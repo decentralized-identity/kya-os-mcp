@@ -1,8 +1,14 @@
 # Contributing to @kya-os/mcp
 
-Thank you for your interest in contributing to `@kya-os/mcp` — the reference implementation of MCP-I, the identity surface of KYA-OS (Know Your Agent Operating System), submitted to the [DIF Trust and Authorization for AI Agents Working Group (TAAWG)](https://identity.foundation/working-groups/agent-and-authorization.html). KYA-OS is the umbrella protocol for agent identity, authorization, and observability; MCP-I binds those primitives to Model Context Protocol servers.
+Thank you for your interest in contributing to `@kya-os/mcp` — the reference implementation of the KYA-OS (Know Your Agent Operating System) protocol for Model Context Protocol servers, submitted to the [DIF Trust and Authorization for AI Agents Working Group (TAAWG)](https://identity.foundation/working-groups/agent-and-authorization.html). KYA-OS is the agent identity, authorization, and observability protocol; this package binds its primitives into MCP.
 
 All contributions are welcome: bug fixes, protocol clarifications, new examples, test improvements, and documentation.
+
+---
+
+## DIF Membership
+
+Contributing to this repository requires [**DIF Membership**](https://identity.foundation/join). DIF (the Decentralized Identity Foundation) is the standards body where the KYA-OS protocol is being developed and ratified; membership is the licensing-and-IPR vehicle that lets your contributions land in a DIF-owned spec without ambiguity. Please join at <https://identity.foundation/join> before opening a pull request.
 
 ---
 
@@ -27,8 +33,8 @@ Commits without a DCO sign-off will not be merged.
 ## Getting Started
 
 ```bash
-git clone https://github.com/modelcontextprotocol-identity/mcp-i-core.git
-cd mcp-i-core
+git clone https://github.com/modelcontextprotocol-identity/kya-os-mcp.git
+cd kya-os-mcp
 npm install
 npm test
 npx tsx examples/node-server/server.ts

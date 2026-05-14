@@ -1,6 +1,6 @@
 # consent-basic
 
-Human-in-the-loop consent flow for MCP-I. An AI agent calls a protected tool, the human approves via a consent page, and the agent retries with a signed delegation credential.
+Human-in-the-loop consent flow for `@kya-os/mcp`. An AI agent calls a protected tool, the human approves via a consent page, and the agent retries with a signed delegation credential.
 
 ```
 Agent calls checkout → needs_authorization → Human approves → Agent retries with VC → Tool executes

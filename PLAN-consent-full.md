@@ -2,7 +2,7 @@
 
 ## Summary
 
-Add `examples/consent-branded/` — the same MCP-I consent flow as consent-basic, but using `@kya-os/consent` for the consent page. Demonstrates branded UI, multi-mode auth (consent-only by default, credentials via env var), config resolution, and production-grade HTML with loading skeleton and no-JS fallback. The example justifies `@kya-os/consent` by showing the DX leap: less code in the consent server, richer UI, configurable auth modes — all from a single `generateInlineConsentShell()` call.
+Add `examples/consent-branded/` — the same `@kya-os/mcp` consent flow as consent-basic, but using `@kya-os/consent` for the consent page. Demonstrates branded UI, multi-mode auth (consent-only by default, credentials via env var), config resolution, and production-grade HTML with loading skeleton and no-JS fallback. The example justifies `@kya-os/consent` by showing the DX leap: less code in the consent server, richer UI, configurable auth modes — all from a single `generateInlineConsentShell()` call.
 
 ## Decision Log
 

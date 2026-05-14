@@ -44,11 +44,20 @@ jobs:
       - name: Coverage
         run: npx vitest run --coverage
 
+      # Blocks Vouched product-internal terms from leaking into the
+      # public spec-reference tree. `@kya-os` is no longer in the
+      # blocklist: this package's own scope is `@kya-os/mcp`, so the
+      # term would trip on every JSDoc package header. Other
+      # `@kya-os/<product>` packages (e.g. `@kya-os/argus`,
+      # `@kya-os/agentshield`) are still caught by their product
+      # substring (`argus`, `agentshield`, etc.), so removing the
+      # scope-level entry doesn't open a hole — it just stops the
+      # check tripping on the package's own name.
       - name: Product contamination check
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          if grep -rn "kta\|bouncer\|argus\|agentshield\|knowthat\|@kya-os" src/ --include='*.ts'; then
+          if grep -rn "kta\|bouncer\|argus\|agentshield\|knowthat" src/ --include='*.ts'; then
             echo "::error::Product contamination found in src/"
             exit 1
           fi
@@ -59,7 +68,7 @@ jobs:
         shell: pwsh
         run: |
           $matches = Get-ChildItem -Path src -Recurse -Include "*.ts" |
-            Select-String -Pattern "kta|bouncer|argus|agentshield|knowthat|@kya-os"
+            Select-String -Pattern "kta|bouncer|argus|agentshield|knowthat"
           if ($matches) {
             Write-Host "::error::Product contamination found in src/"
             exit 1

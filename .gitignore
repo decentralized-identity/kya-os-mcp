@@ -9,3 +9,18 @@ coverage/
 # name or version moves.
 examples/*/package-lock.json
 examples/*/pnpm-lock.yaml
+
+# AI-assistant tooling artifacts. Kept out of the tree so contributors'
+# local assistant configs don't leak into the public repository.
+CLAUDE.md
+CLAUDE_*.md
+AGENTS.md
+.claude/
+.cursorrules
+.cursor/
+.aider*
+.codex/
+
+# Editor scratch
+.vscode/
+.idea/

@@ -89,7 +89,7 @@
         "nonce": "k7Hy9mNpQrStUvWxYz01Aa",
         "audience": "did:web:example.com",
         "sessionId": "sess_abc123xyz",
-        "requestHash": "sha256:72b80a4aa6ab9f53ae8fe727b67b9cb7f49997f36217989927125832c3265bfb1c",
+        "requestHash": "sha256:72b80a4aa6ab9f53ae8fe727b67b9cb7f49997f362179899271258c3265bfb1c",
         "responseHash": "sha256:1b4f0a1ee7708d4c398ff9a4937b2421a6d3a4824b6a6f1a6be8bacb7ef279da"
       }
     }

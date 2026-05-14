@@ -83,7 +83,7 @@ The demo:
 ## Usage in Your Code
 
 ```typescript
-import { buildOutboundDelegationHeaders } from '@mcp-i/core';
+import { buildOutboundDelegationHeaders } from '@kya-os/mcp';
 
 // When making an outbound request on behalf of an agent...
 const headers = await buildOutboundDelegationHeaders({

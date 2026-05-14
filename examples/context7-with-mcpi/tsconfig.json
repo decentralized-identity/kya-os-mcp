@@ -11,7 +11,7 @@
     "skipLibCheck": true,
     "noEmit": true,
     "paths": {
-      "@mcp-i/core": ["../../src/index.ts"]
+      "@kya-os/mcp": ["../../src/index.ts"]
     }
   },
   "include": ["src/**/*"],

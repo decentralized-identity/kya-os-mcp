@@ -1,6 +1,6 @@
 ---
 name: Conformance Submission
-about: Submit conformance test results for a @mcp-i/core implementation
+about: Submit conformance test results for a @kya-os/mcp implementation
 labels: conformance
 ---
 

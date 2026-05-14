@@ -4,7 +4,7 @@
  * Centralized utilities for DID validation, normalization, and handling.
  * Promotes DRY principle and consistency across the codebase.
  *
- * @package @mcp-i/core/utils
+ * @package @kya-os/mcp/utils
  */
 
 import { base58Encode } from "./base58.js";

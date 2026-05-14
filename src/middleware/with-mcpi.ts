@@ -7,7 +7,7 @@
  * `./with-mcpi-server.ts` which (by default) auto-registers the handshake
  * tool and auto-attaches proofs to all tool responses:
  *
- *   import { withMCPI } from '@mcp-i/core';
+ *   import { withMCPI } from '@kya-os/mcp';
  *   await withMCPI(server, { crypto: new NodeCryptoProvider() });
  *
  * `createMCPIMiddleware()` in this file is the lower-level API used

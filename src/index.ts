@@ -1,5 +1,5 @@
 /**
- * @mcp-i/core — MCP-I Protocol Reference Implementation
+ * @kya-os/mcp — MCP-I Protocol Reference Implementation
  *
  * Delegation, proof, and session for Model Context Protocol Identity.
  * This package is a DIF TAAWG protocol reference implementation.

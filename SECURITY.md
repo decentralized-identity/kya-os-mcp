@@ -28,7 +28,7 @@ Reporters will be credited in release notes unless they prefer to remain anonymo
 
 ## Scope
 
-This policy covers the `@mcp-i/core` npm package and this repository. It includes:
+This policy covers the `@kya-os/mcp` npm package and this repository. It includes:
 - Cryptographic implementation errors (Ed25519, JWS, SHA-256)
 - Delegation verification bypasses
 - Session replay vulnerabilities

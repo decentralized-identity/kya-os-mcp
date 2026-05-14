@@ -1,6 +1,6 @@
-# Contributing to @mcp-i/core
+# Contributing to @kya-os/mcp
 
-Thank you for your interest in contributing to `@mcp-i/core` — the MCP-I protocol reference implementation submitted to the [DIF Trust and Authorization for AI Agents Working Group (TAAWG)](https://identity.foundation/working-groups/agent-and-authorization.html).
+Thank you for your interest in contributing to `@kya-os/mcp` — the reference implementation of MCP-I, the identity surface of KYA-OS (Know Your Agent Operating System), submitted to the [DIF Trust and Authorization for AI Agents Working Group (TAAWG)](https://identity.foundation/working-groups/agent-and-authorization.html). KYA-OS is the umbrella protocol for agent identity, authorization, and observability; MCP-I binds those primitives to Model Context Protocol servers.
 
 All contributions are welcome: bug fixes, protocol clarifications, new examples, test improvements, and documentation.
 

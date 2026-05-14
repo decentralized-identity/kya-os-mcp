@@ -5,7 +5,7 @@
  * standard McpServer instance with a single function call.
  *
  * Usage:
- *   import { withMCPI } from '@mcp-i/core/middleware';
+ *   import { withMCPI } from '@kya-os/mcp/middleware';
  *   const mcpi = await withMCPI(server, { crypto: new NodeCryptoProvider() });
  *   // All tools registered on `server` now get proofs automatically.
  *   await server.connect(transport); // transport is transparently wrapped

@@ -35,7 +35,7 @@ Add `examples/consent-branded/` — the same MCP-I consent flow as consent-basic
 
 #### Changes
 
-- `package.json`: name `@mcp-i/example-consent-branded`, add `@kya-os/consent` as dependency alongside `@modelcontextprotocol/sdk`
+- `package.json`: name `@kya-os/example-consent-branded`, add `@kya-os/consent` as dependency alongside `@modelcontextprotocol/sdk`
 - `tsconfig.json`: same as consent-basic
 - `.gitignore`: same as consent-basic (`.mcpi/`, `node_modules/`, `dist/`)
 

@@ -30,7 +30,7 @@ import { AsyncLocalStorage } from "async_hooks";
 import { SERVER_VERSION, RESOURCE_URL, AUTH_SERVER_URL } from "./lib/constants.js";
 
 // ── MCP-I imports ──────────────────────────────────────────────────
-import { withMCPI, NodeCryptoProvider } from '@mcp-i/core';
+import { withMCPI, NodeCryptoProvider } from '@kya-os/mcp';
 
 /** Default HTTP server port */
 const DEFAULT_PORT = 3000;

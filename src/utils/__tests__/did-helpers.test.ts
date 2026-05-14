@@ -1,7 +1,7 @@
 /**
  * Tests for DID Helper Utilities
  *
- * @package @mcp-i/core/utils/__tests__
+ * @package @kya-os/mcp/utils/__tests__
  */
 
 import { describe, it, expect } from "vitest";

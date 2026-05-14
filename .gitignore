@@ -3,3 +3,9 @@ dist/
 coverage/
 .DS_Store
 *.tgz
+
+# Example projects regenerate their lockfiles at install time; pinning
+# them in-tree rots the resolved URLs every time the parent package
+# name or version moves.
+examples/*/package-lock.json
+examples/*/pnpm-lock.yaml

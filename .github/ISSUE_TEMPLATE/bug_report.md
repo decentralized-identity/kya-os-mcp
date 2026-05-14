@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug in @mcp-i/core
+about: Report a bug in @kya-os/mcp
 labels: bug
 ---
 
@@ -13,7 +13,7 @@ labels: bug
 **Expected behavior**
 
 
-**Environment** (Node version, OS, @mcp-i/core version)
+**Environment** (Node version, OS, @kya-os/mcp version)
 
 
 **Additional context**

@@ -6,8 +6,8 @@
  *
  * @example
  * ```typescript
- * import { NodeCryptoProvider } from '@mcp-i/core/providers';
- * import { withMCPI } from '@mcp-i/core/middleware';
+ * import { NodeCryptoProvider } from '@kya-os/mcp/providers';
+ * import { withMCPI } from '@kya-os/mcp/middleware';
  *
  * await withMCPI(server, { crypto: new NodeCryptoProvider() });
  * ```

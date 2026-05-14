@@ -1,5 +1,5 @@
 /**
- * Session Manager Tests — @mcp-i/core
+ * Session Manager Tests — @kya-os/mcp
  *
  * Verifies platform-agnostic SessionManager behaviour:
  * - Nonce format identical to existing implementation

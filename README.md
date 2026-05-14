@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@mcp-i/core"><img src="https://img.shields.io/npm/v/@mcp-i/core" alt="npm"></a>
+  <a href="https://www.npmjs.com/package/@kya-os/mcp"><img src="https://img.shields.io/npm/v/@kya-os/mcp" alt="npm"></a>
   <a href="https://modelcontextprotocol-identity.io"><img src="https://img.shields.io/badge/spec-modelcontextprotocol--identity.io-blue" alt="spec"></a>
   <a href="https://identity.foundation/working-groups/agent-and-authorization.html"><img src="https://img.shields.io/badge/DIF-TAAWG-purple" alt="DIF TAAWG"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/modelcontextprotocol-identity/mcp-i-core" alt="license"></a>
@@ -28,7 +28,7 @@ AI agents call tools on your behalf. But today, there's no way to know *who* cal
 - **The AI never knows** — identity, proofs, and consent happen transparently in the protocol layer
 
 ```
-npm install @mcp-i/core
+npm install @kya-os/mcp
 ```
 
 ---
@@ -51,7 +51,7 @@ server.registerTool('greet', { description: 'Say hello' }, async (args) => ({
 
 ```typescript
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { withMCPI, NodeCryptoProvider } from '@mcp-i/core';  // +1 line
+import { withMCPI, NodeCryptoProvider } from '@kya-os/mcp';  // +1 line
 
 const server = new McpServer({ name: 'my-server', version: '1.0.0' });
 await withMCPI(server, { crypto: new NodeCryptoProvider() }); // +1 line
@@ -123,7 +123,7 @@ Also available: [outbound-delegation](./examples/outbound-delegation/) (gateway 
 
 ## Links
 
-- [Spec](https://modelcontextprotocol-identity.io) | [DIF TAAWG](https://identity.foundation/working-groups/agent-and-authorization.html) | [npm](https://www.npmjs.com/package/@mcp-i/core)
+- [Spec](https://modelcontextprotocol-identity.io) | [DIF TAAWG](https://identity.foundation/working-groups/agent-and-authorization.html) | [npm](https://www.npmjs.com/package/@kya-os/mcp)
 - [CONTRIBUTING.md](./CONTRIBUTING.md) | [CONFORMANCE.md](./CONFORMANCE.md) | [SECURITY.md](./SECURITY.md) | [GOVERNANCE.md](./GOVERNANCE.md)
 
 ## License

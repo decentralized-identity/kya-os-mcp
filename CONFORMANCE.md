@@ -2,8 +2,8 @@
 
 **Model Context Protocol Identity Extension — Compliance Levels**
 
-Version: 1.0.0-draft
-Status: Draft
+Version: 1.0.0
+Status: Stable
 
 ---
 

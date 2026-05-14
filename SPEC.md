@@ -2,8 +2,8 @@
 
 **Model Context Protocol Identity Extension**
 
-Version: 0.1.0-draft
-Status: Draft
+Version: 1.0.0
+Status: Stable
 Editors: MCP-I Working Group
 Repository: https://github.com/modelcontextprotocol-identity/mcp-i-core
 
@@ -23,7 +23,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ## Status
 
-**Draft** — Submitted to DIF TAAWG (Decentralized Identity Foundation, Trust and Authorization for AI Agents Working Group) for review. Not yet a standard.
+**Stable 1.0.0** — Donated to DIF TAAWG (Decentralized Identity Foundation, Trust and Authorization for AI Agents Working Group). Under review for ratification as a DIF standard. The wire format is stable: any future change that breaks compatibility with this version will require a major version bump.
 
 ---
 

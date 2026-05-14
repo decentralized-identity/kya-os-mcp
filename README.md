@@ -18,9 +18,13 @@
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/modelcontextprotocol-identity/mcp-i-core" alt="license"></a>
 </p>
 
+<p align="center">
+  <em><code>@kya-os/mcp</code> is the reference implementation of <strong>MCP-I</strong>, the identity surface of <strong>KYA-OS</strong> (Know Your Agent Operating System). KYA-OS is the umbrella protocol for agent identity, authorization, and observability; MCP-I is its first surface, binding those primitives to Model Context Protocol servers.</em>
+</p>
+
 ---
 
-AI agents call tools on your behalf. But today, there's no way to know *who* called, *whether they were allowed to*, or *what actually happened*. MCP-I fixes that.
+AI agents call tools on your behalf. But today, there's no way to know *who* called, *whether they were allowed to*, or *what actually happened*. MCP-I fixes that for Model Context Protocol servers.
 
 - **Every server gets a cryptographic identity** (DID) — no accounts, no API keys, no central registry
 - **Every tool call gets a signed proof** — a tamper-evident receipt the agent can't forge or deny

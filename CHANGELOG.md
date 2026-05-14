@@ -9,6 +9,12 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ### Changed
 
+- **Package renamed from `@mcp-i/core` to `@kya-os/mcp`.** Reframed under
+  the KYA-OS taxonomy: MCP-I is the identity surface of KYA-OS (Know
+  Your Agent Operating System), the umbrella protocol for agent
+  identity, authorization, and observability. Version stays at 1.2.0 —
+  the wire format, exports (`MCPI*`), and behavior are unchanged. The
+  old `@mcp-i/core` package is deprecated and points at this one.
 - Delegation middleware remains strict by default for chain and status-list validation.
 - Added `delegation.allowLegacyUnsafeDelegation` to `createMCPIMiddleware` as a temporary migration escape hatch for legacy integrations.
 - Added middleware tests covering legacy-compatibility behavior for parent-linked and status-list credentials.

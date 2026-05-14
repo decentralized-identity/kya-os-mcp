@@ -42,13 +42,16 @@
     "./middleware": {
       "types": "./dist/middleware/index.d.ts",
       "default": "./dist/middleware/index.js"
-    }
+    },
+    "./schemas/*.json": "./schemas/*.json",
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",
-    "src",
+    "schemas",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsc",
@@ -58,13 +61,15 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
     "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build && npm run test",
     "demo": "bash scripts/demo.sh",
     "example:server": "npx tsx examples/node-server/server.ts",
     "example:inspector": "npx @modelcontextprotocol/inspector npx tsx examples/node-server/server.ts --stdio"
   },
   "dependencies": {
     "jose": "^5.6.3",
-    "json-canonicalize": "^2.0.0"
+    "json-canonicalize": "^2.0.0",
+    "zod": "^4.3.6"
   },
   "peerDependencies": {
     "@modelcontextprotocol/sdk": ">=1.0.0"
@@ -88,8 +93,7 @@
     "express": "^5.2.1",
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.57.0",
-    "vitest": "^2.0.0",
-    "zod": "^4.3.6"
+    "vitest": "^2.0.0"
   },
   "keywords": [
     "mcp-i",

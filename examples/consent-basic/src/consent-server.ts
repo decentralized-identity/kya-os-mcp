@@ -109,12 +109,14 @@ export async function startConsentServer(
     if (url.pathname === '/approve' && req.method === 'POST') {
       try {
         const body = await readBody(req);
-        const { tool, scopes, agentDid, resumeToken } = JSON.parse(body) as {
+        const parsed = JSON.parse(body) as {
           tool?: string;
           scopes?: string;
           agentDid?: string;
           resumeToken?: string;
+          format?: string;
         };
+        const { tool, scopes, agentDid, resumeToken } = parsed;
 
         if (!tool || !scopes || !agentDid) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -130,7 +132,7 @@ export async function startConsentServer(
         const delegationId = `delegation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const nowSeconds = Math.floor(Date.now() / 1000);
 
-        const vc = await factory.issuer.createAndIssueDelegation({
+        const delegationParams = {
           id: delegationId,
           issuerDid: factory.identity.did,
           subjectDid,
@@ -139,16 +141,26 @@ export async function startConsentServer(
             notAfter: nowSeconds + 3600, // 1 hour expiry
           },
           metadata: { tool, approvedAt: new Date().toISOString() },
-        });
+        };
 
-        // Store VC in delegation store so MCP server can auto-apply on retry
+        // Support VC-JWT format via ?format=jwt query param or body field
+        const format = url.searchParams.get('format') ?? parsed.format;
+        let delegationToken: unknown;
+
+        if (format === 'jwt') {
+          delegationToken = await factory.issueAsJWT(delegationParams);
+        } else {
+          delegationToken = await factory.issuer.createAndIssueDelegation(delegationParams);
+        }
+
+        // Store delegation so MCP server can auto-apply on retry
         if (resumeToken && config.delegationStore) {
-          config.delegationStore.set(resumeToken, vc);
+          config.delegationStore.set(resumeToken, delegationToken);
           process.stderr.write(`[consent] Stored delegation for resume_token: ${resumeToken}\n`);
         }
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ delegationToken: vc }));
+        res.end(JSON.stringify({ delegationToken }));
       } catch (err) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({

@@ -48,7 +48,7 @@ import {
 } from "../types/protocol.js";
 import { logger } from "../logging/index.js";
 import { MCPI_ERROR_CODES } from "../errors.js";
-import { canonicalizeJSON } from "../delegation/utils.js";
+import { canonicalizeJSON, parseVCJWT } from "../delegation/utils.js";
 import { base64urlDecodeToBytes, base64urlEncodeFromBytes, bytesToBase64 } from "../utils/base64.js";
 
 export interface MCPIIdentityConfig {
@@ -702,6 +702,7 @@ export function createMCPIMiddleware(
 
     const validateDelegationChain = async (
       leafCredential: DelegationCredential,
+      options?: { skipSignature?: boolean },
     ): Promise<{ valid: boolean; reason?: string }> => {
       const leafDelegation = extractDelegationFromVC(leafCredential);
       let chain: DelegationCredential[] = [leafCredential];
@@ -787,7 +788,10 @@ export function createMCPIMiddleware(
           !delegationConfig?.statusListResolver;
         const credentialVerification = await verifier.verifyDelegationCredential(
           credential,
-          skipStatusForLegacy ? { skipStatus: true } : undefined,
+          {
+            ...(skipStatusForLegacy ? { skipStatus: true } : {}),
+            ...(options?.skipSignature ? { skipSignature: true } : {}),
+          },
         );
         if (!credentialVerification.valid) {
           return {
@@ -902,8 +906,37 @@ export function createMCPIMiddleware(
         };
       }
 
-      const vc = delegationArg as DelegationCredential;
-      const verificationResult = await validateDelegationChain(vc);
+      // Accept delegation as either a JSON object (embedded proof) or a
+      // VC-JWT string (compact JWT). The Cloudflare consent service issues
+      // VC-JWTs; examples use embedded proofs. Support both transparently.
+      let vc: DelegationCredential;
+      let isVCJWT = false;
+      if (typeof delegationArg === "string") {
+        const parsed = parseVCJWT(delegationArg);
+        if (!parsed || !parsed.payload.vc) {
+          return buildDelegationErrorResponse(
+            MCPI_ERROR_CODES.delegation_invalid,
+            "Invalid VC-JWT format",
+          );
+        }
+        vc = parsed.payload.vc as DelegationCredential;
+        // VC-JWTs don't have an embedded proof — the JWT signature is the
+        // proof. Add a marker so basic validation (which checks for proof
+        // presence) passes. The actual signature is in the JWT envelope.
+        if (!vc.proof) {
+          vc = { ...vc, proof: { type: 'JwtProof2020', jwt: delegationArg } };
+        }
+        isVCJWT = true;
+      } else {
+        vc = delegationArg as DelegationCredential;
+      }
+
+      // For VC-JWTs, skip the embedded proof/signature check — the JWT
+      // envelope signature is the proof. Basic checks (schema, expiry,
+      // status, scopes) still apply.
+      const verificationResult = await validateDelegationChain(vc, {
+        skipSignature: isVCJWT,
+      });
 
       if (!verificationResult.valid) {
         logger.warn(

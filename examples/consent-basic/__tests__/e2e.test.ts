@@ -118,6 +118,47 @@ describe('E2E: consent -> delegation -> execution', () => {
     expect(retryResult._meta!.proof!.jws).toBeDefined();
   });
 
+  // Full cycle with VC-JWT format: §6.1 → §4.1 → §6.2 → §5.1
+  it('should complete the full consent flow with VC-JWT format', async () => {
+    // 3. Call checkout → get needs_authorization
+    const firstAttempt = await checkoutHandler({ item: 'headphones' });
+    const authError = JSON.parse(firstAttempt.content[0]!.text) as NeedsAuthorizationError;
+    expect(authError.error).toBe('needs_authorization');
+
+    // 4. Parse authorizationUrl
+    const authUrl = new URL(authError.authorizationUrl);
+    const tool = authUrl.searchParams.get('tool');
+    const scopes = authUrl.searchParams.get('scopes');
+    const agentDid = authUrl.searchParams.get('agent_did');
+
+    // 5. POST /approve with format=jwt
+    const approveRes = await fetch(`${consentServer.url}/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tool, scopes, agentDid, format: 'jwt' }),
+    });
+    expect(approveRes.status).toBe(200);
+
+    // 6. Parse the delegation token — should be a JWT string (not object)
+    const approveData = (await approveRes.json()) as { delegationToken: string };
+    expect(typeof approveData.delegationToken).toBe('string');
+    expect(approveData.delegationToken.split('.').length).toBe(3);
+
+    // 7. Retry checkout with the JWT string as _mcpi_delegation
+    const retryResult = await checkoutHandler({
+      item: 'headphones',
+      _mcpi_delegation: approveData.delegationToken,
+    });
+
+    // 8. Tool executes successfully — middleware parsed the JWT transparently
+    expect(retryResult.isError).toBeUndefined();
+    expect(retryResult.content[0]!.text).toContain('Order confirmed');
+    expect(retryResult.content[0]!.text).toContain('headphones');
+
+    // 9. Response includes proof
+    expect(retryResult._meta?.proof).toBeDefined();
+  });
+
   // §4.3 — scope mismatch across tools
   it('should not allow reuse of delegation for different tools', async () => {
     // A delegation for cart:write should not work for a tool requiring admin:write

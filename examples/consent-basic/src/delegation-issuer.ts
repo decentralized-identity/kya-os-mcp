@@ -2,6 +2,10 @@
  * Delegation Issuer Factory
  *
  * Creates a DelegationCredentialIssuer from an identity config.
+ * Supports two credential formats:
+ *   - Embedded proof (Ed25519Signature2020) — VC as JSON with proof attached
+ *   - VC-JWT — compact JWT string (header.payload.signature)
+ *
  * Used by both consent-server.ts and tests.
  *
  * Related Spec: MCP-I §3.1 (VC structure), §4.1 (DelegationRecord)
@@ -9,9 +13,13 @@
 
 import { DelegationCredentialIssuer } from '../../../src/delegation/vc-issuer.js';
 import type { VCSigningFunction } from '../../../src/delegation/vc-issuer.js';
-import type { Proof } from '../../../src/types/protocol.js';
+import type { Proof, DelegationCredential } from '../../../src/types/protocol.js';
+import { wrapDelegationAsVC } from '../../../src/types/protocol.js';
 import type { CryptoProvider } from '../../../src/providers/base.js';
 import { base64urlEncodeFromBytes } from '../../../src/utils/base64.js';
+import { createUnsignedVCJWT, completeVCJWT } from '../../../src/delegation/utils.js';
+
+export type DelegationFormat = 'embedded-proof' | 'vc-jwt';
 
 export interface AgentIdentityConfig {
   did: string;
@@ -23,6 +31,12 @@ export interface AgentIdentityConfig {
 export interface DelegationIssuerFactory {
   issuer: DelegationCredentialIssuer;
   identity: AgentIdentityConfig;
+  /**
+   * Issue a delegation as a VC-JWT string.
+   * Uses createUnsignedVCJWT → Ed25519 sign → completeVCJWT,
+   * matching the pattern used by mcp-i-cloudflare's consent service.
+   */
+  issueAsJWT: (delegation: Parameters<DelegationCredentialIssuer['createAndIssueDelegation']>[0], options?: Parameters<DelegationCredentialIssuer['createAndIssueDelegation']>[1]) => Promise<string>;
 }
 
 export function createDelegationIssuerFromIdentity(
@@ -55,5 +69,18 @@ export function createDelegationIssuerFromIdentity(
     signingFunction,
   );
 
-  return { issuer, identity };
+  const issueAsJWT: DelegationIssuerFactory['issueAsJWT'] = async (params, options) => {
+    // Build the unsigned VC (same as the embedded-proof path)
+    const vc = await issuer.createAndIssueDelegation(params, options);
+    const vcWithoutProof = { ...vc } as Record<string, unknown>;
+    delete vcWithoutProof['proof'];
+
+    // Create and sign as JWT
+    const { signingInput } = createUnsignedVCJWT(vcWithoutProof, { keyId: identity.kid });
+    const sigBytes = await crypto.sign(new TextEncoder().encode(signingInput), identity.privateKey);
+    const signature = base64urlEncodeFromBytes(sigBytes);
+    return completeVCJWT(signingInput, signature);
+  };
+
+  return { issuer, identity, issueAsJWT };
 }

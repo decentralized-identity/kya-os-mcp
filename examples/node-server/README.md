@@ -44,7 +44,7 @@ The response includes:
   - `meta.ts` — signature timestamp
 
 > Sessions are created automatically — no manual handshake step needed.
-> In production, MCP-I-aware clients handle the handshake transparently.
+> In production, KYA-OS-aware clients handle the handshake transparently.
 
 ### Call `restricted_greet` (protected tool)
 

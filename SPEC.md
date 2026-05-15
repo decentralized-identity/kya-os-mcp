@@ -1,17 +1,17 @@
-# MCP-I Protocol Specification
+# KYA-OS Protocol Specification
 
-**Model Context Protocol Identity Extension**
+**Cryptographic identity, delegation, and proof for Model Context Protocol servers**
 
 Version: 1.0.0
 Status: Stable
-Editors: MCP-I Working Group
-Repository: https://github.com/modelcontextprotocol-identity/mcp-i-core
+Editors: KYA-OS Working Group
+Repository: https://github.com/decentralized-identity/kya-os-mcp
 
 ---
 
 ## Abstract
 
-MCP-I (Model Context Protocol Identity) is a protocol extension for the Model Context Protocol (MCP) that adds cryptographic identity, delegation chains, and non-repudiation proofs to AI agent interactions. MCP-I enables MCP servers to verify *who* is calling (agent DID), *on whose behalf* (user delegation via W3C Verifiable Credentials), and *what* was done (signed proof for audit trails). The protocol uses Decentralized Identifiers (DIDs) for agent identity, W3C Verifiable Credentials for delegation, Ed25519 signatures for cryptographic operations, and StatusList2021 for revocation.
+KYA-OS (Know Your Agent Operating System) is a protocol extension for the Model Context Protocol (MCP) that adds cryptographic identity, delegation chains, and non-repudiation proofs to AI agent interactions. KYA-OS enables MCP servers to verify *who* is calling (agent DID), *on whose behalf* (user delegation via W3C Verifiable Credentials), and *what* was done (signed proof for audit trails). The protocol uses Decentralized Identifiers (DIDs) for agent identity, W3C Verifiable Credentials for delegation, Ed25519 signatures for cryptographic operations, and StatusList2021 for revocation.
 
 ---
 
@@ -55,7 +55,7 @@ DIDs and Verifiable Credentials are the right fit for this problem:
 
 | Term | Definition |
 |------|------------|
-| **Agent DID** | A Decentralized Identifier (DID) that uniquely identifies an AI agent. MCP-I supports `did:key` (self-certifying, ephemeral) and `did:web` (organization-hosted, persistent). |
+| **Agent DID** | A Decentralized Identifier (DID) that uniquely identifies an AI agent. KYA-OS supports `did:key` (self-certifying, ephemeral) and `did:web` (organization-hosted, persistent). |
 | **Delegation Chain** | An ordered sequence of Delegation Credentials from a root delegator to the current agent, where each credential's subject is the next credential's issuer. |
 | **Delegation Credential** | A W3C Verifiable Credential that grants specific permissions from an issuer (delegator) to a subject (delegate). Contains CRISP constraints defining allowed operations. |
 | **Detached Proof** | A JWS (JSON Web Signature) that cryptographically binds a tool request and response together, enabling non-repudiation and audit. Attached to responses in the `_meta` field. |
@@ -68,7 +68,7 @@ DIDs and Verifiable Credentials are the right fit for this problem:
 
 ## 3. Protocol Overview
 
-The following diagram illustrates the MCP-I protocol flow:
+The following diagram illustrates the KYA-OS protocol flow:
 
 ```
 ┌─────────────────┐                              ┌─────────────────┐
@@ -138,7 +138,7 @@ The following diagram illustrates the MCP-I protocol flow:
 
 ### 4.1 Supported DID Methods
 
-MCP-I implementations MUST support:
+KYA-OS implementations MUST support:
 
 | Method | Use Case | Resolution |
 |--------|----------|------------|
@@ -149,7 +149,7 @@ Implementations MAY support additional DID methods.
 
 ### 4.2 Key Material
 
-MCP-I uses Ed25519 (EdDSA over Curve25519) for all cryptographic operations:
+KYA-OS uses Ed25519 (EdDSA over Curve25519) for all cryptographic operations:
 
 - **Key Size**: 32-byte private seed, 32-byte public key
 - **Signature Size**: 64 bytes
@@ -412,7 +412,7 @@ When a delegation is revoked:
 
 ### 6.6 StatusList2021 Revocation
 
-MCP-I uses the W3C StatusList2021 specification for revocation:
+KYA-OS uses the W3C StatusList2021 specification for revocation:
 
 ```json
 {
@@ -550,7 +550,7 @@ When an MCP server calls downstream services (APIs, other MCP servers), it MUST 
 |--------|-------|
 | `KYA-Agent-DID` | Original agent's DID |
 | `KYA-Delegation-Chain` | Comma-separated list of delegation IDs from root to current |
-| `KYA-Session-Id` | MCP-I session ID |
+| `KYA-Session-Id` | KYA-OS session ID |
 | `KYA-Delegation-Proof` | Signed JWT proving delegation authority |
 | `KYA-Granted-Scopes` | Comma-separated list of granted scopes |
 
@@ -566,7 +566,7 @@ interface DelegationProofJWT {
   exp: number;   // Expires at (iat + 60 seconds)
   jti: string;   // Unique JWT ID (UUID)
 
-  // MCP-I claims
+  // KYA-OS claims
   delegation_id: string;    // Current delegation ID
   delegation_chain: string; // Chain path (vcId>delegationId)
   scope: string;            // Comma-separated scopes
@@ -627,7 +627,7 @@ interface NeedsAuthorizationError {
 
 ## 10. Well-Known Endpoint
 
-MCP-I servers SHOULD expose `/.well-known/mcpi`:
+KYA-OS servers SHOULD expose `/.well-known/mcpi`:
 
 ```json
 {
@@ -697,7 +697,7 @@ A confused deputy attack occurs when Agent B receives a valid delegation from Ag
 
 ### 11.7 Downgrade Attacks
 
-An adversary or non-compliant client may omit MCP-I headers entirely, bypassing identity and delegation checks. Because MCP-I is an extension to MCP, a server cannot distinguish between a client that does not support MCP-I and one that is deliberately stripping identity headers.
+An adversary or non-compliant client may omit KYA-OS headers entirely, bypassing identity and delegation checks. Because KYA-OS is an extension to MCP, a server cannot distinguish between a client that does not support KYA-OS and one that is deliberately stripping identity headers.
 
 - Servers that require identity MUST reject tool calls without a valid session (fail-closed)
 - Servers SHOULD NOT fall back to unauthenticated mode for tools that require delegation
@@ -758,7 +758,7 @@ Minor version differences SHOULD be handled gracefully — servers SHOULD implem
 
 ## 14. Transport Binding
 
-MCP-I is transport-agnostic. The handshake and proofs use standard MCP mechanisms:
+KYA-OS is transport-agnostic. The handshake and proofs use standard MCP mechanisms:
 
 **Handshake**: Implemented as an MCP tool named `_mcpi_handshake`. This is compatible with all MCP transports (stdio, SSE, HTTP Streamable) without modification.
 
@@ -848,7 +848,7 @@ These test vectors enable interoperability testing across implementations.
 5057521f310b536837b619f0ac040ef8064f8c597da8ec22a56801b435744033
 ```
 
-**MCP-I Format:**
+**KYA-OS Format:**
 ```
 sha256:5057521f310b536837b619f0ac040ef8064f8c597da8ec22a56801b435744033
 ```

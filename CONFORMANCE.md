@@ -1,6 +1,6 @@
-# MCP-I Conformance Requirements
+# KYA-OS Conformance Requirements
 
-**Model Context Protocol Identity Extension — Compliance Levels**
+**Compliance levels for KYA-OS implementations**
 
 Version: 1.0.0
 Status: Stable
@@ -9,7 +9,7 @@ Status: Stable
 
 ## Overview
 
-This document defines three compliance levels for MCP-I implementations. Each level builds on the previous, with increasing capability requirements. Implementations MUST pass all tests for a given level to claim conformance at that level.
+This document defines three compliance levels for KYA-OS implementations. Each level builds on the previous, with increasing capability requirements. Implementations MUST pass all tests for a given level to claim conformance at that level.
 
 ---
 
@@ -167,7 +167,7 @@ All Level 2 requirements, plus:
 
 Implementation MUST:
 - Produce valid W3C Verifiable Credential structure
-- Include `@context` with VC v1 and MCP-I delegation context
+- Include `@context` with VC v1 and KYA-OS delegation context
 - Include `type` array with `VerifiableCredential` and `DelegationCredential`
 - Include `issuer` as DID string or object with `id`
 - Include `issuanceDate` in ISO 8601 format
@@ -278,7 +278,7 @@ To submit conformance results for your implementation:
 ### Issue Template
 
 ```markdown
-## MCP-I Conformance Submission
+## KYA-OS Conformance Submission
 
 **Implementation**: [Name] v[Version]
 **Conformance Level**: [1 | 2 | 3]
@@ -310,9 +310,9 @@ To submit conformance results for your implementation:
 
 Implementations that pass conformance testing may display badges:
 
-- **MCP-I Level 1 Conformant** — Core cryptographic operations
-- **MCP-I Level 2 Conformant** — Session management and proofs
-- **MCP-I Level 3 Conformant** — Full delegation support
+- **KYA-OS Level 1 Conformant** — Core cryptographic operations
+- **KYA-OS Level 2 Conformant** — Session management and proofs
+- **KYA-OS Level 3 Conformant** — Full delegation support
 
 Badge assets will be provided upon successful conformance submission.
 

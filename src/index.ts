@@ -251,6 +251,18 @@ export {
 
 export { NodeCryptoProvider } from './providers/node-crypto.js';
 
+export {
+  createDidKeyIdentity,
+  createDidWebIdentity,
+  createIdentity,
+  type ProvisionedIdentity,
+  type CreateIdentityOptions,
+  type CreateIdentityMethod,
+  type CreateIdentityRequest,
+  type CreateDidWebIdentityArgs,
+  type CreateDidWebIdentityOptions,
+} from './providers/identity-factory.js';
+
 // Middleware
 export {
   createMCPIMiddleware,

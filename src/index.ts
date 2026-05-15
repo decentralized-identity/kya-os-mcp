@@ -160,6 +160,8 @@ export {
   isDidWeb,
   parseDidWeb,
   didWebToUrl,
+  buildDidWebDocument,
+  type BuildDidWebDocumentOptions,
 } from './delegation/did-web-resolver.js';
 
 // Utils
@@ -237,6 +239,7 @@ export {
   StorageProvider,
   NonceCacheProvider,
   IdentityProvider,
+  type Identity,
   type AgentIdentity,
 } from './providers/base.js';
 

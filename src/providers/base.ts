@@ -50,14 +50,44 @@ export abstract class NonceCacheProvider {
   abstract destroy(): Promise<void>;
 }
 
-export interface AgentIdentity {
+/**
+ * Generic identity bundle backing the MCP-I protocol primitives.
+ *
+ * Holds the DID, verification-method id, and key material for any
+ * subject the protocol speaks about (agents, servers, users, services).
+ * The wire format (delegations, proofs, status lists) is subject-
+ * agnostic, so the in-memory representation is too.
+ *
+ * `privateKey` is optional because verifier-only deployments hold
+ * only public material — the private key lives elsewhere (HSM, wallet,
+ * delegated issuer). Issuance flows that need to sign should narrow
+ * to {@link AgentIdentity} or check `privateKey` explicitly.
+ */
+export interface Identity {
+  /** Subject DID (e.g. `did:key:...`, `did:web:...`). */
   did: string;
+  /** Verification-method id (`<did>#<fragment>`). */
   kid: string;
-  privateKey: string;
+  /** Public key material as base64-encoded raw bytes (Ed25519: 32 bytes). */
   publicKey: string;
+  /** Private key material as base64-encoded raw bytes. Absent on verifier-only holders. */
+  privateKey?: string;
+  /** ISO-8601 creation timestamp. */
   createdAt: string;
-  type: 'development' | 'production';
+  /** Free-form, implementation-defined metadata. */
   metadata?: Record<string, unknown>;
+}
+
+/**
+ * Agent-flavoured {@link Identity} used by MCP server implementations.
+ *
+ * Adds the agent-lifecycle fields (`type`) and re-tightens `privateKey`
+ * to required, since servers issue and sign on behalf of the agent
+ * and therefore always hold private material in this context.
+ */
+export interface AgentIdentity extends Identity {
+  privateKey: string;
+  type: 'development' | 'production';
 }
 
 export abstract class IdentityProvider {

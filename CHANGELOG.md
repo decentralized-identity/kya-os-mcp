@@ -7,6 +7,23 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- **Generic `Identity` interface** exported from the root entry point.
+  Captures the shape shared by every subject the protocol speaks about
+  (DID + verification-method id + key material). `AgentIdentity` now
+  extends `Identity`; the agent-flavoured shape is unchanged for
+  existing consumers.
+- **`buildDidWebDocument(identity, options?)`** in
+  `delegation/did-web-resolver`. Produces the DID Document a `did:web`
+  controller serves at its resolution URL (see `didWebToUrl`),
+  completing the producer/consumer round-trip with `DidWebResolver`.
+  Emits both `publicKeyJwk` and `publicKeyMultibase` for cross-format
+  interop, matching the `Ed25519VerificationKey2020` form used by the
+  did:key resolver.
+- Optional `@context` field on `DIDDocument` so produced documents can
+  declare the JSON-LD contexts they reference.
+
 ### Changed
 
 - **Package renamed from `@mcp-i/core` to `@kya-os/mcp`.** Reframed under

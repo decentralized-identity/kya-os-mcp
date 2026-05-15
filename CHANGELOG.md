@@ -23,6 +23,23 @@ Versioning: https://semver.org/spec/v2.0.0.html
   did:key resolver.
 - Optional `@context` field on `DIDDocument` so produced documents can
   declare the JSON-LD contexts they reference.
+- **`createIdentity(crypto, request)`** — discriminated-union
+  dispatching surface that selects the DID method at call time
+  (`{ method: 'did:key', ... }` or
+  `{ method: 'did:web', domain, path?, ... }`). Per-method options
+  (e.g. `kidFragment` on did:web only) live on the request itself so
+  cross-method misuse fails at compile time rather than at runtime.
+  Future `did:jwk` / `did:peer` / `did:ion` helpers extend the union
+  without growing the top-level export footprint.
+- **`createDidKeyIdentity(crypto, options?)`** and
+  **`createDidWebIdentity(crypto, args, options?)`** in
+  `providers/identity-factory`. Single-call provisioning helpers that
+  compose a `CryptoProvider` with the appropriate DID method to mint a
+  fresh `Identity`. Both return `ProvisionedIdentity` (the narrowed
+  `Identity & { privateKey: string }`) and accept an optional
+  `ClockProvider` for deterministic `createdAt` stamping. The did:web
+  helper validates `domain` and `path` segments per the construction-
+  throws contract.
 
 ### Changed
 

@@ -1,12 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   DidWebResolver,
+  buildDidWebDocument,
   createDidWebResolver,
   isDidWeb,
   parseDidWeb,
   didWebToUrl,
 } from '../did-web-resolver.js';
-import type { FetchProvider } from '../../providers/base.js';
+import { base58Decode } from '../../utils/base58.js';
+import { bytesToBase64 } from '../../utils/base64.js';
+import type { FetchProvider, Identity } from '../../providers/base.js';
 import type { DIDDocument } from '../vc-verifier.js';
 
 /**
@@ -422,6 +425,166 @@ describe('DidWebResolver', () => {
       await resolver.resolve('did:web:example.com');
 
       expect(mockFetchProvider.fetch).toHaveBeenCalledTimes(2);
+    });
+  });
+});
+
+describe('buildDidWebDocument', () => {
+  /** Multicodec prefix for Ed25519 public keys (matches the resolver). */
+  const ED25519_MULTICODEC_PREFIX = new Uint8Array([0xed, 0x01]);
+
+  /**
+   * Construct a deterministic 32-byte test key and the matching
+   * Identity bundle. Returning the raw bytes too makes round-trip
+   * assertions on `publicKeyMultibase` straightforward.
+   */
+  const buildIdentity = (
+    did: string,
+    fragment = 'keys-1'
+  ): { identity: Identity; publicKeyBytes: Uint8Array } => {
+    const publicKeyBytes = new Uint8Array(32).map((_, i) => (i * 7) & 0xff);
+    return {
+      publicKeyBytes,
+      identity: {
+        did,
+        kid: `${did}#${fragment}`,
+        publicKey: bytesToBase64(publicKeyBytes),
+        privateKey: undefined,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    };
+  };
+
+  describe('happy path', () => {
+    it('produces a DID Document whose id matches the identity DID', () => {
+      const { identity } = buildIdentity('did:web:example.com');
+
+      const doc = buildDidWebDocument(identity);
+
+      expect(doc.id).toBe('did:web:example.com');
+    });
+
+    it('emits the default JSON-LD contexts in spec-required order', () => {
+      const { identity } = buildIdentity('did:web:example.com');
+
+      const doc = buildDidWebDocument(identity);
+
+      expect(doc['@context']).toEqual([
+        'https://www.w3.org/ns/did/v1',
+        'https://w3id.org/security/suites/ed25519-2020/v1',
+      ]);
+    });
+
+    it('appends additional contexts after the defaults', () => {
+      const { identity } = buildIdentity('did:web:example.com');
+
+      const doc = buildDidWebDocument(identity, {
+        additionalContexts: ['https://example.com/custom/v1'],
+      });
+
+      expect(doc['@context']).toEqual([
+        'https://www.w3.org/ns/did/v1',
+        'https://w3id.org/security/suites/ed25519-2020/v1',
+        'https://example.com/custom/v1',
+      ]);
+    });
+
+    it('emits a single Ed25519VerificationKey2020 method controlled by the DID', () => {
+      const { identity } = buildIdentity('did:web:example.com:agents:bot1');
+
+      const doc = buildDidWebDocument(identity);
+
+      expect(doc.verificationMethod).toHaveLength(1);
+      const vm = doc.verificationMethod?.[0];
+      expect(vm?.id).toBe(identity.kid);
+      expect(vm?.type).toBe('Ed25519VerificationKey2020');
+      expect(vm?.controller).toBe(identity.did);
+    });
+
+    it('publishes the verification method under both authentication and assertionMethod', () => {
+      const { identity } = buildIdentity('did:web:example.com');
+
+      const doc = buildDidWebDocument(identity);
+
+      expect(doc.authentication).toEqual([identity.kid]);
+      expect(doc.assertionMethod).toEqual([identity.kid]);
+    });
+
+    it('emits publicKeyJwk in OKP/Ed25519 form', () => {
+      const { identity } = buildIdentity('did:web:example.com');
+
+      const doc = buildDidWebDocument(identity);
+
+      const jwk = doc.verificationMethod?.[0]?.publicKeyJwk as {
+        kty: string;
+        crv: string;
+        x: string;
+      };
+      expect(jwk.kty).toBe('OKP');
+      expect(jwk.crv).toBe('Ed25519');
+      expect(jwk.x).toMatch(/^[A-Za-z0-9_-]+$/);
+    });
+
+    it('emits publicKeyMultibase that decodes back to the original key bytes', () => {
+      const { identity, publicKeyBytes } = buildIdentity('did:web:example.com');
+
+      const doc = buildDidWebDocument(identity);
+
+      const multibase = doc.verificationMethod?.[0]?.publicKeyMultibase;
+      expect(multibase).toBeDefined();
+      expect(multibase?.startsWith('z')).toBe(true);
+
+      const decoded = base58Decode(multibase!.slice(1));
+      expect(decoded.slice(0, 2)).toEqual(ED25519_MULTICODEC_PREFIX);
+      expect(decoded.slice(2)).toEqual(publicKeyBytes);
+    });
+  });
+
+  describe('round-trip with DidWebResolver', () => {
+    it('produces a document the resolver accepts as valid', async () => {
+      const did = 'did:web:example.com:u:alice';
+      const { identity } = buildIdentity(did);
+      const document = buildDidWebDocument(identity);
+
+      const fetchProvider: FetchProvider = {
+        resolveDID: vi.fn(),
+        fetchStatusList: vi.fn(),
+        fetchDelegationChain: vi.fn(),
+        fetch: vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue(document),
+        }),
+      };
+
+      const resolved = await new DidWebResolver(fetchProvider).resolve(did);
+
+      expect(resolved).not.toBeNull();
+      expect(resolved?.id).toBe(did);
+      expect(resolved?.verificationMethod?.[0]?.controller).toBe(did);
+    });
+  });
+
+  describe('input validation', () => {
+    it('throws when identity.did is not a did:web DID', () => {
+      const { identity } = buildIdentity('did:web:example.com');
+      const bad: Identity = { ...identity, did: 'did:key:z6MkInvalid' };
+
+      expect(() => buildDidWebDocument(bad)).toThrow(/must be a did:web DID/);
+    });
+
+    it('throws when identity.kid does not reference identity.did', () => {
+      const { identity } = buildIdentity('did:web:example.com');
+      const bad: Identity = { ...identity, kid: 'did:web:other.com#keys-1' };
+
+      expect(() => buildDidWebDocument(bad)).toThrow(/does not reference/);
+    });
+
+    it('throws when publicKey is not 32 bytes after base64 decode', () => {
+      const { identity } = buildIdentity('did:web:example.com');
+      const bad: Identity = { ...identity, publicKey: bytesToBase64(new Uint8Array(16)) };
+
+      expect(() => buildDidWebDocument(bad)).toThrow(/expected 32-byte/);
     });
   });
 });

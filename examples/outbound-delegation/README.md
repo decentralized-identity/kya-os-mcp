@@ -1,6 +1,6 @@
 # Outbound Delegation Propagation Example
 
-This example demonstrates MCP-I §7 (Outbound Delegation Propagation) — how an MCP server forwards delegation context when calling downstream services.
+This example demonstrates KYA-OS §7 (Outbound Delegation Propagation) — how an MCP server forwards delegation context when calling downstream services.
 
 ## The Scenario
 
@@ -31,7 +31,7 @@ With outbound delegation propagation:
 |--------|-------------|---------|
 | `KYA-Agent-DID` | The original agent's DID | `did:key:z6Mk...` |
 | `KYA-Delegation-Chain` | The delegation chain ID (vcId of the root delegation) | `urn:uuid:abc-123` |
-| `KYA-Session-Id` | The current MCP-I session ID | `mcpi_xyz789` |
+| `KYA-Session-Id` | The current KYA-OS session ID | `mcpi_xyz789` |
 | `KYA-Delegation-Proof` | Signed JWT proving the delegation is being forwarded | `eyJhbGciOiJFZERTQS...` |
 
 ## The Delegation Proof JWT
@@ -110,5 +110,5 @@ const response = await fetch(targetUrl, {
 
 ## Related Spec
 
-- MCP-I §7 — Outbound Delegation Propagation
+- KYA-OS §7 — Outbound Delegation Propagation
 - [modelcontextprotocol-identity.io](https://modelcontextprotocol-identity.io)

@@ -26,12 +26,17 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ### Changed
 
-- **Package renamed from `@mcp-i/core` to `@kya-os/mcp`.** Reframed under
-  the KYA-OS taxonomy: MCP-I is the identity surface of KYA-OS (Know
-  Your Agent Operating System), the umbrella protocol for agent
-  identity, authorization, and observability. Version stays at 1.2.0 —
-  the wire format, exports (`MCPI*`), and behavior are unchanged. The
-  old `@mcp-i/core` package is deprecated and points at this one.
+- **Package renamed from `@mcp-i/core` to `@kya-os/mcp`.** Renamed
+  under the KYA-OS protocol (Know Your Agent Operating System), the
+  agent identity, authorization, and observability protocol donated
+  to DIF TAAWG. Version stays at 1.2.0 — the wire format, public
+  exports, and behavior are unchanged. The old `@mcp-i/core` package
+  is deprecated and points at this one.
+- **Spec renamed from MCP-I to KYA-OS** across `SPEC.md`,
+  `CONFORMANCE.md`, `GOVERNANCE.md`, and example READMEs. Wire-format
+  identifiers (`_mcpi` tool name, well-known path, JSON Schema
+  files, JSON-LD context URLs) are deferred to a later cutover so
+  this doc-only rename doesn't break running implementations.
 - **Spec cut to `1.0.0`** (was `0.1.0-draft` in `SPEC.md`, `1.0.0-draft`
   in `CONFORMANCE.md`). The wire format was already pinned at `1.0.0`
   in the handshake protocol-version field; the spec docs now match.

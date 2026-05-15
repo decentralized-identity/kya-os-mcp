@@ -2,7 +2,7 @@
   <a href="https://modelcontextprotocol-identity.io">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="https://modelcontextprotocol-identity.io/images/logo-mark_white.svg">
-      <img alt="MCP-I" src="https://modelcontextprotocol-identity.io/images/logo-mark_black.svg" width="64">
+      <img alt="" src="https://modelcontextprotocol-identity.io/images/logo-mark_black.svg" width="64">
     </picture>
   </a>
 </p>

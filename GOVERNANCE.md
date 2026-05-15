@@ -2,7 +2,7 @@
 
 ## Project Role
 
-This repository is the **DIF TAAWG protocol reference implementation** for MCP-I (Model Context Protocol Identity), the identity surface of KYA-OS (Know Your Agent Operating System). KYA-OS is the umbrella protocol for agent identity, authorization, and observability; MCP-I binds those primitives to Model Context Protocol servers. This repo provides the TypeScript implementation of the MCP-I specification — cryptographic identity, delegation chains, and non-repudiation proofs over MCP.
+This repository is the **DIF TAAWG protocol reference implementation** for the KYA-OS (Know Your Agent Operating System) protocol's MCP binding. KYA-OS is the agent identity, authorization, and observability protocol; this repo provides the TypeScript implementation of its MCP binding — cryptographic identity, delegation chains, and non-repudiation proofs over Model Context Protocol. The wire format is specified in [`SPEC.md`](./SPEC.md) (the MCP-I specification, version 1.0.0).
 
 ## Maintainers
 
@@ -31,7 +31,7 @@ Breaking changes to the specification require **explicit vote**:
 
 ## Relationship to DIF TAAWG
 
-This repository implements the MCP-I specification under development in the **Decentralized Identity Foundation (DIF) Trust and Authorization for AI Working Group (TAAWG)**.
+This repository implements the MCP-I specification (the MCP binding of KYA-OS), donated to the **Decentralized Identity Foundation (DIF) Trust and Authorization for AI Working Group (TAAWG)** and under review there for ratification as a DIF standard.
 
 - **Spec decisions** are made in the working group
 - **Implementation decisions** are made here

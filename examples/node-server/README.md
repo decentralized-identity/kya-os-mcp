@@ -1,10 +1,10 @@
-# MCP-I Example Server
+# `@kya-os/mcp` Example Server
 
 A minimal MCP server demonstrating cryptographic identity, proof generation, and tool protection.
 
 ## Quick Start
 
-From the **repository root** (`mcp-i-core/`):
+From the **repository root** (`kya-os-mcp/`):
 
 ```bash
 # Install dependencies

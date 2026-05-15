@@ -1,4 +1,4 @@
-# MCP-I Proof Verification
+# `@kya-os/mcp` Proof Verification
 
 Verifies a DetachedProof JSON using did:key resolution.
 

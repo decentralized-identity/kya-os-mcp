@@ -1,6 +1,6 @@
 # consent-full
 
-Same MCP-I consent flow as [consent-basic](../consent-basic/) — but the consent page is rendered by [`@kya-os/consent`](https://www.npmjs.com/package/@kya-os/consent). One `generateConsentShell()` call replaces 200+ lines of hand-rolled HTML with a production-grade consent UI: multi-mode auth, configurable branding, loading skeleton, and no-JS fallback.
+Same `@kya-os/mcp` consent flow as [consent-basic](../consent-basic/) — but the consent page is rendered by [`@kya-os/consent`](https://www.npmjs.com/package/@kya-os/consent). One `generateConsentShell()` call replaces 200+ lines of hand-rolled HTML with a production-grade consent UI: multi-mode auth, configurable branding, loading skeleton, and no-JS fallback.
 
 ## Quick Start
 
@@ -56,7 +56,7 @@ If your server doesn't need delegation (just proofs + handshake), use `withMCPI`
 |---------|---------|-------------|
 | `AUTH_MODE` | `consent-only` | Auth mode: `consent-only` or `credentials` |
 | `BRAND_COLOR` | `#2563EB` | Primary brand color (hex) |
-| `COMPANY_NAME` | `MCP-I Demo` | Company name shown on consent page |
+| `COMPANY_NAME` | `KYA-OS Demo` | Company name shown on consent page |
 | `PORT` | `3002` | MCP server HTTP port |
 | `CONSENT_PORT` | `3001` | Consent server HTTP port |
 

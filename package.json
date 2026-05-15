@@ -1,7 +1,7 @@
 {
   "name": "@kya-os/mcp",
   "version": "1.2.0",
-  "description": "Core library for MCP-I \u2014 delegation, proof, and session primitives for Model Context Protocol Identity",
+  "description": "Core library for MCP-I — delegation, proof, and session primitives for Model Context Protocol Identity",
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
@@ -91,6 +91,7 @@
     "commander": "^14.0.3",
     "eslint": "^10.0.3",
     "express": "^5.2.1",
+    "fast-check": "^3.23.2",
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.57.0",
     "vitest": "^2.0.0"

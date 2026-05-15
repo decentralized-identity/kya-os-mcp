@@ -237,6 +237,7 @@ export {
   StorageProvider,
   NonceCacheProvider,
   IdentityProvider,
+  type Identity,
   type AgentIdentity,
 } from './providers/base.js';
 

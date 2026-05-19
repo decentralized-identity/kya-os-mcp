@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schema.modelcontextprotocol-identity.io/xmcp-i/handshake/handshake-request.v1.0.0.json",
-  "title": "MCP-I Handshake Request",
-  "description": "Client-initiated handshake request to establish an MCP-I session with nonce-based replay protection.",
+  "title": "KYA-OS Handshake Request",
+  "description": "Client-initiated handshake request to establish a KYA-OS session with nonce-based replay protection.",
   "type": "object",
   "required": ["nonce", "audience", "timestamp"],
   "properties": {
@@ -63,7 +63,7 @@
     "clientProtocolVersion": {
       "type": "string",
       "pattern": "^\\d+\\.\\d+$",
-      "description": "Client's supported MCP-I protocol version (e.g., '1.0')."
+      "description": "Client's supported KYA-OS protocol version (e.g., '1.0')."
     },
     "clientCapabilities": {
       "type": "object",

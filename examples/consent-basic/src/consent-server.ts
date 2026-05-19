@@ -3,13 +3,13 @@
  * Consent HTTP Server
  *
  * Serves a consent page and issues W3C Delegation Credentials on approval.
- * This is the authorization endpoint in the MCP-I consent flow.
+ * This is the authorization endpoint in the KYA-OS consent flow.
  *
  * Routes:
  *   GET  /consent  — Consent page with tool/scopes/agentDid injected
  *   POST /approve  — Issues a delegation VC and returns { delegationToken }
  *
- * Related Spec: MCP-I §4 (Delegation), §6 (Authorization)
+ * Related Spec: KYA-OS §4 (Delegation), §6 (Authorization)
  */
 
 import http from 'node:http';

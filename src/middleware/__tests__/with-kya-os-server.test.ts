@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { generateIdentity, withMCPI } from "../with-mcpi-server.js";
+import { generateIdentity, withKyaOs } from "../with-kya-os-server.js";
 import { NodeCryptoProvider } from "../../__tests__/utils/node-crypto-provider.js";
 
 const crypto = new NodeCryptoProvider();
@@ -32,18 +32,18 @@ describe("generateIdentity", () => {
   });
 });
 
-describe("withMCPI", () => {
-  it("should register _mcpi tool on server by default", async () => {
+describe("withKyaOs", () => {
+  it("should register _kya tool on server by default", async () => {
     const registerTool = vi.fn();
     const server = {
       connect: vi.fn().mockResolvedValue(undefined),
       registerTool,
     };
 
-    await withMCPI(server, { crypto });
+    await withKyaOs(server, { crypto });
 
     expect(registerTool).toHaveBeenCalledWith(
-      "_mcpi",
+      "_kya",
       expect.objectContaining({ description: expect.any(String) }),
       expect.any(Function),
     );
@@ -56,7 +56,7 @@ describe("withMCPI", () => {
       registerTool,
     };
 
-    await withMCPI(server, { crypto, handshakeExposure: "none" });
+    await withKyaOs(server, { crypto, handshakeExposure: "none" });
 
     expect(registerTool).not.toHaveBeenCalled();
   });
@@ -68,7 +68,7 @@ describe("withMCPI", () => {
       registerTool: vi.fn(),
     };
 
-    await withMCPI(server, { crypto });
+    await withKyaOs(server, { crypto });
 
     // server.connect should now be patched
     expect(server.connect).not.toBe(originalConnect);
@@ -95,23 +95,23 @@ describe("withMCPI", () => {
       registerTool: vi.fn(),
     };
 
-    await withMCPI(server, { crypto, proofAllTools: false });
+    await withKyaOs(server, { crypto, proofAllTools: false });
 
     // connect should NOT be patched
     expect(server.connect).toBe(originalConnect);
   });
 
-  it("should return MCPIMiddleware instance", async () => {
+  it("should return KyaOsMiddleware instance", async () => {
     const server = {
       connect: vi.fn().mockResolvedValue(undefined),
       registerTool: vi.fn(),
     };
 
-    const mcpi = await withMCPI(server, { crypto });
+    const kya = await withKyaOs(server, { crypto });
 
-    expect(mcpi).toBeDefined();
-    expect(mcpi.wrapWithProof).toBeInstanceOf(Function);
-    expect(mcpi.wrapWithDelegation).toBeInstanceOf(Function);
-    expect(mcpi.handleMCPI).toBeInstanceOf(Function);
+    expect(kya).toBeDefined();
+    expect(kya.wrapWithProof).toBeInstanceOf(Function);
+    expect(kya.wrapWithDelegation).toBeInstanceOf(Function);
+    expect(kya.handleKya).toBeInstanceOf(Function);
   });
 });

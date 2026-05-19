@@ -1,7 +1,7 @@
 /**
  * End-to-End Integration Test
  *
- * Exercises the full MCP-I protocol flow with real Ed25519 cryptography:
+ * Exercises the full KYA-OS protocol flow with real Ed25519 cryptography:
  *   handshake → session → tool call → proof generation → proof verification
  *
  * No mocks — uses NodeCryptoProvider for real signing and verification.
@@ -65,7 +65,7 @@ class TestFetchProvider extends FetchProvider {
   }
 }
 
-describe("MCP-I Full Protocol Flow", () => {
+describe("KYA-OS Full Protocol Flow", () => {
   it("handshake → session → tool call → proof → verification", async () => {
     const cryptoProvider = new NodeCryptoProvider();
 
@@ -91,7 +91,7 @@ describe("MCP-I Full Protocol Flow", () => {
 
     expect(handshakeResult.success).toBe(true);
     expect(handshakeResult.session).toBeDefined();
-    expect(handshakeResult.session!.sessionId).toMatch(/^mcpi_/);
+    expect(handshakeResult.session!.sessionId).toMatch(/^kya_/);
     expect(handshakeResult.session!.agentDid).toBe(agent.did);
     expect(handshakeResult.session!.audience).toBe(serverDid);
 

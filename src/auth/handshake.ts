@@ -1,7 +1,7 @@
 /**
  * Authorization Handshake — Platform-agnostic Protocol Reference
  *
- * Orchestrates the MCP-I authorization flow:
+ * Orchestrates the KYA-OS authorization flow:
  * 1. Check agent reputation (optional)
  * 2. Verify delegation exists
  * 3. Return needs_authorization error if missing

@@ -10,17 +10,17 @@
  * This file is MCP server infrastructure — identical in structure to consent-basic.
  *
  * Architecture note:
- *   This example uses the low-level SDK `Server` API with `createMCPIMiddleware`
- *   instead of the 2-line `withMCPI(server, { crypto })` pattern (see examples/
- *   context7-with-mcpi for that). The reason: delegation-protected tools receive
- *   `_mcpi_delegation` as a tool argument. McpServer.registerTool validates args
+ *   This example uses the low-level SDK `Server` API with `createKyaOsMiddleware`
+ *   instead of the 2-line `withKyaOs(server, { crypto })` pattern (see examples/
+ *   context7-with-kya-os for that). The reason: delegation-protected tools receive
+ *   `_kya_delegation` as a tool argument. McpServer.registerTool validates args
  *   against zod schemas and strips unknown keys — so the delegation VC would be
  *   silently dropped before the handler sees it. The low-level Server API passes
  *   args through without schema validation, which delegation requires.
  *
  * Transports: stdio (default), sse, mcp (Streamable HTTP)
  *
- * Related Spec: MCP-I §4 (Delegation), §5 (Proof), §6 (Authorization)
+ * Related Spec: KYA-OS §4 (Delegation), §5 (Proof), §6 (Authorization)
  */
 
 import fs from 'node:fs';
@@ -36,21 +36,21 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import {
-  createMCPIMiddleware,
+  createKyaOsMiddleware,
   generateIdentity,
-  type MCPIMiddleware,
-  type MCPIIdentityConfig,
+  type KyaOsMiddleware,
+  type KyaOsIdentityConfig,
 } from '../../../src/middleware/index.js';
 import { NodeCryptoProvider } from '../../../src/providers/node-crypto.js';
 import { startConsentServer } from './consent-server.js';
 import { createDelegationIssuerFromIdentity } from './delegation-issuer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const IDENTITY_PATH = path.resolve(__dirname, '..', '.mcpi', 'identity.json');
+const IDENTITY_PATH = path.resolve(__dirname, '..', '.kya', 'identity.json');
 
 // ── Application-Level Types ─────────────────────────────────────────
 // These are example-specific patterns for the resume_token consent flow,
-// not part of the MCP-I protocol itself.
+// not part of the KYA-OS protocol itself.
 
 export interface ServerConfig {
   consentUrl: string;
@@ -116,11 +116,11 @@ function formatAsConsentLink(
 ): (args: Record<string, unknown>, sessionId?: string) => Promise<ToolResult> {
   return async (args, sessionId) => {
     // Check the delegation store for a previously approved VC (resume token flow).
-    if (!args['_mcpi_delegation'] && delegationStore) {
+    if (!args['_kya_delegation'] && delegationStore) {
       const pending = delegationStore.findByTool(toolName);
       if (pending) {
         process.stderr.write(`[server] Auto-applying delegation from consent approval (token: ${pending.resumeToken})\n`);
-        return handler({ ...args, _mcpi_delegation: pending.vc }, sessionId);
+        return handler({ ...args, _kya_delegation: pending.vc }, sessionId);
       }
     }
 
@@ -169,12 +169,12 @@ export interface ToolResult {
 }
 
 // ── MCP Server Factory ──────────────────────────────────────────────
-// Protocol integration: createMCPIMiddleware provides wrapWithProof (§5)
+// Protocol integration: createKyaOsMiddleware provides wrapWithProof (§5)
 // and wrapWithDelegation (§4). We use the low-level Server API because
 // delegation requires raw args — see architecture note at top of file.
 
 export function createConsentFullMcpServer(
-  mcpi: MCPIMiddleware,
+  kya: KyaOsMiddleware,
   config: ServerConfig,
 ) {
   const server = new Server(
@@ -183,7 +183,7 @@ export function createConsentFullMcpServer(
   );
 
   // browse: public tool — §5 proof attached via wrapWithProof
-  const browseHandler = mcpi.wrapWithProof('browse', async (args) => ({
+  const browseHandler = kya.wrapWithProof('browse', async (args) => ({
     content: [{
       type: 'text',
       text: `Browsing category: ${args['category'] ?? 'all'}. Found 3 items.`,
@@ -191,11 +191,11 @@ export function createConsentFullMcpServer(
   }));
 
   // checkout: protected tool — §4 delegation with scope cart:write
-  // wrapWithDelegation checks _mcpi_delegation in args (why we need raw args)
-  const rawCheckoutHandler = mcpi.wrapWithDelegation(
+  // wrapWithDelegation checks _kya_delegation in args (why we need raw args)
+  const rawCheckoutHandler = kya.wrapWithDelegation(
     'checkout',
     { scopeId: 'cart:write', consentUrl: config.consentUrl },
-    mcpi.wrapWithProof('checkout', async (args) => ({
+    kya.wrapWithProof('checkout', async (args) => ({
       content: [{
         type: 'text',
         text: `Order confirmed for item: ${args['item'] ?? 'unknown'}. Thank you!`,
@@ -205,14 +205,14 @@ export function createConsentFullMcpServer(
   const checkoutHandler = formatAsConsentLink(
     'checkout',
     config.consentUrl,
-    mcpi.identity.did,
+    kya.identity.did,
     config.delegationStore,
     rawCheckoutHandler as (args: Record<string, unknown>, sessionId?: string) => Promise<ToolResult>,
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
-      mcpi.mcpiTool,
+      kya.kyaTool,
       {
         name: 'browse',
         description: 'Browse product categories (public — no delegation required)',
@@ -240,8 +240,8 @@ export function createConsentFullMcpServer(
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args = {} } = request.params;
 
-    if (name === '_mcpi') {
-      return mcpi.handleMCPI(args as Record<string, unknown>);
+    if (name === '_kya') {
+      return kya.handleKya(args as Record<string, unknown>);
     }
 
     if (name === 'browse') {
@@ -264,22 +264,22 @@ export function createConsentFullMcpServer(
 // ── Identity + Middleware Setup ──────────────────────────────────────
 
 /**
- * Load identity from .mcpi/identity.json or generate an ephemeral one,
- * then create MCP-I middleware with session + proof + delegation support.
+ * Load identity from .kya/identity.json or generate an ephemeral one,
+ * then create KYA-OS middleware with session + proof + delegation support.
  */
-export async function createMcpiMiddleware() {
+export async function createKyaOsMiddleware() {
   const crypto = new NodeCryptoProvider();
 
-  let identity: MCPIIdentityConfig;
+  let identity: KyaOsIdentityConfig;
   if (fs.existsSync(IDENTITY_PATH)) {
-    identity = JSON.parse(fs.readFileSync(IDENTITY_PATH, 'utf-8')) as MCPIIdentityConfig;
+    identity = JSON.parse(fs.readFileSync(IDENTITY_PATH, 'utf-8')) as KyaOsIdentityConfig;
     process.stderr.write(`[server] Loaded identity from ${IDENTITY_PATH}\n`);
   } else {
     identity = await generateIdentity(crypto);
     process.stderr.write(`[server] Generated ephemeral identity (run 'npm run generate-identity' to persist)\n`);
   }
 
-  return createMCPIMiddleware(
+  return createKyaOsMiddleware(
     { identity, session: { sessionTtlMinutes: 60 }, autoSession: true },
     crypto,
   );
@@ -297,7 +297,7 @@ function setCorsHeaders(res: http.ServerResponse) {
 }
 
 /** Start the MCP server with SSE + Streamable HTTP transports. */
-async function startHttpServer(mcpi: MCPIMiddleware, consentUrl: string, port: number, delegationStore?: DelegationStore) {
+async function startHttpServer(kya: KyaOsMiddleware, consentUrl: string, port: number, delegationStore?: DelegationStore) {
   let sseTransport: SSEServerTransport | null = null;
 
   const httpServer = http.createServer(async (req, res) => {
@@ -313,7 +313,7 @@ async function startHttpServer(mcpi: MCPIMiddleware, consentUrl: string, port: n
 
     // SSE transport: GET /sse + POST /messages
     if (url.pathname === '/sse' && req.method === 'GET') {
-      const server = createConsentFullMcpServer(mcpi, { consentUrl, delegationStore });
+      const server = createConsentFullMcpServer(kya, { consentUrl, delegationStore });
       sseTransport = new SSEServerTransport('/messages', res);
       await server.connect(sseTransport);
       process.stderr.write('[server] SSE client connected\n');
@@ -332,7 +332,7 @@ async function startHttpServer(mcpi: MCPIMiddleware, consentUrl: string, port: n
 
     // Streamable HTTP transport: POST /mcp
     if (url.pathname === '/mcp' && req.method === 'POST') {
-      const server = createConsentFullMcpServer(mcpi, { consentUrl, delegationStore });
+      const server = createConsentFullMcpServer(kya, { consentUrl, delegationStore });
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
         enableJsonResponse: true,
@@ -348,7 +348,7 @@ async function startHttpServer(mcpi: MCPIMiddleware, consentUrl: string, port: n
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         name: 'consent-full-example',
-        did: mcpi.identity.did,
+        did: kya.identity.did,
         transports: {
           sse: `http://localhost:${port}/sse`,
           mcp: `http://localhost:${port}/mcp`,
@@ -365,7 +365,7 @@ async function startHttpServer(mcpi: MCPIMiddleware, consentUrl: string, port: n
     process.stderr.write(`[server] HTTP server: http://localhost:${port}\n`);
     process.stderr.write(`[server]   SSE:  http://localhost:${port}/sse\n`);
     process.stderr.write(`[server]   MCP:  http://localhost:${port}/mcp\n`);
-    process.stderr.write(`[server] Agent DID: ${mcpi.identity.did}\n`);
+    process.stderr.write(`[server] Agent DID: ${kya.identity.did}\n`);
   });
 }
 
@@ -383,13 +383,13 @@ if (isMain) {
     ? 0
     : parseInt(process.env['CONSENT_PORT'] ?? '3001', 10);
 
-  createMcpiMiddleware().then(async (mcpi) => {
+  createKyaOsMiddleware().then(async (kya) => {
     const cryptoProvider = new NodeCryptoProvider();
     const factory = createDelegationIssuerFromIdentity(cryptoProvider, {
-      did: mcpi.identity.did,
-      kid: mcpi.identity.kid,
-      privateKey: mcpi.identity.privateKey,
-      publicKey: mcpi.identity.publicKey,
+      did: kya.identity.did,
+      kid: kya.identity.kid,
+      privateKey: kya.identity.privateKey,
+      publicKey: kya.identity.publicKey,
     });
     // Shared delegation store — consent server writes, MCP server reads
     const delegationStore = new DelegationStore();
@@ -397,12 +397,12 @@ if (isMain) {
     const consentUrl = `${consentServer.url}/consent`;
 
     if (transport === 'stdio') {
-      process.stderr.write(`[server] Agent DID: ${mcpi.identity.did}\n`);
-      const server = createConsentFullMcpServer(mcpi, { consentUrl, delegationStore });
+      process.stderr.write(`[server] Agent DID: ${kya.identity.did}\n`);
+      const server = createConsentFullMcpServer(kya, { consentUrl, delegationStore });
       await server.connect(new StdioServerTransport());
       process.stderr.write('[server] MCP server running on stdio\n');
     } else {
-      await startHttpServer(mcpi, consentUrl, port, delegationStore);
+      await startHttpServer(kya, consentUrl, port, delegationStore);
     }
   }).catch((err) => {
     process.stderr.write(`Fatal: ${err}\n`);

@@ -1,15 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schema.modelcontextprotocol-identity.io/xmcp-i/discovery/well-known-mcpi.v1.0.0.json",
-  "title": "MCP-I Discovery Document",
-  "description": "Well-known discovery document served at /.well-known/mcpi for MCP-I service discovery.",
+  "$id": "https://schema.modelcontextprotocol-identity.io/xmcp-i/discovery/well-known-kya.v1.0.0.json",
+  "title": "KYA-OS Discovery Document",
+  "description": "Well-known discovery document served at /.well-known/kya for KYA-OS service discovery.",
   "type": "object",
   "required": ["version", "serverDid", "endpoints"],
   "properties": {
     "version": {
       "type": "string",
       "pattern": "^\\d+\\.\\d+$",
-      "description": "MCP-I protocol version supported by this server."
+      "description": "KYA-OS protocol version supported by this server."
     },
     "serverDid": {
       "type": "string",
@@ -142,9 +142,9 @@
       "version": "1.0",
       "serverDid": "did:web:api.example.com",
       "endpoints": {
-        "handshake": "/mcpi/handshake",
-        "tools": "/mcpi/tools",
-        "delegation": "/mcpi/delegations",
+        "handshake": "/kya/handshake",
+        "tools": "/kya/tools",
+        "delegation": "/kya/delegations",
         "authorization": "https://auth.example.com/authorize"
       },
       "capabilities": {

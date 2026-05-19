@@ -1,7 +1,7 @@
 {
   "name": "@kya-os/mcp",
   "version": "1.2.0",
-  "description": "Core library for MCP-I \u2014 delegation, proof, and session primitives for Model Context Protocol Identity",
+  "description": "Core library for KYA-OS \u2014 delegation, proof, and session primitives for Model Context Protocol Identity",
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
@@ -96,7 +96,7 @@
     "vitest": "^2.0.0"
   },
   "keywords": [
-    "mcp-i",
+    "kya-os",
     "mcp",
     "delegation",
     "verifiable-credentials",
@@ -107,7 +107,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/modelcontextprotocol-identity/mcp-i-core"
+    "url": "https://github.com/identity-foundation/kya-os-mcp"
   },
   "publishConfig": {
     "access": "public"

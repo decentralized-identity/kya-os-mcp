@@ -1,8 +1,8 @@
 /**
- * withMCPI() Integration Tests
+ * withKyaOs() Integration Tests
  *
- * Tests the dream API: `withMCPI(server, { crypto })` auto-registers
- * the `_mcpi` protocol tool and auto-attaches proofs to all tool responses.
+ * Tests the dream API: `withKyaOs(server, { crypto })` auto-registers
+ * the `_kya` protocol tool and auto-attaches proofs to all tool responses.
  */
 
 import { describe, it, expect, afterEach } from 'vitest';
@@ -10,7 +10,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { z } from 'zod';
-import { withMCPI, generateIdentity } from '../../middleware/with-mcpi-server.js';
+import { withKyaOs, generateIdentity } from '../../middleware/with-kya-os-server.js';
 import { NodeCryptoProvider } from '../utils/node-crypto-provider.js';
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -19,17 +19,17 @@ async function createTestPair(options?: {
   proofAllTools?: boolean;
   excludeTools?: string[];
   autoSession?: boolean;
-  registerToolsBeforeWithMCPI?: boolean;
+  registerToolsBeforeWithKyaOs?: boolean;
   handshakeExposure?: 'tool' | 'none';
 }) {
   const crypto = new NodeCryptoProvider();
   const server = new McpServer(
-    { name: 'withMCPI-test', version: '1.0.0' },
-    { instructions: 'Test server for withMCPI integration' },
+    { name: 'withKyaOs-test', version: '1.0.0' },
+    { instructions: 'Test server for withKyaOs integration' },
   );
 
-  // Register tools BEFORE withMCPI to test pre-existing tool interception
-  if (options?.registerToolsBeforeWithMCPI) {
+  // Register tools BEFORE withKyaOs to test pre-existing tool interception
+  if (options?.registerToolsBeforeWithKyaOs) {
     server.registerTool(
       'greet',
       {
@@ -42,7 +42,7 @@ async function createTestPair(options?: {
     );
   }
 
-  const mcpi = await withMCPI(server, {
+  const kya = await withKyaOs(server, {
     crypto,
     autoSession: options?.autoSession ?? true,
     proofAllTools: options?.proofAllTools,
@@ -50,8 +50,8 @@ async function createTestPair(options?: {
     handshakeExposure: options?.handshakeExposure,
   });
 
-  // Register tools AFTER withMCPI to test late registration
-  if (!options?.registerToolsBeforeWithMCPI) {
+  // Register tools AFTER withKyaOs to test late registration
+  if (!options?.registerToolsBeforeWithKyaOs) {
     server.registerTool(
       'greet',
       {
@@ -76,19 +76,19 @@ async function createTestPair(options?: {
   );
 
   const client = new Client(
-    { name: 'withMCPI-test-client', version: '1.0.0' },
+    { name: 'withKyaOs-test-client', version: '1.0.0' },
   );
 
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   await client.connect(clientTransport);
 
-  return { client, server, mcpi, crypto };
+  return { client, server, kya, crypto };
 }
 
 // ── Tests ──────────────────────────────────────────────────────
 
-describe('withMCPI()', () => {
+describe('withKyaOs()', () => {
   const pairs: Array<{ client: Client; server: McpServer }> = [];
 
   afterEach(async () => {
@@ -105,22 +105,22 @@ describe('withMCPI()', () => {
     return pair;
   }
 
-  it('auto-registers _mcpi tool', async () => {
+  it('auto-registers _kya tool', async () => {
     const { client } = await create();
 
     const result = await client.listTools();
     const toolNames = result.tools.map((t) => t.name);
 
-    expect(toolNames).toContain('_mcpi');
+    expect(toolNames).toContain('_kya');
   });
 
-  it('handshakeExposure: none does not auto-register _mcpi', async () => {
+  it('handshakeExposure: none does not auto-register _kya', async () => {
     const { client } = await create({ handshakeExposure: 'none' });
 
     const result = await client.listTools();
     const toolNames = result.tools.map((t) => t.name);
 
-    expect(toolNames).not.toContain('_mcpi');
+    expect(toolNames).not.toContain('_kya');
     expect(toolNames).toContain('greet');
   });
 
@@ -144,11 +144,11 @@ describe('withMCPI()', () => {
     expect(proof).toBeDefined();
     expect(proof.jws).toBeDefined();
     expect(proof.meta.did).toMatch(/^did:key:/);
-    expect(proof.meta.sessionId).toMatch(/^mcpi_/);
+    expect(proof.meta.sessionId).toMatch(/^kya_/);
   });
 
-  it('tools registered before withMCPI also get proofs', async () => {
-    const { client } = await create({ registerToolsBeforeWithMCPI: true });
+  it('tools registered before withKyaOs also get proofs', async () => {
+    const { client } = await create({ registerToolsBeforeWithKyaOs: true });
 
     const result = await client.callTool({
       name: 'greet',
@@ -212,15 +212,15 @@ describe('withMCPI()', () => {
     expect(proof).toBeUndefined();
   });
 
-  it('handshake establishes session through withMCPI', async () => {
-    const { client, mcpi } = await create({ autoSession: false });
+  it('handshake establishes session through withKyaOs', async () => {
+    const { client, kya } = await create({ autoSession: false });
 
     const result = await client.callTool({
-      name: '_mcpi',
+      name: '_kya',
       arguments: {
         action: 'handshake',
         nonce: `test-${Date.now()}`,
-        audience: mcpi.identity.did,
+        audience: kya.identity.did,
         timestamp: Math.floor(Date.now() / 1000),
       },
     });
@@ -228,19 +228,19 @@ describe('withMCPI()', () => {
     const first = result.content[0] as { type: string; text: string };
     const parsed = JSON.parse(first.text);
     expect(parsed.success).toBe(true);
-    expect(parsed.sessionId).toMatch(/^mcpi_/);
-    expect(parsed.serverDid).toBe(mcpi.identity.did);
+    expect(parsed.sessionId).toMatch(/^kya_/);
+    expect(parsed.serverDid).toBe(kya.identity.did);
   });
 
   it('manual handshake API works when handshake tool is not exposed', async () => {
-    const { client, mcpi } = await create({
+    const { client, kya } = await create({
       autoSession: false,
       handshakeExposure: 'none',
     });
 
-    await mcpi.handleHandshake({
+    await kya.handleHandshake({
       nonce: `manual-${Date.now()}`,
-      audience: mcpi.identity.did,
+      audience: kya.identity.did,
       timestamp: Math.floor(Date.now() / 1000),
     });
 
@@ -259,7 +259,7 @@ describe('withMCPI()', () => {
     };
     expect(proof).toBeDefined();
     expect(proof.jws).toBeDefined();
-    expect(proof.meta.sessionId).toMatch(/^mcpi_/);
+    expect(proof.meta.sessionId).toMatch(/^kya_/);
   });
 
   it('multiple tools share the same auto-session', async () => {
@@ -284,16 +284,16 @@ describe('withMCPI()', () => {
     expect(proof1.meta.sessionId).toBe(proof2.meta.sessionId);
   });
 
-  it('wrapWithDelegation still works alongside withMCPI', async () => {
+  it('wrapWithDelegation still works alongside withKyaOs', async () => {
     const crypto = new NodeCryptoProvider();
     const server = new McpServer(
       { name: 'delegation-test', version: '1.0.0' },
     );
 
-    const mcpi = await withMCPI(server, { crypto, autoSession: true });
+    const kya = await withKyaOs(server, { crypto, autoSession: true });
 
     // Use wrapWithDelegation for a restricted tool
-    const restrictedHandler = mcpi.wrapWithDelegation(
+    const restrictedHandler = kya.wrapWithDelegation(
       'restricted-tool',
       { scopeId: 'admin:write', consentUrl: 'https://example.com/consent' },
       async (args) => ({

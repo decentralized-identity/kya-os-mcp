@@ -7,7 +7,7 @@
  * Wire format: signed compact EdDSA JWT (60s TTL, per-call jti)
  * Header injection: KYA-Delegation-Id, KYA-Delegation-Chain, KYA-Delegation-Proof, KYA-Granted-Scopes
  *
- * Related Spec: MCP-I §2 — Outbound Delegation Propagation
+ * Related Spec: KYA-OS §2 — Outbound Delegation Propagation
  */
 
 import { SignJWT, importJWK } from 'jose';

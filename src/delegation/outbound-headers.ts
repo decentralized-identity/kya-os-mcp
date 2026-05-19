@@ -4,13 +4,13 @@
  * Builds the full set of outbound delegation headers for forwarding
  * delegation context to downstream services.
  *
- * Headers (MCP-I §7):
+ * Headers (KYA-OS §7):
  * - KYA-Agent-DID: the original agent's DID
  * - KYA-Delegation-Chain: the delegation chain ID (vcId of the root delegation)
  * - KYA-Session-Id: the current session ID
  * - KYA-Delegation-Proof: a signed JWT proving the delegation is being forwarded
  *
- * Related Spec: MCP-I §7 — Outbound Delegation Propagation
+ * Related Spec: KYA-OS §7 — Outbound Delegation Propagation
  */
 
 import type { SessionContext, DelegationRecord } from '../types/protocol.js';
@@ -158,7 +158,7 @@ export async function buildOutboundDelegationHeaders(
   );
 
   // Build the delegation proof JWT
-  // Per MCP-I §7, the JWT has:
+  // Per KYA-OS §7, the JWT has:
   // - iss: serverDid (the MCP server forwarding the request)
   // - sub: agentDid (the original agent)
   // - aud: targetHostname (the downstream service)

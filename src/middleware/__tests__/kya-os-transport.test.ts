@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import { createMCPITransport, type Transport, type JSONRPCMessage } from "../mcpi-transport.js";
-import type { MCPIMiddleware, MCPIToolHandler } from "../with-mcpi.js";
+import { createKyaOsTransport, type Transport, type JSONRPCMessage } from "../kya-os-transport.js";
+import type { KyaOsMiddleware, KyaOsToolHandler } from "../with-kya-os.js";
 
 function createMockTransport(): Transport & { sentMessages: JSONRPCMessage[] } {
   const sent: JSONRPCMessage[] = [];
@@ -15,9 +15,9 @@ function createMockTransport(): Transport & { sentMessages: JSONRPCMessage[] } {
   };
 }
 
-function createMockMCPI(proofResult?: Record<string, unknown>): MCPIMiddleware {
+function createMockKyaOs(proofResult?: Record<string, unknown>): KyaOsMiddleware {
   return {
-    wrapWithProof: (_toolName: string, handler: MCPIToolHandler) => {
+    wrapWithProof: (_toolName: string, handler: KyaOsToolHandler) => {
       return async (args: Record<string, unknown>) => {
         const result = await handler(args);
         if (proofResult) {
@@ -26,14 +26,14 @@ function createMockMCPI(proofResult?: Record<string, unknown>): MCPIMiddleware {
         return result;
       };
     },
-  } as unknown as MCPIMiddleware;
+  } as unknown as KyaOsMiddleware;
 }
 
-describe("createMCPITransport", () => {
+describe("createKyaOsTransport", () => {
   it("should pass through non-tools/call messages unmodified", async () => {
     const inner = createMockTransport();
-    const mcpi = createMockMCPI();
-    const wrapper = createMCPITransport(inner, mcpi);
+    const kya = createMockKyaOs();
+    const wrapper = createKyaOsTransport(inner, kya);
 
     await wrapper.send({ jsonrpc: "2.0", method: "resources/list", id: 1 });
 
@@ -43,17 +43,17 @@ describe("createMCPITransport", () => {
 
   it("should skip proof injection for excluded tools", async () => {
     const inner = createMockTransport();
-    const mcpi = createMockMCPI({ jws: "test" });
-    const wrapper = createMCPITransport(inner, mcpi, ["_mcpi"]);
+    const kya = createMockKyaOs({ jws: "test" });
+    const wrapper = createKyaOsTransport(inner, kya, ["_kya"]);
 
     await wrapper.start();
 
-    // Simulate incoming _mcpi request
+    // Simulate incoming _kya request
     inner.onmessage!({
       jsonrpc: "2.0",
       method: "tools/call",
       id: 42,
-      params: { name: "_mcpi", arguments: { action: "handshake" } },
+      params: { name: "_kya", arguments: { action: "handshake" } },
     });
 
     // Simulate response
@@ -71,8 +71,8 @@ describe("createMCPITransport", () => {
   it("should inject proof for non-excluded tool calls", async () => {
     const inner = createMockTransport();
     const proof = { jws: "test.jws.sig", meta: { did: "did:key:z6Mk..." } };
-    const mcpi = createMockMCPI(proof);
-    const wrapper = createMCPITransport(inner, mcpi);
+    const kya = createMockKyaOs(proof);
+    const wrapper = createKyaOsTransport(inner, kya);
 
     await wrapper.start();
 
@@ -97,8 +97,8 @@ describe("createMCPITransport", () => {
 
   it("should not inject proof for error responses", async () => {
     const inner = createMockTransport();
-    const mcpi = createMockMCPI({ jws: "test" });
-    const wrapper = createMCPITransport(inner, mcpi);
+    const kya = createMockKyaOs({ jws: "test" });
+    const wrapper = createKyaOsTransport(inner, kya);
 
     await wrapper.start();
 
@@ -121,8 +121,8 @@ describe("createMCPITransport", () => {
 
   it("should proxy onmessage/onclose/onerror to inner transport", () => {
     const inner = createMockTransport();
-    const mcpi = createMockMCPI();
-    const wrapper = createMCPITransport(inner, mcpi);
+    const kya = createMockKyaOs();
+    const wrapper = createKyaOsTransport(inner, kya);
 
     const handler = () => {};
     wrapper.onmessage = handler;
@@ -140,8 +140,8 @@ describe("createMCPITransport", () => {
 
   it("should delegate start and close to inner transport", async () => {
     const inner = createMockTransport();
-    const mcpi = createMockMCPI();
-    const wrapper = createMCPITransport(inner, mcpi);
+    const kya = createMockKyaOs();
+    const wrapper = createKyaOsTransport(inner, kya);
 
     // close delegates directly
     await wrapper.close();

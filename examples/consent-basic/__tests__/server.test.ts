@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { createMCPIMiddleware, type MCPIMiddleware } from '../../../src/middleware/with-mcpi.js';
+import { createKyaOsMiddleware, type KyaOsMiddleware } from '../../../src/middleware/with-kya-os.js';
 import { NodeCryptoProvider } from '../../../src/providers/node-crypto.js';
 import { generateDidKeyFromBase64 } from '../../../src/utils/did-helpers.js';
 import { createDelegationIssuerFromIdentity } from '../src/delegation-issuer.js';
@@ -26,7 +26,7 @@ interface ToolResult {
   [key: string]: unknown;
 }
 
-let mcpi: MCPIMiddleware;
+let kya: KyaOsMiddleware;
 let browseHandler: (args: Record<string, unknown>, sessionId?: string) => Promise<ToolResult>;
 let checkoutHandler: (args: Record<string, unknown>, sessionId?: string) => Promise<ToolResult>;
 let serverDid: string;
@@ -37,15 +37,15 @@ async function issueTestDelegation(
   notAfterOffset = 3600,
 ): Promise<DelegationCredential> {
   const factory = createDelegationIssuerFromIdentity(crypto, {
-    did: mcpi.identity.did,
-    kid: mcpi.identity.kid,
-    privateKey: mcpi.identity.privateKey,
-    publicKey: mcpi.identity.publicKey,
+    did: kya.identity.did,
+    kid: kya.identity.kid,
+    privateKey: kya.identity.privateKey,
+    publicKey: kya.identity.publicKey,
   });
 
   return factory.issuer.createAndIssueDelegation({
     id: `delegation-test-${Date.now()}`,
-    issuerDid: mcpi.identity.did,
+    issuerDid: kya.identity.did,
     subjectDid,
     constraints: {
       scopes,
@@ -61,7 +61,7 @@ describe('MCP Server with consent-basic', () => {
     const kid = `${did}#${did.replace('did:key:', '')}`;
     serverDid = did;
 
-    mcpi = createMCPIMiddleware(
+    kya = createKyaOsMiddleware(
       {
         identity: { did, kid, privateKey: keyPair.privateKey, publicKey: keyPair.publicKey },
         session: { sessionTtlMinutes: 60 },
@@ -70,17 +70,17 @@ describe('MCP Server with consent-basic', () => {
       crypto,
     );
 
-    browseHandler = mcpi.wrapWithProof('browse', async (args) => ({
+    browseHandler = kya.wrapWithProof('browse', async (args) => ({
       content: [{
         type: 'text',
         text: `Browsing category: ${args['category'] ?? 'all'}. Found 3 items.`,
       }],
     })) as typeof browseHandler;
 
-    checkoutHandler = mcpi.wrapWithDelegation(
+    checkoutHandler = kya.wrapWithDelegation(
       'checkout',
       { scopeId: 'cart:write', consentUrl: CONSENT_URL },
-      mcpi.wrapWithProof('checkout', async (args) => ({
+      kya.wrapWithProof('checkout', async (args) => ({
         content: [{
           type: 'text',
           text: `Order confirmed for item: ${args['item'] ?? 'unknown'}. Thank you!`,
@@ -124,7 +124,7 @@ describe('MCP Server with consent-basic', () => {
   // §6.2 — Delegation verification (valid VC)
   it('should execute checkout with a valid delegation VC', async () => {
     const vc = await issueTestDelegation(serverDid, ['cart:write']);
-    const result = await checkoutHandler({ item: 'widget', _mcpi_delegation: vc });
+    const result = await checkoutHandler({ item: 'widget', _kya_delegation: vc });
 
     expect(result.isError).toBeUndefined();
     expect(result.content[0]!.text).toContain('Order confirmed');
@@ -134,7 +134,7 @@ describe('MCP Server with consent-basic', () => {
   // §4.3 — Wrong scope
   it('should reject a delegation VC with wrong scope', async () => {
     const vc = await issueTestDelegation(serverDid, ['cart:read']);
-    const result = await checkoutHandler({ item: 'widget', _mcpi_delegation: vc });
+    const result = await checkoutHandler({ item: 'widget', _kya_delegation: vc });
 
     expect(result.isError).toBe(true);
     const parsed = JSON.parse(result.content[0]!.text) as { error: string };
@@ -144,16 +144,16 @@ describe('MCP Server with consent-basic', () => {
   // §4.2 — Expired delegation
   it('should reject an expired delegation VC', async () => {
     // Use a dedicated middleware instance to avoid shared state interference
-    const expiredMcpi = createMCPIMiddleware(
+    const expiredKya = createKyaOsMiddleware(
       {
-        identity: mcpi.identity,
+        identity: kya.identity,
         session: { sessionTtlMinutes: 60 },
         autoSession: true,
       },
       crypto,
     );
 
-    const expiredCheckout = expiredMcpi.wrapWithDelegation(
+    const expiredCheckout = expiredKya.wrapWithDelegation(
       'checkout',
       { scopeId: 'cart:write', consentUrl: CONSENT_URL },
       async (args) => ({
@@ -162,7 +162,7 @@ describe('MCP Server with consent-basic', () => {
     );
 
     const vc = await issueTestDelegation(serverDid, ['cart:write'], -3600);
-    const result = await expiredCheckout({ item: 'widget', _mcpi_delegation: vc });
+    const result = await expiredCheckout({ item: 'widget', _kya_delegation: vc });
 
     expect(result.isError).toBe(true);
     const parsed = JSON.parse(result.content[0]!.text) as { error: string };
@@ -197,19 +197,19 @@ describe('MCP Server with consent-basic', () => {
     );
   });
 
-  // §4.3 — _mcpi_delegation stripping
-  it('should not pass _mcpi_delegation to the tool handler', async () => {
+  // §4.3 — _kya_delegation stripping
+  it('should not pass _kya_delegation to the tool handler', async () => {
     let capturedArgs: Record<string, unknown> | undefined;
-    const testMcpi = createMCPIMiddleware(
+    const testKya = createKyaOsMiddleware(
       {
-        identity: mcpi.identity,
+        identity: kya.identity,
         session: { sessionTtlMinutes: 60 },
         autoSession: true,
       },
       crypto,
     );
 
-    const handler = testMcpi.wrapWithDelegation(
+    const handler = testKya.wrapWithDelegation(
       'checkout',
       { scopeId: 'cart:write', consentUrl: CONSENT_URL },
       async (args) => {
@@ -219,10 +219,10 @@ describe('MCP Server with consent-basic', () => {
     );
 
     const vc = await issueTestDelegation(serverDid, ['cart:write']);
-    await handler({ item: 'widget', _mcpi_delegation: vc });
+    await handler({ item: 'widget', _kya_delegation: vc });
 
     expect(capturedArgs).toBeDefined();
     expect(capturedArgs!['item']).toBe('widget');
-    expect(capturedArgs!['_mcpi_delegation']).toBeUndefined();
+    expect(capturedArgs!['_kya_delegation']).toBeUndefined();
   });
 });

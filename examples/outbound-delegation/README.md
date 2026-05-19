@@ -31,7 +31,7 @@ With outbound delegation propagation:
 |--------|-------------|---------|
 | `KYA-Agent-DID` | The original agent's DID | `did:key:z6Mk...` |
 | `KYA-Delegation-Chain` | The delegation chain ID (vcId of the root delegation) | `urn:uuid:abc-123` |
-| `KYA-Session-Id` | The current KYA-OS session ID | `mcpi_xyz789` |
+| `KYA-Session-Id` | The current KYA-OS session ID | `kya_xyz789` |
 | `KYA-Delegation-Proof` | Signed JWT proving the delegation is being forwarded | `eyJhbGciOiJFZERTQS...` |
 
 ## The Delegation Proof JWT

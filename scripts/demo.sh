@@ -28,7 +28,7 @@ trap cleanup EXIT INT TERM
 usage() {
   echo -e "${BOLD}Usage:${NC} $0 [options] [example...]"
   echo ""
-  echo "Start MCP-I example servers for testing with the MCP Inspector."
+  echo "Start KYA-OS example servers for testing with the MCP Inspector."
   echo ""
   echo -e "${BOLD}Examples:${NC}"
   echo "  $0                    # start all examples"
@@ -37,10 +37,10 @@ usage() {
   echo "  $0 --no-inspector     # start servers without opening Inspector"
   echo ""
   echo -e "${BOLD}Available examples:${NC}"
-  echo "  node-server        Low-level MCP-I server with proof + restricted tools"
+  echo "  node-server        Low-level KYA-OS server with proof + restricted tools"
   echo "  consent-basic      Human-in-the-loop consent flow (built-in UI)"
   echo "  consent-full       Consent flow with @kya-os/consent (production UI)"
-  echo "  context7-with-mcpi Context7 MCP server + MCP-I identity"
+  echo "  context7-with-kya-os Context7 MCP server + KYA-OS identity"
   echo ""
   exit 0
 }
@@ -57,7 +57,7 @@ for arg in "$@"; do
   esac
 done
 
-ALL_EXAMPLES=(node-server consent-basic consent-full context7-with-mcpi)
+ALL_EXAMPLES=(node-server consent-basic consent-full context7-with-kya-os)
 
 if [ ${#REQUESTED[@]} -eq 0 ]; then
   EXAMPLES=("${ALL_EXAMPLES[@]}")
@@ -123,8 +123,8 @@ start_example() {
       EX_URLS+=("http://localhost:3003/sse")
       EX_TRANSPORTS+=("SSE")
       ;;
-    context7-with-mcpi)
-      npx tsx examples/context7-with-mcpi/src/index.ts --transport http --port 3004 &
+    context7-with-kya-os)
+      npx tsx examples/context7-with-kya-os/src/index.ts --transport http --port 3004 &
       PIDS+=($!)
       EX_URLS+=("http://localhost:3004/mcp")
       EX_TRANSPORTS+=("Streamable HTTP")
@@ -140,7 +140,7 @@ sleep 2
 
 # ── Print summary ────────────────────────────────────────────────────
 echo -e "${BOLD}┌─────────────────────────────────────────────────────────────────┐${NC}"
-echo -e "${BOLD}│  MCP-I Example Servers                                        │${NC}"
+echo -e "${BOLD}│  KYA-OS Example Servers                                        │${NC}"
 echo -e "${BOLD}├──────────────────────┬───────────┬────────────────────────────┤${NC}"
 printf  "${BOLD}│ %-20s │ %-9s │ %-26s │${NC}\n" "Example" "Transport" "URL"
 echo -e "${BOLD}├──────────────────────┼───────────┼────────────────────────────┤${NC}"

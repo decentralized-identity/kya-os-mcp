@@ -1,7 +1,7 @@
 /**
- * McpServer (High-Level API) + MCP-I Integration Test
+ * McpServer (High-Level API) + KYA-OS Integration Test
  *
- * Proves that MCP-I middleware works with the high-level McpServer API
+ * Proves that KYA-OS middleware works with the high-level McpServer API
  * used by most real-world MCP servers (including Context7).
  *
  * This is distinct from mcp-transport.test.ts which uses the low-level
@@ -14,8 +14,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { z } from 'zod';
-import { createMCPIMiddleware } from '../../middleware/with-mcpi.js';
-import { withMCPI } from '../../middleware/with-mcpi-server.js';
+import { createKyaOsMiddleware } from '../../middleware/with-kya-os.js';
+import { withKyaOs } from '../../middleware/with-kya-os-server.js';
 import { NodeCryptoProvider } from '../utils/node-crypto-provider.js';
 import { generateDidKeyFromBase64 } from '../../utils/did-helpers.js';
 
@@ -27,7 +27,7 @@ async function setupMcpServerPair(options?: { autoSession?: boolean }) {
   const did = generateDidKeyFromBase64(keyPair.publicKey);
   const kid = `${did}#${did.replace('did:key:', '')}`;
 
-  const mcpi = createMCPIMiddleware(
+  const kya = createKyaOsMiddleware(
     {
       identity: { did, kid, privateKey: keyPair.privateKey, publicKey: keyPair.publicKey },
       session: { sessionTtlMinutes: 60 },
@@ -39,15 +39,15 @@ async function setupMcpServerPair(options?: { autoSession?: boolean }) {
   // ── McpServer (high-level API, same as Context7) ──
 
   const server = new McpServer(
-    { name: 'mcpi-mcpserver-test', version: '1.0.0' },
-    { instructions: 'Test server for McpServer + MCP-I integration' },
+    { name: 'kya-os-mcpserver-test', version: '1.0.0' },
+    { instructions: 'Test server for McpServer + KYA-OS integration' },
   );
 
-  // Register unified _mcpi tool (same pattern as Context7 integration)
+  // Register unified _kya tool (same pattern as Context7 integration)
   server.registerTool(
-    '_mcpi',
+    '_kya',
     {
-      description: 'MCP-I protocol',
+      description: 'KYA-OS protocol',
       inputSchema: {
         action: z.enum(['handshake', 'identity', 'reputation']),
         nonce: z.string().optional(),
@@ -55,11 +55,11 @@ async function setupMcpServerPair(options?: { autoSession?: boolean }) {
         timestamp: z.number().optional(),
       },
     },
-    async (args) => mcpi.handleMCPI(args as Record<string, unknown>),
+    async (args) => kya.handleKya(args as Record<string, unknown>),
   );
 
   // Wrap a test tool with proof (simulates Context7's resolve-library-id)
-  const searchHandler = mcpi.wrapWithProof(
+  const searchHandler = kya.wrapWithProof(
     'search',
     async (args) => ({
       content: [{
@@ -82,7 +82,7 @@ async function setupMcpServerPair(options?: { autoSession?: boolean }) {
   );
 
   // Wrap a second tool (simulates Context7's query-docs)
-  const fetchHandler = mcpi.wrapWithProof(
+  const fetchHandler = kya.wrapWithProof(
     'fetch-docs',
     async (args) => ({
       content: [{
@@ -107,7 +107,7 @@ async function setupMcpServerPair(options?: { autoSession?: boolean }) {
   // ── Client + transport ──
 
   const client = new Client(
-    { name: 'mcpi-mcpserver-test-client', version: '1.0.0' },
+    { name: 'kya-os-mcpserver-test-client', version: '1.0.0' },
   );
 
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -119,7 +119,7 @@ async function setupMcpServerPair(options?: { autoSession?: boolean }) {
 
 // ── Tests ──────────────────────────────────────────────────────
 
-describe('McpServer (High-Level API) + MCP-I Integration', () => {
+describe('McpServer (High-Level API) + KYA-OS Integration', () => {
   const pairs: Array<{ client: Client; server: McpServer }> = [];
 
   afterEach(async () => {
@@ -136,13 +136,13 @@ describe('McpServer (High-Level API) + MCP-I Integration', () => {
     return pair;
   }
 
-  it('listTools returns _mcpi + registered tools', async () => {
+  it('listTools returns _kya + registered tools', async () => {
     const { client } = await createPair();
 
     const result = await client.listTools();
     const toolNames = result.tools.map((t) => t.name);
 
-    expect(toolNames).toContain('_mcpi');
+    expect(toolNames).toContain('_kya');
     expect(toolNames).toContain('search');
     expect(toolNames).toContain('fetch-docs');
   });
@@ -151,7 +151,7 @@ describe('McpServer (High-Level API) + MCP-I Integration', () => {
     const { client, did } = await createPair();
 
     const result = await client.callTool({
-      name: '_mcpi',
+      name: '_kya',
       arguments: {
         action: 'handshake',
         nonce: `mcpserver-test-${Date.now()}`,
@@ -166,7 +166,7 @@ describe('McpServer (High-Level API) + MCP-I Integration', () => {
 
     const parsed = JSON.parse(first.text);
     expect(parsed.success).toBe(true);
-    expect(parsed.sessionId).toMatch(/^mcpi_/);
+    expect(parsed.sessionId).toMatch(/^kya_/);
     expect(parsed.serverDid).toBe(did);
   });
 
@@ -175,7 +175,7 @@ describe('McpServer (High-Level API) + MCP-I Integration', () => {
 
     // Handshake first
     await client.callTool({
-      name: '_mcpi',
+      name: '_kya',
       arguments: {
         action: 'handshake',
         nonce: `mcpserver-test-${Date.now()}`,
@@ -203,7 +203,7 @@ describe('McpServer (High-Level API) + MCP-I Integration', () => {
     expect(proof).toBeDefined();
     expect(proof.jws).toBeDefined();
     expect(proof.meta.did).toMatch(/^did:key:/);
-    expect(proof.meta.sessionId).toMatch(/^mcpi_/);
+    expect(proof.meta.sessionId).toMatch(/^kya_/);
     expect(proof.meta.requestHash).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(proof.meta.responseHash).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
@@ -228,7 +228,7 @@ describe('McpServer (High-Level API) + MCP-I Integration', () => {
     };
     expect(proof).toBeDefined();
     expect(proof.jws).toBeDefined();
-    expect(proof.meta.sessionId).toMatch(/^mcpi_/);
+    expect(proof.meta.sessionId).toMatch(/^kya_/);
   });
 
   it('second tool also gets proof (McpServer)', async () => {
@@ -276,9 +276,9 @@ describe('McpServer (High-Level API) + MCP-I Integration', () => {
   });
 });
 
-// ── withMCPI() path — same tests, dream API ───────────────────
+// ── withKyaOs() path — same tests, dream API ───────────────────
 
-describe('McpServer + withMCPI() (Dream API)', () => {
+describe('McpServer + withKyaOs() (Dream API)', () => {
   const pairs: Array<{ client: Client; server: McpServer }> = [];
 
   afterEach(async () => {
@@ -289,19 +289,19 @@ describe('McpServer + withMCPI() (Dream API)', () => {
     pairs.length = 0;
   });
 
-  async function createWithMCPIPair(options?: { autoSession?: boolean }) {
+  async function createWithKyaOsPair(options?: { autoSession?: boolean }) {
     const crypto = new NodeCryptoProvider();
     const server = new McpServer(
-      { name: 'mcpi-withmcpi-test', version: '1.0.0' },
-      { instructions: 'Test server for withMCPI integration' },
+      { name: 'kya-os-withkyaos-test', version: '1.0.0' },
+      { instructions: 'Test server for withKyaOs integration' },
     );
 
-    const mcpi = await withMCPI(server, {
+    const kya = await withKyaOs(server, {
       crypto,
       autoSession: options?.autoSession ?? true,
     });
 
-    // Register tools AFTER withMCPI — they should still get proofs
+    // Register tools AFTER withKyaOs — they should still get proofs
     server.registerTool(
       'search',
       {
@@ -329,7 +329,7 @@ describe('McpServer + withMCPI() (Dream API)', () => {
     );
 
     const client = new Client(
-      { name: 'mcpi-withmcpi-test-client', version: '1.0.0' },
+      { name: 'kya-os-withkyaos-test-client', version: '1.0.0' },
     );
 
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -337,22 +337,22 @@ describe('McpServer + withMCPI() (Dream API)', () => {
     await client.connect(clientTransport);
 
     pairs.push({ client, server });
-    return { client, server, mcpi };
+    return { client, server, kya };
   }
 
-  it('listTools returns _mcpi + registered tools (withMCPI)', async () => {
-    const { client } = await createWithMCPIPair();
+  it('listTools returns _kya + registered tools (withKyaOs)', async () => {
+    const { client } = await createWithKyaOsPair();
 
     const result = await client.listTools();
     const toolNames = result.tools.map((t) => t.name);
 
-    expect(toolNames).toContain('_mcpi');
+    expect(toolNames).toContain('_kya');
     expect(toolNames).toContain('search');
     expect(toolNames).toContain('fetch-docs');
   });
 
-  it('autoSession attaches proof without handshake (withMCPI)', async () => {
-    const { client } = await createWithMCPIPair();
+  it('autoSession attaches proof without handshake (withKyaOs)', async () => {
+    const { client } = await createWithKyaOsPair();
 
     const result = await client.callTool({
       name: 'search',
@@ -369,18 +369,18 @@ describe('McpServer + withMCPI() (Dream API)', () => {
     };
     expect(proof).toBeDefined();
     expect(proof.jws).toBeDefined();
-    expect(proof.meta.sessionId).toMatch(/^mcpi_/);
+    expect(proof.meta.sessionId).toMatch(/^kya_/);
   });
 
-  it('handshake works through withMCPI', async () => {
-    const { client, mcpi } = await createWithMCPIPair({ autoSession: false });
+  it('handshake works through withKyaOs', async () => {
+    const { client, kya } = await createWithKyaOsPair({ autoSession: false });
 
     const result = await client.callTool({
-      name: '_mcpi',
+      name: '_kya',
       arguments: {
         action: 'handshake',
-        nonce: `withmcpi-test-${Date.now()}`,
-        audience: mcpi.identity.did,
+        nonce: `withkyaos-test-${Date.now()}`,
+        audience: kya.identity.did,
         timestamp: Math.floor(Date.now() / 1000),
       },
     });
@@ -388,12 +388,12 @@ describe('McpServer + withMCPI() (Dream API)', () => {
     const first = result.content[0] as { type: string; text: string };
     const parsed = JSON.parse(first.text);
     expect(parsed.success).toBe(true);
-    expect(parsed.sessionId).toMatch(/^mcpi_/);
-    expect(parsed.serverDid).toBe(mcpi.identity.did);
+    expect(parsed.sessionId).toMatch(/^kya_/);
+    expect(parsed.serverDid).toBe(kya.identity.did);
   });
 
-  it('no per-tool wrapping needed — proofs are automatic (withMCPI)', async () => {
-    const { client } = await createWithMCPIPair();
+  it('no per-tool wrapping needed — proofs are automatic (withKyaOs)', async () => {
+    const { client } = await createWithKyaOsPair();
 
     // Both tools should get proofs without any manual wrapping
     const searchResult = await client.callTool({

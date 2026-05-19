@@ -8,7 +8,7 @@
  * Stage 2: Parallel advanced checks (signature, status)
  * Stage 3: Combined results
  *
- * Related Spec: MCP-I §4.3, W3C VC Data Model 1.1
+ * Related Spec: KYA-OS §4.3, W3C VC Data Model 1.1
  */
 
 import type {

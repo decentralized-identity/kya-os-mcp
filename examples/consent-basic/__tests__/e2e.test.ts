@@ -1,7 +1,7 @@
 /**
  * E2E Tests: Full consent → delegation → execution cycle
  *
- * Validates the complete MCP-I consent flow as a user would experience it:
+ * Validates the complete KYA-OS consent flow as a user would experience it:
  * tool call → needs_authorization → consent page → approve → delegation → retry → success.
  *
  * Spec coverage: §4.1 (delegation chain), §5.1 (proof), §6.1 (needs_authorization),
@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { createMCPIMiddleware, type MCPIMiddleware } from '../../../src/middleware/with-mcpi.js';
+import { createKyaOsMiddleware, type KyaOsMiddleware } from '../../../src/middleware/with-kya-os.js';
 import { NodeCryptoProvider } from '../../../src/providers/node-crypto.js';
 import { generateDidKeyFromBase64 } from '../../../src/utils/did-helpers.js';
 import { startConsentServer, type ConsentServer } from '../src/consent-server.js';
@@ -26,7 +26,7 @@ interface ToolResult {
 }
 
 let consentServer: ConsentServer;
-let mcpi: MCPIMiddleware;
+let kya: KyaOsMiddleware;
 let browseHandler: (args: Record<string, unknown>) => Promise<ToolResult>;
 let checkoutHandler: (args: Record<string, unknown>) => Promise<ToolResult>;
 
@@ -37,7 +37,7 @@ describe('E2E: consent -> delegation -> execution', () => {
     const did = generateDidKeyFromBase64(keyPair.publicKey);
     const kid = `${did}#${did.replace('did:key:', '')}`;
 
-    mcpi = createMCPIMiddleware(
+    kya = createKyaOsMiddleware(
       {
         identity: { did, kid, privateKey: keyPair.privateKey, publicKey: keyPair.publicKey },
         session: { sessionTtlMinutes: 60 },
@@ -52,17 +52,17 @@ describe('E2E: consent -> delegation -> execution', () => {
     });
     consentServer = await startConsentServer({ port: 0, factory });
 
-    browseHandler = mcpi.wrapWithProof('browse', async (args) => ({
+    browseHandler = kya.wrapWithProof('browse', async (args) => ({
       content: [{ type: 'text', text: `Browsing: ${args['category'] ?? 'all'}` }],
     })) as typeof browseHandler;
 
-    checkoutHandler = mcpi.wrapWithDelegation(
+    checkoutHandler = kya.wrapWithDelegation(
       'checkout',
       {
         scopeId: 'cart:write',
         consentUrl: `${consentServer.url}/consent?tool=checkout&scopes=cart:write&agent_did=${encodeURIComponent(did)}`,
       },
-      mcpi.wrapWithProof('checkout', async (args) => ({
+      kya.wrapWithProof('checkout', async (args) => ({
         content: [{ type: 'text', text: `Order confirmed: ${args['item']}` }],
       })),
     ) as typeof checkoutHandler;
@@ -104,7 +104,7 @@ describe('E2E: consent -> delegation -> execution', () => {
     //    This works because both servers share the same identity.
     const retryResult = await checkoutHandler({
       item: 'laptop',
-      _mcpi_delegation: vc,
+      _kya_delegation: vc,
     });
 
     // 8. Tool executes successfully
@@ -144,10 +144,10 @@ describe('E2E: consent -> delegation -> execution', () => {
     expect(typeof approveData.delegationToken).toBe('string');
     expect(approveData.delegationToken.split('.').length).toBe(3);
 
-    // 7. Retry checkout with the JWT string as _mcpi_delegation
+    // 7. Retry checkout with the JWT string as _kya_delegation
     const retryResult = await checkoutHandler({
       item: 'headphones',
-      _mcpi_delegation: approveData.delegationToken,
+      _kya_delegation: approveData.delegationToken,
     });
 
     // 8. Tool executes successfully — middleware parsed the JWT transparently
@@ -163,23 +163,23 @@ describe('E2E: consent -> delegation -> execution', () => {
   it('should not allow reuse of delegation for different tools', async () => {
     // A delegation for cart:write should not work for a tool requiring admin:write
     const factory = createDelegationIssuerFromIdentity(crypto, {
-      did: mcpi.identity.did,
-      kid: mcpi.identity.kid,
-      privateKey: mcpi.identity.privateKey,
-      publicKey: mcpi.identity.publicKey,
+      did: kya.identity.did,
+      kid: kya.identity.kid,
+      privateKey: kya.identity.privateKey,
+      publicKey: kya.identity.publicKey,
     });
 
     const vc = await factory.issuer.createAndIssueDelegation({
       id: `wrong-scope-${Date.now()}`,
-      issuerDid: mcpi.identity.did,
-      subjectDid: mcpi.identity.did,
+      issuerDid: kya.identity.did,
+      subjectDid: kya.identity.did,
       constraints: {
         scopes: ['admin:write'],
         notAfter: Math.floor(Date.now() / 1000) + 3600,
       },
     });
 
-    const result = await checkoutHandler({ item: 'laptop', _mcpi_delegation: vc });
+    const result = await checkoutHandler({ item: 'laptop', _kya_delegation: vc });
     expect(result.isError).toBe(true);
     const parsed = JSON.parse(result.content[0]!.text) as { error: string };
     expect(parsed.error).toBe('insufficient_scope');

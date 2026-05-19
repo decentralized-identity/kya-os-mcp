@@ -5,7 +5,7 @@
  * Follows the Python POC design (Delegation-Service.md:136-163) where
  * delegations are issued AS W3C VCs.
  *
- * Related Spec: MCP-I §4.1, §4.2, W3C VC Data Model 1.1
+ * Related Spec: KYA-OS §4.1, §4.2, W3C VC Data Model 1.1
  */
 
 import type {

@@ -56,14 +56,14 @@ Call `restricted_greet` with:
 }
 ```
 
-The server returns an `MCPI_NEEDS_AUTHORIZATION` error with:
+The server returns an `KYA_NEEDS_AUTHORIZATION` error with:
 - `scopeId` — the required delegation scope (`greeting:restricted`)
 - `consentUrl` — where the user approves the delegation
 - `architecture` — a 5-step explanation of the consent/delegation flow
 
 This demonstrates how protected tools work in production:
 1. Agent calls restricted tool
-2. Server returns `MCPI_NEEDS_AUTHORIZATION` with consent URL
+2. Server returns `KYA_NEEDS_AUTHORIZATION` with consent URL
 3. User approves delegation at the consent URL
 4. A Verifiable Credential (delegation) is issued
 5. Agent presents the delegation credential on the next call
@@ -110,4 +110,4 @@ Client (Inspector)          Server (this example)
 | Tool | Description |
 |------|-------------|
 | `greet` | Returns a greeting with a detached Ed25519 proof via `_meta` |
-| `restricted_greet` | Protected tool — returns `MCPI_NEEDS_AUTHORIZATION` with delegation instructions |
+| `restricted_greet` | Protected tool — returns `KYA_NEEDS_AUTHORIZATION` with delegation instructions |

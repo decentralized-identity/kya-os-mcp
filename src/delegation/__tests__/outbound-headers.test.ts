@@ -36,7 +36,7 @@ beforeAll(async () => {
 
 function createTestSession(overrides: Partial<SessionContext> = {}): SessionContext {
   return {
-    sessionId: 'mcpi_test-session-123',
+    sessionId: 'kya_test-session-123',
     audience: 'did:web:my-mcp-server.example.com',
     nonce: 'test-nonce-abc',
     timestamp: Math.floor(Date.now() / 1000),

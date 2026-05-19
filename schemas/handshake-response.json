@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schema.modelcontextprotocol-identity.io/xmcp-i/handshake/handshake-response.v1.0.0.json",
-  "title": "MCP-I Handshake Response",
+  "title": "KYA-OS Handshake Response",
   "description": "Server response to a successful handshake request, establishing session context.",
   "type": "object",
   "required": ["sessionId", "serverDid", "protocolVersion"],
@@ -19,7 +19,7 @@
     "protocolVersion": {
       "type": "string",
       "pattern": "^\\d+\\.\\d+$",
-      "description": "Negotiated MCP-I protocol version (e.g., '1.0')."
+      "description": "Negotiated KYA-OS protocol version (e.g., '1.0')."
     },
     "serverCapabilities": {
       "type": "object",

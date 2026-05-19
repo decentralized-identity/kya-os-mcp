@@ -1,5 +1,5 @@
 /**
- * MCP-I Canonical Error Codes
+ * KYA-OS Canonical Error Codes
  *
  * Single source of truth for all wire-format error codes.
  * Aligned with the error catalog at modelcontextprotocol-identity.io.
@@ -8,7 +8,7 @@
  * Follows OAuth 2.0 / Stripe conventions for readability and portability.
  */
 
-export const MCPI_ERROR_CODES = {
+export const KYA_OS_ERROR_CODES = {
   // Proof errors
   invalid_proof: "invalid_proof",
   invalid_jws: "invalid_jws",
@@ -47,19 +47,19 @@ export const MCPI_ERROR_CODES = {
   runtime_error: "runtime_error",
 } as const;
 
-export type MCPIErrorCode =
-  (typeof MCPI_ERROR_CODES)[keyof typeof MCPI_ERROR_CODES];
+export type KyaOsErrorCode =
+  (typeof KYA_OS_ERROR_CODES)[keyof typeof KYA_OS_ERROR_CODES];
 
-export interface MCPIErrorResponse {
-  code: MCPIErrorCode;
+export interface KyaOsErrorResponse {
+  code: KyaOsErrorCode;
   message: string;
   details?: Record<string, unknown>;
 }
 
-export function createMCPIError(
-  code: MCPIErrorCode,
+export function createKyaOsError(
+  code: KyaOsErrorCode,
   message: string,
   details?: Record<string, unknown>,
-): MCPIErrorResponse {
+): KyaOsErrorResponse {
   return details ? { code, message, details } : { code, message };
 }

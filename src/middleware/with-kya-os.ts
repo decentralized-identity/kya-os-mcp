@@ -1,17 +1,17 @@
 /**
- * MCP-I Middleware — Core Implementation
+ * KYA-OS Middleware — Core Implementation
  *
  * Adds identity, session management, and proof generation to MCP servers.
  *
- * For most use cases, prefer the high-level `withMCPI()` adapter from
- * `./with-mcpi-server.ts` which (by default) auto-registers the handshake
+ * For most use cases, prefer the high-level `withKyaOs()` adapter from
+ * `./with-kya-os-server.ts` which (by default) auto-registers the handshake
  * tool and auto-attaches proofs to all tool responses:
  *
- *   import { withMCPI } from '@kya-os/mcp';
- *   await withMCPI(server, { crypto: new NodeCryptoProvider() });
+ *   import { withKyaOs } from '@kya-os/mcp';
+ *   await withKyaOs(server, { crypto: new NodeCryptoProvider() });
  *
- * `createMCPIMiddleware()` in this file is the lower-level API used
- * internally by `withMCPI()` and for advanced use cases like the
+ * `createKyaOsMiddleware()` in this file is the lower-level API used
+ * internally by `withKyaOs()` and for advanced use cases like the
  * low-level `Server` API or custom request handler patterns.
  */
 
@@ -47,11 +47,11 @@ import {
   type DelegationRecord,
 } from "../types/protocol.js";
 import { logger } from "../logging/index.js";
-import { MCPI_ERROR_CODES } from "../errors.js";
+import { KYA_OS_ERROR_CODES } from "../errors.js";
 import { canonicalizeJSON, parseVCJWT } from "../delegation/utils.js";
 import { base64urlDecodeToBytes, base64urlEncodeFromBytes, bytesToBase64 } from "../utils/base64.js";
 
-export interface MCPIIdentityConfig {
+export interface KyaOsIdentityConfig {
   did: string;
   kid: string;
   privateKey: string;
@@ -59,10 +59,10 @@ export interface MCPIIdentityConfig {
   agentName?: string;
 }
 
-export const MCPI_ACTIONS = ["handshake", "identity", "reputation"] as const;
-type MCPIAction = (typeof MCPI_ACTIONS)[number];
+export const KYA_OS_ACTIONS = ["handshake", "identity", "reputation"] as const;
+type KyaOsAction = (typeof KYA_OS_ACTIONS)[number];
 
-export interface MCPIDelegationConfig {
+export interface KyaOsDelegationConfig {
   /**
    * Optional custom DID resolver. If it returns null, middleware falls back to
    * built-in did:key resolution and fetch-backed did:web resolution.
@@ -94,7 +94,7 @@ export interface MCPIDelegationConfig {
    * that receives the credential will accept it.
    *
    * Recommended for production. See: Alan Karp's transitive access analysis
-   * and MCP-I §11.6 (Confused Deputy Attacks).
+   * and KYA-OS §11.6 (Confused Deputy Attacks).
    *
    * Default is false for backward compatibility.
    */
@@ -112,23 +112,23 @@ export interface MCPIDelegationConfig {
   allowLegacyUnsafeDelegation?: boolean;
 }
 
-export interface MCPIConfig {
+export interface KyaOsConfig {
   /** Agent identity (DID + key material) */
-  identity: MCPIIdentityConfig;
+  identity: KyaOsIdentityConfig;
   /** Session configuration overrides */
   session?: Omit<SessionConfig, "nonceCache">;
   /** Delegation verification overrides */
-  delegation?: MCPIDelegationConfig;
+  delegation?: KyaOsDelegationConfig;
   /**
    * When true, automatically creates a session on the first tool call
    * if no session exists. Useful for demos and development where
-   * MCP clients don't support the `_mcpi` handshake flow.
-   * In production, MCP-I-aware runtimes should execute handshake before tool calls.
+   * MCP clients don't support the `_kya` handshake flow.
+   * In production, KYA-OS-aware runtimes should execute handshake before tool calls.
    */
   autoSession?: boolean;
 }
 
-export interface MCPIToolDefinition {
+export interface KyaOsToolDefinition {
   name: string;
   description?: string;
   inputSchema: {
@@ -139,7 +139,7 @@ export interface MCPIToolDefinition {
   };
 }
 
-export interface MCPIToolHandler<
+export interface KyaOsToolHandler<
   T extends Record<string, unknown> = Record<string, unknown>,
 > {
   (
@@ -156,16 +156,16 @@ export interface MCPIToolHandler<
  * Server interface — minimal subset of @modelcontextprotocol/sdk Server.
  * This avoids a hard dependency on the SDK at the type level.
  */
-export interface MCPIServer {
+export interface KyaOsServer {
   setRequestHandler(
     schema: unknown,
     handler: (...args: unknown[]) => unknown,
   ): void;
 }
 
-export interface MCPIMiddleware {
+export interface KyaOsMiddleware {
   /** The identity config used by this middleware instance */
-  identity: MCPIIdentityConfig;
+  identity: KyaOsIdentityConfig;
 
   /** The SessionManager instance for manual session operations */
   sessionManager: SessionManager;
@@ -174,31 +174,31 @@ export interface MCPIMiddleware {
   proofGenerator: ProofGenerator;
 
   /**
-   * Unified tool definition for `_mcpi`.
+   * Unified tool definition for `_kya`.
    * Include this in your ListToolsRequest handler's tool list.
    */
-  mcpiTool: MCPIToolDefinition;
+  kyaTool: KyaOsToolDefinition;
 
   /**
-   * @deprecated Use `mcpiTool` (`_mcpi` with `action: "handshake"`).
-   * Tool definition for `_mcpi_handshake`.
+   * @deprecated Use `kyaTool` (`_kya` with `action: "handshake"`).
+   * Tool definition for `_kya_handshake`.
    * Include this in your ListToolsRequest handler's tool list.
    */
-  handshakeTool: MCPIToolDefinition;
+  handshakeTool: KyaOsToolDefinition;
 
   /**
-   * Handle a unified `_mcpi` action. Use this in your CallToolRequest handler
-   * when `request.params.name === '_mcpi'`.
+   * Handle a unified `_kya` action. Use this in your CallToolRequest handler
+   * when `request.params.name === '_kya'`.
    */
-  handleMCPI(args: Record<string, unknown>): Promise<{
+  handleKya(args: Record<string, unknown>): Promise<{
     content: Array<{ type: string; text: string }>;
     isError?: boolean;
   }>;
 
   /**
-   * @deprecated Use `handleMCPI` with `action: "handshake"`.
+   * @deprecated Use `handleKya` with `action: "handshake"`.
    * Handle a handshake call. Use this in your CallToolRequest handler
-   * when `request.params.name === '_mcpi_handshake'`.
+   * when `request.params.name === '_kya_handshake'`.
    */
   handleHandshake(args: Record<string, unknown>): Promise<{
     content: Array<{ type: string; text: string }>;
@@ -211,16 +211,16 @@ export interface MCPIMiddleware {
    */
   wrapWithProof<T extends Record<string, unknown> = Record<string, unknown>>(
     toolName: string,
-    handler: MCPIToolHandler<T>,
-  ): MCPIToolHandler;
+    handler: KyaOsToolHandler<T>,
+  ): KyaOsToolHandler;
 
   /**
    * Wrap a tool handler to require a valid W3C Delegation Credential.
    *
-   * Caller must pass the VC as `_mcpi_delegation` in the tool args.
+   * Caller must pass the VC as `_kya_delegation` in the tool args.
    * - If absent: returns a `needs_authorization` response with the consentUrl.
    * - If present but invalid: returns a structured error with reason.
-   * - If valid with correct scope: strips `_mcpi_delegation` and calls the handler.
+   * - If valid with correct scope: strips `_kya_delegation` and calls the handler.
    */
   wrapWithDelegation(
     toolName: string,
@@ -228,8 +228,8 @@ export interface MCPIMiddleware {
       scopeId: string;
       consentUrl: string;
     },
-    handler: MCPIToolHandler,
-  ): MCPIToolHandler;
+    handler: KyaOsToolHandler,
+  ): KyaOsToolHandler;
 }
 
 class RuntimeFetchProvider extends FetchProvider {
@@ -300,13 +300,13 @@ function validateScopeAttenuation(
 }
 
 /**
- * Create MCP-I middleware for a standard MCP SDK Server.
+ * Create KYA-OS middleware for a standard MCP SDK Server.
  *
- * For most use cases, prefer {@link withMCPI} from `./with-mcpi-server.ts`
+ * For most use cases, prefer {@link withKyaOs} from `./with-kya-os-server.ts`
  * which wraps this function and (by default) auto-registers handshake +
  * auto-attaches proofs.
  *
- * Use `createMCPIMiddleware` directly when:
+ * Use `createKyaOsMiddleware` directly when:
  * - You use the low-level `Server` API (not `McpServer`)
  * - You need custom request handler patterns
  * - You want per-tool control over proof/delegation wrapping
@@ -321,10 +321,10 @@ function validateScopeAttenuation(
  * deployments behind a load balancer. For distributed deployments, implement a custom
  * `SessionStore` backed by Redis, DynamoDB, or similar and pass it via `config.session`.
  */
-export function createMCPIMiddleware(
-  config: MCPIConfig,
+export function createKyaOsMiddleware(
+  config: KyaOsConfig,
   cryptoProvider: CryptoProvider,
-): MCPIMiddleware {
+): KyaOsMiddleware {
   const identity: ProofAgentIdentity = {
     did: config.identity.did,
     kid: config.identity.kid,
@@ -346,10 +346,10 @@ export function createMCPIMiddleware(
   // Active session tracking — set after handshake (manual or auto)
   let activeSessionId: string | undefined;
 
-  const handshakeTool: MCPIToolDefinition = {
-    name: "_mcpi_handshake",
+  const handshakeTool: KyaOsToolDefinition = {
+    name: "_kya_handshake",
     description:
-      "MCP-I identity handshake — establishes a cryptographic session",
+      "KYA-OS identity handshake — establishes a cryptographic session",
     inputSchema: {
       type: "object",
       properties: {
@@ -368,16 +368,16 @@ export function createMCPIMiddleware(
     },
   };
 
-  const mcpiTool: MCPIToolDefinition = {
-    name: "_mcpi",
+  const kyaTool: KyaOsToolDefinition = {
+    name: "_kya",
     description:
-      "MCP-I protocol — identity verification, session handshake, and server metadata",
+      "KYA-OS protocol — identity verification, session handshake, and server metadata",
     inputSchema: {
       type: "object",
       properties: {
         action: {
           type: "string",
-          enum: [...MCPI_ACTIONS],
+          enum: [...KYA_OS_ACTIONS],
           description: "Protocol operation to perform",
         },
         nonce: { type: "string", description: "Client-generated unique nonce" },
@@ -407,7 +407,7 @@ export function createMCPIMiddleware(
             text: JSON.stringify({
               success: false,
               error: {
-                code: MCPI_ERROR_CODES.handshake_failed,
+                code: KYA_OS_ERROR_CODES.handshake_failed,
                 message:
                   "Invalid handshake format: requires nonce (string), audience (string), and timestamp (positive integer)",
               },
@@ -465,13 +465,13 @@ export function createMCPIMiddleware(
     };
   }
 
-  async function handleMCPI(args: Record<string, unknown>): Promise<{
+  async function handleKya(args: Record<string, unknown>): Promise<{
     content: Array<{ type: string; text: string }>;
     isError?: boolean;
   }> {
     const action =
       typeof args.action === "string"
-        ? (args.action as MCPIAction)
+        ? (args.action as KyaOsAction)
         : undefined;
 
     switch (action) {
@@ -489,7 +489,7 @@ export function createMCPIMiddleware(
               text: JSON.stringify({
                 success: false,
                 error: {
-                  code: MCPI_ERROR_CODES.runtime_error,
+                  code: KYA_OS_ERROR_CODES.runtime_error,
                   message:
                     'action: "reputation" is not yet implemented.',
                 },
@@ -507,8 +507,8 @@ export function createMCPIMiddleware(
               text: JSON.stringify({
                 success: false,
                 error: {
-                  code: MCPI_ERROR_CODES.invalid_request,
-                  message: `Unknown _mcpi action: "${action ?? "(missing)"}". Valid actions: ${MCPI_ACTIONS.join(", ")}`,
+                  code: KYA_OS_ERROR_CODES.invalid_request,
+                  message: `Unknown _kya action: "${action ?? "(missing)"}". Valid actions: ${KYA_OS_ACTIONS.join(", ")}`,
                 },
               }),
             },
@@ -520,8 +520,8 @@ export function createMCPIMiddleware(
 
   /**
    * Auto-create a session for proof generation when no handshake has occurred.
-   * In production, MCP-I-aware runtimes should execute handshake before tool calls.
-   * This convenience mode allows non-MCP-I clients (like MCP Inspector) to
+   * In production, KYA-OS-aware runtimes should execute handshake before tool calls.
+   * This convenience mode allows non-KYA-OS clients (like MCP Inspector) to
    * still see proofs without manual handshake.
    */
   async function ensureSession(): Promise<string | undefined> {
@@ -554,8 +554,8 @@ export function createMCPIMiddleware(
 
   function wrapWithProof<T extends Record<string, unknown> = Record<string, unknown>>(
     toolName: string,
-    handler: MCPIToolHandler<T>,
-  ): MCPIToolHandler {
+    handler: KyaOsToolHandler<T>,
+  ): KyaOsToolHandler {
     return async (args: Record<string, unknown>, sessionId?: string) => {
       const result = await handler(args as T, sessionId);
 
@@ -587,7 +587,7 @@ export function createMCPIMiddleware(
         // Attach proof as _meta (rendered by MCP Inspector, invisible to LLMs)
         result._meta = { proof };
       } catch (error) {
-        logger.error("[mcpi] Proof generation failed", {
+        logger.error("[kya-os] Proof generation failed", {
           tool: toolName,
           error: error instanceof Error ? error.message : String(error),
         });
@@ -603,8 +603,8 @@ export function createMCPIMiddleware(
   function wrapWithDelegation(
     toolName: string,
     config: { scopeId: string; consentUrl: string },
-    handler: MCPIToolHandler,
-  ): MCPIToolHandler {
+    handler: KyaOsToolHandler,
+  ): KyaOsToolHandler {
     const legacyUnsafeDelegationEnabled =
       delegationConfig?.allowLegacyUnsafeDelegation === true;
     const didKeyResolver = createDidKeyResolver();
@@ -690,7 +690,7 @@ export function createMCPIMiddleware(
     const buildDelegationErrorResponse = (
       error: string,
       reason: string,
-    ): Awaited<ReturnType<MCPIToolHandler>> => ({
+    ): Awaited<ReturnType<KyaOsToolHandler>> => ({
       content: [
         {
           type: "text" as const,
@@ -711,7 +711,7 @@ export function createMCPIMiddleware(
         if (!delegationConfig?.resolveDelegationChain) {
           if (legacyUnsafeDelegationEnabled) {
             logger.warn(
-              `[mcpi] Legacy delegation mode enabled: accepting parent-linked credential ${leafDelegation.id} without resolveDelegationChain`,
+              `[kya-os] Legacy delegation mode enabled: accepting parent-linked credential ${leafDelegation.id} without resolveDelegationChain`,
             );
             return { valid: true };
           }
@@ -772,7 +772,7 @@ export function createMCPIMiddleware(
         if (credential.credentialStatus && !delegationConfig?.statusListResolver) {
           if (legacyUnsafeDelegationEnabled) {
             logger.warn(
-              `[mcpi] Legacy delegation mode enabled: skipping status-list verification for ${delegation.id}`,
+              `[kya-os] Legacy delegation mode enabled: skipping status-list verification for ${delegation.id}`,
             );
           } else {
           return {
@@ -876,7 +876,7 @@ export function createMCPIMiddleware(
       args: Record<string, unknown>,
       sessionId?: string,
     ) => {
-      const delegationArg = args["_mcpi_delegation"];
+      const delegationArg = args["_kya_delegation"];
 
       if (delegationArg === undefined || delegationArg === null) {
         // No delegation provided — return needs_authorization response
@@ -915,7 +915,7 @@ export function createMCPIMiddleware(
         const parsed = parseVCJWT(delegationArg);
         if (!parsed || !parsed.payload.vc) {
           return buildDelegationErrorResponse(
-            MCPI_ERROR_CODES.delegation_invalid,
+            KYA_OS_ERROR_CODES.delegation_invalid,
             "Invalid VC-JWT format",
           );
         }
@@ -940,10 +940,10 @@ export function createMCPIMiddleware(
 
       if (!verificationResult.valid) {
         logger.warn(
-          `[mcpi] Delegation verification failed for "${toolName}": ${verificationResult.reason}`,
+          `[kya-os] Delegation verification failed for "${toolName}": ${verificationResult.reason}`,
         );
         return buildDelegationErrorResponse(
-          MCPI_ERROR_CODES.delegation_invalid,
+          KYA_OS_ERROR_CODES.delegation_invalid,
           verificationResult.reason ?? "Unknown delegation validation error",
         );
       }
@@ -951,22 +951,22 @@ export function createMCPIMiddleware(
       const scopes = getDelegationScopes(vc);
       if (!scopes.includes(config.scopeId)) {
         logger.warn(
-          `[mcpi] Delegation missing required scope "${config.scopeId}" for "${toolName}"`,
+          `[kya-os] Delegation missing required scope "${config.scopeId}" for "${toolName}"`,
         );
         return buildDelegationErrorResponse(
-          MCPI_ERROR_CODES.insufficient_scope,
+          KYA_OS_ERROR_CODES.insufficient_scope,
           `Required scope "${config.scopeId}" not in delegation scopes`,
         );
       }
 
-      // Strip _mcpi_delegation from args before passing to handler
+      // Strip _kya_delegation from args before passing to handler
       const cleanArgs: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(args)) {
-        if (k !== "_mcpi_delegation") cleanArgs[k] = v;
+        if (k !== "_kya_delegation") cleanArgs[k] = v;
       }
 
       logger.debug(
-        `[mcpi] Delegation verified for "${toolName}", scope "${config.scopeId}"`,
+        `[kya-os] Delegation verified for "${toolName}", scope "${config.scopeId}"`,
       );
       return handler(cleanArgs, sessionId);
     };
@@ -976,9 +976,9 @@ export function createMCPIMiddleware(
     identity: config.identity,
     sessionManager,
     proofGenerator,
-    mcpiTool,
+    kyaTool,
     handshakeTool,
-    handleMCPI,
+    handleKya,
     handleHandshake,
     wrapWithProof,
     wrapWithDelegation,

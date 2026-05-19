@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
-  MCPI_ERROR_CODES,
-  createMCPIError,
+  KYA_OS_ERROR_CODES,
+  createKyaOsError,
 } from "../errors.js";
 
-describe("MCPI_ERROR_CODES", () => {
+describe("KYA_OS_ERROR_CODES", () => {
   it("should define all canonical error codes", () => {
-    const codes = Object.values(MCPI_ERROR_CODES);
+    const codes = Object.values(KYA_OS_ERROR_CODES);
     expect(codes).toContain("invalid_proof");
     expect(codes).toContain("invalid_jws");
     expect(codes).toContain("nonce_replay");
@@ -33,22 +33,22 @@ describe("MCPI_ERROR_CODES", () => {
   });
 
   it("should have key === value for every code", () => {
-    for (const [key, value] of Object.entries(MCPI_ERROR_CODES)) {
+    for (const [key, value] of Object.entries(KYA_OS_ERROR_CODES)) {
       expect(key).toBe(value);
     }
   });
 });
 
-describe("createMCPIError", () => {
+describe("createKyaOsError", () => {
   it("should create an error response with code and message", () => {
-    const error = createMCPIError("handshake_failed", "Nonce already used");
+    const error = createKyaOsError("handshake_failed", "Nonce already used");
     expect(error.code).toBe("handshake_failed");
     expect(error.message).toBe("Nonce already used");
     expect(error.details).toBeUndefined();
   });
 
   it("should include details when provided", () => {
-    const error = createMCPIError("delegation_revoked", "Credential revoked", {
+    const error = createKyaOsError("delegation_revoked", "Credential revoked", {
       credentialId: "urn:uuid:123",
     });
     expect(error.details).toEqual({ credentialId: "urn:uuid:123" });

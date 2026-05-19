@@ -4,7 +4,7 @@
  * Tracks parent-child relationships between delegation credentials.
  * Critical for cascading revocation per Delegation-Revocation.md.
  *
- * Related Spec: MCP-I §4.4, Delegation Chains
+ * Related Spec: KYA-OS §4.4, Delegation Chains
  */
 
 export interface DelegationNode {

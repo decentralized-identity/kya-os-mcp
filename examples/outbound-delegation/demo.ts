@@ -1,7 +1,7 @@
 /**
  * Outbound Delegation Propagation Demo
  *
- * Demonstrates MCP-I §7 — how an MCP server forwards delegation context
+ * Demonstrates KYA-OS §7 — how an MCP server forwards delegation context
  * to downstream services using HTTP headers.
  *
  * Run with: npx tsx examples/outbound-delegation/demo.ts
@@ -98,7 +98,7 @@ class NodeCryptoProvider extends CryptoProvider {
 
 async function main() {
   console.log('='.repeat(70));
-  console.log('MCP-I Outbound Delegation Propagation Demo');
+  console.log('KYA-OS Outbound Delegation Propagation Demo');
   console.log('='.repeat(70));
   console.log();
 
@@ -182,7 +182,7 @@ async function main() {
   console.log('-'.repeat(70));
 
   const session: SessionContext = {
-    sessionId: `mcpi_${crypto.randomUUID()}`,
+    sessionId: `kya_${crypto.randomUUID()}`,
     audience: serverADid,
     nonce: crypto.randomUUID(),
     timestamp: Math.floor(Date.now() / 1000),

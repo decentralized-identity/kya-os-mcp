@@ -8,7 +8,7 @@
  *   4. Verify it now fails (revoked)
  *   5. Verify missing status list fails closed (not open)
  *
- * Spec coverage: W3C StatusList2021, MCP-I §4.2 (revocation)
+ * Spec coverage: W3C StatusList2021, KYA-OS §4.2 (revocation)
  */
 
 import { describe, it, expect, beforeAll } from "vitest";

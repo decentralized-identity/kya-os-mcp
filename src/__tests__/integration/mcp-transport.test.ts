@@ -66,7 +66,7 @@ async function setupMcpPair(options?: { autoSession?: boolean }) {
   const did = generateDidKeyFromBase64(keyPair.publicKey);
   const kid = `${did}#${did.replace('did:key:', '')}`;
 
-  const kya = createKyaOsMiddleware(
+  const kyaos = createKyaOsMiddleware(
     {
       identity: { did, kid, privateKey: keyPair.privateKey, publicKey: keyPair.publicKey },
       session: { sessionTtlMinutes: 60 },
@@ -77,17 +77,17 @@ async function setupMcpPair(options?: { autoSession?: boolean }) {
 
   // ── Tool handlers (mirrors examples/node-server/server.ts) ──
 
-  const greetHandler = kya.wrapWithProof('greet', async (args) => ({
+  const greetHandler = kyaos.wrapWithProof('greet', async (args) => ({
     content: [{ type: 'text', text: `Hello, ${args['name'] ?? 'world'}!` }],
   }));
 
-  const restrictedGreetHandler = kya.wrapWithDelegation(
+  const restrictedGreetHandler = kyaos.wrapWithDelegation(
     'restricted_greet',
     {
       scopeId: 'greeting:restricted',
       consentUrl: 'https://example.com/consent?scope=greeting:restricted',
     },
-    kya.wrapWithProof('restricted_greet', async (args) => ({
+    kyaos.wrapWithProof('restricted_greet', async (args) => ({
       content: [{ type: 'text', text: `Hello, ${args['name'] ?? 'world'}! (delegation verified)` }],
     })),
   );
@@ -101,7 +101,7 @@ async function setupMcpPair(options?: { autoSession?: boolean }) {
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
-      kya.kyaTool,
+      kyaos.kyaOsTool,
       {
         name: 'greet',
         description: 'Returns a greeting with proof',
@@ -117,7 +117,7 @@ async function setupMcpPair(options?: { autoSession?: boolean }) {
           type: 'object' as const,
           properties: {
             name: { type: 'string' },
-            _kya_delegation: { type: 'object' },
+            _kyaos_delegation: { type: 'object' },
           },
         },
       },
@@ -127,8 +127,8 @@ async function setupMcpPair(options?: { autoSession?: boolean }) {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args = {} } = request.params;
 
-    if (name === '_kya') {
-      return kya.handleKya(args as Record<string, unknown>);
+    if (name === '_kyaos') {
+      return kyaos.handleKyaOs(args as Record<string, unknown>);
     }
     if (name === 'greet') {
       return greetHandler(args as Record<string, unknown>);
@@ -211,14 +211,14 @@ describe('MCP Transport Integration', () => {
     return pair;
   }
 
-  it('listTools returns _kya + app tools', async () => {
+  it('listTools returns _kyaos + app tools', async () => {
     const { client } = await createPair();
 
     const result = await client.listTools();
     const toolNames = result.tools.map((t) => t.name);
 
     expect(toolNames).toHaveLength(3);
-    expect(toolNames).toContain('_kya');
+    expect(toolNames).toContain('_kyaos');
     expect(toolNames).toContain('greet');
     expect(toolNames).toContain('restricted_greet');
   });
@@ -227,7 +227,7 @@ describe('MCP Transport Integration', () => {
     const { client, did } = await createPair();
 
     const result = await client.callTool({
-      name: '_kya',
+      name: '_kyaos',
       arguments: {
         action: 'handshake',
         nonce: `transport-test-${Date.now()}`,
@@ -242,7 +242,7 @@ describe('MCP Transport Integration', () => {
 
     const parsed = JSON.parse(first.text);
     expect(parsed.success).toBe(true);
-    expect(parsed.sessionId).toMatch(/^kya_/);
+    expect(parsed.sessionId).toMatch(/^kyaos_/);
     expect(parsed.serverDid).toBe(did);
   });
 
@@ -251,7 +251,7 @@ describe('MCP Transport Integration', () => {
 
     // Handshake first
     await client.callTool({
-      name: '_kya',
+      name: '_kyaos',
       arguments: {
         action: 'handshake',
         nonce: `transport-test-${Date.now()}`,
@@ -279,7 +279,7 @@ describe('MCP Transport Integration', () => {
     expect(proof).toBeDefined();
     expect(proof.jws).toBeDefined();
     expect(proof.meta.did).toMatch(/^did:key:/);
-    expect(proof.meta.sessionId).toMatch(/^kya_/);
+    expect(proof.meta.sessionId).toMatch(/^kyaos_/);
     expect(proof.meta.requestHash).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(proof.meta.responseHash).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
@@ -289,7 +289,7 @@ describe('MCP Transport Integration', () => {
 
     // Handshake
     await client.callTool({
-      name: '_kya',
+      name: '_kyaos',
       arguments: {
         action: 'handshake',
         nonce: `transport-test-${Date.now()}`,
@@ -349,7 +349,7 @@ describe('MCP Transport Integration', () => {
     };
     expect(proof).toBeDefined();
     expect(proof.jws).toBeDefined();
-    expect(proof.meta.sessionId).toMatch(/^kya_/);
+    expect(proof.meta.sessionId).toMatch(/^kyaos_/);
   });
 
   it('restricted_greet without delegation returns needs_authorization', async () => {
@@ -375,7 +375,7 @@ describe('MCP Transport Integration', () => {
 
     const result = await client.callTool({
       name: 'restricted_greet',
-      arguments: { name: 'DIF', _kya_delegation: vc },
+      arguments: { name: 'DIF', _kyaos_delegation: vc },
     });
 
     const first = result.content[0] as { type: string; text: string };

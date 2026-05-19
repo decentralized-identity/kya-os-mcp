@@ -75,11 +75,11 @@ describe("SessionManager", () => {
       expect(result.session?.identityState).toBe("anonymous");
     });
 
-    it("should return session ID with kya_ prefix", async () => {
+    it("should return session ID with kyaos_ prefix", async () => {
       const request = makeRequest();
       const result = await manager.validateHandshake(request);
 
-      expect(result.session?.sessionId).toMatch(/^kya_/);
+      expect(result.session?.sessionId).toMatch(/^kyaos_/);
     });
 
     it("should reject request with stale timestamp", async () => {
@@ -133,7 +133,7 @@ describe("SessionManager", () => {
     });
 
     it("should return null for unknown session ID", async () => {
-      const found = await manager.getSession("kya_does-not-exist");
+      const found = await manager.getSession("kyaos_does-not-exist");
       expect(found).toBeNull();
     });
 

@@ -20,7 +20,7 @@ import type { DelegationCredential, NeedsAuthorizationError } from '../../../src
 const crypto = new NodeCryptoProvider();
 
 let consentServer: ConsentServer;
-let kya: KyaOsMiddleware;
+let kyaos: KyaOsMiddleware;
 let browseHandler: (args: Record<string, unknown>) => Promise<ToolResult>;
 let checkoutHandler: (args: Record<string, unknown>) => Promise<ToolResult>;
 
@@ -31,7 +31,7 @@ describe('E2E: consent -> delegation -> execution', () => {
     const did = generateDidKeyFromBase64(keyPair.publicKey);
     const kid = `${did}#${did.replace('did:key:', '')}`;
 
-    kya = createKyaOsMiddleware(
+    kyaos = createKyaOsMiddleware(
       {
         identity: { did, kid, privateKey: keyPair.privateKey, publicKey: keyPair.publicKey },
         session: { sessionTtlMinutes: 60 },
@@ -46,17 +46,17 @@ describe('E2E: consent -> delegation -> execution', () => {
     });
     consentServer = await startConsentServer({ port: 0, factory });
 
-    browseHandler = kya.wrapWithProof('browse', async (args) => ({
+    browseHandler = kyaos.wrapWithProof('browse', async (args) => ({
       content: [{ type: 'text', text: `Browsing: ${args['category'] ?? 'all'}` }],
     })) as typeof browseHandler;
 
-    checkoutHandler = kya.wrapWithDelegation(
+    checkoutHandler = kyaos.wrapWithDelegation(
       'checkout',
       {
         scopeId: 'cart:write',
         consentUrl: `${consentServer.url}/consent?tool=checkout&scopes=cart:write&agent_did=${encodeURIComponent(did)}`,
       },
-      kya.wrapWithProof('checkout', async (args) => ({
+      kyaos.wrapWithProof('checkout', async (args) => ({
         content: [{ type: 'text', text: `Order confirmed: ${args['item']}` }],
       })),
     ) as typeof checkoutHandler;
@@ -105,7 +105,7 @@ describe('E2E: consent -> delegation -> execution', () => {
     // 7. Retry checkout with the VC
     const retryResult = await checkoutHandler({
       item: 'laptop',
-      _kya_delegation: vc,
+      _kyaos_delegation: vc,
     });
 
     // 8. Tool executes successfully
@@ -122,23 +122,23 @@ describe('E2E: consent -> delegation -> execution', () => {
   // §4.3 — scope mismatch across tools
   it('should not allow reuse of delegation for different tools', async () => {
     const factory = createDelegationIssuerFromIdentity(crypto, {
-      did: kya.identity.did,
-      kid: kya.identity.kid,
-      privateKey: kya.identity.privateKey,
-      publicKey: kya.identity.publicKey,
+      did: kyaos.identity.did,
+      kid: kyaos.identity.kid,
+      privateKey: kyaos.identity.privateKey,
+      publicKey: kyaos.identity.publicKey,
     });
 
     const vc = await factory.issuer.createAndIssueDelegation({
       id: `wrong-scope-${Date.now()}`,
-      issuerDid: kya.identity.did,
-      subjectDid: kya.identity.did,
+      issuerDid: kyaos.identity.did,
+      subjectDid: kyaos.identity.did,
       constraints: {
         scopes: ['admin:write'],
         notAfter: Math.floor(Date.now() / 1000) + 3600,
       },
     });
 
-    const result = await checkoutHandler({ item: 'laptop', _kya_delegation: vc });
+    const result = await checkoutHandler({ item: 'laptop', _kyaos_delegation: vc });
     expect(result.isError).toBe(true);
     const parsed = JSON.parse(result.content[0]!.text) as { error: string };
     expect(parsed.error).toBe('insufficient_scope');

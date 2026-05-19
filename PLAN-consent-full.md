@@ -37,7 +37,7 @@ Add `examples/consent-branded/` — the same `@kya-os/mcp` consent flow as conse
 
 - `package.json`: name `@kya-os/example-consent-branded`, add `@kya-os/consent` as dependency alongside `@modelcontextprotocol/sdk`
 - `tsconfig.json`: same as consent-basic
-- `.gitignore`: same as consent-basic (`.kya/`, `node_modules/`, `dist/`)
+- `.gitignore`: same as consent-basic (`.kya-os/`, `node_modules/`, `dist/`)
 
 ### Milestone 2: Consent Server with @kya-os/consent
 

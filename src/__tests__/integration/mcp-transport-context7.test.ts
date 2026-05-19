@@ -27,7 +27,7 @@ async function setupMcpServerPair(options?: { autoSession?: boolean }) {
   const did = generateDidKeyFromBase64(keyPair.publicKey);
   const kid = `${did}#${did.replace('did:key:', '')}`;
 
-  const kya = createKyaOsMiddleware(
+  const kyaos = createKyaOsMiddleware(
     {
       identity: { did, kid, privateKey: keyPair.privateKey, publicKey: keyPair.publicKey },
       session: { sessionTtlMinutes: 60 },
@@ -43,9 +43,9 @@ async function setupMcpServerPair(options?: { autoSession?: boolean }) {
     { instructions: 'Test server for McpServer + KYA-OS integration' },
   );
 
-  // Register unified _kya tool (same pattern as Context7 integration)
+  // Register unified _kyaos tool (same pattern as Context7 integration)
   server.registerTool(
-    '_kya',
+    '_kyaos',
     {
       description: 'KYA-OS protocol',
       inputSchema: {
@@ -55,11 +55,11 @@ async function setupMcpServerPair(options?: { autoSession?: boolean }) {
         timestamp: z.number().optional(),
       },
     },
-    async (args) => kya.handleKya(args as Record<string, unknown>),
+    async (args) => kyaos.handleKyaOs(args as Record<string, unknown>),
   );
 
   // Wrap a test tool with proof (simulates Context7's resolve-library-id)
-  const searchHandler = kya.wrapWithProof(
+  const searchHandler = kyaos.wrapWithProof(
     'search',
     async (args) => ({
       content: [{
@@ -82,7 +82,7 @@ async function setupMcpServerPair(options?: { autoSession?: boolean }) {
   );
 
   // Wrap a second tool (simulates Context7's query-docs)
-  const fetchHandler = kya.wrapWithProof(
+  const fetchHandler = kyaos.wrapWithProof(
     'fetch-docs',
     async (args) => ({
       content: [{
@@ -136,13 +136,13 @@ describe('McpServer (High-Level API) + KYA-OS Integration', () => {
     return pair;
   }
 
-  it('listTools returns _kya + registered tools', async () => {
+  it('listTools returns _kyaos + registered tools', async () => {
     const { client } = await createPair();
 
     const result = await client.listTools();
     const toolNames = result.tools.map((t) => t.name);
 
-    expect(toolNames).toContain('_kya');
+    expect(toolNames).toContain('_kyaos');
     expect(toolNames).toContain('search');
     expect(toolNames).toContain('fetch-docs');
   });
@@ -151,7 +151,7 @@ describe('McpServer (High-Level API) + KYA-OS Integration', () => {
     const { client, did } = await createPair();
 
     const result = await client.callTool({
-      name: '_kya',
+      name: '_kyaos',
       arguments: {
         action: 'handshake',
         nonce: `mcpserver-test-${Date.now()}`,
@@ -166,7 +166,7 @@ describe('McpServer (High-Level API) + KYA-OS Integration', () => {
 
     const parsed = JSON.parse(first.text);
     expect(parsed.success).toBe(true);
-    expect(parsed.sessionId).toMatch(/^kya_/);
+    expect(parsed.sessionId).toMatch(/^kyaos_/);
     expect(parsed.serverDid).toBe(did);
   });
 
@@ -175,7 +175,7 @@ describe('McpServer (High-Level API) + KYA-OS Integration', () => {
 
     // Handshake first
     await client.callTool({
-      name: '_kya',
+      name: '_kyaos',
       arguments: {
         action: 'handshake',
         nonce: `mcpserver-test-${Date.now()}`,
@@ -203,7 +203,7 @@ describe('McpServer (High-Level API) + KYA-OS Integration', () => {
     expect(proof).toBeDefined();
     expect(proof.jws).toBeDefined();
     expect(proof.meta.did).toMatch(/^did:key:/);
-    expect(proof.meta.sessionId).toMatch(/^kya_/);
+    expect(proof.meta.sessionId).toMatch(/^kyaos_/);
     expect(proof.meta.requestHash).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(proof.meta.responseHash).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
@@ -228,7 +228,7 @@ describe('McpServer (High-Level API) + KYA-OS Integration', () => {
     };
     expect(proof).toBeDefined();
     expect(proof.jws).toBeDefined();
-    expect(proof.meta.sessionId).toMatch(/^kya_/);
+    expect(proof.meta.sessionId).toMatch(/^kyaos_/);
   });
 
   it('second tool also gets proof (McpServer)', async () => {
@@ -296,7 +296,7 @@ describe('McpServer + withKyaOs() (Dream API)', () => {
       { instructions: 'Test server for withKyaOs integration' },
     );
 
-    const kya = await withKyaOs(server, {
+    const kyaos = await withKyaOs(server, {
       crypto,
       autoSession: options?.autoSession ?? true,
     });
@@ -337,16 +337,16 @@ describe('McpServer + withKyaOs() (Dream API)', () => {
     await client.connect(clientTransport);
 
     pairs.push({ client, server });
-    return { client, server, kya };
+    return { client, server, kyaos };
   }
 
-  it('listTools returns _kya + registered tools (withKyaOs)', async () => {
+  it('listTools returns _kyaos + registered tools (withKyaOs)', async () => {
     const { client } = await createWithKyaOsPair();
 
     const result = await client.listTools();
     const toolNames = result.tools.map((t) => t.name);
 
-    expect(toolNames).toContain('_kya');
+    expect(toolNames).toContain('_kyaos');
     expect(toolNames).toContain('search');
     expect(toolNames).toContain('fetch-docs');
   });
@@ -369,18 +369,18 @@ describe('McpServer + withKyaOs() (Dream API)', () => {
     };
     expect(proof).toBeDefined();
     expect(proof.jws).toBeDefined();
-    expect(proof.meta.sessionId).toMatch(/^kya_/);
+    expect(proof.meta.sessionId).toMatch(/^kyaos_/);
   });
 
   it('handshake works through withKyaOs', async () => {
-    const { client, kya } = await createWithKyaOsPair({ autoSession: false });
+    const { client, kyaos } = await createWithKyaOsPair({ autoSession: false });
 
     const result = await client.callTool({
-      name: '_kya',
+      name: '_kyaos',
       arguments: {
         action: 'handshake',
         nonce: `withkyaos-test-${Date.now()}`,
-        audience: kya.identity.did,
+        audience: kyaos.identity.did,
         timestamp: Math.floor(Date.now() / 1000),
       },
     });
@@ -388,8 +388,8 @@ describe('McpServer + withKyaOs() (Dream API)', () => {
     const first = result.content[0] as { type: string; text: string };
     const parsed = JSON.parse(first.text);
     expect(parsed.success).toBe(true);
-    expect(parsed.sessionId).toMatch(/^kya_/);
-    expect(parsed.serverDid).toBe(kya.identity.did);
+    expect(parsed.sessionId).toMatch(/^kyaos_/);
+    expect(parsed.serverDid).toBe(kyaos.identity.did);
   });
 
   it('no per-tool wrapping needed — proofs are automatic (withKyaOs)', async () => {

@@ -35,7 +35,7 @@ This example runs **two servers**:
 
 ### Why the low-level Server API?
 
-This example uses `createKyaOsMiddleware` with the SDK's low-level `Server` class instead of the 2-line `withKyaOs(server, { crypto })` pattern ([see context7-with-kya-os](../context7-with-kya-os/) for that). The reason: delegation-protected tools receive `_kya_delegation` as a tool argument. `McpServer.registerTool` validates args against zod schemas and strips unknown keys — so the delegation VC is silently dropped before the handler sees it. The low-level `Server` API passes args through without schema validation, which delegation requires.
+This example uses `createKyaOsMiddleware` with the SDK's low-level `Server` class instead of the 2-line `withKyaOs(server, { crypto })` pattern ([see context7-with-kya-os](../context7-with-kya-os/) for that). The reason: delegation-protected tools receive `_kyaos_delegation` as a tool argument. `McpServer.registerTool` validates args against zod schemas and strips unknown keys — so the delegation VC is silently dropped before the handler sees it. The low-level `Server` API passes args through without schema validation, which delegation requires.
 
 If your server doesn't need delegation (just proofs + handshake), use `withKyaOs` — it's 2 lines.
 
@@ -87,7 +87,7 @@ The consent page shows a username/password form. Demo credentials: `demo` / `dem
 npx tsx examples/consent-full/scripts/generate-identity.ts
 ```
 
-Generates `.kya/identity.json` — the DID survives server restarts. Without it, the server creates an ephemeral identity on each start.
+Generates `.kya-os/identity.json` — the DID survives server restarts. Without it, the server creates an ephemeral identity on each start.
 
 ## Tests
 

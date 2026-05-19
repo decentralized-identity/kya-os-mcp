@@ -33,7 +33,7 @@ describe("generateIdentity", () => {
 });
 
 describe("withKyaOs", () => {
-  it("should register _kya tool on server by default", async () => {
+  it("should register _kyaos tool on server by default", async () => {
     const registerTool = vi.fn();
     const server = {
       connect: vi.fn().mockResolvedValue(undefined),
@@ -43,7 +43,7 @@ describe("withKyaOs", () => {
     await withKyaOs(server, { crypto });
 
     expect(registerTool).toHaveBeenCalledWith(
-      "_kya",
+      "_kyaos",
       expect.objectContaining({ description: expect.any(String) }),
       expect.any(Function),
     );
@@ -107,11 +107,11 @@ describe("withKyaOs", () => {
       registerTool: vi.fn(),
     };
 
-    const kya = await withKyaOs(server, { crypto });
+    const kyaos = await withKyaOs(server, { crypto });
 
-    expect(kya).toBeDefined();
-    expect(kya.wrapWithProof).toBeInstanceOf(Function);
-    expect(kya.wrapWithDelegation).toBeInstanceOf(Function);
-    expect(kya.handleKya).toBeInstanceOf(Function);
+    expect(kyaos).toBeDefined();
+    expect(kyaos.wrapWithProof).toBeInstanceOf(Function);
+    expect(kyaos.wrapWithDelegation).toBeInstanceOf(Function);
+    expect(kyaos.handleKyaOs).toBeInstanceOf(Function);
   });
 });

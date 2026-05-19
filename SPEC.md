@@ -92,7 +92,7 @@ The following diagram illustrates the KYA-OS protocol flow:
          │                                                │
          │  ┌──────────────────────────────────────────┐  │
          │  │ 2. HANDSHAKE RESPONSE                    │  │
-         │  │    - sessionId: "kya_<uuid>"            │  │
+         │  │    - sessionId: "kyaos_<uuid>"            │  │
          │  │    - serverDid: "did:web:srv"            │  │
          │  │    - ttlMinutes: 30                      │  │
          ◄──┴──────────────────────────────────────────┴──┤
@@ -103,7 +103,7 @@ The following diagram illustrates the KYA-OS protocol flow:
          │  │    params:                               │  │
          │  │      name: "read_file"                   │  │
          │  │      arguments: { path: "/etc/hosts" }   │  │
-         │  │      sessionId: "kya_..."               │  │
+         │  │      sessionId: "kyaos_..."               │  │
          │  │      delegation: <DelegationCredential>  │◄── Optional
          ├──┴──────────────────────────────────────────┴──►
          │                                                │
@@ -248,7 +248,7 @@ On successful validation, the server creates a session:
 
 ```typescript
 interface SessionContext {
-  sessionId: string;         // Format: "kya_<uuid-v4>"
+  sessionId: string;         // Format: "kyaos_<uuid-v4>"
   audience: string;          // Echoed from request
   nonce: string;             // Echoed from request
   timestamp: number;         // Request timestamp
@@ -507,7 +507,7 @@ BASE64URL(header) . BASE64URL(payload) . BASE64URL(signature)
   "nonce": "...",
   "requestHash": "sha256:...",
   "responseHash": "sha256:...",
-  "sessionId": "kya_...",
+  "sessionId": "kyaos_...",
   "sub": "did:web:server.example.com",
   "ts": 1710288000
 }
@@ -529,7 +529,7 @@ The proof is attached to tool responses in the `_meta` field:
         "ts": 1710288000,
         "nonce": "abc123...",
         "audience": "did:web:server.example.com",
-        "sessionId": "kya_d7f8a9b0-...",
+        "sessionId": "kyaos_d7f8a9b0-...",
         "requestHash": "sha256:a1b2c3...",
         "responseHash": "sha256:d4e5f6..."
       }
@@ -548,11 +548,11 @@ When an MCP server calls downstream services (APIs, other MCP servers), it MUST 
 
 | Header | Value |
 |--------|-------|
-| `KYA-Agent-DID` | Original agent's DID |
-| `KYA-Delegation-Chain` | Comma-separated list of delegation IDs from root to current |
-| `KYA-Session-Id` | KYA-OS session ID |
-| `KYA-Delegation-Proof` | Signed JWT proving delegation authority |
-| `KYA-Granted-Scopes` | Comma-separated list of granted scopes |
+| `KYA-OS-Agent-DID` | Original agent's DID |
+| `KYA-OS-Delegation-Chain` | Comma-separated list of delegation IDs from root to current |
+| `KYA-OS-Session-Id` | KYA-OS session ID |
+| `KYA-OS-Delegation-Proof` | Signed JWT proving delegation authority |
+| `KYA-OS-Granted-Scopes` | Comma-separated list of granted scopes |
 
 ### 8.2 Delegation Proof JWT
 
@@ -627,7 +627,7 @@ interface NeedsAuthorizationError {
 
 ## 10. Well-Known Endpoint
 
-KYA-OS servers SHOULD expose `/.well-known/kya`:
+KYA-OS servers SHOULD expose `/.well-known/kyaos-os-os`:
 
 ```json
 {
@@ -641,7 +641,7 @@ KYA-OS servers SHOULD expose `/.well-known/kya`:
   "supported_did_methods": ["did:key", "did:web"],
   "proof_algorithms": ["EdDSA"],
   "endpoints": {
-    "handshake": "/_kya/handshake",
+    "handshake": "/_kya-os/handshake",
     "status_list": "/.well-known/status/1"
   }
 }
@@ -701,7 +701,7 @@ An adversary or non-compliant client may omit KYA-OS headers entirely, bypassing
 
 - Servers that require identity MUST reject tool calls without a valid session (fail-closed)
 - Servers SHOULD NOT fall back to unauthenticated mode for tools that require delegation
-- The `/.well-known/kya` endpoint allows clients to discover server requirements before connecting
+- The `/.well-known/kyaos-os-os` endpoint allows clients to discover server requirements before connecting
 
 ### 11.8 Delegation Credential Theft
 
@@ -732,11 +732,11 @@ A persistent `did:key` or `did:web` identifier acts as a pseudonym. Using the sa
 
 ### 12.2 Session Linkability
 
-Session IDs (`kya_*`) appear in detached proofs. Within a session, all tool calls are linkable. Implementations SHOULD use short session TTLs and avoid logging session IDs alongside PII.
+Session IDs (`kyaos_*`) appear in detached proofs. Within a session, all tool calls are linkable. Implementations SHOULD use short session TTLs and avoid logging session IDs alongside PII.
 
 ### 12.3 Delegation Chain Disclosure
 
-Outbound `KYA-Agent-DID` and `KYA-Delegation-Chain` headers reveal the agent's identity and delegation provenance to downstream services. Implementations SHOULD only propagate delegation headers to trusted downstream services.
+Outbound `KYA-OS-Agent-DID` and `KYA-OS-Delegation-Chain` headers reveal the agent's identity and delegation provenance to downstream services. Implementations SHOULD only propagate delegation headers to trusted downstream services.
 
 ### 12.4 Proof Retention and Right to Erasure
 
@@ -760,11 +760,11 @@ Minor version differences SHOULD be handled gracefully — servers SHOULD implem
 
 KYA-OS is transport-agnostic. The handshake and proofs use standard MCP mechanisms:
 
-**Handshake**: Implemented as an MCP tool named `_kya_handshake`. This is compatible with all MCP transports (stdio, SSE, HTTP Streamable) without modification.
+**Handshake**: Implemented as an MCP tool named `_kyaos_handshake`. This is compatible with all MCP transports (stdio, SSE, HTTP Streamable) without modification.
 
 **Proof attachment**: Detached proofs are attached to tool responses in the standard MCP `_meta` field, which is transported transparently by all MCP transport implementations.
 
-**Outbound delegation headers**: When an MCP server makes outbound HTTP calls (not MCP calls), delegation context is propagated via HTTP headers as defined in §8. For MCP-to-MCP calls, delegation context SHOULD be passed via the `_kya_handshake` flow.
+**Outbound delegation headers**: When an MCP server makes outbound HTTP calls (not MCP calls), delegation context is propagated via HTTP headers as defined in §8. For MCP-to-MCP calls, delegation context SHOULD be passed via the `_kyaos_handshake` flow.
 
 ---
 
@@ -807,13 +807,13 @@ See `CONFORMANCE.md` for detailed requirements and test references.
 
 | Code | Description |
 |------|-------------|
-| `KYA_EHANDSHAKE` | Handshake validation failed (timestamp, nonce, or audience) |
-| `KYA_ESESSION` | Session not found or expired |
-| `KYA_EDELEGATION` | Delegation verification failed |
-| `KYA_ESCOPE` | Requested operation outside delegated scope |
-| `KYA_EREVOKED` | Delegation has been revoked |
-| `KYA_EPROOF` | Proof verification failed |
-| `KYA_EDID` | DID resolution failed |
+| `KYA_OS_EHANDSHAKE` | Handshake validation failed (timestamp, nonce, or audience) |
+| `KYA_OS_ESESSION` | Session not found or expired |
+| `KYA_OS_EDELEGATION` | Delegation verification failed |
+| `KYA_OS_ESCOPE` | Requested operation outside delegated scope |
+| `KYA_OS_EREVOKED` | Delegation has been revoked |
+| `KYA_OS_EPROOF` | Proof verification failed |
+| `KYA_OS_EDID` | DID resolution failed |
 
 ---
 
@@ -905,7 +905,7 @@ A valid detached proof JWS has the following structure:
   "nonce": "abc123...",
   "requestHash": "sha256:5057521f...",
   "responseHash": "sha256:d4e5f6...",
-  "sessionId": "kya_d7f8a9b0-...",
+  "sessionId": "kyaos_d7f8a9b0-...",
   "sub": "did:web:server.example.com",
   "ts": 1710288000
 }

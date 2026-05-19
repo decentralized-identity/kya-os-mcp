@@ -48,13 +48,13 @@ type ToolResult = {
  * responses.
  *
  * @param inner   - The real transport (Stdio, HTTP, etc.)
- * @param kya    - Configured KyaOsMiddleware instance
+ * @param kyaos    - Configured KyaOsMiddleware instance
  * @param exclude - Tool names to skip proof generation for
  */
 export function createKyaOsTransport(
   inner: Transport,
-  kya: KyaOsMiddleware,
-  exclude: string[] = ["_kya", "_kya_handshake"],
+  kyaos: KyaOsMiddleware,
+  exclude: string[] = ["_kyaos", "_kyaos_handshake"],
 ): Transport {
   // Request id → { toolName, args } for pending tool calls
   const pending = new Map<unknown, PendingCall>();
@@ -98,7 +98,7 @@ export function createKyaOsTransport(
           const rawResult = message.result as ToolResult | undefined;
           if (rawResult && !rawResult.isError) {
             const handler: KyaOsToolHandler = async () => rawResult;
-            const addProof = kya.wrapWithProof(call.toolName, handler);
+            const addProof = kyaos.wrapWithProof(call.toolName, handler);
             const proofed = await addProof(call.args);
             if (proofed._meta !== undefined) {
               message = {

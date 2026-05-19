@@ -122,7 +122,7 @@ export interface KyaOsConfig {
   /**
    * When true, automatically creates a session on the first tool call
    * if no session exists. Useful for demos and development where
-   * MCP clients don't support the `_kya` handshake flow.
+   * MCP clients don't support the `_kyaos` handshake flow.
    * In production, KYA-OS-aware runtimes should execute handshake before tool calls.
    */
   autoSession?: boolean;
@@ -174,31 +174,31 @@ export interface KyaOsMiddleware {
   proofGenerator: ProofGenerator;
 
   /**
-   * Unified tool definition for `_kya`.
+   * Unified tool definition for `_kyaos`.
    * Include this in your ListToolsRequest handler's tool list.
    */
-  kyaTool: KyaOsToolDefinition;
+  kyaOsTool: KyaOsToolDefinition;
 
   /**
-   * @deprecated Use `kyaTool` (`_kya` with `action: "handshake"`).
-   * Tool definition for `_kya_handshake`.
+   * @deprecated Use `kyaOsTool` (`_kyaos` with `action: "handshake"`).
+   * Tool definition for `_kyaos_handshake`.
    * Include this in your ListToolsRequest handler's tool list.
    */
   handshakeTool: KyaOsToolDefinition;
 
   /**
-   * Handle a unified `_kya` action. Use this in your CallToolRequest handler
-   * when `request.params.name === '_kya'`.
+   * Handle a unified `_kyaos` action. Use this in your CallToolRequest handler
+   * when `request.params.name === '_kyaos'`.
    */
-  handleKya(args: Record<string, unknown>): Promise<{
+  handleKyaOs(args: Record<string, unknown>): Promise<{
     content: Array<{ type: string; text: string }>;
     isError?: boolean;
   }>;
 
   /**
-   * @deprecated Use `handleKya` with `action: "handshake"`.
+   * @deprecated Use `handleKyaOs` with `action: "handshake"`.
    * Handle a handshake call. Use this in your CallToolRequest handler
-   * when `request.params.name === '_kya_handshake'`.
+   * when `request.params.name === '_kyaos_handshake'`.
    */
   handleHandshake(args: Record<string, unknown>): Promise<{
     content: Array<{ type: string; text: string }>;
@@ -217,10 +217,10 @@ export interface KyaOsMiddleware {
   /**
    * Wrap a tool handler to require a valid W3C Delegation Credential.
    *
-   * Caller must pass the VC as `_kya_delegation` in the tool args.
+   * Caller must pass the VC as `_kyaos_delegation` in the tool args.
    * - If absent: returns a `needs_authorization` response with the consentUrl.
    * - If present but invalid: returns a structured error with reason.
-   * - If valid with correct scope: strips `_kya_delegation` and calls the handler.
+   * - If valid with correct scope: strips `_kyaos_delegation` and calls the handler.
    */
   wrapWithDelegation(
     toolName: string,
@@ -347,7 +347,7 @@ export function createKyaOsMiddleware(
   let activeSessionId: string | undefined;
 
   const handshakeTool: KyaOsToolDefinition = {
-    name: "_kya_handshake",
+    name: "_kyaos_handshake",
     description:
       "KYA-OS identity handshake — establishes a cryptographic session",
     inputSchema: {
@@ -368,8 +368,8 @@ export function createKyaOsMiddleware(
     },
   };
 
-  const kyaTool: KyaOsToolDefinition = {
-    name: "_kya",
+  const kyaOsTool: KyaOsToolDefinition = {
+    name: "_kyaos",
     description:
       "KYA-OS protocol — identity verification, session handshake, and server metadata",
     inputSchema: {
@@ -465,7 +465,7 @@ export function createKyaOsMiddleware(
     };
   }
 
-  async function handleKya(args: Record<string, unknown>): Promise<{
+  async function handleKyaOs(args: Record<string, unknown>): Promise<{
     content: Array<{ type: string; text: string }>;
     isError?: boolean;
   }> {
@@ -508,7 +508,7 @@ export function createKyaOsMiddleware(
                 success: false,
                 error: {
                   code: KYA_OS_ERROR_CODES.invalid_request,
-                  message: `Unknown _kya action: "${action ?? "(missing)"}". Valid actions: ${KYA_OS_ACTIONS.join(", ")}`,
+                  message: `Unknown _kyaos action: "${action ?? "(missing)"}". Valid actions: ${KYA_OS_ACTIONS.join(", ")}`,
                 },
               }),
             },
@@ -876,7 +876,7 @@ export function createKyaOsMiddleware(
       args: Record<string, unknown>,
       sessionId?: string,
     ) => {
-      const delegationArg = args["_kya_delegation"];
+      const delegationArg = args["_kyaos_delegation"];
 
       if (delegationArg === undefined || delegationArg === null) {
         // No delegation provided — return needs_authorization response
@@ -959,10 +959,10 @@ export function createKyaOsMiddleware(
         );
       }
 
-      // Strip _kya_delegation from args before passing to handler
+      // Strip _kyaos_delegation from args before passing to handler
       const cleanArgs: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(args)) {
-        if (k !== "_kya_delegation") cleanArgs[k] = v;
+        if (k !== "_kyaos_delegation") cleanArgs[k] = v;
       }
 
       logger.debug(
@@ -976,9 +976,9 @@ export function createKyaOsMiddleware(
     identity: config.identity,
     sessionManager,
     proofGenerator,
-    kyaTool,
+    kyaOsTool,
     handshakeTool,
-    handleKya,
+    handleKyaOs,
     handleHandshake,
     wrapWithProof,
     wrapWithDelegation,

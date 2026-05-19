@@ -5,7 +5,7 @@
  * Enables downstream services to independently verify the delegation chain.
  *
  * Wire format: signed compact EdDSA JWT (60s TTL, per-call jti)
- * Header injection: KYA-Delegation-Id, KYA-Delegation-Chain, KYA-Delegation-Proof, KYA-Granted-Scopes
+ * Header injection: KYA-OS-Delegation-Id, KYA-OS-Delegation-Chain, KYA-OS-Delegation-Proof, KYA-OS-Granted-Scopes
  *
  * Related Spec: KYA-OS §2 — Outbound Delegation Propagation
  */

@@ -6,7 +6,7 @@
  *
  * Usage:
  *   import { withKyaOs } from '@kya-os/mcp/middleware';
- *   const kya = await withKyaOs(server, { crypto: new NodeCryptoProvider() });
+ *   const kyaos = await withKyaOs(server, { crypto: new NodeCryptoProvider() });
  *   // All tools registered on `server` now get proofs automatically.
  *   await server.connect(transport); // transport is transparently wrapped
  */
@@ -40,7 +40,7 @@ export interface WithKyaOsOptions {
   delegation?: KyaOsDelegationConfig;
   /**
    * How the KYA-OS protocol tool is exposed on the server.
-   * - "tool" (default): auto-register `_kya`
+   * - "tool" (default): auto-register `_kyaos`
    * - "none": do not register KYA-OS tool (use middleware APIs for custom runtime hooks)
    */
   handshakeExposure?: "tool" | "none";
@@ -78,7 +78,7 @@ interface McpServerLike {
  * Add KYA-OS to a McpServer instance.
  *
  * 1. Auto-generates Ed25519 identity (or uses provided one)
- * 2. Registers `_kya` tool by default (`handshakeExposure: "tool"`)
+ * 2. Registers `_kyaos` tool by default (`handshakeExposure: "tool"`)
  * 3. Patches `server.connect()` to transparently wrap the transport with
  *    KyaOsTransport, which injects detached proofs into all `tools/call`
  *    responses using only the public Transport interface.
@@ -87,7 +87,7 @@ interface McpServerLike {
  * call, then connect as normal:
  *
  * ```ts
- * const kya = await withKyaOs(server, { crypto: new NodeCryptoProvider() });
+ * const kyaos = await withKyaOs(server, { crypto: new NodeCryptoProvider() });
  * await server.connect(transport); // KyaOsTransport wraps silently
  * ```
  *
@@ -102,7 +102,7 @@ export async function withKyaOs(
   const identity =
     options.identity ?? (await generateIdentity(options.crypto));
 
-  const kya = createKyaOsMiddleware(
+  const kyaos = createKyaOsMiddleware(
     {
       identity,
       session: options.session,
@@ -113,9 +113,9 @@ export async function withKyaOs(
   );
 
   if ((options.handshakeExposure ?? "tool") === "tool") {
-    // Register the unified _kya tool for protocol operations.
+    // Register the unified _kyaos tool for protocol operations.
     server.registerTool(
-      "_kya",
+      "_kyaos",
       {
         description:
           "KYA-OS protocol — identity verification, session handshake, and server metadata",
@@ -143,7 +143,7 @@ export async function withKyaOs(
         },
       },
       async (args: unknown) => {
-        const result = await kya.handleKya(
+        const result = await kyaos.handleKyaOs(
           args as Record<string, unknown>,
         );
         return {
@@ -161,12 +161,12 @@ export async function withKyaOs(
   // Tool registration order does not matter — proofs are injected at the
   // transport boundary, after McpServer has already dispatched the call.
   if (options.proofAllTools !== false) {
-    const exclude = ["_kya", "_kya_handshake", ...(options.excludeTools ?? [])];
+    const exclude = ["_kyaos", "_kyaos_handshake", ...(options.excludeTools ?? [])];
     const originalConnect = server.connect.bind(server);
 
     server.connect = (transport: Transport) =>
-      originalConnect(createKyaOsTransport(transport, kya, exclude));
+      originalConnect(createKyaOsTransport(transport, kyaos, exclude));
   }
 
-  return kya;
+  return kyaos;
 }

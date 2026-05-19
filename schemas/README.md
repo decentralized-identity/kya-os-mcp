@@ -10,7 +10,7 @@ This directory contains JSON Schema definitions for the core KYA-OS (Model Conte
 | [handshake-response.json](./handshake-response.json) | Server response with session context |
 | [delegation-credential.json](./delegation-credential.json) | W3C Verifiable Credential for delegations |
 | [detached-proof.json](./detached-proof.json) | Cryptographic proof for tool request/response |
-| [well-known-kya.json](./well-known-kya.json) | Service discovery document |
+| [well-known-kyaos.json](./well-known-kyaos.json) | Service discovery document |
 
 ## Usage
 
@@ -79,9 +79,9 @@ Schemas can reference each other using `$ref`. For example, the delegation crede
 │ Client │                          │ Server │
 └───┬────┘                          └───┬────┘
     │                                   │
-    │  GET /.well-known/kya            │
+    │  GET /.well-known/kyaos-os-os            │
     │──────────────────────────────────>│
-    │  (well-known-kya.json)           │
+    │  (well-known-kyaos.json)           │
     │<──────────────────────────────────│
     │                                   │
     │  POST /handshake                  │

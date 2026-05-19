@@ -2,7 +2,7 @@
  * withKyaOs() Integration Tests
  *
  * Tests the dream API: `withKyaOs(server, { crypto })` auto-registers
- * the `_kya` protocol tool and auto-attaches proofs to all tool responses.
+ * the `_kyaos` protocol tool and auto-attaches proofs to all tool responses.
  */
 
 import { describe, it, expect, afterEach } from 'vitest';
@@ -42,7 +42,7 @@ async function createTestPair(options?: {
     );
   }
 
-  const kya = await withKyaOs(server, {
+  const kyaos = await withKyaOs(server, {
     crypto,
     autoSession: options?.autoSession ?? true,
     proofAllTools: options?.proofAllTools,
@@ -83,7 +83,7 @@ async function createTestPair(options?: {
   await server.connect(serverTransport);
   await client.connect(clientTransport);
 
-  return { client, server, kya, crypto };
+  return { client, server, kyaos, crypto };
 }
 
 // ── Tests ──────────────────────────────────────────────────────
@@ -105,22 +105,22 @@ describe('withKyaOs()', () => {
     return pair;
   }
 
-  it('auto-registers _kya tool', async () => {
+  it('auto-registers _kyaos tool', async () => {
     const { client } = await create();
 
     const result = await client.listTools();
     const toolNames = result.tools.map((t) => t.name);
 
-    expect(toolNames).toContain('_kya');
+    expect(toolNames).toContain('_kyaos');
   });
 
-  it('handshakeExposure: none does not auto-register _kya', async () => {
+  it('handshakeExposure: none does not auto-register _kyaos', async () => {
     const { client } = await create({ handshakeExposure: 'none' });
 
     const result = await client.listTools();
     const toolNames = result.tools.map((t) => t.name);
 
-    expect(toolNames).not.toContain('_kya');
+    expect(toolNames).not.toContain('_kyaos');
     expect(toolNames).toContain('greet');
   });
 
@@ -144,7 +144,7 @@ describe('withKyaOs()', () => {
     expect(proof).toBeDefined();
     expect(proof.jws).toBeDefined();
     expect(proof.meta.did).toMatch(/^did:key:/);
-    expect(proof.meta.sessionId).toMatch(/^kya_/);
+    expect(proof.meta.sessionId).toMatch(/^kyaos_/);
   });
 
   it('tools registered before withKyaOs also get proofs', async () => {
@@ -213,14 +213,14 @@ describe('withKyaOs()', () => {
   });
 
   it('handshake establishes session through withKyaOs', async () => {
-    const { client, kya } = await create({ autoSession: false });
+    const { client, kyaos } = await create({ autoSession: false });
 
     const result = await client.callTool({
-      name: '_kya',
+      name: '_kyaos',
       arguments: {
         action: 'handshake',
         nonce: `test-${Date.now()}`,
-        audience: kya.identity.did,
+        audience: kyaos.identity.did,
         timestamp: Math.floor(Date.now() / 1000),
       },
     });
@@ -228,19 +228,19 @@ describe('withKyaOs()', () => {
     const first = result.content[0] as { type: string; text: string };
     const parsed = JSON.parse(first.text);
     expect(parsed.success).toBe(true);
-    expect(parsed.sessionId).toMatch(/^kya_/);
-    expect(parsed.serverDid).toBe(kya.identity.did);
+    expect(parsed.sessionId).toMatch(/^kyaos_/);
+    expect(parsed.serverDid).toBe(kyaos.identity.did);
   });
 
   it('manual handshake API works when handshake tool is not exposed', async () => {
-    const { client, kya } = await create({
+    const { client, kyaos } = await create({
       autoSession: false,
       handshakeExposure: 'none',
     });
 
-    await kya.handleHandshake({
+    await kyaos.handleHandshake({
       nonce: `manual-${Date.now()}`,
-      audience: kya.identity.did,
+      audience: kyaos.identity.did,
       timestamp: Math.floor(Date.now() / 1000),
     });
 
@@ -259,7 +259,7 @@ describe('withKyaOs()', () => {
     };
     expect(proof).toBeDefined();
     expect(proof.jws).toBeDefined();
-    expect(proof.meta.sessionId).toMatch(/^kya_/);
+    expect(proof.meta.sessionId).toMatch(/^kyaos_/);
   });
 
   it('multiple tools share the same auto-session', async () => {
@@ -290,10 +290,10 @@ describe('withKyaOs()', () => {
       { name: 'delegation-test', version: '1.0.0' },
     );
 
-    const kya = await withKyaOs(server, { crypto, autoSession: true });
+    const kyaos = await withKyaOs(server, { crypto, autoSession: true });
 
     // Use wrapWithDelegation for a restricted tool
-    const restrictedHandler = kya.wrapWithDelegation(
+    const restrictedHandler = kyaos.wrapWithDelegation(
       'restricted-tool',
       { scopeId: 'admin:write', consentUrl: 'https://example.com/consent' },
       async (args) => ({

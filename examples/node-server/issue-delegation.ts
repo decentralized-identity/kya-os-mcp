@@ -5,7 +5,7 @@
  * Usage:
  *   npx tsx examples/node-server/issue-delegation.ts
  *
- * Then copy the printed JSON and pass it as `_kya_delegation` when calling
+ * Then copy the printed JSON and pass it as `_kyaos_delegation` when calling
  * restricted_greet via MCP Inspector.
  */
 

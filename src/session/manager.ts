@@ -175,7 +175,7 @@ export class SessionManager {
    * Returns null if session doesn't exist, has exceeded idle TTL, or has exceeded
    * absolute lifetime (if configured).
    *
-   * @param sessionId - The session ID (e.g., "kya_...")
+   * @param sessionId - The session ID (e.g., "kyaos_...")
    * @returns Session context if valid, null if expired or not found
    */
   async getSession(sessionId: string): Promise<SessionContext | null> {
@@ -213,7 +213,7 @@ export class SessionManager {
       .map((b) => b.toString(16).padStart(2, '0'))
       .join('');
     const uuid = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
-    return `kya_${uuid}`;
+    return `kyaos_${uuid}`;
   }
 
   private async generateClientId(): Promise<string> {

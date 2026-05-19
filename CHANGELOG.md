@@ -17,7 +17,7 @@ Versioning: https://semver.org/spec/v2.0.0.html
   is deprecated and points at this one.
 - **Spec renamed from KYA-OS to KYA-OS** across `SPEC.md`,
   `CONFORMANCE.md`, `GOVERNANCE.md`, and example READMEs. Wire-format
-  identifiers (`_kya` tool name, well-known path, JSON Schema
+  identifiers (`_kyaos` tool name, well-known path, JSON Schema
   files, JSON-LD context URLs) are deferred to a later cutover so
   this doc-only rename doesn't break running implementations.
 - **Spec cut to `1.0.0`** (was `0.1.0-draft` in `SPEC.md`, `1.0.0-draft`
@@ -58,7 +58,7 @@ Versioning: https://semver.org/spec/v2.0.0.html
 - In-memory implementations for all providers (testing)
 - Configurable logging with debug, info, warn, error levels
 - Pure TypeScript protocol type definitions (zero runtime dependencies)
-- Well-known endpoint (`/.well-known/kya`) for server discovery
+- Well-known endpoint (`/.well-known/kyaos-os-os`) for server discovery
 - Outbound delegation proof JWT builder for downstream API calls
 - Three-tier conformance levels:
   - Level 1: Core Crypto (key generation, signing, hashing, DID resolution)

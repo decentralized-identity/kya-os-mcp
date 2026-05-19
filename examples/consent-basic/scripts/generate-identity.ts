@@ -2,7 +2,7 @@
 /**
  * Generate Identity
  *
- * Creates a persistent Ed25519 DID identity and saves it to .kya/identity.json.
+ * Creates a persistent Ed25519 DID identity and saves it to .kya-os/identity.json.
  * If an identity already exists, prints it without overwriting.
  *
  * Usage:
@@ -19,7 +19,7 @@ import { NodeCryptoProvider } from '../../../src/providers/node-crypto.js';
 import { generateDidKeyFromBase64 } from '../../../src/utils/did-helpers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const IDENTITY_DIR = path.resolve(__dirname, '..', '.kya');
+const IDENTITY_DIR = path.resolve(__dirname, '..', '.kya-os');
 const IDENTITY_PATH = path.join(IDENTITY_DIR, 'identity.json');
 
 interface PersistedIdentity {

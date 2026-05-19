@@ -20,7 +20,7 @@
  *   2. Issue a delegation VC:
  *        npx tsx examples/node-server/issue-delegation.ts > delegation.json
  *   3. Connect MCP Inspector to http://localhost:3001/sse
- *   4. Call `restricted_greet` with `_kya_delegation` = contents of delegation.json
+ *   4. Call `restricted_greet` with `_kyaos_delegation` = contents of delegation.json
  *   5. Watch it verify the VC and return the greeting with a signed proof
  */
 
@@ -36,7 +36,7 @@ import { createKyaOsMiddleware } from '../../src/middleware/with-kya-os.js';
 import { generateDidKeyFromBase64 } from '../../src/utils/did-helpers.js';
 import { NodeCryptoProvider } from './node-crypto.js';
 
-function createMcpServer(kya: ReturnType<typeof createKyaOsMiddleware>) {
+function createMcpServer(kyaos: ReturnType<typeof createKyaOsMiddleware>) {
   const server = new Server(
     { name: 'kya-os-example', version: '1.0.0' },
     { capabilities: { tools: {} } }
@@ -44,18 +44,18 @@ function createMcpServer(kya: ReturnType<typeof createKyaOsMiddleware>) {
 
   // ── Tool handlers ───────────────────────────────────────────────
 
-  const greetHandler = kya.wrapWithProof('greet', async (args) => ({
+  const greetHandler = kyaos.wrapWithProof('greet', async (args) => ({
     content: [{ type: 'text', text: `Hello, ${args['name'] ?? 'world'}!` }],
   }));
 
   // restricted_greet: verify delegation VC, then attach proof on success
-  const restrictedGreetHandler = kya.wrapWithDelegation(
+  const restrictedGreetHandler = kyaos.wrapWithDelegation(
     'restricted_greet',
     {
       scopeId: 'greeting:restricted',
       consentUrl: 'https://example.com/consent?scope=greeting:restricted',
     },
-    kya.wrapWithProof('restricted_greet', async (args) => ({
+    kyaos.wrapWithProof('restricted_greet', async (args) => ({
       content: [{ type: 'text', text: `Hello, ${args['name'] ?? 'world'}! (delegation verified)` }],
     })),
   );
@@ -64,7 +64,7 @@ function createMcpServer(kya: ReturnType<typeof createKyaOsMiddleware>) {
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
-      kya.kyaTool,
+      kyaos.kyaOsTool,
       {
         name: 'greet',
         description: 'Returns a greeting with a signed Ed25519 proof',
@@ -82,7 +82,7 @@ function createMcpServer(kya: ReturnType<typeof createKyaOsMiddleware>) {
           type: 'object' as const,
           properties: {
             name: { type: 'string', description: 'Name to greet' },
-            _kya_delegation: {
+            _kyaos_delegation: {
               type: 'object',
               description: 'W3C Delegation Credential granting scope greeting:restricted',
             },
@@ -96,8 +96,8 @@ function createMcpServer(kya: ReturnType<typeof createKyaOsMiddleware>) {
     const { name, arguments: args = {} } = request.params;
 
     // ── KYA-OS protocol operations ────────────────────────────────
-    if (name === '_kya') {
-      return kya.handleKya(args as Record<string, unknown>);
+    if (name === '_kyaos') {
+      return kyaos.handleKyaOs(args as Record<string, unknown>);
     }
 
     // ── Open tools ──────────────────────────────────────────────
@@ -130,7 +130,7 @@ async function main() {
 
   console.error(`[kya-os] Agent DID: ${did}`);
 
-  const kya = createKyaOsMiddleware(
+  const kyaos = createKyaOsMiddleware(
     {
       identity: { did, kid, privateKey: keyPair.privateKey, publicKey: keyPair.publicKey },
       session: { sessionTtlMinutes: 60 },
@@ -140,7 +140,7 @@ async function main() {
   );
 
   if (useStdio) {
-    const server = createMcpServer(kya);
+    const server = createMcpServer(kyaos);
     const transport = new StdioServerTransport();
     await server.connect(transport);
     console.error('[kya-os] Server running on stdio');
@@ -162,7 +162,7 @@ async function main() {
       const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
 
       if (url.pathname === '/sse' && req.method === 'GET') {
-        const server = createMcpServer(kya);
+        const server = createMcpServer(kyaos);
         sseTransport = new SSEServerTransport('/messages', res);
         await server.connect(sseTransport);
         console.error('[kya-os] SSE client connected');

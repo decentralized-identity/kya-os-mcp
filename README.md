@@ -65,7 +65,7 @@ server.registerTool('greet', { description: 'Say hello' }, async (args) => ({
 }));
 ```
 
-That's it. `withKyaOs` auto-generates an Ed25519 identity, registers the `_kya` protocol tool, and wraps the transport so every tool response includes a detached JWS proof in `_meta` — invisible to the LLM, verifiable by anyone.
+That's it. `withKyaOs` auto-generates an Ed25519 identity, registers the `_kyaos` protocol tool, and wraps the transport so every tool response includes a detached JWS proof in `_meta` — invisible to the LLM, verifiable by anyone.
 
 > See the full working example: [examples/context7-with-kya-os](./examples/context7-with-kya-os/) — a real MCP server (Context7) migrated with exactly 2 lines of code.
 
@@ -76,10 +76,10 @@ That's it. `withKyaOs` auto-generates an Ed25519 identity, registers the `_kya` 
 Some tools shouldn't run without a human saying "yes." KYA-OS MCP adds per-tool authorization using W3C Verifiable Credentials:
 
 ```typescript
-const checkout = kya.wrapWithDelegation(
+const checkout = kyaos.wrapWithDelegation(
   'checkout',
   { scopeId: 'cart:write', consentUrl: 'https://example.com/consent' },
-  kya.wrapWithProof('checkout', async (args) => ({
+  kyaos.wrapWithProof('checkout', async (args) => ({
     content: [{ type: 'text', text: `Order placed: ${args.item}` }],
   })),
 );

@@ -206,7 +206,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         }),
       );
 
-      const result = await handler({ _kya_delegation: bobToCarol });
+      const result = await handler({ _kyaos_delegation: bobToCarol });
 
       expect(result.isError).toBeUndefined();
       expect(result.content[0].text).toBe('query result for resource X');
@@ -289,7 +289,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         async () => ({ content: [{ type: 'text', text: 'ok' }] }),
       );
 
-      const result = await handler({ _kya_delegation: bobToCarol });
+      const result = await handler({ _kyaos_delegation: bobToCarol });
       expect(result.isError).toBeUndefined();
     });
 
@@ -322,7 +322,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
       );
 
-      const result = await handler({ _kya_delegation: bobToCarol });
+      const result = await handler({ _kyaos_delegation: bobToCarol });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
@@ -359,7 +359,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
       );
 
-      const result = await handler({ _kya_delegation: bobToCarol });
+      const result = await handler({ _kyaos_delegation: bobToCarol });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
@@ -412,7 +412,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
       );
 
-      const result = await handler({ _kya_delegation: bobToCarol });
+      const result = await handler({ _kyaos_delegation: bobToCarol });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
@@ -452,7 +452,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
       );
 
-      const result = await handler({ _kya_delegation: bobToCarol });
+      const result = await handler({ _kyaos_delegation: bobToCarol });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
@@ -487,7 +487,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         }),
       );
 
-      const result = await handler({ _kya_delegation: aliceToBob });
+      const result = await handler({ _kyaos_delegation: aliceToBob });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
@@ -521,7 +521,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         }),
       );
 
-      const result = await handler({ _kya_delegation: aliceToBob });
+      const result = await handler({ _kyaos_delegation: aliceToBob });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
@@ -756,7 +756,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
       );
 
-      const result = await handler({ _kya_delegation: eveToCarol });
+      const result = await handler({ _kyaos_delegation: eveToCarol });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
@@ -789,7 +789,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
       );
 
-      const result = await handler({ _kya_delegation: bobToCarol });
+      const result = await handler({ _kyaos_delegation: bobToCarol });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
@@ -878,7 +878,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         async () => ({ content: [{ type: 'text', text: 'ok from Dave' }] }),
       );
 
-      const result = await handler({ _kya_delegation: carolToDave });
+      const result = await handler({ _kyaos_delegation: carolToDave });
       expect(result.isError).toBeUndefined();
       expect(result.content[0].text).toBe('ok from Dave');
     });
@@ -921,7 +921,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
       );
 
-      const result = await handler({ _kya_delegation: carolToDave });
+      const result = await handler({ _kyaos_delegation: carolToDave });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
@@ -951,7 +951,7 @@ describe('Transitive Access — Karp Use Cases', () => {
 
       const headers = await buildOutboundDelegationHeaders({
         session: {
-          sessionId: 'kya_test-session',
+          sessionId: 'kyaos_test-session',
           audience: 'aperture.example.com',
           nonce: 'test-nonce',
           timestamp: Math.floor(Date.now() / 1000),
@@ -979,11 +979,11 @@ describe('Transitive Access — Karp Use Cases', () => {
       });
 
       // Headers expose the full provenance
-      expect(headers['KYA-Agent-DID']).toBe(alice.did);
-      expect(headers['KYA-Delegation-Chain']).toBe(aliceToBob.id);
-      expect(headers['KYA-Session-Id']).toBe('kya_test-session');
+      expect(headers['KYA-OS-Agent-DID']).toBe(alice.did);
+      expect(headers['KYA-OS-Delegation-Chain']).toBe(aliceToBob.id);
+      expect(headers['KYA-OS-Session-Id']).toBe('kyaos_test-session');
       // The proof is a signed JWT that downstream can verify
-      expect(headers['KYA-Delegation-Proof']).toMatch(
+      expect(headers['KYA-OS-Delegation-Proof']).toMatch(
         /^eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/,
       );
     });
@@ -1016,7 +1016,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         async () => ({ content: [{ type: 'text', text: 'stolen data' }] }),
       );
 
-      const result = await handler({ _kya_delegation: vc });
+      const result = await handler({ _kyaos_delegation: vc });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
@@ -1097,7 +1097,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
       );
 
-      const result = await handler({ _kya_delegation: bobToCarol });
+      const result = await handler({ _kyaos_delegation: bobToCarol });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
@@ -1139,7 +1139,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         async () => ({ content: [{ type: 'text', text: 'ok' }] }),
       );
 
-      const result = await handler({ _kya_delegation: bobToCarol });
+      const result = await handler({ _kyaos_delegation: bobToCarol });
       expect(result.isError).toBeUndefined();
       expect(result.content[0].text).toBe('ok');
     });
@@ -1175,7 +1175,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         async () => ({ content: [{ type: 'text', text: 'ok' }] }),
       );
 
-      const result = await handler({ _kya_delegation: bobToCarol });
+      const result = await handler({ _kyaos_delegation: bobToCarol });
       expect(result.isError).toBeUndefined();
       expect(result.content[0].text).toBe('ok');
     });
@@ -1221,7 +1221,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
       );
 
-      const result = await handler({ _kya_delegation: carolToDave });
+      const result = await handler({ _kyaos_delegation: carolToDave });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);

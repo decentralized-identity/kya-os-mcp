@@ -10,7 +10,7 @@
  *   This example uses the low-level SDK `Server` API with `createKyaOsMiddleware`
  *   instead of the 2-line `withKyaOs(server, { crypto })` pattern (see examples/
  *   context7-with-kya-os for that). The reason: delegation-protected tools receive
- *   `_kya_delegation` as a tool argument. McpServer.registerTool validates args
+ *   `_kyaos_delegation` as a tool argument. McpServer.registerTool validates args
  *   against zod schemas and strips unknown keys — so the delegation VC would be
  *   silently dropped before the handler sees it. The low-level Server API passes
  *   args through without schema validation, which delegation requires.
@@ -39,7 +39,7 @@ import { startConsentServer } from './consent-server.js';
 import { createDelegationIssuerFromIdentity } from './delegation-issuer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const IDENTITY_PATH = path.resolve(__dirname, '..', '.kya', 'identity.json');
+const IDENTITY_PATH = path.resolve(__dirname, '..', '.kya-os', 'identity.json');
 
 export interface ServerConfig {
   consentUrl: string;
@@ -105,11 +105,11 @@ function formatAsConsentLink(
 ): (args: Record<string, unknown>, sessionId?: string) => Promise<ToolResult> {
   return async (args, sessionId) => {
     // Check the delegation store for a previously approved VC (resume token flow).
-    if (!args['_kya_delegation'] && delegationStore) {
+    if (!args['_kyaos_delegation'] && delegationStore) {
       const pending = delegationStore.findByTool(toolName);
       if (pending) {
         process.stderr.write(`[server] Auto-applying delegation from consent approval (token: ${pending.resumeToken})\n`);
-        return handler({ ...args, _kya_delegation: pending.vc }, sessionId);
+        return handler({ ...args, _kyaos_delegation: pending.vc }, sessionId);
       }
     }
 
@@ -158,7 +158,7 @@ interface ToolResult {
 }
 
 export function createConsentMcpServer(
-  kya: KyaOsMiddleware,
+  kyaos: KyaOsMiddleware,
   config: ServerConfig,
 ) {
   const server = new Server(
@@ -167,7 +167,7 @@ export function createConsentMcpServer(
   );
 
   // browse: public tool — proof attached via wrapWithProof
-  const browseHandler = kya.wrapWithProof('browse', async (args) => ({
+  const browseHandler = kyaos.wrapWithProof('browse', async (args) => ({
     content: [{
       type: 'text',
       text: `Browsing category: ${args['category'] ?? 'all'}. Found 3 items.`,
@@ -175,10 +175,10 @@ export function createConsentMcpServer(
   }));
 
   // checkout: protected tool — requires delegation with scope cart:write
-  const rawCheckoutHandler = kya.wrapWithDelegation(
+  const rawCheckoutHandler = kyaos.wrapWithDelegation(
     'checkout',
     { scopeId: 'cart:write', consentUrl: config.consentUrl },
-    kya.wrapWithProof('checkout', async (args) => ({
+    kyaos.wrapWithProof('checkout', async (args) => ({
       content: [{
         type: 'text',
         text: `Order confirmed for item: ${args['item'] ?? 'unknown'}. Thank you!`,
@@ -188,14 +188,14 @@ export function createConsentMcpServer(
   const checkoutHandler = formatAsConsentLink(
     'checkout',
     config.consentUrl,
-    kya.identity.did,
+    kyaos.identity.did,
     config.delegationStore,
     rawCheckoutHandler as (args: Record<string, unknown>, sessionId?: string) => Promise<ToolResult>,
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
-      kya.kyaTool,
+      kyaos.kyaOsTool,
       {
         name: 'browse',
         description: 'Browse product categories (public — no delegation required)',
@@ -223,8 +223,8 @@ export function createConsentMcpServer(
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args = {} } = request.params;
 
-    if (name === '_kya') {
-      return kya.handleKya(args as Record<string, unknown>);
+    if (name === '_kyaos') {
+      return kyaos.handleKyaOs(args as Record<string, unknown>);
     }
 
     if (name === 'browse') {
@@ -245,7 +245,7 @@ export function createConsentMcpServer(
 }
 
 /**
- * Load identity from .kya/identity.json if it exists,
+ * Load identity from .kya-os/identity.json if it exists,
  * otherwise generate an ephemeral one.
  */
 export async function createKyaOsMiddleware() {
@@ -293,7 +293,7 @@ function setCorsHeaders(res: http.ServerResponse) {
 /**
  * Start the MCP server with SSE + Streamable HTTP transports.
  */
-async function startHttpServer(kya: KyaOsMiddleware, consentUrl: string, port: number, delegationStore?: DelegationStore) {
+async function startHttpServer(kyaos: KyaOsMiddleware, consentUrl: string, port: number, delegationStore?: DelegationStore) {
   let sseTransport: SSEServerTransport | null = null;
 
   const httpServer = http.createServer(async (req, res) => {
@@ -309,7 +309,7 @@ async function startHttpServer(kya: KyaOsMiddleware, consentUrl: string, port: n
 
     // ── SSE transport: GET /sse + POST /messages ──────────────────
     if (url.pathname === '/sse' && req.method === 'GET') {
-      const server = createConsentMcpServer(kya, { consentUrl, delegationStore });
+      const server = createConsentMcpServer(kyaos, { consentUrl, delegationStore });
       sseTransport = new SSEServerTransport('/messages', res);
       await server.connect(sseTransport);
       process.stderr.write('[server] SSE client connected\n');
@@ -328,7 +328,7 @@ async function startHttpServer(kya: KyaOsMiddleware, consentUrl: string, port: n
 
     // ── Streamable HTTP transport: POST /mcp ─────────────────────
     if (url.pathname === '/mcp' && req.method === 'POST') {
-      const server = createConsentMcpServer(kya, { consentUrl, delegationStore });
+      const server = createConsentMcpServer(kyaos, { consentUrl, delegationStore });
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
         enableJsonResponse: true,
@@ -344,7 +344,7 @@ async function startHttpServer(kya: KyaOsMiddleware, consentUrl: string, port: n
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         name: 'consent-basic-example',
-        did: kya.identity.did,
+        did: kyaos.identity.did,
         transports: {
           sse: `http://localhost:${port}/sse`,
           mcp: `http://localhost:${port}/mcp`,
@@ -361,7 +361,7 @@ async function startHttpServer(kya: KyaOsMiddleware, consentUrl: string, port: n
     process.stderr.write(`[server] HTTP server: http://localhost:${port}\n`);
     process.stderr.write(`[server]   SSE:  http://localhost:${port}/sse\n`);
     process.stderr.write(`[server]   MCP:  http://localhost:${port}/mcp\n`);
-    process.stderr.write(`[server] Agent DID: ${kya.identity.did}\n`);
+    process.stderr.write(`[server] Agent DID: ${kyaos.identity.did}\n`);
   });
 }
 
@@ -379,15 +379,15 @@ if (isMain) {
     ? 0
     : parseInt(process.env['CONSENT_PORT'] ?? '3001', 10);
 
-  createKyaOsMiddleware().then(async (kya) => {
+  createKyaOsMiddleware().then(async (kyaos) => {
     // Start consent server with the MCP server's identity so VCs are
     // issued by the same DID that verifies them (single trust domain).
     const cryptoProvider = new NodeCryptoProvider();
     const factory = createDelegationIssuerFromIdentity(cryptoProvider, {
-      did: kya.identity.did,
-      kid: kya.identity.kid,
-      privateKey: kya.identity.privateKey,
-      publicKey: kya.identity.publicKey,
+      did: kyaos.identity.did,
+      kid: kyaos.identity.kid,
+      privateKey: kyaos.identity.privateKey,
+      publicKey: kyaos.identity.publicKey,
     });
     // Shared delegation store — consent server writes, MCP server reads
     const delegationStore = new DelegationStore();
@@ -395,12 +395,12 @@ if (isMain) {
     const consentUrl = `${consentServer.url}/consent`;
 
     if (transport === 'stdio') {
-      process.stderr.write(`[server] Agent DID: ${kya.identity.did}\n`);
-      const server = createConsentMcpServer(kya, { consentUrl, delegationStore });
+      process.stderr.write(`[server] Agent DID: ${kyaos.identity.did}\n`);
+      const server = createConsentMcpServer(kyaos, { consentUrl, delegationStore });
       await server.connect(new StdioServerTransport());
       process.stderr.write('[server] MCP server running on stdio\n');
     } else {
-      await startHttpServer(kya, consentUrl, port, delegationStore);
+      await startHttpServer(kyaos, consentUrl, port, delegationStore);
     }
   }).catch((err) => {
     process.stderr.write(`Fatal: ${err}\n`);

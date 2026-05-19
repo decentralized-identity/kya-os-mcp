@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schema.modelcontextprotocol-identity.io/xmcp-i/discovery/well-known-kya.v1.0.0.json",
+  "$id": "https://schema.modelcontextprotocol-identity.io/xmcp-i/discovery/well-known-kyaos.v1.0.0.json",
   "title": "KYA-OS Discovery Document",
-  "description": "Well-known discovery document served at /.well-known/kya for KYA-OS service discovery.",
+  "description": "Well-known discovery document served at /.well-known/kyaos-os-os for KYA-OS service discovery.",
   "type": "object",
   "required": ["version", "serverDid", "endpoints"],
   "properties": {
@@ -142,9 +142,9 @@
       "version": "1.0",
       "serverDid": "did:web:api.example.com",
       "endpoints": {
-        "handshake": "/kya/handshake",
-        "tools": "/kya/tools",
-        "delegation": "/kya/delegations",
+        "handshake": "/kyaos-os/handshake",
+        "tools": "/kyaos-os/tools",
+        "delegation": "/kyaos-os/delegations",
         "authorization": "https://auth.example.com/authorize"
       },
       "capabilities": {

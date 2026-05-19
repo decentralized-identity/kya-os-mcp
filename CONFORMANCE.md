@@ -30,7 +30,7 @@ Level 1 establishes the cryptographic foundation. An implementation at this leve
 | L1.7 | Extract Ed25519 public key from `did:key` | `src/delegation/__tests__/did-key-resolver.test.ts` | `extractPublicKeyFromDidKey > should extract public key bytes from valid did:key` |
 | L1.8 | Convert public key bytes to JWK format | `src/delegation/__tests__/did-key-resolver.test.ts` | `publicKeyToJwk > should convert public key bytes to JWK format` |
 | L1.9 | Implement base58btc encoding/decoding | `src/delegation/__tests__/did-key-resolver.test.ts` | `Base58 Utilities` (all tests) |
-| L1.10 | Expose `/.well-known/kya` endpoint (recommended) | — | Implementation-specific |
+| L1.10 | Expose `/.well-known/kyaos-os-os` endpoint (recommended) | — | Implementation-specific |
 
 ### Detailed Requirements
 
@@ -84,7 +84,7 @@ All Level 1 requirements, plus:
 | L2.4 | Accept requests within timestamp skew | `src/session/__tests__/session-manager.test.ts` | `Handshake validation > should accept request within timestamp skew` |
 | L2.5 | Enforce nonce uniqueness (replay prevention) | `src/session/__tests__/session-manager.test.ts` | `Handshake validation > should reject replayed nonce` |
 | L2.6 | Generate unique nonces | `src/session/__tests__/session-manager.test.ts` | `Nonce format > should generate unique nonces` |
-| L2.7 | Generate session IDs with `kya_` prefix | `src/session/__tests__/session-manager.test.ts` | `Handshake validation > should return session ID with kya_ prefix` |
+| L2.7 | Generate session IDs with `kyaos_` prefix | `src/session/__tests__/session-manager.test.ts` | `Handshake validation > should return session ID with kyaos_ prefix` |
 | L2.8 | Maintain session TTL | `src/session/__tests__/session-manager.test.ts` | `Session expiry — TTL behaviour > should expire idle sessions after TTL` |
 | L2.9 | Support configurable timestamp skew | `src/session/__tests__/session-manager.test.ts` | `Custom timestamp skew > should use custom timestampSkewSeconds when provided` |
 | L2.10 | Update session `lastActivity` on access | `src/session/__tests__/session-manager.test.ts` | `Session lookup — getSession > should update lastActivity on each getSession call` |

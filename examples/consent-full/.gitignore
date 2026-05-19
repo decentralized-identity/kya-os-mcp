@@ -1,4 +1,4 @@
 # Private key material — never commit
-.kya/
+.kya-os/
 node_modules/
 dist/

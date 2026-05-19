@@ -105,8 +105,8 @@ async function issueDelegationVC(options?: {
 describe('createKyaOsMiddleware', () => {
   describe('handleHandshake', () => {
     it('should establish a session with valid handshake', async () => {
-      const { middleware: kya, did } = await createTestMiddleware();
-      const result = await kya.handleHandshake({
+      const { middleware: kyaos, did } = await createTestMiddleware();
+      const result = await kyaos.handleHandshake({
         nonce: 'test-nonce',
         audience: did,
         timestamp: Math.floor(Date.now() / 1000),
@@ -115,13 +115,13 @@ describe('createKyaOsMiddleware', () => {
       expect(result.isError).toBeUndefined();
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.success).toBe(true);
-      expect(parsed.sessionId).toMatch(/^kya_/);
+      expect(parsed.sessionId).toMatch(/^kyaos_/);
       expect(parsed.serverDid).toMatch(/^did:key:/);
     });
 
     it('should reject invalid handshake', async () => {
-      const { middleware: kya } = await createTestMiddleware();
-      const result = await kya.handleHandshake({ nonce: 'test' });
+      const { middleware: kyaos } = await createTestMiddleware();
+      const result = await kyaos.handleHandshake({ nonce: 'test' });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
@@ -130,29 +130,29 @@ describe('createKyaOsMiddleware', () => {
     });
   });
 
-  describe('_kya unified tool', () => {
-    it('should expose kyaTool with name "_kya"', async () => {
-      const { middleware: kya } = await createTestMiddleware();
-      expect(kya.kyaTool.name).toBe('_kya');
-      expect(kya.kyaTool.inputSchema.properties?.action).toBeDefined();
+  describe('_kyaos unified tool', () => {
+    it('should expose kyaOsTool with name "_kyaos"', async () => {
+      const { middleware: kyaos } = await createTestMiddleware();
+      expect(kyaos.kyaOsTool.name).toBe('_kyaos');
+      expect(kyaos.kyaOsTool.inputSchema.properties?.action).toBeDefined();
       expect(
-        (kya.kyaTool.inputSchema.properties?.action as { enum?: string[] })?.enum,
+        (kyaos.kyaOsTool.inputSchema.properties?.action as { enum?: string[] })?.enum,
       ).toContain('handshake');
       expect(
-        (kya.kyaTool.inputSchema.properties?.action as { enum?: string[] })?.enum,
+        (kyaos.kyaOsTool.inputSchema.properties?.action as { enum?: string[] })?.enum,
       ).toContain('identity');
-      expect(kya.kyaTool.inputSchema.required).toEqual(['action']);
+      expect(kyaos.kyaOsTool.inputSchema.required).toEqual(['action']);
     });
 
     it('should still expose handshakeTool as deprecated alias', async () => {
-      const { middleware: kya } = await createTestMiddleware();
-      expect(kya.handshakeTool).toBeDefined();
-      expect(kya.handshakeTool.name).toBe('_kya_handshake');
+      const { middleware: kyaos } = await createTestMiddleware();
+      expect(kyaos.handshakeTool).toBeDefined();
+      expect(kyaos.handshakeTool.name).toBe('_kyaos_handshake');
     });
 
     it('should dispatch action: "handshake" to handleHandshake', async () => {
-      const { middleware: kya, did } = await createTestMiddleware();
-      const result = await kya.handleKya({
+      const { middleware: kyaos, did } = await createTestMiddleware();
+      const result = await kyaos.handleKyaOs({
         action: 'handshake',
         nonce: 'test-nonce',
         audience: did,
@@ -162,12 +162,12 @@ describe('createKyaOsMiddleware', () => {
       expect(result.isError).toBeUndefined();
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.success).toBe(true);
-      expect(parsed.sessionId).toMatch(/^kya_/);
+      expect(parsed.sessionId).toMatch(/^kyaos_/);
     });
 
     it('should dispatch action: "identity" and return server metadata', async () => {
-      const { middleware: kya, did } = await createTestMiddleware();
-      const result = await kya.handleKya({ action: 'identity' });
+      const { middleware: kyaos, did } = await createTestMiddleware();
+      const result = await kyaos.handleKyaOs({ action: 'identity' });
 
       expect(result.isError).toBeUndefined();
       const parsed = JSON.parse(result.content[0].text);
@@ -179,8 +179,8 @@ describe('createKyaOsMiddleware', () => {
     });
 
     it('should return error for unknown action', async () => {
-      const { middleware: kya } = await createTestMiddleware();
-      const result = await kya.handleKya({ action: 'does_not_exist' });
+      const { middleware: kyaos } = await createTestMiddleware();
+      const result = await kyaos.handleKyaOs({ action: 'does_not_exist' });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
@@ -188,8 +188,8 @@ describe('createKyaOsMiddleware', () => {
     });
 
     it('should return error when action is missing', async () => {
-      const { middleware: kya } = await createTestMiddleware();
-      const result = await kya.handleKya({});
+      const { middleware: kyaos } = await createTestMiddleware();
+      const result = await kyaos.handleKyaOs({});
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
@@ -197,8 +197,8 @@ describe('createKyaOsMiddleware', () => {
     });
 
     it('should return "not implemented" for action: "reputation"', async () => {
-      const { middleware: kya } = await createTestMiddleware();
-      const result = await kya.handleKya({ action: 'reputation' });
+      const { middleware: kyaos } = await createTestMiddleware();
+      const result = await kyaos.handleKyaOs({ action: 'reputation' });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
@@ -206,8 +206,8 @@ describe('createKyaOsMiddleware', () => {
     });
 
     it('should still support handleHandshake() directly (backward compat)', async () => {
-      const { middleware: kya, did } = await createTestMiddleware();
-      const result = await kya.handleHandshake({
+      const { middleware: kyaos, did } = await createTestMiddleware();
+      const result = await kyaos.handleHandshake({
         nonce: 'legacy-nonce',
         audience: did,
         timestamp: Math.floor(Date.now() / 1000),
@@ -220,10 +220,10 @@ describe('createKyaOsMiddleware', () => {
 
   describe('wrapWithProof', () => {
     it('should attach proof in _meta after handshake', async () => {
-      const { middleware: kya, did } = await createTestMiddleware();
+      const { middleware: kyaos, did } = await createTestMiddleware();
 
       // Handshake first
-      const hs = await kya.handleHandshake({
+      const hs = await kyaos.handleHandshake({
         nonce: 'test-nonce',
         audience: did,
         timestamp: Math.floor(Date.now() / 1000),
@@ -231,7 +231,7 @@ describe('createKyaOsMiddleware', () => {
       const sessionId = JSON.parse(hs.content[0].text).sessionId;
 
       // Call wrapped tool
-      const handler = kya.wrapWithProof('greet', async (args) => ({
+      const handler = kyaos.wrapWithProof('greet', async (args) => ({
         content: [{ type: 'text', text: `Hello, ${args['name']}!` }],
       }));
 
@@ -253,16 +253,16 @@ describe('createKyaOsMiddleware', () => {
     });
 
     it('should not attach proof when result is an error', async () => {
-      const { middleware: kya, did } = await createTestMiddleware();
+      const { middleware: kyaos, did } = await createTestMiddleware();
 
-      const hs = await kya.handleHandshake({
+      const hs = await kyaos.handleHandshake({
         nonce: 'test-nonce',
         audience: did,
         timestamp: Math.floor(Date.now() / 1000),
       });
       const sessionId = JSON.parse(hs.content[0].text).sessionId;
 
-      const handler = kya.wrapWithProof('fail-tool', async () => ({
+      const handler = kyaos.wrapWithProof('fail-tool', async () => ({
         content: [{ type: 'text', text: 'error' }],
         isError: true,
       }));
@@ -273,9 +273,9 @@ describe('createKyaOsMiddleware', () => {
     });
 
     it('should return result without proof when no session exists and autoSession is off', async () => {
-      const { middleware: kya } = await createTestMiddleware({ autoSession: false });
+      const { middleware: kyaos } = await createTestMiddleware({ autoSession: false });
 
-      const handler = kya.wrapWithProof('greet', async () => ({
+      const handler = kyaos.wrapWithProof('greet', async () => ({
         content: [{ type: 'text', text: 'Hello!' }],
       }));
 
@@ -285,10 +285,10 @@ describe('createKyaOsMiddleware', () => {
     });
 
     it('should surface proofError in _meta when proof generation fails', async () => {
-      const { middleware: kya, did, crypto } = await createTestMiddleware();
+      const { middleware: kyaos, did, crypto } = await createTestMiddleware();
 
       // Handshake first
-      const hs = await kya.handleHandshake({
+      const hs = await kyaos.handleHandshake({
         nonce: 'test-nonce-proof-fail',
         audience: did,
         timestamp: Math.floor(Date.now() / 1000),
@@ -298,7 +298,7 @@ describe('createKyaOsMiddleware', () => {
       // Make crypto.hash throw to break proof generation after handshake succeeds
       vi.spyOn(crypto, 'hash').mockRejectedValue(new Error('HSM unavailable'));
 
-      const handler = kya.wrapWithProof('greet', async () => ({
+      const handler = kyaos.wrapWithProof('greet', async () => ({
         content: [{ type: 'text', text: 'Hello!' }],
       }));
 
@@ -316,10 +316,10 @@ describe('createKyaOsMiddleware', () => {
   });
 
   describe('wrapWithDelegation', () => {
-    it('should return needs_authorization when no _kya_delegation arg is provided', async () => {
-      const { middleware: kya } = await createTestMiddleware();
+    it('should return needs_authorization when no _kyaos_delegation arg is provided', async () => {
+      const { middleware: kyaos } = await createTestMiddleware();
 
-      const handler = kya.wrapWithDelegation(
+      const handler = kyaos.wrapWithDelegation(
         'my-tool',
         { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
         async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
@@ -337,16 +337,16 @@ describe('createKyaOsMiddleware', () => {
     });
 
     it('should reject when VC has wrong scope', async () => {
-      const { middleware: kya } = await createTestMiddleware();
+      const { middleware: kyaos } = await createTestMiddleware();
       const vc = await issueDelegationVC({ scopes: ['wrong:scope'] });
 
-      const handler = kya.wrapWithDelegation(
+      const handler = kyaos.wrapWithDelegation(
         'my-tool',
         { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
         async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
       );
 
-      const result = await handler({ _kya_delegation: vc });
+      const result = await handler({ _kyaos_delegation: vc });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
@@ -354,10 +354,10 @@ describe('createKyaOsMiddleware', () => {
     });
 
     it('should accept and call handler when VC has correct scope and valid signature', async () => {
-      const { middleware: kya } = await createTestMiddleware();
+      const { middleware: kyaos } = await createTestMiddleware();
       const vc = await issueDelegationVC({ scopes: ['test:scope', 'other:scope'] });
 
-      const handler = kya.wrapWithDelegation(
+      const handler = kyaos.wrapWithDelegation(
         'my-tool',
         { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
         async (args) => ({
@@ -365,17 +365,17 @@ describe('createKyaOsMiddleware', () => {
         }),
       );
 
-      const result = await handler({ _kya_delegation: vc, name: 'DIF' });
+      const result = await handler({ _kyaos_delegation: vc, name: 'DIF' });
 
       expect(result.isError).toBeUndefined();
       const parsed = JSON.parse(result.content[0].text.replace('Called: ', ''));
-      // _kya_delegation should be stripped from args
-      expect(parsed['_kya_delegation']).toBeUndefined();
+      // _kyaos_delegation should be stripped from args
+      expect(parsed['_kyaos_delegation']).toBeUndefined();
       expect(parsed['name']).toBe('DIF');
     });
 
     it('should reject credentials with credentialStatus when no status list resolver is configured', async () => {
-      const { middleware: kya } = await createTestMiddleware();
+      const { middleware: kyaos } = await createTestMiddleware();
       const vc = await issueDelegationVC({
         scopes: ['test:scope'],
         credentialStatus: {
@@ -387,13 +387,13 @@ describe('createKyaOsMiddleware', () => {
         },
       });
 
-      const handler = kya.wrapWithDelegation(
+      const handler = kyaos.wrapWithDelegation(
         'my-tool',
         { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
         async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
       );
 
-      const result = await handler({ _kya_delegation: vc });
+      const result = await handler({ _kyaos_delegation: vc });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
@@ -402,19 +402,19 @@ describe('createKyaOsMiddleware', () => {
     });
 
     it('should reject delegations whose audience does not include the server DID', async () => {
-      const { middleware: kya } = await createTestMiddleware();
+      const { middleware: kyaos } = await createTestMiddleware();
       const vc = await issueDelegationVC({
         scopes: ['test:scope'],
         audience: 'did:web:other.example.com',
       });
 
-      const handler = kya.wrapWithDelegation(
+      const handler = kyaos.wrapWithDelegation(
         'my-tool',
         { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
         async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
       );
 
-      const result = await handler({ _kya_delegation: vc });
+      const result = await handler({ _kyaos_delegation: vc });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
@@ -423,19 +423,19 @@ describe('createKyaOsMiddleware', () => {
     });
 
     it('should reject parent delegations when no chain resolver is configured', async () => {
-      const { middleware: kya } = await createTestMiddleware();
+      const { middleware: kyaos } = await createTestMiddleware();
       const vc = await issueDelegationVC({
         scopes: ['test:scope'],
         parentId: 'parent-delegation',
       });
 
-      const handler = kya.wrapWithDelegation(
+      const handler = kyaos.wrapWithDelegation(
         'my-tool',
         { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
         async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
       );
 
-      const result = await handler({ _kya_delegation: vc });
+      const result = await handler({ _kyaos_delegation: vc });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
@@ -444,7 +444,7 @@ describe('createKyaOsMiddleware', () => {
     });
 
     it('should allow parent delegations in legacy mode without a chain resolver', async () => {
-      const { middleware: kya } = await createTestMiddleware({
+      const { middleware: kyaos } = await createTestMiddleware({
         delegation: { allowLegacyUnsafeDelegation: true },
       });
       const vc = await issueDelegationVC({
@@ -452,13 +452,13 @@ describe('createKyaOsMiddleware', () => {
         parentId: 'parent-delegation',
       });
 
-      const handler = kya.wrapWithDelegation(
+      const handler = kyaos.wrapWithDelegation(
         'my-tool',
         { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
         async () => ({ content: [{ type: 'text', text: 'legacy-ok' }] }),
       );
 
-      const result = await handler({ _kya_delegation: vc });
+      const result = await handler({ _kyaos_delegation: vc });
       expect(result.isError).toBeUndefined();
       expect(result.content[0].text).toBe('legacy-ok');
     });
@@ -479,19 +479,19 @@ describe('createKyaOsMiddleware', () => {
         subjectDid: leafSubject,
       });
 
-      const { middleware: kya } = await createTestMiddleware({
+      const { middleware: kyaos } = await createTestMiddleware({
         delegation: {
           resolveDelegationChain: async () => [parentVc],
         },
       });
 
-      const handler = kya.wrapWithDelegation(
+      const handler = kyaos.wrapWithDelegation(
         'my-tool',
         { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
         async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
       );
 
-      const result = await handler({ _kya_delegation: childVc });
+      const result = await handler({ _kyaos_delegation: childVc });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
@@ -533,11 +533,11 @@ describe('createKyaOsMiddleware', () => {
           },
         );
 
-      const { middleware: kya } = await createTestMiddleware({
+      const { middleware: kyaos } = await createTestMiddleware({
         delegation: { fetchProvider },
       });
 
-      const handler = kya.wrapWithDelegation(
+      const handler = kyaos.wrapWithDelegation(
         'my-tool',
         { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
         async (args) => ({
@@ -545,7 +545,7 @@ describe('createKyaOsMiddleware', () => {
         }),
       );
 
-      const result = await handler({ _kya_delegation: vc, name: 'DIF' });
+      const result = await handler({ _kyaos_delegation: vc, name: 'DIF' });
 
       expect(result.isError).toBeUndefined();
       const parsed = JSON.parse(result.content[0].text.replace('Called: ', ''));
@@ -553,7 +553,7 @@ describe('createKyaOsMiddleware', () => {
     });
 
     it('should allow credentialStatus without status resolver in legacy mode', async () => {
-      const { middleware: kya } = await createTestMiddleware({
+      const { middleware: kyaos } = await createTestMiddleware({
         delegation: { allowLegacyUnsafeDelegation: true },
       });
       const vc = await issueDelegationVC({
@@ -567,13 +567,13 @@ describe('createKyaOsMiddleware', () => {
         },
       });
 
-      const handler = kya.wrapWithDelegation(
+      const handler = kyaos.wrapWithDelegation(
         'my-tool',
         { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
         async () => ({ content: [{ type: 'text', text: 'legacy-status-ok' }] }),
       );
 
-      const result = await handler({ _kya_delegation: vc });
+      const result = await handler({ _kyaos_delegation: vc });
       expect(result.isError).toBeUndefined();
       expect(result.content[0].text).toBe('legacy-status-ok');
     });
@@ -581,9 +581,9 @@ describe('createKyaOsMiddleware', () => {
 
   describe('autoSession', () => {
     it('should auto-create session and attach proof without handshake', async () => {
-      const { middleware: kya } = await createTestMiddleware({ autoSession: true });
+      const { middleware: kyaos } = await createTestMiddleware({ autoSession: true });
 
-      const handler = kya.wrapWithProof('greet', async (args) => ({
+      const handler = kyaos.wrapWithProof('greet', async (args) => ({
         content: [{ type: 'text', text: `Hello, ${args['name']}!` }],
       }));
 
@@ -598,15 +598,15 @@ describe('createKyaOsMiddleware', () => {
       const proof = result._meta!.proof as { jws: string; meta: Record<string, unknown> };
       expect(proof.jws).toBeDefined();
       expect(proof.meta.did).toMatch(/^did:key:/);
-      expect(proof.meta.sessionId).toMatch(/^kya_/);
+      expect(proof.meta.sessionId).toMatch(/^kyaos_/);
       // Nonce is now a base64url-encoded 16-byte random value
       expect(proof.meta.nonce).toMatch(/^[A-Za-z0-9_-]+$/);
     });
 
     it('should reuse auto-created session across multiple calls', async () => {
-      const { middleware: kya } = await createTestMiddleware({ autoSession: true });
+      const { middleware: kyaos } = await createTestMiddleware({ autoSession: true });
 
-      const handler = kya.wrapWithProof('greet', async () => ({
+      const handler = kyaos.wrapWithProof('greet', async () => ({
         content: [{ type: 'text', text: 'Hello!' }],
       }));
 

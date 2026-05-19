@@ -32,8 +32,8 @@ function createMockKyaOs(proofResult?: Record<string, unknown>): KyaOsMiddleware
 describe("createKyaOsTransport", () => {
   it("should pass through non-tools/call messages unmodified", async () => {
     const inner = createMockTransport();
-    const kya = createMockKyaOs();
-    const wrapper = createKyaOsTransport(inner, kya);
+    const kyaos = createMockKyaOs();
+    const wrapper = createKyaOsTransport(inner, kyaos);
 
     await wrapper.send({ jsonrpc: "2.0", method: "resources/list", id: 1 });
 
@@ -43,17 +43,17 @@ describe("createKyaOsTransport", () => {
 
   it("should skip proof injection for excluded tools", async () => {
     const inner = createMockTransport();
-    const kya = createMockKyaOs({ jws: "test" });
-    const wrapper = createKyaOsTransport(inner, kya, ["_kya"]);
+    const kyaos = createMockKyaOs({ jws: "test" });
+    const wrapper = createKyaOsTransport(inner, kyaos, ["_kyaos"]);
 
     await wrapper.start();
 
-    // Simulate incoming _kya request
+    // Simulate incoming _kyaos request
     inner.onmessage!({
       jsonrpc: "2.0",
       method: "tools/call",
       id: 42,
-      params: { name: "_kya", arguments: { action: "handshake" } },
+      params: { name: "_kyaos", arguments: { action: "handshake" } },
     });
 
     // Simulate response
@@ -71,8 +71,8 @@ describe("createKyaOsTransport", () => {
   it("should inject proof for non-excluded tool calls", async () => {
     const inner = createMockTransport();
     const proof = { jws: "test.jws.sig", meta: { did: "did:key:z6Mk..." } };
-    const kya = createMockKyaOs(proof);
-    const wrapper = createKyaOsTransport(inner, kya);
+    const kyaos = createMockKyaOs(proof);
+    const wrapper = createKyaOsTransport(inner, kyaos);
 
     await wrapper.start();
 
@@ -97,8 +97,8 @@ describe("createKyaOsTransport", () => {
 
   it("should not inject proof for error responses", async () => {
     const inner = createMockTransport();
-    const kya = createMockKyaOs({ jws: "test" });
-    const wrapper = createKyaOsTransport(inner, kya);
+    const kyaos = createMockKyaOs({ jws: "test" });
+    const wrapper = createKyaOsTransport(inner, kyaos);
 
     await wrapper.start();
 
@@ -121,8 +121,8 @@ describe("createKyaOsTransport", () => {
 
   it("should proxy onmessage/onclose/onerror to inner transport", () => {
     const inner = createMockTransport();
-    const kya = createMockKyaOs();
-    const wrapper = createKyaOsTransport(inner, kya);
+    const kyaos = createMockKyaOs();
+    const wrapper = createKyaOsTransport(inner, kyaos);
 
     const handler = () => {};
     wrapper.onmessage = handler;
@@ -140,8 +140,8 @@ describe("createKyaOsTransport", () => {
 
   it("should delegate start and close to inner transport", async () => {
     const inner = createMockTransport();
-    const kya = createMockKyaOs();
-    const wrapper = createKyaOsTransport(inner, kya);
+    const kyaos = createMockKyaOs();
+    const wrapper = createKyaOsTransport(inner, kyaos);
 
     // close delegates directly
     await wrapper.close();

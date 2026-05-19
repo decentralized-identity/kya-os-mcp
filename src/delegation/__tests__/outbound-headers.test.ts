@@ -36,7 +36,7 @@ beforeAll(async () => {
 
 function createTestSession(overrides: Partial<SessionContext> = {}): SessionContext {
   return {
-    sessionId: 'kya_test-session-123',
+    sessionId: 'kyaos_test-session-123',
     audience: 'did:web:my-mcp-server.example.com',
     nonce: 'test-nonce-abc',
     timestamp: Math.floor(Date.now() / 1000),
@@ -90,38 +90,38 @@ describe('buildOutboundDelegationHeaders', () => {
     const context = createTestContext();
     const headers = await buildOutboundDelegationHeaders(context);
 
-    expect(headers).toHaveProperty('KYA-Agent-DID');
-    expect(headers).toHaveProperty('KYA-Delegation-Chain');
-    expect(headers).toHaveProperty('KYA-Session-Id');
-    expect(headers).toHaveProperty('KYA-Delegation-Proof');
+    expect(headers).toHaveProperty('KYA-OS-Agent-DID');
+    expect(headers).toHaveProperty('KYA-OS-Delegation-Chain');
+    expect(headers).toHaveProperty('KYA-OS-Session-Id');
+    expect(headers).toHaveProperty('KYA-OS-Delegation-Proof');
   });
 
-  it('KYA-Agent-DID matches session.agentDid', async () => {
+  it('KYA-OS-Agent-DID matches session.agentDid', async () => {
     const context = createTestContext();
     const headers = await buildOutboundDelegationHeaders(context);
 
-    expect(headers['KYA-Agent-DID']).toBe(context.session.agentDid);
+    expect(headers['KYA-OS-Agent-DID']).toBe(context.session.agentDid);
   });
 
-  it('KYA-Delegation-Chain matches delegation.vcId', async () => {
+  it('KYA-OS-Delegation-Chain matches delegation.vcId', async () => {
     const context = createTestContext();
     const headers = await buildOutboundDelegationHeaders(context);
 
-    expect(headers['KYA-Delegation-Chain']).toBe(context.delegation.vcId);
+    expect(headers['KYA-OS-Delegation-Chain']).toBe(context.delegation.vcId);
   });
 
-  it('KYA-Session-Id matches session.sessionId', async () => {
+  it('KYA-OS-Session-Id matches session.sessionId', async () => {
     const context = createTestContext();
     const headers = await buildOutboundDelegationHeaders(context);
 
-    expect(headers['KYA-Session-Id']).toBe(context.session.sessionId);
+    expect(headers['KYA-OS-Session-Id']).toBe(context.session.sessionId);
   });
 
-  it('KYA-Delegation-Proof is a valid JWT with correct claims', async () => {
+  it('KYA-OS-Delegation-Proof is a valid JWT with correct claims', async () => {
     const context = createTestContext();
     const headers = await buildOutboundDelegationHeaders(context);
 
-    const jwt = headers['KYA-Delegation-Proof'];
+    const jwt = headers['KYA-OS-Delegation-Proof'];
 
     // Verify it's a valid JWT format (3 parts)
     expect(jwt.split('.')).toHaveLength(3);
@@ -148,7 +148,7 @@ describe('buildOutboundDelegationHeaders', () => {
     });
     const headers = await buildOutboundDelegationHeaders(context);
 
-    const payload = decodeJwt(headers['KYA-Delegation-Proof']);
+    const payload = decodeJwt(headers['KYA-OS-Delegation-Proof']);
     expect(payload.aud).toBe('api.service.example.com');
   });
 
@@ -158,7 +158,7 @@ describe('buildOutboundDelegationHeaders', () => {
     });
     const headers = await buildOutboundDelegationHeaders(context);
 
-    const payload = decodeJwt(headers['KYA-Delegation-Proof']);
+    const payload = decodeJwt(headers['KYA-OS-Delegation-Proof']);
     expect(payload.aud).toBe('internal-service.local');
   });
 
@@ -168,7 +168,7 @@ describe('buildOutboundDelegationHeaders', () => {
     });
     const headers = await buildOutboundDelegationHeaders(context);
 
-    const payload = decodeJwt(headers['KYA-Delegation-Proof']);
+    const payload = decodeJwt(headers['KYA-OS-Delegation-Proof']);
     expect(payload.aud).toBe('secure.example.org');
   });
 
@@ -176,7 +176,7 @@ describe('buildOutboundDelegationHeaders', () => {
     const context = createTestContext();
     const headers = await buildOutboundDelegationHeaders(context);
 
-    const payload = decodeJwt(headers['KYA-Delegation-Proof']);
+    const payload = decodeJwt(headers['KYA-OS-Delegation-Proof']);
     expect((payload.exp as number) - (payload.iat as number)).toBe(60);
   });
 

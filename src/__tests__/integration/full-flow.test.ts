@@ -91,7 +91,7 @@ describe("KYA-OS Full Protocol Flow", () => {
 
     expect(handshakeResult.success).toBe(true);
     expect(handshakeResult.session).toBeDefined();
-    expect(handshakeResult.session!.sessionId).toMatch(/^kya_/);
+    expect(handshakeResult.session!.sessionId).toMatch(/^kyaos_/);
     expect(handshakeResult.session!.agentDid).toBe(agent.did);
     expect(handshakeResult.session!.audience).toBe(serverDid);
 

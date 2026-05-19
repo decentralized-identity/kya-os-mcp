@@ -148,8 +148,8 @@ async function main() {
   };
 
   // ── KYA-OS: 2 lines to add identity + proofs to all tools ──────
-  const kya = await withKyaOs(server, { crypto: new NodeCryptoProvider() });
-  console.error(`[kya-os] Server DID: ${kya.identity.did}`);
+  const kyaos = await withKyaOs(server, { crypto: new NodeCryptoProvider() });
+  console.error(`[kya-os] Server DID: ${kyaos.identity.did}`);
 
   // ── Register tools normally — proofs attached automatically ────
 
@@ -442,7 +442,7 @@ IMPORTANT: Do not call this tool more than 3 times per question.`,
         console.error(
           `Context7 MCP Server v${SERVER_VERSION} + KYA-OS running on HTTP at http://localhost:${port}/mcp`
         );
-        console.error(`[kya-os] Server DID: ${kya.identity.did}`);
+        console.error(`[kya-os] Server DID: ${kyaos.identity.did}`);
       });
     };
 
@@ -454,7 +454,7 @@ IMPORTANT: Do not call this tool more than 3 times per question.`,
     await server.connect(transport);
 
     console.error(`Context7 MCP Server v${SERVER_VERSION} + KYA-OS running on stdio`);
-    console.error(`[kya-os] Server DID: ${kya.identity.did}`);
+    console.error(`[kya-os] Server DID: ${kyaos.identity.did}`);
   }
 }
 

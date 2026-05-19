@@ -15,7 +15,7 @@
   <a href="https://www.npmjs.com/package/@kya-os/mcp"><img src="https://img.shields.io/npm/v/@kya-os/mcp" alt="npm"></a>
   <a href="https://modelcontextprotocol-identity.io"><img src="https://img.shields.io/badge/spec-modelcontextprotocol--identity.io-blue" alt="spec"></a>
   <a href="https://identity.foundation/working-groups/agent-and-authorization.html"><img src="https://img.shields.io/badge/DIF-TAAWG-purple" alt="DIF TAAWG"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/github/license/identity-foundation/kya-os-mcp" alt="license"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/github/license/decentralized-identity/kya-os-mcp" alt="license"></a>
 </p>
 
 <p align="center">
@@ -94,7 +94,7 @@ When an agent calls `checkout` without a delegation credential, it gets back a `
 ## See It in Action
 
 ```bash
-git clone https://github.com/identity-foundation/kya-os-mcp.git
+git clone https://github.com/decentralized-identity/kya-os-mcp.git
 cd kya-os-mcp && npm install
 bash scripts/demo.sh
 ```

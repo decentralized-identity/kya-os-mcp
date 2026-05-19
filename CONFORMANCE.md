@@ -267,7 +267,7 @@ To submit conformance results for your implementation:
 1. Fork the `kya-os-mcp` repository
 2. Run the test suite against your implementation
 3. Capture test output and coverage report
-4. Open a GitHub issue at https://github.com/identity-foundation/kya-os-mcp/issues with:
+4. Open a GitHub issue at https://github.com/decentralized-identity/kya-os-mcp/issues with:
    - Implementation name and version
    - Target conformance level (1, 2, or 3)
    - Test results (pass/fail counts)

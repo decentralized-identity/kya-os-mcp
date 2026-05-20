@@ -248,7 +248,7 @@ export function createConsentMcpServer(
  * Load identity from .kya-os/identity.json if it exists,
  * otherwise generate an ephemeral one.
  */
-export async function createKyaOsMiddleware() {
+export async function loadKyaOsMiddleware() {
   const crypto = new NodeCryptoProvider();
   let did: string;
   let kid: string;
@@ -379,7 +379,7 @@ if (isMain) {
     ? 0
     : parseInt(process.env['CONSENT_PORT'] ?? '3001', 10);
 
-  createKyaOsMiddleware().then(async (kyaos) => {
+  loadKyaOsMiddleware().then(async (kyaos) => {
     // Start consent server with the MCP server's identity so VCs are
     // issued by the same DID that verifies them (single trust domain).
     const cryptoProvider = new NodeCryptoProvider();

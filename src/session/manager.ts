@@ -2,14 +2,14 @@
  * Session Management — Platform-agnostic Protocol Reference
  *
  * Handles handshake enforcement, session management, and nonce validation
- * according to MCP-I requirements 4.5–4.9 and 19.1–19.2.
+ * according to KYA-OS requirements 4.5–4.9 and 19.1–19.2.
  *
  * Platform adapters inject a CryptoProvider for all random byte generation.
  * The static generateNonce() uses globalThis.crypto (available Node 20+ and
  * Cloudflare Workers) to remain synchronous without platform-specific imports.
  */
 
-import { MCPI_ERROR_CODES, type MCPIErrorCode } from "../errors.js";
+import { KYA_OS_ERROR_CODES, type KyaOsErrorCode } from "../errors.js";
 import type {
   HandshakeRequest,
   SessionContext,
@@ -33,7 +33,7 @@ export interface HandshakeResult {
   success: boolean;
   session?: SessionContext;
   error?: {
-    code: MCPIErrorCode;
+    code: KyaOsErrorCode;
     message: string;
     remediation?: string;
   };
@@ -76,7 +76,7 @@ export class SessionManager {
   }
 
   /**
-   * Validate an MCP-I handshake request and create a session.
+   * Validate a KYA-OS handshake request and create a session.
    *
    * Performs the following checks:
    * - Timestamp within acceptable skew window
@@ -95,7 +95,7 @@ export class SessionManager {
         return {
           success: false,
           error: {
-            code: MCPI_ERROR_CODES.handshake_failed,
+            code: KYA_OS_ERROR_CODES.handshake_failed,
             message: `Timestamp outside acceptable range (±${this.config.timestampSkewSeconds}s)`,
             remediation: `Check NTP sync on client and server. Current server time: ${now}, received: ${request.timestamp}, diff: ${timeDiff}s. Adjust timestampSkewSeconds if needed.`,
           },
@@ -107,7 +107,7 @@ export class SessionManager {
         return {
           success: false,
           error: {
-            code: MCPI_ERROR_CODES.handshake_failed,
+            code: KYA_OS_ERROR_CODES.handshake_failed,
             message: `Audience mismatch: expected ${this.config.serverDid}, got ${request.audience}`,
           },
         };
@@ -121,7 +121,7 @@ export class SessionManager {
         return {
           success: false,
           error: {
-            code: MCPI_ERROR_CODES.handshake_failed,
+            code: KYA_OS_ERROR_CODES.handshake_failed,
             message: 'Nonce already used (replay attack prevention)',
             remediation: 'Generate a new unique nonce for each request',
           },
@@ -161,7 +161,7 @@ export class SessionManager {
       return {
         success: false,
         error: {
-          code: MCPI_ERROR_CODES.handshake_failed,
+          code: KYA_OS_ERROR_CODES.handshake_failed,
           message: `Handshake validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         },
       };
@@ -175,7 +175,7 @@ export class SessionManager {
    * Returns null if session doesn't exist, has exceeded idle TTL, or has exceeded
    * absolute lifetime (if configured).
    *
-   * @param sessionId - The session ID (e.g., "mcpi_...")
+   * @param sessionId - The session ID (e.g., "kyaos_...")
    * @returns Session context if valid, null if expired or not found
    */
   async getSession(sessionId: string): Promise<SessionContext | null> {
@@ -213,7 +213,7 @@ export class SessionManager {
       .map((b) => b.toString(16).padStart(2, '0'))
       .join('');
     const uuid = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
-    return `mcpi_${uuid}`;
+    return `kyaos_${uuid}`;
   }
 
   private async generateClientId(): Promise<string> {

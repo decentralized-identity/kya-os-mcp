@@ -1,18 +1,18 @@
 #!/usr/bin/env npx tsx
 /**
- * MCP-I Example Server (Low-Level Server API)
+ * KYA-OS Example Server (Low-Level Server API)
  *
- * This example uses the low-level `Server` API with `createMCPIMiddleware`
+ * This example uses the low-level `Server` API with `createKyaOsMiddleware`
  * for manual request handler patterns. For most servers, prefer the
- * simpler `withMCPI()` adapter — see examples/context7-with-mcpi/ for
+ * simpler `withKyaOs()` adapter — see examples/context7-with-kya-os/ for
  * a 2-line integration with the high-level `McpServer` API.
  *
- * Demonstrates the MCP-I protocol:
+ * Demonstrates the KYA-OS protocol:
  *   1. greet           — open tool with signed proof (via _meta)
  *   2. restricted_greet — protected tool requiring a W3C Delegation Credential
  *
  * Sessions are created automatically — no manual handshake needed.
- * In production, MCP-I-aware clients handle the handshake transparently.
+ * In production, KYA-OS-aware clients handle the handshake transparently.
  *
  * Full demo flow:
  *   1. Start server:
@@ -20,7 +20,7 @@
  *   2. Issue a delegation VC:
  *        npx tsx examples/node-server/issue-delegation.ts > delegation.json
  *   3. Connect MCP Inspector to http://localhost:3001/sse
- *   4. Call `restricted_greet` with `_mcpi_delegation` = contents of delegation.json
+ *   4. Call `restricted_greet` with `_kyaos_delegation` = contents of delegation.json
  *   5. Watch it verify the VC and return the greeting with a signed proof
  */
 
@@ -32,30 +32,30 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { createMCPIMiddleware } from '../../src/middleware/with-mcpi.js';
+import { createKyaOsMiddleware } from '../../src/middleware/with-kya-os.js';
 import { generateDidKeyFromBase64 } from '../../src/utils/did-helpers.js';
 import { NodeCryptoProvider } from './node-crypto.js';
 
-function createMcpServer(mcpi: ReturnType<typeof createMCPIMiddleware>) {
+function createMcpServer(kyaos: ReturnType<typeof createKyaOsMiddleware>) {
   const server = new Server(
-    { name: 'mcpi-example', version: '1.0.0' },
+    { name: 'kya-os-example', version: '1.0.0' },
     { capabilities: { tools: {} } }
   );
 
   // ── Tool handlers ───────────────────────────────────────────────
 
-  const greetHandler = mcpi.wrapWithProof('greet', async (args) => ({
+  const greetHandler = kyaos.wrapWithProof('greet', async (args) => ({
     content: [{ type: 'text', text: `Hello, ${args['name'] ?? 'world'}!` }],
   }));
 
   // restricted_greet: verify delegation VC, then attach proof on success
-  const restrictedGreetHandler = mcpi.wrapWithDelegation(
+  const restrictedGreetHandler = kyaos.wrapWithDelegation(
     'restricted_greet',
     {
       scopeId: 'greeting:restricted',
       consentUrl: 'https://example.com/consent?scope=greeting:restricted',
     },
-    mcpi.wrapWithProof('restricted_greet', async (args) => ({
+    kyaos.wrapWithProof('restricted_greet', async (args) => ({
       content: [{ type: 'text', text: `Hello, ${args['name'] ?? 'world'}! (delegation verified)` }],
     })),
   );
@@ -64,7 +64,7 @@ function createMcpServer(mcpi: ReturnType<typeof createMCPIMiddleware>) {
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
-      mcpi.mcpiTool,
+      kyaos.kyaOsTool,
       {
         name: 'greet',
         description: 'Returns a greeting with a signed Ed25519 proof',
@@ -82,7 +82,7 @@ function createMcpServer(mcpi: ReturnType<typeof createMCPIMiddleware>) {
           type: 'object' as const,
           properties: {
             name: { type: 'string', description: 'Name to greet' },
-            _mcpi_delegation: {
+            _kyaos_delegation: {
               type: 'object',
               description: 'W3C Delegation Credential granting scope greeting:restricted',
             },
@@ -95,9 +95,9 @@ function createMcpServer(mcpi: ReturnType<typeof createMCPIMiddleware>) {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args = {} } = request.params;
 
-    // ── MCP-I protocol operations ────────────────────────────────
-    if (name === '_mcpi') {
-      return mcpi.handleMCPI(args as Record<string, unknown>);
+    // ── KYA-OS protocol operations ────────────────────────────────
+    if (name === '_kyaos') {
+      return kyaos.handleKyaOs(args as Record<string, unknown>);
     }
 
     // ── Open tools ──────────────────────────────────────────────
@@ -128,9 +128,9 @@ async function main() {
   const did = generateDidKeyFromBase64(keyPair.publicKey);
   const kid = `${did}#${did.replace('did:key:', '')}`;
 
-  console.error(`[mcpi] Agent DID: ${did}`);
+  console.error(`[kya-os] Agent DID: ${did}`);
 
-  const mcpi = createMCPIMiddleware(
+  const kyaos = createKyaOsMiddleware(
     {
       identity: { did, kid, privateKey: keyPair.privateKey, publicKey: keyPair.publicKey },
       session: { sessionTtlMinutes: 60 },
@@ -140,10 +140,10 @@ async function main() {
   );
 
   if (useStdio) {
-    const server = createMcpServer(mcpi);
+    const server = createMcpServer(kyaos);
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error('[mcpi] Server running on stdio');
+    console.error('[kya-os] Server running on stdio');
   } else {
     const PORT = parseInt(process.env['PORT'] ?? '3001', 10);
     let sseTransport: SSEServerTransport | null = null;
@@ -162,10 +162,10 @@ async function main() {
       const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
 
       if (url.pathname === '/sse' && req.method === 'GET') {
-        const server = createMcpServer(mcpi);
+        const server = createMcpServer(kyaos);
         sseTransport = new SSEServerTransport('/messages', res);
         await server.connect(sseTransport);
-        console.error('[mcpi] SSE client connected');
+        console.error('[kya-os] SSE client connected');
         return;
       }
 
@@ -182,7 +182,7 @@ async function main() {
       if (url.pathname === '/' && req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
-          name: 'mcpi-example',
+          name: 'kya-os-example',
           did,
           transport: 'sse',
           connect: `http://localhost:${PORT}/sse`,
@@ -195,8 +195,8 @@ async function main() {
     });
 
     httpServer.listen(PORT, () => {
-      console.error(`[mcpi] SSE server: http://localhost:${PORT}`);
-      console.error(`[mcpi] Connect Inspector to: http://localhost:${PORT}/sse`);
+      console.error(`[kya-os] SSE server: http://localhost:${PORT}`);
+      console.error(`[kya-os] Connect Inspector to: http://localhost:${PORT}/sse`);
     });
   }
 }

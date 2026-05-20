@@ -3,14 +3,14 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import pkg from '../package.json' with { type: 'json' };
 import { isToolPermittedByUser } from './config.js';
 import { type SmitheryConfig, setOptions } from './config.js';
-import { withMCPI, generateIdentity } from '../../../src/middleware/index.js';
-import type { MCPIIdentityConfig } from '../../../src/middleware/index.js';
+import { withKyaOs, generateIdentity } from '../../../src/middleware/index.js';
+import type { KyaOsIdentityConfig } from '../../../src/middleware/index.js';
 import { NodeCryptoProvider } from '../../node-server/node-crypto.js';
 export { configSchema } from './config.js';
 
 // Shared crypto + identity — generated once, reused across all McpServer instances
 const crypto = new NodeCryptoProvider();
-let sharedIdentity: MCPIIdentityConfig | undefined;
+let sharedIdentity: KyaOsIdentityConfig | undefined;
 
 type CreateMcpServerOptions = {
   config: SmitheryConfig;
@@ -24,7 +24,7 @@ export default async function createMcpServer(
   // Generate identity once on first call
   if (!sharedIdentity) {
     sharedIdentity = await generateIdentity(crypto);
-    console.error(`[mcpi] Server DID: ${sharedIdentity.did}`);
+    console.error(`[kya-os] Server DID: ${sharedIdentity.did}`);
   }
 
   const mcpServer = new McpServer(
@@ -42,8 +42,8 @@ export default async function createMcpServer(
     }
   );
 
-  // MCP-I: auto-register handshake + auto-proof all tools (reuses shared identity)
-  await withMCPI(mcpServer, { crypto, identity: sharedIdentity });
+  // KYA-OS: auto-register handshake + auto-proof all tools (reuses shared identity)
+  await withKyaOs(mcpServer, { crypto, identity: sharedIdentity });
 
   for (const tool of Object.values(tools)) {
     // The user may have enabled/disabled this tool at runtime

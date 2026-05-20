@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "MCP-I consent flow example — demonstrates needs_authorization → consent page → delegation VC → tool execution",
+  "description": "KYA-OS consent flow example — demonstrates needs_authorization → consent page → delegation VC → tool execution",
   "scripts": {
     "start": "npx tsx src/server.ts",
     "start:consent": "npx tsx src/consent-server.ts",

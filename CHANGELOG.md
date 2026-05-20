@@ -32,9 +32,9 @@ Versioning: https://semver.org/spec/v2.0.0.html
   to DIF TAAWG. Version stays at 1.2.0 — the wire format, public
   exports, and behavior are unchanged. The old `@mcp-i/core` package
   is deprecated and points at this one.
-- **Spec renamed from MCP-I to KYA-OS** across `SPEC.md`,
+- **Spec renamed from KYA-OS to KYA-OS** across `SPEC.md`,
   `CONFORMANCE.md`, `GOVERNANCE.md`, and example READMEs. Wire-format
-  identifiers (`_mcpi` tool name, well-known path, JSON Schema
+  identifiers (`_kyaos` tool name, well-known path, JSON Schema
   files, JSON-LD context URLs) are deferred to a later cutover so
   this doc-only rename doesn't break running implementations.
 - **Spec cut to `1.0.0`** (was `0.1.0-draft` in `SPEC.md`, `1.0.0-draft`
@@ -44,14 +44,14 @@ Versioning: https://semver.org/spec/v2.0.0.html
   semver is independent of package semver: the spec describes the wire
   protocol, the package describes the implementation shipping it.
 - Delegation middleware remains strict by default for chain and status-list validation.
-- Added `delegation.allowLegacyUnsafeDelegation` to `createMCPIMiddleware` as a temporary migration escape hatch for legacy integrations.
+- Added `delegation.allowLegacyUnsafeDelegation` to `createKyaOsMiddleware` as a temporary migration escape hatch for legacy integrations.
 - Added middleware tests covering legacy-compatibility behavior for parent-linked and status-list credentials.
 
 ## [1.0.0-draft] - 2026-03-12
 
 ### Added
 
-- SPEC.md protocol specification defining MCP-I extension for cryptographic identity
+- SPEC.md protocol specification defining KYA-OS extension for cryptographic identity
 - Supported DID methods: `did:key` (ephemeral/dev) and `did:web` (production)
 - Ed25519/EdDSA cryptography for signing and verification
 - Delegation module with W3C Verifiable Credential issuance and verification
@@ -68,14 +68,14 @@ Versioning: https://semver.org/spec/v2.0.0.html
 - Auth module with `verifyOrHints` orchestration and sensitive scope detection
 - Resume token storage for authorization flows
 - `needs_authorization` hint response pattern
-- MCP SDK middleware wrapper (`createMCPIMiddleware`)
+- MCP SDK middleware wrapper (`createKyaOsMiddleware`)
 - Tool wrapping with automatic proof generation
 - Handshake tool registration and handling
 - Provider abstractions: CryptoProvider, ClockProvider, FetchProvider, StorageProvider, NonceCacheProvider, IdentityProvider
 - In-memory implementations for all providers (testing)
 - Configurable logging with debug, info, warn, error levels
 - Pure TypeScript protocol type definitions (zero runtime dependencies)
-- Well-known endpoint (`/.well-known/mcpi`) for server discovery
+- Well-known endpoint (`/.well-known/kyaos-os-os`) for server discovery
 - Outbound delegation proof JWT builder for downstream API calls
 - Three-tier conformance levels:
   - Level 1: Core Crypto (key generation, signing, hashing, DID resolution)

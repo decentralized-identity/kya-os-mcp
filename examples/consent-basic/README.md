@@ -27,7 +27,7 @@ npx @modelcontextprotocol/inspector
 | `src/server.ts` | MCP server with `browse` (public) and `checkout` (protected) tools |
 | `src/consent-server.ts` | HTTP consent page + VC issuance endpoint |
 | `src/delegation-issuer.ts` | Shared factory for creating a `DelegationCredentialIssuer` from identity config |
-| `scripts/generate-identity.ts` | Persist a DID to `.mcpi/identity.json` so it survives restarts |
+| `scripts/generate-identity.ts` | Persist a DID to `.kya-os/identity.json` so it survives restarts |
 | `public/consent.html` | Consent UI served during the authorization flow |
 
 ## Testing the Consent Flow
@@ -54,4 +54,4 @@ This example generates ephemeral keys by default. To persist across restarts:
 npm run generate-identity
 ```
 
-This writes a `did:key` identity to `.mcpi/identity.json`. The server loads it automatically on startup.
+This writes a `did:key` identity to `.kya-os/identity.json`. The server loads it automatically on startup.

@@ -15,7 +15,7 @@
   <a href="https://www.npmjs.com/package/@kya-os/mcp"><img src="https://img.shields.io/npm/v/@kya-os/mcp" alt="npm"></a>
   <a href="https://modelcontextprotocol-identity.io"><img src="https://img.shields.io/badge/spec-modelcontextprotocol--identity.io-blue" alt="spec"></a>
   <a href="https://identity.foundation/working-groups/agent-and-authorization.html"><img src="https://img.shields.io/badge/DIF-TAAWG-purple" alt="DIF TAAWG"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/github/license/modelcontextprotocol-identity/mcp-i-core" alt="license"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/github/license/decentralized-identity/kya-os-mcp" alt="license"></a>
 </p>
 
 <p align="center">
@@ -55,19 +55,19 @@ server.registerTool('greet', { description: 'Say hello' }, async (args) => ({
 
 ```typescript
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { withMCPI, NodeCryptoProvider } from '@kya-os/mcp';  // +1 line
+import { withKyaOs, NodeCryptoProvider } from '@kya-os/mcp';  // +1 line
 
 const server = new McpServer({ name: 'my-server', version: '1.0.0' });
-await withMCPI(server, { crypto: new NodeCryptoProvider() }); // +1 line
+await withKyaOs(server, { crypto: new NodeCryptoProvider() }); // +1 line
 
 server.registerTool('greet', { description: 'Say hello' }, async (args) => ({
   content: [{ type: 'text', text: `Hello, ${args.name}!` }],
 }));
 ```
 
-That's it. `withMCPI` auto-generates an Ed25519 identity, registers the `_mcpi` protocol tool, and wraps the transport so every tool response includes a detached JWS proof in `_meta` — invisible to the LLM, verifiable by anyone.
+That's it. `withKyaOs` auto-generates an Ed25519 identity, registers the `_kyaos` protocol tool, and wraps the transport so every tool response includes a detached JWS proof in `_meta` — invisible to the LLM, verifiable by anyone.
 
-> See the full working example: [examples/context7-with-mcpi](./examples/context7-with-mcpi/) — a real MCP server (Context7) migrated with exactly 2 lines of code.
+> See the full working example: [examples/context7-with-kya-os](./examples/context7-with-kya-os/) — a real MCP server (Context7) migrated with exactly 2 lines of code.
 
 ---
 
@@ -76,10 +76,10 @@ That's it. `withMCPI` auto-generates an Ed25519 identity, registers the `_mcpi` 
 Some tools shouldn't run without a human saying "yes." KYA-OS MCP adds per-tool authorization using W3C Verifiable Credentials:
 
 ```typescript
-const checkout = mcpi.wrapWithDelegation(
+const checkout = kyaos.wrapWithDelegation(
   'checkout',
   { scopeId: 'cart:write', consentUrl: 'https://example.com/consent' },
-  mcpi.wrapWithProof('checkout', async (args) => ({
+  kyaos.wrapWithProof('checkout', async (args) => ({
     content: [{ type: 'text', text: `Order placed: ${args.item}` }],
   })),
 );
@@ -94,8 +94,8 @@ When an agent calls `checkout` without a delegation credential, it gets back a `
 ## See It in Action
 
 ```bash
-git clone https://github.com/modelcontextprotocol-identity/mcp-i-core.git
-cd mcp-i-core && npm install
+git clone https://github.com/decentralized-identity/kya-os-mcp.git
+cd kya-os-mcp && npm install
 bash scripts/demo.sh
 ```
 
@@ -106,7 +106,7 @@ This starts all example servers and opens [MCP Inspector](https://github.com/mod
 | 3001 | [node-server](./examples/node-server/) | Proofs + restricted tools (low-level API) |
 | 3002 | [consent-basic](./examples/consent-basic/) | Human consent flow with built-in UI |
 | 3003 | [consent-full](./examples/consent-full/) | Production consent UI ([@kya-os/consent](https://www.npmjs.com/package/@kya-os/consent)) |
-| 3004 | [context7-with-mcpi](./examples/context7-with-mcpi/) | 2-line migration of a real MCP server |
+| 3004 | [context7-with-kya-os](./examples/context7-with-kya-os/) | 2-line migration of a real MCP server |
 
 Also available: [outbound-delegation](./examples/outbound-delegation/) (gateway pattern), [verify-proof](./examples/verify-proof/) (standalone verification), [statuslist](./examples/statuslist/) (revocation lifecycle).
 

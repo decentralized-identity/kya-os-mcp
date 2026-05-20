@@ -1,8 +1,8 @@
 /**
- * MCPITransport — Proof-injecting Transport Wrapper
+ * KyaOsTransport — Proof-injecting Transport Wrapper
  *
  * Wraps any MCP Transport to intercept `tools/call` responses and attach
- * MCP-I detached proofs. Uses only the public Transport interface — no
+ * KYA-OS detached proofs. Uses only the public Transport interface — no
  * private SDK internals accessed.
  *
  * The McpServer never knows this wrapper exists. It sees a normal transport.
@@ -14,10 +14,10 @@
  *   2. Outgoing responses for those ids get a proof injected into `_meta`.
  *   3. All other message types pass through unmodified.
  *
- * @module mcpi-transport
+ * @module kya-os-transport
  */
 
-import type { MCPIMiddleware, MCPIToolHandler } from "./with-mcpi.js";
+import type { KyaOsMiddleware, KyaOsToolHandler } from "./with-kya-os.js";
 import { logger } from "../logging/index.js";
 
 /** Minimal Transport interface — matches @modelcontextprotocol/sdk Transport */
@@ -44,17 +44,17 @@ type ToolResult = {
 };
 
 /**
- * Creates a transport wrapper that injects MCP-I proofs into `tools/call`
+ * Creates a transport wrapper that injects KYA-OS proofs into `tools/call`
  * responses.
  *
  * @param inner   - The real transport (Stdio, HTTP, etc.)
- * @param mcpi    - Configured MCPIMiddleware instance
+ * @param kyaos    - Configured KyaOsMiddleware instance
  * @param exclude - Tool names to skip proof generation for
  */
-export function createMCPITransport(
+export function createKyaOsTransport(
   inner: Transport,
-  mcpi: MCPIMiddleware,
-  exclude: string[] = ["_mcpi", "_mcpi_handshake"],
+  kyaos: KyaOsMiddleware,
+  exclude: string[] = ["_kyaos", "_kyaos_handshake"],
 ): Transport {
   // Request id → { toolName, args } for pending tool calls
   const pending = new Map<unknown, PendingCall>();
@@ -97,8 +97,8 @@ export function createMCPITransport(
         try {
           const rawResult = message.result as ToolResult | undefined;
           if (rawResult && !rawResult.isError) {
-            const handler: MCPIToolHandler = async () => rawResult;
-            const addProof = mcpi.wrapWithProof(call.toolName, handler);
+            const handler: KyaOsToolHandler = async () => rawResult;
+            const addProof = kyaos.wrapWithProof(call.toolName, handler);
             const proofed = await addProof(call.args);
             if (proofed._meta !== undefined) {
               message = {
@@ -108,7 +108,7 @@ export function createMCPITransport(
             }
           }
         } catch (error) {
-          logger.error("[mcpi-transport] Proof injection failed", {
+          logger.error("[kya-os-transport] Proof injection failed", {
             tool: call.toolName,
             error: error instanceof Error ? error.message : String(error),
           });

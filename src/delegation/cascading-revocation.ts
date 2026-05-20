@@ -4,7 +4,7 @@
  * Implements cascading revocation per Python POC design.
  * When a parent delegation is revoked, all children are automatically revoked.
  *
- * Related Spec: MCP-I §4.4, Delegation Chains
+ * Related Spec: KYA-OS §4.4, Delegation Chains
  */
 
 import type { CredentialStatus } from '../types/protocol.js';

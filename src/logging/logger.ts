@@ -1,5 +1,5 @@
 /**
- * Transport-aware Logger for MCP-I
+ * Transport-aware Logger for KYA-OS
  *
  * Provides a lightweight, dependency-free logging interface that:
  * - Maps log levels correctly for Cloudflare Workers

@@ -1,6 +1,6 @@
-# MCP-I JSON Schemas
+# KYA-OS JSON Schemas
 
-This directory contains JSON Schema definitions for the core MCP-I (Model Context Protocol - Identity) protocol messages.
+This directory contains JSON Schema definitions for the core KYA-OS (Model Context Protocol - Identity) protocol messages.
 
 ## Schemas
 
@@ -10,7 +10,7 @@ This directory contains JSON Schema definitions for the core MCP-I (Model Contex
 | [handshake-response.json](./handshake-response.json) | Server response with session context |
 | [delegation-credential.json](./delegation-credential.json) | W3C Verifiable Credential for delegations |
 | [detached-proof.json](./detached-proof.json) | Cryptographic proof for tool request/response |
-| [well-known-mcpi.json](./well-known-mcpi.json) | Service discovery document |
+| [well-known-kyaos.json](./well-known-kyaos.json) | Service discovery document |
 
 ## Usage
 
@@ -79,9 +79,9 @@ Schemas can reference each other using `$ref`. For example, the delegation crede
 │ Client │                          │ Server │
 └───┬────┘                          └───┬────┘
     │                                   │
-    │  GET /.well-known/mcpi            │
+    │  GET /.well-known/kyaos-os-os            │
     │──────────────────────────────────>│
-    │  (well-known-mcpi.json)           │
+    │  (well-known-kyaos.json)           │
     │<──────────────────────────────────│
     │                                   │
     │  POST /handshake                  │
@@ -100,7 +100,7 @@ Schemas can reference each other using `$ref`. For example, the delegation crede
 
 ## Specification Reference
 
-These schemas implement types defined in the [MCP-I Specification](../SPEC.md):
+These schemas implement types defined in the [KYA-OS Specification](../SPEC.md):
 
 - **Handshake**: SPEC.md §4.5–4.9
 - **Delegation Credentials**: SPEC.md §4.1–4.2

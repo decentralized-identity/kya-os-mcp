@@ -1,31 +1,31 @@
 /**
- * MCP-I Middleware
+ * KYA-OS Middleware
  *
- * Primary entry point: `withMCPI(server, { crypto })` — adds identity,
+ * Primary entry point: `withKyaOs(server, { crypto })` — adds identity,
  * handshake, and auto-proofs to any McpServer instance in one call.
  *
- * For the low-level `Server` API or custom patterns, use `createMCPIMiddleware` directly.
+ * For the low-level `Server` API or custom patterns, use `createKyaOsMiddleware` directly.
  */
 
 export {
-  createMCPIMiddleware,
-  type MCPIConfig,
-  type MCPIDelegationConfig,
-  type MCPIIdentityConfig,
-  type MCPIMiddleware,
-  type MCPIToolDefinition,
-  type MCPIToolHandler,
-  type MCPIServer,
-} from './with-mcpi.js';
+  createKyaOsMiddleware,
+  type KyaOsConfig,
+  type KyaOsDelegationConfig,
+  type KyaOsIdentityConfig,
+  type KyaOsMiddleware,
+  type KyaOsToolDefinition,
+  type KyaOsToolHandler,
+  type KyaOsServer,
+} from './with-kya-os.js';
 
 export {
-  withMCPI,
+  withKyaOs,
   generateIdentity,
-  type WithMCPIOptions,
-} from './with-mcpi-server.js';
+  type WithKyaOsOptions,
+} from './with-kya-os-server.js';
 
 export {
-  createMCPITransport,
+  createKyaOsTransport,
   type Transport,
   type JSONRPCMessage,
-} from './mcpi-transport.js';
+} from './kya-os-transport.js';

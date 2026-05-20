@@ -1,6 +1,6 @@
 #!/usr/bin/env npx tsx
 /**
- * MCP-I Proof Verification Example
+ * KYA-OS Proof Verification Example
  *
  * Verifies a DetachedProof JSON from stdin or file argument.
  *

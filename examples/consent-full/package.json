@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "MCP-I consent flow with @kya-os/consent — multi-mode auth, configurable branding, and production-grade consent UI",
+  "description": "KYA-OS consent flow with @kya-os/consent — multi-mode auth, configurable branding, and production-grade consent UI",
   "scripts": {
     "start": "npx tsx src/server.ts",
     "start:consent": "npx tsx src/consent-server.ts",

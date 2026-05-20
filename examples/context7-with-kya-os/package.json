@@ -1,8 +1,8 @@
 {
-  "name": "@context7/mcp-with-mcpi",
+  "name": "@context7/mcp-with-kya-os",
   "version": "0.1.0",
   "private": true,
-  "description": "Context7 MCP server modified with MCP-I integration (audit example)",
+  "description": "Context7 MCP server modified with KYA-OS integration (audit example)",
   "type": "module",
   "scripts": {
     "build": "tsc",

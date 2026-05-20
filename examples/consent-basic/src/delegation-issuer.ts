@@ -8,7 +8,7 @@
  *
  * Used by both consent-server.ts and tests.
  *
- * Related Spec: MCP-I §3.1 (VC structure), §4.1 (DelegationRecord)
+ * Related Spec: KYA-OS §3.1 (VC structure), §4.1 (DelegationRecord)
  */
 
 import { DelegationCredentialIssuer } from '../../../src/delegation/vc-issuer.js';

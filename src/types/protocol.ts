@@ -1,14 +1,14 @@
 /**
- * MCP-I Protocol Types
+ * KYA-OS Protocol Types
  *
- * Inlined type definitions for the MCP-I protocol reference implementation.
+ * Inlined type definitions for the KYA-OS protocol reference implementation.
  * All types are pure TypeScript — no external dependencies.
  *
- * Related Spec: MCP-I §3, §4, §5, §6
+ * Related Spec: KYA-OS §3, §4, §5, §6
  */
 
 // ============================================================================
-// CRISP Delegation Constraints (MCP-I §4.2)
+// CRISP Delegation Constraints (KYA-OS §4.2)
 // ============================================================================
 
 export interface CrispBudget {
@@ -40,7 +40,7 @@ export interface DelegationConstraints {
 }
 
 // ============================================================================
-// Delegation Record (MCP-I §4.1)
+// Delegation Record (KYA-OS §4.1)
 // ============================================================================
 
 export type DelegationStatus = 'active' | 'revoked' | 'expired';
@@ -334,7 +334,7 @@ export function validateDelegationCredential(vc: unknown): {
 }
 
 // ============================================================================
-// Handshake and Session (MCP-I §4.5–4.9)
+// Handshake and Session (KYA-OS §4.5–4.9)
 // ============================================================================
 
 export interface MCPClientInfo {
@@ -404,7 +404,7 @@ export const DEFAULT_TIMESTAMP_SKEW_SECONDS = 120;
 export const NONCE_LENGTH_BYTES = 16;
 
 // ============================================================================
-// Proof types (MCP-I §5)
+// Proof types (KYA-OS §5)
 // ============================================================================
 
 export interface ProofMeta {
@@ -481,7 +481,7 @@ export interface AuditEventContext {
 }
 
 // ============================================================================
-// Authorization error types (MCP-I §6)
+// Authorization error types (KYA-OS §6)
 // ============================================================================
 
 export interface AuthorizationDisplay {

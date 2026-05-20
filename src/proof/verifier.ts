@@ -429,7 +429,7 @@ export class ProofVerifier {
       sub: meta.did, // Subject (agent DID)
       iss: meta.did, // Issuer (agent DID - self-issued)
 
-      // Custom MCP-I proof claims
+      // Custom KYA-OS proof claims
       requestHash: meta.requestHash,
       responseHash: meta.responseHash,
       ts: meta.ts,

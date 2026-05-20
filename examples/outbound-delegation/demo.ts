@@ -1,7 +1,7 @@
 /**
  * Outbound Delegation Propagation Demo
  *
- * Demonstrates MCP-I §7 — how an MCP server forwards delegation context
+ * Demonstrates KYA-OS §7 — how an MCP server forwards delegation context
  * to downstream services using HTTP headers.
  *
  * Run with: npx tsx examples/outbound-delegation/demo.ts
@@ -98,7 +98,7 @@ class NodeCryptoProvider extends CryptoProvider {
 
 async function main() {
   console.log('='.repeat(70));
-  console.log('MCP-I Outbound Delegation Propagation Demo');
+  console.log('KYA-OS Outbound Delegation Propagation Demo');
   console.log('='.repeat(70));
   console.log();
 
@@ -182,7 +182,7 @@ async function main() {
   console.log('-'.repeat(70));
 
   const session: SessionContext = {
-    sessionId: `mcpi_${crypto.randomUUID()}`,
+    sessionId: `kyaos_${crypto.randomUUID()}`,
     audience: serverADid,
     nonce: crypto.randomUUID(),
     timestamp: Math.floor(Date.now() / 1000),
@@ -222,19 +222,19 @@ async function main() {
   });
 
   console.log('Outbound Headers:');
-  console.log(`  KYA-Agent-DID:        ${headers['KYA-Agent-DID'].slice(0, 40)}...`);
-  console.log(`  KYA-Delegation-Chain: ${headers['KYA-Delegation-Chain']}`);
-  console.log(`  KYA-Session-Id:       ${headers['KYA-Session-Id']}`);
-  console.log(`  KYA-Delegation-Proof: ${headers['KYA-Delegation-Proof'].slice(0, 40)}...`);
+  console.log(`  KYA-OS-Agent-DID:        ${headers['KYA-OS-Agent-DID'].slice(0, 40)}...`);
+  console.log(`  KYA-OS-Delegation-Chain: ${headers['KYA-OS-Delegation-Chain']}`);
+  console.log(`  KYA-OS-Session-Id:       ${headers['KYA-OS-Session-Id']}`);
+  console.log(`  KYA-OS-Delegation-Proof: ${headers['KYA-OS-Delegation-Proof'].slice(0, 40)}...`);
   console.log();
 
   // -------------------------------------------------------------------------
-  // Step 5: Decode the KYA-Delegation-Proof JWT
+  // Step 5: Decode the KYA-OS-Delegation-Proof JWT
   // -------------------------------------------------------------------------
-  console.log('Step 5: Decoding the KYA-Delegation-Proof JWT...');
+  console.log('Step 5: Decoding the KYA-OS-Delegation-Proof JWT...');
   console.log('-'.repeat(70));
 
-  const jwt = headers['KYA-Delegation-Proof'];
+  const jwt = headers['KYA-OS-Delegation-Proof'];
   const jwtHeader = decodeProtectedHeader(jwt);
   const jwtPayload = decodeJwt(jwt);
 
@@ -261,7 +261,7 @@ async function main() {
 
   console.log('Server B receives the request with these headers and should:');
   console.log();
-  console.log('  1. Extract KYA-Delegation-Proof JWT');
+  console.log('  1. Extract KYA-OS-Delegation-Proof JWT');
   console.log('  2. Verify JWT signature using iss DID public key');
   console.log(`     - iss (${(jwtPayload.iss as string).slice(0, 30)}...) resolves to public key`);
   console.log('  3. Check timing:');
@@ -272,11 +272,11 @@ async function main() {
   console.log('  5. Check scope:');
   console.log(`     - scope is "delegation:propagate"`);
   console.log('  6. Match DIDs:');
-  console.log(`     - sub (${(jwtPayload.sub as string).slice(0, 30)}...) matches KYA-Agent-DID header`);
+  console.log(`     - sub (${(jwtPayload.sub as string).slice(0, 30)}...) matches KYA-OS-Agent-DID header`);
   console.log();
 
-  const subMatchesHeader = jwtPayload.sub === headers['KYA-Agent-DID'];
-  console.log(`  Verification: sub matches KYA-Agent-DID? ${subMatchesHeader ? 'YES' : 'NO'}`);
+  const subMatchesHeader = jwtPayload.sub === headers['KYA-OS-Agent-DID'];
+  console.log(`  Verification: sub matches KYA-OS-Agent-DID? ${subMatchesHeader ? 'YES' : 'NO'}`);
   console.log();
 
   console.log('='.repeat(70));

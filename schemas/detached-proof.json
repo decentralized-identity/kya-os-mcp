@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schema.modelcontextprotocol-identity.io/xmcp-i/proof/detached-proof.v1.0.0.json",
-  "title": "MCP-I Detached Proof",
+  "title": "KYA-OS Detached Proof",
   "description": "Cryptographic proof binding an MCP tool request/response pair to an agent's identity and session context.",
   "type": "object",
   "required": ["jws", "meta"],

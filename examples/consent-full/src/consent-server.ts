@@ -16,7 +16,7 @@
  *   consent-only  (default) — Approve/deny only. Zero config.
  *   credentials             — Username/password + approve. Demo credentials: demo / demo123
  *
- * Related Spec: MCP-I §4 (Delegation), §6 (Authorization)
+ * Related Spec: KYA-OS §4 (Delegation), §6 (Authorization)
  */
 
 import http from 'node:http';
@@ -87,7 +87,7 @@ export async function startConsentServer(
   const consentConfig: ConsentConfig = {
     branding: {
       primaryColor: config.branding?.primaryColor ?? process.env['BRAND_COLOR'] ?? '#2563EB',
-      companyName: config.branding?.companyName ?? process.env['COMPANY_NAME'] ?? 'MCP-I Demo',
+      companyName: config.branding?.companyName ?? process.env['COMPANY_NAME'] ?? 'KYA-OS Demo',
     },
     ui: {
       title: 'Permission Request',
@@ -127,7 +127,7 @@ export async function startConsentServer(
         tool,
         scopes,
         agentDid,
-        // @kya-os/consent uses session_id internally; maps 1:1 with MCP-I resume_token
+        // @kya-os/consent uses session_id internally; maps 1:1 with KYA-OS resume_token
         sessionId: resumeToken,
         projectId: 'consent-full-example',
         serverUrl: `http://localhost:${actualPort}`,

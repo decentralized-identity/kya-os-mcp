@@ -33,7 +33,7 @@ Commits without a DCO sign-off will not be merged.
 ## Getting Started
 
 ```bash
-git clone https://github.com/modelcontextprotocol-identity/kya-os-mcp.git
+git clone https://github.com/decentralized-identity/kya-os-mcp.git
 cd kya-os-mcp
 npm install
 npm test

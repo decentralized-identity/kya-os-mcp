@@ -4,13 +4,13 @@
  * Builds the full set of outbound delegation headers for forwarding
  * delegation context to downstream services.
  *
- * Headers (MCP-I §7):
- * - KYA-Agent-DID: the original agent's DID
- * - KYA-Delegation-Chain: the delegation chain ID (vcId of the root delegation)
- * - KYA-Session-Id: the current session ID
- * - KYA-Delegation-Proof: a signed JWT proving the delegation is being forwarded
+ * Headers (KYA-OS §7):
+ * - KYA-OS-Agent-DID: the original agent's DID
+ * - KYA-OS-Delegation-Chain: the delegation chain ID (vcId of the root delegation)
+ * - KYA-OS-Session-Id: the current session ID
+ * - KYA-OS-Delegation-Proof: a signed JWT proving the delegation is being forwarded
  *
- * Related Spec: MCP-I §7 — Outbound Delegation Propagation
+ * Related Spec: KYA-OS §7 — Outbound Delegation Propagation
  */
 
 import type { SessionContext, DelegationRecord } from '../types/protocol.js';
@@ -23,10 +23,10 @@ import { logger } from '../logging/index.js';
  * Header names for outbound delegation propagation
  */
 export const OUTBOUND_HEADER_NAMES = {
-  AGENT_DID: 'KYA-Agent-DID',
-  DELEGATION_CHAIN: 'KYA-Delegation-Chain',
-  SESSION_ID: 'KYA-Session-Id',
-  DELEGATION_PROOF: 'KYA-Delegation-Proof',
+  AGENT_DID: 'KYA-OS-Agent-DID',
+  DELEGATION_CHAIN: 'KYA-OS-Delegation-Chain',
+  SESSION_ID: 'KYA-OS-Session-Id',
+  DELEGATION_PROOF: 'KYA-OS-Delegation-Proof',
 } as const;
 
 /**
@@ -51,10 +51,10 @@ export interface OutboundDelegationContext {
  * Outbound delegation headers to attach to downstream requests
  */
 export interface OutboundDelegationHeaders {
-  'KYA-Agent-DID': string;
-  'KYA-Delegation-Chain': string;
-  'KYA-Session-Id': string;
-  'KYA-Delegation-Proof': string;
+  'KYA-OS-Agent-DID': string;
+  'KYA-OS-Delegation-Chain': string;
+  'KYA-OS-Session-Id': string;
+  'KYA-OS-Delegation-Proof': string;
 }
 
 /**
@@ -158,7 +158,7 @@ export async function buildOutboundDelegationHeaders(
   );
 
   // Build the delegation proof JWT
-  // Per MCP-I §7, the JWT has:
+  // Per KYA-OS §7, the JWT has:
   // - iss: serverDid (the MCP server forwarding the request)
   // - sub: agentDid (the original agent)
   // - aud: targetHostname (the downstream service)
@@ -182,9 +182,9 @@ export async function buildOutboundDelegationHeaders(
   });
 
   return {
-    'KYA-Agent-DID': session.agentDid,
-    'KYA-Delegation-Chain': delegation.vcId,
-    'KYA-Session-Id': session.sessionId,
-    'KYA-Delegation-Proof': jwt,
+    'KYA-OS-Agent-DID': session.agentDid,
+    'KYA-OS-Delegation-Chain': delegation.vcId,
+    'KYA-OS-Session-Id': session.sessionId,
+    'KYA-OS-Delegation-Proof': jwt,
   };
 }

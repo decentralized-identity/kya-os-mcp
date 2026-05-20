@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
 /**
- * Context7 MCP Server — Modified with MCP-I Identity
+ * Context7 MCP Server — Modified with KYA-OS Identity
  *
- * This is a copy of @upstash/context7-mcp (v2.1.4) with MCP-I identity,
- * session management, and proof generation added via `withMCPI()`.
+ * This is a copy of @upstash/context7-mcp (v2.1.4) with KYA-OS identity,
+ * session management, and proof generation added via `withKyaOs()`.
  *
  * Changes from original:
- *   1. Import `withMCPI` + `NodeCryptoProvider` (2 lines)
- *   2. Call `await withMCPI(server, { crypto })` (1 line)
+ *   1. Import `withKyaOs` + `NodeCryptoProvider` (2 lines)
+ *   2. Call `await withKyaOs(server, { crypto })` (1 line)
  *
  * That's it. Handshake tool is auto-registered, proofs are auto-attached
  * to all tool responses.
@@ -29,8 +29,8 @@ import { Command } from "commander";
 import { AsyncLocalStorage } from "async_hooks";
 import { SERVER_VERSION, RESOURCE_URL, AUTH_SERVER_URL } from "./lib/constants.js";
 
-// ── MCP-I imports ──────────────────────────────────────────────────
-import { withMCPI, NodeCryptoProvider } from '@kya-os/mcp';
+// ── KYA-OS imports ──────────────────────────────────────────────────
+import { withKyaOs, NodeCryptoProvider } from '@kya-os/mcp';
 
 /** Default HTTP server port */
 const DEFAULT_PORT = 3000;
@@ -147,9 +147,9 @@ async function main() {
     }
   };
 
-  // ── MCP-I: 2 lines to add identity + proofs to all tools ──────
-  const mcpi = await withMCPI(server, { crypto: new NodeCryptoProvider() });
-  console.error(`[mcpi] Server DID: ${mcpi.identity.did}`);
+  // ── KYA-OS: 2 lines to add identity + proofs to all tools ──────
+  const kyaos = await withKyaOs(server, { crypto: new NodeCryptoProvider() });
+  console.error(`[kya-os] Server DID: ${kyaos.identity.did}`);
 
   // ── Register tools normally — proofs attached automatically ────
 
@@ -440,9 +440,9 @@ IMPORTANT: Do not call this tool more than 3 times per question.`,
 
       httpServer.once("listening", () => {
         console.error(
-          `Context7 MCP Server v${SERVER_VERSION} + MCP-I running on HTTP at http://localhost:${port}/mcp`
+          `Context7 MCP Server v${SERVER_VERSION} + KYA-OS running on HTTP at http://localhost:${port}/mcp`
         );
-        console.error(`[mcpi] Server DID: ${mcpi.identity.did}`);
+        console.error(`[kya-os] Server DID: ${kyaos.identity.did}`);
       });
     };
 
@@ -453,8 +453,8 @@ IMPORTANT: Do not call this tool more than 3 times per question.`,
 
     await server.connect(transport);
 
-    console.error(`Context7 MCP Server v${SERVER_VERSION} + MCP-I running on stdio`);
-    console.error(`[mcpi] Server DID: ${mcpi.identity.did}`);
+    console.error(`Context7 MCP Server v${SERVER_VERSION} + KYA-OS running on stdio`);
+    console.error(`[kya-os] Server DID: ${kyaos.identity.did}`);
   }
 }
 

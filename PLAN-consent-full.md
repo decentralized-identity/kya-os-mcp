@@ -37,7 +37,7 @@ Add `examples/consent-branded/` — the same `@kya-os/mcp` consent flow as conse
 
 - `package.json`: name `@kya-os/example-consent-branded`, add `@kya-os/consent` as dependency alongside `@modelcontextprotocol/sdk`
 - `tsconfig.json`: same as consent-basic
-- `.gitignore`: same as consent-basic (`.mcpi/`, `node_modules/`, `dist/`)
+- `.gitignore`: same as consent-basic (`.kya-os/`, `node_modules/`, `dist/`)
 
 ### Milestone 2: Consent Server with @kya-os/consent
 
@@ -79,7 +79,7 @@ Key difference from consent-basic: no `consent.html` template file. No template 
   - DelegationStore class
   - formatAsConsentLink() wrapper
   - createBrandedMcpServer() factory (browse + checkout tools)
-  - createMcpiMiddleware() identity loader
+  - createKyaOsMiddleware() identity loader
   - Transport setup (stdio, SSE, streamable HTTP)
   - Standalone entry point creates shared DelegationStore, passes to both servers
 

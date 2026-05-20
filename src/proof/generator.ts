@@ -2,7 +2,7 @@
  * Proof Generation — Platform-agnostic Protocol Reference
  *
  * Handles JCS canonicalization, SHA-256 digest generation, and Ed25519 JWS
- * signing (compact format) according to MCP-I requirements 5.1, 5.2, 5.3, 5.6.
+ * signing (compact format) according to KYA-OS requirements 5.1, 5.2, 5.3, 5.6.
  *
  * This module is the authoritative proof implementation. All platform adapters
  * (Node.js, Cloudflare Workers) inject a CryptoProvider and delegate here.

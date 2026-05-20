@@ -1,5 +1,5 @@
 /**
- * @kya-os/mcp — MCP-I Protocol Reference Implementation
+ * @kya-os/mcp — KYA-OS Protocol Reference Implementation
  *
  * Delegation, proof, and session for Model Context Protocol Identity.
  * This package is a DIF TAAWG protocol reference implementation.
@@ -17,10 +17,10 @@
 
 // Error contract
 export {
-  MCPI_ERROR_CODES,
-  createMCPIError,
-  type MCPIErrorCode,
-  type MCPIErrorResponse,
+  KYA_OS_ERROR_CODES,
+  createKyaOsError,
+  type KyaOsErrorCode,
+  type KyaOsErrorResponse,
 } from './errors.js';
 
 // Protocol types
@@ -253,17 +253,17 @@ export { NodeCryptoProvider } from './providers/node-crypto.js';
 
 // Middleware
 export {
-  createMCPIMiddleware,
-  type MCPIConfig,
-  type MCPIDelegationConfig,
-  type MCPIIdentityConfig,
-  type MCPIMiddleware,
-  type MCPIToolDefinition,
-  type MCPIToolHandler,
-  type MCPIServer,
-  withMCPI,
+  createKyaOsMiddleware,
+  type KyaOsConfig,
+  type KyaOsDelegationConfig,
+  type KyaOsIdentityConfig,
+  type KyaOsMiddleware,
+  type KyaOsToolDefinition,
+  type KyaOsToolHandler,
+  type KyaOsServer,
+  withKyaOs,
   generateIdentity,
-  type WithMCPIOptions,
+  type WithKyaOsOptions,
 } from './middleware/index.js';
 
 // Logging

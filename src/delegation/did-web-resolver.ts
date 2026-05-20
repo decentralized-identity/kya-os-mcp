@@ -11,9 +11,12 @@
  * @see https://w3c-ccg.github.io/did-method-web/
  */
 
-import type { FetchProvider } from '../providers/base.js';
+import type { FetchProvider, Identity } from '../providers/base.js';
 import type { DIDResolver, DIDDocument, VerificationMethod } from './vc-verifier.js';
 import { logger } from '../logging/index.js';
+import { base58Encode } from '../utils/base58.js';
+import { base64ToBytes } from '../utils/base64.js';
+import { publicKeyToJwk } from './did-key-resolver.js';
 
 /**
  * Parsed components of a did:web DID
@@ -267,4 +270,142 @@ export function createDidWebResolver(
   options?: { cacheTtl?: number }
 ): DIDResolver {
   return new DidWebResolver(fetchProvider, options);
+}
+
+/** Ed25519 multicodec prefix (0xed 0x01) used for `publicKeyMultibase`. */
+const ED25519_MULTICODEC_PREFIX = new Uint8Array([0xed, 0x01]);
+
+/**
+ * Default JSON-LD contexts for an Ed25519-keyed did:web Document.
+ * `did/v1` is required by DID Core; `ed25519-2020/v1` defines the
+ * `Ed25519VerificationKey2020` type emitted below.
+ */
+const DEFAULT_DID_WEB_CONTEXTS: readonly string[] = [
+  'https://www.w3.org/ns/did/v1',
+  'https://w3id.org/security/suites/ed25519-2020/v1',
+];
+
+/**
+ * Options for {@link buildDidWebDocument}.
+ */
+export interface BuildDidWebDocumentOptions {
+  /**
+   * Additional JSON-LD contexts appended after the defaults
+   * (`did/v1`, `ed25519-2020/v1`). Use to declare credential or
+   * service contexts the controller publishes alongside its keys.
+   */
+  additionalContexts?: readonly string[];
+}
+
+/**
+ * Build the DID Document a did:web controller serves at its
+ * resolution URL (see {@link didWebToUrl}).
+ *
+ * Emits a single Ed25519 verification method derived from
+ * `identity.publicKey` (base64-encoded raw bytes — the
+ * {@link Identity} convention). Both `publicKeyJwk` and
+ * `publicKeyMultibase` are included for cross-format interop with
+ * verifiers that prefer one over the other.
+ *
+ * The verification method is published in both `authentication` and
+ * `assertionMethod`, matching the {@link createDidKeyResolver} output
+ * and the most common verifier expectations.
+ *
+ * The function is purely synchronous and performs no I/O. Hosts
+ * publish the returned object verbatim (e.g. as the body of a
+ * `/.well-known/did.json` route).
+ *
+ * @param identity - Subject identity. `did` must be a `did:web:` DID;
+ *   `kid` must reference the same DID (`<did>#<fragment>`).
+ * @param options - Optional context extensions.
+ * @returns DID Document satisfying the W3C DID Core data model.
+ * @throws Error when `identity.did` is not a `did:web:` DID, when
+ *   `identity.kid` does not reference `identity.did`, or when
+ *   `identity.publicKey` is not a valid base64 string of the
+ *   expected length.
+ *
+ * @example
+ * ```typescript
+ * const document = buildDidWebDocument({
+ *   did: 'did:web:example.com:agents:bot1',
+ *   kid: 'did:web:example.com:agents:bot1#keys-1',
+ *   publicKey: agent.publicKey, // base64-encoded Ed25519
+ *   createdAt: new Date().toISOString(),
+ * });
+ * // Serve `document` at https://example.com/agents/bot1/did.json
+ * ```
+ */
+export function buildDidWebDocument(
+  identity: Identity,
+  options?: BuildDidWebDocumentOptions
+): DIDDocument {
+  if (!isDidWeb(identity.did)) {
+    throw new Error(
+      `buildDidWebDocument: identity.did must be a did:web DID (got "${identity.did}")`
+    );
+  }
+
+  if (!identity.kid.startsWith(`${identity.did}#`)) {
+    throw new Error(
+      `buildDidWebDocument: identity.kid "${identity.kid}" does not reference identity.did "${identity.did}"`
+    );
+  }
+
+  const publicKeyBytes = decodePublicKey(identity.publicKey);
+  const publicKeyJwk = publicKeyToJwk(publicKeyBytes);
+  const publicKeyMultibase = encodeEd25519Multibase(publicKeyBytes);
+
+  const verificationMethod: VerificationMethod = {
+    id: identity.kid,
+    type: 'Ed25519VerificationKey2020',
+    controller: identity.did,
+    publicKeyJwk,
+    publicKeyMultibase,
+  };
+
+  const contexts = options?.additionalContexts?.length
+    ? [...DEFAULT_DID_WEB_CONTEXTS, ...options.additionalContexts]
+    : [...DEFAULT_DID_WEB_CONTEXTS];
+
+  return {
+    '@context': contexts,
+    id: identity.did,
+    verificationMethod: [verificationMethod],
+    authentication: [identity.kid],
+    assertionMethod: [identity.kid],
+  };
+}
+
+/**
+ * Decode a base64-encoded Ed25519 public key to raw bytes.
+ *
+ * The {@link Identity} contract documents `publicKey` as base64 of the
+ * 32-byte Ed25519 public key. We accept that length only — anything
+ * else is a programming error and surfaces as a thrown construction
+ * exception (per the repository error contract: construction throws,
+ * verification/resolution returns).
+ */
+function decodePublicKey(publicKeyBase64: string): Uint8Array {
+  const bytes = base64ToBytes(publicKeyBase64);
+  if (bytes.length !== 32) {
+    throw new Error(
+      `buildDidWebDocument: expected 32-byte Ed25519 public key, got ${bytes.length} bytes after base64 decode`
+    );
+  }
+  return bytes;
+}
+
+/**
+ * Encode raw Ed25519 public key bytes as `publicKeyMultibase`
+ * (multicodec-tagged, base58btc-encoded, `z`-prefixed). Matches the
+ * encoding used by {@link createDidKeyResolver} for the equivalent
+ * field on did:key documents.
+ */
+function encodeEd25519Multibase(publicKeyBytes: Uint8Array): string {
+  const multicodec = new Uint8Array(
+    ED25519_MULTICODEC_PREFIX.length + publicKeyBytes.length
+  );
+  multicodec.set(ED25519_MULTICODEC_PREFIX);
+  multicodec.set(publicKeyBytes, ED25519_MULTICODEC_PREFIX.length);
+  return `z${base58Encode(multicodec)}`;
 }

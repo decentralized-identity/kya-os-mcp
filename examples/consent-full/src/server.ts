@@ -267,7 +267,7 @@ export function createConsentFullMcpServer(
  * Load identity from .kya-os/identity.json or generate an ephemeral one,
  * then create KYA-OS middleware with session + proof + delegation support.
  */
-export async function createKyaOsMiddleware() {
+export async function loadKyaOsMiddleware() {
   const crypto = new NodeCryptoProvider();
 
   let identity: KyaOsIdentityConfig;
@@ -383,7 +383,7 @@ if (isMain) {
     ? 0
     : parseInt(process.env['CONSENT_PORT'] ?? '3001', 10);
 
-  createKyaOsMiddleware().then(async (kyaos) => {
+  loadKyaOsMiddleware().then(async (kyaos) => {
     const cryptoProvider = new NodeCryptoProvider();
     const factory = createDelegationIssuerFromIdentity(cryptoProvider, {
       did: kyaos.identity.did,

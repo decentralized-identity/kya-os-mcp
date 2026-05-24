@@ -79,7 +79,7 @@ Schemas can reference each other using `$ref`. For example, the delegation crede
 │ Client │                          │ Server │
 └───┬────┘                          └───┬────┘
     │                                   │
-    │  GET /.well-known/kyaos-os-os            │
+    │  GET /.well-known/mcp                │
     │──────────────────────────────────>│
     │  (well-known-kyaos.json)           │
     │<──────────────────────────────────│

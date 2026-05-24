@@ -627,7 +627,7 @@ interface NeedsAuthorizationError {
 
 ## 10. Well-Known Endpoint
 
-KYA-OS servers SHOULD expose `/.well-known/kyaos-os-os`:
+KYA-OS servers SHOULD expose `/.well-known/mcp`:
 
 ```json
 {
@@ -701,7 +701,7 @@ An adversary or non-compliant client may omit KYA-OS headers entirely, bypassing
 
 - Servers that require identity MUST reject tool calls without a valid session (fail-closed)
 - Servers SHOULD NOT fall back to unauthenticated mode for tools that require delegation
-- The `/.well-known/kyaos-os-os` endpoint allows clients to discover server requirements before connecting
+- The `/.well-known/mcp` endpoint allows clients to discover server requirements before connecting
 
 ### 11.8 Delegation Credential Theft
 

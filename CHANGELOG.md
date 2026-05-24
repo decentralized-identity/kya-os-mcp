@@ -32,7 +32,7 @@ Versioning: https://semver.org/spec/v2.0.0.html
   to DIF TAAWG. Version stays at 1.2.0 — the wire format, public
   exports, and behavior are unchanged. The old `@mcp-i/core` package
   is deprecated and points at this one.
-- **Spec renamed from KYA-OS to KYA-OS** across `SPEC.md`,
+- **Spec renamed from MCP-I to KYA-OS** across `SPEC.md`,
   `CONFORMANCE.md`, `GOVERNANCE.md`, and example READMEs. Wire-format
   identifiers (`_kyaos` tool name, well-known path, JSON Schema
   files, JSON-LD context URLs) are deferred to a later cutover so
@@ -75,7 +75,7 @@ Versioning: https://semver.org/spec/v2.0.0.html
 - In-memory implementations for all providers (testing)
 - Configurable logging with debug, info, warn, error levels
 - Pure TypeScript protocol type definitions (zero runtime dependencies)
-- Well-known endpoint (`/.well-known/kyaos-os-os`) for server discovery
+- Well-known endpoint (`/.well-known/mcp`) for server discovery
 - Outbound delegation proof JWT builder for downstream API calls
 - Three-tier conformance levels:
   - Level 1: Core Crypto (key generation, signing, hashing, DID resolution)

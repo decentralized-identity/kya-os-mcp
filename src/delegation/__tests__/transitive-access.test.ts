@@ -136,6 +136,16 @@ async function createServer(opts?: {
   const did = generateDidKeyFromBase64(keyPair.publicKey);
   const kid = `${did}#${did.replace('did:key:', '')}`;
 
+  // These transitive-access tests exercise chain-integrity, scope attenuation,
+  // and confused-deputy invariants — they pre-date the secure-default flip
+  // of `requireAudienceOnRedelegation` (now `true` by default in production).
+  // We opt out here so each test can isolate the invariant it's checking;
+  // explicit audience-enforcement tests in §11 set the flag back to `true`.
+  const delegation: KyaOsDelegationConfig = {
+    requireAudienceOnRedelegation: false,
+    ...(opts?.delegation ?? {}),
+  };
+
   const middleware = createKyaOsMiddleware(
     {
       identity: {
@@ -145,7 +155,7 @@ async function createServer(opts?: {
         publicKey: keyPair.publicKey,
       },
       session: { sessionTtlMinutes: 60 },
-      delegation: opts?.delegation,
+      delegation,
       autoSession: opts?.autoSession,
     },
     crypto,
@@ -1144,9 +1154,11 @@ describe('Transitive Access — Karp Use Cases', () => {
       expect(result.content[0].text).toBe('ok');
     });
 
-    it('allows re-delegations without audience when enforcement is disabled (default)', async () => {
-      // Backward compatibility: the flag defaults to false, so existing
-      // integrations that omit audience on re-delegations continue to work.
+    it('allows re-delegations without audience when enforcement is explicitly disabled', async () => {
+      // Backward-compatibility opt-out: setting the flag to `false`
+      // restores legacy behavior for integrations that cannot yet bind
+      // audience on every re-delegation. A one-time warn is emitted
+      // per process; we assert behavior here, not the warning.
 
       const aliceToBob = await issueVC({
         from: alice,
@@ -1159,12 +1171,12 @@ describe('Transitive Access — Karp Use Cases', () => {
         to: carol,
         scopes: ['query:x'],
         parentId: aliceToBob.credentialSubject.delegation.id,
-        // no audience — allowed when flag is off
+        // no audience — allowed when flag is explicitly false
       });
 
       const { middleware } = await createServer({
         delegation: {
-          // requireAudienceOnRedelegation not set (defaults to false)
+          requireAudienceOnRedelegation: false, // explicit opt-out
           resolveDelegationChain: async () => [aliceToBob],
         },
       });

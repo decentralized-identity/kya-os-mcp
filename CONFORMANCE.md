@@ -30,7 +30,7 @@ Level 1 establishes the cryptographic foundation. An implementation at this leve
 | L1.7 | Extract Ed25519 public key from `did:key` | `src/delegation/__tests__/did-key-resolver.test.ts` | `extractPublicKeyFromDidKey > should extract public key bytes from valid did:key` |
 | L1.8 | Convert public key bytes to JWK format | `src/delegation/__tests__/did-key-resolver.test.ts` | `publicKeyToJwk > should convert public key bytes to JWK format` |
 | L1.9 | Implement base58btc encoding/decoding | `src/delegation/__tests__/did-key-resolver.test.ts` | `Base58 Utilities` (all tests) |
-| L1.10 | Expose `/.well-known/kyaos-os-os` endpoint (recommended) | — | Implementation-specific |
+| L1.10 | Expose `/.well-known/mcp` endpoint (recommended) | — | Implementation-specific |
 
 ### Detailed Requirements
 

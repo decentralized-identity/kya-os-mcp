@@ -7,6 +7,23 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Security
+
+- **BREAKING (default flip): `requireAudienceOnRedelegation` now defaults to `true`.**
+  Every non-root credential in a delegation chain must carry an `audience`
+  constraint. Closes the confused-deputy class flagged by Alan Karp's
+  transitive-access analysis and matches `SPEC.md` §11.6. Integrations that
+  cannot yet bind audience on every re-delegation can set the flag to `false`
+  explicitly to preserve legacy behavior; doing so logs a one-time
+  per-process warning so the configuration is auditable in production logs.
+- **Unsafe-mode warning:** setting `allowLegacyUnsafeDelegation` to `true`
+  now emits a one-time per-process `console.warn` on first use. Default
+  is unchanged (`false` / strict). The warning surfaces accidental
+  configuration in production logs without spamming per-session.
+- `SECURITY.md` gained a "Secure Defaults & Unsafe Delegation Modes" section
+  documenting both flags, when to opt out, and the migration path back to
+  safe defaults.
+
 ### Added
 
 - **Generic `Identity` interface** exported from the root entry point.
@@ -32,7 +49,7 @@ Versioning: https://semver.org/spec/v2.0.0.html
   to DIF TAAWG. Version stays at 1.2.0 — the wire format, public
   exports, and behavior are unchanged. The old `@mcp-i/core` package
   is deprecated and points at this one.
-- **Spec renamed from KYA-OS to KYA-OS** across `SPEC.md`,
+- **Spec renamed from MCP-I to KYA-OS** across `SPEC.md`,
   `CONFORMANCE.md`, `GOVERNANCE.md`, and example READMEs. Wire-format
   identifiers (`_kyaos` tool name, well-known path, JSON Schema
   files, JSON-LD context URLs) are deferred to a later cutover so
@@ -75,7 +92,7 @@ Versioning: https://semver.org/spec/v2.0.0.html
 - In-memory implementations for all providers (testing)
 - Configurable logging with debug, info, warn, error levels
 - Pure TypeScript protocol type definitions (zero runtime dependencies)
-- Well-known endpoint (`/.well-known/kyaos-os-os`) for server discovery
+- Well-known endpoint (`/.well-known/mcp`) for server discovery
 - Outbound delegation proof JWT builder for downstream API calls
 - Three-tier conformance levels:
   - Level 1: Core Crypto (key generation, signing, hashing, DID resolution)

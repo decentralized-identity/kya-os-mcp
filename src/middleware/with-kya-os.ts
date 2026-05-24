@@ -96,7 +96,10 @@ export interface KyaOsDelegationConfig {
    * Recommended for production. See: Alan Karp's transitive access analysis
    * and KYA-OS §11.6 (Confused Deputy Attacks).
    *
-   * Default is false for backward compatibility.
+   * Default is `true` as of KYA-OS 1.3.x. Existing integrations that
+   * issue re-delegations without an `audience` constraint can set this
+   * to `false` to preserve legacy behavior; doing so logs a one-time
+   * warning per process.
    */
   requireAudienceOnRedelegation?: boolean;
   /**
@@ -321,6 +324,13 @@ function validateScopeAttenuation(
  * deployments behind a load balancer. For distributed deployments, implement a custom
  * `SessionStore` backed by Redis, DynamoDB, or similar and pass it via `config.session`.
  */
+
+// Module-level warn-once flags for unsafe configuration. Per-process,
+// not per-session, so long-running servers don't spam logs on every new
+// session.
+let warnedAudienceOptOut = false;
+let warnedLegacyUnsafeDelegation = false;
+
 export function createKyaOsMiddleware(
   config: KyaOsConfig,
   cryptoProvider: CryptoProvider,
@@ -607,6 +617,25 @@ export function createKyaOsMiddleware(
   ): KyaOsToolHandler {
     const legacyUnsafeDelegationEnabled =
       delegationConfig?.allowLegacyUnsafeDelegation === true;
+    if (legacyUnsafeDelegationEnabled && !warnedLegacyUnsafeDelegation) {
+      warnedLegacyUnsafeDelegation = true;
+      console.warn(
+        "⚠️  KYA-OS: allowLegacyUnsafeDelegation=true disables delegation-chain " +
+          "resolution and StatusList revocation checks. This is unsafe for production. " +
+          "See SECURITY.md (Unsafe Delegation Modes).",
+      );
+    }
+    if (
+      delegationConfig?.requireAudienceOnRedelegation === false &&
+      !warnedAudienceOptOut
+    ) {
+      warnedAudienceOptOut = true;
+      console.warn(
+        "⚠️  KYA-OS: requireAudienceOnRedelegation=false disables confused-deputy " +
+          "protection on re-delegations. The default is true as of 1.3.x. " +
+          "See SECURITY.md (Unsafe Delegation Modes).",
+      );
+    }
     const didKeyResolver = createDidKeyResolver();
     const fetchProvider =
       delegationConfig?.fetchProvider ??
@@ -811,8 +840,14 @@ export function createKyaOsMiddleware(
         // credential in the chain MUST have an audience constraint.
         // This prevents confused-deputy attacks where re-delegated
         // credentials are forwarded to unintended servers.
+        //
+        // Defaults to `true`. Set explicitly to `false` to preserve
+        // legacy behavior (logged once per process — see opt-out warning
+        // below).
+        const requireAudienceOnRedelegation =
+          delegationConfig?.requireAudienceOnRedelegation !== false;
         if (
-          delegationConfig?.requireAudienceOnRedelegation &&
+          requireAudienceOnRedelegation &&
           delegation.parentId &&
           !delegation.constraints.audience
         ) {

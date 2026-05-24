@@ -26,11 +26,21 @@ async function createTestMiddleware(options?: {
   const did = generateDidKeyFromBase64(keyPair.publicKey);
   const kid = `${did}#${did.replace('did:key:', '')}`;
 
+  // Pre-secure-default fixture: legacy tests in this file exercise specific
+  // chain/scope invariants without binding audience on each hop. Opt out of
+  // the (now-default-true) audience-on-redelegation check so each test can
+  // isolate the invariant under examination. Tests that need to assert
+  // audience enforcement set the flag explicitly to `true`.
+  const delegation: KyaOsDelegationConfig = {
+    requireAudienceOnRedelegation: false,
+    ...(options?.delegation ?? {}),
+  };
+
   const middleware = createKyaOsMiddleware(
     {
       identity: { did, kid, privateKey: keyPair.privateKey, publicKey: keyPair.publicKey },
       session: { sessionTtlMinutes: 60 },
-      delegation: options?.delegation,
+      delegation,
       autoSession: options?.autoSession,
     },
     crypto,

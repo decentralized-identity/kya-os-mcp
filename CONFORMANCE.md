@@ -31,6 +31,7 @@ Level 1 establishes the cryptographic foundation. An implementation at this leve
 | L1.8 | Convert public key bytes to JWK format | `src/delegation/__tests__/did-key-resolver.test.ts` | `publicKeyToJwk > should convert public key bytes to JWK format` |
 | L1.9 | Implement base58btc encoding/decoding | `src/delegation/__tests__/did-key-resolver.test.ts` | `Base58 Utilities` (all tests) |
 | L1.10 | Expose `/.well-known/mcp` endpoint (recommended) | — | Implementation-specific |
+| L1.11 | Audit logging MAY be implemented | — | Implementation-specific |
 
 ### Detailed Requirements
 
@@ -66,6 +67,10 @@ Implementation MUST:
 - Verify `kid` in header matches expected key
 - Return boolean result
 
+#### L1.11 — Audit Logging
+
+Audit logging MAY be implemented at Level 1. If implemented, it SHOULD capture key generation events and signature operations.
+
 ---
 
 ## Level 2 — Full Session
@@ -93,6 +98,7 @@ All Level 1 requirements, plus:
 | L2.13 | Verify proof against request/response | `src/proof/__tests__/proof-generator.test.ts` | `Proof Verification > should reject proof with mismatched request` |
 | L2.14 | Validate handshake request format | `src/session/__tests__/session-manager.test.ts` | `validateHandshakeFormat` (all tests) |
 | L2.15 | Create handshake request with current timestamp | `src/session/__tests__/session-manager.test.ts` | `createHandshakeRequest > should use current timestamp` |
+| L2.16 | Audit logging SHOULD be implemented | — | Implementation-specific |
 
 ### Detailed Requirements
 
@@ -110,6 +116,10 @@ Implementation MUST:
 - Store (nonce, agentDid) tuples for at least `sessionTtlMinutes + 1 minute`
 - Reject any request with a previously-seen nonce for the same agentDid
 - Support cleanup of expired nonces
+
+#### L2.16 — Audit Logging
+
+Audit logging SHOULD be implemented at Level 2. Implementations SHOULD record session lifecycle events (handshake, expiry, replay rejection) and proof generation events with enough detail to reconstruct the sequence of operations for a given session.
 
 #### L2.11 — Detached Proof Generation
 
@@ -160,6 +170,7 @@ All Level 2 requirements, plus:
 | L3.23 | Build delegation proof JWT for outbound calls | `src/delegation/__tests__/outbound-proof.test.ts` | All tests |
 | L3.24 | Build delegation chain string | `src/delegation/__tests__/outbound-proof.test.ts` | `buildChainString` tests |
 | L3.25 | Return `needs_authorization` hints | Implementation-specific | — |
+| L3.26 | Audit logging MUST be implemented | — | Implementation-specific |
 
 ### Detailed Requirements
 
@@ -200,6 +211,18 @@ When revoking a delegation, implementation MUST:
 - Recursively mark all descendants as revoked
 - Update StatusList2021 for each revoked delegation
 - Emit revocation events (implementation-specific)
+
+#### L3.26 — Audit Logging
+
+Audit logging MUST be implemented at Level 3. Implementations MUST record:
+- Delegation issuance and revocation events (including cascading revocations), with issuer DID, subject DID, credential ID, and timestamp
+- Delegation verification outcomes (pass/fail), including chain validation results
+- Outbound delegation proof attachments, including the chain string and target audience
+- Any `needs_authorization` hints returned to callers
+
+Audit records MUST be tamper-evident (e.g., append-only log, signed entries, or equivalent) and MUST be retained for at least the duration of the longest-lived delegation in the system.
+
+> **Note:** Revocation is verifier-local (checked against the verifier's local list or cache). L1 implementations MAY use simple local checks; higher levels MAY use StatusList2021.
 
 ---
 

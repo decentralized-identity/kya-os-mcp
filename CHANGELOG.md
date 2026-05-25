@@ -114,6 +114,17 @@ Versioning: https://semver.org/spec/v2.0.0.html
 - Added `delegation.allowLegacyUnsafeDelegation` to `createKyaOsMiddleware` as a temporary migration escape hatch for legacy integrations.
 - Added middleware tests covering legacy-compatibility behavior for parent-linked and status-list credentials.
 
+### Docs
+
+- L1 revocation terminology clarified (verifier-local, not global CRL).
+- Orchestration directory scope explicitly narrowed from global to service-local.
+- Nonce lifetime documented to prevent early-eviction replay class.
+- Multi-level audit record example added.
+- Conformance-tiered audit-logging requirements added.
+- Registry types (Delegation / Credential / Trust) disambiguated.
+- Broken link to Protocol Registry fixed.
+- Key Topics ordering aligned with site navigation.
+
 ## [1.0.0-draft] - 2026-03-12
 
 ### Added

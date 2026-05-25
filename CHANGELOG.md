@@ -12,6 +12,9 @@ Versioning: https://semver.org/spec/v2.0.0.html
 - Added normative _meta hash exclusion paragraph and `session.metaPolicy` opt-in (default: `strict`).
 - Documented anonymous handshake nonce-dedupe boundary; reference impl now uses a 60s TTL for anonymous nonces.
 - Added `clockSkewSeconds` field to `.well-known/mcp` for server-advertised skew negotiation.
+- Added the **designation invariant** to §6.4.1 as a normative MUST: invocations must designate the specific resource being exercised, even when the delegation authorizes multiple resources. The reference implementation already enforces this via the per-tool `scopeId` check; this change makes the behavior normative and cross-references it from §11.6 (Confused Deputy Attacks).
+- Added §6.5.1 (Revocation Rights) defining who may revoke a delegation in v1.0: direct issuer, any ancestor issuer in the chain, and the responsible party at the root. Subject-side revocation is explicitly disallowed in v1.0; UCAN-style "revocation as a delegatable permission" is tracked for v1.1.
+- Added §6.5.2 (Concurrency and the Revocation Race) acknowledging the Lamport-concurrent race between revocation issuance and propagation, with implementation guidance on bounding the window.
 
 ### Security
 
@@ -29,6 +32,9 @@ Versioning: https://semver.org/spec/v2.0.0.html
 - `SECURITY.md` gained a "Secure Defaults & Unsafe Delegation Modes" section
   documenting both flags, when to opt out, and the migration path back to
   safe defaults.
+- Added test coverage pinning the warn-once behavior on both unsafe-mode
+  flags: warns exactly once per process on opt-in, silent on safe defaults,
+  no duplicate warnings across repeated `wrapWithDelegation` calls.
 
 ### Added
 

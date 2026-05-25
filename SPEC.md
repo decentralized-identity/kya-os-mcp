@@ -1337,11 +1337,53 @@ Outbound `KYA-OS-Agent-DID` and `KYA-OS-Delegation-Chain` headers reveal the age
 
 Detached proofs are audit records containing DIDs and session identifiers. Operators retaining proof logs SHOULD consider applicable data protection regulations (GDPR Art. 17, CCPA) and implement appropriate retention policies.
 
-### 12.5 Per-Delegation Keys (Delegate Unlinkability)
+### 12.5 One-Off Delegation Keypairs (Delegate Unlinkability)
+
+> *Non-normative.* This section describes a privacy pattern; it does not add normative requirements.
 
 A delegate that does not wish to link its activity across delegations MAY present a fresh, single-purpose public key for each delegation it receives, rather than its long-term DID. The delegator issues the `DelegationCredential` to that one-off key, and the delegate proves control of it for that delegation only. This keeps the delegate's primary identity unlinkable across delegations and prevents a delegator — or an observer who sees multiple delegations — from correlating them through a shared subject DID.
 
-_Non-normative example:_ an organization delegating read access to an external auditing agent issues each engagement's delegation to a per-engagement key the auditor generates, so separate engagements cannot be cross-correlated via a common subject identifier.
+**Historical precedent.** The United States Navy used a structurally equivalent pattern in its early cryptographic systems: one-time call signs were issued to ships and aircraft for individual missions so that an adversary intercepting radio traffic could not correlate signals from the same vessel across operations. One-off delegation keypairs extend this unlinkability principle to the agent identity layer.
+
+**Example — DelegationCredential issued to a one-off key:**
+
+```json
+{
+  "@context": [
+    "https://www.w3.org/2018/credentials/v1",
+    "https://schema.modelcontextprotocol-identity.io/xmcp-i/credentials/delegation.v1.0.0.json"
+  ],
+  "id": "urn:uuid:7a3c1f80-a1b2-4d3e-8f5a-c0d9e2f34567",
+  "type": ["VerifiableCredential", "DelegationCredential"],
+  "issuer": "did:key:z6MkIssuer...",
+  "issuanceDate": "2024-06-01T09:00:00Z",
+  "expirationDate": "2024-06-01T10:00:00Z",
+  "credentialSubject": {
+    "id": "did:key:z6MkOneOff7fXq...",
+    "delegation": {
+      "id": "del-oneoff-001",
+      "issuerDid": "did:key:z6MkIssuer...",
+      "subjectDid": "did:key:z6MkOneOff7fXq...",
+      "constraints": {
+        "scopes": ["tool:read_report"],
+        "notBefore": 1717232400,
+        "notAfter": 1717236000,
+        "audience": "did:web:analytics.example.com"
+      },
+      "status": "active"
+    }
+  },
+  "proof": { "...": "..." }
+}
+```
+
+**Tradeoffs.** The delegate accumulates no cross-session reputation under the one-off key. However, the delegator retains an audit trail: the one-off DID appears in the issued credential, and the delegator's records link it to the delegate's primary identity at issuance time. If investigation is warranted, the delegator can correlate the one-off key back to the delegate — but external observers cannot.
+
+### 12.6 Scoped Verifiable Credentials
+
+A *scoped Verifiable Credential* is a `DelegationCredential` issued with the minimum capability scopes needed for a specific task — a data-minimization pattern applied at the delegation layer.
+
+Note that the protocol enforces a *maximum-scope* invariant (§6.4): a child delegation cannot exceed its parent's scopes. Minimum-scope enforcement — issuing credentials as narrowly as possible for the task at hand — is operator policy, not a protocol guarantee. Operators SHOULD issue credentials with the narrowest scope that satisfies the task rather than reusing broad delegations across different task types.
 
 ---
 
@@ -1583,6 +1625,27 @@ Ed25519Sign(privateKey, BASE64URL(header) || "." || BASE64URL(canonicalize(paylo
 ```
 
 Note: Actual signature values are key-dependent. Implementers should verify the structure and use the test key material from the reference implementation's test suite for bit-exact validation.
+
+---
+
+## Appendix D: Future Considerations
+
+### D.1 Post-Quantum Cryptography Roadmap
+
+KYA-OS v1.0 uses Ed25519 (EdDSA over Curve25519) for all signature operations (§4.2). The following post-quantum algorithms are tracked for a future major version:
+
+| Algorithm | Standard | Role | Status |
+|-----------|----------|------|--------|
+| **ML-DSA** | FIPS 204 | Signature | Most likely v2 default |
+| **ML-KEM** | FIPS 203 | Key encapsulation | Tracking (alternate) |
+| **SLH-DSA** | FIPS 205 | Signature (hash-based, stateless) | Tracking (alternate) |
+
+The algorithm identifier lives in two extensible locations:
+
+1. **JWS protected header** — the `alg` field (currently `"EdDSA"`). Parsers MUST NOT hard-code a specific value; they MUST read the algorithm from the header before verifying.
+2. **DID document `verificationMethod`** — the `type` field (currently `"Ed25519VerificationKey2020"`) and `publicKeyJwk.crv` (currently `"Ed25519"`).
+
+Because both locations are already extensible, adding ML-DSA support in a future version requires only a new `alg` value and a new verification-method type — no wire-format changes are needed.
 
 ---
 

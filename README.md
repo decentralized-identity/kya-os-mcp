@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://modelcontextprotocol-identity.io">
+  <a href="https://kya-os.ai">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="https://modelcontextprotocol-identity.io/images/logo-mark_white.svg">
       <img alt="" src="https://modelcontextprotocol-identity.io/images/logo-mark_black.svg" width="64">
@@ -8,28 +8,45 @@
 </p>
 
 <p align="center">
-  <strong>Identity, delegation, and proof for the Model Context Protocol.</strong>
+  <strong>KYA-OS: agent identity, delegation, and proof. This repo is the MCP binding.</strong>
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@kya-os/mcp"><img src="https://img.shields.io/npm/v/@kya-os/mcp" alt="npm"></a>
-  <a href="https://modelcontextprotocol-identity.io"><img src="https://img.shields.io/badge/spec-modelcontextprotocol--identity.io-blue" alt="spec"></a>
+  <a href="https://modelcontextprotocol-identity.io"><img src="https://img.shields.io/badge/spec-KYA--OS-blue" alt="spec"></a>
   <a href="https://identity.foundation/working-groups/agent-and-authorization.html"><img src="https://img.shields.io/badge/DIF-TAAWG-purple" alt="DIF TAAWG"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/decentralized-identity/kya-os-mcp" alt="license"></a>
 </p>
 
-<p align="center">
-  <em><code>@kya-os/mcp</code> is the reference implementation of the <strong>KYA-OS</strong> (Know Your Agent Operating System) protocol for Model Context Protocol servers — binding KYA-OS's identity, delegation, and proof primitives into MCP. KYA-OS is the agent identity, authorization, and observability protocol.</em>
-</p>
-
 ---
 
-AI agents call tools on your behalf. But today, there's no way to know *who* called, *whether they were allowed to*, or *what actually happened*. `@kya-os/mcp` fixes that for Model Context Protocol servers.
+## What KYA-OS is
 
-- **Every server gets a cryptographic identity** (DID) — no accounts, no API keys, no central registry
-- **Every tool call gets a signed proof** — a tamper-evident receipt the agent can't forge or deny
-- **Protected tools require human consent** — per-tool authorization via W3C Delegation Credentials
-- **The AI never knows** — identity, proofs, and consent happen transparently in the protocol layer
+**KYA-OS** (Know Your Agent Operating System) is an identity, authority, and accountability layer that other agent-facing protocols adopt, so that any time an agent acts you can verify *who* called (agent identity), *under what authority* (delegation chain rooted at a Responsible Party, plus consent where required), and *what they did* (signed proofs composing into audit trails).
+
+The shape of the contribution is roughly analogous to TLS. TLS is not a transport, it is a security layer that transports adopt. KYA-OS is not a transport or a runtime, it is an identity and accountability layer that host protocols embed.
+
+Three jobs, six primitives:
+
+- **Identity.** Every agent and every server holds a Decentralized Identifier (`did:key`, `did:web`): a stable, cryptographically-controlled identifier that the agent can prove it owns, and that credentials can be issued against. Without this, there is nothing to bind authority to or hold accountable.
+- **Authority.** W3C Verifiable Credentials carrying scoped, revocable delegation chains rooted at a Responsible Party. Per-tool consent gating for actions that require explicit human approval.
+- **Accountability.** Detached JWS proofs over canonicalized request/response hashes, composing into tamper-evident audit trails. Invisible to the LLM, verifiable by anyone holding the agent's DID.
+
+> **Note on the name.** This protocol was previously known as **MCP-Identity** / **MCP-I**. The rename to KYA-OS reflects the protocol's binding-agnostic scope. See the [`[Unreleased]` entry in `CHANGELOG.md`](./CHANGELOG.md#unreleased) for the full rationale.
+
+## What this repo is
+
+`@kya-os/mcp` is the **MCP binding** of KYA-OS, the reference implementation for [Model Context Protocol](https://modelcontextprotocol.io) servers, and the first binding to ship.
+
+KYA-OS primitives are intended to embed in three kinds of host surface:
+
+1. **Transport bindings.** Wire protocols an agent's calls ride over (e.g. MCP, HTTPS, gRPC, SMTP).
+2. **Runtime bindings.** Agent harnesses where the loop runs and tool invocations can be wrapped uniformly.
+3. **Manifest / assertion embeddings.** Host formats that already carry signed assertions, where a KYA-OS proof can serve as one assertion type (e.g. C2PA-track content provenance manifests).
+
+The MCP binding ships first because MCP is the most concentrated agent-to-tool RPC surface today. Additional bindings will be specified in the working group as they reach consensus.
+
+The KYA-OS protocol itself is defined in [`SPEC.md`](./SPEC.md). Binding-specific behavior is called out so future bindings can diverge cleanly where they need to.
 
 ```
 npm install @kya-os/mcp
@@ -37,9 +54,9 @@ npm install @kya-os/mcp
 
 ---
 
-## Migrate Any MCP Server in 2 Lines
+## Migrate any MCP server in 2 lines
 
-**Before** — a standard MCP server with no identity or proofs:
+**Before**, a standard MCP server with no identity or proofs:
 
 ```typescript
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -51,7 +68,7 @@ server.registerTool('greet', { description: 'Say hello' }, async (args) => ({
 }));
 ```
 
-**After** — every tool response now carries a signed cryptographic proof:
+**After**, every tool response now carries a signed cryptographic proof:
 
 ```typescript
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -65,15 +82,15 @@ server.registerTool('greet', { description: 'Say hello' }, async (args) => ({
 }));
 ```
 
-That's it. `withKyaOs` auto-generates an Ed25519 identity, registers the `_kyaos` protocol tool, and wraps the transport so every tool response includes a detached JWS proof in `_meta` — invisible to the LLM, verifiable by anyone.
+That's it. `withKyaOs` auto-generates an Ed25519 identity, registers the `_kyaos` protocol tool, and wraps the transport so every tool response includes a detached JWS proof in `_meta`. Invisible to the LLM, verifiable by anyone.
 
-> See the full working example: [examples/context7-with-kya-os](./examples/context7-with-kya-os/) — a real MCP server (Context7) migrated with exactly 2 lines of code.
+> See the full working example: [examples/context7-with-kya-os](./examples/context7-with-kya-os/), a real MCP server (Context7) migrated with exactly 2 lines of code.
 
 ---
 
-## Protect Tools with Human Consent
+## Protect tools with human consent
 
-Some tools shouldn't run without a human saying "yes." KYA-OS MCP adds per-tool authorization using W3C Verifiable Credentials:
+Some tools shouldn't run without a human saying "yes." KYA-OS adds per-tool authorization using W3C Verifiable Credentials:
 
 ```typescript
 const checkout = kyaos.wrapWithDelegation(
@@ -85,13 +102,13 @@ const checkout = kyaos.wrapWithDelegation(
 );
 ```
 
-When an agent calls `checkout` without a delegation credential, it gets back a `needs_authorization` response with a consent URL. The human approves, a scoped credential is issued, and the agent retries — now authorized.
+When an agent calls `checkout` without a delegation credential, it gets back a `needs_authorization` response with a consent URL. The human approves, a scoped credential is issued, and the agent retries, now authorized.
 
 > Try it yourself: [examples/consent-basic](./examples/consent-basic/) walks through the full consent flow end-to-end.
 
 ---
 
-## See It in Action
+## See it in action
 
 ```bash
 git clone https://github.com/decentralized-identity/kya-os-mcp.git
@@ -112,13 +129,13 @@ Also available: [outbound-delegation](./examples/outbound-delegation/) (gateway 
 
 ---
 
-## What's Under the Hood
+## What's under the hood
 
 | Capability | How it works |
 |-----------|-------------|
 | **Cryptographic identity** | Ed25519 key pairs, `did:key` and `did:web` resolution |
 | **Signed proofs** | Detached JWS over JCS-canonicalized request/response hashes |
-| **Delegation credentials** | W3C Verifiable Credentials with scope constraints |
+| **Delegation credentials** | W3C Verifiable Credentials with scope constraints, rooted at a Responsible Party |
 | **Revocation** | StatusList2021 bitstring with cascading revocation |
 | **Replay prevention** | Nonce-based handshake with timestamp skew validation |
 | **Extensible** | Bring your own KMS, HSM, nonce cache (Redis, DynamoDB, KV), or DID method |
@@ -127,7 +144,7 @@ Also available: [outbound-delegation](./examples/outbound-delegation/) (gateway 
 
 ## Links
 
-- [Spec](https://modelcontextprotocol-identity.io) | [DIF TAAWG](https://identity.foundation/working-groups/agent-and-authorization.html) | [npm](https://www.npmjs.com/package/@kya-os/mcp)
+- [Spec](./SPEC.md) | [Changelog](./CHANGELOG.md) | [DIF TAAWG](https://identity.foundation/working-groups/agent-and-authorization.html) | [npm](https://www.npmjs.com/package/@kya-os/mcp)
 - [CONTRIBUTING.md](./CONTRIBUTING.md) | [CONFORMANCE.md](./CONFORMANCE.md) | [SECURITY.md](./SECURITY.md) | [GOVERNANCE.md](./GOVERNANCE.md)
 
 ## License

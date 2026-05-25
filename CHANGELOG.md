@@ -76,6 +76,34 @@ Versioning: https://semver.org/spec/v2.0.0.html
   identifiers (`_kyaos` tool name, well-known path, JSON Schema
   files, JSON-LD context URLs) are deferred to a later cutover so
   this doc-only rename doesn't break running implementations.
+
+  Why the rename: two forces.
+
+  First, MCP is Anthropic's trademark and lives under Anthropic's
+  governance. Calling a DIF-track identity protocol "MCP-Identity"
+  suggested an official extension of MCP and tied the protocol to a
+  single vendor's roadmap. The Linux Foundation flagged this during
+  pre-donation review and we agreed: a foundation-owned identity
+  protocol should not carry another foundation's (or vendor's)
+  trademark in its name.
+
+  Second, the protocol was never going to be MCP-only. The design
+  intent was a primitive layer for identity, authority, and
+  accountability that other agent-facing protocols adopt, analogous
+  to how TLS is a security layer that transports adopt rather than
+  a transport itself. KYA-OS primitives are intended to embed in
+  three kinds of host surface: transport bindings (wire protocols
+  an agent's calls ride over, e.g. MCP, HTTPS, gRPC, SMTP, Matrix,
+  browser-driven actions), runtime bindings (agent harnesses where
+  the loop runs and tool invocations can be wrapped uniformly), and
+  manifest / assertion embeddings (host formats like C2PA manifests
+  that already carry signed assertions and can carry a KYA-OS proof
+  as one assertion type). Naming the protocol after one binding
+  undersold the surface.
+
+  The MCP binding ships first because MCP is the most concentrated
+  agent-to-tool RPC surface today. Additional bindings will be
+  specified in the working group as they reach consensus.
 - **Spec cut to `1.0.0`** (was `0.1.0-draft` in `SPEC.md`, `1.0.0-draft`
   in `CONFORMANCE.md`). The wire format was already pinned at `1.0.0`
   in the handshake protocol-version field; the spec docs now match.

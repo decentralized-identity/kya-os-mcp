@@ -744,40 +744,95 @@ Servers MAY advertise a `clockSkewSeconds` field (type: number, default: 120, mi
 
 ## 11. Security Considerations
 
-### 11.1 Nonce Replay Attacks
+### 11.0 Trust Model
+
+KYA-OS distributes verification work across three trust boundaries. Operators
+deploying the protocol need to know which component is trusted with what.
+
+**1. The agent process itself.** Every agent holds its own Ed25519 secret key
+and is trusted to use it only on operations the agent has been authorized to
+perform. Compromise here yields full compromise of every chain the agent can
+sign under. Mitigations are platform-level: software-only identity (default),
+proxy-managed identity (key held by a trusted local process), or
+hardware-attested identity (TEE-bound — SEV-SNP, TDX, Nitro Enclaves). The
+spec is signature-algorithm-agnostic; operators choose key custody to fit
+their threat model.
+
+**2. The verifier.** At Conformance Level 1 (edge-proxy verification), the
+verifier sits in front of legacy MCP servers that don't natively understand
+KYA-OS. In this deployment the verifier is part of the trusted computing
+base for any resource it gates — a compromised L1 verifier can forge accepts
+on requests the resource owner would have rejected. **Operators relying on
+L1 SHOULD treat the verifier as a TCB component**, deploy it with the same
+isolation as other TCB infrastructure, and minimize its blast radius via
+per-service or per-tenant verifier instances rather than a single global
+edge gate.
+
+At Conformance Level 2+, verification moves into the resource boundary
+(native server-side verification). This shrinks the TCB: the edge verifier
+becomes defense-in-depth rather than the sole gate. **Services protecting
+sensitive resources SHOULD adopt L2+ to remove the edge verifier from their
+TCB.**
+
+**3. The service / resource owner.** The service decides what scopes it
+accepts, who its trust registry trusts, and which `did:web` documents it
+will fetch. Trust-registry decisions are advisory: an adversarial agent
+can route around registry rejection via credential sharing or request
+proxying. The cryptographic delegation check is the load-bearing gate; the
+registry is a signal that raises the friction of adversarial behavior.
+
+**Mutual authentication.** Services SHOULD be addressable by a DID
+(typically `did:web`), and agents performing verification SHOULD authenticate
+the service identity before sending sensitive payloads. This prevents an
+agent's delegation from being harvested by a service masquerading as the
+intended audience.
+
+### 11.1 Threat Model Summary
+
+The table below names each protocol-level threat, the protocol's mitigation,
+and the residual risk an operator carries.
+
+| Threat | Mitigation | Residual risk |
+|---|---|---|
+| **Impersonation** — a process claims to be an agent it is not. | Cryptographic identity (Ed25519 + DID). Every tool response carries a detached JWS proof; verifiers check the agent's DID document. | Compromise of an agent's secret key, or compromise of an L1 verifier (see §11.0). |
+| **Replay** — capturing a valid signed request and re-sending it. | Per-handshake nonces with bounded lifetime, dedupe cache on `(nonce, agentDid)`, ±120s clock skew. | Race within the dedupe cache window. Distributed deployments need atomic check-and-set on the cache. |
+| **Scope escalation** — a delegated agent invokes outside the delegator's intent. | Scope subset enforcement at every chain link; CRISP `matcher: 'exact'` for sensitive resources. See §11.4. | Implementation bugs in scope-subset checks. |
+| **Confused deputy** — a multi-resource delegation is repurposed for resources the delegator did not anticipate. | Designation invariant (§6.4.1) + audience-on-redelegation default `true` (§11.6). | Implementation bugs in the designation check. |
+| **Credential theft** — a `DelegationCredential` is intercepted and used by an attacker. | `audience` constraint; short `notAfter`; session binding at high-security tiers (§11.8); StatusList2021 revocation. | Window between theft and revocation. |
+| **Agent abuse** — a legitimate agent exceeds expected behavior. | Audit log of every signed tool call (§7); reputation tracking on both agent and Responsible Party (§2); revocation. | Detection latency; damage done before revocation propagates. |
+| **Key compromise** — an agent's secret key is exfiltrated. | Short-lived delegations; explicit revocation; key rotation via DID document update. | Window between compromise and detection. See §11.5. |
+| **Revocation race** — an invocation arrives while a revocation is propagating. | Status-list TTL bounded ≤ 60s for high-privilege scopes; side-channel revocation signals honored immediately; expiry as primary revocation mechanism. See §6.5.2. | Unavoidable Lamport-concurrent race. Operators bound the window; they cannot eliminate it. |
+| **Downgrade** — a client strips KYA-OS headers entirely. | Fail-closed: servers requiring identity MUST reject sessionless calls; `/.well-known/mcp` advertises requirements. See §11.7. | A non-compliant client that the operator has not configured to require identity. |
+| **Denial of service** | Per-session and per-handshake rate limiting; session caps; external session storage with TTL eviction. See §11.9. | Standard transport-layer DoS exposure (DDoS) is out of scope — operators rely on conventional network defenses. |
+
+### 11.2 Nonce Replay Attacks
 
 - Nonces MUST be cryptographically random (16 bytes minimum entropy)
 - Nonce cache MUST persist across server restarts (use external storage)
 - Nonce cache TTL MUST exceed session TTL
 - Distributed deployments MUST use atomic check-and-set operations
 
-### 11.2 Timestamp Skew Attacks
+### 11.3 Timestamp Skew Attacks
 
 - Default skew tolerance is 120 seconds
 - Servers MAY reduce this for high-security deployments
 - Servers SHOULD use NTP for time synchronization
 - Timestamps in proofs allow detection of delayed replay attempts
 
-### 11.3 Delegation Scope Escalation
+### 11.4 Delegation Scope Escalation
 
 - Child delegations MUST NOT exceed parent scope
 - Servers MUST validate entire delegation chain, not just leaf
 - Scope comparison MUST be performed at each chain link
 - Use CRISP `matcher: 'exact'` for sensitive resources
 
-### 11.4 Key Rotation
+### 11.5 Key Rotation
 
 - did:key: Generate new DID (no rotation mechanism)
 - did:web: Update `did.json` with new verification method
 - Old keys SHOULD remain in `did.json` for proof verification
 - Delegation credentials reference specific key IDs; reissue after rotation
-
-### 11.5 Revocation Freshness
-
-- StatusList2021 credentials have cache-control considerations
-- Servers SHOULD set appropriate `Cache-Control` headers
-- High-security deployments MAY require real-time revocation checks
-- Cascading revocation MUST be atomic
+- Key custody options include software-only (default), proxy-managed, and hardware-attested (TEE). See §11.0.
 
 ### 11.6 Confused Deputy Attacks
 
@@ -826,6 +881,17 @@ An attacker may send a large volume of valid handshake requests to exhaust serve
 - Implementations SHOULD evict the oldest sessions when the limit is reached
 - Rate limiting on the handshake endpoint is RECOMMENDED
 - Distributed deployments SHOULD use external session storage with built-in TTL eviction
+
+### 11.10 Revocation Freshness
+
+The Lamport-concurrent revocation race is documented in §6.5.2. The
+deployment-level controls are:
+
+- StatusList2021 credentials have cache-control considerations
+- Servers SHOULD set appropriate `Cache-Control` headers
+- High-security deployments MAY require real-time revocation checks
+- Cascading revocation MUST be atomic
+- Status-list cache TTL SHOULD be ≤ 60 seconds for high-privilege scopes
 
 ---
 

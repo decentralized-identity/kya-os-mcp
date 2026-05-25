@@ -648,7 +648,7 @@ When an MCP server calls downstream services (APIs, other MCP servers), it MUST 
 interface DelegationProofJWT {
   // Standard JWT claims
   iss: string;   // Server DID (JWT issuer)
-  sub: string;   // User DID (on whose behalf)
+  sub: string;   // Responsible Party DID (the root issuer of the delegation chain)
   aud: string;   // Target service hostname
   iat: number;   // Issued at (Unix epoch)
   exp: number;   // Expires at (iat + 60 seconds)

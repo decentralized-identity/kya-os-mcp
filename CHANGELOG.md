@@ -9,6 +9,9 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ### Spec
 
+- Introduced **Principal** and **Responsible Party** as first-class terms (§2). The Responsible Party is the entity ultimately accountable for actions taken under a delegation chain — the root issuer of the chain. Distinguished from the Principal (the immediate human delegator) to support organizational deployments where the operating human is not the accountable entity.
+- Added a normative invariant to §6.4: every delegation chain MUST terminate at a Responsible Party, identified by the `issuerDid` of the root `DelegationCredential`.
+- Reworded the Abstract to drop "on whose behalf" (impersonation framing) in favor of "what authority they hold (a delegation chain rooted at a Responsible Party)" — capability-security framing that matches the protocol's actual semantics.
 - Added normative _meta hash exclusion paragraph and `session.metaPolicy` opt-in (default: `strict`).
 - Documented anonymous handshake nonce-dedupe boundary; reference impl now uses a 60s TTL for anonymous nonces.
 - Added `clockSkewSeconds` field to `.well-known/mcp` for server-advertised skew negotiation.

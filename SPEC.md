@@ -278,6 +278,8 @@ The nonce cache implementation MUST:
 - Be atomic to prevent race conditions in concurrent environments
 - For distributed deployments: use Redis, DynamoDB, or Cloudflare KV (not in-memory)
 
+Nonce lifetime MUST exceed the session TTL. Servers MUST NOT drop nonces before the lifetime expires, to prevent replay attacks via early eviction.
+
 ---
 
 ## 6. Delegation
@@ -305,6 +307,8 @@ interface DelegationRecord {
 ```
 
 ### 6.2 DelegationCredential as W3C VC
+
+> **Note:** A Delegation credential is itself a W3C Verifiable Credential. The Delegation Registry is a specialized index of delegations, which are VCs.
 
 Delegations are issued as W3C Verifiable Credentials:
 
@@ -515,9 +519,27 @@ KYA-OS uses the W3C StatusList2021 specification for revocation:
 }
 ```
 
+L1 implementations do not require revocation support; revocation checking is available at L3 only.
+
+### 6.7 Orchestration & Extensibility
+
+Orchestration scope is service-local; directory federation is out of scope for this version. Delegation graphs and revocation state are managed within a single service boundary and are not synchronized across independent KYA-OS deployments or external agent directories (e.g. NANDA).
+
 - Each delegation is assigned a `statusListIndex` (0 to 131071)
 - Bit at index is 0 = valid, 1 = revoked
 - Bitstring is gzip-compressed and base64-encoded
+
+### 6.8 Protocol Registry
+
+The registry indexes anything addressable by DID — agents, MCP servers, services, and delegation policies.
+
+Three registry types are defined within the protocol:
+
+- **Delegation Registry** — stores `DelegationCredential` objects and supports querying by issuer, subject, scope, and revocation status.
+- **Credential Registry** — stores all W3C Verifiable Credentials issued within the ecosystem, providing a general-purpose VC index.
+- **Trust Registry** — indexes entities by DID for discovery, enabling participants to resolve trust relationships and verify standing.
+
+`DelegationCredential` IS a Verifiable Credential; Delegation Registry is a specialized Credential Registry view.
 
 ---
 
@@ -625,6 +647,69 @@ The proof is attached to tool responses in the `_meta` field:
 The response hash is computed over the response object with `_meta` removed. Implementations MUST NOT rely on signature coverage of `_meta` fields. Verifiers SHOULD treat `_meta` as containing only `proof` unless the session config explicitly enables additional `_meta` fields via `session.metaPolicy`.
 
 When `session.metaPolicy` is set to `strict` (the default), verifiers MUST reject responses whose `_meta` contains keys other than `proof`. When set to `allow-extensions`, verifiers permit additional keys in `_meta` but MUST NOT include them in any hash computation or signature verification.
+
+### 7.7 Delegation Chain Audit Example
+
+The following shows how audit records link across a 3-level delegation chain: User → Agent A → Agent B → tool call.
+
+**Step 1 — User delegates to Agent A**
+
+```json
+{
+  "id": "urn:uuid:1111-aaaa",
+  "type": "DelegationCredential",
+  "issuer": "did:web:user.example.com",
+  "credentialSubject": {
+    "id": "did:web:agent-a.example.com",
+    "parentDelegation": null,
+    "scope": "files:read files:write"
+  }
+}
+```
+
+**Step 2 — Agent A delegates to Agent B**
+
+```json
+{
+  "id": "urn:uuid:2222-bbbb",
+  "type": "DelegationCredential",
+  "issuer": "did:web:agent-a.example.com",
+  "credentialSubject": {
+    "id": "did:web:agent-b.example.com",
+    "parentDelegation": "urn:uuid:1111-aaaa",
+    "scope": "files:read"
+  }
+}
+```
+
+The `parentDelegation` field links this record back to the User → Agent A credential, forming a verifiable chain.
+
+**Step 3 — Agent B calls a tool; the server generates an audit record**
+
+```json
+{
+  "content": [{ "type": "text", "text": "file contents..." }],
+  "_meta": {
+    "proof": {
+      "jws": "eyJhbGciOiJFZERTQSJ9...",
+      "meta": {
+        "did": "did:web:tool-server.example.com",
+        "kid": "did:web:tool-server.example.com#key-1",
+        "ts": 1710288120,
+        "nonce": "xyz789",
+        "audience": "did:web:tool-server.example.com",
+        "sessionId": "kyaos_f1e2d3c4-...",
+        "requestHash": "sha256:aabbcc...",
+        "responseHash": "sha256:ddeeff...",
+        "delegationRef": "urn:uuid:2222-bbbb",
+        "clientDid": "did:web:agent-b.example.com"
+      }
+    }
+  }
+}
+```
+
+The `delegationRef` in the proof points to Agent B's delegation credential (`urn:uuid:2222-bbbb`), which in turn carries `parentDelegation: urn:uuid:1111-aaaa` back to the original user grant. An auditor can reconstruct the full chain — User → Agent A → Agent B → tool call — by following `delegationRef` → `parentDelegation` links. All three records are independently verifiable offline using the signers' DID documents.
 
 ---
 

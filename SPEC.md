@@ -402,6 +402,32 @@ Delegations form a directed acyclic graph (DAG):
 - Child delegation's `issuerDid` MUST equal parent's `subjectDid`
 - Scope constraints MUST be equal to or narrower than parent's constraints
 
+### 6.4.1 Designation Invariant
+
+A `DelegationCredential` may authorize multiple resources, either via a list
+of explicit scope strings (`constraints.scopes[]`) or via pattern matchers
+(`constraints.crisp.scopes[].matcher`: `'exact' | 'prefix' | 'regex'`). When
+the credential is used to invoke a specific tool or resource, the invocation
+MUST designate the specific scope being exercised, and verifiers MUST confirm
+that the designated scope is a member of (or matches a pattern in) the
+delegation's authorized scopes.
+
+In other words: multi-resource delegations are valid as authority grants
+but cannot be used in invocations without designation. An invocation that
+omits the specific resource designation MUST be rejected, even if the
+delegation would have authorized it under any matching scope.
+
+This is the designation/authorization separation: without it, an attacker
+who acquires a multi-resource delegation can use it against resources the
+original delegator did not anticipate. Together with the audience-on-
+re-delegation requirement (§11.6), this closes the confused-deputy class
+on the invocation path.
+
+Reference implementation: each tool wrapped via `wrapWithDelegation` is
+registered with a fixed `scopeId`; invocations carry the wrapped tool's
+name and the verifier requires the delegation's scopes to contain that
+exact scopeId before the handler runs.
+
 ### 6.5 Cascading Revocation
 
 When a delegation is revoked:
@@ -410,6 +436,56 @@ When a delegation is revoked:
 2. Recursively mark all descendant delegations as `revoked`
 3. Update StatusList2021 credential for each revoked delegation
 4. Emit revocation events for audit logging
+
+#### 6.5.1 Revocation Rights
+
+For v1.0, the parties authorized to revoke a delegation are:
+
+1. **The direct issuer of the delegation.** The party that signed the
+   `DelegationCredential` MAY revoke it at any time.
+2. **Any ancestor issuer in the delegation chain.** A party that issued
+   an upstream delegation MAY revoke any descendant delegation; cascading
+   revocation propagates downward through the graph (§6.5).
+3. **The Responsible Party at the root of the chain.** The root issuer
+   MAY revoke the entire chain.
+4. **The subject of a delegation MAY NOT revoke it.** Revocation requires
+   authority from above; an agent cannot unilaterally invalidate a
+   delegation it received.
+
+Revocation requests SHOULD be signed by the revoking party's key, and
+verifiers SHOULD validate the revoker's identity against the chain before
+honoring the revocation.
+
+Future versions may adopt an explicit "revocation as a delegatable
+permission" model (UCAN-style), allowing the responsible party to grant
+revocation authority to other parties (e.g. a security operations team)
+without those parties being in the original chain. Tracked for v1.1.
+
+#### 6.5.2 Concurrency and the Revocation Race
+
+Revocation and invocation are concurrent operations in the Lamport sense.
+An invocation that arrives at a verifier between the moment a revocation
+is issued and the moment that revocation propagates to the verifier will
+succeed despite the revocation being logically prior. This race is
+unavoidable in any distributed system; implementations can bound the
+window but cannot eliminate it.
+
+Implementations MUST:
+
+- Propagate revocations to all known verifiers as quickly as possible,
+  including immediate StatusList2021 updates and cache invalidation.
+- Cache status-list lookups with a TTL no longer than the revocation
+  propagation target. For high-privilege scopes, ≤ 60 seconds is
+  recommended.
+- Honor explicit revocation signals (e.g., a side-channel notification
+  from a trusted source) immediately, ahead of the next status-list
+  refresh.
+
+Operators of high-stakes resources SHOULD reduce the race window by
+issuing short-lived delegations (so revocation by expiration is the
+primary mechanism) and polling status lists frequently. The unavoidable
+race is the same trade-off familiar from PKI: short certificate lifetimes
+reduce the window during which a compromised credential can be used.
 
 ### 6.6 StatusList2021 Revocation
 
@@ -706,6 +782,18 @@ A confused deputy attack occurs when Agent B receives a valid delegation from Ag
 - Delegation scopes SHOULD be as narrow as possible (prefer `tool:read_file` over `tool:*`)
 - CRISP `matcher: 'exact'` SHOULD be used for sensitive resources
 - Servers MAY implement per-delegation call logging to detect misuse
+
+Two normative invariants close the confused-deputy class on the invocation path:
+
+1. **Designation invariant (§6.4.1).** Invocations MUST designate the specific
+   resource being exercised; verifiers MUST reject invocations that rely on a
+   multi-resource delegation without designation. The reference implementation
+   enforces this by requiring each tool's registered `scopeId` to be present
+   in the delegation's authorized scopes before the handler runs.
+2. **Audience-on-redelegation default (§this section).** Non-root credentials
+   in a delegation chain MUST carry an `audience` constraint binding them to a
+   specific verifying server. This default is `true` as of v1.3.x; opt-out is
+   available with a one-time per-process warning for legacy integrations.
 
 ### 11.7 Downgrade Attacks
 

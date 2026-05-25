@@ -13,6 +13,9 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ### Spec
 
+- Added non-normative privacy primitive: one-off delegation keypairs for unlinkable delegate identity.
+- Defined "scoped Verifiable Credentials" in the data-minimization context.
+- Added forward-looking post-quantum cryptography roadmap (Future Considerations).
 - Added §11.0 (Trust Model) naming the three trust boundaries explicitly: the agent process, the verifier (with the Edge Verifier called out as a TCB component at L1), and the service / resource owner. Includes key custody options (software, proxy-managed, hardware-attested) and a mutual-authentication recommendation for services.
 - Added §11.1 (Threat Model Summary) as a structured table: threat → mitigation → residual risk. Covers impersonation, replay, scope escalation, confused deputy, credential theft, agent abuse, key compromise, revocation race, downgrade, and DoS — with cross-references to detailed sections and to the cap-sec invariants in §6.4.1 / §6.5.
 - Renumbered §11 subsections to fit the new structure (Revocation Freshness moved to §11.10; previous §11.1–§11.5 shifted by one).

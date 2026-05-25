@@ -469,6 +469,7 @@ export function createKyaOsMiddleware(
             name: config.identity.agentName ?? identity.did,
             capabilities: ["handshake", "signing", "verification"],
             protocolVersion: "1.0.0",
+            clockSkewSeconds: sessionManager.getStats().config.timestampSkewSeconds,
           }),
         },
       ],

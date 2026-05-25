@@ -63,6 +63,9 @@ export {
   DEFAULT_SESSION_TTL_MINUTES,
   DEFAULT_TIMESTAMP_SKEW_SECONDS,
   NONCE_LENGTH_BYTES,
+  AUTH_NONCE_TTL_MS,
+  ANON_NONCE_TTL_MS,
+  type MetaPolicy,
 } from './types/protocol.js';
 
 // Delegation module
@@ -211,6 +214,11 @@ export {
 
 export {
   ProofVerifier,
+  validateMetaStructure,
+  extractProofFromMeta,
+  DEFAULT_CLOCK_SKEW_SECONDS,
+  MIN_CLOCK_SKEW_SECONDS,
+  MAX_CLOCK_SKEW_SECONDS,
   type ProofVerifierConfig,
   type ProofVerificationResult,
 } from './proof/verifier.js';

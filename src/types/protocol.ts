@@ -378,6 +378,8 @@ export interface SessionContext {
   userDid?: string;
   clientInfo?: MCPClientSessionInfo;
   identityState: SessionIdentityState;
+  /** Policy for _meta field validation (default: 'strict') */
+  metaPolicy?: MetaPolicy;
   oauthIdentity?: {
     provider: string;
     subject: string;
@@ -402,6 +404,18 @@ export interface NonceCache {
 export const DEFAULT_SESSION_TTL_MINUTES = 30;
 export const DEFAULT_TIMESTAMP_SKEW_SECONDS = 120;
 export const NONCE_LENGTH_BYTES = 16;
+
+/** Nonce TTL for authenticated handshakes (with agentDid) */
+export const AUTH_NONCE_TTL_MS = 120_000;
+/** Nonce TTL for anonymous handshakes (without agentDid) */
+export const ANON_NONCE_TTL_MS = 60_000;
+
+/**
+ * Policy for _meta field validation in proof verification.
+ * - 'strict': reject responses with _meta keys other than 'proof'
+ * - 'allow-extensions': permit additional keys in _meta (not included in hashes)
+ */
+export type MetaPolicy = 'strict' | 'allow-extensions';
 
 // ============================================================================
 // Proof types (KYA-OS §5)

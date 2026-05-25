@@ -238,6 +238,7 @@ The server MUST validate the handshake request:
 2. **Nonce Uniqueness**: The (nonce, agentDid) pair MUST NOT have been seen before
    - Reject with "Nonce already used (replay attack prevention)"
    - Nonces MUST be cached for at least `sessionTtlMinutes + 1 minute`
+   - When `agentDid` is omitted, the dedupe key is `nonce` alone. Servers MUST use a shorter cache TTL for anonymous nonces (recommended: 60 seconds, vs. the default 120 seconds for authenticated handshakes)
 
 3. **Audience Match**: `request.audience` MUST match the server's DID or expected domain
    - Prevents credential forwarding attacks
@@ -538,6 +539,12 @@ The proof is attached to tool responses in the `_meta` field:
 }
 ```
 
+### 7.6 _meta Hash Exclusion
+
+The response hash is computed over the response object with `_meta` removed. Implementations MUST NOT rely on signature coverage of `_meta` fields. Verifiers SHOULD treat `_meta` as containing only `proof` unless the session config explicitly enables additional `_meta` fields via `session.metaPolicy`.
+
+When `session.metaPolicy` is set to `strict` (the default), verifiers MUST reject responses whose `_meta` contains keys other than `proof`. When set to `allow-extensions`, verifiers permit additional keys in `_meta` but MUST NOT include them in any hash computation or signature verification.
+
 ---
 
 ## 8. Outbound Delegation Propagation
@@ -640,12 +647,17 @@ KYA-OS servers SHOULD expose `/.well-known/mcp`:
   },
   "supported_did_methods": ["did:key", "did:web"],
   "proof_algorithms": ["EdDSA"],
+  "clockSkewSeconds": 120,
   "endpoints": {
     "handshake": "/_kya-os/handshake",
     "status_list": "/.well-known/status/1"
   }
 }
 ```
+
+### 10.1 Clock Skew Negotiation
+
+Servers MAY advertise a `clockSkewSeconds` field (type: number, default: 120, minimum: 30, maximum: 600) indicating the tolerance window for timestamp validation. Clients SHOULD read this value on first contact and use it for their own clock-skew tolerance when validating server timestamps, falling back to the hardcoded default (120 seconds) if the field is absent or out of range.
 
 ---
 

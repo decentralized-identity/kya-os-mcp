@@ -46,6 +46,13 @@
         "format": "uri-reference"
       }
     },
+    "clockSkewSeconds": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 600,
+      "default": 120,
+      "description": "Server-advertised timestamp skew tolerance in seconds. Clients SHOULD use this for their own clock-skew validation."
+    },
     "capabilities": {
       "type": "object",
       "description": "Server capabilities for feature discovery.",

@@ -10,10 +10,11 @@
  * NodeCryptoProvider is injected (test environment is Node.js).
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { SessionManager, createHandshakeRequest, validateHandshakeFormat } from "../manager.js";
 import type { SessionConfig } from "../manager.js";
 import type { HandshakeRequest } from "../../types/protocol.js";
+import { AUTH_NONCE_TTL_MS, ANON_NONCE_TTL_MS } from "../../types/protocol.js";
 
 // NodeCryptoProvider for test environment (Node.js)
 import { NodeCryptoProvider } from "../../__tests__/utils/node-crypto-provider.js";
@@ -338,5 +339,152 @@ describe("validateHandshakeFormat", () => {
     expect(validateHandshakeFormat(null)).toBe(false);
     expect(validateHandshakeFormat("string")).toBe(false);
     expect(validateHandshakeFormat(42)).toBe(false);
+  });
+});
+
+describe("Anonymous Nonce TTL", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("should use 60s TTL for anonymous nonces (no agentDid)", async () => {
+    const manager = makeSessionManager();
+    const nonce = SessionManager.generateNonce();
+
+    // First handshake succeeds
+    const result1 = await manager.validateHandshake({
+      nonce,
+      audience: "example.com",
+      timestamp: Math.floor(Date.now() / 1000),
+      agentDid: undefined,
+    });
+    expect(result1.success).toBe(true);
+
+    // Same nonce rejected immediately (still in cache)
+    const result2 = await manager.validateHandshake({
+      nonce,
+      audience: "example.com",
+      timestamp: Math.floor(Date.now() / 1000),
+      agentDid: undefined,
+    });
+    expect(result2.success).toBe(false);
+
+    // Advance time past 60s TTL
+    vi.advanceTimersByTime(ANON_NONCE_TTL_MS + 1000);
+    await manager.cleanup();
+
+    // Same nonce should now be accepted (cache expired)
+    const result3 = await manager.validateHandshake({
+      nonce,
+      audience: "example.com",
+      timestamp: Math.floor(Date.now() / 1000),
+      agentDid: undefined,
+    });
+    expect(result3.success).toBe(true);
+  });
+
+  it("should use 120s TTL for authenticated nonces (with agentDid)", async () => {
+    const manager = makeSessionManager();
+    const nonce = SessionManager.generateNonce();
+    const agentDid = "did:key:zAgent";
+
+    // First handshake succeeds
+    const result1 = await manager.validateHandshake({
+      nonce,
+      audience: "example.com",
+      timestamp: Math.floor(Date.now() / 1000),
+      agentDid,
+    });
+    expect(result1.success).toBe(true);
+
+    // Advance 70s - still within 120s TTL
+    vi.advanceTimersByTime(70_000);
+    await manager.cleanup();
+
+    // Same nonce still rejected (within 120s window) - use fresh timestamp
+    const result2 = await manager.validateHandshake({
+      nonce,
+      audience: "example.com",
+      timestamp: Math.floor(Date.now() / 1000),
+      agentDid,
+    });
+    expect(result2.success).toBe(false);
+
+    // Advance past 120s total
+    vi.advanceTimersByTime(60_000);
+    await manager.cleanup();
+
+    // Same nonce should now be accepted - use fresh timestamp
+    const result3 = await manager.validateHandshake({
+      nonce,
+      audience: "example.com",
+      timestamp: Math.floor(Date.now() / 1000),
+      agentDid,
+    });
+    expect(result3.success).toBe(true);
+  });
+
+  it("should expire anonymous nonce before authenticated nonce", async () => {
+    const manager = makeSessionManager();
+    const anonNonce = SessionManager.generateNonce();
+    const authNonce = SessionManager.generateNonce();
+    const agentDid = "did:key:zAgent";
+
+    await manager.validateHandshake({
+      nonce: anonNonce,
+      audience: "example.com",
+      timestamp: Math.floor(Date.now() / 1000),
+      agentDid: undefined,
+    });
+    await manager.validateHandshake({
+      nonce: authNonce,
+      audience: "example.com",
+      timestamp: Math.floor(Date.now() / 1000),
+      agentDid,
+    });
+
+    // Advance 70s - anonymous should expire, authenticated should not
+    vi.advanceTimersByTime(70_000);
+    await manager.cleanup();
+
+    // Anonymous nonce can be reused (expired) - use fresh timestamp
+    const anonResult = await manager.validateHandshake({
+      nonce: anonNonce,
+      audience: "example.com",
+      timestamp: Math.floor(Date.now() / 1000),
+      agentDid: undefined,
+    });
+    expect(anonResult.success).toBe(true);
+
+    // Authenticated nonce still blocked - use fresh timestamp
+    const authResult = await manager.validateHandshake({
+      nonce: authNonce,
+      audience: "example.com",
+      timestamp: Math.floor(Date.now() / 1000),
+      agentDid,
+    });
+    expect(authResult.success).toBe(false);
+  });
+});
+
+describe("Session metaPolicy", () => {
+  it("should default to strict metaPolicy", async () => {
+    const manager = makeSessionManager();
+    const request = makeRequest();
+    const { session } = await manager.validateHandshake(request);
+
+    expect(session?.metaPolicy).toBe("strict");
+  });
+
+  it("should use configured metaPolicy", async () => {
+    const manager = makeSessionManager({ metaPolicy: "allow-extensions" });
+    const request = makeRequest();
+    const { session } = await manager.validateHandshake(request);
+
+    expect(session?.metaPolicy).toBe("allow-extensions");
   });
 });

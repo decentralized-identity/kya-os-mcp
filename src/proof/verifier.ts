@@ -13,6 +13,7 @@ import { FetchProvider } from "../providers/base.js";
 import {
   validateDetachedProof,
   type DetachedProof,
+  type MetaPolicy,
 } from "../types/protocol.js";
 import { canonicalize } from "json-canonicalize";
 import {
@@ -39,6 +40,13 @@ export interface ProofVerifierConfig {
   nonceTtlSeconds?: number;
 }
 
+/** Default timestamp skew for proof verification (seconds) */
+export const DEFAULT_CLOCK_SKEW_SECONDS = 120;
+/** Minimum allowed clock skew (seconds) */
+export const MIN_CLOCK_SKEW_SECONDS = 30;
+/** Maximum allowed clock skew (seconds) */
+export const MAX_CLOCK_SKEW_SECONDS = 600;
+
 export class ProofVerifier {
   private cryptoService: CryptoService;
   private clock: ClockProvider;
@@ -52,8 +60,32 @@ export class ProofVerifier {
     this.clock = config.clockProvider;
     this.nonceCache = config.nonceCacheProvider;
     this.fetch = config.fetchProvider;
-    this.timestampSkewSeconds = config.timestampSkewSeconds ?? 300; // Default 5 minutes
+    this.timestampSkewSeconds = config.timestampSkewSeconds ?? DEFAULT_CLOCK_SKEW_SECONDS;
     this.nonceTtlSeconds = config.nonceTtlSeconds ?? 300; // Default 5 minutes
+  }
+
+  /**
+   * Update the timestamp skew from a server-advertised value.
+   * Clients SHOULD call this with the server's clockSkewSeconds from /.well-known/mcp.
+   * The value is clamped to [30, 600] seconds.
+   *
+   * @param skewSeconds - Server-advertised clock skew in seconds
+   */
+  setTimestampSkew(skewSeconds: number): void {
+    if (typeof skewSeconds !== 'number' || !Number.isFinite(skewSeconds)) {
+      return;
+    }
+    this.timestampSkewSeconds = Math.max(
+      MIN_CLOCK_SKEW_SECONDS,
+      Math.min(MAX_CLOCK_SKEW_SECONDS, Math.floor(skewSeconds))
+    );
+  }
+
+  /**
+   * Get the current timestamp skew setting.
+   */
+  getTimestampSkew(): number {
+    return this.timestampSkewSeconds;
   }
 
   /**
@@ -446,4 +478,75 @@ export class ProofVerifier {
     // CRITICAL: Must use json-canonicalize canonicalize() to match proof.ts exactly
     return canonicalize(payload);
   }
+}
+
+/**
+ * Validate _meta structure according to meta policy.
+ *
+ * In 'strict' mode, _meta must contain only 'proof'.
+ * In 'allow-extensions' mode, additional keys are permitted.
+ *
+ * @param meta - The _meta object from a response
+ * @param policy - Meta policy ('strict' or 'allow-extensions')
+ * @returns Validation result with valid flag and optional reason
+ */
+export function validateMetaStructure(
+  meta: Record<string, unknown>,
+  policy: MetaPolicy = 'strict'
+): { valid: boolean; reason?: string; extraKeys?: string[] } {
+  const keys = Object.keys(meta);
+  const extraKeys = keys.filter(k => k !== 'proof');
+
+  if (policy === 'strict' && extraKeys.length > 0) {
+    return {
+      valid: false,
+      reason: `_meta contains keys other than 'proof' in strict mode: ${extraKeys.join(', ')}`,
+      extraKeys,
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Extract proof from _meta with policy validation.
+ *
+ * @param meta - The _meta object from a response
+ * @param policy - Meta policy ('strict' or 'allow-extensions')
+ * @returns Extracted proof or error result
+ */
+export function extractProofFromMeta(
+  meta: Record<string, unknown>,
+  policy: MetaPolicy = 'strict'
+): { success: true; proof: DetachedProof } | { success: false; reason: string; errorCode: string } {
+  // Check for required proof field first
+  const proof = meta.proof;
+  if (!proof) {
+    return {
+      success: false,
+      reason: '_meta does not contain proof',
+      errorCode: PROOF_VERIFICATION_ERROR_CODES.MISSING_REQUIRED_FIELD,
+    };
+  }
+
+  // Validate meta structure according to policy
+  const validation = validateMetaStructure(meta, policy);
+  if (!validation.valid) {
+    return {
+      success: false,
+      reason: validation.reason!,
+      errorCode: PROOF_VERIFICATION_ERROR_CODES.META_POLICY_VIOLATION,
+    };
+  }
+
+  const proofValidation = validateDetachedProof(proof);
+  if (!proofValidation.success) {
+    return {
+      success: false,
+      reason: proofValidation.error?.message ?? 'Invalid proof structure',
+      errorCode: PROOF_VERIFICATION_ERROR_CODES.INVALID_PROOF_STRUCTURE,
+    };
+  }
+
+  return { success: true, proof: proofValidation.data! };
 }

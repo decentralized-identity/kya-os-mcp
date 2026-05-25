@@ -7,6 +7,12 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Spec
+
+- Added normative _meta hash exclusion paragraph and `session.metaPolicy` opt-in (default: `strict`).
+- Documented anonymous handshake nonce-dedupe boundary; reference impl now uses a 60s TTL for anonymous nonces.
+- Added `clockSkewSeconds` field to `.well-known/mcp` for server-advertised skew negotiation.
+
 ### Security
 
 - **BREAKING (default flip): `requireAudienceOnRedelegation` now defaults to `true`.**

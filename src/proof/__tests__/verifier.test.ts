@@ -9,7 +9,14 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { ProofVerifier } from '../verifier.js';
+import {
+  ProofVerifier,
+  validateMetaStructure,
+  extractProofFromMeta,
+  DEFAULT_CLOCK_SKEW_SECONDS,
+  MIN_CLOCK_SKEW_SECONDS,
+  MAX_CLOCK_SKEW_SECONDS,
+} from '../verifier.js';
 import { CryptoService, type Ed25519JWK } from '../../utils/crypto-service.js';
 import type {
   CryptoProvider,
@@ -17,7 +24,7 @@ import type {
   NonceCacheProvider,
   FetchProvider,
 } from '../../providers/base.js';
-import type { DetachedProof } from '../../types/protocol.js';
+import type { DetachedProof, MetaPolicy } from '../../types/protocol.js';
 import {
   ProofVerificationError,
   PROOF_VERIFICATION_ERROR_CODES,
@@ -482,6 +489,146 @@ describe('ProofVerifier Security', () => {
         expect((error as ProofVerificationError).code).toBe(
           PROOF_VERIFICATION_ERROR_CODES.INVALID_JWK_FORMAT
         );
+      }
+    });
+  });
+
+  describe('Clock Skew Negotiation', () => {
+    it('should use default clock skew when not configured', () => {
+      expect(proofVerifier.getTimestampSkew()).toBe(120);
+    });
+
+    it('should allow updating clock skew from server-advertised value', () => {
+      proofVerifier.setTimestampSkew(60);
+      expect(proofVerifier.getTimestampSkew()).toBe(60);
+    });
+
+    it('should clamp clock skew to minimum (30s)', () => {
+      proofVerifier.setTimestampSkew(10);
+      expect(proofVerifier.getTimestampSkew()).toBe(MIN_CLOCK_SKEW_SECONDS);
+    });
+
+    it('should clamp clock skew to maximum (600s)', () => {
+      proofVerifier.setTimestampSkew(1000);
+      expect(proofVerifier.getTimestampSkew()).toBe(MAX_CLOCK_SKEW_SECONDS);
+    });
+
+    it('should ignore non-finite values', () => {
+      const original = proofVerifier.getTimestampSkew();
+      proofVerifier.setTimestampSkew(NaN);
+      expect(proofVerifier.getTimestampSkew()).toBe(original);
+      proofVerifier.setTimestampSkew(Infinity);
+      expect(proofVerifier.getTimestampSkew()).toBe(original);
+    });
+
+    it('should reject timestamp outside server-advertised 60s window', async () => {
+      proofVerifier.setTimestampSkew(60);
+      const proof = createValidProof();
+      // Timestamp 90s old
+      proof.meta.ts = Math.floor(Date.now() / 1000) - 90;
+
+      mockClockProvider.isWithinSkew = vi.fn().mockReturnValue(false);
+
+      const result = await proofVerifier.verifyProof(proof, validJwk);
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain('skew');
+      expect(mockClockProvider.isWithinSkew).toHaveBeenCalledWith(
+        proof.meta.ts * 1000,
+        60
+      );
+    });
+
+    it('should accept timestamp within default 120s window', async () => {
+      const proof = createValidProof();
+      // Timestamp 90s old - rejected at 60s, accepted at 120s
+      proof.meta.ts = Math.floor(Date.now() / 1000) - 90;
+
+      mockClockProvider.isWithinSkew = vi.fn().mockReturnValue(true);
+
+      const result = await proofVerifier.verifyProof(proof, validJwk);
+      expect(result.valid).toBe(true);
+      expect(mockClockProvider.isWithinSkew).toHaveBeenCalledWith(
+        proof.meta.ts * 1000,
+        120
+      );
+    });
+  });
+});
+
+describe('Meta Policy Validation', () => {
+  describe('validateMetaStructure', () => {
+    it('should accept _meta with only proof in strict mode', () => {
+      const meta = { proof: { jws: 'test', meta: {} } };
+      const result = validateMetaStructure(meta, 'strict');
+      expect(result.valid).toBe(true);
+    });
+
+    it('should reject _meta with extra keys in strict mode', () => {
+      const meta = { proof: { jws: 'test', meta: {} }, extra: 'evil' };
+      const result = validateMetaStructure(meta, 'strict');
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain('extra');
+      expect(result.extraKeys).toContain('extra');
+    });
+
+    it('should accept _meta with extra keys in allow-extensions mode', () => {
+      const meta = { proof: { jws: 'test', meta: {} }, extra: 'allowed' };
+      const result = validateMetaStructure(meta, 'allow-extensions');
+      expect(result.valid).toBe(true);
+    });
+
+    it('should default to strict mode', () => {
+      const meta = { proof: { jws: 'test', meta: {} }, extra: 'evil' };
+      const result = validateMetaStructure(meta);
+      expect(result.valid).toBe(false);
+    });
+  });
+
+  describe('extractProofFromMeta', () => {
+    const validProof = {
+      jws: 'eyJhbGciOiJFZERTQSJ9.e30.sig',
+      meta: {
+        did: 'did:key:z123',
+        kid: 'did:key:z123#keys-1',
+        ts: Math.floor(Date.now() / 1000),
+        nonce: 'nonce123',
+        audience: 'test',
+        sessionId: 'session123',
+        requestHash: 'sha256:' + 'a'.repeat(64),
+        responseHash: 'sha256:' + 'b'.repeat(64),
+      },
+    };
+
+    it('should extract proof from valid _meta', () => {
+      const meta = { proof: validProof };
+      const result = extractProofFromMeta(meta, 'strict');
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.proof).toEqual(validProof);
+      }
+    });
+
+    it('should reject _meta with extra keys in strict mode', () => {
+      const meta = { proof: validProof, extra: 'evil' };
+      const result = extractProofFromMeta(meta, 'strict');
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.errorCode).toBe(PROOF_VERIFICATION_ERROR_CODES.META_POLICY_VIOLATION);
+      }
+    });
+
+    it('should accept _meta with extra keys in allow-extensions mode', () => {
+      const meta = { proof: validProof, extra: 'allowed' };
+      const result = extractProofFromMeta(meta, 'allow-extensions');
+      expect(result.success).toBe(true);
+    });
+
+    it('should reject _meta without proof', () => {
+      const meta = { other: 'data' };
+      const result = extractProofFromMeta(meta, 'strict');
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.errorCode).toBe(PROOF_VERIFICATION_ERROR_CODES.MISSING_REQUIRED_FIELD);
       }
     });
   });

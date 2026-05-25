@@ -14,6 +14,11 @@ import type {
   HandshakeRequest,
   SessionContext,
   NonceCache,
+  MetaPolicy,
+} from '../types/protocol.js';
+import {
+  AUTH_NONCE_TTL_MS,
+  ANON_NONCE_TTL_MS,
 } from '../types/protocol.js';
 import type { CryptoProvider } from '../providers/base.js';
 import { MemoryNonceCacheProvider } from '../providers/memory.js';
@@ -27,6 +32,8 @@ export interface SessionConfig {
   serverDid?: string;
   /** Maximum number of concurrent sessions. Oldest sessions are evicted when exceeded. Default: 10000 */
   maxSessions?: number;
+  /** Policy for _meta field validation in proof verification. Default: 'strict' */
+  metaPolicy?: MetaPolicy;
 }
 
 export interface HandshakeResult {
@@ -40,9 +47,10 @@ export interface HandshakeResult {
 }
 
 export class SessionManager {
-  private config: Required<Omit<SessionConfig, 'absoluteSessionLifetime' | 'serverDid' | 'maxSessions'>> & {
+  private config: Required<Omit<SessionConfig, 'absoluteSessionLifetime' | 'serverDid' | 'maxSessions' | 'metaPolicy'>> & {
     absoluteSessionLifetime?: number;
     serverDid?: string;
+    metaPolicy: MetaPolicy;
   };
   private cryptoProvider: CryptoProvider;
   private sessions = new Map<string, SessionContext>();
@@ -56,6 +64,7 @@ export class SessionManager {
       timestampSkewSeconds: config.timestampSkewSeconds ?? 120,
       sessionTtlMinutes: config.sessionTtlMinutes ?? 30,
       nonceCache: config.nonceCache ?? new MemoryNonceCacheProvider(),
+      metaPolicy: config.metaPolicy ?? 'strict',
       ...(config.absoluteSessionLifetime !== undefined && {
         absoluteSessionLifetime: config.absoluteSessionLifetime,
       }),
@@ -128,7 +137,10 @@ export class SessionManager {
         };
       }
 
-      const nonceTtlSeconds = this.config.sessionTtlMinutes * 60 + 60;
+      // Use different TTLs for anonymous vs authenticated nonces (SPEC.md §5.2)
+      const isAnonymous = !request.agentDid;
+      const nonceTtlMs = isAnonymous ? ANON_NONCE_TTL_MS : AUTH_NONCE_TTL_MS;
+      const nonceTtlSeconds = Math.ceil(nonceTtlMs / 1000);
       await this.config.nonceCache.add(
         request.nonce,
         nonceTtlSeconds,
@@ -147,6 +159,7 @@ export class SessionManager {
         lastActivity: now,
         ttlMinutes: this.config.sessionTtlMinutes,
         identityState: 'anonymous',
+        metaPolicy: this.config.metaPolicy,
         agentDid: request.agentDid,
         ...(this.config.serverDid && { serverDid: this.config.serverDid }),
         ...(clientInfo && { clientInfo }),

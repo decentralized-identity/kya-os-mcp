@@ -10,6 +10,11 @@ export {
 
 export {
   ProofVerifier,
+  validateMetaStructure,
+  extractProofFromMeta,
+  DEFAULT_CLOCK_SKEW_SECONDS,
+  MIN_CLOCK_SKEW_SECONDS,
+  MAX_CLOCK_SKEW_SECONDS,
   type ProofVerifierConfig,
   type ProofVerificationResult,
 } from './verifier.js';

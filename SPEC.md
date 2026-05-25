@@ -11,7 +11,7 @@ Repository: https://github.com/decentralized-identity/kya-os-mcp
 
 ## Abstract
 
-KYA-OS (Know Your Agent Operating System) is a protocol extension for the Model Context Protocol (MCP) that adds cryptographic identity, delegation chains, and non-repudiation proofs to AI agent interactions. KYA-OS enables MCP servers to verify *who* is calling (agent DID), *on whose behalf* (user delegation via W3C Verifiable Credentials), and *what* was done (signed proof for audit trails). The protocol uses Decentralized Identifiers (DIDs) for agent identity, W3C Verifiable Credentials for delegation, Ed25519 signatures for cryptographic operations, and StatusList2021 for revocation.
+KYA-OS (Know Your Agent Operating System) is a protocol extension for the Model Context Protocol (MCP) that adds cryptographic identity, delegation chains, and non-repudiation proofs to AI agent interactions. KYA-OS enables MCP servers to verify *who* is calling (agent DID), *what authority they hold* (a delegation chain rooted at a Responsible Party, expressed as W3C Verifiable Credentials), and *what was done* (signed proof for audit trails). The protocol uses Decentralized Identifiers (DIDs) for agent identity, W3C Verifiable Credentials for delegation, Ed25519 signatures for cryptographic operations, and StatusList2021 for revocation.
 
 ---
 
@@ -56,7 +56,9 @@ DIDs and Verifiable Credentials are the right fit for this problem:
 | Term | Definition |
 |------|------------|
 | **Agent DID** | A Decentralized Identifier (DID) that uniquely identifies an AI agent. KYA-OS supports `did:key` (self-certifying, ephemeral) and `did:web` (organization-hosted, persistent). |
-| **Delegation Chain** | An ordered sequence of Delegation Credentials from a root delegator to the current agent, where each credential's subject is the next credential's issuer. |
+| **Principal** | The entity that immediately delegates authority to an agent — typically the human operator who launches the agent for a task. The Principal MAY or MAY NOT be the Responsible Party. In personal-use scenarios they are usually the same; in organizational scenarios they differ. |
+| **Responsible Party** | The entity ultimately accountable for the actions of an agent operating under a delegation chain. The Responsible Party is the root issuer of the chain (`issuerDid` of the root `DelegationCredential`). In personal use, the Responsible Party equals the Principal. In organizational use, the Responsible Party is the employing organization or parent entity while the Principal is the immediate human delegator within that organization. |
+| **Delegation Chain** | An ordered sequence of Delegation Credentials from a root delegator (the Responsible Party) to the current agent, where each credential's subject is the next credential's issuer. |
 | **Delegation Credential** | A W3C Verifiable Credential that grants specific permissions from an issuer (delegator) to a subject (delegate). Contains CRISP constraints defining allowed operations. |
 | **Detached Proof** | A JWS (JSON Web Signature) that cryptographically binds a tool request and response together, enabling non-repudiation and audit. Attached to responses in the `_meta` field. |
 | **CRISP Constraints** | **C**onstraints, **R**esources, **I**dentity, **S**cope, **P**olicy — a structured envelope defining what operations a delegation permits: allowed scopes, budget caps, temporal bounds, and audience restrictions. |
@@ -387,7 +389,9 @@ interface DelegationConstraints {
 Delegations form a directed acyclic graph (DAG):
 
 ```
-     [Root: User → Agent A]
+     [Root: Responsible Party → Principal]
+            │
+     [Principal → Agent A]
             │
      ┌──────┴──────┐
      ▼             ▼
@@ -401,6 +405,7 @@ Delegations form a directed acyclic graph (DAG):
 - `parentId` links to the parent delegation
 - Child delegation's `issuerDid` MUST equal parent's `subjectDid`
 - Scope constraints MUST be equal to or narrower than parent's constraints
+- Every chain MUST terminate at a Responsible Party. The Responsible Party's DID is the `issuerDid` of the root `DelegationCredential` and is the entity ultimately accountable for actions taken under any descendant delegation. In personal use the Responsible Party equals the Principal; in organizational use the Responsible Party is the parent organization while the Principal is the immediate human delegator (see §2).
 
 ### 6.4.1 Designation Invariant
 

@@ -355,6 +355,19 @@ Delegations are issued as W3C Verifiable Credentials:
 }
 ```
 
+A `DelegationCredential` carries a _permission_, not a _claim_. To keep claim
+semantics out of an authorization decision — a confused-deputy vector (§11.6) —
+the `credentialSubject` MUST contain only two properties: `id` (the delegate's
+DID) and `delegation` (the permission payload). A verifier MUST reject a
+`DelegationCredential` whose `credentialSubject` carries any other property, and
+MUST reject a credential whose `type` array does not include both
+`VerifiableCredential` and `DelegationCredential`.
+
+Implementations MAY offer an explicit, audited opt-out of the `credentialSubject`
+shape check to bridge non-conformant issuers. Such an opt-out MUST default to off
+and MUST emit a one-time warning when enabled, so the relaxation is visible in
+operational logs.
+
 ### 6.3 CRISP Constraint Envelope
 
 ```typescript

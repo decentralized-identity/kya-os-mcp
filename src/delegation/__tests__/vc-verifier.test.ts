@@ -276,6 +276,73 @@ describe("DelegationCredentialVerifier", () => {
     });
   });
 
+  describe("verifyDelegationCredential - Subject Shape (claim contamination)", () => {
+    // A DelegationCredential `credentialSubject` MUST carry only `id` and
+    // `delegation`. Claim-bearing fields alongside a permission separate
+    // designation from authorization — the confused-deputy class (KYA-OS §11.6).
+    const contaminatedVC: DelegationCredential = {
+      ...mockValidVC,
+      credentialSubject: {
+        ...mockValidVC.credentialSubject,
+        // `alumniOf` is a canonical W3C VC *claim*; it has no place in a
+        // delegation (permission) credential.
+        alumniOf: "did:web:example.edu",
+      } as DelegationCredential["credentialSubject"],
+    };
+
+    it("rejects a credentialSubject carrying non-delegation (claim) fields", async () => {
+      await setupDefaultContractsMocks();
+
+      const result = await verifier.verifyDelegationCredential(contaminatedVC, {
+        skipSignature: true,
+        skipStatus: true,
+      });
+
+      expect(result.valid).toBe(false);
+      expect(result.stage).toBe("basic");
+      expect(result.reason).toMatch(/non-delegation field/i);
+      expect(result.reason).toContain("alumniOf");
+    });
+
+    it("accepts contaminated subject under allowNonDelegationSubjectFields, warning once per process", async () => {
+      await setupDefaultContractsMocks();
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      const first = await verifier.verifyDelegationCredential(contaminatedVC, {
+        skipSignature: true,
+        skipStatus: true,
+        allowNonDelegationSubjectFields: true,
+      });
+      const second = await verifier.verifyDelegationCredential(contaminatedVC, {
+        skipSignature: true,
+        skipStatus: true,
+        skipCache: true,
+        allowNonDelegationSubjectFields: true,
+      });
+
+      expect(first.valid).toBe(true);
+      expect(second.valid).toBe(true);
+      // One-time per-process warning, not once per verification.
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0]?.[0]).toMatch(
+        /allowNonDelegationSubjectFields/,
+      );
+
+      warnSpy.mockRestore();
+    });
+
+    it("accepts a well-formed subject carrying only id and delegation", async () => {
+      await setupDefaultContractsMocks();
+
+      const result = await verifier.verifyDelegationCredential(mockValidVC, {
+        skipSignature: true,
+        skipStatus: true,
+      });
+
+      expect(result.valid).toBe(true);
+    });
+  });
+
   describe("verifyDelegationCredential - Signature Verification", () => {
     it("should skip signature verification when skipSignature is true", async () => {
       await setupDefaultContractsMocks();

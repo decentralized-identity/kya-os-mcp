@@ -34,6 +34,35 @@ describe("buildAuditRecord", () => {
     const { scopeId: _omit, ...noScope } = ctx;
     expect(buildAuditRecord(noScope).scope).toBe("-");
   });
+
+  it("maps a failed verification (verified: 'no')", () => {
+    expect(buildAuditRecord({ ...ctx, verified: "no" }).verified).toBe("no");
+  });
+
+  it("never leaks context fields beyond the frozen record (no private key, no nonce)", () => {
+    // AuditContext.identity/session allow passthrough fields; the record MUST NOT
+    // carry anything beyond the 10 frozen audit.v1 fields — never key material or nonces.
+    const record = buildAuditRecord({
+      ...ctx,
+      identity: { ...ctx.identity, privateKey: "SECRET_KEY" },
+      session: { ...ctx.session, nonce: "SECRET_NONCE" },
+    });
+    expect(Object.keys(record).sort()).toEqual(
+      [
+        "audience",
+        "did",
+        "kid",
+        "reqHash",
+        "resHash",
+        "scope",
+        "session",
+        "ts",
+        "verified",
+        "version",
+      ].sort(),
+    );
+    expect(JSON.stringify(record)).not.toContain("SECRET");
+  });
 });
 
 describe("MemoryAuditLogProvider", () => {

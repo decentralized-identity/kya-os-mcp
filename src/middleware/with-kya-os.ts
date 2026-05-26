@@ -19,6 +19,7 @@ import {
   type CryptoProvider,
   FetchProvider,
 } from "../providers/base.js";
+import { AuditLogProvider, NoopAuditLogProvider } from "../providers/audit-log.js";
 import {
   SessionManager,
   type SessionConfig,
@@ -101,6 +102,12 @@ export interface KyaOsConfig {
    * In production, KYA-OS-aware runtimes should execute handshake before tool calls.
    */
   autoSession?: boolean;
+  /**
+   * Sink for retaining audit records of verified tool calls. Defaults to a
+   * no-op; supply an {@link AuditLogProvider} (e.g. a durable, append-only
+   * implementation) to capture an audit trail.
+   */
+  auditLog?: AuditLogProvider;
 }
 
 export interface KyaOsToolDefinition {
@@ -315,6 +322,7 @@ export function createKyaOsMiddleware(
 
   const proofGenerator = new ProofGenerator(identity, cryptoProvider);
   const delegationConfig = config.delegation;
+  const auditLog = config.auditLog ?? new NoopAuditLogProvider();
 
   // Session map: sessionId → last nonce (for proof generation)
   const sessionNonces = new Map<string, string>();
@@ -563,6 +571,27 @@ export function createKyaOsMiddleware(
 
         // Attach proof as _meta (rendered by MCP Inspector, invisible to LLMs)
         result._meta = { proof };
+
+        // Hand the verified call to the audit sink. A sink failure MUST NOT
+        // break the tool response, so it is logged and swallowed.
+        try {
+          await auditLog.logAuditRecord({
+            identity: { did: identity.did, kid: identity.kid },
+            session: { sessionId: session.sessionId, audience: session.audience },
+            requestHash: proof.meta.requestHash,
+            responseHash: proof.meta.responseHash,
+            verified: "yes",
+            scopeId: proof.meta.scopeId,
+          });
+        } catch (auditError) {
+          logger.error("[kya-os] Audit log failed", {
+            tool: toolName,
+            error:
+              auditError instanceof Error
+                ? auditError.message
+                : String(auditError),
+          });
+        }
       } catch (error) {
         logger.error("[kya-os] Proof generation failed", {
           tool: toolName,

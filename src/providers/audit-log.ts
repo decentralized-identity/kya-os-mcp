@@ -9,7 +9,7 @@
  * defaults — durable backends (Postgres, object storage, append-only log)
  * are operator-provided, keeping the package storage-agnostic exactly like
  * `CryptoProvider` / `NonceCacheProvider`. Audit records are intended for a
- * durable, append-only store; see `SECURITY.md` for retention guidance.
+ * durable, append-only store; see `SPEC.md` §12.4 (Proof Retention) for guidance.
  */
 
 import type {

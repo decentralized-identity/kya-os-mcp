@@ -85,34 +85,6 @@ export interface KyaOsDelegationConfig {
   resolveDelegationChain?: (
     leafCredential: DelegationCredential,
   ) => Promise<DelegationCredential[]>;
-  /**
-   * When true, re-delegations (credentials with a `parentId`) MUST include
-   * an `audience` constraint binding them to the verifying server's DID.
-   *
-   * This prevents confused-deputy attacks where a delegated credential is
-   * forwarded to an unintended server. Without audience binding, any server
-   * that receives the credential will accept it.
-   *
-   * Recommended for production. See: Alan Karp's transitive access analysis
-   * and KYA-OS §11.6 (Confused Deputy Attacks).
-   *
-   * Default is `true` as of KYA-OS 1.3.x. Existing integrations that
-   * issue re-delegations without an `audience` constraint can set this
-   * to `false` to preserve legacy behavior; doing so logs a one-time
-   * warning per process.
-   */
-  requireAudienceOnRedelegation?: boolean;
-  /**
-   * Compatibility mode for legacy integrations that cannot yet provide
-   * full delegation-chain and status-list resolvers.
-   *
-   * WARNING: Enabling this weakens verification guarantees:
-   * - Parent-linked delegations are accepted without chain resolution
-   * - credentialStatus is accepted without StatusList checks
-   *
-   * Default is false (strict security behavior).
-   */
-  allowLegacyUnsafeDelegation?: boolean;
 }
 
 export interface KyaOsConfig {
@@ -324,12 +296,6 @@ function validateScopeAttenuation(
  * deployments behind a load balancer. For distributed deployments, implement a custom
  * `SessionStore` backed by Redis, DynamoDB, or similar and pass it via `config.session`.
  */
-
-// Module-level warn-once flags for unsafe configuration. Per-process,
-// not per-session, so long-running servers don't spam logs on every new
-// session.
-let warnedAudienceOptOut = false;
-let warnedLegacyUnsafeDelegation = false;
 
 export function createKyaOsMiddleware(
   config: KyaOsConfig,
@@ -616,27 +582,6 @@ export function createKyaOsMiddleware(
     config: { scopeId: string; consentUrl: string },
     handler: KyaOsToolHandler,
   ): KyaOsToolHandler {
-    const legacyUnsafeDelegationEnabled =
-      delegationConfig?.allowLegacyUnsafeDelegation === true;
-    if (legacyUnsafeDelegationEnabled && !warnedLegacyUnsafeDelegation) {
-      warnedLegacyUnsafeDelegation = true;
-      console.warn(
-        "⚠️  KYA-OS: allowLegacyUnsafeDelegation=true disables delegation-chain " +
-          "resolution and StatusList revocation checks. This is unsafe for production. " +
-          "See SECURITY.md (Unsafe Delegation Modes).",
-      );
-    }
-    if (
-      delegationConfig?.requireAudienceOnRedelegation === false &&
-      !warnedAudienceOptOut
-    ) {
-      warnedAudienceOptOut = true;
-      console.warn(
-        "⚠️  KYA-OS: requireAudienceOnRedelegation=false disables confused-deputy " +
-          "protection on re-delegations. The default is true as of 1.3.x. " +
-          "See SECURITY.md (Unsafe Delegation Modes).",
-      );
-    }
     const didKeyResolver = createDidKeyResolver();
     const fetchProvider =
       delegationConfig?.fetchProvider ??
@@ -739,12 +684,6 @@ export function createKyaOsMiddleware(
 
       if (leafDelegation.parentId) {
         if (!delegationConfig?.resolveDelegationChain) {
-          if (legacyUnsafeDelegationEnabled) {
-            logger.warn(
-              `[kya-os] Legacy delegation mode enabled: accepting parent-linked credential ${leafDelegation.id} without resolveDelegationChain`,
-            );
-            return { valid: true };
-          }
           return {
             valid: false,
             reason: `Delegation ${leafDelegation.id} references parent ${leafDelegation.parentId} but no resolveDelegationChain handler is configured`,
@@ -800,26 +739,15 @@ export function createKyaOsMiddleware(
         seenIds.add(delegation.id);
 
         if (credential.credentialStatus && !delegationConfig?.statusListResolver) {
-          if (legacyUnsafeDelegationEnabled) {
-            logger.warn(
-              `[kya-os] Legacy delegation mode enabled: skipping status-list verification for ${delegation.id}`,
-            );
-          } else {
           return {
             valid: false,
             reason: `Delegation ${delegation.id} has credentialStatus but no statusListResolver is configured`,
           };
-          }
         }
 
-        const skipStatusForLegacy =
-          legacyUnsafeDelegationEnabled &&
-          !!credential.credentialStatus &&
-          !delegationConfig?.statusListResolver;
         const credentialVerification = await verifier.verifyDelegationCredential(
           credential,
           {
-            ...(skipStatusForLegacy ? { skipStatus: true } : {}),
             ...(options?.skipSignature ? { skipSignature: true } : {}),
           },
         );
@@ -837,24 +765,14 @@ export function createKyaOsMiddleware(
           };
         }
 
-        // When requireAudienceOnRedelegation is enabled, every non-root
-        // credential in the chain MUST have an audience constraint.
-        // This prevents confused-deputy attacks where re-delegated
-        // credentials are forwarded to unintended servers.
-        //
-        // Defaults to `true`. Set explicitly to `false` to preserve
-        // legacy behavior (logged once per process — see opt-out warning
-        // below).
-        const requireAudienceOnRedelegation =
-          delegationConfig?.requireAudienceOnRedelegation !== false;
-        if (
-          requireAudienceOnRedelegation &&
-          delegation.parentId &&
-          !delegation.constraints.audience
-        ) {
+        // Every non-root credential in the chain MUST carry an `audience`
+        // constraint binding it to the verifying server. This closes the
+        // confused-deputy class where a re-delegated credential is forwarded
+        // to an unintended server (KYA-OS §11.6). Unconditional as of 1.4.0.
+        if (delegation.parentId && !delegation.constraints.audience) {
           return {
             valid: false,
-            reason: `Delegation ${delegation.id} is a re-delegation (parentId: ${delegation.parentId}) but has no audience constraint. Re-delegations must include an audience when requireAudienceOnRedelegation is enabled`,
+            reason: `Delegation ${delegation.id} is a re-delegation (parentId: ${delegation.parentId}) but has no audience constraint. Re-delegations MUST include an audience constraint (KYA-OS §11.6)`,
           };
         }
 

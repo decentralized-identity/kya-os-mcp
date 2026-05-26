@@ -118,7 +118,7 @@ export interface DelegationCredential {
 }
 
 export const DELEGATION_CREDENTIAL_CONTEXT =
-  'https://schema.modelcontextprotocol-identity.io/xmcp-i/credentials/delegation.v1.0.0.json' as const;
+  'https://schema.kya-os.ai/xmcp-i/credentials/delegation.v1.0.0.json' as const;
 
 // ============================================================================
 // StatusList2021 (W3C)

@@ -4,7 +4,7 @@
  * Delegation, proof, and session for Model Context Protocol Identity.
  * This package is a DIF TAAWG protocol reference implementation.
  *
- * Related Spec: https://modelcontextprotocol-identity.io
+ * Related Spec: https://kya-os.ai/mcp
  *
  * ## Error handling strategy
  *

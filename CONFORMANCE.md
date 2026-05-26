@@ -150,6 +150,7 @@ All Level 2 requirements, plus:
 | L3.3 | Support issuance options (id, dates, status) | `src/delegation/__tests__/vc-issuer.test.ts` | `issueDelegationCredential > should pass options to wrapDelegationAsVC` |
 | L3.4 | Canonicalize VC before signing | `src/delegation/__tests__/vc-issuer.test.ts` | `issueDelegationCredential > should canonicalize VC before signing` |
 | L3.5 | Verify DelegationCredential basic properties | `src/delegation/__tests__/vc-verifier.test.ts` | `verifyDelegationCredential - Basic Validation Stage` (all tests) |
+| L3.5a | Reject claim-contaminated `credentialSubject` (only `id` + `delegation`) | `src/delegation/__tests__/vc-verifier.test.ts` | `Subject Shape (claim contamination) > rejects a credentialSubject carrying non-delegation (claim) fields` |
 | L3.6 | Reject expired credentials | `src/delegation/__tests__/vc-verifier.test.ts` | `Basic Validation Stage > should reject expired credentials` |
 | L3.7 | Reject not-yet-valid credentials | `src/delegation/__tests__/vc-verifier.test.ts` | `Basic Validation Stage > should reject not-yet-valid credentials` |
 | L3.8 | Reject revoked credentials (status field) | `src/delegation/__tests__/vc-verifier.test.ts` | `Basic Validation Stage > should reject revoked credentials` |

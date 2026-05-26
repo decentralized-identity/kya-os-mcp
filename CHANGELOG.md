@@ -49,6 +49,15 @@ Versioning: https://semver.org/spec/v2.0.0.html
 - Added test coverage pinning the warn-once behavior on both unsafe-mode
   flags: warns exactly once per process on opt-in, silent on safe defaults,
   no duplicate warnings across repeated `wrapWithDelegation` calls.
+- **Verifier rejects claim-contaminated delegation credentials.** A
+  `DelegationCredential` whose `credentialSubject` carries properties beyond
+  `id` and `delegation` is now rejected by default: claim-bearing fields in a
+  permission credential separate designation from authorization (the
+  confused-deputy class — `SPEC.md` §6.2 / §11.6). The reference verifier
+  exposes `allowNonDelegationSubjectFields` (default `false`) as an audited
+  opt-out that logs a one-time per-process warning. Spec-conformant issuers are
+  unaffected — the reference issuer already emits `{ id, delegation }` subjects,
+  and the full suite passes unchanged. New conformance requirement L3.5a.
 
 ### Added
 

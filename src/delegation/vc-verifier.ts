@@ -21,6 +21,18 @@ import {
   validateDelegationCredential,
 } from "../types/protocol.js";
 
+/**
+ * Properties a DelegationCredential `credentialSubject` may carry. Anything
+ * else is treated as a claim-intended field and rejected by default — a
+ * permission credential must not smuggle claims (KYA-OS §11.6).
+ */
+const DELEGATION_SUBJECT_KEYS: readonly string[] = ["id", "delegation"];
+
+// Module-level warn-once flag for the unsafe opt-out in validateSubjectShape.
+// Per-process, mirroring the convention in middleware/with-kya-os.ts so
+// operators see a single log line rather than one per verification.
+let warnedNonDelegationSubjectFields = false;
+
 export interface DelegationVCVerificationResult {
   valid: boolean;
   reason?: string;
@@ -45,6 +57,15 @@ export interface VerifyDelegationVCOptions {
   skipStatus?: boolean;
   didResolver?: DIDResolver;
   statusListResolver?: StatusListResolver;
+  /**
+   * Accept a delegation credential whose `credentialSubject` carries properties
+   * beyond `id` and `delegation` (e.g. claim-bearing fields). UNSAFE: mixing
+   * claim semantics into a permission credential separates designation from
+   * authorization — the root of the confused-deputy class (KYA-OS §11.6).
+   * Defaults to `false` (strict). When `true`, the verifier emits a one-time
+   * per-process warning and accepts the credential.
+   */
+  allowNonDelegationSubjectFields?: boolean;
 }
 
 export interface DIDResolver {
@@ -139,7 +160,7 @@ export class DelegationCredentialVerifier {
     }
 
     const basicCheckStart = Date.now();
-    const basicValidation = this.validateBasicProperties(vc);
+    const basicValidation = this.validateBasicProperties(vc, options);
     const basicCheckMs = Date.now() - basicCheckStart;
 
     if (!basicValidation.valid) {
@@ -221,7 +242,10 @@ export class DelegationCredentialVerifier {
     return result;
   }
 
-  private validateBasicProperties(vc: DelegationCredential): {
+  private validateBasicProperties(
+    vc: DelegationCredential,
+    options: VerifyDelegationVCOptions,
+  ): {
     valid: boolean;
     reason?: string;
   } {
@@ -257,7 +281,51 @@ export class DelegationCredentialVerifier {
       return { valid: false, reason: "Missing proof" };
     }
 
+    const subjectShape = this.validateSubjectShape(vc, options);
+    if (!subjectShape.valid) {
+      return subjectShape;
+    }
+
     return { valid: true };
+  }
+
+  /**
+   * Reject a delegation credential whose `credentialSubject` carries properties
+   * other than `id` and `delegation`. Claim-bearing fields in a permission
+   * credential separate designation from authorization — the confused-deputy
+   * class (KYA-OS §11.6). Strict by default; the unsafe opt-out emits a
+   * one-time per-process warning.
+   */
+  private validateSubjectShape(
+    vc: DelegationCredential,
+    options: VerifyDelegationVCOptions,
+  ): { valid: boolean; reason?: string } {
+    const extraneous = Object.keys(vc.credentialSubject).filter(
+      (key) => !DELEGATION_SUBJECT_KEYS.includes(key),
+    );
+
+    if (extraneous.length === 0) {
+      return { valid: true };
+    }
+
+    if (options.allowNonDelegationSubjectFields) {
+      if (!warnedNonDelegationSubjectFields) {
+        warnedNonDelegationSubjectFields = true;
+        console.warn(
+          `[DelegationCredentialVerifier] allowNonDelegationSubjectFields is enabled — ` +
+            `accepting credentialSubject with non-delegation field(s): ${extraneous.join(", ")}. ` +
+            `Claim-bearing fields in a permission credential are a confused-deputy risk (KYA-OS §11.6).`,
+        );
+      }
+      return { valid: true };
+    }
+
+    return {
+      valid: false,
+      reason:
+        `credentialSubject contains non-delegation field(s): ${extraneous.join(", ")}. ` +
+        `A DelegationCredential subject MUST carry only 'id' and 'delegation' (KYA-OS §11.6).`,
+    };
   }
 
   private async verifySignature(

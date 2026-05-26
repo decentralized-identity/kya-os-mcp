@@ -316,7 +316,7 @@ Delegations are issued as W3C Verifiable Credentials:
 {
   "@context": [
     "https://www.w3.org/2018/credentials/v1",
-    "https://schema.kya-os.ai/xmcp-i/credentials/delegation.v1.0.0.json"
+    "https://schema.kya-os.ai/v1/protocol/delegation/context/v1.0.0"
   ],
   "id": "urn:uuid:d7f8a9b0-1234-5678-9abc-def012345678",
   "type": ["VerifiableCredential", "DelegationCredential"],

@@ -207,6 +207,29 @@ The DID Document MUST contain at least one verification method with `publicKeyJw
 }
 ```
 
+### 4.5 Agent-Controlled Key Generation
+
+An agent MUST generate its own keypair locally. No other party generates,
+holds, escrows, or otherwise gains access to an agent's secret key at any
+point:
+
+1. The agent generates an Ed25519 keypair (§4.2) using a local CSPRNG.
+2. The agent derives its DID from the public key (`did:key`, §4.3) or publishes
+   a DID document referencing the public key (`did:web`, §4.4).
+3. Where a DID document is registered or published through a service, the agent
+   signs the registration request with its secret key.
+4. The service verifies the signature and publishes the document. It receives
+   the public key only.
+
+A registry (§6.8), verifier, or any registration or provisioning service MUST
+NOT generate, escrow, or otherwise gain access to an agent's secret key. This
+invariant keeps identity infrastructure from becoming a centralized key escrow:
+a compromise of a registry or verifier MUST NOT yield agent secret keys (see
+§11.11).
+
+Implementations that generate or hold agent secret keys on the agent's behalf
+are non-conformant.
+
 ---
 
 ## 5. Session Lifecycle
@@ -554,6 +577,42 @@ Three registry types are defined within the protocol:
 
 `DelegationCredential` IS a Verifiable Credential; Delegation Registry is a specialized Credential Registry view.
 
+Trust-registry rejection is advisory, not blocking. The cryptographic
+delegation check is the load-bearing gate (§11.0); registry standing is a
+secondary signal. Services SHOULD honor well-formed delegations from
+low-standing delegates but MAY apply rate limits, additional verification, or
+scope reduction. Outright rejection of well-formed delegations pushes the same
+authority through worse channels — credential sharing, request proxying — which
+reduces auditability rather than improving security.
+
+### 6.9 Ephemeral Delegate Keys (Non-Normative)
+
+A delegator MAY subject a `DelegationCredential` to a one-off ephemeral public
+key (typically a `did:key`) instead of a long-lived agent DID. This
+privacy-preserving pattern lets a chain authorize an action without correlating
+the delegate across unrelated delegations (§12.1).
+
+```json
+{
+  "credentialSubject": {
+    "id": "did:key:z6Mk-ephemeral-...",
+    "delegation": {
+      "id": "del-ephemeral-001",
+      "subjectDid": "did:key:z6Mk-ephemeral-...",
+      "parentId": "urn:uuid:...",
+      "constraints": { "scopes": ["files:read"] },
+      "status": "active"
+    }
+  }
+}
+```
+
+The ephemeral key signs presentations of this credential and is discarded once
+the delegation expires. The `credentialSubject` carries only `id` and
+`delegation`, so the example remains conformant with the subject-shape rule in
+§6.2. Implementations MAY support this pattern; it is not required for any
+conformance level.
+
 ---
 
 ## 7. Proof Generation
@@ -897,7 +956,7 @@ and the residual risk an operator carries.
 | **Scope escalation** — a delegated agent invokes outside the delegator's intent. | Scope subset enforcement at every chain link; CRISP `matcher: 'exact'` for sensitive resources. See §11.4. | Implementation bugs in scope-subset checks. |
 | **Confused deputy** — a multi-resource delegation is repurposed for resources the delegator did not anticipate. | Designation invariant (§6.4.1) + audience-on-redelegation default `true` (§11.6). | Implementation bugs in the designation check. |
 | **Credential theft** — a `DelegationCredential` is intercepted and used by an attacker. | `audience` constraint; short `notAfter`; session binding at high-security tiers (§11.8); StatusList2021 revocation. | Window between theft and revocation. |
-| **Agent abuse** — a legitimate agent exceeds expected behavior. | Audit log of every signed tool call (§7); reputation tracking on both agent and Responsible Party (§2); revocation. | Detection latency; damage done before revocation propagates. |
+| **Agent abuse** — a legitimate agent exceeds expected behavior. | Audit log of every signed tool call (§7); reputation tracking on both agent and Responsible Party (§11.12); revocation. | Detection latency; damage done before revocation propagates. |
 | **Key compromise** — an agent's secret key is exfiltrated. | Short-lived delegations; explicit revocation; key rotation via DID document update. | Window between compromise and detection. See §11.5. |
 | **Revocation race** — an invocation arrives while a revocation is propagating. | Status-list TTL bounded ≤ 60s for high-privilege scopes; side-channel revocation signals honored immediately; expiry as primary revocation mechanism. See §6.5.2. | Unavoidable Lamport-concurrent race. Operators bound the window; they cannot eliminate it. |
 | **Downgrade** — a client strips KYA-OS headers entirely. | Fail-closed: servers requiring identity MUST reject sessionless calls; `/.well-known/mcp` advertises requirements. See §11.7. | A non-compliant client that the operator has not configured to require identity. |
@@ -991,6 +1050,31 @@ deployment-level controls are:
 - Cascading revocation MUST be atomic
 - Status-list cache TTL SHOULD be ≤ 60 seconds for high-privilege scopes
 
+### 11.11 Key Custody and Escrow Exclusion
+
+KYA-OS excludes centralized agent-key generation as a failure mode. If a single
+service generated agent keypairs — even transiently — that service would hold
+the secret material for every identity it provisioned, recreating the escrow
+weakness of identity-based-encryption-style key-generation centers: one
+compromise yields every dependent secret key. Agent-controlled key generation
+(§4.5) removes that single point of total compromise. A registry or verifier
+that is breached leaks public material and metadata, never agent secret keys,
+because no protocol component ever holds them. Operators MUST NOT introduce a
+server-side key-generation or escrow step as a convenience; doing so is
+non-conformant (§4.5).
+
+### 11.12 Reputation Scope
+
+Reputation is tracked primarily on the Responsible Party — the root issuer
+accountable for a delegation chain (§2). Agent-level reputation, where
+surfaced, is a secondary signal scoped to a specific binding rather than a
+free-floating per-agent score. A newly minted agent inheriting authority from a
+high-reputation Responsible Party MUST be treated as carrying that party's
+standing for capability decisions, modulo binding-specific risk signals. This
+closes reputation laundering in both directions: a bad actor cannot shed a poor
+Responsible-Party history by spawning fresh agents, and a new agent under a
+trusted party is not penalized for lacking its own history.
+
 ---
 
 ## 12. Privacy Considerations
@@ -1046,6 +1130,17 @@ Implementation conformance requirements are defined in `CONFORMANCE.md`. Three c
 - **Level 3 — Full Delegation**: VC issuance/verification, delegation graphs, revocation, outbound propagation
 
 See `CONFORMANCE.md` for detailed requirements and test references.
+
+### 15.1 Relationship to OAuth Dynamic Client Registration
+
+KYA-OS L2+ is not OAuth Dynamic Client Registration restated. OAuth-DCR binds a
+client by a `client_id`/`client_secret` registered with an authorization server,
+after which authority rides on a bearer token. KYA-OS binds an agent by its DID
+and requires the delegation chain to be presented and cryptographically verified
+at every invocation (§6, §7). The delegation chain remains required and
+verifiable at Level 2 and Level 3 regardless of whether or how the agent's
+identity is recorded in a trust registry (§6.8). Registry presence is discovery
+and a trust signal (§11.0), never a substitute for chain verification.
 
 ---
 

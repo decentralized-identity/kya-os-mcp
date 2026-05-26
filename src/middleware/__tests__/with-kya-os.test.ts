@@ -16,10 +16,12 @@ import {
   base64ToBytes,
   base64urlEncodeFromBytes,
 } from '../../utils/base64.js';
+import { AuditLogProvider, MemoryAuditLogProvider } from '../../providers/audit-log.js';
 
 async function createTestMiddleware(options?: {
   autoSession?: boolean;
   delegation?: KyaOsDelegationConfig;
+  auditLog?: AuditLogProvider;
 }) {
   const crypto = new NodeCryptoProvider();
   const keyPair = await crypto.generateKeyPair();
@@ -32,6 +34,7 @@ async function createTestMiddleware(options?: {
       session: { sessionTtlMinutes: 60 },
       delegation: options?.delegation,
       autoSession: options?.autoSession,
+      auditLog: options?.auditLog,
     },
     crypto,
   );
@@ -270,6 +273,80 @@ describe('createKyaOsMiddleware', () => {
       const result = await handler({}, sessionId);
       expect(result.isError).toBe(true);
       expect(result._meta).toBeUndefined();
+    });
+
+    it('logs an audit record to the configured AuditLogProvider after a proofed call', async () => {
+      const auditLog = new MemoryAuditLogProvider();
+      const { middleware: kyaos, did } = await createTestMiddleware({ auditLog });
+
+      const hs = await kyaos.handleHandshake({
+        nonce: 'audit-nonce',
+        audience: did,
+        timestamp: Math.floor(Date.now() / 1000),
+      });
+      const sessionId = JSON.parse(hs.content[0].text).sessionId;
+
+      const handler = kyaos.wrapWithProof('greet', async () => ({
+        content: [{ type: 'text', text: 'hi' }],
+      }));
+      await handler({}, sessionId);
+
+      expect(auditLog.records).toHaveLength(1);
+      const rec = auditLog.records[0]!;
+      expect(rec.version).toBe('audit.v1');
+      expect(rec.session).toBe(sessionId);
+      expect(rec.audience).toBe(did);
+      expect(rec.did).toBe(did);
+      expect(rec.verified).toBe('yes');
+      expect(rec.reqHash).toMatch(/^sha256:[a-f0-9]{64}$/);
+    });
+
+    it('does not break the tool response when the audit sink throws', async () => {
+      class ThrowingAuditLog extends AuditLogProvider {
+        async logAuditRecord(): Promise<void> {
+          throw new Error('sink down');
+        }
+        async logEvent(): Promise<void> {}
+      }
+      const { middleware: kyaos, did } = await createTestMiddleware({
+        auditLog: new ThrowingAuditLog(),
+      });
+
+      const hs = await kyaos.handleHandshake({
+        nonce: 'audit-nonce-2',
+        audience: did,
+        timestamp: Math.floor(Date.now() / 1000),
+      });
+      const sessionId = JSON.parse(hs.content[0].text).sessionId;
+
+      const handler = kyaos.wrapWithProof('greet', async () => ({
+        content: [{ type: 'text', text: 'hi' }],
+      }));
+      const result = await handler({}, sessionId);
+
+      // The proofed response must be intact despite the sink failure.
+      expect(result.content[0].text).toBe('hi');
+      expect(result._meta!.proof).toBeDefined();
+    });
+
+    it('records the delegation scope when threaded via call context', async () => {
+      const auditLog = new MemoryAuditLogProvider();
+      const { middleware: kyaos, did } = await createTestMiddleware({ auditLog });
+
+      const hs = await kyaos.handleHandshake({
+        nonce: 'audit-scope-nonce',
+        audience: did,
+        timestamp: Math.floor(Date.now() / 1000),
+      });
+      const sessionId = JSON.parse(hs.content[0].text).sessionId;
+
+      const handler = kyaos.wrapWithProof('greet', async () => ({
+        content: [{ type: 'text', text: 'hi' }],
+      }));
+      // wrapWithDelegation threads its scopeId as the 3rd (context) argument.
+      await handler({}, sessionId, { scopeId: 'calendar:read' });
+
+      expect(auditLog.records[0]!.scope).toBe('calendar:read');
     });
 
     it('should return result without proof when no session exists and autoSession is off', async () => {

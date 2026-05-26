@@ -7,6 +7,24 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- **`AuditLogProvider` — pluggable sink for audit-record retention.** A new
+  provider (abstract base + `MemoryAuditLogProvider` / `NoopAuditLogProvider`
+  defaults, exported from the root and `./providers`) for persisting the frozen
+  `audit.v1` record of each verified tool call. Wire it via `KyaOsConfig.auditLog`
+  (default: no-op); `createKyaOsMiddleware` emits a record after each proofed
+  call, and a sink failure never breaks the tool response. `buildAuditRecord(ctx)`
+  exposes the context→record mapping. Records carry only DID/key id, session,
+  audience, scope, request/response hashes, and the verification result — never
+  key material or nonces. The storage backend is operator-provided (durable,
+  append-only); the package stays storage-agnostic, like the other providers.
+- **Delegation scope on audit records.** Delegation-protected tools record the
+  scope they were authorized under: `wrapWithDelegation` threads its `scopeId`
+  through a new optional `KyaOsCallContext` (3rd handler argument) into the proof
+  meta, so the audit record's `scope` reflects it (was `'-'`). The argument is
+  optional and backward-compatible; tool handlers that ignore it are unaffected.
+
 ## [1.4.0] - 2026-05-26
 
 ### Spec

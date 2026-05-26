@@ -48,6 +48,10 @@ import { MemoryStatusListStorage } from '../storage/memory-statuslist-storage.js
 import {
   buildOutboundDelegationHeaders,
 } from '../outbound-headers.js';
+import {
+  MemoryAuditLogProvider,
+  type AuditLogProvider,
+} from '../../providers/audit-log.js';
 
 // ---------------------------------------------------------------------------
 // Shared identity helpers
@@ -130,6 +134,7 @@ async function issueVC(opts: {
 async function createServer(opts?: {
   delegation?: KyaOsDelegationConfig;
   autoSession?: boolean;
+  auditLog?: AuditLogProvider;
 }): Promise<{ middleware: KyaOsMiddleware; did: string }> {
   const crypto = new NodeCryptoProvider();
   const keyPair = await crypto.generateKeyPair();
@@ -149,6 +154,7 @@ async function createServer(opts?: {
       session: { sessionTtlMinutes: 60 },
       delegation,
       autoSession: opts?.autoSession,
+      auditLog: opts?.auditLog,
     },
     crypto,
   );
@@ -1271,6 +1277,51 @@ describe('Transitive Access — Karp Use Cases', () => {
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toBe('delegation_invalid');
       expect(parsed.reason).toContain('must end with the leaf credential');
+    });
+  });
+
+  // =========================================================================
+  // 13. Audit scope from delegation
+  // =========================================================================
+
+  describe('13. Audit scope from delegation', () => {
+    it('records the delegation scope on the audit record for a verified delegated call', async () => {
+      const auditLog = new MemoryAuditLogProvider();
+      const { middleware, did: serverDid } = await createServer({
+        delegation: { resolveDelegationChain: async () => [aliceToBob] },
+        autoSession: true,
+        auditLog,
+      });
+
+      const aliceToBob = await issueVC({
+        from: alice,
+        to: bob,
+        scopes: ['query:x', 'update:y'],
+      });
+      const bobToCarol = await issueVC({
+        from: bob,
+        to: carol,
+        scopes: ['query:x'],
+        parentId: aliceToBob.credentialSubject.delegation.id,
+        audience: serverDid,
+      });
+
+      // Delegation-protected tool: wrapWithDelegation threads scopeId into the
+      // inner wrapWithProof, so the audit record carries the real scope, not '-'.
+      const handler = middleware.wrapWithDelegation(
+        'query_x',
+        { scopeId: 'query:x', consentUrl: 'https://aperture.example/consent' },
+        middleware.wrapWithProof('query_x', async () => ({
+          content: [{ type: 'text', text: 'query result' }],
+        })),
+      );
+
+      const result = await handler({ _kyaos_delegation: bobToCarol });
+
+      expect(result.isError).toBeUndefined();
+      expect(auditLog.records).toHaveLength(1);
+      expect(auditLog.records[0]!.scope).toBe('query:x');
+      expect(auditLog.records[0]!.verified).toBe('yes');
     });
   });
 });

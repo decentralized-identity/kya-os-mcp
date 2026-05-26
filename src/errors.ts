@@ -2,7 +2,7 @@
  * KYA-OS Canonical Error Codes
  *
  * Single source of truth for all wire-format error codes.
- * Aligned with the error catalog at modelcontextprotocol-identity.io.
+ * Aligned with the error catalog at kya-os.ai/mcp.
  *
  * Naming convention: snake_case, no protocol prefix.
  * Follows OAuth 2.0 / Stripe conventions for readability and portability.

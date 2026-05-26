@@ -111,4 +111,4 @@ const response = await fetch(targetUrl, {
 ## Related Spec
 
 - KYA-OS §7 — Outbound Delegation Propagation
-- [modelcontextprotocol-identity.io](https://modelcontextprotocol-identity.io)
+- [kya-os.ai/mcp](https://kya-os.ai/mcp)

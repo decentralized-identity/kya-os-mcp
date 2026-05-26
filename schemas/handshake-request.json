@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schema.modelcontextprotocol-identity.io/xmcp-i/handshake/handshake-request.v1.0.0.json",
+  "$id": "https://schema.kya-os.ai/xmcp-i/handshake/handshake-request.v1.0.0.json",
   "title": "KYA-OS Handshake Request",
   "description": "Client-initiated handshake request to establish a KYA-OS session with nonce-based replay protection.",
   "type": "object",

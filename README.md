@@ -1,8 +1,8 @@
 <p align="center">
   <a href="https://kya-os.ai">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://modelcontextprotocol-identity.io/images/logo-mark_white.svg">
-      <img alt="" src="https://modelcontextprotocol-identity.io/images/logo-mark_black.svg" width="64">
+      <source media="(prefers-color-scheme: dark)" srcset="https://kya-os.ai/mcp/images/logo-mark_white.svg">
+      <img alt="" src="https://kya-os.ai/mcp/images/logo-mark_black.svg" width="64">
     </picture>
   </a>
 </p>
@@ -13,7 +13,7 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@kya-os/mcp"><img src="https://img.shields.io/npm/v/@kya-os/mcp" alt="npm"></a>
-  <a href="https://modelcontextprotocol-identity.io"><img src="https://img.shields.io/badge/spec-KYA--OS-blue" alt="spec"></a>
+  <a href="https://kya-os.ai/mcp"><img src="https://img.shields.io/badge/spec-KYA--OS-blue" alt="spec"></a>
   <a href="https://identity.foundation/working-groups/agent-and-authorization.html"><img src="https://img.shields.io/badge/DIF-TAAWG-purple" alt="DIF TAAWG"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/decentralized-identity/kya-os-mcp" alt="license"></a>
 </p>

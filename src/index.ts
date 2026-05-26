@@ -23,6 +23,12 @@ export {
   type KyaOsErrorResponse,
 } from './errors.js';
 
+// Encoding utilities (RFC 4648 base64url, byte variants)
+export {
+  base64urlEncodeFromBytes,
+  base64urlDecodeToBytes,
+} from './utils/base64.js';
+
 // Protocol types
 export type {
   DelegationConstraints,

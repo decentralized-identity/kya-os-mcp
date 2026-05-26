@@ -329,6 +329,26 @@ describe('createKyaOsMiddleware', () => {
       expect(result._meta!.proof).toBeDefined();
     });
 
+    it('records the delegation scope when threaded via call context', async () => {
+      const auditLog = new MemoryAuditLogProvider();
+      const { middleware: kyaos, did } = await createTestMiddleware({ auditLog });
+
+      const hs = await kyaos.handleHandshake({
+        nonce: 'audit-scope-nonce',
+        audience: did,
+        timestamp: Math.floor(Date.now() / 1000),
+      });
+      const sessionId = JSON.parse(hs.content[0].text).sessionId;
+
+      const handler = kyaos.wrapWithProof('greet', async () => ({
+        content: [{ type: 'text', text: 'hi' }],
+      }));
+      // wrapWithDelegation threads its scopeId as the 3rd (context) argument.
+      await handler({}, sessionId, { scopeId: 'calendar:read' });
+
+      expect(auditLog.records[0]!.scope).toBe('calendar:read');
+    });
+
     it('should return result without proof when no session exists and autoSession is off', async () => {
       const { middleware: kyaos } = await createTestMiddleware({ autoSession: false });
 

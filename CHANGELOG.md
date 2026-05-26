@@ -19,6 +19,11 @@ Versioning: https://semver.org/spec/v2.0.0.html
   audience, scope, request/response hashes, and the verification result — never
   key material or nonces. The storage backend is operator-provided (durable,
   append-only); the package stays storage-agnostic, like the other providers.
+- **Delegation scope on audit records.** Delegation-protected tools record the
+  scope they were authorized under: `wrapWithDelegation` threads its `scopeId`
+  through a new optional `KyaOsCallContext` (3rd handler argument) into the proof
+  meta, so the audit record's `scope` reflects it (was `'-'`). The argument is
+  optional and backward-compatible; tool handlers that ignore it are unaffected.
 
 ## [1.4.0] - 2026-05-26
 

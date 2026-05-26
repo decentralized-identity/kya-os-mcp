@@ -121,12 +121,22 @@ export interface KyaOsToolDefinition {
   };
 }
 
+/**
+ * Per-call context threaded through the middleware wrappers (not part of the
+ * tool's public arguments). `wrapWithDelegation` populates `scopeId` so the
+ * proof and audit record reflect the scope the call was authorized under.
+ */
+export interface KyaOsCallContext {
+  scopeId?: string;
+}
+
 export interface KyaOsToolHandler<
   T extends Record<string, unknown> = Record<string, unknown>,
 > {
   (
     args: T,
     sessionId?: string,
+    context?: KyaOsCallContext,
   ): Promise<{
     content: Array<{ type: string; text: string; [key: string]: unknown }>;
     isError?: boolean;
@@ -541,8 +551,12 @@ export function createKyaOsMiddleware(
     toolName: string,
     handler: KyaOsToolHandler<T>,
   ): KyaOsToolHandler {
-    return async (args: Record<string, unknown>, sessionId?: string) => {
-      const result = await handler(args as T, sessionId);
+    return async (
+      args: Record<string, unknown>,
+      sessionId?: string,
+      context?: KyaOsCallContext,
+    ) => {
+      const result = await handler(args as T, sessionId, context);
 
       if (result.isError) {
         return result;
@@ -567,6 +581,7 @@ export function createKyaOsMiddleware(
           request,
           response,
           session,
+          { scopeId: context?.scopeId },
         );
 
         // Attach proof as _meta (rendered by MCP Inspector, invisible to LLMs)
@@ -951,7 +966,7 @@ export function createKyaOsMiddleware(
       logger.debug(
         `[kya-os] Delegation verified for "${toolName}", scope "${config.scopeId}"`,
       );
-      return handler(cleanArgs, sessionId);
+      return handler(cleanArgs, sessionId, { scopeId: config.scopeId });
     };
   }
 

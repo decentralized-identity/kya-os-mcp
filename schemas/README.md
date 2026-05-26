@@ -67,7 +67,7 @@ except ValidationError as e:
 All schemas use JSON Schema draft 2020-12 and are published at:
 
 ```
-https://schema.kya-os.ai/xmcp-i/{category}/{schema-name}.v1.0.0.json
+https://schema.kya-os.ai/v1/protocol/{family}/{resource}/v1.0.0
 ```
 
 Schemas can reference each other using `$ref`. For example, the delegation credential schema references shared definitions for constraints and proof structures.

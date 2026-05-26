@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schema.kya-os.ai/xmcp-i/discovery/well-known-kyaos.v1.0.0.json",
+  "$id": "https://schema.kya-os.ai/v1/protocol/well-known/v1.0.0",
   "title": "KYA-OS Discovery Document",
   "description": "Well-known discovery document served at /.well-known/mcp for KYA-OS service discovery.",
   "type": "object",

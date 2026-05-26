@@ -304,33 +304,6 @@ describe("DelegationCredentialVerifier", () => {
       expect(result.reason).toContain("alumniOf");
     });
 
-    it("accepts contaminated subject under allowNonDelegationSubjectFields, warning once per process", async () => {
-      await setupDefaultContractsMocks();
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-      const first = await verifier.verifyDelegationCredential(contaminatedVC, {
-        skipSignature: true,
-        skipStatus: true,
-        allowNonDelegationSubjectFields: true,
-      });
-      const second = await verifier.verifyDelegationCredential(contaminatedVC, {
-        skipSignature: true,
-        skipStatus: true,
-        skipCache: true,
-        allowNonDelegationSubjectFields: true,
-      });
-
-      expect(first.valid).toBe(true);
-      expect(second.valid).toBe(true);
-      // One-time per-process warning, not once per verification.
-      expect(warnSpy).toHaveBeenCalledTimes(1);
-      expect(warnSpy.mock.calls[0]?.[0]).toMatch(
-        /allowNonDelegationSubjectFields/,
-      );
-
-      warnSpy.mockRestore();
-    });
-
     it("accepts a well-formed subject carrying only id and delegation", async () => {
       await setupDefaultContractsMocks();
 

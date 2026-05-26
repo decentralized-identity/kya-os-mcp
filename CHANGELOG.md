@@ -7,6 +7,8 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-05-26
+
 ### Spec
 
 - **§4.2 — normative MUST on key generation.** An agent's key pair MUST be
@@ -31,6 +33,26 @@ Versioning: https://semver.org/spec/v2.0.0.html
 - **Terminology.** Standardized on _secret key_ (synonymous with _private key_,
   retained in PKCS#8 / JWK references); fixed the one residual _private key_
   usage in §7.
+
+### Removed
+
+- **BREAKING: removed the three unsafe delegation opt-outs.** The
+  secure-by-default behavior they bypassed is now unconditional and cannot be
+  disabled:
+  - `delegation.requireAudienceOnRedelegation` — audience binding on every
+    non-root credential in a chain is now mandatory (`SPEC.md` §11.6).
+  - `delegation.allowLegacyUnsafeDelegation` — full delegation-chain resolution
+    and `credentialStatus` / StatusList revocation checks are always enforced;
+    parent-linked credentials without a `resolveDelegationChain` handler, and
+    `credentialStatus` without a `statusListResolver`, are rejected.
+  - `VerifyDelegationVCOptions.allowNonDelegationSubjectFields` — the
+    `credentialSubject` shape check (only `id` + `delegation`) is always
+    enforced (`SPEC.md` §6.2; conformance L3.5a).
+
+  The associated one-time `console.warn` notices are removed along with the
+  flags. Migration guidance: `SECURITY.md` → Mandatory Delegation Protections.
+  Consumers that did not set these flags are unaffected — the reference issuer
+  and all bundled examples already emit conformant credentials.
 
 ## [1.3.2] - 2026-05-26
 

@@ -136,15 +136,7 @@ async function createServer(opts?: {
   const did = generateDidKeyFromBase64(keyPair.publicKey);
   const kid = `${did}#${did.replace('did:key:', '')}`;
 
-  // These transitive-access tests exercise chain-integrity, scope attenuation,
-  // and confused-deputy invariants — they pre-date the secure-default flip
-  // of `requireAudienceOnRedelegation` (now `true` by default in production).
-  // We opt out here so each test can isolate the invariant it's checking;
-  // explicit audience-enforcement tests in §11 set the flag back to `true`.
-  const delegation: KyaOsDelegationConfig = {
-    requireAudienceOnRedelegation: false,
-    ...(opts?.delegation ?? {}),
-  };
+  const delegation: KyaOsDelegationConfig | undefined = opts?.delegation;
 
   const middleware = createKyaOsMiddleware(
     {
@@ -186,6 +178,13 @@ beforeAll(async () => {
 describe('Transitive Access — Karp Use Cases', () => {
   describe('1. Valid transitive delegation chain (Alice → Bob → Carol)', () => {
     it('accepts a two-hop chain where Carol acts with attenuated scope', async () => {
+      // Aperture's server is configured to resolve chains
+      const { middleware, did: serverDid } = await createServer({
+        delegation: {
+          resolveDelegationChain: async () => [aliceToBob],
+        },
+      });
+
       // Alice delegates [query:x, update:y] to Bob
       const aliceToBob = await issueVC({
         from: alice,
@@ -199,13 +198,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         to: carol,
         scopes: ['query:x'],
         parentId: aliceToBob.credentialSubject.delegation.id,
-      });
-
-      // Aperture's server is configured to resolve chains
-      const { middleware } = await createServer({
-        delegation: {
-          resolveDelegationChain: async () => [aliceToBob],
-        },
+        audience: serverDid,
       });
 
       const handler = middleware.wrapWithDelegation(
@@ -273,6 +266,12 @@ describe('Transitive Access — Karp Use Cases', () => {
 
   describe('3. Scope attenuation across hops', () => {
     it('accepts a child that narrows the parent\'s scopes', async () => {
+      const { middleware, did: serverDid } = await createServer({
+        delegation: {
+          resolveDelegationChain: async () => [aliceToBob],
+        },
+      });
+
       const aliceToBob = await issueVC({
         from: alice,
         to: bob,
@@ -285,12 +284,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         to: carol,
         scopes: ['query:x'],
         parentId: aliceToBob.credentialSubject.delegation.id,
-      });
-
-      const { middleware } = await createServer({
-        delegation: {
-          resolveDelegationChain: async () => [aliceToBob],
-        },
+        audience: serverDid,
       });
 
       const handler = middleware.wrapWithDelegation(
@@ -304,6 +298,12 @@ describe('Transitive Access — Karp Use Cases', () => {
     });
 
     it('rejects a child that widens scopes beyond the parent\'s grant', async () => {
+      const { middleware, did: serverDid } = await createServer({
+        delegation: {
+          resolveDelegationChain: async () => [aliceToBob],
+        },
+      });
+
       // Alice gave Bob [query:x, update:y]
       const aliceToBob = await issueVC({
         from: alice,
@@ -318,12 +318,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         to: carol,
         scopes: ['query:x', 'update:y', 'admin:z'],
         parentId: aliceToBob.credentialSubject.delegation.id,
-      });
-
-      const { middleware } = await createServer({
-        delegation: {
-          resolveDelegationChain: async () => [aliceToBob],
-        },
+        audience: serverDid,
       });
 
       const handler = middleware.wrapWithDelegation(
@@ -342,6 +337,12 @@ describe('Transitive Access — Karp Use Cases', () => {
     });
 
     it('rejects a child that passes through equal scopes but adds new ones', async () => {
+      const { middleware, did: serverDid } = await createServer({
+        delegation: {
+          resolveDelegationChain: async () => [aliceToBob],
+        },
+      });
+
       // Alice gave Bob [query:x]
       const aliceToBob = await issueVC({
         from: alice,
@@ -355,12 +356,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         to: carol,
         scopes: ['query:x', 'update:y'],
         parentId: aliceToBob.credentialSubject.delegation.id,
-      });
-
-      const { middleware } = await createServer({
-        delegation: {
-          resolveDelegationChain: async () => [aliceToBob],
-        },
+        audience: serverDid,
       });
 
       const handler = middleware.wrapWithDelegation(
@@ -436,6 +432,12 @@ describe('Transitive Access — Karp Use Cases', () => {
       // Even if the chain is perfectly valid, the scope check at the tool
       // level prevents the confused deputy from exceeding her authority.
 
+      const { middleware, did: serverDid } = await createServer({
+        delegation: {
+          resolveDelegationChain: async () => [aliceToBob],
+        },
+      });
+
       const aliceToBob = await issueVC({
         from: alice,
         to: bob,
@@ -447,12 +449,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         to: carol,
         scopes: ['query:x'],
         parentId: aliceToBob.credentialSubject.delegation.id,
-      });
-
-      const { middleware } = await createServer({
-        delegation: {
-          resolveDelegationChain: async () => [aliceToBob],
-        },
+        audience: serverDid,
       });
 
       // Tool requires update:y — Carol only has query:x
@@ -737,6 +734,12 @@ describe('Transitive Access — Karp Use Cases', () => {
       // This is the cryptographic enforcement of Karp's "capability
       // certificates carry provenance" property.
 
+      const { middleware, did: serverDid } = await createServer({
+        delegation: {
+          resolveDelegationChain: async () => [aliceToBob],
+        },
+      });
+
       // Alice delegates to Bob
       const aliceToBob = await issueVC({
         from: alice,
@@ -752,12 +755,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         to: carol,
         scopes: ['query:x'],
         parentId: aliceToBob.credentialSubject.delegation.id,
-      });
-
-      const { middleware } = await createServer({
-        delegation: {
-          resolveDelegationChain: async () => [aliceToBob],
-        },
+        audience: serverDid,
       });
 
       const handler = middleware.wrapWithDelegation(
@@ -853,6 +851,12 @@ describe('Transitive Access — Karp Use Cases', () => {
 
       const dave = await createAgentIdentity();
 
+      const { middleware, did: serverDid } = await createServer({
+        delegation: {
+          resolveDelegationChain: async () => [aliceToBob, bobToCarol],
+        },
+      });
+
       // Alice → Bob: [query:x, update:y, delete:y]
       const aliceToBob = await issueVC({
         from: alice,
@@ -866,6 +870,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         to: carol,
         scopes: ['query:x', 'update:y'],
         parentId: aliceToBob.credentialSubject.delegation.id,
+        audience: serverDid,
       });
 
       // Carol → Dave: [query:x] (drops update:y)
@@ -874,12 +879,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         to: dave,
         scopes: ['query:x'],
         parentId: bobToCarol.credentialSubject.delegation.id,
-      });
-
-      const { middleware } = await createServer({
-        delegation: {
-          resolveDelegationChain: async () => [aliceToBob, bobToCarol],
-        },
+        audience: serverDid,
       });
 
       const handler = middleware.wrapWithDelegation(
@@ -896,6 +896,12 @@ describe('Transitive Access — Karp Use Cases', () => {
     it('rejects if any link in a three-hop chain widens scope', async () => {
       const dave = await createAgentIdentity();
 
+      const { middleware, did: serverDid } = await createServer({
+        delegation: {
+          resolveDelegationChain: async () => [aliceToBob, bobToCarol],
+        },
+      });
+
       // Alice → Bob: [query:x]
       const aliceToBob = await issueVC({
         from: alice,
@@ -909,6 +915,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         to: carol,
         scopes: ['query:x'],
         parentId: aliceToBob.credentialSubject.delegation.id,
+        audience: serverDid,
       });
 
       // Carol → Dave: [query:x, update:y] — INVALID, widens scope
@@ -917,12 +924,7 @@ describe('Transitive Access — Karp Use Cases', () => {
         to: dave,
         scopes: ['query:x', 'update:y'],
         parentId: bobToCarol.credentialSubject.delegation.id,
-      });
-
-      const { middleware } = await createServer({
-        delegation: {
-          resolveDelegationChain: async () => [aliceToBob, bobToCarol],
-        },
+        audience: serverDid,
       });
 
       const handler = middleware.wrapWithDelegation(
@@ -1069,17 +1071,16 @@ describe('Transitive Access — Karp Use Cases', () => {
   });
 
   // =========================================================================
-  // 11. requireAudienceOnRedelegation enforcement
+  // 11. Audience-on-redelegation enforcement (mandatory)
   // =========================================================================
 
-  describe('11. requireAudienceOnRedelegation — strict confused-deputy prevention', () => {
+  describe('11. Audience-on-redelegation — strict confused-deputy prevention', () => {
     it('rejects a re-delegation without audience when enforcement is enabled', async () => {
       // Core fix for transitive access: re-delegations MUST carry an
       // audience constraint so they cannot be forwarded to unintended servers.
 
       const { middleware, did: serverDid } = await createServer({
         delegation: {
-          requireAudienceOnRedelegation: true,
           resolveDelegationChain: async () => [aliceToBob],
         },
       });
@@ -1119,7 +1120,6 @@ describe('Transitive Access — Karp Use Cases', () => {
     it('accepts a re-delegation WITH audience when enforcement is enabled', async () => {
       const { middleware, did: serverDid } = await createServer({
         delegation: {
-          requireAudienceOnRedelegation: true,
           resolveDelegationChain: async (leaf) => {
             // Dynamically return the correct parent
             return [aliceToBobVC];
@@ -1154,50 +1154,11 @@ describe('Transitive Access — Karp Use Cases', () => {
       expect(result.content[0].text).toBe('ok');
     });
 
-    it('allows re-delegations without audience when enforcement is explicitly disabled', async () => {
-      // Backward-compatibility opt-out: setting the flag to `false`
-      // restores legacy behavior for integrations that cannot yet bind
-      // audience on every re-delegation. A one-time warn is emitted
-      // per process; we assert behavior here, not the warning.
-
-      const aliceToBob = await issueVC({
-        from: alice,
-        to: bob,
-        scopes: ['query:x'],
-      });
-
-      const bobToCarol = await issueVC({
-        from: bob,
-        to: carol,
-        scopes: ['query:x'],
-        parentId: aliceToBob.credentialSubject.delegation.id,
-        // no audience — allowed when flag is explicitly false
-      });
-
-      const { middleware } = await createServer({
-        delegation: {
-          requireAudienceOnRedelegation: false, // explicit opt-out
-          resolveDelegationChain: async () => [aliceToBob],
-        },
-      });
-
-      const handler = middleware.wrapWithDelegation(
-        'query_x',
-        { scopeId: 'query:x', consentUrl: 'https://aperture.example/consent' },
-        async () => ({ content: [{ type: 'text', text: 'ok' }] }),
-      );
-
-      const result = await handler({ _kyaos_delegation: bobToCarol });
-      expect(result.isError).toBeUndefined();
-      expect(result.content[0].text).toBe('ok');
-    });
-
     it('rejects at any hop in a three-hop chain missing audience', async () => {
       const dave = await createAgentIdentity();
 
       const { middleware, did: serverDid } = await createServer({
         delegation: {
-          requireAudienceOnRedelegation: true,
           resolveDelegationChain: async () => [aliceToBobVC, bobToCarolVC],
         },
       });
@@ -1240,6 +1201,76 @@ describe('Transitive Access — Karp Use Cases', () => {
       expect(parsed.error).toBe('delegation_invalid');
       expect(parsed.reason).toContain('re-delegation');
       expect(parsed.reason).toContain('audience');
+    });
+  });
+
+  // =========================================================================
+  // 12. Chain-resolution failure handling
+  // =========================================================================
+
+  describe('12. Chain-resolution failure handling', () => {
+    it('rejects when resolveDelegationChain throws', async () => {
+      const { middleware, did: serverDid } = await createServer({
+        delegation: {
+          resolveDelegationChain: async () => {
+            throw new Error('registry unreachable');
+          },
+        },
+      });
+
+      const aliceToBob = await issueVC({ from: alice, to: bob, scopes: ['query:x'] });
+      const bobToCarol = await issueVC({
+        from: bob,
+        to: carol,
+        scopes: ['query:x'],
+        parentId: aliceToBob.credentialSubject.delegation.id,
+        audience: serverDid,
+      });
+
+      const handler = middleware.wrapWithDelegation(
+        'query_x',
+        { scopeId: 'query:x', consentUrl: 'https://aperture.example/consent' },
+        async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
+      );
+
+      const result = await handler({ _kyaos_delegation: bobToCarol });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toBe('delegation_invalid');
+      expect(parsed.reason).toContain('Failed to resolve delegation chain');
+      expect(parsed.reason).toContain('registry unreachable');
+    });
+
+    it('rejects when the resolved chain does not end with the leaf credential', async () => {
+      const { middleware, did: serverDid } = await createServer({
+        delegation: {
+          // Wrong order: the presented leaf is returned first, not last.
+          resolveDelegationChain: async () => [bobToCarol, aliceToBob],
+        },
+      });
+
+      const aliceToBob = await issueVC({ from: alice, to: bob, scopes: ['query:x'] });
+      const bobToCarol = await issueVC({
+        from: bob,
+        to: carol,
+        scopes: ['query:x'],
+        parentId: aliceToBob.credentialSubject.delegation.id,
+        audience: serverDid,
+      });
+
+      const handler = middleware.wrapWithDelegation(
+        'query_x',
+        { scopeId: 'query:x', consentUrl: 'https://aperture.example/consent' },
+        async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
+      );
+
+      const result = await handler({ _kyaos_delegation: bobToCarol });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toBe('delegation_invalid');
+      expect(parsed.reason).toContain('must end with the leaf credential');
     });
   });
 });

@@ -26,21 +26,11 @@ async function createTestMiddleware(options?: {
   const did = generateDidKeyFromBase64(keyPair.publicKey);
   const kid = `${did}#${did.replace('did:key:', '')}`;
 
-  // Pre-secure-default fixture: legacy tests in this file exercise specific
-  // chain/scope invariants without binding audience on each hop. Opt out of
-  // the (now-default-true) audience-on-redelegation check so each test can
-  // isolate the invariant under examination. Tests that need to assert
-  // audience enforcement set the flag explicitly to `true`.
-  const delegation: KyaOsDelegationConfig = {
-    requireAudienceOnRedelegation: false,
-    ...(options?.delegation ?? {}),
-  };
-
   const middleware = createKyaOsMiddleware(
     {
       identity: { did, kid, privateKey: keyPair.privateKey, publicKey: keyPair.publicKey },
       session: { sessionTtlMinutes: 60 },
-      delegation,
+      delegation: options?.delegation,
       autoSession: options?.autoSession,
     },
     crypto,
@@ -453,26 +443,6 @@ describe('createKyaOsMiddleware', () => {
       expect(parsed.reason).toContain('resolveDelegationChain');
     });
 
-    it('should allow parent delegations in legacy mode without a chain resolver', async () => {
-      const { middleware: kyaos } = await createTestMiddleware({
-        delegation: { allowLegacyUnsafeDelegation: true },
-      });
-      const vc = await issueDelegationVC({
-        scopes: ['test:scope'],
-        parentId: 'parent-delegation',
-      });
-
-      const handler = kyaos.wrapWithDelegation(
-        'my-tool',
-        { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
-        async () => ({ content: [{ type: 'text', text: 'legacy-ok' }] }),
-      );
-
-      const result = await handler({ _kyaos_delegation: vc });
-      expect(result.isError).toBeUndefined();
-      expect(result.content[0].text).toBe('legacy-ok');
-    });
-
     it('should reject delegation chains that widen parent scopes', async () => {
       const parentIssuer = await createDelegationIssuer();
       const childIssuer = await createDelegationIssuer();
@@ -482,17 +452,19 @@ describe('createKyaOsMiddleware', () => {
         scopes: ['test:scope'],
         subjectDid: childIssuer.did,
       });
+
+      const { middleware: kyaos, did } = await createTestMiddleware({
+        delegation: {
+          resolveDelegationChain: async () => [parentVc],
+        },
+      });
+
       const childVc = await issueDelegationVC({
         issuer: childIssuer,
         scopes: ['test:scope', 'admin:scope'],
         parentId: parentVc.credentialSubject.delegation.id,
         subjectDid: leafSubject,
-      });
-
-      const { middleware: kyaos } = await createTestMiddleware({
-        delegation: {
-          resolveDelegationChain: async () => [parentVc],
-        },
+        audience: did,
       });
 
       const handler = kyaos.wrapWithDelegation(
@@ -562,10 +534,8 @@ describe('createKyaOsMiddleware', () => {
       expect(parsed['name']).toBe('DIF');
     });
 
-    it('should allow credentialStatus without status resolver in legacy mode', async () => {
-      const { middleware: kyaos } = await createTestMiddleware({
-        delegation: { allowLegacyUnsafeDelegation: true },
-      });
+    it('should reject credentialStatus when no status resolver is configured', async () => {
+      const { middleware: kyaos } = await createTestMiddleware();
       const vc = await issueDelegationVC({
         scopes: ['test:scope'],
         credentialStatus: {
@@ -580,12 +550,14 @@ describe('createKyaOsMiddleware', () => {
       const handler = kyaos.wrapWithDelegation(
         'my-tool',
         { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
-        async () => ({ content: [{ type: 'text', text: 'legacy-status-ok' }] }),
+        async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
       );
 
       const result = await handler({ _kyaos_delegation: vc });
-      expect(result.isError).toBeUndefined();
-      expect(result.content[0].text).toBe('legacy-status-ok');
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toBe('delegation_invalid');
+      expect(parsed.reason).toContain('statusListResolver');
     });
   });
 

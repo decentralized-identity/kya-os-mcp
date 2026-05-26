@@ -7,6 +7,36 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-05-26
+
+### Security
+
+- **Verifier rejects claim-contaminated delegation credentials.** A
+  `DelegationCredential` whose `credentialSubject` carries properties beyond
+  `id` and `delegation` is now rejected by default — claim-bearing fields in a
+  permission credential separate designation from authorization (the
+  confused-deputy class, `SPEC.md` §6.2 / §11.6). The reference verifier exposes
+  `allowNonDelegationSubjectFields` (default `false`) as an audited opt-out that
+  logs a one-time per-process warning. Spec-conformant issuers are unaffected;
+  the reference issuer already emits `{ id, delegation }` subjects. New
+  conformance requirement L3.5a. (#67)
+
+### Changed
+
+- **Schema `$id` and JSON-LD `@context` hosts migrated** off the
+  `modelcontextprotocol-identity.io` trademark domain to the foundation-owned
+  `schema.kya-os.ai`. All five shipped JSON Schemas (`schemas/*.json`), the
+  spec's context references, and the `DELEGATION_CREDENTIAL_CONTEXT` constant
+  now resolve under `schema.kya-os.ai`; schemas are served identically at both
+  hosts during the migration window (no `$id` is 301-redirected). (#65)
+
+## [1.3.1] - 2026-05-26
+
+> These entries accreted across the 1.2.0 → 1.3.1 donation cutover and were
+> published without strict per-version sectioning. They are grouped here for
+> completeness; see `npm view @kya-os/mcp time` and git history for exact ship
+> points. A clean per-version backfill is tracked separately.
+
 ### Added
 
 - Export the byte-variant base64url helpers (`base64urlEncodeFromBytes`, `base64urlDecodeToBytes`) from the package entry point. They existed in `src/utils/base64.ts` but were not on the public API; downstream consumers need them for DID/JWK key encoding.
@@ -49,15 +79,6 @@ Versioning: https://semver.org/spec/v2.0.0.html
 - Added test coverage pinning the warn-once behavior on both unsafe-mode
   flags: warns exactly once per process on opt-in, silent on safe defaults,
   no duplicate warnings across repeated `wrapWithDelegation` calls.
-- **Verifier rejects claim-contaminated delegation credentials.** A
-  `DelegationCredential` whose `credentialSubject` carries properties beyond
-  `id` and `delegation` is now rejected by default: claim-bearing fields in a
-  permission credential separate designation from authorization (the
-  confused-deputy class — `SPEC.md` §6.2 / §11.6). The reference verifier
-  exposes `allowNonDelegationSubjectFields` (default `false`) as an audited
-  opt-out that logs a one-time per-process warning. Spec-conformant issuers are
-  unaffected — the reference issuer already emits `{ id, delegation }` subjects,
-  and the full suite passes unchanged. New conformance requirement L3.5a.
 
 ### Added
 

@@ -15,3 +15,10 @@ export {
 } from './memory.js';
 
 export { NodeCryptoProvider } from './node-crypto.js';
+
+export {
+  AuditLogProvider,
+  MemoryAuditLogProvider,
+  NoopAuditLogProvider,
+  buildAuditRecord,
+} from './audit-log.js';

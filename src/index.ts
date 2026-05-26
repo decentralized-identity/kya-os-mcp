@@ -265,6 +265,13 @@ export {
 
 export { NodeCryptoProvider } from './providers/node-crypto.js';
 
+export {
+  AuditLogProvider,
+  MemoryAuditLogProvider,
+  NoopAuditLogProvider,
+  buildAuditRecord,
+} from './providers/audit-log.js';
+
 // Middleware
 export {
   createKyaOsMiddleware,

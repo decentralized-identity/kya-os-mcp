@@ -1203,4 +1203,74 @@ describe('Transitive Access — Karp Use Cases', () => {
       expect(parsed.reason).toContain('audience');
     });
   });
+
+  // =========================================================================
+  // 12. Chain-resolution failure handling
+  // =========================================================================
+
+  describe('12. Chain-resolution failure handling', () => {
+    it('rejects when resolveDelegationChain throws', async () => {
+      const { middleware, did: serverDid } = await createServer({
+        delegation: {
+          resolveDelegationChain: async () => {
+            throw new Error('registry unreachable');
+          },
+        },
+      });
+
+      const aliceToBob = await issueVC({ from: alice, to: bob, scopes: ['query:x'] });
+      const bobToCarol = await issueVC({
+        from: bob,
+        to: carol,
+        scopes: ['query:x'],
+        parentId: aliceToBob.credentialSubject.delegation.id,
+        audience: serverDid,
+      });
+
+      const handler = middleware.wrapWithDelegation(
+        'query_x',
+        { scopeId: 'query:x', consentUrl: 'https://aperture.example/consent' },
+        async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
+      );
+
+      const result = await handler({ _kyaos_delegation: bobToCarol });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toBe('delegation_invalid');
+      expect(parsed.reason).toContain('Failed to resolve delegation chain');
+      expect(parsed.reason).toContain('registry unreachable');
+    });
+
+    it('rejects when the resolved chain does not end with the leaf credential', async () => {
+      const { middleware, did: serverDid } = await createServer({
+        delegation: {
+          // Wrong order: the presented leaf is returned first, not last.
+          resolveDelegationChain: async () => [bobToCarol, aliceToBob],
+        },
+      });
+
+      const aliceToBob = await issueVC({ from: alice, to: bob, scopes: ['query:x'] });
+      const bobToCarol = await issueVC({
+        from: bob,
+        to: carol,
+        scopes: ['query:x'],
+        parentId: aliceToBob.credentialSubject.delegation.id,
+        audience: serverDid,
+      });
+
+      const handler = middleware.wrapWithDelegation(
+        'query_x',
+        { scopeId: 'query:x', consentUrl: 'https://aperture.example/consent' },
+        async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
+      );
+
+      const result = await handler({ _kyaos_delegation: bobToCarol });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toBe('delegation_invalid');
+      expect(parsed.reason).toContain('must end with the leaf credential');
+    });
+  });
 });

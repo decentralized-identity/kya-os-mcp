@@ -32,9 +32,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { createKyaOsMiddleware, type KyaOsMiddleware } from '../../../src/middleware/with-kya-os.js';
-import { NodeCryptoProvider } from '../../../src/providers/node-crypto.js';
-import { generateDidKeyFromBase64 } from '../../../src/utils/did-helpers.js';
+import { createKyaOsMiddleware, NodeCryptoProvider, generateDidKeyFromBase64, type KyaOsMiddleware } from '@kya-os/mcp';
 import { startConsentServer } from './consent-server.js';
 import { createDelegationIssuerFromIdentity } from './delegation-issuer.js';
 
@@ -90,21 +88,23 @@ export class DelegationStore {
 }
 
 /**
- * Intercept needs_authorization responses and reformat as a clickable
- * consent link with URL params (tool, scopes, agent_did, resume_token).
+ * Auto-inject a previously approved delegation on retry (resume-token flow via
+ * the DelegationStore).
  *
- * Also checks the DelegationStore for previously approved delegations
- * and auto-injects them on retry.
+ * The needs_authorization challenge presentation — the clickable markdown consent
+ * link — is produced by the `formatChallenge` hook passed to `wrapWithDelegation`
+ * (see createConsentMcpServer), NOT here. Rendering the link before signing lets
+ * the challenge proof bind a `responseHash` over the link itself, keeping the
+ * authorizationUrl tamper-evident; rewriting the response after signing (as this
+ * wrapper used to) would have broken that binding.
  */
 function formatAsConsentLink(
   toolName: string,
-  consentBaseUrl: string,
-  agentDid: string,
   delegationStore: DelegationStore | undefined,
   handler: (args: Record<string, unknown>, sessionId?: string) => Promise<ToolResult>,
 ): (args: Record<string, unknown>, sessionId?: string) => Promise<ToolResult> {
   return async (args, sessionId) => {
-    // Check the delegation store for a previously approved VC (resume token flow).
+    // Resume-token flow: inject a previously approved VC on retry.
     if (!args['_kyaos_delegation'] && delegationStore) {
       const pending = delegationStore.findByTool(toolName);
       if (pending) {
@@ -112,41 +112,7 @@ function formatAsConsentLink(
         return handler({ ...args, _kyaos_delegation: pending.vc }, sessionId);
       }
     }
-
-    const result = await handler(args, sessionId);
-
-    // Intercept needs_authorization JSON and reformat as markdown link
-    const text = result.content?.[0]?.text;
-    if (text && !result.isError) {
-      try {
-        const parsed = JSON.parse(text) as {
-          error?: string;
-          scopes?: string[];
-          resumeToken?: string;
-        };
-        if (parsed.error === 'needs_authorization') {
-          const url = new URL(consentBaseUrl);
-          url.searchParams.set('tool', toolName);
-          url.searchParams.set('scopes', (parsed.scopes ?? []).join(','));
-          url.searchParams.set('agent_did', agentDid);
-          if (parsed.resumeToken) {
-            url.searchParams.set('resume_token', parsed.resumeToken);
-          }
-
-          return {
-            content: [{
-              type: 'text' as const,
-              text: `Authorization required.\n\n[Authorize ${toolName}](${url.toString()})\n\nRetry after authorizing.`,
-            }],
-            isError: false,
-          };
-        }
-      } catch {
-        // Not JSON — pass through
-      }
-    }
-
-    return result;
+    return handler(args, sessionId);
   };
 }
 
@@ -177,7 +143,24 @@ export function createConsentMcpServer(
   // checkout: protected tool — requires delegation with scope cart:write
   const rawCheckoutHandler = kyaos.wrapWithDelegation(
     'checkout',
-    { scopeId: 'cart:write', consentUrl: config.consentUrl },
+    {
+      scopeId: 'cart:write',
+      consentUrl: config.consentUrl,
+      // Render the challenge as a clickable markdown consent link BEFORE signing,
+      // so the challenge proof binds a responseHash over the rendered link
+      // (tamper-evident authorizationUrl). LLM / chat-style MCP clients render it.
+      formatChallenge: (challenge) => {
+        const url = new URL(config.consentUrl);
+        url.searchParams.set('tool', 'checkout');
+        url.searchParams.set('scopes', challenge.scopes.join(','));
+        url.searchParams.set('agent_did', kyaos.identity.did);
+        url.searchParams.set('resume_token', challenge.resumeToken);
+        return [{
+          type: 'text' as const,
+          text: `Authorization required.\n\n[Authorize checkout](${url.toString()})\n\nRetry after authorizing.`,
+        }];
+      },
+    },
     kyaos.wrapWithProof('checkout', async (args) => ({
       content: [{
         type: 'text',
@@ -187,8 +170,6 @@ export function createConsentMcpServer(
   );
   const checkoutHandler = formatAsConsentLink(
     'checkout',
-    config.consentUrl,
-    kyaos.identity.did,
     config.delegationStore,
     rawCheckoutHandler as (args: Record<string, unknown>, sessionId?: string) => Promise<ToolResult>,
   );

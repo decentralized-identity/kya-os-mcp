@@ -17,8 +17,9 @@
 
 import {
   type CryptoProvider,
-  FetchProvider,
+  type FetchProvider,
 } from "../providers/base.js";
+import { RuntimeFetchProvider } from "../providers/runtime-fetch.js";
 import { AuditLogProvider, NoopAuditLogProvider } from "../providers/audit-log.js";
 import {
   SessionManager,
@@ -39,15 +40,23 @@ import {
   type StatusListResolver,
 } from "../delegation/vc-verifier.js";
 import { createDidKeyResolver } from "../delegation/did-key-resolver.js";
+import { scopeSatisfies } from "../delegation/scope-matcher.js";
 import { createDidWebResolver } from "../delegation/did-web-resolver.js";
 import { verifyDelegationAudience } from "../delegation/audience-validator.js";
 import {
   createNeedsAuthorizationError,
+  createNeedsApprovalError,
   extractDelegationFromVC,
   type DelegationCredential,
   type DelegationRecord,
+  type NeedsAuthorizationError,
 } from "../types/protocol.js";
 import { logger } from "../logging/index.js";
+import { RiskClassifier } from "../policy/classifier.js";
+import { DefaultPolicyEngine } from "../policy/default-engine.js";
+import { verifyApprovalQuorum, type ApprovalGrant } from "../policy/approval.js";
+import type { PolicyEngine } from "../policy/engine.js";
+import type { PolicyRequest } from "../policy/types.js";
 import { KYA_OS_ERROR_CODES } from "../errors.js";
 import { canonicalizeJSON, parseVCJWT } from "../delegation/utils.js";
 import { base64urlDecodeToBytes, base64urlEncodeFromBytes, bytesToBase64 } from "../utils/base64.js";
@@ -219,31 +228,36 @@ export interface KyaOsMiddleware {
     config: {
       scopeId: string;
       consentUrl: string;
+      /**
+       * Optional presentation hook for the `needs_authorization` challenge.
+       * Given the structured challenge, return the tool-response content to emit
+       * (e.g. a markdown "Authorize" link for LLM / chat-style MCP clients that
+       * won't parse raw JSON). The signed challenge proof binds a `responseHash`
+       * over WHATEVER this returns, so the `authorizationUrl` stays tamper-evident
+       * regardless of presentation. Defaults to the structured challenge as JSON.
+       */
+      formatChallenge?: (
+        challenge: NeedsAuthorizationError,
+      ) => Array<{ type: "text"; text: string }>;
     },
     handler: KyaOsToolHandler,
   ): KyaOsToolHandler;
-}
 
-class RuntimeFetchProvider extends FetchProvider {
-  async resolveDID(): Promise<null> {
-    return null;
-  }
-
-  async fetchStatusList(): Promise<null> {
-    return null;
-  }
-
-  async fetchDelegationChain(): Promise<DelegationRecord[]> {
-    return [];
-  }
-
-  async fetch(url: string, options?: unknown): Promise<Response> {
-    if (typeof globalThis.fetch !== "function") {
-      throw new Error("Global fetch is not available in this runtime");
-    }
-
-    return globalThis.fetch(url, options as RequestInit);
-  }
+  /**
+   * Wrap a tool handler with a per-action policy / step-up gate.
+   *
+   * Compose after `wrapWithDelegation`. Classifies the action's risk and asks a
+   * pluggable PolicyEngine: allow → run handler; deny → signed denial proof;
+   * step_up → `needs_approval` until N-of-M signed approval grants (bound to the
+   * request hash) are supplied.
+   */
+  // Optional so external structural implementers / mocks of KyaOsMiddleware are
+  // not broken by this additive method.
+  withPolicyGate?(
+    toolName: string,
+    handler: KyaOsToolHandler,
+    opts?: PolicyGateOptions,
+  ): KyaOsToolHandler;
 }
 
 function getDelegationScopes(credential: DelegationCredential): string[] {
@@ -253,11 +267,91 @@ function getDelegationScopes(credential: DelegationCredential): string[] {
     scopes.add(scope);
   }
 
-  for (const scope of credential.credentialSubject.delegation.constraints.scopes ?? []) {
+  for (const scope of credential.credentialSubject.delegation.constraints?.scopes ?? []) {
     scopes.add(scope);
   }
 
   return Array.from(scopes);
+}
+
+/**
+ * Strip control characters and cap length on caller-derived values before they
+ * are interpolated into client-facing reasons or log lines. A hostile
+ * credential could otherwise embed newlines / control chars in an id or scope to
+ * forge or corrupt log entries (log injection) or break a terminal. The fixed
+ * parts of a reason contain no control chars, so sanitizing the whole assembled
+ * string at the emission boundary is equivalent to sanitizing each interpolated
+ * value, and is idempotent.
+ */
+function sanitizeForMessage(value: unknown, maxLen = 256): string {
+  const s = typeof value === "string" ? value : String(value);
+  // Replace C0/C1 control chars (incl. CR, LF, TAB, ESC, DEL) with U+FFFD so a
+  // hostile id/scope cannot forge log lines or break a terminal. Filtered by
+  // code point to keep this source ASCII-only (no literal control chars).
+  let out = "";
+  for (const ch of s) {
+    const code = ch.codePointAt(0) ?? 0;
+    out += code <= 0x1f || (code >= 0x7f && code <= 0x9f) ? "\uFFFD" : ch;
+  }
+  return out.length > maxLen ? `${out.slice(0, maxLen)}\u2026` : out;
+}
+
+export interface PolicyGateOptions {
+  /** Policy decision engine. Defaults to a fail-closed DefaultPolicyEngine. */
+  engine?: PolicyEngine;
+  /** Risk classifier. Defaults to the built-in RiskClassifier. */
+  classifier?: RiskClassifier;
+  /** Derive the resource namespace from the tool args (defaults to the tool name). */
+  resolveNamespace?: (args: Record<string, unknown>) => string;
+  /** Tool-arg key carrying approval grants on resume. Default "_kyaos_approvals". */
+  approvalsArgKey?: string;
+  /** Verifier for approval-grant signatures (identity-layer). Default: reject all. */
+  isValidApprovalSignature?: (grant: ApprovalGrant) => Promise<boolean>;
+  /**
+   * Whether a prior step already authorized this action's scope/identity.
+   *
+   * Defaults to FALSE (fail-closed): used standalone, withPolicyGate enforces no
+   * scope or identity, so it must NOT be trusted to allow on its own. When you
+   * compose it AFTER wrapWithDelegation (the expected usage), pass
+   * `scopeMatched: true` to signal that the delegated scope was already verified.
+   * Note: principal facts are projected from the (unverified) `_kyaos_delegation`
+   * arg on a best-effort basis and must not be treated as authenticated unless
+   * wrapWithDelegation ran first.
+   */
+  scopeMatched?: boolean;
+}
+
+/** Best-effort projection of a delegation VC into policy principal facts. */
+function extractPolicyPrincipal(del: unknown): {
+  agentDid: string;
+  responsibleParty?: string;
+  delegatedScopes: string[];
+} {
+  if (!del || typeof del !== "object") {
+    return { agentDid: "unknown", delegatedScopes: [] };
+  }
+  try {
+    const vc = del as DelegationCredential;
+    const subject = vc.credentialSubject as unknown as {
+      id?: string;
+      delegation?: { subjectDid?: string; controller?: string };
+    };
+    const agentDid = subject?.delegation?.subjectDid ?? subject?.id ?? "unknown";
+    const responsibleParty = subject?.delegation?.controller;
+    let delegatedScopes: string[] = [];
+    try {
+      delegatedScopes = getDelegationScopes(vc);
+    } catch {
+      delegatedScopes = [];
+    }
+    return {
+      agentDid,
+      ...(responsibleParty ? { responsibleParty } : {}),
+      delegatedScopes,
+    };
+  } catch {
+    return { agentDid: "unknown", delegatedScopes: [] };
+  }
 }
 
 function validateScopeAttenuation(
@@ -267,6 +361,26 @@ function validateScopeAttenuation(
   const parentScopes = getDelegationScopes(parentCredential);
   const childScopes = getDelegationScopes(childCredential);
   const childDelegation = childCredential.credentialSubject.delegation;
+
+  // CRISP matcher attenuation: getDelegationScopes does NOT see constraints.crisp.scopes,
+  // so a re-delegation could otherwise widen authority by introducing a broad
+  // prefix/regex matcher (e.g. resource:"" matches every scope). Require the child's
+  // crisp matchers to be a subset of the parent's (by matcher+resource). Fail closed.
+  const crispKey = (s: { resource: string; matcher: string }): string => `${s.matcher}\u0000${s.resource}`;
+  const parentCrisp = new Set(
+    (parentCredential.credentialSubject.delegation.constraints.crisp?.scopes ?? []).map(crispKey),
+  );
+  const widenedCrisp = (childDelegation.constraints.crisp?.scopes ?? []).filter(
+    (s) => !parentCrisp.has(crispKey(s)),
+  );
+  if (widenedCrisp.length > 0) {
+    return {
+      valid: false,
+      reason: `Delegation ${childDelegation.id} introduces crisp scope matcher(s) absent from parent ${parentCredential.credentialSubject.delegation.id}: ${widenedCrisp
+        .map((s) => `${s.matcher}:${s.resource}`)
+        .join(", ")}`,
+    };
+  }
 
   if (parentScopes.length === 0) {
     return { valid: true };
@@ -621,9 +735,75 @@ export function createKyaOsMiddleware(
     };
   }
 
+  /**
+   * Attach a signed proof recording an authorization OUTCOME to a response, so
+   * rejected or pending privileged attempts leave a verifiable, non-repudiable
+   * forensic record (these previously produced no proof). Used for `denied`,
+   * `step_up_required`, and `needs_authorization` outcomes.
+   *
+   * When `responseData` is provided (e.g. the `needs_authorization` challenge
+   * content), the proof binds a `responseHash` over it — so the signed proof
+   * also attests the response body (notably the consent `authorizationUrl`),
+   * letting a verifier detect a tampered/MITM-swapped URL. Pure denials and
+   * step-ups pass no `responseData` (there is no response body to bind).
+   *
+   * Best-effort: if no session can be resolved or proof generation fails, the
+   * original response is returned unchanged.
+   */
+  async function attachOutcomeProof(
+    response: Awaited<ReturnType<KyaOsToolHandler>>,
+    toolName: string,
+    args: Record<string, unknown>,
+    sessionId: string | undefined,
+    reason: string,
+    outcome: "denied" | "step_up_required" | "needs_authorization" = "denied",
+    paramsOverride?: Record<string, unknown>,
+    responseData?: unknown,
+  ): Promise<Awaited<ReturnType<KyaOsToolHandler>>> {
+    try {
+      const resolvedSessionId = sessionId ?? (await ensureSession());
+      if (!resolvedSessionId) return response;
+      const session = await sessionManager.getSession(resolvedSessionId);
+      if (!session) return response;
+
+      // Prefer the caller's already-stripped args so the signed requestHash
+      // matches the needs_approval / resumeToken requestHash exactly.
+      let cleanArgs: Record<string, unknown>;
+      if (paramsOverride !== undefined) {
+        cleanArgs = paramsOverride;
+      } else {
+        cleanArgs = {};
+        for (const [k, v] of Object.entries(args)) {
+          if (k !== "_kyaos_delegation") cleanArgs[k] = v;
+        }
+      }
+
+      const request: ToolRequest = { method: toolName, params: cleanArgs };
+      const proofResponse: ToolResponse | undefined =
+        responseData !== undefined ? { data: responseData } : undefined;
+      const proof = await proofGenerator.generateProof(request, proofResponse, session, {
+        outcome,
+        reason: sanitizeForMessage(reason),
+      });
+      response._meta = { ...(response._meta ?? {}), proof };
+    } catch (error) {
+      logger.error("[kya-os] Outcome proof generation failed", {
+        tool: toolName,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return response;
+  }
+
   function wrapWithDelegation(
     toolName: string,
-    config: { scopeId: string; consentUrl: string },
+    config: {
+      scopeId: string;
+      consentUrl: string;
+      formatChallenge?: (
+        challenge: NeedsAuthorizationError,
+      ) => Array<{ type: "text"; text: string }>;
+    },
     handler: KyaOsToolHandler,
   ): KyaOsToolHandler {
     const didKeyResolver = createDidKeyResolver();
@@ -713,7 +893,7 @@ export function createKyaOsMiddleware(
       content: [
         {
           type: "text" as const,
-          text: JSON.stringify({ error, reason }),
+          text: JSON.stringify({ error, reason: sanitizeForMessage(reason) }),
         },
       ],
       isError: true,
@@ -723,6 +903,31 @@ export function createKyaOsMiddleware(
       leafCredential: DelegationCredential,
       options?: { skipSignature?: boolean },
     ): Promise<{ valid: boolean; reason?: string }> => {
+      // Shape guard (validate* never-throw contract): a structurally malformed
+      // leaf returns a { valid, reason } result rather than letting
+      // extractDelegationFromVC OR the downstream scopeSatisfies check throw.
+      // Requires both credentialSubject.delegation AND .constraints (the
+      // verifier's own invariant) — the legacy-unsafe path can reach
+      // scopeSatisfies, which runs OUTSIDE the wrapper's try/catch backstop, so a
+      // constraints-less leaf must be rejected here. A hostile getter/Proxy
+      // accessor still throws → caught by the backstop, by design.
+      const leafDelegationObj = (
+        leafCredential?.credentialSubject as
+          | { delegation?: { constraints?: unknown } }
+          | undefined
+      )?.delegation;
+      if (
+        !leafDelegationObj ||
+        typeof leafDelegationObj !== "object" ||
+        !leafDelegationObj.constraints ||
+        typeof leafDelegationObj.constraints !== "object"
+      ) {
+        return {
+          valid: false,
+          reason:
+            "Malformed delegation credential: missing credentialSubject.delegation or its constraints",
+        };
+      }
       const leafDelegation = extractDelegationFromVC(leafCredential);
       let chain: DelegationCredential[] = [leafCredential];
 
@@ -899,9 +1104,41 @@ export function createKyaOsMiddleware(
           scopes: [config.scopeId],
         });
 
-        return {
-          content: [{ type: "text", text: JSON.stringify(authError) }],
-        };
+        // Sign the challenge (outcome=needs_authorization). The proof binds a
+        // responseHash over the EMITTED challenge content — including the
+        // authorizationUrl. A verifier that recomputes the response hash over the
+        // content it received (ProofVerifier.verifyProof(proof, jwk, { request,
+        // response })) thereby detects a tampered/MITM-swapped consent URL; the
+        // signature alone proves authenticity, not content-match. config.format-
+        // Challenge lets a server render the challenge (e.g. a markdown link for
+        // LLM clients) BEFORE signing, so the proof binds exactly what the client
+        // receives. A throwing hook falls back to the default challenge (never
+        // -32603). Best-effort: attachOutcomeProof no-ops if no session resolves.
+        const defaultChallengeContent = [
+          { type: "text" as const, text: JSON.stringify(authError) },
+        ];
+        let challengeContent = defaultChallengeContent;
+        if (config.formatChallenge) {
+          try {
+            challengeContent = config.formatChallenge(authError);
+          } catch (error) {
+            logger.error("[kya-os] formatChallenge threw; using the default challenge", {
+              tool: toolName,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            challengeContent = defaultChallengeContent;
+          }
+        }
+        return attachOutcomeProof(
+          { content: challengeContent },
+          toolName,
+          args,
+          sessionId,
+          authError.message,
+          "needs_authorization",
+          undefined,
+          challengeContent,
+        );
       }
 
       // Accept delegation as either a JSON object (embedded proof) or a
@@ -912,8 +1149,14 @@ export function createKyaOsMiddleware(
       if (typeof delegationArg === "string") {
         const parsed = parseVCJWT(delegationArg);
         if (!parsed || !parsed.payload.vc) {
-          return buildDelegationErrorResponse(
-            KYA_OS_ERROR_CODES.delegation_invalid,
+          return attachOutcomeProof(
+            buildDelegationErrorResponse(
+              KYA_OS_ERROR_CODES.delegation_invalid,
+              "Invalid VC-JWT format",
+            ),
+            toolName,
+            args,
+            sessionId,
             "Invalid VC-JWT format",
           );
         }
@@ -929,31 +1172,66 @@ export function createKyaOsMiddleware(
         vc = delegationArg as DelegationCredential;
       }
 
-      // For VC-JWTs, skip the embedded proof/signature check — the JWT
-      // envelope signature is the proof. Basic checks (schema, expiry,
-      // status, scopes) still apply.
-      const verificationResult = await validateDelegationChain(vc, {
-        skipSignature: isVCJWT,
-      });
+      // For VC-JWTs the embedded-signature check is skipped (the JWT envelope
+      // signature is the proof); schema/expiry/status/scope checks still apply.
+      // validateDelegationChain performs the shape check and returns
+      // { valid, reason } for malformed input, never throwing on normal or
+      // structurally-malformed credentials. This try/catch is therefore a PURE
+      // BACKSTOP — it fires only on a truly unexpected throw (e.g. a hostile
+      // getter/Proxy accessor or a provider fault): it logs the detail
+      // server-side and returns a GENERIC reason, so no internal/implementation
+      // detail (stack, raw error text) leaks to the client or the signed proof.
+      const verificationResult = await (async (): Promise<{
+        valid: boolean;
+        reason?: string;
+      }> => {
+        try {
+          return await validateDelegationChain(vc, { skipSignature: isVCJWT });
+        } catch (error) {
+          logger.error("[kya-os] Unexpected error verifying delegation", {
+            tool: toolName,
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+          });
+          return { valid: false, reason: "Delegation credential could not be verified" };
+        }
+      })();
 
       if (!verificationResult.valid) {
+        const reason = verificationResult.reason ?? "Unknown delegation validation error";
         logger.warn(
-          `[kya-os] Delegation verification failed for "${toolName}": ${verificationResult.reason}`,
+          `[kya-os] Delegation verification failed for "${toolName}": ${sanitizeForMessage(reason)}`,
         );
-        return buildDelegationErrorResponse(
-          KYA_OS_ERROR_CODES.delegation_invalid,
-          verificationResult.reason ?? "Unknown delegation validation error",
+        return attachOutcomeProof(
+          buildDelegationErrorResponse(KYA_OS_ERROR_CODES.delegation_invalid, reason),
+          toolName,
+          args,
+          sessionId,
+          reason,
         );
       }
 
-      const scopes = getDelegationScopes(vc);
-      if (!scopes.includes(config.scopeId)) {
+      // Safe to call directly: the structural guard + validateDelegationChain
+      // above guarantee a well-formed credential here, and scopeSatisfies is
+      // bounded (ReDoS-guarded) and returns rather than throws.
+      const scopeResult = scopeSatisfies(config.scopeId, vc);
+      if (scopeResult.usedNonExactMatcher) {
+        logger.warn(
+          `[kya-os] Scope "${config.scopeId}" for "${toolName}" granted via a non-exact ` +
+            `(prefix/regex) matcher. Verify this is intended — non-exact matchers widen authority.`,
+        );
+      }
+      if (!scopeResult.satisfied) {
+        const reason = `Required scope "${config.scopeId}" not in delegation scopes`;
         logger.warn(
           `[kya-os] Delegation missing required scope "${config.scopeId}" for "${toolName}"`,
         );
-        return buildDelegationErrorResponse(
-          KYA_OS_ERROR_CODES.insufficient_scope,
-          `Required scope "${config.scopeId}" not in delegation scopes`,
+        return attachOutcomeProof(
+          buildDelegationErrorResponse(KYA_OS_ERROR_CODES.insufficient_scope, reason),
+          toolName,
+          args,
+          sessionId,
+          reason,
         );
       }
 
@@ -970,6 +1248,127 @@ export function createKyaOsMiddleware(
     };
   }
 
+  const defaultRiskClassifier = new RiskClassifier();
+  const defaultPolicyEngine: PolicyEngine = new DefaultPolicyEngine();
+
+  /**
+   * Per-action policy / step-up gate. Composed AFTER wrapWithDelegation (which
+   * enforces identity + scope); this wrapper adds the PROPORTIONALITY layer:
+   * classify the action's risk, ask a pluggable PolicyEngine, and either allow,
+   * deny (with a signed denial proof), or require N-of-M human approval
+   * (needs_approval) before the handler runs. It forces a decision point — it
+   * does not itself supply judgment.
+   */
+  function withPolicyGate(
+    toolName: string,
+    handler: KyaOsToolHandler,
+    opts: PolicyGateOptions = {},
+  ): KyaOsToolHandler {
+    const engine = opts.engine ?? defaultPolicyEngine;
+    const classifier = opts.classifier ?? defaultRiskClassifier;
+    const approvalsKey = opts.approvalsArgKey ?? "_kyaos_approvals";
+    const isValidApprovalSignature =
+      opts.isValidApprovalSignature ?? (async () => false);
+
+    return async (args: Record<string, unknown>, sessionId?: string) => {
+      const controlKeys = new Set(["_kyaos_delegation", approvalsKey]);
+      const cleanArgs: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(args)) {
+        if (!controlKeys.has(k)) cleanArgs[k] = v;
+      }
+
+      const namespace = opts.resolveNamespace?.(args) ?? toolName;
+      const risk = classifier.classify({ toolName, namespace });
+      const principal = extractPolicyPrincipal(args["_kyaos_delegation"]);
+
+      const policyRequest: PolicyRequest = {
+        principal: {
+          agentDid: principal.agentDid,
+          ...(principal.responsibleParty
+            ? { responsibleParty: principal.responsibleParty }
+            : {}),
+        },
+        action: { toolName },
+        resource: { namespace },
+        context: {
+          delegatedScopes: principal.delegatedScopes,
+          scopeMatched: opts.scopeMatched ?? false,
+          humanApprovals: [],
+          ...risk,
+        },
+      };
+
+      const decision = await engine.evaluate(policyRequest);
+
+      if (decision.decision === "allow") {
+        return handler(cleanArgs, sessionId);
+      }
+
+      if (decision.decision === "deny") {
+        const denied: Awaited<ReturnType<KyaOsToolHandler>> = {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                error: KYA_OS_ERROR_CODES.policy_denied,
+                reason: sanitizeForMessage(decision.reason),
+              }),
+            },
+          ],
+          isError: true,
+        };
+        return attachOutcomeProof(
+          denied,
+          toolName,
+          args,
+          sessionId,
+          decision.reason,
+          "denied",
+          cleanArgs,
+        );
+      }
+
+      // step_up: verify any supplied approval grants, bound to this exact action.
+      const requestHash = await proofGenerator.hashRequest({
+        method: toolName,
+        params: cleanArgs,
+      });
+      const grants = Array.isArray(args[approvalsKey])
+        ? (args[approvalsKey] as ApprovalGrant[])
+        : [];
+      const quorumResult = await verifyApprovalQuorum(
+        grants,
+        requestHash,
+        decision.quorum,
+        isValidApprovalSignature,
+      );
+      if (quorumResult.satisfied) {
+        return handler(cleanArgs, sessionId);
+      }
+
+      const needsApproval = createNeedsApprovalError({
+        message: `Tool "${toolName}" requires ${decision.quorum.n}-of-N approval before it may proceed (${sanitizeForMessage(decision.reason)}).`,
+        resumeToken: `step_up:${requestHash}`,
+        expiresAt: Math.floor(Date.now() / 1000) + 300,
+        requestHash,
+        quorum: decision.quorum,
+      });
+      const stepUp: Awaited<ReturnType<KyaOsToolHandler>> = {
+        content: [{ type: "text", text: JSON.stringify(needsApproval) }],
+        isError: true,
+      };
+      return attachOutcomeProof(
+        stepUp,
+        toolName,
+        args,
+        sessionId,
+        decision.reason,
+        "step_up_required",
+        cleanArgs,
+      );
+    };
+  }
+
   return {
     identity: config.identity,
     sessionManager,
@@ -980,5 +1379,6 @@ export function createKyaOsMiddleware(
     handleHandshake,
     wrapWithProof,
     wrapWithDelegation,
+    withPolicyGate,
   };
 }

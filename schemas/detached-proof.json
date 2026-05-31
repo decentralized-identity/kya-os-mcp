@@ -20,7 +20,7 @@
   "$defs": {
     "ProofMeta": {
       "type": "object",
-      "required": ["did", "kid", "ts", "nonce", "audience", "sessionId", "requestHash", "responseHash"],
+      "required": ["did", "kid", "ts", "nonce", "audience", "sessionId", "requestHash"],
       "properties": {
         "did": {
           "type": "string",
@@ -60,7 +60,7 @@
         "responseHash": {
           "type": "string",
           "pattern": "^sha256:[a-f0-9]{64}$",
-          "description": "SHA-256 hash of JCS-canonicalized response. Format: 'sha256:<64 hex chars>'."
+          "description": "SHA-256 hash of JCS-canonicalized response. Absent on denial / step-up proofs (no response). Format: 'sha256:<64 hex chars>'."
         },
         "scopeId": {
           "type": "string",
@@ -74,6 +74,15 @@
           "type": "string",
           "pattern": "^did:.+$",
           "description": "Optional client DID for multi-party scenarios."
+        },
+        "outcome": {
+          "type": "string",
+          "enum": ["allowed", "denied", "step_up_required", "needs_authorization"],
+          "description": "Authorization outcome. Present on denial / step-up / needs-authorization proofs; absent (implicitly 'allowed') on success proofs."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Human-readable reason accompanying a denied / step-up / needs-authorization outcome."
         }
       },
       "additionalProperties": false

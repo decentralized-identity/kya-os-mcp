@@ -660,10 +660,16 @@ interface ProofMeta {
   audience: string;     // Session audience
   sessionId: string;    // Session identifier
   requestHash: string;  // SHA-256 of canonicalized request
-  responseHash: string; // SHA-256 of canonicalized response
+  responseHash?: string; // SHA-256 of canonicalized response. Present on success
+                         // AND on needs_authorization challenges (binds the
+                         // challenge content, incl. authorizationUrl); ABSENT on
+                         // denial / step-up proofs (no response body).
   scopeId?: string;     // Scope under which the call was made
   delegationRef?: string; // Reference to delegation credential
   clientDid?: string;   // Client's DID if authenticated
+  outcome?: 'allowed' | 'denied' | 'step_up_required' | 'needs_authorization';
+                         // Authorization outcome; ABSENT ⇒ implicitly 'allowed' (success)
+  reason?: string;       // Human-readable reason on a non-'allowed' outcome
 }
 ```
 
@@ -705,6 +711,42 @@ BASE64URL(header) . BASE64URL(payload) . BASE64URL(signature)
   "aud": "did:web:server.example.com",
   "iss": "did:web:server.example.com",
   "nonce": "...",
+  "requestHash": "sha256:...",
+  "responseHash": "sha256:...",
+  "sessionId": "kyaos_...",
+  "sub": "did:web:server.example.com",
+  "ts": 1710288000
+}
+```
+
+**Denial** and **step-up** proofs have no response body, so `responseHash` is
+omitted and `outcome` (plus an optional `reason`) is included instead. Keys
+remain RFC 8785-sorted:
+```json
+{
+  "aud": "did:web:server.example.com",
+  "iss": "did:web:server.example.com",
+  "nonce": "...",
+  "outcome": "denied",
+  "reason": "insufficient_scope",
+  "requestHash": "sha256:...",
+  "sessionId": "kyaos_...",
+  "sub": "did:web:server.example.com",
+  "ts": 1710288000
+}
+```
+
+A **needs_authorization** challenge *does* carry a response body (the consent
+challenge, including the `authorizationUrl`), so its proof includes **both** a
+`responseHash` over that body — binding the URL against tampering / MITM
+substitution — and `outcome: "needs_authorization"`:
+```json
+{
+  "aud": "did:web:server.example.com",
+  "iss": "did:web:server.example.com",
+  "nonce": "...",
+  "outcome": "needs_authorization",
+  "reason": "requires delegation with scope: greeting:restricted",
   "requestHash": "sha256:...",
   "responseHash": "sha256:...",
   "sessionId": "kyaos_...",
@@ -883,14 +925,24 @@ interface NeedsAuthorizationError {
 }
 ```
 
+The `needs_authorization` response is itself **signed**: it carries a detached-JWS
+proof in `_meta` (`outcome: 'needs_authorization'`) whose `responseHash` binds the
+challenge content, including `authorizationUrl` (see §7.4). A client detects a
+substituted consent URL by verifying that proof against the resource's DID and
+recomputing `responseHash` over the challenge it actually received
+(`ProofVerifier.verifyProof(proof, jwk, { request, response })`) — see §11.1.
+
 ### 9.3 Resume Flow
 
 1. Client receives `needs_authorization` error
-2. Client directs user to `authorizationUrl`
-3. User authenticates and grants authorization
-4. Authorization service issues DelegationCredential
-5. Client retries request with `resumeToken` and new delegation
-6. Server validates delegation and processes request
+2. Client verifies the challenge proof against the resource's DID — recomputing
+   `responseHash` over the received content — before trusting `authorizationUrl`
+   (detects a substituted consent URL; §11.1)
+3. Client directs user to `authorizationUrl`
+4. User authenticates and grants authorization
+5. Authorization service issues DelegationCredential
+6. Client retries request with `resumeToken` and new delegation
+7. Server validates delegation and processes request
 
 ---
 
@@ -994,6 +1046,7 @@ and the residual risk an operator carries.
 | **Key compromise** — an agent's secret key is exfiltrated. | Short-lived delegations; explicit revocation; key rotation via DID document update. | Window between compromise and detection. See §11.5. |
 | **Revocation race** — an invocation arrives while a revocation is propagating. | Status-list TTL bounded ≤ 60s for high-privilege scopes; side-channel revocation signals honored immediately; expiry as primary revocation mechanism. See §6.5.2. | Unavoidable Lamport-concurrent race. Operators bound the window; they cannot eliminate it. |
 | **Downgrade** — a client strips KYA-OS headers entirely. | Fail-closed: servers requiring identity MUST reject sessionless calls; `/.well-known/mcp` advertises requirements. See §11.7. | A non-compliant client that the operator has not configured to require identity. |
+| **Consent-URL substitution** — a malicious in-path intermediary swaps the `authorizationUrl` in a `needs_authorization` challenge to phish the user toward an attacker-controlled consent page. | The challenge is signed (`outcome: 'needs_authorization'`); its `responseHash` binds the challenge content incl. the URL (§7.4, §9.2). A client recomputes `responseHash` over the received challenge and verifies the proof against the resource DID, detecting the swap. | A client that does not verify the challenge proof / recompute the hash — the check is the verifier's responsibility (a §11.7-style downgrade). TLS protects the URL in transit; this adds defense against a malicious in-path component. |
 | **Denial of service** | Per-session and per-handshake rate limiting; session caps; external session storage with TTL eviction. See §11.9. | Standard transport-layer DoS exposure (DDoS) is out of scope — operators rely on conventional network defenses. |
 
 ### 11.2 Nonce Replay Attacks

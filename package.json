@@ -64,7 +64,9 @@
     "prepublishOnly": "npm run clean && npm run build && npm run test",
     "demo": "bash scripts/demo.sh",
     "example:server": "npx tsx examples/node-server/server.ts",
-    "example:inspector": "npx @modelcontextprotocol/inspector npx tsx examples/node-server/server.ts --stdio"
+    "example:inspector": "npx @modelcontextprotocol/inspector npx tsx examples/node-server/server.ts --stdio",
+    "example:verify-proof": "npx tsx examples/verify-proof/verify.ts",
+    "example:anti-mitm": "npx tsx examples/verify-proof/anti-mitm-demo.ts"
   },
   "dependencies": {
     "jose": "^5.6.3",

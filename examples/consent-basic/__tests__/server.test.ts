@@ -10,11 +10,8 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { createKyaOsMiddleware, type KyaOsMiddleware } from '../../../src/middleware/with-kya-os.js';
-import { NodeCryptoProvider } from '../../../src/providers/node-crypto.js';
-import { generateDidKeyFromBase64 } from '../../../src/utils/did-helpers.js';
+import { createKyaOsMiddleware, NodeCryptoProvider, generateDidKeyFromBase64, type KyaOsMiddleware, type DelegationCredential, type NeedsAuthorizationError } from '@kya-os/mcp';
 import { createDelegationIssuerFromIdentity } from '../src/delegation-issuer.js';
-import type { DelegationCredential, NeedsAuthorizationError } from '../../../src/types/protocol.js';
 
 const crypto = new NodeCryptoProvider();
 const CONSENT_URL = 'http://localhost:9999/consent';

@@ -17,6 +17,10 @@ export const PROOF_VERIFICATION_ERROR_CODES = {
   NONCE_REPLAY_DETECTED: "NONCE_REPLAY_DETECTED",
   TIMESTAMP_SKEW_EXCEEDED: "TIMESTAMP_SKEW_EXCEEDED",
   TIMESTAMP_INVALID: "TIMESTAMP_INVALID",
+  // Content binding: the proof's signature is valid, but the recomputed hash of
+  // the request/response the verifier actually received does not match the hash
+  // bound in the (authentic) proof — i.e. the content was substituted in transit.
+  CONTENT_BINDING_MISMATCH: "CONTENT_BINDING_MISMATCH",
 
   // Signature errors
   INVALID_JWS_SIGNATURE: "INVALID_JWS_SIGNATURE",

@@ -10,10 +10,12 @@
  */
 
 import { NodeCryptoProvider } from './node-crypto.js';
-import { generateDidKeyFromBase64 } from '../../src/utils/did-helpers.js';
-import { DelegationCredentialIssuer } from '../../src/delegation/vc-issuer.js';
-import type { Proof } from '../../src/types/protocol.js';
-import { base64urlEncodeFromBytes } from '../../src/utils/base64.js';
+import {
+  generateDidKeyFromBase64,
+  DelegationCredentialIssuer,
+  base64urlEncodeFromBytes,
+  type Proof,
+} from '@kya-os/mcp';
 
 async function main() {
   const crypto = new NodeCryptoProvider();

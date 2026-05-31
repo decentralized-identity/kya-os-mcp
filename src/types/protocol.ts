@@ -208,7 +208,18 @@ export function wrapDelegationAsVC(
  * Extract a DelegationRecord from a DelegationCredential.
  */
 export function extractDelegationFromVC(vc: DelegationCredential): DelegationRecord {
-  const delegation = vc.credentialSubject.delegation;
+  // Defensive: callers may pass an untrusted/loosely-typed value. Fail with a
+  // clear, controlled error instead of a cryptic "Cannot read properties of
+  // undefined (reading 'delegation')" when the credential is structurally
+  // malformed. validate*-style callers should shape-check first and return
+  // { valid, reason } rather than relying on this throw — see
+  // validateDelegationChain, which never throws on a malformed leaf.
+  const delegation = vc?.credentialSubject?.delegation;
+  if (!delegation || typeof delegation !== 'object') {
+    throw new Error(
+      'extractDelegationFromVC: credential is missing credentialSubject.delegation',
+    );
+  }
 
   let signature = '';
   if (vc.proof) {
@@ -429,10 +440,12 @@ export interface ProofMeta {
   audience: string;
   sessionId: string;
   requestHash: string;
-  responseHash: string;
+  responseHash?: string;
   scopeId?: string;
   delegationRef?: string;
   clientDid?: string;
+  outcome?: 'allowed' | 'denied' | 'step_up_required' | 'needs_authorization';
+  reason?: string;
 }
 
 export interface DetachedProof {
@@ -474,7 +487,7 @@ export interface AuditContext {
     [key: string]: unknown;
   };
   requestHash: string;
-  responseHash: string;
+  responseHash?: string;
   verified: 'yes' | 'no';
   scopeId?: string;
 }
@@ -540,6 +553,47 @@ export function isNeedsAuthorizationError(error: unknown): error is NeedsAuthori
   );
 }
 
+/**
+ * Returned when an in-scope action is high-risk and requires per-action,
+ * N-of-M human (or second-identity) approval before it may proceed. The
+ * client collects approval grants bound to `requestHash` and resumes via
+ * `resumeToken`. Mirrors NeedsAuthorizationError, but gates a specific
+ * destructive action rather than session-level authorization.
+ */
+export interface NeedsApprovalError {
+  error: 'needs_approval';
+  message: string;
+  resumeToken: string;
+  expiresAt: number;
+  /** Approval grants MUST be bound to this requestHash (TOCTOU guard). */
+  requestHash: string;
+  quorum: { n: number; approvers: string[] };
+  context?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export function createNeedsApprovalError(config: {
+  message: string;
+  resumeToken: string;
+  expiresAt: number;
+  requestHash: string;
+  quorum: { n: number; approvers: string[] };
+  context?: Record<string, unknown>;
+}): NeedsApprovalError {
+  return {
+    error: 'needs_approval',
+    ...config,
+  };
+}
+
+export function isNeedsApprovalError(error: unknown): error is NeedsApprovalError {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as Record<string, unknown>)['error'] === 'needs_approval'
+  );
+}
+
 // ============================================================================
 // DetachedProof validation
 // ============================================================================
@@ -587,20 +641,41 @@ export function validateDetachedProof(proof: unknown): {
     return { success: false, error: { message: 'meta.ts must be a positive integer' } };
   }
 
-  // Validate hash fields
-  const hashFields = ['requestHash', 'responseHash'] as const;
-  for (const field of hashFields) {
-    if (typeof m[field] !== 'string' || !HASH_REGEX.test(m[field] as string)) {
-      return { success: false, error: { message: `meta.${field} must match sha256:<64 hex chars>` } };
-    }
+  // Validate hash fields: requestHash is always required. responseHash is
+  // absent on denial / step-up proofs (no response) and validated only when present.
+  if (typeof m['requestHash'] !== 'string' || !HASH_REGEX.test(m['requestHash'] as string)) {
+    return { success: false, error: { message: 'meta.requestHash must match sha256:<64 hex chars>' } };
+  }
+  if (
+    m['responseHash'] !== undefined &&
+    (typeof m['responseHash'] !== 'string' || !HASH_REGEX.test(m['responseHash'] as string))
+  ) {
+    return {
+      success: false,
+      error: { message: 'meta.responseHash must match sha256:<64 hex chars> when present' },
+    };
   }
 
   // Optional string fields
-  const optionalStrings = ['scopeId', 'delegationRef', 'clientDid'] as const;
+  const optionalStrings = ['scopeId', 'delegationRef', 'clientDid', 'reason'] as const;
   for (const field of optionalStrings) {
     if (m[field] !== undefined && typeof m[field] !== 'string') {
       return { success: false, error: { message: `meta.${field} must be a string if present` } };
     }
+  }
+
+  // Optional outcome enum (present on denial / step-up / needs-authorization proofs)
+  if (
+    m['outcome'] !== undefined &&
+    !['allowed', 'denied', 'step_up_required', 'needs_authorization'].includes(m['outcome'] as string)
+  ) {
+    return {
+      success: false,
+      error: {
+        message:
+          'meta.outcome must be one of allowed | denied | step_up_required | needs_authorization',
+      },
+    };
   }
 
   return {

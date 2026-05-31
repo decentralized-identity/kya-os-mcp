@@ -25,8 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { generateConsentShell } from '@kya-os/consent/bundle/shell';
 import { CONSENT_BUNDLE } from '@kya-os/consent/bundle/inline';
 import type { ConsentConfig } from '@kya-os/consent/types';
-import { NodeCryptoProvider } from '../../../src/providers/node-crypto.js';
-import { generateDidKeyFromBase64 } from '../../../src/utils/did-helpers.js';
+import { NodeCryptoProvider, generateDidKeyFromBase64 } from '@kya-os/mcp';
 import {
   createDelegationIssuerFromIdentity,
   type AgentIdentityConfig,

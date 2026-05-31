@@ -22,6 +22,11 @@ import {
   type ProofVerificationErrorCode,
 } from "./errors.js";
 import { logger } from "../logging/index.js";
+import {
+  computeCanonicalHashes,
+  type ToolRequest,
+  type ToolResponse,
+} from "./generator.js";
 
 export interface ProofVerificationResult {
   valid: boolean;
@@ -54,9 +59,11 @@ export class ProofVerifier {
   private fetch: FetchProvider;
   private timestampSkewSeconds: number;
   private nonceTtlSeconds: number;
+  private cryptoProvider: CryptoProvider;
 
   constructor(config: ProofVerifierConfig) {
     this.cryptoService = new CryptoService(config.cryptoProvider);
+    this.cryptoProvider = config.cryptoProvider;
     this.clock = config.clockProvider;
     this.nonceCache = config.nonceCacheProvider;
     this.fetch = config.fetchProvider;
@@ -89,15 +96,32 @@ export class ProofVerifier {
   }
 
   /**
-   * Verify a DetachedProof
-   * Automatically reconstructs canonical payload from proof.meta for signature verification
+   * Verify a DetachedProof.
+   *
+   * Reconstructs the canonical payload from proof.meta and checks the JWS
+   * signature, nonce replay, and timestamp skew — proving the proof is AUTHENTIC
+   * (signed by the holder of `kid`). On its own this does NOT confirm that the
+   * request/response the verifier actually received matches what was signed. To
+   * detect content substitution (e.g. a MITM-swapped `authorizationUrl` in a
+   * needs_authorization challenge), pass `expected`: the request you sent and the
+   * response you received are re-hashed via the SAME canonical hashing the signer
+   * used (computeCanonicalHashes) and compared to the bound requestHash/
+   * responseHash. A mismatch fails with CONTENT_BINDING_MISMATCH.
+   *
    * @param proof - The proof to verify
    * @param publicKeyJwk - Ed25519 public key in JWK format (from DID document)
+   * @param expected - Optional content binding: the `request` you sent and the
+   *   `response` you received. Their canonical hashes MUST match the proof's
+   *   bound hashes. FAIL-CLOSED: if the proof binds a `responseHash` (success and
+   *   needs_authorization proofs), `response` is REQUIRED — omitting it fails with
+   *   CONTENT_BINDING_MISMATCH, so the URL-bearing body cannot go silently
+   *   unverified.
    * @returns Verification result
    */
   async verifyProof(
     proof: DetachedProof,
-    publicKeyJwk: Ed25519JWK
+    publicKeyJwk: Ed25519JWK,
+    expected?: { request: ToolRequest; response?: ToolResponse }
   ): Promise<ProofVerificationResult> {
     try {
       // Reconstruct canonical payload from proof meta
@@ -106,7 +130,7 @@ export class ProofVerifier {
         canonicalPayloadString
       );
 
-      return await this.runVerificationPipeline(proof, publicKeyJwk, canonicalPayloadBytes);
+      return await this.runVerificationPipeline(proof, publicKeyJwk, canonicalPayloadBytes, expected);
     } catch (error) {
       return this.handleVerificationError(error);
     }
@@ -144,7 +168,8 @@ export class ProofVerifier {
   private async runVerificationPipeline(
     proof: DetachedProof,
     publicKeyJwk: Ed25519JWK,
-    canonicalPayloadBytes: Uint8Array
+    canonicalPayloadBytes: Uint8Array,
+    expected?: { request: ToolRequest; response?: ToolResponse }
   ): Promise<ProofVerificationResult> {
     // 1. Validate proof structure
     const structureValidation = await this.validateProofStructure(proof);
@@ -181,12 +206,83 @@ export class ProofVerifier {
       return signatureValidation;
     }
 
+    // 4b. Content binding (optional): the signature proves the proof is
+    // AUTHENTIC, but not that the request/response WE received matches what was
+    // signed. When the caller supplies what it actually saw, recompute the
+    // canonical hashes and confirm they match the bound hashes — this is what
+    // turns the signed proof into substitution detection (e.g. a MITM-swapped
+    // consent URL). Checked before caching the nonce so a mismatch does not burn
+    // the nonce for a legitimate retry.
+    if (expected !== undefined) {
+      const bindingValidation = await this.validateContentBinding(
+        validatedProof,
+        expected
+      );
+      if (!bindingValidation.valid) {
+        return bindingValidation;
+      }
+    }
+
     // 5. Add nonce to cache to prevent replay (scoped to agent DID)
     await this.addNonceToCache(
       validatedProof.meta.nonce,
       validatedProof.meta.did
     );
 
+    return { valid: true };
+  }
+
+  /**
+   * Recompute the canonical hashes of the request/response the verifier actually
+   * received (via the same hashing the signer used) and compare to the proof's
+   * bound hashes. Fails CONTENT_BINDING_MISMATCH on any divergence — the check
+   * that makes a signed proof tamper-evident against content substitution.
+   * @private
+   */
+  private async validateContentBinding(
+    proof: DetachedProof,
+    expected: { request: ToolRequest; response?: ToolResponse }
+  ): Promise<ProofVerificationResult> {
+    const { requestHash, responseHash } = await computeCanonicalHashes(
+      expected.request,
+      expected.response,
+      (bytes) => this.cryptoProvider.hash(bytes)
+    );
+    if (proof.meta.requestHash !== requestHash) {
+      return {
+        valid: false,
+        reason:
+          "Request hash mismatch: the proof does not bind the request you supplied",
+        errorCode: PROOF_VERIFICATION_ERROR_CODES.CONTENT_BINDING_MISMATCH,
+      };
+    }
+    // Response binding (FAIL-CLOSED): proof.meta.responseHash is the ONLY thing
+    // that binds the response body — including a needs_authorization challenge's
+    // authorizationUrl. It MUST be checked whenever the proof carries one.
+    // Gating the comparison on `expected.response !== undefined` would let a
+    // caller who supplies only `request` get { valid: true } while the swapped
+    // URL went unverified (the requestHash is identical for a genuine and a
+    // MITM'd challenge). So: if the proof binds a responseHash the caller MUST
+    // supply the response; if it binds none, the caller must not supply one.
+    const proofBindsResponse = proof.meta.responseHash !== undefined;
+    const callerSuppliedResponse = expected.response !== undefined;
+    if (proofBindsResponse !== callerSuppliedResponse) {
+      return {
+        valid: false,
+        reason: proofBindsResponse
+          ? "Proof binds a response (responseHash present) but no response was supplied to verify against — pass expected.response"
+          : "A response was supplied but the proof binds none — content/proof mismatch",
+        errorCode: PROOF_VERIFICATION_ERROR_CODES.CONTENT_BINDING_MISMATCH,
+      };
+    }
+    if (proofBindsResponse && proof.meta.responseHash !== responseHash) {
+      return {
+        valid: false,
+        reason:
+          "Response hash mismatch: received content differs from what the server signed (possible substitution / MITM)",
+        errorCode: PROOF_VERIFICATION_ERROR_CODES.CONTENT_BINDING_MISMATCH,
+      };
+    }
     return { valid: true };
   }
 
@@ -463,7 +559,8 @@ export class ProofVerifier {
 
       // Custom KYA-OS proof claims
       requestHash: meta.requestHash,
-      responseHash: meta.responseHash,
+      // responseHash is absent on denial / step-up proofs (no response).
+      ...(meta.responseHash !== undefined && { responseHash: meta.responseHash }),
       ts: meta.ts,
       nonce: meta.nonce,
       sessionId: meta.sessionId,
@@ -472,6 +569,8 @@ export class ProofVerifier {
       ...(meta.scopeId && { scopeId: meta.scopeId }),
       ...(meta.delegationRef && { delegationRef: meta.delegationRef }),
       ...(meta.clientDid && { clientDid: meta.clientDid }),
+      ...(meta.outcome && { outcome: meta.outcome }),
+      ...(meta.reason && { reason: meta.reason }),
     };
 
     // Canonicalize the reconstructed payload using the same function as proof generation

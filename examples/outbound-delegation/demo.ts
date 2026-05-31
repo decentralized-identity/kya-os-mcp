@@ -17,7 +17,7 @@ import {
   type DelegationRecord,
   type SessionContext,
   type VCSigningFunction,
-} from '../../src/index.js';
+} from '@kya-os/mcp';
 
 // ---------------------------------------------------------------------------
 // NodeCryptoProvider — Ed25519 operations using node:crypto

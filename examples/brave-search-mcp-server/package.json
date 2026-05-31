@@ -35,6 +35,7 @@
     "inspector:http": "npx @modelcontextprotocol/inspector --transport http"
   },
   "dependencies": {
+    "@kya-os/mcp": "file:../..",
     "@modelcontextprotocol/sdk": "1.27.1",
     "commander": "14.0.3",
     "dotenv": "17.3.1",

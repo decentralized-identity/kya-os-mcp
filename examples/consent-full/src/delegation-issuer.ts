@@ -11,12 +11,7 @@
  * Related Spec: KYA-OS §3.1 (VC structure), §4.1 (DelegationRecord)
  */
 
-import { DelegationCredentialIssuer } from '../../../src/delegation/vc-issuer.js';
-import type { VCSigningFunction } from '../../../src/delegation/vc-issuer.js';
-import type { Proof } from '../../../src/types/protocol.js';
-import type { CryptoProvider } from '../../../src/providers/base.js';
-import { base64urlEncodeFromBytes } from '../../../src/utils/base64.js';
-import { createUnsignedVCJWT, completeVCJWT } from '../../../src/delegation/utils.js';
+import { DelegationCredentialIssuer, base64urlEncodeFromBytes, createUnsignedVCJWT, completeVCJWT, type VCSigningFunction, type Proof, type CryptoProvider } from '@kya-os/mcp';
 
 export type DelegationFormat = 'embedded-proof' | 'vc-jwt';
 

@@ -56,6 +56,31 @@ describe("ProofGenerator", () => {
     proofGenerator = new ProofGenerator(mockIdentity, cryptoProvider);
   });
 
+  describe("Denial proofs", () => {
+    it("generates a verifiable denial proof without a responseHash", async () => {
+      const request: ToolRequest = { method: "tool", params: { x: 1 } };
+      const proof = await proofGenerator.generateProof(
+        request,
+        undefined,
+        mockSession,
+        { outcome: "denied", reason: "insufficient_scope" },
+      );
+      expect(proof.meta.outcome).toBe("denied");
+      expect(proof.meta.reason).toBe("insufficient_scope");
+      expect(proof.meta.responseHash).toBeUndefined();
+      expect(await proofGenerator.verifyProof(proof, request)).toBe(true);
+    });
+
+    it("still includes responseHash and verifies for allowed proofs (backward compat)", async () => {
+      const request: ToolRequest = { method: "tool", params: { x: 1 } };
+      const response: ToolResponse = { data: { ok: true } };
+      const proof = await proofGenerator.generateProof(request, response, mockSession);
+      expect(proof.meta.responseHash).toBeTruthy();
+      expect(proof.meta.outcome).toBeUndefined();
+      expect(await proofGenerator.verifyProof(proof, request, response)).toBe(true);
+    });
+  });
+
   describe("Canonical Hash Generation", () => {
     it("should generate consistent hashes for same request/response", async () => {
       const request: ToolRequest = {

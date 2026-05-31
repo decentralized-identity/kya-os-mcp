@@ -84,6 +84,7 @@ async function issueDelegationVC(options?: {
   parentId?: string;
   credentialStatus?: CredentialStatus;
   subjectDid?: string;
+  crispScopes?: { resource: string; matcher: 'exact' | 'prefix' | 'regex' }[];
 }): Promise<DelegationCredential> {
   const issuerIdentity = options?.issuer ?? await createDelegationIssuer();
 
@@ -95,6 +96,7 @@ async function issueDelegationVC(options?: {
       parentId: options?.parentId,
       constraints: {
         scopes: options?.scopes ?? [],
+        ...(options?.crispScopes ? { crisp: { scopes: options.crispScopes } } : {}),
         ...(options?.audience !== undefined && { audience: options.audience }),
         notAfter: Math.floor(Date.now() / 1000) + 3600,
       },
@@ -430,6 +432,287 @@ describe('createKyaOsMiddleware', () => {
       expect(parsed.error).toBe('insufficient_scope');
     });
 
+    it('emits a signed denial proof (outcome=denied) on insufficient scope', async () => {
+      const { middleware: kyaos, did } = await createTestMiddleware();
+      const hs = await kyaos.handleHandshake({
+        nonce: 'test-nonce-denial',
+        audience: did,
+        timestamp: Math.floor(Date.now() / 1000),
+      });
+      const sessionId = JSON.parse(hs.content[0].text).sessionId;
+
+      const vc = await issueDelegationVC({ scopes: ['wrong:scope'] });
+      const handler = kyaos.wrapWithDelegation(
+        'my-tool',
+        { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
+        async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
+      );
+
+      const result = await handler({ _kyaos_delegation: vc }, sessionId);
+
+      expect(result.isError).toBe(true);
+      const meta = (result as { _meta?: { proof?: { meta?: Record<string, unknown> } } })._meta;
+      expect(meta?.proof?.meta?.['outcome']).toBe('denied');
+      expect(meta?.proof?.meta?.['responseHash']).toBeUndefined();
+    });
+
+    it('emits a signed proof (outcome=needs_authorization) on the no-delegation challenge', async () => {
+      const { middleware: kyaos, did } = await createTestMiddleware();
+      const hs = await kyaos.handleHandshake({
+        nonce: 'test-nonce-needsauth',
+        audience: did,
+        timestamp: Math.floor(Date.now() / 1000),
+      });
+      const sessionId = JSON.parse(hs.content[0].text).sessionId;
+
+      const handler = kyaos.wrapWithDelegation(
+        'my-tool',
+        { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
+        async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
+      );
+
+      const result = await handler({ name: 'world' }, sessionId);
+
+      // The challenge content is unchanged (still the needs_authorization JSON)...
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toBe('needs_authorization');
+      expect(parsed.authorizationUrl).toBe('https://example.com/consent');
+
+      // ...and now carries a signed proof that BINDS the challenge content via
+      // responseHash (covering the authorizationUrl) — option B, anti-MITM.
+      const meta = (result as { _meta?: { proof?: { meta?: Record<string, unknown> } } })._meta;
+      expect(meta?.proof?.meta?.['outcome']).toBe('needs_authorization');
+      expect(meta?.proof?.meta?.['responseHash']).toBeDefined();
+    });
+
+    it('renders the challenge via formatChallenge and binds the proof over THAT content', async () => {
+      const { middleware: kyaos, did } = await createTestMiddleware();
+      const hs = await kyaos.handleHandshake({
+        nonce: 'test-nonce-fmtchallenge',
+        audience: did,
+        timestamp: Math.floor(Date.now() / 1000),
+      });
+      const sessionId = JSON.parse(hs.content[0].text).sessionId;
+
+      const handler = kyaos.wrapWithDelegation(
+        'my-tool',
+        {
+          scopeId: 'test:scope',
+          consentUrl: 'https://example.com/consent',
+          // Render a markdown consent link (as the consent-* examples do for
+          // LLM clients) instead of the default JSON challenge.
+          formatChallenge: (challenge) => [
+            {
+              type: 'text',
+              text: `Authorize at https://example.com/c?token=${challenge.resumeToken}`,
+            },
+          ],
+        },
+        async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
+      );
+
+      const result = await handler({ name: 'world' }, sessionId);
+
+      // The emitted content is the custom rendering, not the JSON challenge.
+      expect(result.content[0].text).toContain('Authorize at https://example.com/c?token=');
+      expect(() => JSON.parse(result.content[0].text)).toThrow();
+
+      // The proof binds a responseHash over the rendered content (so a verifier
+      // hashing what the client received matches) with outcome=needs_authorization.
+      const meta = (result as { _meta?: { proof?: { meta?: Record<string, unknown> } } })._meta;
+      expect(meta?.proof?.meta?.['outcome']).toBe('needs_authorization');
+      expect(meta?.proof?.meta?.['responseHash']).toBeDefined();
+    });
+
+    it('falls back to the default JSON challenge when formatChallenge throws (no -32603)', async () => {
+      const { middleware: kyaos, did } = await createTestMiddleware();
+      const hs = await kyaos.handleHandshake({
+        nonce: 'test-nonce-fmtthrows',
+        audience: did,
+        timestamp: Math.floor(Date.now() / 1000),
+      });
+      const sessionId = JSON.parse(hs.content[0].text).sessionId;
+
+      const handler = kyaos.wrapWithDelegation(
+        'my-tool',
+        {
+          scopeId: 'test:scope',
+          consentUrl: 'https://example.com/consent',
+          // A buggy renderer must never escalate to a JSON-RPC -32603 crash: the
+          // challenge degrades to the default JSON shape, still proof-bound.
+          formatChallenge: () => {
+            throw new Error('boom in formatChallenge');
+          },
+        },
+        async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
+      );
+
+      const result = await handler({ name: 'world' }, sessionId);
+
+      // Degrades to the default needs_authorization JSON, not an internal error.
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toBe('needs_authorization');
+      expect(parsed.authorizationUrl).toBe('https://example.com/consent');
+
+      // Still carries a signed proof binding the (default) challenge content.
+      const meta = (result as { _meta?: { proof?: { meta?: Record<string, unknown> } } })._meta;
+      expect(meta?.proof?.meta?.['outcome']).toBe('needs_authorization');
+      expect(meta?.proof?.meta?.['responseHash']).toBeDefined();
+    });
+
+    it('returns delegation_invalid (not a crash) for structurally malformed delegations', async () => {
+      const { middleware: kyaos } = await createTestMiddleware();
+      const handler = kyaos.wrapWithDelegation(
+        'my-tool',
+        { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
+        async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
+      );
+
+      // Each previously threw "Cannot read properties of undefined (reading 'delegation')"
+      // (object branch) or was already handled (string branch). None may crash.
+      const malformed: unknown[] = [
+        { bogus: true },
+        { credentialSubject: {} },
+        { credentialSubject: { delegation: null } },
+        42,
+        ['x'],
+        'not-a-jwt',
+      ];
+      for (const bad of malformed) {
+        const result = await handler({ _kyaos_delegation: bad });
+        expect(result.isError).toBe(true);
+        const parsed = JSON.parse(result.content[0].text);
+        expect(parsed.error).toBe('delegation_invalid');
+      }
+    });
+
+    it('attaches a signed denial proof (outcome=denied) for a malformed delegation', async () => {
+      const { middleware: kyaos, did } = await createTestMiddleware();
+      const hs = await kyaos.handleHandshake({
+        nonce: 'test-nonce-malformed',
+        audience: did,
+        timestamp: Math.floor(Date.now() / 1000),
+      });
+      const sessionId = JSON.parse(hs.content[0].text).sessionId;
+
+      const handler = kyaos.wrapWithDelegation(
+        'my-tool',
+        { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
+        async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
+      );
+
+      const result = await handler({ _kyaos_delegation: { bogus: true } }, sessionId);
+      expect(result.isError).toBe(true);
+      const meta = (result as { _meta?: { proof?: { meta?: Record<string, unknown> } } })._meta;
+      expect(meta?.proof?.meta?.['outcome']).toBe('denied');
+    });
+
+    it('returns delegation_invalid (not a crash) when a delegation accessor throws', async () => {
+      const { middleware: kyaos } = await createTestMiddleware();
+      const handler = kyaos.wrapWithDelegation(
+        'my-tool',
+        { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
+        async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
+      );
+
+      // A getter that throws on property access must not escape as MCP -32603.
+      const throwingDelegation = {};
+      Object.defineProperty(throwingDelegation, 'credentialSubject', {
+        get() {
+          throw new Error('boom');
+        },
+        enumerable: true,
+      });
+
+      const result = await handler({ _kyaos_delegation: throwingDelegation });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toBe('delegation_invalid');
+    });
+
+    it('sanitizes control characters from caller-derived values in the client reason', async () => {
+      const { middleware: kyaos } = await createTestMiddleware();
+      const vc = await issueDelegationVC({ scopes: ['test:scope'] });
+      // A hostile credential embeds control chars (NUL, ESC, newline) in its id.
+      // Tampering the id invalidates the signature; the resulting reason must not
+      // reflect raw control chars into the client response (log-injection /
+      // terminal-corruption risk). Built via fromCharCode to keep source ASCII.
+      const ctrl = String.fromCharCode(0, 27, 10);
+      (vc as unknown as { credentialSubject: { delegation: { id: string } } })
+        .credentialSubject.delegation.id = `evil${ctrl}id`;
+
+      const handler = kyaos.wrapWithDelegation(
+        'my-tool',
+        { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
+        async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
+      );
+      const result = await handler({ _kyaos_delegation: vc });
+
+      expect(result.isError).toBe(true);
+      const reason = JSON.parse(result.content[0].text).reason as string;
+      const hasControlChar = [...reason].some((c) => {
+        const o = c.charCodeAt(0);
+        return o < 0x20 || (o >= 0x7f && o <= 0x9f);
+      });
+      expect(hasControlChar).toBe(false);
+      expect(reason).toContain(String.fromCharCode(0xfffd));
+    });
+
+    it('returns delegation_invalid (not a crash) for a constraints-less leaf', async () => {
+      const { middleware: kyaos } = await createTestMiddleware();
+      const handler = kyaos.wrapWithDelegation(
+        'my-tool',
+        { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
+        async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
+      );
+      // A hand-crafted leaf with NO constraints. The leaf shape guard rejects it
+      // with delegation_invalid; without the guard, the constraints-less VC would
+      // reach scopeSatisfies (which runs OUTSIDE the wrapper's backstop) and throw
+      // a raw TypeError surfaced as MCP -32603. scopeSatisfies is also null-safe.
+      const malformedLeaf = {
+        '@context': ['https://www.w3.org/2018/credentials/v1'],
+        type: ['VerifiableCredential'],
+        credentialSubject: {
+          id: 'did:key:zSubject',
+          delegation: {
+            id: 'leaf-no-constraints',
+            issuerDid: 'did:key:zIssuer',
+            subjectDid: 'did:key:zSubject',
+            parentId: 'parent-1',
+            status: 'active',
+          },
+        },
+        proof: { type: 'Ed25519Signature2020', proofValue: 'x' },
+      } as unknown as DelegationCredential;
+
+      const result = await handler({ _kyaos_delegation: malformedLeaf });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toBe('delegation_invalid');
+    });
+
+    it('should accept when scope is granted via a crisp.scopes prefix matcher', async () => {
+      const { middleware: kyaos } = await createTestMiddleware();
+      const vc = await issueDelegationVC({
+        scopes: [],
+        crispScopes: [{ resource: 'test:', matcher: 'prefix' }],
+      });
+
+      const handler = kyaos.wrapWithDelegation(
+        'my-tool',
+        { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
+        async (args) => ({
+          content: [{ type: 'text', text: `Called: ${JSON.stringify(args)}` }],
+        }),
+      );
+
+      const result = await handler({ _kyaos_delegation: vc, name: 'DIF' });
+
+      expect(result.isError).toBeUndefined();
+    });
+
     it('should accept and call handler when VC has correct scope and valid signature', async () => {
       const { middleware: kyaos } = await createTestMiddleware();
       const vc = await issueDelegationVC({ scopes: ['test:scope', 'other:scope'] });
@@ -558,6 +841,50 @@ describe('createKyaOsMiddleware', () => {
       expect(parsed.reason).toContain('widens scopes');
     });
 
+    it('should reject re-delegations that introduce crisp scope matchers absent from the parent', async () => {
+      const parentIssuer = await createDelegationIssuer();
+      const childIssuer = await createDelegationIssuer();
+      const leafSubject = (await createDelegationIssuer()).did;
+
+      // Audience binding on re-delegations is mandatory, so the middleware must
+      // exist first to supply its DID as the re-delegation's audience.
+      let parentVcRef!: DelegationCredential;
+      const { middleware: kyaos, did: serverDid } = await createTestMiddleware({
+        delegation: { resolveDelegationChain: async () => [parentVcRef] },
+      });
+
+      const parentVc = await issueDelegationVC({
+        issuer: parentIssuer,
+        scopes: ['test:scope'],
+        subjectDid: childIssuer.did,
+      });
+      parentVcRef = parentVc;
+
+      // Flat scopes do NOT widen, but the child sneaks in a crisp prefix matcher
+      // with an empty resource that would match every scope — privilege escalation.
+      const childVc = await issueDelegationVC({
+        issuer: childIssuer,
+        scopes: ['test:scope'],
+        crispScopes: [{ resource: 'admin:', matcher: 'prefix' }],
+        parentId: parentVc.credentialSubject.delegation.id,
+        subjectDid: leafSubject,
+        audience: serverDid,
+      });
+
+      const handler = kyaos.wrapWithDelegation(
+        'my-tool',
+        { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
+        async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
+      );
+
+      const result = await handler({ _kyaos_delegation: childVc });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toBe('delegation_invalid');
+      expect(parsed.reason).toContain('crisp scope matcher');
+    });
+
     it('should accept did:web issuers when a fetch-backed resolver is available', async () => {
       const did = 'did:web:issuer.example.com';
       const kid = `${did}#key-1`;
@@ -677,5 +1004,88 @@ describe('createKyaOsMiddleware', () => {
 
       expect(proof1.meta.sessionId).toBe(proof2.meta.sessionId);
     });
+  });
+});
+
+describe('withPolicyGate', () => {
+  const text = (r: { content: Array<{ text: string }> }) => r.content[0].text;
+
+  it('allows a reversible, low-severity action', async () => {
+    const { middleware: kyaos } = await createTestMiddleware();
+    const handler = kyaos.withPolicyGate!('repo.read', async (args) => ({
+      content: [{ type: 'text', text: `ran:${JSON.stringify(args)}` }],
+    }), { scopeMatched: true });
+    const result = await handler({ id: 1 });
+    expect(result.isError).toBeUndefined();
+    expect(text(result)).toContain('ran:');
+  });
+
+  it('denies an unclassified (unknown) action — fail-closed', async () => {
+    const { middleware: kyaos } = await createTestMiddleware();
+    const handler = kyaos.withPolicyGate!('frobnicate', async () => ({
+      content: [{ type: 'text', text: 'ran' }],
+    }), { scopeMatched: true });
+    const result = await handler({});
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(text(result)).error).toBe('policy_denied');
+  });
+
+  it('requires step-up (needs_approval) for a destructive prod action', async () => {
+    const { middleware: kyaos } = await createTestMiddleware();
+    const handler = kyaos.withPolicyGate(
+      'db.drop',
+      async () => ({ content: [{ type: 'text', text: 'ran' }] }),
+      { resolveNamespace: () => 'prod', scopeMatched: true },
+    );
+    const result = await handler({ table: 'users' });
+    expect(result.isError).toBe(true);
+    const body = JSON.parse(text(result));
+    expect(body.error).toBe('needs_approval');
+    expect(typeof body.requestHash).toBe('string');
+    expect(body.quorum.n).toBe(1);
+  });
+
+  it('proceeds once a valid approval grant bound to the requestHash is supplied', async () => {
+    const { middleware: kyaos } = await createTestMiddleware();
+    const handler = kyaos.withPolicyGate(
+      'db.drop',
+      async (args) => ({ content: [{ type: 'text', text: `ran:${JSON.stringify(args)}` }] }),
+      { resolveNamespace: () => 'prod', isValidApprovalSignature: async () => true, scopeMatched: true },
+    );
+
+    const first = await handler({ table: 'users' });
+    const { requestHash } = JSON.parse(text(first));
+
+    const grant = {
+      approvalRequestId: 'r1',
+      approverDid: 'did:example:approver',
+      requestHash,
+      decision: 'approve',
+      ts: 1,
+      signature: 'sig',
+    };
+    const second = await handler({ table: 'users', _kyaos_approvals: [grant] });
+    expect(second.isError).toBeUndefined();
+    expect(text(second)).toContain('ran:');
+  });
+
+  it('rejects an approval grant bound to a different requestHash (TOCTOU)', async () => {
+    const { middleware: kyaos } = await createTestMiddleware();
+    const handler = kyaos.withPolicyGate(
+      'db.drop',
+      async () => ({ content: [{ type: 'text', text: 'ran' }] }),
+      { resolveNamespace: () => 'prod', isValidApprovalSignature: async () => true, scopeMatched: true },
+    );
+    const grant = {
+      approvalRequestId: 'r1',
+      approverDid: 'did:example:approver',
+      requestHash: 'sha256:WRONG',
+      decision: 'approve',
+      ts: 1,
+      signature: 'sig',
+    };
+    const result = await handler({ table: 'users', _kyaos_approvals: [grant] });
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(text(result)).error).toBe('needs_approval');
   });
 });

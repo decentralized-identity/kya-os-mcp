@@ -78,3 +78,11 @@ If you set any of the removed flags before 1.4.0:
 
 After migrating, remove the flags from your config; they are no longer recognized.
 
+## Outbound resolution & SSRF (`RuntimeFetchProvider`)
+
+`RuntimeFetchProvider` resolves `did:web` and fetches StatusList2021 credentials over the network, and the target host is named by counterparty-controlled data — the DID or status-list URL embedded in a proof or credential. To blunt server-side request forgery it refuses requests to private / loopback / link-local **IP-literal** hosts by default (e.g. `did:web:169.254.169.254`, the cloud-metadata endpoint; `127.0.0.0/8`; RFC 1918 ranges; IPv6 loopback/link-local/unique-local). This is best-effort defense-in-depth for IP literals only — it does **not** stop a public domain that resolves to an internal address (DNS rebinding).
+
+- **Real mitigation:** run verifier deployments behind an egress allowlist and treat did:web resolution as an outbound request to an untrusted host.
+- **Opt out:** `new RuntimeFetchProvider({ allowPrivateNetworkHosts: true })`, for trusted internal deployments only.
+- The raw `fetch()` escape hatch is intentionally unguarded — it is the caller's responsibility.
+

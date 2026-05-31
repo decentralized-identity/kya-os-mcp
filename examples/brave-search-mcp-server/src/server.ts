@@ -3,8 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import pkg from '../package.json' with { type: 'json' };
 import { isToolPermittedByUser } from './config.js';
 import { type SmitheryConfig, setOptions } from './config.js';
-import { withKyaOs, generateIdentity } from '../../../src/middleware/index.js';
-import type { KyaOsIdentityConfig } from '../../../src/middleware/index.js';
+import { withKyaOs, generateIdentity, type KyaOsIdentityConfig } from '@kya-os/mcp';
 import { NodeCryptoProvider } from '../../node-server/node-crypto.js';
 export { configSchema } from './config.js';
 

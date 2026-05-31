@@ -21,42 +21,17 @@ import { generateDidKeyFromBase64 } from '../../utils/did-helpers.js';
 import { DelegationCredentialIssuer } from '../../delegation/vc-issuer.js';
 import { ProofVerifier } from '../../proof/verifier.js';
 import { MemoryNonceCacheProvider } from '../../providers/memory.js';
-import { ClockProvider, FetchProvider } from '../../providers/base.js';
+import { SystemClockProvider } from '../../providers/system-clock.js';
+import { RuntimeFetchProvider } from '../../providers/runtime-fetch.js';
 import {
-  createDidKeyResolver,
   extractPublicKeyFromDidKey,
   publicKeyToJwk,
 } from '../../delegation/did-key-resolver.js';
 import { base64urlEncodeFromBytes } from '../../utils/base64.js';
 import type {
   DelegationCredential,
-  DIDDocument,
-  StatusList2021Credential,
-  DelegationRecord,
   Proof,
 } from '../../types/protocol.js';
-
-// ── Test providers for ProofVerifier ──────────────────────────────
-
-class TestClockProvider extends ClockProvider {
-  now(): number { return Date.now(); }
-  isWithinSkew(timestampMs: number, skewSeconds: number): boolean {
-    return Math.abs(Date.now() - timestampMs) <= skewSeconds * 1000;
-  }
-  hasExpired(expiresAt: number): boolean { return Date.now() > expiresAt; }
-  calculateExpiry(ttlSeconds: number): number { return Date.now() + ttlSeconds * 1000; }
-  format(timestamp: number): string { return new Date(timestamp).toISOString(); }
-}
-
-class TestFetchProvider extends FetchProvider {
-  private didResolver = createDidKeyResolver();
-  async resolveDID(did: string): Promise<DIDDocument | null> {
-    return this.didResolver.resolve(did);
-  }
-  async fetchStatusList(): Promise<StatusList2021Credential | null> { return null; }
-  async fetchDelegationChain(): Promise<DelegationRecord[]> { return []; }
-  async fetch(): Promise<Response> { throw new Error('Not implemented'); }
-}
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -318,9 +293,9 @@ describe('MCP Transport Integration', () => {
     const crypto = new NodeCryptoProvider();
     const verifier = new ProofVerifier({
       cryptoProvider: crypto,
-      clockProvider: new TestClockProvider(),
+      clockProvider: new SystemClockProvider(),
       nonceCacheProvider: new MemoryNonceCacheProvider(),
-      fetchProvider: new TestFetchProvider(),
+      fetchProvider: new RuntimeFetchProvider(),
       timestampSkewSeconds: 300,
     });
 

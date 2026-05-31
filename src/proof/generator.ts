@@ -13,7 +13,6 @@ import { canonicalize } from 'json-canonicalize';
 import type {
   DetachedProof,
   ProofMeta,
-  CanonicalHashes,
   SessionContext,
 } from '../types/protocol.js';
 import type { CryptoProvider } from '../providers/base.js';
@@ -45,6 +44,48 @@ export interface ProofOptions {
   scopeId?: string;
   delegationRef?: string;
   clientDid?: string;
+  outcome?: 'allowed' | 'denied' | 'step_up_required' | 'needs_authorization';
+  reason?: string;
+}
+
+/**
+ * Compute the canonical request/response hashes that bind a proof to a specific
+ * invocation. This is the SINGLE source of truth for that hashing — used by both
+ * the signer (`ProofGenerator`) and the verifier (`ProofVerifier`), so the two
+ * cannot drift. `requestHash` = SHA-256 over RFC 8785 `canonicalize({method,params})`;
+ * `responseHash` = SHA-256 over `canonicalize(response.data)` (omitted when there
+ * is no response body, e.g. denial / step-up proofs).
+ *
+ * Note: RFC 8785 (via json-canonicalize) drops object members whose value is
+ * `undefined`, so a field set to `undefined` hashes identically to that field
+ * being absent. Bind only over values that are actually present; never rely on
+ * the presence of an `undefined`-valued key to distinguish two payloads.
+ *
+ * @param hash - a byte → `sha256:<hex>` function (bind a `CryptoProvider.hash`)
+ */
+export async function computeCanonicalHashes(
+  request: ToolRequest,
+  response: ToolResponse | undefined,
+  hash: (bytes: Uint8Array) => Promise<string>,
+): Promise<{ requestHash: string; responseHash?: string }> {
+  const canonicalRequest = {
+    method: request.method,
+    ...(request.params ? { params: request.params } : {}),
+  };
+  const requestHash = await hash(
+    new TextEncoder().encode(
+      canonicalize(canonicalRequest as Parameters<typeof canonicalize>[0]),
+    ),
+  );
+  if (response === undefined) {
+    return { requestHash };
+  }
+  const responseHash = await hash(
+    new TextEncoder().encode(
+      canonicalize(response.data as Parameters<typeof canonicalize>[0]),
+    ),
+  );
+  return { requestHash, responseHash };
 }
 
 export class ProofGenerator {
@@ -71,7 +112,7 @@ export class ProofGenerator {
    */
   async generateProof(
     request: ToolRequest,
-    response: ToolResponse,
+    response: ToolResponse | undefined,
     session: SessionContext,
     options: ProofOptions = {}
   ): Promise<DetachedProof> {
@@ -85,7 +126,9 @@ export class ProofGenerator {
       audience: session.audience,
       sessionId: session.sessionId,
       requestHash: hashes.requestHash,
-      responseHash: hashes.responseHash,
+      ...(hashes.responseHash !== undefined
+        ? { responseHash: hashes.responseHash }
+        : {}),
       ...options,
     };
 
@@ -94,30 +137,21 @@ export class ProofGenerator {
     return { jws, meta };
   }
 
+  /**
+   * Compute the canonical request hash for an invocation, independent of any
+   * response. Used to bind step-up approval grants to a specific action.
+   */
+  async hashRequest(request: ToolRequest): Promise<string> {
+    return (await this.generateCanonicalHashes(request)).requestHash;
+  }
+
   private async generateCanonicalHashes(
     request: ToolRequest,
-    response: ToolResponse
-  ): Promise<CanonicalHashes> {
-    const canonicalRequest = {
-      method: request.method,
-      ...(request.params ? { params: request.params } : {}),
-    };
-    const canonicalResponse = response.data;
-
-    const requestHash = await this.generateSHA256Hash(canonicalRequest);
-    const responseHash = await this.generateSHA256Hash(canonicalResponse);
-
-    return { requestHash, responseHash };
-  }
-
-  private async generateSHA256Hash(data: unknown): Promise<string> {
-    const canonicalJson = this.canonicalizeJSON(data);
-    const encoded = new TextEncoder().encode(canonicalJson);
-    return this.cryptoProvider.hash(encoded);
-  }
-
-  private canonicalizeJSON(obj: unknown): string {
-    return canonicalize(obj as Parameters<typeof canonicalize>[0]);
+    response?: ToolResponse
+  ): Promise<{ requestHash: string; responseHash?: string }> {
+    return computeCanonicalHashes(request, response, (bytes) =>
+      this.cryptoProvider.hash(bytes),
+    );
   }
 
   private async generateJWS(meta: ProofMeta): Promise<string> {
@@ -130,13 +164,15 @@ export class ProofGenerator {
         sub: meta.did,
         iss: meta.did,
         requestHash: meta.requestHash,
-        responseHash: meta.responseHash,
+        ...(meta.responseHash !== undefined && { responseHash: meta.responseHash }),
         ts: meta.ts,
         nonce: meta.nonce,
         sessionId: meta.sessionId,
         ...(meta.scopeId && { scopeId: meta.scopeId }),
         ...(meta.delegationRef && { delegationRef: meta.delegationRef }),
         ...(meta.clientDid && { clientDid: meta.clientDid }),
+        ...(meta.outcome && { outcome: meta.outcome }),
+        ...(meta.reason && { reason: meta.reason }),
       };
 
       // Use canonicalized JSON (RFC 8785) for deterministic payload serialization.
@@ -183,16 +219,21 @@ export class ProofGenerator {
   async verifyProof(
     proof: DetachedProof,
     request: ToolRequest,
-    response: ToolResponse
+    response?: ToolResponse
   ): Promise<boolean> {
     try {
       const expectedHashes = await this.generateCanonicalHashes(request, response);
 
-      if (
-        proof.meta.requestHash !== expectedHashes.requestHash ||
-        proof.meta.responseHash !== expectedHashes.responseHash
-      ) {
+      if (proof.meta.requestHash !== expectedHashes.requestHash) {
         return false;
+      }
+      if (proof.meta.responseHash !== undefined) {
+        if (
+          expectedHashes.responseHash === undefined ||
+          proof.meta.responseHash !== expectedHashes.responseHash
+        ) {
+          return false;
+        }
       }
 
       const publicKeyJwk = this.base64PublicKeyToJWK(this.identity.publicKey);

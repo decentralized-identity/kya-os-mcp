@@ -131,6 +131,33 @@ describe('ProofVerifier Security', () => {
   });
 
   describe('Nonce Replay Protection', () => {
+    it('reconstructs the canonical payload for denial proofs (outcome/reason, no responseHash)', () => {
+      const denialMeta = {
+        did: 'did:key:z123',
+        kid: 'did:key:z123#z123',
+        ts: 1,
+        nonce: 'n',
+        audience: 'aud',
+        sessionId: 's',
+        requestHash: 'sha256:' + 'a'.repeat(64),
+        outcome: 'denied' as const,
+        reason: 'insufficient_scope',
+      };
+      const payload = proofVerifier.buildCanonicalPayload(denialMeta);
+      expect(payload).toContain('"outcome":"denied"');
+      expect(payload).toContain('"reason":"insufficient_scope"');
+      expect(payload).not.toContain('responseHash');
+
+      const allowedPayload = proofVerifier.buildCanonicalPayload({
+        ...denialMeta,
+        responseHash: 'sha256:' + 'b'.repeat(64),
+        outcome: undefined,
+        reason: undefined,
+      });
+      expect(allowedPayload).toContain('responseHash');
+      expect(allowedPayload).not.toContain('outcome');
+    });
+
     it('should prevent nonce replay attacks', async () => {
       const proof = createValidProof();
 

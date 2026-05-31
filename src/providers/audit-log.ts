@@ -34,7 +34,7 @@ export function buildAuditRecord(context: AuditContext): AuditRecord {
     did: context.identity.did,
     kid: context.identity.kid,
     reqHash: context.requestHash,
-    resHash: context.responseHash,
+    resHash: context.responseHash ?? "-",
     verified: context.verified,
     scope: context.scopeId ?? "-",
   };

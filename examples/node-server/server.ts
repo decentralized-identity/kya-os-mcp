@@ -10,6 +10,8 @@
  * Demonstrates the KYA-OS protocol:
  *   1. greet           — open tool with signed proof (via _meta)
  *   2. restricted_greet — protected tool requiring a W3C Delegation Credential
+ *   3. delete_record    — destructive tool gated by the policy step-up (needs_approval
+ *                         until signed approval grants are supplied in _kyaos_approvals)
  *
  * Sessions are created automatically — no manual handshake needed.
  * In production, KYA-OS-aware clients handle the handshake transparently.
@@ -32,9 +34,9 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { createKyaOsMiddleware } from '../../src/middleware/with-kya-os.js';
-import { generateDidKeyFromBase64 } from '../../src/utils/did-helpers.js';
+import { createKyaOsMiddleware, generateDidKeyFromBase64 } from '@kya-os/mcp';
 import { NodeCryptoProvider } from './node-crypto.js';
+import { verifyApprovalGrantSignature } from './approval-demo.js';
 
 function createMcpServer(kyaos: ReturnType<typeof createKyaOsMiddleware>) {
   const server = new Server(
@@ -53,11 +55,46 @@ function createMcpServer(kyaos: ReturnType<typeof createKyaOsMiddleware>) {
     'restricted_greet',
     {
       scopeId: 'greeting:restricted',
+      // This minimal example does NOT host a consent page. `consentUrl` is a
+      // placeholder; `formatChallenge` (below) renders an actionable instruction
+      // instead — and the challenge proof binds that rendered text. For a hosted
+      // browser consent flow + page, see examples/consent-full.
       consentUrl: 'https://example.com/consent?scope=greeting:restricted',
+      // Render the needs_authorization challenge as a concrete next step for THIS
+      // (page-less) example, rather than a bare URL the caller can't act on.
+      formatChallenge: (challenge) => [
+        {
+          type: 'text',
+          text:
+            `"restricted_greet" requires a delegation credential (scope: ${challenge.scopes.join(', ')}).\n\n` +
+            `This minimal example does not host a consent page. To authorize:\n` +
+            `  1. Mint a credential:  npx tsx examples/node-server/issue-delegation.ts\n` +
+            `  2. Re-call restricted_greet with "_kyaos_delegation" set to the printed VC.\n\n` +
+            `For a hosted consent page + browser flow, see the consent-full example.`,
+        },
+      ],
     },
     kyaos.wrapWithProof('restricted_greet', async (args) => ({
       content: [{ type: 'text', text: `Hello, ${args['name'] ?? 'world'}! (delegation verified)` }],
     })),
+  );
+
+  // delete_record: a destructive, in-scope action. The policy gate classifies it
+  // (irreversible + prod namespace → catastrophic) and requires per-action human
+  // approval: the first call returns `needs_approval`; supplying signed approval
+  // grant(s) in `_kyaos_approvals` (bound to the call's requestHash) lets it proceed.
+  // scopeMatched:true mimics composition after a verified delegation. The approval
+  // verifier is a REAL Ed25519 check (examples/node-server/approval-demo.ts), not a stub.
+  const deleteRecordHandler = kyaos.withPolicyGate!(
+    'delete_record',
+    kyaos.wrapWithProof('delete_record', async (args) => ({
+      content: [{ type: 'text', text: `Deleted record ${args['record'] ?? '(none)'} — approved.` }],
+    })),
+    {
+      scopeMatched: true,
+      resolveNamespace: () => 'prod',
+      isValidApprovalSignature: verifyApprovalGrantSignature,
+    },
   );
 
   // ── Request handlers ────────────────────────────────────────────
@@ -89,6 +126,21 @@ function createMcpServer(kyaos: ReturnType<typeof createKyaOsMiddleware>) {
           },
         },
       },
+      {
+        name: 'delete_record',
+        description:
+          'A destructive action gated by the policy step-up: returns needs_approval until signed approval grants are supplied in _kyaos_approvals.',
+        inputSchema: {
+          type: 'object' as const,
+          properties: {
+            record: { type: 'string', description: 'Record id to delete' },
+            _kyaos_approvals: {
+              type: 'array',
+              description: 'Signed approval grants (from issue-approval.ts), bound to this call\'s requestHash',
+            },
+          },
+        },
+      },
     ],
   }));
 
@@ -108,6 +160,10 @@ function createMcpServer(kyaos: ReturnType<typeof createKyaOsMiddleware>) {
     // ── Protected tools (delegation required) ───────────────────
     if (name === 'restricted_greet') {
       return restrictedGreetHandler(args as Record<string, unknown>);
+    }
+
+    if (name === 'delete_record') {
+      return deleteRecordHandler(args as Record<string, unknown>);
     }
 
     return {

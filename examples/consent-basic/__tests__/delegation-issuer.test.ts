@@ -9,9 +9,7 @@
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createDelegationIssuerFromIdentity, type DelegationIssuerFactory } from '../src/delegation-issuer.js';
-import { NodeCryptoProvider } from '../../../src/providers/node-crypto.js';
-import { generateDidKeyFromBase64 } from '../../../src/utils/did-helpers.js';
-import type { DelegationCredential } from '../../../src/types/protocol.js';
+import { NodeCryptoProvider, generateDidKeyFromBase64, type DelegationCredential } from '@kya-os/mcp';
 
 const crypto = new NodeCryptoProvider();
 

@@ -11,7 +11,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startConsentServer, type ConsentServer } from '../src/consent-server.js';
-import type { DelegationCredential } from '../../../src/types/protocol.js';
+import type { DelegationCredential } from '@kya-os/mcp';
 
 let server: ConsentServer;
 

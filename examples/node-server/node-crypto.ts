@@ -4,7 +4,7 @@
  */
 
 import { createHash, generateKeyPairSync, sign, verify, randomBytes } from 'node:crypto';
-import { CryptoProvider } from '../../src/providers/base.js';
+import { CryptoProvider } from '@kya-os/mcp';
 
 export class NodeCryptoProvider extends CryptoProvider {
   async sign(data: Uint8Array, privateKeyBase64: string): Promise<Uint8Array> {

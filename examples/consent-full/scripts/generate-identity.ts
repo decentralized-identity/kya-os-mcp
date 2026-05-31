@@ -15,8 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { NodeCryptoProvider } from '../../../src/providers/node-crypto.js';
-import { generateDidKeyFromBase64 } from '../../../src/utils/did-helpers.js';
+import { NodeCryptoProvider, generateDidKeyFromBase64 } from '@kya-os/mcp';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const IDENTITY_DIR = path.resolve(__dirname, '..', '.kya-os');

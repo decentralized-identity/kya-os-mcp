@@ -16,8 +16,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { NodeCryptoProvider } from '../../../src/providers/node-crypto.js';
-import { generateDidKeyFromBase64 } from '../../../src/utils/did-helpers.js';
+import { NodeCryptoProvider, generateDidKeyFromBase64 } from '@kya-os/mcp';
 import {
   createDelegationIssuerFromIdentity,
   type AgentIdentityConfig,

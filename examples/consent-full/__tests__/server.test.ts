@@ -12,12 +12,9 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { createKyaOsMiddleware, type KyaOsMiddleware } from '../../../src/middleware/index.js';
-import { NodeCryptoProvider } from '../../../src/providers/node-crypto.js';
-import { generateDidKeyFromBase64 } from '../../../src/utils/did-helpers.js';
+import { createKyaOsMiddleware, NodeCryptoProvider, generateDidKeyFromBase64, type KyaOsMiddleware, type DelegationCredential, type NeedsAuthorizationError } from '@kya-os/mcp';
 import { createDelegationIssuerFromIdentity } from '../src/delegation-issuer.js';
 import { createConsentFullMcpServer, type ToolResult } from '../src/server.js';
-import type { DelegationCredential, NeedsAuthorizationError } from '../../../src/types/protocol.js';
 
 const crypto = new NodeCryptoProvider();
 const CONSENT_URL = 'http://localhost:9999/consent';

@@ -12,22 +12,20 @@
  */
 
 import { describe, it, expect, beforeAll } from "vitest";
-import { NodeCryptoProvider } from "../../../src/providers/node-crypto.js";
-import { generateDidKeyFromBase64 } from "../../../src/utils/did-helpers.js";
-import { DelegationCredentialIssuer } from "../../../src/delegation/vc-issuer.js";
 import {
+  NodeCryptoProvider,
+  generateDidKeyFromBase64,
+  DelegationCredentialIssuer,
   StatusList2021Manager,
+  MemoryStatusListStorage,
+  DelegationCredentialVerifier,
+  createDidKeyResolver,
+  base64urlEncodeFromBytes,
   type StatusListStorageProvider,
-} from "../../../src/delegation/statuslist-manager.js";
-import { MemoryStatusListStorage } from "../../../src/delegation/storage/memory-statuslist-storage.js";
-import { DelegationCredentialVerifier } from "../../../src/delegation/vc-verifier.js";
-import { createDidKeyResolver } from "../../../src/delegation/did-key-resolver.js";
-import { base64urlEncodeFromBytes } from "../../../src/utils/base64.js";
-import type {
-  DelegationCredential,
-  CredentialStatus,
-  Proof,
-} from "../../../src/types/protocol.js";
+  type DelegationCredential,
+  type CredentialStatus,
+  type Proof,
+} from "@kya-os/mcp";
 
 const crypto = new NodeCryptoProvider();
 

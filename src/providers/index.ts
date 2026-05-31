@@ -15,6 +15,8 @@ export {
 } from './memory.js';
 
 export { NodeCryptoProvider } from './node-crypto.js';
+export { SystemClockProvider } from './system-clock.js';
+export { RuntimeFetchProvider } from './runtime-fetch.js';
 
 export {
   AuditLogProvider,

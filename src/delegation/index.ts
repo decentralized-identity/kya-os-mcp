@@ -15,6 +15,7 @@ export * from './utils.js';
 export * from './outbound-proof.js';
 export * from './outbound-headers.js';
 export * from './audience-validator.js';
+export * from './scope-matcher.js';
 export {
   createDidKeyResolver,
   resolveDidKeySync,
@@ -28,6 +29,7 @@ export {
   isDidWeb,
   parseDidWeb,
   didWebToUrl,
+  buildDidWebDocument,
 } from './did-web-resolver.js';
 export { MemoryStatusListStorage } from './storage/memory-statuslist-storage.js';
 export { MemoryDelegationGraphStorage } from './storage/memory-graph-storage.js';

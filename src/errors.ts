@@ -27,6 +27,7 @@ export const KYA_OS_ERROR_CODES = {
   // Delegation errors
   needs_authorization: "needs_authorization",
   insufficient_scope: "insufficient_scope",
+  policy_denied: "policy_denied",
   delegation_expired: "delegation_expired",
   delegation_not_yet_valid: "delegation_not_yet_valid",
   delegation_revoked: "delegation_revoked",

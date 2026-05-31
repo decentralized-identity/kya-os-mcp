@@ -23,10 +23,12 @@ export {
   type KyaOsErrorResponse,
 } from './errors.js';
 
-// Encoding utilities (RFC 4648 base64url, byte variants)
+// Encoding utilities (RFC 4648 base64url + standard base64, byte variants)
 export {
   base64urlEncodeFromBytes,
   base64urlDecodeToBytes,
+  bytesToBase64,
+  base64ToBytes,
 } from './utils/base64.js';
 
 // Protocol types
@@ -51,6 +53,7 @@ export type {
   AuditContext,
   AuditEventContext,
   NeedsAuthorizationError,
+  NeedsApprovalError,
   AuthorizationDisplay,
   CrispBudget,
   CrispScope,
@@ -65,6 +68,8 @@ export {
   validateDetachedProof,
   createNeedsAuthorizationError,
   isNeedsAuthorizationError,
+  createNeedsApprovalError,
+  isNeedsApprovalError,
   DELEGATION_CREDENTIAL_CONTEXT,
   DEFAULT_SESSION_TTL_MINUTES,
   DEFAULT_TIMESTAMP_SKEW_SECONDS,
@@ -264,6 +269,8 @@ export {
 } from './providers/memory.js';
 
 export { NodeCryptoProvider } from './providers/node-crypto.js';
+export { SystemClockProvider } from './providers/system-clock.js';
+export { RuntimeFetchProvider } from './providers/runtime-fetch.js';
 
 export {
   AuditLogProvider,
@@ -286,6 +293,15 @@ export {
   generateIdentity,
   type WithKyaOsOptions,
 } from './middleware/index.js';
+
+// Policy-as-Code subsystem + step-up gate
+export * from './policy/index.js';
+export {
+  matchScope,
+  scopeSatisfies,
+  type ScopeMatcher,
+  type ScopeSatisfaction,
+} from './delegation/scope-matcher.js';
 
 // Logging
 export {

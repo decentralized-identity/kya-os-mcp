@@ -151,6 +151,13 @@ describe('RuntimeFetchProvider', () => {
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
+    it('refuses an IPv6 loopback host (bracketed) by default, without fetching', async () => {
+      const fetchSpy = vi.fn();
+      vi.stubGlobal('fetch', fetchSpy);
+      expect(await provider.fetchStatusList('http://[::1]/status')).toBeNull();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
     it('still resolves public did:web hosts (domain names are not IP-blocked)', async () => {
       const did = 'did:web:example.com';
       vi.stubGlobal(

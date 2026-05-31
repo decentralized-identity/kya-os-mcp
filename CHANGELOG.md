@@ -5,10 +5,68 @@ All notable changes to @kya-os/mcp will be documented here.
 Format: https://keepachangelog.com/en/1.0.0/
 Versioning: https://semver.org/spec/v2.0.0.html
 
-## [Unreleased]
+## [1.4.0] - 2026-05-31
+
+Ports the KYA-OS authorization primitives developed upstream (xmcp-i) into
+`@kya-os/mcp`: a per-action policy / step-up gate, scope-matcher enforcement,
+signed `needs_authorization` challenges with verifier content binding, and
+shipped runtime providers. Additive over 1.3.x except where noted under
+**Changed** and **Removed**.
 
 ### Added
 
+- **Signed `needs_authorization` challenge.** The delegation challenge returned
+  when a protected tool is invoked without a credential now carries a signed
+  detached-JWS proof in `_meta` (`outcome: 'needs_authorization'`). The proof
+  binds a `responseHash` over the challenge content — including the
+  `authorizationUrl`. A verifier that recomputes the response hash over the
+  content it received — via the new `ProofVerifier` content binding (below) —
+  detects a tampered / MITM-swapped consent URL; the signature alone proves
+  authenticity, not content-match. The challenge content/shape is unchanged; attachment
+  is best-effort (no-ops when no session can be resolved). The proof `outcome`
+  enum widened to include `'needs_authorization'` across `ProofMeta`,
+  `ProofOptions`, `validateDetachedProof`, and the `detached-proof` JSON Schema.
+  Success proofs are byte-identical (unaffected).
+- **`wrapWithDelegation` `formatChallenge` hook.** An optional config callback
+  that renders the `needs_authorization` challenge content (e.g. a clickable
+  markdown consent link for LLM / chat-style MCP clients) **before** the proof is
+  signed — so the challenge `responseHash` binds exactly what the client
+  receives, keeping the `authorizationUrl` tamper-evident regardless of
+  presentation. Defaults to the structured JSON challenge. The consent-basic /
+  consent-full examples now render their consent link via this hook instead of
+  rewriting the response after signing (which had left the proof bound to stale
+  content).
+- **`ProofVerifier` content binding.** `verifyProof(proof, jwk, { request, response })`
+  recomputes `requestHash`/`responseHash` over the request/response the verifier
+  actually received — via a shared `computeCanonicalHashes` (single source of
+  truth with the signer, so they can't drift) — and fails `CONTENT_BINDING_MISMATCH`
+  on divergence. This is what realizes substitution detection (the signed
+  challenge's anti-MITM, and content-binding for any proof); the signature alone
+  proves only authenticity. New `CONTENT_BINDING_MISMATCH` proof-verification
+  error code.
+- **Concrete `SystemClockProvider` + `RuntimeFetchProvider`.** The package now
+  ships a wall-clock `ClockProvider` and a network-capable `FetchProvider`
+  (did:key resolved locally, did:web over HTTPS, StatusList2021 fetch) so a
+  consumer no longer hand-rolls them to drive `ProofVerifier`. `RuntimeFetchProvider`
+  is the default the middleware uses and replaces the prior internal stub (whose
+  `resolveDID` returned `null`); it refuses private-network targets by default
+  (see **Security**). The verify-proof / anti-MITM examples now consume both.
+- **Per-action policy / step-up gate (`withPolicyGate`).** A new opt-in
+  middleware wrapper that classifies an action's risk (reversibility, blast
+  radius, severity) and consults a pluggable Policy-as-Code `PolicyEngine`:
+  `allow` runs the handler, `deny` returns a `policy_denied` error, and
+  `step_up` returns a `needs_approval` error until N-of-M signed `ApprovalGrant`s
+  — each bound to the request hash (TOCTOU-safe) — are supplied. Ships a
+  fail-closed `DefaultPolicyEngine` and a built-in `RiskClassifier`; OPA/Rego and
+  Cedar adapters are intended follow-ups. Composes after `wrapWithDelegation`;
+  no behavior change unless adopted.
+- **`PolicyEngine` PaC port + `policy/` subsystem** (`PolicyRequest`,
+  `PolicyDecision`, `RiskClassifier`, `DefaultPolicyEngine`, `ApprovalGrant`,
+  `verifyApprovalQuorum`), exported from the package root.
+- **`needs_approval` error** (`NeedsApprovalError`, `createNeedsApprovalError`,
+  `isNeedsApprovalError`) and the `policy_denied` error code.
+- **`bytesToBase64` / `base64ToBytes`** are now re-exported from the package root
+  (standard-base64 byte helpers, alongside the existing base64url variants).
 - **`AuditLogProvider` — pluggable sink for audit-record retention.** A new
   provider (abstract base + `MemoryAuditLogProvider` / `NoopAuditLogProvider`
   defaults, exported from the root and `./providers`) for persisting the frozen
@@ -25,7 +83,31 @@ Versioning: https://semver.org/spec/v2.0.0.html
   meta, so the audit record's `scope` reflects it (was `'-'`). The argument is
   optional and backward-compatible; tool handlers that ignore it are unaffected.
 
-## [1.4.0] - 2026-05-26
+### Changed
+
+- **`ProofMeta.responseHash` is now optional** (`string | undefined`). Denial /
+  step-up proofs carry no response, so code reading `responseHash` must treat it
+  as possibly-absent. `validateDetachedProof` and the `detached-proof` JSON
+  Schema no longer require it (and now permit `outcome`/`reason`).
+- **`CrispScope` `prefix`/`regex` matchers are now enforced** (previously inert —
+  only exact membership in the flat `scopes[]` was checked). A credential
+  declaring a non-exact matcher now grants its pattern set, with ReDoS-safe regex
+  evaluation; flat `scopes[]` remain exact-match (unchanged). **Behavioral
+  change** for any credential that declared a `prefix`/`regex` matcher: it now
+  grants where it previously granted nothing, and a one-time warning is logged on
+  first non-exact use. Re-delegations may not introduce crisp matchers absent
+  from the parent.
+- **`withPolicyGate`'s `scopeMatched` defaults to `false`** (fail-closed): compose
+  it after `wrapWithDelegation` and pass `scopeMatched: true`, or it denies.
+  `withPolicyGate` is an optional member of the `KyaOsMiddleware` interface
+  (additive; structural implementers/mocks are not broken). New in this release,
+  so no prior consumer is affected.
+- **Bundled examples now consume the built `@kya-os/mcp` package** rather than
+  reaching into `src/` via relative paths. Nested example packages (consent-basic,
+  consent-full, context7, brave-search) link the local build via `file:../..`;
+  root-tree examples (node-server, verify-proof, outbound-delegation, statuslist)
+  resolve it by package self-reference. Fixes the context7 example, which had
+  pinned a stale published `@kya-os/mcp@^1.3.0` (pre-`withKyaOs` rename).
 
 ### Spec
 
@@ -52,6 +134,46 @@ Versioning: https://semver.org/spec/v2.0.0.html
   retained in PKCS#8 / JWK references); fixed the one residual _private key_
   usage in §7.
 
+### Security
+
+- **Malformed delegation input no longer crashes.** A malformed `_kyaos_delegation`
+  (non-object, missing `credentialSubject.delegation`, or even a throwing
+  getter/Proxy accessor) previously surfaced as a JSON-RPC internal error (`-32603`);
+  it now returns a clean, signed `delegation_invalid` denial. `validateDelegationChain`
+  shape-checks the leaf and returns `{ valid, reason }` (honouring the
+  `verify*`/`validate*` never-throw contract); `extractDelegationFromVC` fails
+  with a clear error instead of a cryptic `TypeError`; the middleware try/catch is
+  now a pure backstop that logs the detail server-side and returns a generic
+  reason (no internal/stack detail leaks to the client). The invalid-VC-JWT path
+  is now signed as well.
+- **Log-injection / reflection hardening.** Caller-derived values (credential
+  ids, scopes) interpolated into delegation-failure reasons and logs are now
+  stripped of control characters and length-capped before emission, so a hostile
+  credential cannot forge log lines, corrupt a terminal, or reflect raw control
+  bytes into a client response.
+- **`RuntimeFetchProvider` refuses private-network targets by default (SSRF).**
+  did:web resolution and StatusList2021 fetches reject loopback / link-local /
+  RFC-1918 IP-literal hosts (e.g. `did:web:169.254.169.254`, the cloud-metadata
+  endpoint) unless constructed with `{ allowPrivateNetworkHosts: true }`. This
+  is best-effort defense-in-depth for IP literals — not DNS rebinding; run
+  verifiers behind an egress allowlist (`SECURITY.md`).
+- **Signed proofs are now emitted on denial and step-up.** Delegation/scope
+  denials and policy step-ups previously produced no proof; they now attach a
+  signed detached-JWS proof (`outcome: 'denied' | 'step_up_required'`, no
+  `responseHash`), so rejected privileged attempts are non-repudiably auditable.
+- **Fail-closed policy default.** Unclassified ("unknown") high-risk actions are
+  denied by the `DefaultPolicyEngine` rather than forwarded.
+- **Denial/step-up proofs are verifiable end-to-end.** `validateDetachedProof`
+  and `ProofVerifier` accept response-less proofs (the earlier fix only corrected
+  canonical-payload reconstruction); added a real-crypto end-to-end test.
+- **Crisp-scope attenuation.** Re-delegations cannot widen authority via crisp
+  matchers absent from the parent — closes a privilege-escalation path that
+  enforcing the matcher would otherwise have opened.
+- **ReDoS hardening.** The `regex` matcher rejects nested-quantifier patterns and
+  bounds input length. This is a conservative guard, **not** a guarantee — prefer
+  `exact`/`prefix` for untrusted issuers, or evaluate via a linear-time engine.
+  The `prefix` matcher refuses an empty/`*`-only base (no universal grant).
+
 ### Removed
 
 - **BREAKING: removed the three unsafe delegation opt-outs.** The
@@ -71,6 +193,16 @@ Versioning: https://semver.org/spec/v2.0.0.html
   flags. Migration guidance: `SECURITY.md` → Mandatory Delegation Protections.
   Consumers that did not set these flags are unaffected — the reference issuer
   and all bundled examples already emit conformant credentials.
+
+### Known limitations (policy gate — experimental, non-normative)
+
+- Step-up approval grants are **not yet single-use or expiry-bound** (replayable
+  for the same action); a server-issued single-use challenge is a planned follow-up.
+- The default approval-signature verifier **rejects all** — integrators must supply
+  a real verifier; `isValidApprovalSignature: async () => true` is test-only.
+- `policy_denied` / `needs_approval`, the step-up flow, and the now-normative
+  `CrispScope` matcher semantics are **not yet documented in `SPEC.md` /
+  `CONFORMANCE.md`** (tracked as follow-ups).
 
 ## [1.3.2] - 2026-05-26
 

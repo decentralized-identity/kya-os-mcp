@@ -131,7 +131,19 @@ Proof metadata MUST include:
 - `audience`: Session audience
 - `sessionId`: Session identifier
 - `requestHash`: SHA-256 of canonicalized request (`sha256:<hex>`)
-- `responseHash`: SHA-256 of canonicalized response (`sha256:<hex>`)
+
+`responseHash` (SHA-256 of the canonicalized response, `sha256:<hex>`) MUST be
+present on proofs that carry a response body — success proofs and
+`needs_authorization` challenges — and is ABSENT on `denied` / `step_up_required`
+proofs (which have no response body). See SPEC §7.2 / §7.4 and the
+`detached-proof` schema (`responseHash` is intentionally not in `required`).
+
+A verifier that acts on a `needs_authorization` `authorizationUrl` — or
+otherwise relies on the response body — MUST recompute `responseHash` over the
+response it actually received and compare it to the bound value BEFORE trusting
+it. The signature alone proves the proof is authentic, not that the received
+content matches what was signed: an in-path intermediary can leave the signature
+intact while swapping the `authorizationUrl`, and only the recompute detects it.
 
 ---
 
@@ -220,6 +232,12 @@ Audit logging MUST be implemented at Level 3. Implementations MUST record:
 - Delegation verification outcomes (pass/fail), including chain validation results
 - Outbound delegation proof attachments, including the chain string and target audience
 - Any `needs_authorization` hints returned to callers
+
+A conformant implementation MAY satisfy part of this requirement using the
+signed detached-JWS proof attached to each outcome: `denied`, `step_up_required`,
+and `needs_authorization` responses carry a proof whose `meta.outcome` records
+the authorization decision (success proofs omit `outcome`, implying `allowed`).
+Such proofs are themselves tamper-evident signed records.
 
 Audit records MUST be tamper-evident (e.g., append-only log, signed entries, or equivalent) and MUST be retained for at least the duration of the longest-lived delegation in the system.
 

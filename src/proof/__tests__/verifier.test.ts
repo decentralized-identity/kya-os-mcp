@@ -25,6 +25,7 @@ import type {
   FetchProvider,
 } from '../../providers/base.js';
 import type { DetachedProof, MetaPolicy } from '../../types/protocol.js';
+import { validateDetachedProof } from '../../types/protocol.js';
 import {
   ProofVerificationError,
   PROOF_VERIFICATION_ERROR_CODES,
@@ -343,6 +344,38 @@ describe('ProofVerifier Security', () => {
 
       expect(result.valid).toBe(false);
     });
+
+    it('validateDetachedProof rejects an unknown meta.outcome enum value', () => {
+      const proof = createValidProof();
+      (proof.meta as Record<string, unknown>)['outcome'] = 'bogus';
+      const result = validateDetachedProof(proof);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error?.message).toContain('outcome');
+      }
+    });
+
+    it('validateDetachedProof rejects a non-string optional meta field', () => {
+      const proof = createValidProof();
+      (proof.meta as Record<string, unknown>)['scopeId'] = 123;
+      const result = validateDetachedProof(proof);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error?.message).toContain('scopeId');
+      }
+    });
+
+    it('extractProofFromMeta flags a structurally invalid inner proof', () => {
+      const result = extractProofFromMeta({
+        proof: { jws: 'a.b.c', meta: { did: 'did:key:z123' } },
+      });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.errorCode).toBe(
+          PROOF_VERIFICATION_ERROR_CODES.INVALID_PROOF_STRUCTURE,
+        );
+      }
+    });
   });
 
   describe('Signature Verification', () => {
@@ -515,6 +548,23 @@ describe('ProofVerifier Security', () => {
         expect(error).toBeInstanceOf(ProofVerificationError);
         expect((error as ProofVerificationError).code).toBe(
           PROOF_VERIFICATION_ERROR_CODES.INVALID_JWK_FORMAT
+        );
+      }
+    });
+
+    it('throws DID_RESOLUTION_FAILED when DID resolution itself throws', async () => {
+      mockFetchProvider.resolveDID = vi.fn().mockRejectedValue(new Error('network boom'));
+
+      await expect(
+        proofVerifier.fetchPublicKeyFromDID('did:key:z123')
+      ).rejects.toThrow(ProofVerificationError);
+
+      try {
+        await proofVerifier.fetchPublicKeyFromDID('did:key:z123');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ProofVerificationError);
+        expect((error as ProofVerificationError).code).toBe(
+          PROOF_VERIFICATION_ERROR_CODES.DID_RESOLUTION_FAILED
         );
       }
     });

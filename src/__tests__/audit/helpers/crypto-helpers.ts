@@ -9,13 +9,12 @@
 import * as zlib from 'node:zlib';
 import { NodeCryptoProvider } from '../../utils/node-crypto-provider.js';
 import { MemoryIdentityProvider, MemoryNonceCacheProvider } from '../../../providers/memory.js';
-import { ClockProvider, FetchProvider } from '../../../providers/base.js';
+import { ClockProvider } from '../../../providers/base.js';
 import type { AgentIdentity } from '../../../providers/base.js';
-import type { Proof, StatusList2021Credential, DelegationRecord } from '../../../types/protocol.js';
+import type { Proof } from '../../../types/protocol.js';
 import type { VCSigningFunction } from '../../../delegation/vc-issuer.js';
-import type { SignatureVerificationFunction, DIDDocument } from '../../../delegation/vc-verifier.js';
+import type { SignatureVerificationFunction } from '../../../delegation/vc-verifier.js';
 import { canonicalizeJSON } from '../../../delegation/utils.js';
-import { createDidKeyResolver } from '../../../delegation/did-key-resolver.js';
 import type { CompressionFunction, DecompressionFunction } from '../../../delegation/bitstring.js';
 import { StatusList2021Manager } from '../../../delegation/statuslist-manager.js';
 import { MemoryStatusListStorage } from '../../../delegation/storage/memory-statuslist-storage.js';
@@ -32,24 +31,7 @@ export async function createRealIdentity(crypto: NodeCryptoProvider): Promise<Ag
 }
 
 // ── Clock Providers ─────────────────────────────────────────────
-
-export class RealClockProvider extends ClockProvider {
-  now(): number {
-    return Date.now();
-  }
-  isWithinSkew(timestampMs: number, skewSeconds: number): boolean {
-    return Math.abs(Date.now() - timestampMs) <= skewSeconds * 1000;
-  }
-  hasExpired(expiresAt: number): boolean {
-    return Date.now() > expiresAt;
-  }
-  calculateExpiry(ttlSeconds: number): number {
-    return Date.now() + ttlSeconds * 1000;
-  }
-  format(timestamp: number): string {
-    return new Date(timestamp).toISOString();
-  }
-}
+// RealClockProvider is the shipped SystemClockProvider (re-exported below).
 
 /**
  * Clock provider with a controllable "now" for precise boundary testing.
@@ -89,28 +71,6 @@ export class ControllableClockProvider extends ClockProvider {
 
   format(timestamp: number): string {
     return new Date(timestamp).toISOString();
-  }
-}
-
-// ── Fetch Provider ──────────────────────────────────────────────
-
-export class RealFetchProvider extends FetchProvider {
-  private didResolver = createDidKeyResolver();
-
-  async resolveDID(did: string): Promise<DIDDocument | null> {
-    return this.didResolver.resolve(did);
-  }
-
-  async fetchStatusList(_url: string): Promise<StatusList2021Credential | null> {
-    return null;
-  }
-
-  async fetchDelegationChain(_id: string): Promise<DelegationRecord[]> {
-    return [];
-  }
-
-  async fetch(_url: string, _options?: unknown): Promise<Response> {
-    throw new Error('Not implemented');
   }
 }
 
@@ -243,3 +203,9 @@ export { MemoryNonceCacheProvider } from '../../../providers/memory.js';
 export { MemoryIdentityProvider } from '../../../providers/memory.js';
 export { MemoryDelegationGraphStorage } from '../../../delegation/storage/memory-graph-storage.js';
 export { MemoryStatusListStorage } from '../../../delegation/storage/memory-statuslist-storage.js';
+
+// RealClockProvider / RealFetchProvider were byte-for-byte duplicates of the
+// shipped providers; alias them so the audit tests exercise the real package
+// code (did:key resolution is identical; these tests never call fetch()).
+export { SystemClockProvider as RealClockProvider } from '../../../providers/system-clock.js';
+export { RuntimeFetchProvider as RealFetchProvider } from '../../../providers/runtime-fetch.js';

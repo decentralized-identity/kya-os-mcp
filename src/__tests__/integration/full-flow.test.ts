@@ -14,56 +14,14 @@ import { MemoryNonceCacheProvider } from "../../providers/memory.js";
 import { SessionManager, createHandshakeRequest } from "../../session/manager.js";
 import { ProofGenerator } from "../../proof/generator.js";
 import { ProofVerifier } from "../../proof/verifier.js";
-import { ClockProvider, FetchProvider } from "../../providers/base.js";
+import { SystemClockProvider } from "../../providers/system-clock.js";
+import { RuntimeFetchProvider } from "../../providers/runtime-fetch.js";
 import {
-  createDidKeyResolver,
   resolveDidKeySync,
   extractPublicKeyFromDidKey,
   publicKeyToJwk,
 } from "../../delegation/did-key-resolver.js";
-import type { DIDDocument } from "../../delegation/vc-verifier.js";
-import type { DetachedProof, StatusList2021Credential, DelegationRecord } from "../../types/protocol.js";
-
-// Minimal concrete providers for the ProofVerifier
-class TestClockProvider extends ClockProvider {
-  now(): number {
-    return Date.now();
-  }
-  isWithinSkew(timestampMs: number, skewSeconds: number): boolean {
-    const diff = Math.abs(Date.now() - timestampMs);
-    return diff <= skewSeconds * 1000;
-  }
-  hasExpired(expiresAt: number): boolean {
-    return Date.now() > expiresAt;
-  }
-  calculateExpiry(ttlSeconds: number): number {
-    return Date.now() + ttlSeconds * 1000;
-  }
-  format(timestamp: number): string {
-    return new Date(timestamp).toISOString();
-  }
-}
-
-class TestFetchProvider extends FetchProvider {
-  private didResolver = createDidKeyResolver();
-
-  async resolveDID(did: string): Promise<DIDDocument | null> {
-    // createDidKeyResolver returns a DIDResolver { resolve(did) }
-    return this.didResolver.resolve(did);
-  }
-
-  async fetchStatusList(_url: string): Promise<StatusList2021Credential | null> {
-    return null;
-  }
-
-  async fetchDelegationChain(_id: string): Promise<DelegationRecord[]> {
-    return [];
-  }
-
-  async fetch(_url: string, _options?: unknown): Promise<Response> {
-    throw new Error("Not implemented");
-  }
-}
+import type { DetachedProof } from "../../types/protocol.js";
 
 describe("KYA-OS Full Protocol Flow", () => {
   it("handshake → session → tool call → proof → verification", async () => {
@@ -145,9 +103,9 @@ describe("KYA-OS Full Protocol Flow", () => {
     // ── Step 5: Verify proof with ProofVerifier ──────────────────
     const verifier = new ProofVerifier({
       cryptoProvider,
-      clockProvider: new TestClockProvider() ,
+      clockProvider: new SystemClockProvider() ,
       nonceCacheProvider: new MemoryNonceCacheProvider(),
-      fetchProvider: new TestFetchProvider() ,
+      fetchProvider: new RuntimeFetchProvider() ,
       timestampSkewSeconds: 300,
     });
 
@@ -208,9 +166,9 @@ describe("KYA-OS Full Protocol Flow", () => {
 
     const verifier = new ProofVerifier({
       cryptoProvider,
-      clockProvider: new TestClockProvider() ,
+      clockProvider: new SystemClockProvider() ,
       nonceCacheProvider: new MemoryNonceCacheProvider(),
-      fetchProvider: new TestFetchProvider() ,
+      fetchProvider: new RuntimeFetchProvider() ,
       timestampSkewSeconds: 300,
     });
 

@@ -4,9 +4,9 @@
  * A neutral, pluggable authorization layer mirroring the policy seam: a small
  * port ({@link AuthorizationServerAdapter}), a registry that routes a tool's
  * protection to an adapter, a generic-OIDC reference adapter, and the
- * accountability projection that feeds the policy principal. Vendor adapters
- * (Okta, Auth0, an identity-provider plugin) live downstream and bind the same
- * port without changing this core.
+ * accountability projection that feeds the policy principal. Concrete vendor
+ * adapters (commercial identity providers, an identity-provider plugin) live
+ * downstream and bind the same port without changing this core.
  */
 export {
   AuthorizationRequirementSchema,

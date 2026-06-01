@@ -44,9 +44,10 @@ interface PendingFlow {
  * Reference generic-OIDC authorization-server adapter.
  *
  * Implements {@link AuthorizationServerAdapter} for a standards-only OpenID
- * Connect / OAuth 2.1 provider. Per DR-4 no named vendor IdP appears here;
- * Okta/Auth0/etc. are downstream adapters binding the same port. The pure
- * pieces (authorize URL, PKCE) run inline; the single IdP HTTP call (token
+ * Connect / OAuth 2.1 provider. No named vendor identity provider appears
+ * here; concrete commercial providers are downstream adapters binding the same
+ * port. The pure pieces (authorize URL, PKCE) run inline; the single IdP HTTP
+ * call (token
  * exchange) goes through an injectable fetch seam, so the adapter is fully
  * deterministic under test with no network.
  *

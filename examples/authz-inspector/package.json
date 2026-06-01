@@ -1,0 +1,23 @@
+{
+  "name": "@kya-os/example-authz-inspector",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP Inspector-ready demo of the @kya-os/mcp/authz authorization seam: one protected tool, a needs_authorization challenge, and an in-memory OIDC provider (no network). Runs over stdio and the modern Streamable HTTP /mcp transport.",
+  "scripts": {
+    "start": "npx tsx src/stdio.ts",
+    "start:http": "npx tsx src/http.ts",
+    "inspector": "npx @modelcontextprotocol/inspector npx tsx src/stdio.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@kya-os/mcp": "file:../..",
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}

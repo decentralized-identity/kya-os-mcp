@@ -2,16 +2,20 @@
  * Authorization-server demo — MCP Inspector ready.
  *
  * A minimal MCP server with one protected tool, `read_vault`, gated by the
- * `@kya-os/mcp/authz` authorization seam. When an agent calls the tool without
- * authorization, the server returns the `needs_authorization` challenge the
- * adapter produces — the authorize URL, scopes, and a resume token — which MCP
- * Inspector renders as an actionable prompt. Supplying the returned
- * authorization code completes the flow and the tool runs.
+ * `@kya-os/mcp/authz` seam. The caller only ever handles one value, a
+ * `resume_token`:
  *
- * The authorization logic is the tested seam (GenericOidcAdapter +
- * AuthorizationServerRegistry); this file is only the thin MCP shell over it.
- * The token exchange is backed by an in-memory provider so the demo is
- * deterministic and runs with no external identity provider or network.
+ *   - call read_vault with no args → a `needs_authorization` challenge: an
+ *     authorize URL to open, and a resume_token
+ *   - approve in the browser → the server completes the OAuth + PKCE exchange
+ *     itself and caches the grant under the resume_token
+ *   - re-call read_vault { resume_token } → the cached grant is auto-applied and
+ *     the vault reads
+ *
+ * No authorization code, state, or PKCE verifier is ever surfaced to the
+ * caller — the OAuth plumbing stays server-side, mirroring the consent-full
+ * "approve once, retry once" pattern. The authorization logic is the tested
+ * seam (GenericOidcAdapter + AuthorizationServerRegistry, via the session).
  */
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import {
@@ -19,83 +23,22 @@ import {
   ListToolsRequestSchema,
   type CallToolResult,
 } from '@modelcontextprotocol/sdk/types.js';
-import {
-  AuthorizationServerRegistry,
-  GenericOidcAdapter,
-  type FetchImpl,
-  type ToolProtection,
-} from '@kya-os/mcp/authz';
+import type { AuthzSession } from './session.js';
+import { READ_VAULT_PROTECTION } from './session.js';
 
 export interface ToolResult {
   content: Array<{ type: string; text: string }>;
   isError?: boolean;
 }
 
-const READ_VAULT_PROTECTION: ToolProtection = {
-  toolName: 'read_vault',
-  requirement: { type: 'oauth', provider: 'generic-oidc', requiredScopes: ['vault:read'] },
-};
-
-/**
- * An in-memory token endpoint standing in for a live OIDC provider, so the demo
- * is deterministic and network-free. Returns the granted scopes for any
- * well-formed authorization-code exchange.
- */
-export function inMemoryTokenEndpoint(grantedScopes: string[]): FetchImpl {
-  return async (url, init) => {
-    if (url !== 'memory://idp/token') {
-      throw new Error(`unexpected external call to ${url}`);
-    }
-    const body = String(init?.body ?? '');
-    if (!body.includes('grant_type=authorization_code') || !body.includes('code_verifier=')) {
-      return new Response('invalid_request', { status: 400 });
-    }
-    return new Response(
-      JSON.stringify({ access_token: 'demo-access-token', token_type: 'Bearer', scope: grantedScopes.join(' ') }),
-      { status: 200, headers: { 'content-type': 'application/json' } },
-    );
-  };
-}
-
-/** Build the registry holding the generic-OIDC reference adapter for the demo. */
-export function createDemoRegistry(fetchImpl: FetchImpl = inMemoryTokenEndpoint(['vault:read'])): {
-  registry: AuthorizationServerRegistry;
-  adapter: GenericOidcAdapter;
-} {
-  const adapter = new GenericOidcAdapter({
-    type: 'oauth',
-    issuer: 'memory://idp',
-    authorizationEndpoint: 'memory://idp/authorize',
-    tokenEndpoint: 'memory://idp/token',
-    clientId: 'oauth-inspector-demo',
-    scopes: ['vault:read'],
-    resource: 'memory://resource/vault',
-    fetchImpl,
-  });
-  const registry = new AuthorizationServerRegistry();
-  registry.register(adapter);
-  registry.seal();
-  return { registry, adapter };
-}
-
 export interface AuthzInspectorServerOptions {
+  /** The shared authorization session (challenge + grant store). */
+  session: AuthzSession;
   /** The agent DID the demo acts as. */
   agentDid?: string;
-  /**
-   * A pre-built adapter to use (and reuse across requests). The HTTP transport
-   * supplies a single shared adapter so a resume token issued on one MCP call
-   * is still valid on the follow-up call; stdio can omit it (one instance lives
-   * for the whole session).
-   */
-  adapter?: GenericOidcAdapter;
-  /** Redirect URI the authorize request should return to (the demo's /callback). */
-  redirectUri?: string;
-  /**
-   * Redirect URI to surface in the challenge as the where-to-visit hint. When
-   * the demo hosts a real authorization server this is the visitable
-   * `/authorize` page; the in-memory default has nothing to visit, so the hint
-   * says so.
-   */
+  /** The authorization server's callback URI (where Approve redirects). */
+  callbackUri: string;
+  /** Whether the authorize URL is a real, visitable page. */
   visitable?: boolean;
 }
 
@@ -105,66 +48,52 @@ export interface AuthzInspectorServerOptions {
  * server for Inspector.
  */
 export function createAuthzInspectorMcpServer(
-  options: AuthzInspectorServerOptions = {},
+  options: AuthzInspectorServerOptions,
 ): { server: Server; readVault: (args: Record<string, unknown>) => Promise<ToolResult> } {
+  const { session } = options;
   const agentDid = options.agentDid ?? 'did:key:zDemoAgent';
-  const redirectUri = options.redirectUri ?? 'memory://app/callback';
-  const adapter = options.adapter ?? createDemoRegistry().adapter;
-  const registry = new AuthorizationServerRegistry();
-  registry.register(adapter);
-  registry.seal();
 
   const readVault = async (args: Record<string, unknown>): Promise<ToolResult> => {
-    const resolved = registry.resolve(READ_VAULT_PROTECTION);
-    if (!resolved) {
-      return { content: [{ type: 'text', text: 'read_vault is misconfigured: no adapter.' }], isError: true };
-    }
-
-    const code = typeof args['authorization_code'] === 'string' ? (args['authorization_code'] as string) : undefined;
     const resumeToken = typeof args['resume_token'] === 'string' ? (args['resume_token'] as string) : undefined;
-    const state = typeof args['state'] === 'string' ? (args['state'] as string) : undefined;
 
-    // Unauthorized call → produce the needs_authorization challenge.
-    if (!code || !resumeToken || !state) {
-      const challenge = await resolved.initiateFlow({
-        protection: READ_VAULT_PROTECTION,
-        agentDid,
-        redirectUri,
-        state: 'demo-state',
-      });
-      const visitLine = options.visitable
-        ? `1. Open this URL in your browser and click Approve:\n   ${challenge.authorizationUrl}\n   The page redirects to ${redirectUri}?code=...&state=... — copy the "code".\n\n`
-        : `1. (In-memory demo: there is no page to visit. The URL below shows the real\n` +
-          `   OAuth request a live provider would receive; use the code "demo-auth-code".)\n   ${challenge.authorizationUrl}\n\n`;
-      return {
-        content: [
-          {
-            type: 'text',
-            text:
-              `"read_vault" requires authorization (scopes: ${challenge.scopes.join(', ')}).\n\n` +
-              visitLine +
-              `2. Re-call read_vault with:\n` +
-              `   resume_token: ${challenge.resumeToken}\n` +
-              `   state: demo-state\n` +
-              `   authorization_code: ${options.visitable ? '<the code from the redirect>' : 'demo-auth-code'}`,
-          },
-        ],
-      };
+    // Retry path: a resume_token whose grant is cached → auto-apply.
+    if (resumeToken) {
+      const grant = session.grantFor(resumeToken);
+      if (grant?.valid) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                `Vault read authorized for ${grant.credential?.agent_did} ` +
+                `(scopes: ${grant.credential?.scopes.join(', ')}).\n` +
+                `Contents: [ "note-1.md", "note-2.md" ]`,
+            },
+          ],
+        };
+      }
     }
 
-    // Authorized call → verify and run.
-    const result = await resolved.verifyAuthorization(resumeToken, { code, state });
-    if (!result.valid) {
-      return { content: [{ type: 'text', text: `Authorization failed: ${result.reason ?? 'unknown'}` }], isError: true };
-    }
+    // First call (or pre-approval retry): restate the still-pending challenge
+    // for a known token, or issue a fresh one. Reusing the pending challenge
+    // means a retry-before-approval does not invalidate the user's token.
+    const challenge =
+      (resumeToken ? session.pendingFor(resumeToken) : undefined) ??
+      (await session.challenge(READ_VAULT_PROTECTION, agentDid, options.callbackUri));
+    const visitLine = options.visitable
+      ? `1. Open this URL in your browser and click Approve:\n   ${challenge.authorizationUrl}\n\n`
+      : `1. (In-memory demo: there is no page to visit; approval is simulated.)\n   ${challenge.authorizationUrl}\n\n`;
     return {
       content: [
         {
           type: 'text',
           text:
-            `Vault read authorized for ${result.credential?.agent_did} ` +
-            `(scopes: ${result.credential?.scopes.join(', ')}).\n` +
-            `Contents: [ "note-1.md", "note-2.md" ]`,
+            `"read_vault" requires authorization (scopes: ${challenge.scopes.join(', ')}).\n\n` +
+            visitLine +
+            `2. Then re-call read_vault with just:\n` +
+            `   resume_token: ${challenge.resumeToken}\n\n` +
+            `That's it — no codes to copy. The server completes the OAuth exchange when\n` +
+            `you approve, and the delegation is applied automatically on retry.`,
         },
       ],
     };
@@ -179,13 +108,16 @@ export function createAuthzInspectorMcpServer(
     tools: [
       {
         name: 'read_vault',
-        description: 'Read the user vault. Protected: requires an OAuth authorization flow.',
+        description:
+          'Read the user vault. Protected: returns an authorization challenge on first call; ' +
+          'approve in the browser, then re-call with the resume_token.',
         inputSchema: {
           type: 'object',
           properties: {
-            authorization_code: { type: 'string', description: 'Code returned by the authorization server' },
-            resume_token: { type: 'string', description: 'Resume token from the needs_authorization challenge' },
-            state: { type: 'string', description: 'State echoed from the challenge' },
+            resume_token: {
+              type: 'string',
+              description: 'The resume token from the needs_authorization challenge (omit on the first call).',
+            },
           },
         },
       },

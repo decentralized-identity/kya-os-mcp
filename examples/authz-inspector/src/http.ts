@@ -1,39 +1,38 @@
 /**
  * Streamable HTTP entrypoint for the authz Inspector demo — with a real,
- * visitable authorization server.
+ * visitable authorization server and the one-token consent flow.
  *
  * Launch:
  *   npx tsx examples/authz-inspector/src/http.ts
  *   # MCP endpoint:   http://localhost:3030/mcp
- *   # authorize page: opened from the challenge the protected tool returns
  *
- * Unlike the stdio entrypoint (which uses the in-memory provider), this server
- * co-hosts a genuine OAuth 2.1 + PKCE authorization server, so the authorize
- * URL the protected tool hands back is a real page you open in the browser and
- * click "Approve". The MCP adapter's token exchange is pointed at this server's
- * own /token endpoint, so the whole authorization-code + PKCE round trip runs
- * locally end to end (no external IdP, deterministic).
+ * Flow (the caller only ever handles a resume_token):
+ *   1. call read_vault (no args) → challenge: a real /authorize URL + resume_token
+ *   2. open /authorize → Approve → the SERVER runs the OAuth + PKCE exchange and
+ *      caches the grant (the human copies nothing back)
+ *   3. re-call read_vault { resume_token } → grant auto-applied → vault reads
  *
- * A single shared adapter is used across requests so a resume token issued on
- * one /mcp call is still valid on the follow-up call.
+ * One shared session holds the pending flows and the grant store; one shared
+ * authorization server hosts the consent page + token endpoint. Everything runs
+ * in-process, so the round trip is a genuine authorization-code + PKCE exchange
+ * with no external IdP.
  */
 import http from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { GenericOidcAdapter } from '@kya-os/mcp/authz';
 import { createAuthzInspectorMcpServer } from './server.js';
+import { createAuthzSession } from './session.js';
 import { createDemoAuthServer, type AuthorizeParams } from './auth-server.js';
 
 const PORT = parseInt(process.env['PORT'] ?? '3030', 10);
 const BASE = `http://localhost:${PORT}`;
+const CALLBACK = `${BASE}/callback`;
 
 // The demo's own authorization server (consent page + code + token endpoint).
 const authServer = createDemoAuthServer();
 
-// One shared adapter for the whole process. Its token exchange is pointed at
-// this server's /token endpoint, so verifyAuthorization completes a real PKCE
-// code exchange against the local authorization server.
-const adapter = new GenericOidcAdapter({
-  type: 'oauth',
+// One shared session: its adapter's token exchange is pointed at this server's
+// own /token endpoint, so completing the flow is a real local PKCE exchange.
+const session = createAuthzSession({
   issuer: BASE,
   authorizationEndpoint: `${BASE}/authorize`,
   tokenEndpoint: `${BASE}/token`,
@@ -63,13 +62,20 @@ async function readBody(req: http.IncomingMessage): Promise<string> {
 const httpServer = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', BASE);
 
-  // ── MCP transport: POST /mcp (modern Streamable HTTP) ──────────────
-  if (url.pathname === '/mcp' && req.method === 'POST') {
-    const { server } = createAuthzInspectorMcpServer({ adapter, redirectUri: `${BASE}/callback`, visitable: true });
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-    res.on('close', () => void transport.close());
-    await server.connect(transport);
-    await transport.handleRequest(req, res);
+  // ── MCP transport: /mcp ────────────────────────────────────────────
+  if (url.pathname === '/mcp') {
+    if (req.method === 'POST') {
+      const { server } = createAuthzInspectorMcpServer({ session, callbackUri: CALLBACK, visitable: true });
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+      res.on('close', () => void transport.close());
+      await server.connect(transport);
+      await transport.handleRequest(req, res);
+      return;
+    }
+    // Stateless mode does not support the optional server→client GET stream.
+    // Answer it explicitly (405) so clients that probe it don't see a 404.
+    res.writeHead(405, { 'content-type': 'application/json', allow: 'POST' });
+    res.end(JSON.stringify({ error: 'method_not_allowed', error_description: 'Use POST for /mcp (stateless).' }));
     return;
   }
 
@@ -92,18 +98,22 @@ const httpServer = http.createServer(async (req, res) => {
     return;
   }
 
-  // ── Redirect target: GET /callback → show the code to paste back ───
+  // ── Redirect target: GET /callback → SERVER completes the exchange ─
   if (url.pathname === '/callback' && req.method === 'GET') {
     const code = url.searchParams.get('code') ?? '';
     const state = url.searchParams.get('state') ?? '';
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    const outcome = await session.completeFromCallback(state, code);
+    res.writeHead(outcome.ok ? 200 : 400, { 'content-type': 'text/html; charset=utf-8' });
     res.end(
-      `<!doctype html><meta charset="utf-8"><body style="font:15px system-ui;max-width:32rem;margin:4rem auto">
-       <h1 style="font-size:1.1rem">Authorized ✓</h1>
-       <p>Copy this authorization code back into the <code>read_vault</code> tool in MCP Inspector:</p>
-       <p><code style="font-size:1.1rem;background:#f3f3f7;padding:.4rem .6rem;border-radius:6px">${escapeHtml(code)}</code></p>
-       <p style="color:#666;font-size:.85rem">state: <code>${escapeHtml(state)}</code></p>
-       </body>`,
+      outcome.ok
+        ? `<!doctype html><meta charset="utf-8"><body style="font:15px system-ui;max-width:32rem;margin:4rem auto">
+           <h1 style="font-size:1.1rem">Authorized ✓</h1>
+           <p>You can close this tab and return to MCP Inspector. Re-call
+           <code>read_vault</code> with the <code>resume_token</code> from the
+           challenge — the delegation is applied automatically.</p></body>`
+        : `<!doctype html><meta charset="utf-8"><body style="font:15px system-ui;max-width:32rem;margin:4rem auto">
+           <h1 style="font-size:1.1rem">Authorization failed</h1>
+           <p>${escapeHtml(outcome.reason ?? 'unknown error')}</p></body>`,
     );
     return;
   }

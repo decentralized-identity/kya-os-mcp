@@ -35,8 +35,9 @@ already pointed at it):
 npm run example:authz-inspector:http
 ```
 
-The two transports differ in one meaningful way — **whether the authorize URL
-is a real page you can open**:
+You only ever handle **one value — the `resume_token`**. No authorization codes,
+state, or PKCE verifiers are surfaced to you; the OAuth exchange happens
+server-side, just like the consent-full example (approve once, retry once).
 
 ### Over HTTP — a real, clickable authorization flow
 
@@ -47,20 +48,21 @@ the authorize URL is a live page. Once Inspector is open (connected to
 1. **List tools** → you'll see `read_vault`.
 2. **Call `read_vault`** with no arguments → the challenge comes back with a real
    `http://localhost:3030/authorize?...` URL (mandatory `S256` PKCE, RFC 8707
-   `resource`), the scopes, and a `resume_token`.
+   `resource`) and a `resume_token`.
 3. **Open that authorize URL in your browser** → a consent page → click
-   **Approve**. It redirects to `/callback?code=...&state=demo-state`, which
-   shows the **authorization code**.
-4. **Re-call `read_vault`** with `authorization_code` = the code from step 3,
-   `resume_token` = step 2's value, `state` = `demo-state`. The server runs the
-   PKCE code exchange against its own `/token` endpoint → the vault reads.
+   **Approve**. The server completes the OAuth + PKCE exchange itself and caches
+   the grant; the page just says "Authorized — return to Inspector." There is
+   nothing to copy from it.
+4. **Re-call `read_vault`** with only `resume_token` = step 2's value → the
+   cached grant is applied automatically → the vault reads.
 
-### Over stdio — the same flow, deterministic (no page to visit)
+### Over stdio — the same one-token flow, deterministic
 
-stdio uses the in-memory provider (there is no HTTP server to host a page), so
-step 3 is skipped: the challenge shows the real OAuth request shape, and you use
-the fixed code `demo-auth-code` directly in step 4. Same `read_vault` tool, same
-`needs_authorization` challenge — only the provider differs.
+stdio has no HTTP server to host a consent page, so it uses an in-memory session:
+the challenge shows the real OAuth request shape and approval is simulated
+in-process. Steps are identical from the caller's side — call `read_vault`, get a
+`resume_token`, re-call with it, vault reads — only the human approval step is
+stubbed.
 
 ## Run a server only (no Inspector)
 

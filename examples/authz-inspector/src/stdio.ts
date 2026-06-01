@@ -9,10 +9,10 @@
  * authorization_code (the demo accepts `demo-auth-code`) to read the vault.
  */
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { createOauthInspectorMcpServer } from './server.js';
+import { createAuthzInspectorMcpServer } from './server.js';
 
 async function main(): Promise<void> {
-  const { server } = createOauthInspectorMcpServer();
+  const { server } = createAuthzInspectorMcpServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
   // Diagnostics go to stderr so they never corrupt the stdio JSON-RPC stream.

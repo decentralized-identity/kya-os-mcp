@@ -13,7 +13,7 @@
  */
 import http from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { createOauthInspectorMcpServer } from './server.js';
+import { createAuthzInspectorMcpServer } from './server.js';
 
 const PORT = parseInt(process.env['PORT'] ?? '3030', 10);
 
@@ -22,7 +22,7 @@ const httpServer = http.createServer(async (req, res) => {
 
   // Modern Streamable HTTP transport: POST /mcp
   if (url.pathname === '/mcp' && req.method === 'POST') {
-    const { server } = createOauthInspectorMcpServer();
+    const { server } = createAuthzInspectorMcpServer();
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,

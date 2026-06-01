@@ -10,7 +10,7 @@ import http from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { createOauthInspectorMcpServer } from '../src/server.js';
+import { createAuthzInspectorMcpServer } from '../src/server.js';
 
 let server: http.Server;
 let baseUrl: string;
@@ -19,7 +19,7 @@ beforeAll(async () => {
   server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (url.pathname === '/mcp' && req.method === 'POST') {
-      const { server: mcp } = createOauthInspectorMcpServer();
+      const { server: mcp } = createAuthzInspectorMcpServer();
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
         enableJsonResponse: true,

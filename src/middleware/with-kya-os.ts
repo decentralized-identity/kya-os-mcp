@@ -56,7 +56,7 @@ import { RiskClassifier } from "../policy/classifier.js";
 import { DefaultPolicyEngine } from "../policy/default-engine.js";
 import { verifyApprovalQuorum, type ApprovalGrant } from "../policy/approval.js";
 import type { PolicyEngine } from "../policy/engine.js";
-import type { PolicyRequest } from "../policy/types.js";
+import { buildPolicyRequest } from "../policy/projection.js";
 import { KYA_OS_ERROR_CODES } from "../errors.js";
 import { canonicalizeJSON, parseVCJWT } from "../delegation/utils.js";
 import { base64urlDecodeToBytes, base64urlEncodeFromBytes, bytesToBase64 } from "../utils/base64.js";
@@ -1281,7 +1281,7 @@ export function createKyaOsMiddleware(
       const risk = classifier.classify({ toolName, namespace });
       const principal = extractPolicyPrincipal(args["_kyaos_delegation"]);
 
-      const policyRequest: PolicyRequest = {
+      const policyRequest = buildPolicyRequest({
         principal: {
           agentDid: principal.agentDid,
           ...(principal.responsibleParty
@@ -1290,13 +1290,10 @@ export function createKyaOsMiddleware(
         },
         action: { toolName },
         resource: { namespace },
-        context: {
-          delegatedScopes: principal.delegatedScopes,
-          scopeMatched: opts.scopeMatched ?? false,
-          humanApprovals: [],
-          ...risk,
-        },
-      };
+        delegatedScopes: principal.delegatedScopes,
+        scopeMatched: opts.scopeMatched ?? false,
+        risk,
+      });
 
       const decision = await engine.evaluate(policyRequest);
 

@@ -5,6 +5,30 @@ All notable changes to @kya-os/mcp will be documented here.
 Format: https://keepachangelog.com/en/1.0.0/
 Versioning: https://semver.org/spec/v2.0.0.html
 
+## [1.5.0] - 2026-06-01
+
+Exposes the policy-request projection as a reusable primitive and adds a
+dedicated `./policy` entry point, so hosts beyond the bundled middleware (for
+example a gateway) can build a `PolicyRequest` from their own resolved facts
+without copying internal logic. Additive over 1.4.x.
+
+### Added
+
+- **`buildPolicyRequest(input)` projection helper.** Pure, transport-agnostic
+  assembly of resolved facts — principal, delegated scopes, risk, scope-match,
+  and optional approvals / budget — into the canonical `PolicyRequest` a
+  `PolicyEngine` evaluates. Lets any host present an identical request contract
+  to the engine instead of re-deriving the shape.
+- **`./policy` subpath export.** The policy seam (`PolicyRequest`,
+  `PolicyDecision`, `PolicyEngine`, `DefaultPolicyEngine`, `RiskClassifier`,
+  `buildPolicyRequest`) is now importable directly from `@kya-os/mcp/policy`,
+  alongside the existing re-export from the package root.
+
+### Changed
+
+- The bundled per-action policy gate now builds its `PolicyRequest` via
+  `buildPolicyRequest` rather than an inline literal. No behavior change.
+
 ## [1.4.0] - 2026-05-31
 
 Ports the KYA-OS authorization primitives developed upstream (xmcp-i) into

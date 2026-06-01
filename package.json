@@ -1,6 +1,6 @@
 {
   "name": "@kya-os/mcp",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Reference implementation of the KYA-OS protocol for Model Context Protocol servers: delegation, proof, and session primitives",
   "license": "MIT",
   "type": "module",
@@ -42,6 +42,10 @@
     "./middleware": {
       "types": "./dist/middleware/index.d.ts",
       "default": "./dist/middleware/index.js"
+    },
+    "./policy": {
+      "types": "./dist/policy/index.d.ts",
+      "default": "./dist/policy/index.js"
     },
     "./schemas/*.json": "./schemas/*.json",
     "./package.json": "./package.json"

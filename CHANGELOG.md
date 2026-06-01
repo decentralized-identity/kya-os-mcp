@@ -9,11 +9,14 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ### Added
 
-- `./oauth` authorization-server seam: a neutral `AuthorizationServerAdapter`
-  port with a shared dispatch predicate, an `AuthorizationServerRegistry` that
-  routes a tool's protection to one adapter, and a generic-OIDC reference
-  adapter (mandatory S256 PKCE, RFC 8707 resource binding, injectable fetch
-  seam — no named vendor IdP, per the donation's vendor-neutrality).
+- `./authz` authorization seam: a neutral, method-agnostic
+  `AuthorizationServerAdapter` port with a shared dispatch predicate, an
+  `AuthorizationServerRegistry` that routes a tool's protection to one adapter,
+  and a generic-OIDC reference adapter under `authz/oidc/` (mandatory S256 PKCE,
+  RFC 8707 resource binding, injectable fetch seam — no named vendor IdP, per
+  the donation's vendor-neutrality). The `AuthorizationRequirement` union
+  (`oauth`/`mdl`/`idv`/`credential`/`none`) anticipates further adapters as
+  siblings of `oidc/`.
 - `AccountabilityContext` projection (agent → accountable-admin → user →
   intent) that feeds the policy principal's `responsibleParty`; `orgRootDid` is
   a forward-compatible slot pending the organization root identity.

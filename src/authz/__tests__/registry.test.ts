@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { AuthorizationServerRegistry } from '../registry.js';
-import { GenericOidcAdapter } from '../oidc-adapter.js';
+import { GenericOidcAdapter } from '../oidc/oidc-adapter.js';
 import type { AuthorizationServerAdapter } from '../adapter.js';
 
 /**

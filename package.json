@@ -47,9 +47,9 @@
       "types": "./dist/policy/index.d.ts",
       "default": "./dist/policy/index.js"
     },
-    "./oauth": {
-      "types": "./dist/oauth/index.d.ts",
-      "default": "./dist/oauth/index.js"
+    "./authz": {
+      "types": "./dist/authz/index.d.ts",
+      "default": "./dist/authz/index.js"
     },
     "./schemas/*.json": "./schemas/*.json",
     "./package.json": "./package.json"

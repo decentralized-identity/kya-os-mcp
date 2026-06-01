@@ -21,7 +21,7 @@ export {
   type FlowParams,
 } from './adapter.js';
 
-export { buildAuthorizeUrl, type AuthorizeUrlParams } from './authorize.js';
+export { buildAuthorizeUrl, type AuthorizeUrlParams } from './oidc/authorize.js';
 
 export {
   buildAuthorizationServerMetadata,
@@ -30,20 +30,20 @@ export {
   type AuthorizationServerMetadataInput,
   type ProtectedResourceMetadata,
   type ProtectedResourceMetadataInput,
-} from './metadata.js';
+} from './oidc/metadata.js';
 
 export {
   isS256ChallengeMethod,
   computeS256Challenge,
   verifyS256Challenge,
   type S256,
-} from './pkce.js';
+} from './oidc/pkce.js';
 
 export {
   GenericOidcAdapter,
   type GenericOidcAdapterConfig,
   type FetchImpl,
-} from './oidc-adapter.js';
+} from './oidc/oidc-adapter.js';
 
 export { AuthorizationServerRegistry } from './registry.js';
 

@@ -5,7 +5,7 @@ import * as oauth from '../index.js';
  * The ./oauth barrel is the package's public authorization surface. This test
  * pins the exported value identifiers so an accidental removal is caught.
  */
-describe('@kya-os/mcp/oauth public surface', () => {
+describe('@kya-os/mcp/authz public surface', () => {
   it('exports the seam, registry, reference adapter, and helpers', () => {
     expect(typeof oauth.AuthorizationServerRegistry).toBe('function');
     expect(typeof oauth.GenericOidcAdapter).toBe('function');

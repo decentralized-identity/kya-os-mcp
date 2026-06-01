@@ -2,7 +2,7 @@ import type { NeedsAuthorizationError } from '../../types/protocol.js';
 import type { VerifyDelegationResult } from '../../auth/types.js';
 import type { PolicyRequestInput } from '../../policy/projection.js';
 import { AuthorizationServerRegistry } from '../registry.js';
-import { GenericOidcAdapter, type FetchImpl } from '../oidc-adapter.js';
+import { GenericOidcAdapter, type FetchImpl } from '../oidc/oidc-adapter.js';
 import { accountabilityToPolicyPrincipal, type AccountabilityContext } from '../accountability.js';
 import type { ToolProtection } from '../requirement.js';
 

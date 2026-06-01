@@ -2,13 +2,13 @@ import { base64url } from 'jose';
 import {
   createNeedsAuthorizationError,
   type NeedsAuthorizationError,
-} from '../types/protocol.js';
-import type { VerifyDelegationResult } from '../auth/types.js';
-import type { AuthorizationServerAdapter, FlowParams } from './adapter.js';
-import { requirementMatchesAdapter } from './adapter.js';
+} from '../../types/protocol.js';
+import type { VerifyDelegationResult } from '../../auth/types.js';
+import type { AuthorizationServerAdapter, FlowParams } from '../adapter.js';
+import { requirementMatchesAdapter } from '../adapter.js';
 import { buildAuthorizeUrl } from './authorize.js';
 import { computeS256Challenge } from './pkce.js';
-import type { ToolProtection } from './requirement.js';
+import type { ToolProtection } from '../requirement.js';
 
 /** A minimal fetch signature — the injectable seam for IdP HTTP calls. */
 export type FetchImpl = (

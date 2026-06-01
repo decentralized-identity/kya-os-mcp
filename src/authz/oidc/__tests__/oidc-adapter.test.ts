@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { GenericOidcAdapter } from '../oidc-adapter.js';
-import { isNeedsAuthorizationError } from '../../types/protocol.js';
-import type { ToolProtection } from '../requirement.js';
+import { isNeedsAuthorizationError } from '../../../types/protocol.js';
+import type { ToolProtection } from '../../requirement.js';
 
 /**
  * The generic-OIDC reference adapter is the in-package implementation of the

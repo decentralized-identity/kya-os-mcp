@@ -35,20 +35,32 @@ already pointed at it):
 npm run example:authz-inspector:http
 ```
 
-Either way, once Inspector is open:
+The two transports differ in one meaningful way — **whether the authorize URL
+is a real page you can open**:
 
-1. **List tools** — you'll see `read_vault`.
-2. **Call `read_vault`** with no arguments — the response is the
-   `needs_authorization` challenge: an authorize URL (with mandatory `S256`
-   PKCE), the requested scopes, and a `resume_token`.
-3. **Re-call `read_vault`** with:
-   - `resume_token`: the value from step 2
-   - `state`: `demo-state`
-   - `authorization_code`: `demo-auth-code`  *(what the in-memory provider accepts)*
-4. The tool returns the vault contents — authorization verified.
+### Over HTTP — a real, clickable authorization flow
 
-The `read_vault` tool and the `needs_authorization` flow are identical across
-both transports — only the wire differs.
+The HTTP entrypoint co-hosts a genuine OAuth 2.1 + PKCE authorization server, so
+the authorize URL is a live page. Once Inspector is open (connected to
+`http://localhost:3030/mcp`):
+
+1. **List tools** → you'll see `read_vault`.
+2. **Call `read_vault`** with no arguments → the challenge comes back with a real
+   `http://localhost:3030/authorize?...` URL (mandatory `S256` PKCE, RFC 8707
+   `resource`), the scopes, and a `resume_token`.
+3. **Open that authorize URL in your browser** → a consent page → click
+   **Approve**. It redirects to `/callback?code=...&state=demo-state`, which
+   shows the **authorization code**.
+4. **Re-call `read_vault`** with `authorization_code` = the code from step 3,
+   `resume_token` = step 2's value, `state` = `demo-state`. The server runs the
+   PKCE code exchange against its own `/token` endpoint → the vault reads.
+
+### Over stdio — the same flow, deterministic (no page to visit)
+
+stdio uses the in-memory provider (there is no HTTP server to host a page), so
+step 3 is skipped: the challenge shows the real OAuth request shape, and you use
+the fixed code `demo-auth-code` directly in step 4. Same `read_vault` tool, same
+`needs_authorization` challenge — only the provider differs.
 
 ## Run a server only (no Inspector)
 

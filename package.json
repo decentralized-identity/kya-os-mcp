@@ -74,7 +74,9 @@
     "example:server": "npx tsx examples/node-server/server.ts",
     "example:inspector": "npx @modelcontextprotocol/inspector npx tsx examples/node-server/server.ts --stdio",
     "example:verify-proof": "npx tsx examples/verify-proof/verify.ts",
-    "example:anti-mitm": "npx tsx examples/verify-proof/anti-mitm-demo.ts"
+    "example:anti-mitm": "npx tsx examples/verify-proof/anti-mitm-demo.ts",
+    "example:authz-inspector": "npx @modelcontextprotocol/inspector npx tsx examples/authz-inspector/src/stdio.ts",
+    "example:authz-inspector:http": "npx tsx examples/authz-inspector/src/http.ts"
   },
   "dependencies": {
     "jose": "^5.6.3",

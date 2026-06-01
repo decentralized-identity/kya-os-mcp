@@ -9,10 +9,10 @@
 import { describe, it, expect } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { createOauthInspectorMcpServer, type ToolResult } from '../src/server.js';
+import { createAuthzInspectorMcpServer, type ToolResult } from '../src/server.js';
 
 async function connectedClient() {
-  const { server, readVault } = createOauthInspectorMcpServer();
+  const { server, readVault } = createAuthzInspectorMcpServer();
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'test-client', version: '1.0.0' });
   await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);

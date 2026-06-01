@@ -8,6 +8,7 @@
     "start": "npx tsx src/stdio.ts",
     "start:http": "npx tsx src/http.ts",
     "inspector": "npx @modelcontextprotocol/inspector npx tsx src/stdio.ts",
+    "inspector:http": "npx tsx src/inspector-http.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

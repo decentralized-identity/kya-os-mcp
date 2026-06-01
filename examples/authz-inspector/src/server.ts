@@ -1,5 +1,5 @@
 /**
- * OAuth authorization-server demo — MCP Inspector ready.
+ * Authorization-server demo — MCP Inspector ready.
  *
  * A minimal MCP server with one protected tool, `read_vault`, gated by the
  * `@kya-os/mcp/authz` authorization seam. When an agent calls the tool without
@@ -14,7 +14,11 @@
  * deterministic and runs with no external identity provider or network.
  */
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+  type CallToolResult,
+} from '@modelcontextprotocol/sdk/types.js';
 import {
   AuthorizationServerRegistry,
   GenericOidcAdapter,
@@ -79,7 +83,7 @@ export function createDemoRegistry(fetchImpl: FetchImpl = inMemoryTokenEndpoint(
  * lets a test drive it directly while the same instance is mounted on the
  * server for Inspector.
  */
-export function createOauthInspectorMcpServer(
+export function createAuthzInspectorMcpServer(
   agentDid = 'did:key:zDemoAgent',
   fetchImpl?: FetchImpl,
 ): { server: Server; readVault: (args: Record<string, unknown>) => Promise<ToolResult> } {
@@ -138,7 +142,7 @@ export function createOauthInspectorMcpServer(
   };
 
   const server = new Server(
-    { name: 'kya-os-oauth-inspector', version: '1.0.0' },
+    { name: 'kya-os-authz-inspector', version: '1.0.0' },
     { capabilities: { tools: {} } },
   );
 
@@ -159,12 +163,13 @@ export function createOauthInspectorMcpServer(
     ],
   }));
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToolResult> => {
     const { name, arguments: args = {} } = request.params;
-    if (name === 'read_vault') {
-      return readVault(args as Record<string, unknown>);
-    }
-    return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true };
+    const result =
+      name === 'read_vault'
+        ? await readVault(args as Record<string, unknown>)
+        : { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true };
+    return result as CallToolResult;
   });
 
   return { server, readVault };

@@ -14,14 +14,28 @@ network**.
 
 ## Run it with MCP Inspector
 
+Each command below is **a single command** — it starts the demo server *and*
+opens [MCP Inspector](https://github.com/modelcontextprotocol/inspector)
+connected to it. You do not need a server running first.
+
+**Over stdio** (Inspector launches the server as a child process):
+
 ```bash
 # From the repo root
 pnpm install
 npm run example:authz-inspector
 ```
 
-That launches [MCP Inspector](https://github.com/modelcontextprotocol/inspector)
-against the demo server over stdio. Then, in Inspector:
+**Over the modern Streamable HTTP `/mcp` transport** (starts the `/mcp` server
+on `http://localhost:3030/mcp`, waits for it to be ready, then opens Inspector
+already pointed at it):
+
+```bash
+# From the repo root
+npm run example:authz-inspector:http
+```
+
+Either way, once Inspector is open:
 
 1. **List tools** — you'll see `read_vault`.
 2. **Call `read_vault`** with no arguments — the response is the
@@ -33,28 +47,24 @@ against the demo server over stdio. Then, in Inspector:
    - `authorization_code`: `demo-auth-code`  *(what the in-memory provider accepts)*
 4. The tool returns the vault contents — authorization verified.
 
-## Run the server directly (without Inspector)
+The `read_vault` tool and the `needs_authorization` flow are identical across
+both transports — only the wire differs.
+
+## Run a server only (no Inspector)
+
+If you want just the server — for example to point your own MCP client at it:
 
 ```bash
-npx tsx examples/authz-inspector/src/stdio.ts
+# stdio
+npm run example:authz-inspector:stdio:server   # equivalently: npx tsx examples/authz-inspector/src/stdio.ts
+
+# Streamable HTTP — serves http://localhost:3030/mcp
+npm run example:authz-inspector:http:server
 ```
 
-## Run over the modern Streamable HTTP `/mcp` transport
-
-The demo also serves the modern MCP transport, so it works the same way in a
-deployed `/mcp` setup as it does over stdio:
-
-```bash
-# From the repo root
-npm run example:authz-inspector:http
-# → serves http://localhost:3030/mcp
-```
-
-Point MCP Inspector (or any Streamable-HTTP MCP client) at
-`http://localhost:3030/mcp`. The same `read_vault` tool and the same
-`needs_authorization` challenge flow apply — only the transport differs. Both
-transports are exercised by the test suite (`__tests__/http-transport.test.ts`
-drives the server through the SDK's Streamable HTTP client).
+Both transports are exercised by the test suite — `__tests__/server.test.ts`
+(stdio, via an in-memory client) and `__tests__/http-transport.test.ts` (the
+`/mcp` transport, via the SDK's Streamable HTTP client).
 
 ## How it maps to the seam
 

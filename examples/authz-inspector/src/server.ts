@@ -78,20 +78,45 @@ export function createDemoRegistry(fetchImpl: FetchImpl = inMemoryTokenEndpoint(
   return { registry, adapter };
 }
 
+export interface AuthzInspectorServerOptions {
+  /** The agent DID the demo acts as. */
+  agentDid?: string;
+  /**
+   * A pre-built adapter to use (and reuse across requests). The HTTP transport
+   * supplies a single shared adapter so a resume token issued on one MCP call
+   * is still valid on the follow-up call; stdio can omit it (one instance lives
+   * for the whole session).
+   */
+  adapter?: GenericOidcAdapter;
+  /** Redirect URI the authorize request should return to (the demo's /callback). */
+  redirectUri?: string;
+  /**
+   * Redirect URI to surface in the challenge as the where-to-visit hint. When
+   * the demo hosts a real authorization server this is the visitable
+   * `/authorize` page; the in-memory default has nothing to visit, so the hint
+   * says so.
+   */
+  visitable?: boolean;
+}
+
 /**
  * Build the demo MCP server plus the bound tool handler. Returning the handler
  * lets a test drive it directly while the same instance is mounted on the
  * server for Inspector.
  */
 export function createAuthzInspectorMcpServer(
-  agentDid = 'did:key:zDemoAgent',
-  fetchImpl?: FetchImpl,
+  options: AuthzInspectorServerOptions = {},
 ): { server: Server; readVault: (args: Record<string, unknown>) => Promise<ToolResult> } {
-  const { registry } = createDemoRegistry(fetchImpl);
+  const agentDid = options.agentDid ?? 'did:key:zDemoAgent';
+  const redirectUri = options.redirectUri ?? 'memory://app/callback';
+  const adapter = options.adapter ?? createDemoRegistry().adapter;
+  const registry = new AuthorizationServerRegistry();
+  registry.register(adapter);
+  registry.seal();
 
   const readVault = async (args: Record<string, unknown>): Promise<ToolResult> => {
-    const adapter = registry.resolve(READ_VAULT_PROTECTION);
-    if (!adapter) {
+    const resolved = registry.resolve(READ_VAULT_PROTECTION);
+    if (!resolved) {
       return { content: [{ type: 'text', text: 'read_vault is misconfigured: no adapter.' }], isError: true };
     }
 
@@ -101,30 +126,34 @@ export function createAuthzInspectorMcpServer(
 
     // Unauthorized call → produce the needs_authorization challenge.
     if (!code || !resumeToken || !state) {
-      const challenge = await adapter.initiateFlow({
+      const challenge = await resolved.initiateFlow({
         protection: READ_VAULT_PROTECTION,
         agentDid,
-        redirectUri: 'memory://app/callback',
+        redirectUri,
         state: 'demo-state',
       });
+      const visitLine = options.visitable
+        ? `1. Open this URL in your browser and click Approve:\n   ${challenge.authorizationUrl}\n   The page redirects to ${redirectUri}?code=...&state=... — copy the "code".\n\n`
+        : `1. (In-memory demo: there is no page to visit. The URL below shows the real\n` +
+          `   OAuth request a live provider would receive; use the code "demo-auth-code".)\n   ${challenge.authorizationUrl}\n\n`;
       return {
         content: [
           {
             type: 'text',
             text:
               `"read_vault" requires authorization (scopes: ${challenge.scopes.join(', ')}).\n\n` +
-              `1. Visit the authorization URL:\n   ${challenge.authorizationUrl}\n\n` +
+              visitLine +
               `2. Re-call read_vault with:\n` +
               `   resume_token: ${challenge.resumeToken}\n` +
               `   state: demo-state\n` +
-              `   authorization_code: <the code the provider returns>  (demo accepts: demo-auth-code)`,
+              `   authorization_code: ${options.visitable ? '<the code from the redirect>' : 'demo-auth-code'}`,
           },
         ],
       };
     }
 
     // Authorized call → verify and run.
-    const result = await adapter.verifyAuthorization(resumeToken, { code, state });
+    const result = await resolved.verifyAuthorization(resumeToken, { code, state });
     if (!result.valid) {
       return { content: [{ type: 'text', text: `Authorization failed: ${result.reason ?? 'unknown'}` }], isError: true };
     }

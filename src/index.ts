@@ -317,3 +317,6 @@ export {
   ED25519_SPKI_DER_HEADER_LENGTH,
   ED25519_KEY_SIZE,
 } from './utils/index.js';
+
+// A2A wire-format interop codec (Google + Adobe) ⇄ DelegationRecord
+export * from './interop/index.js';

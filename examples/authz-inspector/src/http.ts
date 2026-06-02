@@ -132,9 +132,9 @@ const httpServer = http.createServer(async (req, res) => {
       outcome.ok
         ? `<!doctype html><meta charset="utf-8"><body style="font:15px system-ui;max-width:32rem;margin:4rem auto">
            <h1 style="font-size:1.1rem">Authorized ✓</h1>
-           <p>You can close this tab and return to MCP Inspector. Re-call
-           <code>read_vault</code> with the <code>resume_token</code> from the
-           challenge — the delegation is applied automatically.</p></body>`
+           <p>You can close this tab and return to MCP Inspector. Just re-run
+           <code>read_vault</code> — no arguments needed; the approval is applied
+           automatically.</p></body>`
         : `<!doctype html><meta charset="utf-8"><body style="font:15px system-ui;max-width:32rem;margin:4rem auto">
            <h1 style="font-size:1.1rem">Authorization failed</h1>
            <p>${escapeHtml(outcome.reason ?? 'unknown error')}</p></body>`,

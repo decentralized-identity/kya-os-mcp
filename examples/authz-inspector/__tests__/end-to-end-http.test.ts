@@ -15,24 +15,52 @@
  * server is in-process).
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, execSync, type ChildProcess } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
+const repoRoot = join(here, '..', '..', '..');
 const PORT = 3099;
 const BASE = `http://localhost:${PORT}`;
 let proc: ChildProcess;
 
 beforeAll(async () => {
-  proc = spawn('npx', ['tsx', join(here, '..', 'src', 'http.ts')], {
-    stdio: ['ignore', 'inherit', 'inherit'],
+  // The demo spawns a child that imports the BUILT package
+  // (`@kya-os/mcp/authz` → dist/authz/index.js). When this suite runs before
+  // `npm run build` — e.g. the root `vitest run` that also globs examples —
+  // dist/ is absent, the child dies with ERR_MODULE_NOT_FOUND, and that only
+  // surfaced as a blind "did not start" timeout. Build once when the artifact
+  // is missing so the e2e is self-sufficient regardless of task ordering
+  // (a no-op in CI once the package is already built).
+  if (!existsSync(join(repoRoot, 'dist', 'authz', 'index.js'))) {
+    execSync('npm run build', { cwd: repoRoot, stdio: 'inherit' });
+  }
+
+  // Launch via `node --import tsx` rather than `npx tsx`: process.execPath is an
+  // absolute path to the current node, so there is no PATH / `npx.cmd` shell
+  // quirk on Windows, and tsx (a devDependency) resolves locally instead of
+  // being network-fetched on first run.
+  proc = spawn(process.execPath, ['--import', 'tsx', join(here, '..', 'src', 'http.ts')], {
+    stdio: ['ignore', 'inherit', 'pipe'],
     env: { ...process.env, PORT: String(PORT) },
   });
+
+  // Surface the child's own failure instead of a silent timeout: if it exits
+  // early, fail with its captured stderr (e.g. a missing-module crash).
+  let stderr = '';
+  let exited: string | undefined;
+  proc.stderr?.on('data', (d) => { stderr += String(d); });
+  proc.on('exit', (code) => {
+    if (code) exited = `demo HTTP server exited early (code ${code}):\n${stderr}`;
+  });
+
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
+    if (exited) throw new Error(exited);
     try {
       await fetch(`${BASE}/`);
       return;
@@ -40,8 +68,8 @@ beforeAll(async () => {
       await new Promise((r) => setTimeout(r, 250));
     }
   }
-  throw new Error('demo HTTP server did not start');
-}, 30_000);
+  throw new Error(`demo HTTP server did not start${stderr ? `:\n${stderr}` : ''}`);
+}, 60_000);
 
 afterAll(() => {
   proc?.kill('SIGINT');

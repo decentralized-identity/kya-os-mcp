@@ -35,34 +35,41 @@ already pointed at it):
 npm run example:authz-inspector:http
 ```
 
-You only ever handle **one value — the `resume_token`**. No authorization codes,
-state, or PKCE verifiers are surfaced to you; the OAuth exchange happens
-server-side, just like the consent-full example (approve once, retry once).
+**You paste nothing.** The only action is clicking **Approve** in the browser;
+no authorization codes, state, PKCE verifiers, or tokens are ever surfaced. The
+authorization is bound to your MCP session, so the retry just works — and one
+session's approval can never be applied to another's call.
+
+The demo is **progressively enhanced** by client capability:
+
+| Client supports… | What happens |
+|---|---|
+| **Elicitation** | `read_vault` opens the consent URL in your client and resolves in **one call** — no retry. |
+| **Stateful session** (no elicitation) | click the link → Approve → **re-run `read_vault` with no arguments** → it reads. |
+| **Stateless only** | the challenge includes an explicit `resume_token` to pass back (graceful fallback). |
 
 ### Over HTTP — a real, clickable authorization flow
 
-The HTTP entrypoint co-hosts a genuine OAuth 2.1 + PKCE authorization server, so
-the authorize URL is a live page. Once Inspector is open (connected to
+The HTTP entrypoint co-hosts a genuine OAuth 2.1 + PKCE authorization server and
+uses the stateful Streamable HTTP transport. Once Inspector is open (connected to
 `http://localhost:3030/mcp`):
 
 1. **List tools** → you'll see `read_vault`.
-2. **Call `read_vault`** with no arguments → the challenge comes back with a real
-   `http://localhost:3030/authorize?...` URL (mandatory `S256` PKCE, RFC 8707
-   `resource`) and a `resume_token`.
-3. **Open that authorize URL in your browser** → a consent page → click
-   **Approve**. The server completes the OAuth + PKCE exchange itself and caches
-   the grant; the page just says "Authorized — return to Inspector." There is
-   nothing to copy from it.
-4. **Re-call `read_vault`** with only `resume_token` = step 2's value → the
-   cached grant is applied automatically → the vault reads.
+2. **Call `read_vault`** with no arguments → the challenge comes back with a
+   clickable **Approve** link (a real `http://localhost:3030/authorize?...` URL
+   with mandatory `S256` PKCE and an RFC 8707 `resource`).
+3. **Click the link** → a consent page → **Approve**. The server completes the
+   OAuth + PKCE exchange itself and binds the grant to your session; the page
+   just says "Authorized — return to Inspector." Nothing to copy.
+4. **Re-run `read_vault` with no arguments** → the session-bound grant is applied
+   automatically → the vault reads.
 
-### Over stdio — the same one-token flow, deterministic
+### Over stdio — the same no-paste flow, deterministic
 
 stdio has no HTTP server to host a consent page, so it uses an in-memory session:
 the challenge shows the real OAuth request shape and approval is simulated
-in-process. Steps are identical from the caller's side — call `read_vault`, get a
-`resume_token`, re-call with it, vault reads — only the human approval step is
-stubbed.
+in-process. The caller experience is identical — call `read_vault`, then re-call,
+vault reads — only the human approval step is stubbed.
 
 ## Run a server only (no Inspector)
 

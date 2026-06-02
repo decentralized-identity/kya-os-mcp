@@ -23,6 +23,13 @@ Versioning: https://semver.org/spec/v2.0.0.html
 - A deterministic, network-free in-memory OIDC example exercising the full
   authorization path. Additive; no new runtime dependency (zod, jose, Web
   Crypto only).
+- `GrantStore` provider + `MemoryGrantStore` reference implementation: the
+  post-approval counterpart to `ResumeTokenStore`. A grant binds to the agent
+  DID (durable authority) and optionally to a session (the confused-deputy-safe,
+  no-paste retry convenience — a grant bound to one session is never returned to
+  another). Soft revocation, TTL cleanup, lookup by agent or session. The memory
+  impl is the dev/reference store; production injects Redis / a Durable Object /
+  a database behind the same interface (mirroring `NonceCacheProvider`).
 
 ## [1.5.0] - 2026-06-01
 

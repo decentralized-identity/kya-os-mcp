@@ -32,6 +32,7 @@ export const KYA_OS_ERROR_CODES = {
   delegation_not_yet_valid: "delegation_not_yet_valid",
   delegation_revoked: "delegation_revoked",
   delegation_invalid: "delegation_invalid",
+  holder_binding_failed: "holder_binding_failed",
   budget_exceeded: "budget_exceeded",
   rate_limit_exceeded: "rate_limit_exceeded",
 

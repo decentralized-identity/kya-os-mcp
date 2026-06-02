@@ -18,6 +18,7 @@
 import {
   type CryptoProvider,
   type FetchProvider,
+  type NonceCacheProvider,
 } from "../providers/base.js";
 import { RuntimeFetchProvider } from "../providers/runtime-fetch.js";
 import { AuditLogProvider, NoopAuditLogProvider } from "../providers/audit-log.js";
@@ -40,6 +41,15 @@ import {
   type StatusListResolver,
 } from "../delegation/vc-verifier.js";
 import { createDidKeyResolver } from "../delegation/did-key-resolver.js";
+import {
+  assertHolderBinding,
+  isHolderBindingApplicable,
+  isKyaOsControlArg,
+  toHolderBindingRequest,
+} from "../delegation/holder-binding.js";
+import { ProofVerifier } from "../proof/verifier.js";
+import { SystemClockProvider } from "../providers/system-clock.js";
+import { MemoryNonceCacheProvider } from "../providers/memory.js";
 import { scopeSatisfies } from "../delegation/scope-matcher.js";
 import { createDidWebResolver } from "../delegation/did-web-resolver.js";
 import { verifyDelegationAudience } from "../delegation/audience-validator.js";
@@ -49,6 +59,7 @@ import {
   extractDelegationFromVC,
   type DelegationCredential,
   type DelegationRecord,
+  type DetachedProof,
   type NeedsAuthorizationError,
 } from "../types/protocol.js";
 import { logger } from "../logging/index.js";
@@ -95,6 +106,23 @@ export interface KyaOsDelegationConfig {
   resolveDelegationChain?: (
     leafCredential: DelegationCredential,
   ) => Promise<DelegationCredential[]>;
+  /**
+   * Holder-of-key enforcement for inbound calls (spec §11.8). A valid delegation
+   * is a *bearer* credential; holder binding additionally requires the caller to
+   * present a per-request proof (`_kyaos_proof`) signed by the delegation
+   * SUBJECT's key, closing theft-replay for the key-bearing population.
+   *
+   * - `'off'` (default): no holder-binding check — current behavior, unchanged.
+   * - `'warn'`: check and log failures (missing/unbound proof), but still allow.
+   * - `'enforce'`: reject calls whose proof is missing or does not bind the
+   *   subject. **Breaking for callers that don't yet send `_kyaos_proof`** — opt
+   *   in only once your agents mint request proofs.
+   *
+   * Scope is did:key subjects (the DID encodes the key). did:web and other
+   * subjects are deferred to cnf-based binding (phase 2) and logged, never
+   * rejected — so enabling `'enforce'` never breaks did:web traffic.
+   */
+  holderBinding?: "off" | "warn" | "enforce";
 }
 
 export interface KyaOsConfig {
@@ -102,6 +130,14 @@ export interface KyaOsConfig {
   identity: KyaOsIdentityConfig;
   /** Session configuration overrides */
   session?: Omit<SessionConfig, "nonceCache">;
+  /**
+   * Replay-protection store, shared by the session handshake AND inbound holder
+   * binding so both draw on one nonce namespace. Defaults to an in-memory store
+   * (single-process only); inject a Redis / Durable Object / KV-backed
+   * {@link NonceCacheProvider} for multi-instance deployments. Set here, not on
+   * `session`, so there is exactly one cache and the two cannot diverge.
+   */
+  nonceCache?: NonceCacheProvider;
   /** Delegation verification overrides */
   delegation?: KyaOsDelegationConfig;
   /**
@@ -439,14 +475,45 @@ export function createKyaOsMiddleware(
     publicKey: config.identity.publicKey,
   };
 
+  // One replay-protection store, shared by the handshake and holder binding.
+  // Defaults to in-memory; SessionManager.cleanup() drives its expiry sweep.
+  const nonceCache = config.nonceCache ?? new MemoryNonceCacheProvider();
+
   const sessionManager = new SessionManager(cryptoProvider, {
     ...config.session,
     serverDid: identity.did,
+    nonceCache,
   });
 
   const proofGenerator = new ProofGenerator(identity, cryptoProvider);
   const delegationConfig = config.delegation;
   const auditLog = config.auditLog ?? new NoopAuditLogProvider();
+
+  // Holder binding (spec §11.8). Built once so all tools share one replay cache.
+  // The verifier derives the subject key from the did:key DID directly, so its
+  // fetchProvider is unused on the phase-1 path — a never-called stub keeps
+  // enforcement active even where a runtime fetch is absent.
+  const holderBindingMode = delegationConfig?.holderBinding ?? "off";
+  const holderBindingVerifier =
+    holderBindingMode === "off"
+      ? undefined
+      : new ProofVerifier({
+          cryptoProvider,
+          clockProvider: new SystemClockProvider(),
+          nonceCacheProvider: nonceCache,
+          fetchProvider:
+            delegationConfig?.fetchProvider ??
+            (typeof globalThis.fetch === "function"
+              ? new RuntimeFetchProvider()
+              : ({
+                  resolveDID: async () => null,
+                  fetchStatusList: async () => null,
+                  fetchDelegationChain: async () => [],
+                  fetch: async () => {
+                    throw new Error("fetch unavailable");
+                  },
+                } as unknown as FetchProvider)),
+        });
 
   // Session map: sessionId → last nonce (for proof generation)
   const sessionNonces = new Map<string, string>();
@@ -1211,6 +1278,79 @@ export function createKyaOsMiddleware(
         );
       }
 
+      // Holder binding (spec §11.8): the delegation is valid, but a valid
+      // *credential* is a bearer token until we also prove the caller holds the
+      // delegation SUBJECT's key. Opt-in via `delegation.holderBinding`. did:key
+      // subjects are bound here; did:web is deferred to cnf binding (phase 2) and
+      // logged, never rejected. Runs after identity is established, before scope.
+      if (holderBindingMode !== "off" && holderBindingVerifier) {
+        const subjectDid = vc.credentialSubject?.id;
+        if (subjectDid && isHolderBindingApplicable(subjectDid)) {
+          const proofArg = args["_kyaos_proof"];
+          if (proofArg === undefined) {
+            const reason =
+              "Holder-of-key proof (_kyaos_proof) is required for this delegation subject";
+            logger.warn(
+              `[kya-os] Holder binding: "${toolName}" called without _kyaos_proof`,
+            );
+            if (holderBindingMode === "enforce") {
+              return attachOutcomeProof(
+                buildDelegationErrorResponse(
+                  KYA_OS_ERROR_CODES.holder_binding_failed,
+                  reason,
+                ),
+                toolName,
+                args,
+                sessionId,
+                reason,
+              );
+            }
+          } else {
+            let parsedProof: unknown = proofArg;
+            if (typeof proofArg === "string") {
+              try {
+                parsedProof = JSON.parse(proofArg);
+              } catch {
+                parsedProof = {};
+              }
+            }
+            const binding = await assertHolderBinding({
+              proof: parsedProof as DetachedProof,
+              subjectDid,
+              request: toHolderBindingRequest(toolName, args),
+              expectedAudience: identity.did,
+              proofVerifier: holderBindingVerifier,
+            });
+            if (binding.status !== "bound") {
+              const reason =
+                binding.reason ??
+                "Holder-of-key proof did not bind the delegation subject";
+              logger.warn(
+                `[kya-os] Holder binding ${binding.status} for "${toolName}": ${sanitizeForMessage(reason)}`,
+              );
+              if (holderBindingMode === "enforce") {
+                return attachOutcomeProof(
+                  buildDelegationErrorResponse(
+                    KYA_OS_ERROR_CODES.holder_binding_failed,
+                    reason,
+                  ),
+                  toolName,
+                  args,
+                  sessionId,
+                  reason,
+                );
+              }
+            }
+          }
+        } else if (subjectDid) {
+          // Non-did:key subject — phase 1 cannot pin its key; defer to cnf
+          // binding (phase 2) rather than reject legitimate traffic.
+          logger.warn(
+            `[kya-os] Holder binding: subject "${subjectDid}" is not did:key; deferring to cnf binding (phase 2)`,
+          );
+        }
+      }
+
       // Safe to call directly: the structural guard + validateDelegationChain
       // above guarantee a well-formed credential here, and scopeSatisfies is
       // bounded (ReDoS-guarded) and returns rather than throws.
@@ -1235,10 +1375,12 @@ export function createKyaOsMiddleware(
         );
       }
 
-      // Strip _kyaos_delegation from args before passing to handler
+      // Strip the reserved _kyaos* control namespace before passing to the
+      // handler — same predicate the bound request hash uses, so the handler
+      // receives exactly the call the subject signed (no smuggled control arg).
       const cleanArgs: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(args)) {
-        if (k !== "_kyaos_delegation") cleanArgs[k] = v;
+        if (!isKyaOsControlArg(k)) cleanArgs[k] = v;
       }
 
       logger.debug(
@@ -1271,10 +1413,11 @@ export function createKyaOsMiddleware(
       opts.isValidApprovalSignature ?? (async () => false);
 
     return async (args: Record<string, unknown>, sessionId?: string) => {
-      const controlKeys = new Set(["_kyaos_delegation", approvalsKey]);
+      // Drop the reserved _kyaos* namespace plus the (possibly custom) approvals
+      // key, so no control arg reaches the handler.
       const cleanArgs: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(args)) {
-        if (!controlKeys.has(k)) cleanArgs[k] = v;
+        if (!isKyaOsControlArg(k) && k !== approvalsKey) cleanArgs[k] = v;
       }
 
       const namespace = opts.resolveNamespace?.(args) ?? toolName;

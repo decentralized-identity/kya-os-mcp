@@ -16,6 +16,7 @@ export * from './outbound-proof.js';
 export * from './outbound-headers.js';
 export * from './audience-validator.js';
 export * from './scope-matcher.js';
+export * from './holder-binding.js';
 export {
   createDidKeyResolver,
   resolveDidKeySync,

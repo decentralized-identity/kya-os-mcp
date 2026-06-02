@@ -24,3 +24,5 @@ export {
   NoopAuditLogProvider,
   buildAuditRecord,
 } from './audit-log.js';
+
+export { GrantStore, MemoryGrantStore, type Grant, type MemoryGrantStoreOptions } from './grant-store.js';

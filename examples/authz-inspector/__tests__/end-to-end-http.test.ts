@@ -1,17 +1,18 @@
 /**
- * Full clickable-flow test over the real HTTP authorization server.
+ * Full clickable-flow test over the real HTTP authorization server, exercising
+ * the stateful Streamable HTTP transport so the grant binds to the connection.
  *
  * Walks the flow the way a human does in MCP Inspector, but programmatically.
- * Crucially, the agent only ever handles ONE value — the `resume_token`:
+ * The caller pastes NOTHING — the only step is clicking Approve:
  *
- *   1. call read_vault (no args) → challenge: a real /authorize URL + resume_token
+ *   1. call read_vault (no args) → challenge: a real, clickable /authorize URL
  *   2. open /authorize → Approve → the SERVER runs the OAuth + PKCE exchange and
- *      caches the grant under the resume_token (the human copies nothing)
- *   3. re-call read_vault { resume_token } → server auto-applies the grant → vault reads
+ *      binds the grant to this connection's session
+ *   3. re-call read_vault (no args) → the session-bound grant auto-applies → vault reads
  *
- * This mirrors the consent-full pattern: approve once, retry once, done. No
- * authorization codes, state, or PKCE verifiers are ever surfaced to the caller.
- * Deterministic and network-free (the authorization server is in-process).
+ * No authorization codes, state, PKCE verifiers, or resume tokens are ever
+ * surfaced to the caller. Deterministic and network-free (the authorization
+ * server is in-process).
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -78,7 +79,7 @@ describe('authz-inspector one-token clickable flow', () => {
     const challenge = (await client.callTool({ name: 'read_vault', arguments: {} })) as {
       content: Array<{ type: string; text?: string }>;
     };
-    const authorizeUrl = /(http:\/\/[^\s]+\/authorize[^\s]*)/.exec(textOf(challenge))?.[1];
+    const authorizeUrl = /open the URL:\s*(http:\/\/\S+)/.exec(textOf(challenge))?.[1];
     expect(authorizeUrl, 'challenge should contain a real /authorize URL').toBeTruthy();
 
     const page = await fetch(authorizeUrl!);
@@ -89,27 +90,31 @@ describe('authz-inspector one-token clickable flow', () => {
     await client.close();
   });
 
-  it('reads the vault after approving — the caller supplies only the resume_token', async () => {
+  it('reads the vault after approving — the caller supplies nothing on retry', async () => {
     const client = await mcpClient();
 
-    // 1. Protected call → challenge with a real authorize URL + resume token.
+    // 1. Protected call → challenge with a real, clickable authorize URL.
     const challenge = (await client.callTool({ name: 'read_vault', arguments: {} })) as {
       content: Array<{ type: string; text?: string }>;
     };
     const cText = textOf(challenge);
-    const authorizeUrl = /(http:\/\/[^\s]+\/authorize[^\s]*)/.exec(cText)?.[1];
-    const resumeToken = /resume_token:\s*(\S+)/.exec(cText)?.[1];
-    expect(authorizeUrl && resumeToken).toBeTruthy();
-    // The caller is NOT asked for a code or state.
+    // Extract the bare URL from the "(or open the URL: …)" line (no trailing ')').
+    const authorizeUrl = /open the URL:\s*(http:\/\/\S+)/.exec(cText)?.[1];
+    expect(authorizeUrl, 'challenge should contain a real authorize URL').toBeTruthy();
+    // The caller is NOT asked for a code, state, or even a resume_token here.
     expect(cText).not.toContain('authorization_code:');
+    expect(cText).toContain('no arguments needed');
 
-    // 2. Human approves in the browser; the server completes the exchange.
+    // 2. Human approves in the browser; the server completes the exchange and
+    //    binds the grant to this connection's session.
     await approveInBrowser(authorizeUrl!);
 
-    // 3. Re-call with ONLY the resume_token → grant auto-applied → vault reads.
+    // 3. Re-call with NO arguments at all. Because the MCP client keeps the same
+    //    session across calls, the server auto-applies the session-bound grant —
+    //    no resume_token, no code, nothing to paste.
     const authorized = (await client.callTool({
       name: 'read_vault',
-      arguments: { resume_token: resumeToken },
+      arguments: {},
     })) as { content: Array<{ type: string; text?: string }>; isError?: boolean };
 
     expect(authorized.isError).toBeFalsy();
@@ -119,23 +124,20 @@ describe('authz-inspector one-token clickable flow', () => {
     await client.close();
   });
 
-  it('still shows the pending challenge if retried before approval', async () => {
+  it('re-prompts (does not error) if retried before approval', async () => {
     const client = await mcpClient();
-    const challenge = (await client.callTool({ name: 'read_vault', arguments: {} })) as {
-      content: Array<{ type: string; text?: string }>;
-    };
-    const resumeToken = /resume_token:\s*(\S+)/.exec(textOf(challenge))?.[1];
+    await client.callTool({ name: 'read_vault', arguments: {} });
 
-    // Retry with the token before approving → not yet authorized, re-prompt.
-    const retry = (await client.callTool({
-      name: 'read_vault',
-      arguments: { resume_token: resumeToken },
-    })) as { content: Array<{ type: string; text?: string }> };
+    // Retry before approving → still unauthorized, so the tool re-prompts with
+    // a fresh authorization challenge rather than erroring or reading the vault.
+    const retry = (await client.callTool({ name: 'read_vault', arguments: {} })) as {
+      content: Array<{ type: string; text?: string }>;
+      isError?: boolean;
+    };
     const retryText = textOf(retry);
+    expect(retry.isError).toBeFalsy();
     expect(retryText).toContain('requires authorization');
-    // The same resume_token is restated — retrying before approval does not
-    // silently invalidate the token the user is holding.
-    expect(retryText).toContain(resumeToken!);
+    expect(retryText).not.toContain('Vault read authorized');
     await client.close();
   });
 });

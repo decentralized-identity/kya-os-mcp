@@ -14,6 +14,7 @@ import type { ToolProtection } from '@kya-os/mcp/authz';
 
 export function createInMemorySession(scopes: string[]): AuthzSession {
   const grants = new Map<string, VerifyDelegationResult>();
+  const sessionGrants = new Map<string, VerifyDelegationResult>();
   const pending = new Map<string, Challenge>();
   let counter = 0;
 
@@ -21,6 +22,7 @@ export function createInMemorySession(scopes: string[]): AuthzSession {
     protection: ToolProtection,
     agentDid: string,
     _callbackUri: string,
+    sessionId?: string,
   ): Promise<Challenge> {
     const resumeToken = `inmem-${(counter += 1)}-${randomToken(8)}`;
     const requiredScopes =
@@ -30,7 +32,7 @@ export function createInMemorySession(scopes: string[]): AuthzSession {
     const granted = unique([...scopes, ...requiredScopes]);
 
     // Simulated approval: cache a valid grant immediately so the retry succeeds.
-    grants.set(resumeToken, {
+    const grant: VerifyDelegationResult = {
       valid: true,
       credential: {
         agent_did: agentDid,
@@ -38,7 +40,9 @@ export function createInMemorySession(scopes: string[]): AuthzSession {
         scopes: granted,
         authorization: { type: 'oauth', provider: 'in-memory' },
       },
-    });
+    };
+    grants.set(resumeToken, grant);
+    if (sessionId) sessionGrants.set(`${sessionId} ${protection.toolName}`, grant);
 
     // The "authorize URL" shows the request shape; there is nothing to visit.
     const url = new URL('memory://idp/authorize');
@@ -59,11 +63,15 @@ export function createInMemorySession(scopes: string[]): AuthzSession {
     return grants.get(resumeToken);
   }
 
+  function grantForSession(sessionId: string, toolName: string): VerifyDelegationResult | undefined {
+    return sessionGrants.get(`${sessionId} ${toolName}`);
+  }
+
   function pendingFor(resumeToken: string): Challenge | undefined {
     return pending.get(resumeToken);
   }
 
-  return { challenge, completeFromCallback, grantFor, pendingFor };
+  return { challenge, completeFromCallback, grantFor, grantForSession, pendingFor };
 }
 
 function randomToken(byteLength: number): string {

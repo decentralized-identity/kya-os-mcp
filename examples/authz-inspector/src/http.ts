@@ -18,6 +18,7 @@
  * with no external IdP.
  */
 import http from 'node:http';
+import { randomUUID } from 'node:crypto';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createAuthzInspectorMcpServer } from './server.js';
 import { createAuthzSession } from './session.js';
@@ -59,23 +60,46 @@ async function readBody(req: http.IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
+  // Stateful transports, keyed by mcp-session-id. A stable session id is what
+  // lets a retried read_vault auto-apply the approval bound to this connection,
+  // with no token to paste — and keeps one connection's grant off another's.
+  const transports = new Map<string, StreamableHTTPServerTransport>();
+
 const httpServer = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', BASE);
 
-  // ── MCP transport: /mcp ────────────────────────────────────────────
+  // ── MCP transport: /mcp (stateful Streamable HTTP) ─────────────────
   if (url.pathname === '/mcp') {
+    const sid = req.headers['mcp-session-id'];
+    const existing = typeof sid === 'string' ? transports.get(sid) : undefined;
+
+    if (existing) {
+      // Subsequent request on an established session (POST, GET stream, DELETE).
+      await existing.handleRequest(req, res);
+      return;
+    }
+
     if (req.method === 'POST') {
+      // A new session: the transport assigns the id on initialize, and the
+      // server reads it as extra.sessionId on every later tool call.
       const { server } = createAuthzInspectorMcpServer({ session, callbackUri: CALLBACK, visitable: true });
-      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-      res.on('close', () => void transport.close());
+      const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+        onsessioninitialized: (id: string) => {
+          transports.set(id, transport);
+        },
+        enableJsonResponse: true,
+      });
+      transport.onclose = () => {
+        if (transport.sessionId) transports.delete(transport.sessionId);
+      };
       await server.connect(transport);
       await transport.handleRequest(req, res);
       return;
     }
-    // Stateless mode does not support the optional server→client GET stream.
-    // Answer it explicitly (405) so clients that probe it don't see a 404.
-    res.writeHead(405, { 'content-type': 'application/json', allow: 'POST' });
-    res.end(JSON.stringify({ error: 'method_not_allowed', error_description: 'Use POST for /mcp (stateless).' }));
+
+    res.writeHead(400, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'invalid_request', error_description: 'No valid mcp-session-id; POST to initialize first.' }));
     return;
   }
 

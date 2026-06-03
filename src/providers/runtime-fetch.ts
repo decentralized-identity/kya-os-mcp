@@ -141,6 +141,29 @@ export class RuntimeFetchProvider extends FetchProvider {
   }
 }
 
+/**
+ * No-op {@link FetchProvider} for runtimes without a global `fetch`, and the
+ * offline fallback when a verifier is constructed without one. Every network
+ * lookup resolves empty so verification fails closed on anything that would
+ * need the network, and the raw `fetch` escape hatch throws rather than
+ * pretending to succeed. A single named definition (vs. an inline literal) so
+ * it is covered once and reused everywhere the offline fallback is needed.
+ */
+export class NoopFetchProvider extends FetchProvider {
+  async resolveDID(_did: string): Promise<DIDDocument | null> {
+    return null;
+  }
+  async fetchStatusList(_url: string): Promise<StatusList2021Credential | null> {
+    return null;
+  }
+  async fetchDelegationChain(_id: string): Promise<DelegationRecord[]> {
+    return [];
+  }
+  async fetch(_url: string, _options?: unknown): Promise<Response> {
+    throw new Error("fetch unavailable");
+  }
+}
+
 /** Structural guard: a JSON payload is a StatusList2021 credential. */
 function isStatusList2021Credential(
   value: unknown,

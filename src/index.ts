@@ -283,7 +283,7 @@ export {
 
 export { NodeCryptoProvider } from './providers/node-crypto.js';
 export { SystemClockProvider } from './providers/system-clock.js';
-export { RuntimeFetchProvider } from './providers/runtime-fetch.js';
+export { RuntimeFetchProvider, NoopFetchProvider } from './providers/runtime-fetch.js';
 
 export {
   AuditLogProvider,

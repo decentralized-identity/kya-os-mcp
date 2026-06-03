@@ -20,7 +20,7 @@ import {
   type FetchProvider,
   type NonceCacheProvider,
 } from "../providers/base.js";
-import { RuntimeFetchProvider } from "../providers/runtime-fetch.js";
+import { RuntimeFetchProvider, NoopFetchProvider } from "../providers/runtime-fetch.js";
 import { AuditLogProvider, NoopAuditLogProvider } from "../providers/audit-log.js";
 import {
   SessionManager,
@@ -505,14 +505,7 @@ export function createKyaOsMiddleware(
             delegationConfig?.fetchProvider ??
             (typeof globalThis.fetch === "function"
               ? new RuntimeFetchProvider()
-              : ({
-                  resolveDID: async () => null,
-                  fetchStatusList: async () => null,
-                  fetchDelegationChain: async () => [],
-                  fetch: async () => {
-                    throw new Error("fetch unavailable");
-                  },
-                } as unknown as FetchProvider)),
+              : new NoopFetchProvider()),
         });
 
   // Session map: sessionId → last nonce (for proof generation)

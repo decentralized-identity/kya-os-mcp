@@ -7,6 +7,14 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-06-03
+
+Advances the E3 verifier-consolidation groundwork and hardens the delegation
+gate: an isomorphic WebCrypto provider so the proof verifier can run on edge
+runtimes without `node:crypto`, the delegation chain-enforcement rules lifted
+into a framework-agnostic core reusable by any host, and holder-of-key binding
+enforced at the inbound gate. Additive over 1.5.x.
+
 ### Added
 
 - `./authz` authorization seam: a neutral, method-agnostic
@@ -30,6 +38,39 @@ Versioning: https://semver.org/spec/v2.0.0.html
   another). Soft revocation, TTL cleanup, lookup by agent or session. The memory
   impl is the dev/reference store; production injects Redis / a Durable Object /
   a database behind the same interface (mirroring `NonceCacheProvider`).
+- **Holder-of-key binding** at the inbound gate (spec §11.8). A delegation
+  credential is a bearer token, so the caller must now prove possession of the
+  delegation subject's key on the request itself. For a `did:key` subject the
+  DID encodes the public key, so binding needs no new credential fields and no
+  new crypto: `assertHolderBinding` verifies the request proof against the key
+  derived from the subject DID — a stolen-credential replay fails signature
+  binding, a tampered request fails content binding, and a proof minted for
+  another server fails audience binding (RFC 8707). The client half
+  (`generateRequestProof`, request-only with a fresh nonce per call) and the PEP
+  half (`assertHolderBinding`) ship in `delegation/holder-binding`. Opt-in.
+- Framework-agnostic delegation **chain-enforcement core**
+  (`validateDelegationChain`, with the injected `DelegationCredentialVerifierPort`
+  and `RevocationChecker` ports, plus `validateScopeAttenuation` /
+  `getDelegationScopes`), lifted out of the `with-kya-os` middleware closure so
+  the leaf→root chain walk, scope attenuation, audience / confused-deputy
+  binding (§11.6), and ancestor-revocation rules run identically in any host
+  (MCP middleware, an HTTP PEP, the conformance harness) instead of a
+  per-transport fork. Dependencies are injected as ports; nothing imports a
+  transport. Includes the correctness fix behind the new graph-backed
+  `RevocationChecker` (reference adapter `CascadingRevocationManager`): a
+  cascade-revoked ancestor is now caught even when the leaf's own StatusList bit
+  never flipped. Exported from `@kya-os/mcp/delegation`.
+- `NoopFetchProvider` — the offline `FetchProvider` fallback (used when the
+  runtime exposes no global `fetch`) extracted from an inline literal into a
+  named, exported class alongside `RuntimeFetchProvider`, and reused at the
+  holder-binding gate.
+- `WebCryptoProvider` — an isomorphic `CryptoProvider` backed by the WebCrypto
+  API (`globalThis.crypto.subtle`, Ed25519), so an edge runtime (Cloudflare
+  Workers, Deno, browsers, Node 20+) can drive `ProofVerifier` without
+  `node:crypto`. Mirrors `NodeCryptoProvider`'s key formats exactly — raw
+  32-byte Ed25519 keys, base64-encoded; `sha256:<hex>` digests — so the two are
+  drop-in interchangeable: a proof signed under one verifies under the other,
+  with byte-identical signatures. Exported from `@kya-os/mcp/providers`.
 
 ## [1.5.0] - 2026-06-01
 

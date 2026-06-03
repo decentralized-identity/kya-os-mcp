@@ -1,0 +1,332 @@
+/**
+ * Delegation chain enforcement — framework-agnostic core (E3 · #2888).
+ *
+ * The leaf→root chain walk, scope-attenuation, audience binding, confused-deputy
+ * guard (KYA-OS §11.6), and ancestor-revocation rules, lifted out of the
+ * `with-kya-os` middleware closure so the SAME logic runs in every host (MCP
+ * middleware, an HTTP PEP, the conformance harness) against one implementation
+ * rather than a per-transport fork.
+ *
+ * Dependencies are injected as ports (interface-first): a per-credential
+ * verifier, an optional ancestor resolver, and an optional graph-backed
+ * `RevocationChecker`. Nothing here imports a transport or framework.
+ */
+import {
+  extractDelegationFromVC,
+  type DelegationCredential,
+  type DelegationRecord,
+} from "../types/protocol.js";
+import { verifyDelegationAudience } from "./audience-validator.js";
+
+/** Union of a credential's delegation scopes and its constraint scopes. */
+export function getDelegationScopes(credential: DelegationCredential): string[] {
+  const scopes = new Set<string>();
+  for (const scope of credential.credentialSubject.delegation.scopes ?? []) {
+    scopes.add(scope);
+  }
+  for (const scope of credential.credentialSubject.delegation.constraints?.scopes ?? []) {
+    scopes.add(scope);
+  }
+  return Array.from(scopes);
+}
+
+/**
+ * A child re-delegation may only narrow (attenuate) its parent's authority.
+ * Enforces flat-scope subset AND crisp-matcher subset (by matcher+resource),
+ * failing closed on any widening. Pure; never throws.
+ */
+export function validateScopeAttenuation(
+  parentCredential: DelegationCredential,
+  childCredential: DelegationCredential,
+): { valid: boolean; reason?: string } {
+  const parentScopes = getDelegationScopes(parentCredential);
+  const childScopes = getDelegationScopes(childCredential);
+  const childDelegation = childCredential.credentialSubject.delegation;
+
+  // CRISP matcher attenuation: getDelegationScopes does NOT see constraints.crisp.scopes,
+  // so a re-delegation could otherwise widen authority by introducing a broad
+  // prefix/regex matcher (e.g. resource:"" matches every scope). Require the child's
+  // crisp matchers to be a subset of the parent's (by matcher+resource). Fail closed.
+  const crispKey = (s: { resource: string; matcher: string }): string => `${s.matcher}\u0000${s.resource}`;
+  const parentCrisp = new Set(
+    (parentCredential.credentialSubject.delegation.constraints.crisp?.scopes ?? []).map(crispKey),
+  );
+  const widenedCrisp = (childDelegation.constraints.crisp?.scopes ?? []).filter(
+    (s) => !parentCrisp.has(crispKey(s)),
+  );
+  if (widenedCrisp.length > 0) {
+    return {
+      valid: false,
+      reason: `Delegation ${childDelegation.id} introduces crisp scope matcher(s) absent from parent ${parentCredential.credentialSubject.delegation.id}: ${widenedCrisp
+        .map((s) => `${s.matcher}:${s.resource}`)
+        .join(", ")}`,
+    };
+  }
+
+  if (parentScopes.length === 0) {
+    return { valid: true };
+  }
+
+  if (childScopes.length === 0) {
+    return {
+      valid: false,
+      reason: `Delegation ${childDelegation.id} omits scopes required to prove attenuation from parent ${parentCredential.credentialSubject.delegation.id}`,
+    };
+  }
+
+  const parentScopeSet = new Set(parentScopes);
+  const widenedScopes = childScopes.filter((scope) => !parentScopeSet.has(scope));
+  if (widenedScopes.length > 0) {
+    return {
+      valid: false,
+      reason: `Delegation ${childDelegation.id} widens scopes beyond parent ${parentCredential.credentialSubject.delegation.id}: ${widenedScopes.join(", ")}`,
+    };
+  }
+
+  return { valid: true };
+}
+
+/** Per-credential verifier port (signature / schema / expiry / own status). */
+export interface DelegationCredentialVerifierPort {
+  verifyDelegationCredential(
+    credential: DelegationCredential,
+    options?: { skipSignature?: boolean },
+  ): Promise<{ valid: boolean; reason?: string }>;
+}
+
+/**
+ * Graph-backed ancestor-revocation port. The reference adapter is
+ * `CascadingRevocationManager` (./cascading-revocation), whose `isRevoked()`
+ * walks root→target over the delegation graph + StatusList, detecting a
+ * cascade-revoked ANCESTOR independently of how the chain was resolved.
+ *
+ * Wiring this is the E3.1 correctness fix: the prior closure checked only each
+ * credential's OWN `credentialStatus` bit via the resolver, so an ancestor
+ * cascade-revocation that hadn't flipped the leaf's own bit could be missed.
+ */
+export interface RevocationChecker {
+  isRevoked(delegationId: string): Promise<{
+    revoked: boolean;
+    reason?: string;
+    revokedAncestor?: string;
+  }>;
+}
+
+export interface ChainEnforcementDeps {
+  /** The verifying server's DID — every chain credential's audience must include it. */
+  serverDid: string;
+  /** Per-credential verifier (signature / schema / expiry / own status). */
+  verifier: DelegationCredentialVerifierPort;
+  /**
+   * Resolve ancestor credentials for a re-delegated leaf. May return ancestors
+   * only (root→parent) or the full chain (root→leaf). Required when the leaf has
+   * a `parentId`.
+   */
+  resolveDelegationChain?: (
+    leafCredential: DelegationCredential,
+  ) => Promise<DelegationCredential[]>;
+  /**
+   * Whether a StatusList resolver is configured downstream. A credential bearing
+   * `credentialStatus` is rejected when false (fail-closed).
+   */
+  statusListConfigured: boolean;
+  /** Optional graph-backed ancestor-revocation check (see {@link RevocationChecker}). */
+  revocationChecker?: RevocationChecker;
+}
+
+export interface ChainValidationResult {
+  valid: boolean;
+  reason?: string;
+}
+
+/**
+ * Validate a delegation credential and (if re-delegated) its full chain:
+ * structural shape, per-credential verification, audience binding to the server,
+ * the §11.6 re-delegation audience-constraint requirement, parent↔child linkage
+ * (parentId + issuerDid==parent.subjectDid), cycle detection, scope attenuation,
+ * and — when a {@link RevocationChecker} is supplied — graph-backed ancestor
+ * revocation. Never throws on a malformed input; returns `{ valid, reason }`.
+ */
+export async function validateDelegationChain(
+  leafCredential: DelegationCredential,
+  deps: ChainEnforcementDeps,
+  options?: { skipSignature?: boolean },
+): Promise<ChainValidationResult> {
+  // Shape guard (validate* never-throw contract): a structurally malformed leaf
+  // returns a { valid, reason } result rather than letting extractDelegationFromVC
+  // or the downstream scope check throw. Requires both
+  // credentialSubject.delegation AND .constraints (the verifier's own invariant).
+  const leafDelegationObj = (
+    leafCredential?.credentialSubject as
+      | { delegation?: { constraints?: unknown } }
+      | undefined
+  )?.delegation;
+  if (
+    !leafDelegationObj ||
+    typeof leafDelegationObj !== "object" ||
+    !leafDelegationObj.constraints ||
+    typeof leafDelegationObj.constraints !== "object"
+  ) {
+    return {
+      valid: false,
+      reason:
+        "Malformed delegation credential: missing credentialSubject.delegation or its constraints",
+    };
+  }
+  const leafDelegation = extractDelegationFromVC(leafCredential);
+  let chain: DelegationCredential[] = [leafCredential];
+
+  if (leafDelegation.parentId) {
+    if (!deps.resolveDelegationChain) {
+      return {
+        valid: false,
+        reason: `Delegation ${leafDelegation.id} references parent ${leafDelegation.parentId} but no resolveDelegationChain handler is configured`,
+      };
+    }
+
+    let resolvedChain: DelegationCredential[];
+    try {
+      resolvedChain = await deps.resolveDelegationChain(leafCredential);
+    } catch (error) {
+      return {
+        valid: false,
+        reason: `Failed to resolve delegation chain: ${error instanceof Error ? error.message : "Unknown error"}`,
+      };
+    }
+
+    if (resolvedChain.length === 0) {
+      return {
+        valid: false,
+        reason: `Delegation ${leafDelegation.id} references parent ${leafDelegation.parentId} but the resolved chain is empty`,
+      };
+    }
+
+    const leafIndex = resolvedChain.findIndex(
+      (credential) =>
+        credential.credentialSubject.delegation.id === leafDelegation.id,
+    );
+    if (leafIndex !== -1 && leafIndex !== resolvedChain.length - 1) {
+      return {
+        valid: false,
+        reason: `Resolved delegation chain for ${leafDelegation.id} must end with the leaf credential`,
+      };
+    }
+
+    chain = leafIndex === -1 ? [...resolvedChain, leafCredential] : resolvedChain;
+  }
+
+  const seenIds = new Set<string>();
+  let previousDelegation: DelegationRecord | undefined;
+  let previousCredential: DelegationCredential | undefined;
+
+  for (const credential of chain) {
+    const delegation = extractDelegationFromVC(credential);
+
+    if (seenIds.has(delegation.id)) {
+      return {
+        valid: false,
+        reason: `Delegation chain contains a circular reference at ${delegation.id}`,
+      };
+    }
+    seenIds.add(delegation.id);
+
+    if (credential.credentialStatus && !deps.statusListConfigured) {
+      return {
+        valid: false,
+        reason: `Delegation ${delegation.id} has credentialStatus but no statusListResolver is configured`,
+      };
+    }
+
+    const credentialVerification = await deps.verifier.verifyDelegationCredential(
+      credential,
+      {
+        ...(options?.skipSignature ? { skipSignature: true } : {}),
+      },
+    );
+    if (!credentialVerification.valid) {
+      return {
+        valid: false,
+        reason: `Delegation ${delegation.id} invalid: ${credentialVerification.reason}`,
+      };
+    }
+
+    if (!verifyDelegationAudience(delegation, deps.serverDid)) {
+      return {
+        valid: false,
+        reason: `Delegation ${delegation.id} audience does not include server DID ${deps.serverDid}`,
+      };
+    }
+
+    // Every non-root credential in the chain MUST carry an `audience` constraint
+    // binding it to the verifying server. This closes the confused-deputy class
+    // where a re-delegated credential is forwarded to an unintended server
+    // (KYA-OS §11.6). Unconditional as of 1.4.0.
+    if (delegation.parentId && !delegation.constraints.audience) {
+      return {
+        valid: false,
+        reason: `Delegation ${delegation.id} is a re-delegation (parentId: ${delegation.parentId}) but has no audience constraint. Re-delegations MUST include an audience constraint (KYA-OS §11.6)`,
+      };
+    }
+
+    if (!previousDelegation || !previousCredential) {
+      if (delegation.parentId) {
+        return {
+          valid: false,
+          reason: `Resolved delegation chain is incomplete: root delegation ${delegation.id} still references parent ${delegation.parentId}`,
+        };
+      }
+
+      previousDelegation = delegation;
+      previousCredential = credential;
+      continue;
+    }
+
+    if (delegation.parentId !== previousDelegation.id) {
+      return {
+        valid: false,
+        reason: `Delegation ${delegation.id} references parent ${delegation.parentId} but expected ${previousDelegation.id}`,
+      };
+    }
+
+    if (delegation.issuerDid !== previousDelegation.subjectDid) {
+      return {
+        valid: false,
+        reason: `Delegation ${delegation.id} issued by ${delegation.issuerDid} but parent subject is ${previousDelegation.subjectDid}`,
+      };
+    }
+
+    const scopeValidation = validateScopeAttenuation(previousCredential, credential);
+    if (!scopeValidation.valid) {
+      return scopeValidation;
+    }
+
+    previousDelegation = delegation;
+    previousCredential = credential;
+  }
+
+  const finalDelegation = extractDelegationFromVC(chain[chain.length - 1]!);
+  if (finalDelegation.id !== leafDelegation.id) {
+    return {
+      valid: false,
+      reason: `Resolved delegation chain ended at ${finalDelegation.id} instead of leaf ${leafDelegation.id}`,
+    };
+  }
+
+  // E3.1: graph-backed ancestor revocation. Independent of how the chain above
+  // was resolved — catches a cascade-revoked ANCESTOR even when the leaf's own
+  // credentialStatus bit was never flipped. Opt-in: only runs when a checker is
+  // wired, so existing callers are unaffected.
+  if (deps.revocationChecker) {
+    const revocation = await deps.revocationChecker.isRevoked(leafDelegation.id);
+    if (revocation.revoked) {
+      return {
+        valid: false,
+        reason: revocation.revokedAncestor
+          ? `Delegation ${leafDelegation.id} is revoked via ancestor ${revocation.revokedAncestor}`
+          : `Delegation ${leafDelegation.id} is revoked${revocation.reason ? `: ${revocation.reason}` : ""}`,
+      };
+    }
+  }
+
+  return { valid: true };
+}

@@ -156,6 +156,19 @@ export {
   type VCJWTPayload,
 } from './delegation/utils.js';
 
+export {
+  assertHolderBinding,
+  generateRequestProof,
+  toHolderBindingRequest,
+  isHolderBindingApplicable,
+  isKyaOsControlArg,
+  HOLDER_BINDING_ERROR,
+  type AssertHolderBindingInput,
+  type GenerateRequestProofInput,
+  type HolderBindingResult,
+  type HolderBindingStatus,
+} from './delegation/holder-binding.js';
+
 export { MemoryStatusListStorage } from './delegation/storage/memory-statuslist-storage.js';
 
 export { MemoryDelegationGraphStorage } from './delegation/storage/memory-graph-storage.js';

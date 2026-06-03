@@ -42,9 +42,12 @@ beforeAll(async () => {
 
   // Launch via `node --import tsx` rather than `npx tsx`: process.execPath is an
   // absolute path to the current node, so there is no PATH / `npx.cmd` shell
-  // quirk on Windows, and tsx (a devDependency) resolves locally instead of
-  // being network-fetched on first run.
+  // quirk on Windows. `cwd` is pinned to the example so `--import tsx` resolves
+  // tsx from this package's own node_modules — Node resolves `--import` against
+  // the working directory, which under the root test run is the repo root (where
+  // tsx is not installed), not this example.
   proc = spawn(process.execPath, ['--import', 'tsx', join(here, '..', 'src', 'http.ts')], {
+    cwd: join(here, '..'),
     stdio: ['ignore', 'inherit', 'pipe'],
     env: { ...process.env, PORT: String(PORT) },
   });

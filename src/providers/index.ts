@@ -15,6 +15,7 @@ export {
 } from './memory.js';
 
 export { NodeCryptoProvider } from './node-crypto.js';
+export { WebCryptoProvider } from './web-crypto.js';
 export { SystemClockProvider } from './system-clock.js';
 export { RuntimeFetchProvider } from './runtime-fetch.js';
 

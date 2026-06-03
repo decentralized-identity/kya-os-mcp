@@ -270,6 +270,12 @@ shipped runtime providers. Additive over 1.3.x except where noted under
 
 ### Changed
 
+- **Schema `$id` and JSON-LD `@context` hosts migrated** to the DIF-registered
+  `schema.kya-os.org`. All five shipped JSON Schemas (`schemas/*.json`), the
+  spec's context references, and the `DELEGATION_CREDENTIAL_CONTEXT` constant
+  now resolve under `schema.kya-os.org`; the prior `schema.kya-os.ai` host
+  continues to serve the same documents during the migration window (no `$id`
+  is 301-redirected).
 - **Schema `$id` and JSON-LD `@context` hosts migrated** off the
   `modelcontextprotocol-identity.io` trademark domain to the foundation-owned
   `schema.kya-os.ai`. All five shipped JSON Schemas (`schemas/*.json`), the

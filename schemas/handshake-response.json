@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schema.kya-os.ai/v1/protocol/handshake/response/v1.0.0",
+  "$id": "https://schema.kya-os.org/v1/protocol/handshake/response/v1.0.0",
   "title": "KYA-OS Handshake Response",
   "description": "Server response to a successful handshake request, establishing session context.",
   "type": "object",

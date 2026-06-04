@@ -147,7 +147,10 @@ KYA-OS implementations MUST support:
 | `did:key` | Ephemeral agents, development, testing | Local derivation from public key bytes |
 | `did:web` | Production servers, organizational identity | HTTPS fetch of `/.well-known/did.json` or path-based document |
 
-Implementations MAY support additional DID methods.
+Implementations MAY support additional DID methods. `did:cheqd` support, when
+implemented, MUST be additive: it MUST NOT replace or weaken existing `did:key`
+or `did:web` behavior, and it MUST NOT make cheqd resolution mandatory for
+deployments that have not configured it.
 
 ### 4.2 Key Material
 
@@ -221,6 +224,81 @@ The DID Document MUST contain at least one verification method with `publicKeyJw
   "assertionMethod": ["did:web:example.com#key-1"]
 }
 ```
+
+### 4.4.1 Optional did:cheqd Resolution and Registrar Writes
+
+A KYA-OS implementation MAY support `did:cheqd` as an additional resolvable DID
+method. `did:cheqd` resolution MUST be explicit opt-in through a configured
+resolver endpoint, such as `https://resolver.cheqd.net/1.0/identifiers/{did}`.
+Resolution failures MUST fail closed and MUST NOT fall back to accepting an
+unresolved key.
+
+Resolvers SHOULD accept both raw DID Documents and Universal Resolver-style DID
+Resolution Results containing `didDocument`. They MUST reject malformed
+`did:cheqd` values, HTTP or transport failures, invalid JSON, malformed DID
+Documents, and DID Document `id` mismatches by returning no document.
+
+KYA-OS deployments that expose cheqd support SHOULD use a configuration shape
+equivalent to:
+
+```ts
+cheqd?: {
+  resolverUrl?: string;
+  registrarUrl?: string;
+  headers?: Record<string, string> | (() => Promise<Record<string, string>>);
+  cacheTtl?: number;
+}
+```
+
+`registrarUrl` is for explicit operator/admin write flows only. Runtime proof
+generation and normal MCP tool-call handling MUST NOT create, update, or publish
+cheqd ledger entries.
+
+Updates to cheqd DID Documents and DID-Linked Resources SHOULD use cheqd DID
+Registrar's client-managed-secret flow for `/create`, `/update`, and
+`/{did}/create-resource`: the registrar returns a `jobId` and serialized
+payload, the controller signs the serialized payload locally, then the client
+submits `secret.signingResponse` back to the registrar. Secret keys MUST NOT be
+transmitted to the registrar. Signing MAY be delegated to a KMS/HSM-backed
+signer hook. Local Ed25519 helpers MUST keep key material inside the caller's
+trust boundary and send only signatures to the registrar.
+
+Mainnet deployments SHOULD run or contract against their own fee-payer
+registrar deployment. Public or staging registrar endpoints SHOULD be treated as
+testnet-only unless the operator has an explicit mainnet service agreement.
+
+When linking an existing `did:web` identity to a `did:cheqd` identity, verifiers
+SHOULD require bidirectional `alsoKnownAs` linkage:
+
+1. Resolve the `did:web` DID Document.
+2. Resolve the `did:cheqd` DID Document.
+3. Confirm the `did:web` document lists the `did:cheqd` DID in `alsoKnownAs`.
+4. Confirm the `did:cheqd` document lists the `did:web` DID in `alsoKnownAs`.
+
+`did:web` remains canonical unless an operator explicitly publishes reciprocal
+linkage. `alsoKnownAs` values on DID Documents MUST be strings. Resource metadata
+aliases, where supported by a registrar, use a different resource-specific shape
+and MUST NOT be accepted as DID Document `alsoKnownAs` entries.
+
+Selected durable artifacts MAY be anchored as cheqd DID-Linked Resources under
+the `did:cheqd` subject. Supported KYA-OS DLR artifact categories are:
+
+| Artifact | Purpose |
+|----------|---------|
+| `CapabilityManifest` | Durable description of agent/tool capabilities and outputs |
+| `ConformanceManifest` | Durable statement of protocol profiles and checks satisfied |
+| `AccessHashManifest` | Durable hashes of off-chain policy/access artifacts |
+| `TrustConfigManifest` | Durable trust policy, accepted DID methods, and linkage requirements |
+
+DLR content SHOULD be canonicalized before hashing, and content hashes SHOULD
+use `sha256:<64 lowercase hex characters>`. Updating a DLR means publishing a
+new resource version in the same resource collection/name/type; prior content is
+not overwritten. High-volume runtime events, raw operational logs, normal
+tool-call proofs, and frequently changing metadata MUST remain off-chain.
+
+Out of scope for this specification section: external registry changes,
+reputation VC snapshot publication, status-list backend hosting, KYC/KYB
+issuance, and replacing `did:web` as the canonical identity.
 
 ### 4.5 Agent-Controlled Key Generation
 
@@ -959,7 +1037,7 @@ KYA-OS servers SHOULD expose `/.well-known/mcp`:
     "proof": true,
     "revocation": true
   },
-  "supported_did_methods": ["did:key", "did:web"],
+  "supported_did_methods": ["did:key", "did:web", "did:cheqd"],
   "proof_algorithms": ["EdDSA"],
   "clockSkewSeconds": 120,
   "endpoints": {
@@ -968,6 +1046,9 @@ KYA-OS servers SHOULD expose `/.well-known/mcp`:
   }
 }
 ```
+
+Servers SHOULD list `did:cheqd` only when cheqd resolution has been explicitly
+configured for that deployment.
 
 ### 10.1 Clock Skew Negotiation
 

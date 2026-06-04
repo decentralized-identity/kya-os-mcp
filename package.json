@@ -51,6 +51,10 @@
       "types": "./dist/authz/index.d.ts",
       "default": "./dist/authz/index.js"
     },
+    "./cheqd": {
+      "types": "./dist/cheqd/index.d.ts",
+      "default": "./dist/cheqd/index.js"
+    },
     "./schemas/*.json": "./schemas/*.json",
     "./package.json": "./package.json"
   },
@@ -64,6 +68,7 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
+    "test:e2e:cheqd:testnet": "vitest run src/cheqd/__tests__/registrar.live.test.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
@@ -78,7 +83,8 @@
     "example:authz-inspector": "npx @modelcontextprotocol/inspector npx tsx examples/authz-inspector/src/stdio.ts",
     "example:authz-inspector:http": "npx tsx examples/authz-inspector/src/inspector-http.ts",
     "example:authz-inspector:http:server": "npx tsx examples/authz-inspector/src/http.ts",
-    "example:authz-inspector:stdio:server": "npx tsx examples/authz-inspector/src/stdio.ts"
+    "example:authz-inspector:stdio:server": "npx tsx examples/authz-inspector/src/stdio.ts",
+    "example:cheqd-dlr": "npx tsx examples/cheqd-dlr/operator-flow.ts"
   },
   "dependencies": {
     "jose": "^5.6.3",

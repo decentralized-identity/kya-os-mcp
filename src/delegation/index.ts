@@ -33,5 +33,23 @@ export {
   didWebToUrl,
   buildDidWebDocument,
 } from './did-web-resolver.js';
+export {
+  DidCheqdResolver,
+  createDidCheqdResolver,
+  didCheqdToResolverUrl,
+  isDidCheqd,
+  parseDidCheqd,
+  type DidCheqdNetwork,
+  type DidCheqdResolverOptions,
+  type ParsedDidCheqd,
+} from './did-cheqd-resolver.js';
+export {
+  updateCheqdAlsoKnownAs,
+  verifyDidLinkage,
+  type DidLinkageVerificationResult,
+  type UpdateCheqdAlsoKnownAsOptions,
+  type UpdateCheqdAlsoKnownAsResult,
+  type VerifyDidLinkageOptions,
+} from './did-linkage.js';
 export { MemoryStatusListStorage } from './storage/memory-statuslist-storage.js';
 export { MemoryDelegationGraphStorage } from './storage/memory-graph-storage.js';

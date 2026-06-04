@@ -295,6 +295,12 @@ export interface BuildDidWebDocumentOptions {
    * service contexts the controller publishes alongside its keys.
    */
   additionalContexts?: readonly string[];
+  /**
+   * Related DIDs intentionally associated with this `did:web` subject.
+   * For `did:cheqd` linkage, publish the cheqd DID here and verify the
+   * reciprocal reference on the cheqd DID Document.
+   */
+  alsoKnownAs?: readonly string[];
 }
 
 /**
@@ -370,6 +376,7 @@ export function buildDidWebDocument(
   return {
     '@context': contexts,
     id: identity.did,
+    ...(options?.alsoKnownAs?.length ? { alsoKnownAs: [...options.alsoKnownAs] } : {}),
     verificationMethod: [verificationMethod],
     authentication: [identity.kid],
     assertionMethod: [identity.kid],

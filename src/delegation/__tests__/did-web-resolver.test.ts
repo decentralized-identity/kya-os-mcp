@@ -489,6 +489,15 @@ describe('buildDidWebDocument', () => {
       ]);
     });
 
+    it('can publish alsoKnownAs linkage entries', () => {
+      const { identity } = buildIdentity('did:web:example.com');
+      const cheqdDid = 'did:cheqd:testnet:11111111-1111-4111-8111-111111111111';
+
+      const doc = buildDidWebDocument(identity, { alsoKnownAs: [cheqdDid] });
+
+      expect(doc.alsoKnownAs).toEqual([cheqdDid]);
+    });
+
     it('emits a single Ed25519VerificationKey2020 method controlled by the DID', () => {
       const { identity } = buildIdentity('did:web:example.com:agents:bot1');
 

@@ -57,6 +57,7 @@ import {
   getDelegationScopes,
   type RevocationChecker,
 } from "../delegation/chain-enforcement.js";
+import { createDidCheqdResolver } from "../delegation/did-cheqd-resolver.js";
 import {
   createNeedsAuthorizationError,
   createNeedsApprovalError,
@@ -96,6 +97,17 @@ export interface KyaOsDelegationConfig {
    * If omitted, middleware falls back to the runtime global fetch when available.
    */
   fetchProvider?: FetchProvider;
+  /**
+   * Optional cheqd resolver / registrar configuration. Resolver support is
+   * additive and opt-in; registrar writes are exposed through the cheqd helpers,
+   * not invoked by runtime proof generation.
+   */
+  cheqd?: {
+    resolverUrl?: string;
+    registrarUrl?: string;
+    headers?: Record<string, string> | (() => Promise<Record<string, string>>);
+    cacheTtl?: number;
+  };
   /**
    * Resolver for StatusList2021 checks. Credentials with credentialStatus are
    * rejected when no resolver is configured.
@@ -820,6 +832,18 @@ export function createKyaOsMiddleware(
     const didWebResolver = fetchProvider
       ? createDidWebResolver(fetchProvider)
       : undefined;
+    const didCheqdResolver =
+      fetchProvider && delegationConfig?.cheqd?.resolverUrl
+        ? createDidCheqdResolver(fetchProvider, {
+            resolverUrl: delegationConfig.cheqd.resolverUrl,
+            ...(delegationConfig.cheqd.cacheTtl !== undefined
+              ? { cacheTtl: delegationConfig.cheqd.cacheTtl }
+              : {}),
+            ...(delegationConfig.cheqd.headers !== undefined
+              ? { headers: delegationConfig.cheqd.headers }
+              : {}),
+          })
+        : undefined;
     const didResolver: DIDResolver = {
       async resolve(did: string) {
         const customResolver = delegationConfig?.didResolver;
@@ -836,6 +860,10 @@ export function createKyaOsMiddleware(
 
         if (did.startsWith("did:web:")) {
           return didWebResolver?.resolve(did) ?? null;
+        }
+
+        if (did.startsWith("did:cheqd:")) {
+          return didCheqdResolver?.resolve(did) ?? null;
         }
 
         return null;

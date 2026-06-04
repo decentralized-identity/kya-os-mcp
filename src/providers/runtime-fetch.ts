@@ -37,6 +37,10 @@ import {
   isDidWeb,
   didWebToUrl,
 } from "../delegation/did-web-resolver.js";
+import {
+  createDidCheqdResolver,
+  isDidCheqd,
+} from "../delegation/did-cheqd-resolver.js";
 import type { DIDDocument } from "../delegation/vc-verifier.js";
 import type {
   StatusList2021Credential,
@@ -50,17 +54,31 @@ export interface RuntimeFetchProviderOptions {
    * trusted internal deployments.
    */
   allowPrivateNetworkHosts?: boolean;
+  /**
+   * Optional cheqd resolver base URL. When supplied, `resolveDID` can resolve
+   * did:cheqd documents through `${cheqdResolverUrl}/1.0/identifiers/{did}`.
+   */
+  cheqdResolverUrl?: string;
+  cheqdCacheTtl?: number;
+  cheqdHeaders?: Record<string, string> | (() => Promise<Record<string, string>>);
 }
 
 export class RuntimeFetchProvider extends FetchProvider {
   private readonly didKeyResolver = createDidKeyResolver();
   private didWebResolver: ReturnType<typeof createDidWebResolver> | undefined;
+  private didCheqdResolver: ReturnType<typeof createDidCheqdResolver> | undefined;
   private readonly allowPrivateNetworkHosts: boolean;
+  private readonly cheqdResolverUrl?: string;
+  private readonly cheqdCacheTtl?: number;
+  private readonly cheqdHeaders?: Record<string, string> | (() => Promise<Record<string, string>>);
 
   constructor(options?: RuntimeFetchProviderOptions) {
     super();
     this.allowPrivateNetworkHosts =
       options?.allowPrivateNetworkHosts ?? false;
+    this.cheqdResolverUrl = options?.cheqdResolverUrl;
+    this.cheqdCacheTtl = options?.cheqdCacheTtl;
+    this.cheqdHeaders = options?.cheqdHeaders;
   }
 
   /**
@@ -83,6 +101,16 @@ export class RuntimeFetchProvider extends FetchProvider {
         this.didWebResolver = createDidWebResolver(this);
       }
       return this.didWebResolver.resolve(did);
+    }
+    if (isDidCheqd(did) && this.cheqdResolverUrl) {
+      if (!this.didCheqdResolver) {
+        this.didCheqdResolver = createDidCheqdResolver(this, {
+          resolverUrl: this.cheqdResolverUrl,
+          ...(this.cheqdCacheTtl !== undefined ? { cacheTtl: this.cheqdCacheTtl } : {}),
+          ...(this.cheqdHeaders !== undefined ? { headers: this.cheqdHeaders } : {}),
+        });
+      }
+      return this.didCheqdResolver.resolve(did);
     }
     return null;
   }

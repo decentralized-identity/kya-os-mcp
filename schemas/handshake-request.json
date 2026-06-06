@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schema.kya-os.ai/v1/protocol/handshake/request/v1.0.0",
+  "$id": "https://schema.kya-os.org/v1/protocol/handshake/request/v1.0.0",
   "title": "KYA-OS Handshake Request",
   "description": "Client-initiated handshake request to establish a KYA-OS session with nonce-based replay protection.",
   "type": "object",

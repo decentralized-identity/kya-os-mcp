@@ -4,8 +4,8 @@ import {
   createLocalEd25519CheqdRegistrarSigner,
   type CheqdRegistrarSigner,
 } from '../registrar.js';
-import type { FetchProvider } from '../../providers/base.js';
-import type { DIDDocument } from '../../delegation/vc-verifier.js';
+import type { FetchProvider } from '../../../providers/base.js';
+import type { DIDDocument } from '../../../delegation/vc-verifier.js';
 
 function queuedFetchProvider(responses: Response[]): {
   provider: FetchProvider;

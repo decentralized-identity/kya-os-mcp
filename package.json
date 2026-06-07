@@ -52,8 +52,8 @@
       "default": "./dist/authz/index.js"
     },
     "./cheqd": {
-      "types": "./dist/cheqd/index.d.ts",
-      "default": "./dist/cheqd/index.js"
+      "types": "./dist/integrations/cheqd/index.d.ts",
+      "default": "./dist/integrations/cheqd/index.js"
     },
     "./schemas/*.json": "./schemas/*.json",
     "./package.json": "./package.json"
@@ -68,7 +68,7 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
-    "test:e2e:cheqd:testnet": "vitest run src/cheqd/__tests__/registrar.live.test.ts",
+    "test:e2e:cheqd:testnet": "vitest run src/integrations/cheqd/__tests__/registrar.live.test.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",

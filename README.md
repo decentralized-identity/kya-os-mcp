@@ -152,25 +152,29 @@ identifier while linking to a cheqd DID over time.
 
 ```typescript
 import { RuntimeFetchProvider, withKyaOs, NodeCryptoProvider } from '@kya-os/mcp';
+import { cheqdResolver } from '@kya-os/mcp/cheqd';
 
 const crypto = new NodeCryptoProvider();
-const fetchProvider = new RuntimeFetchProvider({
-  cheqdResolverUrl: 'https://resolver.cheqd.net',
-});
+const fetchProvider = new RuntimeFetchProvider();
+const didResolvers = {
+  cheqd: cheqdResolver({ resolverUrl: 'https://resolver.cheqd.net' }),
+};
 
 await withKyaOs(server, {
   crypto,
   delegation: {
     fetchProvider,
-    cheqd: {
-      resolverUrl: 'https://resolver.cheqd.net',
-      registrarUrl: 'https://your-registrar.example',
-    },
+    didResolvers,
   },
 });
 ```
 
-`did:cheqd` is resolved only when a cheqd resolver URL is explicitly supplied.
+`did:cheqd` is resolved only when a resolver for the `cheqd` DID method is
+explicitly supplied. The core middleware and fetch provider use the generic
+`didResolvers` registry; cheqd-specific URL/cache/header options live in the
+`cheqdResolver()` factory from `@kya-os/mcp/cheqd`.
+`RuntimeFetchProvider` accepts the same registry when it is used directly by a
+standalone verifier or operator script.
 Unsupported methods, malformed DIDs, fetch failures, invalid JSON, malformed DID
 Documents, and DID id mismatches fail closed by returning `null`. The resolver
 accepts both raw DID Documents and Universal Resolver-style DID Resolution
@@ -188,6 +192,8 @@ signature is submitted back. Private keys are not sent to the registrar.
 import {
   CheqdDidRegistrarClient,
   createLocalEd25519CheqdRegistrarSigner,
+} from '@kya-os/mcp/cheqd';
+import {
   NodeCryptoProvider,
 } from '@kya-os/mcp';
 
@@ -224,7 +230,8 @@ can include the `did:cheqd` reference on the `did:web` side, while
 `updateCheqdAlsoKnownAs()` updates the cheqd side through the registrar.
 
 ```typescript
-import { updateCheqdAlsoKnownAs, verifyDidLinkage } from '@kya-os/mcp';
+import { verifyDidLinkage } from '@kya-os/mcp';
+import { updateCheqdAlsoKnownAs } from '@kya-os/mcp/cheqd';
 
 await updateCheqdAlsoKnownAs({
   didWeb: 'did:web:agent.example.com',
@@ -262,7 +269,7 @@ normal runtime proof events to cheqd; keep those in your normal audit/hash
 stores.
 
 ```typescript
-import { prepareCheqdDlrResource } from '@kya-os/mcp';
+import { prepareCheqdDlrResource } from '@kya-os/mcp/cheqd';
 
 const prepared = await prepareCheqdDlrResource({
   type: 'TrustConfigManifest',

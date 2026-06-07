@@ -6,9 +6,11 @@
  * (`{ didDocument: ... }`) and raw DID Documents.
  */
 
-import type { FetchProvider } from '../providers/base.js';
-import type { DIDDocument, DIDResolver, VerificationMethod } from './vc-verifier.js';
-import { logger } from '../logging/index.js';
+import type { FetchProvider } from '../../providers/base.js';
+import type { DIDResolverFactory } from '../../delegation/did-resolver-registry.js';
+import type { DIDDocument, DIDResolver, VerificationMethod } from '../../delegation/vc-verifier.js';
+import { logger } from '../../logging/index.js';
+import { isRecord, stripTrailingSlashes } from '../../utils/index.js';
 
 export type DidCheqdNetwork = 'mainnet' | 'testnet';
 
@@ -143,8 +145,12 @@ export function createDidCheqdResolver(
   return new DidCheqdResolver(fetchProvider, options);
 }
 
+export function cheqdResolver(options: DidCheqdResolverOptions): DIDResolverFactory {
+  return (fetchProvider) => createDidCheqdResolver(fetchProvider, options);
+}
+
 export function didCheqdToResolverUrl(did: string, resolverUrl: string): string {
-  const base = resolverUrl.replace(/\/+$/, '');
+  const base = stripTrailingSlashes(resolverUrl);
   if (base.includes('{did}')) {
     return base.replace('{did}', did);
   }
@@ -204,8 +210,4 @@ function isValidVerificationMethod(value: unknown): value is VerificationMethod 
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }

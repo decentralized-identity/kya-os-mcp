@@ -6,12 +6,13 @@ import {
   type CheqdRegistrarResult,
 } from '../registrar.js';
 import { prepareCheqdDlrResource, type CheqdDlrArtifact } from '../dlr.js';
-import { createDidCheqdResolver } from '../../delegation/did-cheqd-resolver.js';
-import { updateCheqdAlsoKnownAs } from '../../delegation/did-linkage.js';
-import type { DIDDocument } from '../../delegation/vc-verifier.js';
-import type { FetchProvider } from '../../providers/base.js';
-import { NodeCryptoProvider } from '../../providers/node-crypto.js';
-import { generateDidKeyFromBase64 } from '../../utils/did-helpers.js';
+import { createDidCheqdResolver } from '../resolver.js';
+import { updateCheqdAlsoKnownAs } from '../linkage.js';
+import type { DIDDocument } from '../../../delegation/vc-verifier.js';
+import type { FetchProvider } from '../../../providers/base.js';
+import { NodeCryptoProvider } from '../../../providers/node-crypto.js';
+import { generateDidKeyFromBase64 } from '../../../utils/did-helpers.js';
+import { isRecord } from '../../../utils/index.js';
 
 const LIVE_E2E_ENABLED = process.env['KYA_OS_CHEQD_E2E'] === '1';
 const TESTNET_REGISTRAR_URL =
@@ -382,8 +383,4 @@ function findStringByKey(value: unknown, key: string): string | undefined {
   }
 
   return undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }

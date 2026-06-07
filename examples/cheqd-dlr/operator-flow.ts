@@ -1,14 +1,16 @@
 #!/usr/bin/env npx tsx
 import {
-  CheqdDidRegistrarClient,
   RuntimeFetchProvider,
   NodeCryptoProvider,
-  createDidCheqdResolver,
+} from '@kya-os/mcp';
+import {
+  CheqdDidRegistrarClient,
+  cheqdResolver,
   createLocalEd25519CheqdRegistrarSigner,
   prepareCheqdDlrResource,
   updateCheqdAlsoKnownAs,
   type CheqdDlrArtifact,
-} from '@kya-os/mcp';
+} from '@kya-os/mcp/cheqd';
 
 const did = requiredEnv('CHEQD_DID');
 const didWeb = requiredEnv('CHEQD_DID_WEB');
@@ -20,12 +22,11 @@ const resolverUrl = process.env['CHEQD_RESOLVER_URL'] ?? 'https://resolver.cheqd
 
 const cryptoProvider = new NodeCryptoProvider();
 const fetchProvider = new RuntimeFetchProvider({
-  cheqdResolverUrl: resolverUrl,
+  didResolvers: {
+    cheqd: cheqdResolver({ resolverUrl }),
+  },
 });
-const resolver = createDidCheqdResolver(fetchProvider, {
-  resolverUrl,
-  cacheTtl: 0,
-});
+const resolver = { resolve: (value: string) => fetchProvider.resolveDID(value) };
 const registrar = new CheqdDidRegistrarClient({
   registrarUrl,
   fetchProvider,

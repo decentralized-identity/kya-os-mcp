@@ -24,6 +24,7 @@ import {
 } from '../../__tests__/audit/helpers/crypto-helpers.js';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
 import { RuntimeFetchProvider } from '../../providers/runtime-fetch.js';
+import { cheqdResolver } from '../../integrations/cheqd/index.js';
 
 describe('ProofVerifier (real crypto)', () => {
   let crypto: NodeCryptoProvider;
@@ -396,7 +397,9 @@ describe('ProofVerifier (real crypto)', () => {
       clockProvider: new RealClockProvider(),
       nonceCacheProvider: new MemoryNonceCacheProvider(),
       fetchProvider: new RuntimeFetchProvider({
-        cheqdResolverUrl: 'https://resolver.cheqd.net',
+        didResolvers: {
+          cheqd: cheqdResolver({ resolverUrl: 'https://resolver.cheqd.net' }),
+        },
       }),
       timestampSkewSeconds: 300,
     });

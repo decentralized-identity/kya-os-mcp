@@ -4,7 +4,7 @@ import {
   prepareCheqdDlrResource,
   validateCheqdDlrArtifact,
 } from '../dlr.js';
-import type { CryptoProvider } from '../../providers/base.js';
+import type { CryptoProvider } from '../../../providers/base.js';
 
 const cryptoProvider: CryptoProvider = {
   sign: vi.fn(),

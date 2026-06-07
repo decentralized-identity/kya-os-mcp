@@ -38,9 +38,10 @@ import {
   didWebToUrl,
 } from "../delegation/did-web-resolver.js";
 import {
-  createDidCheqdResolver,
-  isDidCheqd,
-} from "../delegation/did-cheqd-resolver.js";
+  buildDidResolverRegistry,
+  type DIDResolverRegistry,
+} from "../delegation/did-resolver-registry.js";
+import { getDidMethod } from "../utils/did-helpers.js";
 import type { DIDDocument } from "../delegation/vc-verifier.js";
 import type {
   StatusList2021Credential,
@@ -55,30 +56,24 @@ export interface RuntimeFetchProviderOptions {
    */
   allowPrivateNetworkHosts?: boolean;
   /**
-   * Optional cheqd resolver base URL. When supplied, `resolveDID` can resolve
-   * did:cheqd documents through `${cheqdResolverUrl}/1.0/identifiers/{did}`.
+   * Optional DID method resolver registry. Entries dispatch by DID method before
+   * built-in did:key and did:web fallback. A factory receives this fetch provider
+   * so network-backed resolvers can share the same fetch implementation.
    */
-  cheqdResolverUrl?: string;
-  cheqdCacheTtl?: number;
-  cheqdHeaders?: Record<string, string> | (() => Promise<Record<string, string>>);
+  didResolvers?: DIDResolverRegistry;
 }
 
 export class RuntimeFetchProvider extends FetchProvider {
   private readonly didKeyResolver = createDidKeyResolver();
   private didWebResolver: ReturnType<typeof createDidWebResolver> | undefined;
-  private didCheqdResolver: ReturnType<typeof createDidCheqdResolver> | undefined;
+  private readonly didResolvers: Record<string, { resolve(did: string): Promise<DIDDocument | null> }>;
   private readonly allowPrivateNetworkHosts: boolean;
-  private readonly cheqdResolverUrl?: string;
-  private readonly cheqdCacheTtl?: number;
-  private readonly cheqdHeaders?: Record<string, string> | (() => Promise<Record<string, string>>);
 
   constructor(options?: RuntimeFetchProviderOptions) {
     super();
     this.allowPrivateNetworkHosts =
       options?.allowPrivateNetworkHosts ?? false;
-    this.cheqdResolverUrl = options?.cheqdResolverUrl;
-    this.cheqdCacheTtl = options?.cheqdCacheTtl;
-    this.cheqdHeaders = options?.cheqdHeaders;
+    this.didResolvers = buildDidResolverRegistry(options?.didResolvers, this);
   }
 
   /**
@@ -88,6 +83,19 @@ export class RuntimeFetchProvider extends FetchProvider {
    * resolution failure (never throws).
    */
   async resolveDID(did: string): Promise<DIDDocument | null> {
+    const method = getDidMethod(did);
+    const configuredResolver = method ? this.didResolvers[method] : undefined;
+    if (configuredResolver) {
+      try {
+        const resolved = await configuredResolver.resolve(did);
+        if (resolved) {
+          return resolved;
+        }
+      } catch {
+        return null;
+      }
+    }
+
     if (did.startsWith("did:key:")) {
       return this.didKeyResolver.resolve(did);
     }
@@ -101,16 +109,6 @@ export class RuntimeFetchProvider extends FetchProvider {
         this.didWebResolver = createDidWebResolver(this);
       }
       return this.didWebResolver.resolve(did);
-    }
-    if (isDidCheqd(did) && this.cheqdResolverUrl) {
-      if (!this.didCheqdResolver) {
-        this.didCheqdResolver = createDidCheqdResolver(this, {
-          resolverUrl: this.cheqdResolverUrl,
-          ...(this.cheqdCacheTtl !== undefined ? { cacheTtl: this.cheqdCacheTtl } : {}),
-          ...(this.cheqdHeaders !== undefined ? { headers: this.cheqdHeaders } : {}),
-        });
-      }
-      return this.didCheqdResolver.resolve(did);
     }
     return null;
   }

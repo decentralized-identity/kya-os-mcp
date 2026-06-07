@@ -1,6 +1,7 @@
-import type { CryptoProvider, FetchProvider } from '../providers/base.js';
-import type { DIDDocument } from '../delegation/vc-verifier.js';
-import { base64ToBytes, base64urlEncodeFromBytes, bytesToBase64 } from '../utils/base64.js';
+import type { CryptoProvider, FetchProvider } from '../../providers/base.js';
+import type { DIDDocument } from '../../delegation/vc-verifier.js';
+import { base64ToBytes, base64urlEncodeFromBytes, bytesToBase64 } from '../../utils/base64.js';
+import { isRecord, stripTrailingSlashes } from '../../utils/index.js';
 
 export type CheqdRegistrarOperation = 'create' | 'update' | 'create-resource';
 
@@ -101,7 +102,7 @@ export class CheqdDidRegistrarClient {
   private readonly headers?: Record<string, string> | (() => Promise<Record<string, string>>);
 
   constructor(options: CheqdRegistrarClientOptions) {
-    this.registrarUrl = options.registrarUrl.replace(/\/+$/, '');
+    this.registrarUrl = stripTrailingSlashes(options.registrarUrl);
     this.fetchProvider = options.fetchProvider;
     this.headers = options.headers;
   }
@@ -480,8 +481,4 @@ function inferVerificationMethodId(value: unknown): string | undefined {
 function isFinished(value: unknown): boolean {
   const state = findStringByKey(value, 'state');
   return state === 'finished';
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }

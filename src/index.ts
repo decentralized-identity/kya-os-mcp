@@ -192,49 +192,17 @@ export {
 } from './delegation/did-web-resolver.js';
 
 export {
-  DidCheqdResolver,
-  createDidCheqdResolver,
-  didCheqdToResolverUrl,
-  isDidCheqd,
-  parseDidCheqd,
-  type DidCheqdNetwork,
-  type DidCheqdResolverOptions,
-  type ParsedDidCheqd,
-} from './delegation/did-cheqd-resolver.js';
-
-export {
-  updateCheqdAlsoKnownAs,
   verifyDidLinkage,
   type DidLinkageVerificationResult,
-  type UpdateCheqdAlsoKnownAsOptions,
-  type UpdateCheqdAlsoKnownAsResult,
   type VerifyDidLinkageOptions,
 } from './delegation/did-linkage.js';
 
 export {
-  CheqdDidRegistrarClient,
-  CHEQD_DLR_ARTIFACT_TYPES,
-  buildCheqdDlrReference,
-  createLocalEd25519CheqdRegistrarSigner,
-  isSupportedCheqdDlrArtifactType,
-  prepareCheqdDlrResource,
-  validateCheqdDlrArtifact,
-  type CheqdCreateResourceBody,
-  type CheqdDlrArtifact,
-  type CheqdDlrArtifactType,
-  type CheqdDlrReference,
-  type CheqdRegistrarClientOptions,
-  type CheqdRegistrarOperation,
-  type CheqdRegistrarResult,
-  type CheqdRegistrarSigner,
-  type CheqdRegistrarSigningRequest,
-  type CheqdRegistrarSigningResponse,
-  type CreateCheqdDidOptions,
-  type CreateCheqdResourceOptions,
-  type LocalCheqdRegistrarSignerOptions,
-  type PreparedCheqdDlrResource,
-  type UpdateCheqdDidOptions,
-} from './cheqd/index.js';
+  buildDidResolverRegistry,
+  type DIDResolverFactory,
+  type DIDResolverRegistry,
+  type DIDResolverRegistryEntry,
+} from './delegation/did-resolver-registry.js';
 
 // Utils
 export {

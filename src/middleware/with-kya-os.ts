@@ -53,11 +53,15 @@ import { MemoryNonceCacheProvider } from "../providers/memory.js";
 import { scopeSatisfies } from "../delegation/scope-matcher.js";
 import { createDidWebResolver } from "../delegation/did-web-resolver.js";
 import {
+  buildDidResolverRegistry,
+  type DIDResolverRegistry,
+} from "../delegation/did-resolver-registry.js";
+import { getDidMethod } from "../utils/did-helpers.js";
+import {
   validateDelegationChain as validateDelegationChainCore,
   getDelegationScopes,
   type RevocationChecker,
 } from "../delegation/chain-enforcement.js";
-import { createDidCheqdResolver } from "../delegation/did-cheqd-resolver.js";
 import {
   createNeedsAuthorizationError,
   createNeedsApprovalError,
@@ -98,16 +102,11 @@ export interface KyaOsDelegationConfig {
    */
   fetchProvider?: FetchProvider;
   /**
-   * Optional cheqd resolver / registrar configuration. Resolver support is
-   * additive and opt-in; registrar writes are exposed through the cheqd helpers,
-   * not invoked by runtime proof generation.
+   * Optional DID method resolver registry. Entries are keyed by DID method
+   * (for example, "cheqd") and are checked before the built-in did:key and
+   * did:web fallback. Factory entries receive the active fetch provider.
    */
-  cheqd?: {
-    resolverUrl?: string;
-    registrarUrl?: string;
-    headers?: Record<string, string> | (() => Promise<Record<string, string>>);
-    cacheTtl?: number;
-  };
+  didResolvers?: DIDResolverRegistry;
   /**
    * Resolver for StatusList2021 checks. Credentials with credentialStatus are
    * rejected when no resolver is configured.
@@ -832,18 +831,10 @@ export function createKyaOsMiddleware(
     const didWebResolver = fetchProvider
       ? createDidWebResolver(fetchProvider)
       : undefined;
-    const didCheqdResolver =
-      fetchProvider && delegationConfig?.cheqd?.resolverUrl
-        ? createDidCheqdResolver(fetchProvider, {
-            resolverUrl: delegationConfig.cheqd.resolverUrl,
-            ...(delegationConfig.cheqd.cacheTtl !== undefined
-              ? { cacheTtl: delegationConfig.cheqd.cacheTtl }
-              : {}),
-            ...(delegationConfig.cheqd.headers !== undefined
-              ? { headers: delegationConfig.cheqd.headers }
-              : {}),
-          })
-        : undefined;
+    const configuredDidResolvers = buildDidResolverRegistry(
+      delegationConfig?.didResolvers,
+      fetchProvider,
+    );
     const didResolver: DIDResolver = {
       async resolve(did: string) {
         const customResolver = delegationConfig?.didResolver;
@@ -854,16 +845,25 @@ export function createKyaOsMiddleware(
           }
         }
 
+        const method = getDidMethod(did);
+        const configuredResolver = method ? configuredDidResolvers[method] : undefined;
+        if (configuredResolver) {
+          try {
+            const resolved = await configuredResolver.resolve(did);
+            if (resolved) {
+              return resolved;
+            }
+          } catch {
+            return null;
+          }
+        }
+
         if (did.startsWith("did:key:")) {
           return didKeyResolver.resolve(did);
         }
 
         if (did.startsWith("did:web:")) {
           return didWebResolver?.resolve(did) ?? null;
-        }
-
-        if (did.startsWith("did:cheqd:")) {
-          return didCheqdResolver?.resolve(did) ?? null;
         }
 
         return null;

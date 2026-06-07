@@ -1,9 +1,5 @@
 import type { DIDDocument } from './vc-verifier.js';
-import type {
-  CheqdDidRegistrarClient,
-  CheqdRegistrarResult,
-  CheqdRegistrarSigner,
-} from '../cheqd/registrar.js';
+import { isRecord } from '../utils/index.js';
 
 export interface VerifyDidLinkageOptions {
   primaryDid: string;
@@ -22,22 +18,6 @@ export interface DidLinkageVerificationResult {
     primaryDocumentMatches: boolean;
     secondaryDocumentMatches: boolean;
   };
-}
-
-export interface UpdateCheqdAlsoKnownAsOptions {
-  didWeb: string;
-  didCheqd: string;
-  resolver: { resolve(did: string): Promise<DIDDocument | null> };
-  registrar: CheqdDidRegistrarClient;
-  signer: CheqdRegistrarSigner;
-  verificationMethodId?: string;
-}
-
-export interface UpdateCheqdAlsoKnownAsResult {
-  changed: boolean;
-  didDocument?: DIDDocument;
-  registrarResult?: CheqdRegistrarResult;
-  reason?: string;
 }
 
 export function verifyDidLinkage(
@@ -86,63 +66,24 @@ export function verifyDidLinkage(
   return { valid: true, checks };
 }
 
-export async function updateCheqdAlsoKnownAs(
-  options: UpdateCheqdAlsoKnownAsOptions,
-): Promise<UpdateCheqdAlsoKnownAsResult> {
-  const didCheqd = normalizeDid(options.didCheqd);
-  const didWeb = normalizeDid(options.didWeb);
-  const didDocument = await options.resolver.resolve(didCheqd);
-
-  if (!isDidDocument(didDocument) || normalizeDid(didDocument.id) !== didCheqd) {
-    return {
-      changed: false,
-      reason: `Could not resolve DID Document for ${didCheqd}`,
-    };
-  }
-
-  if (hasAlsoKnownAs(didDocument, didWeb)) {
-    return { changed: false, didDocument };
-  }
-
-  const nextDocument: DIDDocument = {
-    ...didDocument,
-    alsoKnownAs: [...(didDocument.alsoKnownAs ?? []), didWeb],
-  };
-
-  const registrarResult = await options.registrar.updateDid({
-    did: didCheqd,
-    didDocument: nextDocument,
-    signer: options.signer,
-    verificationMethodId: options.verificationMethodId,
-  });
-
-  return {
-    changed: registrarResult.success,
-    didDocument: nextDocument,
-    registrarResult,
-    ...(registrarResult.success ? {} : { reason: registrarResult.reason }),
-  };
-}
-
-function hasAlsoKnownAs(document: DIDDocument, did: string): boolean {
+export function hasAlsoKnownAs(document: DIDDocument, did: string): boolean {
   return (document.alsoKnownAs ?? []).some((entry) => normalizeDid(entry) === did);
 }
 
-function normalizeDid(did: string): string {
+export function normalizeDid(did: string): string {
   return did.trim();
 }
 
-function isDidDocument(value: unknown): value is DIDDocument {
-  if (typeof value !== 'object' || value === null) {
+export function isDidDocument(value: unknown): value is DIDDocument {
+  if (!isRecord(value)) {
     return false;
   }
-  const doc = value as Record<string, unknown>;
-  if (typeof doc['id'] !== 'string' || doc['id'].trim().length === 0) {
+  if (typeof value['id'] !== 'string' || value['id'].trim().length === 0) {
     return false;
   }
-  if (doc['alsoKnownAs'] !== undefined) {
-    return Array.isArray(doc['alsoKnownAs']) &&
-      doc['alsoKnownAs'].every((entry) => typeof entry === 'string');
+  if (value['alsoKnownAs'] !== undefined) {
+    return Array.isArray(value['alsoKnownAs']) &&
+      value['alsoKnownAs'].every((entry) => typeof entry === 'string');
   }
   return true;
 }

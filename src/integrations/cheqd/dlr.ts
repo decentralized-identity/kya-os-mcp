@@ -1,6 +1,7 @@
 import { canonicalize } from 'json-canonicalize';
-import type { CryptoProvider } from '../providers/base.js';
-import { bytesToBase64 } from '../utils/base64.js';
+import type { CryptoProvider } from '../../providers/base.js';
+import { bytesToBase64 } from '../../utils/base64.js';
+import { isRecord, stripTrailingSlashes } from '../../utils/index.js';
 import type { CheqdCreateResourceBody } from './registrar.js';
 
 export const CHEQD_DLR_ARTIFACT_TYPES = [
@@ -90,7 +91,7 @@ export async function prepareCheqdDlrResource(
 ): Promise<PreparedCheqdDlrResource> {
   const validation = validateCheqdDlrArtifact(artifact);
   if (!validation.valid) {
-    throw new Error(validation.reason);
+    throw new Error(validation.reason ?? 'Invalid DLR artifact');
   }
 
   const canonicalContent = canonicalize(artifact.content as Parameters<typeof canonicalize>[0]);
@@ -120,7 +121,6 @@ export async function prepareCheqdDlrResource(
     canonicalContent,
   };
 }
-
 export function buildCheqdDlrReference(options: {
   did: string;
   resolverUrl?: string;
@@ -132,8 +132,7 @@ export function buildCheqdDlrReference(options: {
     throw new Error('resourceId must be a 36-character lowercase resource id');
   }
 
-  const base = (options.resolverUrl ?? 'https://resolver.cheqd.net')
-    .replace(/\/+$/, '');
+  const base = stripTrailingSlashes(options.resolverUrl ?? 'https://resolver.cheqd.net');
   const identifiersBase = base.endsWith('/1.0/identifiers')
     ? base
     : `${base}/1.0/identifiers`;
@@ -148,8 +147,4 @@ export function buildCheqdDlrReference(options: {
     resourceType: options.resourceType,
     url,
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }

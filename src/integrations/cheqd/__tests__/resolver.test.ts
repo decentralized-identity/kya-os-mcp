@@ -4,9 +4,9 @@ import {
   didCheqdToResolverUrl,
   isDidCheqd,
   parseDidCheqd,
-} from '../did-cheqd-resolver.js';
-import type { FetchProvider } from '../../providers/base.js';
-import type { DIDDocument } from '../vc-verifier.js';
+} from '../resolver.js';
+import type { FetchProvider } from '../../../providers/base.js';
+import type { DIDDocument } from '../../../delegation/vc-verifier.js';
 
 function fetchProvider(response: unknown, status = 200): FetchProvider {
   return {

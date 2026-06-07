@@ -1,4 +1,16 @@
 export {
+  DidCheqdResolver,
+  cheqdResolver,
+  createDidCheqdResolver,
+  didCheqdToResolverUrl,
+  isDidCheqd,
+  parseDidCheqd,
+  type DidCheqdNetwork,
+  type DidCheqdResolverOptions,
+  type ParsedDidCheqd,
+} from './resolver.js';
+
+export {
   CheqdDidRegistrarClient,
   createLocalEd25519CheqdRegistrarSigner,
   type CheqdCreateResourceBody,
@@ -13,6 +25,12 @@ export {
   type LocalCheqdRegistrarSignerOptions,
   type UpdateCheqdDidOptions,
 } from './registrar.js';
+
+export {
+  updateCheqdAlsoKnownAs,
+  type UpdateCheqdAlsoKnownAsOptions,
+  type UpdateCheqdAlsoKnownAsResult,
+} from './linkage.js';
 
 export {
   CHEQD_DLR_ARTIFACT_TYPES,

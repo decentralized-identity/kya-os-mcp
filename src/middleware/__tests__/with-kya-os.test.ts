@@ -17,6 +17,7 @@ import {
   base64urlEncodeFromBytes,
 } from '../../utils/base64.js';
 import { AuditLogProvider, MemoryAuditLogProvider } from '../../providers/audit-log.js';
+import { cheqdResolver } from '../../integrations/cheqd/index.js';
 
 async function createTestMiddleware(options?: {
   autoSession?: boolean;
@@ -977,7 +978,9 @@ describe('createKyaOsMiddleware', () => {
       const { middleware: kyaos } = await createTestMiddleware({
         delegation: {
           fetchProvider,
-          cheqd: { resolverUrl: 'https://resolver.cheqd.net' },
+          didResolvers: {
+            cheqd: cheqdResolver({ resolverUrl: 'https://resolver.cheqd.net' }),
+          },
         },
       });
 

@@ -238,21 +238,25 @@ Resolution Results containing `didDocument`. They MUST reject malformed
 `did:cheqd` values, HTTP or transport failures, invalid JSON, malformed DID
 Documents, and DID Document `id` mismatches by returning no document.
 
-KYA-OS deployments that expose cheqd support SHOULD use a configuration shape
-equivalent to:
+KYA-OS deployments that expose cheqd support SHOULD use the generic DID method
+resolver registry rather than a vendor-specific core config block:
 
 ```ts
-cheqd?: {
-  resolverUrl?: string;
-  registrarUrl?: string;
-  headers?: Record<string, string> | (() => Promise<Record<string, string>>);
-  cacheTtl?: number;
+didResolvers?: Record<
+  string,
+  DIDResolver | ((fetchProvider: FetchProvider) => DIDResolver)
+>;
+
+didResolvers: {
+  cheqd: cheqdResolver({ resolverUrl: 'https://resolver.cheqd.net' }),
 }
 ```
 
-`registrarUrl` is for explicit operator/admin write flows only. Runtime proof
-generation and normal MCP tool-call handling MUST NOT create, update, or publish
-cheqd ledger entries.
+cheqd-specific resolver URL, cache, and header settings live in the cheqd
+resolver factory or integration module, not in core middleware/provider
+configuration. Registrar URLs are for explicit operator/admin write flows only.
+Runtime proof generation and normal MCP tool-call handling MUST NOT create,
+update, or publish cheqd ledger entries.
 
 Updates to cheqd DID Documents and DID-Linked Resources SHOULD use cheqd DID
 Registrar's client-managed-secret flow for `/create`, `/update`, and

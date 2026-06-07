@@ -18,6 +18,7 @@ export * from './audience-validator.js';
 export * from './scope-matcher.js';
 export * from './holder-binding.js';
 export * from './chain-enforcement.js';
+export * from './did-resolver-registry.js';
 export {
   createDidKeyResolver,
   resolveDidKeySync,
@@ -34,21 +35,8 @@ export {
   buildDidWebDocument,
 } from './did-web-resolver.js';
 export {
-  DidCheqdResolver,
-  createDidCheqdResolver,
-  didCheqdToResolverUrl,
-  isDidCheqd,
-  parseDidCheqd,
-  type DidCheqdNetwork,
-  type DidCheqdResolverOptions,
-  type ParsedDidCheqd,
-} from './did-cheqd-resolver.js';
-export {
-  updateCheqdAlsoKnownAs,
   verifyDidLinkage,
   type DidLinkageVerificationResult,
-  type UpdateCheqdAlsoKnownAsOptions,
-  type UpdateCheqdAlsoKnownAsResult,
   type VerifyDidLinkageOptions,
 } from './did-linkage.js';
 export { MemoryStatusListStorage } from './storage/memory-statuslist-storage.js';

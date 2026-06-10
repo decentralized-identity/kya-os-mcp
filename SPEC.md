@@ -1264,13 +1264,13 @@ and a trust signal (§11.0), never a substitute for chain verification.
 
 | Code | Description |
 |------|-------------|
-| `KYA_OS_EHANDSHAKE` | Handshake validation failed (timestamp, nonce, or audience) |
-| `KYA_OS_ESESSION` | Session not found or expired |
-| `KYA_OS_EDELEGATION` | Delegation verification failed |
-| `KYA_OS_ESCOPE` | Requested operation outside delegated scope |
-| `KYA_OS_EREVOKED` | Delegation has been revoked |
-| `KYA_OS_EPROOF` | Proof verification failed |
-| `KYA_OS_EDID` | DID resolution failed |
+| `handshake_failed` | Handshake validation failed (timestamp, nonce, or audience) |
+| `session_expired` | Session not found or expired |
+| `delegation_invalid` | Delegation verification failed |
+| `insufficient_scope` | Requested operation outside delegated scope |
+| `delegation_revoked` | Delegation has been revoked |
+| `invalid_proof` | Proof verification failed |
+| `did_not_found` | DID resolution failed |
 
 ---
 

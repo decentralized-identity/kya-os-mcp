@@ -7,6 +7,15 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Fixed
+
+- **Appendix A error codes corrected** to match `src/errors.ts`, the single
+  source of truth. The table listed prefixed codes (`KYA_OS_EHANDSHAKE`,
+  `KYA_OS_EPROOF`, ...) that no part of the codebase emits; the runtime,
+  middleware, and session manager all return bare snake_case codes
+  (`handshake_failed`, `invalid_proof`, ...). Documentation only — no behaviour
+  change.
+
 ## [1.6.1] - 2026-06-10
 
 Releases the schema-host migration already merged on `main` (it was unshipped:

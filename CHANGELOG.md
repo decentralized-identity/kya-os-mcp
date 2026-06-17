@@ -7,6 +7,34 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- **Durable consent persistence (optional, in-memory defaults — no breaking
+  change).** New pluggable seams so consent / grant / PKCE state survives
+  restarts and resolves across load-balanced instances: `grantStore` (the
+  no-paste retry — holder-of-key `getByAgent` first, then session-bearer
+  `getBySession`), `PendingFlowStore` (durable OAuth/OIDC PKCE state with an
+  atomic `consume()`), and an optional `SessionStore`. The detached proof is now
+  namespaced under `_meta["org.kya-os/proof"]`; the legacy bare `proof` key is
+  still accepted on verify and (by default) still emitted — toggle with
+  `emitLegacyProofKey`. The legacy mirror stays **ON by default for the entire
+  1.x line** (a pre-1.1 reader of bare `_meta.proof` would otherwise silently get
+  no proof; the cost is ~1.5 KB of `_meta`, which is outside the response hash)
+  and will be **dropped at 2.0**.
+
+### Changed
+
+- **BEHAVIORAL — `strict` `metaPolicy` now IGNORES foreign `_meta` keys instead
+  of rejecting them.** Previously a `strict` verifier rejected any `_meta` key
+  other than the proof. Under MCP 2026-07-28 (SEP-414) `_meta` legitimately
+  carries reserved `io.modelcontextprotocol/*` and W3C trace-context keys
+  (`traceparent`/`tracestate`/`baggage`), so `strict` now ignores every
+  non-KYA-OS key (never hashed, trusted, or rejected) and `allow-extensions`
+  additionally surfaces them. The zero-trust boundary is unchanged — only the
+  KYA-OS proof key is ever hashed or trusted. **Migration:** anyone relying on
+  `strict` to REJECT foreign `_meta` keys must now enforce that themselves; the
+  verifier no longer fails on them.
+
 ### Fixed
 
 - **Appendix A error codes corrected** to match `src/errors.ts`, the single

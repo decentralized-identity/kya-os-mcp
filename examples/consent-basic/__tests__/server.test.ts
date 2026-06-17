@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { createKyaOsMiddleware, NodeCryptoProvider, generateDidKeyFromBase64, type KyaOsMiddleware, type DelegationCredential, type NeedsAuthorizationError } from '@kya-os/mcp';
+import { createKyaOsMiddleware, NodeCryptoProvider, generateDidKeyFromBase64, KYA_OS_PROOF_META_KEY, type KyaOsMiddleware, type DelegationCredential, type NeedsAuthorizationError } from '@kya-os/mcp';
 import { createDelegationIssuerFromIdentity } from '../src/delegation-issuer.js';
 
 const crypto = new NodeCryptoProvider();
@@ -19,7 +19,7 @@ const CONSENT_URL = 'http://localhost:9999/consent';
 interface ToolResult {
   content: Array<{ type: string; text: string; [key: string]: unknown }>;
   isError?: boolean;
-  _meta?: { proof?: { jws: string; meta: Record<string, unknown> } };
+  _meta?: Record<string, { jws: string; meta: Record<string, unknown> } | undefined>;
   [key: string]: unknown;
 }
 
@@ -171,9 +171,9 @@ describe('MCP Server with consent-basic', () => {
     const result = await browseHandler({ category: 'books' });
 
     expect(result._meta).toBeDefined();
-    expect(result._meta!.proof).toBeDefined();
+    expect(result._meta![KYA_OS_PROOF_META_KEY]).toBeDefined();
 
-    const proof = result._meta!.proof!;
+    const proof = result._meta![KYA_OS_PROOF_META_KEY]!;
     // JWS: 3 dot-separated base64url parts
     expect(proof.jws).toBeDefined();
     expect(proof.jws.split('.').length).toBe(3);
@@ -189,8 +189,8 @@ describe('MCP Server with consent-basic', () => {
     const result1 = await browseHandler({ category: 'books' });
     const result2 = await browseHandler({ category: 'books' });
 
-    expect(result1._meta!.proof!.meta.requestHash).toBe(
-      result2._meta!.proof!.meta.requestHash,
+    expect(result1._meta![KYA_OS_PROOF_META_KEY]!.meta.requestHash).toBe(
+      result2._meta![KYA_OS_PROOF_META_KEY]!.meta.requestHash,
     );
   });
 

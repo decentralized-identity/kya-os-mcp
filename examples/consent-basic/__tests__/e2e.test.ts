@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { createKyaOsMiddleware, NodeCryptoProvider, generateDidKeyFromBase64, type KyaOsMiddleware, type DelegationCredential, type NeedsAuthorizationError } from '@kya-os/mcp';
+import { createKyaOsMiddleware, NodeCryptoProvider, generateDidKeyFromBase64, KYA_OS_PROOF_META_KEY, type KyaOsMiddleware, type DelegationCredential, type NeedsAuthorizationError } from '@kya-os/mcp';
 import { startConsentServer, type ConsentServer } from '../src/consent-server.js';
 import { createDelegationIssuerFromIdentity } from '../src/delegation-issuer.js';
 
@@ -18,7 +18,7 @@ const crypto = new NodeCryptoProvider();
 interface ToolResult {
   content: Array<{ type: string; text: string; [key: string]: unknown }>;
   isError?: boolean;
-  _meta?: { proof?: { jws: string; meta: Record<string, unknown> } };
+  _meta?: Record<string, { jws: string; meta: Record<string, unknown> } | undefined>;
   [key: string]: unknown;
 }
 
@@ -111,8 +111,8 @@ describe('E2E: consent -> delegation -> execution', () => {
 
     // 9. Response includes proof
     expect(retryResult._meta).toBeDefined();
-    expect(retryResult._meta!.proof).toBeDefined();
-    expect(retryResult._meta!.proof!.jws).toBeDefined();
+    expect(retryResult._meta![KYA_OS_PROOF_META_KEY]).toBeDefined();
+    expect(retryResult._meta![KYA_OS_PROOF_META_KEY]!.jws).toBeDefined();
   });
 
   // Full cycle with VC-JWT format: §6.1 → §4.1 → §6.2 → §5.1
@@ -153,7 +153,7 @@ describe('E2E: consent -> delegation -> execution', () => {
     expect(retryResult.content[0]!.text).toContain('headphones');
 
     // 9. Response includes proof
-    expect(retryResult._meta?.proof).toBeDefined();
+    expect(retryResult._meta?.[KYA_OS_PROOF_META_KEY]).toBeDefined();
   });
 
   // §4.3 — scope mismatch across tools
@@ -195,6 +195,6 @@ describe('E2E: consent -> delegation -> execution', () => {
     const result = await browseHandler({ category: 'electronics' });
     expect(result.isError).toBeUndefined();
     expect(result.content[0]!.text).toContain('electronics');
-    expect(result._meta?.proof).toBeDefined();
+    expect(result._meta?.[KYA_OS_PROOF_META_KEY]).toBeDefined();
   });
 });

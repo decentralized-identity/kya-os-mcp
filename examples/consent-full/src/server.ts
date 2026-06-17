@@ -67,7 +67,7 @@ export interface ServerConfig {
 export class DelegationStore {
   private store = new Map<string, { vc: unknown; expiresAt: number }>();
 
-  set(resumeToken: string, vc: unknown, ttlSeconds = 300): void {
+  set(resumeToken: string, vc: unknown, ttlSeconds = 3600): void {
     this.store.set(resumeToken, { vc, expiresAt: Date.now() + ttlSeconds * 1000 });
   }
 
@@ -92,7 +92,10 @@ export class DelegationStore {
       const metadata = (vc?.credentialSubject as Record<string, unknown>)
         ?.delegation as Record<string, unknown> | undefined;
       if (metadata?.metadata && (metadata.metadata as Record<string, unknown>).tool === toolName) {
-        this.store.delete(token); // consume it
+        // PEEK — do NOT consume. Re-present the approved delegation on EVERY
+        // retry so a generic client (e.g. mcp-inspector) that can't thread a
+        // session or mint a holder-of-key proof keeps succeeding after a single
+        // approval, until the entry's TTL lapses.
         return { resumeToken: token, vc: entry.vc };
       }
     }
@@ -132,7 +135,7 @@ function formatAsConsentLink(
 export interface ToolResult {
   content: Array<{ type: string; text: string; [key: string]: unknown }>;
   isError?: boolean;
-  _meta?: { proof?: { jws: string; meta: Record<string, unknown> } };
+  _meta?: Record<string, { jws: string; meta: Record<string, unknown> } | undefined>;
   [key: string]: unknown;
 }
 
@@ -220,19 +223,23 @@ export function createConsentFullMcpServer(
     ],
   }));
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const { name, arguments: args = {} } = request.params;
+    // Thread the transport's sessionId (when it has one) into the handlers
+    // instead of dropping it — previously it was lost, so proofs/grants couldn't
+    // be attributed to the call's session.
+    const sessionId = extra?.sessionId;
 
     if (name === '_kyaos') {
       return kyaos.handleKyaOs(args as Record<string, unknown>);
     }
 
     if (name === 'browse') {
-      return browseHandler(args as Record<string, unknown>);
+      return browseHandler(args as Record<string, unknown>, sessionId);
     }
 
     if (name === 'checkout') {
-      return checkoutHandler(args as Record<string, unknown>);
+      return checkoutHandler(args as Record<string, unknown>, sessionId);
     }
 
     return {
@@ -263,7 +270,9 @@ export async function loadKyaOsMiddleware() {
   }
 
   return createKyaOsMiddleware(
-    { identity, session: { sessionTtlMinutes: 60 }, autoSession: true },
+    // emitLegacyProofKey: false → single-key Inspector view for the demo (the
+    // library default mirrors the proof under legacy bare `proof` for back-compat).
+    { identity, session: { sessionTtlMinutes: 60 }, autoSession: true, emitLegacyProofKey: false },
     crypto,
   );
 }

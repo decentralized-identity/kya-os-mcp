@@ -1002,6 +1002,23 @@ The JWT is signed with EdDSA using the server's secret key.
 
 Example: `urn:uuid:d7f8a9b0-1234-5678-9abc-def012345678>del-001`
 
+### 8.4 Gateway Routing Without Body Inspection (MCP 2026-07-28)
+
+A policy enforcement point (PEP) or gateway in front of a KYA-OS server can make
+routing and coarse policy decisions from headers alone, without parsing the JSON
+body. Under MCP 2026-07-28 (SEP-2243), the request carries the routing headers
+`Mcp-Method` (the JSON-RPC method, e.g. `tools/call`) and `Mcp-Name` (the target,
+e.g. the tool name). A KYA-OS-aware gateway MAY:
+
+- route on `Mcp-Method` / `Mcp-Name`; and
+- authenticate the caller and check coarse authority from the KYA-OS delegation
+  headers (§8.1) and the detached `KYA-OS-Delegation-Proof` (§8.2),
+
+all before the body is read. This is an optimization only: the origin server MUST
+still perform full delegation-chain and detached-proof verification (§6, §7) on
+the request body. Routing headers are advisory and MUST NOT be trusted as
+authority.
+
 ---
 
 ## 9. Authorization Flow
@@ -1348,6 +1365,12 @@ KYA-OS is transport-agnostic. The handshake and proofs use standard MCP mechanis
 **Proof attachment**: Detached proofs are attached to tool responses in the standard MCP `_meta` field, which is transported transparently by all MCP transport implementations.
 
 **Outbound delegation headers**: When an MCP server makes outbound HTTP calls (not MCP calls), delegation context is propagated via HTTP headers as defined in §8. For MCP-to-MCP calls, delegation context SHOULD be passed via the `_kyaos_handshake` flow.
+
+**Body-free routing**: On HTTP transports, intermediaries MAY route on the MCP
+2026-07-28 routing headers `Mcp-Method` and `Mcp-Name` (SEP-2243) and verify the
+KYA-OS delegation headers (§8.1) and detached proof (§8.2) without inspecting the
+request body. See §8.4. The origin server remains responsible for full
+verification.
 
 ---
 

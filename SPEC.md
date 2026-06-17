@@ -937,13 +937,32 @@ When an MCP server calls downstream services (APIs, other MCP servers), it MUST 
 
 ### 8.1 HTTP Headers
 
-| Header | Value |
-|--------|-------|
-| `KYA-OS-Agent-DID` | Original agent's DID |
-| `KYA-OS-Delegation-Chain` | Comma-separated list of delegation IDs from root to current |
-| `KYA-OS-Session-Id` | KYA-OS session ID |
-| `KYA-OS-Delegation-Proof` | Signed JWT proving delegation authority |
-| `KYA-OS-Granted-Scopes` | Comma-separated list of granted scopes |
+| Header | Disposition | Value |
+|--------|-------------|-------|
+| `KYA-OS-Delegation-Credential` | **AUTHORITATIVE** | The delegation Verifiable Credential (VC-JWT). The verifier derives granted scopes and the delegation chain from it (its embedded scopes, its chain to a trusted root, its StatusList revocation state). |
+| `KYA-OS-Delegation-Proof` | **AUTHORITATIVE** | The holder-of-key delegation proof JWT (EdDSA-signed, `aud`-bound to the request authority, `sub` == the Layer-1 signature DID); see §8.2. |
+| `KYA-OS-Agent-DID` | **AUTHORITATIVE** | The agent's DID. A conformant verifier MUST check it equals the Layer-1 signature's resolved DID. |
+| `KYA-OS-Session-Id` | Anchor | The KYA-OS session ID, used for grant read-back. An anchor, not an authorization input. |
+| `KYA-OS-Delegation-Chain` | OPTIONAL (advisory) | A transport hint for routing/observability/debugging. **MUST NOT** be used for any authorization decision; ignored when it disagrees with the credential. |
+| `KYA-OS-Granted-Scopes` | OPTIONAL (advisory) | A transport hint for routing/observability/debugging. **MUST NOT** be used for any authorization decision; ignored when it disagrees with the credential. |
+
+**The Verifiable Credential is authoritative.** Granted scopes and the delegation
+chain are derived from cryptographically-signed artifacts — the
+`KYA-OS-Delegation-Credential` (VC-JWT) and the `KYA-OS-Delegation-Proof` JWT —
+never from advisory transport headers. A conformant verifier MUST derive
+authorization from the credential (its embedded scopes, its chain to a trusted
+root, its revocation state) and MUST check that `KYA-OS-Agent-DID` equals the
+Layer-1 signature's resolved DID. `KYA-OS-Delegation-Chain` and
+`KYA-OS-Granted-Scopes` are advisory only: a conformant verifier MUST NOT trust
+them for any authorization decision and MUST ignore them when they disagree with
+the credential.
+
+**Corollary (covered components).** Because authority is derived only from signed
+artifacts — the VC and the proof JWT, each with independent integrity — the
+Layer-2 headers are **NOT required** to be RFC 9421 covered components. Signing
+them is permitted as defense-in-depth but is not a conformance requirement. A
+tampered `KYA-OS-Granted-Scopes` or `KYA-OS-Delegation-Chain` is therefore not a
+vulnerability: it is ignored by a conformant verifier.
 
 ### 8.2 Delegation Proof JWT
 

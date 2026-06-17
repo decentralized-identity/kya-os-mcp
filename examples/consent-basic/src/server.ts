@@ -54,7 +54,7 @@ export interface ServerConfig {
 export class DelegationStore {
   private store = new Map<string, { vc: unknown; expiresAt: number }>();
 
-  set(resumeToken: string, vc: unknown, ttlSeconds = 300): void {
+  set(resumeToken: string, vc: unknown, ttlSeconds = 3600): void {
     this.store.set(resumeToken, { vc, expiresAt: Date.now() + ttlSeconds * 1000 });
   }
 
@@ -79,7 +79,9 @@ export class DelegationStore {
       const metadata = (vc?.credentialSubject as Record<string, unknown>)
         ?.delegation as Record<string, unknown> | undefined;
       if (metadata?.metadata && (metadata.metadata as Record<string, unknown>).tool === toolName) {
-        this.store.delete(token); // consume it
+        // PEEK — do NOT consume. Re-present the approved delegation on EVERY
+        // retry so a generic client (e.g. mcp-inspector) keeps succeeding after a
+        // single approval, until the entry's TTL lapses.
         return { resumeToken: token, vc: entry.vc };
       }
     }
@@ -201,19 +203,21 @@ export function createConsentMcpServer(
     ],
   }));
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const { name, arguments: args = {} } = request.params;
+    // Thread the transport's sessionId (when present) instead of dropping it.
+    const sessionId = extra?.sessionId;
 
     if (name === '_kyaos') {
       return kyaos.handleKyaOs(args as Record<string, unknown>);
     }
 
     if (name === 'browse') {
-      return browseHandler(args as Record<string, unknown>);
+      return browseHandler(args as Record<string, unknown>, sessionId);
     }
 
     if (name === 'checkout') {
-      return checkoutHandler(args as Record<string, unknown>);
+      return checkoutHandler(args as Record<string, unknown>, sessionId);
     }
 
     return {
@@ -259,6 +263,9 @@ export async function loadKyaOsMiddleware() {
       identity: { did, kid, privateKey, publicKey },
       session: { sessionTtlMinutes: 60 },
       autoSession: true,
+      // Single-key Inspector view for the demo; the library default also mirrors
+      // the proof under legacy bare `proof` for pre-1.1 back-compat.
+      emitLegacyProofKey: false,
     },
     crypto,
   );

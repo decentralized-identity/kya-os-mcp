@@ -12,6 +12,8 @@
  */
 
 import type { CryptoProvider } from "../providers/base.js";
+import type { GrantStore } from "../providers/grant-store.js";
+import type { SessionConfig } from "../session/manager.js";
 import { generateDidKeyFromBase64, didKeyFragment } from "../utils/did-helpers.js";
 import {
   KYA_OS_ACTIONS,
@@ -28,16 +30,33 @@ export interface WithKyaOsOptions {
   crypto: CryptoProvider;
   /** Identity config — auto-generated if omitted */
   identity?: KyaOsIdentityConfig;
-  /** Session configuration */
-  session?: { sessionTtlMinutes?: number };
+  /**
+   * Session configuration. Accepts the full {@link SessionConfig} (minus the
+   * `nonceCache`, which is set at the top level), so an optional durable
+   * `sessionStore` can be injected for cross-instance session continuity.
+   */
+  session?: Omit<SessionConfig, "nonceCache">;
   /** Auto-create sessions for non-KYA-OS clients (default: true) */
   autoSession?: boolean;
   /** Attach proofs to all tool responses (default: true) */
   proofAllTools?: boolean;
+  /**
+   * Also emit the proof under the legacy bare `_meta.proof` key (default: true),
+   * in addition to the namespaced `org.kya-os/proof`. Set `false` for a clean
+   * single-key view once clients read the namespaced key. Passed through to the
+   * middleware.
+   */
+  emitLegacyProofKey?: boolean;
   /** Tools to skip proof generation for */
   excludeTools?: string[];
   /** Delegation verification config */
   delegation?: KyaOsDelegationConfig;
+  /**
+   * Durable store for approved grants, enabling the no-paste retry across
+   * instances / restarts. Defaults to in-memory; inject a durable
+   * {@link GrantStore} for production. Passed through to the middleware.
+   */
+  grantStore?: GrantStore;
   /**
    * How the KYA-OS protocol tool is exposed on the server.
    * - "tool" (default): auto-register `_kyaos`
@@ -108,6 +127,10 @@ export async function withKyaOs(
       session: options.session,
       delegation: options.delegation,
       autoSession: options.autoSession ?? true,
+      ...(options.grantStore ? { grantStore: options.grantStore } : {}),
+      ...(options.emitLegacyProofKey !== undefined
+        ? { emitLegacyProofKey: options.emitLegacyProofKey }
+        : {}),
     },
     options.crypto,
   );

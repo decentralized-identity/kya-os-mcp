@@ -17,6 +17,11 @@ import {
   MIN_CLOCK_SKEW_SECONDS,
   MAX_CLOCK_SKEW_SECONDS,
 } from '../verifier.js';
+import {
+  KYA_OS_PROOF_META_KEY,
+  LEGACY_PROOF_META_KEY,
+} from '../generator.js';
+import { isReservedMcpMetaKey } from '../verifier.js';
 import { CryptoService, type Ed25519JWK } from '../../utils/crypto-service.js';
 import type {
   CryptoProvider,
@@ -526,6 +531,42 @@ describe('ProofVerifier Security', () => {
       }
     });
 
+    it('throws VERIFICATION_METHOD_NOT_FOUND when the kid matches no method', async () => {
+      mockFetchProvider.resolveDID = vi.fn().mockResolvedValue({
+        verificationMethod: [
+          { id: 'did:key:z123#other', publicKeyJwk: { kty: 'OKP', crv: 'Ed25519', x: 'AAA' } },
+        ],
+      });
+
+      await expect(
+        proofVerifier.fetchPublicKeyFromDID('did:key:z123', 'no-such-kid'),
+      ).rejects.toThrow(ProofVerificationError);
+      try {
+        await proofVerifier.fetchPublicKeyFromDID('did:key:z123', 'no-such-kid');
+      } catch (error) {
+        expect((error as ProofVerificationError).code).toBe(
+          PROOF_VERIFICATION_ERROR_CODES.VERIFICATION_METHOD_NOT_FOUND,
+        );
+      }
+    });
+
+    it('throws PUBLIC_KEY_NOT_FOUND when the verification method has no publicKeyJwk', async () => {
+      mockFetchProvider.resolveDID = vi.fn().mockResolvedValue({
+        verificationMethod: [{ id: 'did:key:z123#z123' }],
+      });
+
+      await expect(
+        proofVerifier.fetchPublicKeyFromDID('did:key:z123'),
+      ).rejects.toThrow(ProofVerificationError);
+      try {
+        await proofVerifier.fetchPublicKeyFromDID('did:key:z123');
+      } catch (error) {
+        expect((error as ProofVerificationError).code).toBe(
+          PROOF_VERIFICATION_ERROR_CODES.PUBLIC_KEY_NOT_FOUND,
+        );
+      }
+    });
+
     it('should throw ProofVerificationError if JWK is not Ed25519', async () => {
       mockFetchProvider.resolveDID = vi.fn().mockResolvedValue({
         verificationMethod: [{
@@ -640,24 +681,76 @@ describe('Meta Policy Validation', () => {
       expect(result.valid).toBe(true);
     });
 
-    it('should reject _meta with extra keys in strict mode', () => {
+    it('IGNORES (does not reject) non-KYA-OS keys in strict mode (SEP-414)', () => {
       const meta = { proof: { jws: 'test', meta: {} }, extra: 'evil' };
       const result = validateMetaStructure(meta, 'strict');
-      expect(result.valid).toBe(false);
-      expect(result.reason).toContain('extra');
-      expect(result.extraKeys).toContain('extra');
+      // strict no longer rejects foreign keys — it discards them.
+      expect(result.valid).toBe(true);
+      expect(result.extraKeys).toBeUndefined();
     });
 
-    it('should accept _meta with extra keys in allow-extensions mode', () => {
-      const meta = { proof: { jws: 'test', meta: {} }, extra: 'allowed' };
-      const result = validateMetaStructure(meta, 'allow-extensions');
+    it('strict tolerates MCP-reserved _meta keys (must not reject conformant RC traffic)', () => {
+      const meta = {
+        [KYA_OS_PROOF_META_KEY]: { jws: 'test', meta: {} },
+        'io.modelcontextprotocol/foo': { any: 'thing' },
+        traceparent: '00-abc-def-01',
+        tracestate: 'vendor=1',
+        baggage: 'k=v',
+      };
+      const result = validateMetaStructure(meta, 'strict');
       expect(result.valid).toBe(true);
     });
 
-    it('should default to strict mode', () => {
+    it('surfaces non-KYA-OS keys in allow-extensions mode', () => {
+      const meta = { proof: { jws: 'test', meta: {} }, extra: 'allowed' };
+      const result = validateMetaStructure(meta, 'allow-extensions');
+      expect(result.valid).toBe(true);
+      expect(result.extraKeys).toContain('extra');
+    });
+
+    it('allow-extensions with no extra keys surfaces nothing', () => {
+      const meta = { [KYA_OS_PROOF_META_KEY]: { jws: 'test', meta: {} } };
+      const result = validateMetaStructure(meta, 'allow-extensions');
+      expect(result.valid).toBe(true);
+      expect(result.extraKeys).toBeUndefined();
+    });
+
+    it('should default to strict (ignore) mode', () => {
       const meta = { proof: { jws: 'test', meta: {} }, extra: 'evil' };
       const result = validateMetaStructure(meta);
-      expect(result.valid).toBe(false);
+      expect(result.valid).toBe(true);
+      expect(result.extraKeys).toBeUndefined();
+    });
+
+    it('should accept the namespaced proof key in strict mode (SEP-414)', () => {
+      const meta = { [KYA_OS_PROOF_META_KEY]: { jws: 'test', meta: {} } };
+      const result = validateMetaStructure(meta, 'strict');
+      expect(result.valid).toBe(true);
+    });
+
+    it('treats the namespaced key as the proof key, not an extra', () => {
+      // A response carrying ONLY the namespaced proof key is not "extra keys".
+      const meta = { [KYA_OS_PROOF_META_KEY]: { jws: 'test', meta: {} } };
+      const result = validateMetaStructure(meta, 'strict');
+      expect(result.extraKeys ?? []).not.toContain(KYA_OS_PROOF_META_KEY);
+    });
+  });
+
+  describe('isReservedMcpMetaKey', () => {
+    it('recognizes the io.modelcontextprotocol/* reserved namespace', () => {
+      expect(isReservedMcpMetaKey('io.modelcontextprotocol/anything')).toBe(true);
+    });
+
+    it('recognizes the W3C trace-context keys', () => {
+      expect(isReservedMcpMetaKey('traceparent')).toBe(true);
+      expect(isReservedMcpMetaKey('tracestate')).toBe(true);
+      expect(isReservedMcpMetaKey('baggage')).toBe(true);
+    });
+
+    it('does not flag the KYA-OS proof key or arbitrary keys', () => {
+      expect(isReservedMcpMetaKey(KYA_OS_PROOF_META_KEY)).toBe(false);
+      expect(isReservedMcpMetaKey('proof')).toBe(false);
+      expect(isReservedMcpMetaKey('whatever')).toBe(false);
     });
   });
 
@@ -685,12 +778,13 @@ describe('Meta Policy Validation', () => {
       }
     });
 
-    it('should reject _meta with extra keys in strict mode', () => {
-      const meta = { proof: validProof, extra: 'evil' };
+    it('extracts the proof even when foreign _meta keys coexist in strict mode', () => {
+      // strict ignores non-KYA-OS keys rather than rejecting (SEP-414).
+      const meta = { proof: validProof, extra: 'evil', traceparent: '00-a-b-01' };
       const result = extractProofFromMeta(meta, 'strict');
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.errorCode).toBe(PROOF_VERIFICATION_ERROR_CODES.META_POLICY_VIOLATION);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.proof).toEqual(validProof);
       }
     });
 
@@ -706,6 +800,45 @@ describe('Meta Policy Validation', () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.errorCode).toBe(PROOF_VERIFICATION_ERROR_CODES.MISSING_REQUIRED_FIELD);
+      }
+    });
+
+    it('extracts the proof from the namespaced key (SEP-414)', () => {
+      const meta = { [KYA_OS_PROOF_META_KEY]: validProof };
+      const result = extractProofFromMeta(meta, 'strict');
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.proof).toEqual(validProof);
+      }
+    });
+
+    it('still accepts a proof published under the legacy bare key (back-compat)', () => {
+      const meta = { [LEGACY_PROOF_META_KEY]: validProof };
+      const result = extractProofFromMeta(meta, 'strict');
+      expect(result.success).toBe(true);
+    });
+
+    it('prefers the namespaced key when both are present (namespaced wins)', () => {
+      const legacyOnly = { ...validProof, jws: 'legacy.jws.sig' };
+      const meta = {
+        [KYA_OS_PROOF_META_KEY]: validProof,
+        [LEGACY_PROOF_META_KEY]: legacyOnly,
+      };
+      const result = extractProofFromMeta(meta, 'strict');
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.proof.jws).toBe(validProof.jws);
+      }
+    });
+
+    it('reads a dual-emitted response (both keys, identical value)', () => {
+      // The default producer mirrors the proof under both keys; a verifier reads
+      // it cleanly (namespaced wins, identical value) with no policy violation.
+      const meta = { [KYA_OS_PROOF_META_KEY]: validProof, [LEGACY_PROOF_META_KEY]: validProof };
+      const result = extractProofFromMeta(meta, 'strict');
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.proof).toEqual(validProof);
       }
     });
   });

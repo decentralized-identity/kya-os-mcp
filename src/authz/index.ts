@@ -45,6 +45,13 @@ export {
   type FetchImpl,
 } from './oidc/oidc-adapter.js';
 
+export {
+  PendingFlowStore,
+  MemoryPendingFlowStore,
+  type PendingFlow,
+  type MemoryPendingFlowStoreOptions,
+} from './oidc/pending-flow-store.js';
+
 export { AuthorizationServerRegistry } from './registry.js';
 
 export {

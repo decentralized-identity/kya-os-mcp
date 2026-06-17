@@ -12,7 +12,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { createKyaOsMiddleware, NodeCryptoProvider, generateDidKeyFromBase64, type KyaOsMiddleware, type DelegationCredential, type NeedsAuthorizationError } from '@kya-os/mcp';
+import { createKyaOsMiddleware, NodeCryptoProvider, generateDidKeyFromBase64, KYA_OS_PROOF_META_KEY, type KyaOsMiddleware, type DelegationCredential, type NeedsAuthorizationError } from '@kya-os/mcp';
 import { createDelegationIssuerFromIdentity } from '../src/delegation-issuer.js';
 import { createConsentFullMcpServer, type ToolResult } from '../src/server.js';
 
@@ -194,12 +194,21 @@ describe('MCP Server with consent-full', () => {
 
   // §5.1 — Detached proof on browse
   it('should attach a detached proof to browse tool response', async () => {
-    const result = await browseHandler({ category: 'books' });
+    // Thread the session explicitly: the shared middleware has multiple sessions
+    // by now, so the auto-proof path won't borrow activeSessionId (proof
+    // mis-attribution guard). A KYA-OS-aware caller threads its sessionId.
+    const hs = await kyaos.handleHandshake({
+      nonce: `bp-${Math.random().toString(16).slice(2)}`,
+      audience: serverDid,
+      timestamp: Math.floor(Date.now() / 1000),
+    });
+    const sessionId = JSON.parse(hs.content[0]!.text).sessionId as string;
+    const result = await browseHandler({ category: 'books' }, sessionId);
 
     expect(result._meta).toBeDefined();
-    expect(result._meta!.proof).toBeDefined();
+    expect(result._meta![KYA_OS_PROOF_META_KEY]).toBeDefined();
 
-    const proof = result._meta!.proof!;
+    const proof = result._meta![KYA_OS_PROOF_META_KEY]!;
     // JWS: 3 dot-separated base64url parts
     expect(proof.jws).toBeDefined();
     expect(proof.jws.split('.').length).toBe(3);
@@ -212,11 +221,17 @@ describe('MCP Server with consent-full', () => {
 
   // §5.2 — Deterministic hashing
   it('should produce deterministic hashes for identical requests', async () => {
-    const result1 = await browseHandler({ category: 'books' });
-    const result2 = await browseHandler({ category: 'books' });
+    const hs = await kyaos.handleHandshake({
+      nonce: `dh-${Math.random().toString(16).slice(2)}`,
+      audience: serverDid,
+      timestamp: Math.floor(Date.now() / 1000),
+    });
+    const sessionId = JSON.parse(hs.content[0]!.text).sessionId as string;
+    const result1 = await browseHandler({ category: 'books' }, sessionId);
+    const result2 = await browseHandler({ category: 'books' }, sessionId);
 
-    expect(result1._meta!.proof!.meta.requestHash).toBe(
-      result2._meta!.proof!.meta.requestHash,
+    expect(result1._meta![KYA_OS_PROOF_META_KEY]!.meta.requestHash).toBe(
+      result2._meta![KYA_OS_PROOF_META_KEY]!.meta.requestHash,
     );
   });
 

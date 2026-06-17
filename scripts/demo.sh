@@ -40,6 +40,7 @@ usage() {
   echo "  node-server        Low-level KYA-OS server with proof + restricted tools"
   echo "  consent-basic      Human-in-the-loop consent flow (built-in UI)"
   echo "  consent-full       Consent flow with @kya-os/consent (production UI)"
+  echo "  consent-persistence Durable consent: two instances share a file-backed grant store"
   echo "  context7-with-kya-os Context7 MCP server + KYA-OS identity"
   echo ""
   exit 0
@@ -57,7 +58,7 @@ for arg in "$@"; do
   esac
 done
 
-ALL_EXAMPLES=(node-server consent-basic consent-full context7-with-kya-os)
+ALL_EXAMPLES=(node-server consent-basic consent-full consent-persistence context7-with-kya-os)
 
 if [ ${#REQUESTED[@]} -eq 0 ]; then
   EXAMPLES=("${ALL_EXAMPLES[@]}")
@@ -82,7 +83,21 @@ fi
 
 for ex in "${EXAMPLES[@]}"; do
   dir="$ROOT/examples/$ex"
-  if [ -f "$dir/package.json" ] && [ ! -d "$dir/node_modules" ]; then
+  [ -f "$dir/package.json" ] || continue
+
+  # (Re)install when node_modules is missing OR the linked @kya-os/mcp dep is
+  # stale/broken — the latter causes a confusing ERR_MODULE_NOT_FOUND at start
+  # even though deps are unchanged. `-e` follows the file: symlink to its target.
+  needs_install=false
+  if [ ! -d "$dir/node_modules" ]; then
+    needs_install=true
+  elif grep -q '"@kya-os/mcp"' "$dir/package.json" \
+       && [ ! -e "$dir/node_modules/@kya-os/mcp/package.json" ]; then
+    echo -e "${YELLOW}  $ex: @kya-os/mcp link is stale — reinstalling${NC}"
+    needs_install=true
+  fi
+
+  if [ "$needs_install" = true ]; then
     echo -e "${DIM}  $ex${NC}"
     if [ -f "$dir/pnpm-lock.yaml" ]; then
       (cd "$dir" && pnpm install --silent 2>/dev/null) || (cd "$dir" && npm install --silent 2>/dev/null)
@@ -106,7 +121,7 @@ start_example() {
   EX_NAMES+=("$name")
   case "$name" in
     node-server)
-      PORT=3001 npx tsx examples/node-server/server.ts &
+      PORT=3001 CONSENT_PORT=3011 npx tsx examples/node-server/server.ts &
       PIDS+=($!)
       EX_URLS+=("http://localhost:3001/sse")
       EX_TRANSPORTS+=("SSE")
@@ -122,6 +137,12 @@ start_example() {
       PIDS+=($!)
       EX_URLS+=("http://localhost:3003/sse")
       EX_TRANSPORTS+=("SSE")
+      ;;
+    consent-persistence)
+      PORT_A=3005 PORT_B=3006 CONSENT_PORT=3015 npx tsx examples/consent-persistence/src/server.ts &
+      PIDS+=($!)
+      EX_URLS+=("http://localhost:3005/mcp")
+      EX_TRANSPORTS+=("Streamable HTTP")
       ;;
     context7-with-kya-os)
       npx tsx examples/context7-with-kya-os/src/index.ts --transport http --port 3004 &

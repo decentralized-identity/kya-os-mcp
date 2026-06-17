@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { generateIdentity, withKyaOs } from "../with-kya-os-server.js";
 import { NodeCryptoProvider } from "../../__tests__/utils/node-crypto-provider.js";
+import { KYA_OS_PROOF_META_KEY, LEGACY_PROOF_META_KEY } from "../../proof/index.js";
 
 const crypto = new NodeCryptoProvider();
 
@@ -113,5 +114,36 @@ describe("withKyaOs", () => {
     expect(kyaos.wrapWithProof).toBeInstanceOf(Function);
     expect(kyaos.wrapWithDelegation).toBeInstanceOf(Function);
     expect(kyaos.handleKyaOs).toBeInstanceOf(Function);
+  });
+
+  it("threads emitLegacyProofKey through to the middleware (suppresses the legacy key)", async () => {
+    const server = {
+      connect: vi.fn().mockResolvedValue(undefined),
+      registerTool: vi.fn(),
+    };
+    const identity = await generateIdentity(crypto);
+
+    const kyaos = await withKyaOs(server, {
+      crypto,
+      identity,
+      emitLegacyProofKey: false,
+    });
+
+    const hs = await kyaos.handleHandshake({
+      nonce: "test-nonce",
+      audience: identity.did,
+      timestamp: Math.floor(Date.now() / 1000),
+    });
+    const sessionId = JSON.parse(hs.content[0].text).sessionId;
+
+    const handler = kyaos.wrapWithProof("greet", async (args) => ({
+      content: [{ type: "text", text: `Hello, ${args["name"]}!` }],
+    }));
+    const result = await handler({ name: "DIF" }, sessionId);
+
+    // Proof is emitted under the namespaced key, but NOT the legacy bare key,
+    // because emitLegacyProofKey: false was threaded through withKyaOs.
+    expect(result._meta?.[KYA_OS_PROOF_META_KEY]).toBeDefined();
+    expect(result._meta?.[LEGACY_PROOF_META_KEY]).toBeUndefined();
   });
 });

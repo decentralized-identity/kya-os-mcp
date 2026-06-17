@@ -22,6 +22,7 @@ import {
 } from "../providers/base.js";
 import { RuntimeFetchProvider, NoopFetchProvider } from "../providers/runtime-fetch.js";
 import { AuditLogProvider, NoopAuditLogProvider } from "../providers/audit-log.js";
+import { GrantStore, MemoryGrantStore, type Grant } from "../providers/grant-store.js";
 import {
   SessionManager,
   type SessionConfig,
@@ -29,6 +30,8 @@ import {
 } from "../session/manager.js";
 import {
   ProofGenerator,
+  KYA_OS_PROOF_META_KEY,
+  LEGACY_PROOF_META_KEY,
   type ProofAgentIdentity,
   type ToolRequest,
   type ToolResponse,
@@ -148,6 +151,38 @@ export interface KyaOsConfig {
    * `session`, so there is exactly one cache and the two cannot diverge.
    */
   nonceCache?: NonceCacheProvider;
+  /**
+   * Durable store for approved authorization grants, enabling the no-paste
+   * retry: an agent that already obtained a grant can call again — even on a
+   * fresh instance with empty memory, or after a restart — without re-pasting
+   * the delegation. Defaults to an in-memory {@link MemoryGrantStore}
+   * (single-process only); inject a Redis / Durable Object / DB-backed
+   * {@link GrantStore} for multi-instance deployments. Mirrors `nonceCache?`.
+   *
+   * For the no-paste retry to actually RESOLVE a bound grant, the call must be
+   * resolvable: either holder binding is `'enforce'` and the agent presents a
+   * per-request `_kyaos_proof` (agent-anchored `getByAgent`), or the client
+   * threads its `sessionId` (session-bearer `getBySession`). A grant that would
+   * be unresolvable — holder binding `'off'` with no threaded `sessionId` — is
+   * NOT bound (it would only orphan a store row); such flows achieve durability
+   * by re-presenting the delegation instead.
+   */
+  grantStore?: GrantStore;
+  /**
+   * Whether to ALSO emit the detached proof under the legacy bare `_meta.proof`
+   * key (in addition to the namespaced `org.kya-os/proof`). The value is
+   * identical under both keys and `_meta` is excluded from the response hash
+   * (§7.6), so the mirror never affects signatures or verification.
+   *
+   * Default `true` — a transition aid so pre-1.1 clients that still read bare
+   * `proof` keep working. Set `false` once your clients read the namespaced key
+   * (the examples do this for a clean single-key Inspector view).
+   *
+   * Stays ON by default for the whole 1.x line (a pre-1.1 reader of bare
+   * `_meta.proof` would otherwise silently get no proof); the legacy mirror is
+   * dropped at 2.0.
+   */
+  emitLegacyProofKey?: boolean;
   /** Delegation verification overrides */
   delegation?: KyaOsDelegationConfig;
   /**
@@ -403,10 +438,13 @@ function extractPolicyPrincipal(del: unknown): {
  * @returns Middleware components for session management and proof generation
  *
  * @remarks
- * **Single-process only**: This middleware stores session state in memory using closure
- * variables (`activeSessionId`, `sessionNonces`). It is NOT suitable for multi-instance
- * deployments behind a load balancer. For distributed deployments, implement a custom
- * `SessionStore` backed by Redis, DynamoDB, or similar and pass it via `config.session`.
+ * **Session resolution**: proof generation resolves the session from the explicit
+ * `sessionId` threaded into each wrapper. A single-process `activeSessionId`
+ * fallback (the established handshake/auto session) is consulted ONLY when no
+ * sessionId was threaded — e.g. non-KYA-OS clients (MCP Inspector) and the
+ * transport auto-proof path; a KYA-OS-aware call never depends on it. By default
+ * sessions live in an in-memory Map; for multi-instance deployments inject a
+ * durable `SessionStore` via `config.session.sessionStore`.
  */
 
 export function createKyaOsMiddleware(
@@ -434,6 +472,37 @@ export function createKyaOsMiddleware(
   const delegationConfig = config.delegation;
   const auditLog = config.auditLog ?? new NoopAuditLogProvider();
 
+  // Emit the proof under the legacy bare key as well, by default, for pre-1.1
+  // back-compat. The value is identical under both keys and `_meta` is never
+  // hashed (§7.6), so the mirror is purely additive.
+  const emitLegacyProofKey = config.emitLegacyProofKey ?? true;
+
+  /**
+   * Place a detached proof into a `_meta` object: always under the namespaced
+   * key, and (when {@link emitLegacyProofKey}) mirrored under the legacy bare
+   * key. The single place both emit paths build `_meta`, so they cannot drift.
+   */
+  const withProofMeta = (
+    base: Record<string, unknown>,
+    proof: DetachedProof,
+  ): Record<string, unknown> => ({
+    ...base,
+    [KYA_OS_PROOF_META_KEY]: proof,
+    ...(emitLegacyProofKey ? { [LEGACY_PROOF_META_KEY]: proof } : {}),
+  });
+
+  // Durable grant store for the no-paste retry. Defaults to in-memory; inject a
+  // shared, durable store for multi-instance / restart survival (mirrors the
+  // nonceCache precedent and its production warning).
+  const grantStore = config.grantStore ?? new MemoryGrantStore();
+  if (!config.grantStore) {
+    logger.warn(
+      "[kya-os] Using MemoryGrantStore — grants are lost on restart and not " +
+        "shared across instances. Inject a Redis / Durable Object / DB-backed " +
+        "GrantStore via config.grantStore for production / multi-instance use.",
+    );
+  }
+
   // Holder binding (spec §11.8). Built once so all tools share one replay cache.
   // The verifier derives the subject key from the did:key DID directly, so its
   // fetchProvider is unused on the phase-1 path — a never-called stub keeps
@@ -453,10 +522,12 @@ export function createKyaOsMiddleware(
               : new NoopFetchProvider()),
         });
 
-  // Session map: sessionId → last nonce (for proof generation)
-  const sessionNonces = new Map<string, string>();
-
-  // Active session tracking — set after handshake (manual or auto)
+  // Single-process fallback for the established (handshake or auto) session, used
+  // ONLY when no sessionId was threaded into the wrapper — e.g. non-KYA-OS clients
+  // (MCP Inspector) and the transport auto-proof path, which never thread one. The
+  // PRIMARY resolver is the explicit `sessionId` parameter, so a KYA-OS-aware call
+  // never depends on this fallback. The per-session proof nonce lives on the
+  // session record (`session.nonce`), so no separate nonce map is needed.
   let activeSessionId: string | undefined;
 
   const handshakeTool: KyaOsToolDefinition = {
@@ -534,8 +605,9 @@ export function createKyaOsMiddleware(
     const result: HandshakeResult =
       await sessionManager.validateHandshake(args);
 
+    // Cache the established session as the single-process fallback for callers
+    // that do not thread a sessionId (e.g. the transport auto-proof path).
     if (result.success && result.session) {
-      sessionNonces.set(result.session.sessionId, result.session.nonce);
       activeSessionId = result.session.sessionId;
     }
 
@@ -637,11 +709,30 @@ export function createKyaOsMiddleware(
    * In production, KYA-OS-aware runtimes should execute handshake before tool calls.
    * This convenience mode allows non-KYA-OS clients (like MCP Inspector) to
    * still see proofs without manual handshake.
+   *
+   * SINGLE-SESSION ONLY: the auto-proof transport path does not thread a
+   * sessionId, so it relies on the shared `activeSessionId`. That is only an
+   * unambiguous attribution when exactly one session exists. With multiple
+   * concurrent sessions and no threaded id, borrowing `activeSessionId` would
+   * sign the proof with another client's session/nonce/audience — so this
+   * refuses to borrow and returns undefined (the caller skips the proof). The
+   * `autoSession` create path is unaffected (it makes the single session).
    */
   async function ensureSession(): Promise<string | undefined> {
     if (activeSessionId) {
       const existing = await sessionManager.getSession(activeSessionId);
-      if (existing) return activeSessionId;
+      if (existing) {
+        if (sessionManager.getStats().activeSessions <= 1) {
+          return activeSessionId;
+        }
+        // Ambiguous: more than one session and none threaded — do NOT borrow.
+        logger.warn(
+          "[kya-os] Multiple sessions active and no sessionId threaded; skipping " +
+            "proof attribution to avoid signing with another client's session. " +
+            "Thread the sessionId (the auto-proof path is single-session only).",
+        );
+        return undefined;
+      }
     }
 
     if (!config.autoSession) return undefined;
@@ -659,7 +750,6 @@ export function createKyaOsMiddleware(
 
     if (result.success && result.session) {
       activeSessionId = result.session.sessionId;
-      sessionNonces.set(result.session.sessionId, result.session.nonce);
       return activeSessionId;
     }
 
@@ -703,8 +793,10 @@ export function createKyaOsMiddleware(
           { scopeId: context?.scopeId },
         );
 
-        // Attach proof as _meta (rendered by MCP Inspector, invisible to LLMs)
-        result._meta = { proof };
+        // Attach proof under the namespaced _meta key (rendered by MCP
+        // Inspector, invisible to LLMs), plus the legacy bare key when enabled.
+        // Other _meta keys may coexist (SEP-414).
+        result._meta = withProofMeta({}, proof);
 
         // Hand the verified call to the audit sink. A sink failure MUST NOT
         // break the tool response, so it is logged and swallowed.
@@ -790,7 +882,10 @@ export function createKyaOsMiddleware(
         outcome,
         reason: sanitizeForMessage(reason),
       });
-      response._meta = { ...(response._meta ?? {}), proof };
+      response._meta = withProofMeta(
+        (response._meta as Record<string, unknown> | undefined) ?? {},
+        proof,
+      );
     } catch (error) {
       logger.error("[kya-os] Outcome proof generation failed", {
         tool: toolName,
@@ -798,6 +893,170 @@ export function createKyaOsMiddleware(
       });
     }
     return response;
+  }
+
+  /**
+   * Deterministic grant id from (agentDid, sessionId, sorted scopes). Stable for
+   * the same tuple so a repeated VC-paste UPSERTS one grant rather than piling
+   * duplicate rows in a durable store.
+   */
+  async function grantId(
+    agentDid: string,
+    sessionId: string | undefined,
+    scopes: string[],
+  ): Promise<string> {
+    const key = `${agentDid}|${sessionId ?? ""}|${[...scopes].sort().join(",")}`;
+    const digest = await cryptoProvider.hash(new TextEncoder().encode(key));
+    return `grant_${digest.replace(/^sha256:/, "")}`;
+  }
+
+  /** Grant expiry (ms epoch) derived from the VC, or undefined for no expiry. */
+  function delegationExpiryMs(vc: DelegationCredential): number | undefined {
+    if (vc.expirationDate) {
+      const parsed = Date.parse(vc.expirationDate);
+      if (!Number.isNaN(parsed)) return parsed;
+    }
+    const notAfter = vc.credentialSubject?.delegation?.constraints?.notAfter;
+    if (typeof notAfter === "number") return notAfter * 1000;
+    return undefined;
+  }
+
+  /**
+   * Resolve a durable, agent-anchored grant for a no-delegation call — BUT ONLY
+   * behind a verified holder-of-key proof. The agent DID is taken from the
+   * `_kyaos_proof` and re-proven per request (possession of the subject key over
+   * THIS request), never trusted from a bearer hint. This is the single most
+   * security-sensitive gate of the durable-consent change: without it, any
+   * caller who knows agent A's DID could replay A's grant (confused-deputy
+   * escalation, spec §A.4). Returns undefined unless possession is proven.
+   */
+  async function resolveAgentGrant(
+    toolName: string,
+    args: Record<string, unknown>,
+    sessionId: string | undefined,
+    scopeId: string,
+  ): Promise<Grant | undefined> {
+    if (!holderBindingVerifier) return undefined; // inert unless holder binding is on
+    const proofArg = args["_kyaos_proof"];
+    if (proofArg === undefined) return undefined;
+    let parsedProof: unknown = proofArg;
+    if (typeof proofArg === "string") {
+      try {
+        parsedProof = JSON.parse(proofArg);
+      } catch {
+        return undefined;
+      }
+    }
+    const proof = parsedProof as DetachedProof;
+    const agentDid = proof?.meta?.did;
+    if (typeof agentDid !== "string" || !isHolderBindingApplicable(agentDid)) {
+      return undefined;
+    }
+    const binding = await assertHolderBinding({
+      proof,
+      subjectDid: agentDid,
+      request: toHolderBindingRequest(toolName, args),
+      expectedAudience: identity.did,
+      proofVerifier: holderBindingVerifier,
+    });
+    if (binding.status !== "bound") return undefined;
+    const grants = await grantStore.getByAgent(agentDid, [scopeId]);
+    // A session-bound grant is usable only from its own session; an
+    // agent-anchored (session-less) grant is portable across transports.
+    return grants.find(
+      (g) => g.sessionId === undefined || g.sessionId === sessionId,
+    );
+  }
+
+  /**
+   * Resolve an existing durable grant for a no-delegation (retry) call, so a
+   * fresh instance with empty memory authorizes the retry from the shared store.
+   * Fail-closed, holder-of-key first (agent-anchored, portable), then the
+   * session bearer capability (never crosses sessions). Returns undefined to
+   * fall through to the needs_authorization challenge.
+   */
+  async function resolveExistingGrant(
+    toolName: string,
+    args: Record<string, unknown>,
+    sessionId: string | undefined,
+    scopeId: string,
+  ): Promise<Grant | undefined> {
+    const agentGrant = await resolveAgentGrant(toolName, args, sessionId, scopeId);
+    if (agentGrant) return agentGrant;
+
+    if (sessionId) {
+      const [sessionGrant] = await grantStore.getBySession(sessionId, [scopeId]);
+      if (sessionGrant) return sessionGrant;
+    }
+    return undefined;
+  }
+
+  /**
+   * Mint a durable grant from a freshly-verified delegation so the NEXT call —
+   * on any instance — resolves via {@link resolveExistingGrant} without
+   * re-pasting the VC. Best-effort: a store failure must not break the
+   * already-authorized response.
+   */
+  async function bindGrantOnSuccess(
+    vc: DelegationCredential,
+    delegationArg: unknown,
+    isVCJWT: boolean,
+    sessionId: string | undefined,
+    scopeId: string,
+  ): Promise<void> {
+    try {
+      const agentDid = vc.credentialSubject?.id;
+      if (!agentDid) return;
+
+      // A session-less grant minted with holder binding OFF is unresolvable on
+      // retry (getByAgent needs a holder-of-key proof; getBySession needs a
+      // sessionId), so DON'T bind it — that would only orphan a row in a durable
+      // store. Durability for such flows comes from re-presenting the delegation,
+      // not from a grant. Enable holderBinding 'enforce' or thread a sessionId to
+      // use the grant-backed no-paste retry. (review F4)
+      if (holderBindingMode === "off" && sessionId === undefined) {
+        logger.debug(
+          `[kya-os] Skipping an unresolvable session-less grant for scope "${scopeId}" (holderBinding 'off', no sessionId).`,
+        );
+        return;
+      }
+
+      let delegatedScopes: string[];
+      try {
+        delegatedScopes = getDelegationScopes(vc);
+      } catch {
+        delegatedScopes = [];
+      }
+      // Store the EXACT required scope alongside the delegated scopes. The retry
+      // queries by the tool's exact scopeId, but the delegation may have granted
+      // a prefix/regex scope (e.g. "cart:*"); the store's exact `coversScopes`
+      // would never match the wildcard, so the no-paste retry would silently
+      // re-challenge. Including scopeId makes the grant resolvable. (review F1)
+      const scopes = Array.from(new Set([scopeId, ...delegatedScopes]));
+      const userDid = vc.credentialSubject?.delegation?.controller;
+      const expiresAt = delegationExpiryMs(vc);
+
+      const grant: Grant = {
+        id: await grantId(agentDid, sessionId, scopes),
+        agentDid,
+        ...(userDid !== undefined ? { userDid } : {}),
+        scopes,
+        ...(sessionId !== undefined ? { sessionId } : {}),
+        authorization: { type: "delegation" },
+        ...(isVCJWT && typeof delegationArg === "string"
+          ? { credentialJwt: delegationArg }
+          : {}),
+        issuedAt: Date.now(),
+        ...(expiresAt !== undefined ? { expiresAt } : {}),
+        status: "active",
+      };
+      await grantStore.bind(grant);
+    } catch (error) {
+      logger.error("[kya-os] Grant bind failed", {
+        scope: scopeId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   function wrapWithDelegation(
@@ -931,6 +1190,28 @@ export function createKyaOsMiddleware(
       const delegationArg = args["_kyaos_delegation"];
 
       if (delegationArg === undefined || delegationArg === null) {
+        // No delegation pasted — a durable grant may already authorize this call
+        // (the no-paste retry), even on a fresh instance with empty memory.
+        // Holder-of-key first (agent-anchored, proof-gated), then the session
+        // bearer capability. On a hit, skip the challenge and run the handler
+        // with exactly the call shape a verified delegation would have produced.
+        const existingGrant = await resolveExistingGrant(
+          toolName,
+          args,
+          sessionId,
+          config.scopeId,
+        );
+        if (existingGrant) {
+          const grantArgs: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(args)) {
+            if (!isKyaOsControlArg(k)) grantArgs[k] = v;
+          }
+          logger.debug(
+            `[kya-os] Grant resolved for "${toolName}" (scope "${config.scopeId}") — no re-paste required`,
+          );
+          return handler(grantArgs, sessionId, { scopeId: config.scopeId });
+        }
+
         // No delegation provided — return needs_authorization response
         const tokenBytes = await cryptoProvider.randomBytes(16);
         const hex = Array.from(tokenBytes)
@@ -1164,6 +1445,10 @@ export function createKyaOsMiddleware(
       for (const [k, v] of Object.entries(args)) {
         if (!isKyaOsControlArg(k)) cleanArgs[k] = v;
       }
+
+      // Mint a durable grant from this verified delegation so the next call —
+      // on any instance — resolves via resolveExistingGrant with no re-paste.
+      await bindGrantOnSuccess(vc, delegationArg, isVCJWT, sessionId, config.scopeId);
 
       logger.debug(
         `[kya-os] Delegation verified for "${toolName}", scope "${config.scopeId}"`,

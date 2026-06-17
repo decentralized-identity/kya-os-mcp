@@ -18,6 +18,7 @@ import { createKyaOsMiddleware } from '../../middleware/with-kya-os.js';
 import { withKyaOs } from '../../middleware/with-kya-os-server.js';
 import { NodeCryptoProvider } from '../utils/node-crypto-provider.js';
 import { generateDidKeyFromBase64 } from '../../utils/did-helpers.js';
+import { KYA_OS_PROOF_META_KEY } from '../../proof/index.js';
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -196,7 +197,7 @@ describe('McpServer (High-Level API) + KYA-OS Integration', () => {
 
     // Verify proof in _meta
     expect(result._meta).toBeDefined();
-    const proof = (result._meta as Record<string, unknown>).proof as {
+    const proof = (result._meta as Record<string, unknown>)[KYA_OS_PROOF_META_KEY] as {
       jws: string;
       meta: Record<string, unknown>;
     };
@@ -222,7 +223,7 @@ describe('McpServer (High-Level API) + KYA-OS Integration', () => {
 
     // Proof should be present via auto-session
     expect(result._meta).toBeDefined();
-    const proof = (result._meta as Record<string, unknown>).proof as {
+    const proof = (result._meta as Record<string, unknown>)[KYA_OS_PROOF_META_KEY] as {
       jws: string;
       meta: Record<string, unknown>;
     };
@@ -244,7 +245,7 @@ describe('McpServer (High-Level API) + KYA-OS Integration', () => {
 
     // Verify proof is attached
     expect(result._meta).toBeDefined();
-    const proof = (result._meta as Record<string, unknown>).proof as {
+    const proof = (result._meta as Record<string, unknown>)[KYA_OS_PROOF_META_KEY] as {
       jws: string;
       meta: Record<string, unknown>;
     };
@@ -264,10 +265,10 @@ describe('McpServer (High-Level API) + KYA-OS Integration', () => {
       arguments: { libraryId: '/expressjs/express', query: 'middleware' },
     });
 
-    const proof1 = (result1._meta as Record<string, unknown>).proof as {
+    const proof1 = (result1._meta as Record<string, unknown>)[KYA_OS_PROOF_META_KEY] as {
       meta: Record<string, unknown>;
     };
-    const proof2 = (result2._meta as Record<string, unknown>).proof as {
+    const proof2 = (result2._meta as Record<string, unknown>)[KYA_OS_PROOF_META_KEY] as {
       meta: Record<string, unknown>;
     };
 
@@ -363,7 +364,7 @@ describe('McpServer + withKyaOs() (Dream API)', () => {
     expect(first.text).toBe('Found results for: next.js routing');
 
     expect(result._meta).toBeDefined();
-    const proof = (result._meta as Record<string, unknown>).proof as {
+    const proof = (result._meta as Record<string, unknown>)[KYA_OS_PROOF_META_KEY] as {
       jws: string;
       meta: Record<string, unknown>;
     };
@@ -407,7 +408,7 @@ describe('McpServer + withKyaOs() (Dream API)', () => {
 
     for (const result of [searchResult, docsResult]) {
       expect(result._meta).toBeDefined();
-      const proof = (result._meta as Record<string, unknown>).proof as {
+      const proof = (result._meta as Record<string, unknown>)[KYA_OS_PROOF_META_KEY] as {
         jws: string;
       };
       expect(proof).toBeDefined();

@@ -59,7 +59,16 @@ export abstract class GrantStore {
   abstract bind(grant: Grant): Promise<void>;
   /** Active grants for an agent DID, optionally narrowed to required scopes. */
   abstract getByAgent(agentDid: string, requiredScopes?: string[]): Promise<Grant[]>;
-  /** Active grants bound to a session, optionally narrowed to required scopes. */
+  /**
+   * Active grants bound to a session, optionally narrowed to required scopes.
+   *
+   * SECURITY: this path resolves on possession of the `sessionId` ALONE — there
+   * is no per-request proof here — so the session id is a bearer capability and
+   * its confidentiality is load-bearing (treat it like a secret; never log or
+   * expose it). For privileged scopes prefer holder-of-key (`holderBinding:
+   * 'enforce'` + {@link GrantStore.getByAgent}), which re-proves possession of
+   * the agent's key on every request and does not rely on session secrecy.
+   */
   abstract getBySession(sessionId: string, requiredScopes?: string[]): Promise<Grant[]>;
   /** A grant by id regardless of status (returns revoked/expired records too). */
   abstract getById(id: string): Promise<Grant | undefined>;

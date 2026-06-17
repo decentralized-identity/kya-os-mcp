@@ -9,6 +9,10 @@ import { requirementMatchesAdapter } from '../adapter.js';
 import { buildAuthorizeUrl } from './authorize.js';
 import { computeS256Challenge } from './pkce.js';
 import type { ToolProtection } from '../requirement.js';
+import {
+  MemoryPendingFlowStore,
+  type PendingFlowStore,
+} from './pending-flow-store.js';
 
 /** A minimal fetch signature — the injectable seam for IdP HTTP calls. */
 export type FetchImpl = (
@@ -30,15 +34,17 @@ export interface GenericOidcAdapterConfig {
   resumeTokenTtlMs?: number;
   /** Injected fetch seam; defaults to the runtime global fetch. */
   fetchImpl?: FetchImpl;
+  /**
+   * Pluggable store for in-flight PKCE state. Defaults to an in-memory store
+   * (single-process only). Inject a durable {@link PendingFlowStore} (Redis /
+   * Durable Object / DB) so an authorization callback that lands on another
+   * instance — or after a restart — can still complete the token exchange.
+   */
+  pendingFlowStore?: PendingFlowStore;
 }
 
-interface PendingFlow {
-  agentDid: string;
-  scopes: string[];
-  state: string;
-  codeVerifier: string;
-  redirectUri: string;
-}
+/** Default resume-token / pending-flow lifetime (10 minutes). */
+const DEFAULT_RESUME_TOKEN_TTL_MS = 600_000;
 
 /**
  * Reference generic-OIDC authorization-server adapter.
@@ -56,11 +62,12 @@ interface PendingFlow {
  */
 export class GenericOidcAdapter implements AuthorizationServerAdapter {
   readonly type = 'oauth' as const;
-  private readonly pending = new Map<string, PendingFlow>();
+  private readonly pendingFlowStore: PendingFlowStore;
   private readonly fetchImpl: FetchImpl;
 
   constructor(private readonly config: GenericOidcAdapterConfig) {
     this.fetchImpl = config.fetchImpl ?? ((url, init) => fetch(url, init));
+    this.pendingFlowStore = config.pendingFlowStore ?? new MemoryPendingFlowStore();
   }
 
   isRequired(protection: ToolProtection): boolean {
@@ -77,14 +84,19 @@ export class GenericOidcAdapter implements AuthorizationServerAdapter {
     const codeVerifier = randomToken(32);
     const codeChallenge = await computeS256Challenge(codeVerifier);
     const resumeToken = randomToken(24);
+    const ttlMs = this.config.resumeTokenTtlMs ?? DEFAULT_RESUME_TOKEN_TTL_MS;
 
-    this.pending.set(resumeToken, {
-      agentDid: params.agentDid,
-      scopes,
-      state: params.state,
-      codeVerifier,
-      redirectUri: params.redirectUri,
-    });
+    await this.pendingFlowStore.put(
+      resumeToken,
+      {
+        agentDid: params.agentDid,
+        scopes,
+        state: params.state,
+        codeVerifier,
+        redirectUri: params.redirectUri,
+      },
+      ttlMs,
+    );
 
     const authorizationUrl = buildAuthorizeUrl({
       authorizationEndpoint: this.config.authorizationEndpoint,
@@ -100,13 +112,18 @@ export class GenericOidcAdapter implements AuthorizationServerAdapter {
       message: `Authorization required for "${params.protection.toolName}".`,
       authorizationUrl,
       resumeToken,
-      expiresAt: nowMs() + (this.config.resumeTokenTtlMs ?? 600_000),
+      expiresAt: nowMs() + ttlMs,
       scopes,
     });
   }
 
   async verifyAuthorization(flowState: string, result: unknown): Promise<VerifyDelegationResult> {
-    const pending = this.pending.get(flowState);
+    // Atomically consume the pending flow up front: one-time use, so two
+    // concurrent callbacks for the same resume token can't both reach the token
+    // exchange (closes the replay window). The trade-off is that a transient IdP
+    // failure burns the token and the user re-initiates — acceptable, and the
+    // authorization code is itself one-time-use at the IdP.
+    const pending = await this.pendingFlowStore.consume(flowState);
     if (!pending) {
       return { valid: false, reason: 'unknown or expired resume token' };
     }
@@ -143,9 +160,7 @@ export class GenericOidcAdapter implements AuthorizationServerAdapter {
       return { valid: false, reason: `token exchange failed: ${(error as Error).message}` };
     }
 
-    // One-time use: a resume token is consumed on verification.
-    this.pending.delete(flowState);
-
+    // The flow was already atomically consumed above (one-time use).
     const grantedScopes = token.scope ? token.scope.split(' ') : pending.scopes;
     return {
       valid: true,
@@ -159,8 +174,8 @@ export class GenericOidcAdapter implements AuthorizationServerAdapter {
   }
 
   /** Test/inspection seam: the pending code verifier for a resume token, if any. */
-  pendingVerifierFor(resumeToken: string): string | undefined {
-    return this.pending.get(resumeToken)?.codeVerifier;
+  async pendingVerifierFor(resumeToken: string): Promise<string | undefined> {
+    return (await this.pendingFlowStore.get(resumeToken))?.codeVerifier;
   }
 }
 

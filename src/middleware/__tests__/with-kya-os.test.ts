@@ -17,11 +17,13 @@ import {
   base64urlEncodeFromBytes,
 } from '../../utils/base64.js';
 import { AuditLogProvider, MemoryAuditLogProvider } from '../../providers/audit-log.js';
+import { KYA_OS_PROOF_META_KEY, LEGACY_PROOF_META_KEY } from '../../proof/index.js';
 
 async function createTestMiddleware(options?: {
   autoSession?: boolean;
   delegation?: KyaOsDelegationConfig;
   auditLog?: AuditLogProvider;
+  emitLegacyProofKey?: boolean;
 }) {
   const crypto = new NodeCryptoProvider();
   const keyPair = await crypto.generateKeyPair();
@@ -35,6 +37,9 @@ async function createTestMiddleware(options?: {
       delegation: options?.delegation,
       autoSession: options?.autoSession,
       auditLog: options?.auditLog,
+      ...(options?.emitLegacyProofKey !== undefined
+        ? { emitLegacyProofKey: options.emitLegacyProofKey }
+        : {}),
     },
     crypto,
   );
@@ -248,8 +253,8 @@ describe('createKyaOsMiddleware', () => {
 
       // Proof in _meta, not in content
       expect(result._meta).toBeDefined();
-      expect(result._meta!.proof).toBeDefined();
-      const proof = result._meta!.proof as { jws: string; meta: Record<string, unknown> };
+      expect(result._meta![KYA_OS_PROOF_META_KEY]).toBeDefined();
+      const proof = result._meta![KYA_OS_PROOF_META_KEY] as { jws: string; meta: Record<string, unknown> };
       expect(proof.jws).toBeDefined();
       expect(proof.meta.did).toMatch(/^did:key:/);
       expect(proof.meta.sessionId).toBe(sessionId);
@@ -328,7 +333,7 @@ describe('createKyaOsMiddleware', () => {
 
       // The proofed response must be intact despite the sink failure.
       expect(result.content[0].text).toBe('hi');
-      expect(result._meta!.proof).toBeDefined();
+      expect(result._meta![KYA_OS_PROOF_META_KEY]).toBeDefined();
     });
 
     it('records the delegation scope when threaded via call context', async () => {
@@ -390,7 +395,7 @@ describe('createKyaOsMiddleware', () => {
       // But _meta signals the proof failure
       expect(result._meta).toBeDefined();
       expect(result._meta!.proofError).toBeDefined();
-      expect(result._meta!.proof).toBeUndefined();
+      expect(result._meta![KYA_OS_PROOF_META_KEY]).toBeUndefined();
     });
   });
 
@@ -451,9 +456,9 @@ describe('createKyaOsMiddleware', () => {
       const result = await handler({ _kyaos_delegation: vc }, sessionId);
 
       expect(result.isError).toBe(true);
-      const meta = (result as { _meta?: { proof?: { meta?: Record<string, unknown> } } })._meta;
-      expect(meta?.proof?.meta?.['outcome']).toBe('denied');
-      expect(meta?.proof?.meta?.['responseHash']).toBeUndefined();
+      const meta = (result as { _meta?: Record<string, { meta?: Record<string, unknown> } | undefined> })._meta;
+      expect(meta?.[KYA_OS_PROOF_META_KEY]?.meta?.['outcome']).toBe('denied');
+      expect(meta?.[KYA_OS_PROOF_META_KEY]?.meta?.['responseHash']).toBeUndefined();
     });
 
     it('emits a signed proof (outcome=needs_authorization) on the no-delegation challenge', async () => {
@@ -481,9 +486,9 @@ describe('createKyaOsMiddleware', () => {
 
       // ...and now carries a signed proof that BINDS the challenge content via
       // responseHash (covering the authorizationUrl) — option B, anti-MITM.
-      const meta = (result as { _meta?: { proof?: { meta?: Record<string, unknown> } } })._meta;
-      expect(meta?.proof?.meta?.['outcome']).toBe('needs_authorization');
-      expect(meta?.proof?.meta?.['responseHash']).toBeDefined();
+      const meta = (result as { _meta?: Record<string, { meta?: Record<string, unknown> } | undefined> })._meta;
+      expect(meta?.[KYA_OS_PROOF_META_KEY]?.meta?.['outcome']).toBe('needs_authorization');
+      expect(meta?.[KYA_OS_PROOF_META_KEY]?.meta?.['responseHash']).toBeDefined();
     });
 
     it('renders the challenge via formatChallenge and binds the proof over THAT content', async () => {
@@ -520,9 +525,9 @@ describe('createKyaOsMiddleware', () => {
 
       // The proof binds a responseHash over the rendered content (so a verifier
       // hashing what the client received matches) with outcome=needs_authorization.
-      const meta = (result as { _meta?: { proof?: { meta?: Record<string, unknown> } } })._meta;
-      expect(meta?.proof?.meta?.['outcome']).toBe('needs_authorization');
-      expect(meta?.proof?.meta?.['responseHash']).toBeDefined();
+      const meta = (result as { _meta?: Record<string, { meta?: Record<string, unknown> } | undefined> })._meta;
+      expect(meta?.[KYA_OS_PROOF_META_KEY]?.meta?.['outcome']).toBe('needs_authorization');
+      expect(meta?.[KYA_OS_PROOF_META_KEY]?.meta?.['responseHash']).toBeDefined();
     });
 
     it('falls back to the default JSON challenge when formatChallenge throws (no -32603)', async () => {
@@ -557,9 +562,9 @@ describe('createKyaOsMiddleware', () => {
       expect(parsed.authorizationUrl).toBe('https://example.com/consent');
 
       // Still carries a signed proof binding the (default) challenge content.
-      const meta = (result as { _meta?: { proof?: { meta?: Record<string, unknown> } } })._meta;
-      expect(meta?.proof?.meta?.['outcome']).toBe('needs_authorization');
-      expect(meta?.proof?.meta?.['responseHash']).toBeDefined();
+      const meta = (result as { _meta?: Record<string, { meta?: Record<string, unknown> } | undefined> })._meta;
+      expect(meta?.[KYA_OS_PROOF_META_KEY]?.meta?.['outcome']).toBe('needs_authorization');
+      expect(meta?.[KYA_OS_PROOF_META_KEY]?.meta?.['responseHash']).toBeDefined();
     });
 
     it('returns delegation_invalid (not a crash) for structurally malformed delegations', async () => {
@@ -605,8 +610,8 @@ describe('createKyaOsMiddleware', () => {
 
       const result = await handler({ _kyaos_delegation: { bogus: true } }, sessionId);
       expect(result.isError).toBe(true);
-      const meta = (result as { _meta?: { proof?: { meta?: Record<string, unknown> } } })._meta;
-      expect(meta?.proof?.meta?.['outcome']).toBe('denied');
+      const meta = (result as { _meta?: Record<string, { meta?: Record<string, unknown> } | undefined> })._meta;
+      expect(meta?.[KYA_OS_PROOF_META_KEY]?.meta?.['outcome']).toBe('denied');
     });
 
     it('returns delegation_invalid (not a crash) when a delegation accessor throws', async () => {
@@ -981,7 +986,7 @@ describe('createKyaOsMiddleware', () => {
 
       // Proof should still be generated via auto-session
       expect(result._meta).toBeDefined();
-      const proof = result._meta!.proof as { jws: string; meta: Record<string, unknown> };
+      const proof = result._meta![KYA_OS_PROOF_META_KEY] as { jws: string; meta: Record<string, unknown> };
       expect(proof.jws).toBeDefined();
       expect(proof.meta.did).toMatch(/^did:key:/);
       expect(proof.meta.sessionId).toMatch(/^kyaos_/);
@@ -999,10 +1004,90 @@ describe('createKyaOsMiddleware', () => {
       const result1 = await handler({});
       const result2 = await handler({});
 
-      const proof1 = result1._meta!.proof as { meta: Record<string, unknown> };
-      const proof2 = result2._meta!.proof as { meta: Record<string, unknown> };
+      const proof1 = result1._meta![KYA_OS_PROOF_META_KEY] as { meta: Record<string, unknown> };
+      const proof2 = result2._meta![KYA_OS_PROOF_META_KEY] as { meta: Record<string, unknown> };
 
       expect(proof1.meta.sessionId).toBe(proof2.meta.sessionId);
+    });
+  });
+
+  describe('emitLegacyProofKey', () => {
+    async function proofedMeta(emitLegacyProofKey?: boolean): Promise<Record<string, unknown>> {
+      const { middleware, did } = await createTestMiddleware(
+        emitLegacyProofKey === undefined ? {} : { emitLegacyProofKey },
+      );
+      const hs = await middleware.handleHandshake({
+        nonce: `legacy-${Math.random().toString(16).slice(2)}`,
+        audience: did,
+        timestamp: Math.floor(Date.now() / 1000),
+      });
+      const sessionId = JSON.parse(hs.content[0].text).sessionId;
+      const handler = middleware.wrapWithProof('greet', async () => ({
+        content: [{ type: 'text', text: 'Hello!' }],
+      }));
+      const result = await handler({ name: 'DIF' }, sessionId);
+      return result._meta as Record<string, unknown>;
+    }
+
+    it('by default emits the proof under BOTH keys with an identical value', async () => {
+      const meta = await proofedMeta();
+      expect(meta[KYA_OS_PROOF_META_KEY]).toBeDefined();
+      expect(meta[LEGACY_PROOF_META_KEY]).toBeDefined();
+      expect(meta[LEGACY_PROOF_META_KEY]).toEqual(meta[KYA_OS_PROOF_META_KEY]);
+    });
+
+    it('emits ONLY the namespaced key when emitLegacyProofKey is false', async () => {
+      const meta = await proofedMeta(false);
+      expect(meta[KYA_OS_PROOF_META_KEY]).toBeDefined();
+      expect(meta[LEGACY_PROOF_META_KEY]).toBeUndefined();
+    });
+
+    it('the legacy mirror does not change the response hash (_meta is excluded from the hash)', async () => {
+      const both = await proofedMeta(true);
+      const single = await proofedMeta(false);
+      const responseHashOf = (m: Record<string, unknown>): string | undefined =>
+        (m[KYA_OS_PROOF_META_KEY] as { meta: { responseHash?: string } }).meta.responseHash;
+      // Same tool + same args ⇒ identical responseHash regardless of the _meta mirror.
+      expect(responseHashOf(both)).toBeDefined();
+      expect(responseHashOf(both)).toBe(responseHashOf(single));
+    });
+  });
+
+  describe('proof attribution safety (F5)', () => {
+    it('attributes the proof to the single session when exactly one exists', async () => {
+      const { middleware: kyaos, did } = await createTestMiddleware();
+      await kyaos.handleHandshake({
+        nonce: `f5-single-${Math.random().toString(16).slice(2)}`,
+        audience: did,
+        timestamp: Math.floor(Date.now() / 1000),
+      });
+      const handler = kyaos.wrapWithProof('greet', async () => ({
+        content: [{ type: 'text', text: 'Hello!' }],
+      }));
+      // No threaded sessionId, but exactly one session ⇒ unambiguous ⇒ proof attached.
+      const result = await handler({});
+      expect(result._meta![KYA_OS_PROOF_META_KEY]).toBeDefined();
+    });
+
+    it('does NOT borrow activeSessionId when multiple sessions exist and none is threaded', async () => {
+      const { middleware: kyaos, did } = await createTestMiddleware();
+      await kyaos.handleHandshake({
+        nonce: `f5-a-${Math.random().toString(16).slice(2)}`,
+        audience: did,
+        timestamp: Math.floor(Date.now() / 1000),
+      });
+      await kyaos.handleHandshake({
+        nonce: `f5-b-${Math.random().toString(16).slice(2)}`,
+        audience: did,
+        timestamp: Math.floor(Date.now() / 1000),
+      });
+      const handler = kyaos.wrapWithProof('greet', async () => ({
+        content: [{ type: 'text', text: 'Hello!' }],
+      }));
+      // Two sessions + no threaded id ⇒ ambiguous ⇒ proof skipped (not mis-attributed).
+      const result = await handler({});
+      expect(result.content[0].text).toBe('Hello!');
+      expect(result._meta?.[KYA_OS_PROOF_META_KEY]).toBeUndefined();
     });
   });
 });

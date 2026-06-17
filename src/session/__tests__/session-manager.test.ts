@@ -13,6 +13,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { SessionManager, createHandshakeRequest, validateHandshakeFormat } from "../manager.js";
 import type { SessionConfig } from "../manager.js";
+import { MemorySessionStore } from "../session-store.js";
 import type { HandshakeRequest } from "../../types/protocol.js";
 import { AUTH_NONCE_TTL_MS, ANON_NONCE_TTL_MS } from "../../types/protocol.js";
 
@@ -238,10 +239,30 @@ describe("SessionManager", () => {
   describe("clearSessions", () => {
     it("should clear all sessions", async () => {
       await manager.validateHandshake(makeRequest());
-      manager.clearSessions();
+      await manager.clearSessions();
 
       const stats = manager.getStats();
       expect(stats.activeSessions).toBe(0);
+    });
+  });
+
+  describe("injected SessionStore", () => {
+    it("routes get/set/delete through an injected store (parity with the default)", async () => {
+      const store = new MemorySessionStore();
+      const sm = makeSessionManager({ sessionStore: store });
+
+      const result = await sm.validateHandshake(makeRequest());
+      expect(result.success).toBe(true);
+      const sessionId = result.session!.sessionId;
+
+      // The injected store holds the session, and the manager reads through it.
+      expect(store.size()).toBe(1);
+      expect(await sm.getSession(sessionId)).not.toBeNull();
+      expect((await store.get(sessionId))?.sessionId).toBe(sessionId);
+
+      await sm.clearSessions();
+      expect(store.size()).toBe(0);
+      expect(await sm.getSession(sessionId)).toBeNull();
     });
   });
 

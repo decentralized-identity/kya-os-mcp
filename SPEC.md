@@ -431,6 +431,15 @@ shape check to bridge non-conformant issuers. Such an opt-out MUST default to of
 and MUST emit a one-time warning when enabled, so the relaxation is visible in
 operational logs.
 
+> **Schema dialect (MCP 2026-07-28).** All KYA-OS JSON Schemas in this
+> specification — and the normative copies in `schemas/*.json` — are authored
+> against **JSON Schema 2020-12** and MUST declare
+> `"$schema": "https://json-schema.org/draft/2020-12/schema"`. KYA-OS MCP tool
+> definitions MUST likewise express their `inputSchema` and `outputSchema` in
+> JSON Schema 2020-12 (SEP-2106). Consistent with the RC, a tool's
+> `structuredContent` MAY be any JSON value permitted by its `outputSchema`, not
+> only a JSON object.
+
 ### 6.3 CRISP Constraint Envelope
 
 ```typescript

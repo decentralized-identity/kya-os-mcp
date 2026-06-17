@@ -1043,6 +1043,35 @@ recomputing `responseHash` over the challenge it actually received
 6. Client retries request with `resumeToken` and new delegation
 7. Server validates delegation and processes request
 
+### 9.4 OAuth/OIDC Hardening Alignment (MCP 2026-07-28)
+
+Where the authorization service in §9.3 is an OAuth 2.0 / OIDC authorization
+server, the KYA-OS profile aligns with the MCP 2026-07-28 OAuth hardening SEPs.
+These are *additive* hardening requirements; they do not change the KYA-OS trust
+model (§15.1), in which authority rides on a verified delegation chain, not on a
+bearer token.
+
+1. **Issuer validation (RFC 9207 / SEP-2468).** On the authorization callback /
+   resume step, the client MUST validate the `iss` authorization-response
+   parameter against the expected issuer and MUST reject a response whose `iss`
+   does not exactly match. This is verified *in addition to* recomputing
+   `responseHash` over the challenge (§9.3 step 2).
+2. **Credential↔issuer binding (SEP-2352).** Any token or credential obtained in
+   step 5 MUST be bound to, and accepted only for, the issuer that minted it; a
+   credential MUST NOT be replayed against a different issuer or resource.
+3. **Dynamic Client Registration `application_type` (SEP-837).** Clients
+   performing DCR MUST declare `application_type` and MUST NOT use a redirect URI
+   inconsistent with it.
+4. **Refresh & step-up (SEP-2207 / SEP-2350).** Refresh tokens follow SEP-2207;
+   a `step_up_required` outcome (§7.2) accumulates scope per SEP-2350 rather than
+   discarding previously granted scope.
+5. **Metadata discovery (SEP-2351).** `.well-known` authorization-server and
+   protected-resource metadata use the SEP-2351 path-suffix form.
+
+A KYA-OS server MUST NOT treat successful completion of this OAuth flow as
+sufficient on its own: the resulting DelegationCredential is still verified per
+§6 and §7 on the retried request (§9.3 step 7).
+
 ---
 
 ## 10. Well-Known Endpoint
@@ -1333,6 +1362,15 @@ at every invocation (§6, §7). The delegation chain remains required and
 verifiable at Level 2 and Level 3 regardless of whether or how the agent's
 identity is recorded in a trust registry (§6.8). Registry presence is discovery
 and a trust signal (§11.0), never a substitute for chain verification.
+
+This is complementary to, not in tension with, MCP 2026-07-28's OAuth hardening.
+Where KYA-OS interoperates with an OAuth/OIDC authorization server (§9.4), it
+adopts that server-side hardening — `iss` validation per RFC 9207 (SEP-2468),
+credential↔issuer binding (SEP-2352), DCR `application_type` (SEP-837) — as the
+*token-acquisition* layer, while the delegation chain (§6, §7) remains the
+*authority* layer verified at every invocation. OAuth hardening strengthens how a
+credential is obtained; it never becomes the basis on which a KYA-OS request is
+authorized.
 
 ---
 

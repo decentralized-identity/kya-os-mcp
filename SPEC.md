@@ -834,10 +834,11 @@ therefore namespaces its own payload and MUST NOT assume exclusive ownership of
 `_meta`.
 
 **Canonical key.** KYA-OS attaches its detached proof under the reverse-DNS key
-`org.kya-os/proof` (the `proofMetaKey`). This key SHOULD be configurable: if and
-when KYA-OS is registered as an MCP Extension (SEP-2133), its reverse-DNS
-extension id — and hence this key — may change; implementations MUST allow the
-key to be set without a code change.
+`org.kya-os/proof` (the `proofMetaKey`). This key SHOULD be configurable (e.g., a
+single build-time constant rather than a value scattered through the code), so
+that if and when KYA-OS is registered as an MCP Extension (SEP-2133), its
+reverse-DNS extension id — and hence this key — can be re-pointed without a wire
+change.
 
 > **Editorial note — open for discussion.** The reverse-DNS key `org.kya-os/proof`
 > (and the corresponding proposed MCP Extension id `org.kya-os.identity`; see

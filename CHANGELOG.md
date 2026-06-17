@@ -7,6 +7,17 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-06-17
+
+Durable consent persistence. Pluggable `GrantStore` / `PendingFlowStore` /
+`SessionStore` seams so consent, grant, and PKCE state survive restarts and
+resolve across load-balanced instances — the holder-of-key (`getByAgent`)
+no-paste retry, with session-bearer (`getBySession`) as a fallback. The detached
+proof is namespaced under `_meta["org.kya-os/proof"]` and still dual-emitted
+under the legacy bare key (ON for all of 1.x, dropped at 2.0). Additive over
+1.6.x, with one documented behavioral change: a `strict` verifier now ignores
+MCP-reserved foreign `_meta` keys instead of rejecting them.
+
 ### Added
 
 - **Durable consent persistence (optional, in-memory defaults — no breaking

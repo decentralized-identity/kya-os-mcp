@@ -62,7 +62,7 @@ DIDs and Verifiable Credentials are the right fit for this problem:
 | **Delegation Credential** | A W3C Verifiable Credential that grants specific permissions from an issuer (delegator) to a subject (delegate). Contains CRISP constraints defining allowed operations. |
 | **Detached Proof** | A JWS (JSON Web Signature) that cryptographically binds a tool request and response together, enabling non-repudiation and audit. Attached to responses under the reverse-DNS key `org.kya-os/proof` within the MCP `_meta` field (legacy bare `proof` accepted for backward compatibility; see §7.6). |
 | **CRISP Constraints** | **C**onstraints, **R**esources, **I**dentity, **S**cope, **P**olicy — a structured envelope defining what operations a delegation permits: allowed scopes, budget caps, temporal bounds, and audience restrictions. |
-| **Session** | A validated, time-bounded context established via handshake. Sessions prevent replay attacks and provide a stable context for proof generation. |
+| **Session** | An OPTIONAL, validated, time-bounded convenience context established via the `_kyaos_handshake` tool. Sessions aid replay prevention and provide a stable context for proof generation, but are **not** the durable authority — the per-request detached-JWS proof (§7) and DID-anchored grant (§6) are (see §5 preamble). KYA-OS sessions are independent of MCP's session, which was removed in MCP 2026-07-28 (SEP-2567/SEP-2575). |
 | **Handshake Nonce** | A cryptographically random value provided by the client during session establishment. Used once; prevents replay attacks. |
 | **Audience** | The intended recipient of a credential or proof, typically the MCP server's DID or domain. Prevents credential/proof misuse across different servers. |
 
@@ -248,6 +248,31 @@ are non-conformant.
 ---
 
 ## 5. Session Lifecycle
+
+> **Normative framing (MCP 2026-07-28).** The KYA-OS session described in this
+> section is an **OPTIONAL convenience layer**, not the protocol's durable source
+> of authority. The **normative, durable authority** for every KYA-OS interaction
+> is (a) the per-request **holder-of-key detached-JWS proof** (§7), which is
+> self-contained and replay-bound on its own, and (b) the **DID-anchored
+> delegation grant** (§6). A conformant verifier MUST be able to authorize and
+> audit a request from the proof and grant alone, with no server-side session
+> state.
+>
+> This independence is deliberate. MCP 2026-07-28 removed `initialize`/
+> `initialized` (SEP-2575) and the `Mcp-Session-Id` header (SEP-2567), making the
+> MCP core stateless: every request is self-contained, and client info, version,
+> and capabilities ride in `_meta` per request. KYA-OS sessions are **KYA-OS's
+> own layer** — established via the `_kyaos_handshake` tool (§14), independent of
+> MCP's now-removed session — and exist only as a **transport/UX convenience**
+> (e.g. for wallet-less clients, nonce bookkeeping, and a stable context for proof
+> generation). They are an *application-state handle* in the SEP-2575 sense:
+> explicit and model-visible, never hidden server state on which authorization
+> silently depends.
+>
+> The `sessionId`/`nonce` carried in a proof (§7.2) therefore bind a proof to its
+> originating handshake for replay defense; they are **not** a substitute for
+> verifying the proof signature and the delegation chain. The mechanics below
+> remain valid where a session is used.
 
 ### 5.1 Handshake Request
 

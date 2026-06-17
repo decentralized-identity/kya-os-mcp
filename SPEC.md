@@ -60,7 +60,7 @@ DIDs and Verifiable Credentials are the right fit for this problem:
 | **Responsible Party** | The entity ultimately accountable for the actions of an agent operating under a delegation chain. The Responsible Party is the root issuer of the chain (`issuerDid` of the root `DelegationCredential`). In personal use, the Responsible Party equals the Principal. In organizational use, the Responsible Party is the employing organization or parent entity while the Principal is the immediate human delegator within that organization. Reputation and accountability signals are scoped primarily to the Responsible Party rather than to an agent's ephemeral identity — "can this be trusted?" is ultimately a question about the accountable party. |
 | **Delegation Chain** | An ordered sequence of Delegation Credentials from a root delegator (the Responsible Party) to the current agent, where each credential's subject is the next credential's issuer. |
 | **Delegation Credential** | A W3C Verifiable Credential that grants specific permissions from an issuer (delegator) to a subject (delegate). Contains CRISP constraints defining allowed operations. |
-| **Detached Proof** | A JWS (JSON Web Signature) that cryptographically binds a tool request and response together, enabling non-repudiation and audit. Attached to responses in the `_meta` field. |
+| **Detached Proof** | A JWS (JSON Web Signature) that cryptographically binds a tool request and response together, enabling non-repudiation and audit. Attached to responses under the reverse-DNS key `org.kya-os/proof` within the MCP `_meta` field (legacy bare `proof` accepted for backward compatibility; see §7.6). |
 | **CRISP Constraints** | **C**onstraints, **R**esources, **I**dentity, **S**cope, **P**olicy — a structured envelope defining what operations a delegation permits: allowed scopes, budget caps, temporal bounds, and audience restrictions. |
 | **Session** | A validated, time-bounded context established via handshake. Sessions prevent replay attacks and provide a stable context for proof generation. |
 | **Handshake Nonce** | A cryptographically random value provided by the client during session establishment. Used once; prevents replay attacks. |
@@ -120,7 +120,7 @@ The following diagram illustrates the KYA-OS protocol flow:
          │  │ 4. TOOL CALL RESPONSE                    │  │
          │  │    content: [ { type: "text", ... } ]    │  │
          │  │    _meta:                                │  │
-         │  │      proof:                              │  │
+         │  │      org.kya-os/proof:                   │  │
          │  │        jws: "eyJhbGciOiJFZERTQSI..."     │  │
          │  │        meta:                             │  │
          │  │          did: "did:web:srv"              │  │
@@ -757,13 +757,16 @@ substitution — and `outcome: "needs_authorization"`:
 
 ### 7.5 _meta Attachment
 
-The proof is attached to tool responses in the `_meta` field:
+The proof is attached to tool responses under the reverse-DNS key
+`org.kya-os/proof` inside the standard MCP `_meta` field. Other `_meta` keys
+(e.g. `io.modelcontextprotocol/*`, `traceparent`) MAY coexist and are ignored by
+the verifier (§7.6):
 
 ```json
 {
   "content": [{ "type": "text", "text": "File contents..." }],
   "_meta": {
-    "proof": {
+    "org.kya-os/proof": {
       "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6Ii4uLiJ9.eyJhdWQiOi4uLn0.c2ln...",
       "meta": {
         "did": "did:web:server.example.com",
@@ -775,16 +778,68 @@ The proof is attached to tool responses in the `_meta` field:
         "requestHash": "sha256:a1b2c3...",
         "responseHash": "sha256:d4e5f6..."
       }
-    }
+    },
+    "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
   }
 }
 ```
 
-### 7.6 _meta Hash Exclusion
+The `traceparent` key above illustrates a coexisting reserved key; it is not part
+of the proof and is never hashed or trusted (§7.6).
 
-The response hash is computed over the response object with `_meta` removed. Implementations MUST NOT rely on signature coverage of `_meta` fields. Verifiers SHOULD treat `_meta` as containing only `proof` unless the session config explicitly enables additional `_meta` fields via `session.metaPolicy`.
+### 7.6 _meta Namespacing and Hash Exclusion
 
-When `session.metaPolicy` is set to `strict` (the default), verifiers MUST reject responses whose `_meta` contains keys other than `proof`. When set to `allow-extensions`, verifiers permit additional keys in `_meta` but MUST NOT include them in any hash computation or signature verification.
+The response hash is computed over the response object with `_meta` removed (see
+§7.3). Implementations MUST NOT rely on signature coverage of any `_meta` field.
+
+`_meta` is the Model Context Protocol per-request metadata channel and is shared
+real estate: under MCP 2026-07-28 it legitimately carries reverse-DNS–namespaced
+keys reserved by the MCP maintainers (`io.modelcontextprotocol/*`) and W3C Trace
+Context propagation keys (`traceparent`, `tracestate`, `baggage`). KYA-OS
+therefore namespaces its own payload and MUST NOT assume exclusive ownership of
+`_meta`.
+
+**Canonical key.** KYA-OS attaches its detached proof under the reverse-DNS key
+`org.kya-os/proof` (the `proofMetaKey`). This key SHOULD be configurable: if and
+when KYA-OS is registered as an MCP Extension (SEP-2133), its reverse-DNS
+extension id — and hence this key — may change; implementations MUST allow the
+key to be set without a code change.
+
+> **Editorial note — open for discussion.** The reverse-DNS key `org.kya-os/proof`
+> (and the corresponding proposed MCP Extension id `org.kya-os.identity`; see
+> §15.2) are **proposed** and not yet ratified. They remain open for
+> working-group discussion and MAY change before this revision is finalized.
+> Because the key is configurable (above), pinning the final id later does not
+> require a code change.
+
+**Backward compatibility.** For one major version, verifiers MUST also accept a
+proof published under the legacy bare key `proof`. Producers SHOULD emit
+`org.kya-os/proof`; producers targeting pre-1.1 verifiers MAY additionally
+mirror the proof under bare `proof`. When both are present and disagree, the
+namespaced key wins.
+
+**`metaPolicy` semantics.** The `session.metaPolicy` setting governs how a
+verifier treats `_meta` keys that are *not* KYA-OS's proof key:
+
+- `strict` (the default) — the verifier processes **only** the KYA-OS proof key
+  (`org.kya-os/proof`, or legacy `proof`). All other keys are **ignored**: never
+  hashed, never trusted, and — critically — **never a cause for rejection**. In
+  particular a `strict` verifier MUST NOT reject a response merely because
+  `_meta` also carries `io.modelcontextprotocol/*`, `traceparent`, `tracestate`,
+  or `baggage`; these reserved/standard keys are explicitly allowlisted and pass
+  through untouched.
+- `allow-extensions` — identical trust boundary (still only the KYA-OS proof key
+  is hashed or trusted), but the verifier additionally surfaces non-KYA-OS
+  `_meta` keys to the application layer rather than discarding them.
+
+Under no policy does a verifier include any non-proof `_meta` key in a hash or
+signature computation. The signature covers the `data`/response body only; it
+never covers `_meta` (§7.3).
+
+> **Note.** The proof object's shape is normatively defined by
+> `schemas/detached-proof.json` (`$schema: draft/2020-12`). The *placement* key
+> inside `_meta` is `org.kya-os/proof`; the schema describes the value
+> (`{ jws, meta }`), not the key.
 
 ### 7.7 Delegation Chain Audit Example
 
@@ -828,7 +883,7 @@ The `parentDelegation` field links this record back to the User → Agent A cred
 {
   "content": [{ "type": "text", "text": "file contents..." }],
   "_meta": {
-    "proof": {
+    "org.kya-os/proof": {
       "jws": "eyJhbGciOiJFZERTQSJ9...",
       "meta": {
         "did": "did:web:tool-server.example.com",

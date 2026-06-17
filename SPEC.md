@@ -1404,6 +1404,40 @@ credential↔issuer binding (SEP-2352), DCR `application_type` (SEP-837) — as 
 credential is obtained; it never becomes the basis on which a KYA-OS request is
 authorized.
 
+### 15.2 MCP 2026-07-28 Compatibility
+
+KYA-OS is designed to layer cleanly on the MCP 2026-07-28 Release Candidate.
+
+- **Stateless core.** MCP removed `initialize`/`initialized` (SEP-2575) and the
+  `Mcp-Session-Id` header (SEP-2567). KYA-OS does not depend on either: every
+  KYA-OS request is authorized from its self-contained detached-JWS proof (§7)
+  and DID-anchored grant (§6). The KYA-OS session (§5) is an optional KYA-OS-owned
+  convenience layer delivered via the `_kyaos_handshake` tool (§14) and is
+  independent of MCP's removed session.
+- **`_meta` reserved-namespace coexistence.** KYA-OS publishes its proof under the
+  reverse-DNS key `org.kya-os/proof` and ignores all other `_meta` keys, including
+  the MCP-reserved `io.modelcontextprotocol/*` and W3C Trace Context keys
+  `traceparent`/`tracestate`/`baggage` (SEP-414). See §7.6.
+- **Routing headers.** KYA-OS gateways MAY use `Mcp-Method`/`Mcp-Name` (SEP-2243)
+  for body-free routing (§8.4).
+- **JSON Schema 2020-12.** Tool `inputSchema`/`outputSchema` and KYA-OS schemas use
+  JSON Schema 2020-12 (SEP-2106); see §6.2.
+- **Extensions Track intent (SEP-2133).** KYA-OS intends to register as an MCP
+  Extension under the proposed reverse-DNS extension id `org.kya-os.identity`,
+  with an `ext-*` repository, independent versioning, and negotiation via the
+  `extensions` capability map. Once registered, the canonical proof key (§7.6
+  `proofMetaKey`) and capability advertisement (§10) will use that extension id;
+  the key is configurable for this reason. KYA-OS targets the SEP-2133
+  Standards-Track path.
+
+  > **Editorial note — open for discussion.** The extension id `org.kya-os.identity`
+  > and the proof key `org.kya-os/proof` (§7.6) are **proposed** and not yet
+  > ratified; both remain open for working-group discussion and MAY change before
+  > this revision is finalized.
+- **Deprecations are zero-impact.** SEP-2577 deprecates MCP **Roots**, **Sampling**,
+  and **Logging** on 12-month windows. KYA-OS uses **none** of these features, so
+  the deprecations have **no impact** on KYA-OS implementations.
+
 ---
 
 ## 16. References

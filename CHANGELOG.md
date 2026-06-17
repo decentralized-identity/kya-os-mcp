@@ -7,6 +7,69 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-06-17
+
+Durable consent persistence. Pluggable `GrantStore` / `PendingFlowStore` /
+`SessionStore` seams so consent, grant, and PKCE state survive restarts and
+resolve across load-balanced instances — the holder-of-key (`getByAgent`)
+no-paste retry, with session-bearer (`getBySession`) as a fallback. The detached
+proof is namespaced under `_meta["org.kya-os/proof"]` and still dual-emitted
+under the legacy bare key (ON for all of 1.x, dropped at 2.0). Additive over
+1.6.x, with one documented behavioral change: a `strict` verifier now ignores
+MCP-reserved foreign `_meta` keys instead of rejecting them.
+
+### Added
+
+- **Durable consent persistence (optional, in-memory defaults — no breaking
+  change).** New pluggable seams so consent / grant / PKCE state survives
+  restarts and resolves across load-balanced instances: `grantStore` (the
+  no-paste retry — holder-of-key `getByAgent` first, then session-bearer
+  `getBySession`), `PendingFlowStore` (durable OAuth/OIDC PKCE state with an
+  atomic `consume()`), and an optional `SessionStore`. The detached proof is now
+  namespaced under `_meta["org.kya-os/proof"]`; the legacy bare `proof` key is
+  still accepted on verify and (by default) still emitted — toggle with
+  `emitLegacyProofKey`. The legacy mirror stays **ON by default for the entire
+  1.x line** (a pre-1.1 reader of bare `_meta.proof` would otherwise silently get
+  no proof; the cost is ~1.5 KB of `_meta`, which is outside the response hash)
+  and will be **dropped at 2.0**.
+
+### Changed
+
+- **BEHAVIORAL — `strict` `metaPolicy` now IGNORES foreign `_meta` keys instead
+  of rejecting them.** Previously a `strict` verifier rejected any `_meta` key
+  other than the proof. Under MCP 2026-07-28 (SEP-414) `_meta` legitimately
+  carries reserved `io.modelcontextprotocol/*` and W3C trace-context keys
+  (`traceparent`/`tracestate`/`baggage`), so `strict` now ignores every
+  non-KYA-OS key (never hashed, trusted, or rejected) and `allow-extensions`
+  additionally surfaces them. The zero-trust boundary is unchanged — only the
+  KYA-OS proof key is ever hashed or trusted. **Migration:** anyone relying on
+  `strict` to REJECT foreign `_meta` keys must now enforce that themselves; the
+  verifier no longer fails on them.
+
+### Fixed
+
+- **Appendix A error codes corrected** to match `src/errors.ts`, the single
+  source of truth. The table listed prefixed codes (`KYA_OS_EHANDSHAKE`,
+  `KYA_OS_EPROOF`, ...) that no part of the codebase emits; the runtime,
+  middleware, and session manager all return bare snake_case codes
+  (`handshake_failed`, `invalid_proof`, ...). Documentation only — no behaviour
+  change.
+
+## [1.6.1] - 2026-06-10
+
+Releases the schema-host migration already merged on `main` (it was unshipped:
+`1.6.0` still carried the prior host). Schema-only; no code or API changes.
+
+### Changed
+
+- **Schema `$id` and JSON-LD `@context` hosts migrated** to the DIF-registered
+  `schema.kya-os.org` — now live. All five shipped JSON Schemas
+  (`schemas/*.json`), the spec's context references, and the
+  `DELEGATION_CREDENTIAL_CONTEXT` constant resolve under `schema.kya-os.org`.
+  The prior `schema.kya-os.ai` host served the same documents during the
+  migration window; no `$id` is 301-redirected. Consumers that pinned a
+  `schema.kya-os.ai` `$id` should update to `schema.kya-os.org`.
+
 ## [1.6.0] - 2026-06-03
 
 Advances the E3 verifier-consolidation groundwork and hardens the delegation

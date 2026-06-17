@@ -22,6 +22,7 @@ import {
 } from '../types/protocol.js';
 import type { CryptoProvider } from '../providers/base.js';
 import { MemoryNonceCacheProvider } from '../providers/memory.js';
+import { SessionStore, MemorySessionStore } from './session-store.js';
 import { logger } from '../logging/index.js';
 
 export interface SessionConfig {
@@ -32,7 +33,20 @@ export interface SessionConfig {
   serverDid?: string;
   /** Maximum number of concurrent sessions. Oldest sessions are evicted when exceeded. Default: 10000 */
   maxSessions?: number;
-  /** Policy for _meta field validation in proof verification. Default: 'strict' */
+  /**
+   * Optional pluggable session store. Defaults to an in-memory
+   * {@link MemorySessionStore} that reproduces the prior single-process
+   * behavior. Inject a durable {@link SessionStore} (Redis / Durable Object /
+   * DB) to make sessions survive restarts and resolve across instances (enables
+   * the wallet-less cross-instance retry + proof-nonce continuity).
+   */
+  sessionStore?: SessionStore;
+  /**
+   * Policy for non-KYA-OS `_meta` keys during proof verification (SEP-414).
+   * Default 'strict' IGNORES foreign keys (never hashed, trusted, or rejected);
+   * 'allow-extensions' surfaces them. Neither rejects coexisting reserved keys
+   * such as `io.modelcontextprotocol/*` or `traceparent`. See {@link MetaPolicy}.
+   */
   metaPolicy?: MetaPolicy;
 }
 
@@ -47,19 +61,19 @@ export interface HandshakeResult {
 }
 
 export class SessionManager {
-  private config: Required<Omit<SessionConfig, 'absoluteSessionLifetime' | 'serverDid' | 'maxSessions' | 'metaPolicy'>> & {
+  private config: Required<Omit<SessionConfig, 'absoluteSessionLifetime' | 'serverDid' | 'maxSessions' | 'metaPolicy' | 'sessionStore'>> & {
     absoluteSessionLifetime?: number;
     serverDid?: string;
     metaPolicy: MetaPolicy;
   };
   private cryptoProvider: CryptoProvider;
-  private sessions = new Map<string, SessionContext>();
-  private sessionInsertionOrder: string[] = [];
-  private maxSessions: number;
+  private sessionStore: SessionStore;
 
   constructor(cryptoProvider: CryptoProvider, config: SessionConfig = {}) {
     this.cryptoProvider = cryptoProvider;
-    this.maxSessions = config.maxSessions ?? 10_000;
+    this.sessionStore =
+      config.sessionStore ??
+      new MemorySessionStore({ maxSessions: config.maxSessions ?? 10_000 });
     this.config = {
       timestampSkewSeconds: config.timestampSkewSeconds ?? 120,
       sessionTtlMinutes: config.sessionTtlMinutes ?? 30,
@@ -165,9 +179,7 @@ export class SessionManager {
         ...(clientInfo && { clientInfo }),
       };
 
-      this.evictIfNeeded();
-      this.sessions.set(sessionId, session);
-      this.sessionInsertionOrder.push(sessionId);
+      await this.sessionStore.set(sessionId, session);
 
       return { success: true, session };
     } catch (error) {
@@ -192,7 +204,7 @@ export class SessionManager {
    * @returns Session context if valid, null if expired or not found
    */
   async getSession(sessionId: string): Promise<SessionContext | null> {
-    const session = this.sessions.get(sessionId);
+    const session = await this.sessionStore.get(sessionId);
     if (!session) return null;
 
     const now = Math.floor(Date.now() / 1000);
@@ -200,7 +212,7 @@ export class SessionManager {
     const maxIdleSeconds = session.ttlMinutes * 60;
 
     if (idleTimeSeconds > maxIdleSeconds) {
-      this.sessions.delete(sessionId);
+      await this.sessionStore.delete(sessionId);
       return null;
     }
 
@@ -208,13 +220,13 @@ export class SessionManager {
       const sessionAgeSeconds = now - session.createdAt;
       const maxAgeSeconds = this.config.absoluteSessionLifetime * 60;
       if (sessionAgeSeconds > maxAgeSeconds) {
-        this.sessions.delete(sessionId);
+        await this.sessionStore.delete(sessionId);
         return null;
       }
     }
 
     session.lastActivity = now;
-    this.sessions.set(sessionId, session);
+    await this.sessionStore.set(sessionId, session);
     return session;
   }
 
@@ -283,19 +295,10 @@ export class SessionManager {
       .replace(/=/g, '');
   }
 
-  private evictIfNeeded(): void {
-    while (this.sessions.size >= this.maxSessions && this.sessionInsertionOrder.length > 0) {
-      const oldest = this.sessionInsertionOrder.shift();
-      if (oldest) {
-        this.sessions.delete(oldest);
-      }
-    }
-  }
-
   async cleanup(): Promise<void> {
     const now = Math.floor(Date.now() / 1000);
 
-    for (const [sessionId, session] of this.sessions.entries()) {
+    for (const [sessionId, session] of await this.sessionStore.entries()) {
       const idleTimeSeconds = now - session.lastActivity;
       const maxIdleSeconds = session.ttlMinutes * 60;
       let expired = idleTimeSeconds > maxIdleSeconds;
@@ -307,14 +310,11 @@ export class SessionManager {
       }
 
       if (expired) {
-        this.sessions.delete(sessionId);
+        await this.sessionStore.delete(sessionId);
       }
     }
 
-    this.sessionInsertionOrder = this.sessionInsertionOrder.filter(
-      id => this.sessions.has(id)
-    );
-
+    await this.sessionStore.cleanup();
     await this.config.nonceCache.cleanup();
   }
 
@@ -328,7 +328,7 @@ export class SessionManager {
     };
   } {
     return {
-      activeSessions: this.sessions.size,
+      activeSessions: this.sessionStore.size(),
       config: {
         timestampSkewSeconds: this.config.timestampSkewSeconds,
         sessionTtlMinutes: this.config.sessionTtlMinutes,
@@ -338,9 +338,8 @@ export class SessionManager {
     };
   }
 
-  clearSessions(): void {
-    this.sessions.clear();
-    this.sessionInsertionOrder = [];
+  async clearSessions(): Promise<void> {
+    await this.sessionStore.clear();
   }
 }
 

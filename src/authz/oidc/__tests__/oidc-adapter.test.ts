@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { GenericOidcAdapter } from '../oidc-adapter.js';
+import { MemoryPendingFlowStore } from '../pending-flow-store.js';
 import { isNeedsAuthorizationError } from '../../../types/protocol.js';
 import type { ToolProtection } from '../../requirement.js';
 
@@ -66,7 +67,7 @@ describe('GenericOidcAdapter.initiateFlow', () => {
     const challenge = await adapter.initiateFlow(flowParams);
     // The verifier is retrievable by resumeToken (kept off the wire / not in the URL).
     expect(new URL(challenge.authorizationUrl).searchParams.has('code_verifier')).toBe(false);
-    expect(adapter.pendingVerifierFor(challenge.resumeToken)).toBeTruthy();
+    expect(await adapter.pendingVerifierFor(challenge.resumeToken)).toBeTruthy();
   });
 });
 
@@ -111,6 +112,29 @@ describe('GenericOidcAdapter.verifyAuthorization', () => {
     const adapter = new GenericOidcAdapter(config);
     const result = await adapter.verifyAuthorization('never-issued', { code: 'x', state: 'y' });
     expect(result.valid).toBe(false);
+  });
+
+  it('completes the callback on a SECOND adapter sharing one PendingFlowStore (cross-instance)', async () => {
+    // Instance A initiates; the PKCE verifier lands in the shared store.
+    const store = new MemoryPendingFlowStore();
+    const instanceA = new GenericOidcAdapter({ ...config, pendingFlowStore: store });
+    const challenge = await instanceA.initiateFlow(flowParams);
+
+    // Instance B (fresh, empty memory) shares the store and completes the exchange.
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ access_token: 'at-2', token_type: 'Bearer', scope: 'vault:read' }),
+    );
+    const instanceB = new GenericOidcAdapter({ ...config, fetchImpl, pendingFlowStore: store });
+    const result = await instanceB.verifyAuthorization(challenge.resumeToken, {
+      code: 'auth-code-2',
+      state: 'state-xyz',
+    });
+
+    expect(result.valid).toBe(true);
+    expect(result.credential?.agent_did).toBe('did:key:zAgent');
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    // One-time use: the shared verifier is consumed after the exchange.
+    expect(await instanceB.pendingVerifierFor(challenge.resumeToken)).toBeUndefined();
   });
 });
 

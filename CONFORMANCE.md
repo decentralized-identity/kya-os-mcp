@@ -99,6 +99,7 @@ All Level 1 requirements, plus:
 | L2.14 | Validate handshake request format | `src/session/__tests__/session-manager.test.ts` | `validateHandshakeFormat` (all tests) |
 | L2.15 | Create handshake request with current timestamp | `src/session/__tests__/session-manager.test.ts` | `createHandshakeRequest > should use current timestamp` |
 | L2.16 | Audit logging SHOULD be implemented | — | Implementation-specific |
+| L2.17 | Process only the KYA-OS proof `_meta` key; ignore (do not reject) reserved keys | — | Spec-defined behavior (SPEC §7.6) |
 
 ### Detailed Requirements
 
@@ -145,6 +146,22 @@ it. The signature alone proves the proof is authentic, not that the received
 content matches what was signed: an in-path intermediary can leave the signature
 intact while swapping the `authorizationUrl`, and only the recompute detects it.
 
+#### L2.17 — `_meta` Namespacing Tolerance
+
+`_meta` is the MCP per-request metadata channel and is shared with reserved
+reverse-DNS keys. A conformant verifier MUST:
+- Read the KYA-OS proof from `org.kya-os/proof` and, for backward compatibility,
+  from the legacy bare `proof` key.
+- Process **only** the KYA-OS proof key; ignore every other `_meta` key (never
+  hash it, never trust it).
+- **Never reject** a response merely because `_meta` also carries non-KYA-OS
+  keys, including the MCP-reserved `io.modelcontextprotocol/*` and the W3C Trace
+  Context keys `traceparent` / `tracestate` / `baggage`.
+
+This holds under the default `strict` `metaPolicy`; `allow-extensions` shares the
+same trust boundary but additionally surfaces non-KYA-OS keys to the application
+layer. See SPEC §7.6.
+
 ---
 
 ## Level 3 — Full Delegation
@@ -184,6 +201,7 @@ All Level 2 requirements, plus:
 | L3.24 | Build delegation chain string | `src/delegation/__tests__/outbound-proof.test.ts` | `buildChainString` tests |
 | L3.25 | Return `needs_authorization` hints | Implementation-specific | — |
 | L3.26 | Audit logging MUST be implemented | — | Implementation-specific |
+| L3.27 | Derive authorization from the VC; treat L2 chain/scope headers as advisory | — | Spec-defined behavior (SPEC §8.1) |
 
 ### Detailed Requirements
 
@@ -242,6 +260,22 @@ Such proofs are themselves tamper-evident signed records.
 Audit records MUST be tamper-evident (e.g., append-only log, signed entries, or equivalent) and MUST be retained for at least the duration of the longest-lived delegation in the system.
 
 > **Note:** Revocation is verifier-local (checked against the verifier's local list or cache). L1 implementations MAY use simple local checks; higher levels MAY use StatusList2021.
+
+#### L3.27 — VC-Authoritative Layer-2 Headers
+
+The Verifiable Credential is authoritative for granted authority. A conformant
+verifier MUST:
+- Derive granted scopes and the delegation chain from `KYA-OS-Delegation-Credential`
+  (the VC-JWT) — its embedded scopes, its chain to a trusted root, and its
+  StatusList revocation state — together with the `KYA-OS-Delegation-Proof` JWT.
+- Check that `KYA-OS-Agent-DID` equals the Layer-1 signature's resolved DID.
+- **NOT** use `KYA-OS-Delegation-Chain` or `KYA-OS-Granted-Scopes` for any
+  authorization decision; these are OPTIONAL advisory transport hints and MUST be
+  ignored when they disagree with the credential.
+
+Because authority is derived only from signed artifacts (the VC and the proof
+JWT), the Layer-2 headers are NOT required to be RFC 9421 covered components; a
+tampered advisory header is ignored, not a vulnerability. See SPEC §8.1.
 
 ---
 

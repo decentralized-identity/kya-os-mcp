@@ -20,6 +20,7 @@ import { NodeCryptoProvider } from '../utils/node-crypto-provider.js';
 import { generateDidKeyFromBase64 } from '../../utils/did-helpers.js';
 import { DelegationCredentialIssuer } from '../../delegation/vc-issuer.js';
 import { ProofVerifier } from '../../proof/verifier.js';
+import { KYA_OS_PROOF_META_KEY } from '../../proof/index.js';
 import { MemoryNonceCacheProvider } from '../../providers/memory.js';
 import { SystemClockProvider } from '../../providers/system-clock.js';
 import { RuntimeFetchProvider } from '../../providers/runtime-fetch.js';
@@ -247,7 +248,7 @@ describe('MCP Transport Integration', () => {
 
     // Verify proof in _meta (top-level on the result)
     expect(result._meta).toBeDefined();
-    const proof = (result._meta as Record<string, unknown>).proof as {
+    const proof = (result._meta as Record<string, unknown>)[KYA_OS_PROOF_META_KEY] as {
       jws: string;
       meta: Record<string, unknown>;
     };
@@ -279,7 +280,7 @@ describe('MCP Transport Integration', () => {
       arguments: { name: 'Verifier' },
     });
 
-    const proof = (result._meta as Record<string, unknown>).proof as {
+    const proof = (result._meta as Record<string, unknown>)[KYA_OS_PROOF_META_KEY] as {
       jws: string;
       meta: Record<string, unknown>;
     };
@@ -318,7 +319,7 @@ describe('MCP Transport Integration', () => {
 
     // Proof should be present via auto-session
     expect(result._meta).toBeDefined();
-    const proof = (result._meta as Record<string, unknown>).proof as {
+    const proof = (result._meta as Record<string, unknown>)[KYA_OS_PROOF_META_KEY] as {
       jws: string;
       meta: Record<string, unknown>;
     };
@@ -358,7 +359,7 @@ describe('MCP Transport Integration', () => {
 
     // Proof from inner wrapWithProof
     expect(result._meta).toBeDefined();
-    const proof = (result._meta as Record<string, unknown>).proof as {
+    const proof = (result._meta as Record<string, unknown>)[KYA_OS_PROOF_META_KEY] as {
       jws: string;
       meta: Record<string, unknown>;
     };

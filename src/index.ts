@@ -243,6 +243,8 @@ export {
   ProofGenerator,
   createProofResponse,
   extractCanonicalData,
+  KYA_OS_PROOF_META_KEY,
+  LEGACY_PROOF_META_KEY,
   type ProofAgentIdentity,
   type ToolRequest,
   type ToolResponse,
@@ -253,6 +255,7 @@ export {
   ProofVerifier,
   validateMetaStructure,
   extractProofFromMeta,
+  isReservedMcpMetaKey,
   DEFAULT_CLOCK_SKEW_SECONDS,
   MIN_CLOCK_SKEW_SECONDS,
   MAX_CLOCK_SKEW_SECONDS,
@@ -272,8 +275,11 @@ export {
   SessionManager,
   createHandshakeRequest,
   validateHandshakeFormat,
+  SessionStore,
+  MemorySessionStore,
   type SessionConfig,
   type HandshakeResult,
+  type MemorySessionStoreOptions,
 } from './session/index.js';
 
 // Providers
@@ -304,6 +310,23 @@ export {
   NoopAuditLogProvider,
   buildAuditRecord,
 } from './providers/audit-log.js';
+
+// Durable grant store (the no-paste retry authority) — also reachable via the
+// ./providers subpath; re-exported here at the top level for discoverability.
+export {
+  GrantStore,
+  MemoryGrantStore,
+  type Grant,
+  type MemoryGrantStoreOptions,
+} from './providers/grant-store.js';
+
+// Pending OAuth/OIDC PKCE-flow store (durable resume across instances/restarts).
+export {
+  PendingFlowStore,
+  MemoryPendingFlowStore,
+  type PendingFlow,
+  type MemoryPendingFlowStoreOptions,
+} from './authz/oidc/pending-flow-store.js';
 
 // Middleware
 export {

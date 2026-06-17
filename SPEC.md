@@ -60,9 +60,9 @@ DIDs and Verifiable Credentials are the right fit for this problem:
 | **Responsible Party** | The entity ultimately accountable for the actions of an agent operating under a delegation chain. The Responsible Party is the root issuer of the chain (`issuerDid` of the root `DelegationCredential`). In personal use, the Responsible Party equals the Principal. In organizational use, the Responsible Party is the employing organization or parent entity while the Principal is the immediate human delegator within that organization. Reputation and accountability signals are scoped primarily to the Responsible Party rather than to an agent's ephemeral identity — "can this be trusted?" is ultimately a question about the accountable party. |
 | **Delegation Chain** | An ordered sequence of Delegation Credentials from a root delegator (the Responsible Party) to the current agent, where each credential's subject is the next credential's issuer. |
 | **Delegation Credential** | A W3C Verifiable Credential that grants specific permissions from an issuer (delegator) to a subject (delegate). Contains CRISP constraints defining allowed operations. |
-| **Detached Proof** | A JWS (JSON Web Signature) that cryptographically binds a tool request and response together, enabling non-repudiation and audit. Attached to responses in the `_meta` field. |
+| **Detached Proof** | A JWS (JSON Web Signature) that cryptographically binds a tool request and response together, enabling non-repudiation and audit. Attached to responses under the reverse-DNS key `org.kya-os/proof` within the MCP `_meta` field (legacy bare `proof` accepted for backward compatibility; see §7.6). |
 | **CRISP Constraints** | **C**onstraints, **R**esources, **I**dentity, **S**cope, **P**olicy — a structured envelope defining what operations a delegation permits: allowed scopes, budget caps, temporal bounds, and audience restrictions. |
-| **Session** | A validated, time-bounded context established via handshake. Sessions prevent replay attacks and provide a stable context for proof generation. |
+| **Session** | An OPTIONAL, validated, time-bounded convenience context established via the `_kyaos_handshake` tool. Sessions aid replay prevention and provide a stable context for proof generation, but are **not** the durable authority — the per-request detached-JWS proof (§7) and DID-anchored grant (§6) are (see §5 preamble). KYA-OS sessions are independent of MCP's session, which was removed in MCP 2026-07-28 (SEP-2567/SEP-2575). |
 | **Handshake Nonce** | A cryptographically random value provided by the client during session establishment. Used once; prevents replay attacks. |
 | **Audience** | The intended recipient of a credential or proof, typically the MCP server's DID or domain. Prevents credential/proof misuse across different servers. |
 
@@ -120,7 +120,7 @@ The following diagram illustrates the KYA-OS protocol flow:
          │  │ 4. TOOL CALL RESPONSE                    │  │
          │  │    content: [ { type: "text", ... } ]    │  │
          │  │    _meta:                                │  │
-         │  │      proof:                              │  │
+         │  │      org.kya-os/proof:                   │  │
          │  │        jws: "eyJhbGciOiJFZERTQSI..."     │  │
          │  │        meta:                             │  │
          │  │          did: "did:web:srv"              │  │
@@ -331,6 +331,31 @@ are non-conformant.
 
 ## 5. Session Lifecycle
 
+> **Normative framing (MCP 2026-07-28).** The KYA-OS session described in this
+> section is an **OPTIONAL convenience layer**, not the protocol's durable source
+> of authority. The **normative, durable authority** for every KYA-OS interaction
+> is (a) the per-request **holder-of-key detached-JWS proof** (§7), which is
+> self-contained and replay-bound on its own, and (b) the **DID-anchored
+> delegation grant** (§6). A conformant verifier MUST be able to authorize and
+> audit a request from the proof and grant alone, with no server-side session
+> state.
+>
+> This independence is deliberate. MCP 2026-07-28 removed `initialize`/
+> `initialized` (SEP-2575) and the `Mcp-Session-Id` header (SEP-2567), making the
+> MCP core stateless: every request is self-contained, and client info, version,
+> and capabilities ride in `_meta` per request. KYA-OS sessions are **KYA-OS's
+> own layer** — established via the `_kyaos_handshake` tool (§14), independent of
+> MCP's now-removed session — and exist only as a **transport/UX convenience**
+> (e.g. for wallet-less clients, nonce bookkeeping, and a stable context for proof
+> generation). They are an *application-state handle* in the SEP-2575 sense:
+> explicit and model-visible, never hidden server state on which authorization
+> silently depends.
+>
+> The `sessionId`/`nonce` carried in a proof (§7.2) therefore bind a proof to its
+> originating handshake for replay defense; they are **not** a substitute for
+> verifying the proof signature and the delegation chain. The mechanics below
+> remain valid where a session is used.
+
 ### 5.1 Handshake Request
 
 To establish a session, the client sends a handshake request:
@@ -436,7 +461,7 @@ Delegations are issued as W3C Verifiable Credentials:
 {
   "@context": [
     "https://www.w3.org/2018/credentials/v1",
-    "https://schema.kya-os.ai/v1/protocol/delegation/context/v1.0.0"
+    "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
   ],
   "id": "urn:uuid:d7f8a9b0-1234-5678-9abc-def012345678",
   "type": ["VerifiableCredential", "DelegationCredential"],
@@ -487,6 +512,15 @@ Implementations MAY offer an explicit, audited opt-out of the `credentialSubject
 shape check to bridge non-conformant issuers. Such an opt-out MUST default to off
 and MUST emit a one-time warning when enabled, so the relaxation is visible in
 operational logs.
+
+> **Schema dialect (MCP 2026-07-28).** All KYA-OS JSON Schemas in this
+> specification — and the normative copies in `schemas/*.json` — are authored
+> against **JSON Schema 2020-12** and MUST declare
+> `"$schema": "https://json-schema.org/draft/2020-12/schema"`. KYA-OS MCP tool
+> definitions MUST likewise express their `inputSchema` and `outputSchema` in
+> JSON Schema 2020-12 (SEP-2106). Consistent with the RC, a tool's
+> `structuredContent` MAY be any JSON value permitted by its `outputSchema`, not
+> only a JSON object.
 
 ### 6.3 CRISP Constraint Envelope
 
@@ -839,13 +873,16 @@ substitution — and `outcome: "needs_authorization"`:
 
 ### 7.5 _meta Attachment
 
-The proof is attached to tool responses in the `_meta` field:
+The proof is attached to tool responses under the reverse-DNS key
+`org.kya-os/proof` inside the standard MCP `_meta` field. Other `_meta` keys
+(e.g. `io.modelcontextprotocol/*`, `traceparent`) MAY coexist and are ignored by
+the verifier (§7.6):
 
 ```json
 {
   "content": [{ "type": "text", "text": "File contents..." }],
   "_meta": {
-    "proof": {
+    "org.kya-os/proof": {
       "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6Ii4uLiJ9.eyJhdWQiOi4uLn0.c2ln...",
       "meta": {
         "did": "did:web:server.example.com",
@@ -857,16 +894,69 @@ The proof is attached to tool responses in the `_meta` field:
         "requestHash": "sha256:a1b2c3...",
         "responseHash": "sha256:d4e5f6..."
       }
-    }
+    },
+    "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
   }
 }
 ```
 
-### 7.6 _meta Hash Exclusion
+The `traceparent` key above illustrates a coexisting reserved key; it is not part
+of the proof and is never hashed or trusted (§7.6).
 
-The response hash is computed over the response object with `_meta` removed. Implementations MUST NOT rely on signature coverage of `_meta` fields. Verifiers SHOULD treat `_meta` as containing only `proof` unless the session config explicitly enables additional `_meta` fields via `session.metaPolicy`.
+### 7.6 _meta Namespacing and Hash Exclusion
 
-When `session.metaPolicy` is set to `strict` (the default), verifiers MUST reject responses whose `_meta` contains keys other than `proof`. When set to `allow-extensions`, verifiers permit additional keys in `_meta` but MUST NOT include them in any hash computation or signature verification.
+The response hash is computed over the response object with `_meta` removed (see
+§7.3). Implementations MUST NOT rely on signature coverage of any `_meta` field.
+
+`_meta` is the Model Context Protocol per-request metadata channel and is shared
+real estate: under MCP 2026-07-28 it legitimately carries reverse-DNS–namespaced
+keys reserved by the MCP maintainers (`io.modelcontextprotocol/*`) and W3C Trace
+Context propagation keys (`traceparent`, `tracestate`, `baggage`). KYA-OS
+therefore namespaces its own payload and MUST NOT assume exclusive ownership of
+`_meta`.
+
+**Canonical key.** KYA-OS attaches its detached proof under the reverse-DNS key
+`org.kya-os/proof` (the `proofMetaKey`). This key SHOULD be configurable (e.g., a
+single build-time constant rather than a value scattered through the code), so
+that if and when KYA-OS is registered as an MCP Extension (SEP-2133), its
+reverse-DNS extension id — and hence this key — can be re-pointed without a wire
+change.
+
+> **Editorial note — open for discussion.** The reverse-DNS key `org.kya-os/proof`
+> (and the corresponding proposed MCP Extension id `org.kya-os.identity`; see
+> §15.2) are **proposed** and not yet ratified. They remain open for
+> working-group discussion and MAY change before this revision is finalized.
+> Because the key is configurable (above), pinning the final id later does not
+> require a code change.
+
+**Backward compatibility.** For one major version, verifiers MUST also accept a
+proof published under the legacy bare key `proof`. Producers SHOULD emit
+`org.kya-os/proof`; producers targeting pre-1.1 verifiers MAY additionally
+mirror the proof under bare `proof`. When both are present and disagree, the
+namespaced key wins.
+
+**`metaPolicy` semantics.** The `session.metaPolicy` setting governs how a
+verifier treats `_meta` keys that are *not* KYA-OS's proof key:
+
+- `strict` (the default) — the verifier processes **only** the KYA-OS proof key
+  (`org.kya-os/proof`, or legacy `proof`). All other keys are **ignored**: never
+  hashed, never trusted, and — critically — **never a cause for rejection**. In
+  particular a `strict` verifier MUST NOT reject a response merely because
+  `_meta` also carries `io.modelcontextprotocol/*`, `traceparent`, `tracestate`,
+  or `baggage`; these reserved/standard keys are explicitly allowlisted and pass
+  through untouched.
+- `allow-extensions` — identical trust boundary (still only the KYA-OS proof key
+  is hashed or trusted), but the verifier additionally surfaces non-KYA-OS
+  `_meta` keys to the application layer rather than discarding them.
+
+Under no policy does a verifier include any non-proof `_meta` key in a hash or
+signature computation. The signature covers the `data`/response body only; it
+never covers `_meta` (§7.3).
+
+> **Note.** The proof object's shape is normatively defined by
+> `schemas/detached-proof.json` (`$schema: draft/2020-12`). The *placement* key
+> inside `_meta` is `org.kya-os/proof`; the schema describes the value
+> (`{ jws, meta }`), not the key.
 
 ### 7.7 Delegation Chain Audit Example
 
@@ -910,7 +1000,7 @@ The `parentDelegation` field links this record back to the User → Agent A cred
 {
   "content": [{ "type": "text", "text": "file contents..." }],
   "_meta": {
-    "proof": {
+    "org.kya-os/proof": {
       "jws": "eyJhbGciOiJFZERTQSJ9...",
       "meta": {
         "did": "did:web:tool-server.example.com",
@@ -939,13 +1029,32 @@ When an MCP server calls downstream services (APIs, other MCP servers), it MUST 
 
 ### 8.1 HTTP Headers
 
-| Header | Value |
-|--------|-------|
-| `KYA-OS-Agent-DID` | Original agent's DID |
-| `KYA-OS-Delegation-Chain` | Comma-separated list of delegation IDs from root to current |
-| `KYA-OS-Session-Id` | KYA-OS session ID |
-| `KYA-OS-Delegation-Proof` | Signed JWT proving delegation authority |
-| `KYA-OS-Granted-Scopes` | Comma-separated list of granted scopes |
+| Header | Disposition | Value |
+|--------|-------------|-------|
+| `KYA-OS-Delegation-Credential` | **AUTHORITATIVE** | The delegation Verifiable Credential (VC-JWT). The verifier derives granted scopes and the delegation chain from it (its embedded scopes, its chain to a trusted root, its StatusList revocation state). |
+| `KYA-OS-Delegation-Proof` | **AUTHORITATIVE** | The holder-of-key delegation proof JWT (EdDSA-signed, `aud`-bound to the request authority, `sub` == the Layer-1 signature DID); see §8.2. |
+| `KYA-OS-Agent-DID` | **AUTHORITATIVE** | The agent's DID. A conformant verifier MUST check it equals the Layer-1 signature's resolved DID. |
+| `KYA-OS-Session-Id` | Anchor | The KYA-OS session ID, used for grant read-back. An anchor, not an authorization input. |
+| `KYA-OS-Delegation-Chain` | OPTIONAL (advisory) | A transport hint for routing/observability/debugging. **MUST NOT** be used for any authorization decision; ignored when it disagrees with the credential. |
+| `KYA-OS-Granted-Scopes` | OPTIONAL (advisory) | A transport hint for routing/observability/debugging. **MUST NOT** be used for any authorization decision; ignored when it disagrees with the credential. |
+
+**The Verifiable Credential is authoritative.** Granted scopes and the delegation
+chain are derived from cryptographically-signed artifacts — the
+`KYA-OS-Delegation-Credential` (VC-JWT) and the `KYA-OS-Delegation-Proof` JWT —
+never from advisory transport headers. A conformant verifier MUST derive
+authorization from the credential (its embedded scopes, its chain to a trusted
+root, its revocation state) and MUST check that `KYA-OS-Agent-DID` equals the
+Layer-1 signature's resolved DID. `KYA-OS-Delegation-Chain` and
+`KYA-OS-Granted-Scopes` are advisory only: a conformant verifier MUST NOT trust
+them for any authorization decision and MUST ignore them when they disagree with
+the credential.
+
+**Corollary (covered components).** Because authority is derived only from signed
+artifacts — the VC and the proof JWT, each with independent integrity — the
+Layer-2 headers are **NOT required** to be RFC 9421 covered components. Signing
+them is permitted as defense-in-depth but is not a conformance requirement. A
+tampered `KYA-OS-Granted-Scopes` or `KYA-OS-Delegation-Chain` is therefore not a
+vulnerability: it is ignored by a conformant verifier.
 
 ### 8.2 Delegation Proof JWT
 
@@ -975,6 +1084,23 @@ The JWT is signed with EdDSA using the server's secret key.
 ```
 
 Example: `urn:uuid:d7f8a9b0-1234-5678-9abc-def012345678>del-001`
+
+### 8.4 Gateway Routing Without Body Inspection (MCP 2026-07-28)
+
+A policy enforcement point (PEP) or gateway in front of a KYA-OS server can make
+routing and coarse policy decisions from headers alone, without parsing the JSON
+body. Under MCP 2026-07-28 (SEP-2243), the request carries the routing headers
+`Mcp-Method` (the JSON-RPC method, e.g. `tools/call`) and `Mcp-Name` (the target,
+e.g. the tool name). A KYA-OS-aware gateway MAY:
+
+- route on `Mcp-Method` / `Mcp-Name`; and
+- authenticate the caller and check coarse authority from the KYA-OS delegation
+  headers (§8.1) and the detached `KYA-OS-Delegation-Proof` (§8.2),
+
+all before the body is read. This is an optimization only: the origin server MUST
+still perform full delegation-chain and detached-proof verification (§6, §7) on
+the request body. Routing headers are advisory and MUST NOT be trusted as
+authority.
 
 ---
 
@@ -1025,6 +1151,35 @@ recomputing `responseHash` over the challenge it actually received
 5. Authorization service issues DelegationCredential
 6. Client retries request with `resumeToken` and new delegation
 7. Server validates delegation and processes request
+
+### 9.4 OAuth/OIDC Hardening Alignment (MCP 2026-07-28)
+
+Where the authorization service in §9.3 is an OAuth 2.0 / OIDC authorization
+server, the KYA-OS profile aligns with the MCP 2026-07-28 OAuth hardening SEPs.
+These are *additive* hardening requirements; they do not change the KYA-OS trust
+model (§15.1), in which authority rides on a verified delegation chain, not on a
+bearer token.
+
+1. **Issuer validation (RFC 9207 / SEP-2468).** On the authorization callback /
+   resume step, the client MUST validate the `iss` authorization-response
+   parameter against the expected issuer and MUST reject a response whose `iss`
+   does not exactly match. This is verified *in addition to* recomputing
+   `responseHash` over the challenge (§9.3 step 2).
+2. **Credential↔issuer binding (SEP-2352).** Any token or credential obtained in
+   step 5 MUST be bound to, and accepted only for, the issuer that minted it; a
+   credential MUST NOT be replayed against a different issuer or resource.
+3. **Dynamic Client Registration `application_type` (SEP-837).** Clients
+   performing DCR MUST declare `application_type` and MUST NOT use a redirect URI
+   inconsistent with it.
+4. **Refresh & step-up (SEP-2207 / SEP-2350).** Refresh tokens follow SEP-2207;
+   a `step_up_required` outcome (§7.2) accumulates scope per SEP-2350 rather than
+   discarding previously granted scope.
+5. **Metadata discovery (SEP-2351).** `.well-known` authorization-server and
+   protected-resource metadata use the SEP-2351 path-suffix form.
+
+A KYA-OS server MUST NOT treat successful completion of this OAuth flow as
+sufficient on its own: the resulting DelegationCredential is still verified per
+§6 and §7 on the retried request (§9.3 step 7).
 
 ---
 
@@ -1297,6 +1452,12 @@ KYA-OS is transport-agnostic. The handshake and proofs use standard MCP mechanis
 
 **Outbound delegation headers**: When an MCP server makes outbound HTTP calls (not MCP calls), delegation context is propagated via HTTP headers as defined in §8. For MCP-to-MCP calls, delegation context SHOULD be passed via the `_kyaos_handshake` flow.
 
+**Body-free routing**: On HTTP transports, intermediaries MAY route on the MCP
+2026-07-28 routing headers `Mcp-Method` and `Mcp-Name` (SEP-2243) and verify the
+KYA-OS delegation headers (§8.1) and detached proof (§8.2) without inspecting the
+request body. See §8.4. The origin server remains responsible for full
+verification.
+
 ---
 
 ## 15. Conformance
@@ -1319,6 +1480,49 @@ at every invocation (§6, §7). The delegation chain remains required and
 verifiable at Level 2 and Level 3 regardless of whether or how the agent's
 identity is recorded in a trust registry (§6.8). Registry presence is discovery
 and a trust signal (§11.0), never a substitute for chain verification.
+
+This is complementary to, not in tension with, MCP 2026-07-28's OAuth hardening.
+Where KYA-OS interoperates with an OAuth/OIDC authorization server (§9.4), it
+adopts that server-side hardening — `iss` validation per RFC 9207 (SEP-2468),
+credential↔issuer binding (SEP-2352), DCR `application_type` (SEP-837) — as the
+*token-acquisition* layer, while the delegation chain (§6, §7) remains the
+*authority* layer verified at every invocation. OAuth hardening strengthens how a
+credential is obtained; it never becomes the basis on which a KYA-OS request is
+authorized.
+
+### 15.2 MCP 2026-07-28 Compatibility
+
+KYA-OS is designed to layer cleanly on the MCP 2026-07-28 Release Candidate.
+
+- **Stateless core.** MCP removed `initialize`/`initialized` (SEP-2575) and the
+  `Mcp-Session-Id` header (SEP-2567). KYA-OS does not depend on either: every
+  KYA-OS request is authorized from its self-contained detached-JWS proof (§7)
+  and DID-anchored grant (§6). The KYA-OS session (§5) is an optional KYA-OS-owned
+  convenience layer delivered via the `_kyaos_handshake` tool (§14) and is
+  independent of MCP's removed session.
+- **`_meta` reserved-namespace coexistence.** KYA-OS publishes its proof under the
+  reverse-DNS key `org.kya-os/proof` and ignores all other `_meta` keys, including
+  the MCP-reserved `io.modelcontextprotocol/*` and W3C Trace Context keys
+  `traceparent`/`tracestate`/`baggage` (SEP-414). See §7.6.
+- **Routing headers.** KYA-OS gateways MAY use `Mcp-Method`/`Mcp-Name` (SEP-2243)
+  for body-free routing (§8.4).
+- **JSON Schema 2020-12.** Tool `inputSchema`/`outputSchema` and KYA-OS schemas use
+  JSON Schema 2020-12 (SEP-2106); see §6.2.
+- **Extensions Track intent (SEP-2133).** KYA-OS intends to register as an MCP
+  Extension under the proposed reverse-DNS extension id `org.kya-os.identity`,
+  with an `ext-*` repository, independent versioning, and negotiation via the
+  `extensions` capability map. Once registered, the canonical proof key (§7.6
+  `proofMetaKey`) and capability advertisement (§10) will use that extension id;
+  the key is configurable for this reason. KYA-OS targets the SEP-2133
+  Standards-Track path.
+
+  > **Editorial note — open for discussion.** The extension id `org.kya-os.identity`
+  > and the proof key `org.kya-os/proof` (§7.6) are **proposed** and not yet
+  > ratified; both remain open for working-group discussion and MAY change before
+  > this revision is finalized.
+- **Deprecations are zero-impact.** SEP-2577 deprecates MCP **Roots**, **Sampling**,
+  and **Logging** on 12-month windows. KYA-OS uses **none** of these features, so
+  the deprecations have **no impact** on KYA-OS implementations.
 
 ---
 
@@ -1349,13 +1553,13 @@ and a trust signal (§11.0), never a substitute for chain verification.
 
 | Code | Description |
 |------|-------------|
-| `KYA_OS_EHANDSHAKE` | Handshake validation failed (timestamp, nonce, or audience) |
-| `KYA_OS_ESESSION` | Session not found or expired |
-| `KYA_OS_EDELEGATION` | Delegation verification failed |
-| `KYA_OS_ESCOPE` | Requested operation outside delegated scope |
-| `KYA_OS_EREVOKED` | Delegation has been revoked |
-| `KYA_OS_EPROOF` | Proof verification failed |
-| `KYA_OS_EDID` | DID resolution failed |
+| `handshake_failed` | Handshake validation failed (timestamp, nonce, or audience) |
+| `session_expired` | Session not found or expired |
+| `delegation_invalid` | Delegation verification failed |
+| `insufficient_scope` | Requested operation outside delegated scope |
+| `delegation_revoked` | Delegation has been revoked |
+| `invalid_proof` | Proof verification failed |
+| `did_not_found` | DID resolution failed |
 
 ---
 

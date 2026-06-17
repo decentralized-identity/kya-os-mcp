@@ -12,6 +12,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { z } from 'zod';
 import { withKyaOs, generateIdentity } from '../../middleware/with-kya-os-server.js';
 import { NodeCryptoProvider } from '../utils/node-crypto-provider.js';
+import { KYA_OS_PROOF_META_KEY } from '../../proof/index.js';
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -137,7 +138,7 @@ describe('withKyaOs()', () => {
 
     // Proof should be present via auto-session + auto-proof
     expect(result._meta).toBeDefined();
-    const proof = (result._meta as Record<string, unknown>).proof as {
+    const proof = (result._meta as Record<string, unknown>)[KYA_OS_PROOF_META_KEY] as {
       jws: string;
       meta: Record<string, unknown>;
     };
@@ -159,7 +160,7 @@ describe('withKyaOs()', () => {
     expect(first.text).toBe('Hello, Early Bird!');
 
     expect(result._meta).toBeDefined();
-    const proof = (result._meta as Record<string, unknown>).proof as {
+    const proof = (result._meta as Record<string, unknown>)[KYA_OS_PROOF_META_KEY] as {
       jws: string;
     };
     expect(proof).toBeDefined();
@@ -179,7 +180,7 @@ describe('withKyaOs()', () => {
     expect(greetContent.text).toBe('Hello, No Proof!');
 
     // _meta may be undefined or proof should not be present
-    const greetProof = (greetResult._meta as Record<string, unknown> | undefined)?.proof;
+    const greetProof = (greetResult._meta as Record<string, unknown> | undefined)?.[KYA_OS_PROOF_META_KEY];
     expect(greetProof).toBeUndefined();
 
     // 'add' should still have proof
@@ -189,7 +190,7 @@ describe('withKyaOs()', () => {
     });
 
     expect(addResult._meta).toBeDefined();
-    const addProof = (addResult._meta as Record<string, unknown>).proof as {
+    const addProof = (addResult._meta as Record<string, unknown>)[KYA_OS_PROOF_META_KEY] as {
       jws: string;
     };
     expect(addProof).toBeDefined();
@@ -208,7 +209,7 @@ describe('withKyaOs()', () => {
     expect(first.text).toBe('Hello, No Auto-Proof!');
 
     // No proof — auto-proofing is off
-    const proof = (result._meta as Record<string, unknown> | undefined)?.proof;
+    const proof = (result._meta as Record<string, unknown> | undefined)?.[KYA_OS_PROOF_META_KEY];
     expect(proof).toBeUndefined();
   });
 
@@ -253,7 +254,7 @@ describe('withKyaOs()', () => {
     expect(first.text).toBe('Hello, Manual Handshake!');
 
     expect(result._meta).toBeDefined();
-    const proof = (result._meta as Record<string, unknown>).proof as {
+    const proof = (result._meta as Record<string, unknown>)[KYA_OS_PROOF_META_KEY] as {
       jws: string;
       meta: Record<string, unknown>;
     };
@@ -274,10 +275,10 @@ describe('withKyaOs()', () => {
       arguments: { a: 1, b: 2 },
     });
 
-    const proof1 = (result1._meta as Record<string, unknown>).proof as {
+    const proof1 = (result1._meta as Record<string, unknown>)[KYA_OS_PROOF_META_KEY] as {
       meta: Record<string, unknown>;
     };
-    const proof2 = (result2._meta as Record<string, unknown>).proof as {
+    const proof2 = (result2._meta as Record<string, unknown>)[KYA_OS_PROOF_META_KEY] as {
       meta: Record<string, unknown>;
     };
 

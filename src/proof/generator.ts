@@ -20,6 +20,29 @@ import { CryptoService, type Ed25519JWK } from '../utils/crypto-service.js';
 import { base64ToBytes, base64urlEncodeFromBytes, bytesToBase64 } from '../utils/base64.js';
 import { ED25519_PKCS8_DER_HEADER, ED25519_KEY_SIZE } from '../utils/ed25519-constants.js';
 
+/**
+ * Canonical reverse-DNS `_meta` key under which KYA-OS attaches its detached
+ * proof. MCP 2026-07-28 (SEP-414) makes `_meta` shared, reverse-DNS–namespaced
+ * real estate — it also carries `io.modelcontextprotocol/*` and W3C trace
+ * context keys — so KYA-OS namespaces its own payload rather than owning bare
+ * `proof`.
+ *
+ * SINGLE SOURCE OF TRUTH: every emit site (middleware) and verify site
+ * (`extractProofFromMeta` / `validateMetaStructure`) references this constant,
+ * so renaming the namespace — e.g. once KYA-OS registers as an MCP Extension
+ * under SEP-2133 — is a one-line change. See SPEC §7.6.
+ */
+export const KYA_OS_PROOF_META_KEY = 'org.kya-os/proof';
+
+/**
+ * Legacy bare `_meta.proof` key — the legacy `_meta.proof` mirror; drop at 2.0.
+ * For one major version verifiers MUST keep accepting a proof published here
+ * (back-compat); producers SHOULD emit under {@link KYA_OS_PROOF_META_KEY}. When
+ * both keys are present the namespaced key wins. The mirror is emitted by default
+ * for the whole 1.x line (see `emitLegacyProofKey`) and removed at 2.0. SPEC §7.6.
+ */
+export const LEGACY_PROOF_META_KEY = 'proof';
+
 export interface ProofAgentIdentity {
   did: string;
   kid: string;

@@ -42,7 +42,9 @@ export default async function createMcpServer(
   );
 
   // KYA-OS: auto-register handshake + auto-proof all tools (reuses shared identity)
-  await withKyaOs(mcpServer, { crypto, identity: sharedIdentity });
+  // emitLegacyProofKey: false → single-key Inspector view (library default mirrors
+  // the proof under legacy bare `proof` for pre-1.1 back-compat).
+  await withKyaOs(mcpServer, { crypto, identity: sharedIdentity, emitLegacyProofKey: false });
 
   for (const tool of Object.values(tools)) {
     // The user may have enabled/disabled this tool at runtime

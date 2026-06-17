@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { createKyaOsMiddleware, NodeCryptoProvider, generateDidKeyFromBase64, type KyaOsMiddleware, type DelegationCredential, type NeedsAuthorizationError } from '@kya-os/mcp';
+import { createKyaOsMiddleware, NodeCryptoProvider, generateDidKeyFromBase64, KYA_OS_PROOF_META_KEY, type KyaOsMiddleware, type DelegationCredential, type NeedsAuthorizationError } from '@kya-os/mcp';
 import { startConsentServer, type ConsentServer } from '../src/consent-server.js';
 import { createDelegationIssuerFromIdentity } from '../src/delegation-issuer.js';
 import type { ToolResult } from '../src/server.js';
@@ -112,8 +112,8 @@ describe('E2E: consent -> delegation -> execution', () => {
 
     // 9. Response includes proof
     expect(retryResult._meta).toBeDefined();
-    expect(retryResult._meta!.proof).toBeDefined();
-    expect(retryResult._meta!.proof!.jws).toBeDefined();
+    expect(retryResult._meta![KYA_OS_PROOF_META_KEY]).toBeDefined();
+    expect(retryResult._meta![KYA_OS_PROOF_META_KEY]!.jws).toBeDefined();
   });
 
   // §4.3 — scope mismatch across tools
@@ -153,7 +153,7 @@ describe('E2E: consent -> delegation -> execution', () => {
     const result = await browseHandler({ category: 'electronics' });
     expect(result.isError).toBeUndefined();
     expect(result.content[0]!.text).toContain('electronics');
-    expect(result._meta?.proof).toBeDefined();
+    expect(result._meta?.[KYA_OS_PROOF_META_KEY]).toBeDefined();
   });
 
   // Consent page rendered by @kya-os/consent

@@ -27,6 +27,8 @@
  */
 
 import http from 'node:http';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -37,8 +39,70 @@ import {
 import { createKyaOsMiddleware, generateDidKeyFromBase64 } from '@kya-os/mcp';
 import { NodeCryptoProvider } from './node-crypto.js';
 import { verifyApprovalGrantSignature } from './approval-demo.js';
+import { startConsentServer } from './consent-server.js';
+import { createDelegationIssuerFromIdentity } from './delegation-issuer.js';
 
-function createMcpServer(kyaos: ReturnType<typeof createKyaOsMiddleware>) {
+interface ToolResult {
+  content: Array<{ type: string; text: string; [key: string]: unknown }>;
+  isError?: boolean;
+  _meta?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+/**
+ * In-memory resume_token -> approved delegation VC store. The consent host
+ * writes here on approve; the MCP server auto-applies on retry so the user
+ * never pastes the credential by hand. (Same pattern as consent-full.)
+ */
+export class DelegationStore {
+  private store = new Map<string, { vc: unknown; expiresAt: number }>();
+
+  set(resumeToken: string, vc: unknown, ttlSeconds = 300): void {
+    this.store.set(resumeToken, { vc, expiresAt: Date.now() + ttlSeconds * 1000 });
+  }
+
+  /** Find any pending delegation for a given tool (by the VC's metadata.tool). */
+  findByTool(toolName: string): { resumeToken: string; vc: unknown } | undefined {
+    for (const [token, entry] of this.store) {
+      if (Date.now() > entry.expiresAt) {
+        this.store.delete(token);
+        continue;
+      }
+      const vc = entry.vc as Record<string, unknown> | undefined;
+      const delegation = (vc?.credentialSubject as Record<string, unknown>)
+        ?.delegation as Record<string, unknown> | undefined;
+      if (delegation?.metadata && (delegation.metadata as Record<string, unknown>).tool === toolName) {
+        this.store.delete(token); // consume it
+        return { resumeToken: token, vc: entry.vc };
+      }
+    }
+    return undefined;
+  }
+}
+
+/** Auto-inject a previously approved delegation on retry (resume-token flow). */
+function formatAsConsentLink(
+  toolName: string,
+  delegationStore: DelegationStore | undefined,
+  handler: (args: Record<string, unknown>, sessionId?: string) => Promise<ToolResult>,
+): (args: Record<string, unknown>, sessionId?: string) => Promise<ToolResult> {
+  return async (args, sessionId) => {
+    if (!args['_kyaos_delegation'] && delegationStore) {
+      const pending = delegationStore.findByTool(toolName);
+      if (pending) {
+        console.error(`[kya-os] Auto-applying delegation from consent approval (token: ${pending.resumeToken})`);
+        return handler({ ...args, _kyaos_delegation: pending.vc }, sessionId);
+      }
+    }
+    return handler(args, sessionId);
+  };
+}
+
+function createMcpServer(
+  kyaos: ReturnType<typeof createKyaOsMiddleware>,
+  consentUrl: string,
+  delegationStore: DelegationStore,
+) {
   const server = new Server(
     { name: 'kya-os-example', version: '1.0.0' },
     { capabilities: { tools: {} } }
@@ -50,33 +114,40 @@ function createMcpServer(kyaos: ReturnType<typeof createKyaOsMiddleware>) {
     content: [{ type: 'text', text: `Hello, ${args['name'] ?? 'world'}!` }],
   }));
 
-  // restricted_greet: verify delegation VC, then attach proof on success
-  const restrictedGreetHandler = kyaos.wrapWithDelegation(
+  // restricted_greet: verify delegation VC, then attach proof on success. The
+  // challenge renders a clickable @kya-os/consent link; on approve the consent
+  // host stores the VC and `formatAsConsentLink` auto-applies it on retry — the
+  // user never pastes the credential by hand.
+  const rawRestrictedGreet = kyaos.wrapWithDelegation(
     'restricted_greet',
     {
       scopeId: 'greeting:restricted',
-      // This minimal example does NOT host a consent page. `consentUrl` is a
-      // placeholder; `formatChallenge` (below) renders an actionable instruction
-      // instead — and the challenge proof binds that rendered text. For a hosted
-      // browser consent flow + page, see examples/consent-full.
-      consentUrl: 'https://example.com/consent?scope=greeting:restricted',
-      // Render the needs_authorization challenge as a concrete next step for THIS
-      // (page-less) example, rather than a bare URL the caller can't act on.
-      formatChallenge: (challenge) => [
-        {
-          type: 'text',
-          text:
-            `"restricted_greet" requires a delegation credential (scope: ${challenge.scopes.join(', ')}).\n\n` +
-            `This minimal example does not host a consent page. To authorize:\n` +
-            `  1. Mint a credential:  npx tsx examples/node-server/issue-delegation.ts\n` +
-            `  2. Re-call restricted_greet with "_kyaos_delegation" set to the printed VC.\n\n` +
-            `For a hosted consent page + browser flow, see the consent-full example.`,
-        },
-      ],
+      consentUrl,
+      formatChallenge: (challenge) => {
+        const url = new URL(consentUrl);
+        url.searchParams.set('tool', 'restricted_greet');
+        url.searchParams.set('scopes', challenge.scopes.join(','));
+        url.searchParams.set('agent_did', kyaos.identity.did);
+        url.searchParams.set('resume_token', challenge.resumeToken);
+        return [
+          {
+            type: 'text',
+            text:
+              `Authorization required (scope: ${challenge.scopes.join(', ')}).\n\n` +
+              `[Authorize restricted_greet](${url.toString()})\n\n` +
+              `Approve in the browser, then retry restricted_greet — the delegation is applied automatically.`,
+          },
+        ];
+      },
     },
     kyaos.wrapWithProof('restricted_greet', async (args) => ({
       content: [{ type: 'text', text: `Hello, ${args['name'] ?? 'world'}! (delegation verified)` }],
     })),
+  );
+  const restrictedGreetHandler = formatAsConsentLink(
+    'restricted_greet',
+    delegationStore,
+    rawRestrictedGreet as (args: Record<string, unknown>, sessionId?: string) => Promise<ToolResult>,
   );
 
   // delete_record: a destructive, in-scope action. The policy gate classifies it
@@ -186,17 +257,31 @@ async function main() {
 
   console.error(`[kya-os] Agent DID: ${did}`);
 
+  const identity = { did, kid, privateKey: keyPair.privateKey, publicKey: keyPair.publicKey };
   const kyaos = createKyaOsMiddleware(
     {
-      identity: { did, kid, privateKey: keyPair.privateKey, publicKey: keyPair.publicKey },
+      identity,
       session: { sessionTtlMinutes: 60 },
       autoSession: true,
+      // Single-key Inspector view for the demo; the library default also mirrors
+      // the proof under legacy bare `proof` for pre-1.1 back-compat.
+      emitLegacyProofKey: false,
     },
     crypto
   );
 
+  // Real consent host powered by @kya-os/consent, issuing the
+  // greeting:restricted VC with this identity. The shared DelegationStore lets
+  // restricted_greet auto-apply the approved VC on retry (no manual paste).
+  const consentPort = parseInt(process.env['CONSENT_PORT'] ?? '3011', 10);
+  const delegationStore = new DelegationStore();
+  const factory = createDelegationIssuerFromIdentity(crypto, identity);
+  const consentHost = await startConsentServer({ port: consentPort, factory, delegationStore });
+  const consentUrl = `${consentHost.url}/consent`;
+  console.error(`[kya-os] Consent page: ${consentUrl}`);
+
   if (useStdio) {
-    const server = createMcpServer(kyaos);
+    const server = createMcpServer(kyaos, consentUrl, delegationStore);
     const transport = new StdioServerTransport();
     await server.connect(transport);
     console.error('[kya-os] Server running on stdio');
@@ -218,7 +303,7 @@ async function main() {
       const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
 
       if (url.pathname === '/sse' && req.method === 'GET') {
-        const server = createMcpServer(kyaos);
+        const server = createMcpServer(kyaos, consentUrl, delegationStore);
         sseTransport = new SSEServerTransport('/messages', res);
         await server.connect(sseTransport);
         console.error('[kya-os] SSE client connected');
@@ -257,7 +342,12 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error('Fatal:', err);
-  process.exit(1);
-});
+// Run only when executed directly (so this module can be imported in tests).
+const isMain =
+  process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
+  main().catch((err) => {
+    console.error('Fatal:', err);
+    process.exit(1);
+  });
+}

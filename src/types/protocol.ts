@@ -118,7 +118,7 @@ export interface DelegationCredential {
 }
 
 export const DELEGATION_CREDENTIAL_CONTEXT =
-  'https://schema.kya-os.ai/v1/protocol/delegation/context/v1.0.0' as const;
+  'https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0' as const;
 
 // ============================================================================
 // StatusList2021 (W3C)
@@ -422,9 +422,15 @@ export const AUTH_NONCE_TTL_MS = 120_000;
 export const ANON_NONCE_TTL_MS = 60_000;
 
 /**
- * Policy for _meta field validation in proof verification.
- * - 'strict': reject responses with _meta keys other than 'proof'
- * - 'allow-extensions': permit additional keys in _meta (not included in hashes)
+ * Policy for non-KYA-OS `_meta` keys during proof verification (MCP 2026-07-28 /
+ * SEP-414). `_meta` is shared real estate, so both policies share one zero-trust
+ * boundary — only the KYA-OS proof key is ever hashed or trusted, and no foreign
+ * key is ever a cause for rejection.
+ * - 'strict' (default): non-KYA-OS keys (including reserved
+ *   `io.modelcontextprotocol/*` and W3C trace-context keys) are ignored — never
+ *   hashed, trusted, or rejected.
+ * - 'allow-extensions': identical trust boundary, but non-KYA-OS keys are
+ *   surfaced to the application layer instead of discarded.
  */
 export type MetaPolicy = 'strict' | 'allow-extensions';
 

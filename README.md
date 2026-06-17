@@ -140,6 +140,15 @@ Also available: [outbound-delegation](./examples/outbound-delegation/) (gateway 
 | **Replay prevention** | Nonce-based handshake with timestamp skew validation |
 | **Extensible** | Bring your own KMS, HSM, nonce cache (Redis, DynamoDB, KV), or DID method |
 
+### Multi-instance deployments
+
+The in-memory defaults are **single-process only**. For a load-balanced /
+multi-instance deployment, inject a durable Redis / Durable Object / DB-backed
+implementation for **every** runtime-state seam — the nonce cache
+(`NonceCacheProvider`) together with the consent stores (`GrantStore`,
+`PendingFlowStore`, `SessionStore`) — so replay protection, grants, pending OAuth
+flows, and sessions are shared across instances and survive restarts.
+
 ---
 
 ## Optional did:cheqd and DID-Linked Resources

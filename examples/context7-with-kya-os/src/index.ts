@@ -148,7 +148,9 @@ async function main() {
   };
 
   // ── KYA-OS: 2 lines to add identity + proofs to all tools ──────
-  const kyaos = await withKyaOs(server, { crypto: new NodeCryptoProvider() });
+  // emitLegacyProofKey: false → single-key Inspector view (the library default
+  // also mirrors the proof under legacy bare `proof` for pre-1.1 back-compat).
+  const kyaos = await withKyaOs(server, { crypto: new NodeCryptoProvider(), emitLegacyProofKey: false });
   console.error(`[kya-os] Server DID: ${kyaos.identity.did}`);
 
   // ── Register tools normally — proofs attached automatically ────

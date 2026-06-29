@@ -1,0 +1,36 @@
+{
+  "version": "1.0.0",
+  "category": "did-key-resolution",
+  "vectors": [
+    {
+      "id": "did-key/valid-ed25519",
+      "category": "did-key-resolution",
+      "description": "A well-formed Ed25519 did:key",
+      "expected": "pass",
+      "reason": "Resolves to a single Ed25519 verification method",
+      "input": {
+        "did": "did:key:z6MkiupQ1QPitvNtmEwCb47mkfCtCoU9A6znu7ECSqyFbVXH"
+      }
+    },
+    {
+      "id": "did-key/malformed-multibase",
+      "category": "did-key-resolution",
+      "description": "A did:key with corrupted base58 multibase payload",
+      "expected": "fail",
+      "reason": "Invalid multibase cannot decode to a key — must reject",
+      "input": {
+        "did": "did:key:z6MkNOTVALIDbase58!!!!"
+      }
+    },
+    {
+      "id": "did-key/wrong-method",
+      "category": "did-key-resolution",
+      "description": "A non-did:key DID passed to the did:key resolver",
+      "expected": "fail",
+      "reason": "did:web is out of scope for the did:key resolver — must not resolve",
+      "input": {
+        "did": "did:web:example.com"
+      }
+    }
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "version": "1.0.0",
+  "category": "did-web-resolution",
+  "vectors": [
+    {
+      "id": "did-web/valid",
+      "category": "did-web-resolution",
+      "description": "A did:web whose well-known document is well-formed and id-matched",
+      "expected": "pass",
+      "reason": "Resolves to a usable Ed25519 verification method",
+      "input": {
+        "did": "did:web:agent.example.com",
+        "didDocument": {
+          "@context": [
+            "https://www.w3.org/ns/did/v1",
+            "https://w3id.org/security/suites/ed25519-2020/v1"
+          ],
+          "id": "did:web:agent.example.com",
+          "verificationMethod": [
+            {
+              "id": "did:web:agent.example.com#keys-1",
+              "type": "Ed25519VerificationKey2020",
+              "controller": "did:web:agent.example.com",
+              "publicKeyJwk": {
+                "kty": "OKP",
+                "crv": "Ed25519",
+                "x": "zIbzE7nNFfU0i62mv43FWCPYS4i5sS8-NeRy_O7ptW8"
+              },
+              "publicKeyMultibase": "z6MktDeZmp9n8K334seLnTYeKkePNmWRfSVhoighWct9zK74"
+            }
+          ],
+          "authentication": [
+            "did:web:agent.example.com#keys-1"
+          ],
+          "assertionMethod": [
+            "did:web:agent.example.com#keys-1"
+          ]
+        }
+      }
+    },
+    {
+      "id": "did-web/id-mismatch",
+      "category": "did-web-resolution",
+      "description": "Served document id does not equal the requested DID",
+      "expected": "fail",
+      "reason": "An id mismatch is a substitution attempt — must reject",
+      "input": {
+        "did": "did:web:agent.example.com",
+        "didDocument": {
+          "@context": [
+            "https://www.w3.org/ns/did/v1",
+            "https://w3id.org/security/suites/ed25519-2020/v1"
+          ],
+          "id": "did:web:evil.example.com",
+          "verificationMethod": [
+            {
+              "id": "did:web:agent.example.com#keys-1",
+              "type": "Ed25519VerificationKey2020",
+              "controller": "did:web:agent.example.com",
+              "publicKeyJwk": {
+                "kty": "OKP",
+                "crv": "Ed25519",
+                "x": "zIbzE7nNFfU0i62mv43FWCPYS4i5sS8-NeRy_O7ptW8"
+              },
+              "publicKeyMultibase": "z6MktDeZmp9n8K334seLnTYeKkePNmWRfSVhoighWct9zK74"
+            }
+          ],
+          "authentication": [
+            "did:web:agent.example.com#keys-1"
+          ],
+          "assertionMethod": [
+            "did:web:agent.example.com#keys-1"
+          ]
+        }
+      }
+    },
+    {
+      "id": "did-web/not-found",
+      "category": "did-web-resolution",
+      "description": "No document served at the well-known URL",
+      "expected": "fail",
+      "reason": "Resolution must fail closed when the document cannot be fetched",
+      "input": {
+        "did": "did:web:agent.example.com"
+      }
+    }
+  ]
+}

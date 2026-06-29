@@ -78,6 +78,35 @@ jobs:
           }
           Write-Host "No product contamination found"
 
+  conformance:
+    name: Protocol Conformance Harness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.x'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      # Type-check the harness against the live source (it is outside src/, so
+      # the package build does not cover it).
+      - name: Type check conformance harness
+        run: pnpm run conformance:typecheck
+
+      # Run every committed conformance vector through the reference adapter.
+      # Exits non-zero on ANY mismatch — a tampered/negative vector the
+      # implementation fails to reject, or a positive vector it fails to accept.
+      - name: Run conformance vectors
+        run: pnpm run conformance
+
   codeql:
     name: CodeQL Security Scan
     runs-on: ubuntu-latest

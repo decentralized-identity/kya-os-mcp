@@ -394,4 +394,88 @@ Badge assets will be provided upon successful conformance submission.
 
 ---
 
+## Independent Conformance Harness
+
+The `conformance/` directory contains an **implementation-agnostic** test harness:
+a set of versioned, pre-signed test vectors plus a runner that asserts a verifier
+ACCEPTS every positive vector and REJECTS every negative one. It exercises the
+protocol's **public** verify primitives — it does not fork verification logic — so
+the reference implementation and any third-party implementation are held to the
+exact same evidence.
+
+### What it covers
+
+Each vector is a self-contained JSON object — `{ id, category, description, input,
+expected: "pass" | "fail", reason }` — and carries fully-formed signed artifacts
+so it is reproducible against any implementation without re-signing.
+
+| File | Category | Positive | Negative |
+|------|----------|----------|----------|
+| `vectors/signed-proof.json` | Detached proof verification | valid signature + in-window ts | tampered signature, tampered meta, wrong key, timestamp skew exceeded |
+| `vectors/delegation-chain.json` | Delegation chain verification | single-hop, two-hop attenuated | broken issuer↔subject linkage, scope widening, tampered signature, audience mismatch |
+| `vectors/status-list.json` | StatusList2021 revocation | active (bit unset) | revoked (bit set) |
+| `vectors/did-key-resolution.json` | did:key resolution | valid Ed25519 | malformed multibase, wrong method |
+| `vectors/did-web-resolution.json` | did:web resolution | well-formed id-matched document | document id mismatch, not found |
+
+A `fail` vector passes the suite only when the implementation correctly **rejects**
+it. The runner exits non-zero on any mismatch.
+
+### Running the reference implementation
+
+```bash
+pnpm install
+pnpm run conformance               # run all vectors, exit non-zero on any mismatch
+pnpm run conformance -- --category signed-proof   # one category
+pnpm run conformance -- --json     # machine-readable report
+```
+
+CI runs this on every push/PR (the **Protocol Conformance Harness** job).
+
+### Regenerating the vectors
+
+The committed JSON is produced from the reference primitives:
+
+```bash
+pnpm run conformance:generate
+```
+
+Re-running mints fresh keys but preserves every positive/negative relationship by
+construction.
+
+### Running the harness against YOUR implementation
+
+The harness is decoupled from `@kya-os/mcp` through a single documented port,
+`ConformanceAdapter` (`conformance/types.ts`). Implement its methods over your own
+verifier and feed it the same vectors:
+
+```ts
+import { loadVectors } from "./conformance/loader.js";
+import { runConformance, formatReport } from "./conformance/runner.js";
+import type { ConformanceAdapter } from "./conformance/types.js";
+
+const myAdapter: ConformanceAdapter = {
+  name: "my-implementation",
+  async verifySignedProof(input)      { /* return { outcome: "pass" | "fail" } */ },
+  async verifyDelegationChain(input)  { /* ... */ },
+  async verifyStatusList(input)       { /* ... */ },
+  async resolveDidKey(input)          { /* ... */ },
+  async resolveDidWeb(input)          { /* ... */ },
+};
+
+const report = await runConformance(myAdapter, loadVectors());
+console.log(formatReport(report));
+process.exit(report.allMatched ? 0 : 1);
+```
+
+**Adapter contract.** Every method takes a vector's `input` and returns
+`{ outcome: "pass" | "fail", detail? }`, where `pass` means your implementation
+ACCEPTED the artifact and `fail` means it REJECTED it. Methods MUST be
+**fail-closed**: any error, malformed input, or unmet security property maps to
+`{ outcome: "fail" }` — never throw. The runner records a thrown error as a
+harness failure, not a rejection. The reference adapter
+(`conformance/reference-adapter.ts`) is the worked example wiring these methods to
+the public `@kya-os/mcp` primitives.
+
+---
+
 *End of Conformance Requirements*

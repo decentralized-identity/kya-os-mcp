@@ -67,6 +67,9 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
+    "conformance": "tsx conformance/bin.ts",
+    "conformance:generate": "tsx conformance/generate-vectors.ts",
+    "conformance:typecheck": "tsc --noEmit -p conformance/tsconfig.json",
     "lint": "eslint src --ext .ts",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run clean && npm run build && npm run test",
@@ -105,6 +108,7 @@
     "commander": "^14.0.3",
     "eslint": "^10.0.3",
     "express": "^5.2.1",
+    "tsx": "^4.22.4",
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.57.0",
     "vitest": "^2.0.0"

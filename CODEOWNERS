@@ -1,0 +1,33 @@
+# Adjust handles/teams as needed; @H0BB5 is a safe default owner.
+#
+# Default owner for everything in the repo.
+* @H0BB5
+
+# ── Security-critical paths (explicit ownership) ──────────────────────────────
+# Cryptographic primitives, proof signing/verification, and canonicalization.
+/src/proof/                 @H0BB5
+/src/utils/crypto-service.ts @H0BB5
+/src/utils/ed25519-constants.ts @H0BB5
+/src/providers/node-crypto.ts @H0BB5
+/src/providers/web-crypto.ts @H0BB5
+
+# Delegation, DID resolution (did:key / did:web), status-list revocation,
+# chain enforcement, audience binding, and holder binding — the authorization
+# and SSRF-adjacent surface.
+/src/delegation/            @H0BB5
+
+# Authentication handshake and authorization subsystems.
+/src/auth/                  @H0BB5
+/src/authz/                 @H0BB5
+/src/policy/                @H0BB5
+
+# Session management (nonce replay, session identity state).
+/src/session/               @H0BB5
+
+# The independent conformance harness and its test vectors — changes here alter
+# what "conformant" means for every implementation.
+/conformance/               @H0BB5
+
+# CI, governance, and dependency automation.
+/.github/                   @H0BB5
+/CODEOWNERS                 @H0BB5

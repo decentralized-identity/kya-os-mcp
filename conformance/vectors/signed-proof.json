@@ -1,0 +1,156 @@
+{
+  "version": "1.0.0",
+  "category": "signed-proof",
+  "vectors": [
+    {
+      "id": "signed-proof/valid-basic",
+      "category": "signed-proof",
+      "description": "A well-formed proof with a valid Ed25519 signature and in-window timestamp",
+      "expected": "pass",
+      "reason": "Signature verifies against the signer key and ts is within skew",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3BZOEw4Z0g1ZXlWZmdzZlk5dEZKc2M2OWk2UGlSZ0dpQjJFZDVTd3F5empXI3o2TWtwWThMOGdINWV5VmZnc2ZZOXRGSnNjNjlpNlBpUmdHaUIyRWQ1U3dxeXpqVyJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3BZOEw4Z0g1ZXlWZmdzZlk5dEZKc2M2OWk2UGlSZ0dpQjJFZDVTd3F5empXIiwibm9uY2UiOiJub25jZS1jb25mb3JtYW5jZS0wMDAxIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6YzhmM2Q1OTk1OWM5MjQ3MjExZGU4Yzc2Yjk0ZWYxN2YwYzI3OWYwOTM2MjM1MGNlZDY3ZjY5ZWNkYjg5ZDZjNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1Njo0YmNmYTVkNzg4NjczZDBhMmE3OTZkMjJiMGFkMjhiYmI0ODJlYzA4Nzc3MGNkODcwZDZhOGNlMmU5MGVjMTQyIiwic2Vzc2lvbklkIjoic2Vzc19jb25mb3JtYW5jZSIsInN1YiI6ImRpZDprZXk6ejZNa3BZOEw4Z0g1ZXlWZmdzZlk5dEZKc2M2OWk2UGlSZ0dpQjJFZDVTd3F5empXIiwidHMiOjE3NTAwMDAwMDB9.m3CbTG0TIru4niqLMUVXLrm8tCRHrDP4aV3bzGEvZyGEN3-omMo6N6mKWrrcuqvNx1U7AHioIhpdCAYdzyPlBw",
+          "meta": {
+            "did": "did:key:z6MkpY8L8gH5eyVfgsfY9tFJsc69i6PiRgGiB2Ed5SwqyzjW",
+            "kid": "did:key:z6MkpY8L8gH5eyVfgsfY9tFJsc69i6PiRgGiB2Ed5SwqyzjW#z6MkpY8L8gH5eyVfgsfY9tFJsc69i6PiRgGiB2Ed5SwqyzjW",
+            "ts": 1750000000,
+            "nonce": "nonce-conformance-0001",
+            "audience": "did:web:server.example.com",
+            "sessionId": "sess_conformance",
+            "requestHash": "sha256:c8f3d59959c9247211de8c76b94ef17f0c279f09362350ced67f69ecdb89d6c7",
+            "responseHash": "sha256:4bcfa5d788673d0a2a796d22b0ad28bbb482ec087770cd870d6a8ce2e90ec142"
+          }
+        },
+        "publicKeyJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "ldQM13vcDqdmYsSGBhimaFY0DWIag2PoLyxsznMykmU",
+          "kid": "did:key:z6MkpY8L8gH5eyVfgsfY9tFJsc69i6PiRgGiB2Ed5SwqyzjW#z6MkpY8L8gH5eyVfgsfY9tFJsc69i6PiRgGiB2Ed5SwqyzjW"
+        },
+        "now": 1750000000,
+        "skewSeconds": 300
+      }
+    },
+    {
+      "id": "signed-proof/tampered-signature",
+      "category": "signed-proof",
+      "description": "Proof whose JWS signature bytes were altered",
+      "expected": "fail",
+      "reason": "A mutated signature must fail EdDSA verification",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3BZOEw4Z0g1ZXlWZmdzZlk5dEZKc2M2OWk2UGlSZ0dpQjJFZDVTd3F5empXI3o2TWtwWThMOGdINWV5VmZnc2ZZOXRGSnNjNjlpNlBpUmdHaUIyRWQ1U3dxeXpqVyJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3BZOEw4Z0g1ZXlWZmdzZlk5dEZKc2M2OWk2UGlSZ0dpQjJFZDVTd3F5empXIiwibm9uY2UiOiJub25jZS1jb25mb3JtYW5jZS0wMDAxIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6YzhmM2Q1OTk1OWM5MjQ3MjExZGU4Yzc2Yjk0ZWYxN2YwYzI3OWYwOTM2MjM1MGNlZDY3ZjY5ZWNkYjg5ZDZjNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1Njo0YmNmYTVkNzg4NjczZDBhMmE3OTZkMjJiMGFkMjhiYmI0ODJlYzA4Nzc3MGNkODcwZDZhOGNlMmU5MGVjMTQyIiwic2Vzc2lvbklkIjoic2Vzc19jb25mb3JtYW5jZSIsInN1YiI6ImRpZDprZXk6ejZNa3BZOEw4Z0g1ZXlWZmdzZlk5dEZKc2M2OWk2UGlSZ0dpQjJFZDVTd3F5empXIiwidHMiOjE3NTAwMDAwMDB9.m3CbTG0TIru4niqLMUVXLrm8tCRHrDP4aV3bzGEvZyGEN3-omMo6N6mKWrrcuqvNx1U7AHioIhpdCAYdzyPlBA",
+          "meta": {
+            "did": "did:key:z6MkpY8L8gH5eyVfgsfY9tFJsc69i6PiRgGiB2Ed5SwqyzjW",
+            "kid": "did:key:z6MkpY8L8gH5eyVfgsfY9tFJsc69i6PiRgGiB2Ed5SwqyzjW#z6MkpY8L8gH5eyVfgsfY9tFJsc69i6PiRgGiB2Ed5SwqyzjW",
+            "ts": 1750000000,
+            "nonce": "nonce-conformance-0001",
+            "audience": "did:web:server.example.com",
+            "sessionId": "sess_conformance",
+            "requestHash": "sha256:c8f3d59959c9247211de8c76b94ef17f0c279f09362350ced67f69ecdb89d6c7",
+            "responseHash": "sha256:4bcfa5d788673d0a2a796d22b0ad28bbb482ec087770cd870d6a8ce2e90ec142"
+          }
+        },
+        "publicKeyJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "ldQM13vcDqdmYsSGBhimaFY0DWIag2PoLyxsznMykmU",
+          "kid": "did:key:z6MkpY8L8gH5eyVfgsfY9tFJsc69i6PiRgGiB2Ed5SwqyzjW#z6MkpY8L8gH5eyVfgsfY9tFJsc69i6PiRgGiB2Ed5SwqyzjW"
+        },
+        "now": 1750000000,
+        "skewSeconds": 300
+      }
+    },
+    {
+      "id": "signed-proof/tampered-meta",
+      "category": "signed-proof",
+      "description": "Proof whose signed requestHash was altered after signing",
+      "expected": "fail",
+      "reason": "The reconstructed canonical payload no longer matches the signature",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3BZOEw4Z0g1ZXlWZmdzZlk5dEZKc2M2OWk2UGlSZ0dpQjJFZDVTd3F5empXI3o2TWtwWThMOGdINWV5VmZnc2ZZOXRGSnNjNjlpNlBpUmdHaUIyRWQ1U3dxeXpqVyJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3BZOEw4Z0g1ZXlWZmdzZlk5dEZKc2M2OWk2UGlSZ0dpQjJFZDVTd3F5empXIiwibm9uY2UiOiJub25jZS1jb25mb3JtYW5jZS0wMDAxIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6YzhmM2Q1OTk1OWM5MjQ3MjExZGU4Yzc2Yjk0ZWYxN2YwYzI3OWYwOTM2MjM1MGNlZDY3ZjY5ZWNkYjg5ZDZjNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1Njo0YmNmYTVkNzg4NjczZDBhMmE3OTZkMjJiMGFkMjhiYmI0ODJlYzA4Nzc3MGNkODcwZDZhOGNlMmU5MGVjMTQyIiwic2Vzc2lvbklkIjoic2Vzc19jb25mb3JtYW5jZSIsInN1YiI6ImRpZDprZXk6ejZNa3BZOEw4Z0g1ZXlWZmdzZlk5dEZKc2M2OWk2UGlSZ0dpQjJFZDVTd3F5empXIiwidHMiOjE3NTAwMDAwMDB9.m3CbTG0TIru4niqLMUVXLrm8tCRHrDP4aV3bzGEvZyGEN3-omMo6N6mKWrrcuqvNx1U7AHioIhpdCAYdzyPlBw",
+          "meta": {
+            "did": "did:key:z6MkpY8L8gH5eyVfgsfY9tFJsc69i6PiRgGiB2Ed5SwqyzjW",
+            "kid": "did:key:z6MkpY8L8gH5eyVfgsfY9tFJsc69i6PiRgGiB2Ed5SwqyzjW#z6MkpY8L8gH5eyVfgsfY9tFJsc69i6PiRgGiB2Ed5SwqyzjW",
+            "ts": 1750000000,
+            "nonce": "nonce-conformance-0001",
+            "audience": "did:web:server.example.com",
+            "sessionId": "sess_conformance",
+            "requestHash": "sha256:dededededededededededededededededededededededededededededededede",
+            "responseHash": "sha256:4bcfa5d788673d0a2a796d22b0ad28bbb482ec087770cd870d6a8ce2e90ec142"
+          }
+        },
+        "publicKeyJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "ldQM13vcDqdmYsSGBhimaFY0DWIag2PoLyxsznMykmU",
+          "kid": "did:key:z6MkpY8L8gH5eyVfgsfY9tFJsc69i6PiRgGiB2Ed5SwqyzjW#z6MkpY8L8gH5eyVfgsfY9tFJsc69i6PiRgGiB2Ed5SwqyzjW"
+        },
+        "now": 1750000000,
+        "skewSeconds": 300
+      }
+    },
+    {
+      "id": "signed-proof/wrong-key",
+      "category": "signed-proof",
+      "description": "Valid proof verified against a different agent public key",
+      "expected": "fail",
+      "reason": "Signature does not verify under an unrelated key",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3BZOEw4Z0g1ZXlWZmdzZlk5dEZKc2M2OWk2UGlSZ0dpQjJFZDVTd3F5empXI3o2TWtwWThMOGdINWV5VmZnc2ZZOXRGSnNjNjlpNlBpUmdHaUIyRWQ1U3dxeXpqVyJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3BZOEw4Z0g1ZXlWZmdzZlk5dEZKc2M2OWk2UGlSZ0dpQjJFZDVTd3F5empXIiwibm9uY2UiOiJub25jZS1jb25mb3JtYW5jZS0wMDAxIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6YzhmM2Q1OTk1OWM5MjQ3MjExZGU4Yzc2Yjk0ZWYxN2YwYzI3OWYwOTM2MjM1MGNlZDY3ZjY5ZWNkYjg5ZDZjNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1Njo0YmNmYTVkNzg4NjczZDBhMmE3OTZkMjJiMGFkMjhiYmI0ODJlYzA4Nzc3MGNkODcwZDZhOGNlMmU5MGVjMTQyIiwic2Vzc2lvbklkIjoic2Vzc19jb25mb3JtYW5jZSIsInN1YiI6ImRpZDprZXk6ejZNa3BZOEw4Z0g1ZXlWZmdzZlk5dEZKc2M2OWk2UGlSZ0dpQjJFZDVTd3F5empXIiwidHMiOjE3NTAwMDAwMDB9.m3CbTG0TIru4niqLMUVXLrm8tCRHrDP4aV3bzGEvZyGEN3-omMo6N6mKWrrcuqvNx1U7AHioIhpdCAYdzyPlBw",
+          "meta": {
+            "did": "did:key:z6MkpY8L8gH5eyVfgsfY9tFJsc69i6PiRgGiB2Ed5SwqyzjW",
+            "kid": "did:key:z6MkpY8L8gH5eyVfgsfY9tFJsc69i6PiRgGiB2Ed5SwqyzjW#z6MkpY8L8gH5eyVfgsfY9tFJsc69i6PiRgGiB2Ed5SwqyzjW",
+            "ts": 1750000000,
+            "nonce": "nonce-conformance-0001",
+            "audience": "did:web:server.example.com",
+            "sessionId": "sess_conformance",
+            "requestHash": "sha256:c8f3d59959c9247211de8c76b94ef17f0c279f09362350ced67f69ecdb89d6c7",
+            "responseHash": "sha256:4bcfa5d788673d0a2a796d22b0ad28bbb482ec087770cd870d6a8ce2e90ec142"
+          }
+        },
+        "publicKeyJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "NxJT_wy6jD-u4Ggup26cWtuKuz6ntNREzk-xIP8pTuc",
+          "kid": "did:key:z6MkiAEgJA1vxX2PJRhG7qwbEHBZkD6mvzEhmQ4VNMT3R2AS#z6MkiAEgJA1vxX2PJRhG7qwbEHBZkD6mvzEhmQ4VNMT3R2AS"
+        },
+        "now": 1750000000,
+        "skewSeconds": 300
+      }
+    },
+    {
+      "id": "signed-proof/timestamp-skew-exceeded",
+      "category": "signed-proof",
+      "description": "Authentically signed proof whose timestamp is far outside the skew window",
+      "expected": "fail",
+      "reason": "ts is 10000s before now with a 300s skew — replay/stale guard must reject",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3BZOEw4Z0g1ZXlWZmdzZlk5dEZKc2M2OWk2UGlSZ0dpQjJFZDVTd3F5empXI3o2TWtwWThMOGdINWV5VmZnc2ZZOXRGSnNjNjlpNlBpUmdHaUIyRWQ1U3dxeXpqVyJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3BZOEw4Z0g1ZXlWZmdzZlk5dEZKc2M2OWk2UGlSZ0dpQjJFZDVTd3F5empXIiwibm9uY2UiOiJub25jZS1jb25mb3JtYW5jZS0wMDAxIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6YzhmM2Q1OTk1OWM5MjQ3MjExZGU4Yzc2Yjk0ZWYxN2YwYzI3OWYwOTM2MjM1MGNlZDY3ZjY5ZWNkYjg5ZDZjNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1Njo0YmNmYTVkNzg4NjczZDBhMmE3OTZkMjJiMGFkMjhiYmI0ODJlYzA4Nzc3MGNkODcwZDZhOGNlMmU5MGVjMTQyIiwic2Vzc2lvbklkIjoic2Vzc19jb25mb3JtYW5jZSIsInN1YiI6ImRpZDprZXk6ejZNa3BZOEw4Z0g1ZXlWZmdzZlk5dEZKc2M2OWk2UGlSZ0dpQjJFZDVTd3F5empXIiwidHMiOjE3NDk5OTAwMDB9.Xi32lZ-eg8KZf-CkK0_Ok8hazAot3gUAbmxFi27jcCixGEMiOCA96gzswLBUvbQI6xYkhLdRiy3m4OQhuI2wAQ",
+          "meta": {
+            "did": "did:key:z6MkpY8L8gH5eyVfgsfY9tFJsc69i6PiRgGiB2Ed5SwqyzjW",
+            "kid": "did:key:z6MkpY8L8gH5eyVfgsfY9tFJsc69i6PiRgGiB2Ed5SwqyzjW#z6MkpY8L8gH5eyVfgsfY9tFJsc69i6PiRgGiB2Ed5SwqyzjW",
+            "ts": 1749990000,
+            "nonce": "nonce-conformance-0001",
+            "audience": "did:web:server.example.com",
+            "sessionId": "sess_conformance",
+            "requestHash": "sha256:c8f3d59959c9247211de8c76b94ef17f0c279f09362350ced67f69ecdb89d6c7",
+            "responseHash": "sha256:4bcfa5d788673d0a2a796d22b0ad28bbb482ec087770cd870d6a8ce2e90ec142"
+          }
+        },
+        "publicKeyJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "ldQM13vcDqdmYsSGBhimaFY0DWIag2PoLyxsznMykmU",
+          "kid": "did:key:z6MkpY8L8gH5eyVfgsfY9tFJsc69i6PiRgGiB2Ed5SwqyzjW#z6MkpY8L8gH5eyVfgsfY9tFJsc69i6PiRgGiB2Ed5SwqyzjW"
+        },
+        "now": 1750000000,
+        "skewSeconds": 300
+      }
+    }
+  ]
+}

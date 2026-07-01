@@ -1,0 +1,78 @@
+name: Coverage Comment
+
+# Runs after Coverage Report finishes, using the base repo's workflow file
+# and token — not the fork's. This is what lets us post/update the coverage
+# comment on PRs from forks, where the pull_request-triggered job only ever
+# gets a read-only GITHUB_TOKEN. See coverage-report.yml for the artifact it
+# consumes.
+on:
+  workflow_run:
+    workflows: [Coverage Report]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Download coverage comment artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-comment
+          path: /tmp/coverage-comment
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Post or update coverage comment
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+
+            // Resolve the PR from the workflow_run's head_sha, which GitHub sets
+            // server-side and the fork's job can't influence — never trust a PR
+            // number that came out of a job that ran untrusted fork code.
+            const { data: pulls } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.payload.workflow_run.head_sha,
+            });
+
+            const pr = pulls.find(p => p.state === 'open') ?? pulls[0];
+            if (!pr) {
+              core.setFailed(`No pull request found for head_sha ${context.payload.workflow_run.head_sha}`);
+              return;
+            }
+            const prNumber = pr.number;
+
+            const body = fs.readFileSync('/tmp/coverage-comment/coverage-comment-body.md', 'utf8');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+
+            const marker = '## Coverage Report';
+            const existing = comments.find(c => c.body?.startsWith(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body,
+              });
+            }

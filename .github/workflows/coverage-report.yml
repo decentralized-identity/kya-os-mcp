@@ -6,7 +6,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   coverage:
@@ -57,8 +56,15 @@ jobs:
             echo '{}' > /tmp/base-coverage.json
           fi
 
-      # Generate the comment
-      - name: Generate coverage comment
+      # Render the comment body to a file. This job runs against the PR head
+      # (untrusted for fork PRs), so GITHUB_TOKEN here is read-only and can't
+      # post comments — a separate workflow_run job (coverage-comment.yml),
+      # which runs with the base repo's token, uploads it. The artifact only
+      # carries the rendered body, never a PR/issue number: coverage-comment.yml
+      # derives the target PR itself from the trusted workflow_run.head_sha, since
+      # anything written here runs alongside untrusted fork code and could be
+      # tampered with to redirect the comment to an unrelated PR or issue.
+      - name: Render coverage comment
         uses: actions/github-script@v9
         with:
           script: |
@@ -77,12 +83,7 @@ jobs:
             }
 
             if (!pr || !pr.total) {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: '⚠️ Coverage report unavailable — tests may have failed.',
-              });
+              fs.writeFileSync('/tmp/coverage-comment-body.md', '⚠️ Coverage report unavailable — tests may have failed.');
               return;
             }
 
@@ -158,28 +159,11 @@ jobs:
             body += `- **Config**: vitest + v8, thresholds enforced in \`vitest.config.mts\`\n`;
             body += `</details>\n`;
 
-            // Find and update existing comment or create new one
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
+            fs.writeFileSync('/tmp/coverage-comment-body.md', body);
 
-            const marker = '## Coverage Report';
-            const existing = comments.find(c => c.body?.startsWith(marker));
-
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body,
-              });
-            }
+      - name: Upload coverage comment
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-comment
+          path: /tmp/coverage-comment-body.md
+          retention-days: 1

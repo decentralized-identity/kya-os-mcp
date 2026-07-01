@@ -61,6 +61,7 @@ export interface DIDResolver {
 export interface DIDDocument {
   '@context'?: string | string[];
   id: string;
+  alsoKnownAs?: string[];
   verificationMethod?: VerificationMethod[];
   authentication?: (string | VerificationMethod)[];
   assertionMethod?: (string | VerificationMethod)[];

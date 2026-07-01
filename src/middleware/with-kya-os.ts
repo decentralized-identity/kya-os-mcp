@@ -56,6 +56,11 @@ import { MemoryNonceCacheProvider } from "../providers/memory.js";
 import { scopeSatisfies } from "../delegation/scope-matcher.js";
 import { createDidWebResolver } from "../delegation/did-web-resolver.js";
 import {
+  buildDidResolverRegistry,
+  type DIDResolverRegistry,
+} from "../delegation/did-resolver-registry.js";
+import { getDidMethod } from "../utils/did-helpers.js";
+import {
   validateDelegationChain as validateDelegationChainCore,
   getDelegationScopes,
   type RevocationChecker,
@@ -99,6 +104,12 @@ export interface KyaOsDelegationConfig {
    * If omitted, middleware falls back to the runtime global fetch when available.
    */
   fetchProvider?: FetchProvider;
+  /**
+   * Optional DID method resolver registry. Entries are keyed by DID method
+   * (for example, "cheqd") and are checked before the built-in did:key and
+   * did:web fallback. Factory entries receive the active fetch provider.
+   */
+  didResolvers?: DIDResolverRegistry;
   /**
    * Resolver for StatusList2021 checks. Credentials with credentialStatus are
    * rejected when no resolver is configured.
@@ -1079,6 +1090,10 @@ export function createKyaOsMiddleware(
     const didWebResolver = fetchProvider
       ? createDidWebResolver(fetchProvider)
       : undefined;
+    const configuredDidResolvers = buildDidResolverRegistry(
+      delegationConfig?.didResolvers,
+      fetchProvider,
+    );
     const didResolver: DIDResolver = {
       async resolve(did: string) {
         const customResolver = delegationConfig?.didResolver;
@@ -1086,6 +1101,19 @@ export function createKyaOsMiddleware(
           const resolved = await customResolver.resolve(did);
           if (resolved) {
             return resolved;
+          }
+        }
+
+        const method = getDidMethod(did);
+        const configuredResolver = method ? configuredDidResolvers[method] : undefined;
+        if (configuredResolver) {
+          try {
+            const resolved = await configuredResolver.resolve(did);
+            if (resolved) {
+              return resolved;
+            }
+          } catch {
+            return null;
           }
         }
 

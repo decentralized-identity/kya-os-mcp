@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { RuntimeFetchProvider } from '../../providers/runtime-fetch.js';
 import { NodeCryptoProvider } from '../../providers/node-crypto.js';
 import { generateDidKeyFromBase64 } from '../../utils/did-helpers.js';
+import { cheqdResolver } from '../../integrations/cheqd/index.js';
 
 describe('RuntimeFetchProvider', () => {
   let provider: RuntimeFetchProvider;
@@ -35,6 +36,45 @@ describe('RuntimeFetchProvider', () => {
 
     it('returns null for an unsupported DID method', async () => {
       expect(await provider.resolveDID('did:example:abc')).toBeNull();
+    });
+
+    it('returns null for did:cheqd unless a cheqd resolver is configured', async () => {
+      const fetchSpy = vi.fn();
+      vi.stubGlobal('fetch', fetchSpy);
+
+      expect(
+        await provider.resolveDID('did:cheqd:testnet:11111111-1111-4111-8111-111111111111'),
+      ).toBeNull();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('resolves did:cheqd through an explicitly configured method resolver', async () => {
+      const did = 'did:cheqd:testnet:11111111-1111-4111-8111-111111111111';
+      const cheqdProvider = new RuntimeFetchProvider({
+        didResolvers: {
+          cheqd: cheqdResolver({ resolverUrl: 'https://resolver.cheqd.net' }),
+        },
+      });
+      const fetchSpy = vi.fn(async (url: string) => {
+        expect(url).toBe(`https://resolver.cheqd.net/1.0/identifiers/${did}`);
+        return new Response(
+          JSON.stringify({
+            didDocument: {
+              id: did,
+              verificationMethod: [
+                { id: `${did}#key-1`, type: 'Ed25519VerificationKey2020', controller: did },
+              ],
+            },
+          }),
+          { status: 200 },
+        );
+      });
+      vi.stubGlobal('fetch', fetchSpy);
+
+      const doc = await cheqdProvider.resolveDID(did);
+
+      expect(doc?.id).toBe(did);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
     });
 
     it('resolves a did:web over the HTTPS .well-known fetch path', async () => {

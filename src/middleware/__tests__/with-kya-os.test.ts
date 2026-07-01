@@ -17,6 +17,7 @@ import {
   base64urlEncodeFromBytes,
 } from '../../utils/base64.js';
 import { AuditLogProvider, MemoryAuditLogProvider } from '../../providers/audit-log.js';
+import { cheqdResolver } from '../../integrations/cheqd/index.js';
 import { KYA_OS_PROOF_META_KEY, LEGACY_PROOF_META_KEY } from '../../proof/index.js';
 
 async function createTestMiddleware(options?: {
@@ -941,6 +942,90 @@ describe('createKyaOsMiddleware', () => {
       expect(result.isError).toBeUndefined();
       const parsed = JSON.parse(result.content[0].text.replace('Called: ', ''));
       expect(parsed['name']).toBe('DIF');
+    });
+
+    it('should accept did:cheqd issuers when a cheqd resolver is configured', async () => {
+      const did = 'did:cheqd:testnet:11111111-1111-4111-8111-111111111111';
+      const kid = `${did}#key-1`;
+      const issuer = await createDelegationIssuer({ did, kid });
+      const vc = await issueDelegationVC({
+        issuer,
+        scopes: ['test:scope'],
+      });
+      const fetchProvider = new MockFetchProvider();
+      fetchProvider.fetch = async () =>
+        new Response(
+          JSON.stringify({
+            didDocument: {
+              id: did,
+              verificationMethod: [
+                {
+                  id: kid,
+                  type: 'Ed25519VerificationKey2020',
+                  controller: did,
+                  publicKeyJwk: {
+                    kty: 'OKP',
+                    crv: 'Ed25519',
+                    x: base64urlEncodeFromBytes(base64ToBytes(issuer.keyPair.publicKey)),
+                  },
+                },
+              ],
+              authentication: [kid],
+              assertionMethod: [kid],
+            },
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        );
+
+      const { middleware: kyaos } = await createTestMiddleware({
+        delegation: {
+          fetchProvider,
+          didResolvers: {
+            cheqd: cheqdResolver({ resolverUrl: 'https://resolver.cheqd.net' }),
+          },
+        },
+      });
+
+      const handler = kyaos.wrapWithDelegation(
+        'my-tool',
+        { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
+        async (args) => ({
+          content: [{ type: 'text', text: `Called: ${JSON.stringify(args)}` }],
+        }),
+      );
+
+      const result = await handler({ _kyaos_delegation: vc, name: 'DIF' });
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text.replace('Called: ', ''));
+      expect(parsed['name']).toBe('DIF');
+    });
+
+    it('should reject did:cheqd issuers when no cheqd resolver is configured', async () => {
+      const did = 'did:cheqd:testnet:11111111-1111-4111-8111-111111111111';
+      const kid = `${did}#key-1`;
+      const issuer = await createDelegationIssuer({ did, kid });
+      const vc = await issueDelegationVC({
+        issuer,
+        scopes: ['test:scope'],
+      });
+      const { middleware: kyaos } = await createTestMiddleware();
+
+      const handler = kyaos.wrapWithDelegation(
+        'my-tool',
+        { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
+        async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
+      );
+
+      const result = await handler({ _kyaos_delegation: vc });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toBe('delegation_invalid');
+      expect(parsed.reason).toContain(`Could not resolve issuer DID: ${did}`);
     });
 
     it('should reject credentialStatus when no status resolver is configured', async () => {

@@ -191,6 +191,19 @@ export {
   type BuildDidWebDocumentOptions,
 } from './delegation/did-web-resolver.js';
 
+export {
+  verifyDidLinkage,
+  type DidLinkageVerificationResult,
+  type VerifyDidLinkageOptions,
+} from './delegation/did-linkage.js';
+
+export {
+  buildDidResolverRegistry,
+  type DIDResolverFactory,
+  type DIDResolverRegistry,
+  type DIDResolverRegistryEntry,
+} from './delegation/did-resolver-registry.js';
+
 // Utils
 export {
   base58Encode,

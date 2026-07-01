@@ -9,7 +9,7 @@
  * and that security properties hold with actual cryptographic operations.
  */
 
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 import { ProofGenerator } from '../generator.js';
 import { ProofVerifier } from '../verifier.js';
 import type { AgentIdentity } from '../../providers/base.js';
@@ -23,6 +23,8 @@ import {
   MemoryNonceCacheProvider,
 } from '../../__tests__/audit/helpers/crypto-helpers.js';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
+import { RuntimeFetchProvider } from '../../providers/runtime-fetch.js';
+import { cheqdResolver } from '../../integrations/cheqd/index.js';
 
 describe('ProofVerifier (real crypto)', () => {
   let crypto: NodeCryptoProvider;
@@ -362,5 +364,49 @@ describe('ProofVerifier (real crypto)', () => {
     expect(jwk!.kty).toBe('OKP');
     expect(jwk!.crv).toBe('Ed25519');
     expect(jwk!.x).toBeTruthy();
+  });
+
+  it('should resolve did:cheqd public keys when the fetch provider is configured for cheqd', async () => {
+    const did = 'did:cheqd:testnet:11111111-1111-4111-8111-111111111111';
+    const kid = `${did}#key-1`;
+    const raw = extractPublicKeyFromDidKey(agent.did);
+    const publicKeyJwk = publicKeyToJwk(raw!);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            didDocument: {
+              id: did,
+              verificationMethod: [
+                {
+                  id: kid,
+                  type: 'Ed25519VerificationKey2020',
+                  controller: did,
+                  publicKeyJwk,
+                },
+              ],
+            },
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    const verifier = new ProofVerifier({
+      cryptoProvider: crypto,
+      clockProvider: new RealClockProvider(),
+      nonceCacheProvider: new MemoryNonceCacheProvider(),
+      fetchProvider: new RuntimeFetchProvider({
+        didResolvers: {
+          cheqd: cheqdResolver({ resolverUrl: 'https://resolver.cheqd.net' }),
+        },
+      }),
+      timestampSkewSeconds: 300,
+    });
+
+    const jwk = await verifier.fetchPublicKeyFromDID(did, 'key-1');
+
+    expect(jwk?.kid).toBe(kid);
+    vi.unstubAllGlobals();
   });
 });

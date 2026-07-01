@@ -18,6 +18,7 @@ export * from './audience-validator.js';
 export * from './scope-matcher.js';
 export * from './holder-binding.js';
 export * from './chain-enforcement.js';
+export * from './did-resolver-registry.js';
 export {
   createDidKeyResolver,
   resolveDidKeySync,
@@ -33,5 +34,10 @@ export {
   didWebToUrl,
   buildDidWebDocument,
 } from './did-web-resolver.js';
+export {
+  verifyDidLinkage,
+  type DidLinkageVerificationResult,
+  type VerifyDidLinkageOptions,
+} from './did-linkage.js';
 export { MemoryStatusListStorage } from './storage/memory-statuslist-storage.js';
 export { MemoryDelegationGraphStorage } from './storage/memory-graph-storage.js';

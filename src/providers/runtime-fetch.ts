@@ -37,6 +37,11 @@ import {
   isDidWeb,
   didWebToUrl,
 } from "../delegation/did-web-resolver.js";
+import {
+  buildDidResolverRegistry,
+  type DIDResolverRegistry,
+} from "../delegation/did-resolver-registry.js";
+import { getDidMethod } from "../utils/did-helpers.js";
 import type { DIDDocument } from "../delegation/vc-verifier.js";
 import type {
   StatusList2021Credential,
@@ -50,17 +55,25 @@ export interface RuntimeFetchProviderOptions {
    * trusted internal deployments.
    */
   allowPrivateNetworkHosts?: boolean;
+  /**
+   * Optional DID method resolver registry. Entries dispatch by DID method before
+   * built-in did:key and did:web fallback. A factory receives this fetch provider
+   * so network-backed resolvers can share the same fetch implementation.
+   */
+  didResolvers?: DIDResolverRegistry;
 }
 
 export class RuntimeFetchProvider extends FetchProvider {
   private readonly didKeyResolver = createDidKeyResolver();
   private didWebResolver: ReturnType<typeof createDidWebResolver> | undefined;
+  private readonly didResolvers: Record<string, { resolve(did: string): Promise<DIDDocument | null> }>;
   private readonly allowPrivateNetworkHosts: boolean;
 
   constructor(options?: RuntimeFetchProviderOptions) {
     super();
     this.allowPrivateNetworkHosts =
       options?.allowPrivateNetworkHosts ?? false;
+    this.didResolvers = buildDidResolverRegistry(options?.didResolvers, this);
   }
 
   /**
@@ -70,6 +83,19 @@ export class RuntimeFetchProvider extends FetchProvider {
    * resolution failure (never throws).
    */
   async resolveDID(did: string): Promise<DIDDocument | null> {
+    const method = getDidMethod(did);
+    const configuredResolver = method ? this.didResolvers[method] : undefined;
+    if (configuredResolver) {
+      try {
+        const resolved = await configuredResolver.resolve(did);
+        if (resolved) {
+          return resolved;
+        }
+      } catch {
+        return null;
+      }
+    }
+
     if (did.startsWith("did:key:")) {
       return this.didKeyResolver.resolve(did);
     }

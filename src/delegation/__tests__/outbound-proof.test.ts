@@ -23,7 +23,9 @@ async function generateTestKeyPair(): Promise<{
   privateKeyJwk: Ed25519PrivateJWK;
   kid: string;
 }> {
-  const { privateKey } = await generateKeyPair("EdDSA", { crv: "Ed25519" });
+  // jose 6 generates non-extractable keys by default; this helper needs to
+  // export the private key back out as a JWK for the test fixture.
+  const { privateKey } = await generateKeyPair("EdDSA", { crv: "Ed25519", extractable: true });
   const jwk = await exportJWK(privateKey);
   const privateKeyJwk: Ed25519PrivateJWK = {
     kty: "OKP",

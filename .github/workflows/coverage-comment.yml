@@ -34,7 +34,22 @@ jobs:
           script: |
             const fs = require('fs');
 
-            const prNumber = parseInt(fs.readFileSync('/tmp/coverage-comment/pr-number.txt', 'utf8').trim(), 10);
+            // Resolve the PR from the workflow_run's head_sha, which GitHub sets
+            // server-side and the fork's job can't influence — never trust a PR
+            // number that came out of a job that ran untrusted fork code.
+            const { data: pulls } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.payload.workflow_run.head_sha,
+            });
+
+            const pr = pulls.find(p => p.state === 'open') ?? pulls[0];
+            if (!pr) {
+              core.setFailed(`No pull request found for head_sha ${context.payload.workflow_run.head_sha}`);
+              return;
+            }
+            const prNumber = pr.number;
+
             const body = fs.readFileSync('/tmp/coverage-comment/coverage-comment-body.md', 'utf8');
 
             const { data: comments } = await github.rest.issues.listComments({

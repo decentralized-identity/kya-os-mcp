@@ -59,7 +59,11 @@ jobs:
       # Render the comment body to a file. This job runs against the PR head
       # (untrusted for fork PRs), so GITHUB_TOKEN here is read-only and can't
       # post comments — a separate workflow_run job (coverage-comment.yml),
-      # which runs with the base repo's token, uploads it.
+      # which runs with the base repo's token, uploads it. The artifact only
+      # carries the rendered body, never a PR/issue number: coverage-comment.yml
+      # derives the target PR itself from the trusted workflow_run.head_sha, since
+      # anything written here runs alongside untrusted fork code and could be
+      # tampered with to redirect the comment to an unrelated PR or issue.
       - name: Render coverage comment
         uses: actions/github-script@v9
         with:
@@ -80,7 +84,6 @@ jobs:
 
             if (!pr || !pr.total) {
               fs.writeFileSync('/tmp/coverage-comment-body.md', '⚠️ Coverage report unavailable — tests may have failed.');
-              fs.writeFileSync('/tmp/pr-number.txt', String(context.issue.number));
               return;
             }
 
@@ -157,13 +160,10 @@ jobs:
             body += `</details>\n`;
 
             fs.writeFileSync('/tmp/coverage-comment-body.md', body);
-            fs.writeFileSync('/tmp/pr-number.txt', String(context.issue.number));
 
       - name: Upload coverage comment
         uses: actions/upload-artifact@v4
         with:
           name: coverage-comment
-          path: |
-            /tmp/coverage-comment-body.md
-            /tmp/pr-number.txt
+          path: /tmp/coverage-comment-body.md
           retention-days: 1

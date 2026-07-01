@@ -50,6 +50,24 @@ function toHex(bytes: Uint8Array): string {
   return out;
 }
 
+// WebCrypto's BufferSource requires a Uint8Array backed by a concrete
+// ArrayBuffer (not the wider ArrayBufferLike a bare `Uint8Array` type
+// admits). `.slice()` always allocates a fresh ArrayBuffer, so it doubles
+// as the narrowing conversion.
+function toBufferSource(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
+  return bytes.slice();
+}
+
+// CryptoKeyPair isn't a global name without the DOM lib (see getCrypto), so
+// it's derived from generateKey's own return type rather than named directly.
+type SubtleCryptoT = ReturnType<typeof getCrypto>["subtle"];
+type GeneratedKey = Awaited<ReturnType<SubtleCryptoT["generateKey"]>>;
+type GeneratedKeyPair = Extract<GeneratedKey, { privateKey: unknown }>;
+
+function isKeyPair(key: GeneratedKey): key is GeneratedKeyPair {
+  return "privateKey" in key && "publicKey" in key;
+}
+
 export class WebCryptoProvider extends CryptoProvider {
   async sign(data: Uint8Array, privateKeyBase64: string): Promise<Uint8Array> {
     const raw = base64ToBytes(privateKeyBase64);
@@ -59,7 +77,7 @@ export class WebCryptoProvider extends CryptoProvider {
     pkcs8.set(ED25519_PKCS8_PREFIX, 0);
     pkcs8.set(seed, ED25519_PKCS8_PREFIX.length);
     const key = await getCrypto().subtle.importKey("pkcs8", pkcs8, { name: ALG }, false, ["sign"]);
-    const sig = await getCrypto().subtle.sign({ name: ALG }, key, data);
+    const sig = await getCrypto().subtle.sign({ name: ALG }, key, toBufferSource(data));
     return new Uint8Array(sig);
   }
 
@@ -70,8 +88,19 @@ export class WebCryptoProvider extends CryptoProvider {
   ): Promise<boolean> {
     try {
       const raw = base64ToBytes(publicKeyBase64);
-      const key = await getCrypto().subtle.importKey("raw", raw, { name: ALG }, false, ["verify"]);
-      return await getCrypto().subtle.verify({ name: ALG }, key, signature, data);
+      const key = await getCrypto().subtle.importKey(
+        "raw",
+        toBufferSource(raw),
+        { name: ALG },
+        false,
+        ["verify"],
+      );
+      return await getCrypto().subtle.verify(
+        { name: ALG },
+        key,
+        toBufferSource(signature),
+        toBufferSource(data),
+      );
     } catch {
       // Never throw on a bad key/signature — verification simply fails.
       return false;
@@ -80,9 +109,7 @@ export class WebCryptoProvider extends CryptoProvider {
 
   async generateKeyPair(): Promise<{ privateKey: string; publicKey: string }> {
     const kp = await getCrypto().subtle.generateKey({ name: ALG }, true, ["sign", "verify"]);
-    // generateKey returns CryptoKey | CryptoKeyPair; narrow to the pair without
-    // naming the DOM type (this file compiles without a DOM lib — see getCrypto).
-    if (!("publicKey" in kp)) {
+    if (!isKeyPair(kp)) {
       throw new Error("WebCryptoProvider: expected an Ed25519 key pair from generateKey");
     }
     const rawPub = new Uint8Array(await getCrypto().subtle.exportKey("raw", kp.publicKey));
@@ -94,7 +121,7 @@ export class WebCryptoProvider extends CryptoProvider {
   }
 
   async hash(data: Uint8Array): Promise<string> {
-    const digest = new Uint8Array(await getCrypto().subtle.digest("SHA-256", data));
+    const digest = new Uint8Array(await getCrypto().subtle.digest("SHA-256", toBufferSource(data)));
     return `sha256:${toHex(digest)}`;
   }
 

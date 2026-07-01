@@ -90,7 +90,7 @@
     "example:cheqd-dlr": "npx tsx examples/cheqd-dlr/operator-flow.ts"
   },
   "dependencies": {
-    "jose": "^5.6.3",
+    "jose": "^6.2.3",
     "json-canonicalize": "^2.0.0",
     "zod": "^4.3.6"
   },

@@ -1,17 +1,10 @@
 /**
- * Reference {@link ConformanceAdapter} for `@kya-os/mcp`.
- *
- * DRY: every method delegates to the package's PUBLIC verify primitives — it does
- * NOT re-implement any verification logic. This is exactly the surface a third
- * party would wire their own implementation into, so passing the suite here
- * proves the reference implementation is conformant against the same vectors any
- * other implementation would run.
- *
- *   - signed proofs        → {@link ProofVerifier.verifyProof}
- *   - delegation chains    → {@link validateDelegationChain} + {@link DelegationCredentialVerifier}
- *   - status-list checks   → {@link StatusList2021Manager.checkStatus} via the chain's status resolver
- *   - did:key resolution   → {@link createDidKeyResolver}
- *   - did:web resolution   → {@link createDidWebResolver}
+ * Reference {@link ConformanceAdapter} for `@kya-os/mcp`: every method delegates
+ * to the package's PUBLIC verify primitives (signed proofs, delegation chains,
+ * status lists, did:key/did:web resolution, and the Entity Card layer) and
+ * re-implements no verification logic — passing the suite here proves the
+ * reference implementation is conformant against the same vectors any other
+ * implementation would run. Standalone helpers live in `./adapter-helpers.ts`.
  *
  * All methods are fail-closed: any thrown error or unmet property becomes
  * `{ outcome: 'fail' }`.
@@ -36,11 +29,24 @@ import {
 } from '../src/delegation/chain-enforcement.js';
 import { BitstringManager } from '../src/delegation/bitstring.js';
 import { ClockProvider, FetchProvider } from '../src/providers/base.js';
+// The Entity Card layer (`org.kya-os/proof@1` + the typed card) lives on the
+// `@kya-os/mcp/card` subpath, NOT the package root — wire its PUBLIC verify
+// primitives here exactly as the legacy ones above (no forked logic).
+import {
+  verifyCardProof as verifyCardProofPrimitive,
+  verifyCard,
+  parseCard,
+  InMemoryNonceCache,
+  type VerifyCardDeps,
+} from '../src/card/index.js';
+import type { ToolRequest } from '../src/proof/generator.js';
 import type {
   AdapterResult,
+  CardProofInput,
   ConformanceAdapter,
   DelegationChainInput,
   DidResolutionInput,
+  EntityCardInput,
   SignedProofInput,
   StatusListInput,
 } from './types.js';
@@ -49,6 +55,16 @@ import {
   conformanceDecompressor,
   ed25519SignatureVerifier,
 } from './crypto-kit.js';
+import {
+  asMessage,
+  didOfKid,
+  didWebUrl,
+  isUsableEd25519Document,
+  makeAccountabilityVerifier,
+  makeMultiResolver,
+  resolveJwksKey,
+  toEd25519PublicJwk,
+} from './adapter-helpers.js';
 
 const PASS: AdapterResult = { outcome: 'pass' };
 function fail(detail: string): AdapterResult {
@@ -56,9 +72,8 @@ function fail(detail: string): AdapterResult {
 }
 
 /**
- * Clock pinned to a fixed epoch-seconds "now" so timestamp-skew vectors are
- * deterministic regardless of wall-clock time. Implements the package's
- * `ClockProvider` port with a fixed time source.
+ * `ClockProvider` pinned to a fixed epoch-ms "now" so timestamp-skew vectors are
+ * deterministic regardless of wall-clock time.
  */
 class PinnedClock extends ClockProvider {
   constructor(private readonly nowMs: number) {
@@ -82,8 +97,8 @@ class PinnedClock extends ClockProvider {
 }
 
 /**
- * Offline FetchProvider serving DID documents and status lists from in-memory
- * maps the vector supplies. The harness MUST do no network I/O so vectors are
+ * Offline `FetchProvider` serving DID documents and status lists from in-memory
+ * maps the vector supplies — the harness does no network I/O, so vectors stay
  * hermetic and reproducible.
  */
 class StaticFetchProvider extends FetchProvider {
@@ -246,54 +261,44 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
       return fail(`resolveDidWeb threw: ${asMessage(error)}`);
     }
   }
-}
 
-/**
- * Resolve a DID against the vector's supplied documents, falling back to the
- * offline method resolvers (did:key derives from the DID itself; did:web reads
- * the static fetch map). Keeps signature verification self-contained.
- */
-function makeMultiResolver(
-  didDocuments: Record<string, unknown>,
-  fetchProvider: StaticFetchProvider,
-): { resolve(did: string): Promise<DIDDocument | null> } {
-  const didKey = createDidKeyResolver();
-  const didWeb = createDidWebResolver(fetchProvider);
-  return {
-    resolve: async (did: string): Promise<DIDDocument | null> => {
-      const supplied = didDocuments[did];
-      if (supplied) {
-        return supplied as DIDDocument;
-      }
-      if (did.startsWith('did:key:')) {
-        return didKey.resolve(did);
-      }
-      if (did.startsWith('did:web:')) {
-        return didWeb.resolve(did);
-      }
-      return null;
-    },
-  };
-}
+  async verifyCardProof(input: CardProofInput): Promise<AdapterResult> {
+    try {
+      const keys = input.jwks.keys.map(toEd25519PublicJwk);
+      // A fresh single-use nonce cache per vector: race-free consume, pinned clock.
+      const nonceCache = new InMemoryNonceCache({ now: () => input.nowMs });
+      const result = await verifyCardProofPrimitive(input.proof, input.request as ToolRequest, {
+        resolveKey: (kid) => resolveJwksKey(keys, kid),
+        resolveDidKeys: (did) => keys.filter((k) => didOfKid(k.kid) === did),
+        expectedAudience: input.expectedAudience,
+        // Omit the seam for the nonce-seam-missing vector; the verifier MUST fail closed without it.
+        ...(input.omitNonceSeam ? {} : { consumeNonceIfFresh: nonceCache.consume }),
+        now: () => input.nowMs,
+        skewSec: input.skewSeconds,
+        ...(input.tokenCnfJkt !== undefined ? { tokenCnfJkt: input.tokenCnfJkt } : {}),
+      });
+      return result.ok ? PASS : fail(result.reasons.join(', '));
+    } catch (error) {
+      return fail(`verifyCardProof threw: ${asMessage(error)}`);
+    }
+  }
 
-function isUsableEd25519Document(doc: DIDDocument | null): boolean {
-  const vm = doc?.verificationMethod?.[0];
-  const jwk = vm?.publicKeyJwk as { kty?: string; crv?: string; x?: string } | undefined;
-  return Boolean(jwk && jwk.kty === 'OKP' && jwk.crv === 'Ed25519' && jwk.x);
-}
-
-function didWebUrl(did: string): string | null {
-  if (!did.startsWith('did:web:')) return null;
-  const remainder = did.slice('did:web:'.length);
-  const parts = remainder.split(':').map((p) => decodeURIComponent(p));
-  const domain = parts[0];
-  if (!domain) return null;
-  const path = parts.slice(1);
-  return path.length === 0
-    ? `https://${domain}/.well-known/did.json`
-    : `https://${domain}/${path.join('/')}/did.json`;
-}
-
-function asMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  async verifyEntityCard(input: EntityCardInput): Promise<AdapterResult> {
+    try {
+      const card = parseCard(input.card); // throws on a malformed card → fail-closed
+      const deps: VerifyCardDeps = {
+        ...(input.trustedIssuers ? { trustedIssuers: input.trustedIssuers } : {}),
+        ...(input.cimdKeyProven !== undefined ? { cimdKeyProven: input.cimdKeyProven } : {}),
+        ...(input.accountability
+          ? { accountabilityVerifier: makeAccountabilityVerifier(input.accountability) }
+          : {}),
+      };
+      const result = await verifyCard(card, deps);
+      return result.ok
+        ? PASS
+        : fail(`card rejected (level ${result.conformanceLevel})`);
+    } catch (error) {
+      return fail(`verifyEntityCard rejected: ${asMessage(error)}`);
+    }
+  }
 }

@@ -15,10 +15,12 @@
 
 import type {
   AdapterResult,
+  CardProofInput,
   ConformanceAdapter,
   ConformanceVector,
   DelegationChainInput,
   DidResolutionInput,
+  EntityCardInput,
   ExpectedOutcome,
   SignedProofInput,
   StatusListInput,
@@ -60,6 +62,10 @@ async function dispatch(
       return adapter.resolveDidKey(vector.input as DidResolutionInput);
     case 'did-web-resolution':
       return adapter.resolveDidWeb(vector.input as DidResolutionInput);
+    case 'card-proof':
+      return adapter.verifyCardProof(vector.input as CardProofInput);
+    case 'entity-card':
+      return adapter.verifyEntityCard(vector.input as EntityCardInput);
     default: {
       const exhaustive: never = vector.category;
       throw new Error(`Unknown vector category: ${String(exhaustive)}`);

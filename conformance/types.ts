@@ -13,13 +13,23 @@
  * See CONFORMANCE.md § "Running the harness against your implementation".
  */
 
-/** Categories a vector can target. One adapter method per category. */
+/**
+ * Categories a vector can target. One adapter method per category.
+ *
+ * The first five exercise the LEGACY session-bound primitives (detached
+ * `ProofMeta`, `DelegationCredential` + StatusList2021, the DID resolvers). The
+ * last two exercise the NEWER Entity Card layer — the stateless
+ * `org.kya-os/proof@1` holder-of-key proof (`card-proof`) and the typed,
+ * DID-anchored card (`entity-card`) — which is a distinct, orthogonal profile.
+ */
 export type VectorCategory =
   | 'signed-proof'
   | 'delegation-chain'
   | 'status-list'
   | 'did-key-resolution'
-  | 'did-web-resolution';
+  | 'did-web-resolution'
+  | 'card-proof'
+  | 'entity-card';
 
 /** The outcome a conformant implementation MUST produce for a vector. */
 export type ExpectedOutcome = 'pass' | 'fail';
@@ -111,6 +121,84 @@ export interface DidResolutionInput {
   didDocument?: unknown;
 }
 
+/** An Ed25519 public key in JWK form, as embedded in a vector's resolver material. */
+export interface Ed25519PublicJwkLike {
+  kty: string;
+  crv: string;
+  x: string;
+  kid?: string;
+  use?: string;
+}
+
+/**
+ * Input for the stateless Entity Card holder-of-key proof (`org.kya-os/proof@1`).
+ * Carries the full, pre-signed proof plus the resolver material a verifier needs
+ * to recompute every binding — the DID-keyed JWKS (the signer's public JWK[s]),
+ * the recipient `expectedAudience`, and a pinned `now`/`skew` window. All fields
+ * are JSON-serializable so the vector reproduces against any implementation.
+ */
+export interface CardProofInput {
+  /**
+   * The `org.kya-os/proof@1` proof object: `{ prf, alg, did, kid, audience,
+   * nonce, created, expires, requestHash, cnf?, jws, httpSig? }`.
+   */
+  proof: unknown;
+  /** The request the proof binds (`{ method, params? }`); `requestHash` MUST recompute to it. */
+  request: { method: string; params?: unknown };
+  /**
+   * The DID-keyed JWKS the proof verifies against. `resolveKey` selects by `kid`;
+   * `resolveDidKeys` (the RFC 7638 membership proof) selects every key the `did`
+   * publishes (those whose `kid` DID-part equals the proof's `did`).
+   */
+  jwks: { keys: Ed25519PublicJwkLike[] };
+  /** The verifier's own DID — the proof's `audience` MUST equal this (anti-relay). */
+  expectedAudience: string;
+  /** Reference epoch-MILLISECONDS the verifier treats as "now" (the freshness anchor). */
+  nowMs: number;
+  /** Accepted clock skew in seconds for the created/expires window. */
+  skewSeconds: number;
+  /** OPTIONAL access-token RFC 9449 `cnf.jkt` enabling the L3 fusion; omit for L3-minus. */
+  tokenCnfJkt?: string;
+  /**
+   * When true, the verifier is invoked WITHOUT a replay (nonce) seam. A conformant verifier MUST
+   * then fail closed (`nonce_seam_missing`) rather than skip the replay check — this catches an
+   * implementation that silently omits the atomic nonce consumer.
+   */
+  omitNonceSeam?: boolean;
+}
+
+/** The delegation context a card with `responsibleParty` recomputes its accountability edge over. */
+export interface EntityCardAccountabilityInput {
+  /** Asserted issuer of the ROOT VC (the accountable resource owner). */
+  resourceOwner: string;
+  /** Asserted `invocationTarget` of the ROOT VC (the delegated resource). */
+  resource?: string;
+  /** The signed DelegationCredential chain, root → leaf. */
+  chain: unknown[];
+  /** The proof's `did` a verifier asserts equals the recomputed leaf invoker (the JOIN). */
+  proofDid?: string;
+  /** Epoch-ms the chain is verified at — pins the wall-clock expiry gate (deterministic vectors). */
+  now?: number;
+}
+
+/**
+ * Input for the typed, DID-anchored Entity Card. The card is `parseCard`-validated
+ * (fail-closed on a malformed card) then `verifyCard`-recomputed. When the card
+ * carries `responsibleParty`, `accountability` supplies the delegation chain +
+ * context the accountability seam recomputes; `trustedIssuers`/`cimdKeyProven`
+ * are the remaining serializable verify deps.
+ */
+export interface EntityCardInput {
+  /** The EntityCard to parse + verify. */
+  card: unknown;
+  /** Trusted issuer allowlist (default: the implementation's own default). */
+  trustedIssuers?: string[];
+  /** For a card carrying `responsibleParty`: the delegation chain + context to recompute. */
+  accountability?: EntityCardAccountabilityInput;
+  /** Echoes the caller's CIMD L1 key-possession evidence. */
+  cimdKeyProven?: boolean;
+}
+
 /**
  * The contract a third party implements to run the KYA-OS conformance vectors
  * against their own implementation.
@@ -139,4 +227,17 @@ export interface ConformanceAdapter {
 
   /** Resolve a did:web DID to a usable Ed25519 verification method. */
   resolveDidWeb(input: DidResolutionInput): Promise<AdapterResult>;
+
+  /**
+   * Verify a stateless `org.kya-os/proof@1` holder-of-key proof: recompute the
+   * signature, `requestHash`, `audience`, nonce freshness, `created`/`expires`
+   * window, the `kid`⇄`did` binding, and the DID-key membership.
+   */
+  verifyCardProof(input: CardProofInput): Promise<AdapterResult>;
+
+  /**
+   * Parse + verify a typed Entity Card: reject a malformed card, then recompute
+   * accountability / attestations / revocation and the conformance level.
+   */
+  verifyEntityCard(input: EntityCardInput): Promise<AdapterResult>;
 }

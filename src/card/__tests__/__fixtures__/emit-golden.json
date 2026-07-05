@@ -1,0 +1,68 @@
+{
+  "card": {
+    "id": "did:web:example.com:agents:acme-pay",
+    "entityType": "agent",
+    "name": "Acme Pay Agent",
+    "kid": "did:web:example.com:agents:acme-pay#key-1",
+    "capabilities": [
+      "handshake",
+      { "name": "payments.transfer", "attestations": [{ "vc": "jwt-cap" }] }
+    ],
+    "conformanceLevel": "L2",
+    "responsibleParty": "did:web:example.com:org:acme",
+    "principal": "did:web:example.com:users:alice",
+    "delegationRef": "vc_root>del_123",
+    "proofProfile": "org.kya-os/proof@1"
+  },
+  "didServiceEntry": {
+    "id": "#kya-os-card",
+    "type": "KyaOsEntityCard",
+    "serviceEndpoint": "https://example.com/agents/acme-pay/card.json"
+  },
+  "serverCardMeta": {
+    "org.kya-os/card": {
+      "id": "did:web:example.com:agents:acme-pay",
+      "entityType": "agent",
+      "name": "Acme Pay Agent",
+      "capabilities": ["handshake", "payments.transfer"],
+      "responsibleParty": "did:web:example.com:org:acme",
+      "delegationRef": "vc_root>del_123",
+      "proofProfile": "org.kya-os/proof@1"
+    }
+  },
+  "serverCardMetaByRef": {
+    "org.kya-os/card": {
+      "org.kya-os/cardRef": "https://example.com/agents/acme-pay/card.json"
+    }
+  },
+  "catalogEntry": {
+    "name": "Acme Pay Agent",
+    "_meta": {
+      "org.kya-os/card": {
+        "org.kya-os/cardRef": "https://example.com/agents/acme-pay/card.json"
+      }
+    }
+  },
+  "a2aExtension": {
+    "uri": "https://kya-os.org/a2a/ext/entity-card/v1",
+    "description": "KYA-OS typed DID-anchored holder-of-key identity",
+    "required": false,
+    "params": {
+      "id": "did:web:example.com:agents:acme-pay",
+      "entityType": "agent",
+      "cardUrl": "https://example.com/agents/acme-pay/card.json",
+      "proofProfile": "org.kya-os/proof@1"
+    }
+  },
+  "agentFacts": {
+    "@context": { "kya": "https://kya-os.org/ns/agentfacts/v1#" },
+    "id": "did:web:example.com:agents:acme-pay",
+    "agent_name": "Acme Pay Agent",
+    "kya:entityType": "agent",
+    "owner": "did:web:example.com:org:acme",
+    "capabilities": ["handshake", "payments.transfer"],
+    "kya:conformanceLevel": "L2",
+    "kya:proofProfile": "org.kya-os/proof@1",
+    "kya:delegationRef": "vc_root>del_123"
+  }
+}

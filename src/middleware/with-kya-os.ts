@@ -256,29 +256,14 @@ export interface KyaOsServer {
   ): void;
 }
 
-export interface KyaOsMiddleware {
-  /** The identity config used by this middleware instance */
-  identity: KyaOsIdentityConfig;
+// ── Role interfaces (ISP) ────────────────────────────────────────────────────
+// The middleware surface is decomposed into four focused ROLES. Depend on the
+// single role you need (e.g. a function that only attaches proofs takes a
+// `KyaOsProofAttacher`, not the whole middleware). `KyaOsMiddleware` composes
+// them, so the existing flat API (`middleware.wrapWithProof(...)`) is unchanged.
 
-  /** The SessionManager instance for manual session operations */
-  sessionManager: SessionManager;
-
-  /** The ProofGenerator instance for manual proof operations */
-  proofGenerator: ProofGenerator;
-
-  /**
-   * Unified tool definition for `_kyaos`.
-   * Include this in your ListToolsRequest handler's tool list.
-   */
-  kyaOsTool: KyaOsToolDefinition;
-
-  /**
-   * @deprecated Use `kyaOsTool` (`_kyaos` with `action: "handshake"`).
-   * Tool definition for `_kyaos_handshake`.
-   * Include this in your ListToolsRequest handler's tool list.
-   */
-  handshakeTool: KyaOsToolDefinition;
-
+/** Route the unified `_kyaos` protocol action (and the deprecated handshake). */
+export interface KyaOsProtocolHandler {
   /**
    * Handle a unified `_kyaos` action. Use this in your CallToolRequest handler
    * when `request.params.name === '_kyaos'`.
@@ -297,7 +282,10 @@ export interface KyaOsMiddleware {
     content: Array<{ type: string; text: string }>;
     isError?: boolean;
   }>;
+}
 
+/** Wrap a tool handler to automatically attach holder-of-key proofs. */
+export interface KyaOsProofAttacher {
   /**
    * Wrap a tool handler to automatically generate proofs.
    * Returns a new handler that appends proof metadata to the response.
@@ -306,7 +294,10 @@ export interface KyaOsMiddleware {
     toolName: string,
     handler: KyaOsToolHandler<T>,
   ): KyaOsToolHandler;
+}
 
+/** Wrap a tool handler to require a valid W3C Delegation Credential. */
+export interface KyaOsDelegationGate {
   /**
    * Wrap a tool handler to require a valid W3C Delegation Credential.
    *
@@ -334,7 +325,10 @@ export interface KyaOsMiddleware {
     },
     handler: KyaOsToolHandler,
   ): KyaOsToolHandler;
+}
 
+/** Wrap a tool handler with a per-action policy / step-up gate. */
+export interface KyaOsPolicyGate {
   /**
    * Wrap a tool handler with a per-action policy / step-up gate.
    *
@@ -343,13 +337,49 @@ export interface KyaOsMiddleware {
    * step_up → `needs_approval` until N-of-M signed approval grants (bound to the
    * request hash) are supplied.
    */
-  // Optional so external structural implementers / mocks of KyaOsMiddleware are
-  // not broken by this additive method.
-  withPolicyGate?(
+  withPolicyGate(
     toolName: string,
     handler: KyaOsToolHandler,
     opts?: PolicyGateOptions,
   ): KyaOsToolHandler;
+}
+
+/**
+ * The full middleware surface = the exposed components PLUS the four wrapping
+ * ROLES ({@link KyaOsProtocolHandler}, {@link KyaOsProofAttacher},
+ * {@link KyaOsDelegationGate}, {@link KyaOsPolicyGate}). Prefer depending on a
+ * single role where a caller only needs one; this composition keeps the flat API
+ * for back-compat while satisfying the Interface Segregation Principle.
+ */
+export interface KyaOsMiddleware
+  extends KyaOsProtocolHandler,
+    KyaOsProofAttacher,
+    KyaOsDelegationGate {
+  /** The identity config used by this middleware instance */
+  identity: KyaOsIdentityConfig;
+
+  /** The SessionManager instance for manual session operations */
+  sessionManager: SessionManager;
+
+  /** The ProofGenerator instance for manual proof operations */
+  proofGenerator: ProofGenerator;
+
+  /**
+   * Unified tool definition for `_kyaos`.
+   * Include this in your ListToolsRequest handler's tool list.
+   */
+  kyaOsTool: KyaOsToolDefinition;
+
+  /**
+   * @deprecated Use `kyaOsTool` (`_kyaos` with `action: "handshake"`).
+   * Tool definition for `_kyaos_handshake`.
+   * Include this in your ListToolsRequest handler's tool list.
+   */
+  handshakeTool: KyaOsToolDefinition;
+
+  // Optional so external structural implementers / mocks of KyaOsMiddleware are
+  // not broken by this additive method (the KyaOsPolicyGate role requires it).
+  withPolicyGate?: KyaOsPolicyGate["withPolicyGate"];
 }
 
 /**
@@ -1024,7 +1054,7 @@ export function createKyaOsMiddleware(
       // sessionId), so DON'T bind it — that would only orphan a row in a durable
       // store. Durability for such flows comes from re-presenting the delegation,
       // not from a grant. Enable holderBinding 'enforce' or thread a sessionId to
-      // use the grant-backed no-paste retry. (review F4)
+      // use the grant-backed no-paste retry.
       if (holderBindingMode === "off" && sessionId === undefined) {
         logger.debug(
           `[kya-os] Skipping an unresolvable session-less grant for scope "${scopeId}" (holderBinding 'off', no sessionId).`,
@@ -1042,7 +1072,7 @@ export function createKyaOsMiddleware(
       // queries by the tool's exact scopeId, but the delegation may have granted
       // a prefix/regex scope (e.g. "cart:*"); the store's exact `coversScopes`
       // would never match the wildcard, so the no-paste retry would silently
-      // re-challenge. Including scopeId makes the grant resolvable. (review F1)
+      // re-challenge. Including scopeId makes the grant resolvable.
       const scopes = Array.from(new Set([scopeId, ...delegatedScopes]));
       const userDid = vc.credentialSubject?.delegation?.controller;
       const expiresAt = delegationExpiryMs(vc);

@@ -1,0 +1,350 @@
+{
+  "version": "1.0.0",
+  "category": "card-proof",
+  "vectors": [
+    {
+      "id": "card-proof/valid",
+      "category": "card-proof",
+      "description": "A well-formed org.kya-os/proof@1 with a valid detached JWS, in-window and audience-bound",
+      "expected": "pass",
+      "reason": "Every binding — signature, requestHash, audience, nonce, window, kid⇄did — holds",
+      "input": {
+        "proof": {
+          "prf": "org.kya-os/proof@1",
+          "alg": "EdDSA",
+          "did": "did:web:example.com:agents:acme-pay",
+          "kid": "did:web:example.com:agents:acme-pay#key-1",
+          "audience": "did:web:example.com:mcp:server",
+          "nonce": "n-0123456789abcdef0123456789abcdef",
+          "created": 1782820800,
+          "expires": 1782820860,
+          "requestHash": "sha-256=:T8jgo0TvEQ6oN092KUuE35oSWKt/19cUxydyYbD2qis=:",
+          "cnf": {
+            "jkt": "0Z9PGGnrUbAvSHRWxKkBxjgrUrvu6ETEhOl2StPyW7c"
+          },
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIn0..NFt4aac7bm-dylDH3A08Fc4s2yPiDTTJ-2m08QZPlYPhv1cfayO2XciAEJHu_M4VfqqsGBm3pOCXm70Nmn2kBw",
+          "httpSig": "iDE_f0kDMwJUAVxNngtbVNslLGF26Ie1SeJYt-nF-UuRV4D8VPzd2fGF43TnbtBryq3X7J2AuGClgc5tidzCDA"
+        },
+        "request": {
+          "method": "tools/call",
+          "params": {
+            "name": "payments.transfer",
+            "arguments": {
+              "to": "did:web:merchant.example",
+              "amount": "42.00",
+              "currency": "USD"
+            }
+          }
+        },
+        "jwks": {
+          "keys": [
+            {
+              "kty": "OKP",
+              "crv": "Ed25519",
+              "x": "RvWVWwqcVO9f_7aQ8dXf0F16aoQsE4i_Ebjqo8mn_Ts",
+              "kid": "did:web:example.com:agents:acme-pay#key-1"
+            }
+          ]
+        },
+        "expectedAudience": "did:web:example.com:mcp:server",
+        "nowMs": 1782820800000,
+        "skewSeconds": 5
+      }
+    },
+    {
+      "id": "card-proof/tampered-body",
+      "category": "card-proof",
+      "description": "The proof verified against a mutated request body (amount 42.00 → 9999.00)",
+      "expected": "fail",
+      "reason": "requestHash no longer recomputes to the signed value — the body binding breaks",
+      "input": {
+        "proof": {
+          "prf": "org.kya-os/proof@1",
+          "alg": "EdDSA",
+          "did": "did:web:example.com:agents:acme-pay",
+          "kid": "did:web:example.com:agents:acme-pay#key-1",
+          "audience": "did:web:example.com:mcp:server",
+          "nonce": "n-0123456789abcdef0123456789abcdef",
+          "created": 1782820800,
+          "expires": 1782820860,
+          "requestHash": "sha-256=:T8jgo0TvEQ6oN092KUuE35oSWKt/19cUxydyYbD2qis=:",
+          "cnf": {
+            "jkt": "0Z9PGGnrUbAvSHRWxKkBxjgrUrvu6ETEhOl2StPyW7c"
+          },
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIn0..NFt4aac7bm-dylDH3A08Fc4s2yPiDTTJ-2m08QZPlYPhv1cfayO2XciAEJHu_M4VfqqsGBm3pOCXm70Nmn2kBw",
+          "httpSig": "iDE_f0kDMwJUAVxNngtbVNslLGF26Ie1SeJYt-nF-UuRV4D8VPzd2fGF43TnbtBryq3X7J2AuGClgc5tidzCDA"
+        },
+        "request": {
+          "method": "tools/call",
+          "params": {
+            "name": "payments.transfer",
+            "arguments": {
+              "to": "did:web:merchant.example",
+              "amount": "9999.00",
+              "currency": "USD"
+            }
+          }
+        },
+        "jwks": {
+          "keys": [
+            {
+              "kty": "OKP",
+              "crv": "Ed25519",
+              "x": "RvWVWwqcVO9f_7aQ8dXf0F16aoQsE4i_Ebjqo8mn_Ts",
+              "kid": "did:web:example.com:agents:acme-pay#key-1"
+            }
+          ]
+        },
+        "expectedAudience": "did:web:example.com:mcp:server",
+        "nowMs": 1782820800000,
+        "skewSeconds": 5
+      }
+    },
+    {
+      "id": "card-proof/tampered-signature",
+      "category": "card-proof",
+      "description": "Proof whose detached JWS signature bytes were altered",
+      "expected": "fail",
+      "reason": "A mutated signature must fail EdDSA verification over the covered claims",
+      "input": {
+        "proof": {
+          "prf": "org.kya-os/proof@1",
+          "alg": "EdDSA",
+          "did": "did:web:example.com:agents:acme-pay",
+          "kid": "did:web:example.com:agents:acme-pay#key-1",
+          "audience": "did:web:example.com:mcp:server",
+          "nonce": "n-0123456789abcdef0123456789abcdef",
+          "created": 1782820800,
+          "expires": 1782820860,
+          "requestHash": "sha-256=:T8jgo0TvEQ6oN092KUuE35oSWKt/19cUxydyYbD2qis=:",
+          "cnf": {
+            "jkt": "0Z9PGGnrUbAvSHRWxKkBxjgrUrvu6ETEhOl2StPyW7c"
+          },
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIn0..NFt4aac7bm-dylDH3A08Fc4s2yPiDTTJ-2m08QZPlYPhv1cfayO2XciAEJHu_M4VfqqsGBm3pOCXm70Nmn2kBA",
+          "httpSig": "iDE_f0kDMwJUAVxNngtbVNslLGF26Ie1SeJYt-nF-UuRV4D8VPzd2fGF43TnbtBryq3X7J2AuGClgc5tidzCDA"
+        },
+        "request": {
+          "method": "tools/call",
+          "params": {
+            "name": "payments.transfer",
+            "arguments": {
+              "to": "did:web:merchant.example",
+              "amount": "42.00",
+              "currency": "USD"
+            }
+          }
+        },
+        "jwks": {
+          "keys": [
+            {
+              "kty": "OKP",
+              "crv": "Ed25519",
+              "x": "RvWVWwqcVO9f_7aQ8dXf0F16aoQsE4i_Ebjqo8mn_Ts",
+              "kid": "did:web:example.com:agents:acme-pay#key-1"
+            }
+          ]
+        },
+        "expectedAudience": "did:web:example.com:mcp:server",
+        "nowMs": 1782820800000,
+        "skewSeconds": 5
+      }
+    },
+    {
+      "id": "card-proof/wrong-audience",
+      "category": "card-proof",
+      "description": "Valid proof presented to a verifier whose DID is not the proof audience",
+      "expected": "fail",
+      "reason": "Audience binding (anti-relay / confused-deputy) must reject a mismatched recipient",
+      "input": {
+        "proof": {
+          "prf": "org.kya-os/proof@1",
+          "alg": "EdDSA",
+          "did": "did:web:example.com:agents:acme-pay",
+          "kid": "did:web:example.com:agents:acme-pay#key-1",
+          "audience": "did:web:example.com:mcp:server",
+          "nonce": "n-0123456789abcdef0123456789abcdef",
+          "created": 1782820800,
+          "expires": 1782820860,
+          "requestHash": "sha-256=:T8jgo0TvEQ6oN092KUuE35oSWKt/19cUxydyYbD2qis=:",
+          "cnf": {
+            "jkt": "0Z9PGGnrUbAvSHRWxKkBxjgrUrvu6ETEhOl2StPyW7c"
+          },
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIn0..NFt4aac7bm-dylDH3A08Fc4s2yPiDTTJ-2m08QZPlYPhv1cfayO2XciAEJHu_M4VfqqsGBm3pOCXm70Nmn2kBw",
+          "httpSig": "iDE_f0kDMwJUAVxNngtbVNslLGF26Ie1SeJYt-nF-UuRV4D8VPzd2fGF43TnbtBryq3X7J2AuGClgc5tidzCDA"
+        },
+        "request": {
+          "method": "tools/call",
+          "params": {
+            "name": "payments.transfer",
+            "arguments": {
+              "to": "did:web:merchant.example",
+              "amount": "42.00",
+              "currency": "USD"
+            }
+          }
+        },
+        "jwks": {
+          "keys": [
+            {
+              "kty": "OKP",
+              "crv": "Ed25519",
+              "x": "RvWVWwqcVO9f_7aQ8dXf0F16aoQsE4i_Ebjqo8mn_Ts",
+              "kid": "did:web:example.com:agents:acme-pay#key-1"
+            }
+          ]
+        },
+        "expectedAudience": "did:web:evil.example",
+        "nowMs": 1782820800000,
+        "skewSeconds": 5
+      }
+    },
+    {
+      "id": "card-proof/expired",
+      "category": "card-proof",
+      "description": "Authentically signed proof evaluated an hour after its expires window",
+      "expected": "fail",
+      "reason": "A stale proof outside created/expires (±skew) must fail closed (replay guard)",
+      "input": {
+        "proof": {
+          "prf": "org.kya-os/proof@1",
+          "alg": "EdDSA",
+          "did": "did:web:example.com:agents:acme-pay",
+          "kid": "did:web:example.com:agents:acme-pay#key-1",
+          "audience": "did:web:example.com:mcp:server",
+          "nonce": "n-0123456789abcdef0123456789abcdef",
+          "created": 1782820800,
+          "expires": 1782820860,
+          "requestHash": "sha-256=:T8jgo0TvEQ6oN092KUuE35oSWKt/19cUxydyYbD2qis=:",
+          "cnf": {
+            "jkt": "0Z9PGGnrUbAvSHRWxKkBxjgrUrvu6ETEhOl2StPyW7c"
+          },
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIn0..NFt4aac7bm-dylDH3A08Fc4s2yPiDTTJ-2m08QZPlYPhv1cfayO2XciAEJHu_M4VfqqsGBm3pOCXm70Nmn2kBw",
+          "httpSig": "iDE_f0kDMwJUAVxNngtbVNslLGF26Ie1SeJYt-nF-UuRV4D8VPzd2fGF43TnbtBryq3X7J2AuGClgc5tidzCDA"
+        },
+        "request": {
+          "method": "tools/call",
+          "params": {
+            "name": "payments.transfer",
+            "arguments": {
+              "to": "did:web:merchant.example",
+              "amount": "42.00",
+              "currency": "USD"
+            }
+          }
+        },
+        "jwks": {
+          "keys": [
+            {
+              "kty": "OKP",
+              "crv": "Ed25519",
+              "x": "RvWVWwqcVO9f_7aQ8dXf0F16aoQsE4i_Ebjqo8mn_Ts",
+              "kid": "did:web:example.com:agents:acme-pay#key-1"
+            }
+          ]
+        },
+        "expectedAudience": "did:web:example.com:mcp:server",
+        "nowMs": 1782824400000,
+        "skewSeconds": 5
+      }
+    },
+    {
+      "id": "card-proof/kid-did-forgery",
+      "category": "card-proof",
+      "description": "Proof claims did:web:victim.example while kid names the real signer DID",
+      "expected": "fail",
+      "reason": "kid⇄did binding (kid.split(\"#\")[0] === did) closes the forgeable-principal gap",
+      "input": {
+        "proof": {
+          "prf": "org.kya-os/proof@1",
+          "alg": "EdDSA",
+          "did": "did:web:victim.example",
+          "kid": "did:web:example.com:agents:acme-pay#key-1",
+          "audience": "did:web:example.com:mcp:server",
+          "nonce": "n-forgery-00000000000000000000",
+          "created": 1782820800,
+          "expires": 1782820860,
+          "requestHash": "sha-256=:T8jgo0TvEQ6oN092KUuE35oSWKt/19cUxydyYbD2qis=:",
+          "cnf": {
+            "jkt": "0Z9PGGnrUbAvSHRWxKkBxjgrUrvu6ETEhOl2StPyW7c"
+          },
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIn0..mEbNlkKtsmKVULYOQIqs1FoJ3TvicWeAIwswNQmQxwhmQtdzqxyOchBOJquk-KvDvhyndjC9Wf8A5GtRD7nuCw",
+          "httpSig": "EW8xp6SCcCAUPklsc_NhE_P9HpNLWd-85x6E3sUyT3X7R8S3Ti_t5EiExYXAdpRuMmC3ma8ySXgnGxqR6W2lDA"
+        },
+        "request": {
+          "method": "tools/call",
+          "params": {
+            "name": "payments.transfer",
+            "arguments": {
+              "to": "did:web:merchant.example",
+              "amount": "42.00",
+              "currency": "USD"
+            }
+          }
+        },
+        "jwks": {
+          "keys": [
+            {
+              "kty": "OKP",
+              "crv": "Ed25519",
+              "x": "RvWVWwqcVO9f_7aQ8dXf0F16aoQsE4i_Ebjqo8mn_Ts",
+              "kid": "did:web:example.com:agents:acme-pay#key-1"
+            }
+          ]
+        },
+        "expectedAudience": "did:web:example.com:mcp:server",
+        "nowMs": 1782820800000,
+        "skewSeconds": 5
+      }
+    },
+    {
+      "id": "card-proof/nonce-seam-missing",
+      "category": "card-proof",
+      "description": "A valid proof verified by a verifier that supplies NO replay (nonce) seam",
+      "expected": "fail",
+      "reason": "Without an atomic consumeNonceIfFresh seam there is no replay defense — fail closed (nonce_seam_missing)",
+      "input": {
+        "proof": {
+          "prf": "org.kya-os/proof@1",
+          "alg": "EdDSA",
+          "did": "did:web:example.com:agents:acme-pay",
+          "kid": "did:web:example.com:agents:acme-pay#key-1",
+          "audience": "did:web:example.com:mcp:server",
+          "nonce": "n-0123456789abcdef0123456789abcdef",
+          "created": 1782820800,
+          "expires": 1782820860,
+          "requestHash": "sha-256=:T8jgo0TvEQ6oN092KUuE35oSWKt/19cUxydyYbD2qis=:",
+          "cnf": {
+            "jkt": "0Z9PGGnrUbAvSHRWxKkBxjgrUrvu6ETEhOl2StPyW7c"
+          },
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIn0..NFt4aac7bm-dylDH3A08Fc4s2yPiDTTJ-2m08QZPlYPhv1cfayO2XciAEJHu_M4VfqqsGBm3pOCXm70Nmn2kBw",
+          "httpSig": "iDE_f0kDMwJUAVxNngtbVNslLGF26Ie1SeJYt-nF-UuRV4D8VPzd2fGF43TnbtBryq3X7J2AuGClgc5tidzCDA"
+        },
+        "request": {
+          "method": "tools/call",
+          "params": {
+            "name": "payments.transfer",
+            "arguments": {
+              "to": "did:web:merchant.example",
+              "amount": "42.00",
+              "currency": "USD"
+            }
+          }
+        },
+        "jwks": {
+          "keys": [
+            {
+              "kty": "OKP",
+              "crv": "Ed25519",
+              "x": "RvWVWwqcVO9f_7aQ8dXf0F16aoQsE4i_Ebjqo8mn_Ts",
+              "kid": "did:web:example.com:agents:acme-pay#key-1"
+            }
+          ]
+        },
+        "expectedAudience": "did:web:example.com:mcp:server",
+        "nowMs": 1782820800000,
+        "skewSeconds": 5,
+        "omitNonceSeam": true
+      }
+    }
+  ]
+}

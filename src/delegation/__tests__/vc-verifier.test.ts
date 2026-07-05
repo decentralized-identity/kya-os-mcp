@@ -1068,6 +1068,90 @@ describe("DelegationCredentialVerifier", () => {
     });
   });
 
+  describe("statusOutcome (revoked vs status_unresolvable)", () => {
+    // A permission MUST fail-closed on status either way, but the consumer needs
+    // the *reason* to choose retry (infra blip) vs re-consent (settled deny).
+    const vcWithStatus: DelegationCredential = {
+      ...mockValidVC,
+      credentialStatus: {
+        id: "https://example.com/status#123",
+        type: "StatusList2021Entry" as const,
+        statusPurpose: "revocation" as const,
+        statusListIndex: "123",
+        statusListCredential: "https://example.com/status",
+      },
+    };
+
+    const validDidDoc = {
+      id: "did:web:example.com:issuer",
+      verificationMethod: [
+        {
+          id: "did:web:example.com:issuer#key-1",
+          type: "Ed25519VerificationKey2020",
+          controller: "did:web:example.com:issuer",
+          publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
+        },
+      ],
+    };
+
+    it("labels a resolver that THROWS as status_unresolvable (still denies)", async () => {
+      await setupDefaultContractsMocks();
+      mockDidResolver.resolve.mockResolvedValue(validDidDoc);
+      mockSignatureVerifier.mockResolvedValue({ valid: true });
+      // Infra failure: resolver cannot read the status list.
+      mockStatusListResolver.checkStatus.mockRejectedValue(
+        new Error("503 status list unavailable")
+      );
+
+      const result = await verifier.verifyDelegationCredential(vcWithStatus);
+
+      expect(result.valid).toBe(false);
+      expect(result.statusOutcome).toBe("status_unresolvable");
+    });
+
+    it("labels a set status bit as revoked (distinct from unresolvable)", async () => {
+      await setupDefaultContractsMocks();
+      mockDidResolver.resolve.mockResolvedValue(validDidDoc);
+      mockSignatureVerifier.mockResolvedValue({ valid: true });
+      // Genuine revocation: the bit is set.
+      mockStatusListResolver.checkStatus.mockResolvedValue(true);
+
+      const result = await verifier.verifyDelegationCredential(vcWithStatus);
+
+      expect(result.valid).toBe(false);
+      expect(result.statusOutcome).toBe("revoked");
+    });
+
+    it("labels a missing resolver as status_unresolvable (fail-closed)", async () => {
+      await setupDefaultContractsMocks();
+      const noStatusResolver = new DelegationCredentialVerifier({
+        didResolver: mockDidResolver as DIDResolver,
+        signatureVerifier: mockSignatureVerifier,
+        // No statusListResolver — status cannot be resolved.
+      });
+      mockDidResolver.resolve.mockResolvedValue(validDidDoc);
+      mockSignatureVerifier.mockResolvedValue({ valid: true });
+
+      const result =
+        await noStatusResolver.verifyDelegationCredential(vcWithStatus);
+
+      expect(result.valid).toBe(false);
+      expect(result.statusOutcome).toBe("status_unresolvable");
+    });
+
+    it("leaves statusOutcome unset when status resolves clean", async () => {
+      await setupDefaultContractsMocks();
+      mockDidResolver.resolve.mockResolvedValue(validDidDoc);
+      mockSignatureVerifier.mockResolvedValue({ valid: true });
+      mockStatusListResolver.checkStatus.mockResolvedValue(false);
+
+      const result = await verifier.verifyDelegationCredential(vcWithStatus);
+
+      expect(result.valid).toBe(true);
+      expect(result.statusOutcome).toBeUndefined();
+    });
+  });
+
   describe("E2E: StatusList2021 missing storage → verifier rejects", () => {
     it("should return valid: false when status list resolver throws (missing storage)", async () => {
       await setupDefaultContractsMocks();

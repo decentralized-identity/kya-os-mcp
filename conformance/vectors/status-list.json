@@ -72,7 +72,7 @@
               "id": "https://status.example.com/revocation/v1#list",
               "type": "StatusList2021",
               "statusPurpose": "revocation",
-              "encodedList": "H4sIAAAAAAAAE-3BMQEAAAzDoBzzr3ky-gBVXQAAAAAAAAAAAAAAAAAAAMDQA3hY9W4AQAAA"
+              "encodedList": "H4sIAAAAAAAAE-3BMQEAAAjAoEWxf0pt4QPUmQAAAAAAAAAAAAAAAAAAAIBHCzOa7TAAQAAA"
             },
             "proof": {
               "type": "Ed25519Signature2020",
@@ -179,7 +179,7 @@
               "id": "https://status.example.com/revocation/v1#list",
               "type": "StatusList2021",
               "statusPurpose": "revocation",
-              "encodedList": "H4sIAAAAAAAAE-3BMQEAAAzDoBzzr3ky-gBVXQAAAAAAAAAAAAAAAAAAAMDQA3hY9W4AQAAA"
+              "encodedList": "H4sIAAAAAAAAE-3BMQEAAAjAoEWxf0pt4QPUmQAAAAAAAAAAAAAAAAAAAIBHCzOa7TAAQAAA"
             },
             "proof": {
               "type": "Ed25519Signature2020",

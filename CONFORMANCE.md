@@ -416,6 +416,11 @@ so it is reproducible against any implementation without re-signing.
 | `vectors/status-list.json` | StatusList2021 revocation | active (bit unset) | revoked (bit set) |
 | `vectors/did-key-resolution.json` | did:key resolution | valid Ed25519 | malformed multibase, wrong method |
 | `vectors/did-web-resolution.json` | did:web resolution | well-formed id-matched document | document id mismatch, not found |
+| `vectors/card-proof.json` | `org.kya-os/proof@1` holder-of-key proof | valid signed proof, in-window, audience-bound | tampered body, tampered signature, wrong audience, expired, kid⇄did forgery |
+| `vectors/entity-card.json` | Entity Card `parseCard` + `verifyCard` | golden card per `entityType`, accountable agent | malformed (unknown field), broken accountability JOIN |
+
+The first five categories exercise the **legacy** session-bound primitives; the
+last two exercise the **Entity Card** layer (see the dedicated section below).
 
 A `fail` vector passes the suite only when the implementation correctly **rejects**
 it. The runner exits non-zero on any mismatch.
@@ -460,6 +465,8 @@ const myAdapter: ConformanceAdapter = {
   async verifyStatusList(input)       { /* ... */ },
   async resolveDidKey(input)          { /* ... */ },
   async resolveDidWeb(input)          { /* ... */ },
+  async verifyCardProof(input)        { /* org.kya-os/proof@1 holder-of-key proof */ },
+  async verifyEntityCard(input)       { /* parseCard + verifyCard */ },
 };
 
 const report = await runConformance(myAdapter, loadVectors());
@@ -475,6 +482,90 @@ ACCEPTED the artifact and `fail` means it REJECTED it. Methods MUST be
 harness failure, not a rejection. The reference adapter
 (`conformance/reference-adapter.ts`) is the worked example wiring these methods to
 the public `@kya-os/mcp` primitives.
+
+---
+
+## Entity Card Conformance
+
+The Entity Card is a **distinct, newer layer** on top of the Level 1–3 ladder above:
+a typed, DID-anchored card plus a stateless, sender-constrained per-request proof.
+It is orthogonal to the legacy session-bound proof — the two coexist, each under
+its OWN distinct `_meta` key (`_meta['org.kya-os/proof']` for the legacy
+session-bound proof, `_meta['org.kya-os/proof@1']` for the stateless card proof),
+and each verifier reads its own key and ignores the other. Its
+conformance vectors live in the SAME harness under two categories, wired to the two
+adapter methods `verifyCardProof` and `verifyEntityCard`.
+
+### `card-proof` — the `org.kya-os/proof@1` holder-of-key proof
+
+`vectors/card-proof.json` carries fully-formed, pre-signed proofs. Each vector's
+`input` is self-contained: the proof object, the `request` it binds, the DID-keyed
+`jwks` the signing key resolves from, the verifier's `expectedAudience`, and a
+pinned `nowMs`/`skewSeconds` window. A conformant `verifyCardProof` MUST recompute
+**every** binding and fail closed on the first that does not hold:
+
+| Vector | Expected | Property under test |
+|--------|----------|---------------------|
+| `card-proof/valid` | pass | signature + `requestHash` + `audience` + nonce + window + `kid`⇄`did` all hold |
+| `card-proof/tampered-body` | fail | `requestHash` no longer recomputes to the signed value |
+| `card-proof/tampered-signature` | fail | mutated detached-JWS signature fails EdDSA verification |
+| `card-proof/wrong-audience` | fail | `audience` ≠ the verifier (anti-relay / confused-deputy) |
+| `card-proof/expired` | fail | evaluated outside `created`/`expires` (±skew) — replay guard |
+| `card-proof/kid-did-forgery` | fail | `kid.split('#')[0] !== did` — the forgeable-principal gap |
+
+### `entity-card` — the typed card (`parseCard` + `verifyCard`)
+
+`vectors/entity-card.json` ships the golden `parseCard`-valid card for each
+`entityType` (`mcp` \| `agent` \| `client` \| `verifier` \| `human`), the accountable
+agent card (whose `responsibleParty === issuer(rootVC)` and leaf-invoker === proof
+`did` recompute over an embedded multi-hop VC 2.0 + ZCAP-LD chain), and negatives:
+a malformed card (unknown top-level property → the strict schema rejects) and a
+broken accountability JOIN (leaf-invoker ≠ the asserted proof `did`). A conformant
+`verifyEntityCard` MUST reject a malformed card and MUST NOT trust the card's
+self-declared `conformanceLevel` — it recomputes it.
+
+### Card conformance ↔ the L1/L2/L3 ladder
+
+The card's conformance level is **recomputed**, never trusted from the card. It maps
+onto the same ladder:
+
+- **L1** — the card parses (`parseCard`) and its DID + key are well-formed; capabilities
+  are self-declared (bare strings). The CIMD on-ramp (`client_id` ⇄ `did:web`) sits here.
+- **L2** — every declared capability is attested (a verified `CapabilityAttestation`),
+  and, for a card carrying `responsibleParty`, the delegation/accountability edge verifies
+  offline (`responsibleParty === issuer(rootVC)`).
+- **L3** — L2 **plus** a valid live holder-of-key proof (a passing `card-proof` vector)
+  bound to the request, fused with the token's RFC 9449 `cnf.jkt` (`L3`) or standalone
+  (`L3-minus`), and a fresh (live) revocation status. Any missing/expired/revoked artifact
+  demotes L3 → L2 → L1, fail-closed.
+
+### Cross-language reference (`conformance/verify.py`)
+
+`conformance/verify.py` is the **second-language complement** to the adapter contract:
+a pure-Python-stdlib re-implementation of the `org.kya-os/proof@1` verification path
+that shares no code with the TypeScript reference. It reads the SAME
+`vectors/card-proof.json`, selects the positive vector, and independently re-derives
+the JCS (RFC 8785) canonicalization, recomputes the SHA-256 `requestHash`, and verifies
+both the detached EdDSA JWS and the RFC 9421 `httpSig` against the vector's embedded
+JWKS (Ed25519 via the RFC 8032 reference — no `pip install`). A green run proves
+cross-language canonicalization + Ed25519 signature parity.
+
+```bash
+python3 conformance/verify.py       # npm run conformance:verify:crosslang
+npm run conformance:generate:card   # deterministically regenerate the card vectors
+```
+
+Expected output:
+
+```
+KYA-OS cross-language verifier (Python 3.x, stdlib-only)
+  proof: org.kya-os/proof@1  did: did:web:example.com:agents:acme-pay
+  [PASS] requestHash JCS+SHA-256 recompute
+  [PASS] detached EdDSA JWS over JCS(coveredClaims)
+  [PASS] RFC 9421 httpSig over the signature base
+  [PASS] RFC 7638 cnf.jkt thumbprint fusion
+RESULT: PASS — cross-language JCS + Ed25519 parity confirmed
+```
 
 ---
 

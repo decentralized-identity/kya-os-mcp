@@ -1,0 +1,284 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schema.kya-os.org/v1/protocol/identity/card/v1.1.0",
+  "title": "KYA-OS Entity Card",
+  "description": "A typed, DID-anchored identity card for a KYA-OS entity (mcp | agent | client | verifier | human). One canonical card is anchored by a `KyaOsEntityCard` service entry on the entity's did:web DID document and projected onto the four discovery surfaces the ecosystem already indexes (MCP server.json / catalog.json `_meta['org.kya-os/card']`, A2A AgentExtension, NANDA AgentFacts, and the MCP catalog entry). The card asserts identity + type + declared capabilities; everything trust-bearing (accountability, attested capabilities, KYC/KYB) is proven by referenced credentials, not self-claimed (claim-minimalism). The sender-constrained holder-of-key proof (`org.kya-os/proof@1`) is NEVER on the static card — it rides per-request `_meta` on top (see detached-proof); `proofProfile` only names the profile a verifier should expect.",
+  "type": "object",
+  "required": ["id", "entityType", "name"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^did:(key|web):.+$",
+      "description": "The entity's DID. did:web cards are registry-anchored (trust tiers 1-2 + L2 + KYC/KYB eligible); did:key cards are self-asserted (dev/ephemeral; trust from holder-of-key-on-use only)."
+    },
+    "entityType": {
+      "type": "string",
+      "enum": ["mcp", "agent", "client", "verifier", "human"],
+      "description": "The kind of entity. tool/skill are sub-resources (capabilities), not entity types. Named 'entityType' to avoid colliding with the deployment-flavour AgentIdentity.type (development|production)."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable display name."
+    },
+    "kid": {
+      "type": "string",
+      "description": "Key identifier for the entity's signing key (matches a verification method in the DID document and the JWS header kid of its proofs)."
+    },
+    "publicKeyJwk": {
+      "$ref": "#/$defs/Ed25519PublicJwk",
+      "description": "Optional inline public key. MUST match the key published in the DID document; omit to require resolution from didDocument."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the entity/card was created."
+    },
+    "capabilities": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Capability" },
+      "description": "Declared capabilities. Bare strings are L1 (self-declared, unattested); objects with attestations are L2 (capability-attested). tool/skill sub-resources appear here, not as top-level cards."
+    },
+    "conformanceLevel": {
+      "type": "string",
+      "enum": ["L1", "L2", "L3"],
+      "description": "DERIVED, verifier-recomputable summary of the entity's conformance floor: L1 self-declared, L2 capability-attested, L3 holder-of-key + delegation-chain resolution. NOT an independent claim — a verifier recomputes it from capabilities + the live per-request proof."
+    },
+    "responsibleParty": {
+      "type": "string",
+      "pattern": "^did:(key|web):.+$",
+      "description": "DID of the entity ultimately accountable (= root issuerDid of the delegation chain; SPEC Responsible Party). SHOULD be did:web. Verified via delegationRef against the signed DelegationCredential, not self-asserted."
+    },
+    "principal": {
+      "type": "string",
+      "pattern": "^did:(key|web):.+$",
+      "description": "Optional DID of the immediate delegator / authorizing human (the runtime userDid), when it differs from responsibleParty (SPEC Principal)."
+    },
+    "delegationRef": {
+      "type": "string",
+      "description": "Reference to the signed DelegationCredential chain backing responsibleParty/principal. Format 'vcId>delId', multi-hop joined with '>'. The DelegationCredential VC is authoritative (ADR-001); KYA-OS-Delegation-Chain/-Granted-Scopes headers are advisory."
+    },
+    "attestations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Attestation" },
+      "description": "Resolvable, signed credentials about the entity or its responsibleParty (e.g. IdentityVerification = KYC/KYB). Referenced, not inlined; verified via the trusted-issuer + signature + expiry path. Assert the verification fact + level, not raw PII."
+    },
+    "didDocument": {
+      "type": "string",
+      "format": "uri",
+      "description": "URL of the entity's DID document (the trust anchor for did:web; integrity derives from domain control). The DID document carries the `KyaOsEntityCard` service entry that anchors this card."
+    },
+    "proofProfile": {
+      "const": "org.kya-os/proof@1",
+      "description": "Names the per-request holder-of-key proof profile this entity's requests carry — the stateless, sender-constrained `org.kya-os/proof@1` envelope (distinct from the legacy session-bound ProofMeta). The proof itself is NEVER on this static card; it rides per-request `_meta`. This field only advertises the profile a verifier should expect."
+    },
+    "cimd": {
+      "$ref": "#/$defs/CimdBinding",
+      "description": "L1 CIMD (draft-ietf-oauth-client-id-metadata-document) on-ramp coordinates binding the entity's did:web to its OAuth client identity and DID-keyed JWKS."
+    },
+    "revocation": {
+      "$ref": "#/$defs/BitstringStatusListEntry",
+      "description": "W3C Bitstring Status List v1.0 revocation entry for this card's backing credential, evaluated through the injected RevocationChecker seam (live at L3, cached/offline at L2)."
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Capability": {
+      "description": "A declared capability: an L1 bare-string name, or an L2 object carrying attestations.",
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "description": "L1: self-declared capability name (unattested)."
+        },
+        { "$ref": "#/$defs/Level2Capability" }
+      ]
+    },
+    "Level2Capability": {
+      "type": "object",
+      "required": ["name", "attestations"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Capability name, e.g. 'payments.transfer'."
+        },
+        "attestations": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/CapabilityAttestation" },
+          "description": "At least one attestation; the capability is L2 if at least one verifies (signature + trusted issuer + subject + capability match + validity)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "CapabilityAttestation": {
+      "type": "object",
+      "required": ["vc"],
+      "properties": {
+        "vc": {
+          "type": ["string", "object"],
+          "description": "A CapabilityAttestationCredential — compact VC-JWT string or pre-parsed object. issuer MUST be a trusted issuer (default did:web:example.com); credentialSubject.id MUST equal the card id; credentialSubject.capability MUST equal the capability name; validUntil MUST be in the future."
+        }
+      },
+      "additionalProperties": true
+    },
+    "Attestation": {
+      "type": "object",
+      "required": ["type", "vc"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["IdentityVerification", "CapabilityAttestation"],
+          "description": "Attestation kind. IdentityVerification is the registry-issued KYC (individual) / KYB (organization) credential."
+        },
+        "vc": {
+          "type": ["string", "object"],
+          "description": "The signed Verifiable Credential (compact VC-JWT string or object), resolved + verified via the trusted-issuer path. For IdentityVerification: credentialSubject = { id: <subject DID>, subjectType: 'individual'|'organization', verificationLevel: 'basic'|'enhanced'|'loa3', provider }."
+        },
+        "subject": {
+          "type": "string",
+          "pattern": "^did:(key|web):.+$",
+          "description": "DID the attestation is about. For KYC/KYB this is the responsibleParty, not the agent."
+        },
+        "issuer": {
+          "type": "string",
+          "pattern": "^did:(key|web):.+$",
+          "description": "Issuer DID. MUST be in the trusted-issuer allowlist (default did:web:example.com)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "Ed25519PublicJwk": {
+      "type": "object",
+      "required": ["kty", "crv", "x"],
+      "properties": {
+        "kty": { "const": "OKP" },
+        "crv": { "const": "Ed25519" },
+        "x": { "type": "string", "description": "Base64url-encoded Ed25519 public key." },
+        "kid": { "type": "string" },
+        "use": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "CimdBinding": {
+      "type": "object",
+      "description": "CIMD on-ramp binding: the client_id ↔ did:web bijection and the DID-keyed JWKS the AS validates private_key_jwt against (so OAuth client-auth IS a DID-key proof, closing L1→L3).",
+      "required": ["clientId", "jwksUri"],
+      "properties": {
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The OAuth client_id — the did:web HTTPS form (did:web:host:a:b ⇄ https://host/a/b). Its origin MUST equal the did:web host and the jwksUri origin (origin-equality, fail-closed)."
+        },
+        "jwksUri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "JWKS endpoint that is a mechanical projection of the DID document's verificationMethod[] (Ed25519 → OKP JWK, kid preserved)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "BitstringStatusListEntry": {
+      "type": "object",
+      "description": "W3C Bitstring Status List v1.0 credentialStatus entry — the StatusList2021Entry successor. `statusListIndex` is an integer expressed as a string per the spec.",
+      "required": ["statusListCredential", "statusListIndex"],
+      "properties": {
+        "statusListCredential": {
+          "type": "string",
+          "minLength": 1,
+          "description": "URL of the Bitstring Status List credential."
+        },
+        "statusListIndex": {
+          "type": "string",
+          "pattern": "^[0-9]+$",
+          "description": "Index in the status-list bitstring — a non-negative canonical decimal string (no whitespace, hex, or scientific notation), matching the fail-closed runtime parse."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "examples": [
+    {
+      "id": "did:web:example.com:agents:acme-pay",
+      "entityType": "agent",
+      "name": "Acme Pay Agent",
+      "kid": "did:web:example.com:agents:acme-pay#key-1",
+      "createdAt": "2026-06-01T00:00:00Z",
+      "capabilities": [
+        "handshake",
+        {
+          "name": "payments.transfer",
+          "attestations": [
+            { "vc": "eyJhbGciOiJFZERTQSJ9.eyJ2YyI6e319.sig" }
+          ]
+        }
+      ],
+      "conformanceLevel": "L2",
+      "responsibleParty": "did:web:example.com:org:acme",
+      "principal": "did:web:example.com:users:jane",
+      "delegationRef": "vc_root>del_123",
+      "attestations": [
+        {
+          "type": "IdentityVerification",
+          "vc": "eyJhbGciOiJFZERTQSJ9.eyJ2YyI6e319.sig",
+          "subject": "did:web:example.com:org:acme",
+          "issuer": "did:web:example.com"
+        }
+      ],
+      "didDocument": "https://example.com/agents/acme-pay/did.json"
+    },
+    {
+      "id": "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK",
+      "entityType": "client",
+      "name": "KYA-OS Inspector (dev)",
+      "capabilities": ["handshake", "signing", "verification"],
+      "conformanceLevel": "L1",
+      "proofProfile": "org.kya-os/proof@1"
+    },
+    {
+      "id": "did:web:example.com:mcp:acme-search",
+      "entityType": "mcp",
+      "name": "Acme Search MCP",
+      "kid": "did:web:example.com:mcp:acme-search#key-1",
+      "createdAt": "2026-06-01T00:00:00Z",
+      "capabilities": [
+        "tools.list",
+        {
+          "name": "tools.call",
+          "attestations": [
+            { "vc": "eyJhbGciOiJFZERTQSJ9.eyJ2YyI6e319.sig" }
+          ]
+        }
+      ],
+      "conformanceLevel": "L3",
+      "responsibleParty": "did:web:example.com:org:acme",
+      "delegationRef": "vc_root>del_mcp",
+      "didDocument": "https://example.com/mcp/acme-search/did.json",
+      "proofProfile": "org.kya-os/proof@1",
+      "cimd": {
+        "clientId": "https://example.com/mcp/acme-search",
+        "jwksUri": "https://example.com/mcp/acme-search/jwks.json"
+      },
+      "revocation": {
+        "statusListCredential": "https://example.com/status/1",
+        "statusListIndex": "94567"
+      }
+    },
+    {
+      "id": "did:web:example.com:clients:acme-cli",
+      "entityType": "client",
+      "name": "Acme CLI",
+      "kid": "did:web:example.com:clients:acme-cli#key-1",
+      "capabilities": ["handshake"],
+      "conformanceLevel": "L1",
+      "responsibleParty": "did:web:example.com:org:acme",
+      "didDocument": "https://example.com/clients/acme-cli/did.json",
+      "proofProfile": "org.kya-os/proof@1",
+      "cimd": {
+        "clientId": "https://example.com/clients/acme-cli",
+        "jwksUri": "https://example.com/clients/acme-cli/jwks.json"
+      }
+    }
+  ]
+}

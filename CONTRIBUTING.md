@@ -60,7 +60,8 @@ npx tsx examples/outbound-delegation/demo.ts
 - TypeScript strict mode — no any types
 - No console.log — use the logger from src/logging/index.ts
 - .js extension on all imports (ESM)
-- No thrown errors in resolvers — return null on failure, log at debug level
+- DID-METHOD resolvers (`DIDResolver` impls — e.g. `src/delegation/did-web-resolver.ts`) return null on failure and log at debug level: a failed method must degrade gracefully so another resolver can be tried
+- The card resolve/verify surface (`src/card/resolve.ts` — `resolveCard`) is the EXCEPTION: it fails CLOSED, throwing a reasoned `Error` on any failure. A silently-null card risks a fail-OPEN integrator that reads "no card = allow"; a loud throw forces explicit handling. See `resolveCard`'s docstring for the throw contract
 - Run npm run lint before pushing
 
 ---

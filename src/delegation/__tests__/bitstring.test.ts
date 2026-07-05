@@ -119,6 +119,35 @@ describe("BitstringManager", () => {
     });
   });
 
+  // P0.2: a NaN / Infinity / fractional index MUST fail closed at every entry point. A NaN slips
+  // past a bare `index < 0 || index >= size` guard (both comparisons are false for NaN), so on a
+  // REVOCATION read that would resolve from garbage instead of denying.
+  describe("non-integer / NaN index fails closed", () => {
+    const rejected = [NaN, Infinity, -Infinity, 1.5, -1, 8, 2 ** 53];
+    it.each(rejected)("setBit(%s) throws (fail-closed)", (index) => {
+      const m = new BitstringManager(8, compressor, decompressor);
+      expect(() => m.setBit(index, true)).toThrow("out of range");
+    });
+    it.each(rejected)("getBit(%s) throws (fail-closed)", (index) => {
+      const m = new BitstringManager(8, compressor, decompressor);
+      expect(() => m.getBit(index)).toThrow("out of range");
+    });
+    it("isIndexSet rejects NaN / Infinity / fractional / out-of-range", async () => {
+      const m = new BitstringManager(8, compressor, decompressor);
+      m.setBit(3, true);
+      const encoded = await m.encode();
+      for (const index of [NaN, Infinity, -Infinity, 1.5, -1, 999]) {
+        await expect(isIndexSet(encoded, index, decompressor)).rejects.toThrow();
+      }
+    });
+    it("treats -0 as the valid integer index 0 (Number.isInteger(-0) === true), not a throw", () => {
+      const m = new BitstringManager(8, compressor, decompressor);
+      expect(m.getBit(-0)).toBe(false); // index 0, unset
+      expect(() => m.setBit(-0, true)).not.toThrow();
+      expect(m.getBit(0)).toBe(true);
+    });
+  });
+
   describe("getSetBits", () => {
     it("should return empty array when no bits are set", () => {
       const manager = new BitstringManager(8, compressor, decompressor);
@@ -320,12 +349,13 @@ describe("isIndexSet", () => {
     expect(result).toBe(false);
   });
 
-  it("should return false for out of range index", async () => {
+  it("throws (fail-closed) for an out-of-range index", async () => {
     const manager = new BitstringManager(8, new MockCompressor(), decompressor);
     const encoded = await manager.encode();
 
-    const result = await isIndexSet(encoded, 100, decompressor);
-    expect(result).toBe(false);
+    // Fail-CLOSED: an out-of-range index cannot be proven clear, so it must throw rather than
+    // silently read as "not set" (the prior fail-open let an out-of-range index verify as live).
+    await expect(isIndexSet(encoded, 100, decompressor)).rejects.toThrow("out of range");
   });
 
   it("should handle multiple bits", async () => {
@@ -341,6 +371,39 @@ describe("isIndexSet", () => {
     expect(await isIndexSet(encoded, 8, decompressor)).toBe(true);
     expect(await isIndexSet(encoded, 15, decompressor)).toBe(true);
     expect(await isIndexSet(encoded, 1, decompressor)).toBe(false);
+  });
+});
+
+describe("W3C multibase encodedList (u prefix)", () => {
+  const decompressor = new MockDecompressor();
+
+  it("encode() emits the leading 'u' multibase prefix", async () => {
+    const manager = new BitstringManager(8, new MockCompressor(), decompressor);
+    manager.setBit(3, true);
+    expect((await manager.encode())[0]).toBe("u");
+  });
+
+  it("isIndexSet reads a multibase-prefixed list (the W3C wire form that previously threw)", async () => {
+    const manager = new BitstringManager(8, new MockCompressor(), decompressor);
+    manager.setBit(3, true);
+    const encoded = await manager.encode(); // now 'u'-prefixed
+    expect(encoded[0]).toBe("u");
+    expect(await isIndexSet(encoded, 3, decompressor)).toBe(true);
+    expect(await isIndexSet(encoded, 2, decompressor)).toBe(false);
+  });
+
+  it("isIndexSet still reads an unprefixed list (back-compat, no double-strip)", async () => {
+    const manager = new BitstringManager(8, new MockCompressor(), decompressor);
+    manager.setBit(3, true);
+    const unprefixed = (await manager.encode()).slice(1); // drop the multibase 'u'
+    expect(await isIndexSet(unprefixed, 3, decompressor)).toBe(true);
+  });
+
+  it("isIndexSet fails closed against a decompression bomb (post-inflation cap)", async () => {
+    // The standalone reader shares BitstringManager.decode's 16 MiB cap: an over-inflating
+    // decompressor must throw, not allocate the bomb and read a bit from it.
+    const bomb: DecompressionFunction = { decompress: async () => new Uint8Array(17 * 1024 * 1024) };
+    await expect(isIndexSet("uAAAA", 0, bomb)).rejects.toThrow(/too large/);
   });
 });
 

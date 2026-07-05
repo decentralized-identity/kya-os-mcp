@@ -8,7 +8,8 @@ This directory contains JSON Schema definitions for the core KYA-OS (Model Conte
 |--------|-------------|
 | [handshake-request.json](./handshake-request.json) | Client-initiated session establishment request |
 | [handshake-response.json](./handshake-response.json) | Server response with session context |
-| [delegation-credential.json](./delegation-credential.json) | W3C Verifiable Credential for delegations |
+| [delegation-credential.json](./delegation-credential.json) | W3C Verifiable Credential for delegations (legacy VC 1.0 shape) |
+| [card-delegation-credential.json](./card-delegation-credential.json) | W3C VC 2.0 + ZCAP-LD delegation profile (Entity Card) |
 | [detached-proof.json](./detached-proof.json) | Cryptographic proof for tool request/response |
 | [well-known-kyaos.json](./well-known-kyaos.json) | Service discovery document |
 

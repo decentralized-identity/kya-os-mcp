@@ -174,6 +174,21 @@ done
 echo -e "${BOLD}└──────────────────────┴───────────┴────────────────────────────┘${NC}"
 echo ""
 
+# consent-persistence is HOLDER-OF-KEY: the Inspector can connect + browse it, but it cannot
+# complete the flow (a generic client can't mint the per-request _kyaos_proof). Steer to the
+# scenario scripts, which play the signing agent and show it end-to-end.
+for _ex in "${EX_NAMES[@]}"; do
+  if [ "$_ex" = "consent-persistence" ]; then
+    echo -e "${YELLOW}Note — consent-persistence (3005) is holder-of-key (scenario-driven).${NC}"
+    echo -e "${DIM}  The Inspector can connect and browse it, but CANNOT complete the consent flow (it can't"
+    echo -e "  mint the per-request proof a real agent signs). See it end-to-end — durable grants across"
+    echo -e "  instances and a restart — with:${NC}"
+    echo -e "  ${CYAN}cd examples/consent-persistence && npm run scenario:cross-instance && npm run scenario:restart${NC}"
+    echo ""
+    break
+  fi
+done
+
 # ── Inspector ────────────────────────────────────────────────────────
 if [ "$OPEN_INSPECTOR" = true ]; then
   echo -e "${BOLD}Starting MCP Inspector...${NC}"

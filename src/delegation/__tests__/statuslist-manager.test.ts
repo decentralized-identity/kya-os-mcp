@@ -285,7 +285,7 @@ describe("StatusList2021Manager", () => {
       const statusListId = "https://status.example.com/revocation/v1";
       // Create a credential where bit 5 is already set
       const bytes = new Uint8Array(2);
-      bytes[0] = 0b00100000; // Bit 5 is set
+      bytes[0] = 0b00000100; // Bit 5 is set (MSB-first: 0x80 >> 5)
       const encodedList = Buffer.from(bytes).toString("base64url");
       const existingCredential = createStatusListCredential(
         statusListId,
@@ -381,7 +381,7 @@ describe("StatusList2021Manager", () => {
       const statusListId = "https://status.example.com/revocation/v1";
       // Create bitstring with bit 5 set
       const bytes = new Uint8Array(2);
-      bytes[0] = 0b00100000; // Bit 5 is set
+      bytes[0] = 0b00000100; // Bit 5 is set (MSB-first: 0x80 >> 5)
       const encodedList = Buffer.from(bytes).toString("base64url");
       const existingCredential = createStatusListCredential(
         statusListId,
@@ -403,6 +403,32 @@ describe("StatusList2021Manager", () => {
       const isRevoked = await manager.checkStatus(credentialStatus);
 
       expect(isRevoked).toBe(true);
+    });
+
+    it("throws (fail-closed) when the list statusPurpose ≠ the credential's (wrong-list bypass)", async () => {
+      const manager = new StatusList2021Manager(
+        mockStorage,
+        mockIdentity,
+        mockSigningFunction,
+        mockCompressor,
+        mockDecompressor
+      );
+
+      const statusListId = "https://status.example.com/revocation/v1";
+      // A SUSPENSION list (all-clear at index 5) is resolved for a REVOCATION credential. Pre-fix,
+      // the clear bit read as "not revoked" — a fail-OPEN bypass. It must throw instead.
+      const wrongPurposeList = createStatusListCredential(statusListId, "suspension");
+      vi.mocked(mockStorage.getStatusList).mockResolvedValue(wrongPurposeList);
+
+      const credentialStatus: CredentialStatus = {
+        id: `${statusListId}#5`,
+        type: "StatusList2021Entry",
+        statusPurpose: "revocation",
+        statusListIndex: "5",
+        statusListCredential: statusListId,
+      };
+
+      await expect(manager.checkStatus(credentialStatus)).rejects.toThrow(/statusPurpose mismatch/);
     });
 
     it("should throw if status list doesn't exist (fail closed)", async () => {
@@ -461,7 +487,7 @@ describe("StatusList2021Manager", () => {
       const statusListId = "https://status.example.com/revocation/v1";
       // Create bitstring with bits 0, 2, and 5 set
       const bytes = new Uint8Array(2);
-      bytes[0] = 0b00100101; // Bits 0, 2, 5 are set
+      bytes[0] = 0b10100100; // Bits 0, 2, 5 are set (MSB-first: 0x80 >> i)
       const encodedList = Buffer.from(bytes).toString("base64url");
       const existingCredential = createStatusListCredential(
         statusListId,
@@ -604,7 +630,7 @@ describe("StatusList2021Manager", () => {
 
       const statusListId = "https://status.example.com/revocation/v1";
       const bytes = new Uint8Array(2);
-      bytes[0] = 0b00001000; // Bit 3 set
+      bytes[0] = 0b00010000; // Bit 3 set (MSB-first: 0x80 >> 3)
       const encodedList = Buffer.from(bytes).toString("base64url");
       const existingCredential = createStatusListCredential(
         statusListId,

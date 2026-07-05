@@ -19,6 +19,8 @@ const REQUIRED_CATEGORIES: VectorCategory[] = [
   'status-list',
   'did-key-resolution',
   'did-web-resolution',
+  'card-proof',
+  'entity-card',
 ];
 
 describe('KYA-OS conformance — reference implementation', () => {

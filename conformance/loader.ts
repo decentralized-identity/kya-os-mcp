@@ -23,6 +23,8 @@ const VALID_CATEGORIES: readonly VectorCategory[] = [
   'status-list',
   'did-key-resolution',
   'did-web-resolution',
+  'card-proof',
+  'entity-card',
 ];
 
 function assertVectorFile(file: unknown, source: string): asserts file is VectorFile {

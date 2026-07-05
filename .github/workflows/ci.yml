@@ -107,6 +107,12 @@ jobs:
       - name: Run conformance vectors
         run: pnpm run conformance
 
+      # Independently re-verify the org.kya-os/proof@1 card-proof vector in a second
+      # language (pure Python stdlib, shares no code with the TS reference) — proves
+      # cross-language JCS (RFC 8785) + Ed25519 signature parity. Exits non-zero on mismatch.
+      - name: Cross-language proof verification
+        run: pnpm run conformance:verify:crosslang
+
   codeql:
     name: CodeQL Security Scan
     runs-on: ubuntu-latest

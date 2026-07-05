@@ -92,6 +92,7 @@ export {
   DelegationCredentialVerifier,
   createDelegationVerifier,
   type DelegationVCVerificationResult,
+  type StatusOutcome,
   type VerifyDelegationVCOptions,
   type DIDResolver,
   type DIDDocument,

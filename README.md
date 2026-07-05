@@ -108,6 +108,44 @@ When an agent calls `checkout` without a delegation credential, it gets back a `
 
 ---
 
+## Typed, DID-anchored identity: the Entity Card
+
+Proofs answer *what an agent did*. The **Entity Card** answers *who is calling* — a typed, DID-anchored identity (`agent`, `mcp`, `client`, `verifier`, `human`) an entity publishes once and every discovery rail can index. It is claim-minimal: it asserts only identity, type, declared capabilities, and accountability locators. The trust **level** (L1/L2/L3) is never self-claimed — a verifier RECOMPUTES it from evidence. Three ergonomic calls, imported from the published `@kya-os/mcp/card` subpath:
+
+```typescript
+import { card, withKyaOsCard, requireProof, InMemoryNonceCache } from '@kya-os/mcp/card';
+
+// 1. BUILD — describe the agent, fluently. No conformanceLevel: a verifier derives it.
+const myCard = card({ did: 'did:web:acme.example:agents:pay', entityType: 'agent', name: 'Acme Pay' })
+  .capability('search')                                  // L1: bare-string, self-declared
+  .attestedCapability('payments.transfer', capabilityVc) // L2: VC-backed
+  .accountableTo('did:web:acme.example:org', { via: 'vc_root>del_123' })
+  .usesProof()
+  .build();
+
+// 2. EMIT — mount the three discovery artifacts (card.json, DID service entry, server.json _meta).
+const mount = withKyaOsCard(myCard);
+const serverJson = mount.mountServerJson({ name: 'acme-mcp', version: '1.0.0' });
+
+// 3. GUARD — verify a per-request holder-of-key proof, fail-closed.
+const nonces = new InMemoryNonceCache();     // ATOMIC replay defense — never hand-roll this seam
+const guard = requireProof({
+  resolveKey,                                // resolve the signing key from its kid (DID document)
+  expectedAudience: 'did:web:acme.example:mcp:server',
+  consumeNonceIfFresh: nonces.consume,       // test-AND-set; a replayed nonce is rejected
+});
+
+// Pass the EXACT body the client signed (without _meta) plus the _meta that carried the proof.
+const { _meta, ...signedBody } = incomingRequest;
+const verdict = await guard(signedBody, _meta); // { ok: true, did, level } or a 401-shaped reject
+```
+
+Miss the proof, replay a nonce, or tamper the body and `requireProof` fails closed. To go the other direction — DISCOVER and verify another entity's card — use `resolveCard` + `verifyCard` (the verifier recomputes the conformance floor rather than trusting the card).
+
+> Run the full 10-minute path end-to-end: [examples/entity-card](./examples/entity-card/) — `npm run example:entity-card:server` (build → emit → guard, with a valid proof accepted and a replay + tamper rejected) and `npm run example:entity-card` (the discover → resolve → verify walkthrough). See [SPEC-ENTITY-CARD.md](./SPEC-ENTITY-CARD.md) for normative detail.
+
+---
+
 ## See it in action
 
 ```bash
@@ -133,7 +171,8 @@ Also available: [outbound-delegation](./examples/outbound-delegation/) (gateway 
 
 | Capability | How it works |
 |-----------|-------------|
-| **Cryptographic identity** | Ed25519 key pairs, `did:key` / `did:web` resolution, optional `did:cheqd` resolver support |
+| **Cryptographic identity** | Ed25519 (EdDSA) and P-256 (ES256, FIPS-eligible) key pairs, `did:key` / `did:web` resolution, optional `did:cheqd` resolver support |
+| **Entity Card** | Typed, DID-anchored identity: fluent `card()` builder, `withKyaOsCard` discovery projections, `requireProof` per-request holder-of-key guard |
 | **Signed proofs** | Detached JWS over JCS-canonicalized request/response hashes |
 | **Delegation credentials** | W3C Verifiable Credentials with scope constraints, rooted at a Responsible Party |
 | **Revocation** | StatusList2021 bitstring with cascading revocation |
@@ -330,7 +369,7 @@ publication, status-list backend hosting, and external registry changes.
 
 ## Links
 
-- [Spec](./SPEC.md) | [Changelog](./CHANGELOG.md) | [DIF TAAWG](https://identity.foundation/working-groups/agent-and-authorization.html) | [npm](https://www.npmjs.com/package/@kya-os/mcp)
+- [Spec](./SPEC.md) | [Card Profile](./SPEC-ENTITY-CARD.md) | [Changelog](./CHANGELOG.md) | [DIF TAAWG](https://identity.foundation/working-groups/agent-and-authorization.html) | [npm](https://www.npmjs.com/package/@kya-os/mcp)
 - [CONTRIBUTING.md](./CONTRIBUTING.md) | [CONFORMANCE.md](./CONFORMANCE.md) | [SECURITY.md](./SECURITY.md) | [GOVERNANCE.md](./GOVERNANCE.md)
 
 ## License

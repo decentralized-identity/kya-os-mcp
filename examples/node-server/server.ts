@@ -87,12 +87,21 @@ function formatAsConsentLink(
   handler: (args: Record<string, unknown>, sessionId?: string) => Promise<ToolResult>,
 ): (args: Record<string, unknown>, sessionId?: string) => Promise<ToolResult> {
   return async (args, sessionId) => {
-    if (!args['_kyaos_delegation'] && delegationStore) {
-      const pending = delegationStore.findByTool(toolName);
+    // The MCP Inspector sends the schema-declared `_kyaos_delegation` as an empty `{}` even when the
+    // user supplied nothing. Treat anything that is not a REAL delegation VC (no credentialSubject)
+    // as ABSENT, so the approved credential is auto-applied instead of failing verification on `{}`.
+    const provided = args['_kyaos_delegation'] as { credentialSubject?: unknown } | undefined;
+    const hasRealDelegation =
+      provided != null && typeof provided === 'object' && provided.credentialSubject != null;
+    if (!hasRealDelegation) {
+      const rest = { ...args };
+      delete rest['_kyaos_delegation'];
+      const pending = delegationStore?.findByTool(toolName);
       if (pending) {
         console.error(`[kya-os] Auto-applying delegation from consent approval (token: ${pending.resumeToken})`);
-        return handler({ ...args, _kyaos_delegation: pending.vc }, sessionId);
+        return handler({ ...rest, _kyaos_delegation: pending.vc }, sessionId);
       }
+      return handler(rest, sessionId); // no stored grant → middleware returns needs_authorization
     }
     return handler(args, sessionId);
   };

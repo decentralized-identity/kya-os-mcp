@@ -87,19 +87,21 @@ function startHttpInstance(instance: Instance, port: number, did: string): http.
       return;
     }
 
-    // The mcp-inspector opens an SSE stream with GET /mcp. This example is
-    // holder-of-key and DRIVEN BY THE SCENARIO SCRIPTS, not inspector-interactive
-    // (the inspector can't mint the per-request `_kyaos_proof`, so a retry never
-    // resolves). Return a clear explanation rather than a bare 404.
+    // The mcp-inspector opens a server->client SSE stream with GET /mcp. This server is stateless
+    // POST-only (sessionIdGenerator: undefined), so per the Streamable HTTP spec it MUST answer a
+    // GET with 405 Method Not Allowed (NOT 400) — that lets the inspector degrade gracefully to
+    // POST-only and connect, instead of treating it as a fatal "Bad Request". NOTE: the full
+    // persistence flow is holder-of-key, so the retry needs a real per-request `_kyaos_proof` the
+    // inspector cannot mint — run the scenario scripts to see it end-to-end.
     if (url.pathname === '/mcp') {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.writeHead(405, { 'Content-Type': 'application/json', Allow: 'POST' });
       res.end(
         JSON.stringify({
-          error: 'not_inspector_interactive',
+          error: 'method_not_allowed',
           message:
-            'consent-persistence is holder-of-key and scenario-script-driven, not ' +
-            'mcp-inspector-interactive (the inspector cannot mint the per-request _kyaos_proof). ' +
-            'Run:  npm run scenario:cross-instance   and   npm run scenario:restart.',
+            'consent-persistence uses stateless POST-only Streamable HTTP (no server->client SSE ' +
+            'stream). The inspector connects fine for tools; the full holder-of-key persistence ' +
+            'flow needs a per-request _kyaos_proof — run:  npm run scenario:cross-instance  and  npm run scenario:restart.',
         }),
       );
       return;

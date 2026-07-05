@@ -12,7 +12,28 @@ import type { GrantStore } from "../providers/grant-store.js";
 import type { SessionManager } from "../session/manager.js";
 import type { ProofGenerator, ProofAgentIdentity } from "../proof/generator.js";
 import type { ProofVerifier } from "../proof/verifier.js";
-import type { KyaOsConfig, KyaOsDelegationConfig } from "./with-kya-os.types.js";
+import type {
+  KyaOsConfig,
+  KyaOsDelegationConfig,
+  KyaOsToolHandler,
+} from "./with-kya-os.types.js";
+
+/**
+ * Attach a signed proof recording an authorization OUTCOME (denied / step-up /
+ * needs-authorization) to a response. Provided by the session/proof sub-factory
+ * and consumed by the delegation- and policy-gate sub-factories, so it is typed
+ * here as the shared internal contract between them.
+ */
+export type AttachOutcomeProof = (
+  response: Awaited<ReturnType<KyaOsToolHandler>>,
+  toolName: string,
+  args: Record<string, unknown>,
+  sessionId: string | undefined,
+  reason: string,
+  outcome?: "denied" | "step_up_required" | "needs_authorization",
+  paramsOverride?: Record<string, unknown>,
+  responseData?: unknown,
+) => Promise<Awaited<ReturnType<KyaOsToolHandler>>>;
 
 /** The constructed dependencies shared across the middleware sub-factories. */
 export interface MiddlewareDeps {

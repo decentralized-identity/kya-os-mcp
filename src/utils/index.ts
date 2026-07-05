@@ -10,3 +10,16 @@ export {
 
 export { isRecord } from './guards.js';
 export { stripTrailingSlashes } from './url.js';
+export {
+  createSafeFetch,
+  fetchTransport,
+  isBlockedAddress,
+  type SafeFetch,
+  type SafeFetchResponse,
+  type SafeFetchOptions,
+  type SafeFetchTransport,
+  type TransportInit,
+  type RawResponse,
+  type DnsLookup,
+  type DnsAddress,
+} from './safe-fetch.js';

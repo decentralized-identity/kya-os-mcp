@@ -1,12 +1,17 @@
 /**
- * Bitstring Utilities for StatusList2021
+ * Bitstring Utilities for W3C status lists (StatusList2021 / Bitstring Status List v1.0).
  *
  * Implements GZIP compression + base64url encoding for efficient status lists.
- * Per W3C StatusList2021 spec, each bit represents credential status:
+ * Each bit represents credential status:
  * - 0: Not revoked/suspended
  * - 1: Revoked/suspended
  *
- * Related Spec: W3C StatusList2021
+ * Bit order is MSB-FIRST within each byte (index 0 → the 0x80 bit), matching the W3C spec and
+ * the Digital Bazaar reference `Bitstring` (`0x80 >> bit`). This is the SAME order the Entity Card
+ * revocation reader (`src/card/revocation.ts`) uses, so both code paths read an identical
+ * `encodedList` to the SAME verdict.
+ *
+ * Related Spec: W3C Bitstring Status List v1.0 (successor to StatusList2021)
  */
 
 export interface CompressionFunction {
@@ -16,6 +21,17 @@ export interface CompressionFunction {
 export interface DecompressionFunction {
   decompress(data: Uint8Array): Promise<Uint8Array>;
 }
+
+/** Fixed ceiling on an inflated status bitstring (16 MiB ≈ 134M entries) — fail-closed against a
+ *  decompression bomb. Mirrors the cap in the card revocation reader (src/card/revocation.ts). */
+const MAX_STATUS_LIST_BYTES = 16 * 1024 * 1024;
+
+/** The W3C Bitstring Status List `encodedList` multibase prefix (base64url, no padding). `encode`
+ *  emits it and `base64urlDecode` strips it, so this reader is interoperable with the card
+ *  revocation reader (src/card/revocation.ts) and any conformant issuer. A gzip stream's fixed
+ *  magic byte (0x1f) makes its base64url start with `H`, never `u`, so a leading `u` is
+ *  unambiguously the multibase code rather than payload. */
+const MULTIBASE_BASE64URL = 'u';
 
 export class BitstringManager {
   private bits: Uint8Array;
@@ -32,7 +48,9 @@ export class BitstringManager {
   }
 
   setBit(index: number, value: boolean): void {
-    if (index < 0 || index >= this.size) {
+    if (!Number.isInteger(index) || index < 0 || index >= this.size) {
+      // `!Number.isInteger` also rejects NaN — a NaN index (e.g. parseInt("abc") upstream) would
+      // otherwise slip past `< 0 || >= size` and read bits[NaN] = undefined = "not set" (fail-open).
       throw new Error(`Bit index ${index} out of range (0-${this.size - 1})`);
     }
 
@@ -40,21 +58,23 @@ export class BitstringManager {
     const bitIndex = index % 8;
 
     if (value) {
-      this.bits[byteIndex]! |= 1 << bitIndex;
+      this.bits[byteIndex]! |= 0x80 >> bitIndex; // MSB-first (W3C): index 0 → 0x80
     } else {
-      this.bits[byteIndex]! &= ~(1 << bitIndex);
+      this.bits[byteIndex]! &= 0xff ^ (0x80 >> bitIndex);
     }
   }
 
   getBit(index: number): boolean {
-    if (index < 0 || index >= this.size) {
+    if (!Number.isInteger(index) || index < 0 || index >= this.size) {
+      // `!Number.isInteger` also rejects NaN — a NaN index (e.g. parseInt("abc") upstream) would
+      // otherwise slip past `< 0 || >= size` and read bits[NaN] = undefined = "not set" (fail-open).
       throw new Error(`Bit index ${index} out of range (0-${this.size - 1})`);
     }
 
     const byteIndex = Math.floor(index / 8);
     const bitIndex = index % 8;
 
-    return (this.bits[byteIndex]! & (1 << bitIndex)) !== 0;
+    return (this.bits[byteIndex]! & (0x80 >> bitIndex)) !== 0; // MSB-first (W3C)
   }
 
   getSetBits(): number[] {
@@ -69,7 +89,7 @@ export class BitstringManager {
 
   async encode(): Promise<string> {
     const compressed = await this.compressor.compress(this.bits);
-    return this.base64urlEncode(compressed);
+    return MULTIBASE_BASE64URL + this.base64urlEncode(compressed);
   }
 
   static async decode(
@@ -77,8 +97,7 @@ export class BitstringManager {
     compressor: CompressionFunction,
     decompressor: DecompressionFunction
   ): Promise<BitstringManager> {
-    const compressed = BitstringManager.base64urlDecode(encodedList);
-    const decompressed = await decompressor.decompress(compressed);
+    const decompressed = await inflateStatusList(encodedList, decompressor);
 
     const size = decompressed.length * 8;
     const manager = new BitstringManager(size, compressor, decompressor);
@@ -99,32 +118,11 @@ export class BitstringManager {
     return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
   }
 
-  private static base64urlDecode(encoded: string): Uint8Array {
-    let base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
-    while (base64.length % 4 !== 0) {
-      base64 += '=';
-    }
-    return BitstringManager.base64ToBytes(base64);
-  }
-
   private bytesToBase64(bytes: Uint8Array): string {
     const binary = Array.from(bytes)
       .map((byte) => String.fromCharCode(byte))
       .join('');
     return btoa(binary);
-  }
-
-  private static base64ToBytes(base64: string): Uint8Array {
-    let standardBase64 = base64.replace(/-/g, '+').replace(/_/g, '/');
-    const paddingNeeded = (4 - (standardBase64.length % 4)) % 4;
-    standardBase64 += '='.repeat(paddingNeeded);
-
-    const binary = atob(standardBase64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    return bytes;
   }
 
   static fromSetBits(
@@ -141,20 +139,56 @@ export class BitstringManager {
   }
 }
 
+/**
+ * Decode a base64url `encodedList`, stripping an optional leading W3C multibase `u` prefix so this
+ * module's own `encode` output and a conformant issuer's `encodedList` decode identically (matches
+ * src/card/revocation.ts). Standalone so both {@link BitstringManager.decode} and {@link isIndexSet}
+ * share ONE reader (no private-visibility casts).
+ */
+function decodeBase64urlMultibase(encoded: string): Uint8Array {
+  const payload = encoded[0] === MULTIBASE_BASE64URL ? encoded.slice(1) : encoded;
+  let standard = payload.replace(/-/g, '+').replace(/_/g, '/');
+  standard += '='.repeat((4 - (standard.length % 4)) % 4);
+  const binary = atob(standard);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * Decode + decompress a status-list `encodedList`, FAIL-CLOSED against a decompression bomb via a
+ * post-inflation size cap. The single reader path shared by {@link BitstringManager.decode} and
+ * {@link isIndexSet}, so both bound inflation identically. (Production decompressors SHOULD also
+ * bound output DURING inflation.)
+ */
+async function inflateStatusList(
+  encodedList: string,
+  decompressor: DecompressionFunction
+): Promise<Uint8Array> {
+  const decompressed = await decompressor.decompress(decodeBase64urlMultibase(encodedList));
+  if (decompressed.length > MAX_STATUS_LIST_BYTES) {
+    throw new Error(`Status list too large: ${decompressed.length} bytes exceeds ${MAX_STATUS_LIST_BYTES}`);
+  }
+  return decompressed;
+}
+
 export async function isIndexSet(
   encodedList: string,
   index: number,
   decompressor: DecompressionFunction
 ): Promise<boolean> {
-  const compressed = (BitstringManager as unknown as { base64urlDecode: (s: string) => Uint8Array })['base64urlDecode'](encodedList);
-  const decompressed = await decompressor.decompress(compressed);
+  const decompressed = await inflateStatusList(encodedList, decompressor);
 
   const byteIndex = Math.floor(index / 8);
   const bitIndex = index % 8;
 
-  if (byteIndex >= decompressed.length) {
-    return false;
+  if (!Number.isInteger(index) || index < 0 || byteIndex >= decompressed.length) {
+    // Fail-CLOSED: an out-of-range/NaN index cannot be proven clear, so it must NOT read as "not
+    // set". `!Number.isInteger` is required because `byteIndex >= length` is FALSE for a NaN index
+    // (any comparison with NaN is false), which would otherwise slip past and read bits[NaN] =
+    // undefined = live (the fail-open getBit already rejects, but this standalone reader did not).
+    throw new Error(`Bit index ${index} out of range for the status list`);
   }
 
-  return (decompressed[byteIndex]! & (1 << bitIndex)) !== 0;
+  return (decompressed[byteIndex]! & (0x80 >> bitIndex)) !== 0; // MSB-first (W3C)
 }

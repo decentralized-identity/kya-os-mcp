@@ -28,9 +28,26 @@ import {
  */
 const DELEGATION_SUBJECT_KEYS: readonly string[] = ["id", "delegation"];
 
+/**
+ * Machine-readable outcome of the credential-status check. Both values still
+ * DENY (fail-closed) — the label only tells the consumer *why*, so retry vs
+ * re-consent can be decided:
+ * - `revoked`: the status bit is set — a settled deny. Re-consent required.
+ * - `status_unresolvable`: the status could not be read (resolver missing,
+ *   threw, or infra unavailable). Deny now, but the credential may still be
+ *   good; safe to retry once status resolution recovers.
+ */
+export type StatusOutcome = "revoked" | "status_unresolvable";
+
 export interface DelegationVCVerificationResult {
   valid: boolean;
   reason?: string;
+  /**
+   * Present only when a status check produced a deny. Distinguishes a settled
+   * `revoked` from a transient `status_unresolvable` without weakening
+   * fail-closed — both still deny (see {@link StatusOutcome}).
+   */
+  statusOutcome?: StatusOutcome;
   stage: "basic" | "signature" | "status" | "complete";
   cached?: boolean;
   metrics?: {
@@ -78,6 +95,18 @@ export interface VerificationMethod {
 
 export interface StatusListResolver {
   checkStatus(status: CredentialStatus): Promise<boolean>;
+}
+
+/**
+ * Internal result of a credential-status check. `outcome` is set on every
+ * deny (see {@link StatusOutcome}); it is surfaced as
+ * `DelegationVCVerificationResult.statusOutcome`.
+ */
+interface StatusCheckResult {
+  valid: boolean;
+  reason?: string;
+  outcome?: StatusOutcome;
+  durationMs?: number;
 }
 
 export interface SignatureVerificationFunction {
@@ -183,11 +212,7 @@ export class DelegationCredentialVerifier {
             vc.credentialStatus,
             options.statusListResolver || this.statusListResolver,
           )
-        : Promise.resolve<{
-            valid: boolean;
-            reason?: string;
-            durationMs?: number;
-          }>({
+        : Promise.resolve<StatusCheckResult>({
             valid: true,
             durationMs: 0,
           });
@@ -208,6 +233,7 @@ export class DelegationCredentialVerifier {
       reason: !allValid
         ? signatureResult.reason || statusResult.reason || "Unknown failure"
         : undefined,
+      statusOutcome: statusResult.outcome,
       stage: "complete",
       metrics: {
         basicCheckMs,
@@ -381,10 +407,17 @@ export class DelegationCredentialVerifier {
     }
   }
 
+  /**
+   * Resolve a credential's revocation status, fail-closed. Every deny is
+   * labelled with a {@link StatusOutcome} so consumers can tell a settled
+   * `revoked` (re-consent) from a transient `status_unresolvable` (retry):
+   * a missing resolver or a resolver that throws both DENY as
+   * `status_unresolvable`; a set status bit DENIES as `revoked`.
+   */
   private async checkCredentialStatus(
     status: CredentialStatus,
     statusListResolver?: StatusListResolver,
-  ): Promise<{ valid: boolean; reason?: string; durationMs?: number }> {
+  ): Promise<StatusCheckResult> {
     const startTime = Date.now();
 
     try {
@@ -393,6 +426,7 @@ export class DelegationCredentialVerifier {
           valid: false,
           reason:
             "Credential has credentialStatus but no status list resolver is configured — cannot verify revocation status",
+          outcome: "status_unresolvable",
           durationMs: Date.now() - startTime,
         };
       }
@@ -403,6 +437,7 @@ export class DelegationCredentialVerifier {
         return {
           valid: false,
           reason: `Credential revoked via StatusList2021 (${status.statusPurpose})`,
+          outcome: "revoked",
           durationMs: Date.now() - startTime,
         };
       }
@@ -415,6 +450,7 @@ export class DelegationCredentialVerifier {
       return {
         valid: false,
         reason: `Status check error: ${error instanceof Error ? error.message : "Unknown error"}`,
+        outcome: "status_unresolvable",
         durationMs: Date.now() - startTime,
       };
     }

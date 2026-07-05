@@ -13,6 +13,7 @@ import type {
 import { BitstringManager, type CompressionFunction, type DecompressionFunction } from './bitstring.js';
 import type { VCSigningFunction } from './vc-issuer.js';
 import { canonicalizeJSON } from './utils.js';
+import { assertStatusPurpose } from '../utils/statuslist-purpose.js';
 
 export interface StatusListStorageProvider {
   getStatusList(statusListId: string): Promise<StatusList2021Credential | null>;
@@ -134,13 +135,28 @@ export class StatusList2021Manager {
       );
     }
 
+    // Fail-CLOSED on statusPurpose parity via the shared validator: the resolved list MUST be the
+    // SAME KIND the credential points at, else its clear bit would report "not revoked" from the
+    // wrong list — a fail-OPEN revocation bypass.
+    assertStatusPurpose(statusList.credentialSubject.statusPurpose, credentialStatus.statusPurpose);
+
     const manager = await BitstringManager.decode(
       statusList.credentialSubject.encodedList,
       this.compressor,
       this.decompressor
     );
 
-    const index = parseInt(statusListIndex, 10);
+    // Strict decimal, fail-closed: lenient parseInt would read "0x2A" as 0 / "42abc" as 42, and a
+    // whitespace/NaN index used to slip past getBit's guard and read as "not revoked" (fail-open).
+    if (!/^[0-9]+$/.test(statusListIndex)) {
+      throw new Error(`Invalid statusListIndex "${statusListIndex}" — must be a canonical non-negative decimal`);
+    }
+    const index = Number(statusListIndex);
+    // A canonical-decimal string can still exceed 2^53-1 and lose precision; reject it explicitly at
+    // the parse layer (matches revocation.ts parseIndex) rather than leaning only on getBit's bounds.
+    if (!Number.isSafeInteger(index)) {
+      throw new Error(`statusListIndex "${statusListIndex}" exceeds the safe integer range`);
+    }
     return manager.getBit(index);
   }
 

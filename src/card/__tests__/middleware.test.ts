@@ -86,7 +86,14 @@ describe('requireProof — the per-request holder-of-key guard', () => {
     const { signer, publicJwk } = await keypair();
     const guard = requireProof(deps(publicJwk));
     const result = await guard(REQ, await mintMeta(signer));
-    expect(result).toEqual({ ok: true, did: signer.did, level: 'L3-minus' });
+    // The proof carried a cnf but no token cnf was wired, so the guard surfaces the non-fatal
+    // unfused-cnf warning (TM-1) alongside the valid L3-minus result — it does not fail the guard.
+    expect(result).toEqual({
+      ok: true,
+      did: signer.did,
+      level: 'L3-minus',
+      warnings: ['cnf_present_but_token_unfused'],
+    });
   });
 
   it('derives L3 when the token cnf fuses with the proof key', async () => {

@@ -235,4 +235,12 @@ export interface ProofVerifyResult {
   /** Present only when `ok`: the derived assurance and the accountable principal DID. */
   level?: ProofAssurance;
   did?: string;
+  /**
+   * Non-fatal diagnostics. Unlike `reasons`, these do NOT affect `ok` — the proof is valid — but
+   * flag a configuration state a caller should be able to observe. Currently:
+   * `cnf_present_but_token_unfused` — the proof carried a sender-constraint (`cnf`) that could not be
+   * fused because the verifier was given no token `cnf.jkt` (`tokenCnfJkt`), so assurance is L3-minus,
+   * not L3. Surfaced so an integrator who intended L3 sees the downgrade instead of it passing silently.
+   */
+  warnings?: string[];
 }

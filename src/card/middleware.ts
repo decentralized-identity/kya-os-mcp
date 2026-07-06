@@ -138,7 +138,7 @@ export interface ProofGateError {
 
 /** The guard verdict: a pass carries the accountable principal + assurance; a fail is 401-shaped. */
 export type ProofGateResult =
-  | { ok: true; did: string; level: ProofAssurance }
+  | { ok: true; did: string; level: ProofAssurance; warnings?: string[] }
   | { ok: false; status: 401; error: ProofGateError };
 
 /**
@@ -184,7 +184,12 @@ export function requireProof(deps: VerifyProofDeps, opts: RequireProofOptions = 
       const message = `proof assurance ${level} is below the required ${opts.minLevel}`;
       return fail('proof_level_insufficient', message, ['proof_level_insufficient']);
     }
-    return { ok: true, did: result.did, level };
+    return {
+      ok: true,
+      did: result.did,
+      level,
+      ...(result.warnings ? { warnings: result.warnings } : {}),
+    };
   };
 }
 

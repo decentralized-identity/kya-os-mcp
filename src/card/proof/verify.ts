@@ -68,11 +68,15 @@ export async function verifyCardProof(
   await consumeNonce(meta, deps, reasons);
   if (key && algOk && !(await verifyDetachedJws(meta, key))) reasons.push('invalid_signature');
 
+  const warnings: string[] = [];
   let level: ProofAssurance = 'L3-minus';
-  if (key) level = await checkCnfFusion(meta, key, deps, reasons);
+  if (key) level = await checkCnfFusion(meta, key, deps, reasons, warnings);
 
   const ok = reasons.length === 0;
-  return ok ? { ok, reasons, level, did: meta.did } : { ok, reasons };
+  const withWarnings = warnings.length > 0 ? { warnings } : {};
+  return ok
+    ? { ok, reasons, level, did: meta.did, ...withWarnings }
+    : { ok, reasons, ...withWarnings };
 }
 
 /** Resolve the signing key for `kid`; fail-closed (records `key_unresolvable`) on throw. */
@@ -206,6 +210,7 @@ async function checkCnfFusion(
   key: ProofPublicJwk,
   deps: VerifyProofDeps,
   reasons: string[],
+  warnings: string[],
 ): Promise<ProofAssurance> {
   let keyJkt: string;
   try {
@@ -216,7 +221,15 @@ async function checkCnfFusion(
     return 'L3-minus';
   }
   if (meta.cnf && meta.cnf.jkt !== keyJkt) reasons.push('cnf_key_mismatch');
-  if (deps.tokenCnfJkt === undefined) return 'L3-minus';
+  if (deps.tokenCnfJkt === undefined) {
+    // No token cnf.jkt was supplied, so there is nothing to fuse against and assurance is L3-minus.
+    // If the client nonetheless PRESENTED a sender-constraint (`cnf`), the proof was capable of L3 —
+    // it degraded only because `tokenCnfJkt` was not wired. That is a valid L3-minus proof, not a
+    // failure, so it is a warning (not a reason): it lets an integrator who intended L3 notice the
+    // silent downgrade rather than assume token-theft resistance they are not actually getting.
+    if (meta.cnf) warnings.push('cnf_present_but_token_unfused');
+    return 'L3-minus';
+  }
   if (!meta.cnf) {
     reasons.push('cnf_required_by_token');
     return 'L3-minus';

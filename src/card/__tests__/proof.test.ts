@@ -61,7 +61,16 @@ describe('verifyCardProof — happy path', () => {
   it('verifies a valid proof and derives L3-minus without a token cnf', async () => {
     const { signer, publicJwk } = await keypair();
     const res = await verifyCardProof(await mint(signer), REQ, deps(publicJwk));
-    expect(res).toEqual({ ok: true, reasons: [], level: 'L3-minus', did: DID });
+    // The proof carries a cnf but no token cnf was wired to fuse it against, so it degrades to a
+    // valid L3-minus proof AND surfaces a NON-FATAL warning (TM-1) so the downgrade is observable.
+    // ok / reasons / level are unaffected — the warning does not fail the proof closed.
+    expect(res).toEqual({
+      ok: true,
+      reasons: [],
+      level: 'L3-minus',
+      did: DID,
+      warnings: ['cnf_present_but_token_unfused'],
+    });
   });
 
   it('accepts the proof when resolveDidKeys confirms the signing key is published by the DID', async () => {
@@ -77,6 +86,18 @@ describe('verifyCardProof — cnf.jkt fusion (RFC 7638 / 9449)', () => {
     const res = await verifyCardProof(await mint(signer), REQ, deps(publicJwk, { tokenCnfJkt: signer.jkt }));
     expect(res.ok).toBe(true);
     expect(res.level).toBe('L3');
+    // When the cnf actually fuses to L3 there is nothing unfused to warn about.
+    expect(res.warnings).toBeUndefined();
+  });
+
+  it('emits NO unfused-cnf warning when the proof itself carried no cnf', async () => {
+    const { signer, publicJwk } = await keypair();
+    const noCnf: ProofSigner = { did: signer.did, kid: signer.kid, sign: signer.sign };
+    const res = await verifyCardProof(await mint(noCnf), REQ, deps(publicJwk));
+    // No cnf presented → the L3-minus degradation is expected, not a misconfiguration, so no warning.
+    expect(res.ok).toBe(true);
+    expect(res.level).toBe('L3-minus');
+    expect(res.warnings).toBeUndefined();
   });
 
   it('rejects a token cnf.jkt that does not fuse with the proof', async () => {

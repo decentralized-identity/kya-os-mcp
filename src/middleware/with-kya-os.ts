@@ -18,7 +18,7 @@
 import { type CryptoProvider } from "../providers/base.js";
 import { RuntimeFetchProvider, NoopFetchProvider } from "../providers/runtime-fetch.js";
 import { NoopAuditLogProvider } from "../providers/audit-log.js";
-import { GrantStore, MemoryGrantStore } from "../providers/grant-store.js";
+import { MemoryGrantStore } from "../providers/grant-store.js";
 import { SessionManager } from "../session/manager.js";
 import {
   ProofGenerator,

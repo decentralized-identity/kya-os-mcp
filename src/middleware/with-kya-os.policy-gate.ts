@@ -7,7 +7,6 @@
  * human approval before the handler runs. Extracted from `./with-kya-os.ts`.
  */
 
-import { logger } from "../logging/index.js";
 import { RiskClassifier } from "../policy/classifier.js";
 import { DefaultPolicyEngine } from "../policy/default-engine.js";
 import { verifyApprovalQuorum, type ApprovalGrant } from "../policy/approval.js";

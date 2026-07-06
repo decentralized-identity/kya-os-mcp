@@ -44,8 +44,7 @@ export function createDelegationGate(
   deps: MiddlewareDeps,
   wiring: DelegationGateWiring,
 ): Pick<KyaOsDelegationGate, "wrapWithDelegation"> {
-  const { identity, cryptoProvider, holderBindingMode, holderBindingVerifier } =
-    deps;
+  const { identity, holderBindingMode, holderBindingVerifier } = deps;
   const { attachOutcomeProof, resolveExistingGrant, bindGrantOnSuccess } =
     wiring;
   const {

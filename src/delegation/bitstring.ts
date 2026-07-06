@@ -40,7 +40,10 @@ export class BitstringManager {
   constructor(
     size: number,
     private compressor: CompressionFunction,
-    private decompressor: DecompressionFunction
+    // Accepted for signature symmetry with decode()/fromSetBits() and public
+    // back-compat, but the INSTANCE never decompresses: decode() inflates via
+    // the shared inflateStatusList() before construction, so no field is stored.
+    _decompressor: DecompressionFunction
   ) {
     this.size = size;
     const byteCount = Math.ceil(size / 8);

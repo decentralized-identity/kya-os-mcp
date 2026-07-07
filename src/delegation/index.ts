@@ -7,6 +7,7 @@
 
 export * from './vc-issuer.js';
 export * from './vc-verifier.js';
+export * from './vc-jwt-verify.js';
 export * from './bitstring.js';
 export * from './statuslist-manager.js';
 export * from './delegation-graph.js';

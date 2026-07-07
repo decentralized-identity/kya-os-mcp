@@ -28,7 +28,13 @@ import {
   validateBasicProperties,
   verifySignature,
   checkCredentialStatus,
+  combineVerificationResult,
 } from "./vc-verification-checks.js";
+import {
+  verifyVcJwtSignature,
+  prepareVcJwtCredential,
+} from "./vc-jwt-verify.js";
+import type { VcJwtSignatureResult } from "./vc-jwt-verify.js";
 
 // Re-export the shared type surface so existing imports of DIDResolver /
 // SignatureVerificationFunction / StatusListResolver / … are unchanged.
@@ -136,36 +142,102 @@ export class DelegationCredentialVerifier {
             durationMs: 0,
           });
 
+    return this.finalizeVerification(
+      vc,
+      signaturePromise,
+      statusPromise,
+      basicCheckMs,
+      startTime,
+    );
+  }
+
+  /**
+   * Verify a delegation credential presented as a compact VC-JWT — the JWT
+   * serialization (W3C VC Data Model 1.1 §6.3.1), the form browser wallets
+   * mint, where the JWS envelope signature over `header.payload` IS the proof.
+   *
+   * Parses the token, runs the same fast basic checks on the extracted
+   * credential (minus the embedded-`proof` requirement — the envelope is the
+   * proof), then verifies that envelope signature and the credential status in
+   * parallel. Same result shape, cache, and metrics as
+   * {@link verifyDelegationCredential}.
+   */
+  async verifyDelegationJwt(
+    jwt: string,
+    options: VerifyDelegationVCOptions = {},
+  ): Promise<DelegationVCVerificationResult> {
+    const startTime = Date.now();
+
+    const prepared = prepareVcJwtCredential(jwt, startTime);
+    if ("failure" in prepared) {
+      return prepared.failure;
+    }
+    const { vc, issuerDid, kid, basicCheckMs } = prepared;
+
+    if (!options.skipCache) {
+      const cached = this.getFromCache(vc.id || "");
+      if (cached) {
+        return { ...cached, cached: true };
+      }
+    }
+
+    const signaturePromise = !options.skipSignature
+      ? verifyVcJwtSignature(
+          jwt,
+          issuerDid,
+          kid,
+          options.didResolver || this.didResolver,
+        )
+      : Promise.resolve<VcJwtSignatureResult>({ valid: true, durationMs: 0 });
+
+    const statusPromise =
+      !options.skipStatus && vc.credentialStatus
+        ? checkCredentialStatus(
+            vc.credentialStatus,
+            options.statusListResolver || this.statusListResolver,
+          )
+        : Promise.resolve<StatusCheckResult>({
+            valid: true,
+            durationMs: 0,
+          });
+
+    return this.finalizeVerification(
+      vc,
+      signaturePromise,
+      statusPromise,
+      basicCheckMs,
+      startTime,
+    );
+  }
+
+  /**
+   * Await the parallel signature + status checks, fold them into the final
+   * result via {@link combineVerificationResult}, and cache a valid one. Shared
+   * by the Data Integrity and VC-JWT paths; both reach here only after
+   * `validateBasicProperties` has passed.
+   */
+  private async finalizeVerification(
+    vc: DelegationCredential,
+    signaturePromise: Promise<{
+      valid: boolean;
+      reason?: string;
+      durationMs?: number;
+    }>,
+    statusPromise: Promise<StatusCheckResult>,
+    basicCheckMs: number,
+    startTime: number,
+  ): Promise<DelegationVCVerificationResult> {
     const [signatureResult, statusResult] = await Promise.all([
       signaturePromise,
       statusPromise,
     ]);
 
-    const signatureCheckMs = signatureResult.durationMs || 0;
-    const statusCheckMs = statusResult.durationMs || 0;
-
-    const allValid =
-      basicValidation.valid && signatureResult.valid && statusResult.valid;
-
-    const result: DelegationVCVerificationResult = {
-      valid: allValid,
-      reason: !allValid
-        ? signatureResult.reason || statusResult.reason || "Unknown failure"
-        : undefined,
-      statusOutcome: statusResult.outcome,
-      stage: "complete",
-      metrics: {
-        basicCheckMs,
-        signatureCheckMs,
-        statusCheckMs,
-        totalMs: Date.now() - startTime,
-      },
-      checks: {
-        basicValid: basicValidation.valid,
-        signatureValid: signatureResult.valid,
-        statusValid: statusResult.valid,
-      },
-    };
+    const result = combineVerificationResult(
+      signatureResult,
+      statusResult,
+      basicCheckMs,
+      startTime,
+    );
 
     if (result.valid && vc.id) {
       this.setInCache(vc.id, result);

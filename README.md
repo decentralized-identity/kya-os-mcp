@@ -172,7 +172,7 @@ Also available: [outbound-delegation](./examples/outbound-delegation/) (gateway 
 | Capability | How it works |
 |-----------|-------------|
 | **Cryptographic identity** | Ed25519 (EdDSA) and P-256 (ES256, FIPS-eligible) key pairs, `did:key` / `did:web` resolution, optional `did:cheqd` resolver support |
-| **Entity Card** | Typed, DID-anchored identity: fluent `card()` builder, `withKyaOsCard` discovery projections, `requireProof` per-request holder-of-key guard |
+| **Entity Card** | Typed, DID-anchored identity: fluent `card()` builder, `requireProof` per-request holder-of-key guard, CIMD OAuth on-ramp (`client_id` ⇄ `did:web`, MCP's default client auth), and `withKyaOsCard` projections that embed into MCP `server.json` / Server Cards (draft SEP-2127), A2A AgentCards, and NANDA AgentFacts |
 | **Signed proofs** | Detached JWS over JCS-canonicalized request/response hashes |
 | **Delegation credentials** | W3C Verifiable Credentials with scope constraints, rooted at a Responsible Party |
 | **Revocation** | StatusList2021 bitstring with cascading revocation |

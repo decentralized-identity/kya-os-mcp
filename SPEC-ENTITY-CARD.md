@@ -554,6 +554,13 @@ is a downgrade attempt and MUST fail closed (`cnf_required_by_token`, §11.2, §
 threads L1 token possession (§7) to L3 per-request proof-of-possession: **a stolen bearer token is
 inert without live possession of the DID key.**
 
+Where a proof DOES carry a `cnf` but the verifier is given no token `cnf.jkt` to fuse it against, the
+degradation to L3-minus is legitimate but easy to cause by misconfiguration (a verifier that simply
+never extracted the token's `cnf`). A verifier SHOULD therefore emit a **non-fatal** diagnostic —
+`cnf_present_but_token_unfused` — in that case. It does not affect validity (the proof is a sound
+L3-minus proof) and is distinct from the fail-closed `reasons`; its only purpose is to let an
+integrator who intended L3 observe the downgrade rather than have it pass silently.
+
 ### 8.7 Bindings summary
 
 | Binding | Defends against |
@@ -563,6 +570,45 @@ inert without live possession of the DID key.**
 | `nonce` + `created`/`expires` → NOW | replay (§12.2) |
 | `kid` → a DID verification method (and `kid.split('#')[0] === did`) | forged principal (§11.2, §12.1) |
 | `cnf.jkt` fusion | session-carry / stolen bearer token (§12.4) |
+
+### 8.8 Relationship to RFC 9449 (DPoP)
+
+`org.kya-os/proof@1` is a per-request proof-of-possession mechanism and it deliberately overlaps with
+DPoP [RFC9449]: both bind a fresh, short-lived proof to every request, both carry a nonce and a
+validity window, and both express the sender-constraint as an RFC 7638 [RFC7638] `cnf.jkt` thumbprint.
+This profile does **not** aim to replace DPoP. Where an authorization server issues DPoP-sender-
+constrained tokens, the two **compose** (see *Composition* below). This section records the specific
+points where the binding differs, and why, so that the mechanisms are not conflated.
+
+- **Request binding.** DPoP binds the HTTP method and target URI (`htm`/`htu`). An MCP tool call is a
+  JSON-RPC message, and under the Streamable HTTP transport such calls are typically `POST`ed to a
+  single `/mcp` endpoint — so `htm`/`htu` are identical across every call and distinguish no
+  operation; under the stdio transport there is no HTTP envelope to bind at all. The profile therefore
+  binds the JSON-RPC operation directly — `requestHash = SHA-256( RFC 8785 JCS({ method, params }) )`
+  (§8.3) — which is the invariant that actually identifies the request across both transports.
+- **Carrier.** DPoP travels as an HTTP header. This proof travels in the request's `_meta` (§8.2),
+  in-band with the JSON-RPC message, so it is transport-agnostic — the same proof verifies over stdio
+  and over Streamable HTTP. For deployments that terminate at an HTTP edge, §8.5 defines an OPTIONAL
+  RFC 9421 [RFC9421] HTTP Message Signature sibling over the same covered claims, so a
+  message-signature-aware intermediary can additionally check the proof at that layer.
+- **Key-to-principal anchoring.** A DPoP proof carries its public key inline (the JWT header `jwk`),
+  and the sender-constraint is that the token was issued bound to that key. This proof additionally
+  requires the signing key to be a verification method published by the caller's DID document
+  (`kid.split('#')[0] === did` plus RFC 7638 thumbprint membership, §8.4, §11.2), so possession is
+  bound not only to a token but to a discoverable, accountable **principal** (the Entity's Card DID) —
+  the identity axis DPoP does not itself address.
+- **Audience.** The proof binds a recipient `audience` DID (§8.4) — the intended recipient Entity —
+  closing relay / confused-deputy at the level of a principal's identity, which DPoP's `htu` (a URI)
+  does not express.
+- **Composition (§7.5, §8.6).** Where the authorization server does issue a DPoP-sender-constrained
+  access token, its `cnf.jkt` is fused with the proof's `cnf.jkt` and the resolved DID key to reach
+  **L3**: one key threads token possession and per-request possession. DPoP then operates at the token
+  layer and this proof at the per-request JSON-RPC layer — complementary, not competing. Absent an AS
+  `cnf`, the proof degrades to L3-minus (§8.6); it never requires DPoP and never conflicts with it.
+
+For a conventional HTTP resource server, DPoP remains the appropriate mechanism. This profile targets
+the MCP/JSON-RPC transport and the DID-anchored, typed-identity model, and reuses DPoP's
+sender-constraint semantics wherever they are present.
 
 ---
 

@@ -22,6 +22,7 @@ import type {
   StatusListResolver,
   StatusCheckResult,
   SignatureVerificationFunction,
+  DelegationVCVerificationResult,
 } from "./vc-verifier.types.js";
 
 /**
@@ -31,8 +32,18 @@ import type {
  */
 const DELEGATION_SUBJECT_KEYS: readonly string[] = ["id", "delegation"];
 
-/** Stage 1: schema, expiry, status field, and subject-shape checks (no network). */
-export function validateBasicProperties(vc: DelegationCredential): {
+/**
+ * Stage 1: schema, expiry, status field, and subject-shape checks (no network).
+ *
+ * `requireEmbeddedProof` (default `true`) demands a Data Integrity `proof`
+ * block. The VC-JWT path passes `false`: a compact JWS carries no embedded
+ * `proof` — its envelope signature is the proof, verified separately by
+ * {@link verifyVcJwtSignature}.
+ */
+export function validateBasicProperties(
+  vc: DelegationCredential,
+  options: { requireEmbeddedProof?: boolean } = {},
+): {
   valid: boolean;
   reason?: string;
 } {
@@ -64,7 +75,7 @@ export function validateBasicProperties(vc: DelegationCredential): {
     return { valid: false, reason: "Missing issuer or subject DID" };
   }
 
-  if (!vc.proof) {
+  if ((options.requireEmbeddedProof ?? true) && !vc.proof) {
     return { valid: false, reason: "Missing proof" };
   }
 
@@ -109,6 +120,41 @@ function findVerificationMethod(
   return didDoc.verificationMethod?.find(
     (vm) => vm.id === verificationMethodId,
   );
+}
+
+/**
+ * Fold the parallel signature + status results — with the already-passed basic
+ * stage — into the final verification result. Pure (no caching; the verifier
+ * caches a valid result itself). Shared by the Data Integrity and VC-JWT paths,
+ * which both reach here only after `validateBasicProperties` passed, so
+ * `basicValid` is true.
+ */
+export function combineVerificationResult(
+  signatureResult: { valid: boolean; reason?: string; durationMs?: number },
+  statusResult: StatusCheckResult,
+  basicCheckMs: number,
+  startTime: number,
+): DelegationVCVerificationResult {
+  const allValid = signatureResult.valid && statusResult.valid;
+  return {
+    valid: allValid,
+    reason: !allValid
+      ? signatureResult.reason || statusResult.reason || "Unknown failure"
+      : undefined,
+    statusOutcome: statusResult.outcome,
+    stage: "complete",
+    metrics: {
+      basicCheckMs,
+      signatureCheckMs: signatureResult.durationMs || 0,
+      statusCheckMs: statusResult.durationMs || 0,
+      totalMs: Date.now() - startTime,
+    },
+    checks: {
+      basicValid: true,
+      signatureValid: signatureResult.valid,
+      statusValid: statusResult.valid,
+    },
+  };
 }
 
 /** Stage 2a: resolve the issuer key and verify the embedded proof signature. */

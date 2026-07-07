@@ -596,6 +596,83 @@ describe('buildDidWebDocument', () => {
       expect(() => buildDidWebDocument(bad)).toThrow(/expected 32-byte/);
     });
   });
+
+  describe('multi-key (multi-device)', () => {
+    const DID = 'did:web:example.com:u:alice';
+
+    it('emits one verification method per identity, all under the one DID', () => {
+      const laptop = buildIdentity(DID, 'key-laptop').identity;
+      const phone = buildIdentity(DID, 'key-phone').identity;
+
+      const doc = buildDidWebDocument([laptop, phone]);
+
+      expect(doc.id).toBe(DID);
+      expect(doc.verificationMethod).toHaveLength(2);
+      expect(doc.verificationMethod?.map((vm) => vm.id)).toEqual([
+        laptop.kid,
+        phone.kid,
+      ]);
+      expect(
+        doc.verificationMethod?.every((vm) => vm.controller === DID)
+      ).toBe(true);
+    });
+
+    it('lists every device key in both authentication and assertionMethod', () => {
+      const a = buildIdentity(DID, 'key-a').identity;
+      const b = buildIdentity(DID, 'key-b').identity;
+      const c = buildIdentity(DID, 'key-c').identity;
+
+      const doc = buildDidWebDocument([a, b, c]);
+
+      expect(doc.authentication).toEqual([a.kid, b.kid, c.kid]);
+      expect(doc.assertionMethod).toEqual([a.kid, b.kid, c.kid]);
+    });
+
+    it('gives each device distinct key material (different publicKeyJwk.x)', () => {
+      const a = buildIdentity(DID, 'key-a').identity;
+      const bBytes = new Uint8Array(32).map((_, i) => (i * 13 + 1) & 0xff);
+      const b: Identity = {
+        did: DID,
+        kid: `${DID}#key-b`,
+        publicKey: bytesToBase64(bBytes),
+        privateKey: undefined,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      };
+
+      const doc = buildDidWebDocument([a, b]);
+      const xs = doc.verificationMethod?.map(
+        (vm) => (vm.publicKeyJwk as { x: string }).x
+      );
+      expect(xs?.[0]).not.toBe(xs?.[1]);
+    });
+
+    it('is backward-compatible: a lone identity equals a one-element array', () => {
+      const { identity } = buildIdentity('did:web:example.com');
+      expect(buildDidWebDocument([identity])).toEqual(
+        buildDidWebDocument(identity)
+      );
+    });
+
+    it('throws on an empty identity set', () => {
+      expect(() => buildDidWebDocument([])).toThrow(/at least one identity/);
+    });
+
+    it('throws when identities disagree on the DID', () => {
+      const a = buildIdentity('did:web:example.com:u:alice', 'key-a').identity;
+      const b = buildIdentity('did:web:example.com:u:bob', 'key-b').identity;
+
+      expect(() => buildDidWebDocument([a, b])).toThrow(/must share one DID/);
+    });
+
+    it('throws on a duplicate kid across devices', () => {
+      const a = buildIdentity(DID, 'dupe').identity;
+      const b = buildIdentity(DID, 'dupe').identity;
+
+      expect(() => buildDidWebDocument([a, b])).toThrow(
+        /unique verification-method id/
+      );
+    });
+  });
 });
 
 describe('createDidWebResolver', () => {

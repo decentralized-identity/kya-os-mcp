@@ -307,28 +307,33 @@ export interface BuildDidWebDocumentOptions {
  * Build the DID Document a did:web controller serves at its
  * resolution URL (see {@link didWebToUrl}).
  *
- * Emits a single Ed25519 verification method derived from
- * `identity.publicKey` (base64-encoded raw bytes — the
- * {@link Identity} convention). Both `publicKeyJwk` and
- * `publicKeyMultibase` are included for cross-format interop with
- * verifiers that prefer one over the other.
+ * Accepts one identity, or an array of them — one per key the subject
+ * controls (e.g. a key per device). Each becomes an Ed25519 verification
+ * method derived from its `publicKey` (base64-encoded raw bytes — the
+ * {@link Identity} convention), emitting both `publicKeyJwk` and
+ * `publicKeyMultibase` for cross-format interop. All keys share the one
+ * controller DID and each carries its own `kid` fragment, so a verifier can
+ * select the signing key by `kid` — the basis for multi-device identity: a
+ * new device adds a method, a lost one is dropped, and every other key is
+ * untouched.
  *
- * The verification method is published in both `authentication` and
- * `assertionMethod`, matching the {@link createDidKeyResolver} output
- * and the most common verifier expectations.
+ * Every method is published in both `authentication` and `assertionMethod`,
+ * matching the {@link createDidKeyResolver} output and the most common
+ * verifier expectations.
  *
- * The function is purely synchronous and performs no I/O. Hosts
- * publish the returned object verbatim (e.g. as the body of a
- * `/.well-known/did.json` route).
+ * The function is purely synchronous and performs no I/O. Hosts publish the
+ * returned object verbatim (e.g. as the body of a `/.well-known/did.json`
+ * route).
  *
- * @param identity - Subject identity. `did` must be a `did:web:` DID;
- *   `kid` must reference the same DID (`<did>#<fragment>`).
+ * @param identity - Subject identity, or an array of identities that all
+ *   share one `did:web:` DID. Each `kid` must reference that DID
+ *   (`<did>#<fragment>`) and be unique across the set.
  * @param options - Optional context extensions.
  * @returns DID Document satisfying the W3C DID Core data model.
- * @throws Error when `identity.did` is not a `did:web:` DID, when
- *   `identity.kid` does not reference `identity.did`, or when
- *   `identity.publicKey` is not a valid base64 string of the
- *   expected length.
+ * @throws Error when the set is empty, when the DID is not a `did:web:` DID,
+ *   when identities disagree on the DID, when a `kid` does not reference the
+ *   DID or collides with another, or when a `publicKey` is not a valid base64
+ *   string of the expected length.
  *
  * @example
  * ```typescript
@@ -342,32 +347,35 @@ export interface BuildDidWebDocumentOptions {
  * ```
  */
 export function buildDidWebDocument(
-  identity: Identity,
+  identity: Identity | Identity[],
   options?: BuildDidWebDocumentOptions
 ): DIDDocument {
-  if (!isDidWeb(identity.did)) {
+  const identities = Array.isArray(identity) ? identity : [identity];
+
+  const first = identities[0];
+  if (!first) {
+    throw new Error('buildDidWebDocument: at least one identity is required');
+  }
+
+  const did = first.did;
+  if (!isDidWeb(did)) {
     throw new Error(
-      `buildDidWebDocument: identity.did must be a did:web DID (got "${identity.did}")`
+      `buildDidWebDocument: identity.did must be a did:web DID (got "${did}")`
     );
   }
 
-  if (!identity.kid.startsWith(`${identity.did}#`)) {
+  const verificationMethod = identities.map((id) =>
+    toVerificationMethod(id, did)
+  );
+
+  // Every device key needs a distinct fragment; duplicate kids would produce
+  // two verification methods with the same id — an ambiguous, malformed doc.
+  const kids = verificationMethod.map((vm) => vm.id);
+  if (new Set(kids).size !== kids.length) {
     throw new Error(
-      `buildDidWebDocument: identity.kid "${identity.kid}" does not reference identity.did "${identity.did}"`
+      'buildDidWebDocument: every key needs a unique verification-method id (kid); got a duplicate'
     );
   }
-
-  const publicKeyBytes = decodePublicKey(identity.publicKey);
-  const publicKeyJwk = publicKeyToJwk(publicKeyBytes);
-  const publicKeyMultibase = encodeEd25519Multibase(publicKeyBytes);
-
-  const verificationMethod: VerificationMethod = {
-    id: identity.kid,
-    type: 'Ed25519VerificationKey2020',
-    controller: identity.did,
-    publicKeyJwk,
-    publicKeyMultibase,
-  };
 
   const contexts = options?.additionalContexts?.length
     ? [...DEFAULT_DID_WEB_CONTEXTS, ...options.additionalContexts]
@@ -375,11 +383,44 @@ export function buildDidWebDocument(
 
   return {
     '@context': contexts,
-    id: identity.did,
+    id: did,
     ...(options?.alsoKnownAs?.length ? { alsoKnownAs: [...options.alsoKnownAs] } : {}),
-    verificationMethod: [verificationMethod],
-    authentication: [identity.kid],
-    assertionMethod: [identity.kid],
+    verificationMethod,
+    authentication: kids,
+    assertionMethod: kids,
+  };
+}
+
+/**
+ * Build one Ed25519 verification method from a single device key, emitting
+ * both `publicKeyJwk` and `publicKeyMultibase` for cross-format interop.
+ *
+ * Enforces the two invariants a multi-key document depends on: the key must
+ * belong to `expectedDid` (a document must never mix keys from different DIDs),
+ * and its `kid` must be a fragment of that one controller DID.
+ */
+function toVerificationMethod(
+  identity: Identity,
+  expectedDid: string
+): VerificationMethod {
+  if (identity.did !== expectedDid) {
+    throw new Error(
+      `buildDidWebDocument: all identities must share one DID; got "${identity.did}" alongside "${expectedDid}"`
+    );
+  }
+  if (!identity.kid.startsWith(`${expectedDid}#`)) {
+    throw new Error(
+      `buildDidWebDocument: identity.kid "${identity.kid}" does not reference identity.did "${expectedDid}"`
+    );
+  }
+
+  const publicKeyBytes = decodePublicKey(identity.publicKey);
+  return {
+    id: identity.kid,
+    type: 'Ed25519VerificationKey2020',
+    controller: expectedDid,
+    publicKeyJwk: publicKeyToJwk(publicKeyBytes),
+    publicKeyMultibase: encodeEd25519Multibase(publicKeyBytes),
   };
 }
 

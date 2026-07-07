@@ -7,9 +7,15 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-07-07
+
 Entity Card (`@kya-os/mcp/card`) — a typed, DID-anchored, per-request
 holder-of-key identity layer that rides existing rails (MCP server-card `_meta`,
 A2A extension, NANDA AgentFacts) instead of a new well-known doc. Additive.
+
+First npm release since 1.7.0 (the prepared 1.8.0 was never published). See the
+BREAKING status-list note below — persisted 1.x status lists MUST be
+regenerated on upgrade.
 
 ### Added
 
@@ -32,6 +38,19 @@ A2A extension, NANDA AgentFacts) instead of a new well-known doc. Additive.
   ships alongside `ed25519SignerFromJwk`; the RFC 9421 sibling carries the
   matching `ecdsa-p256-sha256` label. (CIMD DID-keyed JWKS extraction stays
   Ed25519-only for now — a P-256 verifier supplies its own `resolveDidKeys`.)
+- **VC-JWT verification (`./delegation`)** — `DelegationCredentialVerifier.verifyDelegationJwt()`
+  verifies the JWT serialization of a Verifiable Credential (compact JWS, where
+  the envelope signature over `header.payload` IS the proof — no embedded
+  `proof` block), so credentials minted by browser / passkey wallets verify
+  without a hand-rolled path. `algorithms` is pinned to `EdDSA`, and the
+  credential `issuer` must equal the signed `iss`. Additive; the Data Integrity
+  path is unchanged.
+- **Multi-key did:web documents** — `buildDidWebDocument` now accepts
+  `Identity | Identity[]`, emitting one verification method per key under a
+  single controller DID. This is the basis for multi-device identity: a device
+  is added or removed by adding or removing a verification method, and a
+  verifier selects the signing key by `kid`. Backward-compatible — a lone
+  identity yields the same single-method document as before.
 
 ### Changed — BREAKING for persisted status lists
 

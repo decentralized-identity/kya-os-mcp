@@ -7,6 +7,20 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Fixed
+
+- **Cloudflare Worker / workerd bundle compatibility.** `safe-fetch-transports`
+  statically imported `node:dns/promises` and `node:https` at the module top
+  level, so anything that builds a `SafeFetch` — including the Entity Card /
+  VC-JWT verification path (card resolution + status-list revocation) — required
+  those node built-ins at bundle time and broke workerd builds. They now load
+  **lazily** (only when a node code path actually runs), so the module bundles
+  cleanly for workerd / browser. `selectDefaultTransport` transparently falls
+  back to `fetchTransport` where `node:https` is absent. The SSRF policy
+  (resolve-and-pin, private-range denial, redirect + size + timeout guards) is
+  unchanged; a Worker injects its own DNS seam (or uses trusted origins +
+  `fetchTransport`) to avoid `node:dns` at runtime.
+
 ## [1.10.0] - 2026-07-08
 
 ### Added

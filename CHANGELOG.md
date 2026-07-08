@@ -7,6 +7,20 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- **`ProofGenerator` accepts a non-extractable signing key.**
+  `ProofAgentIdentity.privateKey` and `KyaOsIdentityConfig.privateKey` now
+  accept a `CryptoKey` handle in addition to a base64 private-key string. A
+  non-extractable WebCrypto key (e.g. a passkey-PRF-derived or HSM/KMS-fronted
+  key) can now produce `org.kya-os/proof` proofs without the secret ever being
+  materialized by the caller — realizing the signer-hook model the spec already
+  describes (§4.5) — end-to-end through `withKyaOs`. Both key forms yield an
+  equally valid, verifier-accepted proof. Backward-compatible: existing string
+  keys are unaffected (the string path is byte-for-byte unchanged); the only
+  source-level impact is that external code which reads `.privateKey` expecting
+  a `string` now sees a `string | CryptoKey` union.
+
 ## [1.9.0] - 2026-07-07
 
 Entity Card (`@kya-os/mcp/card`) — a typed, DID-anchored, per-request

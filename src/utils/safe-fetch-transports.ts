@@ -10,14 +10,54 @@
  * `./ip-classifier`; the seam vocabulary lives in `./safe-fetch-types`. No crypto here.
  */
 
-import { lookup as nodeDnsLookup } from 'node:dns/promises';
-import { request as httpsRequest } from 'node:https';
 import type { IncomingMessage } from 'node:http';
 import type { LookupFunction } from 'node:net';
 import type { DnsLookup, RawResponse, SafeFetchTransport } from './safe-fetch-types.js';
 
+/*
+ * Node built-ins are loaded LAZILY (never at the module top level), so this
+ * module — and everything that builds a `SafeFetch`, incl. the Entity Card /
+ * VC-JWT verification path — bundles cleanly for workerd / browser, where
+ * `node:dns` and `node:https` don't exist. A static `import 'node:dns/promises'`
+ * here broke Cloudflare Worker builds at bundle time (@kya-os/mcp 1.10.0). The
+ * built-ins now load only when a node code path actually runs; a Worker that
+ * injects its own `lookup` / `transport` (or uses `fetchTransport` + trusted
+ * origins) never triggers them. Type-only imports above are erased at compile
+ * time, so they never reach the bundle.
+ */
+
+type NodeDnsLookup = (typeof import('node:dns/promises'))['lookup'];
+let dnsLookupPromise: Promise<NodeDnsLookup> | undefined;
+/**
+ * Lazily load (and cache) `node:dns/promises`' `lookup`. Where `node:dns` is absent (workerd),
+ * fail with a guiding error rather than a cryptic module-resolution reject: a Worker should inject
+ * its own `lookup` seam (e.g. DNS-over-HTTPS) or use trusted origins + `fetchTransport`.
+ */
+function loadNodeDnsLookup(): Promise<NodeDnsLookup> {
+  return (dnsLookupPromise ??= import('node:dns/promises').then(
+    (m) => m.lookup,
+    (cause) => {
+      throw new Error(
+        'safe-fetch: node:dns is unavailable in this runtime — inject a `lookup` seam (e.g. DNS-over-HTTPS) or use trusted origins with fetchTransport',
+        { cause },
+      );
+    },
+  ));
+}
+
+type NodeHttps = typeof import('node:https');
+let nodeHttpsPromise: Promise<NodeHttps | null> | undefined;
+/** Lazily load (and cache) `node:https`; resolves to `null` where it's absent (workerd). */
+function loadNodeHttps(): Promise<NodeHttps | null> {
+  return (nodeHttpsPromise ??= import('node:https').then(
+    (m) => m,
+    () => null,
+  ));
+}
+
 /** Default DNS seam — resolve every address (`all: true`) for full SSRF screening. */
 export const defaultLookup: DnsLookup = async (hostname) => {
+  const nodeDnsLookup = await loadNodeDnsLookup();
   const resolved = await nodeDnsLookup(hostname, { all: true, verbatim: true });
   return resolved.map((entry) => ({ address: entry.address, family: entry.family }));
 };
@@ -68,24 +108,37 @@ async function readCapped(response: Response, maxBytes: number): Promise<RawResp
   };
 }
 
+/**
+ * Build the custom `node:https` lookup that pins the connection to the pre-validated IP for BOTH
+ * call-shapes (closing the DNS-rebinding TOCTOU window). Node ≥20 defaults to
+ * `autoSelectFamily=true`, which invokes a custom lookup with `{ all: true }` and expects an ARRAY
+ * of `{ address, family }`; a scalar 3-arg callback yields "Invalid IP address: undefined" and
+ * breaks every real request. Honour the array form when `all` is asked, the scalar form otherwise.
+ * Exported for direct unit testing (the request wiring around it is integration-only — no TLS in
+ * the unit suite). Not re-exported from the package barrels; the public surface is unchanged.
+ */
+export function buildPinnedLookup(pinnedAddress: string, family: 4 | 6): LookupFunction {
+  return (_hostname, options, cb) => {
+    if (typeof options === 'object' && options?.all) {
+      (cb as unknown as (e: null, a: Array<{ address: string; family: number }>) => void)(null, [
+        { address: pinnedAddress, family },
+      ]);
+    } else {
+      cb(null, pinnedAddress, family);
+    }
+  };
+}
+
 /** Default transport — node:https pinned to the validated IP, TLS SNI preserved, body-capped. */
-export const nodeHttpsTransport: SafeFetchTransport = (url, init) =>
-  new Promise<RawResponse>((resolve, reject) => {
-    // Return the pinned IP for BOTH lookup call-shapes. Node ≥20 defaults to
-    // `autoSelectFamily=true`, which invokes a custom lookup with `{ all: true }` and expects an
-    // ARRAY of `{ address, family }`; a scalar 3-arg callback yields "Invalid IP address:
-    // undefined" and breaks every real request. Honour the array form when `all` is asked,
-    // the scalar form otherwise.
+export const nodeHttpsTransport: SafeFetchTransport = async (url, init) => {
+  const https = await loadNodeHttps();
+  if (!https) {
+    throw new Error('safe-fetch: node:https is unavailable in this runtime; pass transport: fetchTransport');
+  }
+  const httpsRequest = https.request;
+  return new Promise<RawResponse>((resolve, reject) => {
     const family = init.family === 6 ? 6 : 4;
-    const pinnedLookup: LookupFunction = (_hostname, options, cb) => {
-      if (typeof options === 'object' && options?.all) {
-        (cb as unknown as (e: null, a: Array<{ address: string; family: number }>) => void)(null, [
-          { address: init.pinnedAddress, family },
-        ]);
-      } else {
-        cb(null, init.pinnedAddress, family);
-      }
-    };
+    const pinnedLookup = buildPinnedLookup(init.pinnedAddress, family);
     const req = httpsRequest(
       url,
       { method: 'GET', servername: init.hostname, signal: init.signal, lookup: pinnedLookup },
@@ -108,6 +161,7 @@ export const nodeHttpsTransport: SafeFetchTransport = (url, init) =>
     req.on('error', reject);
     req.end();
   });
+};
 
 /** Project a node:http IncomingMessage + buffered chunks into the RawResponse shape. */
 function toRawResponse(res: IncomingMessage, chunks: Buffer[]): RawResponse {
@@ -125,9 +179,14 @@ function toRawResponse(res: IncomingMessage, chunks: Buffer[]): RawResponse {
 
 /**
  * Pick the default transport: the `node:https` pinned transport when it is available, else the
- * fetch-based transport. This only covers ABSENCE of `node:https`; a runtime where the pinned
- * path is present-but-broken (e.g. Vercel Node serverless) must pass `transport: fetchTransport`.
+ * fetch-based transport. The `node:https` check is deferred to request time (it lazy-loads), so a
+ * runtime without `node:https` (workerd) transparently gets `fetchTransport`. This only covers
+ * ABSENCE of `node:https`; a runtime where the pinned path is present-but-broken (e.g. the Vercel
+ * Node serverless runtime) must still pass `transport: fetchTransport` explicitly.
  */
 export function selectDefaultTransport(): SafeFetchTransport {
-  return typeof httpsRequest === 'function' ? nodeHttpsTransport : fetchTransport;
+  return async (url, init) => {
+    const https = await loadNodeHttps();
+    return https ? nodeHttpsTransport(url, init) : fetchTransport(url, init);
+  };
 }

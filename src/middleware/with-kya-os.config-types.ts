@@ -21,7 +21,14 @@ import type { DelegationCredential } from "../types/protocol.js";
 export interface KyaOsIdentityConfig {
   did: string;
   kid: string;
-  privateKey: string;
+  /**
+   * The Ed25519 signing key: a base64 raw private key, or a `CryptoKey` handle
+   * — including a non-extractable one (passkey-PRF- or HSM/KMS-fronted). The key
+   * is used only to sign per-request proofs (via {@link ProofGenerator}), so a
+   * handle lets a deployment keep secret key material inside its trust boundary
+   * end-to-end, per SPEC §4.5. See {@link ProofAgentIdentity.privateKey}.
+   */
+  privateKey: string | CryptoKey;
   publicKey: string;
   agentName?: string;
 }

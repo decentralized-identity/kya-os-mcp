@@ -46,7 +46,16 @@ export const LEGACY_PROOF_META_KEY = 'proof';
 export interface ProofAgentIdentity {
   did: string;
   kid: string;
-  privateKey: string;
+  /**
+   * The Ed25519 signing key. Either the base64-encoded raw private key (the
+   * historical form), or a `CryptoKey` handle — including a **non-extractable**
+   * WebCrypto key (e.g. a passkey-PRF-derived or HSM/KMS-fronted key). Passing a
+   * handle keeps secret key material inside the caller's trust boundary and
+   * hands the library only a signer, per SPEC §4.5 ("implementations that …
+   * hold agent secret keys … are non-conformant") and the KMS/HSM signer-hook
+   * guidance. Either form produces an equally valid, verifier-accepted proof.
+   */
+  privateKey: string | CryptoKey;
   publicKey: string;
 }
 
@@ -177,10 +186,26 @@ export class ProofGenerator {
     );
   }
 
+  /**
+   * Resolve the identity's signing key into the form jose signs with. A base64
+   * string is imported as a PKCS#8 key (the historical path); a `CryptoKey`
+   * handle — including a non-extractable one (passkey-PRF- or HSM/KMS-fronted)
+   * — is used as-is. Either way the caller never has to materialize secret key
+   * bytes for the library, per SPEC §4.5.
+   */
+  private async resolveSigningKey(): Promise<CryptoKey> {
+    const key = this.identity.privateKey;
+    return typeof key === 'string'
+      ? importPKCS8(this.formatPrivateKeyAsPEM(key), 'EdDSA')
+      : key;
+  }
+
   private async generateJWS(meta: ProofMeta): Promise<string> {
     try {
-      const privateKeyPem = this.formatPrivateKeyAsPEM(this.identity.privateKey);
-      const privateKey = await importPKCS8(privateKeyPem, 'EdDSA');
+      // jose's CompactSign owns the JWS signing-input construction, so
+      // canonicalization stays inside the library and the signing input is the
+      // same regardless of how the signing key was supplied.
+      const privateKey = await this.resolveSigningKey();
 
       const payload = {
         aud: meta.audience,

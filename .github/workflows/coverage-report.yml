@@ -162,7 +162,7 @@ jobs:
             fs.writeFileSync('/tmp/coverage-comment-body.md', body);
 
       - name: Upload coverage comment
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-comment
           path: /tmp/coverage-comment-body.md

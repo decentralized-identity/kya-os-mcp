@@ -1,0 +1,73 @@
+name: Live deployment probe
+
+# Read-only daily check of the public reference deployment at
+# https://demo-mcp.kya-os.ai. The repo does not deploy or operate the server;
+# it independently verifies it, the same way any third party can. No secrets.
+
+on:
+  schedule:
+    - cron: '17 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    env:
+      BASE: https://demo-mcp.kya-os.ai
+      EXPECTED_DID: did:web:demo-mcp.kya-os.ai
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20.x'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build
+        run: pnpm build
+
+      - name: Check the published discovery surfaces
+        run: |
+          curl -sf "$BASE/health" > /dev/null
+          test "$(curl -sf "$BASE/.well-known/did.json" | jq -r .id)" = "$EXPECTED_DID"
+          test "$(curl -sf "$BASE/card.json" | jq -r .id)" = "$EXPECTED_DID"
+          test "$(curl -sf "$BASE/card.json" | jq -r .entityType)" = "mcp"
+          curl -sf "$BASE/provenance" | jq -e '.package == "@kya-os/mcp"' > /dev/null
+          curl -sf "$BASE/status-list" | jq -e '.encodedList | length > 0' > /dev/null
+
+      - name: Round-trip a live proof over MCP and verify it
+        run: |
+          SID=$(curl -s -D - -o /dev/null "$BASE/mcp" \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"live-probe","version":"0"}}}' \
+            | grep -i '^mcp-session-id:' | tr -d '\r' | awk '{print $2}')
+          test -n "$SID"
+
+          curl -s "$BASE/mcp" \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            -H "mcp-session-id: $SID" \
+            -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' > /dev/null
+
+          curl -s "$BASE/mcp" \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            -H "mcp-session-id: $SID" \
+            -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"vault_read","arguments":{"file":"q3-plan.md"}}}' \
+            | sed -n 's/^data: //p' \
+            | jq '.result._meta["org.kya-os/proof"]' > proof.json
+
+          jq -e .jws proof.json > /dev/null
+          # Resolves the signer DID over the public internet and checks the JWS.
+          npx tsx examples/verify-proof/verify.ts proof.json

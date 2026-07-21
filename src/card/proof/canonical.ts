@@ -136,11 +136,27 @@ export async function es256VerifyRaw(
  * underlying digests across formats.
  */
 export async function computeRequestHash(req: ToolRequest): Promise<string> {
-  const canonicalRequest = { method: req.method, ...(req.params ? { params: req.params } : {}) };
+  const params = stripParamsMeta(req.params);
+  const canonicalRequest = { method: req.method, ...(params ? { params } : {}) };
   const digest = await sha256(
     encoder.encode(canonicalize(canonicalRequest as Parameters<typeof canonicalize>[0])),
   );
   return `sha-256=:${bytesToBase64(digest)}:`;
+}
+
+/**
+ * The §8.3 pre-signing transformation: remove the `_meta` member of `params` before
+ * canonicalizing. `_meta` is the transport-metadata carrier - it carries the proof itself, so it
+ * can never be part of the signed material; hashing it verbatim on the verify side would make the
+ * definition circular (the received `params._meta` contains the proof being verified). Only the
+ * top-level `_meta` member is removed; nothing nested below other members is touched. Requests
+ * without `params._meta` hash byte-identically to the untransformed shape.
+ */
+function stripParamsMeta(params: unknown): unknown {
+  if (params === null || typeof params !== 'object' || Array.isArray(params)) return params;
+  if (!('_meta' in (params as Record<string, unknown>))) return params;
+  const { _meta: _stripped, ...rest } = params as Record<string, unknown>;
+  return rest;
 }
 
 /** Hex of the SHA-256 digest carried by a `sha-256=:<base64>:` (RFC 9421) or `sha256:<hex>` (legacy)

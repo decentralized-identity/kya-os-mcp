@@ -1,9 +1,9 @@
-# KYA-OS Entity Card — Profile Specification
+# KYA-OS Entity Card - Profile Specification
 
 **Typed, DID-anchored, per-request holder-of-key identity for the agent ecosystem**
 
 Version: 1.1 (Entity Card profile)
-Reference implementation: `@kya-os/mcp` v1.8.0 (subpath `@kya-os/mcp/card`)
+Reference implementation: `@kya-os/mcp` v1.10.x (subpath `@kya-os/mcp/card`)
 Status: **DIF TAAWG work item / reference implementation**
 Editors: KYA-OS Working Group
 Repository: https://github.com/decentralized-identity/kya-os-mcp
@@ -13,26 +13,22 @@ Profiles: the KYA-OS Protocol Specification ([SPEC.md](./SPEC.md))
 
 ## Abstract
 
-The **KYA-OS Entity Card** is one canonical, **typed**, DID-anchored identity object that is
-*projected* onto every discovery rail the agent ecosystem already indexes — the MCP
-`server.json` / `catalog.json` `_meta`, the A2A `AgentExtension`, and the NANDA `AgentFacts`
-document — all anchored by a `KyaOsEntityCard` service entry on the entity's `did:web`
-DID document. On top of that conventional discovery layer rides a **per-request,
-sender-constrained holder-of-key proof** (`org.kya-os/proof@1`) carried under its own
-`_meta["org.kya-os/proof@1"]` key.
+The **KYA-OS Entity Card** is one canonical, typed, DID-anchored identity object, projected onto
+the discovery rails the agent ecosystem already indexes: the MCP `server.json` / `catalog.json`
+`_meta`, the A2A `AgentExtension`, and the NANDA `AgentFacts` document. Each projection points
+back to the same card, anchored by a `KyaOsEntityCard` service entry on the entity's `did:web`
+DID document. On top of that discovery layer rides a per-request, sender-constrained
+holder-of-key proof (`org.kya-os/proof@1`) carried under its own `_meta["org.kya-os/proof@1"]`
+key: discover like everyone, prove like no one. An unaware peer safely ignores the KYA-OS layer;
+a KYA-OS-aware peer can verify the caller cryptographically on every request.
 
-The design goal is one sentence: **discover like everyone, prove like no one.** An entity is
-discoverable by any peer that speaks a mainstream rail (progressive enhancement — an unaware
-peer safely ignores the KYA-OS layer), and *verifiable* — cryptographically, on every single
-request — by any peer that is KYA-OS-aware.
-
-Two properties are claimed as uniquely filled seams, and only these two: (1) **typed entities**
-— nothing in A2A, NANDA, CIMD, MCP `server.json`, or the AIP capability-token work types the
-principal (`mcp | agent | client | verifier | human`); and (2) **per-request PROVEN
-accountability** — every other card/document scheme proves card- or document-integrity, never
-that the *live caller* currently holds the key bound to a typed entity that is accountable up a
-verifiable delegation chain. KYA-OS does not re-claim NANDA's `owner` edge (it *populates* it) or
-"we do DIDs/VCs" (it *profiles* them).
+This profile claims two properties as uniquely filled seams, and only these two. First, **typed
+entities**: nothing in A2A, NANDA, CIMD, MCP `server.json`, or the AIP capability-token work
+types the principal (`mcp | agent | client | verifier | human`). Second, **per-request proven
+accountability**: other card and document schemes prove card- or document-integrity, not that the
+live caller currently holds the key bound to a typed entity that is accountable up a verifiable
+delegation chain. KYA-OS does not re-claim NANDA's `owner` edge (it populates it) and does not
+claim novelty for using DIDs or VCs (it profiles them).
 
 ---
 
@@ -53,11 +49,12 @@ as the reference implementation (§15.6).
 ## Status of This Document
 
 This is a **DIF TAAWG work item** with a conformant **reference implementation** in
-`@kya-os/mcp` v1.8.0. The Entity Card profile is additive over, and non-breaking with respect to,
-the KYA-OS 1.x protocol: the stateless `org.kya-os/proof@1` profile defined here coexists with the
-legacy session-bound proof under the same `_meta` key, discriminated by the `prf` tag (§8.1,
-§15.5). The wire shapes in §3–§8 and Appendix A are stable for the 1.x line; a breaking change
-requires a major version bump.
+`@kya-os/mcp` (v1.10.x at the time of writing). The Entity Card profile is additive over, and
+non-breaking with respect to, the KYA-OS 1.x protocol. The `org.kya-os/proof@1` profile defined
+here coexists with the legacy session-bound proof, and each rides its own `_meta` key:
+`org.kya-os/proof@1` for this profile, `org.kya-os/proof` for the legacy proof (§8.1, §15.5). The
+card proof additionally names its profile in a `prf` field. The wire shapes in §3–§8 and
+Appendix A are stable for the 1.x line; a breaking change requires a major version bump.
 
 Several referents are **moving targets**; each normative reference to one is pinned with a
 **verified-at** date (§15). Implementers MUST re-verify a moving target at use-time before relying
@@ -79,7 +76,7 @@ THIS exact request?*" The discovery layers, from lowest to highest:
 | **D1** | MCP `server.json` (MCP Registry) | Distribution + reverse-DNS/GitHub namespace trust | No cryptographic identity |
 | **D2** | Server Card / `catalog.json` index (SEP-2127) | A discoverable index of server cards; identity fields **advisory, not authoritative** | No per-request proof; untyped principal |
 | **D3** | CIMD (`client_id` metadata document, SEP-991 / draft-ietf-oauth-client-id-metadata-document) | OAuth key possession **once, at the token endpoint** | No DID anchor; no per-request proof-of-possession |
-| **D4** | **KYA-OS Entity Card (this document)** | Typed DID-anchored identity + **per-request** holder-of-key proof | — (this is the previously-empty seam) |
+| **D4** | **KYA-OS Entity Card (this document)** | Typed DID-anchored identity + **per-request** holder-of-key proof | - (the layer this document adds) |
 
 D1–D3 are shipped and widely deployed. D4 is the seam KYA-OS fills, and it fills it *by projecting
 onto* D1–D3 rather than by introducing a competing rail (§6, §7).
@@ -89,7 +86,7 @@ onto* D1–D3 rather than by introducing a competing rail (§6, §7).
 This document specifies, normatively:
 
 - the **entity model** and its `type` axis (§3);
-- the **Card object** — fields, claim-minimalism, JSON Schema (§4, Appendix A);
+- the **Card object** - fields, claim-minimalism, JSON Schema (§4, Appendix A);
 - **anchoring** on `did:web` / `did:key` and the `KyaOsEntityCard` DID-document service (§5);
 - the four **discovery projections** and their graceful-degradation contract (§6);
 - the **CIMD on-ramp** binding `client_id ⇄ did:web`, `jwks_uri ⇄ DID keys` (§7);
@@ -108,14 +105,12 @@ KYC/KYB adjudication (§10.7 specifies only the credential shape that carries it
 
 ### 1.3 The two claims
 
-> **Discover like everyone, prove like no one.**
-
 KYA-OS claims exactly two uniquely-filled seams: **typed entities** (§3) and **per-request proven
-accountability** (§8–§11). A2A signs the card (card-integrity); NANDA names an `owner` and signs
-`AgentFacts` (document-integrity + a static accountability claim KYA-OS *populates*); CIMD proves
-key possession once at the token endpoint (session-integrity). None type the principal, and none
-prove the *live* caller per request. The `cnf.jkt` fusion (§8.6) makes the two claims one coherent
-cryptographic story from the L1 token to the L3 per-request proof.
+accountability** (§8–§11). For comparison: A2A signs the card (card-integrity); NANDA names an
+`owner` and signs `AgentFacts` (document-integrity plus a static accountability claim KYA-OS
+populates); CIMD proves key possession once, at the token endpoint (session-integrity). None of
+them type the principal, and none prove the live caller per request. The `cnf.jkt` fusion (§8.6)
+connects the two claims, from the L1 token to the L3 per-request proof, through one DID key.
 
 ---
 
@@ -136,11 +131,11 @@ cryptographic story from the L1 token to the L3 per-request proof.
 | **Entity** | A first-class, DID-identified principal of exactly one `entityType` (§3). Each Entity has its own DID and its own Card. |
 | **Entity Card** (Card) | The typed, DID-anchored identity object of §4. It ASSERTS identity + type + declared capabilities; everything trust-bearing is PROVEN by referenced credentials (claim-minimalism, §4.2). |
 | **Responsible Party** | The entity **ultimately accountable** for an Entity's actions: the **root issuer** of its delegation chain (`issuer` of the root `DelegationCredential`). Carried on the Card as `responsibleParty`; verified as `responsibleParty === issuer(rootVC)`, never self-asserted (§10.5). |
-| **Principal** | The **immediate** delegator — typically the authorizing human — when it differs from the Responsible Party. Carried as `principal`. |
+| **Principal** | The **immediate** delegator - typically the authorizing human - when it differs from the Responsible Party. Carried as `principal`. |
 | **Delegation Chain** | An ordered sequence of `DelegationCredential`s from the root delegator to the current Entity, each hop's delegate being the next hop's issuer (§10.3). |
-| **Capability** | A declared operation. A bare string is L1 (self-declared); an object `{ name, attestations }` is L2 (attested by a Verifiable Credential) (§4.1, §9). |
+| **Capability** (Card field) | A declared operation NAME: what an Entity says it can do. Declaring one conveys no authority - authority is conveyed only by a delegation chain (§10), where the ZCAP-LD capability (the signed credential) is the authority object. A bare string is L1 (self-declared); an object `{ name, attestations }` is L2 (attested by a Verifiable Credential) (§4.1, §9). |
 | **Holder-of-Key Proof** | The per-request, sender-constrained `org.kya-os/proof@1` object (§8) that proves the caller currently controls the DID key bound to the Card. |
-| **Audience** | The intended recipient of a proof — the recipient Entity's DID, read from its Card. Binds a proof to THIS recipient (anti-relay / anti-confused-deputy, §8.4). |
+| **Audience** | The intended recipient of a proof - the recipient Entity's DID, read from its Card. Binds a proof to THIS recipient (anti-relay / anti-confused-deputy, §8.4). |
 | **`cnf.jkt`** | An RFC 7638 [RFC7638] JWK thumbprint used as an RFC 9449 [RFC9449] confirmation-key sender-constraint. The fusion anchor of §8.6. |
 | **CIMD** | Client ID Metadata Document (draft-ietf-oauth-client-id-metadata-document / SEP-991): the OAuth `client_id` is an HTTPS URL that serves the client's metadata. The KYA-OS L1 on-ramp (§7). |
 | **Conformance Level** | A DERIVED, verifier-recomputable floor (`L1`/`L2`/`L3`, §9) summarizing an Entity's assurance. The Card's self-declared `conformanceLevel` is NEVER trusted. |
@@ -150,9 +145,9 @@ cryptographic story from the L1 token to the L3 per-request proof.
 For the accountability edge, the ONLY normative terms are **Responsible Party** (root) and
 **Principal** (immediate delegator). An implementation MUST NOT introduce `owner`, `operator`, or
 `controller` as accountability-role synonyms on the Card. (Note: ZCAP-LD's
-`credentialSubject.controller` — §10.2 — names the *delegate* of a capability, a distinct concept
+`credentialSubject.controller` - §10.2 - names the *delegate* of a capability, a distinct concept
 that is retained under its ZCAP meaning; and NANDA's `owner` slot is *populated from*
-`responsibleParty` in the AgentFacts projection — §6.3 — not adopted as a Card field.)
+`responsibleParty` in the AgentFacts projection - §6.3 - not adopted as a Card field.)
 
 ---
 
@@ -181,7 +176,7 @@ Each type is a first-class principal with its own DID and its own Card.
 
 ### 3.2 Sub-resources are not entities
 
-`tool` and `skill` are **sub-resources** — capabilities *of* an `mcp` or `agent` — and MUST appear
+`tool` and `skill` are **sub-resources** - capabilities *of* an `mcp` or `agent` - and MUST appear
 inside `capabilities` (§4.1), never as a standalone `entityType`. There is no standalone `tool`
 card and no standalone `skill` card.
 
@@ -227,8 +222,8 @@ top-level properties.
 ### 4.2 Claim-minimalism
 
 A Card ASSERTS only identity + type + declared capabilities + accountability *locators*. Everything
-trust-bearing — accountability (`responsibleParty` verified via `delegationRef`), attested
-capabilities (L2), KYC/KYB (`attestations`) — MUST be PROVEN by referenced, signed credentials that
+trust-bearing - accountability (`responsibleParty` verified via `delegationRef`), attested
+capabilities (L2), KYC/KYB (`attestations`) - MUST be PROVEN by referenced, signed credentials that
 a Verifier resolves and checks, and MUST NOT be treated as true merely because the Card asserts it.
 A Card builder MUST NOT set `conformanceLevel` on emit (`buildCard` / the fluent `card()` builder
 omit it deliberately).
@@ -275,7 +270,7 @@ KYA-OS owns exactly one registered string: the service **type** `KyaOsEntityCard
 deliberately decentralizes DID service types, so no central registration is required. The service
 entry is the **canonical** card home. A bare `did:web:host` org root has no path segment to derive a
 `card.json` from, so it additionally publishes at the well-known path
-`/.well-known/kya-os-card.json` (§5.4) — origin-authenticated on the entity's own host, mirroring
+`/.well-known/kya-os-card.json` (§5.4) - origin-authenticated on the entity's own host, mirroring
 did:web's own `/.well-known/did.json`.
 
 ### 5.4 URL derivation
@@ -287,7 +282,7 @@ For a path-form `did:web`, with percent-decoded segments `host:seg1:…:segN`:
 - **Card:** `did:web:host:a:b → https://host/a/b/card.json`. A bare `did:web:host` has no path
   segment, so it derives the well-known card path `https://host/.well-known/kya-os-card.json`,
   mirroring the bare-host `.well-known/did.json` rule above. This is origin-authenticated (same host
-  as the DID document, https-only) and lets org roots — including the default trusted issuer —
+  as the DID document, https-only) and lets org roots - including the default trusted issuer -
   publish via the shipped helpers. The `KyaOsEntityCard` service entry remains the canonical pointer
   and the two-step `did.json → service entry` resolve stays gated on it; the well-known path is the
   direct-derivation fallback, not a bypass of the service entry. A non-`did:web` DID (e.g.
@@ -375,7 +370,7 @@ with no fetch, a `cardRef` is fetched); `{ a2a }` (follow `params.cardUrl`); or 
 
 Because resolution follows attacker-influenced URLs across four surfaces, every outbound fetch
 (card, DID document, JWKS, status list) MUST be routed through an SSRF-hardened fetch that enforces,
-fail-closed: **https-only**; **public-unicast only** — RFC1918, loopback (`127/8`, `::1`),
+fail-closed: **https-only**; **public-unicast only** - RFC1918, loopback (`127/8`, `::1`),
 link-local (`169.254/16` incl. the `169.254.169.254` cloud-metadata endpoint, `fe80::/10`), CGNAT
 `100.64/10`, IPv6 ULA `fc00::/7` (incl. `fd00::/8`), multicast, and other non-public ranges are
 denied; **resolve-once-and-pin** the connection IP (closing the DNS-rebinding TOCTOU window);
@@ -391,8 +386,8 @@ CIMD (draft-ietf-oauth-client-id-metadata-document; MCP default since the 2025-1
 **verified-at 2026-06-30**) is the L1 on-ramp with zero new infrastructure: the OAuth `client_id`
 IS the Entity's `did:web` in HTTPS form, and the `jwks_uri` the authorization server (AS) validates
 `private_key_jwt` against IS a mechanical projection of the DID document's keys. OAuth
-client-authentication therefore *is* a DID-key proof. This binding — `client_id → did:web →
-mandate-VC` — is the second of the two TAAWG-normative primitives.
+client-authentication therefore *is* a DID-key proof. This binding - `client_id → did:web →
+mandate-VC` - is the second of the two TAAWG-normative primitives.
 
 ### 7.1 `client_id ⇄ did:web` bijection
 
@@ -426,16 +421,16 @@ The document served at the `client_id` URL is projected from the Card:
 ```
 
 A pure-CIMD client with no declared DID still onboards: its `did:web` is minted from `client_id`
-(`cardFromClientMetadata` yields an L1 `entityType: "client"` Card). A `did:key` client is L1-only —
+(`cardFromClientMetadata` yields an L1 `entityType: "client"` Card). A `did:key` client is L1-only -
 it cannot bind a `did:web` origin and never reaches L2.
 
 ### 7.4 Anti-substitution bind (fail-closed)
 
 Before trusting a CIMD binding, a Verifier MUST enforce, fail-closed (`verifyCimdBind`):
 
-1. **origin-equality** — `did:web` host origin === `client_id` origin === `jwks_uri` origin (a
+1. **origin-equality** - `did:web` host origin === `client_id` origin === `jwks_uri` origin (a
    hostile CIMD pointing `jwks_uri` at another origin's keys fails here); and
-2. a **reciprocal `alsoKnownAs` bind** — the DID document's `alsoKnownAs` MUST list the `client_id`
+2. a **reciprocal `alsoKnownAs` bind** - the DID document's `alsoKnownAs` MUST list the `client_id`
    URL, so a CIMD cannot unilaterally claim a DID it does not control.
 
 ### 7.5 `cnf.jkt` sender-constraint
@@ -449,17 +444,25 @@ emit `cnf`, verification degrades to **L3-minus** (§8.6, §9.4) rather than fai
 
 ## 8. Per-Request Holder-of-Key Proof (NORMATIVE) [TAAWG-NORMATIVE]
 
-`org.kya-os/proof@1` is a **stateless**, **sender-constrained**, fail-closed proof that rides its own
-`_meta["org.kya-os/proof@1"]` key. Every request self-proves; there is no session state.
+`org.kya-os/proof@1` is a **self-contained**, **sender-constrained**, fail-closed proof that rides
+its own `_meta["org.kya-os/proof@1"]` key. There is no session establishment and no handshake;
+every request carries its own proof.
+
+A note on the word "stateless", which earlier drafts used for this profile: the proof *object* is
+stateless (it references no session and no prior request, and the minter keeps nothing between
+requests), but the verification *protocol* is not. Replay prevention requires the Verifier to keep
+a nonce store (§11.2 step 8, §12.2), and a Verifier without one MUST fail closed
+(`nonce_seam_missing`) rather than skip the check. Where this document says "stateless" it means
+stateless proof construction, never stateless verification.
 
 ### 8.1 Two proof eras, one key each (coexistence)
 
 Two orthogonal proof profiles may appear on one server, each under its OWN `_meta` key: the
 **legacy session-bound** `ProofMeta` (carrying `sessionId` + a handshake nonce; retained untouched
-for 1.x back-compat) under `_meta["org.kya-os/proof"]`, and the **stateless** `org.kya-os/proof@1`
-specified here under `_meta["org.kya-os/proof@1"]` — the key equals the profile id, so it is
-self-describing and versioned. Distinct keys let both regimes coexist without either guard seeing —
-or rejecting — the other's proof (a shared key made them mutually exclusive: a legacy proof failed
+for 1.x back-compat) under `_meta["org.kya-os/proof"]`, and the **self-contained** `org.kya-os/proof@1`
+specified here under `_meta["org.kya-os/proof@1"]` - the key equals the profile id, so it is
+self-describing and versioned. Distinct keys let both regimes coexist without either guard seeing -
+or rejecting - the other's proof (a shared key made them mutually exclusive: a legacy proof failed
 the card schema and a card proof failed the legacy structure check). A Verifier reads the key for
 the profile it implements; the object still carries `prf` as a self-describing discriminator. This
 document specifies only `org.kya-os/proof@1`.
@@ -469,17 +472,17 @@ document specifies only `org.kya-os/proof@1`.
 ```jsonc
 {
   "prf": "org.kya-os/proof@1",           // profile discriminator (literal)
-  "alg": "EdDSA",                         // "EdDSA" (Ed25519) | "ES256" (P-256) — allow-list, no negotiation
+  "alg": "EdDSA",                         // "EdDSA" (Ed25519) | "ES256" (P-256) - allow-list, no negotiation
   "did": "did:web:…",                     // caller DID (the accountable principal)
   "kid": "did:web:…#key-1",               // signing key id; kid.split('#')[0] MUST == did
-  "audience": "did:web:…",                // recipient DID (from its Card) — anti-relay
+  "audience": "did:web:…",                // recipient DID (from its Card) - anti-relay
   "nonce": "<128-bit, client-random or server-issued>",
   "created": 1782820800,                  // epoch seconds
   "expires": 1782820860,                  // epoch seconds; expires-created ≤ 60
   "requestHash": "sha-256=:<b64>:",       // §8.3
-  "cnf": { "jkt": "<RFC 7638 thumbprint>" },  // OPTIONAL — §8.6
+  "cnf": { "jkt": "<RFC 7638 thumbprint>" },  // OPTIONAL - §8.6
   "jws": "<detached JWS (EdDSA|ES256): protected..signature>",  // §8.4
-  "httpSig": "<raw sig base64url (ed25519 | ecdsa-p256-sha256)>" // OPTIONAL — §8.5 dual carrier
+  "httpSig": "<raw sig base64url (ed25519 | ecdsa-p256-sha256)>" // OPTIONAL - §8.5 dual carrier
 }
 ```
 
@@ -489,18 +492,35 @@ Lifetime: `expires > created`, and `expires - created` MUST NOT exceed **60 seco
 
 ### 8.3 Request binding (`requestHash`, RFC 8785 + RFC 9421)
 
-`requestHash` binds the proof to THIS request body. It is computed as:
+`requestHash` binds the proof to THIS request body.
+
+**Pre-signing transformation (exact).** The covered request is derived from the JSON-RPC call, and
+the minter and the Verifier MUST apply the same derivation:
+
+1. Start from the call's `{ method, params }`.
+2. Remove the `_meta` member of `params`, if present. `_meta` is the transport-metadata carrier:
+   it carries this proof itself (§8.2), and hosts may add their own members to it (MCP's
+   `progressToken`, for example), so it can never be part of the signed material. Nothing else is
+   removed, and values nested below the other `params` members are not touched.
+3. When `params` is absent, the covered request is `{ method }` (the `params` key is omitted, not
+   set to `null`).
+
+The hash is then computed over the covered request:
 
 ```
-requestHash = "sha-256=:" || base64( SHA-256( JCS({ method, params }) ) ) || ":"
+requestHash = "sha-256=:" || base64( SHA-256( JCS(coveredRequest) ) ) || ":"
 ```
 
-where `JCS` is RFC 8785 [RFC8785] JSON Canonicalization over the object `{ method,
-…(params present ? { params } : {}) }` (the `params` key is omitted when absent). The result is
-emitted in the RFC 9421 [RFC9421] Content-Digest structured-field form `sha-256=:<base64>:` so the
-HTTP Message Signature sibling (§8.5) can carry it verbatim. The same canonicalizer and request
-shape are used by the legacy hasher, so a proof minted here recomputes stably cross-implementation
-(proven by Appendix C).
+where `JCS` is RFC 8785 [RFC8785] JSON Canonicalization. The result is emitted in the RFC 9421
+[RFC9421] Content-Digest structured-field form `sha-256=:<base64>:` so the HTTP Message Signature
+sibling (§8.5) can carry it verbatim.
+
+Step 2 is what makes the definition non-circular: the proof rides `params._meta`, so a Verifier
+that hashed the received `params` verbatim would be hashing a structure that contains the proof,
+and the result could never equal the hash the minter signed (the minter signs before the proof
+exists). A Verifier recomputes this exact derivation over the request it received (§11.2 step 6).
+The same canonicalizer and request shape are used by the legacy hasher, so a proof minted here
+recomputes stably cross-implementation (proven by Appendix C).
 
 ### 8.4 Detached JWS carrier (canonical)
 
@@ -509,8 +529,8 @@ The **covered claims** are every proof field EXCEPT the two signatures (`jws`, `
 detached JWS signs the RFC 8785 (JCS) canonical bytes of the covered claims with the proof's
 algorithm, serialized detached: `<protected>..<signature>` (empty payload segment).
 
-The signing algorithm is an ALLOW-LIST of exactly two — `EdDSA` (Ed25519) and `ES256` (ECDSA
-P-256, FIPS-eligible) — never negotiated. On verification: the (schema-validated, itself
+The signing algorithm is an ALLOW-LIST of exactly two - `EdDSA` (Ed25519) and `ES256` (ECDSA
+P-256, FIPS-eligible) - never negotiated. On verification: the (schema-validated, itself
 covered/signed) `alg` MUST be one of the two; the resolved key type MUST match it (an `ES256` proof
 MUST carry a P-256 key, an `EdDSA` proof an Ed25519 key, else `alg_key_mismatch`); the JWS protected
 header's `alg` MUST equal the proof `alg` and its `kid` the proof `kid`; and verification is PINNED to
@@ -522,7 +542,7 @@ field (including `alg`) yields a different signing input and fails.
 The proof MAY additionally carry `httpSig`: a **RAW EdDSA or ES256 signature** (base64url, NOT
 JWS-framed, matching `alg`) made by the SAME DID key over the RFC 9421 signature base. Because a JWS signature also covers its
 protected header, its bytes can never satisfy a stock RFC 9421 verifier reconstructing a bare
-signature base — the two carriers therefore require two signatures over one semantic set. The
+signature base - the two carriers therefore require two signatures over one semantic set. The
 signature base is deterministic and self-contained from the proof:
 
 ```
@@ -539,7 +559,7 @@ reconstructs this base and verifies `httpSig` against the resolved DID key with 
 signer without a raw-signature seam mints a JWS-only proof and the sibling simply degrades away
 (never a failure).
 
-### 8.6 `cnf.jkt` fusion (RFC 9449 + RFC 7638) — the spine
+### 8.6 `cnf.jkt` fusion (RFC 9449 + RFC 7638) - the spine
 
 `cnf.jkt`, when present, MUST equal the RFC 7638 thumbprint of the signing key. When the AS supplies
 a token `cnf.jkt` (§7.5), the three MUST fuse:
@@ -556,8 +576,8 @@ inert without live possession of the DID key.**
 
 Where a proof DOES carry a `cnf` but the verifier is given no token `cnf.jkt` to fuse it against, the
 degradation to L3-minus is legitimate but easy to cause by misconfiguration (a verifier that simply
-never extracted the token's `cnf`). A verifier SHOULD therefore emit a **non-fatal** diagnostic —
-`cnf_present_but_token_unfused` — in that case. It does not affect validity (the proof is a sound
+never extracted the token's `cnf`). A verifier SHOULD therefore emit a **non-fatal** diagnostic -
+`cnf_present_but_token_unfused` - in that case. It does not affect validity (the proof is a sound
 L3-minus proof) and is distinct from the fail-closed `reasons`; its only purpose is to let an
 integrator who intended L3 observe the downgrade rather than have it pass silently.
 
@@ -582,12 +602,12 @@ points where the binding differs, and why, so that the mechanisms are not confla
 
 - **Request binding.** DPoP binds the HTTP method and target URI (`htm`/`htu`). An MCP tool call is a
   JSON-RPC message, and under the Streamable HTTP transport such calls are typically `POST`ed to a
-  single `/mcp` endpoint — so `htm`/`htu` are identical across every call and distinguish no
+  single `/mcp` endpoint - so `htm`/`htu` are identical across every call and distinguish no
   operation; under the stdio transport there is no HTTP envelope to bind at all. The profile therefore
-  binds the JSON-RPC operation directly — `requestHash = SHA-256( RFC 8785 JCS({ method, params }) )`
-  (§8.3) — which is the invariant that actually identifies the request across both transports.
+  binds the JSON-RPC operation directly - `requestHash` over the JCS of the covered request
+  (§8.3) - which is the invariant that actually identifies the request across both transports.
 - **Carrier.** DPoP travels as an HTTP header. This proof travels in the request's `_meta` (§8.2),
-  in-band with the JSON-RPC message, so it is transport-agnostic — the same proof verifies over stdio
+  in-band with the JSON-RPC message, so it is transport-agnostic - the same proof verifies over stdio
   and over Streamable HTTP. For deployments that terminate at an HTTP edge, §8.5 defines an OPTIONAL
   RFC 9421 [RFC9421] HTTP Message Signature sibling over the same covered claims, so a
   message-signature-aware intermediary can additionally check the proof at that layer.
@@ -595,15 +615,15 @@ points where the binding differs, and why, so that the mechanisms are not confla
   and the sender-constraint is that the token was issued bound to that key. This proof additionally
   requires the signing key to be a verification method published by the caller's DID document
   (`kid.split('#')[0] === did` plus RFC 7638 thumbprint membership, §8.4, §11.2), so possession is
-  bound not only to a token but to a discoverable, accountable **principal** (the Entity's Card DID) —
+  bound not only to a token but to a discoverable, accountable **principal** (the Entity's Card DID) -
   the identity axis DPoP does not itself address.
-- **Audience.** The proof binds a recipient `audience` DID (§8.4) — the intended recipient Entity —
+- **Audience.** The proof binds a recipient `audience` DID (§8.4) - the intended recipient Entity -
   closing relay / confused-deputy at the level of a principal's identity, which DPoP's `htu` (a URI)
   does not express.
 - **Composition (§7.5, §8.6).** Where the authorization server does issue a DPoP-sender-constrained
   access token, its `cnf.jkt` is fused with the proof's `cnf.jkt` and the resolved DID key to reach
   **L3**: one key threads token possession and per-request possession. DPoP then operates at the token
-  layer and this proof at the per-request JSON-RPC layer — complementary, not competing. Absent an AS
+  layer and this proof at the per-request JSON-RPC layer - complementary, not competing. Absent an AS
   `cnf`, the proof degrades to L3-minus (§8.6); it never requires DPoP and never conflicts with it.
 
 For a conventional HTTP resource server, DPoP remains the appropriate mechanism. This profile targets
@@ -617,13 +637,13 @@ sender-constraint semantics wherever they are present.
 Each rung is a named standard a Verifier independently RECOMPUTES; the Card's self-declared
 `conformanceLevel` is NEVER trusted (recompute-on-verify). `L3 ⊇ L2 ⊇ L1`.
 
-### 9.1 L1 — key possession
+### 9.1 L1 - key possession
 
 Evidence: a resolvable CIMD document whose `client_id` is the Card's `did:web` HTTPS form, a
-`jwks_uri` resolving to DID keys, and a validated `private_key_jwt` (§7) — or a `did:key`
+`jwks_uri` resolving to DID keys, and a validated `private_key_jwt` (§7) - or a `did:key`
 self-asserted Card. Capabilities are bare strings.
 
-### 9.2 L2 — DID + VC, offline-verifiable
+### 9.2 L2 - DID + VC, offline-verifiable
 
 Evidence: a `did:web` anchor with a `KyaOsEntityCard` service on the DID document; every declared
 capability backed by a trusted-issuer `CapabilityAttestationCredential`
@@ -635,14 +655,14 @@ Delegation-chain resolution (CRISP attenuation, `responsibleParty === issuer(roo
 NOT level evidence. When the Card carries a `responsibleParty`, chain resolution is a fail-closed
 GATE on the `ok` verdict (§11.1 step 6): an unresolved chain sets `ok: false` and the Card is
 rejected outright, but the derived level is computed by the §9.4 algorithm from the capability
-floor, proof floor, and revocation freshness alone — never from accountability. A conforming
+floor, proof floor, and revocation freshness alone - never from accountability. A conforming
 implementation MUST derive the level per §9.4 / §11.1 step 7, not from this prose.
 
-### 9.3 L3 — live per-request proof-of-possession
+### 9.3 L3 - live per-request proof-of-possession
 
-Evidence: L2 **plus** a valid sender-constrained `org.kya-os/proof@1` (§8) — `audience` === self,
+Evidence: L2 **plus** a valid sender-constrained `org.kya-os/proof@1` (§8) - `audience` === self,
 nonce fresh, `requestHash` recomputes, and the `cnf.jkt` fusion when the AS supplies a token `cnf`
-(this is the proof floor that lifts the level to L3) — **plus** a LIVE Bitstring Status List
+(this is the proof floor that lifts the level to L3) - **plus** a LIVE Bitstring Status List
 freshness check on the leaf delegation/capability credentials. The leaf-invoker === `proof.did`
 join (§10.5), like delegation-chain resolution in §9.2, is a fail-closed GATE on `ok` (§11.1 step
 6), not level evidence; the level is derived per §9.4 / §11.1 step 7.
@@ -720,23 +740,27 @@ capability MUST name one of them.
 A chain is valid only if EVERY hop attenuates its parent. Any broadening hop invalidates the whole
 chain:
 
-- **action subset** — child `allowedAction ⊆ parent`;
-- **monotone caveats** — no parent caveat may be silently dropped; for a shared caveat type, child
+- **action subset** - child `allowedAction ⊆ parent`;
+- **monotone caveats** - no parent caveat may be silently dropped; for a shared caveat type, child
   `MaxAmount ≤ parent` (same currency; compared as fixed-point decimals scaled to 6 places) and
   child `ValidUntil ≤ parent`; an unknown caveat type MUST be replicated **verbatim**;
-- **top-level `validUntil` narrowing** — child `validUntil ≤ parent`;
-- **continuity** — the parent's delegate (`invoker`) MUST equal the child's `issuer` (you may only
+- **top-level `validUntil` narrowing** - child `validUntil ≤ parent`;
+- **continuity** - the parent's delegate (`invoker`) MUST equal the child's `issuer` (you may only
   re-delegate what was delegated to YOUR key), and child `parentCapability` MUST reference the
   parent capability `id`;
 - **constant `invocationTarget`** along the chain;
 - **depth** MUST NOT exceed **10** hops (`MAX_DELEGATION_DEPTH`);
-- **root** — root `parentCapability` MUST equal its `invocationTarget` (the resource); when a
+- **root** - root `parentCapability` MUST equal its `invocationTarget` (the resource); when a
   resource owner / resource is asserted, root `issuer` MUST equal the resource owner and root
   `invocationTarget` MUST equal the resource.
 
+A verifying resource SHOULD assert its own identity as the expected resource when it evaluates a
+chain (the `resource` context of `evaluateDelegationChain`), so that a chain minted for a
+different resource fails at the root check instead of being accepted by an unrelated Verifier.
+
 ### 10.4 (reserved)
 
-### 10.5 The join — recomputed, asserted nowhere
+### 10.5 The join - recomputed, asserted nowhere
 
 Two equalities gate accountability and are RECOMPUTED (never trusted on the Card):
 
@@ -749,15 +773,15 @@ The `leafInvoker === proof.did` join ties the delegation chain (§10) to the liv
 (§8): the accountability verifier is threaded the verified `proof.did` and asserts it equals the
 leaf delegate.
 
-### 10.6 Revocation — Bitstring Status List v1.0, cascading
+### 10.6 Revocation - Bitstring Status List v1.0, cascading
 
 Revocation uses **W3C Bitstring Status List v1.0** [BITSTRING-STATUS-LIST]
-(`BitstringStatusListEntry`) — the **successor to** the deprecated StatusList2021 — behind a
+(`BitstringStatusListEntry`) - the **successor to** the deprecated StatusList2021 - behind a
 pluggable `RevocationChecker` seam so status-list churn never reaches callers. The default checker
 resolves `statusListCredential` via SafeFetch (§6.6), inflates the multibase (`u` = base64url) +
 GZIP `encodedList`, and reads the bit at `statusListIndex` MSB-first within each byte. It is
 **fail-closed**: an unreachable list, malformed credential, mismatched `statusPurpose`, or
-out-of-range index all resolve to `{ revoked: true }`. Each verdict also reports `fresh` — `true`
+out-of-range index all resolve to `{ revoked: true }`. Each verdict also reports `fresh` - `true`
 only when read from a live, in-validity-window (`validFrom`/`validUntil`, or
 `issuanceDate`/`expirationDate`) status list. The chain walk is **cascading**: root→leaf,
 short-circuiting on the first revoked/unresolvable hop (a revoked ancestor invalidates the subtree),
@@ -781,15 +805,15 @@ than erroring open.
 
 ### 11.1 Card verification (`verifyCard`)
 
-1. **Capabilities** — run the capability verifier over `card.capabilities` for `subjectDid =
+1. **Capabilities** - run the capability verifier over `card.capabilities` for `subjectDid =
    card.id`; with no verifier injected, all capabilities are floored to *unverified* (L1).
-2. **Live proof** — if a proof + request + proof-verifier are supplied, RECOMPUTE the proof (§11.2);
+2. **Live proof** - if a proof + request + proof-verifier are supplied, RECOMPUTE the proof (§11.2);
    a throwing verifier yields `{ ok: false, reasons: ["proof_verifier_threw"] }` (a demotion, not an
    escape). Let `proofDid = proof.ok ? proof.did : undefined`.
-3. **Accountability** — if `card.responsibleParty` is present, run the accountability verifier with
+3. **Accountability** - if `card.responsibleParty` is present, run the accountability verifier with
    `{ trustedIssuers, proofDid }` (threading `proofDid` for the §10.5 leaf-invoker join).
-4. **Attestations** — recompute each `card.attestations[]` via the attestation verifier.
-5. **Card revocation** — if a status-list checker is supplied and the Card declares `revocation`,
+4. **Attestations** - recompute each `card.attestations[]` via the attestation verifier.
+5. **Card revocation** - if a status-list checker is supplied and the Card declares `revocation`,
    live-check it; unreachable ⇒ `{ revoked: true, fresh: false }` (fail-closed).
 6. **`ok`** = `accountabilityOk AND attestationsOk AND NOT revocation.revoked`, where
    `accountabilityOk = (no responsibleParty) OR accountability.verified` and `attestationsOk` is the
@@ -804,17 +828,18 @@ than erroring open.
 1. Schema-parse the proof; on failure return `["malformed_proof"]`.
 2. `kid.split('#')[0] === did`, else `kid_did_mismatch`.
 3. Resolve the signing key for `kid`; a throw records `key_unresolvable`.
-4. **DID membership (secure by default)** — if a `resolveDidKeys` seam is present, the resolved key's
+4. **DID membership (secure by default)** - if a `resolveDidKeys` seam is present, the resolved key's
    RFC 7638 thumbprint MUST be among the DID document's published keys, else `kid_not_in_did_document`
    (a throw records `did_keys_unresolvable`). If the seam is ABSENT there is no independent membership
    proof, so a verifier MUST fail closed with `did_membership_unverifiable` UNLESS it explicitly attests
    its `resolveKey` is authoritative (`trustResolveKeyAuthority`), in which case binding rests on step 2
    plus that contract. A conformant production verifier SHOULD supply `resolveDidKeys`.
 5. `audience === expectedAudience`, else `audience_mismatch`.
-6. `requestHash === recompute(request)` (§8.3), else `request_hash_mismatch`.
-7. **Window** — `expires > created` (`invalid_window`); `expires - created ≤ 60` (`ttl_too_long`);
+6. `requestHash === recompute(request)` after the §8.3 pre-signing transformation (strip
+   `params._meta` before canonicalizing), else `request_hash_mismatch`.
+7. **Window** - `expires > created` (`invalid_window`); `expires - created ≤ 60` (`ttl_too_long`);
    `created ≤ now + skew` (`created_in_future`); `expires ≥ now - skew` (`expired`).
-8. **Replay** — `nonce` unseen for `did`, else `nonce_replayed`. If the `consumeNonceIfFresh` seam
+8. **Replay** - `nonce` unseen for `did`, else `nonce_replayed`. If the `consumeNonceIfFresh` seam
    is ABSENT there is no replay defense to run, so a verifier MUST fail closed with
    `nonce_seam_missing` rather than skip the check (mirrors step 4's seam-absent posture).
 9. Detached JWS verifies over the recomputed covered claims (§8.4), else `invalid_signature`.
@@ -864,16 +889,20 @@ L1 edge Verifier.
 
 Capturing a valid signed request and re-sending it. Mitigation: `nonce` freshness scoped to `did`,
 `created`/`expires` bounded to ≤60 s with ±5 s skew (§8.2, §11.2 steps 7–8). A server-issued
-single-use nonce (requiring a bounded nonce store) is the strong policy; a client-random nonce +
-short window is the stateless default (a weaker replay defense — see §12.9). Residual: a race inside
+single-use nonce is the strong policy; a client-random nonce with a short window is the default.
+Under either policy the Verifier keeps a nonce store and consumes from it atomically - replay
+prevention is stateful even though the proof is self-contained (§8). Residual: a race inside
 the nonce window; distributed deployments MUST use atomic check-and-set on the nonce cache.
 
 ### 12.3 Confused deputy / relay
 
 A proof or delegation is repurposed against a recipient the delegator did not intend. Mitigations:
 `audience` binds a proof to THIS recipient DID (§8.4); the CRISP designation/continuity invariants
-bind a delegation to a specific resource and delegate (§10.3); the `leafInvoker === proof.did` join
-(§10.5) prevents a delegation to key A being exercised by key B.
+bind a delegation to a specific resource and delegate (§10.3), and the verifying resource asserts
+itself as the expected `invocationTarget` (§10.3); the `leafInvoker === proof.did` join
+(§10.5) prevents a delegation to key A being exercised by key B. For re-delegated credentials, the
+core protocol's per-hop `audience` constraint (SPEC.md §11.6) applies unchanged alongside this
+profile.
 
 ### 12.4 Session-carry / stolen bearer token
 
@@ -902,7 +931,7 @@ dereference, so an inline `_meta` discovery summary is parsed as presented (a `d
 contrast, is always dereferenced from its origin-served `card.json`, §6.5). A discovery intermediary
 that strips the `revocation` pointer from an *unsigned* `did:key` summary can therefore make a
 revoked-but-key-holding `did:key` Entity verify `ok:true`. This is inherent to the self-asserted
-`did:key` tier: **`did:web` is REQUIRED (§5) for any Entity that MUST be revocable or accountable** —
+`did:key` tier: **`did:web` is REQUIRED (§5) for any Entity that MUST be revocable or accountable** -
 its `card.json` cannot be tampered without controlling the origin. `did:key` remains dev/ephemeral and
 self-asserted; operators needing revocable ephemeral identities SHOULD integrity-bind the `did:key`
 discovery channel (a signed summary) or use `did:web`. In the embedded model (an Entity serves its own
@@ -927,7 +956,7 @@ anchor authenticity is bounded by DNS+TLS.
 ### 12.9 SSRF via attacker-influenced resolution
 
 Resolution follows URLs from four discovery surfaces plus JWKS and status lists. Mitigation:
-**MANDATORY** SafeFetch (§6.6) — https-only, public-unicast-only with the cloud-metadata endpoint
+**MANDATORY** SafeFetch (§6.6) - https-only, public-unicast-only with the cloud-metadata endpoint
 `169.254.169.254` explicitly denied, resolve-once-and-pin against DNS rebinding, no cross-origin
 redirects, size/time caps. Residual: standard transport-layer DoS is out of scope.
 
@@ -977,7 +1006,7 @@ redirects, size/time caps. Residual: standard transport-layer DoS is out of scop
 |-----|---------|---------|
 | `org.kya-os/card` | inline Card summary or a `cardRef` on MCP `server.json`/`catalog.json` | §6.1 |
 | `org.kya-os/cardRef` | a lazy-fetch `card.json` URL (inside `org.kya-os/card`) | §6.1 |
-| `org.kya-os/proof@1` | the stateless per-request holder-of-key proof (§8); the key equals the profile id | §8 |
+| `org.kya-os/proof@1` | the self-contained per-request holder-of-key proof (§8); the key equals the profile id | §8 |
 | `org.kya-os/proof` | the legacy session-bound proof (`ProofMeta`); a distinct key, so the two coexist | §8.1 |
 | `org.kya-os/did` | the Entity's DID inside a CIMD document | §7.3 |
 
@@ -988,7 +1017,7 @@ use-time (§15.7).
 
 ### 14.2 A2A extension URI
 
-`https://kya-os.org/a2a/ext/entity-card/v1` — version pinned in the URI (§6.2). Registration venue
+`https://kya-os.org/a2a/ext/entity-card/v1` - version pinned in the URI (§6.2). Registration venue
 (DIF vs an A2A extension registry) is an open coordination item (§15.7).
 
 ### 14.3 JSON-LD `@context`s
@@ -999,7 +1028,7 @@ use-time (§15.7).
 
 ### 14.4 DID service type
 
-`KyaOsEntityCard` — the single service-`type` string KYA-OS owns (§5.3). W3C decentralizes DID
+`KyaOsEntityCard` - the single service-`type` string KYA-OS owns (§5.3). W3C decentralizes DID
 service types; no central registration is required.
 
 ---
@@ -1008,11 +1037,11 @@ service types; no central registration is required.
 
 Each moving target below is pinned **verified-at 2026-06-30**; re-verify at use-time.
 
-### 15.1 MCP — server.json, SEP-2127, SEP-991 (CIMD)
+### 15.1 MCP - server.json, SEP-2127, SEP-991 (CIMD)
 
 `server.json` (MCP Registry) is distribution + namespace trust, no crypto. **SEP-2127** Server Card
 is now an Extensions-Track charter (`io.modelcontextprotocol/server-card`); the canonical path has
-drifted to `/.well-known/mcp/catalog.json` — an INDEX of cards — and its identity fields are
+drifted to `/.well-known/mcp/catalog.json` - an INDEX of cards - and its identity fields are
 "advisory, not authoritative." KYA-OS co-locates under that rail's `_meta` (§6.1, §6.4). **SEP-991 /
 CIMD** is the L1 on-ramp (§7); the IETF draft is
 `draft-ietf-oauth-client-id-metadata-document-01` (2026-03-02, pre-WGLC).
@@ -1031,13 +1060,14 @@ already ships an `owner: did:org` accountability slot and positions AgentFacts a
 A2A card. KYA-OS **populates** `owner` from `responsibleParty` rather than re-claiming it, and adds
 its unique axes under the `kya:` context (§6.3).
 
-### 15.4 AIP — distinguished
+### 15.4 AIP - distinguished
 
 The AIP "Agent Interaction Protocol" capability-token work (**arXiv:2603.24775**) is
-**Invocation-Bound Capability Tokens** (Biscuit / Datalog attenuation) — capability tokens, **not**
+**Invocation-Bound Capability Tokens** (Biscuit / Datalog attenuation) - capability tokens, **not**
 typed entities and **not** DID-anchored discoverable cards. It is complementary, not overlapping:
 it constrains *what a token may invoke*; KYA-OS types the *principal* and proves the *live caller*.
-The "AIP pre-empts the type axis / the card" concern was checked and is false.
+AIP defines neither typed entities nor DID-anchored discoverable cards, so it does not overlap
+with either primitive this document marks for ratification.
 
 ### 15.5 ANP and legacy KYA-OS session profile
 
@@ -1045,12 +1075,12 @@ ANP (Agent Network Protocol) is an informative peer in the discovery-rail landsc
 the **legacy session-bound proof** (`ProofMeta` with `sessionId` + handshake nonce) under
 `_meta["org.kya-os/proof"]` coexists with `org.kya-os/proof@1` under its own distinct
 `_meta["org.kya-os/proof@1"]` key (§8.1); it is retained unchanged for the 1.x line and is expected
-to be deprecated at 2.0 in favour of the stateless profile.
+to be deprecated at 2.0 in favour of the self-contained profile.
 
-### 15.6 Governance — standardize exactly two primitives
+### 15.6 Governance - standardize exactly two primitives
 
-KYA-OS marks **[TAAWG-NORMATIVE]** exactly two sub-primitives — the entity **type axis** (§3) and the
-per-request holder-of-key **binding** `client_id → did:web → mandate-VC` (§7–§8) — and nothing else.
+KYA-OS marks **[TAAWG-NORMATIVE]** exactly two sub-primitives - the entity **type axis** (§3) and the
+per-request holder-of-key **binding** `client_id → did:web → mandate-VC` (§7–§8) - and nothing else.
 These are the only two properties this survey (§15.1–§15.5) confirmed *unfilled*: nobody else types
 the principal, and nobody else proves the live caller per request. Every other requirement in this
 document is KYA-OS **profiling or projecting** standards it does not own, so it ships as
@@ -1068,11 +1098,10 @@ Standardizing the vectors alongside the two primitives is deliberate: a vocabula
 only interoperable once a second implementation can reproduce them byte-for-byte (§8.3), so the
 vectors *are* the ratifiable artifact.
 
-**The window is time-bounded.** NANDA v1.3 (VC + ZK selective disclosure, §15.3) and A2A's
-`AgentExtension` momentum (§15.2) are converging on the same identity seam. If the two primitives —
-type vocabulary, then binding, then vectors, in that order — are not recognized *before* those land,
-the seam is absorbed and the one axis KYA-OS uniquely holds becomes someone else's default. Ship the
-reference implementation now to prove the primitives; ratify the primitives now to keep them.
+**Timing.** NANDA v1.3 (VC + ZK selective disclosure, §15.3) and A2A's `AgentExtension` momentum
+(§15.2) are converging on the same identity seam, so the working group should treat recognition of
+the two primitives (type vocabulary first, then the binding, then the vectors) as time-sensitive:
+once a peer rail ships an equivalent, the axis stops being available to standardize here.
 
 ### 15.7 Open coordination items
 
@@ -1151,7 +1180,7 @@ The Entity Card fixtures are integrated into the implementation-agnostic conform
 `conformance/vectors/` (the `card-proof` and `entity-card` categories), so a **second implementation**
 proves interoperability through the SAME `ConformanceAdapter` contract as every other category (see
 `CONFORMANCE.md`), and so the RFC 8785 (JCS) canonicalization the per-request proof depends on is
-verified **across languages** — closing the cross-language JCS drift risk for the polyglot CLI. The
+verified **across languages** - closing the cross-language JCS drift risk for the polyglot CLI. The
 card vectors are signed with FIXED test keys and a FIXED clock, so the files are byte-reproducible
 (`npm run conformance:generate:card`). The keys are TEST-ONLY (their private `d` is committed); never
 reuse them.
@@ -1165,11 +1194,11 @@ reuse them.
 
 **Two independent verifications:**
 
-1. **TypeScript reference** — the framework runner drives every card vector through the reference
+1. **TypeScript reference** - the framework runner drives every card vector through the reference
    adapter (`npm run conformance`), and `src/card/__tests__/vectors.test.ts` additionally round-trips
    the positive vector through the shipped engine at a finer grain (`buildCardProof` /
    `verifyCardProof` / `verifyHttpSignature` / `validateDelegationChain` / `parseCard`).
-2. **Cross-language (Python stdlib-only)** — a second implementation sharing no code with the TS
+2. **Cross-language (Python stdlib-only)** - a second implementation sharing no code with the TS
    reference; it re-derives `JCS({method,params})`, recomputes the SHA-256 `requestHash`, and verifies
    BOTH the detached EdDSA JWS and the RFC 9421 `httpSig` against the vector's embedded JWKS (Ed25519
    via the RFC 8032 reference): `python3 conformance/verify.py`. Expected:
@@ -1181,7 +1210,7 @@ KYA-OS cross-language verifier (Python 3.x, stdlib-only)
   [PASS] detached EdDSA JWS over JCS(coveredClaims)
   [PASS] RFC 9421 httpSig over the signature base
   [PASS] RFC 7638 cnf.jkt thumbprint fusion
-RESULT: PASS — cross-language JCS + Ed25519 parity confirmed
+RESULT: PASS - cross-language JCS + Ed25519 parity confirmed
 ```
 
 A green run of both proves cross-language canonicalization + Ed25519 signature parity.
@@ -1199,10 +1228,10 @@ Codes are snake_case, aligned to the implementation.
 | `malformed_proof` | The proof failed schema validation. |
 | `kid_did_mismatch` | `kid.split('#')[0] !== did`. |
 | `key_unresolvable` | The signing key for `kid` could not be resolved. |
-| `did_membership_unverifiable` | No `resolveDidKeys` seam and no `trustResolveKeyAuthority` opt-out — membership cannot be proven, so fail closed. |
+| `did_membership_unverifiable` | No `resolveDidKeys` seam and no `trustResolveKeyAuthority` opt-out - membership cannot be proven, so fail closed. |
 | `did_keys_unresolvable` | The DID document's keys could not be resolved. |
 | `kid_not_in_did_document` | The signing key is not a published verification method of `did`. |
-| `thumbprint_computation_failed` | A resolved JWK was structurally invalid, so its RFC 7638 thumbprint could not be computed — fail closed. |
+| `thumbprint_computation_failed` | A resolved JWK was structurally invalid, so its RFC 7638 thumbprint could not be computed - fail closed. |
 | `audience_mismatch` | `audience !== expectedAudience`. |
 | `request_hash_mismatch` | `requestHash` does not recompute over the request. |
 | `invalid_window` | `expires <= created`. |
@@ -1210,7 +1239,7 @@ Codes are snake_case, aligned to the implementation.
 | `created_in_future` | `created > now + skew`. |
 | `expired` | `expires < now - skew`. |
 | `nonce_replayed` | The nonce has been seen for this `did`. |
-| `nonce_seam_missing` | No `consumeNonceIfFresh` seam supplied — replay freshness cannot be verified, so fail closed. |
+| `nonce_seam_missing` | No `consumeNonceIfFresh` seam supplied - replay freshness cannot be verified, so fail closed. |
 | `alg_key_mismatch` | Proof `alg` (`EdDSA` \| `ES256`) does not match the resolved signing key type (Ed25519 / P-256). |
 | `invalid_signature` | The detached JWS did not verify under the pinned `alg`. |
 | `cnf_key_mismatch` | Proof `cnf.jkt` ≠ the signing key thumbprint. |

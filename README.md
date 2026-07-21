@@ -165,6 +165,28 @@ This starts all example servers and opens [MCP Inspector](https://github.com/mod
 
 Also available: [outbound-delegation](./examples/outbound-delegation/) (gateway pattern), [verify-proof](./examples/verify-proof/) (standalone verification), [statuslist](./examples/statuslist/) (revocation lifecycle), [cheqd-dlr](./examples/cheqd-dlr/) (operator DID linkage + DLR publishing).
 
+## Try it against the live server
+
+[![Live deployment probe](https://github.com/decentralized-identity/kya-os-mcp/actions/workflows/live-probe.yml/badge.svg)](https://github.com/decentralized-identity/kya-os-mcp/actions/workflows/live-probe.yml)
+
+A public reference deployment runs the latest published release, with the identity `did:web:demo-mcp.kya-os.ai`.
+Every surface is a plain HTTPS fetch, so no privileged access is needed to check any claim it makes.
+
+| Surface | URL |
+|---------|-----|
+| MCP endpoint (streamable-http) | `https://demo-mcp.kya-os.ai/mcp` |
+| DID document | [/.well-known/did.json](https://demo-mcp.kya-os.ai/.well-known/did.json) |
+| Entity Card | [/card.json](https://demo-mcp.kya-os.ai/card.json) |
+| Revocation status list | [/status-list](https://demo-mcp.kya-os.ai/status-list) |
+| Exactly what is running | [/provenance](https://demo-mcp.kya-os.ai/provenance) |
+
+Connect [MCP Inspector](https://github.com/modelcontextprotocol/inspector) to `https://demo-mcp.kya-os.ai/mcp`, call `vault_read`, and inspect the proof in `_meta`.
+Then verify that proof yourself with [examples/verify-proof](./examples/verify-proof/), which resolves the server's `did:web` over the public internet and checks the signature.
+A guided browser walkthrough of the same server (valid proof, tamper, replay, stolen key, live revocation, cross-language re-verification) runs at [poc.kya-os.ai](https://poc.kya-os.ai).
+
+The [daily probe](./.github/workflows/live-probe.yml) in CI performs those same read-only checks: it fetches the discovery surfaces, round-trips a real tool call over MCP, and verifies the returned proof against the publicly resolved DID.
+The server is operated by a maintainer on pinned releases; this repo does not deploy it, it independently verifies it.
+
 ---
 
 ## What's under the hood

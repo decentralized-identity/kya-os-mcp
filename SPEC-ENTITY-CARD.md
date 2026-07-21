@@ -93,15 +93,15 @@ This document specifies, normatively:
 - the **per-request holder-of-key proof** `org.kya-os/proof@1`, its dual carrier, and the
   `cnf.jkt` sender-constraint fusion (§8);
 - the **conformance ladder** L1/L2/L3 and its recompute-on-verify algorithm (§9);
-- **delegation & accountability** as a W3C VC 2.0 + ZCAP-LD profile with CRISP attenuation and
-  Bitstring Status List revocation (§10);
+- the **accountability joins and revocation binding** Card verification consumes (§10); the
+  delegation profile itself lives in the core protocol specification (SPEC.md §6, §6.10);
 - the exact, fail-closed **verification algorithm** (§11);
 - **security** (§12), **privacy** (§13), **IANA/registry** considerations (§14), and **interop**
   (§15).
 
 Out of scope: the wire framing of MCP itself; key custody hardware; the authorization server's
 internal token issuance (§7.5 specifies only the `cnf` binding KYA-OS consumes); and business-layer
-KYC/KYB adjudication (§10.7 specifies only the credential shape that carries its *result*).
+KYC/KYB adjudication (§10.4 points at the credential shape that carries its *result*).
 
 ### 1.3 The two claims
 
@@ -130,9 +130,9 @@ connects the two claims, from the L1 token to the L3 per-request proof, through 
 |------|------------|
 | **Entity** | A first-class, DID-identified principal of exactly one `entityType` (§3). Each Entity has its own DID and its own Card. |
 | **Entity Card** (Card) | The typed, DID-anchored identity object of §4. It ASSERTS identity + type + declared capabilities; everything trust-bearing is PROVEN by referenced credentials (claim-minimalism, §4.2). |
-| **Responsible Party** | The entity **ultimately accountable** for an Entity's actions: the **root issuer** of its delegation chain (`issuer` of the root `DelegationCredential`). Carried on the Card as `responsibleParty`; verified as `responsibleParty === issuer(rootVC)`, never self-asserted (§10.5). |
+| **Responsible Party** | The entity **ultimately accountable** for an Entity's actions: the **root issuer** of its delegation chain (`issuer` of the root `DelegationCredential`). Carried on the Card as `responsibleParty`; verified as `responsibleParty === issuer(rootVC)`, never self-asserted (§10.2). |
 | **Principal** | The **immediate** delegator - typically the authorizing human - when it differs from the Responsible Party. Carried as `principal`. |
-| **Delegation Chain** | An ordered sequence of `DelegationCredential`s from the root delegator to the current Entity, each hop's delegate being the next hop's issuer (§10.3). |
+| **Delegation Chain** | An ordered sequence of `DelegationCredential`s from the root delegator to the current Entity, each hop's delegate being the next hop's issuer (§10.1). |
 | **Capability** (Card field) | A declared operation NAME: what an Entity says it can do. Declaring one conveys no authority - authority is conveyed only by a delegation chain (§10), where the ZCAP-LD capability (the signed credential) is the authority object. A bare string is L1 (self-declared); an object `{ name, attestations }` is L2 (attested by a Verifiable Credential) (§4.1, §9). |
 | **Holder-of-Key Proof** | The per-request, sender-constrained `org.kya-os/proof@1` object (§8) that proves the caller currently controls the DID key bound to the Card. |
 | **Audience** | The intended recipient of a proof - the recipient Entity's DID, read from its Card. Binds a proof to THIS recipient (anti-relay / anti-confused-deputy, §8.4). |
@@ -145,7 +145,7 @@ connects the two claims, from the L1 token to the L3 per-request proof, through 
 For the accountability edge, the ONLY normative terms are **Responsible Party** (root) and
 **Principal** (immediate delegator). An implementation MUST NOT introduce `owner`, `operator`, or
 `controller` as accountability-role synonyms on the Card. (Note: ZCAP-LD's
-`credentialSubject.controller` - §10.2 - names the *delegate* of a capability, a distinct concept
+`credentialSubject.controller` - SPEC.md §6.10 - names the *delegate* of a capability, a distinct concept
 that is retained under its ZCAP meaning; and NANDA's `owner` slot is *populated from*
 `responsibleParty` in the AgentFacts projection - §6.3 - not adopted as a Card field.)
 
@@ -210,14 +210,14 @@ top-level properties.
 | `createdAt` | string (date-time) | MAY | Creation timestamp. |
 | `capabilities` | array of (string \| `{name, attestations[≥1]}`) | MAY | Declared capabilities. A bare string is **L1**; an object with `attestations` is **L2** (§9). |
 | `conformanceLevel` | enum `L1`\|`L2`\|`L3` | MAY | **DERIVED** summary. A Verifier MUST ignore this on input and RECOMPUTE it (§9, §11). |
-| `responsibleParty` | DID | MAY | Root-accountable Entity (§2.2, §10.5). SHOULD be `did:web`. |
+| `responsibleParty` | DID | MAY | Root-accountable Entity (§2.2, §10.2). SHOULD be `did:web`. |
 | `principal` | DID | MAY | Immediate human delegator, when distinct. |
 | `delegationRef` | string | MAY | Locator for the signed delegation chain backing `responsibleParty`/`principal` (e.g. `vc_root>del_123`, hops joined by `>`); resolved, not inlined. |
 | `attestations` | array of `{type: "IdentityVerification"\|"CapabilityAttestation", vc, subject?, issuer?}` | MAY | Resolvable, signed credentials about the Entity or its `responsibleParty` (e.g. KYC/KYB). |
 | `didDocument` | string | MAY | URL of the DID document (for `did:web`, otherwise derivable, §5.3). |
 | `proofProfile` | literal `"org.kya-os/proof@1"` | MAY | Names the per-request proof profile the Entity's requests carry (§8). The proof itself is NEVER on the Card. |
 | `cimd` | `{clientId, jwksUri}` | MAY | CIMD on-ramp coordinates (§7). |
-| `revocation` | `{statusListCredential, statusListIndex}` | MAY | W3C Bitstring Status List v1.0 entry for the Card's backing credential (§10.6). |
+| `revocation` | `{statusListCredential, statusListIndex}` | MAY | W3C Bitstring Status List v1.0 entry for the Card's backing credential (§10.3). |
 
 ### 4.2 Claim-minimalism
 
@@ -648,10 +648,10 @@ self-asserted Card. Capabilities are bare strings.
 Evidence: a `did:web` anchor with a `KyaOsEntityCard` service on the DID document; every declared
 capability backed by a trusted-issuer `CapabilityAttestationCredential`
 (`credentialSubject.id === card.id`, capability name matches, `validUntil` in the future, not
-revoked per a cached Bitstring Status List, §10.6); OPTIONALLY a KYC/KYB
-`IdentityVerificationCredential` on the `responsibleParty` (§10.7).
+revoked per a cached Bitstring Status List, §10.3); OPTIONALLY a KYC/KYB
+`IdentityVerificationCredential` on the `responsibleParty` (§10.4).
 
-Delegation-chain resolution (CRISP attenuation, `responsibleParty === issuer(rootVC)`, §10.5) is
+Delegation-chain resolution (the attenuation invariants, `responsibleParty === issuer(rootVC)`, §10.2) is
 NOT level evidence. When the Card carries a `responsibleParty`, chain resolution is a fail-closed
 GATE on the `ok` verdict (§11.1 step 6): an unresolved chain sets `ok: false` and the Card is
 rejected outright, but the derived level is computed by the §9.4 algorithm from the capability
@@ -664,7 +664,7 @@ Evidence: L2 **plus** a valid sender-constrained `org.kya-os/proof@1` (§8) - `a
 nonce fresh, `requestHash` recomputes, and the `cnf.jkt` fusion when the AS supplies a token `cnf`
 (this is the proof floor that lifts the level to L3) - **plus** a LIVE Bitstring Status List
 freshness check on the leaf delegation/capability credentials. The leaf-invoker === `proof.did`
-join (§10.5), like delegation-chain resolution in §9.2, is a fail-closed GATE on `ok` (§11.1 step
+join (§10.2), like delegation-chain resolution in §9.2, is a fail-closed GATE on `ok` (§11.1 step
 6), not level evidence; the level is derived per §9.4 / §11.1 step 7.
 
 ### 9.4 Derivation algorithm
@@ -695,72 +695,24 @@ unverified.
 
 ## 10. Delegation & Accountability (NORMATIVE)
 
-KYA-OS **profiles** W3C Verifiable Credentials 2.0 [VC-DATA-MODEL-2] + ZCAP-LD [ZCAP-LD]; it does
-not fork them.
+The Card asserts none of this; it carries locators (`responsibleParty`, `principal`,
+`delegationRef`, `revocation`) that a Verifier resolves and recomputes. The delegation profile
+itself - the `DelegationCredential` shape (a W3C VC 2.0 whose `credentialSubject` is an attenuated
+ZCAP-LD capability), the delegate rules, and the attenuation invariants every hop must
+satisfy - is specified in the core protocol's delegation chapter (SPEC.md §6.10, alongside the
+legacy shape it succeeds). The rest of that chapter and the core delegation rules, including the
+per-hop `audience` constraint on re-delegation (SPEC.md §11.6), apply unchanged. This section
+keeps only what Card verification consumes directly.
 
-### 10.1 DelegationCredential
+### 10.1 The delegation profile, by reference
 
-One `DelegationCredential` per delegation **hop**; a chain runs `root → … → leaf`. A
-`DelegationCredential` is a VC 2.0 whose `credentialSubject` IS an attenuated ZCAP-LD capability:
+One `DelegationCredential` per delegation hop; a chain runs `root → … → leaf`, each hop's delegate
+being the next hop's issuer, under the `https://kya-os.org/ns/delegation/v1` JSON-LD context. A
+chain is valid only if every hop attenuates its parent (actions, caveats, validity) and preserves
+continuity and a constant `invocationTarget`; any broadening hop invalidates the whole chain.
+Shape, fields, worked example, and the full invariant list: SPEC.md §6.10.
 
-```jsonc
-{
-  "@context": [ "https://www.w3.org/ns/credentials/v2",
-                "https://w3id.org/security/zcap/v1",
-                "https://kya-os.org/ns/delegation/v1" ],
-  "type": [ "VerifiableCredential", "DelegationCredential" ],
-  "issuer": "<delegator DID>",
-  "validUntil": "2027-01-01T00:00:00Z",
-  "credentialSubject": {
-    "id": "urn:zcap:del_123",
-    "invoker": "<delegate DID>",           // or "controller" (§2.3)
-    "parentCapability": "<parent id | root invocationTarget>",
-    "invocationTarget": "<resource DID>",
-    "allowedAction": [ "payments.transfer" ],
-    "caveats": [ { "type": "ValidUntil", "date": "…" },
-                 { "type": "MaxAmount", "limit": "500.00", "currency": "USD" } ]
-  },
-  "credentialStatus": { "type": "BitstringStatusListEntry",
-    "statusPurpose": "revocation", "statusListIndex": "42",
-    "statusListCredential": "https://…/status/delegations" },
-  "proof": { "type": "DataIntegrityProof", "cryptosuite": "eddsa-jcs-2022" }
-}
-```
-
-Per-hop signature verification (the `DataIntegrityProof`, `eddsa-jcs-2022`) is a SEPARATE injected
-concern; this section specifies the CRISP + continuity recompute.
-
-### 10.2 The delegate
-
-The delegate is `credentialSubject.invoker`, falling back to `credentialSubject.controller`; a
-capability MUST name one of them.
-
-### 10.3 CRISP attenuation (fail-closed, on resolve)
-
-A chain is valid only if EVERY hop attenuates its parent. Any broadening hop invalidates the whole
-chain:
-
-- **action subset** - child `allowedAction ⊆ parent`;
-- **monotone caveats** - no parent caveat may be silently dropped; for a shared caveat type, child
-  `MaxAmount ≤ parent` (same currency; compared as fixed-point decimals scaled to 6 places) and
-  child `ValidUntil ≤ parent`; an unknown caveat type MUST be replicated **verbatim**;
-- **top-level `validUntil` narrowing** - child `validUntil ≤ parent`;
-- **continuity** - the parent's delegate (`invoker`) MUST equal the child's `issuer` (you may only
-  re-delegate what was delegated to YOUR key), and child `parentCapability` MUST reference the
-  parent capability `id`;
-- **constant `invocationTarget`** along the chain;
-- **depth** MUST NOT exceed **10** hops (`MAX_DELEGATION_DEPTH`);
-- **root** - root `parentCapability` MUST equal its `invocationTarget` (the resource); when a
-  resource owner / resource is asserted, root `issuer` MUST equal the resource owner and root
-  `invocationTarget` MUST equal the resource.
-
-A verifying resource SHOULD assert its own identity as the expected resource when it evaluates a
-chain (the `resource` context of `evaluateDelegationChain`), so that a chain minted for a
-different resource fails at the root check instead of being accepted by an unrelated Verifier.
-
-### 10.4 (reserved)
-
-### 10.5 The join - recomputed, asserted nowhere
+### 10.2 The join - recomputed, asserted nowhere
 
 Two equalities gate accountability and are RECOMPUTED (never trusted on the Card):
 
@@ -773,27 +725,20 @@ The `leafInvoker === proof.did` join ties the delegation chain (§10) to the liv
 (§8): the accountability verifier is threaded the verified `proof.did` and asserts it equals the
 leaf delegate.
 
-### 10.6 Revocation - Bitstring Status List v1.0, cascading
+### 10.3 Revocation
 
-Revocation uses **W3C Bitstring Status List v1.0** [BITSTRING-STATUS-LIST]
-(`BitstringStatusListEntry`) - the **successor to** the deprecated StatusList2021 - behind a
-pluggable `RevocationChecker` seam so status-list churn never reaches callers. The default checker
-resolves `statusListCredential` via SafeFetch (§6.6), inflates the multibase (`u` = base64url) +
-GZIP `encodedList`, and reads the bit at `statusListIndex` MSB-first within each byte. It is
-**fail-closed**: an unreachable list, malformed credential, mismatched `statusPurpose`, or
-out-of-range index all resolve to `{ revoked: true }`. Each verdict also reports `fresh` - `true`
-only when read from a live, in-validity-window (`validFrom`/`validUntil`, or
-`issuanceDate`/`expirationDate`) status list. The chain walk is **cascading**: root→leaf,
-short-circuiting on the first revoked/unresolvable hop (a revoked ancestor invalidates the subtree),
-with `fresh` the AND of every checked hop. L2 accepts a non-revoked chain (cached / offline
-acceptable); L3 additionally requires `fresh` (a live check).
+The Card's `revocation` field is a W3C Bitstring Status List v1.0 [BITSTRING-STATUS-LIST] entry
+(`statusListCredential`, `statusListIndex`) for the Card's backing credential. Checks are
+fail-closed (an unreachable or malformed list reads as revoked) and report freshness; L2 accepts a
+cached non-revoked verdict, L3 requires a live one (§9). The chain walk is cascading: a revoked
+ancestor invalidates the subtree. Mechanics, the `RevocationChecker` seam, and the fail-closed
+rules: SPEC.md §6.10.
 
-### 10.7 KYC/KYB
+### 10.4 KYC/KYB
 
-KYC/KYB rides the same rail as an `IdentityVerificationCredential` whose `credentialSubject` is the
-`responsibleParty` and which asserts the verification **fact + level** (`verificationLevel ∈
-{ basic, enhanced, loa3 }`), never raw PII. It is verified via the same trusted-issuer + signature +
-expiry path as an L2 capability attestation and surfaced through the Card's `attestations[]`.
+KYC/KYB rides the same rail as an `IdentityVerificationCredential` on the `responsibleParty`,
+asserting the verification fact and level, never raw PII, surfaced through the Card's
+`attestations[]`. Shape: SPEC.md §6.10.
 
 ---
 
@@ -811,7 +756,7 @@ than erroring open.
    a throwing verifier yields `{ ok: false, reasons: ["proof_verifier_threw"] }` (a demotion, not an
    escape). Let `proofDid = proof.ok ? proof.did : undefined`.
 3. **Accountability** - if `card.responsibleParty` is present, run the accountability verifier with
-   `{ trustedIssuers, proofDid }` (threading `proofDid` for the §10.5 leaf-invoker join).
+   `{ trustedIssuers, proofDid }` (threading `proofDid` for the §10.2 leaf-invoker join).
 4. **Attestations** - recompute each `card.attestations[]` via the attestation verifier.
 5. **Card revocation** - if a status-list checker is supplied and the Card declares `revocation`,
    live-check it; unreachable ⇒ `{ revoked: true, fresh: false }` (fail-closed).
@@ -897,10 +842,10 @@ the nonce window; distributed deployments MUST use atomic check-and-set on the n
 ### 12.3 Confused deputy / relay
 
 A proof or delegation is repurposed against a recipient the delegator did not intend. Mitigations:
-`audience` binds a proof to THIS recipient DID (§8.4); the CRISP designation/continuity invariants
-bind a delegation to a specific resource and delegate (§10.3), and the verifying resource asserts
-itself as the expected `invocationTarget` (§10.3); the `leafInvoker === proof.did` join
-(§10.5) prevents a delegation to key A being exercised by key B. For re-delegated credentials, the
+`audience` binds a proof to THIS recipient DID (§8.4); the designation/continuity invariants
+bind a delegation to a specific resource and delegate, and the verifying resource asserts
+itself as the expected `invocationTarget` (SPEC.md §6.10); the `leafInvoker === proof.did` join
+(§10.2) prevents a delegation to key A being exercised by key B. For re-delegated credentials, the
 core protocol's per-hop `audience` constraint (SPEC.md §11.6) applies unchanged alongside this
 profile.
 
@@ -915,14 +860,14 @@ audience-, nonce-, and key-bound).
 ### 12.5 Key compromise
 
 An Entity's secret key is exfiltrated. Mitigations: short-lived proofs and delegations; explicit
-revocation (§10.6); key rotation via DID-document update (old keys SHOULD remain for historical proof
+revocation (§10.3); key rotation via DID-document update (old keys SHOULD remain for historical proof
 verification; reissue delegations bound to specific `kid`s). Residual: the window between compromise
 and detection/revocation.
 
 ### 12.6 Revocation freshness
 
 An invocation arrives while a revocation propagates (a Lamport-concurrent race). Mitigations: L3
-requires a LIVE, in-window status check (§10.6); status-list cache TTL SHOULD be short (≤60 s) for
+requires a LIVE, in-window status check (§10.3); status-list cache TTL SHOULD be short (≤60 s) for
 high-privilege scopes; cascading revocation is atomic over the subtree; expiry is the primary
 revocation mechanism. Residual: the unavoidable race window operators bound but cannot eliminate.
 
@@ -966,7 +911,7 @@ redirects, size/time caps. Residual: standard transport-layer DoS is out of scop
 |--------|----------------|----------|
 | Impersonation | `kid`↔`did` binding + DID membership (§12.1) | key/edge-Verifier compromise |
 | Replay | nonce + bounded window (§12.2) | nonce-window race |
-| Confused deputy / relay | `audience` + CRISP + leaf-invoker join (§12.3) | check-implementation bugs |
+| Confused deputy / relay | `audience` + attenuation invariants + leaf-invoker join (§12.3) | check-implementation bugs |
 | Session-carry | `cnf.jkt` fusion (§12.4) | L3-minus where AS omits `cnf` |
 | Key compromise | short TTL + revocation + rotation (§12.5) | compromise→detection window |
 | Revocation race | live status + short TTL + cascading (§12.6) | Lamport-concurrent race |
@@ -982,7 +927,7 @@ redirects, size/time caps. Residual: standard transport-layer DoS is out of scop
 - **Claim-minimalism (§4.2).** The Card asserts only identity + type + declared capabilities +
   accountability locators. Trust-bearing claims are referenced credentials, resolved on demand.
 - **PII off-card.** KYC/KYB is asserted as a fact + level (`basic | enhanced | loa3`), never raw PII;
-  DUNS/legal-name/etc. stay in the registry, off the Card and off every projection (§10.7).
+  DUNS/legal-name/etc. stay in the registry, off the Card and off every projection (§10.4).
 - **Selective disclosure (forward seam).** The delegation/attestation rail is VC 2.0, so
   selective-disclosure / BBS unlinkable proofs are a forward-compatible upgrade path; a Verifier
   that receives an SD credential MUST NOT require full disclosure where a predicate proof suffices.
@@ -1092,7 +1037,7 @@ implementation, not as a new primitive to ratify.
 |---|---|
 | The `entityType` vocabulary and its closed value space (§3). | Discovery projections onto MCP `_meta`, A2A, NANDA, catalog (§6). |
 | The `client_id → did:web → mandate-VC` binding and its `cnf.jkt` fusion (§7–§8, §8.6). | The CIMD document, proof wire-format, and RFC 9421 sibling mechanics (§7–§8). |
-| The machine-checkable conformance vectors that pin both (Appendix C). | The L1/L2/L3 ladder (§9), ZCAP-LD delegation (§10), revocation (§10.6), verification order (§11), SafeFetch (§6.6). |
+| The machine-checkable conformance vectors that pin both (Appendix C). | The L1/L2/L3 ladder (§9), ZCAP-LD delegation (§10), revocation (§10.3), verification order (§11), SafeFetch (§6.6). |
 
 Standardizing the vectors alongside the two primitives is deliberate: a vocabulary and a binding are
 only interoperable once a second implementation can reproduce them byte-for-byte (§8.3), so the
@@ -1107,8 +1052,10 @@ once a peer rail ships an equivalent, the axis stops being available to standard
 
 The A2A extension-URI registration venue (§14.2); MCP registry acceptance of unknown `_meta`
 (§14.1); whether the AS (`example.com` / Vouched) emits RFC 9449 `cnf.jkt` today (else L3-minus,
-§8.6); status-list hosting + cascading-walk cost (§10.6); a registry-signed offline `did:web`
-key-pin (§12.8); and the per-route nonce policy (§12.2, §12.9).
+§8.6); status-list hosting + cascading-walk cost (§10.3); a registry-signed offline `did:web`
+key-pin (§12.8); the per-route nonce policy (§12.2, §12.9); and whether the Card should carry a
+field enumerating the access-control mechanisms an Entity supports (raised in review; today the
+mechanisms are implied by `proofProfile`, `cimd`, and the delegation locators rather than named).
 
 ---
 
@@ -1188,7 +1135,7 @@ reuse them.
 | Vector file | Contents |
 |-------------|----------|
 | `conformance/vectors/card-proof.json` | Signed `org.kya-os/proof@1` proofs + their RFC 9421 siblings, each carrying its request, the DID-keyed JWKS (`input.jwks`), audience, and window. One positive vector + five negatives (tampered body, tampered signature, wrong audience, expired, kid⇄did forgery). |
-| `conformance/vectors/entity-card.json` | Golden `parseCard`-valid Cards, one per `entityType`, plus the multi-hop VC 2.0 + ZCAP-LD delegation chain (CRISP attenuation; leaf invoker === proof `did`) carried by the agent accountability vector. |
+| `conformance/vectors/entity-card.json` | Golden `parseCard`-valid Cards, one per `entityType`, plus the multi-hop VC 2.0 + ZCAP-LD delegation chain (attenuation invariants; leaf invoker === proof `did`) carried by the agent accountability vector. |
 | `conformance/card-vectors.ts` | Deterministic regenerator (TypeScript). |
 | `conformance/verify.py` | The INDEPENDENT cross-language verifier (pure Python stdlib). |
 
@@ -1260,8 +1207,8 @@ Codes are snake_case, aligned to the implementation.
 `validateDelegationChain` / `evaluateDelegationChain` emit human-readable reasons for: allowedAction
 escalation, caveat broadening/dropping, `validUntil` broadening, broken continuity (parent invoker ≠
 child issuer; child `parentCapability` ≠ parent id), `invocationTarget` drift, depth-cap exceeded,
-and root mismatches (§10.3). `evaluateRevocationChain` emits a fail-closed reason per revoked /
-unresolvable hop (§10.6). `verifyCimdBind` emits origin-mismatch and missing-`alsoKnownAs` reasons
+and root mismatches (SPEC.md §6.10). `evaluateRevocationChain` emits a fail-closed reason per revoked /
+unresolvable hop (§10.3). `verifyCimdBind` emits origin-mismatch and missing-`alsoKnownAs` reasons
 (§7.4).
 
 ### D.4 Legacy protocol error codes (1.x session profile)

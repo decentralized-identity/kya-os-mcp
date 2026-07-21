@@ -155,7 +155,8 @@ export async function computeRequestHash(req: ToolRequest): Promise<string> {
 function stripParamsMeta(params: unknown): unknown {
   if (params === null || typeof params !== 'object' || Array.isArray(params)) return params;
   if (!('_meta' in (params as Record<string, unknown>))) return params;
-  const { _meta: _stripped, ...rest } = params as Record<string, unknown>;
+  const rest: Record<string, unknown> = { ...(params as Record<string, unknown>) };
+  delete rest._meta;
   return rest;
 }
 

@@ -210,6 +210,84 @@ describe('ProofVerifier Security', () => {
       expect(mockClockProvider.isWithinSkew).not.toHaveBeenCalled();
       expect(mockCryptoProvider.verify).toHaveBeenCalled();
     });
+
+    it('rejects a structurally invalid retained artifact', async () => {
+      const result = await proofVerifier.verifyProofArtifact(
+        { jws: 'invalid', meta: { did: 'did:key:z123' } } as DetachedProof,
+        validJwk,
+      );
+
+      expect(result).toMatchObject({
+        valid: false,
+        errorCode: PROOF_VERIFICATION_ERROR_CODES.INVALID_PROOF_STRUCTURE,
+      });
+      expect(mockCryptoProvider.verify).not.toHaveBeenCalled();
+    });
+
+    it('rejects a retained artifact with an invalid signature', async () => {
+      mockCryptoProvider.verify = vi.fn().mockResolvedValue(false);
+
+      const result = await proofVerifier.verifyProofArtifact(
+        createValidProof(),
+        validJwk,
+      );
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain('Invalid JWS signature');
+    });
+
+    it('requires the retained response when an artifact binds one', async () => {
+      const proof = createValidProof();
+      mockCryptoProvider.hash = vi.fn().mockResolvedValue(proof.meta.requestHash);
+
+      const result = await proofVerifier.verifyProofArtifact(proof, validJwk, {
+        request: { method: 'read', params: {} },
+      });
+
+      expect(result).toMatchObject({
+        valid: false,
+        errorCode: PROOF_VERIFICATION_ERROR_CODES.CONTENT_BINDING_MISMATCH,
+      });
+      expect(result.reason).toContain('no response was supplied');
+    });
+
+    it('rejects a retained response when the artifact binds none', async () => {
+      const proof = createValidProof();
+      delete proof.meta.responseHash;
+      mockCryptoProvider.hash = vi.fn()
+        .mockResolvedValueOnce(proof.meta.requestHash)
+        .mockResolvedValueOnce('sha256:' + 'c'.repeat(64));
+
+      const result = await proofVerifier.verifyProofArtifact(proof, validJwk, {
+        request: { method: 'deny', params: {} },
+        response: { data: { denied: true } },
+      });
+
+      expect(result).toMatchObject({
+        valid: false,
+        errorCode: PROOF_VERIFICATION_ERROR_CODES.CONTENT_BINDING_MISMATCH,
+      });
+      expect(result.reason).toContain('proof binds none');
+    });
+
+    it('normalizes unexpected artifact verification failures', async () => {
+      vi.spyOn(proofVerifier, 'buildCanonicalPayload').mockImplementationOnce(() => {
+        throw 'artifact verification failed';
+      });
+
+      const result = await proofVerifier.verifyProofArtifact(
+        createValidProof(),
+        validJwk,
+      );
+
+      expect(result).toMatchObject({
+        valid: false,
+        reason: 'Proof verification error',
+        errorCode: PROOF_VERIFICATION_ERROR_CODES.VERIFICATION_ERROR,
+        details: { errorMessage: 'artifact verification failed' },
+      });
+      expect(result.error).toBeInstanceOf(Error);
+    });
   });
 
   describe('Timestamp Skew Validation', () => {
@@ -474,6 +552,27 @@ describe('ProofVerifier Security', () => {
       );
       expect(result2.valid).toBe(false);
       expect(result2.reason).toContain('replay');
+    });
+
+    it('should normalize an unexpected detached-payload conversion failure', async () => {
+      const hostilePayload = new Proxy(new Uint8Array(), {
+        getPrototypeOf: () => {
+          throw new Error('payload unavailable');
+        },
+      });
+
+      const result = await proofVerifier.verifyProofDetached(
+        createValidProof(),
+        hostilePayload,
+        validJwk,
+      );
+
+      expect(result).toMatchObject({
+        valid: false,
+        reason: 'Proof verification error',
+        errorCode: PROOF_VERIFICATION_ERROR_CODES.VERIFICATION_ERROR,
+        details: { errorMessage: 'payload unavailable' },
+      });
     });
   });
 

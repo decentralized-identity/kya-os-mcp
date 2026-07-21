@@ -5,6 +5,8 @@ import { MemoryAuditLogProvider } from '../../providers/audit-log.js';
 import type { AuditTrailService } from '../../audit/service.js';
 import { createKyaOsMiddleware } from '../with-kya-os.js';
 
+type AuditEventInput = Parameters<AuditTrailService['record']>[0];
+
 async function setup(record: Pick<AuditTrailService, 'record'>['record']) {
   const crypto = new NodeCryptoProvider();
   const keyPair = await crypto.generateKeyPair();
@@ -143,6 +145,259 @@ describe('MCP audit instrumentation', () => {
     await middleware.handleKyaOs(request);
     expect(events.map((event) => event.eventType)).toEqual([
       'session.established', 'session.replay_rejected',
+    ]);
+  });
+
+  it('threads complete call attribution into proof and tool audit events', async () => {
+    const events: AuditEventInput[] = [];
+    const middleware = await setup(async (event) => {
+      events.push(event);
+      return { status: 'pending', event: event as never };
+    });
+    const context = {
+      actor: { kind: 'public_did' as const, did: 'did:example:actor' },
+      responsibleParty: { kind: 'public_did' as const, did: 'did:example:owner' },
+      authorization: { source: 'policy' as const, decision: 'allowed' as const },
+      correlationId: 'correlation-1',
+      causationId: 'causation-1',
+    };
+    const handler = middleware.wrapWithProof('read', async () => ({
+      content: [{ type: 'text', text: 'ok' }],
+    }));
+
+    await handler({}, undefined, context);
+
+    expect(events[0]).toMatchObject(context);
+    expect(events.find((event) => event.eventType === 'proof.generated'))
+      .toMatchObject(context);
+  });
+
+  it('audits an explicit unknown session without misattributing a proof', async () => {
+    const events: AuditEventInput[] = [];
+    const middleware = await setup(async (event) => {
+      events.push(event);
+      return { status: 'pending', event: event as never };
+    });
+    const handler = middleware.wrapWithProof('read', async () => ({
+      content: [{ type: 'text', text: 'ok' }],
+    }));
+
+    const result = await handler({}, 'kyaos_missing');
+
+    expect(result._meta).toBeUndefined();
+    expect(events.map((event) => event.eventType)).toEqual([
+      'tool.call.started', 'proof.rejected', 'tool.call.completed',
+    ]);
+    expect(events[1]).toMatchObject({
+      details: { verificationCode: 'PROOF_SESSION_NOT_FOUND' },
+    });
+  });
+
+  it('returns an unproven result when automatic session establishment fails', async () => {
+    const events: AuditEventInput[] = [];
+    const middleware = await setup(async (event) => {
+      events.push(event);
+      return { status: 'pending', event: event as never };
+    });
+    vi.spyOn(middleware.sessionManager, 'validateHandshake').mockResolvedValueOnce({
+      success: false,
+      error: { code: 'handshake_failed', message: 'session unavailable' },
+    });
+    const handler = middleware.wrapWithProof('read', async () => ({
+      content: [{ type: 'text', text: 'ok' }],
+    }));
+
+    const result = await handler({});
+
+    expect(result._meta).toBeUndefined();
+    expect(events[1]).toMatchObject({
+      eventType: 'proof.rejected',
+      details: { verificationCode: 'PROOF_SESSION_UNAVAILABLE' },
+    });
+  });
+
+  it('marks a completed response degraded when required terminal audit delivery fails', async () => {
+    const middleware = await setup(async (event) => {
+      if (event.eventType === 'proof.generated') throw 'required recorder unavailable';
+      return { status: 'pending', event: event as never };
+    });
+    const handler = middleware.wrapWithProof('write', async () => ({
+      content: [{ type: 'text', text: 'completed' }],
+    }));
+
+    const result = await handler({});
+
+    expect(result.isError).toBe(true);
+    expect(result._meta).toMatchObject({
+      'org.kya-os/audit': {
+        status: 'degraded',
+        reason: 'Required terminal audit delivery failed after tool completion',
+      },
+    });
+  });
+
+  it('audits proof-generation failures while preserving the tool response', async () => {
+    const events: AuditEventInput[] = [];
+    const middleware = await setup(async (event) => {
+      events.push(event);
+      return { status: 'pending', event: event as never };
+    });
+    vi.spyOn(middleware.proofGenerator, 'generateProof')
+      .mockRejectedValueOnce('signer unavailable');
+    const handler = middleware.wrapWithProof('read', async () => ({
+      content: [{ type: 'text', text: 'ok' }],
+    }));
+
+    const result = await handler({});
+
+    expect(result.isError).toBeUndefined();
+    expect(result._meta).toEqual({
+      proofError: 'Proof generation failed — response is unproven',
+    });
+    expect(events.at(-1)).toMatchObject({
+      eventType: 'proof.rejected',
+      details: { verificationCode: 'PROOF_GENERATION_FAILED' },
+    });
+  });
+
+  it('audits allow decisions with the complete authorization context', async () => {
+    const events: AuditEventInput[] = [];
+    const middleware = await setup(async (event) => {
+      events.push(event);
+      return { status: 'pending', event: event as never };
+    });
+    const context = {
+      actor: { kind: 'public_did' as const, did: 'did:example:actor' },
+      responsibleParty: { kind: 'public_did' as const, did: 'did:example:owner' },
+      authorization: { source: 'delegation' as const, decision: 'allowed' as const },
+    };
+    const handler = middleware.withPolicyGate!(
+      'repo.read',
+      async (args) => ({ content: [{ type: 'text', text: JSON.stringify(args) }] }),
+      { scopeMatched: true },
+    );
+
+    const result = await handler({
+      _kyaos_delegation: {
+        credentialSubject: {
+          id: 'did:example:actor',
+          delegation: {
+            subjectDid: 'did:example:actor',
+            controller: 'did:example:owner',
+          },
+        },
+      },
+    }, undefined, context);
+
+    expect(result.isError).toBeUndefined();
+    expect(events.filter((event) => event.eventType.startsWith('authorization.')))
+      .toEqual([
+        expect.objectContaining({ eventType: 'authorization.evaluated', ...context }),
+        expect.objectContaining({ eventType: 'authorization.approved', ...context }),
+      ]);
+  });
+
+  it('omits unavailable optional attribution from policy audit events', async () => {
+    const events: AuditEventInput[] = [];
+    const middleware = await setup(async (event) => {
+      events.push(event);
+      return { status: 'pending', event: event as never };
+    });
+    const handler = middleware.withPolicyGate!(
+      'repo.read',
+      async () => ({ content: [{ type: 'text', text: 'ok' }] }),
+      { scopeMatched: true },
+    );
+
+    await handler({}, undefined, {});
+
+    const evaluated = events.find(
+      (event) => event.eventType === 'authorization.evaluated',
+    );
+    expect(evaluated).not.toHaveProperty('responsibleParty');
+    expect(evaluated).not.toHaveProperty('authorization');
+  });
+
+  it('audits policy denials and outcome-proof failures', async () => {
+    const events: AuditEventInput[] = [];
+    const middleware = await setup(async (event) => {
+      events.push(event);
+      return { status: 'pending', event: event as never };
+    });
+    vi.spyOn(middleware.proofGenerator, 'generateProof')
+      .mockRejectedValueOnce('outcome signer unavailable');
+    const handler = middleware.withPolicyGate!(
+      'frobnicate',
+      async () => ({ content: [{ type: 'text', text: 'must-not-run' }] }),
+      { scopeMatched: true },
+    );
+
+    const result = await handler({});
+
+    expect(result.isError).toBe(true);
+    expect(events.map((event) => event.eventType)).toEqual([
+      'authorization.evaluated',
+      'authorization.denied',
+      'tool.call.denied',
+      'proof.rejected',
+    ]);
+  });
+
+  it('audits the approval that satisfies a step-up quorum', async () => {
+    const events: AuditEventInput[] = [];
+    const middleware = await setup(async (event) => {
+      events.push(event);
+      return { status: 'pending', event: event as never };
+    });
+    const handler = middleware.withPolicyGate!(
+      'db.drop',
+      async () => ({ content: [{ type: 'text', text: 'ran' }] }),
+      {
+        resolveNamespace: () => 'prod',
+        scopeMatched: true,
+        isValidApprovalSignature: async () => true,
+      },
+    );
+    const challenge = await handler({ table: 'users' });
+    const { requestHash } = JSON.parse(challenge.content[0]!.text) as {
+      requestHash: string;
+    };
+
+    const result = await handler({
+      table: 'users',
+      _kyaos_approvals: [{
+        approvalRequestId: 'approval-1',
+        approverDid: 'did:example:approver',
+        requestHash,
+        decision: 'approve',
+        ts: 1,
+        signature: 'signature',
+      }],
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(events.some((event) => event.eventType === 'authorization.approved'))
+      .toBe(true);
+  });
+
+  it('returns a denial unchanged when its explicit session is absent', async () => {
+    const events: AuditEventInput[] = [];
+    const middleware = await setup(async (event) => {
+      events.push(event);
+      return { status: 'pending', event: event as never };
+    });
+    const handler = middleware.withPolicyGate!(
+      'frobnicate',
+      async () => ({ content: [{ type: 'text', text: 'must-not-run' }] }),
+      { scopeMatched: true },
+    );
+
+    const result = await handler({}, 'kyaos_missing');
+
+    expect(result.isError).toBe(true);
+    expect(result._meta).toBeUndefined();
+    expect(events.map((event) => event.eventType)).toEqual([
+      'authorization.evaluated', 'authorization.denied', 'tool.call.denied',
     ]);
   });
 });

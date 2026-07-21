@@ -60,6 +60,28 @@ describe("MemoryDelegationGraphStorage", () => {
     });
   });
 
+  describe("registerNodeAtomic", () => {
+    it("should reject an orphan without retaining it", async () => {
+      const orphan = createMockNode("del-orphan", "del-missing-parent");
+
+      await expect(storage.registerNodeAtomic(orphan)).rejects.toThrow(
+        "Parent delegation not found: del-missing-parent"
+      );
+      expect(await storage.getNode(orphan.id)).toBeNull();
+    });
+
+    it("should preserve a parent link when the child is registered again", async () => {
+      const parent = createMockNode("del-parent");
+      parent.children = ["del-child"];
+      await storage.setNode(parent);
+
+      await storage.registerNodeAtomic(createMockNode("del-child", parent.id));
+
+      expect((await storage.getNode(parent.id))?.children).toEqual(["del-child"]);
+      expect(await storage.getNode("del-child")).not.toBeNull();
+    });
+  });
+
   describe("getChildren", () => {
     it("should return empty array for node with no children", async () => {
       const node = createMockNode("del-001");
@@ -347,7 +369,6 @@ describe("MemoryDelegationGraphStorage", () => {
     });
   });
 });
-
 
 
 

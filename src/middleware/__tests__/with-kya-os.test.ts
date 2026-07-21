@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   createKyaOsMiddleware,
+  type KyaOsAuditTrail,
   type KyaOsDelegationConfig,
 } from '../with-kya-os.js';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
@@ -23,6 +24,7 @@ import { KYA_OS_PROOF_META_KEY, LEGACY_PROOF_META_KEY } from '../../proof/index.
 async function createTestMiddleware(options?: {
   autoSession?: boolean;
   delegation?: KyaOsDelegationConfig;
+  audit?: KyaOsAuditTrail | false;
   auditLog?: AuditLogProvider;
   emitLegacyProofKey?: boolean;
 }) {
@@ -36,6 +38,7 @@ async function createTestMiddleware(options?: {
       identity: { did, kid, privateKey: keyPair.privateKey, publicKey: keyPair.publicKey },
       session: { sessionTtlMinutes: 60 },
       delegation: options?.delegation,
+      audit: options?.audit,
       autoSession: options?.autoSession,
       auditLog: options?.auditLog,
       ...(options?.emitLegacyProofKey !== undefined
@@ -187,6 +190,73 @@ describe('createKyaOsMiddleware', () => {
       expect(parsed.capabilities).toContain('handshake');
       expect(parsed.capabilities).toContain('signing');
       expect(parsed.capabilities).toContain('verification');
+      expect(parsed.auditAssurance).toEqual({ enabled: false, profile: 'AAP-0' });
+    });
+
+    it('should advertise the configured audit assurance and capabilities', async () => {
+      const capabilities = {
+        profile: 'AAP-2' as const,
+        recorderTopology: 'self-hosted' as const,
+        delivery: 'required' as const,
+        journalDurability: 'durable' as const,
+        atomicAppend: true,
+        sourceHighWater: false,
+        merkleCheckpoints: false,
+        independentObservation: false,
+        supportingAnchors: [],
+        evidenceRetention: 'separate' as const,
+      };
+      const { middleware: kyaos } = await createTestMiddleware({
+        audit: {
+          record: async (event) => ({ status: 'pending', event: event as never }),
+          capabilities,
+        },
+      });
+
+      const result = await kyaos.handleKyaOs({ action: 'identity' });
+      const parsed = JSON.parse(result.content[0].text);
+
+      expect(parsed.auditAssurance).toEqual({
+        enabled: true,
+        profile: 'AAP-2',
+        capabilities,
+      });
+    });
+
+    it('should default an enabled audit adapter to AAP-1 without capabilities', async () => {
+      const { middleware: kyaos } = await createTestMiddleware({
+        audit: {
+          record: async (event) => ({ status: 'pending', event: event as never }),
+        },
+      });
+
+      const result = await kyaos.handleKyaOs({ action: 'identity' });
+      const parsed = JSON.parse(result.content[0].text);
+
+      expect(parsed.auditAssurance).toEqual({ enabled: true, profile: 'AAP-1' });
+    });
+
+    it('should let an explicit audit profile override capability inference', async () => {
+      const { middleware: kyaos } = await createTestMiddleware({
+        audit: {
+          record: async (event) => ({ status: 'pending', event: event as never }),
+          auditProfile: 'AAP-3',
+        },
+      });
+
+      const result = await kyaos.handleKyaOs({ action: 'identity' });
+      const parsed = JSON.parse(result.content[0].text);
+
+      expect(parsed.auditAssurance).toEqual({ enabled: true, profile: 'AAP-3' });
+    });
+
+    it('should advertise AAP-0 when audit is explicitly disabled', async () => {
+      const { middleware: kyaos } = await createTestMiddleware({ audit: false });
+
+      const result = await kyaos.handleKyaOs({ action: 'identity' });
+      const parsed = JSON.parse(result.content[0].text);
+
+      expect(parsed.auditAssurance).toEqual({ enabled: false, profile: 'AAP-0' });
     });
 
     it('should return error for unknown action', async () => {

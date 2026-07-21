@@ -37,6 +37,23 @@ Versioning: https://semver.org/spec/v2.0.0.html
   delegation chain), noted that a verifying resource should assert itself as the
   expected `invocationTarget` when evaluating a chain, and updated the
   reference-implementation version pointer.
+- **The delegation profile moved into the core specification's delegation
+  chapter.** Working-group review made the case that an extended description of
+  delegation does not belong in the Entity Card specification: the card asserts
+  locators, so the card document should point at the delegation profile rather
+  than contain it. SPEC-ENTITY-CARD.md section 10 is now a compact section
+  holding only what card verification consumes directly (the two recomputed
+  accountability equalities, the meaning of the `revocation` field, and the
+  KYC/KYB surface). The full profile (the VC 2.0 + ZCAP-LD credential shape,
+  delegate rules, attenuation invariants, Bitstring revocation mechanics, and
+  the KYC/KYB shape) now lives in SPEC.md section 6.10, beside the legacy
+  credential shape it succeeds, so delegation has one home. The chain
+  attenuation rules are now called attenuation invariants to end a naming
+  collision with the CRISP constraint envelope of SPEC.md section 6.3. Content
+  moved verbatim; wire shapes, schemas, and all other section numbering are
+  unchanged, and every cross-reference was updated. A candidate card field
+  naming the access-control mechanisms an entity supports is recorded as an
+  open coordination item (section 15.7).
 
 ## [1.10.1] - 2026-07-08
 

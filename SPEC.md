@@ -753,6 +753,98 @@ the delegation expires. The `credentialSubject` carries only `id` and
 §6.2. Implementations MAY support this pattern; it is not required for any
 conformance level.
 
+### 6.10 Card-era profile: VC 2.0 + ZCAP-LD delegation
+
+The Entity Card profile ([SPEC-ENTITY-CARD.md](./SPEC-ENTITY-CARD.md) §10) uses a newer credential
+shape than §6.2: a W3C Verifiable Credentials 2.0 credential whose `credentialSubject` IS an
+attenuated ZCAP-LD capability, revoked via W3C Bitstring Status List v1.0 (the successor to the
+StatusList2021 mechanism of §6.6). The delegation model of this chapter - one credential per hop,
+subset discipline at every link, cascading revocation (§6.5), the designation invariant (§6.4.1),
+and the per-hop `audience` rule (§11.6) - is unchanged; only the wire shape and the revocation
+list format differ. Both shapes remain valid for the 1.x line: §6.2 is what the legacy session
+profile issues and verifies, this profile is what the Entity Card path issues and verifies, and an
+implementation encountering one never needs to accept the other in its place. The JSON Schema is
+published at `schemas/card-delegation-credential.json`.
+
+**Credential shape.** One `DelegationCredential` per delegation **hop**; a chain runs `root → … → leaf`. A
+`DelegationCredential` is a VC 2.0 whose `credentialSubject` IS an attenuated ZCAP-LD capability:
+
+```jsonc
+{
+  "@context": [ "https://www.w3.org/ns/credentials/v2",
+                "https://w3id.org/security/zcap/v1",
+                "https://kya-os.org/ns/delegation/v1" ],
+  "type": [ "VerifiableCredential", "DelegationCredential" ],
+  "issuer": "<delegator DID>",
+  "validUntil": "2027-01-01T00:00:00Z",
+  "credentialSubject": {
+    "id": "urn:zcap:del_123",
+    "invoker": "<delegate DID>",           // or "controller" (§2.3)
+    "parentCapability": "<parent id | root invocationTarget>",
+    "invocationTarget": "<resource DID>",
+    "allowedAction": [ "payments.transfer" ],
+    "caveats": [ { "type": "ValidUntil", "date": "…" },
+                 { "type": "MaxAmount", "limit": "500.00", "currency": "USD" } ]
+  },
+  "credentialStatus": { "type": "BitstringStatusListEntry",
+    "statusPurpose": "revocation", "statusListIndex": "42",
+    "statusListCredential": "https://…/status/delegations" },
+  "proof": { "type": "DataIntegrityProof", "cryptosuite": "eddsa-jcs-2022" }
+}
+```
+
+Per-hop signature verification (the `DataIntegrityProof`, `eddsa-jcs-2022`) is a SEPARATE injected
+concern; this profile specifies the attenuation + continuity recompute.
+
+**The delegate.** The delegate is `credentialSubject.invoker`, falling back to `credentialSubject.controller`; a
+capability MUST name one of them.
+
+**Attenuation invariants (fail-closed, on resolve).** Note: earlier drafts labelled these "CRISP
+attenuation"; they are the chain-attenuation rules and are distinct from the §6.3 CRISP constraint
+envelope, whose subset discipline they generalize to ZCAP chains. A chain is valid only if EVERY hop attenuates its parent. Any broadening hop invalidates the whole
+chain:
+
+- **action subset** - child `allowedAction ⊆ parent`;
+- **monotone caveats** - no parent caveat may be silently dropped; for a shared caveat type, child
+  `MaxAmount ≤ parent` (same currency; compared as fixed-point decimals scaled to 6 places) and
+  child `ValidUntil ≤ parent`; an unknown caveat type MUST be replicated **verbatim**;
+- **top-level `validUntil` narrowing** - child `validUntil ≤ parent`;
+- **continuity** - the parent's delegate (`invoker`) MUST equal the child's `issuer` (you may only
+  re-delegate what was delegated to YOUR key), and child `parentCapability` MUST reference the
+  parent capability `id`;
+- **constant `invocationTarget`** along the chain;
+- **depth** MUST NOT exceed **10** hops (`MAX_DELEGATION_DEPTH`);
+- **root** - root `parentCapability` MUST equal its `invocationTarget` (the resource); when a
+  resource owner / resource is asserted, root `issuer` MUST equal the resource owner and root
+  `invocationTarget` MUST equal the resource.
+
+A verifying resource SHOULD assert its own identity as the expected resource when it evaluates a
+chain (the `resource` context of `evaluateDelegationChain`), so that a chain minted for a
+different resource fails at the root check instead of being accepted by an unrelated Verifier.
+
+**Revocation.** Revocation uses **W3C Bitstring Status List v1.0** [BITSTRING-STATUS-LIST]
+(`BitstringStatusListEntry`) - the **successor to** the deprecated StatusList2021 - behind a
+pluggable `RevocationChecker` seam so status-list churn never reaches callers. The default checker
+resolves `statusListCredential` via SafeFetch (§6.6), inflates the multibase (`u` = base64url) +
+GZIP `encodedList`, and reads the bit at `statusListIndex` MSB-first within each byte. It is
+**fail-closed**: an unreachable list, malformed credential, mismatched `statusPurpose`, or
+out-of-range index all resolve to `{ revoked: true }`. Each verdict also reports `fresh` - `true`
+only when read from a live, in-validity-window (`validFrom`/`validUntil`, or
+`issuanceDate`/`expirationDate`) status list. The chain walk is **cascading**: root→leaf,
+short-circuiting on the first revoked/unresolvable hop (a revoked ancestor invalidates the subtree),
+with `fresh` the AND of every checked hop. L2 accepts a non-revoked chain (cached / offline
+acceptable); L3 additionally requires `fresh` (a live check).
+
+**KYC/KYB.** KYC/KYB rides the same rail as an `IdentityVerificationCredential` whose `credentialSubject` is the
+`responsibleParty` and which asserts the verification **fact + level** (`verificationLevel ∈
+{ basic, enhanced, loa3 }`), never raw PII. It is verified via the same trusted-issuer + signature +
+expiry path as an L2 capability attestation and surfaced through the Card's `attestations[]`.
+
+---
+
+The equalities a Verifier recomputes from a resolved chain, and their place in the fail-closed
+verification order, are specified in SPEC-ENTITY-CARD.md §10.2 and §11.
+
 ---
 
 ## 7. Proof Generation

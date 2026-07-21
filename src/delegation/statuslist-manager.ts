@@ -21,6 +21,15 @@ export interface StatusListStorageProvider {
   allocateIndex(statusListId: string): Promise<number>;
 }
 
+/** Optional immutable-history extension used by audit replay/export adapters. */
+export interface HistoricalStatusListStorageProvider extends StatusListStorageProvider {
+  getStatusListVersion(
+    statusListId: string,
+    version: number,
+  ): Promise<StatusList2021Credential | null>;
+  getStatusListVersionCount(statusListId: string): Promise<number>;
+}
+
 export interface StatusListIdentityProvider {
   getDid(): string;
   getKeyId(): string;

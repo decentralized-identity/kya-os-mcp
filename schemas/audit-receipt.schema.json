@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schema.kya-os.org/v1/protocol/audit/receipt/v1.0.0",
+  "title": "KYA-OS Audit Recorder Receipt Core v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "ledgerId", "ledgerEpochId", "sequence", "eventId", "entryDigest", "previousEntryDigest", "recordedAt", "recorder", "integritySuite"],
+  "properties": {
+    "schema": { "const": "https://schema.kya-os.org/v1/protocol/audit/receipt/v1.0.0" },
+    "ledgerId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "ledgerEpochId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "sequence": { "$ref": "#/$defs/decimal" },
+    "eventId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "entryDigest": { "$ref": "#/$defs/digest" },
+    "previousEntryDigest": { "oneOf": [{ "$ref": "#/$defs/digest" }, { "type": "null" }] },
+    "recordedAt": { "type": "integer", "minimum": 0 },
+    "recorder": { "$ref": "#/$defs/signerRef" },
+    "integritySuite": { "const": "KYA-AUDIT-JCS-SHA256-JWS-2026" }
+  },
+  "$defs": {
+    "decimal": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+    "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "signerRef": {
+      "type": "object", "additionalProperties": false, "required": ["did", "kid", "alg"],
+      "properties": {
+        "did": { "type": "string", "pattern": "^did:.+" },
+        "kid": { "type": "string", "minLength": 1 },
+        "alg": { "enum": ["EdDSA", "ES256"] }
+      }
+    }
+  }
+}

@@ -141,8 +141,8 @@ describe('CryptoService', () => {
     };
 
     // Create a valid JWS for testing
-    const createValidJWS = (): string => {
-      const header = { alg: 'EdDSA', typ: 'JWT' };
+    const createValidJWS = (kid?: string): string => {
+      const header = { alg: 'EdDSA', typ: 'JWT', ...(kid ? { kid } : {}) };
       const payload = { sub: 'did:key:z123', iss: 'did:key:z123' };
       const headerB64 = Buffer.from(JSON.stringify(header)).toString('base64')
         .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
@@ -155,7 +155,7 @@ describe('CryptoService', () => {
 
     it('should verify valid full compact JWS', async () => {
       mockCryptoProvider.verify = vi.fn().mockResolvedValue(true);
-      const validJws = createValidJWS();
+      const validJws = createValidJWS('key-1');
 
       const result = await cryptoService.verifyJWS(validJws, validJwk);
 
@@ -165,7 +165,7 @@ describe('CryptoService', () => {
 
     it('should reject invalid JWK format', async () => {
       const invalidJwk = { kty: 'RSA' } as any;
-      const validJws = createValidJWS();
+      const validJws = createValidJWS('key-1');
 
       const result = await cryptoService.verifyJWS(validJws, invalidJwk);
 
@@ -340,7 +340,7 @@ describe('CryptoService', () => {
 
     it('should validate expectedKid option', async () => {
       mockCryptoProvider.verify = vi.fn().mockResolvedValue(true);
-      const validJws = createValidJWS();
+      const validJws = createValidJWS('key-1');
       const jwkWithKid: Ed25519JWK = {
         kty: 'OKP',
         crv: 'Ed25519',
@@ -359,6 +359,25 @@ describe('CryptoService', () => {
         expectedKid: 'key-2',
       });
       expect(result2).toBe(false);
+    });
+
+    it('binds expectedKid to the protected JWS header, not only the JWK', async () => {
+      mockCryptoProvider.verify = vi.fn().mockResolvedValue(true);
+      const jwkWithKid: Ed25519JWK = {
+        kty: 'OKP',
+        crv: 'Ed25519',
+        x: 'VCpo2LMLhn6iWku8MKvSLg2ZAoC-nlOyPVQaO3FxVeQ',
+        kid: 'key-1',
+      };
+
+      const result = await cryptoService.verifyJWS(
+        createValidJWS('key-2'),
+        jwkWithKid,
+        { expectedKid: 'key-1' },
+      );
+
+      expect(result).toBe(false);
+      expect(mockCryptoProvider.verify).not.toHaveBeenCalled();
     });
 
     it('should validate alg option', async () => {

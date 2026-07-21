@@ -72,6 +72,23 @@
         "crisp": {
           "type": "boolean",
           "description": "Server supports CRISP constraint evaluation."
+        },
+        "audit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["profile", "recorderTopology", "delivery", "journalDurability", "atomicAppend", "sourceHighWater", "merkleCheckpoints", "independentObservation", "supportingAnchors", "evidenceRetention"],
+          "properties": {
+            "profile": { "enum": ["AAP-0", "AAP-1", "AAP-2", "AAP-3", "AAP-4"] },
+            "recorderTopology": { "enum": ["none", "self-hosted", "managed", "verified-mirror"] },
+            "delivery": { "enum": ["best-effort", "buffered", "required"] },
+            "journalDurability": { "enum": ["none", "ephemeral", "durable"] },
+            "atomicAppend": { "type": "boolean" },
+            "sourceHighWater": { "type": "boolean" },
+            "merkleCheckpoints": { "type": "boolean" },
+            "independentObservation": { "type": "boolean" },
+            "supportingAnchors": { "type": "array", "items": { "enum": ["worm", "rfc3161", "scitt"] }, "uniqueItems": true },
+            "evidenceRetention": { "enum": ["none", "inline", "separate"] }
+          }
         }
       },
       "additionalProperties": true

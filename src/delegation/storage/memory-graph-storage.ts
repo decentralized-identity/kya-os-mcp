@@ -8,6 +8,7 @@
  */
 
 import type {
+  AtomicDelegationGraphStorageProvider,
   DelegationGraphStorageProvider,
   DelegationNode,
 } from '../delegation-graph.js';
@@ -23,7 +24,7 @@ import type {
  * - Examples
  */
 export class MemoryDelegationGraphStorage
-  implements DelegationGraphStorageProvider
+  implements DelegationGraphStorageProvider, AtomicDelegationGraphStorageProvider
 {
   private nodes = new Map<string, DelegationNode>();
 
@@ -39,6 +40,25 @@ export class MemoryDelegationGraphStorage
    */
   async setNode(node: DelegationNode): Promise<void> {
     this.nodes.set(node.id, node);
+  }
+
+  /** Performs parent validation, child insert, and parent link in one serialization point. */
+  async registerNodeAtomic(node: DelegationNode): Promise<void> {
+    const parent = node.parentId === null ? null : this.nodes.get(node.parentId);
+    if (node.parentId !== null && parent === undefined) {
+      throw new Error(`Parent delegation not found: ${node.parentId}`);
+    }
+    const storedNode = { ...node, children: [...node.children] };
+    if (parent !== null && parent !== undefined) {
+      const storedParent = {
+        ...parent,
+        children: parent.children.includes(node.id)
+          ? [...parent.children]
+          : [...parent.children, node.id],
+      };
+      this.nodes.set(storedParent.id, storedParent);
+    }
+    this.nodes.set(storedNode.id, storedNode);
   }
 
   /**

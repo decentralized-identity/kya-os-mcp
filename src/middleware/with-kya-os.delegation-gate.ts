@@ -28,6 +28,8 @@ import type {
 import type { MiddlewareDeps, AttachOutcomeProof } from "./with-kya-os.deps.js";
 import type { GrantResolution } from "./with-kya-os.grants.js";
 import { sanitizeForMessage } from "./with-kya-os.helpers.js";
+import { canonicalizeJsonBytes } from "../utils/canonical-json.js";
+import type { Digest } from "../audit/types.js";
 import {
   createDelegationVerification,
   type DelegationGateConfig,
@@ -44,7 +46,7 @@ export function createDelegationGate(
   deps: MiddlewareDeps,
   wiring: DelegationGateWiring,
 ): Pick<KyaOsDelegationGate, "wrapWithDelegation"> {
-  const { identity, holderBindingMode, holderBindingVerifier } = deps;
+  const { identity, holderBindingMode, holderBindingVerifier, audit, cryptoProvider } = deps;
   const { attachOutcomeProof, resolveExistingGrant, bindGrantOnSuccess } =
     wiring;
   const {
@@ -81,7 +83,26 @@ export function createDelegationGate(
           logger.debug(
             `[kya-os] Grant resolved for "${toolName}" (scope "${config.scopeId}") — no re-paste required`,
           );
-          return handler(grantArgs, sessionId, { scopeId: config.scopeId });
+          const grantContext = {
+            scopeId: config.scopeId,
+            actor: { kind: 'pairwise_did' as const, did: existingGrant.agentDid },
+            ...(existingGrant.userDid?.startsWith('did:')
+              ? { responsibleParty: { kind: 'pairwise_did' as const, did: existingGrant.userDid } }
+              : {}),
+            authorization: {
+              source: 'grant' as const,
+              decision: 'allowed' as const,
+              scopeId: config.scopeId,
+              grantRef: existingGrant.id,
+              verificationCode: 'DURABLE_GRANT_RESOLVED',
+            },
+          };
+          await audit?.authorization('grant_used', {
+            outcome: 'succeeded',
+            grantRef: existingGrant.id,
+            context: grantContext,
+          });
+          return handler(grantArgs, sessionId, grantContext);
         }
 
         // No delegation provided — sign & return the needs_authorization
@@ -161,6 +182,11 @@ export function createDelegationGate(
 
       if (!verificationResult.valid) {
         const reason = verificationResult.reason ?? "Unknown delegation validation error";
+        await audit?.delegation('rejected', {
+          delegationRef: vc.id ?? vc.credentialSubject?.delegation?.id ?? 'unknown',
+          outcome: 'failed',
+          reasonCode: 'DELEGATION_VERIFICATION_FAILED',
+        });
         logger.warn(
           `[kya-os] Delegation verification failed for "${toolName}": ${sanitizeForMessage(reason)}`,
         );
@@ -270,6 +296,41 @@ export function createDelegationGate(
         );
       }
 
+      const serializedCredential = isVCJWT
+        ? new TextEncoder().encode(delegationArg as string)
+        : canonicalizeJsonBytes(vc);
+      const credentialDigest = await cryptoProvider.hash(serializedCredential) as Digest;
+      const delegationRef = vc.id ?? vc.credentialSubject.delegation.id;
+      const actor = { kind: 'pairwise_did' as const, did: vc.credentialSubject.id };
+      const controller = vc.credentialSubject.delegation.controller;
+      const authorization = {
+        source: 'delegation' as const,
+        decision: 'allowed' as const,
+        scopeId: config.scopeId,
+        delegationRef,
+        delegationCredentialDigest: credentialDigest,
+        verificationCode: 'DELEGATION_CHAIN_VALID',
+      };
+      const callContext = {
+        scopeId: config.scopeId,
+        actor,
+        ...(controller?.startsWith('did:')
+          ? { responsibleParty: { kind: 'pairwise_did' as const, did: controller } }
+          : {}),
+        authorization,
+      };
+
+      await audit?.delegation('verified', {
+        delegationRef,
+        outcome: 'succeeded',
+        parentRef: vc.credentialSubject.delegation.parentId,
+        context: callContext,
+      });
+      await audit?.authorization('approved', {
+        outcome: 'succeeded',
+        context: callContext,
+      });
+
       // Strip the reserved _kyaos* control namespace before passing to the
       // handler — same predicate the bound request hash uses, so the handler
       // receives exactly the call the subject signed (no smuggled control arg).
@@ -285,7 +346,7 @@ export function createDelegationGate(
       logger.debug(
         `[kya-os] Delegation verified for "${toolName}", scope "${config.scopeId}"`,
       );
-      return handler(cleanArgs, sessionId, { scopeId: config.scopeId });
+      return handler(cleanArgs, sessionId, callContext);
     };
   }
 

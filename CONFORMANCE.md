@@ -418,9 +418,12 @@ so it is reproducible against any implementation without re-signing.
 | `vectors/did-web-resolution.json` | did:web resolution | well-formed id-matched document | document id mismatch, not found |
 | `vectors/card-proof.json` | `org.kya-os/proof@1` holder-of-key proof | valid signed proof, in-window, audience-bound | tampered body, tampered signature, wrong audience, expired, kid⇄did forgery |
 | `vectors/entity-card.json` | Entity Card `parseCard` + `verifyCard` | golden card per `entityType`, accountable agent | malformed (unknown field), broken accountability JOIN |
+| `vectors/audit-integrity.json` | Audit JCS + domain-separated hashing + RFC 9162 | fixed Unicode event, leaf/root, inclusion and consistency paths | mutated event/proof relationships are exercised by the audit unit suites |
 
 The first five categories exercise the **legacy** session-bound primitives; the
-last two exercise the **Entity Card** layer (see the dedicated section below).
+next two exercise the **Entity Card** layer (see the dedicated section below),
+and `audit-integrity` provides language-neutral bytes and hashes for the audit
+protocol.
 
 A `fail` vector passes the suite only when the implementation correctly **rejects**
 it. The runner exits non-zero on any mismatch.
@@ -467,6 +470,7 @@ const myAdapter: ConformanceAdapter = {
   async resolveDidWeb(input)          { /* ... */ },
   async verifyCardProof(input)        { /* org.kya-os/proof@1 holder-of-key proof */ },
   async verifyEntityCard(input)       { /* parseCard + verifyCard */ },
+  async verifyAuditIntegrity(input)   { /* JCS event digest + RFC 9162 proofs */ },
 };
 
 const report = await runConformance(myAdapter, loadVectors());
@@ -482,6 +486,25 @@ ACCEPTED the artifact and `fail` means it REJECTED it. Methods MUST be
 harness failure, not a rejection. The reference adapter
 (`conformance/reference-adapter.ts`) is the worked example wiring these methods to
 the public `@kya-os/mcp` primitives.
+
+### Audit Assurance Profile conformance
+
+An AAP claim is broader than a single vector result. An implementation MUST pass
+all lower profiles and MUST truthfully advertise only mechanics its configured
+providers can supply:
+
+| Profile | Required executable evidence |
+|---------|------------------------------|
+| AAP-0 | No auditability claim. |
+| AAP-1 Recorded | Strict event schemas and typed lifecycle capture for the declared instrumentation surface. |
+| AAP-2 Chained | AAP-1 plus durable non-best-effort delivery and the journal provider contract, including atomic stale-head rejection, global idempotency, and ordered snapshot reads. |
+| AAP-3 Transparent | AAP-2 plus durable source reconciliation, checkpoint signing, RFC 9162 inclusion/consistency vectors, epoch continuity, and historical verification. |
+| AAP-4 Observed | AAP-3 plus the observer provider contract, independent administration, checkpoint view comparison/fork detection, and authenticated supporting-anchor verification where claimed. |
+
+Reference adapter authors can run the framework-neutral suites exported by
+`@kya-os/mcp/audit/testing`. Passing the in-memory reference suite demonstrates
+the contract; it is not evidence that a production datastore, KMS, or observer
+deployment satisfies its operational durability or independence claims.
 
 ---
 
@@ -542,13 +565,11 @@ onto the same ladder:
 ### Cross-language reference (`conformance/verify.py`)
 
 `conformance/verify.py` is the **second-language complement** to the adapter contract:
-a pure-Python-stdlib re-implementation of the `org.kya-os/proof@1` verification path
-that shares no code with the TypeScript reference. It reads the SAME
-`vectors/card-proof.json`, selects the positive vector, and independently re-derives
-the JCS (RFC 8785) canonicalization, recomputes the SHA-256 `requestHash`, and verifies
-both the detached EdDSA JWS and the RFC 9421 `httpSig` against the vector's embedded
-JWKS (Ed25519 via the RFC 8032 reference — no `pip install`). A green run proves
-cross-language canonicalization + Ed25519 signature parity.
+a pure-Python-stdlib re-implementation that shares no code with the TypeScript
+reference. It verifies the positive `org.kya-os/proof@1` vector and independently
+re-derives the audit event's RFC 8785 bytes, domain-separated digest, RFC 9162
+root, inclusion path, and consistency path. Ed25519 uses the RFC 8032 reference
+without `pip install`.
 
 ```bash
 python3 conformance/verify.py       # npm run conformance:verify:crosslang
@@ -564,6 +585,11 @@ KYA-OS cross-language verifier (Python 3.x, stdlib-only)
   [PASS] detached EdDSA JWS over JCS(coveredClaims)
   [PASS] RFC 9421 httpSig over the signature base
   [PASS] RFC 7638 cnf.jkt thumbprint fusion
+  [PASS] audit event JCS canonical bytes
+  [PASS] domain-separated audit event digest
+  [PASS] RFC 9162 audit Merkle root
+  [PASS] RFC 9162 audit inclusion proof
+  [PASS] RFC 9162 audit consistency proof
 RESULT: PASS — cross-language JCS + Ed25519 parity confirmed
 ```
 

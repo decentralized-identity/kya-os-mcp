@@ -95,7 +95,8 @@ describe("KYA-OS Full Protocol Flow", () => {
     expect(proof.meta.kid).toBe(agent.kid);
     expect(proof.meta.audience).toBe(serverDid);
     expect(proof.meta.sessionId).toBe(session.sessionId);
-    expect(proof.meta.nonce).toBe(session.nonce);
+    expect(proof.meta.nonce).not.toBe(session.nonce);
+    expect(proof.meta.nonce).toMatch(/^[A-Za-z0-9_-]{22}$/);
     expect(proof.meta.requestHash).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(proof.meta.responseHash).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(proof.meta.ts).toBeGreaterThan(0);

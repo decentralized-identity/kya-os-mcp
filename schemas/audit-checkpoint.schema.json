@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schema.kya-os.org/v1/protocol/audit/checkpoint/v1.0.0",
+  "title": "KYA-OS Audit Checkpoint Core v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "checkpointId", "ledgerId", "ledgerEpochId", "treeSize", "firstSequence", "lastSequence", "rootDigest", "headEntryDigest", "previousCheckpointDigest", "createdAt", "issuer", "integritySuite"],
+  "properties": {
+    "schema": { "const": "https://schema.kya-os.org/v1/protocol/audit/checkpoint/v1.0.0" },
+    "checkpointId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "ledgerId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "ledgerEpochId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "treeSize": { "$ref": "#/$defs/nonzeroDecimal" },
+    "firstSequence": { "$ref": "#/$defs/decimal" },
+    "lastSequence": { "$ref": "#/$defs/decimal" },
+    "rootDigest": { "$ref": "#/$defs/digest" },
+    "headEntryDigest": { "$ref": "#/$defs/digest" },
+    "previousCheckpointDigest": { "oneOf": [{ "$ref": "#/$defs/digest" }, { "type": "null" }] },
+    "createdAt": { "type": "integer", "minimum": 0 },
+    "issuer": { "$ref": "#/$defs/signerRef" },
+    "integritySuite": { "const": "KYA-AUDIT-RFC9162-SHA256-JWS-2026" }
+  },
+  "$defs": {
+    "decimal": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+    "nonzeroDecimal": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+    "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "signerRef": {
+      "type": "object", "additionalProperties": false, "required": ["did", "kid", "alg"],
+      "properties": {
+        "did": { "type": "string", "pattern": "^did:.+" },
+        "kid": { "type": "string", "minLength": 1 },
+        "alg": { "enum": ["EdDSA", "ES256"] }
+      }
+    }
+  }
+}

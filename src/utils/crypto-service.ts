@@ -147,6 +147,13 @@ export class CryptoService {
         );
         return false;
       }
+      if (
+        options?.expectedKid !== undefined &&
+        parsed.header['kid'] !== options.expectedKid
+      ) {
+        logger.error('[CryptoService] Protected JWS key ID mismatch');
+        return false;
+      }
 
       let signingInputBytes: Uint8Array;
 

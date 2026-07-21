@@ -590,6 +590,7 @@ describe("DelegationGraphManager", () => {
           subjectDid: "did:web:example.com:subject",
         })
       ).rejects.toThrow("Parent delegation not found: non-existent-parent");
+      expect(await graph.getNode("del-orphan")).toBeNull();
     });
 
     it("should not add duplicate children to parent", async () => {
@@ -620,4 +621,3 @@ describe("DelegationGraphManager", () => {
     });
   });
 });
-

@@ -727,6 +727,52 @@ describe("DelegationCredentialVerifier", () => {
       expect(result2.valid).toBe(true);
       expect(result2.cached).toBeUndefined(); // Should not be cached
     });
+
+    it('does not reuse a cached result for different credential bytes sharing an id', async () => {
+      await setupDefaultContractsMocks();
+      mockDidResolver.resolve.mockResolvedValue({
+        id: 'did:web:example.com:issuer',
+        verificationMethod: [{
+          id: 'did:web:example.com:issuer#key-1',
+          type: 'Ed25519VerificationKey2020',
+          controller: 'did:web:example.com:issuer',
+          publicKeyJwk: { kty: 'OKP', crv: 'Ed25519', x: 'mock-key' },
+        }],
+      });
+      mockSignatureVerifier.mockResolvedValueOnce({ valid: true });
+      expect((await verifier.verifyDelegationCredential(mockValidVC)).valid).toBe(true);
+
+      mockSignatureVerifier.mockResolvedValueOnce({ valid: false, reason: 'tampered' });
+      const changed = {
+        ...mockValidVC,
+        proof: { ...mockValidVC.proof!, proofValue: 'different-signature' },
+      };
+      const result = await verifier.verifyDelegationCredential(changed);
+      expect(result.valid).toBe(false);
+      expect(result.cached).toBeUndefined();
+      expect(mockSignatureVerifier).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not let a skip-signature cache entry satisfy a strict verification profile', async () => {
+      await setupDefaultContractsMocks();
+      expect((await verifier.verifyDelegationCredential(mockValidVC, {
+        skipSignature: true,
+      })).valid).toBe(true);
+
+      mockDidResolver.resolve.mockResolvedValue({
+        id: 'did:web:example.com:issuer',
+        verificationMethod: [{
+          id: 'did:web:example.com:issuer#key-1',
+          type: 'Ed25519VerificationKey2020',
+          controller: 'did:web:example.com:issuer',
+          publicKeyJwk: { kty: 'OKP', crv: 'Ed25519', x: 'mock-key' },
+        }],
+      });
+      mockSignatureVerifier.mockResolvedValue({ valid: false, reason: 'invalid signature' });
+      const strict = await verifier.verifyDelegationCredential(mockValidVC);
+      expect(strict.valid).toBe(false);
+      expect(strict.cached).toBeUndefined();
+    });
   });
 
   describe("issuer handling", () => {

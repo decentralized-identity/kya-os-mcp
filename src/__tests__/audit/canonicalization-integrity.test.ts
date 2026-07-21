@@ -106,6 +106,21 @@ describe('Canonicalization Integrity Audit', () => {
     it('should reject non-finite values in arrays', () => {
       expect(() => canonicalizeJSON([1, 2, Infinity])).toThrow(TypeError);
     });
+
+    it('should reject integers that cannot be represented exactly by JavaScript', () => {
+      expect(() => canonicalizeJSON({ sequence: Number.MAX_SAFE_INTEGER + 1 })).toThrow(
+        'Cannot canonicalize unsafe integer at $.sequence',
+      );
+    });
+
+    it('should reject cyclic objects with a stable path-aware error', () => {
+      const cyclic: Record<string, unknown> = {};
+      cyclic['self'] = cyclic;
+
+      expect(() => canonicalizeJSON(cyclic)).toThrow(
+        'Cannot canonicalize cyclic reference at $.self',
+      );
+    });
   });
 
   // ── Valid JSON Values ─────────────────────────────────────────

@@ -15,7 +15,7 @@ import {
   type DetachedProof,
   type MetaPolicy,
 } from "../types/protocol.js";
-import { canonicalize } from "json-canonicalize";
+import { canonicalizeJson } from "../utils/canonical-json.js";
 import {
   ProofVerificationError,
   PROOF_VERIFICATION_ERROR_CODES,
@@ -126,13 +126,60 @@ export class ProofVerifier {
     expected?: { request: ToolRequest; response?: ToolResponse }
   ): Promise<ProofVerificationResult> {
     try {
+      const structureValidation = await this.validateProofStructure(proof);
+      if (!structureValidation.valid) return structureValidation;
+      const validatedProof = structureValidation.proof!;
+
       // Reconstruct canonical payload from proof meta
-      const canonicalPayloadString = this.buildCanonicalPayload(proof.meta);
+      const canonicalPayloadString = this.buildCanonicalPayload(validatedProof.meta);
       const canonicalPayloadBytes = new TextEncoder().encode(
         canonicalPayloadString
       );
 
-      return await this.runVerificationPipeline(proof, publicKeyJwk, canonicalPayloadBytes, expected);
+      return await this.runVerificationPipeline(
+        validatedProof,
+        publicKeyJwk,
+        canonicalPayloadBytes,
+        expected,
+      );
+    } catch (error) {
+      return this.handleVerificationError(error);
+    }
+  }
+
+  /**
+   * Verify a retained proof as historical evidence.
+   *
+   * Unlike live verification, this pure path never reads or mutates replay
+   * state and never compares an old timestamp to the current clock. It verifies
+   * structure, protected-header/key binding, signature, and optional content
+   * binding. Historical key/status policy is evaluated by the audit verifier.
+   */
+  async verifyProofArtifact(
+    proof: DetachedProof,
+    publicKeyJwk: Ed25519JWK,
+    expected?: { request: ToolRequest; response?: ToolResponse },
+  ): Promise<ProofVerificationResult> {
+    try {
+      const structureValidation = await this.validateProofStructure(proof);
+      if (!structureValidation.valid) return structureValidation;
+      const validatedProof = structureValidation.proof!;
+      const canonicalPayloadBytes = new TextEncoder().encode(
+        this.buildCanonicalPayload(validatedProof.meta),
+      );
+
+      const signatureValidation = await this.verifySignature(
+        validatedProof.jws,
+        publicKeyJwk,
+        canonicalPayloadBytes,
+        validatedProof.meta.kid,
+      );
+      if (!signatureValidation.valid) return signatureValidation;
+
+      if (expected !== undefined) {
+        return this.validateContentBinding(validatedProof, expected);
+      }
+      return { valid: true };
     } catch (error) {
       return this.handleVerificationError(error);
     }
@@ -577,7 +624,7 @@ export class ProofVerifier {
 
     // Canonicalize the reconstructed payload using the same function as proof generation
     // CRITICAL: Must use json-canonicalize canonicalize() to match proof.ts exactly
-    return canonicalize(payload);
+    return canonicalizeJson(payload);
   }
 }
 

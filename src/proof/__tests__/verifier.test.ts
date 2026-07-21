@@ -52,7 +52,7 @@ describe('ProofVerifier Security', () => {
   };
 
   const createValidProof = (): DetachedProof => {
-    const header = { alg: 'EdDSA', typ: 'JWT' };
+    const header = { alg: 'EdDSA', typ: 'JWT', kid: 'did:key:z123#z123' };
     // Create a proper JSON payload that matches the meta structure
     const payload = {
       aud: 'test-audience',
@@ -195,6 +195,23 @@ describe('ProofVerifier Security', () => {
     });
   });
 
+  describe('Historical artifact verification', () => {
+    it('verifies cryptographic evidence without consuming live replay or freshness state', async () => {
+      const proof = createValidProof();
+      proof.meta.ts = 1;
+      mockNonceCache.has = vi.fn().mockResolvedValue(true);
+      mockClockProvider.isWithinSkew = vi.fn().mockReturnValue(false);
+
+      const result = await proofVerifier.verifyProofArtifact(proof, validJwk);
+
+      expect(result.valid).toBe(true);
+      expect(mockNonceCache.has).not.toHaveBeenCalled();
+      expect(mockNonceCache.add).not.toHaveBeenCalled();
+      expect(mockClockProvider.isWithinSkew).not.toHaveBeenCalled();
+      expect(mockCryptoProvider.verify).toHaveBeenCalled();
+    });
+  });
+
   describe('Timestamp Skew Validation', () => {
     it('should enforce timestamp skew limits', async () => {
       const proof = createValidProof();
@@ -293,7 +310,7 @@ describe('ProofVerifier Security', () => {
     });
 
     it('should handle detached JWS reconstruction', async () => {
-      const header = { alg: 'EdDSA' };
+      const header = { alg: 'EdDSA', kid: 'did:key:z123#z123' };
       const headerB64 = btoa(JSON.stringify(header))
         .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
       const signatureB64 = btoa('signature')

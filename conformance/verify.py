@@ -10,6 +10,10 @@ EdDSA JWS and the RFC 9421 HTTP Message Signature sibling against the vector's e
 green run proves cross-language canonicalization + Ed25519 signature parity — the JCS cross-language
 guarantee the polyglot toolchain rests on.
 
+The same run also verifies the positive audit-integrity vector using an
+independent RFC 9162 Merkle implementation (leaf/node domain separation,
+inclusion proof, and consistency proof).
+
 Zero external dependencies: SHA-256 via `hashlib`, JCS via `json.dumps(sort_keys, separators,
 ensure_ascii=False)` (exact for the string/integer vector structures), and Ed25519 verification via the
 RFC 8032 reference implementation below. No pip install required.
@@ -191,6 +195,86 @@ def positive_vector(vector_file: dict) -> dict:
     raise SystemExit("FAIL: card-proof.json has no positive (expected: pass) vector")
 
 
+def digest_bytes(value: str) -> bytes:
+    prefix = "sha256:"
+    if not value.startswith(prefix) or len(value) != len(prefix) + 64:
+        raise ValueError("invalid sha256 digest")
+    return bytes.fromhex(value[len(prefix):])
+
+
+def audit_leaf_hash(value: str) -> str:
+    return "sha256:" + hashlib.sha256(b"\x00" + digest_bytes(value)).hexdigest()
+
+
+def audit_node_hash(left: str, right: str) -> str:
+    material = b"\x01" + digest_bytes(left) + digest_bytes(right)
+    return "sha256:" + hashlib.sha256(material).hexdigest()
+
+
+def audit_root(leaves: list[str]) -> str:
+    if not leaves:
+        return "sha256:" + hashlib.sha256(b"").hexdigest()
+    if len(leaves) == 1:
+        return audit_leaf_hash(leaves[0])
+    split = 1 << ((len(leaves) - 1).bit_length() - 1)
+    return audit_node_hash(audit_root(leaves[:split]), audit_root(leaves[split:]))
+
+
+def audit_verify_inclusion(leaf: str, index: int, size: int, root: str, path: list[str]) -> bool:
+    if size <= 0 or index < 0 or index >= size:
+        return False
+    leaf_pos, last_pos = index, size - 1
+    calculated = audit_leaf_hash(leaf)
+    for sibling in path:
+        if last_pos == 0:
+            return False
+        if leaf_pos & 1 or leaf_pos == last_pos:
+            calculated = audit_node_hash(sibling, calculated)
+            while leaf_pos != 0 and not leaf_pos & 1:
+                leaf_pos //= 2
+                last_pos //= 2
+        else:
+            calculated = audit_node_hash(calculated, sibling)
+        leaf_pos //= 2
+        last_pos //= 2
+    return last_pos == 0 and calculated == root
+
+
+def audit_verify_consistency(old_size: int, new_size: int, old_root: str,
+                             new_root: str, path: list[str]) -> bool:
+    if old_size <= 0 or old_size > new_size:
+        return False
+    if old_size == new_size:
+        return not path and old_root == new_root
+    old_node, new_node = old_size - 1, new_size - 1
+    while old_node & 1:
+        old_node //= 2
+        new_node //= 2
+    path_index = 0
+    if old_node == 0:
+        old_calculated = new_calculated = old_root
+    else:
+        if not path:
+            return False
+        old_calculated = new_calculated = path[0]
+        path_index = 1
+    for sibling in path[path_index:]:
+        if new_node == 0:
+            return False
+        if old_node & 1 or old_node == new_node:
+            old_calculated = audit_node_hash(sibling, old_calculated)
+            new_calculated = audit_node_hash(sibling, new_calculated)
+            while old_node != 0 and not old_node & 1:
+                old_node //= 2
+                new_node //= 2
+        else:
+            new_calculated = audit_node_hash(new_calculated, sibling)
+        old_node //= 2
+        new_node //= 2
+    return (new_node == 0 and old_calculated == old_root and
+            new_calculated == new_root)
+
+
 def main() -> int:
     here = Path(__file__).resolve().parent
     vector_file = json.loads((here / "vectors" / "card-proof.json").read_text())
@@ -222,6 +306,32 @@ def main() -> int:
     # 4. Re-derive the RFC 7638 cnf.jkt thumbprint of the resolved key.
     results.append(("RFC 7638 cnf.jkt thumbprint fusion",
                     rfc7638_thumbprint(key) == proof.get("cnf", {}).get("jkt")))
+
+    audit_file = json.loads((here / "vectors" / "audit-integrity.json").read_text())
+    audit = positive_vector(audit_file)
+    audit_leaves = audit["leaves"]
+    inclusion = audit["inclusion"]
+    consistency = audit["consistency"]
+    event_canonical = jcs(audit["event"])
+    event_digest = "sha256:" + hashlib.sha256(
+        b"org.kya-os.audit.event.v1\x00" + event_canonical
+    ).hexdigest()
+    results.append(("audit event JCS canonical bytes",
+                    event_canonical.decode("utf-8") == audit["eventCanonical"]))
+    results.append(("domain-separated audit event digest",
+                    event_digest == audit["eventDigest"]))
+    results.append(("RFC 9162 audit Merkle root",
+                    audit_root(audit_leaves) == audit["root"]))
+    results.append(("RFC 9162 audit inclusion proof",
+                    audit_verify_inclusion(
+                        audit_leaves[inclusion["leafIndex"]],
+                        inclusion["leafIndex"], len(audit_leaves),
+                        audit["root"], inclusion["auditPath"])))
+    results.append(("RFC 9162 audit consistency proof",
+                    audit_verify_consistency(
+                        consistency["oldSize"], len(audit_leaves),
+                        consistency["oldRoot"], audit["root"],
+                        consistency["auditPath"])))
 
     print(f"KYA-OS cross-language verifier (Python {sys.version.split()[0]}, stdlib-only)")
     print(f"  proof: {proof['prf']}  did: {proof['did']}")

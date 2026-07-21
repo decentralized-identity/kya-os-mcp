@@ -29,7 +29,8 @@ export type VectorCategory =
   | 'did-key-resolution'
   | 'did-web-resolution'
   | 'card-proof'
-  | 'entity-card';
+  | 'entity-card'
+  | 'audit-integrity';
 
 /** The outcome a conformant implementation MUST produce for a vector. */
 export type ExpectedOutcome = 'pass' | 'fail';
@@ -199,6 +200,23 @@ export interface EntityCardInput {
   cimdKeyProven?: boolean;
 }
 
+export interface AuditIntegrityInput {
+  event: unknown;
+  eventCanonical: string;
+  eventDigest: `sha256:${string}`;
+  leaves: `sha256:${string}`[];
+  root: `sha256:${string}`;
+  inclusion: {
+    leafIndex: number;
+    auditPath: `sha256:${string}`[];
+  };
+  consistency: {
+    oldSize: number;
+    oldRoot: `sha256:${string}`;
+    auditPath: `sha256:${string}`[];
+  };
+}
+
 /**
  * The contract a third party implements to run the KYA-OS conformance vectors
  * against their own implementation.
@@ -240,4 +258,7 @@ export interface ConformanceAdapter {
    * accountability / attestations / revocation and the conformance level.
    */
   verifyEntityCard(input: EntityCardInput): Promise<AdapterResult>;
+
+  /** Verify RFC 9162 audit root, inclusion, and consistency proof vectors. */
+  verifyAuditIntegrity(input: AuditIntegrityInput): Promise<AdapterResult>;
 }

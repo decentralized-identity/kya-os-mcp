@@ -8,6 +8,14 @@
 
 import type { FetchProvider, NonceCacheProvider } from "../providers/base.js";
 import type { AuditLogProvider } from "../providers/audit-log.js";
+import type { AuditTrailService } from "../audit/service.js";
+import type { AuditAssuranceProfile, AuditCapabilities } from "../audit/assurance.js";
+
+export interface KyaOsAuditTrail {
+  record: AuditTrailService['record'];
+  auditProfile?: AuditAssuranceProfile;
+  capabilities?: AuditCapabilities;
+}
 import type { GrantStore } from "../providers/grant-store.js";
 import type { SessionConfig } from "../session/manager.js";
 import type {
@@ -146,6 +154,11 @@ export interface KyaOsConfig {
    * In production, KYA-OS-aware runtimes should execute handshake before tool calls.
    */
   autoSession?: boolean;
+  /**
+   * Verifiable audit trail service. Set `false` to explicitly advertise no
+   * audit assurance. Cannot be combined with the legacy `auditLog` sink.
+   */
+  audit?: KyaOsAuditTrail | false;
   /**
    * Sink for retaining audit records of verified tool calls. Defaults to a
    * no-op; supply an {@link AuditLogProvider} (e.g. a durable, append-only

@@ -27,6 +27,7 @@ import type {
 } from "./with-kya-os.types.js";
 import type { MiddlewareDeps, AttachOutcomeProof } from "./with-kya-os.deps.js";
 import { sanitizeForMessage } from "./with-kya-os.helpers.js";
+import type { McpAuditContext } from "../audit/adapters/mcp.js";
 
 export interface SessionProof {
   /** Establish a session from a handshake and cache it as the fallback. */
@@ -57,8 +58,28 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     sessionManager,
     proofGenerator,
     auditLog,
+    audit,
     emitLegacyProofKey,
   } = deps;
+  const auditedTerminalResponses = new WeakSet<object>();
+
+  const auditContext = (
+    context: KyaOsCallContext | undefined,
+  ): McpAuditContext | undefined => context === undefined
+    ? undefined
+    : {
+        ...(context.actor === undefined ? {} : { actor: context.actor }),
+        ...(context.responsibleParty === undefined
+          ? {}
+          : { responsibleParty: context.responsibleParty }),
+        ...(context.authorization === undefined
+          ? {}
+          : { authorization: context.authorization }),
+        ...(context.correlationId === undefined
+          ? {}
+          : { correlationId: context.correlationId }),
+        ...(context.causationId === undefined ? {} : { causationId: context.causationId }),
+      };
 
   /**
    * Place a detached proof into a `_meta` object: always under the namespaced
@@ -86,6 +107,10 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     isError?: boolean;
   }> {
     if (!validateHandshakeFormat(args)) {
+      await audit?.session('rejected', {
+        succeeded: false,
+        reasonCode: KYA_OS_ERROR_CODES.handshake_failed,
+      });
       return {
         content: [
           {
@@ -106,6 +131,16 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
 
     const result: HandshakeResult =
       await sessionManager.validateHandshake(args);
+
+    const auditPhase = result.success
+      ? 'established'
+      : result.error?.code === KYA_OS_ERROR_CODES.nonce_replay
+        ? 'replay_rejected'
+        : 'rejected';
+    await audit?.session(auditPhase, {
+      succeeded: result.success,
+      ...(result.error === undefined ? {} : { reasonCode: result.error.code }),
+    });
 
     // Cache the established session as the single-process fallback for callers
     // that do not thread a sessionId (e.g. the transport auto-proof path).
@@ -179,20 +214,64 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       sessionId?: string,
       context?: KyaOsCallContext,
     ) => {
-      const result = await handler(args as T, sessionId, context);
+      await audit?.tool('started', {
+        toolName,
+        outcome: 'unknown',
+        context: auditContext(context),
+      });
+      let result: Awaited<ReturnType<KyaOsToolHandler>>;
+      try {
+        result = await handler(args as T, sessionId, context);
+      } catch (error) {
+        await audit?.tool('failed', {
+          toolName,
+          outcome: 'failed',
+          reasonCode: 'HANDLER_THROWN',
+          context: auditContext(context),
+        });
+        throw error;
+      }
 
       if (result.isError) {
+        if (!auditedTerminalResponses.has(result)) {
+          await audit?.tool('failed', {
+            toolName,
+            outcome: 'failed',
+            reasonCode: 'HANDLER_ERROR_RESULT',
+            context: auditContext(context),
+          });
+        }
         return result;
       }
 
       // Resolve session: explicit param → active session → auto-create
       const resolvedSessionId = sessionId ?? await ensureSession();
       if (!resolvedSessionId) {
+        await audit?.proof('rejected', {
+          outcome: 'failed',
+          verificationCode: 'PROOF_SESSION_UNAVAILABLE',
+          context: auditContext(context),
+        });
+        await audit?.tool('completed', {
+          toolName,
+          outcome: 'succeeded',
+          context: auditContext(context),
+        });
         return result;
       }
 
       const session = await sessionManager.getSession(resolvedSessionId);
       if (!session) {
+        await audit?.proof('rejected', {
+          outcome: 'failed',
+          verificationCode: 'PROOF_SESSION_NOT_FOUND',
+          context: auditContext(context),
+        });
+        await audit?.tool('completed', {
+          toolName,
+          outcome: 'succeeded',
+          context: auditContext(context),
+        });
         return result;
       }
 
@@ -211,6 +290,32 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
         // Inspector, invisible to LLMs), plus the legacy bare key when enabled.
         // Other _meta keys may coexist (SEP-414).
         result._meta = withProofMeta({}, proof);
+
+        try {
+          await audit?.proof('generated', {
+            outcome: 'succeeded',
+            context: auditContext(context),
+          });
+          await audit?.tool('completed', {
+            toolName,
+            outcome: 'succeeded',
+            context: auditContext(context),
+          });
+        } catch (auditError) {
+          result.isError = true;
+          result._meta = {
+            ...((result._meta as Record<string, unknown> | undefined) ?? {}),
+            'org.kya-os/audit': {
+              status: 'degraded',
+              reason: 'Required terminal audit delivery failed after tool completion',
+            },
+          };
+          logger.error('[kya-os] Required terminal audit delivery failed', {
+            tool: toolName,
+            error: auditError instanceof Error ? auditError.message : String(auditError),
+          });
+          return result;
+        }
 
         // Hand the verified call to the audit sink. A sink failure MUST NOT
         // break the tool response, so it is logged and swallowed.
@@ -240,6 +345,11 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
         result._meta = {
           proofError: "Proof generation failed — response is unproven",
         };
+        await audit?.proof('rejected', {
+          outcome: 'failed',
+          verificationCode: 'PROOF_GENERATION_FAILED',
+          context: auditContext(context),
+        });
       }
 
       return result;
@@ -256,6 +366,21 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     paramsOverride,
     responseData,
   ) => {
+    const phase = outcome === 'denied' ? 'denied' : 'step_up_required';
+    await audit?.authorization(phase, {
+      outcome: outcome === 'denied' ? 'denied' : 'challenged',
+      reasonCode: outcome === 'needs_authorization'
+        ? 'NEEDS_AUTHORIZATION'
+        : outcome === 'step_up_required' ? 'STEP_UP_REQUIRED' : 'AUTHORIZATION_DENIED',
+    });
+    await audit?.tool(outcome === 'denied' ? 'denied' : 'challenged', {
+      toolName,
+      outcome: outcome === 'denied' ? 'denied' : 'challenged',
+      reasonCode: outcome === 'needs_authorization'
+        ? 'NEEDS_AUTHORIZATION'
+        : outcome === 'step_up_required' ? 'STEP_UP_REQUIRED' : 'AUTHORIZATION_DENIED',
+    });
+    auditedTerminalResponses.add(response);
     try {
       const resolvedSessionId = sessionId ?? (await ensureSession());
       if (!resolvedSessionId) return response;
@@ -285,10 +410,15 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
         (response._meta as Record<string, unknown> | undefined) ?? {},
         proof,
       );
+      await audit?.proof('generated', { outcome: 'succeeded' });
     } catch (error) {
       logger.error("[kya-os] Outcome proof generation failed", {
         tool: toolName,
         error: error instanceof Error ? error.message : String(error),
+      });
+      await audit?.proof('rejected', {
+        outcome: 'failed',
+        verificationCode: 'OUTCOME_PROOF_GENERATION_FAILED',
       });
     }
     return response;

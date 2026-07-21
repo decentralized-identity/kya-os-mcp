@@ -9,7 +9,7 @@
  */
 
 import { CompactSign, importPKCS8 } from 'jose';
-import { canonicalize } from 'json-canonicalize';
+import { canonicalizeJson, canonicalizeJsonBytes } from '../utils/canonical-json.js';
 import type {
   DetachedProof,
   ProofMeta,
@@ -105,17 +105,13 @@ export async function computeCanonicalHashes(
     ...(request.params ? { params: request.params } : {}),
   };
   const requestHash = await hash(
-    new TextEncoder().encode(
-      canonicalize(canonicalRequest as Parameters<typeof canonicalize>[0]),
-    ),
+    canonicalizeJsonBytes(canonicalRequest),
   );
   if (response === undefined) {
     return { requestHash };
   }
   const responseHash = await hash(
-    new TextEncoder().encode(
-      canonicalize(response.data as Parameters<typeof canonicalize>[0]),
-    ),
+    canonicalizeJsonBytes(response.data),
   );
   return { requestHash, responseHash };
 }
@@ -149,12 +145,15 @@ export class ProofGenerator {
     options: ProofOptions = {}
   ): Promise<DetachedProof> {
     const hashes = await this.generateCanonicalHashes(request, response);
+    const proofNonce = base64urlEncodeFromBytes(
+      await this.cryptoProvider.randomBytes(16),
+    );
 
     const meta: ProofMeta = {
       did: this.identity.did,
       kid: this.identity.kid,
       ts: Math.floor(Date.now() / 1000),
-      nonce: session.nonce,
+      nonce: proofNonce,
       audience: session.audience,
       sessionId: session.sessionId,
       requestHash: hashes.requestHash,
@@ -225,7 +224,7 @@ export class ProofGenerator {
 
       // Use canonicalized JSON (RFC 8785) for deterministic payload serialization.
       // This ensures signature verification succeeds regardless of JSON key ordering.
-      const canonicalPayload = canonicalize(payload as Parameters<typeof canonicalize>[0]);
+      const canonicalPayload = canonicalizeJson(payload);
       const payloadBytes = new TextEncoder().encode(canonicalPayload);
 
       const jws = await new CompactSign(payloadBytes)

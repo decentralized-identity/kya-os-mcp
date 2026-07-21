@@ -21,6 +21,7 @@ const REQUIRED_CATEGORIES: VectorCategory[] = [
   'did-web-resolution',
   'card-proof',
   'entity-card',
+  'audit-integrity',
 ];
 
 describe('KYA-OS conformance — reference implementation', () => {

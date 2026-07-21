@@ -6,6 +6,7 @@ import {
   MemoryAuditCheckpointStore,
 } from '../checkpoint.js';
 import { MemoryAuditJournal } from '../providers/memory-journal.js';
+import type { AuditJournalProvider } from '../providers/journal.js';
 import type {
   AuditLedgerRef,
   Digest,
@@ -165,5 +166,171 @@ describe('AuditCheckpointBuilder', () => {
     expect(checkpoint.core.treeSize).toBe('1');
     expect(callbackTreeSize).toBe('1');
     expect((await builder.createCheckpoint(ledger)).core.treeSize).toBe('2');
+  });
+
+  it('makes checkpoint publication idempotent and detects a conflicting root at one size', async () => {
+    const journal = new MemoryAuditJournal();
+    await append(journal, entry(0));
+    const store = new MemoryAuditCheckpointStore();
+    const builder = new AuditCheckpointBuilder({
+      journal,
+      store,
+      signer: new TestSigner(),
+      hasher: new CryptoProviderAuditHasher(new NodeCryptoProvider()),
+      clock: { now: () => 1_750_000_001_000 },
+    });
+    const checkpoint = await builder.createCheckpoint(ledger);
+
+    expect((await store.putIfAbsent(checkpoint)).kind).toBe('existing');
+    const conflicting = structuredClone(checkpoint);
+    conflicting.checkpointDigest = hash('f');
+    expect(await store.putIfAbsent(conflicting)).toEqual({
+      kind: 'conflict',
+      checkpoint,
+    });
+    expect(await store.getLatest(ledger)).toEqual(checkpoint);
+  });
+
+  it('rejects empty epochs, checkpoint rollback, invalid decimals, and unsafe proof sizes', async () => {
+    const hasher = new CryptoProviderAuditHasher(new NodeCryptoProvider());
+    const emptyBuilder = new AuditCheckpointBuilder({
+      journal: new MemoryAuditJournal(),
+      store: new MemoryAuditCheckpointStore(),
+      signer: new TestSigner(),
+      hasher,
+    });
+    await expect(emptyBuilder.createCheckpoint(ledger)).rejects.toMatchObject({
+      code: 'AUDIT_CHECKPOINT_INVALID',
+    });
+
+    const largerJournal = new MemoryAuditJournal();
+    await append(largerJournal, entry(0));
+    await append(largerJournal, entry(1));
+    const store = new MemoryAuditCheckpointStore();
+    const largerBuilder = new AuditCheckpointBuilder({
+      journal: largerJournal, store, signer: new TestSigner(), hasher,
+    });
+    const largerCheckpoint = await largerBuilder.createCheckpoint(ledger);
+
+    const smallerJournal = new MemoryAuditJournal();
+    await append(smallerJournal, entry(0));
+    const smallerBuilder = new AuditCheckpointBuilder({
+      journal: smallerJournal, store, signer: new TestSigner(), hasher,
+    });
+    await expect(smallerBuilder.createCheckpoint(ledger)).rejects.toMatchObject({
+      code: 'AUDIT_CHECKPOINT_ROLLBACK',
+    });
+    await expect(
+      largerBuilder.consistencyProof(ledger, '-1', largerCheckpoint),
+    ).rejects.toMatchObject({ code: 'AUDIT_CHECKPOINT_INVALID' });
+    await expect(
+      largerBuilder.consistencyProof(ledger, '9007199254740992', largerCheckpoint),
+    ).rejects.toMatchObject({ code: 'AUDIT_CHECKPOINT_INVALID' });
+  });
+
+  it('fails closed for proof/range requests that do not match the signed checkpoint', async () => {
+    const journal = new MemoryAuditJournal();
+    await append(journal, entry(0));
+    await append(journal, entry(1));
+    const builder = new AuditCheckpointBuilder({
+      journal,
+      store: new MemoryAuditCheckpointStore(),
+      signer: new TestSigner(),
+      hasher: new CryptoProviderAuditHasher(new NodeCryptoProvider()),
+    });
+    const checkpoint = await builder.createCheckpoint(ledger);
+    const inclusion = await builder.inclusionProof(ledger, '1', checkpoint);
+    const consistency = await builder.consistencyProof(ledger, '1', checkpoint);
+
+    await expect(builder.inclusionProof(ledger, '99', checkpoint)).rejects.toMatchObject({
+      code: 'AUDIT_CHECKPOINT_INVALID',
+    });
+    await expect(builder.rootForRange(ledger, '0')).resolves.toMatch(/^sha256:/);
+    await expect(builder.rootForRange(ledger, '3')).rejects.toMatchObject({
+      code: 'AUDIT_CHECKPOINT_INVALID',
+    });
+    await expect(builder.verifyInclusion(entry(1).entryDigest, checkpoint, {
+      ...inclusion,
+      treeSize: '1',
+    })).resolves.toBe(false);
+    await expect(builder.verifyConsistency({
+      oldTreeSize: '1',
+      oldRoot: await builder.rootForRange(ledger, '1'),
+      checkpoint,
+      proof: { ...consistency, oldTreeSize: '0' },
+    })).resolves.toBe(false);
+
+    const wrongLedger = structuredClone(checkpoint);
+    wrongLedger.core.ledgerEpochId = 'epoch_other';
+    await expect(builder.inclusionProof(ledger, '1', wrongLedger)).rejects.toMatchObject({
+      code: 'AUDIT_LEDGER_MISMATCH',
+    });
+
+    const wrongHead = structuredClone(checkpoint);
+    wrongHead.core.headEntryDigest = hash('f');
+    await expect(builder.inclusionProof(ledger, '1', wrongHead)).rejects.toMatchObject({
+      code: 'AUDIT_CHECKPOINT_INVALID',
+    });
+  });
+
+  it('rejects checkpoint-store conflicts and unstable or non-contiguous journal snapshots', async () => {
+    const hasher = new CryptoProviderAuditHasher(new NodeCryptoProvider());
+    const source = new MemoryAuditJournal();
+    await append(source, entry(0));
+    const existing = await new AuditCheckpointBuilder({
+      journal: source,
+      store: new MemoryAuditCheckpointStore(),
+      signer: new TestSigner(),
+      hasher,
+    }).createCheckpoint(ledger);
+    const conflictStore = {
+      getLatest: async () => null,
+      getByTreeSize: async () => null,
+      putIfAbsent: async () => ({ kind: 'conflict' as const, checkpoint: existing }),
+    };
+    const conflictBuilder = new AuditCheckpointBuilder({
+      journal: source, store: conflictStore, signer: new TestSigner(), hasher,
+    });
+    await expect(conflictBuilder.createCheckpoint(ledger)).rejects.toMatchObject({
+      code: 'AUDIT_CHECKPOINT_CONFLICT',
+    });
+
+    const head = {
+      ...ledger,
+      sequence: '1',
+      entryDigest: entry(1).entryDigest,
+    };
+    const journalWith = (
+      values: SignedAuditEntryV1[],
+    ): AuditJournalProvider => ({
+      capabilities: {
+        durability: 'ephemeral', atomicAppend: true, orderedRead: true,
+      },
+      getHead: async () => head,
+      getByIdempotencyKey: async () => null,
+      compareAndAppend: async () => ({ kind: 'head_conflict', actualHead: head }),
+      readRange: async function* () {
+        yield* values;
+      },
+    });
+    const unstableBuilder = new AuditCheckpointBuilder({
+      journal: journalWith([entry(0)]),
+      store: new MemoryAuditCheckpointStore(),
+      signer: new TestSigner(),
+      hasher,
+    });
+    await expect(unstableBuilder.createCheckpoint(ledger)).rejects.toMatchObject({
+      code: 'AUDIT_JOURNAL_FAILURE',
+    });
+
+    const nonContiguousBuilder = new AuditCheckpointBuilder({
+      journal: journalWith([entry(1)]),
+      store: new MemoryAuditCheckpointStore(),
+      signer: new TestSigner(),
+      hasher,
+    });
+    await expect(nonContiguousBuilder.createCheckpoint(ledger)).rejects.toMatchObject({
+      code: 'AUDIT_JOURNAL_FAILURE',
+    });
   });
 });

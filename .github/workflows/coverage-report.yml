@@ -29,13 +29,13 @@ jobs:
 
       # Run coverage on the PR branch (json reporter gives us test counts for free)
       - name: Run coverage (PR)
-        run: npx vitest run --coverage --coverage.reporter=json-summary --reporter=json --coverage.reportOnFailure > /tmp/pr-vitest-output.json 2>/dev/null
+        run: npx vitest run --coverage --coverage.reporter=json-summary --reporter=json --outputFile=/tmp/pr-vitest-output.json --coverage.reportOnFailure
         continue-on-error: true
 
       - name: Save PR coverage and test count
         run: |
           cp coverage/coverage-summary.json /tmp/pr-coverage.json
-          cat /tmp/pr-vitest-output.json | jq '{numTotalTests: .numTotalTests, numPassedTests: .numPassedTests, numFailedTests: .numFailedTests, numTotalTestSuites: .numTotalTestSuites}' > /tmp/pr-test-results.json 2>/dev/null || echo '{}' > /tmp/pr-test-results.json
+          jq '{numTotalTests: .numTotalTests, numPassedTests: .numPassedTests, numFailedTests: .numFailedTests, numTotalTestFiles: ((.testResults // []) | length)}' /tmp/pr-vitest-output.json > /tmp/pr-test-results.json 2>/dev/null || echo '{}' > /tmp/pr-test-results.json
 
       # Run coverage on the base branch for comparison
       - name: Checkout base branch
@@ -137,7 +137,7 @@ jobs:
             const totalTests = testResults.numTotalTests ?? 0;
             const passedTests = testResults.numPassedTests ?? 0;
             const failedTests = testResults.numFailedTests ?? 0;
-            const testSuites = testResults.numTotalTestSuites ?? 0;
+            const testFiles = testResults.numTotalTestFiles ?? 0;
             const overallPct = pr.total.statements?.pct ?? 0;
 
             let body = `## Coverage Report\n\n`;
@@ -154,7 +154,7 @@ jobs:
             }
 
             body += `\n<details><summary>Details</summary>\n\n`;
-            body += `- **Tests**: ${passedTests} passed` + (failedTests > 0 ? `, ${failedTests} failed` : '') + ` (${totalTests} total across ${testSuites} suites)\n`;
+            body += `- **Tests**: ${passedTests} passed` + (failedTests > 0 ? `, ${failedTests} failed` : '') + ` (${totalTests} total across ${testFiles} files)\n`;
             body += `- **Overall coverage**: ${fmt(overallPct)} statements\n`;
             body += `- **Config**: vitest + v8, thresholds enforced in \`vitest.config.mts\`\n`;
             body += `</details>\n`;

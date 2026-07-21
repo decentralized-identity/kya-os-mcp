@@ -13,6 +13,17 @@ import { MemoryAuditJournal } from '../providers/memory-journal.js';
 import { AuditRecorderService } from '../recorder-service.js';
 import { AuditArtifactVerifier, AUDIT_REASON_CODES } from '../verifier.js';
 import { AuditCheckpointBuilder, MemoryAuditCheckpointStore } from '../checkpoint.js';
+import { MemoryAuditCheckpointObserver } from '../providers/observer.js';
+import { MemorySupportingAnchorProvider } from '../providers/anchor.js';
+import {
+  parseAuditCheckpointCore,
+  parseAuditObservationReceipt,
+  parseAuditRecorderReceiptCore,
+  parseAuditReplayBundle,
+  parseAuditVerificationPolicy,
+  parseSignedAuditCheckpoint,
+  parseSignedAuditEntry,
+} from '../schemas.js';
 import type {
   AuditProducerEventCoreV1,
   AuditVerificationPolicyV1,
@@ -311,6 +322,7 @@ describe('signed replay bundles', () => {
       ledgerId: ledger.ledgerId, producerEvent: event(3), encryptedEvidence: [],
     }, { producerAuthority: 'did:key:zProducer', tenantAuthority: 'tenant-1' });
     const second = structuredClone(await builder.createCheckpoint(ledger));
+    const consistency = await builder.consistencyProof(ledger, first.core.treeSize, second);
     second.core.previousCheckpointDigest = `sha256:${'e'.repeat(64)}`;
     second.checkpointDigest = await hashAuditValue(
       hasher, AUDIT_DIGEST_DOMAINS.checkpoint, second.core,
@@ -339,6 +351,17 @@ describe('signed replay bundles', () => {
       components: [
         { path: 'ledger/entries.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.entries, disposition: 'included', content: allEntries },
         { path: 'ledger/checkpoints.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.checkpoints, disposition: 'included', content: [first, second] },
+        {
+          path: 'ledger/consistency-proofs.json',
+          mediaType: AUDIT_BUNDLE_MEDIA_TYPES.consistencyProofs,
+          disposition: 'included',
+          content: [{
+            ...ledger,
+            oldCheckpointDigest: first.checkpointDigest,
+            newCheckpointDigest: second.checkpointDigest,
+            proof: consistency,
+          }],
+        },
       ],
     });
     const report = await verifyAuditBundle(bundle, checkpointPolicy, {
@@ -347,6 +370,9 @@ describe('signed replay bundles', () => {
     expect(report.checkpointIntegrity.verdict).toBe('invalid');
     expect(report.checkpointIntegrity.reasonCodes).toContain(
       AUDIT_REASON_CODES.CHECKPOINT_CHAIN_MISMATCH,
+    );
+    expect(report.checkpointIntegrity.reasonCodes).not.toContain(
+      AUDIT_REASON_CODES.MERKLE_PROOF_INVALID,
     );
   });
 
@@ -398,5 +424,268 @@ describe('signed replay bundles', () => {
     expect(report.checkpointIntegrity.reasonCodes).toContain(
       AUDIT_REASON_CODES.MERKLE_PROOF_INVALID,
     );
+  });
+
+  it('rejects ambiguous export metadata and unsafe or duplicate component paths', async () => {
+    const { entries, hasher, signer, policyDigest } = await fixture();
+    const exporter = new AuditReplayBundleExporter({
+      hasher, signer, clock: { now: () => 1_750_000_010_000 },
+    });
+    const common = {
+      bundleId: 'bundle_validation', purpose: 'regulatory-review',
+      verificationPolicyDigest: policyDigest,
+      selections: [{
+        ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1',
+        firstSequence: '0', lastSequence: '2', expectedHeadDigest: entries[2]!.entryDigest,
+        checkpointTreeSizes: [],
+      }],
+    } as const;
+    await expect(exporter.export({ ...common, bundleId: '', components: [] }))
+      .rejects.toThrow(/ID and export purpose/);
+    await expect(exporter.export({
+      ...common,
+      components: [{
+        path: '../entries.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.entries,
+        disposition: 'included', content: entries,
+      }],
+    })).rejects.toThrow(/safe canonical relative path/);
+    await expect(exporter.export({
+      ...common,
+      components: [
+        { path: 'entries.json', mediaType: 'application/json', disposition: 'included', content: [] },
+        { path: 'entries.json', mediaType: 'application/json', disposition: 'included', content: [] },
+      ],
+    })).rejects.toThrow(/Duplicate bundle component path/);
+    await expect(exporter.export({
+      ...common,
+      components: [{
+        path: 'redacted.json', mediaType: 'application/json', disposition: 'redacted',
+      } as never],
+    })).rejects.toThrow(/reason code/);
+  });
+
+  it('detects manifest, policy, signature, component, and selection tampering together', async () => {
+    const { entries, hasher, signer, policy, policyDigest } = await fixture();
+    const bundle = await new AuditReplayBundleExporter({
+      hasher, signer, clock: { now: () => 1_750_000_010_000 },
+    }).export({
+      bundleId: 'bundle_tampering', purpose: 'regulatory-review',
+      verificationPolicyDigest: policyDigest,
+      selections: [{
+        ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1',
+        firstSequence: '0', lastSequence: '2', expectedHeadDigest: entries[2]!.entryDigest,
+        checkpointTreeSizes: [],
+      }],
+      components: [{
+        path: 'ledger/entries.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.entries,
+        disposition: 'included', content: entries,
+      }],
+    });
+    const tampered = structuredClone(bundle);
+    tampered.manifest.core.verificationPolicyDigest = `sha256:${'c'.repeat(64)}`;
+    tampered.manifest.manifestDigest = `sha256:${'d'.repeat(64)}`;
+    tampered.manifest.jws = 'invalid.signature';
+    tampered.components[0]!.content = [];
+
+    const report = await verifyAuditBundle(tampered, {
+      ...policy,
+      acceptedIntegritySuites: ['KYA-AUDIT-JCS-SHA256-JWS-2026'],
+      acceptedAlgorithms: ['ES256'],
+      authorizedExporters: [{
+        ...policy.authorizedExporters[0]!,
+        signerKeys: [{ signer: signer.ref, validUntil: 1 }],
+      }],
+    }, { hasher, signatures: new TestVerifier() });
+    expect(report.cryptographicIntegrity.reasonCodes).toEqual(expect.arrayContaining([
+      AUDIT_REASON_CODES.UNSUPPORTED_SUITE,
+      AUDIT_REASON_CODES.UNSUPPORTED_ALGORITHM,
+      AUDIT_REASON_CODES.BUNDLE_EXPORTER_UNAUTHORIZED,
+      AUDIT_REASON_CODES.BUNDLE_MANIFEST_DIGEST_MISMATCH,
+      AUDIT_REASON_CODES.VERIFICATION_POLICY_MISMATCH,
+      AUDIT_REASON_CODES.BUNDLE_SIGNATURE_INVALID,
+      AUDIT_REASON_CODES.BUNDLE_COMPONENT_DIGEST_MISMATCH,
+    ]));
+    expect(report.scopeEvidenceCompleteness.reasonCodes).toContain(
+      AUDIT_REASON_CODES.BUNDLE_SELECTION_INCOMPLETE,
+    );
+  });
+
+  it('reports explicit evidence dispositions without treating a complete ledger range as invalid', async () => {
+    const { entries, hasher, signer, policy, policyDigest } = await fixture();
+    const bundle = await new AuditReplayBundleExporter({
+      hasher, signer, clock: { now: () => 1_750_000_010_000 },
+    }).export({
+      bundleId: 'bundle_dispositions', purpose: 'regulatory-review',
+      verificationPolicyDigest: policyDigest,
+      selections: [{
+        ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1',
+        firstSequence: '0', lastSequence: '2', expectedHeadDigest: entries[2]!.entryDigest,
+        checkpointTreeSizes: [],
+      }],
+      components: [
+        { path: 'entries.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.entries, disposition: 'included', content: entries },
+        { path: 'pii.json', mediaType: 'application/json', disposition: 'redacted', reasonCode: 'DATA_MINIMIZATION' },
+        { path: 'expired.json', mediaType: 'application/json', disposition: 'disposed', reasonCode: 'RETENTION_EXPIRED' },
+        { path: 'offline.json', mediaType: 'application/json', disposition: 'unavailable', reasonCode: 'SOURCE_OFFLINE' },
+      ],
+    });
+    const completeness = (await verifyAuditBundle(bundle, policy, {
+      hasher, signatures: new TestVerifier(),
+    })).scopeEvidenceCompleteness;
+    expect(completeness.verdict).toBe('indeterminate');
+    expect(completeness.reasonCodes).toEqual(expect.arrayContaining([
+      AUDIT_REASON_CODES.EXPLICITLY_REDACTED,
+      AUDIT_REASON_CODES.EXPLICITLY_DISPOSED,
+      AUDIT_REASON_CODES.EXPLICITLY_UNAVAILABLE,
+    ]));
+  });
+
+  it('fails closed for malformed checkpoint, Merkle, observation, and anchor components', async () => {
+    const { entries, hasher, signer, policy, policyDigest } = await fixture();
+    const bundle = await new AuditReplayBundleExporter({
+      hasher, signer, clock: { now: () => 1_750_000_010_000 },
+    }).export({
+      bundleId: 'bundle_malformed_evidence', purpose: 'regulatory-review',
+      verificationPolicyDigest: policyDigest,
+      selections: [{
+        ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1',
+        firstSequence: '0', lastSequence: '2', expectedHeadDigest: entries[2]!.entryDigest,
+        checkpointTreeSizes: [],
+      }],
+      components: [
+        { path: 'entries.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.entries, disposition: 'included', content: entries },
+        { path: 'checkpoints.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.checkpoints, disposition: 'included', content: [{}] },
+        { path: 'inclusion.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.inclusionProofs, disposition: 'included', content: [{}] },
+        { path: 'consistency.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.consistencyProofs, disposition: 'included', content: [{}] },
+        { path: 'observations.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.observations, disposition: 'included', content: [{}] },
+        { path: 'anchors.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.anchors, disposition: 'included', content: [{}] },
+      ],
+    });
+    const report = await verifyAuditBundle(bundle, policy, {
+      hasher, signatures: new TestVerifier(),
+    });
+    expect(report.checkpointIntegrity.reasonCodes).toContain(AUDIT_REASON_CODES.SCHEMA_INVALID);
+    expect(report.anchorIntegrity.reasonCodes).toContain(AUDIT_REASON_CODES.SCHEMA_INVALID);
+  });
+
+  it('verifies observation chains and evaluates supporting-anchor trust separately', async () => {
+    const { entries, hasher, signer, policy, policyDigest, journal } = await fixture();
+    const ledger = { ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1' };
+    const checkpoint = await new AuditCheckpointBuilder({
+      journal, store: new MemoryAuditCheckpointStore(), signer, hasher,
+      clock: { now: () => 1_750_000_003_000 },
+    }).createCheckpoint(ledger);
+    const observer = new MemoryAuditCheckpointObserver({
+      observerId: 'observer-1', signer, hasher,
+      clock: { now: () => 1_750_000_004_000 },
+      verifyCheckpoint: async () => true,
+      verifyConsistency: async () => true,
+    });
+    const first = await observer.publish(checkpoint);
+    const brokenLink = structuredClone(first);
+    brokenLink.core.observedAt += 1;
+    brokenLink.core.previousObservationDigest = `sha256:${'f'.repeat(64)}`;
+    const anchorProvider = new MemorySupportingAnchorProvider({
+      kind: 'worm', providerId: 'archive-1', clock: { now: () => 1_750_000_005_000 },
+    });
+    const anchor = await anchorProvider.publish(checkpoint);
+    const evidencePolicy: AuditVerificationPolicyV1 = {
+      ...policy,
+      trustedObservers: [{ signer: signer.ref }],
+      trustedSupportingAnchors: [{ kind: 'worm', providerId: 'archive-1' }],
+      acceptedIntegritySuites: [
+        ...policy.acceptedIntegritySuites,
+        'KYA-AUDIT-RFC9162-SHA256-JWS-2026',
+      ],
+    };
+    const evidencePolicyDigest = await hashAuditValue(
+      hasher, 'org.kya-os.audit.verification-policy.v1', evidencePolicy,
+    );
+    const bundle = await new AuditReplayBundleExporter({
+      hasher, signer, clock: { now: () => 1_750_000_010_000 },
+    }).export({
+      bundleId: 'bundle_observed', purpose: 'regulatory-review',
+      verificationPolicyDigest: evidencePolicyDigest,
+      selections: [{
+        ...ledger, firstSequence: '0', lastSequence: '2',
+        expectedHeadDigest: entries[2]!.entryDigest,
+        checkpointTreeSizes: [checkpoint.core.treeSize],
+      }],
+      components: [
+        { path: 'entries.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.entries, disposition: 'included', content: entries },
+        { path: 'checkpoint.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.checkpoints, disposition: 'included', content: [checkpoint] },
+        { path: 'observations.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.observations, disposition: 'included', content: [first, brokenLink] },
+        { path: 'anchors.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.anchors, disposition: 'included', content: [anchor] },
+      ],
+    });
+    const notEvaluated = await verifyAuditBundle(bundle, evidencePolicy, {
+      hasher, signatures: new TestVerifier(),
+    });
+    expect(notEvaluated.anchorIntegrity.reasonCodes).toEqual(expect.arrayContaining([
+      AUDIT_REASON_CODES.OBSERVATION_CHAIN_MISMATCH,
+      AUDIT_REASON_CODES.NOT_EVALUATED,
+    ]));
+
+    const rejected = await verifyAuditBundle(bundle, {
+      ...evidencePolicy,
+      trustedSupportingAnchors: [],
+    }, {
+      hasher, signatures: new TestVerifier(), verifySupportingAnchor: async () => false,
+    });
+    expect(rejected.anchorIntegrity.reasonCodes).toEqual(expect.arrayContaining([
+      AUDIT_REASON_CODES.UNTRUSTED_SUPPORTING_ANCHOR,
+      AUDIT_REASON_CODES.SUPPORTING_ANCHOR_INVALID,
+    ]));
+  });
+
+  it('returns a policy-specific invalid report before processing a bundle', async () => {
+    const { hasher } = await fixture();
+    const report = await verifyAuditBundle({}, { policyId: 'broken-policy' } as never, {
+      hasher, signatures: new TestVerifier(),
+    });
+    expect(report.policyId).toBe('broken-policy');
+    expect(report.cryptographicIntegrity).toEqual({
+      verdict: 'invalid', reasonCodes: [AUDIT_REASON_CODES.VERIFICATION_POLICY_INVALID],
+    });
+  });
+
+  it('round-trips every public signed-artifact parser into an immutable boundary value', async () => {
+    const { entries, hasher, signer, policy, policyDigest, journal } = await fixture();
+    const ledger = { ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1' };
+    const checkpoint = await new AuditCheckpointBuilder({
+      journal, store: new MemoryAuditCheckpointStore(), signer, hasher,
+      clock: { now: () => 1_750_000_003_000 },
+    }).createCheckpoint(ledger);
+    const observation = await new MemoryAuditCheckpointObserver({
+      observerId: 'observer-1', signer, hasher,
+      clock: { now: () => 1_750_000_004_000 },
+      verifyCheckpoint: async () => true,
+      verifyConsistency: async () => true,
+    }).publish(checkpoint);
+    const bundle = await new AuditReplayBundleExporter({
+      hasher, signer, clock: { now: () => 1_750_000_010_000 },
+    }).export({
+      bundleId: 'bundle_parse_roundtrip', purpose: 'regulatory-review',
+      verificationPolicyDigest: policyDigest,
+      selections: [{
+        ...ledger, firstSequence: '0', lastSequence: '2',
+        expectedHeadDigest: entries[2]!.entryDigest, checkpointTreeSizes: [],
+      }],
+      components: [{
+        path: 'entries.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.entries,
+        disposition: 'included', content: entries,
+      }],
+    });
+
+    const parsed = [
+      parseSignedAuditEntry(structuredClone(entries[0]!)),
+      parseAuditRecorderReceiptCore(structuredClone(entries[0]!.recorderReceipt.core)),
+      parseAuditCheckpointCore(structuredClone(checkpoint.core)),
+      parseSignedAuditCheckpoint(structuredClone(checkpoint)),
+      parseAuditObservationReceipt(structuredClone(observation)),
+      parseAuditReplayBundle(structuredClone(bundle)),
+      parseAuditVerificationPolicy(structuredClone(policy)),
+    ];
+    expect(parsed.every(Object.isFrozen)).toBe(true);
   });
 });

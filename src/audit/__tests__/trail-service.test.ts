@@ -11,7 +11,7 @@ import type { AuditOutboxItem, AuditOutboxProvider } from '../providers/outbox.j
 import { MemoryAuditOutbox } from '../providers/outbox.js';
 import { AuditRecorderService } from '../recorder-service.js';
 import type { AuditRecorderSubmission } from '../providers/recorder-client.js';
-import type { PartyRef } from '../types.js';
+import type { PartyRef, SignedAuditEntryV1 } from '../types.js';
 
 class Signer implements AuditSigner {
   readonly ref = {
@@ -181,6 +181,38 @@ describe('AuditTrailService delivery modes', () => {
     await expect(outbox.enqueue(changed)).rejects.toThrow(/identity collision/i);
   });
 
+  it('tracks outbox delivery attempts and removes only acknowledged events', async () => {
+    const { trail } = local();
+    const firstEvent = await trail.record({ ...baseEvent, eventId: 'evt_outbox_first' });
+    const secondEvent = await trail.record({ ...baseEvent, eventId: 'evt_outbox_second' });
+    const item = (event: typeof firstEvent.event): AuditOutboxItem => ({
+      eventId: event.eventId,
+      submission: {
+        ledgerId: 'kya:tenant:prod:primary', producerEvent: event, encryptedEvidence: [],
+      },
+      enqueuedAt: 1,
+      attempts: 0,
+    });
+    const outbox = new MemoryAuditOutbox();
+    await outbox.enqueue(item(firstEvent.event));
+    await outbox.enqueue(item(secondEvent.event));
+
+    const collect = async () => {
+      const values: AuditOutboxItem[] = [];
+      for await (const pending of outbox.pending()) values.push(pending);
+      return values;
+    };
+    const limited: AuditOutboxItem[] = [];
+    for await (const pending of outbox.pending(1)) limited.push(pending);
+    expect(limited).toHaveLength(1);
+    await outbox.markFailed(firstEvent.event.eventId, new Error('recorder offline'));
+    expect((await collect())[0]?.attempts).toBe(1);
+    await outbox.markFailed('unknown-event', new Error('already reconciled'));
+    await outbox.markDelivered(firstEvent.event.eventId);
+    expect((await collect()).map((pending) => pending.eventId))
+      .toEqual([secondEvent.event.eventId]);
+  });
+
   it('persists encrypted evidence before appending an event that commits its reference', async () => {
     const evidenceHasher = new CryptoProviderAuditHasher(new NodeCryptoProvider());
     const evidence = new MemoryAuditEvidenceProvider(evidenceHasher);
@@ -225,5 +257,96 @@ describe('AuditTrailService delivery modes', () => {
     await expect(failing.getSourceState()).resolves.toMatchObject({
       highestEmitted: '1', highestReceipted: '0', pendingSequences: ['1'],
     });
+  });
+
+  it('exposes only truthful assurance capabilities and rejects inconsistent startup claims', () => {
+    const { trail } = local();
+    expect(trail.auditProfile).toBe('AAP-1');
+    expect(trail.capabilities).toBeUndefined();
+    const capabilities = {
+      profile: 'AAP-2' as const,
+      recorderTopology: 'self-hosted' as const,
+      delivery: 'required' as const,
+      journalDurability: 'durable' as const,
+      atomicAppend: true,
+      sourceHighWater: false,
+      merkleCheckpoints: false,
+      independentObservation: false,
+      supportingAnchors: [],
+      evidenceRetention: 'separate' as const,
+    };
+    const declared = createAuditTrail({ ...trail.configuration, capabilities });
+    expect(declared.auditProfile).toBe('AAP-2');
+    expect(declared.capabilities).toEqual(capabilities);
+
+    expect(() => createAuditTrail({
+      ...trail.configuration,
+      capabilities: { ...capabilities, delivery: 'buffered' },
+    })).toThrow(/does not match/);
+    expect(() => createAuditTrail({
+      ...trail.configuration,
+      capabilities: {
+        ...capabilities, profile: 'AAP-3', sourceHighWater: true, merkleCheckpoints: true,
+      },
+    })).toThrow(/durable source state/);
+  });
+
+  it('rejects recorder receipts that do not bind every submitted event boundary', async () => {
+    const { trail } = local();
+    const mutations: Array<(entry: SignedAuditEntryV1) => void> = [
+      (entry) => {
+        entry.core.ledgerId = 'wrong-ledger';
+      },
+      (entry) => { entry.core.ledgerEpochId = 'wrong-epoch'; },
+      (entry) => { entry.eventDigest = `sha256:${'d'.repeat(64)}`; },
+      (entry) => { entry.core.eventDigest = `sha256:${'e'.repeat(64)}`; },
+      (entry) => { entry.core.event.action.category = 'tampered'; },
+    ];
+
+    for (const [index, mutate] of mutations.entries()) {
+      const recorder = {
+        submit: async (submission: AuditRecorderSubmission) => {
+          const eventDigest = await digestAuditEvent(trail.configuration.hasher, submission.producerEvent);
+          const entry: SignedAuditEntryV1 = {
+            core: {
+              schema: 'https://schema.kya-os.org/v1/protocol/audit/entry/v1.0.0' as const,
+              ledgerId: submission.ledgerId,
+              ledgerEpochId: submission.expectedLedgerEpochId ?? 'epoch_1',
+              sequence: '1' as const,
+              previousEntryDigest: null,
+              recordedAt: 1_750_000_000_000,
+              recorder: new Signer().ref,
+              eventDigest,
+              event: structuredClone(submission.producerEvent),
+              evidenceManifestDigest: `sha256:${'b'.repeat(64)}` as const,
+              integritySuite: 'KYA-AUDIT-JCS-SHA256-JWS-2026' as const,
+            },
+            eventDigest,
+            entryDigest: `sha256:${'c'.repeat(64)}` as const,
+            recorderReceipt: {
+              core: {
+                schema: 'https://schema.kya-os.org/v1/protocol/audit/receipt/v1.0.0' as const,
+                ledgerId: submission.ledgerId,
+                ledgerEpochId: submission.expectedLedgerEpochId ?? 'epoch_1',
+                sequence: '1' as const,
+                eventId: submission.producerEvent.eventId,
+                entryDigest: `sha256:${'c'.repeat(64)}` as const,
+                previousEntryDigest: null,
+                recordedAt: 1_750_000_000_000,
+                recorder: new Signer().ref,
+                integritySuite: 'KYA-AUDIT-JCS-SHA256-JWS-2026' as const,
+              },
+              jws: 'signature',
+            },
+          };
+          mutate(entry);
+          return entry;
+        },
+      };
+      const validating = createAuditTrail({ ...trail.configuration, recorder });
+      await expect(validating.record({
+        ...baseEvent, eventId: `evt_tampered_receipt_${index}`,
+      })).rejects.toMatchObject({ code: 'AUDIT_JOURNAL_FAILURE' });
+    }
   });
 });

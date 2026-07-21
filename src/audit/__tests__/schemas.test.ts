@@ -11,6 +11,8 @@ import {
   auditCheckpointCoreSchema,
   auditEntryCoreSchema,
   auditProducerEventSchema,
+  auditReplayBundleSchema,
+  auditVerificationPolicySchema,
   parseAuditEntryCore,
   parseAuditProducerEvent,
 } from '../schemas.js';
@@ -159,5 +161,83 @@ describe('audit protocol schemas', () => {
       ...manifest,
       inventory: [{ path: 'x', mediaType: 'application/json', disposition: 'included' }],
     })).toThrow(/digest\/size/i);
+  });
+
+  it('maps every protocol event namespace to its required detail family', () => {
+    const cases: Array<Pick<AuditProducerEventCoreV1, 'eventType' | 'details'>> = [
+      { eventType: 'session.established', details: { family: 'session', phase: 'established' } },
+      { eventType: 'proof.verified', details: { family: 'proof', phase: 'verified' } },
+      {
+        eventType: 'delegation.verified',
+        details: { family: 'delegation', phase: 'verified', delegationRef: 'delegation-1' },
+      },
+      {
+        eventType: 'authorization.evaluated',
+        details: { family: 'authorization', phase: 'evaluated' },
+      },
+      { eventType: 'credential.verified', details: { family: 'consent', phase: 'credential_verified' } },
+      { eventType: 'policy.changed', details: { family: 'key', phase: 'policy_changed' } },
+    ];
+    for (const item of cases) {
+      expect(parseAuditProducerEvent({ ...makeEvent(), ...item }).details.family)
+        .toBe(item.details.family);
+    }
+  });
+
+  it('rejects reversed bundle selections and malformed included/excluded component semantics', () => {
+    const core = {
+      schema: AUDIT_BUNDLE_MANIFEST_SCHEMA_ID,
+      bundleId: 'bundle_validation', formatVersion: '1.0.0',
+      selections: [{
+        ledgerId: 'ledger', ledgerEpochId: 'epoch', firstSequence: '2',
+        lastSequence: '1', expectedHeadDigest: digest('a'), checkpointTreeSizes: [],
+      }],
+      exporter: { did: 'did:key:zExporter', kid: 'did:key:zExporter#key', alg: 'EdDSA' },
+      purpose: 'audit', exportedAt: 1_750_000_000_000,
+      verificationPolicyDigest: digest('b'), inventory: [],
+      integritySuite: AUDIT_BUNDLE_INTEGRITY_SUITE,
+    };
+    expect(() => auditBundleManifestCoreSchema.parse(core)).toThrow(/reversed/i);
+
+    const validCore = {
+      ...core,
+      selections: [{ ...core.selections[0], firstSequence: '0', lastSequence: '1' }],
+    };
+    expect(() => auditBundleManifestCoreSchema.parse({
+      ...validCore,
+      inventory: [{
+        path: 'redacted.json', mediaType: 'application/json', disposition: 'redacted',
+      }],
+    })).toThrow(/reason code/i);
+    expect(() => auditReplayBundleSchema.parse({
+      manifest: { core: validCore, manifestDigest: digest('c'), jws: 'signature' },
+      components: [{
+        path: 'included.json', mediaType: 'application/json', disposition: 'included',
+        digest: digest('d'), size: '2',
+      }],
+    })).toThrow(/content is required/i);
+    expect(() => auditReplayBundleSchema.parse({
+      manifest: { core: validCore, manifestDigest: digest('c'), jws: 'signature' },
+      components: [{
+        path: 'redacted.json', mediaType: 'application/json', disposition: 'redacted',
+        reasonCode: 'MINIMIZED', content: {},
+      }],
+    })).toThrow(/content is forbidden/i);
+  });
+
+  it('rejects reversed historical key-validity intervals in trust policy', () => {
+    expect(() => auditVerificationPolicySchema.parse({
+      policyId: 'policy:reversed-key-window',
+      trustedLedgerEpochs: [{
+        ledgerId: 'ledger', ledgerEpochId: 'epoch',
+        recorderKeys: [{
+          signer: { did: 'did:key:zRecorder', kid: 'did:key:zRecorder#key', alg: 'EdDSA' },
+          validFrom: 20, validUntil: 10,
+        }],
+      }],
+      trustedObservers: [], authorizedExporters: [],
+      acceptedIntegritySuites: [AUDIT_INTEGRITY_SUITE], acceptedAlgorithms: ['EdDSA'],
+      keyRevocationMode: 'as_observed',
+    })).toThrow(/validity interval is reversed/i);
   });
 });

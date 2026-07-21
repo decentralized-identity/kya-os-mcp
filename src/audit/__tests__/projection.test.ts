@@ -101,4 +101,73 @@ describe('audit projection worker', () => {
     expect((await worker.reconcile(ledger)).status).toBe('gap_detected');
     expect((await journal.getHead(ledger))?.entryDigest).toBe(first.entryDigest);
   });
+
+  it('distinguishes empty, lagging, orphaned, and ahead projection states', async () => {
+    const journal = new MemoryAuditJournal();
+    const projections = new MemoryAuditProjectionProvider();
+    const worker = new AuditProjectionWorker({ projectionId: 'timeline', journal, projections });
+    expect((await worker.reconcile(ledger)).status).toBe('empty');
+
+    projections.corruptOffsetForTesting('timeline', ledger, {
+      sequence: '0', entryDigest: digest('e'),
+    });
+    expect((await worker.reconcile(ledger)).status).toBe('gap_detected');
+    await projections.reset('timeline', ledger);
+
+    const first = entry(0, null);
+    const second = entry(1, first.entryDigest);
+    await append(journal, first);
+    await append(journal, second);
+    await worker.synchronize(ledger);
+    projections.corruptOffsetForTesting('timeline', ledger, {
+      sequence: '0', entryDigest: first.entryDigest,
+    });
+    expect((await worker.reconcile(ledger)).status).toBe('pending');
+    projections.corruptOffsetForTesting('timeline', ledger, {
+      sequence: '2', entryDigest: digest('f'),
+    });
+    expect((await worker.reconcile(ledger)).status).toBe('gap_detected');
+  });
+
+  it('enforces projection identity, offset CAS, sequence order, and duplicate semantics', async () => {
+    const journal = new MemoryAuditJournal();
+    const projections = new MemoryAuditProjectionProvider();
+    expect(() => new AuditProjectionWorker({
+      projectionId: '', journal, projections,
+    })).toThrow(/Projection ID is required/);
+
+    const first = entry(0, null);
+    await append(journal, first);
+    const worker = new AuditProjectionWorker({ projectionId: 'timeline', journal, projections });
+    await worker.synchronize(ledger);
+    const [record] = await projections.read('timeline', ledger);
+    expect(record).toBeDefined();
+
+    await expect(projections.compareAndApply({
+      projectionId: 'timeline', ledger,
+      expectedOffset: await projections.getOffset('timeline', ledger),
+      entry: first, record: record!,
+    })).resolves.toEqual({ kind: 'duplicate' });
+
+    const conflicting = structuredClone(first);
+    conflicting.entryDigest = digest('f');
+    await expect(projections.compareAndApply({
+      projectionId: 'timeline', ledger,
+      expectedOffset: await projections.getOffset('timeline', ledger),
+      entry: conflicting, record: { ...record!, entryDigest: conflicting.entryDigest },
+    })).resolves.toMatchObject({ kind: 'conflict' });
+
+    const second = entry(1, first.entryDigest);
+    await expect(projections.compareAndApply({
+      projectionId: 'timeline', ledger, expectedOffset: null,
+      entry: second, record: { ...record!, sequence: '1', entryDigest: second.entryDigest },
+    })).resolves.toMatchObject({ kind: 'conflict' });
+
+    const skipped = entry(2, first.entryDigest);
+    await expect(projections.compareAndApply({
+      projectionId: 'timeline', ledger,
+      expectedOffset: await projections.getOffset('timeline', ledger),
+      entry: skipped, record: { ...record!, sequence: '2', entryDigest: skipped.entryDigest },
+    })).resolves.toMatchObject({ kind: 'conflict' });
+  });
 });

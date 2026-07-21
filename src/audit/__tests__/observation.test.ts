@@ -106,4 +106,41 @@ describe('checkpoint observation and supporting anchors', () => {
     expect(receipt.kind).toBe('worm');
     expect('previousObservationDigest' in receipt).toBe(false);
   });
+
+  it('fails closed when checkpoint or consistency verification rejects observed history', async () => {
+    const hasher = new CryptoProviderAuditHasher(new NodeCryptoProvider());
+    const rejectingCheckpoint = new MemoryAuditCheckpointObserver({
+      observerId: 'monitor-rejecting-checkpoint', signer: new TestSigner(), hasher,
+      clock: { now: () => 1_750_000_000_000 },
+      verifyCheckpoint: async () => false,
+      verifyConsistency: async () => true,
+    });
+    await expect(rejectingCheckpoint.publish(checkpoint(10))).rejects.toMatchObject({
+      code: 'AUDIT_CHECKPOINT_INVALID',
+    });
+
+    const rejectingConsistency = new MemoryAuditCheckpointObserver({
+      observerId: 'monitor-rejecting-consistency', signer: new TestSigner(), hasher,
+      clock: { now: () => 1_750_000_000_000 },
+      verifyCheckpoint: async () => true,
+      verifyConsistency: async () => false,
+    });
+    const first = checkpoint(10);
+    await rejectingConsistency.publish(first);
+    await expect(rejectingConsistency.publish({
+      ...checkpoint(20, 'd'),
+      core: { ...checkpoint(20, 'd').core, previousCheckpointDigest: first.checkpointDigest },
+    })).rejects.toMatchObject({ code: 'AUDIT_CHECKPOINT_CONFLICT' });
+  });
+
+  it('makes repeated publication idempotent and verifies only the retained observation', async () => {
+    const monitor = observer();
+    const observedCheckpoint = checkpoint(10);
+    const first = await monitor.publish(observedCheckpoint);
+    await expect(monitor.publish(structuredClone(observedCheckpoint))).resolves.toEqual(first);
+    await expect(monitor.verifyObservation(observedCheckpoint, first)).resolves.toBe(true);
+    await expect(monitor.verifyObservation(observedCheckpoint, {
+      ...first, observationDigest: hash('f'),
+    })).resolves.toBe(false);
+  });
 });

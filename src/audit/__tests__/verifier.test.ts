@@ -252,4 +252,151 @@ describe('AuditArtifactVerifier', () => {
       trustedObservers: [{ signer: new TestSigner().ref }],
     })).resolves.toEqual({ verdict: 'valid', reasonCodes: [] });
   });
+
+  it('reports an empty selection and distinguishes unverified authorization collateral', async () => {
+    const empty = await verifier.verifyEntries([], policy);
+    expect(empty.chainIntegrity).toEqual({
+      verdict: 'invalid',
+      reasonCodes: [AUDIT_REASON_CODES.BUNDLE_SELECTION_INCOMPLETE],
+    });
+    expect(empty.scopeEvidenceCompleteness.verdict).toBe('invalid');
+
+    const entries = structuredClone(await history());
+    entries[1]!.core.event.authorization = {
+      source: 'policy', decision: 'allowed', policyId: 'policy-at-call-time',
+    };
+    const report = await verifier.verifyEntries(entries, policy);
+    expect(report.authorizedAsObserved.reasonCodes).toContain(
+      AUDIT_REASON_CODES.AUTHORIZATION_COLLATERAL_NOT_VERIFIED,
+    );
+  });
+
+  it('surfaces every independently verifiable entry and chain-integrity failure', async () => {
+    const entries = structuredClone(await history());
+    entries[0]!.core.event = structuredClone(entries[1]!.core.event);
+    entries[1]!.core.evidenceManifestDigest = `sha256:${'1'.repeat(64)}`;
+    entries[1]!.entryDigest = `sha256:${'2'.repeat(64)}`;
+    entries[1]!.recorderReceipt.core.entryDigest = `sha256:${'3'.repeat(64)}`;
+    entries[1]!.recorderReceipt.jws = 'invalid.signature';
+    entries[2]!.core.ledgerId = 'kya:tenant:prod:secondary';
+
+    const report = await verifier.verifyEntries(entries, {
+      ...policy,
+      acceptedIntegritySuites: ['KYA-AUDIT-RFC9162-SHA256-JWS-2026'],
+      acceptedAlgorithms: ['ES256'],
+      trustedLedgerEpochs: [{
+        ...policy.trustedLedgerEpochs[0]!,
+        recorderKeys: [{ signer: new TestSigner().ref, validUntil: 1 }],
+      }],
+    });
+
+    expect(report.cryptographicIntegrity.reasonCodes).toEqual(expect.arrayContaining([
+      AUDIT_REASON_CODES.UNSUPPORTED_SUITE,
+      AUDIT_REASON_CODES.UNSUPPORTED_ALGORITHM,
+      AUDIT_REASON_CODES.UNTRUSTED_RECORDER,
+      AUDIT_REASON_CODES.EVIDENCE_MANIFEST_DIGEST_MISMATCH,
+      AUDIT_REASON_CODES.ENTRY_DIGEST_MISMATCH,
+      AUDIT_REASON_CODES.RECEIPT_MISMATCH,
+      AUDIT_REASON_CODES.SIGNATURE_INVALID,
+    ]));
+    expect(report.chainIntegrity.reasonCodes).toEqual(expect.arrayContaining([
+      AUDIT_REASON_CODES.GENESIS_INVALID,
+      AUDIT_REASON_CODES.LEDGER_SCOPE_MISMATCH,
+      AUDIT_REASON_CODES.PREDECESSOR_MISMATCH,
+    ]));
+
+    const orphan = structuredClone((await history())[1]!);
+    orphan.core.previousEntryDigest = null;
+    expect((await verifier.verifyEntries([orphan], policy)).chainIntegrity.reasonCodes)
+      .toContain(AUDIT_REASON_CODES.PREDECESSOR_MISMATCH);
+  });
+
+  it('rejects unsupported, untrusted, tampered, and wrong-range checkpoints independently', async () => {
+    const { journal, ledger, entries } = await recordedHistory();
+    const checkpoint = await new AuditCheckpointBuilder({
+      journal, store: new MemoryAuditCheckpointStore(), signer: new TestSigner(),
+      hasher: new CryptoProviderAuditHasher(new NodeCryptoProvider()),
+      clock: { now: () => 1_750_000_002_000 },
+    }).createCheckpoint(ledger);
+    const tampered = structuredClone(checkpoint);
+    tampered.checkpointDigest = `sha256:${'d'.repeat(64)}`;
+    tampered.jws = 'invalid.signature';
+
+    const result = await verifier.verifyCheckpoint(tampered, entries.slice(0, -1), {
+      ...policy,
+      acceptedIntegritySuites: ['KYA-AUDIT-JCS-SHA256-JWS-2026'],
+      acceptedAlgorithms: ['ES256'],
+      trustedLedgerEpochs: [{
+        ...policy.trustedLedgerEpochs[0]!,
+        recorderKeys: [{ signer: new TestSigner().ref, validFrom: 1_750_000_002_001 }],
+      }],
+    });
+    expect(result.reasonCodes).toEqual(expect.arrayContaining([
+      AUDIT_REASON_CODES.UNSUPPORTED_SUITE,
+      AUDIT_REASON_CODES.UNSUPPORTED_ALGORITHM,
+      AUDIT_REASON_CODES.UNTRUSTED_RECORDER,
+      AUDIT_REASON_CODES.CHECKPOINT_DIGEST_MISMATCH,
+      AUDIT_REASON_CODES.CHECKPOINT_SIGNATURE_INVALID,
+      AUDIT_REASON_CODES.CHECKPOINT_RANGE_MISMATCH,
+    ]));
+    await expect(verifier.verifyCheckpoint(checkpoint, entries, { policyId: 'bad' } as never))
+      .resolves.toEqual({
+        verdict: 'invalid',
+        reasonCodes: [AUDIT_REASON_CODES.VERIFICATION_POLICY_INVALID],
+      });
+  });
+
+  it('applies observation freshness and reports scope, trust, digest, and signature failures', async () => {
+    const { journal, ledger } = await recordedHistory();
+    const checkpoint = await new AuditCheckpointBuilder({
+      journal, store: new MemoryAuditCheckpointStore(), signer: new TestSigner(),
+      hasher: new CryptoProviderAuditHasher(new NodeCryptoProvider()),
+      clock: { now: () => 1_750_000_002_000 },
+    }).createCheckpoint(ledger);
+    const observer = new MemoryAuditCheckpointObserver({
+      observerId: 'observer-1', signer: new TestSigner(),
+      hasher: new CryptoProviderAuditHasher(new NodeCryptoProvider()),
+      clock: { now: () => 1_750_000_003_000 },
+      verifyCheckpoint: async () => true,
+      verifyConsistency: async () => true,
+    });
+    const receipt = await observer.publish(checkpoint);
+    const trustedPolicy = {
+      ...policy,
+      trustedObservers: [{ signer: new TestSigner().ref }],
+      requiredCheckpointFreshnessMs: 1_000,
+    };
+    await expect(verifier.verifyObservation(checkpoint, receipt, trustedPolicy))
+      .resolves.toEqual({ verdict: 'indeterminate', reasonCodes: [AUDIT_REASON_CODES.NOT_EVALUATED] });
+
+    const timeAware = new AuditArtifactVerifier({
+      hasher: new CryptoProviderAuditHasher(new NodeCryptoProvider()),
+      signatures: new TestSignatureVerifier(),
+      verifiedAt: () => 1_750_000_005_000,
+    });
+    expect((await timeAware.verifyObservation(checkpoint, receipt, trustedPolicy)).reasonCodes)
+      .toContain(AUDIT_REASON_CODES.OBSERVATION_STALE);
+
+    const tampered = structuredClone(receipt);
+    tampered.core.ledgerId = 'kya:tenant:prod:secondary';
+    tampered.observationDigest = `sha256:${'e'.repeat(64)}`;
+    tampered.jws = 'invalid.signature';
+    const result = await verifier.verifyObservation(checkpoint, tampered, {
+      ...policy,
+      acceptedAlgorithms: ['ES256'],
+      trustedObservers: [],
+    });
+    expect(result.reasonCodes).toEqual(expect.arrayContaining([
+      AUDIT_REASON_CODES.OBSERVATION_SCOPE_MISMATCH,
+      AUDIT_REASON_CODES.UNSUPPORTED_ALGORITHM,
+      AUDIT_REASON_CODES.UNTRUSTED_OBSERVER,
+      AUDIT_REASON_CODES.OBSERVATION_DIGEST_MISMATCH,
+      AUDIT_REASON_CODES.OBSERVATION_SIGNATURE_INVALID,
+    ]));
+    await expect(verifier.verifyObservation(checkpoint, receipt, { policyId: 'bad' } as never))
+      .resolves.toEqual({
+        verdict: 'invalid',
+        reasonCodes: [AUDIT_REASON_CODES.VERIFICATION_POLICY_INVALID],
+      });
+  });
 });

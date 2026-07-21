@@ -7,6 +7,37 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Fixed
+
+- **Entity Card spec corrections from working-group review.** Three defects raised
+  against SPEC-ENTITY-CARD.md are resolved. (1) The Status section said the
+  `org.kya-os/proof@1` and legacy proofs share one `_meta` key discriminated by
+  `prf`; they ride separate keys (`org.kya-os/proof@1` vs `org.kya-os/proof`), as
+  §8.1 and the implementation always had it, and the Status text now matches.
+  (2) §8.3 now specifies the exact pre-signing transformation for `requestHash`:
+  the `_meta` member of `params` (the proof's own carrier) is removed before JCS
+  canonicalization, on both the mint and verify sides. Without that rule the
+  definition was circular for MCP requests, where the proof travels inside
+  `params._meta`. (3) Terminology now distinguishes the self-contained proof
+  object from stateful replay prevention: a verifier still needs a nonce store
+  and fails closed (`nonce_seam_missing`) without one, so the spec no longer
+  describes verification as stateless.
+- **`computeRequestHash` applies the §8.3 transformation itself.** The card
+  hasher removes `params._meta` before canonicalizing, so a verifier handed the
+  raw inbound request (proof still attached) recomputes the hash the minter
+  signed instead of failing on a self-referential body. Requests without
+  `params._meta` hash byte-identically to before; all golden vectors are
+  unchanged.
+
+### Changed
+
+- **SPEC-ENTITY-CARD.md editorial pass.** Tightened the abstract and framing
+  sections, replaced em dashes with plain punctuation throughout, clarified that
+  a declared capability name conveys no authority (authority travels only in the
+  delegation chain), noted that a verifying resource should assert itself as the
+  expected `invocationTarget` when evaluating a chain, and updated the
+  reference-implementation version pointer.
+
 ## [1.10.1] - 2026-07-08
 
 ### Fixed

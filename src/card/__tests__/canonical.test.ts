@@ -28,3 +28,34 @@ describe('digestsEqual (RFC 9421 vs legacy hex)', () => {
     expect(digestsEqual('md5:abc', card)).toBe(false);
   });
 });
+
+describe('the §8.3 pre-signing transformation (strip params._meta)', () => {
+  it('a request carrying params._meta hashes identically to the same request without it', async () => {
+    const bare = await computeRequestHash(REQ);
+    const carried = await computeRequestHash({
+      method: REQ.method,
+      params: {
+        ...REQ.params,
+        _meta: { 'org.kya-os/proof@1': { prf: 'org.kya-os/proof@1', jws: 'x..y' }, progressToken: 7 },
+      },
+    });
+    expect(carried).toBe(bare); // the proof's own carrier is never part of the signed material
+  });
+
+  it('only the top-level _meta member of params is removed', async () => {
+    const nested = { method: 'tools/call', params: { name: 'search', arguments: { _meta: 'payload data' } } };
+    const withCarrier = await computeRequestHash({
+      method: nested.method,
+      params: { ...nested.params, _meta: { anything: true } },
+    });
+    expect(withCarrier).toBe(await computeRequestHash(nested)); // nested _meta-named data survives
+    expect(withCarrier).not.toBe(await computeRequestHash(REQ)); // and still distinguishes bodies
+  });
+
+  it('requests without params (or with non-object params) are unchanged', async () => {
+    const noParams = await computeRequestHash({ method: 'ping' });
+    expect(noParams).toBe(await computeRequestHash({ method: 'ping' }));
+    const arrayParams = await computeRequestHash({ method: 'x', params: [1, 2] });
+    expect(arrayParams).not.toBe(noParams);
+  });
+});

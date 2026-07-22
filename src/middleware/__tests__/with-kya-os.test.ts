@@ -223,7 +223,7 @@ describe('createKyaOsMiddleware', () => {
       });
     });
 
-    it('should default an enabled audit adapter to AAP-1 without capabilities', async () => {
+    it('should avoid assurance claims when an enabled adapter has no capabilities', async () => {
       const { middleware: kyaos } = await createTestMiddleware({
         audit: {
           record: async (event) => ({ status: 'pending', event: event as never }),
@@ -233,21 +233,37 @@ describe('createKyaOsMiddleware', () => {
       const result = await kyaos.handleKyaOs({ action: 'identity' });
       const parsed = JSON.parse(result.content[0].text);
 
-      expect(parsed.auditAssurance).toEqual({ enabled: true, profile: 'AAP-1' });
+      expect(parsed.auditAssurance).toEqual({ enabled: true, profile: 'AAP-0' });
     });
 
-    it('should let an explicit audit profile override capability inference', async () => {
-      const { middleware: kyaos } = await createTestMiddleware({
+    it('rejects an assurance profile that is not backed by validated capabilities', async () => {
+      await expect(createTestMiddleware({
         audit: {
           record: async (event) => ({ status: 'pending', event: event as never }),
           auditProfile: 'AAP-3',
         },
-      });
+      })).rejects.toThrow(/require validated capabilities/i);
+    });
 
-      const result = await kyaos.handleKyaOs({ action: 'identity' });
-      const parsed = JSON.parse(result.content[0].text);
-
-      expect(parsed.auditAssurance).toEqual({ enabled: true, profile: 'AAP-3' });
+    it('rejects an assurance profile that disagrees with validated capabilities', async () => {
+      await expect(createTestMiddleware({
+        audit: {
+          record: async (event) => ({ status: 'pending', event: event as never }),
+          auditProfile: 'AAP-3',
+          capabilities: {
+            profile: 'AAP-2',
+            recorderTopology: 'self-hosted',
+            delivery: 'required',
+            journalDurability: 'durable',
+            atomicAppend: true,
+            sourceHighWater: false,
+            merkleCheckpoints: false,
+            independentObservation: false,
+            supportingAnchors: [],
+            evidenceRetention: 'separate',
+          },
+        },
+      })).rejects.toThrow(/must match the validated capability profile/i);
     });
 
     it('should advertise AAP-0 when audit is explicitly disabled', async () => {

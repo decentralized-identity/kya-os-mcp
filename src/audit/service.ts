@@ -11,7 +11,6 @@ import type {
   AuditRecorderSubmission,
 } from './providers/recorder-client.js';
 import {
-  MemoryAuditSourceState,
   type AuditSourceState,
   type AuditSourceStateProvider,
 } from './providers/source-state.js';
@@ -55,9 +54,15 @@ export interface AuditTrailConfiguration {
   outbox?: AuditOutboxProvider;
   eventIdFactory?: () => string;
   onDeliveryFailure?: (error: unknown, event: AuditProducerEventCoreV1) => void;
+  /** Called when an event is committed but the local source watermark cannot advance. */
+  onSourceStateFailure?: (error: unknown, event: AuditProducerEventCoreV1) => void;
   /** Optional deployment claim; validated against configured delivery at startup. */
   capabilities?: AuditCapabilities;
-  sourceState?: AuditSourceStateProvider;
+  /**
+   * Durable in production. It is explicit because silently resetting source
+   * sequence/linkage state on process restart makes high-water claims ambiguous.
+   */
+  sourceState: AuditSourceStateProvider;
 }
 
 export type AuditEmitResult =
@@ -77,7 +82,7 @@ export class AuditTrailService {
   private sourceConstructionTail: Promise<void> = Promise.resolve();
 
   get auditProfile(): AuditCapabilities['profile'] {
-    return this.configuration.capabilities?.profile ?? 'AAP-1';
+    return this.configuration.capabilities?.profile ?? 'AAP-0';
   }
 
   get capabilities(): AuditCapabilities | undefined {
@@ -101,7 +106,7 @@ export class AuditTrailService {
       }
       assertAuditCapabilities(configuration.capabilities);
       if (configuration.capabilities.sourceHighWater &&
-        configuration.sourceState?.capabilities.durability !== 'durable') {
+        configuration.sourceState.capabilities.durability !== 'durable') {
         throw new AuditProtocolError(
           AUDIT_ERROR_CODES.INVALID_CONFIGURATION,
           'Advertised source high-water support requires durable source state',
@@ -109,7 +114,7 @@ export class AuditTrailService {
       }
     }
     this.configuration = Object.freeze({ ...configuration });
-    this.sourceState = configuration.sourceState ?? new MemoryAuditSourceState();
+    this.sourceState = configuration.sourceState;
   }
 
   async record(
@@ -139,38 +144,53 @@ export class AuditTrailService {
       return { status: 'pending', event };
     }
 
+    let entry: SignedAuditEntryV1;
     try {
-      const entry = await this.submitAndValidate(submission);
-      await this.sourceState.markReceipted(
-        this.configuration.sourceId,
-        event.source.sourceSequence!,
-        entry.entryDigest,
-      );
-      return { status: 'recorded', event, entry };
+      entry = await this.submitAndValidate(submission);
     } catch (error) {
       this.configuration.onDeliveryFailure?.(error, event);
       if (this.configuration.delivery === 'required') throw error;
       return { status: 'failed', event, error };
     }
+    try {
+      await this.sourceState.markReceipted(
+        this.configuration.sourceId,
+        event.source.sourceSequence!,
+        entry.entryDigest,
+      );
+    } catch (error) {
+      // The recorder commit is authoritative and must not be reported as
+      // failed: doing so encourages a caller to emit a new event identity.
+      this.configuration.onSourceStateFailure?.(error, event);
+    }
+    return { status: 'recorded', event, entry };
   }
 
   async flush(limit?: number): Promise<{ delivered: number; failed: number }> {
     if (this.configuration.delivery !== 'buffered') return { delivered: 0, failed: 0 };
     let delivered = 0;
     let failed = 0;
+    const blockedSources = new Set<string>();
     for await (const item of this.configuration.outbox!.pending(limit)) {
+      const sourceId = item.submission.producerEvent.source.sourceId;
+      if (blockedSources.has(sourceId)) continue;
       try {
         const entry = await this.submitAndValidate(item.submission);
-        await this.sourceState.markReceipted(
-          this.configuration.sourceId,
-          item.submission.producerEvent.source.sourceSequence!,
-          entry.entryDigest,
-        );
+        try {
+          await this.sourceState.markReceipted(
+            this.configuration.sourceId,
+            item.submission.producerEvent.source.sourceSequence!,
+            entry.entryDigest,
+          );
+        } catch (error) {
+          this.configuration.onSourceStateFailure?.(error, item.submission.producerEvent);
+        }
         await this.configuration.outbox!.markDelivered(item.eventId);
         delivered += 1;
       } catch (error) {
         await this.configuration.outbox!.markFailed(item.eventId, error);
         this.configuration.onDeliveryFailure?.(error, item.submission.producerEvent);
+        blockedSources.add(sourceId);
         failed += 1;
       }
     }

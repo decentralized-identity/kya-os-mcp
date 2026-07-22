@@ -95,7 +95,7 @@ async function recordedHistory() {
       ledgerId: 'kya:tenant:prod:primary',
       producerEvent: producerEvent(`evt_${index}`, index),
       encryptedEvidence: [],
-    }, { producerAuthority: 'did:key:zProducer', tenantAuthority: 'tenant-1' });
+    }, { producerAuthority: 'did:key:zProducer', tenantAuthority: 'tenant-1', tenantRef });
   }
   const ledger = { ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1' };
   return { journal, ledger, entries: await journal.snapshot(ledger) };

@@ -113,6 +113,15 @@ describe('Canonicalization Integrity Audit', () => {
       );
     });
 
+    it('should reject fractional numbers and non-BMP object keys on protocol inputs', () => {
+      expect(() => canonicalizeJSON(-0.5)).toThrow(
+        'Cannot canonicalize non-integer number at $',
+      );
+      expect(() => canonicalizeJSON({ ['\u{1F600}']: 'value' })).toThrow(
+        'Cannot canonicalize non-BMP or surrogate object key at $',
+      );
+    });
+
     it('should reject cyclic objects with a stable path-aware error', () => {
       const cyclic: Record<string, unknown> = {};
       cyclic['self'] = cyclic;
@@ -135,9 +144,8 @@ describe('Canonicalization Integrity Audit', () => {
       expect(() => canonicalizeJSON(false)).not.toThrow();
     });
 
-    it('should accept finite numbers', () => {
+    it('should accept safe integer numbers', () => {
       expect(() => canonicalizeJSON(42)).not.toThrow();
-      expect(() => canonicalizeJSON(-0.5)).not.toThrow();
       expect(() => canonicalizeJSON(0)).not.toThrow();
     });
 

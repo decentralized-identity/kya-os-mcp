@@ -8,6 +8,7 @@ import {
   MemoryAuditCheckpointStore,
   MemoryAuditJournal,
   MemoryAuditProjectionProvider,
+  MemoryAuditSourceState,
   createAuditTrail,
   createLocalAuditRecorder,
   type PartyRef,
@@ -41,8 +42,9 @@ const recorder = createLocalAuditRecorder({
   hasher,
   clock: Date,
 }, () => ({
-  producerAuthority: 'did:web:mcp.example',
+  producerAuthority: 'did:key:zLocalProducer',
   tenantAuthority: 'tenant-opaque',
+  tenantRef,
 }));
 const trail = createAuditTrail({
   recorder,
@@ -56,6 +58,8 @@ const trail = createAuditTrail({
   binding: 'urn:kya-os:audit-binding:mcp:2025-11-25',
   privacy: { classification: 'internal', retentionClass: 'audit-30d' },
   clock: Date,
+  // Reference-only. Production AAP-3 deployments provide durable source state.
+  sourceState: new MemoryAuditSourceState(),
 });
 
 await trail.record({

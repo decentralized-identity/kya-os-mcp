@@ -18,6 +18,7 @@ import {
   AUDIT_INTEGRITY_SUITE,
   parseAuditEntryCore,
   parseAuditProducerEvent,
+  parseSignedAuditEntry,
 } from './schemas.js';
 import type {
   AuditHead,
@@ -36,6 +37,10 @@ export interface AuditClock {
 export interface AuthenticatedAuditSubmissionContext {
   producerAuthority: string;
   tenantAuthority: string;
+  /** Exact authenticated producer binding for non-public or non-DID identifiers. */
+  producerRef?: PartyRef;
+  /** Exact authenticated tenant binding for opaque or commitment-based tenant identifiers. */
+  tenantRef?: PartyRef;
 }
 
 export interface AuditSubmissionAuthorizer {
@@ -43,6 +48,20 @@ export interface AuditSubmissionAuthorizer {
     submission: AuditRecorderSubmission;
     context: AuthenticatedAuditSubmissionContext;
   }): Promise<boolean> | boolean;
+}
+
+/**
+ * Authoritative epoch-transition port. A successful result means the predecessor terminal
+ * checkpoint was verified and the predecessor epoch was atomically sealed against new appends.
+ * Implementations must be idempotent for identical transition inputs.
+ */
+export interface AuditEpochTransitionGuard {
+  verifyAndSeal(input: {
+    ledgerId: string;
+    previousEpochId: string;
+    nextEpochId: string;
+    previousTerminalCheckpointDigest: Digest;
+  }): Promise<boolean>;
 }
 
 export interface AuditRecorderServiceConfig {
@@ -59,6 +78,7 @@ export interface AuditRecorderServiceConfig {
   authorizer?: AuditSubmissionAuthorizer;
   previousEpochId?: string;
   previousTerminalCheckpointDigest?: Digest;
+  epochTransitionGuard?: AuditEpochTransitionGuard;
   maxAppendConflicts?: number;
 }
 
@@ -73,6 +93,24 @@ function sameHead(left: AuditHead | null, right: AuditHead | null): boolean {
   return left.entryDigest === right.entryDigest && left.sequence === right.sequence;
 }
 
+function sameSigner(left: AuditSigner['ref'], right: AuditSigner['ref']): boolean {
+  return left.did === right.did && left.kid === right.kid && left.alg === right.alg;
+}
+
+function sameParty(left: PartyRef, right: PartyRef): boolean {
+  return canonicalizeJson(left) === canonicalizeJson(right);
+}
+
+function authorityMatchesParty(
+  authority: string,
+  boundRef: PartyRef | undefined,
+  claimedRef: PartyRef,
+): boolean {
+  if (boundRef !== undefined) return sameParty(boundRef, claimedRef);
+  return (claimedRef.kind === 'public_did' || claimedRef.kind === 'pairwise_did') &&
+    claimedRef.did === authority;
+}
+
 export class AuditRecorderService {
   private readonly maxAppendConflicts: number;
   private initialization?: Promise<SignedAuditEntryV1>;
@@ -85,6 +123,12 @@ export class AuditRecorderService {
         'Previous epoch ID and terminal checkpoint digest must be supplied together',
       );
     }
+    if (config.previousEpochId !== undefined && config.epochTransitionGuard === undefined) {
+      throw new AuditProtocolError(
+        AUDIT_ERROR_CODES.INVALID_CONFIGURATION,
+        'Epoch transitions require an authoritative verify-and-seal guard',
+      );
+    }
     this.maxAppendConflicts = config.maxAppendConflicts ?? 256;
   }
 
@@ -92,7 +136,9 @@ export class AuditRecorderService {
     submission: AuditRecorderSubmission,
     context: AuthenticatedAuditSubmissionContext,
   ): Promise<SignedAuditEntryV1> {
-    this.validateSubmissionBoundary(submission, context);
+    this.validateSubmissionEnvelope(submission, context);
+    const producerEvent = parseAuditProducerEvent(submission.producerEvent);
+    this.validateEventAuthority(producerEvent, context);
     if (this.config.authorizer !== undefined &&
       !(await this.config.authorizer.authorize({ submission, context }))) {
       throw new AuditProtocolError(
@@ -101,13 +147,19 @@ export class AuditRecorderService {
       );
     }
 
-    const producerEvent = parseAuditProducerEvent(submission.producerEvent);
-    await this.persistSubmittedEvidence(submission.encryptedEvidence, producerEvent);
+    const identity = await this.identifyEvent(producerEvent, context);
+    const duplicate = await this.config.journal.getByIdempotencyKey(
+      this.config.ledgerId,
+      identity.idempotencyKey,
+    );
+    if (duplicate !== null) return this.resolveDuplicate(duplicate, identity.eventDigest);
+
     await this.ensureInitialized();
-    return this.appendEvent(producerEvent, context);
+    await this.persistSubmittedEvidence(submission.encryptedEvidence, producerEvent);
+    return this.appendEvent(producerEvent, context, false, identity);
   }
 
-  private validateSubmissionBoundary(
+  private validateSubmissionEnvelope(
     submission: AuditRecorderSubmission,
     context: AuthenticatedAuditSubmissionContext,
   ): void {
@@ -123,6 +175,29 @@ export class AuditRecorderService {
     if (submission.expectedLedgerEpochId !== undefined &&
       submission.expectedLedgerEpochId !== this.config.ledgerEpochId) {
       throw new AuditProtocolError(AUDIT_ERROR_CODES.EPOCH_MISMATCH, 'Wrong audit ledger epoch');
+    }
+  }
+
+  private validateEventAuthority(
+    event: AuditProducerEventCoreV1,
+    context: AuthenticatedAuditSubmissionContext,
+  ): void {
+    if (!authorityMatchesParty(
+      context.producerAuthority,
+      context.producerRef,
+      event.source.producer,
+    )) {
+      throw new AuditProtocolError(
+        AUDIT_ERROR_CODES.UNAUTHORIZED_SUBMISSION,
+        'Event producer does not match the authenticated producer authority',
+      );
+    }
+    if (!sameParty(event.tenantRef, this.config.tenantRef) ||
+      !authorityMatchesParty(context.tenantAuthority, context.tenantRef, event.tenantRef)) {
+      throw new AuditProtocolError(
+        AUDIT_ERROR_CODES.UNAUTHORIZED_SUBMISSION,
+        'Event tenant does not match the authenticated tenant authority',
+      );
     }
   }
 
@@ -170,8 +245,23 @@ export class AuditRecorderService {
     const existingHead = await this.config.journal.getHead(ledger);
     if (existingHead !== null) {
       const first = this.config.journal.readRange({ ...ledger, limit: 1 });
-      for await (const entry of first) return entry;
+      for await (const entry of first) return this.validateExistingGenesis(entry);
       throw new AuditProtocolError(AUDIT_ERROR_CODES.JOURNAL_FAILURE, 'Ledger head exists without genesis');
+    }
+
+    if (this.config.previousEpochId !== undefined) {
+      const verifiedAndSealed = await this.config.epochTransitionGuard!.verifyAndSeal({
+        ledgerId: this.config.ledgerId,
+        previousEpochId: this.config.previousEpochId,
+        nextEpochId: this.config.ledgerEpochId,
+        previousTerminalCheckpointDigest: this.config.previousTerminalCheckpointDigest!,
+      });
+      if (!verifiedAndSealed) {
+        throw new AuditProtocolError(
+          AUDIT_ERROR_CODES.INVALID_CONFIGURATION,
+          'Predecessor checkpoint could not be verified and sealed',
+        );
+      }
     }
 
     this.initialization ??= this.appendEvent(
@@ -179,12 +269,46 @@ export class AuditRecorderService {
       {
         producerAuthority: this.config.signer.ref.did,
         tenantAuthority: 'audit-recorder',
+        producerRef: { kind: 'public_did', did: this.config.signer.ref.did },
+        tenantRef: this.config.tenantRef,
       },
       true,
     ).finally(() => {
       this.initialization = undefined;
     });
     return this.initialization;
+  }
+
+  private validateExistingGenesis(candidate: SignedAuditEntryV1): SignedAuditEntryV1 {
+    try {
+      const entry = parseSignedAuditEntry(candidate);
+      const details = entry.core.event.details;
+      const valid = entry.core.sequence === '0' &&
+        entry.core.previousEntryDigest === null &&
+        entry.core.ledgerId === this.config.ledgerId &&
+        entry.core.ledgerEpochId === this.config.ledgerEpochId &&
+        sameSigner(entry.core.recorder, this.config.signer.ref) &&
+        entry.core.event.eventType === 'ledger.epoch.started' &&
+        entry.core.event.binding === this.config.binding &&
+        entry.core.event.source.sourceId === this.config.sourceId &&
+        entry.core.event.source.producer.kind === 'public_did' &&
+        entry.core.event.source.producer.did === this.config.signer.ref.did &&
+        sameParty(entry.core.event.tenantRef, this.config.tenantRef) &&
+        details.family === 'ledger' &&
+        details.phase === 'epoch_started' &&
+        details.previousEpochId === this.config.previousEpochId &&
+        details.previousTerminalCheckpointDigest ===
+          this.config.previousTerminalCheckpointDigest;
+      if (!valid) throw new Error('Genesis does not match recorder epoch configuration');
+      return entry;
+    } catch (error) {
+      throw new AuditProtocolError(
+        AUDIT_ERROR_CODES.JOURNAL_FAILURE,
+        'Existing ledger genesis does not match the authoritative recorder configuration',
+        undefined,
+        { cause: error },
+      );
+    }
   }
 
   private genesisEvent(): AuditProducerEventCoreV1 {
@@ -224,14 +348,10 @@ export class AuditRecorderService {
     event: AuditProducerEventCoreV1,
     context: AuthenticatedAuditSubmissionContext,
     genesis = false,
+    knownIdentity?: { eventDigest: Digest; idempotencyKey: Digest },
   ): Promise<SignedAuditEntryV1> {
-    const eventDigest = await digestAuditEvent(this.config.hasher, event);
-    const idempotencyKey = await hashAuditValue(this.config.hasher, AUDIT_DIGEST_DOMAINS.idempotency, {
-      ledgerId: this.config.ledgerId,
-      producerAuthority: context.producerAuthority,
-      sourceId: event.source.sourceId,
-      eventId: event.eventId,
-    });
+    const { eventDigest, idempotencyKey } = knownIdentity ??
+      await this.identifyEvent(event, context);
 
     const duplicate = await this.config.journal.getByIdempotencyKey(
       this.config.ledgerId,
@@ -276,13 +396,36 @@ export class AuditRecorderService {
       if (result.kind === 'idempotency_conflict') {
         return this.resolveDuplicate(result.existing, eventDigest);
       }
-      if (!sameHead(head, result.actualHead)) continue;
+      if (sameHead(head, result.actualHead)) {
+        throw new AuditProtocolError(
+          AUDIT_ERROR_CODES.JOURNAL_FAILURE,
+          'Audit journal reported a head conflict without advancing its head',
+        );
+      }
     }
 
     throw new AuditProtocolError(
       AUDIT_ERROR_CODES.APPEND_CONFLICT_EXHAUSTED,
       'Audit append conflict retry budget exhausted',
     );
+  }
+
+  private async identifyEvent(
+    event: AuditProducerEventCoreV1,
+    context: AuthenticatedAuditSubmissionContext,
+  ): Promise<{ eventDigest: Digest; idempotencyKey: Digest }> {
+    const eventDigest = await digestAuditEvent(this.config.hasher, event);
+    const idempotencyKey = await hashAuditValue(
+      this.config.hasher,
+      AUDIT_DIGEST_DOMAINS.idempotency,
+      {
+        ledgerId: this.config.ledgerId,
+        producerAuthority: context.producerAuthority,
+        sourceId: event.source.sourceId,
+        eventId: event.eventId,
+      },
+    );
+    return { eventDigest, idempotencyKey };
   }
 
   private resolveDuplicate(existing: SignedAuditEntryV1, digest: Digest): SignedAuditEntryV1 {

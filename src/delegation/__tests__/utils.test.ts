@@ -26,8 +26,8 @@ describe("canonicalizeJSON", () => {
     expect(canonicalizeJSON(-42)).toBe("-42");
   });
 
-  it("should canonicalize decimal number", () => {
-    expect(canonicalizeJSON(3.14)).toBe("3.14");
+  it("should reject fractional protocol numbers", () => {
+    expect(() => canonicalizeJSON(3.14)).toThrow("non-integer number");
   });
 
   it("should throw for Infinity", () => {
@@ -182,4 +182,3 @@ describe("canonicalizeJSON", () => {
     expect(result).toBe('{"1":"one","10":"ten","2":"two"}');
   });
 });
-

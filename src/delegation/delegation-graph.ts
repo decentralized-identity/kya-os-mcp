@@ -71,7 +71,15 @@ export class DelegationGraphManager {
         try {
           await this.addChildToParent(params.parentId, params.id);
         } catch (error) {
-          await this.storage.deleteNode(params.id);
+          try {
+            await this.storage.deleteNode(params.id);
+          } catch (rollbackError) {
+            throw new AggregateError(
+              [error, rollbackError],
+              'Delegation registration failed and its non-atomic rollback also failed',
+              { cause: error },
+            );
+          }
           throw error;
         }
       }

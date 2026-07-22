@@ -128,7 +128,23 @@ export class AuditCheckpointCoordinator {
       } catch (error) {
         lastError = error;
         if (attempt < this.maxAttempts) {
-          await this.options.backoff?.({ role, providerIndex, attempt, error });
+          try {
+            await this.options.backoff?.({ role, providerIndex, attempt, error });
+          } catch (backoffError) {
+            return {
+              ok: false,
+              failure: {
+                role,
+                providerIndex,
+                ...(kind === undefined ? {} : { kind }),
+                attempts: attempt,
+                error: new AggregateError(
+                  [error, backoffError],
+                  'Checkpoint publication backoff failed',
+                ),
+              },
+            };
+          }
         }
       }
     }

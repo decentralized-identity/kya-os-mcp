@@ -11,7 +11,9 @@ import {
   evaluateAuditEvidenceProviderContract,
   evaluateAuditJournalProviderContract,
   evaluateAuditObserverProviderContract,
+  evaluateAuditOutboxProviderContract,
 } from '../testing/provider-contracts.js';
+import { MemoryAuditOutbox } from '../providers/outbox.js';
 import type { Digest, SignedAuditCheckpointV1 } from '../types.js';
 
 const digest = (character: string) => `sha256:${character.repeat(64)}` as Digest;
@@ -89,5 +91,10 @@ describe('audit provider contract kit', () => {
     });
     expect(observerReport.passed).toBe(true);
     expect(anchorReport.passed).toBe(true);
+  });
+
+  it('holds the memory outbox to FIFO and retry-accounting semantics', async () => {
+    const report = await evaluateAuditOutboxProviderContract(() => new MemoryAuditOutbox());
+    expect(report.passed).toBe(true);
   });
 });

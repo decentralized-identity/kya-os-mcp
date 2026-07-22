@@ -18,6 +18,22 @@ describe('LegacyAuditSinkAdapter', () => {
     await adapter.logAuditRecord(context);
     expect(record).toHaveBeenCalledTimes(2);
     expect(adapter.capability).toBe('legacy-capture');
+    expect(record.mock.calls[0]?.[0]).toMatchObject({
+      actor: { kind: 'public_did' },
+      resource: { kind: 'public_did' },
+    });
+  });
+
+  it('accepts explicit pairwise classification when the caller knows the DID is pairwise', async () => {
+    const record = vi.fn(async () => ({ status: 'pending' as const, event: {} as never }));
+    const adapter = new LegacyAuditSinkAdapter({ record }, {
+      identityKind: 'pairwise_did', resourceKind: 'pairwise_did',
+    });
+    await adapter.logAuditRecord(context);
+    expect(record.mock.calls[0]?.[0]).toMatchObject({
+      actor: { kind: 'pairwise_did' },
+      resource: { kind: 'pairwise_did' },
+    });
   });
 
   it('does not copy raw session identifiers or arbitrary legacy event data', async () => {

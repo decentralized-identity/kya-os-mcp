@@ -94,6 +94,20 @@ describe('checkpoint observation and supporting anchors', () => {
       });
   });
 
+  it('serializes concurrent publication so an observer cannot sign a split view', async () => {
+    const monitor = observer();
+    const [left, right] = await Promise.allSettled([
+      monitor.publish(checkpoint(10, 'a')),
+      monitor.publish(checkpoint(10, 'f')),
+    ]);
+
+    expect([left.status, right.status].sort()).toEqual(['fulfilled', 'rejected']);
+    const rejected = left.status === 'rejected' ? left.reason : right.status === 'rejected'
+      ? right.reason
+      : undefined;
+    expect(rejected).toMatchObject({ code: 'AUDIT_CHECKPOINT_CONFLICT' });
+  });
+
   it('keeps WORM/time/SCITT adapters typed as supporting anchors, not observers', async () => {
     const anchor: AuditAnchorProvider = new MemorySupportingAnchorProvider({
       kind: 'worm',

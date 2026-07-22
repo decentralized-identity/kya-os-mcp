@@ -39,10 +39,34 @@ function key(ledger: AuditLedgerRef): string {
 export class MemoryAuditCheckpointObserver implements AuditCheckpointObserverProvider {
   readonly capability = 'independent-observer' as const;
   private readonly observations = new Map<string, ObservedAuditCheckpoint>();
+  private readonly publicationTails = new Map<string, Promise<void>>();
 
   constructor(private readonly config: MemoryAuditCheckpointObserverConfig) {}
 
   async publish(checkpoint: SignedAuditCheckpointV1): Promise<AuditObservationReceiptV1> {
+    const publicationKey = key({
+      ledgerId: checkpoint.core.ledgerId,
+      ledgerEpochId: checkpoint.core.ledgerEpochId,
+    });
+    const previous = this.publicationTails.get(publicationKey) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const tail = previous.then(() => gate);
+    this.publicationTails.set(publicationKey, tail);
+    await previous;
+    try {
+      return await this.publishSerialized(checkpoint);
+    } finally {
+      release();
+      if (this.publicationTails.get(publicationKey) === tail) {
+        this.publicationTails.delete(publicationKey);
+      }
+    }
+  }
+
+  private async publishSerialized(
+    checkpoint: SignedAuditCheckpointV1,
+  ): Promise<AuditObservationReceiptV1> {
     if (!(await this.config.verifyCheckpoint(checkpoint))) {
       throw new AuditProtocolError(
         AUDIT_ERROR_CODES.CHECKPOINT_INVALID,

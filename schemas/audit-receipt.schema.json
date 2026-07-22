@@ -18,13 +18,13 @@
     "integritySuite": { "const": "KYA-AUDIT-JCS-SHA256-JWS-2026" }
   },
   "$defs": {
-    "decimal": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+    "decimal": { "type": "string", "maxLength": 20, "pattern": "^(0|[1-9][0-9]*)$" },
     "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
     "signerRef": {
       "type": "object", "additionalProperties": false, "required": ["did", "kid", "alg"],
       "properties": {
-        "did": { "type": "string", "pattern": "^did:.+" },
-        "kid": { "type": "string", "minLength": 1 },
+        "did": { "type": "string", "minLength": 5, "maxLength": 2048, "pattern": "^did:[^\\r\\n]+$" },
+        "kid": { "type": "string", "minLength": 1, "maxLength": 2304 },
         "alg": { "enum": ["EdDSA", "ES256"] }
       }
     }

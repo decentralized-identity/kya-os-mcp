@@ -204,6 +204,13 @@ arbitrary external systems is not claimed; use a transactional outbox where the
 host and producer outbox share a database, otherwise use intent, terminal event,
 stable idempotency, and reconciliation.
 
+The outbox contract persists an `attempts` count and yields only delivery-eligible
+items. Retry cadence, attempt caps, and dead-letter routing are provider policy,
+because they depend on the host's queue and operational controls. A durable
+adapter must remove dead-lettered items from `pending()` while retaining them for
+operator inspection and recovery; the in-memory development adapter intentionally
+has no retry cap.
+
 Each producer event receives an atomically claimed source sequence. Consecutive
 events also carry `previousSourceEventDigest`. `recordSourceHighWater()` emits
 the producer's current high-water mark through the same recorder path. The
@@ -236,7 +243,9 @@ encrypted evidence and commit only `EvidenceRef` metadata.
 
 `WebCryptoEvidenceEncryptor` uses randomized AES-256-GCM, a random opaque object
 ID, a 96-bit random nonce, authenticated-data digest, ciphertext digest, and key
-version. It does not use convergent encryption. The producer and recorder both
+version. Encryption and decryption reject empty AAD; callers must bind at least
+the tenant/entity and evidence purpose into authenticated data. It does not use
+convergent encryption. The producer and recorder both
 reject encrypted objects that do not exactly match a unique reference in the
 frozen event.
 

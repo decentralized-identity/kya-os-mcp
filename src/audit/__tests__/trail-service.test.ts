@@ -9,6 +9,7 @@ import type { AuditEvidenceProvider } from '../providers/evidence.js';
 import { LocalAuditRecorderClient } from '../providers/recorder-client.js';
 import type { AuditOutboxItem, AuditOutboxProvider } from '../providers/outbox.js';
 import { MemoryAuditOutbox } from '../providers/outbox.js';
+import { MemoryAuditSourceState } from '../providers/source-state.js';
 import { AuditRecorderService } from '../recorder-service.js';
 import type { AuditRecorderSubmission } from '../providers/recorder-client.js';
 import type { PartyRef, SignedAuditEntryV1 } from '../types.js';
@@ -47,7 +48,7 @@ function local(
     ...(evidence === undefined ? {} : { evidence }),
   });
   const client = new LocalAuditRecorderClient(recorder, () => ({
-    producerAuthority: 'did:key:zProducer', tenantAuthority: 'tenant-1',
+    producerAuthority: 'did:key:zProducer', tenantAuthority: 'tenant-1', tenantRef,
   }));
   const trail = createAuditTrail({
     recorder: client, delivery: mode, hasher,
@@ -56,12 +57,13 @@ function local(
     binding: 'urn:kya-os:audit-binding:mcp:2025-11-25',
     privacy: { classification: 'internal', retentionClass: 'audit-365d' },
     clock: { now: () => 1_750_000_000_000 },
+    sourceState: new MemoryAuditSourceState(),
   });
   return { trail, journal, hasher };
 }
 
 class DurableTestOutbox implements AuditOutboxProvider {
-  readonly capabilities = { durability: 'durable' as const };
+  readonly capabilities = { durability: 'durable' as const, fifoPerSource: true as const };
   readonly items: AuditOutboxItem[] = [];
   async enqueue(item: AuditOutboxItem): Promise<void> { this.items.push(item); }
   async *pending(): AsyncIterable<AuditOutboxItem> { yield* [...this.items]; }
@@ -124,6 +126,7 @@ describe('AuditTrailService delivery modes', () => {
       binding: 'urn:kya-os:audit-binding:mcp:2025-11-25' as const,
       privacy: { classification: 'internal' as const, retentionClass: 'audit-365d' },
       clock: { now: () => 1_750_000_000_000 }, onDeliveryFailure: failure,
+      sourceState: new MemoryAuditSourceState(),
     };
     await expect(createAuditTrail({ ...common, delivery: 'required' }).record(baseEvent))
       .rejects.toThrow('offline');
@@ -148,12 +151,33 @@ describe('AuditTrailService delivery modes', () => {
     expect(outbox.items).toHaveLength(0);
   });
 
+  it('does not flush later events from a source past a failed predecessor', async () => {
+    const { trail } = local();
+    const outbox = new DurableTestOutbox();
+    const submit = vi.fn(async () => { throw new Error('recorder offline'); });
+    const buffered = createAuditTrail({
+      ...trail.configuration,
+      recorder: { submit },
+      delivery: 'buffered',
+      outbox,
+      sourceState: new MemoryAuditSourceState(),
+    });
+    await buffered.record({ ...baseEvent, eventId: 'evt_flush_first' });
+    await buffered.record({ ...baseEvent, eventId: 'evt_flush_second' });
+
+    await expect(buffered.flush()).resolves.toEqual({ delivered: 0, failed: 1 });
+    expect(submit).toHaveBeenCalledOnce();
+    expect(outbox.items.map((item) => item.eventId)).toEqual([
+      'evt_flush_first', 'evt_flush_second',
+    ]);
+  });
+
   it('rejects buffered mode backed only by an ephemeral outbox', () => {
     expect(() => createAuditTrail({
       ...local().trail.configuration,
       delivery: 'buffered',
       outbox: {
-        capabilities: { durability: 'ephemeral' },
+        capabilities: { durability: 'ephemeral', fifoPerSource: true },
         enqueue: async () => undefined,
         pending: async function* () {},
         markDelivered: async () => undefined,
@@ -237,6 +261,27 @@ describe('AuditTrailService delivery modes', () => {
     await expect(evidence.has(ref)).resolves.toBe(true);
   });
 
+  it('reports a committed event as recorded when only source watermark persistence fails', async () => {
+    const { trail, journal } = local();
+    const onSourceStateFailure = vi.fn();
+    const failingSourceState = new MemoryAuditSourceState();
+    vi.spyOn(failingSourceState, 'markReceipted').mockRejectedValue(
+      new Error('source state unavailable'),
+    );
+    const configured = createAuditTrail({
+      ...trail.configuration,
+      sourceState: failingSourceState,
+      onSourceStateFailure,
+    });
+
+    await expect(configured.record({ ...baseEvent, eventId: 'evt_committed_state_failure' }))
+      .resolves.toMatchObject({ status: 'recorded' });
+    expect(onSourceStateFailure).toHaveBeenCalledOnce();
+    await expect(journal.snapshot({
+      ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1',
+    })).resolves.toHaveLength(2);
+  });
+
   it('reports emitted/receipted source high-water marks and explicit gaps', async () => {
     const { trail } = local();
     await trail.record({ ...baseEvent, eventId: 'evt_a' });
@@ -252,6 +297,7 @@ describe('AuditTrailService delivery modes', () => {
       ...trail.configuration,
       recorder: { submit: async () => { throw new Error('offline'); } },
       delivery: 'best-effort',
+      sourceState: new MemoryAuditSourceState(),
     });
     await failing.record({ ...baseEvent, eventId: 'evt_gap' });
     await expect(failing.getSourceState()).resolves.toMatchObject({
@@ -261,7 +307,7 @@ describe('AuditTrailService delivery modes', () => {
 
   it('exposes only truthful assurance capabilities and rejects inconsistent startup claims', () => {
     const { trail } = local();
-    expect(trail.auditProfile).toBe('AAP-1');
+    expect(trail.auditProfile).toBe('AAP-0');
     expect(trail.capabilities).toBeUndefined();
     const capabilities = {
       profile: 'AAP-2' as const,

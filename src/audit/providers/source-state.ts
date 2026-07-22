@@ -20,6 +20,7 @@ export interface AuditSourceStateProvider {
 
 interface MutableSourceState {
   next: bigint;
+  receiptedWatermark: bigint;
   receipted: Set<bigint>;
   claims: Map<string, { sequence: bigint; previousSourceEventDigest?: Digest }>;
   eventDigests: Map<bigint, Digest>;
@@ -80,21 +81,33 @@ export class MemoryAuditSourceState implements AuditSourceStateProvider {
     const parsed = BigInt(sequence);
     const state = this.state(sourceId);
     if (parsed < 1n || parsed > state.next) throw new RangeError('Unknown source sequence');
+    if (parsed <= state.receiptedWatermark) return;
     state.receipted.add(parsed);
+    while (state.receipted.delete(state.receiptedWatermark + 1n)) {
+      state.receiptedWatermark += 1n;
+    }
+
+    // Keep only the current watermark's claim/digest plus unresolved entries.
+    // This bounds the reference adapter by the outstanding delivery window,
+    // while retaining the digest needed to link the next producer event.
+    for (const [eventId, claim] of state.claims) {
+      if (claim.sequence < state.receiptedWatermark) state.claims.delete(eventId);
+    }
+    for (const sequenceNumber of state.eventDigests.keys()) {
+      if (sequenceNumber < state.receiptedWatermark) state.eventDigests.delete(sequenceNumber);
+    }
   }
 
   async getState(sourceId: string): Promise<AuditSourceState> {
     const state = this.state(sourceId);
-    let highestContiguous = 0n;
-    while (state.receipted.has(highestContiguous + 1n)) highestContiguous += 1n;
     const pendingSequences: string[] = [];
-    for (let sequence = highestContiguous + 1n; sequence <= state.next; sequence += 1n) {
+    for (let sequence = state.receiptedWatermark + 1n; sequence <= state.next; sequence += 1n) {
       if (!state.receipted.has(sequence)) pendingSequences.push(sequence.toString());
     }
     return {
       sourceId,
       highestEmitted: state.next.toString(),
-      highestReceipted: highestContiguous.toString(),
+      highestReceipted: state.receiptedWatermark.toString(),
       pendingSequences,
     };
   }
@@ -104,6 +117,7 @@ export class MemoryAuditSourceState implements AuditSourceStateProvider {
     if (existing !== undefined) return existing;
     const created = {
       next: 0n,
+      receiptedWatermark: 0n,
       receipted: new Set<bigint>(),
       claims: new Map<string, { sequence: bigint; previousSourceEventDigest?: Digest }>(),
       eventDigests: new Map<bigint, Digest>(),

@@ -4,10 +4,14 @@ import { generateDidKeyFromBase64 } from '../../utils/did-helpers.js';
 import { MemoryAuditLogProvider } from '../../providers/audit-log.js';
 import type { AuditTrailService } from '../../audit/service.js';
 import { createKyaOsMiddleware } from '../with-kya-os.js';
+import { KYA_OS_PROOF_META_KEY, LEGACY_PROOF_META_KEY } from '../../proof/index.js';
 
 type AuditEventInput = Parameters<AuditTrailService['record']>[0];
 
-async function setup(record: Pick<AuditTrailService, 'record'>['record']) {
+async function setup(
+  record: Pick<AuditTrailService, 'record'>['record'],
+  options: { includeToolNames?: boolean; autoSession?: boolean } = {},
+) {
   const crypto = new NodeCryptoProvider();
   const keyPair = await crypto.generateKeyPair();
   const did = generateDidKeyFromBase64(keyPair.publicKey);
@@ -18,8 +22,13 @@ async function setup(record: Pick<AuditTrailService, 'record'>['record']) {
       privateKey: keyPair.privateKey,
       publicKey: keyPair.publicKey,
     },
-    autoSession: true,
-    audit: { record },
+    autoSession: options.autoSession ?? true,
+    audit: {
+      record,
+      ...(options.includeToolNames === undefined
+        ? {}
+        : { includeToolNames: options.includeToolNames }),
+    },
   }, crypto);
   return middleware;
 }
@@ -46,6 +55,21 @@ describe('MCP audit instrumentation', () => {
     expect(JSON.stringify(events)).not.toContain('never-audit-raw-args');
   });
 
+  it('records bounded tool names only when the operator explicitly opts in', async () => {
+    const events: AuditEventInput[] = [];
+    const middleware = await setup(async (event) => {
+      events.push(event);
+      return { status: 'pending', event: event as never };
+    }, { includeToolNames: true });
+    const handler = middleware.wrapWithProof('orders.create', async () => ({
+      content: [{ type: 'text', text: 'ok' }],
+    }));
+
+    await handler({});
+
+    expect(events[0]?.action).toEqual({ category: 'tool.call', name: 'orders.create' });
+  });
+
   it('records thrown and error-result terminal paths', async () => {
     const events: Array<{ eventType: string }> = [];
     const record: Pick<AuditTrailService, 'record'>['record'] = async (event) => {
@@ -65,12 +89,58 @@ describe('MCP audit instrumentation', () => {
     ]);
   });
 
-  it('prevents tool execution when required intent delivery throws', async () => {
+  it('returns a structured failure and prevents execution when required intent delivery throws', async () => {
     const handler = vi.fn(async () => ({ content: [{ type: 'text', text: 'ran' }] }));
     const middleware = await setup(async () => { throw new Error('audit unavailable'); });
-    await expect(middleware.wrapWithProof('write', handler)({}))
-      .rejects.toThrow('audit unavailable');
+    const result = await middleware.wrapWithProof('write', handler)({});
+    expect(result).toMatchObject({
+      isError: true,
+      _meta: { 'org.kya-os/audit': { status: 'degraded' } },
+    });
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+      error: { code: 'audit_delivery_failed' },
+    });
     expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('preserves the handler exception when recording its failure also throws', async () => {
+    const middleware = await setup(async (event) => {
+      if (event.eventType === 'tool.call.failed') throw new Error('audit unavailable');
+      return { status: 'pending', event: event as never };
+    });
+    const handler = middleware.wrapWithProof('write', async () => {
+      throw new Error('original handler failure');
+    });
+
+    await expect(handler({})).rejects.toThrow('original handler failure');
+  });
+
+  it('preserves an error result and marks it degraded when its terminal audit fails', async () => {
+    const middleware = await setup(async (event) => {
+      if (event.eventType === 'tool.call.failed') throw new Error('audit unavailable');
+      return { status: 'pending', event: event as never };
+    });
+    const handler = middleware.wrapWithProof('write', async () => ({
+      content: [{ type: 'text', text: 'domain failure' }], isError: true,
+    }));
+
+    const result = await handler({});
+
+    expect(result.content[0]?.text).toBe('domain failure');
+    expect(result).toMatchObject({
+      isError: true,
+      _meta: { 'org.kya-os/audit': { status: 'degraded' } },
+    });
+  });
+
+  it('never lets rejected-handshake audit failure displace the handshake denial', async () => {
+    const middleware = await setup(async () => { throw new Error('audit unavailable'); });
+    const result = await middleware.handleHandshake({ nonce: 123 });
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+      success: false,
+      error: { code: 'handshake_failed' },
+    });
   });
 
   it('rejects simultaneous legacy and verifiable audit configuration', async () => {
@@ -216,6 +286,38 @@ describe('MCP audit instrumentation', () => {
     });
   });
 
+  it('degrades a completed response when proof-session rejection cannot be audited', async () => {
+    const middleware = await setup(async (event) => {
+      if (event.eventType === 'proof.rejected') throw new Error('audit unavailable');
+      return { status: 'pending', event: event as never };
+    }, { autoSession: false });
+    const handler = middleware.wrapWithProof('read', async () => ({
+      content: [{ type: 'text', text: 'ok' }],
+    }));
+
+    const result = await handler({});
+
+    expect(result).toMatchObject({
+      isError: true,
+      _meta: { 'org.kya-os/audit': { status: 'degraded' } },
+    });
+  });
+
+  it('degrades a completed response when a missing explicit session cannot be audited', async () => {
+    const middleware = await setup(async (event) => {
+      if (event.eventType === 'proof.rejected') throw new Error('audit unavailable');
+      return { status: 'pending', event: event as never };
+    });
+    const result = await middleware.wrapWithProof('read', async () => ({
+      content: [{ type: 'text', text: 'ok' }],
+    }))({}, 'kyaos_missing');
+
+    expect(result).toMatchObject({
+      isError: true,
+      _meta: { 'org.kya-os/audit': { status: 'degraded' } },
+    });
+  });
+
   it('marks a completed response degraded when required terminal audit delivery fails', async () => {
     const middleware = await setup(async (event) => {
       if (event.eventType === 'proof.generated') throw 'required recorder unavailable';
@@ -234,6 +336,8 @@ describe('MCP audit instrumentation', () => {
         reason: 'Required terminal audit delivery failed after tool completion',
       },
     });
+    expect(result._meta?.[KYA_OS_PROOF_META_KEY]).toBeUndefined();
+    expect(result._meta?.[LEGACY_PROOF_META_KEY]).toBeUndefined();
   });
 
   it('audits proof-generation failures while preserving the tool response', async () => {
@@ -257,6 +361,24 @@ describe('MCP audit instrumentation', () => {
     expect(events.at(-1)).toMatchObject({
       eventType: 'proof.rejected',
       details: { verificationCode: 'PROOF_GENERATION_FAILED' },
+    });
+  });
+
+  it('degrades when both proof generation and its required failure audit fail', async () => {
+    const middleware = await setup(async (event) => {
+      if (event.eventType === 'proof.rejected') throw new Error('audit unavailable');
+      return { status: 'pending', event: event as never };
+    });
+    vi.spyOn(middleware.proofGenerator, 'generateProof')
+      .mockRejectedValueOnce(new Error('signer unavailable'));
+
+    const result = await middleware.wrapWithProof('read', async () => ({
+      content: [{ type: 'text', text: 'ok' }],
+    }))({});
+
+    expect(result).toMatchObject({
+      isError: true,
+      _meta: { 'org.kya-os/audit': { status: 'degraded' } },
     });
   });
 
@@ -380,7 +502,7 @@ describe('MCP audit instrumentation', () => {
       .toBe(true);
   });
 
-  it('returns a denial unchanged when its explicit session is absent', async () => {
+  it('marks a denial terminal when its explicit session is absent', async () => {
     const events: AuditEventInput[] = [];
     const middleware = await setup(async (event) => {
       events.push(event);
@@ -395,9 +517,126 @@ describe('MCP audit instrumentation', () => {
     const result = await handler({}, 'kyaos_missing');
 
     expect(result.isError).toBe(true);
-    expect(result._meta).toBeUndefined();
+    expect(result._meta).toMatchObject({
+      'org.kya-os/audit': { terminal: true, outcome: 'denied' },
+    });
     expect(events.map((event) => event.eventType)).toEqual([
       'authorization.evaluated', 'authorization.denied', 'tool.call.denied',
     ]);
+
+    const copied = structuredClone(result);
+    await middleware.wrapWithProof('frobnicate', async () => copied)({}, 'kyaos_missing');
+    expect(events.map((event) => event.eventType)).toEqual([
+      'authorization.evaluated', 'authorization.denied', 'tool.call.denied',
+      'tool.call.started',
+    ]);
+  });
+
+  it('bounds malformed delegation references and never lets audit failure escape denial', async () => {
+    const events: AuditEventInput[] = [];
+    const middleware = await setup(async (event) => {
+      events.push(event);
+      if (event.eventType === 'delegation.rejected') throw new Error('audit unavailable');
+      return { status: 'pending', event: event as never };
+    });
+    const protectedHandler = vi.fn(async () => ({ content: [{ type: 'text', text: 'ran' }] }));
+    const handler = middleware.wrapWithDelegation(
+      'payments.create',
+      { scopeId: 'payments:write', consentUrl: 'https://consent.example/authorize' },
+      protectedHandler,
+    );
+
+    const result = await handler({ _kyaos_delegation: { id: 123, bogus: true } });
+
+    expect(result.isError).toBe(true);
+    expect(protectedHandler).not.toHaveBeenCalled();
+    expect(events[0]).toMatchObject({
+      eventType: 'delegation.rejected',
+      details: { family: 'delegation', delegationRef: 'unknown' },
+    });
+  });
+
+  it('extracts only bounded string references from malformed delegations', async () => {
+    const references: string[] = [];
+    const middleware = await setup(async (event) => {
+      if (event.eventType === 'delegation.rejected') {
+        references.push(event.details.delegationRef as string);
+      }
+      return { status: 'pending', event: event as never };
+    });
+    const protectedHandler = vi.fn(async () => ({ content: [{ type: 'text', text: 'ran' }] }));
+    const handler = middleware.wrapWithDelegation(
+      'payments.create',
+      { scopeId: 'payments:write', consentUrl: 'https://consent.example/authorize' },
+      protectedHandler,
+    );
+    const hostile = {};
+    Object.defineProperty(hostile, 'id', {
+      get: () => { throw new Error('hostile getter'); },
+    });
+
+    await handler({ _kyaos_delegation: { id: 'd'.repeat(300), bogus: true } });
+    await handler({
+      _kyaos_delegation: {
+        credentialSubject: { delegation: { id: 'nested-delegation' } },
+        bogus: true,
+      },
+    });
+    await handler({
+      _kyaos_delegation: {
+        credentialSubject: { delegation: { id: 123 } },
+        bogus: true,
+      },
+    });
+    await handler({ _kyaos_delegation: hostile });
+
+    expect(protectedHandler).not.toHaveBeenCalled();
+    expect(references).toEqual([
+      'd'.repeat(256),
+      'nested-delegation',
+      'unknown',
+      'unknown',
+    ]);
+  });
+
+  it('returns a denial marked degraded when required authorization audit delivery fails', async () => {
+    const middleware = await setup(async (event) => {
+      if (event.eventType === 'authorization.denied') throw new Error('audit unavailable');
+      return { status: 'pending', event: event as never };
+    });
+    const handler = middleware.withPolicyGate!(
+      'frobnicate',
+      async () => ({ content: [{ type: 'text', text: 'must-not-run' }] }),
+      { scopeMatched: true },
+    );
+
+    const result = await handler({});
+
+    expect(result).toMatchObject({
+      isError: true,
+      _meta: {
+        'org.kya-os/audit': { terminal: true, status: 'degraded', outcome: 'denied' },
+      },
+    });
+  });
+
+  it('retains a denial proof but marks it degraded when proof audit delivery fails', async () => {
+    const middleware = await setup(async (event) => {
+      if (event.eventType === 'proof.generated') throw new Error('audit unavailable');
+      return { status: 'pending', event: event as never };
+    });
+    const handler = middleware.withPolicyGate!(
+      'frobnicate',
+      async () => ({ content: [{ type: 'text', text: 'must-not-run' }] }),
+      { scopeMatched: true },
+    );
+
+    const result = await handler({});
+
+    expect(result._meta?.[KYA_OS_PROOF_META_KEY]).toBeDefined();
+    expect(result).toMatchObject({
+      isError: true,
+      _meta: { 'org.kya-os/audit': { terminal: true, status: 'degraded' } },
+    });
   });
 });

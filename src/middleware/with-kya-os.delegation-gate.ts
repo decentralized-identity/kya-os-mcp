@@ -35,6 +35,31 @@ import {
   type DelegationGateConfig,
 } from "./with-kya-os.delegation-verify.js";
 
+const MAX_AUDIT_REFERENCE_LENGTH = 256;
+
+/** Extract only a bounded string from an untrusted credential-shaped value. */
+function rejectedDelegationRef(value: unknown): string {
+  try {
+    if (typeof value !== 'object' || value === null) return 'unknown';
+    const credential = value as Record<string, unknown>;
+    const direct = credential.id;
+    if (typeof direct === 'string' && direct.length > 0) {
+      return direct.slice(0, MAX_AUDIT_REFERENCE_LENGTH);
+    }
+    const subject = credential.credentialSubject;
+    if (typeof subject !== 'object' || subject === null) return 'unknown';
+    const delegation = (subject as Record<string, unknown>).delegation;
+    if (typeof delegation !== 'object' || delegation === null) return 'unknown';
+    const nested = (delegation as Record<string, unknown>).id;
+    return typeof nested === 'string' && nested.length > 0
+      ? nested.slice(0, MAX_AUDIT_REFERENCE_LENGTH)
+      : 'unknown';
+  } catch {
+    // A hostile Proxy/getter must not turn a deny decision into an exception.
+    return 'unknown';
+  }
+}
+
 /** Collaborators the delegation gate borrows from its sibling sub-factories. */
 export interface DelegationGateWiring {
   attachOutcomeProof: AttachOutcomeProof;
@@ -182,11 +207,18 @@ export function createDelegationGate(
 
       if (!verificationResult.valid) {
         const reason = verificationResult.reason ?? "Unknown delegation validation error";
-        await audit?.delegation('rejected', {
-          delegationRef: vc.id ?? vc.credentialSubject?.delegation?.id ?? 'unknown',
-          outcome: 'failed',
-          reasonCode: 'DELEGATION_VERIFICATION_FAILED',
-        });
+        try {
+          await audit?.delegation('rejected', {
+            delegationRef: rejectedDelegationRef(vc),
+            outcome: 'failed',
+            reasonCode: 'DELEGATION_VERIFICATION_FAILED',
+          });
+        } catch (error) {
+          logger.error('[kya-os] Failed to record rejected delegation audit event', {
+            tool: toolName,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
         logger.warn(
           `[kya-os] Delegation verification failed for "${toolName}": ${sanitizeForMessage(reason)}`,
         );

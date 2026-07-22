@@ -13,8 +13,11 @@ import type { AuditAssuranceProfile, AuditCapabilities } from "../audit/assuranc
 
 export interface KyaOsAuditTrail {
   record: AuditTrailService['record'];
+  /** Must match `capabilities.profile`; profiles above AAP-0 require capabilities. */
   auditProfile?: AuditAssuranceProfile;
   capabilities?: AuditCapabilities;
+  /** Opt in to recording bounded tool names; omitted by the privacy-minimal default. */
+  includeToolNames?: boolean;
 }
 import type { GrantStore } from "../providers/grant-store.js";
 import type { SessionConfig } from "../session/manager.js";

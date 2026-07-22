@@ -380,6 +380,19 @@ describe("ProofGenerator", () => {
 
       expect(isValid).toBe(false);
     });
+
+    it("should fail closed when the configured verification key has an invalid length", async () => {
+      const request: ToolRequest = { method: "test-tool", params: { input: "hello" } };
+      const response: ToolResponse = { data: { output: "world" } };
+      const proof = await proofGenerator.generateProof(request, response, mockSession);
+      const invalidVerifier = new ProofGenerator(
+        { ...mockIdentity, publicKey: "AA==" },
+        cryptoProvider,
+      );
+
+      await expect(invalidVerifier.verifyProof(proof, request, response))
+        .resolves.toBe(false);
+    });
   });
 
   describe("JSON Canonicalization", () => {

@@ -7,6 +7,7 @@ import { MemoryAuditJournal } from '../providers/memory-journal.js';
 import { AuditRecorderService } from '../recorder-service.js';
 import type { AuditVerificationPolicyV1, PartyRef, SignerRef } from '../types.js';
 import { AuditArtifactVerifier } from '../verifier.js';
+import type { AuditJournalProvider } from '../providers/journal.js';
 
 class Signer implements AuditSigner {
   readonly ref = { did: 'did:key:zRecorder', kid: 'did:key:zRecorder#key', alg: 'EdDSA' as const };
@@ -44,7 +45,9 @@ async function fixture() {
       details: { family: 'tool', phase: 'completed', attempt: '1' },
       privacy: { classification: 'internal', retentionClass: 'audit' },
     },
-  }, { producerAuthority: 'producer', tenantAuthority: 'tenant' });
+  }, {
+    producerAuthority: 'did:key:zProducer', tenantAuthority: 'tenant', tenantRef,
+  });
   const entries = await source.snapshot({ ledgerId: 'ledger', ledgerEpochId: 'epoch' });
   const policy: AuditVerificationPolicyV1 = {
     policyId: 'policy',
@@ -54,12 +57,13 @@ async function fixture() {
     acceptedAlgorithms: ['EdDSA'], keyRevocationMode: 'as_observed',
   };
   const mirrorJournal = new MemoryAuditJournal();
+  const verifier = new AuditArtifactVerifier({ hasher, signatures: new Signatures() });
   const mirror = new AuditMirrorService({
     ledger: { ledgerId: 'ledger', ledgerEpochId: 'epoch' }, journal: mirrorJournal,
-    verifier: new AuditArtifactVerifier({ hasher, signatures: new Signatures() }),
+    verifier,
     verificationPolicy: policy, hasher,
   });
-  return { entries, mirror, mirrorJournal };
+  return { entries, mirror, mirrorJournal, verifier, policy, hasher };
 }
 
 describe('AuditMirrorService', () => {
@@ -74,12 +78,68 @@ describe('AuditMirrorService', () => {
   it('rejects out-of-order and cryptographically mutated entries', async () => {
     const { entries, mirror } = await fixture();
     await expect(mirror.ingest(entries[1]!)).rejects.toMatchObject({
-      code: 'AUDIT_MIRROR_CONTINUITY_FAILED',
+      code: 'AUDIT_MIRROR_OUT_OF_ORDER',
     });
     const mutated = structuredClone(entries[0]!);
     mutated.core.event.action.category = 'mutated';
     await expect(mirror.ingest(mutated)).rejects.toMatchObject({
       code: 'AUDIT_MIRROR_VERIFICATION_FAILED',
+    });
+    const wrongLedger = structuredClone(entries[0]!);
+    wrongLedger.core.ledgerId = 'other-ledger';
+    await expect(mirror.ingest(wrongLedger)).rejects.toMatchObject({
+      code: 'AUDIT_LEDGER_MISMATCH',
+    });
+  });
+
+  it('treats a compare-and-append race as an idempotent retry when the entry won', async () => {
+    const { entries, verifier, policy, hasher } = await fixture();
+    const entry = entries[0]!;
+    let idempotencyReads = 0;
+    const journal: AuditJournalProvider = {
+      capabilities: { durability: 'ephemeral', atomicAppend: true, orderedRead: true },
+      getHead: async () => null,
+      getByIdempotencyKey: async () => (++idempotencyReads === 1 ? null : entry),
+      compareAndAppend: async () => ({
+        kind: 'head_conflict',
+        actualHead: {
+          ledgerId: 'ledger', ledgerEpochId: 'epoch',
+          sequence: entry.core.sequence, entryDigest: entry.entryDigest,
+        },
+      }),
+      readRange: async function* () {},
+    };
+    const mirror = new AuditMirrorService({
+      ledger: { ledgerId: 'ledger', ledgerEpochId: 'epoch' },
+      journal, verifier, verificationPolicy: policy, hasher,
+    });
+
+    await expect(mirror.ingest(entry)).resolves.toBe(entry);
+  });
+
+  it('raises a continuity alarm when a compare conflict cannot be reconciled', async () => {
+    const { entries, verifier, policy, hasher } = await fixture();
+    const entry = entries[0]!;
+    const journal: AuditJournalProvider = {
+      capabilities: { durability: 'ephemeral', atomicAppend: true, orderedRead: true },
+      getHead: async () => null,
+      getByIdempotencyKey: async () => null,
+      compareAndAppend: async () => ({
+        kind: 'head_conflict',
+        actualHead: {
+          ledgerId: 'ledger', ledgerEpochId: 'epoch',
+          sequence: entry.core.sequence, entryDigest: `sha256:${'f'.repeat(64)}`,
+        },
+      }),
+      readRange: async function* () {},
+    };
+    const mirror = new AuditMirrorService({
+      ledger: { ledgerId: 'ledger', ledgerEpochId: 'epoch' },
+      journal, verifier, verificationPolicy: policy, hasher,
+    });
+
+    await expect(mirror.ingest(entry)).rejects.toMatchObject({
+      code: 'AUDIT_MIRROR_CONTINUITY_FAILED',
     });
   });
 });

@@ -37,6 +37,15 @@ class TestSigner implements AuditSigner {
   }
 }
 
+class OtherSigner implements AuditSigner {
+  readonly ref = {
+    did: 'did:key:zOtherRecorder',
+    kid: 'did:key:zOtherRecorder#zOtherRecorder',
+    alg: 'EdDSA' as const,
+  };
+  async sign(): Promise<string> { return 'other.signature'; }
+}
+
 function event(id: string, sequence: number, outcome: 'succeeded' | 'failed' = 'succeeded'): AuditProducerEventCoreV1 {
   return {
     schema: AUDIT_EVENT_SCHEMA_ID,
@@ -69,6 +78,7 @@ function service(input: {
   epoch?: string;
   previousEpochId?: string;
   previousTerminalCheckpointDigest?: `sha256:${string}`;
+  epochTransitionGuard?: { verifyAndSeal(): Promise<boolean> };
   evidence?: AuditEvidenceProvider;
   authorizer?: { authorize(): Promise<boolean> | boolean };
   maxAppendConflicts?: number;
@@ -95,6 +105,9 @@ function service(input: {
     ...(input.previousTerminalCheckpointDigest
       ? { previousTerminalCheckpointDigest: input.previousTerminalCheckpointDigest }
       : {}),
+    ...(input.epochTransitionGuard === undefined
+      ? {}
+      : { epochTransitionGuard: input.epochTransitionGuard }),
   });
   return { recorder, journal, clock };
 }
@@ -120,8 +133,9 @@ function serviceWithJournal(
 }
 
 const context = {
-  producerAuthority: 'did:key:zAuthenticatedProducer',
+  producerAuthority: 'did:key:zProducer',
   tenantAuthority: 'tenant-1',
+  tenantRef,
 };
 
 describe('AuditRecorderService', () => {
@@ -185,6 +199,67 @@ describe('AuditRecorderService', () => {
     });
   });
 
+  it('binds producer and tenant claims to authenticated context before any write', async () => {
+    let evidenceWrites = 0;
+    const evidenceProvider: AuditEvidenceProvider = {
+      putIfAbsent: async (input) => { evidenceWrites += 1; return input.ref; },
+      has: async () => false,
+      get: async () => null,
+      applyRetention: async (command) => ({ ref: command.ref, state: 'missing' }),
+    };
+    const { recorder, journal } = service({ evidence: evidenceProvider });
+    const ref = {
+      objectId: 'auth-bound-evidence', ciphertextDigest: `sha256:${'a'.repeat(64)}` as const,
+      mediaType: 'application/octet-stream', size: '1',
+      encryption: {
+        suite: 'A256GCM' as const, keyId: 'key', nonce: 'nonce',
+        aadDigest: `sha256:${'b'.repeat(64)}` as const,
+      },
+    };
+    const producerEvent = { ...event('evt_auth_binding', 1), evidence: [ref] };
+
+    await expect(recorder.submitAuthenticated({
+      ledgerId: 'kya:tenant:prod:primary',
+      producerEvent,
+      encryptedEvidence: [{ ref, ciphertext: Uint8Array.of(1) }],
+    }, { ...context, producerAuthority: 'did:key:zImpostor' }))
+      .rejects.toMatchObject({ code: 'AUDIT_UNAUTHORIZED_SUBMISSION' });
+
+    await expect(recorder.submitAuthenticated({
+      ledgerId: 'kya:tenant:prod:primary',
+      producerEvent,
+      encryptedEvidence: [{ ref, ciphertext: Uint8Array.of(1) }],
+    }, { ...context, tenantRef: { ...tenantRef, keyId: 'other-tenant' } }))
+      .rejects.toMatchObject({ code: 'AUDIT_UNAUTHORIZED_SUBMISSION' });
+
+    expect(evidenceWrites).toBe(0);
+    await expect(journal.getHead({
+      ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1',
+    })).resolves.toBeNull();
+  });
+
+  it('requires an exact authenticated PartyRef for opaque producer identities', async () => {
+    const opaqueProducer: PartyRef = {
+      kind: 'keyed_commitment',
+      value: `sha256:${'b'.repeat(64)}`,
+      keyId: 'producer-key-1',
+    };
+    const producerEvent = {
+      ...event('evt_opaque_producer', 1),
+      source: { producer: opaqueProducer, sourceId: 'mcp-server-1', sourceSequence: '1' },
+    };
+    const { recorder } = service();
+
+    await expect(recorder.submitAuthenticated({
+      ledgerId: 'kya:tenant:prod:primary', producerEvent, encryptedEvidence: [],
+    }, context)).rejects.toMatchObject({ code: 'AUDIT_UNAUTHORIZED_SUBMISSION' });
+
+    await expect(recorder.submitAuthenticated({
+      ledgerId: 'kya:tenant:prod:primary', producerEvent, encryptedEvidence: [],
+    }, { ...context, producerAuthority: 'opaque:producer-key-1', producerRef: opaqueProducer }))
+      .resolves.toMatchObject({ core: { sequence: '1' } });
+  });
+
   it('serializes concurrent writers without gaps or forks', async () => {
     const { recorder, journal } = service();
     const results = await Promise.all(
@@ -221,6 +296,7 @@ describe('AuditRecorderService', () => {
       epoch: 'epoch_2',
       previousEpochId: 'epoch_1',
       previousTerminalCheckpointDigest: `sha256:${'f'.repeat(64)}`,
+      epochTransitionGuard: { verifyAndSeal: async () => true },
     }).recorder;
     const retry = await secondService.submitAuthenticated({
       ledgerId: 'kya:tenant:prod:primary',
@@ -230,6 +306,73 @@ describe('AuditRecorderService', () => {
 
     expect(retry).toEqual(original);
     expect(retry.core.ledgerEpochId).toBe('epoch_1');
+  });
+
+  it('requires an authorized, atomic predecessor seal before starting a linked epoch', async () => {
+    const calls: unknown[] = [];
+    let evidenceWrites = 0;
+    const evidenceProvider: AuditEvidenceProvider = {
+      putIfAbsent: async (input) => { evidenceWrites += 1; return input.ref; },
+      has: async () => false,
+      get: async () => null,
+      applyRetention: async (command) => ({ ref: command.ref, state: 'missing' }),
+    };
+    const ref = {
+      objectId: 'transition-evidence', ciphertextDigest: `sha256:${'a'.repeat(64)}` as const,
+      mediaType: 'application/octet-stream', size: '1',
+      encryption: {
+        suite: 'A256GCM' as const, keyId: 'key', nonce: 'nonce',
+        aadDigest: `sha256:${'b'.repeat(64)}` as const,
+      },
+    };
+    const { recorder, journal } = service({
+      epoch: 'epoch_2',
+      previousEpochId: 'epoch_1',
+      previousTerminalCheckpointDigest: `sha256:${'f'.repeat(64)}`,
+      evidence: evidenceProvider,
+      epochTransitionGuard: {
+        verifyAndSeal: async (input?: unknown) => { calls.push(input); return false; },
+      },
+    });
+
+    await expect(recorder.submitAuthenticated({
+      ledgerId: 'kya:tenant:prod:primary',
+      producerEvent: { ...event('evt_rejected_transition', 1), evidence: [ref] },
+      encryptedEvidence: [{ ref, ciphertext: Uint8Array.of(1) }],
+    }, context)).rejects.toMatchObject({ code: 'AUDIT_INVALID_CONFIGURATION' });
+
+    expect(calls).toEqual([{
+      ledgerId: 'kya:tenant:prod:primary',
+      previousEpochId: 'epoch_1',
+      nextEpochId: 'epoch_2',
+      previousTerminalCheckpointDigest: `sha256:${'f'.repeat(64)}`,
+    }]);
+    await expect(journal.getHead({
+      ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_2',
+    })).resolves.toBeNull();
+    expect(evidenceWrites).toBe(0);
+  });
+
+  it('rejects a second recorder identity against an initialized epoch', async () => {
+    const { recorder, journal } = service();
+    await recorder.submitAuthenticated({
+      ledgerId: 'kya:tenant:prod:primary',
+      producerEvent: event('evt_authoritative_recorder', 1),
+      encryptedEvidence: [],
+    }, context);
+    const competing = new AuditRecorderService({
+      ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1', tenantRef,
+      binding: 'urn:kya-os:audit-binding:mcp:2025-11-25', sourceId: 'recorder-1',
+      journal, signer: new OtherSigner(),
+      hasher: new CryptoProviderAuditHasher(new NodeCryptoProvider()),
+      clock: new MutableClock(),
+    });
+
+    await expect(competing.submitAuthenticated({
+      ledgerId: 'kya:tenant:prod:primary',
+      producerEvent: event('evt_competing_recorder', 2),
+      encryptedEvidence: [],
+    }, context)).rejects.toMatchObject({ code: 'AUDIT_JOURNAL_FAILURE' });
   });
 
   it('exposes a producer client that cannot supply sequence, time, signer, or idempotency key', async () => {
@@ -276,6 +419,10 @@ describe('AuditRecorderService', () => {
     expect(() => service({
       previousTerminalCheckpointDigest: `sha256:${'f'.repeat(64)}`,
     })).toThrowError(expect.objectContaining({ code: 'AUDIT_INVALID_CONFIGURATION' }));
+    expect(() => service({
+      previousEpochId: 'epoch_0',
+      previousTerminalCheckpointDigest: `sha256:${'f'.repeat(64)}`,
+    })).toThrowError(expect.objectContaining({ code: 'AUDIT_INVALID_CONFIGURATION' }));
 
     const submission = {
       ledgerId: 'kya:tenant:prod:primary',
@@ -284,7 +431,7 @@ describe('AuditRecorderService', () => {
       encryptedEvidence: [],
     } as const;
     await expect(service().recorder.submitAuthenticated(submission, {
-      producerAuthority: '', tenantAuthority: 'tenant-1',
+      producerAuthority: '', tenantAuthority: 'tenant-1', tenantRef,
     })).rejects.toMatchObject({ code: 'AUDIT_UNAUTHORIZED_SUBMISSION' });
     await expect(service().recorder.submitAuthenticated({
       ...submission, ledgerId: 'wrong-ledger',
@@ -331,6 +478,37 @@ describe('AuditRecorderService', () => {
     }
   });
 
+  it('does not rewrite evidence for an idempotent producer retry', async () => {
+    let evidenceWrites = 0;
+    const evidenceProvider: AuditEvidenceProvider = {
+      putIfAbsent: async (input) => { evidenceWrites += 1; return input.ref; },
+      has: async () => true,
+      get: async () => null,
+      applyRetention: async (command) => ({ ref: command.ref, state: 'retained' }),
+    };
+    const ref = {
+      objectId: 'retry-evidence', ciphertextDigest: `sha256:${'a'.repeat(64)}` as const,
+      mediaType: 'application/octet-stream', size: '1',
+      encryption: {
+        suite: 'A256GCM' as const, keyId: 'key', nonce: 'nonce',
+        aadDigest: `sha256:${'b'.repeat(64)}` as const,
+      },
+    };
+    const producerEvent = { ...event('evt_evidence_retry', 1), evidence: [ref] };
+    const { recorder } = service({ evidence: evidenceProvider });
+    const submission = {
+      ledgerId: 'kya:tenant:prod:primary',
+      producerEvent,
+      encryptedEvidence: [{ ref, ciphertext: Uint8Array.of(1) }],
+    } as const;
+
+    const first = await recorder.submitAuthenticated(submission, context);
+    const retry = await recorder.submitAuthenticated(submission, context);
+
+    expect(retry).toEqual(first);
+    expect(evidenceWrites).toBe(1);
+  });
+
   it('fails closed when a journal reports a head without a readable genesis', async () => {
     const empty = new MemoryAuditJournal();
     const journal: AuditJournalProvider = {
@@ -365,11 +543,27 @@ describe('AuditRecorderService', () => {
       encryptedEvidence: [],
     }, context)).rejects.toMatchObject({ code: 'AUDIT_JOURNAL_FAILURE' });
 
-    const conflicting: AuditJournalProvider = {
+    const stagnantConflict: AuditJournalProvider = {
       ...throwing,
       compareAndAppend: async () => ({ kind: 'head_conflict', actualHead: null }),
     };
-    await expect(serviceWithJournal(conflicting, { maxAppendConflicts: 0 })
+    await expect(serviceWithJournal(stagnantConflict, { maxAppendConflicts: 1 })
+      .submitAuthenticated({
+        ledgerId: 'kya:tenant:prod:primary', producerEvent: event('evt_stagnant_conflict', 1),
+        encryptedEvidence: [],
+      }, context)).rejects.toMatchObject({ code: 'AUDIT_JOURNAL_FAILURE' });
+
+    const advancingConflict: AuditJournalProvider = {
+      ...throwing,
+      compareAndAppend: async () => ({
+        kind: 'head_conflict',
+        actualHead: {
+          ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1',
+          sequence: '0', entryDigest: `sha256:${'a'.repeat(64)}`,
+        },
+      }),
+    };
+    await expect(serviceWithJournal(advancingConflict, { maxAppendConflicts: 0 })
       .submitAuthenticated({
         ledgerId: 'kya:tenant:prod:primary', producerEvent: event('evt_conflict_budget', 1),
         encryptedEvidence: [],

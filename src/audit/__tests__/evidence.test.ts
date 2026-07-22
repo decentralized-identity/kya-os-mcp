@@ -27,6 +27,8 @@ function setup() {
   return { encryptor, provider };
 }
 
+const entityAad = new TextEncoder().encode('tenant-1:evidence');
+
 describe('encrypted audit evidence', () => {
   it('uses randomized AEAD and opaque addressing instead of convergent encryption', async () => {
     const { encryptor } = setup();
@@ -37,7 +39,7 @@ describe('encrypted audit evidence', () => {
       mediaType: 'application/json',
       key: encryptionKey,
       keyId: 'tenant-key-v1',
-      aad: new TextEncoder().encode('tenant-1:evidence'),
+      aad: entityAad,
     } as const;
 
     const first = await encryptor.encrypt(input);
@@ -57,7 +59,7 @@ describe('encrypted audit evidence', () => {
       mediaType: 'application/json',
       key: await key(),
       keyId: 'tenant-key-v1',
-      aad: new Uint8Array(),
+      aad: entityAad,
     });
 
     await expect(provider.putIfAbsent(encrypted)).resolves.toEqual(encrypted.ref);
@@ -77,7 +79,7 @@ describe('encrypted audit evidence', () => {
       mediaType: 'application/json',
       key: await key(),
       keyId: 'tenant-key-v1',
-      aad: new Uint8Array(),
+      aad: entityAad,
     });
     await provider.putIfAbsent(encrypted);
     await provider.applyRetention({
@@ -127,7 +129,7 @@ describe('encrypted audit evidence', () => {
     const encrypted = await encryptor.encrypt({
       plaintext: new TextEncoder().encode('restricted'),
       mediaType: 'application/json', key: await key(), keyId: 'tenant-key-v1',
-      aad: new Uint8Array(),
+      aad: entityAad,
     });
     await provider.putIfAbsent(encrypted);
     await expect(provider.get(encrypted.ref, { actor: 'intruder', purpose: 'debug' }))
@@ -135,5 +137,16 @@ describe('encrypted audit evidence', () => {
     await expect(provider.get(encrypted.ref, {
       actor: 'auditor', purpose: 'regulatory-review',
     })).resolves.toEqual(encrypted.ciphertext);
+  });
+
+  it('rejects evidence encryption without entity-scoped authenticated data', async () => {
+    const { encryptor } = setup();
+    await expect(encryptor.encrypt({
+      plaintext: new TextEncoder().encode('proof'),
+      mediaType: 'application/json',
+      key: await key(),
+      keyId: 'tenant-key-v1',
+      aad: new Uint8Array(),
+    })).rejects.toThrow(/entity-scoped authenticated data/i);
   });
 });

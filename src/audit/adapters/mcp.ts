@@ -18,6 +18,10 @@ export interface McpAuditEventAdapterOptions {
   includeToolNames?: boolean;
 }
 
+function boundedReference(value: string, maxLength = 256): string {
+  return value.slice(0, maxLength);
+}
+
 /** Privacy-minimal translation from MCP lifecycle signals to binding-neutral events. */
 export class McpAuditEventAdapter {
   constructor(
@@ -58,7 +62,9 @@ export class McpAuditEventAdapter {
       ...this.context(input.context),
       action: {
         category: 'tool.call',
-        ...(this.options.includeToolNames ? { name: input.toolName } : {}),
+        ...(this.options.includeToolNames
+          ? { name: boundedReference(input.toolName) }
+          : {}),
       },
       outcome: input.outcome,
       ...(input.reasonCode === undefined ? {} : { reason: { code: input.reasonCode } }),
@@ -115,7 +121,9 @@ export class McpAuditEventAdapter {
       details: {
         family: 'authorization', phase,
         ...(input.policyDigest === undefined ? {} : { policyDigest: input.policyDigest }),
-        ...(input.grantRef === undefined ? {} : { grantRef: input.grantRef }),
+        ...(input.grantRef === undefined
+          ? {}
+          : { grantRef: boundedReference(input.grantRef) }),
       },
     });
   }
@@ -138,8 +146,11 @@ export class McpAuditEventAdapter {
       ...(input.reasonCode === undefined ? {} : { reason: { code: input.reasonCode } }),
       evidence: [],
       details: {
-        family: 'delegation', phase, delegationRef: input.delegationRef,
-        ...(input.parentRef === undefined ? {} : { parentRef: input.parentRef }),
+        family: 'delegation', phase,
+        delegationRef: boundedReference(input.delegationRef),
+        ...(input.parentRef === undefined
+          ? {}
+          : { parentRef: boundedReference(input.parentRef) }),
       },
     });
   }
@@ -165,7 +176,9 @@ export class McpAuditEventAdapter {
       evidence: [],
       details: {
         family: 'consent', phase,
-        ...(input.consentRef === undefined ? {} : { consentRef: input.consentRef }),
+        ...(input.consentRef === undefined
+          ? {}
+          : { consentRef: boundedReference(input.consentRef) }),
       },
     });
   }

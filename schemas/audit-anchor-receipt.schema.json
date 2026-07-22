@@ -11,6 +11,6 @@
     "providerId": { "type": "string", "minLength": 1, "maxLength": 256 },
     "checkpointDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
     "issuedAt": { "type": "integer", "minimum": 0 },
-    "receiptData": { "type": "string", "minLength": 1 }
+    "receiptData": { "type": "string", "minLength": 1, "maxLength": 65536 }
   }
 }

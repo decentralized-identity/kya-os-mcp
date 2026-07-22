@@ -11,10 +11,32 @@ import type {
   SignerRef,
 } from './types.js';
 import { NodeCryptoProvider } from '../providers/node-crypto.js';
+import { z } from 'zod';
 
 interface AuditCliKeyFile {
   keys: Array<{ kid: string; jwk: JWK }>;
 }
+
+const auditCliKeyFileSchema: z.ZodType<AuditCliKeyFile> = z.object({
+  keys: z.array(z.object({
+    kid: z.string().min(1).max(2304),
+    jwk: z.record(z.string(), z.unknown()),
+  }).strict()).max(10_000),
+}).strict().superRefine((value, context) => {
+  const kids = value.keys.map((item) => item.kid);
+  if (new Set(kids).size !== kids.length) {
+    context.addIssue({ code: 'custom', path: ['keys'], message: 'Key IDs must be unique' });
+  }
+  for (const [index, item] of value.keys.entries()) {
+    if (typeof item.jwk['kid'] === 'string' && item.jwk['kid'] !== item.kid) {
+      context.addIssue({
+        code: 'custom',
+        path: ['keys', index, 'jwk', 'kid'],
+        message: 'JWK kid must match the key-file kid',
+      });
+    }
+  }
+});
 
 export interface AuditCliIo {
   readText(path: string): Promise<string>;
@@ -32,7 +54,9 @@ const usage = 'Usage: kya-audit verify <bundle.json> --policy <policy.json> --ke
 
 function option(args: readonly string[], name: string): string | undefined {
   const index = args.indexOf(name);
-  return index < 0 ? undefined : args[index + 1];
+  if (index < 0 || args.indexOf(name, index + 1) >= 0) return undefined;
+  const value = args[index + 1];
+  return value === undefined || value.startsWith('-') ? undefined : value;
 }
 
 export async function runAuditCli(
@@ -59,7 +83,7 @@ export async function runAuditCli(
       io.readText(args[1]).then((value) => JSON.parse(value) as AuditReplayBundleV1),
       io.readText(policyPath).then((value) =>
         parseAuditVerificationPolicy(JSON.parse(value)) as AuditVerificationPolicyV1),
-      io.readText(keysPath).then((value) => JSON.parse(value) as AuditCliKeyFile),
+      io.readText(keysPath).then((value) => auditCliKeyFileSchema.parse(JSON.parse(value))),
     ]);
     const keys = new Map(keyFile.keys.map((item) => [item.kid, item.jwk]));
     const signatures = new CompactJwsAuditSignatureVerifier({

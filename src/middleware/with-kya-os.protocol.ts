@@ -91,7 +91,7 @@ export function createProtocol(
     const auditAssurance = config.audit !== undefined && config.audit !== false
       ? {
           enabled: true,
-          profile: config.audit.auditProfile ?? config.audit.capabilities?.profile ?? 'AAP-1',
+          profile: config.audit.capabilities?.profile ?? config.audit.auditProfile ?? 'AAP-0',
           ...(config.audit.capabilities === undefined
             ? {}
             : { capabilities: config.audit.capabilities }),

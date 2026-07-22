@@ -506,6 +506,17 @@ function selectionCompleteness(
     const selected = entries.filter((entry) =>
       entry.core.ledgerId === selection.ledgerId &&
       entry.core.ledgerEpochId === selection.ledgerEpochId);
+    const uniqueBySequence = new Map<string, SignedAuditEntryV1>();
+    let hasDuplicateSequence = false;
+    for (const entry of selected) {
+      if (uniqueBySequence.has(entry.core.sequence)) hasDuplicateSequence = true;
+      else uniqueBySequence.set(entry.core.sequence, entry);
+    }
+    const ordered = [...uniqueBySequence.values()].sort((left, right) => {
+      const leftSequence = BigInt(left.core.sequence);
+      const rightSequence = BigInt(right.core.sequence);
+      return leftSequence < rightSequence ? -1 : leftSequence > rightSequence ? 1 : 0;
+    });
     let expectedCount: bigint;
     try {
       expectedCount = BigInt(selection.lastSequence) - BigInt(selection.firstSequence) + 1n;
@@ -513,10 +524,19 @@ function selectionCompleteness(
       reasons.add(AUDIT_REASON_CODES.BUNDLE_SELECTION_INCOMPLETE);
       continue;
     }
-    if (expectedCount < 1n || expectedCount !== BigInt(selected.length) ||
-      selected[0]?.core.sequence !== selection.firstSequence ||
-      selected[selected.length - 1]?.core.sequence !== selection.lastSequence ||
-      selected[selected.length - 1]?.entryDigest !== selection.expectedHeadDigest) {
+    let contiguous = true;
+    for (let index = 1; index < ordered.length; index += 1) {
+      if (BigInt(ordered[index]!.core.sequence) !==
+        BigInt(ordered[index - 1]!.core.sequence) + 1n) {
+        contiguous = false;
+        break;
+      }
+    }
+    if (hasDuplicateSequence || !contiguous || expectedCount < 1n ||
+      expectedCount !== BigInt(ordered.length) ||
+      ordered[0]?.core.sequence !== selection.firstSequence ||
+      ordered[ordered.length - 1]?.core.sequence !== selection.lastSequence ||
+      ordered[ordered.length - 1]?.entryDigest !== selection.expectedHeadDigest) {
       reasons.add(AUDIT_REASON_CODES.BUNDLE_SELECTION_INCOMPLETE);
     }
   }

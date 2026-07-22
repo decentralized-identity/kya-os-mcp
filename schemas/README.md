@@ -85,6 +85,18 @@ https://schema.kya-os.org/v1/protocol/{family}/{resource}/v1.0.0
 
 Schemas can reference each other using `$ref`. For example, the delegation credential schema references shared definitions for constraints and proof structures.
 
+### Audit semantic keywords
+
+Two audit schemas use required KYA-OS semantic keywords for invariants that
+JSON Schema draft 2020-12 cannot express with its standard vocabulary:
+
+- `kyaOrderedDecimalRange` compares two canonical decimal-string properties;
+- `kyaUniqueProperty` requires unique values for one property across an array.
+
+Audit validators MUST implement these keywords rather than treating them as
+annotations. The TypeScript/Ajv parity suite in
+`src/audit/__tests__/schema-parity.test.ts` is the executable reference.
+
 ## Protocol Flow
 
 ```

@@ -25,7 +25,10 @@ export function assertCanonicalJsonValue(
     if (!Number.isFinite(value)) {
       throw new TypeError(`Cannot canonicalize non-finite number at ${path}: ${value}`);
     }
-    if (Number.isInteger(value) && !Number.isSafeInteger(value)) {
+    if (!Number.isInteger(value)) {
+      throw new TypeError(`Cannot canonicalize non-integer number at ${path}: ${value}`);
+    }
+    if (!Number.isSafeInteger(value)) {
       throw new TypeError(`Cannot canonicalize unsafe integer at ${path}: ${value}`);
     }
     return;
@@ -71,6 +74,10 @@ export function assertCanonicalJsonValue(
     for (const key of Reflect.ownKeys(value)) {
       if (typeof key === 'symbol') {
         throw new TypeError(`Cannot canonicalize symbol-keyed property at ${path}`);
+      }
+      if ([...key].some((character) => (character.codePointAt(0) ?? 0) > 0xffff) ||
+        /[\uD800-\uDFFF]/.test(key)) {
+        throw new TypeError(`Cannot canonicalize non-BMP or surrogate object key at ${path}`);
       }
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (!descriptor?.enumerable) continue;

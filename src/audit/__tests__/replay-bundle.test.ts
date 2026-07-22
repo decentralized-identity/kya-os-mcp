@@ -97,7 +97,7 @@ async function fixture() {
       ledgerId: 'kya:tenant:prod:primary',
       producerEvent: event(sequence),
       encryptedEvidence: [],
-    }, { producerAuthority: 'did:key:zProducer', tenantAuthority: 'tenant-1' });
+    }, { producerAuthority: 'did:key:zProducer', tenantAuthority: 'tenant-1', tenantRef });
   }
   const entries = await journal.snapshot({
     ledgerId: 'kya:tenant:prod:primary',
@@ -208,6 +208,52 @@ describe('signed replay bundles', () => {
     expect(report.cryptographicIntegrity.verdict).toBe('valid');
     expect(report.chainIntegrity.verdict).toBe('valid');
     expect(report.scopeEvidenceCompleteness.verdict).toBe('valid');
+
+    const reordered = structuredClone(bundle);
+    const entryComponent = reordered.components.find((component) =>
+      component.mediaType === AUDIT_BUNDLE_MEDIA_TYPES.entries);
+    entryComponent!.content = [...entries].reverse();
+    const reorderedReport = await verifyAuditBundle(reordered, policy, {
+      hasher,
+      signatures: new TestVerifier(),
+      artifacts: new AuditArtifactVerifier({ hasher, signatures: new TestVerifier() }),
+    });
+    expect(reorderedReport.scopeEvidenceCompleteness.verdict).toBe('valid');
+  });
+
+  it('rejects duplicate sequence padding even when count and endpoints appear complete', async () => {
+    const { entries, hasher, signer, policy, policyDigest } = await fixture();
+    const apparentLast = structuredClone(entries[2]!);
+    apparentLast.core.sequence = '3';
+    apparentLast.recorderReceipt.core.sequence = '3';
+    const padded = [entries[0]!, entries[1]!, entries[1]!, apparentLast];
+    const bundle = await new AuditReplayBundleExporter({
+      hasher, signer, clock: { now: () => 1_750_000_010_000 },
+    }).export({
+      bundleId: 'bundle_duplicate_padding',
+      purpose: 'regulatory-review',
+      verificationPolicyDigest: policyDigest,
+      selections: [{
+        ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1',
+        firstSequence: '0', lastSequence: '3',
+        expectedHeadDigest: apparentLast.entryDigest,
+        checkpointTreeSizes: [],
+      }],
+      components: [{
+        path: 'ledger/entries.json',
+        mediaType: AUDIT_BUNDLE_MEDIA_TYPES.entries,
+        disposition: 'included',
+        content: padded,
+      }],
+    });
+
+    const report = await verifyAuditBundle(bundle, policy, {
+      hasher, signatures: new TestVerifier(),
+    });
+    expect(report.scopeEvidenceCompleteness).toEqual({
+      verdict: 'invalid',
+      reasonCodes: [AUDIT_REASON_CODES.BUNDLE_SELECTION_INCOMPLETE],
+    });
   });
 
   it('detects omitted inventory and rejects an exporter not authorized out of band', async () => {
@@ -254,10 +300,11 @@ describe('signed replay bundles', () => {
       journal, signer, hasher, clock: { now: () => 1_750_000_002_000 },
       previousEpochId: 'epoch_1',
       previousTerminalCheckpointDigest: `sha256:${'b'.repeat(64)}`,
+      epochTransitionGuard: { verifyAndSeal: async () => true },
     });
     await epochTwoRecorder.submitAuthenticated({
       ledgerId: 'kya:tenant:prod:primary', producerEvent: event(3), encryptedEvidence: [],
-    }, { producerAuthority: 'did:key:zProducer', tenantAuthority: 'tenant-1' });
+    }, { producerAuthority: 'did:key:zProducer', tenantAuthority: 'tenant-1', tenantRef });
     const epochTwoEntries = await journal.snapshot({
       ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_2',
     });
@@ -320,7 +367,7 @@ describe('signed replay bundles', () => {
     });
     await recorder.submitAuthenticated({
       ledgerId: ledger.ledgerId, producerEvent: event(3), encryptedEvidence: [],
-    }, { producerAuthority: 'did:key:zProducer', tenantAuthority: 'tenant-1' });
+    }, { producerAuthority: 'did:key:zProducer', tenantAuthority: 'tenant-1', tenantRef });
     const second = structuredClone(await builder.createCheckpoint(ledger));
     const consistency = await builder.consistencyProof(ledger, first.core.treeSize, second);
     second.core.previousCheckpointDigest = `sha256:${'e'.repeat(64)}`;

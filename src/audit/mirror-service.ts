@@ -56,9 +56,18 @@ export class AuditMirrorService {
     }
 
     const head = await this.options.journal.getHead(this.options.ledger);
+    const entrySequence = BigInt(entry.core.sequence);
+    if ((head === null && entrySequence > 0n) ||
+      (head !== null && entrySequence > BigInt(head.sequence) + 1n)) {
+      throw new AuditProtocolError(
+        AUDIT_ERROR_CODES.MIRROR_OUT_OF_ORDER,
+        'Mirror entry arrived before its predecessor and may be retried',
+        { sequence: entry.core.sequence, observedHeadSequence: head?.sequence ?? null },
+      );
+    }
     const continuous = head === null
       ? entry.core.sequence === '0' && entry.core.previousEntryDigest === null
-      : BigInt(entry.core.sequence) === BigInt(head.sequence) + 1n &&
+      : entrySequence === BigInt(head.sequence) + 1n &&
         entry.core.previousEntryDigest === head.entryDigest;
     if (!continuous) this.continuityFailure();
 
@@ -69,6 +78,11 @@ export class AuditMirrorService {
       idempotencyKey,
     });
     if (result.kind === 'appended' || result.kind === 'duplicate') return result.entry;
+    const racedDuplicate = await this.options.journal.getByIdempotencyKey(
+      entry.core.ledgerId,
+      idempotencyKey,
+    );
+    if (racedDuplicate?.entryDigest === entry.entryDigest) return racedDuplicate;
     this.continuityFailure();
   }
 

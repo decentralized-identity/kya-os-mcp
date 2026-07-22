@@ -5,20 +5,30 @@ export interface AuditOutboxItem {
   eventId: string;
   submission: AuditRecorderSubmission;
   enqueuedAt: number;
+  /** Persisted delivery failures; durable adapters use this for retry and DLQ policy. */
   attempts: number;
 }
 
 export interface AuditOutboxProvider {
-  readonly capabilities: { durability: 'ephemeral' | 'durable' };
+  readonly capabilities: {
+    durability: 'ephemeral' | 'durable';
+    /** `pending()` yields enqueue order within each producer source. */
+    fifoPerSource: true;
+  };
   enqueue(item: AuditOutboxItem): Promise<void>;
+  /**
+   * Eligible items MUST be yielded FIFO for each `producerEvent.source.sourceId`.
+   * The provider owns retry scheduling/caps and excludes dead-lettered items.
+   */
   pending(limit?: number): AsyncIterable<AuditOutboxItem>;
   markDelivered(eventId: string): Promise<void>;
+  /** Persist the failure and apply the provider's configured retry/DLQ policy. */
   markFailed(eventId: string, error: unknown): Promise<void>;
 }
 
 /** Development-only outbox. Buffered assurance requires a durable adapter. */
 export class MemoryAuditOutbox implements AuditOutboxProvider {
-  readonly capabilities = { durability: 'ephemeral' as const };
+  readonly capabilities = { durability: 'ephemeral' as const, fifoPerSource: true as const };
   private readonly items = new Map<string, AuditOutboxItem>();
 
   async enqueue(item: AuditOutboxItem): Promise<void> {

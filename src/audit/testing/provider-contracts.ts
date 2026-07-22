@@ -6,6 +6,7 @@ import type {
 } from '../providers/evidence.js';
 import type { AuditJournalProvider } from '../providers/journal.js';
 import type { AuditCheckpointObserverProvider } from '../providers/observer.js';
+import type { AuditOutboxItem, AuditOutboxProvider } from '../providers/outbox.js';
 import type {
   AuditLedgerRef,
   Digest,
@@ -21,7 +22,7 @@ export interface AuditProviderContractCheck {
 }
 
 export interface AuditProviderContractReport {
-  providerKind: 'journal' | 'evidence' | 'observer' | 'anchor';
+  providerKind: 'journal' | 'evidence' | 'observer' | 'anchor' | 'outbox';
   passed: boolean;
   checks: AuditProviderContractCheck[];
 }
@@ -391,4 +392,60 @@ export async function evaluateAuditAnchorProviderContract(input: {
     );
   });
   return report('anchor', checks);
+}
+
+/** Executable FIFO, retry-accounting, and acknowledgement contract for outboxes. */
+export async function evaluateAuditOutboxProviderContract(
+  createProvider: () => AuditOutboxProvider | Promise<AuditOutboxProvider>,
+): Promise<AuditProviderContractReport> {
+  const checks: AuditProviderContractCheck[] = [];
+  const ledger = { ledgerId: 'contract-ledger', ledgerEpochId: 'epoch-1' };
+  const firstEntry = contractEntry(ledger, 1, digest('1'), digest('0'));
+  const secondEntry = contractEntry(ledger, 2, digest('2'), firstEntry.entryDigest);
+  const item = (entry: SignedAuditEntryV1): AuditOutboxItem => ({
+    eventId: entry.core.event.eventId,
+    submission: {
+      ledgerId: ledger.ledgerId,
+      expectedLedgerEpochId: ledger.ledgerEpochId,
+      producerEvent: entry.core.event,
+      encryptedEvidence: [],
+    },
+    enqueuedAt: entry.core.recordedAt,
+    attempts: 0,
+  });
+  const collect = async (provider: AuditOutboxProvider): Promise<AuditOutboxItem[]> => {
+    const values: AuditOutboxItem[] = [];
+    for await (const value of provider.pending()) values.push(value);
+    return values;
+  };
+
+  await check(checks, 'declares and preserves FIFO order per source', async () => {
+    const provider = await createProvider();
+    expectContract(provider.capabilities.fifoPerSource === true, 'fifoPerSource must be true');
+    await provider.enqueue(item(firstEntry));
+    await provider.enqueue(item(secondEntry));
+    expectContract(
+      equalJson((await collect(provider)).map((value) => value.eventId), [
+        firstEntry.core.event.eventId,
+        secondEntry.core.event.eventId,
+      ]),
+      'pending items were not yielded in enqueue order',
+    );
+  });
+  await check(checks, 'accounts for failures and removes only acknowledged items', async () => {
+    const provider = await createProvider();
+    await provider.enqueue(item(firstEntry));
+    await provider.enqueue(item(secondEntry));
+    await provider.markFailed(firstEntry.core.event.eventId, new Error('offline'));
+    let pending = await collect(provider);
+    expectContract(pending[0]?.attempts === 1, 'failed delivery attempt was not persisted');
+    await provider.markDelivered(firstEntry.core.event.eventId);
+    pending = await collect(provider);
+    expectContract(
+      pending.length === 1 && pending[0]?.eventId === secondEntry.core.event.eventId,
+      'acknowledgement removed the wrong pending item',
+    );
+  });
+
+  return report('outbox', checks);
 }

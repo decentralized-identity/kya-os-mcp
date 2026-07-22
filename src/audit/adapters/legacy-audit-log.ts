@@ -2,6 +2,11 @@ import { AuditLogProvider } from '../../providers/audit-log.js';
 import type { AuditContext, AuditEventContext } from '../../types/protocol.js';
 import type { AuditTrailEventInput, AuditTrailService } from '../service.js';
 
+export interface LegacyAuditSinkAdapterOptions {
+  identityKind?: 'public_did' | 'pairwise_did';
+  resourceKind?: 'public_did' | 'pairwise_did';
+}
+
 /**
  * 1.x compatibility bridge. It captures legacy calls in the new ledger but can
  * claim only legacy/capture coverage because the old shape lacks lifecycle data.
@@ -9,7 +14,10 @@ import type { AuditTrailEventInput, AuditTrailService } from '../service.js';
 export class LegacyAuditSinkAdapter extends AuditLogProvider {
   readonly capability = 'legacy-capture' as const;
 
-  constructor(private readonly trail: Pick<AuditTrailService, 'record'>) {
+  constructor(
+    private readonly trail: Pick<AuditTrailService, 'record'>,
+    private readonly options: LegacyAuditSinkAdapterOptions = {},
+  ) {
     super();
   }
 
@@ -17,8 +25,8 @@ export class LegacyAuditSinkAdapter extends AuditLogProvider {
     const verified = context.verified === 'yes';
     await this.trail.record({
       eventType: verified ? 'proof.verified' : 'proof.rejected',
-      actor: { kind: 'pairwise_did', did: context.identity.did },
-      resource: { kind: 'pairwise_did', did: context.session.audience },
+      actor: { kind: this.options.identityKind ?? 'public_did', did: context.identity.did },
+      resource: { kind: this.options.resourceKind ?? 'public_did', did: context.session.audience },
       action: { category: 'legacy.audit-record' },
       outcome: verified ? 'succeeded' : 'failed',
       ...(verified ? {} : { reason: { code: 'LEGACY_VERIFICATION_FAILED' } }),
@@ -41,8 +49,8 @@ export class LegacyAuditSinkAdapter extends AuditLogProvider {
   async logEvent(context: AuditEventContext): Promise<void> {
     const input: AuditTrailEventInput = {
       eventType: 'configuration.changed',
-      actor: { kind: 'pairwise_did', did: context.identity.did },
-      resource: { kind: 'pairwise_did', did: context.session.audience },
+      actor: { kind: this.options.identityKind ?? 'public_did', did: context.identity.did },
+      resource: { kind: this.options.resourceKind ?? 'public_did', did: context.session.audience },
       action: { category: 'legacy.event' },
       outcome: 'unknown',
       reason: { code: 'LEGACY_EVENT_CAPTURE' },

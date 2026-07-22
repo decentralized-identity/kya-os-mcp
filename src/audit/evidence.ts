@@ -33,6 +33,9 @@ export class WebCryptoEvidenceEncryptor {
     if (input.key.algorithm.name !== 'AES-GCM') {
       throw new TypeError('Evidence encryption key must use AES-GCM');
     }
+    if (input.aad.byteLength === 0) {
+      throw new TypeError('Evidence encryption requires entity-scoped authenticated data');
+    }
     const nonce = await this.config.randomBytes(12);
     const objectRandom = await this.config.randomBytes(16);
     const encrypted = await this.config.crypto.subtle.encrypt(
@@ -71,6 +74,9 @@ export class WebCryptoEvidenceEncryptor {
     key: CryptoKey,
     aad: Uint8Array,
   ): Promise<Uint8Array> {
+    if (aad.byteLength === 0) {
+      throw new TypeError('Evidence decryption requires entity-scoped authenticated data');
+    }
     const ciphertextDigest = await this.config.hasher.sha256(input.ciphertext);
     const aadDigest = await this.config.hasher.sha256(aad);
     if (ciphertextDigest !== input.ref.ciphertextDigest ||

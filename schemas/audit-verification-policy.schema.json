@@ -11,7 +11,7 @@
     "trustedObservers": { "type": "array", "items": { "$ref": "#/$defs/keyPolicy" } },
     "trustedSupportingAnchors": { "type": "array", "items": { "$ref": "#/$defs/anchorTrust" } },
     "authorizedExporters": { "type": "array", "items": { "$ref": "#/$defs/exporter" } },
-    "acceptedIntegritySuites": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "acceptedIntegritySuites": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1, "maxLength": 128 }, "uniqueItems": true },
     "acceptedAlgorithms": { "type": "array", "minItems": 1, "items": { "enum": ["EdDSA", "ES256"] }, "uniqueItems": true },
     "keyRevocationMode": { "enum": ["as_observed", "current", "both"] },
     "requiredCheckpointFreshnessMs": { "type": "integer", "minimum": 0 },
@@ -22,8 +22,8 @@
     "signer": {
       "type": "object", "additionalProperties": false, "required": ["did", "kid", "alg"],
       "properties": {
-        "did": { "type": "string", "pattern": "^did:.+" },
-        "kid": { "type": "string", "minLength": 1 },
+        "did": { "type": "string", "minLength": 5, "maxLength": 2048, "pattern": "^did:[^\\r\\n]+$" },
+        "kid": { "type": "string", "minLength": 1, "maxLength": 2304 },
         "alg": { "enum": ["EdDSA", "ES256"] }
       }
     },
@@ -62,8 +62,8 @@
       "required": ["signerKeys", "allowedLedgerIds", "allowedPurposes"],
       "properties": {
         "signerKeys": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/keyPolicy" } },
-        "allowedLedgerIds": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
-        "allowedPurposes": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+        "allowedLedgerIds": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1, "maxLength": 256 }, "uniqueItems": true },
+        "allowedPurposes": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1, "maxLength": 256 }, "uniqueItems": true }
       }
     }
   }

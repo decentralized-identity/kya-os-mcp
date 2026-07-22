@@ -15,6 +15,7 @@ import {
   auditVerificationPolicySchema,
   parseAuditEntryCore,
   parseAuditProducerEvent,
+  parseAuditReplayBundle,
 } from '../schemas.js';
 import type { AuditProducerEventCoreV1 } from '../types.js';
 
@@ -223,6 +224,45 @@ describe('audit protocol schemas', () => {
         reasonCode: 'MINIMIZED', content: {},
       }],
     })).toThrow(/content is forbidden/i);
+  });
+
+  it('freezes a private clone of bundle content and rejects cyclic content', () => {
+    const content = { nested: { value: 1 } };
+    const core = {
+      schema: AUDIT_BUNDLE_MANIFEST_SCHEMA_ID,
+      bundleId: 'bundle_clone', formatVersion: '1.0.0',
+      selections: [{
+        ledgerId: 'ledger', ledgerEpochId: 'epoch', firstSequence: '0',
+        lastSequence: '0', expectedHeadDigest: digest('a'), checkpointTreeSizes: [],
+      }],
+      exporter: { did: 'did:key:zExporter', kid: 'did:key:zExporter#key', alg: 'EdDSA' },
+      purpose: 'audit', exportedAt: 1_750_000_000_000,
+      verificationPolicyDigest: digest('b'),
+      inventory: [{
+        path: 'content.json', mediaType: 'application/json', disposition: 'included',
+        digest: digest('c'), size: '1',
+      }],
+      integritySuite: AUDIT_BUNDLE_INTEGRITY_SUITE,
+    } as const;
+    const input = {
+      manifest: { core, manifestDigest: digest('d'), jws: 'signature' },
+      components: [{
+        ...core.inventory[0],
+        content,
+      }],
+    };
+    const parsed = parseAuditReplayBundle(input);
+
+    expect(Object.isFrozen(content)).toBe(false);
+    expect(Object.isFrozen(parsed.components[0]?.content)).toBe(true);
+    expect(parsed.components[0]?.content).not.toBe(content);
+
+    const cyclic: Record<string, unknown> = {};
+    cyclic['self'] = cyclic;
+    expect(auditReplayBundleSchema.safeParse({
+      ...input,
+      components: [{ ...input.components[0], content: cyclic }],
+    }).success).toBe(false);
   });
 
   it('rejects reversed historical key-validity intervals in trust policy', () => {

@@ -84,4 +84,31 @@ describe('AuditCheckpointCoordinator', () => {
       .rejects.toMatchObject({ code: 'AUDIT_CHECKPOINT_PUBLICATION_FAILED' });
     expect(publish).toHaveBeenCalledTimes(3);
   });
+
+  it('captures a throwing backoff as a provider failure without abandoning sibling results', async () => {
+    const publishedAnchor = vi.fn(async () => anchor);
+    const coordinator = new AuditCheckpointCoordinator({
+      checkpoints: { createCheckpoint: async () => checkpoint },
+      observers: [{
+        capability: 'independent-observer',
+        publish: async () => { throw new Error('observer offline'); },
+        latest: async () => null,
+        verifyObservation: async () => false,
+      }],
+      anchors: [{
+        capability: 'supporting-anchor', kind: 'worm', publish: publishedAnchor,
+        verify: async () => true,
+      }],
+      maxPublishAttempts: 3,
+      backoff: async () => { throw new Error('backoff unavailable'); },
+    });
+
+    const result = await coordinator.createAndPublish({ ledgerId: 'ledger', ledgerEpochId: 'epoch' });
+
+    expect(result.anchors).toEqual([anchor]);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]).toMatchObject({ role: 'observer', attempts: 1 });
+    expect(result.failures[0]?.error).toBeInstanceOf(AggregateError);
+    expect(publishedAnchor).toHaveBeenCalledOnce();
+  });
 });

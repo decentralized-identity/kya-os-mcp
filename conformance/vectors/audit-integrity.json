@@ -27,6 +27,15 @@
         },
         "eventCanonical": "{\"action\":{\"category\":\"tool.call\"},\"actor\":{\"did\":\"did:key:zVectorAgent\",\"kind\":\"pairwise_did\"},\"binding\":\"urn:kya-os:audit-binding:mcp:2025-11-25\",\"correlationId\":\"trace-α-42\",\"details\":{\"attempt\":\"1\",\"family\":\"tool\",\"phase\":\"completed\"},\"eventId\":\"vector-event-1\",\"eventType\":\"tool.call.completed\",\"eventVersion\":\"1.0.0\",\"evidence\":[],\"occurredAt\":1750000000123,\"outcome\":\"succeeded\",\"privacy\":{\"classification\":\"internal\",\"retentionClass\":\"audit-365d\"},\"schema\":\"https://schema.kya-os.org/v1/protocol/audit/event/v1.0.0\",\"source\":{\"previousSourceEventDigest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"producer\":{\"did\":\"did:key:zVectorProducer\",\"kind\":\"pairwise_did\"},\"sourceId\":\"mcp-server-eu-1\",\"sourceSequence\":\"42\"},\"tenantRef\":{\"keyId\":\"tenant-key-v1\",\"kind\":\"keyed_commitment\",\"value\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}",
         "eventDigest": "sha256:43d116fbe56d27f6aae199bfda46972cf06fae4ba8d310cf4b1ef7cb0a557d82",
+        "canonicalization": {
+          "value": {
+            "😀": "non-bmp key",
+            "ﬁ": "bmp code unit sorts after surrogates",
+            "quote": { "price": 49.99, "score": 0.875, "temperature": -2.5 },
+            "boundaries": [0.000001, 1e-7, 5e-324, 2.220446049250313e-16, 9007199254740991, -0.5, 123.456, 100]
+          },
+          "canonical": "{\"boundaries\":[0.000001,1e-7,5e-324,2.220446049250313e-16,9007199254740991,-0.5,123.456,100],\"quote\":{\"price\":49.99,\"score\":0.875,\"temperature\":-2.5},\"😀\":\"non-bmp key\",\"ﬁ\":\"bmp code unit sorts after surrogates\"}"
+        },
         "leaves": [
           "sha256:f12f4ca1e8e6c6e3605fc3d380966849c0ea48d6fb9e0b8b136069814c73dc32",
           "sha256:5e2d5d1e58e94d7607e0745cd3e612c4a358fc93f37fc5ab1fed8d04bbf7ce77",
@@ -80,6 +89,62 @@
           "sha256:edda7b47233f9790fcc6d116d0a0c0eac38a5d6e44b7cf0c002c6d30bfa61e74"
         ],
         "root": "sha256:739cd00d319a522c5f4cb1a0c15360ab2e14d7dc1b82586689da9d5a54520908",
+        "inclusion": {
+          "leafIndex": 1,
+          "auditPath": [
+            "sha256:8fc4565a030e7b984be355c138ed6411034ee100844784d733671db6048942cc",
+            "sha256:5ee80a55110ef9ca07c485651efdc161dd039f3ddc513cefb12063697255ff1f"
+          ]
+        },
+        "consistency": {
+          "oldSize": 2,
+          "oldRoot": "sha256:ec41137f68d8e549730e6534038dd1a592e2886d9baf6fe5c7cfdecc8091a4b1",
+          "auditPath": [
+            "sha256:5ee80a55110ef9ca07c485651efdc161dd039f3ddc513cefb12063697255ff1f"
+          ]
+        }
+      }
+    },
+    {
+      "id": "audit-integrity/code-point-sorted-keys",
+      "description": "A canonicalization that sorts object keys by code point instead of UTF-16 code unit is rejected",
+      "expected": "fail",
+      "reason": "RFC 8785 orders keys by UTF-16 code units, so the non-BMP key's surrogates sort before U+FB01; the supplied canonical form uses code-point order",
+      "input": {
+        "event": {
+          "schema": "https://schema.kya-os.org/v1/protocol/audit/event/v1.0.0",
+          "eventId": "vector-event-1",
+          "eventType": "tool.call.completed",
+          "eventVersion": "1.0.0",
+          "binding": "urn:kya-os:audit-binding:mcp:2025-11-25",
+          "occurredAt": 1750000000123,
+          "tenantRef": { "kind": "keyed_commitment", "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "keyId": "tenant-key-v1" },
+          "source": { "producer": { "kind": "pairwise_did", "did": "did:key:zVectorProducer" }, "sourceId": "mcp-server-eu-1", "sourceSequence": "42", "previousSourceEventDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+          "correlationId": "trace-α-42",
+          "actor": { "kind": "pairwise_did", "did": "did:key:zVectorAgent" },
+          "action": { "category": "tool.call" },
+          "outcome": "succeeded",
+          "evidence": [],
+          "details": { "family": "tool", "phase": "completed", "attempt": "1" },
+          "privacy": { "classification": "internal", "retentionClass": "audit-365d" }
+        },
+        "eventCanonical": "{\"action\":{\"category\":\"tool.call\"},\"actor\":{\"did\":\"did:key:zVectorAgent\",\"kind\":\"pairwise_did\"},\"binding\":\"urn:kya-os:audit-binding:mcp:2025-11-25\",\"correlationId\":\"trace-α-42\",\"details\":{\"attempt\":\"1\",\"family\":\"tool\",\"phase\":\"completed\"},\"eventId\":\"vector-event-1\",\"eventType\":\"tool.call.completed\",\"eventVersion\":\"1.0.0\",\"evidence\":[],\"occurredAt\":1750000000123,\"outcome\":\"succeeded\",\"privacy\":{\"classification\":\"internal\",\"retentionClass\":\"audit-365d\"},\"schema\":\"https://schema.kya-os.org/v1/protocol/audit/event/v1.0.0\",\"source\":{\"previousSourceEventDigest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"producer\":{\"did\":\"did:key:zVectorProducer\",\"kind\":\"pairwise_did\"},\"sourceId\":\"mcp-server-eu-1\",\"sourceSequence\":\"42\"},\"tenantRef\":{\"keyId\":\"tenant-key-v1\",\"kind\":\"keyed_commitment\",\"value\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}",
+        "eventDigest": "sha256:43d116fbe56d27f6aae199bfda46972cf06fae4ba8d310cf4b1ef7cb0a557d82",
+        "canonicalization": {
+          "value": {
+            "😀": "non-bmp key",
+            "ﬁ": "bmp code unit sorts after surrogates",
+            "quote": { "price": 49.99, "score": 0.875, "temperature": -2.5 },
+            "boundaries": [0.000001, 1e-7, 5e-324, 2.220446049250313e-16, 9007199254740991, -0.5, 123.456, 100]
+          },
+          "canonical": "{\"boundaries\":[0.000001,1e-7,5e-324,2.220446049250313e-16,9007199254740991,-0.5,123.456,100],\"quote\":{\"price\":49.99,\"score\":0.875,\"temperature\":-2.5},\"ﬁ\":\"bmp code unit sorts after surrogates\",\"😀\":\"non-bmp key\"}"
+        },
+        "leaves": [
+          "sha256:f12f4ca1e8e6c6e3605fc3d380966849c0ea48d6fb9e0b8b136069814c73dc32",
+          "sha256:5e2d5d1e58e94d7607e0745cd3e612c4a358fc93f37fc5ab1fed8d04bbf7ce77",
+          "sha256:edda7b47233f9790fcc6d116d0a0c0eac38a5d6e44b7cf0c002c6d30bfa61e74"
+        ],
+        "root": "sha256:639cd00d319a522c5f4cb1a0c15360ab2e14d7dc1b82586689da9d5a54520908",
         "inclusion": {
           "leafIndex": 1,
           "auditPath": [

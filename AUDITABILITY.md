@@ -153,7 +153,13 @@ Failover, key rotation that changes authority, and sealed retention rollover
 create a new `ledgerEpochId`. The new genesis commits the previous epoch ID and
 terminal checkpoint digest. Logical-ledger idempotency remains scoped by
 authenticated producer authority, source ID, and event ID across retained
-epochs, so a retry cannot become a new event after rollover.
+epochs, so a retry cannot become a new event after rollover. The recorder
+resolves that idempotency before enforcing the epoch envelope: a redelivered
+submission still pinned to a retained earlier epoch resolves to its original
+entry, and `expectedLedgerEpochId` fences only new appends. The producer
+never pins buffered outbox submissions, because a durable item may be
+delivered after rollover, where the idempotency scope above, not epoch
+pinning, carries the retry guarantee.
 
 ## Atomic journal contract
 
@@ -203,6 +209,12 @@ instead of pretending the lifecycle is complete. Exactly-once behavior across
 arbitrary external systems is not claimed; use a transactional outbox where the
 host and producer outbox share a database, otherwise use intent, terminal event,
 stable idempotency, and reconciliation.
+
+Direct-mode retries are idempotent only when the rebuilt event is byte-stable:
+a caller that retries `record()` with a stable event ID must also pin
+`occurredAt`, otherwise the recorder rejects the drifted content as an
+event-identity conflict. Buffered outbox redelivery is always byte-stable, and
+`flush()` receipts each delivered item against the item's own producer source.
 
 The outbox contract persists an `attempts` count and yields only delivery-eligible
 items. Retry cadence, attempt caps, and dead-letter routing are provider policy,

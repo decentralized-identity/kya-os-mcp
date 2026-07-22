@@ -136,6 +136,8 @@ describe('audit Zod and JSON Schema parity', () => {
       { ...event, eventId: 'x'.repeat(257) },
       { ...event, source: { ...event.source, sourceSequence: '1'.repeat(21) } },
       { ...event, tenantRef: { kind: 'public_did', did: 'did:\ninvalid' } },
+      { ...event, occurredAt: 1e21 },
+      { ...event, occurredAt: 9_007_199_254_740_991 },
       {
         ...event,
         details: { family: 'delegation', phase: 'rejected', delegationRef: 'x'.repeat(257) },
@@ -154,6 +156,7 @@ describe('audit Zod and JSON Schema parity', () => {
       { ...checkpoint, treeSize: '1'.repeat(21) },
       { ...checkpoint, firstSequence: '2', lastSequence: '1' },
       { ...checkpoint, issuer: { ...signer, did: 'did:\ninvalid' } },
+      { ...checkpoint, createdAt: 1e21 },
     ];
     for (const fixture of fixtures) {
       expect(validate(fixture)).toBe(auditCheckpointCoreSchema.safeParse(fixture).success);
@@ -173,6 +176,7 @@ describe('audit Zod and JSON Schema parity', () => {
         ...manifest,
         selections: [{ ...manifest.selections[0], checkpointTreeSizes: ['1'.repeat(21)] }],
       },
+      { ...manifest, exportedAt: 1e21 },
     ];
     for (const fixture of fixtures) {
       expect(validate(fixture)).toBe(auditBundleManifestCoreSchema.safeParse(fixture).success);

@@ -308,6 +308,43 @@ describe('AuditRecorderService', () => {
     expect(retry.core.ledgerEpochId).toBe('epoch_1');
   });
 
+  it('resolves pinned-previous-epoch redelivery as a duplicate and fences pinned new appends', async () => {
+    const journal = new MemoryAuditJournal();
+    const firstService = service({ journal, epoch: 'epoch_1' }).recorder;
+    const original = await firstService.submitAuthenticated({
+      ledgerId: 'kya:tenant:prod:primary',
+      expectedLedgerEpochId: 'epoch_1',
+      producerEvent: event('evt_pinned_redelivery', 1),
+      encryptedEvidence: [],
+    }, context);
+
+    const secondService = service({
+      journal,
+      epoch: 'epoch_2',
+      previousEpochId: 'epoch_1',
+      previousTerminalCheckpointDigest: `sha256:${'f'.repeat(64)}`,
+      epochTransitionGuard: { verifyAndSeal: async () => true },
+    }).recorder;
+
+    // A redelivered submission still frozen with the retained-epoch pin must
+    // resolve to its original entry instead of wedging on EPOCH_MISMATCH.
+    const redelivered = await secondService.submitAuthenticated({
+      ledgerId: 'kya:tenant:prod:primary',
+      expectedLedgerEpochId: 'epoch_1',
+      producerEvent: event('evt_pinned_redelivery', 1),
+      encryptedEvidence: [],
+    }, context);
+    expect(redelivered).toEqual(original);
+
+    // A new (non-duplicate) append pinned to a stale epoch is still fenced.
+    await expect(secondService.submitAuthenticated({
+      ledgerId: 'kya:tenant:prod:primary',
+      expectedLedgerEpochId: 'epoch_1',
+      producerEvent: event('evt_pinned_new_append', 2),
+      encryptedEvidence: [],
+    }, context)).rejects.toMatchObject({ code: 'AUDIT_EPOCH_MISMATCH' });
+  });
+
   it('requires an authorized, atomic predecessor seal before starting a linked epoch', async () => {
     const calls: unknown[] = [];
     let evidenceWrites = 0;

@@ -203,6 +203,37 @@ export async function evaluateAuditJournalProviderContract(
     expectContract(duplicate.kind === 'duplicate', 'epoch transition reopened idempotency scope');
   });
 
+  await check(checks, 'scopes heads and ranges by epoch within a logical ledger', async () => {
+    const provider = await createProvider();
+    await provider.compareAndAppend({ ledger, expectedHead: null, entry: first, idempotencyKey: idOne });
+    const nextEpoch = { ledgerId: ledger.ledgerId, ledgerEpochId: 'epoch-2' };
+    expectContract(
+      (await provider.getHead(nextEpoch)) === null,
+      'a fresh epoch inherited the previous epoch head',
+    );
+    const nextGenesis = contractEntry(nextEpoch, 0, digest('7'), null);
+    const appended = await provider.compareAndAppend({
+      ledger: nextEpoch, expectedHead: null, entry: nextGenesis, idempotencyKey: digest('8'),
+    });
+    expectContract(appended.kind === 'appended', 'fresh epoch genesis append failed');
+    const previousHead = await provider.getHead(ledger);
+    expectContract(
+      previousHead?.entryDigest === first.entryDigest,
+      'appending to a new epoch changed the previous epoch head',
+    );
+    const nextHead = await provider.getHead(nextEpoch);
+    expectContract(
+      nextHead?.entryDigest === nextGenesis.entryDigest,
+      'the new epoch head is not scoped to its epoch',
+    );
+    const nextRange: SignedAuditEntryV1[] = [];
+    for await (const entry of provider.readRange(nextEpoch)) nextRange.push(entry);
+    expectContract(
+      nextRange.length === 1 && nextRange[0]?.entryDigest === nextGenesis.entryDigest,
+      'the new epoch range leaked entries from another epoch',
+    );
+  });
+
   await check(checks, 'provides ordered stable range cursors', async () => {
     const provider = await createProvider();
     const firstResult = await provider.compareAndAppend({
@@ -432,6 +463,29 @@ export async function evaluateAuditOutboxProviderContract(
       'pending items were not yielded in enqueue order',
     );
   });
+  await check(checks, 'enqueues idempotently and rejects divergent content per event identity', async () => {
+    const provider = await createProvider();
+    await provider.enqueue(item(firstEntry));
+    await provider.enqueue(structuredClone(item(firstEntry)));
+    const pending = await collect(provider);
+    expectContract(pending.length === 1, 'redelivered enqueue duplicated the pending item');
+    const divergent = item(firstEntry);
+    divergent.submission = {
+      ...divergent.submission,
+      producerEvent: {
+        ...divergent.submission.producerEvent,
+        action: { category: 'tampered' },
+      },
+    };
+    let rejected = false;
+    try {
+      await provider.enqueue(divergent);
+    } catch {
+      rejected = true;
+    }
+    expectContract(rejected, 'divergent content under one event identity was accepted');
+  });
+
   await check(checks, 'accounts for failures and removes only acknowledged items', async () => {
     const provider = await createProvider();
     await provider.enqueue(item(firstEntry));

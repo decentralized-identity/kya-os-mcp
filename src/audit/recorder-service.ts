@@ -154,6 +154,14 @@ export class AuditRecorderService {
     );
     if (duplicate !== null) return this.resolveDuplicate(duplicate, identity.eventDigest);
 
+    // Only a new append must target the active epoch. Logical-ledger idempotency
+    // is resolved first so a redelivered submission pinned to a retained earlier
+    // epoch returns its original entry instead of wedging on EPOCH_MISMATCH.
+    if (submission.expectedLedgerEpochId !== undefined &&
+      submission.expectedLedgerEpochId !== this.config.ledgerEpochId) {
+      throw new AuditProtocolError(AUDIT_ERROR_CODES.EPOCH_MISMATCH, 'Wrong audit ledger epoch');
+    }
+
     await this.ensureInitialized();
     await this.persistSubmittedEvidence(submission.encryptedEvidence, producerEvent);
     return this.appendEvent(producerEvent, context, false, identity);
@@ -171,10 +179,6 @@ export class AuditRecorderService {
     }
     if (submission.ledgerId !== this.config.ledgerId) {
       throw new AuditProtocolError(AUDIT_ERROR_CODES.LEDGER_MISMATCH, 'Wrong audit ledger');
-    }
-    if (submission.expectedLedgerEpochId !== undefined &&
-      submission.expectedLedgerEpochId !== this.config.ledgerEpochId) {
-      throw new AuditProtocolError(AUDIT_ERROR_CODES.EPOCH_MISMATCH, 'Wrong audit ledger epoch');
     }
   }
 

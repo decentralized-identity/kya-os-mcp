@@ -117,32 +117,47 @@ export class AuditTrailService {
     this.sourceState = configuration.sourceState;
   }
 
+  /**
+   * A direct-mode retry is idempotent only when it rebuilds the identical frozen
+   * event: callers retrying with a stable `eventId` must also pin `occurredAt`,
+   * otherwise the recorder correctly rejects the divergent content as an
+   * event-identity conflict. Buffered redelivery is always byte-stable.
+   */
   async record(
     input: AuditTrailEventInput,
     options: AuditRecordOptions = {},
   ): Promise<AuditEmitResult> {
     const eventId = input.eventId ?? this.nextEventId();
-    const event = await this.buildAndLinkEvent(input, eventId);
     const encryptedEvidence = options.encryptedEvidence ?? [];
-    this.assertEvidenceIsReferenced(event, encryptedEvidence);
-    const submission: AuditRecorderSubmission = Object.freeze({
-      ledgerId: this.configuration.ledgerId,
-      ...(this.configuration.expectedLedgerEpochId === undefined
-        ? {}
-        : { expectedLedgerEpochId: this.configuration.expectedLedgerEpochId }),
-      producerEvent: event,
-      encryptedEvidence: Object.freeze([...encryptedEvidence]),
+    const buffered = this.configuration.delivery === 'buffered';
+    const { event, submission } = await this.withSourceConstruction(async () => {
+      const builtEvent = await this.buildAndLinkEvent(input, eventId);
+      this.assertEvidenceIsReferenced(builtEvent, encryptedEvidence);
+      const frozenSubmission: AuditRecorderSubmission = Object.freeze({
+        ledgerId: this.configuration.ledgerId,
+        // Buffered submissions are never epoch-pinned: a durable outbox item may
+        // be redelivered after an epoch rollover, where logical-ledger
+        // idempotency (not epoch pinning) carries the retry guarantee.
+        ...(buffered || this.configuration.expectedLedgerEpochId === undefined
+          ? {}
+          : { expectedLedgerEpochId: this.configuration.expectedLedgerEpochId }),
+        producerEvent: builtEvent,
+        encryptedEvidence: Object.freeze([...encryptedEvidence]),
+      });
+      if (buffered) {
+        // Enqueued inside the source-construction lock so items commit to the
+        // outbox in claimed source-sequence order for FIFO providers.
+        await this.configuration.outbox!.enqueue(Object.freeze({
+          eventId: builtEvent.eventId,
+          submission: frozenSubmission,
+          enqueuedAt: this.configuration.clock.now(),
+          attempts: 0,
+        }));
+      }
+      return { event: builtEvent, submission: frozenSubmission };
     });
 
-    if (this.configuration.delivery === 'buffered') {
-      await this.configuration.outbox!.enqueue(Object.freeze({
-        eventId: event.eventId,
-        submission,
-        enqueuedAt: this.configuration.clock.now(),
-        attempts: 0,
-      }));
-      return { status: 'pending', event };
-    }
+    if (buffered) return { status: 'pending', event };
 
     let entry: SignedAuditEntryV1;
     try {
@@ -178,7 +193,7 @@ export class AuditTrailService {
         const entry = await this.submitAndValidate(item.submission);
         try {
           await this.sourceState.markReceipted(
-            this.configuration.sourceId,
+            sourceId,
             item.submission.producerEvent.source.sourceSequence!,
             entry.entryDigest,
           );
@@ -218,10 +233,7 @@ export class AuditTrailService {
     });
   }
 
-  private async buildAndLinkEvent(
-    input: AuditTrailEventInput,
-    eventId: string,
-  ): Promise<AuditProducerEventCoreV1> {
+  private async withSourceConstruction<T>(operation: () => Promise<T>): Promise<T> {
     const previous = this.sourceConstructionTail;
     let release!: () => void;
     this.sourceConstructionTail = new Promise<void>((resolve) => {
@@ -229,19 +241,26 @@ export class AuditTrailService {
     });
     await previous;
     try {
-      const claim = await this.sourceState.claimEvent(this.configuration.sourceId, eventId);
-      const event = this.buildEvent(input, eventId, claim);
-      const eventDigest = await digestAuditEvent(this.configuration.hasher, event);
-      await this.sourceState.markEmitted(
-        this.configuration.sourceId,
-        eventId,
-        claim.sequence,
-        eventDigest,
-      );
-      return event;
+      return await operation();
     } finally {
       release();
     }
+  }
+
+  private async buildAndLinkEvent(
+    input: AuditTrailEventInput,
+    eventId: string,
+  ): Promise<AuditProducerEventCoreV1> {
+    const claim = await this.sourceState.claimEvent(this.configuration.sourceId, eventId);
+    const event = this.buildEvent(input, eventId, claim);
+    const eventDigest = await digestAuditEvent(this.configuration.hasher, event);
+    await this.sourceState.markEmitted(
+      this.configuration.sourceId,
+      eventId,
+      claim.sequence,
+      eventDigest,
+    );
+    return event;
   }
 
   private buildEvent(
@@ -305,9 +324,11 @@ export class AuditTrailService {
       this.configuration.hasher,
       submission.producerEvent,
     );
+    // The binding is content-scoped: an entry from an earlier retained epoch is a
+    // legitimate logical-ledger duplicate. Epoch placement of new appends is the
+    // recorder's envelope guarantee, and epoch claims are recorder-signed and
+    // independently verifiable against checkpoints and mirrors.
     if (entry.core.ledgerId !== submission.ledgerId ||
-      (submission.expectedLedgerEpochId !== undefined &&
-        entry.core.ledgerEpochId !== submission.expectedLedgerEpochId) ||
       entry.eventDigest !== eventDigest ||
       entry.core.eventDigest !== eventDigest ||
       canonicalizeJson(entry.core.event) !== canonicalizeJson(submission.producerEvent)) {

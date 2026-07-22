@@ -32,7 +32,7 @@
         "ledgerEpochId": { "type": "string", "minLength": 1, "maxLength": 256 },
         "checkpointDigest": { "$ref": "#/$defs/digest" },
         "treeSize": { "$ref": "#/$defs/decimal" },
-        "observedAt": { "type": "integer", "minimum": 0 },
+        "observedAt": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
         "previousObservationDigest": { "oneOf": [{ "$ref": "#/$defs/digest" }, { "type": "null" }] }
       }
     }

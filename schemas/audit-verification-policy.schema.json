@@ -14,7 +14,7 @@
     "acceptedIntegritySuites": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1, "maxLength": 128 }, "uniqueItems": true },
     "acceptedAlgorithms": { "type": "array", "minItems": 1, "items": { "enum": ["EdDSA", "ES256"] }, "uniqueItems": true },
     "keyRevocationMode": { "enum": ["as_observed", "current", "both"] },
-    "requiredCheckpointFreshnessMs": { "type": "integer", "minimum": 0 },
+    "requiredCheckpointFreshnessMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
     "requiredAuditProfile": { "enum": ["AAP-0", "AAP-1", "AAP-2", "AAP-3", "AAP-4"] }
   },
   "$defs": {
@@ -31,8 +31,8 @@
       "type": "object", "additionalProperties": false, "required": ["signer"],
       "properties": {
         "signer": { "$ref": "#/$defs/signer" },
-        "validFrom": { "type": "integer", "minimum": 0 },
-        "validUntil": { "type": "integer", "minimum": 0 },
+        "validFrom": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "validUntil": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
         "validFromCheckpoint": { "$ref": "#/$defs/digest" },
         "validUntilCheckpoint": { "$ref": "#/$defs/digest" }
       }
@@ -53,8 +53,8 @@
       "properties": {
         "kind": { "enum": ["worm", "rfc3161", "scitt"] },
         "providerId": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "validFrom": { "type": "integer", "minimum": 0 },
-        "validUntil": { "type": "integer", "minimum": 0 }
+        "validFrom": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "validUntil": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
       }
     },
     "exporter": {

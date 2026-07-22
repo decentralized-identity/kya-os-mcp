@@ -172,6 +172,146 @@ describe('AuditTrailService delivery modes', () => {
     ]);
   });
 
+  it('delivers pending items and redelivered retries across an epoch rollover', async () => {
+    const hasher = new CryptoProviderAuditHasher(new NodeCryptoProvider());
+    const journal = new MemoryAuditJournal();
+    const clock = { now: () => 1_750_000_000_000 };
+    const recorderConfig = {
+      ledgerId: 'kya:tenant:prod:primary', tenantRef,
+      binding: 'urn:kya-os:audit-binding:mcp:2025-11-25' as const, sourceId: 'recorder-1',
+      journal, signer: new Signer(), hasher, clock,
+    };
+    const context = () => ({
+      producerAuthority: 'did:key:zProducer', tenantAuthority: 'tenant-1', tenantRef,
+    });
+    const outbox = new DurableTestOutbox();
+    const sourceState = new MemoryAuditSourceState();
+    const trailConfig = {
+      delivery: 'buffered' as const, hasher,
+      ledgerId: 'kya:tenant:prod:primary', tenantRef, producer, sourceId: 'mcp-server-1',
+      binding: 'urn:kya-os:audit-binding:mcp:2025-11-25' as const,
+      privacy: { classification: 'internal' as const, retentionClass: 'audit-365d' },
+      clock, outbox, sourceState,
+    };
+    const epochOne = createAuditTrail({
+      ...trailConfig,
+      recorder: new LocalAuditRecorderClient(
+        new AuditRecorderService({ ...recorderConfig, ledgerEpochId: 'epoch_1' }),
+        context,
+      ),
+      expectedLedgerEpochId: 'epoch_1',
+    });
+
+    await epochOne.record({ ...baseEvent, eventId: 'evt_rollover_recorded' });
+    expect(outbox.items[0]?.submission.expectedLedgerEpochId).toBeUndefined();
+    const redelivery = outbox.items[0]!;
+    await expect(epochOne.flush()).resolves.toEqual({ delivered: 1, failed: 0 });
+    await epochOne.record({ ...baseEvent, eventId: 'evt_rollover_pending' });
+
+    const epochTwo = createAuditTrail({
+      ...trailConfig,
+      recorder: new LocalAuditRecorderClient(new AuditRecorderService({
+        ...recorderConfig,
+        ledgerEpochId: 'epoch_2',
+        previousEpochId: 'epoch_1',
+        previousTerminalCheckpointDigest: `sha256:${'f'.repeat(64)}`,
+        epochTransitionGuard: { verifyAndSeal: async () => true },
+      }), context),
+      expectedLedgerEpochId: 'epoch_2',
+    });
+    outbox.items.push(redelivery);
+
+    await expect(epochTwo.flush()).resolves.toEqual({ delivered: 2, failed: 0 });
+    const epochTwoEntries = await journal.snapshot({
+      ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_2',
+    });
+    expect(epochTwoEntries.map((entry) => entry.core.event.eventId)).toEqual([
+      'genesis:kya:tenant:prod:primary:epoch_2', 'evt_rollover_pending',
+    ]);
+    const epochOneEntries = await journal.snapshot({
+      ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1',
+    });
+    expect(epochOneEntries.filter(
+      (entry) => entry.core.event.eventId === 'evt_rollover_recorded',
+    )).toHaveLength(1);
+  });
+
+  it('receipts each flushed outbox item against its own producer source', async () => {
+    const { trail } = local();
+    const outbox = new DurableTestOutbox();
+    const sourceState = new MemoryAuditSourceState();
+    const receipts = vi.spyOn(sourceState, 'markReceipted');
+    const shared = { ...trail.configuration, delivery: 'buffered' as const, outbox, sourceState };
+    const trailA = createAuditTrail({ ...shared, sourceId: 'source-a' });
+    const trailB = createAuditTrail({ ...shared, sourceId: 'source-b' });
+    await trailA.record({ ...baseEvent, eventId: 'evt_source_a' });
+    await trailB.record({ ...baseEvent, eventId: 'evt_source_b' });
+
+    await expect(trailA.flush()).resolves.toEqual({ delivered: 2, failed: 0 });
+    expect(receipts.mock.calls.map(([receiptSourceId, sequence]) => [receiptSourceId, sequence]))
+      .toEqual([['source-a', '1'], ['source-b', '1']]);
+  });
+
+  it('commits buffered outbox items in claimed source-sequence order under concurrency', async () => {
+    const { trail } = local();
+    const outbox = new DurableTestOutbox();
+    const originalEnqueue = outbox.enqueue.bind(outbox);
+    let delayed = false;
+    outbox.enqueue = async (item) => {
+      if (!delayed) {
+        delayed = true;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      await originalEnqueue(item);
+    };
+    const buffered = createAuditTrail({
+      ...trail.configuration,
+      delivery: 'buffered',
+      outbox,
+      sourceState: new MemoryAuditSourceState(),
+    });
+    await Promise.all([
+      buffered.record({ ...baseEvent, eventId: 'evt_concurrent_first' }),
+      buffered.record({ ...baseEvent, eventId: 'evt_concurrent_second' }),
+    ]);
+    expect(outbox.items.map((item) => item.submission.producerEvent.source.sourceSequence))
+      .toEqual(['1', '2']);
+  });
+
+  it('makes direct-mode retries idempotent when eventId and occurredAt are pinned together', async () => {
+    const { trail, journal } = local();
+    const first = await trail.record({
+      ...baseEvent, eventId: 'evt_pinned_retry', occurredAt: 1_750_000_000_123,
+    });
+    const restarted = createAuditTrail({
+      ...trail.configuration, sourceState: new MemoryAuditSourceState(),
+    });
+    const retry = await restarted.record({
+      ...baseEvent, eventId: 'evt_pinned_retry', occurredAt: 1_750_000_000_123,
+    });
+    expect(retry.status).toBe('recorded');
+    expect(retry).toEqual(first);
+    await expect(journal.snapshot({
+      ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1',
+    })).resolves.toHaveLength(2);
+  });
+
+  it('rejects an unpinned same-eventId retry whose rebuilt content drifted', async () => {
+    const { trail } = local();
+    let tick = 0;
+    const drifting = createAuditTrail({
+      ...trail.configuration, clock: { now: () => 1_750_000_000_000 + (tick += 1) },
+    });
+    await drifting.record({ ...baseEvent, eventId: 'evt_drifting_retry' });
+    const restarted = createAuditTrail({
+      ...trail.configuration,
+      clock: { now: () => 1_750_000_000_000 + (tick += 1) },
+      sourceState: new MemoryAuditSourceState(),
+    });
+    await expect(restarted.record({ ...baseEvent, eventId: 'evt_drifting_retry' }))
+      .rejects.toMatchObject({ code: 'AUDIT_EVENT_ID_CONFLICT' });
+  });
+
   it('rejects buffered mode backed only by an ephemeral outbox', () => {
     expect(() => createAuditTrail({
       ...local().trail.configuration,
@@ -343,7 +483,6 @@ describe('AuditTrailService delivery modes', () => {
       (entry) => {
         entry.core.ledgerId = 'wrong-ledger';
       },
-      (entry) => { entry.core.ledgerEpochId = 'wrong-epoch'; },
       (entry) => { entry.eventDigest = `sha256:${'d'.repeat(64)}`; },
       (entry) => { entry.core.eventDigest = `sha256:${'e'.repeat(64)}`; },
       (entry) => { entry.core.event.action.category = 'tampered'; },
@@ -394,5 +533,55 @@ describe('AuditTrailService delivery modes', () => {
         ...baseEvent, eventId: `evt_tampered_receipt_${index}`,
       })).rejects.toMatchObject({ code: 'AUDIT_JOURNAL_FAILURE' });
     }
+  });
+
+  it('accepts a content-bound duplicate entry from an earlier retained epoch', async () => {
+    const { trail } = local();
+    const recorder = {
+      submit: async (submission: AuditRecorderSubmission): Promise<SignedAuditEntryV1> => {
+        const eventDigest = await digestAuditEvent(
+          trail.configuration.hasher,
+          submission.producerEvent,
+        );
+        return {
+          core: {
+            schema: 'https://schema.kya-os.org/v1/protocol/audit/entry/v1.0.0' as const,
+            ledgerId: submission.ledgerId,
+            ledgerEpochId: 'epoch_0',
+            sequence: '7' as const,
+            previousEntryDigest: `sha256:${'a'.repeat(64)}` as const,
+            recordedAt: 1_749_000_000_000,
+            recorder: new Signer().ref,
+            eventDigest,
+            event: structuredClone(submission.producerEvent),
+            evidenceManifestDigest: `sha256:${'b'.repeat(64)}` as const,
+            integritySuite: 'KYA-AUDIT-JCS-SHA256-JWS-2026' as const,
+          },
+          eventDigest,
+          entryDigest: `sha256:${'c'.repeat(64)}` as const,
+          recorderReceipt: {
+            core: {
+              schema: 'https://schema.kya-os.org/v1/protocol/audit/receipt/v1.0.0' as const,
+              ledgerId: submission.ledgerId,
+              ledgerEpochId: 'epoch_0',
+              sequence: '7' as const,
+              eventId: submission.producerEvent.eventId,
+              entryDigest: `sha256:${'c'.repeat(64)}` as const,
+              previousEntryDigest: `sha256:${'a'.repeat(64)}` as const,
+              recordedAt: 1_749_000_000_000,
+              recorder: new Signer().ref,
+              integritySuite: 'KYA-AUDIT-JCS-SHA256-JWS-2026' as const,
+            },
+            jws: 'signature',
+          },
+        };
+      },
+    };
+    const crossEpoch = createAuditTrail({ ...trail.configuration, recorder });
+    await expect(crossEpoch.record({ ...baseEvent, eventId: 'evt_cross_epoch_duplicate' }))
+      .resolves.toMatchObject({
+        status: 'recorded',
+        entry: { core: { ledgerEpochId: 'epoch_0' } },
+      });
   });
 });

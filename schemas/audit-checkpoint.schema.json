@@ -17,7 +17,7 @@
     "rootDigest": { "$ref": "#/$defs/digest" },
     "headEntryDigest": { "$ref": "#/$defs/digest" },
     "previousCheckpointDigest": { "oneOf": [{ "$ref": "#/$defs/digest" }, { "type": "null" }] },
-    "createdAt": { "type": "integer", "minimum": 0 },
+    "createdAt": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
     "issuer": { "$ref": "#/$defs/signerRef" },
     "integritySuite": { "const": "KYA-AUDIT-RFC9162-SHA256-JWS-2026" }
   },

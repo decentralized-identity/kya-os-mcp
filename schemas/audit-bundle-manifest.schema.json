@@ -13,7 +13,7 @@
     "selections": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/selection" } },
     "exporter": { "$ref": "#/$defs/signerRef" },
     "purpose": { "type": "string", "minLength": 1, "maxLength": 256 },
-    "exportedAt": { "type": "integer", "minimum": 0 },
+    "exportedAt": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
     "verificationPolicyDigest": { "$ref": "#/$defs/digest" },
     "inventory": { "type": "array", "maxItems": 10000, "items": { "$ref": "#/$defs/inventoryItem" } },
     "integritySuite": { "const": "KYA-AUDIT-BUNDLE-JCS-SHA256-JWS-2026" }

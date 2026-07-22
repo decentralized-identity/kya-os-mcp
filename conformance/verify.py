@@ -14,8 +14,9 @@ The same run also verifies the positive audit-integrity vector using an
 independent RFC 9162 Merkle implementation (leaf/node domain separation,
 inclusion proof, and consistency proof).
 
-Zero external dependencies: SHA-256 via `hashlib`, JCS via `json.dumps(sort_keys, separators,
-ensure_ascii=False)` (exact for the string/integer vector structures), and Ed25519 verification via the
+Zero external dependencies: SHA-256 via `hashlib`, JCS via an exact RFC 8785 serializer below
+(ECMAScript number formatting and UTF-16 code-unit object-key ordering, covering the full admitted
+value space including fractional numbers and non-BMP keys), and Ed25519 verification via the
 RFC 8032 reference implementation below. No pip install required.
 
     run:  python3 conformance/verify.py   (npm run conformance:verify:crosslang)
@@ -126,9 +127,72 @@ def ed25519_verify(public_key: bytes, message: bytes, signature: bytes) -> bool:
 
 
 # ── Encoding helpers ──────────────────────────────────────────────────────────────
+def _es_number(value) -> str:
+    """ECMAScript Number::toString, the number serialization RFC 8785 requires.
+
+    Python's repr provides the same shortest-round-trip digits as ECMAScript but
+    formats exponents differently (1e-07 vs 1e-7, and different decimal/exponent
+    thresholds), so the digits are reformatted per ECMA-262 7.1.12.1.
+    """
+    if isinstance(value, int):
+        if abs(value) > 2 ** 53 - 1:
+            raise ValueError("unsafe integer outside the admitted JCS space")
+        return str(value)
+    if value != value or value in (float("inf"), float("-inf")):
+        raise ValueError("non-finite number")
+    if value == 0.0:
+        return "0"
+    sign = "-" if value < 0 else ""
+    mantissa, _, exponent = repr(abs(value)).partition("e")
+    exp10 = int(exponent) if exponent else 0
+    integer_part, _, fraction = mantissa.partition(".")
+    if integer_part != "0":
+        n = len(integer_part) + exp10
+    else:
+        n = exp10 - (len(fraction) - len(fraction.lstrip("0")))
+    digits = (integer_part + fraction).lstrip("0").rstrip("0") or "0"
+    k = len(digits)
+    if k <= n <= 21:
+        return sign + digits + "0" * (n - k)
+    if 0 < n <= 21:
+        return sign + digits[:n] + "." + digits[n:]
+    if -6 < n <= 0:
+        return sign + "0." + "0" * (-n) + digits
+    e = n - 1
+    mantissa_out = digits[0] + ("." + digits[1:] if k > 1 else "")
+    return f"{sign}{mantissa_out}e{'+' if e >= 0 else '-'}{abs(e)}"
+
+
+def _jcs_string(value: str) -> str:
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _jcs_serialize(value) -> str:
+    if value is None:
+        return "null"
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    if isinstance(value, str):
+        return _jcs_string(value)
+    if isinstance(value, (int, float)):
+        return _es_number(value)
+    if isinstance(value, list):
+        return "[" + ",".join(_jcs_serialize(item) for item in value) + "]"
+    if isinstance(value, dict):
+        # RFC 8785 orders keys by UTF-16 code units, not code points: a non-BMP
+        # key's surrogates sort before BMP characters above U+D7FF.
+        items = sorted(value.items(), key=lambda pair: pair[0].encode("utf-16-be"))
+        return "{" + ",".join(
+            _jcs_string(key) + ":" + _jcs_serialize(item) for key, item in items
+        ) + "}"
+    raise ValueError(f"unsupported JCS value type: {type(value).__name__}")
+
+
 def jcs(value) -> bytes:
-    """RFC 8785 (JCS) canonical bytes — exact for the string/integer vector structures."""
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    """RFC 8785 (JCS) canonical bytes over the full admitted value space."""
+    return _jcs_serialize(value).encode("utf-8")
 
 
 def b64url_decode(s: str) -> bytes:
@@ -318,6 +382,11 @@ def main() -> int:
     ).hexdigest()
     results.append(("audit event JCS canonical bytes",
                     event_canonical.decode("utf-8") == audit["eventCanonical"]))
+    canonicalization = audit.get("canonicalization")
+    if canonicalization is not None:
+        results.append(("full JCS value space (fractions, exponents, non-BMP keys)",
+                        jcs(canonicalization["value"]).decode("utf-8") ==
+                        canonicalization["canonical"]))
     results.append(("domain-separated audit event digest",
                     event_digest == audit["eventDigest"]))
     results.append(("RFC 9162 audit Merkle root",

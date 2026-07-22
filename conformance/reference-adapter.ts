@@ -318,6 +318,8 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
       const event = parseAuditProducerEvent(input.event);
       const eventValid = canonicalizeJson(event) === input.eventCanonical &&
         await digestAuditEvent(hasher, event) === input.eventDigest;
+      const canonicalizationValid = input.canonicalization === undefined ||
+        canonicalizeJson(input.canonicalization.value) === input.canonicalization.canonical;
       const leaves = input.leaves as Digest[];
       const root = await tree.root(leaves);
       const inclusion = await tree.verifyInclusion({
@@ -334,7 +336,7 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
         newRoot: input.root as Digest,
         auditPath: input.consistency.auditPath as Digest[],
       });
-      return eventValid && root === input.root && inclusion && consistency
+      return eventValid && canonicalizationValid && root === input.root && inclusion && consistency
         ? PASS
         : fail('audit event canonicalization/digest, Merkle root, or proof rejected');
     } catch (error) {

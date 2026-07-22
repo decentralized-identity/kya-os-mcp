@@ -204,6 +204,16 @@ export interface AuditIntegrityInput {
   event: unknown;
   eventCanonical: string;
   eventDigest: `sha256:${string}`;
+  /**
+   * Optional free-form payload exercising the full admitted RFC 8785 value
+   * space (fractional numbers, exponent boundaries, non-BMP object keys with
+   * UTF-16 code-unit key ordering). Implementations must reproduce
+   * `canonical` byte-for-byte from `value`.
+   */
+  canonicalization?: {
+    value: unknown;
+    canonical: string;
+  };
   leaves: `sha256:${string}`[];
   root: `sha256:${string}`;
   inclusion: {

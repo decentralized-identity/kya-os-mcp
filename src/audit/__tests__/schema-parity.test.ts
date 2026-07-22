@@ -1,20 +1,26 @@
 import { readFileSync } from 'node:fs';
 import Ajv2020, { type AnySchema } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
+import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
+import { CryptoProviderAuditHasher } from '../crypto.js';
 import {
   AUDIT_BUNDLE_MANIFEST_SCHEMA_ID,
   AUDIT_CHECKPOINT_SCHEMA_ID,
   AUDIT_ENTRY_SCHEMA_ID,
   AUDIT_EVENT_SCHEMA_ID,
   AUDIT_RECEIPT_SCHEMA_ID,
+  auditAnchorReceiptSchema,
   auditBundleManifestCoreSchema,
   auditCheckpointCoreSchema,
   auditEntryCoreSchema,
+  auditMerkleConsistencyProofSchema,
+  auditMerkleInclusionProofSchema,
   auditObservationReceiptSchema,
   auditProducerEventSchema,
   auditRecorderReceiptCoreSchema,
   auditVerificationPolicySchema,
 } from '../schemas.js';
+import { AuditArtifactVerifier } from '../verifier.js';
 
 interface OrderedDecimalRangeKeyword {
   first: string;
@@ -306,6 +312,66 @@ describe('audit Zod and JSON Schema parity', () => {
     for (const fixture of fixtures) {
       expect(validate(fixture)).toBe(auditObservationReceiptSchema.safeParse(fixture).success);
     }
+  });
+
+  it('shares anchor-receipt and Merkle-proof semantics', () => {
+    const validateAnchor = validator(jsonSchema('audit-anchor-receipt.schema.json'));
+    const anchorReceipt = {
+      schema: 'https://schema.kya-os.org/v1/protocol/audit/anchor-receipt/v1.0.0',
+      kind: 'rfc3161',
+      providerId: 'tsa-1',
+      checkpointDigest: digest('c'),
+      issuedAt: 1_750_000_000_000,
+      receiptData: 'MIIB',
+    };
+    for (const fixture of [
+      anchorReceipt,
+      { ...anchorReceipt, issuedAt: 1e21 },
+      { ...anchorReceipt, receiptData: 'x'.repeat(65_537) },
+      { ...anchorReceipt, providerId: 'x'.repeat(257) },
+      { ...anchorReceipt, extra: true },
+    ]) {
+      expect(validateAnchor(fixture)).toBe(auditAnchorReceiptSchema.safeParse(fixture).success);
+    }
+
+    const validateInclusion = validator(jsonSchema('audit-inclusion-proof.schema.json'));
+    const inclusionProof = { leafIndex: '1', treeSize: '3', auditPath: [digest('a'), digest('b')] };
+    for (const fixture of [
+      inclusionProof,
+      { ...inclusionProof, leafIndex: '1'.repeat(21) },
+      { ...inclusionProof, auditPath: ['sha256:not-hex'] },
+      { ...inclusionProof, extra: true },
+    ]) {
+      expect(validateInclusion(fixture))
+        .toBe(auditMerkleInclusionProofSchema.safeParse(fixture).success);
+    }
+
+    const validateConsistency = validator(jsonSchema('audit-consistency-proof.schema.json'));
+    const consistencyProof = { oldTreeSize: '2', newTreeSize: '3', auditPath: [digest('a')] };
+    for (const fixture of [
+      consistencyProof,
+      { ...consistencyProof, newTreeSize: '1'.repeat(21) },
+      { ...consistencyProof, auditPath: [digest('a'), 'sha256:'] },
+      { ...consistencyProof, extra: true },
+    ]) {
+      expect(validateConsistency(fixture))
+        .toBe(auditMerkleConsistencyProofSchema.safeParse(fixture).success);
+    }
+  });
+
+  it('emits verification reports that validate against the published report schema', async () => {
+    const validate = validator(jsonSchema('audit-verification-report.schema.json'));
+    const verifier = new AuditArtifactVerifier({
+      hasher: new CryptoProviderAuditHasher(new NodeCryptoProvider()),
+      signatures: { verify: async () => false },
+      verifiedAt: () => 1_750_000_000_000,
+    });
+    const report = await verifier.verifyEntries([], policy);
+    expect(validate(report)).toBe(true);
+    expect(validate({
+      ...report,
+      cryptographicIntegrity: { verdict: 'plausible', reasonCodes: [] },
+    })).toBe(false);
   });
 
   it('shares verification-policy semantics including uniqueness and interval order', () => {

@@ -30,12 +30,18 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
-      exclude: ['src/**/__tests__/**', 'src/**/index.ts'],
+      // vitest 4's coverage matching pulls in example-workspace sources loaded
+      // through the resolver aliases; the gate measures the library only.
+      exclude: ['src/**/__tests__/**', 'src/**/index.ts', 'examples/**'],
+      // Ratcheted 2026-07-22 against the vitest 4 (ast-remapped) baseline of
+      // 93.4 / 87.4 / 95.8 / 94.2 - a couple of points of headroom for
+      // legitimate refactors, tight enough that a real coverage regression
+      // fails the gate. Ratchet again rather than lowering.
       thresholds: {
-        lines: 80,
-        branches: 75,
-        functions: 80,
-        statements: 80,
+        lines: 92,
+        branches: 85,
+        functions: 93,
+        statements: 91,
       },
     },
   },

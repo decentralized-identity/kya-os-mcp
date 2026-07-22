@@ -9,7 +9,10 @@ import {
 } from '../index.js';
 import { CryptoProviderAuditHasher } from '../crypto.js';
 import { AuditProtocolError } from '../errors.js';
-import { LocalAuditRecorderClient } from '../providers/recorder-client.js';
+import {
+  LocalAuditRecorderClient,
+  createLocalAuditRecorder,
+} from '../providers/recorder-client.js';
 import { MemoryAuditJournal } from '../providers/memory-journal.js';
 import { AuditRecorderService } from '../recorder-service.js';
 import type { AuditEvidenceProvider } from '../providers/evidence.js';
@@ -344,6 +347,23 @@ describe('AuditRecorderService', () => {
       producerEvent: event('evt_pinned_new_append', 2),
       encryptedEvidence: [],
     }, context)).rejects.toMatchObject({ code: 'AUDIT_EPOCH_MISMATCH' });
+  });
+
+  it('composes an in-process authoritative recorder through the one-call helper', async () => {
+    const client = createLocalAuditRecorder({
+      ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1', tenantRef,
+      binding: 'urn:kya-os:audit-binding:mcp:2025-11-25', sourceId: 'recorder-1',
+      journal: new MemoryAuditJournal(), signer: new TestSigner(),
+      hasher: new CryptoProviderAuditHasher(new NodeCryptoProvider()),
+      clock: new MutableClock(),
+    }, () => context);
+    const entry = await client.submit({
+      ledgerId: 'kya:tenant:prod:primary',
+      producerEvent: event('evt_helper_composed', 1),
+      encryptedEvidence: [],
+    });
+    expect(entry.core.sequence).toBe('1');
+    expect(entry.core.event.eventId).toBe('evt_helper_composed');
   });
 
   it('treats a raced replica genesis as configuration-validated, not identity reuse', async () => {

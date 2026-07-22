@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schema.kya-os.org/v1/protocol/audit/anchor-receipt/v1.0.0",
+  "title": "KYA-OS Supporting Checkpoint Anchor Receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "kind", "providerId", "checkpointDigest", "issuedAt"],
+  "properties": {
+    "schema": { "const": "https://schema.kya-os.org/v1/protocol/audit/anchor-receipt/v1.0.0" },
+    "kind": { "enum": ["worm", "rfc3161", "scitt"] },
+    "providerId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "checkpointDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "issuedAt": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "receiptData": { "type": "string", "minLength": 1, "maxLength": 65536 }
+  }
+}

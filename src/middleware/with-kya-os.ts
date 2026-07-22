@@ -18,6 +18,8 @@
 import { type CryptoProvider } from "../providers/base.js";
 import { RuntimeFetchProvider, NoopFetchProvider } from "../providers/runtime-fetch.js";
 import { NoopAuditLogProvider } from "../providers/audit-log.js";
+import { McpAuditEventAdapter } from "../audit/adapters/mcp.js";
+import { assertAuditCapabilities } from "../audit/assurance.js";
 import { MemoryGrantStore } from "../providers/grant-store.js";
 import { SessionManager } from "../session/manager.js";
 import {
@@ -73,6 +75,20 @@ export function createKyaOsMiddleware(
   config: KyaOsConfig,
   cryptoProvider: CryptoProvider,
 ): KyaOsMiddleware {
+  if (config.audit && config.auditLog) {
+    throw new TypeError('Configure either audit or legacy auditLog, not both');
+  }
+  if (config.audit !== undefined && config.audit !== false) {
+    if (config.audit.capabilities !== undefined) {
+      assertAuditCapabilities(config.audit.capabilities);
+      if (config.audit.auditProfile !== undefined &&
+        config.audit.auditProfile !== config.audit.capabilities.profile) {
+        throw new TypeError('Audit profile must match the validated capability profile');
+      }
+    } else if (config.audit.auditProfile !== undefined && config.audit.auditProfile !== 'AAP-0') {
+      throw new TypeError('Audit profiles above AAP-0 require validated capabilities');
+    }
+  }
   const identity: ProofAgentIdentity = {
     did: config.identity.did,
     kid: config.identity.kid,
@@ -93,6 +109,11 @@ export function createKyaOsMiddleware(
   const proofGenerator = new ProofGenerator(identity, cryptoProvider);
   const delegationConfig = config.delegation;
   const auditLog = config.auditLog ?? new NoopAuditLogProvider();
+  const audit = config.audit !== undefined && config.audit !== false
+    ? new McpAuditEventAdapter(config.audit, {
+        includeToolNames: config.audit.includeToolNames ?? false,
+      })
+    : undefined;
 
   // Emit the proof under the legacy bare key as well, by default, for pre-1.1
   // back-compat. The value is identical under both keys and `_meta` is never
@@ -138,6 +159,7 @@ export function createKyaOsMiddleware(
     sessionManager,
     proofGenerator,
     auditLog,
+    audit,
     grantStore,
     delegationConfig,
     holderBindingMode,

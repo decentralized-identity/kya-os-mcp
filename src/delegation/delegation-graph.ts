@@ -25,6 +25,18 @@ export interface DelegationGraphStorageProvider {
   deleteNode(delegationId: string): Promise<void>;
 }
 
+/** Optional transaction seam for providers that can link parent and child atomically. */
+export interface AtomicDelegationGraphStorageProvider extends DelegationGraphStorageProvider {
+  registerNodeAtomic(node: DelegationNode): Promise<void>;
+}
+
+function supportsAtomicRegistration(
+  storage: DelegationGraphStorageProvider,
+): storage is AtomicDelegationGraphStorageProvider {
+  return 'registerNodeAtomic' in storage &&
+    typeof storage.registerNodeAtomic === 'function';
+}
+
 export class DelegationGraphManager {
   constructor(private storage: DelegationGraphStorageProvider) {}
 
@@ -44,10 +56,33 @@ export class DelegationGraphManager {
       credentialStatusId: params.credentialStatusId,
     };
 
-    await this.storage.setNode(node);
-
     if (params.parentId) {
-      await this.addChildToParent(params.parentId, params.id);
+      const parent = await this.storage.getNode(params.parentId);
+      if (!parent) {
+        throw new Error(`Parent delegation not found: ${params.parentId}`);
+      }
+    }
+
+    if (supportsAtomicRegistration(this.storage)) {
+      await this.storage.registerNodeAtomic(node);
+    } else {
+      await this.storage.setNode(node);
+      if (params.parentId) {
+        try {
+          await this.addChildToParent(params.parentId, params.id);
+        } catch (error) {
+          try {
+            await this.storage.deleteNode(params.id);
+          } catch (rollbackError) {
+            throw new AggregateError(
+              [error, rollbackError],
+              'Delegation registration failed and its non-atomic rollback also failed',
+              { cause: error },
+            );
+          }
+          throw error;
+        }
+      }
     }
 
     return node;

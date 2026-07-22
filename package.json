@@ -1,12 +1,15 @@
 {
   "name": "@kya-os/mcp",
   "version": "1.10.1",
-  "description": "Reference implementation of the KYA-OS protocol for Model Context Protocol servers: delegation, proof, and session primitives",
+  "description": "Reference implementation of the KYA-OS protocol for Model Context Protocol servers: identity, delegation, proofs, sessions, and verifiable audit trails",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "kya-audit": "./dist/audit/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -56,6 +59,14 @@
       "types": "./dist/authz/index.d.ts",
       "default": "./dist/authz/index.js"
     },
+    "./audit": {
+      "types": "./dist/audit/index.d.ts",
+      "default": "./dist/audit/index.js"
+    },
+    "./audit/testing": {
+      "types": "./dist/audit/testing/index.d.ts",
+      "default": "./dist/audit/testing/index.js"
+    },
     "./cheqd": {
       "types": "./dist/integrations/cheqd/index.d.ts",
       "default": "./dist/integrations/cheqd/index.js"
@@ -68,7 +79,10 @@
     "schemas",
     "LICENSE",
     "README.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "AUDITABILITY.md",
+    "CONFORMANCE.md",
+    "SPEC.md"
   ],
   "scripts": {
     "build": "tsc",
@@ -97,7 +111,8 @@
     "example:authz-inspector:http": "npx tsx examples/authz-inspector/src/inspector-http.ts",
     "example:authz-inspector:http:server": "npx tsx examples/authz-inspector/src/http.ts",
     "example:authz-inspector:stdio:server": "npx tsx examples/authz-inspector/src/stdio.ts",
-    "example:cheqd-dlr": "npx tsx examples/cheqd-dlr/operator-flow.ts"
+    "example:cheqd-dlr": "npx tsx examples/cheqd-dlr/operator-flow.ts",
+    "example:audit-trail": "npx tsx examples/audit-trail/walkthrough.ts"
   },
   "dependencies": {
     "jose": "^6.2.3",
@@ -121,6 +136,7 @@
     "@typescript-eslint/eslint-plugin": "^8.57.0",
     "@typescript-eslint/parser": "^8.57.0",
     "@vitest/coverage-v8": "^2.0.0",
+    "ajv": "^8.20.0",
     "commander": "^15.0.0",
     "eslint": "^10.0.3",
     "express": "^5.2.1",
@@ -137,6 +153,8 @@
     "did",
     "protocol",
     "identity",
+    "audit",
+    "transparency-log",
     "dif"
   ],
   "repository": {

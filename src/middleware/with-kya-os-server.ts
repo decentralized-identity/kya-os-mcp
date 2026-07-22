@@ -13,6 +13,8 @@
 
 import type { CryptoProvider } from "../providers/base.js";
 import type { GrantStore } from "../providers/grant-store.js";
+import type { AuditLogProvider } from "../providers/audit-log.js";
+import type { KyaOsAuditTrail } from "./with-kya-os.config-types.js";
 import type { SessionConfig } from "../session/manager.js";
 import { generateDidKeyFromBase64, didKeyFragment } from "../utils/did-helpers.js";
 import {
@@ -57,6 +59,10 @@ export interface WithKyaOsOptions {
    * {@link GrantStore} for production. Passed through to the middleware.
    */
   grantStore?: GrantStore;
+  /** Verifiable audit trail service, or false to explicitly disable auditing. */
+  audit?: KyaOsAuditTrail | false;
+  /** @deprecated Use `audit`; this sink provides legacy capture only. */
+  auditLog?: AuditLogProvider;
   /**
    * How the KYA-OS protocol tool is exposed on the server.
    * - "tool" (default): auto-register `_kyaos`
@@ -127,6 +133,8 @@ export async function withKyaOs(
       session: options.session,
       delegation: options.delegation,
       autoSession: options.autoSession ?? true,
+      ...(options.audit !== undefined ? { audit: options.audit } : {}),
+      ...(options.auditLog !== undefined ? { auditLog: options.auditLog } : {}),
       ...(options.grantStore ? { grantStore: options.grantStore } : {}),
       ...(options.emitLegacyProofKey !== undefined
         ? { emitLegacyProofKey: options.emitLegacyProofKey }

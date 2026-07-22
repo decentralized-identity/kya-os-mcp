@@ -144,7 +144,7 @@ export class SessionManager {
         return {
           success: false,
           error: {
-            code: KYA_OS_ERROR_CODES.handshake_failed,
+            code: KYA_OS_ERROR_CODES.nonce_replay,
             message: 'Nonce already used (replay attack prevention)',
             remediation: 'Generate a new unique nonce for each request',
           },

@@ -9,6 +9,11 @@ export {
 } from './ed25519-constants.js';
 
 export { isRecord } from './guards.js';
+export {
+  assertCanonicalJsonValue,
+  canonicalizeJson,
+  canonicalizeJsonBytes,
+} from './canonical-json.js';
 export { stripTrailingSlashes } from './url.js';
 export {
   createSafeFetch,

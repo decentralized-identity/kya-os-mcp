@@ -88,6 +88,15 @@ export function createProtocol(
   };
 
   async function handleIdentity(): Promise<ProtocolResponse> {
+    const auditAssurance = config.audit !== undefined && config.audit !== false
+      ? {
+          enabled: true,
+          profile: config.audit.capabilities?.profile ?? config.audit.auditProfile ?? 'AAP-0',
+          ...(config.audit.capabilities === undefined
+            ? {}
+            : { capabilities: config.audit.capabilities }),
+        }
+      : { enabled: false, profile: 'AAP-0' };
     return {
       content: [
         {
@@ -99,6 +108,7 @@ export function createProtocol(
             capabilities: ["handshake", "signing", "verification"],
             protocolVersion: "1.0.0",
             clockSkewSeconds: sessionManager.getStats().config.timestampSkewSeconds,
+            auditAssurance,
           }),
         },
       ],

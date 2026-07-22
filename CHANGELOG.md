@@ -7,6 +7,29 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- **Verifiable auditability protocol and `@kya-os/mcp/audit`.** Adds strict,
+  versioned, privacy-minimal events; an authoritative recorder with signed
+  append receipts, atomic compare-and-append, logical-ledger idempotency, and
+  epoch transitions; producer delivery modes and source high-water evidence;
+  RFC 9162 Merkle checkpoints, inclusion/consistency proofs, independent
+  observation, and supporting anchors; encrypted evidence lifecycle; pure
+  historical verification; signed replay bundles; rebuildable projections; and
+  the `kya-audit` offline verification CLI.
+- **Provider contract kit.** `@kya-os/mcp/audit/testing` supplies executable,
+  framework-neutral journal, evidence, observer, and anchor contracts. Memory
+  reference providers cover concurrency, stale heads, duplicates, snapshots,
+  legal holds, disposal, observation conflicts, and role separation.
+- **MCP audit instrumentation and capability discovery.** Typed lifecycle events
+  cover calls, errors, denials, step-up/authorization challenges, handshake
+  rejection, replay rejection, consent/credential/key/config/policy changes,
+  checkpoints, evidence, projections, exports, retention, and administration.
+- **Audit schemas and conformance.** Publishes JSON Schemas for all portable
+  audit artifacts, an `audit-integrity` vector category, independent Python
+  verification of audit JCS/domain-separated hashes/RFC 9162 proofs, an
+  end-to-end walkthrough, and the normative `AUDITABILITY.md` operations guide.
+
 ### Fixed
 
 - **Entity Card spec corrections from working-group review.** Three defects raised
@@ -28,6 +51,11 @@ Versioning: https://semver.org/spec/v2.0.0.html
   signed instead of failing on a self-referential body. Requests without
   `params._meta` hash byte-identically to before; all golden vectors are
   unchanged.
+- Historical proof verification no longer consumes live nonce state or applies
+  present-time freshness rules, and protected JWS `kid` values are bound to the
+  expected verification key.
+- Failed child-delegation registration can no longer leave an orphan graph node,
+  and cached VC results cannot be reused across differing trust/status inputs.
 
 ### Changed
 
@@ -54,6 +82,16 @@ Versioning: https://semver.org/spec/v2.0.0.html
   unchanged, and every cross-reference was updated. A candidate card field
   naming the access-control mechanisms an entity supports is recorded as an
   open coordination item (section 15.7).
+- Proof generation now uses a fresh cryptographic nonce for every proof artifact
+  while preserving the session nonce as session-establishment evidence.
+- Canonical JSON handling is shared and strict RFC 8785, rejecting unsafe
+  integers, cycles, sparse arrays, accessors, and unsupported values before
+  hashing or signing.
+- Delegation graph registration supports atomic parent validation, status-list
+  history is retained for historical decisions, and VC verification cache keys
+  bind all decision inputs.
+- Replayed handshake nonces now report the precise `nonce_replay` protocol code,
+  allowing audit instrumentation to classify replay rejection independently.
 
 ## [1.10.1] - 2026-07-08
 

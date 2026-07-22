@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schema.kya-os.org/v1/protocol/audit/bundle-manifest/v1.0.0",
+  "title": "KYA-OS Audit Bundle Manifest Core v1",
+  "type": "object",
+  "additionalProperties": false,
+  "kyaUniqueProperty": { "array": "inventory", "property": "path" },
+  "required": ["schema", "bundleId", "formatVersion", "selections", "exporter", "purpose", "exportedAt", "verificationPolicyDigest", "inventory", "integritySuite"],
+  "properties": {
+    "schema": { "const": "https://schema.kya-os.org/v1/protocol/audit/bundle-manifest/v1.0.0" },
+    "bundleId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "formatVersion": { "const": "1.0.0" },
+    "selections": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/selection" } },
+    "exporter": { "$ref": "#/$defs/signerRef" },
+    "purpose": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "exportedAt": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "verificationPolicyDigest": { "$ref": "#/$defs/digest" },
+    "inventory": { "type": "array", "maxItems": 10000, "items": { "$ref": "#/$defs/inventoryItem" } },
+    "integritySuite": { "const": "KYA-AUDIT-BUNDLE-JCS-SHA256-JWS-2026" }
+  },
+  "$defs": {
+    "decimal": { "type": "string", "maxLength": 20, "pattern": "^(0|[1-9][0-9]*)$" },
+    "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "signerRef": {
+      "type": "object", "additionalProperties": false, "required": ["did", "kid", "alg"],
+      "properties": {
+        "did": { "type": "string", "minLength": 5, "maxLength": 2048, "pattern": "^did:[^\\r\\n]+$" },
+        "kid": { "type": "string", "minLength": 1, "maxLength": 2304 },
+        "alg": { "enum": ["EdDSA", "ES256"] }
+      }
+    },
+    "selection": {
+      "type": "object", "additionalProperties": false,
+      "kyaOrderedDecimalRange": { "first": "firstSequence", "last": "lastSequence" },
+      "required": ["ledgerId", "ledgerEpochId", "firstSequence", "lastSequence", "expectedHeadDigest", "checkpointTreeSizes"],
+      "properties": {
+        "ledgerId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "ledgerEpochId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "firstSequence": { "$ref": "#/$defs/decimal" },
+        "lastSequence": { "$ref": "#/$defs/decimal" },
+        "expectedHeadDigest": { "$ref": "#/$defs/digest" },
+        "checkpointTreeSizes": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/decimal" } }
+      }
+    },
+    "inventoryItem": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["path", "mediaType", "disposition", "digest", "size"],
+          "properties": {
+            "path": { "type": "string", "minLength": 1, "maxLength": 1024 },
+            "mediaType": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "disposition": { "const": "included" },
+            "digest": { "$ref": "#/$defs/digest" },
+            "size": { "$ref": "#/$defs/decimal" }
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["path", "mediaType", "disposition", "reasonCode"],
+          "properties": {
+            "path": { "type": "string", "minLength": 1, "maxLength": 1024 },
+            "mediaType": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "disposition": { "enum": ["redacted", "disposed", "unavailable", "policy_excluded"] },
+            "reasonCode": { "type": "string", "minLength": 1, "maxLength": 128 }
+          }
+        }
+      ]
+    }
+  }
+}

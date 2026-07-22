@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schema.kya-os.org/v1/protocol/audit/observation/v1.0.0",
+  "title": "KYA-OS Independent Checkpoint Observation Receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["core", "observationDigest", "jws"],
+  "properties": {
+    "core": { "$ref": "#/$defs/core" },
+    "observationDigest": { "$ref": "#/$defs/digest" },
+    "jws": { "type": "string", "minLength": 1, "maxLength": 4096 }
+  },
+  "$defs": {
+    "decimal": { "type": "string", "maxLength": 20, "pattern": "^(0|[1-9][0-9]*)$" },
+    "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "signer": {
+      "type": "object", "additionalProperties": false, "required": ["did", "kid", "alg"],
+      "properties": {
+        "did": { "type": "string", "minLength": 5, "maxLength": 2048, "pattern": "^did:[^\\r\\n]+$" },
+        "kid": { "type": "string", "minLength": 1, "maxLength": 2304 },
+        "alg": { "enum": ["EdDSA", "ES256"] }
+      }
+    },
+    "core": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "observerId", "observer", "ledgerId", "ledgerEpochId", "checkpointDigest", "treeSize", "observedAt", "previousObservationDigest"],
+      "properties": {
+        "schema": { "const": "https://schema.kya-os.org/v1/protocol/audit/observation/v1.0.0" },
+        "observerId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "observer": { "$ref": "#/$defs/signer" },
+        "ledgerId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "ledgerEpochId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "checkpointDigest": { "$ref": "#/$defs/digest" },
+        "treeSize": { "$ref": "#/$defs/decimal" },
+        "observedAt": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "previousObservationDigest": { "oneOf": [{ "$ref": "#/$defs/digest" }, { "type": "null" }] }
+      }
+    }
+  }
+}

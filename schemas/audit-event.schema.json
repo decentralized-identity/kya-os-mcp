@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schema.kya-os.org/v1/protocol/audit/event/v1.0.0",
+  "title": "KYA-OS Audit Producer Event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "eventId", "eventType", "eventVersion", "binding", "occurredAt", "tenantRef", "source", "action", "outcome", "evidence", "details", "privacy"],
+  "properties": {
+    "schema": { "const": "https://schema.kya-os.org/v1/protocol/audit/event/v1.0.0" },
+    "eventId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "eventType": {
+      "enum": [
+        "session.established", "session.rejected", "session.expired", "session.replay_rejected",
+        "tool.call.started", "tool.call.completed", "tool.call.failed", "tool.call.denied", "tool.call.challenged",
+        "proof.generated", "proof.verified", "proof.rejected",
+        "delegation.issued", "delegation.verified", "delegation.rejected", "delegation.revoked", "delegation.cascade_revoked", "delegation.outbound_attached",
+        "authorization.evaluated", "authorization.approved", "authorization.denied", "authorization.step_up_required", "grant.used",
+        "consent.requested", "consent.approved", "consent.denied", "credential.required", "credential.verified", "credential.failed",
+        "key.rotated", "policy.changed", "configuration.changed", "integrity_suite.transitioned",
+        "ledger.epoch.started", "ledger.epoch.transitioned", "checkpoint.created", "checkpoint.anchored", "checkpoint.anchor_failed", "evidence.disposed", "projection.reconciled",
+        "audit.source_high_water", "audit.accessed", "audit.exported", "legal_hold.applied", "retention.executed"
+      ]
+    },
+    "eventVersion": { "const": "1.0.0" },
+    "binding": { "type": "string", "maxLength": 256, "pattern": "^urn:kya-os:audit-binding:[a-z0-9][a-z0-9._:-]*$" },
+    "occurredAt": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "tenantRef": { "$ref": "#/$defs/partyRef" },
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["producer", "sourceId"],
+      "properties": {
+        "producer": { "$ref": "#/$defs/partyRef" },
+        "sourceId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "sourceSequence": { "$ref": "#/$defs/decimal" },
+        "previousSourceEventDigest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "correlationId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "causationId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "trace": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "traceId": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
+        "spanId": { "type": "string", "pattern": "^[a-f0-9]{16}$" }
+      }
+    },
+    "session": {
+      "type": "object", "additionalProperties": false, "required": ["ref"],
+      "properties": {
+        "ref": { "$ref": "#/$defs/partyRef" },
+        "handshakeNonceCommitment": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "actor": { "$ref": "#/$defs/partyRef" },
+    "responsibleParty": { "$ref": "#/$defs/partyRef" },
+    "resource": { "$ref": "#/$defs/partyRef" },
+    "action": {
+      "type": "object", "additionalProperties": false, "required": ["category"],
+      "properties": {
+        "category": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "detailRef": { "$ref": "#/$defs/evidenceRef" }
+      }
+    },
+    "outcome": { "enum": ["succeeded", "failed", "denied", "challenged", "unknown"] },
+    "reason": {
+      "type": "object", "additionalProperties": false, "required": ["code"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "detailRef": { "$ref": "#/$defs/evidenceRef" }
+      }
+    },
+    "authorization": {
+      "type": "object", "additionalProperties": false, "required": ["source", "decision"],
+      "properties": {
+        "source": { "enum": ["delegation", "grant", "anonymous", "policy"] },
+        "decision": { "enum": ["allowed", "denied", "step_up_required", "needs_authorization"] },
+        "scopeId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "delegationRef": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "delegationCredentialDigest": { "$ref": "#/$defs/digest" },
+        "delegationChainDigests": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/digest" } },
+        "statusEvidence": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/evidenceRef" } },
+        "grantRef": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "policyId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "policyVersion": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "policyDigest": { "$ref": "#/$defs/digest" },
+        "verificationCode": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "proof": { "$ref": "#/$defs/evidenceRef" },
+    "evidence": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/evidenceRef" } },
+    "details": { "$ref": "#/$defs/details" },
+    "privacy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["classification", "retentionClass"],
+      "properties": {
+        "classification": { "enum": ["public", "internal", "confidential", "restricted"] },
+        "retentionClass": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "legalHold": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    }
+  },
+  "allOf": [
+    { "if": { "properties": { "eventType": { "pattern": "^session\\." } } }, "then": { "properties": { "details": { "properties": { "family": { "const": "session" } } } } } },
+    { "if": { "properties": { "eventType": { "pattern": "^tool\\." } } }, "then": { "properties": { "details": { "properties": { "family": { "const": "tool" } } } } } },
+    { "if": { "properties": { "eventType": { "pattern": "^proof\\." } } }, "then": { "properties": { "details": { "properties": { "family": { "const": "proof" } } } } } },
+    { "if": { "properties": { "eventType": { "pattern": "^delegation\\." } } }, "then": { "properties": { "details": { "properties": { "family": { "const": "delegation" } } } } } },
+    { "if": { "properties": { "eventType": { "pattern": "^(authorization\\.|grant\\.)" } } }, "then": { "properties": { "details": { "properties": { "family": { "const": "authorization" } } } } } },
+    { "if": { "properties": { "eventType": { "pattern": "^(consent\\.|credential\\.)" } } }, "then": { "properties": { "details": { "properties": { "family": { "const": "consent" } } } } } },
+    { "if": { "properties": { "eventType": { "pattern": "^(key\\.|policy\\.|configuration\\.|integrity_suite\\.)" } } }, "then": { "properties": { "details": { "properties": { "family": { "const": "key" } } } } } },
+    { "if": { "properties": { "eventType": { "pattern": "^(ledger\\.|checkpoint\\.|evidence\\.|projection\\.)" } } }, "then": { "properties": { "details": { "properties": { "family": { "const": "ledger" } } } } } },
+    { "if": { "properties": { "eventType": { "pattern": "^(audit\\.|legal_hold\\.|retention\\.)" } } }, "then": { "properties": { "details": { "properties": { "family": { "const": "administration" } } } } } }
+  ],
+  "$defs": {
+    "decimal": { "type": "string", "maxLength": 20, "pattern": "^(0|[1-9][0-9]*)$" },
+    "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "signerRef": {
+      "type": "object", "additionalProperties": false, "required": ["did", "kid", "alg"],
+      "properties": {
+        "did": { "type": "string", "minLength": 5, "maxLength": 2048, "pattern": "^did:[^\\r\\n]+$" },
+        "kid": { "type": "string", "minLength": 1, "maxLength": 2304 },
+        "alg": { "enum": ["EdDSA", "ES256"] }
+      }
+    },
+    "evidenceRef": {
+      "type": "object", "additionalProperties": false,
+      "required": ["objectId", "ciphertextDigest", "mediaType", "size", "encryption"],
+      "properties": {
+        "objectId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "ciphertextDigest": { "$ref": "#/$defs/digest" },
+        "plaintextCommitment": { "$ref": "#/$defs/digest" },
+        "mediaType": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "size": { "$ref": "#/$defs/decimal" },
+        "encryption": {
+          "type": "object", "additionalProperties": false,
+          "required": ["suite", "keyId", "nonce", "aadDigest"],
+          "properties": {
+            "suite": { "const": "A256GCM" },
+            "keyId": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "nonce": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "aadDigest": { "$ref": "#/$defs/digest" }
+          }
+        }
+      }
+    },
+    "partyRef": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["kind", "did"], "properties": { "kind": { "const": "public_did" }, "did": { "type": "string", "minLength": 5, "maxLength": 2048, "pattern": "^did:[^\\r\\n]+$" } } },
+        { "type": "object", "additionalProperties": false, "required": ["kind", "did"], "properties": { "kind": { "const": "pairwise_did" }, "did": { "type": "string", "minLength": 5, "maxLength": 2048, "pattern": "^did:[^\\r\\n]+$" } } },
+        { "type": "object", "additionalProperties": false, "required": ["kind", "value", "keyId"], "properties": { "kind": { "const": "keyed_commitment" }, "value": { "$ref": "#/$defs/digest" }, "keyId": { "type": "string", "minLength": 1, "maxLength": 256 } } },
+        { "type": "object", "additionalProperties": false, "required": ["kind", "ref"], "properties": { "kind": { "const": "evidence_ref" }, "ref": { "$ref": "#/$defs/evidenceRef" } } }
+      ]
+    },
+    "details": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["family", "phase"], "properties": { "family": { "const": "session" }, "phase": { "enum": ["established", "rejected", "expired", "replay_rejected"] }, "reasonCode": { "type": "string", "minLength": 1, "maxLength": 128 } } },
+        { "type": "object", "additionalProperties": false, "required": ["family", "phase", "attempt"], "properties": { "family": { "const": "tool" }, "phase": { "enum": ["started", "completed", "failed", "denied", "challenged"] }, "attempt": { "$ref": "#/$defs/decimal" }, "idempotencyRef": { "type": "string", "minLength": 1, "maxLength": 256 } } },
+        { "type": "object", "additionalProperties": false, "required": ["family", "phase"], "properties": { "family": { "const": "proof" }, "phase": { "enum": ["generated", "verified", "rejected"] }, "proofDigest": { "$ref": "#/$defs/digest" }, "verificationCode": { "type": "string", "minLength": 1, "maxLength": 128 } } },
+        { "type": "object", "additionalProperties": false, "required": ["family", "phase", "delegationRef"], "properties": { "family": { "const": "delegation" }, "phase": { "enum": ["issued", "verified", "rejected", "revoked", "cascade_revoked", "outbound_attached"] }, "delegationRef": { "type": "string", "minLength": 1, "maxLength": 256 }, "parentRef": { "type": "string", "minLength": 1, "maxLength": 256 }, "statusEvidence": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/evidenceRef" } } } },
+        { "type": "object", "additionalProperties": false, "required": ["family", "phase"], "properties": { "family": { "const": "authorization" }, "phase": { "enum": ["evaluated", "approved", "denied", "step_up_required", "grant_used"] }, "policyDigest": { "$ref": "#/$defs/digest" }, "grantRef": { "type": "string", "minLength": 1, "maxLength": 256 } } },
+        { "type": "object", "additionalProperties": false, "required": ["family", "phase"], "properties": { "family": { "const": "consent" }, "phase": { "enum": ["requested", "approved", "denied", "credential_required", "credential_verified", "credential_failed"] }, "consentRef": { "type": "string", "minLength": 1, "maxLength": 256 } } },
+        { "type": "object", "additionalProperties": false, "required": ["family", "phase"], "properties": { "family": { "const": "key" }, "phase": { "enum": ["rotated", "policy_changed", "configuration_changed", "integrity_suite_transitioned"] }, "previousSigner": { "$ref": "#/$defs/signerRef" }, "nextSigner": { "$ref": "#/$defs/signerRef" }, "configurationDigest": { "$ref": "#/$defs/digest" } } },
+        { "type": "object", "additionalProperties": false, "required": ["family", "phase"], "properties": { "family": { "const": "ledger" }, "phase": { "enum": ["epoch_started", "epoch_transitioned", "checkpoint_created", "checkpoint_anchored", "checkpoint_anchor_failed", "evidence_disposed", "projection_reconciled"] }, "checkpointDigest": { "$ref": "#/$defs/digest" }, "previousEpochId": { "type": "string", "minLength": 1, "maxLength": 256 }, "previousTerminalCheckpointDigest": { "$ref": "#/$defs/digest" }, "successorEpochIds": { "type": "array", "maxItems": 256, "items": { "type": "string", "minLength": 1, "maxLength": 256 } }, "targetEvidenceRef": { "$ref": "#/$defs/evidenceRef" } } },
+        { "type": "object", "additionalProperties": false, "required": ["family", "phase"], "properties": { "family": { "const": "administration" }, "phase": { "enum": ["source_high_water", "accessed", "exported", "legal_hold_applied", "retention_executed"] }, "purpose": { "type": "string", "minLength": 1, "maxLength": 256 }, "sourceSequence": { "$ref": "#/$defs/decimal" }, "selectionDigest": { "$ref": "#/$defs/digest" } } }
+      ]
+    }
+  }
+}

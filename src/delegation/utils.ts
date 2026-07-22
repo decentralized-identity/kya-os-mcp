@@ -5,7 +5,7 @@
  */
 
 import { base64urlEncodeFromString, base64urlDecodeToString } from '../utils/base64.js';
-import { canonicalize } from 'json-canonicalize';
+import { canonicalizeJson } from '../utils/canonical-json.js';
 
 /**
  * Canonicalize a JSON value using RFC 8785 (JSON Canonicalization Scheme).
@@ -19,57 +19,7 @@ import { canonicalize } from 'json-canonicalize';
  * @throws {TypeError} If `obj` is not a valid JSON value
  */
 export function canonicalizeJSON(obj: unknown): string {
-  assertJsonSafe(obj);
-  return canonicalize(obj);
-}
-
-/**
- * Recursively validates that a value is JSON-safe.
- * Throws TypeError for Infinity, NaN, undefined, functions, symbols, bigints.
- */
-function assertJsonSafe(value: unknown, path = '$'): void {
-  if (value === null || typeof value === 'boolean' || typeof value === 'string') {
-    return;
-  }
-
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value)) {
-      throw new TypeError(
-        `Cannot canonicalize non-finite number at ${path}: ${value}`
-      );
-    }
-    return;
-  }
-
-  if (typeof value === 'undefined') {
-    throw new TypeError(`Cannot canonicalize undefined at ${path}`);
-  }
-
-  if (typeof value === 'function') {
-    throw new TypeError(`Cannot canonicalize function at ${path}`);
-  }
-
-  if (typeof value === 'symbol') {
-    throw new TypeError(`Cannot canonicalize symbol at ${path}`);
-  }
-
-  if (typeof value === 'bigint') {
-    throw new TypeError(`Cannot canonicalize bigint at ${path}`);
-  }
-
-  if (Array.isArray(value)) {
-    for (let i = 0; i < value.length; i++) {
-      assertJsonSafe(value[i], `${path}[${i}]`);
-    }
-    return;
-  }
-
-  if (typeof value === 'object') {
-    for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
-      assertJsonSafe(val, `${path}.${key}`);
-    }
-    return;
-  }
+  return canonicalizeJson(obj);
 }
 
 export interface VCJWTHeader {
@@ -186,4 +136,3 @@ export function parseVCJWT(jwt: string): {
     return null;
   }
 }
-

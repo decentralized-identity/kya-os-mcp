@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schema.kya-os.org/v1/protocol/audit/verification-report/v1.0.0",
+  "title": "KYA-OS Audit Verification Report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "policyId", "cryptographicIntegrity", "chainIntegrity", "checkpointIntegrity", "anchorIntegrity", "scopeEvidenceCompleteness", "authorizedAsObserved", "currentAuthorization"],
+  "properties": {
+    "schema": { "const": "https://schema.kya-os.org/v1/protocol/audit/verification-report/v1.0.0" },
+    "policyId": { "type": "string", "minLength": 1 },
+    "verifiedAt": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "cryptographicIntegrity": { "$ref": "#/$defs/dimension" },
+    "chainIntegrity": { "$ref": "#/$defs/dimension" },
+    "checkpointIntegrity": { "$ref": "#/$defs/dimension" },
+    "anchorIntegrity": { "$ref": "#/$defs/dimension" },
+    "scopeEvidenceCompleteness": { "$ref": "#/$defs/dimension" },
+    "authorizedAsObserved": { "$ref": "#/$defs/dimension" },
+    "currentAuthorization": { "$ref": "#/$defs/dimension" }
+  },
+  "$defs": {
+    "dimension": {
+      "type": "object", "additionalProperties": false, "required": ["verdict", "reasonCodes"],
+      "properties": {
+        "verdict": { "enum": ["valid", "invalid", "indeterminate"] },
+        "reasonCodes": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    }
+  }
+}

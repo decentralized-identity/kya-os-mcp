@@ -108,7 +108,7 @@ describe("SessionManager", () => {
       // Same request again (same nonce)
       const second = await manager.validateHandshake(request);
       expect(second.success).toBe(false);
-      expect(second.error?.code).toBe("handshake_failed");
+      expect(second.error?.code).toBe("nonce_replay");
     });
 
     it("should accept different nonces in succession", async () => {

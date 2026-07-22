@@ -139,6 +139,33 @@ describe("DelegationGraphManager", () => {
 
       expect(node.credentialStatusId).toBe("https://example.com/status#123");
     });
+
+    it("should roll back a child when a non-atomic parent link fails", async () => {
+      const parent: DelegationNode = {
+        id: "del-parent",
+        parentId: null,
+        children: [],
+        issuerDid: "did:web:example.com:issuer",
+        subjectDid: "did:web:example.com:subject",
+      };
+      vi.mocked(storage.getNode)
+        .mockResolvedValueOnce(parent)
+        .mockResolvedValueOnce(null);
+
+      await expect(
+        graph.registerDelegation({
+          id: "del-child",
+          parentId: parent.id,
+          issuerDid: parent.subjectDid,
+          subjectDid: "did:web:example.com:child",
+        })
+      ).rejects.toThrow(`Parent delegation not found: ${parent.id}`);
+
+      expect(storage.setNode).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "del-child" })
+      );
+      expect(storage.deleteNode).toHaveBeenCalledWith("del-child");
+    });
   });
 
   describe("getNode", () => {
@@ -477,7 +504,32 @@ describe("DelegationGraphManager", () => {
       expect(result.reason).toContain("Invalid chain");
     });
 
-    // Note: parentId mismatch validation is complex - covered by issuer/subject mismatch test above
+    it("should invalidate a chain whose parent link contradicts its ordering", async () => {
+      vi.mocked(storage.getChain).mockResolvedValue([
+        {
+          id: "del-root",
+          parentId: null,
+          children: ["del-child"],
+          issuerDid: "did:web:example.com:issuer",
+          subjectDid: "did:web:example.com:subject",
+        },
+        {
+          id: "del-child",
+          parentId: "del-other-parent",
+          children: [],
+          issuerDid: "did:web:example.com:subject",
+          subjectDid: "did:web:example.com:child",
+        },
+      ]);
+
+      const result = await graph.validateChain("del-child");
+
+      expect(result).toEqual({
+        valid: false,
+        reason:
+          "Invalid chain: del-child parentId=del-other-parent but actual parent is del-root",
+      });
+    });
 
     it("should return invalid for non-existent delegation", async () => {
       const result = await graph.validateChain("non-existent");
@@ -590,6 +642,7 @@ describe("DelegationGraphManager", () => {
           subjectDid: "did:web:example.com:subject",
         })
       ).rejects.toThrow("Parent delegation not found: non-existent-parent");
+      expect(await graph.getNode("del-orphan")).toBeNull();
     });
 
     it("should not add duplicate children to parent", async () => {
@@ -620,4 +673,3 @@ describe("DelegationGraphManager", () => {
     });
   });
 });
-

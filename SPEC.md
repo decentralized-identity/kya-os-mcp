@@ -1616,6 +1616,67 @@ KYA-OS is designed to layer cleanly on the MCP 2026-07-28 Release Candidate.
   and **Logging** on 12-month windows. KYA-OS uses **none** of these features, so
   the deprecations have **no impact** on KYA-OS implementations.
 
+### 15.3 Auditability Protocol
+
+An implementation that advertises a KYA-OS Audit Assurance Profile (AAP) MUST
+use the versioned audit schemas under `schemas/audit-*.schema.json` and MUST NOT
+infer a stronger claim from detached proofs alone.
+
+The audit protocol separates three authorities:
+
+1. The producer emits a strict, privacy-minimal event with a stable event ID,
+   source ID, source sequence, and optional source-predecessor digest.
+2. Exactly one authoritative recorder for a `(ledgerId, ledgerEpochId)` assigns
+   recorder time, a monotonically increasing decimal sequence, the previous
+   entry digest, and a signed append receipt through an atomic compare-and-append
+   operation.
+3. An independent observer MAY retain and compare signed RFC 9162 checkpoints.
+   WORM, RFC 3161, and SCITT receipts are supporting anchors and MUST NOT be
+   represented as independent split-view detection.
+
+The producer event, entry, receipt, checkpoint, observation, and bundle manifest
+MUST be strictly schema-valid before RFC 8785 canonicalization. Integrity hashes
+MUST use the domain-separated construction
+`SHA-256(UTF8(domain) || 0x00 || JCS(value))`. Entries are immutable: correction,
+redaction, disposal, retention, legal-hold, key transition, and epoch transition
+are represented by new events.
+
+Redelivery of the same authenticated producer/source/event identity and the same
+frozen producer bytes MUST return the original stored receipt. Reuse with
+different bytes MUST fail. This idempotency namespace spans retained epochs of
+the logical ledger. A new epoch starts at sequence zero only through a signed
+genesis that commits the prior epoch and its terminal checkpoint.
+
+Replay-bundle verification MUST receive recorder/observer/exporter trust and
+purpose/scope authorization out of band. Bundle contents cannot authorize their
+own signer or bootstrap their own trust root. A verifier MUST distinguish
+`valid`, `invalid`, and `indeterminate`, MUST keep authorization-as-observed
+separate from current authorization/revocation, and MUST NOT consume a live
+nonce cache when verifying historical proof artifacts.
+
+Sensitive payloads SHOULD be encrypted in a separate evidence provider and
+referenced by opaque randomized identifiers and ciphertext commitments. The
+integrity ledger MUST NOT contain raw tool arguments, responses, access tokens,
+or free-form exception text by default. Evidence disposal MUST NOT mutate the
+retained integrity history.
+
+The AAP levels are cumulative:
+
+- **AAP-0:** no audit assurance.
+- **AAP-1 Recorded:** structured capture of delivered instrumented events.
+- **AAP-2 Chained:** durable atomic accepted history with non-best-effort
+  delivery.
+- **AAP-3 Transparent:** AAP-2 plus durable source high-water reconciliation and
+  signed RFC 9162 checkpoints/proofs.
+- **AAP-4 Observed:** AAP-3 plus independently administered checkpoint
+  observation and authenticated view comparison, with supporting external
+  receipt evidence.
+
+Implementations MUST advertise capabilities truthfully and MUST reject startup
+when configured mechanics cannot satisfy the selected profile. Full event
+semantics, provider contracts, failure behavior, privacy guidance, replay-bundle
+rules, and operational requirements are specified in [`AUDITABILITY.md`](./AUDITABILITY.md).
+
 ---
 
 ## 16. References

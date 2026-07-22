@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schema.kya-os.org/v1/protocol/audit/verification-policy/v1.0.0",
+  "title": "KYA-OS Out-of-Band Audit Verification Policy v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["policyId", "trustedLedgerEpochs", "trustedObservers", "authorizedExporters", "acceptedIntegritySuites", "acceptedAlgorithms", "keyRevocationMode"],
+  "properties": {
+    "policyId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "trustedLedgerEpochs": { "type": "array", "items": { "$ref": "#/$defs/ledgerTrust" } },
+    "trustedObservers": { "type": "array", "items": { "$ref": "#/$defs/keyPolicy" } },
+    "trustedSupportingAnchors": { "type": "array", "items": { "$ref": "#/$defs/anchorTrust" } },
+    "authorizedExporters": { "type": "array", "items": { "$ref": "#/$defs/exporter" } },
+    "acceptedIntegritySuites": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1, "maxLength": 128 }, "uniqueItems": true },
+    "acceptedAlgorithms": { "type": "array", "minItems": 1, "items": { "enum": ["EdDSA", "ES256"] }, "uniqueItems": true },
+    "keyRevocationMode": { "enum": ["as_observed", "current", "both"] },
+    "requiredCheckpointFreshnessMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "requiredAuditProfile": { "enum": ["AAP-0", "AAP-1", "AAP-2", "AAP-3", "AAP-4"] }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "signer": {
+      "type": "object", "additionalProperties": false, "required": ["did", "kid", "alg"],
+      "properties": {
+        "did": { "type": "string", "minLength": 5, "maxLength": 2048, "pattern": "^did:[^\\r\\n]+$" },
+        "kid": { "type": "string", "minLength": 1, "maxLength": 2304 },
+        "alg": { "enum": ["EdDSA", "ES256"] }
+      }
+    },
+    "keyPolicy": {
+      "type": "object", "additionalProperties": false, "required": ["signer"],
+      "kyaOrderedNumberRange": { "first": "validFrom", "last": "validUntil" },
+      "properties": {
+        "signer": { "$ref": "#/$defs/signer" },
+        "validFrom": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "validUntil": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "validFromCheckpoint": { "$ref": "#/$defs/digest" },
+        "validUntilCheckpoint": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "ledgerTrust": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ledgerId", "ledgerEpochId", "recorderKeys"],
+      "properties": {
+        "ledgerId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "ledgerEpochId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "recorderKeys": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/keyPolicy" } },
+        "validFromCheckpoint": { "$ref": "#/$defs/digest" },
+        "validUntilCheckpoint": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "anchorTrust": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "providerId"],
+      "properties": {
+        "kind": { "enum": ["worm", "rfc3161", "scitt"] },
+        "providerId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "validFrom": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "validUntil": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+      }
+    },
+    "exporter": {
+      "type": "object", "additionalProperties": false,
+      "required": ["signerKeys", "allowedLedgerIds", "allowedPurposes"],
+      "properties": {
+        "signerKeys": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/keyPolicy" } },
+        "allowedLedgerIds": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1, "maxLength": 256 }, "uniqueItems": true },
+        "allowedPurposes": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1, "maxLength": 256 }, "uniqueItems": true }
+      }
+    }
+  }
+}

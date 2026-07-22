@@ -15,6 +15,7 @@
 
 import type {
   AdapterResult,
+  AuditIntegrityInput,
   CardProofInput,
   ConformanceAdapter,
   ConformanceVector,
@@ -66,6 +67,8 @@ async function dispatch(
       return adapter.verifyCardProof(vector.input as CardProofInput);
     case 'entity-card':
       return adapter.verifyEntityCard(vector.input as EntityCardInput);
+    case 'audit-integrity':
+      return adapter.verifyAuditIntegrity(vector.input as AuditIntegrityInput);
     default: {
       const exhaustive: never = vector.category;
       throw new Error(`Unknown vector category: ${String(exhaustive)}`);

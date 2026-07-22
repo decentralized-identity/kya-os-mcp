@@ -97,11 +97,18 @@ export function createKyaOsTransport(
         pending.delete(id);
         try {
           const rawResult = message.result as ToolResult | undefined;
-          if (rawResult && !rawResult.isError) {
-            const handler: KyaOsToolHandler = async () => rawResult;
+          if (rawResult) {
+            // Work on a shallow copy: middleware is allowed to decorate its
+            // result, and an error response must remain byte-for-byte free of
+            // a success proof even if a custom middleware implementation does
+            // not apply the core implementation's early error return.
+            const handler: KyaOsToolHandler = async () => ({ ...rawResult });
             const addProof = kyaos.wrapWithProof(call.toolName, handler);
             const proofed = await addProof(call.args);
-            if (proofed._meta !== undefined) {
+            // Error results still traverse the middleware so their terminal
+            // audit event is emitted, but they retain the established wire
+            // contract: no success proof is attached to an error response.
+            if (!rawResult.isError && proofed._meta !== undefined) {
               message = {
                 ...message,
                 result: proofed,

@@ -11,7 +11,19 @@ This directory contains JSON Schema definitions for the core KYA-OS (Model Conte
 | [delegation-credential.json](./delegation-credential.json) | W3C Verifiable Credential for delegations (legacy VC 1.0 shape) |
 | [card-delegation-credential.json](./card-delegation-credential.json) | W3C VC 2.0 + ZCAP-LD delegation profile (Entity Card) |
 | [detached-proof.json](./detached-proof.json) | Cryptographic proof for tool request/response |
-| [well-known-kyaos.json](./well-known-kyaos.json) | Service discovery document |
+| [kya-os-card.schema.json](./kya-os-card.schema.json) | Typed KYA-OS Entity Card |
+| [well-known-mcpi.json](./well-known-mcpi.json) | Service discovery document |
+| [audit-event.schema.json](./audit-event.schema.json) | Strict, privacy-minimal producer audit event core |
+| [audit-entry.schema.json](./audit-entry.schema.json) | Recorder-assigned chained entry core |
+| [audit-receipt.schema.json](./audit-receipt.schema.json) | Signed append-receipt core |
+| [audit-checkpoint.schema.json](./audit-checkpoint.schema.json) | RFC 9162 signed-checkpoint core |
+| [audit-bundle-manifest.schema.json](./audit-bundle-manifest.schema.json) | Signed replay-bundle inventory and scope core |
+| [audit-observation.schema.json](./audit-observation.schema.json) | Independently signed checkpoint observation receipt |
+| [audit-anchor-receipt.schema.json](./audit-anchor-receipt.schema.json) | Supporting WORM, RFC 3161, or SCITT receipt |
+| [audit-inclusion-proof.schema.json](./audit-inclusion-proof.schema.json) | RFC 9162 inclusion proof |
+| [audit-consistency-proof.schema.json](./audit-consistency-proof.schema.json) | RFC 9162 consistency proof |
+| [audit-verification-report.schema.json](./audit-verification-report.schema.json) | Multi-dimensional offline verification result |
+| [audit-verification-policy.schema.json](./audit-verification-policy.schema.json) | Out-of-band recorder, observer, anchor, and exporter trust policy |
 
 ## Usage
 
@@ -73,6 +85,19 @@ https://schema.kya-os.org/v1/protocol/{family}/{resource}/v1.0.0
 
 Schemas can reference each other using `$ref`. For example, the delegation credential schema references shared definitions for constraints and proof structures.
 
+### Audit semantic keywords
+
+Three audit schemas use required KYA-OS semantic keywords for invariants that
+JSON Schema draft 2020-12 cannot express with its standard vocabulary:
+
+- `kyaOrderedDecimalRange` compares two canonical decimal-string properties;
+- `kyaOrderedNumberRange` compares two optional integer properties;
+- `kyaUniqueProperty` requires unique values for one property across an array.
+
+Audit validators MUST implement these keywords rather than treating them as
+annotations. The TypeScript/Ajv parity suite in
+`src/audit/__tests__/schema-parity.test.ts` is the executable reference.
+
 ## Protocol Flow
 
 ```
@@ -107,6 +132,7 @@ These schemas implement types defined in the [KYA-OS Specification](../SPEC.md):
 - **Delegation Credentials**: SPEC.md §4.1–4.2
 - **Detached Proofs**: SPEC.md §5
 - **Discovery**: SPEC.md §14 (Transport Binding)
+- **Auditability**: [AUDITABILITY.md](../AUDITABILITY.md)
 
 ## Contributing
 

@@ -27,6 +27,7 @@ import type {
 } from "./with-kya-os.types.js";
 import type { MiddlewareDeps, AttachOutcomeProof } from "./with-kya-os.deps.js";
 import { sanitizeForMessage } from "./with-kya-os.helpers.js";
+import type { McpAuditContext } from "../audit/adapters/mcp.js";
 
 export interface SessionProof {
   /** Establish a session from a handshake and cache it as the fallback. */
@@ -57,8 +58,97 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     sessionManager,
     proofGenerator,
     auditLog,
+    audit,
     emitLegacyProofKey,
   } = deps;
+  const auditedTerminalResponses = new WeakSet<object>();
+  const auditMetaKey = 'org.kya-os/audit';
+
+  type MutableToolResponse = Awaited<ReturnType<KyaOsToolHandler>>;
+
+  const emitAudit = async (
+    label: string,
+    operation: () => Promise<void> | undefined,
+    toolName?: string,
+  ): Promise<boolean> => {
+    try {
+      await operation();
+      return true;
+    } catch (error) {
+      logger.error(`[kya-os] ${label}`, {
+        ...(toolName === undefined ? {} : { tool: toolName }),
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  };
+
+  const markAuditDegraded = (
+    response: MutableToolResponse,
+    reason: string,
+    stripSuccessProof: boolean,
+  ): MutableToolResponse => {
+    const metadata = {
+      ...((response._meta as Record<string, unknown> | undefined) ?? {}),
+    };
+    if (stripSuccessProof) {
+      delete metadata[KYA_OS_PROOF_META_KEY];
+      delete metadata[LEGACY_PROOF_META_KEY];
+    }
+    metadata[auditMetaKey] = {
+      ...(typeof metadata[auditMetaKey] === 'object' && metadata[auditMetaKey] !== null
+        ? metadata[auditMetaKey] as Record<string, unknown>
+        : {}),
+      status: 'degraded',
+      reason,
+    };
+    response._meta = metadata;
+    response.isError = true;
+    return response;
+  };
+
+  const auditUnavailableResponse = (reason: string): MutableToolResponse => ({
+    content: [{
+      type: 'text',
+      text: JSON.stringify({
+        success: false,
+        error: { code: 'audit_delivery_failed', message: reason },
+      }),
+    }],
+    isError: true,
+    _meta: { [auditMetaKey]: { status: 'degraded', reason } },
+  });
+
+  // In-process trust boundary: handlers run inside the same process as this
+  // middleware, so a handler can set the terminal marker on its own error
+  // responses to take over terminal-outcome auditing. The marker is not a
+  // defense against untrusted handler code; it only prevents double-auditing
+  // by cooperating code paths.
+  const hasTerminalAuditMarker = (response: MutableToolResponse): boolean => {
+    if (auditedTerminalResponses.has(response)) return true;
+    const metadata = response._meta as Record<string, unknown> | undefined;
+    const auditMetadata = metadata?.[auditMetaKey];
+    return typeof auditMetadata === 'object' && auditMetadata !== null &&
+      (auditMetadata as Record<string, unknown>).terminal === true;
+  };
+
+  const auditContext = (
+    context: KyaOsCallContext | undefined,
+  ): McpAuditContext | undefined => context === undefined
+    ? undefined
+    : {
+        ...(context.actor === undefined ? {} : { actor: context.actor }),
+        ...(context.responsibleParty === undefined
+          ? {}
+          : { responsibleParty: context.responsibleParty }),
+        ...(context.authorization === undefined
+          ? {}
+          : { authorization: context.authorization }),
+        ...(context.correlationId === undefined
+          ? {}
+          : { correlationId: context.correlationId }),
+        ...(context.causationId === undefined ? {} : { causationId: context.causationId }),
+      };
 
   /**
    * Place a detached proof into a `_meta` object: always under the namespaced
@@ -86,6 +176,13 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     isError?: boolean;
   }> {
     if (!validateHandshakeFormat(args)) {
+      await emitAudit(
+        'Failed to record rejected session audit event',
+        () => audit?.session('rejected', {
+          succeeded: false,
+          reasonCode: KYA_OS_ERROR_CODES.handshake_failed,
+        }),
+      );
       return {
         content: [
           {
@@ -106,6 +203,26 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
 
     const result: HandshakeResult =
       await sessionManager.validateHandshake(args);
+
+    const auditPhase = result.success
+      ? 'established'
+      : result.error?.code === KYA_OS_ERROR_CODES.nonce_replay
+        ? 'replay_rejected'
+        : 'rejected';
+    const sessionAuditDelivered = await emitAudit(
+      `Failed to record ${auditPhase} session audit event`,
+      () => audit?.session(auditPhase, {
+        succeeded: result.success,
+        ...(result.error === undefined ? {} : { reasonCode: result.error.code }),
+      }),
+    );
+
+    if (result.success && !sessionAuditDelivered) {
+      const failed = auditUnavailableResponse(
+        'Required session audit delivery failed after handshake validation',
+      );
+      return { content: failed.content, isError: true };
+    }
 
     // Cache the established session as the single-process fallback for callers
     // that do not thread a sessionId (e.g. the transport auto-proof path).
@@ -179,20 +296,118 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       sessionId?: string,
       context?: KyaOsCallContext,
     ) => {
-      const result = await handler(args as T, sessionId, context);
+      const intentDelivered = await emitAudit(
+        'Required tool intent audit delivery failed',
+        () => audit?.tool('started', {
+          toolName,
+          outcome: 'unknown',
+          context: auditContext(context),
+        }),
+        toolName,
+      );
+      if (!intentDelivered) {
+        return auditUnavailableResponse(
+          'Required intent audit delivery failed before tool execution',
+        );
+      }
+      let result: Awaited<ReturnType<KyaOsToolHandler>>;
+      try {
+        result = await handler(args as T, sessionId, context);
+      } catch (error) {
+        await emitAudit(
+          'Failed to record thrown tool outcome; preserving original handler error',
+          () => audit?.tool('failed', {
+            toolName,
+            outcome: 'failed',
+            reasonCode: 'HANDLER_THROWN',
+            context: auditContext(context),
+          }),
+          toolName,
+        );
+        throw error;
+      }
 
       if (result.isError) {
+        if (!hasTerminalAuditMarker(result)) {
+          const delivered = await emitAudit(
+            'Failed to record error tool outcome',
+            () => audit?.tool('failed', {
+              toolName,
+              outcome: 'failed',
+              reasonCode: 'HANDLER_ERROR_RESULT',
+              context: auditContext(context),
+            }),
+            toolName,
+          );
+          if (!delivered) {
+            markAuditDegraded(
+              result,
+              'Required terminal audit delivery failed for an error response',
+              false,
+            );
+          }
+        }
         return result;
       }
 
       // Resolve session: explicit param → active session → auto-create
       const resolvedSessionId = sessionId ?? await ensureSession();
       if (!resolvedSessionId) {
+        const proofAuditDelivered = await emitAudit(
+          'Failed to record unavailable proof session',
+          () => audit?.proof('rejected', {
+            outcome: 'failed',
+            verificationCode: 'PROOF_SESSION_UNAVAILABLE',
+            context: auditContext(context),
+          }),
+          toolName,
+        );
+        const terminalAuditDelivered = proofAuditDelivered && await emitAudit(
+          'Failed to record completed tool outcome',
+          () => audit?.tool('completed', {
+            toolName,
+            outcome: 'succeeded',
+            context: auditContext(context),
+          }),
+          toolName,
+        );
+        if (!terminalAuditDelivered) {
+          return markAuditDegraded(
+            result,
+            'Required terminal audit delivery failed after tool completion',
+            true,
+          );
+        }
         return result;
       }
 
       const session = await sessionManager.getSession(resolvedSessionId);
       if (!session) {
+        const proofAuditDelivered = await emitAudit(
+          'Failed to record missing proof session',
+          () => audit?.proof('rejected', {
+            outcome: 'failed',
+            verificationCode: 'PROOF_SESSION_NOT_FOUND',
+            context: auditContext(context),
+          }),
+          toolName,
+        );
+        const terminalAuditDelivered = proofAuditDelivered && await emitAudit(
+          'Failed to record completed tool outcome',
+          () => audit?.tool('completed', {
+            toolName,
+            outcome: 'succeeded',
+            context: auditContext(context),
+          }),
+          toolName,
+        );
+        if (!terminalAuditDelivered) {
+          return markAuditDegraded(
+            result,
+            'Required terminal audit delivery failed after tool completion',
+            true,
+          );
+        }
         return result;
       }
 
@@ -211,6 +426,31 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
         // Inspector, invisible to LLMs), plus the legacy bare key when enabled.
         // Other _meta keys may coexist (SEP-414).
         result._meta = withProofMeta({}, proof);
+
+        const proofAuditDelivered = await emitAudit(
+          'Required generated-proof audit delivery failed',
+          () => audit?.proof('generated', {
+            outcome: 'succeeded',
+            context: auditContext(context),
+          }),
+          toolName,
+        );
+        const terminalAuditDelivered = proofAuditDelivered && await emitAudit(
+          'Required completed-tool audit delivery failed',
+          () => audit?.tool('completed', {
+            toolName,
+            outcome: 'succeeded',
+            context: auditContext(context),
+          }),
+          toolName,
+        );
+        if (!terminalAuditDelivered) {
+          return markAuditDegraded(
+            result,
+            'Required terminal audit delivery failed after tool completion',
+            true,
+          );
+        }
 
         // Hand the verified call to the audit sink. A sink failure MUST NOT
         // break the tool response, so it is logged and swallowed.
@@ -240,6 +480,22 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
         result._meta = {
           proofError: "Proof generation failed — response is unproven",
         };
+        const rejectionAuditDelivered = await emitAudit(
+          'Failed to record proof-generation rejection',
+          () => audit?.proof('rejected', {
+            outcome: 'failed',
+            verificationCode: 'PROOF_GENERATION_FAILED',
+            context: auditContext(context),
+          }),
+          toolName,
+        );
+        if (!rejectionAuditDelivered) {
+          markAuditDegraded(
+            result,
+            'Required proof-failure audit delivery failed after tool completion',
+            true,
+          );
+        }
       }
 
       return result;
@@ -256,6 +512,41 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     paramsOverride,
     responseData,
   ) => {
+    const phase = outcome === 'denied' ? 'denied' : 'step_up_required';
+    const reasonCode = outcome === 'needs_authorization'
+      ? 'NEEDS_AUTHORIZATION'
+      : outcome === 'step_up_required' ? 'STEP_UP_REQUIRED' : 'AUTHORIZATION_DENIED';
+    const authorizationAuditDelivered = await emitAudit(
+      'Failed to record authorization outcome',
+      () => audit?.authorization(phase, {
+        outcome: outcome === 'denied' ? 'denied' : 'challenged',
+        reasonCode,
+      }),
+      toolName,
+    );
+    const terminalAuditDelivered = authorizationAuditDelivered && await emitAudit(
+      'Failed to record terminal authorization tool outcome',
+      () => audit?.tool(outcome === 'denied' ? 'denied' : 'challenged', {
+        toolName,
+        outcome: outcome === 'denied' ? 'denied' : 'challenged',
+        reasonCode,
+      }),
+      toolName,
+    );
+    auditedTerminalResponses.add(response);
+    response._meta = {
+      ...((response._meta as Record<string, unknown> | undefined) ?? {}),
+      [auditMetaKey]: {
+        terminal: true,
+        outcome,
+        ...(!terminalAuditDelivered
+          ? {
+              status: 'degraded',
+              reason: 'Required terminal audit delivery failed for authorization outcome',
+            }
+          : {}),
+      },
+    };
     try {
       const resolvedSessionId = sessionId ?? (await ensureSession());
       if (!resolvedSessionId) return response;
@@ -285,11 +576,35 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
         (response._meta as Record<string, unknown> | undefined) ?? {},
         proof,
       );
+      if (terminalAuditDelivered) {
+        const proofAuditDelivered = await emitAudit(
+          'Failed to record generated outcome proof',
+          () => audit?.proof('generated', { outcome: 'succeeded' }),
+          toolName,
+        );
+        if (!proofAuditDelivered) {
+          markAuditDegraded(
+            response,
+            'Required proof audit delivery failed for authorization outcome',
+            false,
+          );
+        }
+      }
     } catch (error) {
       logger.error("[kya-os] Outcome proof generation failed", {
         tool: toolName,
         error: error instanceof Error ? error.message : String(error),
       });
+      if (terminalAuditDelivered) {
+        await emitAudit(
+          'Failed to record outcome-proof rejection',
+          () => audit?.proof('rejected', {
+            outcome: 'failed',
+            verificationCode: 'OUTCOME_PROOF_GENERATION_FAILED',
+          }),
+          toolName,
+        );
+      }
     }
     return response;
   };

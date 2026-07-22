@@ -231,6 +231,39 @@ describe('ProofVerifier (real crypto)', () => {
     expect(result.errorCode).toBe('CONTENT_BINDING_MISMATCH');
   });
 
+  it('generates and content-verifies retained proofs over fractional tool data', async () => {
+    const gen = new ProofGenerator(
+      { did: agent.did, kid: agent.kid, privateKey: agent.privateKey, publicKey: agent.publicKey },
+      crypto
+    );
+    const session = {
+      sessionId: 'sess_float_content',
+      audience: 'did:web:server.example.com',
+      nonce: `nonce-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      timestamp: Math.floor(Date.now() / 1000),
+      createdAt: Math.floor(Date.now() / 1000),
+      lastActivity: Math.floor(Date.now() / 1000),
+      ttlMinutes: 30,
+      identityState: 'anonymous' as const,
+    };
+    const request = {
+      method: 'tools/call',
+      params: { name: 'quote', arguments: { price: 49.99, latitude: 41.8781 } },
+    };
+    const response = { data: { score: 0.875, temperature: -2.5 } };
+
+    const proof = await gen.generateProof(request, response, session);
+    const result = await makeVerifier().verifier.verifyProofArtifact(
+      proof,
+      getJwk(agent),
+      { request, response },
+    );
+
+    expect(proof.meta.requestHash).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(proof.meta.responseHash).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(result.valid).toBe(true);
+  });
+
   it('fails closed when a responseHash-bound proof is verified with only a request (no response)', async () => {
     // The needs_authorization proof binds the URL-bearing content via responseHash.
     // A caller who supplies only { request } must NOT receive valid — the request

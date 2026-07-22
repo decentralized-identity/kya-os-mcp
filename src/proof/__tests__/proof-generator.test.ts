@@ -202,11 +202,25 @@ describe("ProofGenerator", () => {
       expect(proof.meta.did).toBe(mockIdentity.did);
       expect(proof.meta.kid).toBe(mockIdentity.kid);
       expect(proof.meta.ts).toBeTypeOf("number");
-      expect(proof.meta.nonce).toBe(mockSession.nonce);
+      expect(proof.meta.nonce).not.toBe(mockSession.nonce);
+      expect(proof.meta.nonce).toMatch(/^[A-Za-z0-9_-]{22}$/);
       expect(proof.meta.audience).toBe(mockSession.audience);
       expect(proof.meta.sessionId).toBe(mockSession.sessionId);
       expect(proof.meta.requestHash).toBeTruthy();
       expect(proof.meta.responseHash).toBeTruthy();
+    });
+
+    it("uses a fresh proof nonce for every call in the same session", async () => {
+      const request: ToolRequest = { method: "test-tool", params: { input: "same" } };
+      const response: ToolResponse = { data: { output: "same" } };
+
+      const first = await proofGenerator.generateProof(request, response, mockSession);
+      const second = await proofGenerator.generateProof(request, response, mockSession);
+
+      expect(first.meta.sessionId).toBe(second.meta.sessionId);
+      expect(first.meta.nonce).not.toBe(second.meta.nonce);
+      expect(first.meta.nonce).not.toBe(mockSession.nonce);
+      expect(second.meta.nonce).not.toBe(mockSession.nonce);
     });
 
     it("should include optional fields when provided", async () => {
@@ -365,6 +379,19 @@ describe("ProofGenerator", () => {
       );
 
       expect(isValid).toBe(false);
+    });
+
+    it("should fail closed when the configured verification key has an invalid length", async () => {
+      const request: ToolRequest = { method: "test-tool", params: { input: "hello" } };
+      const response: ToolResponse = { data: { output: "world" } };
+      const proof = await proofGenerator.generateProof(request, response, mockSession);
+      const invalidVerifier = new ProofGenerator(
+        { ...mockIdentity, publicKey: "AA==" },
+        cryptoProvider,
+      );
+
+      await expect(invalidVerifier.verifyProof(proof, request, response))
+        .resolves.toBe(false);
     });
   });
 

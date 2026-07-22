@@ -42,6 +42,7 @@ import {
 import type { ToolRequest } from '../src/proof/generator.js';
 import type {
   AdapterResult,
+  AuditIntegrityInput,
   CardProofInput,
   ConformanceAdapter,
   DelegationChainInput,
@@ -50,6 +51,14 @@ import type {
   SignedProofInput,
   StatusListInput,
 } from './types.js';
+import {
+  CryptoProviderAuditHasher,
+  digestAuditEvent,
+  parseAuditProducerEvent,
+  Rfc9162MerkleTree,
+  type Digest,
+} from '../src/audit/index.js';
+import { canonicalizeJson } from '../src/utils/canonical-json.js';
 import {
   conformanceCompressor,
   conformanceDecompressor,
@@ -299,6 +308,37 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
         : fail(`card rejected (level ${result.conformanceLevel})`);
     } catch (error) {
       return fail(`verifyEntityCard rejected: ${asMessage(error)}`);
+    }
+  }
+
+  async verifyAuditIntegrity(input: AuditIntegrityInput): Promise<AdapterResult> {
+    try {
+      const hasher = new CryptoProviderAuditHasher(this.crypto);
+      const tree = new Rfc9162MerkleTree(hasher);
+      const event = parseAuditProducerEvent(input.event);
+      const eventValid = canonicalizeJson(event) === input.eventCanonical &&
+        await digestAuditEvent(hasher, event) === input.eventDigest;
+      const leaves = input.leaves as Digest[];
+      const root = await tree.root(leaves);
+      const inclusion = await tree.verifyInclusion({
+        leaf: leaves[input.inclusion.leafIndex]!,
+        leafIndex: input.inclusion.leafIndex,
+        treeSize: leaves.length,
+        root: input.root as Digest,
+        auditPath: input.inclusion.auditPath as Digest[],
+      });
+      const consistency = await tree.verifyConsistency({
+        oldSize: input.consistency.oldSize,
+        newSize: leaves.length,
+        oldRoot: input.consistency.oldRoot as Digest,
+        newRoot: input.root as Digest,
+        auditPath: input.consistency.auditPath as Digest[],
+      });
+      return eventValid && root === input.root && inclusion && consistency
+        ? PASS
+        : fail('audit event canonicalization/digest, Merkle root, or proof rejected');
+    } catch (error) {
+      return fail(`verifyAuditIntegrity threw: ${asMessage(error)}`);
     }
   }
 }

@@ -8,6 +8,7 @@ import { generateRequestProof } from '../../delegation/holder-binding.js';
 import { MemoryGrantStore, type Grant } from '../../providers/grant-store.js';
 import type { DelegationCredential, Proof } from '../../types/protocol.js';
 import type { ProofAgentIdentity } from '../../proof/generator.js';
+import type { AuditTrailService } from '../../audit/service.js';
 import { base64urlEncodeFromBytes } from '../../utils/base64.js';
 
 /**
@@ -38,6 +39,7 @@ async function makeServer(opts: {
   server?: ProofAgentIdentity;
   holderBinding?: KyaOsDelegationConfig['holderBinding'];
   grantStore?: MemoryGrantStore;
+  auditRecord?: Pick<AuditTrailService, 'record'>['record'];
 } = {}) {
   const server = opts.server ?? (await makeIdentity());
   const middleware = createKyaOsMiddleware(
@@ -46,6 +48,7 @@ async function makeServer(opts: {
       session: { sessionTtlMinutes: 60 },
       ...(opts.holderBinding ? { delegation: { holderBinding: opts.holderBinding } } : {}),
       ...(opts.grantStore ? { grantStore: opts.grantStore } : {}),
+      ...(opts.auditRecord ? { audit: { record: opts.auditRecord } } : {}),
     },
     crypto,
   );
@@ -163,6 +166,35 @@ describe('wrapWithDelegation — grant retry resolution', () => {
 
     const result = await delegationHandler(middleware)({ item: 'laptop' }, sessionId);
     expect(reached(result)).toBe(true);
+  });
+
+  it('attributes a responsible party when a durable grant carries a user DID', async () => {
+    const store = new MemoryGrantStore();
+    const events: Array<Parameters<AuditTrailService['record']>[0]> = [];
+    const { server, middleware } = await makeServer({
+      grantStore: store,
+      auditRecord: async (event) => {
+        events.push(event);
+        return { status: 'pending', event: event as never };
+      },
+    });
+    const sessionId = await openSession(middleware, server.did);
+    store.bind(activeGrant({
+      agentDid: 'did:key:zAgent',
+      userDid: 'did:example:responsible-party',
+      sessionId,
+    }));
+
+    const result = await delegationHandler(middleware)({ item: 'laptop' }, sessionId);
+
+    expect(reached(result)).toBe(true);
+    expect(events.find((event) => event.eventType === 'grant.used'))
+      .toMatchObject({
+        responsibleParty: {
+          kind: 'pairwise_did',
+          did: 'did:example:responsible-party',
+        },
+      });
   });
 
   it('getByAgent: a session-less grant resolves behind a valid holder-of-key proof (portable)', async () => {

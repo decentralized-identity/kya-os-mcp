@@ -108,6 +108,46 @@ When an agent calls `checkout` without a delegation credential, it gets back a `
 
 ---
 
+## Turn proofs into a verifiable audit trail
+
+Detached proofs establish origin and bind request/response content. The
+`@kya-os/mcp/audit` service composes those proofs and the full authorization
+lifecycle into an atomically ordered, signed ledger with RFC 9162 checkpoints,
+independent observations, privacy-separated evidence, and offline replay
+bundles.
+
+```typescript
+import { withKyaOs, NodeCryptoProvider } from '@kya-os/mcp';
+import { createAuditTrail } from '@kya-os/mcp/audit';
+
+const audit = createAuditTrail({
+  recorder: checkpointRecorderClient, // or createLocalAuditRecorder(...)
+  delivery: 'required',
+  hasher,
+  ledgerId: 'kya:tenant-opaque:prod:primary',
+  expectedLedgerEpochId: 'epoch-2026-07',
+  tenantRef,
+  producer: pairwiseProducerRef,
+  sourceId: 'mcp-server-1',
+  binding: 'urn:kya-os:audit-binding:mcp:2025-11-25',
+  privacy: { classification: 'internal', retentionClass: 'audit-365d' },
+  clock: Date,
+});
+
+await withKyaOs(server, { crypto: new NodeCryptoProvider(), audit });
+```
+
+The MCP adapter records intent, terminal success/failure, denial/challenge,
+proof, delegation, authorization, and replay-rejection paths without copying raw
+tool arguments or response bodies. Delivery and assurance claims are explicit;
+unsafe high-assurance combinations fail at startup.
+
+See [AUDITABILITY.md](./AUDITABILITY.md) for the trust model, provider contracts,
+assurance profiles, Checkpoint integration, replay CLI, and production checklist.
+Run the local walkthrough with `npm run example:audit-trail`.
+
+---
+
 ## Typed, DID-anchored identity: the Entity Card
 
 Proofs answer *what an agent did*. The **Entity Card** answers *who is calling* — a typed, DID-anchored identity (`agent`, `mcp`, `client`, `verifier`, `human`) an entity publishes once and every discovery rail can index. It is claim-minimal: it asserts only identity, type, declared capabilities, and accountability locators. The trust **level** (L1/L2/L3) is never self-claimed — a verifier RECOMPUTES it from evidence. Three ergonomic calls, imported from the published `@kya-os/mcp/card` subpath:
@@ -199,6 +239,7 @@ The server is operated by a maintainer on pinned releases; this repo does not de
 | **Delegation credentials** | W3C Verifiable Credentials with scope constraints, rooted at a Responsible Party |
 | **Revocation** | StatusList2021 bitstring with cascading revocation |
 | **Replay prevention** | Nonce-based handshake with timestamp skew validation |
+| **Verifiable auditability** | Typed producer events, authoritative atomic recorder, signed chain receipts, RFC 9162 checkpoints, independent observation, encrypted evidence references, replay bundles, and offline CLI |
 | **Extensible** | Bring your own KMS, HSM, nonce cache (Redis, DynamoDB, KV), or DID method |
 
 ### Multi-instance deployments

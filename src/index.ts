@@ -312,6 +312,9 @@ export {
   buildAuditRecord,
 } from './providers/audit-log.js';
 
+// Auditability protocol and reference service
+export * from './audit/index.js';
+
 // Durable grant store (the no-paste retry authority) — also reachable via the
 // ./providers subpath; re-exported here at the top level for discoverability.
 export {

@@ -16,6 +16,7 @@ import { createNeedsApprovalError } from "../types/protocol.js";
 import { isKyaOsControlArg } from "../delegation/holder-binding.js";
 import { KYA_OS_ERROR_CODES } from "../errors.js";
 import type {
+  KyaOsCallContext,
   KyaOsToolHandler,
   KyaOsPolicyGate,
   PolicyGateOptions,
@@ -32,7 +33,7 @@ export function createPolicyGate(
   deps: MiddlewareDeps,
   wiring: PolicyGateWiring,
 ): Pick<KyaOsPolicyGate, "withPolicyGate"> {
-  const { proofGenerator } = deps;
+  const { proofGenerator, audit } = deps;
   const { attachOutcomeProof } = wiring;
 
   const defaultRiskClassifier = new RiskClassifier();
@@ -49,7 +50,11 @@ export function createPolicyGate(
     const isValidApprovalSignature =
       opts.isValidApprovalSignature ?? (async () => false);
 
-    return async (args: Record<string, unknown>, sessionId?: string) => {
+    return async (
+      args: Record<string, unknown>,
+      sessionId?: string,
+      context?: KyaOsCallContext,
+    ) => {
       // Drop the reserved _kyaos* namespace plus the (possibly custom) approvals
       // key, so no control arg reaches the handler.
       const cleanArgs: Record<string, unknown> = {};
@@ -77,8 +82,30 @@ export function createPolicyGate(
 
       const decision = await engine.evaluate(policyRequest);
 
+      const auditContext = context === undefined ? undefined : {
+        ...(context.actor === undefined ? {} : { actor: context.actor }),
+        ...(context.responsibleParty === undefined
+          ? {}
+          : { responsibleParty: context.responsibleParty }),
+        ...(context.authorization === undefined
+          ? {}
+          : { authorization: context.authorization }),
+      };
+      await audit?.authorization('evaluated', {
+        outcome: decision.decision === 'allow' ? 'succeeded'
+          : decision.decision === 'deny' ? 'denied' : 'challenged',
+        reasonCode: decision.decision === 'allow'
+          ? undefined
+          : decision.decision === 'deny' ? 'POLICY_DENIED' : 'POLICY_STEP_UP',
+        context: auditContext,
+      });
+
       if (decision.decision === "allow") {
-        return handler(cleanArgs, sessionId);
+        await audit?.authorization('approved', {
+          outcome: 'succeeded',
+          context: auditContext,
+        });
+        return handler(cleanArgs, sessionId, context);
       }
 
       if (decision.decision === "deny") {
@@ -120,7 +147,11 @@ export function createPolicyGate(
         isValidApprovalSignature,
       );
       if (quorumResult.satisfied) {
-        return handler(cleanArgs, sessionId);
+        await audit?.authorization('approved', {
+          outcome: 'succeeded',
+          context: auditContext,
+        });
+        return handler(cleanArgs, sessionId, context);
       }
 
       const needsApproval = createNeedsApprovalError({

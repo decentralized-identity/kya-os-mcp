@@ -35,6 +35,7 @@ import {
   prepareVcJwtCredential,
 } from "./vc-jwt-verify.js";
 import type { VcJwtSignatureResult } from "./vc-jwt-verify.js";
+import { canonicalizeJson } from "../utils/canonical-json.js";
 
 // Re-export the shared type surface so existing imports of DIDResolver /
 // SignatureVerificationFunction / StatusListResolver / … are unchanged.
@@ -88,9 +89,10 @@ export class DelegationCredentialVerifier {
     options: VerifyDelegationVCOptions = {},
   ): Promise<DelegationVCVerificationResult> {
     const startTime = Date.now();
+    const cacheKey = this.cacheKeyForCredential('di', vc, options);
 
-    if (!options.skipCache) {
-      const cached = this.getFromCache(vc.id || "");
+    if (cacheKey !== null) {
+      const cached = this.getFromCache(cacheKey);
       if (cached) {
         return { ...cached, cached: true };
       }
@@ -143,11 +145,11 @@ export class DelegationCredentialVerifier {
           });
 
     return this.finalizeVerification(
-      vc,
       signaturePromise,
       statusPromise,
       basicCheckMs,
       startTime,
+      cacheKey,
     );
   }
 
@@ -173,9 +175,10 @@ export class DelegationCredentialVerifier {
       return prepared.failure;
     }
     const { vc, issuerDid, kid, basicCheckMs } = prepared;
+    const cacheKey = this.cacheKeyForJwt(jwt, vc, options);
 
-    if (!options.skipCache) {
-      const cached = this.getFromCache(vc.id || "");
+    if (cacheKey !== null) {
+      const cached = this.getFromCache(cacheKey);
       if (cached) {
         return { ...cached, cached: true };
       }
@@ -202,11 +205,11 @@ export class DelegationCredentialVerifier {
           });
 
     return this.finalizeVerification(
-      vc,
       signaturePromise,
       statusPromise,
       basicCheckMs,
       startTime,
+      cacheKey,
     );
   }
 
@@ -217,7 +220,6 @@ export class DelegationCredentialVerifier {
    * `validateBasicProperties` has passed.
    */
   private async finalizeVerification(
-    vc: DelegationCredential,
     signaturePromise: Promise<{
       valid: boolean;
       reason?: string;
@@ -226,6 +228,7 @@ export class DelegationCredentialVerifier {
     statusPromise: Promise<StatusCheckResult>,
     basicCheckMs: number,
     startTime: number,
+    cacheKey: string | null,
   ): Promise<DelegationVCVerificationResult> {
     const [signatureResult, statusResult] = await Promise.all([
       signaturePromise,
@@ -239,11 +242,43 @@ export class DelegationCredentialVerifier {
       startTime,
     );
 
-    if (result.valid && vc.id) {
-      this.setInCache(vc.id, result);
+    if (result.valid && cacheKey !== null) {
+      this.setInCache(cacheKey, result);
     }
 
     return result;
+  }
+
+  private cacheKeyForCredential(
+    mode: 'di',
+    vc: DelegationCredential,
+    options: VerifyDelegationVCOptions,
+  ): string | null {
+    if (!this.cacheAllowed(options)) return null;
+    try {
+      return `${mode}\0${vc.id ?? ''}\0${this.verificationProfile(options)}\0${canonicalizeJson(vc)}`;
+    } catch {
+      return null;
+    }
+  }
+
+  private cacheKeyForJwt(
+    jwt: string,
+    vc: DelegationCredential,
+    options: VerifyDelegationVCOptions,
+  ): string | null {
+    if (!this.cacheAllowed(options)) return null;
+    return `jwt\0${vc.id ?? ''}\0${this.verificationProfile(options)}\0${jwt}`;
+  }
+
+  private cacheAllowed(options: VerifyDelegationVCOptions): boolean {
+    return !options.skipCache &&
+      options.didResolver === undefined &&
+      options.statusListResolver === undefined;
+  }
+
+  private verificationProfile(options: VerifyDelegationVCOptions): string {
+    return `signature:${options.skipSignature ? 'skip' : 'verify'}|status:${options.skipStatus ? 'skip' : 'verify'}`;
   }
 
   private getFromCache(id: string): DelegationVCVerificationResult | null {
@@ -280,10 +315,13 @@ export class DelegationCredentialVerifier {
   }
 
   clearCacheEntry(id: string): void {
-    this.cache.delete(id);
-    const idx = this.cacheInsertionOrder.indexOf(id);
-    if (idx !== -1) {
-      this.cacheInsertionOrder.splice(idx, 1);
+    const diPrefix = `di\0${id}\0`;
+    const jwtPrefix = `jwt\0${id}\0`;
+    for (const key of [...this.cache.keys()]) {
+      if (!key.startsWith(diPrefix) && !key.startsWith(jwtPrefix)) continue;
+      this.cache.delete(key);
+      const index = this.cacheInsertionOrder.indexOf(key);
+      if (index !== -1) this.cacheInsertionOrder.splice(index, 1);
     }
   }
 }

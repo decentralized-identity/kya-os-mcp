@@ -15,6 +15,7 @@ import type { PolicyEngine } from "../policy/engine.js";
 import type { RiskClassifier } from "../policy/classifier.js";
 import type { ApprovalGrant } from "../policy/approval.js";
 import type { KyaOsIdentityConfig } from "./with-kya-os.config-types.js";
+import type { AuthorizationEvidence, PartyRef } from "../audit/types.js";
 
 // The configuration input types (KyaOsConfig, KyaOsDelegationConfig, …) live in
 // ./with-kya-os.config-types.ts; re-export them so importers are unchanged.
@@ -38,6 +39,11 @@ export interface KyaOsToolDefinition {
  */
 export interface KyaOsCallContext {
   scopeId?: string;
+  actor?: PartyRef;
+  responsibleParty?: PartyRef;
+  authorization?: AuthorizationEvidence;
+  correlationId?: string;
+  causationId?: string;
 }
 
 export interface KyaOsToolHandler<

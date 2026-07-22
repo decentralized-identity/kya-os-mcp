@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schema.kya-os.org/v1/protocol/audit/consistency-proof/v1.0.0",
+  "title": "KYA-OS RFC 9162 Consistency Proof v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["oldTreeSize", "newTreeSize", "auditPath"],
+  "properties": {
+    "oldTreeSize": { "$ref": "#/$defs/decimal" },
+    "newTreeSize": { "$ref": "#/$defs/decimal" },
+    "auditPath": { "type": "array", "items": { "$ref": "#/$defs/digest" } }
+  },
+  "$defs": {
+    "decimal": { "type": "string", "maxLength": 20, "pattern": "^(0|[1-9][0-9]*)$" },
+    "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+  }
+}

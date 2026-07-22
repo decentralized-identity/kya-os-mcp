@@ -106,6 +106,31 @@ describe('Canonicalization Integrity Audit', () => {
     it('should reject non-finite values in arrays', () => {
       expect(() => canonicalizeJSON([1, 2, Infinity])).toThrow(TypeError);
     });
+
+    it('should reject integers that cannot be represented exactly by JavaScript', () => {
+      expect(() => canonicalizeJSON({ sequence: Number.MAX_SAFE_INTEGER + 1 })).toThrow(
+        'Cannot canonicalize unsafe integer at $.sequence',
+      );
+    });
+
+    it('should reject lone surrogates while accepting valid surrogate pairs', () => {
+      expect(() => canonicalizeJSON('\ud800')).toThrow(
+        'Cannot canonicalize string with lone surrogate at $',
+      );
+      expect(() => canonicalizeJSON({ ['\udc00']: 'value' })).toThrow(
+        'Cannot canonicalize object key with lone surrogate at $',
+      );
+      expect(canonicalizeJSON({ ['\u{1F600}']: 'value' })).toBe('{"😀":"value"}');
+    });
+
+    it('should reject cyclic objects with a stable path-aware error', () => {
+      const cyclic: Record<string, unknown> = {};
+      cyclic['self'] = cyclic;
+
+      expect(() => canonicalizeJSON(cyclic)).toThrow(
+        'Cannot canonicalize cyclic reference at $.self',
+      );
+    });
   });
 
   // ── Valid JSON Values ─────────────────────────────────────────
@@ -120,10 +145,14 @@ describe('Canonicalization Integrity Audit', () => {
       expect(() => canonicalizeJSON(false)).not.toThrow();
     });
 
-    it('should accept finite numbers', () => {
+    it('should accept safe integer numbers', () => {
       expect(() => canonicalizeJSON(42)).not.toThrow();
-      expect(() => canonicalizeJSON(-0.5)).not.toThrow();
       expect(() => canonicalizeJSON(0)).not.toThrow();
+    });
+
+    it('should accept finite fractional numbers', () => {
+      expect(canonicalizeJSON(-0.5)).toBe('-0.5');
+      expect(canonicalizeJSON(49.99)).toBe('49.99');
     });
 
     it('should accept strings', () => {

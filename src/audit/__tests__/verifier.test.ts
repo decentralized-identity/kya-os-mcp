@@ -3,7 +3,11 @@ import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.j
 import type { AuditSignatureVerifier, AuditSigner } from '../crypto.js';
 import { CryptoProviderAuditHasher } from '../crypto.js';
 import { AuditCheckpointBuilder, MemoryAuditCheckpointStore } from '../checkpoint.js';
-import { AuditArtifactVerifier, AUDIT_REASON_CODES } from '../verifier.js';
+import {
+  AuditArtifactVerifier,
+  AUDIT_REASON_CODES,
+  mergeAuditDimensions,
+} from '../verifier.js';
 import { MemoryAuditJournal } from '../providers/memory-journal.js';
 import { AuditRecorderService } from '../recorder-service.js';
 import { MemoryAuditCheckpointObserver } from '../providers/observer.js';
@@ -398,5 +402,16 @@ describe('AuditArtifactVerifier', () => {
         verdict: 'invalid',
         reasonCodes: [AUDIT_REASON_CODES.VERIFICATION_POLICY_INVALID],
       });
+  });
+
+  it('never lets an empty dimension merge inherit a passing verdict', () => {
+    expect(mergeAuditDimensions()).toEqual({
+      verdict: 'indeterminate',
+      reasonCodes: [AUDIT_REASON_CODES.NOT_EVALUATED],
+    });
+    expect(mergeAuditDimensions(
+      { verdict: 'valid', reasonCodes: [] },
+      { verdict: 'valid', reasonCodes: [] },
+    )).toEqual({ verdict: 'valid', reasonCodes: [] });
   });
 });

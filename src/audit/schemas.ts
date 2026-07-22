@@ -433,6 +433,10 @@ export const auditReplayBundleSchema = z.object({
   components: z.array(auditBundleComponentSchema),
 }).strict();
 
+function uniqueArrayItems(values: readonly unknown[]): boolean {
+  return new Set(values).size === values.length;
+}
+
 const historicalAuditKeyPolicySchema = z.object({
   signer: signerRefSchema,
   validFrom: z.number().int().nonnegative().optional(),
@@ -464,11 +468,15 @@ export const auditVerificationPolicySchema = z.object({
   }).strict()).optional(),
   authorizedExporters: z.array(z.object({
     signerKeys: z.array(historicalAuditKeyPolicySchema).min(1),
-    allowedLedgerIds: z.array(z.string().min(1).max(256)).min(1),
-    allowedPurposes: z.array(z.string().min(1).max(256)).min(1),
+    allowedLedgerIds: z.array(z.string().min(1).max(256)).min(1)
+      .refine(uniqueArrayItems, 'Allowed ledger IDs must be unique'),
+    allowedPurposes: z.array(z.string().min(1).max(256)).min(1)
+      .refine(uniqueArrayItems, 'Allowed purposes must be unique'),
   }).strict()),
-  acceptedIntegritySuites: z.array(z.string().min(1).max(128)).min(1),
-  acceptedAlgorithms: z.array(z.enum(['EdDSA', 'ES256'])).min(1),
+  acceptedIntegritySuites: z.array(z.string().min(1).max(128)).min(1)
+    .refine(uniqueArrayItems, 'Accepted integrity suites must be unique'),
+  acceptedAlgorithms: z.array(z.enum(['EdDSA', 'ES256'])).min(1)
+    .refine(uniqueArrayItems, 'Accepted algorithms must be unique'),
   keyRevocationMode: z.enum(['as_observed', 'current', 'both']),
   requiredCheckpointFreshnessMs: z.number().int().nonnegative().optional(),
   requiredAuditProfile: z.enum(['AAP-0', 'AAP-1', 'AAP-2', 'AAP-3', 'AAP-4']).optional(),

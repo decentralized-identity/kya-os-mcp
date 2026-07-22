@@ -119,6 +119,11 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     _meta: { [auditMetaKey]: { status: 'degraded', reason } },
   });
 
+  // In-process trust boundary: handlers run inside the same process as this
+  // middleware, so a handler can set the terminal marker on its own error
+  // responses to take over terminal-outcome auditing. The marker is not a
+  // defense against untrusted handler code; it only prevents double-auditing
+  // by cooperating code paths.
   const hasTerminalAuditMarker = (response: MutableToolResponse): boolean => {
     if (auditedTerminalResponses.has(response)) return true;
     const metadata = response._meta as Record<string, unknown> | undefined;

@@ -163,7 +163,7 @@ export class AuditArtifactVerifier {
         chainReasons.add(AUDIT_REASON_CODES.SCHEMA_INVALID);
         continue;
       }
-      const entry = candidate as SignedAuditEntryV1;
+      const entry = parsed.data as SignedAuditEntryV1;
       const index = validatedEntries.length;
       await this.verifyEntry(entry, verificationPolicy, cryptoReasons);
       this.verifyChainPosition(entry, validatedEntries[index - 1], index, chainReasons);
@@ -221,10 +221,12 @@ export class AuditArtifactVerifier {
     if (!auditVerificationPolicySchema.safeParse(policy).success) {
       return dimension('invalid', [AUDIT_REASON_CODES.VERIFICATION_POLICY_INVALID]);
     }
-    if (!signedAuditCheckpointSchema.safeParse(checkpoint).success) {
+    const parsedCheckpoint = signedAuditCheckpointSchema.safeParse(checkpoint);
+    if (!parsedCheckpoint.success) {
       return dimension('invalid', [AUDIT_REASON_CODES.SCHEMA_INVALID]);
     }
-    const core = checkpoint.core;
+    const validated = parsedCheckpoint.data as SignedAuditCheckpointV1;
+    const core = validated.core;
     if (!policy.acceptedIntegritySuites.includes(core.integritySuite)) {
       reasons.add(AUDIT_REASON_CODES.UNSUPPORTED_SUITE);
     }
@@ -244,12 +246,12 @@ export class AuditArtifactVerifier {
       AUDIT_DIGEST_DOMAINS.checkpoint,
       core,
     );
-    if (expectedDigest !== checkpoint.checkpointDigest) {
+    if (expectedDigest !== validated.checkpointDigest) {
       reasons.add(AUDIT_REASON_CODES.CHECKPOINT_DIGEST_MISMATCH);
     }
     if (!(await this.options.signatures.verify(
       canonicalizeJsonBytes(core),
-      checkpoint.jws,
+      validated.jws,
       core.issuer,
     ))) {
       reasons.add(AUDIT_REASON_CODES.CHECKPOINT_SIGNATURE_INVALID);
@@ -284,19 +286,22 @@ export class AuditArtifactVerifier {
     if (!auditVerificationPolicySchema.safeParse(policy).success) {
       return dimension('invalid', [AUDIT_REASON_CODES.VERIFICATION_POLICY_INVALID]);
     }
-    if (!signedAuditCheckpointSchema.safeParse(checkpoint).success ||
-      !auditObservationReceiptSchema.safeParse(receipt).success) {
+    const parsedCheckpoint = signedAuditCheckpointSchema.safeParse(checkpoint);
+    const parsedReceipt = auditObservationReceiptSchema.safeParse(receipt);
+    if (!parsedCheckpoint.success || !parsedReceipt.success) {
       return dimension('invalid', [AUDIT_REASON_CODES.SCHEMA_INVALID]);
     }
-    const core = receipt.core;
+    const validatedCheckpoint = parsedCheckpoint.data as SignedAuditCheckpointV1;
+    const validatedReceipt = parsedReceipt.data as AuditObservationReceiptV1;
+    const core = validatedReceipt.core;
     if (core.schema !==
       'https://schema.kya-os.org/v1/protocol/audit/observation/v1.0.0') {
       reasons.add(AUDIT_REASON_CODES.SCHEMA_INVALID);
     }
-    if (core.ledgerId !== checkpoint.core.ledgerId ||
-      core.ledgerEpochId !== checkpoint.core.ledgerEpochId ||
-      core.checkpointDigest !== checkpoint.checkpointDigest ||
-      core.treeSize !== checkpoint.core.treeSize) {
+    if (core.ledgerId !== validatedCheckpoint.core.ledgerId ||
+      core.ledgerEpochId !== validatedCheckpoint.core.ledgerEpochId ||
+      core.checkpointDigest !== validatedCheckpoint.checkpointDigest ||
+      core.treeSize !== validatedCheckpoint.core.treeSize) {
       reasons.add(AUDIT_REASON_CODES.OBSERVATION_SCOPE_MISMATCH);
     }
     if (!policy.acceptedAlgorithms.includes(core.observer.alg)) {
@@ -321,12 +326,12 @@ export class AuditArtifactVerifier {
       AUDIT_DIGEST_DOMAINS.observation,
       core,
     );
-    if (digest !== receipt.observationDigest) {
+    if (digest !== validatedReceipt.observationDigest) {
       reasons.add(AUDIT_REASON_CODES.OBSERVATION_DIGEST_MISMATCH);
     }
     if (!(await this.options.signatures.verify(
       canonicalizeJsonBytes(core),
-      receipt.jws,
+      validatedReceipt.jws,
       core.observer,
     ))) {
       reasons.add(AUDIT_REASON_CODES.OBSERVATION_SIGNATURE_INVALID);
@@ -420,6 +425,10 @@ export class AuditArtifactVerifier {
 export function mergeAuditDimensions(
   ...values: readonly AuditVerificationDimension[]
 ): AuditVerificationDimension {
+  if (values.length === 0) {
+    // An empty merge must never inherit a passing verdict by vacuous truth.
+    return dimension('indeterminate', [AUDIT_REASON_CODES.NOT_EVALUATED]);
+  }
   const verdict = values.some((value) => value.verdict === 'invalid')
     ? 'invalid'
     : values.every((value) => value.verdict === 'valid') ? 'valid' : 'indeterminate';

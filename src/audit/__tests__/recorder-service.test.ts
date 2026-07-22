@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
+import { MemoryAuditEvidenceProvider } from '../evidence.js';
 import {
   AUDIT_EVENT_SCHEMA_ID,
   type AuditProducerEventCoreV1,
@@ -343,6 +344,91 @@ describe('AuditRecorderService', () => {
       producerEvent: event('evt_pinned_new_append', 2),
       encryptedEvidence: [],
     }, context)).rejects.toMatchObject({ code: 'AUDIT_EPOCH_MISMATCH' });
+  });
+
+  it('treats a raced replica genesis as configuration-validated, not identity reuse', async () => {
+    const journal = new MemoryAuditJournal();
+    const primary = service({ journal }).recorder;
+    await primary.submitAuthenticated({
+      ledgerId: 'kya:tenant:prod:primary',
+      producerEvent: event('evt_primary_before_race', 1),
+      encryptedEvidence: [],
+    }, context);
+
+    // The replica observes an empty ledger once, then races the committed
+    // genesis whose recorder-authored occurredAt differs from its own.
+    let hidHead = false;
+    const racingJournal: AuditJournalProvider = {
+      capabilities: journal.capabilities,
+      getHead: async (ledger) => {
+        if (!hidHead) {
+          hidHead = true;
+          return null;
+        }
+        return journal.getHead(ledger);
+      },
+      readRange: (input) => journal.readRange(input),
+      compareAndAppend: (input) => journal.compareAndAppend(input),
+      getByIdempotencyKey: (ledgerId, key) => journal.getByIdempotencyKey(ledgerId, key),
+    };
+    const replica = new AuditRecorderService({
+      ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1', tenantRef,
+      binding: 'urn:kya-os:audit-binding:mcp:2025-11-25', sourceId: 'recorder-1',
+      journal: racingJournal, signer: new TestSigner(),
+      hasher: new CryptoProviderAuditHasher(new NodeCryptoProvider()),
+      clock: new MutableClock(1_750_999_999_999),
+    });
+
+    const appended = await replica.submitAuthenticated({
+      ledgerId: 'kya:tenant:prod:primary',
+      producerEvent: event('evt_replica_after_race', 2),
+      encryptedEvidence: [],
+    }, context);
+    expect(appended.core.sequence).toBe('2');
+  });
+
+  it('disposes write-ahead evidence when the append permanently fails uncommitted', async () => {
+    const hasher = new CryptoProviderAuditHasher(new NodeCryptoProvider());
+    const evidence = new MemoryAuditEvidenceProvider(hasher);
+    const journal = new MemoryAuditJournal();
+    let appends = 0;
+    const failingJournal: AuditJournalProvider = {
+      capabilities: journal.capabilities,
+      getHead: (ledger) => journal.getHead(ledger),
+      readRange: (input) => journal.readRange(input),
+      getByIdempotencyKey: (ledgerId, key) => journal.getByIdempotencyKey(ledgerId, key),
+      compareAndAppend: async (input) => {
+        appends += 1;
+        if (appends > 1) throw new Error('journal offline');
+        return journal.compareAndAppend(input);
+      },
+    };
+    const recorder = new AuditRecorderService({
+      ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1', tenantRef,
+      binding: 'urn:kya-os:audit-binding:mcp:2025-11-25', sourceId: 'recorder-1',
+      journal: failingJournal, signer: new TestSigner(), hasher,
+      clock: new MutableClock(), evidence,
+    });
+    const ciphertext = Uint8Array.of(1, 2, 3);
+    const ref = {
+      objectId: 'evi_orphan_test',
+      ciphertextDigest: await hasher.sha256(ciphertext),
+      mediaType: 'application/octet-stream',
+      size: '3',
+      encryption: {
+        suite: 'A256GCM' as const,
+        keyId: 'tenant-key-v1',
+        nonce: 'AAAAAAAAAAAAAAAA',
+        aadDigest: await hasher.sha256(new Uint8Array()),
+      },
+    };
+
+    await expect(recorder.submitAuthenticated({
+      ledgerId: 'kya:tenant:prod:primary',
+      producerEvent: { ...event('evt_orphaned_evidence', 1), evidence: [ref] },
+      encryptedEvidence: [{ ref, ciphertext }],
+    }, context)).rejects.toMatchObject({ code: 'AUDIT_JOURNAL_FAILURE' });
+    await expect(evidence.has(ref)).resolves.toBe(false);
   });
 
   it('requires an authorized, atomic predecessor seal before starting a linked epoch', async () => {

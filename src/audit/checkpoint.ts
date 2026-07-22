@@ -143,7 +143,17 @@ export class AuditCheckpointBuilder {
           'Journal tree size is behind the latest signed checkpoint',
         );
       }
-      if (previousSize === BigInt(entries.length)) return previous;
+      if (previousSize === BigInt(entries.length)) {
+        const currentRoot = await this.tree.root(entries.map((entry) => entry.entryDigest));
+        if (previous.core.rootDigest !== currentRoot ||
+          previous.core.headEntryDigest !== entries[entries.length - 1]!.entryDigest) {
+          throw new AuditProtocolError(
+            AUDIT_ERROR_CODES.CHECKPOINT_CONFLICT,
+            'Journal content forked at the latest checkpointed tree size',
+          );
+        }
+        return previous;
+      }
     }
 
     const first = entries[0]!;

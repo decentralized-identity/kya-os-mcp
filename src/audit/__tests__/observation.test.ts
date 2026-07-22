@@ -94,6 +94,25 @@ describe('checkpoint observation and supporting anchors', () => {
       });
   });
 
+  it('accepts a gapped but consistent checkpoint as catch-up after a missed publication', async () => {
+    const monitor = observer();
+    const first = await monitor.publish(checkpoint(10));
+
+    // The gapped successor links an intermediate checkpoint this observer never
+    // saw; only tree consistency with the last observation is required.
+    const gapped = await monitor.publish({
+      ...checkpoint(30, 'e'),
+      core: { ...checkpoint(30, 'e').core, previousCheckpointDigest: hash('9') },
+    });
+
+    expect(gapped.core.previousObservationDigest).toBe(first.observationDigest);
+    expect(gapped.core.treeSize).toBe('30');
+    expect((await monitor.latest({
+      ledgerId: 'kya:tenant:prod:primary',
+      ledgerEpochId: 'epoch_1',
+    }))?.receipt).toEqual(gapped);
+  });
+
   it('serializes concurrent publication so an observer cannot sign a split view', async () => {
     const monitor = observer();
     const [left, right] = await Promise.allSettled([

@@ -72,8 +72,9 @@ describe('audit provider contract kit', () => {
     const next = checkpoint(20, digest('d'), first.checkpointDigest, digest('e'));
     const conflict = checkpoint(10, digest('f'), null, digest('f'));
     const rollback = checkpoint(9, digest('9'), null, digest('9'));
+    const gapped = checkpoint(40, digest('1'), digest('2'), digest('3'));
     const observerReport = await evaluateAuditObserverProviderContract({
-      fixtures: { first, next, conflict, rollback },
+      fixtures: { first, next, conflict, rollback, gapped },
       createProvider: () => new MemoryAuditCheckpointObserver({
         observerId: 'contract-observer', signer: new ObserverSigner(), hasher,
         clock: { now: () => 1_750_000_001_000 },

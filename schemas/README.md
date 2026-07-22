@@ -87,10 +87,11 @@ Schemas can reference each other using `$ref`. For example, the delegation crede
 
 ### Audit semantic keywords
 
-Two audit schemas use required KYA-OS semantic keywords for invariants that
+Three audit schemas use required KYA-OS semantic keywords for invariants that
 JSON Schema draft 2020-12 cannot express with its standard vocabulary:
 
 - `kyaOrderedDecimalRange` compares two canonical decimal-string properties;
+- `kyaOrderedNumberRange` compares two optional integer properties;
 - `kyaUniqueProperty` requires unique values for one property across an array.
 
 Audit validators MUST implement these keywords rather than treating them as

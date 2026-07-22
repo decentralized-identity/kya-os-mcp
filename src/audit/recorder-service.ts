@@ -164,7 +164,42 @@ export class AuditRecorderService {
 
     await this.ensureInitialized();
     await this.persistSubmittedEvidence(submission.encryptedEvidence, producerEvent);
-    return this.appendEvent(producerEvent, context, false, identity);
+    try {
+      return await this.appendEvent(producerEvent, context, false, identity);
+    } catch (error) {
+      await this.disposeUncommittedEvidence(submission.encryptedEvidence, identity);
+      throw error;
+    }
+  }
+
+  /**
+   * Best-effort compensation for write-ahead evidence whose append failed: the
+   * ciphertext is disposed only after re-confirming that no committed entry
+   * claims this event identity, so a raced idempotent commit is never stripped
+   * of its evidence. Failures here leave orphans for operator retention tooling.
+   */
+  private async disposeUncommittedEvidence(
+    evidence: readonly EncryptedEvidenceInput[],
+    identity: { idempotencyKey: Digest },
+  ): Promise<void> {
+    if (evidence.length === 0 || this.config.evidence === undefined) return;
+    try {
+      const committed = await this.config.journal.getByIdempotencyKey(
+        this.config.ledgerId,
+        identity.idempotencyKey,
+      );
+      if (committed !== null) return;
+      for (const item of evidence) {
+        await this.config.evidence.applyRetention({
+          kind: 'dispose',
+          ref: item.ref,
+          authorizedBy: 'audit-recorder',
+          reason: 'append_failed_uncommitted',
+        });
+      }
+    } catch {
+      // Retaining an orphan is preferable to disposing racing committed evidence.
+    }
   }
 
   private validateSubmissionEnvelope(
@@ -361,7 +396,13 @@ export class AuditRecorderService {
       this.config.ledgerId,
       idempotencyKey,
     );
-    if (duplicate !== null) return this.resolveDuplicate(duplicate, eventDigest);
+    if (duplicate !== null) {
+      // A raced replica genesis differs only in recorder-authored timing, so it
+      // resolves through epoch-configuration validation, not content identity.
+      return genesis
+        ? this.validateExistingGenesis(duplicate)
+        : this.resolveDuplicate(duplicate, eventDigest);
+    }
 
     const ledger = this.ledgerRef();
     for (let attempt = 0; attempt <= this.maxAppendConflicts; attempt += 1) {
@@ -371,7 +412,7 @@ export class AuditRecorderService {
           this.config.ledgerId,
           idempotencyKey,
         );
-        if (raced !== null) return this.resolveDuplicate(raced, eventDigest);
+        if (raced !== null) return this.validateExistingGenesis(raced);
       }
 
       const candidate = await this.buildCandidate(event, eventDigest, head, genesis);

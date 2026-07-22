@@ -216,6 +216,12 @@ a caller that retries `record()` with a stable event ID must also pin
 event-identity conflict. Buffered outbox redelivery is always byte-stable, and
 `flush()` receipts each delivered item against the item's own producer source.
 
+Evidence is persisted write-ahead of its committing entry. If the append then
+permanently fails, the recorder best-effort disposes the orphaned ciphertext
+after re-confirming that no committed entry claims the event identity; a
+disposal failure retains the orphan for operator retention tooling rather than
+risking a racing committed reference.
+
 The outbox contract persists an `attempts` count and yields only delivery-eligible
 items. Retry cadence, attempt caps, and dead-letter routing are provider policy,
 because they depend on the host's queue and operational controls. A durable
@@ -291,7 +297,10 @@ The roles are not interchangeable:
 
 - An independent observer validates, retains, chains, and compares checkpoint
   views. It detects rollback and conflicting same-size roots relative to the
-  views it has independently learned.
+  views it has independently learned. An observer that missed intermediate
+  publications catches up on any gapped extension whose tree consistency with
+  its last observation verifies; the consistency proof, not direct checkpoint
+  chain linkage, is the split-view guarantee.
 - A WORM, RFC 3161, or SCITT adapter provides supporting durability,
   registration, or time evidence. It does not by itself detect a split view.
 

@@ -362,6 +362,12 @@ export interface AuditCheckpointProviderContractFixtures {
   next: SignedAuditCheckpointV1;
   conflict: SignedAuditCheckpointV1;
   rollback: SignedAuditCheckpointV1;
+  /**
+   * A larger checkpoint that does NOT directly link `first` but consistently
+   * extends its tree; when provided, the observer must accept it as catch-up
+   * after a missed publication.
+   */
+  gapped?: SignedAuditCheckpointV1;
 }
 
 /** Executable monotonicity/split-view contract for independent observers. */
@@ -400,6 +406,23 @@ export async function evaluateAuditObserverProviderContract(input: {
       expectContract(rejected, 'observer accepted rollback or split view');
     }
   });
+  if (input.fixtures.gapped !== undefined) {
+    const gapped = input.fixtures.gapped;
+    await check(checks, 'accepts a gapped but consistent extension as catch-up', async () => {
+      const provider = await input.createProvider();
+      const first = await provider.publish(input.fixtures.first);
+      const observation = await provider.publish(gapped);
+      expectContract(
+        observation.core.previousObservationDigest === first.observationDigest,
+        'gapped observation did not link the prior observation receipt',
+      );
+      const latest = await provider.latest(gapped.core);
+      expectContract(
+        latest?.checkpoint.checkpointDigest === gapped.checkpointDigest,
+        'gapped catch-up did not become the latest observation',
+      );
+    });
+  }
   return report('observer', checks);
 }
 

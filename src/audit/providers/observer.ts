@@ -97,9 +97,12 @@ export class MemoryAuditCheckpointObserver implements AuditCheckpointObserverPro
         }
         return existing.receipt;
       }
-      if (checkpoint.core.previousCheckpointDigest !==
-        existing.checkpoint.checkpointDigest ||
-        !(await this.config.verifyConsistency(existing.checkpoint, checkpoint))) {
+      // Direct-successor linkage is deliberately not required: an observer that
+      // missed intermediate publications catches up on any gapped extension,
+      // as long as tree consistency with its last observation verifies
+      // cryptographically. The consistency proof, not the checkpoint chain
+      // link, is the split-view guarantee.
+      if (!(await this.config.verifyConsistency(existing.checkpoint, checkpoint))) {
         throw new AuditProtocolError(
           AUDIT_ERROR_CODES.CHECKPOINT_CONFLICT,
           'Checkpoint does not consistently extend the previously observed tree',

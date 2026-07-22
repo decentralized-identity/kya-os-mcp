@@ -121,6 +121,39 @@ describe('AuditCheckpointBuilder', () => {
     expect(second.jws).toMatch(/^checkpoint\./);
   });
 
+  it('detects a same-size journal content fork instead of returning the stale checkpoint', async () => {
+    const journal = new MemoryAuditJournal();
+    await append(journal, entry(0));
+    await append(journal, entry(1));
+    let forked = false;
+    const forkableJournal: AuditJournalProvider = {
+      capabilities: journal.capabilities,
+      getHead: (input) => journal.getHead(input),
+      getByIdempotencyKey: (ledgerId, key) => journal.getByIdempotencyKey(ledgerId, key),
+      compareAndAppend: (input) => journal.compareAndAppend(input),
+      readRange: async function* (input) {
+        for await (const value of journal.readRange(input)) {
+          yield forked && value.core.sequence === '0'
+            ? { ...value, entryDigest: hash('f') }
+            : value;
+        }
+      },
+    };
+    const builder = new AuditCheckpointBuilder({
+      journal: forkableJournal,
+      store: new MemoryAuditCheckpointStore(),
+      signer: new TestSigner(),
+      hasher: new CryptoProviderAuditHasher(new NodeCryptoProvider()),
+      clock: { now: () => 1_750_000_002_000 },
+    });
+    await builder.createCheckpoint(ledger);
+
+    forked = true;
+    await expect(builder.createCheckpoint(ledger)).rejects.toMatchObject({
+      code: 'AUDIT_CHECKPOINT_CONFLICT',
+    });
+  });
+
   it('returns inclusion and consistency proofs that verify against checkpoints', async () => {
     const journal = new MemoryAuditJournal();
     for (let sequence = 0; sequence < 6; sequence += 1) await append(journal, entry(sequence));

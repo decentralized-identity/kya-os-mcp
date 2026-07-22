@@ -29,6 +29,7 @@
     },
     "keyPolicy": {
       "type": "object", "additionalProperties": false, "required": ["signer"],
+      "kyaOrderedNumberRange": { "first": "validFrom", "last": "validUntil" },
       "properties": {
         "signer": { "$ref": "#/$defs/signer" },
         "validFrom": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },

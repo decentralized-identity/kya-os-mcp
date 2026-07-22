@@ -2,7 +2,7 @@
  * Tests for Base64URL Utilities
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   base64urlDecodeToString,
   base64urlDecodeToBytes,
@@ -234,6 +234,43 @@ describe("Base64URL Utilities", () => {
       const decoded = base64urlDecodeToBytes(encoded);
 
       expect(decoded).toEqual(single);
+    });
+  });
+
+  describe("runtime fallbacks", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("round-trips through the Buffer fallbacks when atob/btoa are absent", () => {
+      vi.stubGlobal("atob", undefined);
+      vi.stubGlobal("btoa", undefined);
+      expect(base64urlDecodeToBytes("AQID")).toEqual(new Uint8Array([1, 2, 3]));
+      expect(base64urlEncodeFromBytes(new Uint8Array([1, 2, 3]))).toBe("AQID");
+      expect(bytesToBase64(new Uint8Array([1, 2, 3]))).toBe("AQID");
+      expect(base64ToBytes("AQID")).toEqual(new Uint8Array([1, 2, 3]));
+      expect(base64urlDecodeToString(base64urlEncodeFromString("hello 世界")))
+        .toBe("hello 世界");
+    });
+
+    it("rejects base64url input containing invalid characters", () => {
+      expect(() => base64urlDecodeToString("!!!")).toThrow(/invalid characters/i);
+    });
+
+    it("round-trips through the atob/btoa paths when Buffer is absent", () => {
+      vi.stubGlobal("Buffer", undefined);
+      expect(base64urlDecodeToString("aGVsbG8")).toBe("hello");
+      expect(base64urlEncodeFromString("hello")).toBe("aGVsbG8");
+      expect(base64urlEncodeFromBytes(new Uint8Array([1, 2, 3]))).toBe("AQID");
+      expect(bytesToBase64(new Uint8Array([1, 2, 3]))).toBe("AQID");
+    });
+
+    it("fails closed when no base64 codec is available at all", () => {
+      vi.stubGlobal("Buffer", undefined);
+      vi.stubGlobal("atob", undefined);
+      vi.stubGlobal("btoa", undefined);
+      expect(() => base64urlDecodeToString("aGVsbG8")).toThrow(/Neither Buffer nor atob/);
+      expect(() => base64urlEncodeFromString("x")).toThrow(/Neither Buffer nor btoa/);
     });
   });
 });

@@ -345,6 +345,47 @@ describe('AuditTrailService delivery modes', () => {
     await expect(outbox.enqueue(changed)).rejects.toThrow(/identity collision/i);
   });
 
+  it('compares redelivered outbox evidence byte-for-byte before accepting it as idempotent', async () => {
+    const { trail } = local();
+    const result = await trail.record({ ...baseEvent, eventId: 'evt_outbox_evidence' });
+    const ref = {
+      objectId: 'evi_outbox',
+      ciphertextDigest: `sha256:${'a'.repeat(64)}` as const,
+      mediaType: 'application/octet-stream',
+      size: '3',
+      encryption: {
+        suite: 'A256GCM' as const,
+        keyId: 'tenant-key-v1',
+        nonce: 'AAAAAAAAAAAAAAAA',
+        aadDigest: `sha256:${'b'.repeat(64)}` as const,
+      },
+    };
+    const item = (ciphertext: Uint8Array, objectId = ref.objectId): AuditOutboxItem => ({
+      eventId: result.event.eventId,
+      submission: {
+        ledgerId: 'kya:tenant:prod:primary',
+        producerEvent: result.event,
+        encryptedEvidence: [{ ref: { ...ref, objectId }, ciphertext }],
+      },
+      enqueuedAt: 1,
+      attempts: 0,
+    });
+    const outbox = new MemoryAuditOutbox();
+    await outbox.enqueue(item(Uint8Array.of(1, 2, 3)));
+
+    // Byte-identical evidence is idempotent; any divergence is an identity collision.
+    await expect(outbox.enqueue(item(Uint8Array.of(1, 2, 3)))).resolves.toBeUndefined();
+    await expect(outbox.enqueue(item(Uint8Array.of(1, 2, 4))))
+      .rejects.toThrow(/identity collision/i);
+    await expect(outbox.enqueue(item(Uint8Array.of(1, 2))))
+      .rejects.toThrow(/identity collision/i);
+    await expect(outbox.enqueue(item(Uint8Array.of(1, 2, 3), 'evi_other')))
+      .rejects.toThrow(/identity collision/i);
+    const remaining: AuditOutboxItem[] = [];
+    for await (const pending of outbox.pending()) remaining.push(pending);
+    expect(remaining).toHaveLength(1);
+  });
+
   it('tracks outbox delivery attempts and removes only acknowledged events', async () => {
     const { trail } = local();
     const firstEvent = await trail.record({ ...baseEvent, eventId: 'evt_outbox_first' });

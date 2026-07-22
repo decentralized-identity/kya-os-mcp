@@ -4,6 +4,27 @@ import { RiskClassifier } from '../classifier.js';
 const c = new RiskClassifier();
 
 describe('RiskClassifier', () => {
+  it('merges partial hints over the heuristic base, ignoring undefined hint fields', () => {
+    const hinted = new RiskClassifier({
+      hints: {
+        'vault.getSecrets': { severity: 'high', blastRadius: undefined },
+        'db.drop': {
+          reversibility: 'reversible', blastRadius: 'record', severity: 'low',
+        },
+      },
+    });
+    // Partial hint: heuristic read base with only the defined field overridden.
+    const partial = hinted.classify({ toolName: 'vault.getSecrets', namespace: 'prod' });
+    expect(partial).toEqual({
+      reversibility: 'reversible', blastRadius: 'record', severity: 'high',
+    });
+    // Complete hint wins outright, even over a destructive verb.
+    const complete = hinted.classify({ toolName: 'db.drop', namespace: 'prod' });
+    expect(complete).toEqual({
+      reversibility: 'reversible', blastRadius: 'record', severity: 'low',
+    });
+  });
+
   it('flags destructive verbs as irreversible/high (catastrophic in prod)', () => {
     const prod = c.classify({ toolName: 'db.drop', namespace: 'prod' });
     expect(prod.reversibility).toBe('irreversible');

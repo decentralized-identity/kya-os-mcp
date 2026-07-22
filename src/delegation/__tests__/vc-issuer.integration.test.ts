@@ -92,6 +92,31 @@ describe('DelegationCredentialIssuer (real crypto)', () => {
     expect(result.checks?.signatureValid).toBe(true);
   });
 
+  it('should issue and verify a credential with a fractional budget constraint', async () => {
+    const vc = await issuer.issueDelegationCredential(makeDelegation({
+      constraints: {
+        scopes: ['payments:send'],
+        crisp: {
+          budget: { unit: 'USD', cap: 49.99 },
+          scopes: [],
+        },
+      },
+    }));
+    const verifier = new DelegationCredentialVerifier({
+      didResolver: createDidKeyResolver(),
+      signatureVerifier: createRealSignatureVerifier(crypto),
+    });
+
+    const result = await verifier.verifyDelegationCredential(vc, {
+      skipStatus: true,
+      skipCache: true,
+    });
+
+    expect(vc.credentialSubject.delegation.constraints.crisp?.budget?.cap).toBe(49.99);
+    expect(result.valid).toBe(true);
+    expect(result.checks?.signatureValid).toBe(true);
+  });
+
   it('should produce deterministic canonicalization for the same input', async () => {
     const delegation = makeDelegation();
     const vc1 = await issuer.issueDelegationCredential(delegation);

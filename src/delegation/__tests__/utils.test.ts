@@ -26,8 +26,8 @@ describe("canonicalizeJSON", () => {
     expect(canonicalizeJSON(-42)).toBe("-42");
   });
 
-  it("should reject fractional protocol numbers", () => {
-    expect(() => canonicalizeJSON(3.14)).toThrow("non-integer number");
+  it("should canonicalize finite fractional numbers", () => {
+    expect(canonicalizeJSON(3.14)).toBe("3.14");
   });
 
   it("should throw for Infinity", () => {
@@ -173,6 +173,17 @@ describe("canonicalizeJSON", () => {
   it("should handle unicode strings", () => {
     const result = canonicalizeJSON("hello 世界");
     expect(result).toBe('"hello 世界"');
+  });
+
+  it("should handle supplementary Unicode characters in values and object keys", () => {
+    expect(canonicalizeJSON({ "😀": "launch 🚀" })).toBe('{"😀":"launch 🚀"}');
+  });
+
+  it("should reject lone surrogates in values and object keys", () => {
+    expect(() => canonicalizeJSON("\ud800")).toThrow("string with lone surrogate at $");
+    expect(() => canonicalizeJSON({ "\udc00": "value" })).toThrow(
+      "object key with lone surrogate at $",
+    );
   });
 
   it("should handle object with numeric keys (sorted as strings)", () => {

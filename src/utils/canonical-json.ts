@@ -11,13 +11,35 @@ import { canonicalize } from 'json-canonicalize';
 
 const encoder = new TextEncoder();
 
+/** RFC 8785 requires invalid Unicode data (unpaired UTF-16 surrogates) to fail. */
+function hasLoneSurrogate(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (index + 1 >= value.length || next < 0xdc00 || next > 0xdfff) return true;
+      index += 1;
+    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Validate that a value has an unambiguous JSON representation. */
 export function assertCanonicalJsonValue(
   value: unknown,
   path = '$',
   ancestors: WeakSet<object> = new WeakSet<object>(),
 ): void {
-  if (value === null || typeof value === 'boolean' || typeof value === 'string') {
+  if (value === null || typeof value === 'boolean') {
+    return;
+  }
+
+  if (typeof value === 'string') {
+    if (hasLoneSurrogate(value)) {
+      throw new TypeError(`Cannot canonicalize string with lone surrogate at ${path}`);
+    }
     return;
   }
 
@@ -25,10 +47,7 @@ export function assertCanonicalJsonValue(
     if (!Number.isFinite(value)) {
       throw new TypeError(`Cannot canonicalize non-finite number at ${path}: ${value}`);
     }
-    if (!Number.isInteger(value)) {
-      throw new TypeError(`Cannot canonicalize non-integer number at ${path}: ${value}`);
-    }
-    if (!Number.isSafeInteger(value)) {
+    if (Number.isInteger(value) && !Number.isSafeInteger(value)) {
       throw new TypeError(`Cannot canonicalize unsafe integer at ${path}: ${value}`);
     }
     return;
@@ -75,9 +94,8 @@ export function assertCanonicalJsonValue(
       if (typeof key === 'symbol') {
         throw new TypeError(`Cannot canonicalize symbol-keyed property at ${path}`);
       }
-      if ([...key].some((character) => (character.codePointAt(0) ?? 0) > 0xffff) ||
-        /[\uD800-\uDFFF]/.test(key)) {
-        throw new TypeError(`Cannot canonicalize non-BMP or surrogate object key at ${path}`);
+      if (hasLoneSurrogate(key)) {
+        throw new TypeError(`Cannot canonicalize object key with lone surrogate at ${path}`);
       }
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (!descriptor?.enumerable) continue;

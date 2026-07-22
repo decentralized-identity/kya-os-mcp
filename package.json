@@ -135,7 +135,7 @@
     "@types/node": "^26.0.1",
     "@typescript-eslint/eslint-plugin": "^8.57.0",
     "@typescript-eslint/parser": "^8.57.0",
-    "@vitest/coverage-v8": "^2.0.0",
+    "@vitest/coverage-v8": "^4.1.10",
     "ajv": "^8.20.0",
     "commander": "^15.0.0",
     "eslint": "^10.0.3",
@@ -143,7 +143,7 @@
     "tsx": "^4.22.4",
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.57.0",
-    "vitest": "^2.0.0"
+    "vitest": "^4.1.10"
   },
   "keywords": [
     "kya-os",

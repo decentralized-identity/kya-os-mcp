@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schema.kya-os.org/v1/protocol/mcp-extension/settings/v1.0.0",
+  "title": "KYA-OS MCP Extension Settings",
+  "description": "The settings object declared under capabilities.extensions[\"org.kya-os/delegation\"] in MCP ClientCapabilities and ServerCapabilities (SEP-2133). All members are optional; an empty object means the extension is supported with default configuration. Unknown members are ignored for forward compatibility. See SPEC-MCP-EXTENSION.md section 3.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "The SPEC-MCP-EXTENSION.md document version the peer implements. Defaults to 1.0.0.",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$",
+      "default": "1.0.0"
+    },
+    "proofProfiles": {
+      "type": "array",
+      "description": "Proof profiles the peer can mint (client) or verify (server). Defaults to [\"org.kya-os/proof@1\"].",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1,
+      "uniqueItems": true,
+      "default": ["org.kya-os/proof@1"]
+    },
+    "didMethods": {
+      "type": "array",
+      "description": "DID methods the peer uses (client) or resolves (server), as full method prefixes, e.g. did:key, did:web. Defaults to [\"did:key\", \"did:web\"]; did:cheqd is explicit opt-in per SPEC.md section 4.4.1.",
+      "items": { "type": "string", "pattern": "^did:[a-z0-9]+$" },
+      "minItems": 1,
+      "uniqueItems": true,
+      "default": ["did:key", "did:web"]
+    },
+    "required": {
+      "type": "boolean",
+      "description": "Server-side only: when true, the server rejects requests from clients that did not declare org.kya-os/delegation, using JSON-RPC error -32021 (MissingRequiredClientCapabilityError). Meaningless on a client declaration and ignored there. Defaults to false.",
+      "default": false
+    }
+  },
+  "additionalProperties": true
+}

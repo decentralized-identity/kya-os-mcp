@@ -1,0 +1,157 @@
+{
+  "version": "1.0.0",
+  "category": "negotiation",
+  "vectors": [
+    {
+      "id": "negotiation/declared-optional",
+      "category": "negotiation",
+      "description": "Client declares org.kya-os/decentralized-authority in per-request _meta clientCapabilities; server does not require it",
+      "expected": "pass",
+      "reason": "A declared extension on an optional server is admitted with the extension active",
+      "input": {
+        "serverSettings": { "version": "1.0.0", "proofProfiles": ["org.kya-os/proof@1"] },
+        "request": {
+          "method": "tools/call",
+          "params": {
+            "name": "read_file",
+            "arguments": { "path": "/tmp/notes.txt" },
+            "_meta": {
+              "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+              "io.modelcontextprotocol/clientCapabilities": {
+                "extensions": {
+                  "org.kya-os/decentralized-authority": {
+                    "version": "1.0.0",
+                    "proofProfiles": ["org.kya-os/proof@1"],
+                    "didMethods": ["did:key", "did:web"]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "negotiation/absent-optional",
+      "category": "negotiation",
+      "description": "Client does not declare the extension; server does not require it",
+      "expected": "pass",
+      "reason": "Graceful degradation: an unaware client gets core MCP behavior on an optional server",
+      "input": {
+        "serverSettings": {},
+        "request": {
+          "method": "tools/call",
+          "params": { "name": "read_file", "arguments": { "path": "/tmp/notes.txt" } }
+        }
+      }
+    },
+    {
+      "id": "negotiation/absent-required",
+      "category": "negotiation",
+      "description": "Client does not declare the extension; server requires it",
+      "expected": "fail",
+      "reason": "A required-mode server MUST reject an undeclared client with -32021 (extension_not_declared)",
+      "input": {
+        "serverSettings": { "required": true },
+        "request": {
+          "method": "tools/call",
+          "params": {
+            "name": "read_file",
+            "arguments": { "path": "/tmp/notes.txt" },
+            "_meta": { "io.modelcontextprotocol/protocolVersion": "2026-07-28" }
+          }
+        }
+      }
+    },
+    {
+      "id": "negotiation/malformed-required",
+      "category": "negotiation",
+      "description": "Client declaration entry is present but malformed; server requires the extension",
+      "expected": "fail",
+      "reason": "A malformed settings object MUST be treated as absent (fail closed), so a required server rejects with -32021",
+      "input": {
+        "serverSettings": { "required": true },
+        "request": {
+          "method": "tools/call",
+          "params": {
+            "name": "read_file",
+            "arguments": { "path": "/tmp/notes.txt" },
+            "_meta": {
+              "io.modelcontextprotocol/clientCapabilities": {
+                "extensions": {
+                  "org.kya-os/decentralized-authority": {
+                    "version": 1,
+                    "proofProfiles": "org.kya-os/proof@1"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "negotiation/legacy-initialize-required",
+      "category": "negotiation",
+      "description": "2025-11-25 peer declared the extension via initialize-era capabilities.extensions; server requires it",
+      "expected": "pass",
+      "reason": "The initialize-era carriage is a valid declaration when no per-request declaration is present",
+      "input": {
+        "serverSettings": { "required": true },
+        "request": {
+          "method": "tools/call",
+          "params": { "name": "read_file", "arguments": { "path": "/tmp/notes.txt" } }
+        },
+        "initializeCapabilities": {
+          "extensions": {
+            "org.kya-os/decentralized-authority": { "version": "1.0.0", "didMethods": ["did:web"] }
+          }
+        }
+      }
+    },
+    {
+      "id": "negotiation/empty-object-required",
+      "category": "negotiation",
+      "description": "Client declares the extension as an empty settings object; server requires it",
+      "expected": "pass",
+      "reason": "Per SEP-2133 an empty object means supported-with-default-configuration, which satisfies required mode",
+      "input": {
+        "serverSettings": { "required": true },
+        "request": {
+          "method": "tools/call",
+          "params": {
+            "name": "read_file",
+            "arguments": { "path": "/tmp/notes.txt" },
+            "_meta": {
+              "io.modelcontextprotocol/clientCapabilities": {
+                "extensions": { "org.kya-os/decentralized-authority": {} }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "negotiation/malformed-optional",
+      "category": "negotiation",
+      "description": "Client declaration entry is malformed; server does not require the extension",
+      "expected": "pass",
+      "reason": "A malformed declaration degrades to core behavior on an optional server, never to a rejection",
+      "input": {
+        "serverSettings": {},
+        "request": {
+          "method": "tools/call",
+          "params": {
+            "name": "read_file",
+            "arguments": { "path": "/tmp/notes.txt" },
+            "_meta": {
+              "io.modelcontextprotocol/clientCapabilities": {
+                "extensions": { "org.kya-os/decentralized-authority": ["not", "an", "object"] }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

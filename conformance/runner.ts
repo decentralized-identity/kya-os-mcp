@@ -23,6 +23,7 @@ import type {
   DidResolutionInput,
   EntityCardInput,
   ExpectedOutcome,
+  NegotiationInput,
   SignedProofInput,
   StatusListInput,
 } from './types.js';
@@ -69,6 +70,8 @@ async function dispatch(
       return adapter.verifyEntityCard(vector.input as EntityCardInput);
     case 'audit-integrity':
       return adapter.verifyAuditIntegrity(vector.input as AuditIntegrityInput);
+    case 'negotiation':
+      return adapter.evaluateNegotiation(vector.input as NegotiationInput);
     default: {
       const exhaustive: never = vector.category;
       throw new Error(`Unknown vector category: ${String(exhaustive)}`);

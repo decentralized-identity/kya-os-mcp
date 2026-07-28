@@ -1,6 +1,6 @@
 # KYA-OS MCP Extension Binding
 
-**`org.kya-os/delegation`: agent delegation and per-request proof as an MCP 2026-07-28 extension**
+**`org.kya-os/decentralized-authority`: agent delegation and per-request proof as an MCP 2026-07-28 extension**
 
 Version: 1.0.0-draft
 Status: Draft (extension id proposed, pending DIF TAAWG ratification)
@@ -13,7 +13,7 @@ Binds: the KYA-OS Protocol Specification ([SPEC.md](./SPEC.md)) and the Entity C
 ## Abstract
 
 This document specifies how the KYA-OS protocol operates as an optional, strictly additive extension to the Model Context Protocol, using the Extensions framework introduced in the MCP `2026-07-28` specification (SEP-2133).
-The extension is identified as `org.kya-os/delegation` and is negotiated through the standard `extensions` member of `ClientCapabilities` and `ServerCapabilities`.
+The extension is identified as `org.kya-os/decentralized-authority` and is negotiated through the standard `extensions` member of `ClientCapabilities` and `ServerCapabilities`.
 It adds no tools, no JSON-RPC methods, no handshake, and no session semantics.
 Its entire wire surface is: one capability entry, the reverse-DNS `_meta` keys already registered by the underlying specifications, the `KYA-OS-*` outbound HTTP headers, and the Entity Card discovery projections.
 Everything normative about identity, delegation, proofs, and verification is defined in [SPEC.md](./SPEC.md) and [SPEC-ENTITY-CARD.md](./SPEC-ENTITY-CARD.md); this document defines only the MCP binding and is intentionally thin.
@@ -33,13 +33,14 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 The extension identifier is:
 
 ```
-org.kya-os/delegation
+org.kya-os/decentralized-authority
 ```
 
 The vendor prefix `org.kya-os` is the reverse-DNS form of `kya-os.org`, which the KYA-OS project controls.
 The identifier follows the SEP-2133 `{vendor-prefix}/{extension-name}` form.
+The name states the extension's distinguishing property: the authority it conveys (identity, delegation chains, per-request proofs, and their audit trail) verifies locally from signed artifacts, with no round trip to a central authorization service (§13.2).
 
-> **Editorial note - open for discussion.** The extension id `org.kya-os/delegation` is **proposed** and not yet ratified by the DIF Trusted AI Agents Working Group (TAAWG); it remains open for working-group discussion and MAY change before this revision is finalized (see SPEC.md §7.6 and §15.2).
+> **Editorial note - open for discussion.** The extension id `org.kya-os/decentralized-authority` is **proposed** and not yet ratified by the DIF Trusted AI Agents Working Group (TAAWG); it remains open for working-group discussion and MAY change before this revision is finalized (see SPEC.md §7.6 and §15.2).
 
 ### 1.2 Versioning
 
@@ -60,7 +61,7 @@ Re-keying of the `_meta` registry entries (§2.2) would be specified by a succes
 
 | Surface | Mechanism | Defined in |
 |---|---|---|
-| Capability negotiation | `capabilities.extensions["org.kya-os/delegation"]` settings object | §3 (this document) |
+| Capability negotiation | `capabilities.extensions["org.kya-os/decentralized-authority"]` settings object | §3 (this document) |
 | Request proof | `_meta["org.kya-os/proof@1"]` per-request holder-of-key proof | SPEC-ENTITY-CARD §8 |
 | Response proof / audit | `_meta["org.kya-os/proof"]` detached response proof | SPEC.md §7 |
 | Consent step-up | signed `needs_authorization` challenge | SPEC.md §9 |
@@ -105,7 +106,7 @@ A client that supports this extension declares it inside that object's `extensio
       "io.modelcontextprotocol/protocolVersion": "2026-07-28",
       "io.modelcontextprotocol/clientCapabilities": {
         "extensions": {
-          "org.kya-os/delegation": {
+          "org.kya-os/decentralized-authority": {
             "version": "1.0.0",
             "proofProfiles": ["org.kya-os/proof@1"],
             "didMethods": ["did:key", "did:web"]
@@ -126,7 +127,7 @@ A server declares the extension in the `capabilities.extensions` member of its `
   "supportedVersions": ["2026-07-28"],
   "capabilities": {
     "extensions": {
-      "org.kya-os/delegation": {
+      "org.kya-os/decentralized-authority": {
         "version": "1.0.0",
         "proofProfiles": ["org.kya-os/proof@1"],
         "didMethods": ["did:key", "did:web"],
@@ -164,7 +165,7 @@ A **server** declaration asserts: the server verifies proofs under the listed pr
 
 ### 3.4 Discovery before first call
 
-A client MAY call `server/discover` before any other request to learn whether a server speaks, and whether it requires, `org.kya-os/delegation`, and attach proofs from the first real request onward.
+A client MAY call `server/discover` before any other request to learn whether a server speaks, and whether it requires, `org.kya-os/decentralized-authority`, and attach proofs from the first real request onward.
 The `/.well-known/mcp` document (SPEC.md §10) and the Entity Card projections (SPEC-ENTITY-CARD §6) advertise the same facts out of band; `server/discover` is the in-protocol source of truth under `2026-07-28`.
 
 ---
@@ -181,7 +182,7 @@ When the server does not require the extension:
 
 ### 4.2 Required mode (`required: true`)
 
-When the server requires the extension, a request whose `_meta["io.modelcontextprotocol/clientCapabilities"]` does **not** declare `org.kya-os/delegation` MUST be rejected with the core MCP error:
+When the server requires the extension, a request whose `_meta["io.modelcontextprotocol/clientCapabilities"]` does **not** declare `org.kya-os/decentralized-authority` MUST be rejected with the core MCP error:
 
 ```json
 {
@@ -189,10 +190,10 @@ When the server requires the extension, a request whose `_meta["io.modelcontextp
   "id": 7,
   "error": {
     "code": -32021,
-    "message": "Missing required client capability: org.kya-os/delegation",
+    "message": "Missing required client capability: org.kya-os/decentralized-authority",
     "data": {
       "reason": "extension_not_declared",
-      "extension": "org.kya-os/delegation"
+      "extension": "org.kya-os/decentralized-authority"
     }
   }
 }
@@ -379,7 +380,7 @@ That question is this extension's entire scope, and it composes with, rather tha
 
 An honest comparison against composing DPoP (proof-of-possession), Workload Identity Federation (workload identity), and RFC 8693 token exchange (delegation-ish nesting):
 
-| Capability | DPoP + WIF + RFC 8693 | `org.kya-os/delegation` | Honest call |
+| Capability | DPoP + WIF + RFC 8693 | `org.kya-os/decentralized-authority` | Honest call |
 |---|---|---|---|
 | Per-request proof-of-possession | Yes (HTTP-bound `htm`/`htu`) | Yes (JSON-RPC-bound `requestHash`) | Tie on mechanism; this profile binds the operation, DPoP binds the HTTP envelope; they compose via `cnf.jkt` (SPEC-ENTITY-CARD §8.6, §8.8). |
 | Workload/client identity | Yes, mature IdP federation | Yes (DID + Entity Card) | OAuth rails win on enterprise IdP maturity and reviewer familiarity. |

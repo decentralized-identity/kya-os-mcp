@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schema.kya-os.org/v1/protocol/mcp-extension/settings/v1.0.0",
   "title": "KYA-OS MCP Extension Settings",
-  "description": "The settings object declared under capabilities.extensions[\"org.kya-os/delegation\"] in MCP ClientCapabilities and ServerCapabilities (SEP-2133). All members are optional; an empty object means the extension is supported with default configuration. Unknown members are ignored for forward compatibility. See SPEC-MCP-EXTENSION.md section 3.",
+  "description": "The settings object declared under capabilities.extensions[\"org.kya-os/decentralized-authority\"] in MCP ClientCapabilities and ServerCapabilities (SEP-2133). All members are optional; an empty object means the extension is supported with default configuration. Unknown members are ignored for forward compatibility. See SPEC-MCP-EXTENSION.md section 3.",
   "type": "object",
   "properties": {
     "version": {
@@ -29,7 +29,7 @@
     },
     "required": {
       "type": "boolean",
-      "description": "Server-side only: when true, the server rejects requests from clients that did not declare org.kya-os/delegation, using JSON-RPC error -32021 (MissingRequiredClientCapabilityError). Meaningless on a client declaration and ignored there. Defaults to false.",
+      "description": "Server-side only: when true, the server rejects requests from clients that did not declare org.kya-os/decentralized-authority, using JSON-RPC error -32021 (MissingRequiredClientCapabilityError). Meaningless on a client declaration and ignored there. Defaults to false.",
       "default": false
     }
   },

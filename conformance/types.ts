@@ -21,6 +21,8 @@
  * last two exercise the NEWER Entity Card layer — the stateless
  * `org.kya-os/proof@1` holder-of-key proof (`card-proof`) and the typed,
  * DID-anchored card (`entity-card`) — which is a distinct, orthogonal profile.
+ * `negotiation` exercises the MCP extension admission gate
+ * (`org.kya-os/decentralized-authority`, SPEC-MCP-EXTENSION.md §3-§5).
  */
 export type VectorCategory =
   | 'signed-proof'
@@ -30,7 +32,8 @@ export type VectorCategory =
   | 'did-web-resolution'
   | 'card-proof'
   | 'entity-card'
-  | 'audit-integrity';
+  | 'audit-integrity'
+  | 'negotiation';
 
 /** The outcome a conformant implementation MUST produce for a vector. */
 export type ExpectedOutcome = 'pass' | 'fail';
@@ -228,6 +231,23 @@ export interface AuditIntegrityInput {
 }
 
 /**
+ * Input for the MCP extension admission gate (`org.kya-os/decentralized-authority`,
+ * SPEC-MCP-EXTENSION.md §3-§5): given the server's declared settings and an
+ * inbound request, the implementation either ADMITS the request (`pass` - the
+ * extension is active, or an optional server gracefully degrades to core MCP)
+ * or REJECTS it (`fail` - `-32021` MissingRequiredClientCapability). A
+ * malformed client declaration MUST be treated as absent (fail closed).
+ */
+export interface NegotiationInput {
+  /** The server's `capabilities.extensions["org.kya-os/decentralized-authority"]` settings object. */
+  serverSettings: unknown;
+  /** The inbound JSON-RPC request; `params._meta` may carry the stateless declaration. */
+  request: { method: string; params?: unknown };
+  /** Initialize-era `ClientCapabilities` (2025-11-25 carriage), when the declaration rode initialize. */
+  initializeCapabilities?: unknown;
+}
+
+/**
  * The contract a third party implements to run the KYA-OS conformance vectors
  * against their own implementation.
  *
@@ -271,4 +291,11 @@ export interface ConformanceAdapter {
 
   /** Verify RFC 9162 audit root, inclusion, and consistency proof vectors. */
   verifyAuditIntegrity(input: AuditIntegrityInput): Promise<AdapterResult>;
+
+  /**
+   * Evaluate MCP extension negotiation: `pass` = the request is admitted
+   * (declared, or gracefully degraded on an optional server); `fail` = the
+   * server rejects it (`-32021`, required extension not declared).
+   */
+  evaluateNegotiation(input: NegotiationInput): Promise<AdapterResult>;
 }

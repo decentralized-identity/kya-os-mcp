@@ -16,6 +16,8 @@ import {
   createDidKeyResolver,
   createDidWebResolver,
   MemoryNonceCacheProvider,
+  parseExtensionSettings,
+  requireExtension,
   type DIDDocument,
   type CredentialStatus,
   type DelegationCredential,
@@ -48,9 +50,11 @@ import type {
   DelegationChainInput,
   DidResolutionInput,
   EntityCardInput,
+  NegotiationInput,
   SignedProofInput,
   StatusListInput,
 } from './types.js';
+import { isRecord } from '../src/utils/guards.js';
 import {
   CryptoProviderAuditHasher,
   digestAuditEvent,
@@ -341,6 +345,28 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
         : fail('audit event canonicalization/digest, Merkle root, or proof rejected');
     } catch (error) {
       return fail(`verifyAuditIntegrity threw: ${asMessage(error)}`);
+    }
+  }
+
+  async evaluateNegotiation(input: NegotiationInput): Promise<AdapterResult> {
+    try {
+      const serverSettings = parseExtensionSettings(input.serverSettings);
+      if (serverSettings === undefined) {
+        return fail('vector serverSettings are not a valid settings object');
+      }
+      const guard = requireExtension(serverSettings);
+      const params = isRecord(input.request.params) ? input.request.params : undefined;
+      const verdict = guard({
+        meta: params?.['_meta'],
+        ...(input.initializeCapabilities !== undefined
+          ? { initializeCapabilities: input.initializeCapabilities }
+          : {}),
+      });
+      return verdict.ok
+        ? PASS
+        : fail(`rejected ${verdict.error.code} (${verdict.error.data.reason})`);
+    } catch (error) {
+      return fail(`evaluateNegotiation threw: ${asMessage(error)}`);
     }
   }
 }

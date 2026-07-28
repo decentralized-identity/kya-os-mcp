@@ -13,7 +13,7 @@ This directory contains JSON Schema definitions for the core KYA-OS (Model Conte
 | [detached-proof.json](./detached-proof.json) | Cryptographic proof for tool request/response |
 | [kya-os-card.schema.json](./kya-os-card.schema.json) | Typed KYA-OS Entity Card |
 | [well-known-mcpi.json](./well-known-mcpi.json) | Service discovery document |
-| [mcp-extension-settings.json](./mcp-extension-settings.json) | Negotiation settings for the `org.kya-os/delegation` MCP extension (SEP-2133) |
+| [mcp-extension-settings.json](./mcp-extension-settings.json) | Negotiation settings for the `org.kya-os/decentralized-authority` MCP extension (SEP-2133) |
 | [audit-event.schema.json](./audit-event.schema.json) | Strict, privacy-minimal producer audit event core |
 | [audit-entry.schema.json](./audit-entry.schema.json) | Recorder-assigned chained entry core |
 | [audit-receipt.schema.json](./audit-receipt.schema.json) | Signed append-receipt core |

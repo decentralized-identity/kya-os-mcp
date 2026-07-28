@@ -33,6 +33,7 @@ export {
 
 export {
   KYA_OS_DOMAIN_ERROR_CODE,
+  DEFAULT_EXEMPT_METHODS,
   requireExtension,
   missingRequiredCapabilityError,
   proofGateToJsonRpcError,

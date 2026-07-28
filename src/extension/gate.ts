@@ -10,7 +10,9 @@
  *     the gate always admits and merely reports the declaration when present.
  *   - `required: true`: a request without a declaration is rejected with the
  *     core MCP error `-32021` (`MissingRequiredClientCapabilityError`) carrying
- *     `error.data = { reason: "extension_not_declared", extension: <id> }`.
+ *     the core `requiredCapabilities` member plus this extension's
+ *     `reason`/`extension` pair - except on exempt methods (`server/discover`,
+ *     `ping` by default), which are never gated so discovery stays reachable.
  *
  * A stripped or malformed declaration is an ABSENT declaration (fail closed,
  * §4.3) - never silent acceptance, never a guess.
@@ -31,16 +33,26 @@ import {
 } from './settings.js';
 
 /**
- * Default implementation-defined JSON-RPC code for KYA-OS domain failures
- * (SPEC-MCP-EXTENSION.md §5). The number is deliberately NOT the dispatch
- * surface - clients dispatch on `error.data.reason` - and it stays inside the
- * JSON-RPC implementation-defined range (`-32000..-32019`).
+ * Default JSON-RPC code for KYA-OS domain failures (SPEC-MCP-EXTENSION.md §5).
+ * The number is deliberately NOT the dispatch surface - clients dispatch on
+ * `error.data.reason` - and it sits outside the JSON-RPC reserved range
+ * (`-32768..-32000`), per the 2026-07-28 allocation policy: new codes MUST NOT
+ * be allocated in the legacy `-32000..-32019` sub-range and new
+ * implementations SHOULD NOT use that sub-range at all.
  */
-export const KYA_OS_DOMAIN_ERROR_CODE = -32000;
+export const KYA_OS_DOMAIN_ERROR_CODE = -31000;
 
 /** The MCP-reserved code range this extension MUST NOT allocate from (§5.1). */
 const MCP_RESERVED_MIN = -32099;
 const MCP_RESERVED_MAX = -32020;
+
+/**
+ * Methods a required-mode server never gates (SPEC-MCP-EXTENSION.md §4.2):
+ * `server/discover` MUST stay reachable so a non-declaring client can learn
+ * the requirement it fails; `ping` is exempted for peers on earlier protocol
+ * revisions.
+ */
+export const DEFAULT_EXEMPT_METHODS: readonly string[] = ['server/discover', 'ping'];
 
 /** A JSON-RPC error object (the `error` member of a JSON-RPC response). */
 export interface JsonRpcErrorObject {
@@ -49,6 +61,8 @@ export interface JsonRpcErrorObject {
   data: {
     /** The snake_case KYA-OS reason code - the mandatory dispatch surface (§5.2). */
     reason: string;
+    /** The core schema's -32021 payload: the capabilities the server requires (§4.2). */
+    requiredCapabilities?: Record<string, unknown>;
     /** The extension id, on negotiation failures. */
     extension?: string;
     /** The proof profile, on proof-gate failures. */
@@ -67,6 +81,8 @@ export type ExtensionGateResult =
 export type ExtensionGuard = (input: {
   meta?: unknown;
   initializeCapabilities?: unknown;
+  /** The request's JSON-RPC method; exempt methods are never gated in required mode (§4.2). */
+  method?: string;
 }) => ExtensionGateResult;
 
 /**
@@ -75,16 +91,20 @@ export type ExtensionGuard = (input: {
  */
 export function requireExtension(
   serverSettings: KyaOsExtensionSettings = {},
-  opts: { extensionId?: string } = {},
+  opts: { extensionId?: string; exemptMethods?: readonly string[] } = {},
 ): ExtensionGuard {
   const settings = resolveExtensionSettings(buildExtensionSettings(serverSettings));
   const extensionId = opts.extensionId ?? KYA_OS_EXTENSION_ID;
+  const exemptMethods = opts.exemptMethods ?? DEFAULT_EXEMPT_METHODS;
   return (input) => {
     const declaration = readExtensionDeclaration({ ...input, extensionId });
     if (declaration !== undefined) {
       return { ok: true, declaration };
     }
     if (!settings.required) {
+      return { ok: true };
+    }
+    if (input.method !== undefined && exemptMethods.includes(input.method)) {
       return { ok: true };
     }
     return { ok: false, error: missingRequiredCapabilityError(extensionId) };
@@ -98,7 +118,11 @@ export function missingRequiredCapabilityError(
   return {
     code: MISSING_REQUIRED_CLIENT_CAPABILITY_CODE,
     message: `Missing required client capability: ${extensionId}`,
-    data: { reason: EXTENSION_NOT_DECLARED_REASON, extension: extensionId },
+    data: {
+      requiredCapabilities: { extensions: { [extensionId]: {} } },
+      reason: EXTENSION_NOT_DECLARED_REASON,
+      extension: extensionId,
+    },
   };
 }
 

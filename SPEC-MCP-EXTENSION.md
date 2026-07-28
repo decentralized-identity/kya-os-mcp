@@ -204,6 +204,9 @@ When the server requires the extension, a request whose `_meta["io.modelcontextp
 `requiredCapabilities` is the core schema's payload for this error; `reason` is this extension's dispatch code (§5.2).
 Where an SDK's typed error reconstruction surfaces only `requiredCapabilities`, membership of this extension's id in `requiredCapabilities.extensions` is the fallback discriminant.
 
+Required mode MUST NOT gate `server/discover`: the pre-flight discovery of §3.4 has to remain reachable by non-declaring clients, or a client could never learn the requirement it fails.
+Implementations SHOULD extend the same exemption to liveness pings from earlier protocol revisions.
+
 ### 4.3 Stripped declarations are absent declarations
 
 `params._meta` is excluded from the proof's request hash by design (SPEC-ENTITY-CARD §8.3), so `_meta` content, including the capability declaration, is intermediary-mutable and unauthenticated.
@@ -222,24 +225,26 @@ Nothing security-relevant may ever be trusted from `_meta` without verifying the
 
 ### 5.1 Numeric code policy
 
-MCP `2026-07-28` partitions the JSON-RPC server-error range: `-32000` to `-32019` is implementation-defined, and `-32020` to `-32099` is reserved for the MCP specification (which defines `-32020` `HeaderMismatchError`, `-32021` `MissingRequiredClientCapabilityError`, and `-32022` `UnsupportedProtocolVersionError`).
+MCP `2026-07-28` partitions the JSON-RPC server-error range: `-32000` to `-32019` is legacy (new codes MUST NOT be allocated there, and new implementations SHOULD NOT use codes from that sub-range at all), and `-32020` to `-32099` is reserved for the MCP specification (which defines `-32020` `HeaderMismatchError`, `-32021` `MissingRequiredClientCapabilityError`, and `-32022` `UnsupportedProtocolVersionError`).
+New codes for purposes the core specification does not define SHOULD be allocated outside the JSON-RPC reserved range (`-32768` to `-32000`) entirely.
 This extension:
 
 - uses core `-32021` exclusively for the undeclared-required-capability case (§4.2);
 - MUST NOT allocate extension-specific codes inside the MCP-reserved `-32020` to `-32099` range;
+- allocates its default domain code outside the JSON-RPC reserved range (`-31000` in the reference implementation);
 - carries its own failure taxonomy in `error.data`, not in numeric codes.
 
 ### 5.2 KYA-OS reason codes ride `error.data.reason`
 
 KYA-OS failure codes are snake_case strings, defined in SPEC-ENTITY-CARD Appendix D (current profile) and SPEC.md Appendix A (legacy session profile).
-When a KYA-OS failure surfaces as a JSON-RPC error, the error's numeric `code` is chosen from the implementation-defined range, and `error.data` MUST carry the KYA-OS code verbatim:
+When a KYA-OS failure surfaces as a JSON-RPC error, the error's numeric `code` is implementation-defined and allocated per §5.1, and `error.data` MUST carry the KYA-OS code verbatim:
 
 ```json
 {
   "jsonrpc": "2.0",
   "id": 8,
   "error": {
-    "code": -32000,
+    "code": -31000,
     "message": "KYA-OS proof required",
     "data": {
       "reason": "proof_missing",

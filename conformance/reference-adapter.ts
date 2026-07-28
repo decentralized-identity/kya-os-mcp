@@ -358,6 +358,7 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
       const params = isRecord(input.request.params) ? input.request.params : undefined;
       const verdict = guard({
         meta: params?.['_meta'],
+        method: input.request.method,
         ...(input.initializeCapabilities !== undefined
           ? { initializeCapabilities: input.initializeCapabilities }
           : {}),

@@ -91,6 +91,22 @@
       }
     },
     {
+      "id": "negotiation/absent-required-discover",
+      "category": "negotiation",
+      "description": "Client does not declare the extension; server requires it; the method is server/discover",
+      "expected": "pass",
+      "reason": "Required mode MUST NOT gate server/discover, or a non-declaring client could never learn the requirement it fails",
+      "input": {
+        "serverSettings": { "required": true },
+        "request": {
+          "method": "server/discover",
+          "params": {
+            "_meta": { "io.modelcontextprotocol/clientCapabilities": {} }
+          }
+        }
+      }
+    },
+    {
       "id": "negotiation/legacy-initialize-required",
       "category": "negotiation",
       "description": "2025-11-25 peer declared the extension via initialize-era capabilities.extensions; server requires it",

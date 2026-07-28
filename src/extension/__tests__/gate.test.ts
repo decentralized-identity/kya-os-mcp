@@ -9,6 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import { PROOF_PROFILE_ID } from '../../card/schema.js';
 import {
+  DEFAULT_EXEMPT_METHODS,
   KYA_OS_DOMAIN_ERROR_CODE,
   missingRequiredCapabilityError,
   proofGateToJsonRpcError,
@@ -102,6 +103,28 @@ describe('requireExtension - required mode', () => {
       expect(verdict.error.message).toContain(id);
     }
   });
+
+  it.each(DEFAULT_EXEMPT_METHODS)('never gates the exempt method %s (§4.2)', (method) => {
+    expect(guard({ method })).toEqual({ ok: true });
+  });
+
+  it('still gates non-exempt methods for undeclared peers', () => {
+    const verdict = guard({ method: 'tools/call' });
+    expect(verdict.ok).toBe(false);
+  });
+
+  it('still reports the declaration on an exempt method when one is present', () => {
+    const verdict = guard({ method: 'server/discover', meta: metaDeclaring({}) });
+    expect(verdict.ok).toBe(true);
+    if (verdict.ok) {
+      expect(verdict.declaration?.carriage).toBe('stateless');
+    }
+  });
+
+  it('honors an exemptMethods override, including an empty list', () => {
+    const strict = requireExtension({ required: true }, { exemptMethods: [] });
+    expect(strict({ method: 'server/discover' }).ok).toBe(false);
+  });
 });
 
 describe('requireExtension - own-settings validation', () => {
@@ -162,7 +185,11 @@ describe('proofGateToJsonRpcError', () => {
     },
   );
 
-  it('allows codes outside the reserved range', () => {
-    expect(proofGateToJsonRpcError(gateError, { code: -32100 }).code).toBe(-32100);
+  it('allows codes outside the JSON-RPC reserved range', () => {
+    expect(proofGateToJsonRpcError(gateError, { code: -31005 }).code).toBe(-31005);
+  });
+
+  it('defaults to a code outside the JSON-RPC reserved range', () => {
+    expect(KYA_OS_DOMAIN_ERROR_CODE).toBeGreaterThan(-32000);
   });
 });

@@ -14,7 +14,7 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/@kya-os/mcp"><img src="https://img.shields.io/npm/v/@kya-os/mcp" alt="npm"></a>
   <a href="https://kya-os.org/mcp"><img src="https://img.shields.io/badge/spec-KYA--OS-blue" alt="spec"></a>
-  <a href="https://identity.foundation/working-groups/agent-and-authorization.html"><img src="https://img.shields.io/badge/DIF-TAAWG-purple" alt="DIF TAAWG"></a>
+  <a href="https://identity.foundation/working-groups/trusted-agents.html"><img src="https://img.shields.io/badge/DIF-TAAWG-purple" alt="DIF TAAWG"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/decentralized-identity/kya-os-mcp" alt="license"></a>
 </p>
 
@@ -432,7 +432,7 @@ publication, status-list backend hosting, and external registry changes.
 
 ## Links
 
-- [Spec](./SPEC.md) | [Card Profile](./SPEC-ENTITY-CARD.md) | [Changelog](./CHANGELOG.md) | [DIF TAAWG](https://identity.foundation/working-groups/agent-and-authorization.html) | [npm](https://www.npmjs.com/package/@kya-os/mcp)
+- [Spec](./SPEC.md) | [Card Profile](./SPEC-ENTITY-CARD.md) | [Changelog](./CHANGELOG.md) | [DIF TAAWG](https://identity.foundation/working-groups/trusted-agents.html) | [npm](https://www.npmjs.com/package/@kya-os/mcp)
 - [CONTRIBUTING.md](./CONTRIBUTING.md) | [CONFORMANCE.md](./CONFORMANCE.md) | [SECURITY.md](./SECURITY.md) | [GOVERNANCE.md](./GOVERNANCE.md)
 
 ## License

@@ -1,6 +1,6 @@
 # Contributing to @kya-os/mcp
 
-Thank you for your interest in contributing to `@kya-os/mcp` — the reference implementation of the KYA-OS (Know Your Agent Operating System) protocol for Model Context Protocol servers, submitted to the [DIF Trust and Authorization for AI Agents Working Group (TAAWG)](https://identity.foundation/working-groups/agent-and-authorization.html). KYA-OS is the agent identity, authorization, and observability protocol; this package binds its primitives into MCP.
+Thank you for your interest in contributing to `@kya-os/mcp` — the reference implementation of the KYA-OS (Know Your Agent Operating System) protocol for Model Context Protocol servers, submitted to the [DIF Trusted AI Agents Working Group (TAAWG)](https://identity.foundation/working-groups/trusted-agents.html). KYA-OS is the agent identity, authorization, and observability protocol; this package binds its primitives into MCP.
 
 All contributions are welcome: bug fixes, protocol clarifications, new examples, test improvements, and documentation.
 

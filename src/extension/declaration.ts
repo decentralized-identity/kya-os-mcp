@@ -1,5 +1,5 @@
 /**
- * Reading a peer's `org.kya-os/delegation` declaration (SPEC-MCP-EXTENSION.md §3.1).
+ * Reading a peer's `org.kya-os/decentralized-authority` declaration (SPEC-MCP-EXTENSION.md §3.1).
  *
  * Two carriage forms are normalized into one shape:
  *
@@ -74,7 +74,7 @@ function clientCapabilitiesFromMeta(meta: unknown): unknown {
 /**
  * Locate the extension's entry inside a capabilities object. Presence is
  * detected with `hasOwnProperty` so an explicit empty-object declaration
- * (`{ "org.kya-os/delegation": {} }` - legal per SEP-2133) is distinguishable
+ * (`{ "org.kya-os/decentralized-authority": {} }` - legal per SEP-2133) is distinguishable
  * from an absent one.
  */
 function extensionsEntry(

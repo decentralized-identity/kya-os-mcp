@@ -1,5 +1,5 @@
 /**
- * KYA-OS MCP extension negotiation (`org.kya-os/delegation`).
+ * KYA-OS MCP extension negotiation (`org.kya-os/decentralized-authority`).
  *
  * The MCP binding surface of SPEC-MCP-EXTENSION.md: the extension id and
  * settings object (§1, §3), the declaration reader for both carriage forms

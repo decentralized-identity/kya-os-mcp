@@ -2,7 +2,7 @@
  * KYA-OS MCP extension negotiation - identifiers and the settings object
  * (SPEC-MCP-EXTENSION.md §1, §3; wire schema: `schemas/mcp-extension-settings.json`).
  *
- * The extension is declared under `capabilities.extensions["org.kya-os/delegation"]`
+ * The extension is declared under `capabilities.extensions["org.kya-os/decentralized-authority"]`
  * as a small settings object. Per SEP-2133 an empty object means "supported, with
  * default configuration". Every identifier lives here as a single constant
  * (mirroring `KYA_OS_PROOF_META_KEY`), so a future re-pointing of the extension id
@@ -13,7 +13,7 @@ import { z } from 'zod';
 import { PROOF_PROFILE_ID } from '../card/schema.js';
 
 /** The proposed reverse-DNS MCP extension id (SPEC-MCP-EXTENSION.md §1.1). */
-export const KYA_OS_EXTENSION_ID = 'org.kya-os/delegation';
+export const KYA_OS_EXTENSION_ID = 'org.kya-os/decentralized-authority';
 
 /** The per-request `_meta` key carrying MCP `ClientCapabilities` (SEP-2575, stateless carriage). */
 export const MCP_CLIENT_CAPABILITIES_META_KEY = 'io.modelcontextprotocol/clientCapabilities';
@@ -110,7 +110,7 @@ export function buildExtensionSettings(
 }
 
 /**
- * Build the `extensions` map fragment - `{ "org.kya-os/delegation": settings }` -
+ * Build the `extensions` map fragment - `{ "org.kya-os/decentralized-authority": settings }` -
  * ready to merge into `ClientCapabilities.extensions` / `ServerCapabilities.extensions`
  * (or the per-request `_meta` carriage; SPEC-MCP-EXTENSION.md §3.1).
  */

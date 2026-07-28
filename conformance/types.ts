@@ -22,7 +22,7 @@
  * `org.kya-os/proof@1` holder-of-key proof (`card-proof`) and the typed,
  * DID-anchored card (`entity-card`) — which is a distinct, orthogonal profile.
  * `negotiation` exercises the MCP extension admission gate
- * (`org.kya-os/delegation`, SPEC-MCP-EXTENSION.md §3-§5).
+ * (`org.kya-os/decentralized-authority`, SPEC-MCP-EXTENSION.md §3-§5).
  */
 export type VectorCategory =
   | 'signed-proof'
@@ -231,7 +231,7 @@ export interface AuditIntegrityInput {
 }
 
 /**
- * Input for the MCP extension admission gate (`org.kya-os/delegation`,
+ * Input for the MCP extension admission gate (`org.kya-os/decentralized-authority`,
  * SPEC-MCP-EXTENSION.md §3-§5): given the server's declared settings and an
  * inbound request, the implementation either ADMITS the request (`pass` - the
  * extension is active, or an optional server gracefully degrades to core MCP)
@@ -239,7 +239,7 @@ export interface AuditIntegrityInput {
  * malformed client declaration MUST be treated as absent (fail closed).
  */
 export interface NegotiationInput {
-  /** The server's `capabilities.extensions["org.kya-os/delegation"]` settings object. */
+  /** The server's `capabilities.extensions["org.kya-os/decentralized-authority"]` settings object. */
   serverSettings: unknown;
   /** The inbound JSON-RPC request; `params._meta` may carry the stateless declaration. */
   request: { method: string; params?: unknown };

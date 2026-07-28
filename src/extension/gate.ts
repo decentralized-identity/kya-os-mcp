@@ -1,5 +1,5 @@
 /**
- * The `org.kya-os/delegation` admission gate (SPEC-MCP-EXTENSION.md §4-§5).
+ * The `org.kya-os/decentralized-authority` admission gate (SPEC-MCP-EXTENSION.md §4-§5).
  *
  * Mirrors the `requireProof` guard idiom (`src/card/middleware.ts`): the host
  * builds a guard once from its server settings and runs it per request. Nothing

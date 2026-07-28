@@ -5,7 +5,7 @@
     {
       "id": "negotiation/declared-optional",
       "category": "negotiation",
-      "description": "Client declares org.kya-os/delegation in per-request _meta clientCapabilities; server does not require it",
+      "description": "Client declares org.kya-os/decentralized-authority in per-request _meta clientCapabilities; server does not require it",
       "expected": "pass",
       "reason": "A declared extension on an optional server is admitted with the extension active",
       "input": {
@@ -19,7 +19,7 @@
               "io.modelcontextprotocol/protocolVersion": "2026-07-28",
               "io.modelcontextprotocol/clientCapabilities": {
                 "extensions": {
-                  "org.kya-os/delegation": {
+                  "org.kya-os/decentralized-authority": {
                     "version": "1.0.0",
                     "proofProfiles": ["org.kya-os/proof@1"],
                     "didMethods": ["did:key", "did:web"]
@@ -79,7 +79,7 @@
             "_meta": {
               "io.modelcontextprotocol/clientCapabilities": {
                 "extensions": {
-                  "org.kya-os/delegation": {
+                  "org.kya-os/decentralized-authority": {
                     "version": 1,
                     "proofProfiles": "org.kya-os/proof@1"
                   }
@@ -104,7 +104,7 @@
         },
         "initializeCapabilities": {
           "extensions": {
-            "org.kya-os/delegation": { "version": "1.0.0", "didMethods": ["did:web"] }
+            "org.kya-os/decentralized-authority": { "version": "1.0.0", "didMethods": ["did:web"] }
           }
         }
       }
@@ -124,7 +124,7 @@
             "arguments": { "path": "/tmp/notes.txt" },
             "_meta": {
               "io.modelcontextprotocol/clientCapabilities": {
-                "extensions": { "org.kya-os/delegation": {} }
+                "extensions": { "org.kya-os/decentralized-authority": {} }
               }
             }
           }
@@ -146,7 +146,7 @@
             "arguments": { "path": "/tmp/notes.txt" },
             "_meta": {
               "io.modelcontextprotocol/clientCapabilities": {
-                "extensions": { "org.kya-os/delegation": ["not", "an", "object"] }
+                "extensions": { "org.kya-os/decentralized-authority": ["not", "an", "object"] }
               }
             }
           }

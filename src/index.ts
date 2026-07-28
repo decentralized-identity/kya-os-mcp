@@ -371,7 +371,7 @@ export {
   ED25519_KEY_SIZE,
 } from './utils/index.js';
 
-// MCP extension negotiation (org.kya-os/delegation - SPEC-MCP-EXTENSION.md)
+// MCP extension negotiation (org.kya-os/decentralized-authority - SPEC-MCP-EXTENSION.md)
 export {
   KYA_OS_EXTENSION_ID,
   MCP_CLIENT_CAPABILITIES_META_KEY,

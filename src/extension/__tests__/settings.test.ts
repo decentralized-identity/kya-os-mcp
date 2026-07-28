@@ -101,7 +101,7 @@ describe('buildExtensionSettings / buildExtensionsEntry', () => {
   });
 
   it('supports an id override for graduation re-pointing', () => {
-    const entry = buildExtensionsEntry({}, 'io.modelcontextprotocol/delegation');
-    expect(Object.keys(entry)).toEqual(['io.modelcontextprotocol/delegation']);
+    const entry = buildExtensionsEntry({}, 'io.modelcontextprotocol/decentralized-authority');
+    expect(Object.keys(entry)).toEqual(['io.modelcontextprotocol/decentralized-authority']);
   });
 });

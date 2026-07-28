@@ -103,7 +103,7 @@ describe('readExtensionDeclaration - precedence', () => {
 
 describe('readExtensionDeclaration - id override', () => {
   it('reads a declaration under an overridden extension id', () => {
-    const id = 'io.modelcontextprotocol/delegation';
+    const id = 'io.modelcontextprotocol/decentralized-authority';
     const declaration = readExtensionDeclaration({ meta: metaDeclaring({}, id), extensionId: id });
     expect(declaration).toEqual({ settings: {}, carriage: 'stateless' });
   });

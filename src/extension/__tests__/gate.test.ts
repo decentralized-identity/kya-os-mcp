@@ -93,7 +93,7 @@ describe('requireExtension - required mode', () => {
   });
 
   it('names an overridden extension id in the rejection', () => {
-    const id = 'io.modelcontextprotocol/delegation';
+    const id = 'io.modelcontextprotocol/decentralized-authority';
     const overridden = requireExtension({ required: true }, { extensionId: id });
     const verdict = overridden({});
     expect(verdict.ok).toBe(false);

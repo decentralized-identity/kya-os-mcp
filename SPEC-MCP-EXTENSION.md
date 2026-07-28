@@ -73,7 +73,8 @@ The `_kyaos_handshake` tool and the KYA-OS session lifecycle (SPEC.md §5, §14)
 
 ### 2.2 `_meta` keys
 
-The reverse-DNS `_meta` keys used by this extension are exactly those registered in SPEC-ENTITY-CARD §14.1:
+The reverse-DNS `_meta` keys used by this extension are the keys registered in SPEC-ENTITY-CARD §14.1.
+For `org.kya-os/proof`, that registry records the key's legacy session-profile role; the response-direction role described below is defined by SPEC.md §7.5-§7.6, and recording both roles in the registry is a pending amendment to the underlying specification:
 
 | Key | Carries | Direction |
 |---|---|---|
@@ -137,6 +138,7 @@ A server declares the extension in the `capabilities.extensions` member of its `
 ```
 
 For peers on the `2025-11-25` protocol, the same settings object is carried in the initialize-era `capabilities.extensions` field; implementations supporting both protocol versions MUST normalize the two carriage forms into one internal declaration.
+Note that the `extensions` member is not defined by the `2025-11-25` schema (it was added in `2026-07-28`); on that revision it travels as an additive member that peers tolerate under MCP's unknown-member rules, matching the carriage MCP's extensions documentation demonstrates for initialize-era versions.
 
 ### 3.2 The settings object
 
@@ -246,6 +248,7 @@ When a KYA-OS failure surfaces as a JSON-RPC error, the error's numeric `code` i
 Clients MUST dispatch on `error.data.reason`, never on the implementation-defined numeric code.
 The proof-gate codes are `proof_missing`, `proof_invalid`, and `proof_level_insufficient` (SPEC-ENTITY-CARD Appendix D.2); fine-grained verification reasons (Appendix D.1) MAY additionally be surfaced under `error.data.reasons` for diagnostics.
 No new numeric codes are invented for any Appendix D code.
+This document defines exactly one reason code of its own: `extension_not_declared`, emitted only inside the `data` member of a core `-32021` error (§4.2); every other reason code this extension surfaces is defined by SPEC-ENTITY-CARD Appendix D or SPEC.md Appendix A.
 
 ### 5.3 HTTP-layer failures
 
@@ -264,8 +267,10 @@ The MCP-specific deltas are only these:
 3. **Transport agnosticism.** The proof is in-band JSON-RPC and verifies identically over stdio and Streamable HTTP; the OPTIONAL RFC 9421 sibling (SPEC-ENTITY-CARD §8.5) serves HTTP-edge intermediaries.
 4. **Relationship to DPoP.** SPEC-ENTITY-CARD §8.8 governs; the two compose and are not alternatives.
 
-Response-side proofs (SPEC.md §7) cover the result object with `_meta` removed (SPEC.md §7.3, §7.6).
-Under MCP `2026-07-28` every result carries a `resultType` member (SEP-2322); it is part of the result object and is therefore covered by `responseHash` like any other result member.
+Response-side proofs (SPEC.md §7) cover the response body only: response canonicalization is the `data` field, excluding `_meta` (SPEC.md §7.3, which the reference implementation follows exactly).
+Under MCP `2026-07-28` every result carries a `resultType` member (SEP-2322).
+`resultType` is NOT covered by `responseHash`: result members outside the body (`resultType`, `isError`, `structuredContent`) are unauthenticated, and clients MUST NOT treat them as proof-covered.
+A future MRTR profile (§7.3) would have to extend `responseHash` coverage to `resultType` and `inputRequests` before the consent flow could ride `input_required`.
 
 ---
 
@@ -280,12 +285,13 @@ A proof references its authority via `delegationRef`; declaring the extension co
 
 The step-up flow is SPEC.md §9: a call lacking sufficient delegation returns a `needs_authorization` challenge whose content, including `authorizationUrl`, is bound by a signed response proof (`outcome: "needs_authorization"`, SPEC.md §7.4, §9.2).
 A client MUST verify the challenge proof and recompute `responseHash` over the received challenge before directing a user to `authorizationUrl` (SPEC.md §9.3), and MUST apply the RFC 9207 issuer validation of SPEC.md §9.4 on the authorization callback.
+This document binds the challenge carriage: a server delivers the SPEC.md §9.2 challenge object as the body of a `resultType: "complete"` result, so the proof's `responseHash` covers the challenge content (SPEC.md §7.3, §7.4) while the result's `resultType` member itself remains outside proof coverage (§6).
 
 ### 7.3 Relationship to Multi Round-Trip Requests (informative)
 
 MCP `2026-07-28` introduces the Multi Round-Trip Request pattern (SEP-2322): a server returns `resultType: "input_required"` with `inputRequests`, and the client retries the original request carrying `inputResponses`.
 The KYA-OS step-up flow is structurally the same shape: challenge out, user action, retry with `resumeToken` and a fresh delegation (SPEC.md §9.3).
-This revision carries the challenge as specified in SPEC.md §9.2 (a `resultType: "complete"` result whose body is the challenge object) and does not profile it onto `input_required`, because the underlying specification defines the retry as a new request rather than an MRTR continuation.
+This revision carries the challenge as the body of a `resultType: "complete"` result (§7.2, this document's own binding decision; SPEC.md §9.2 defines the challenge object without a carriage statement) and does not profile it onto `input_required`, because the underlying specification defines the retry as a new request rather than an MRTR continuation.
 A future revision MAY define an MRTR profile of the consent flow; such a profile would be additive and negotiated through the settings object.
 
 ---
@@ -353,10 +359,10 @@ Extension-specific considerations:
 ## 12. Backward Compatibility
 
 1. **Unaware peers.** A peer that ignores this extension gets core MCP behavior end to end; every KYA-OS surface is additive `_meta`, headers, or discovery documents that the graceful-degradation contracts (§4, SPEC-ENTITY-CARD §6) cover.
-2. **`2025-11-25` peers.** The declaration is carried in the initialize-era `capabilities.extensions` field (§3.1); proofs and errors are unchanged.
+2. **`2025-11-25` peers.** The declaration is carried in the initialize-era `capabilities.extensions` field, as an additive member that revision's schema does not define (§3.1); proofs and errors are unchanged.
 3. **Legacy 1.x session profile.** The `_kyaos_handshake` tool, KYA-OS sessions, and the session-bound proof under `_meta["org.kya-os/proof"]` remain valid 1.x behavior outside this extension (SPEC.md §5, §14; SPEC-ENTITY-CARD §8.1, §15.5, Appendix D.4).
    The two proof eras ride distinct keys and coexist on one server; the session profile is expected to be deprecated at KYA-OS 2.0 in favor of the self-contained profile.
-4. **Legacy bare `proof` key.** The one-major-version acceptance window for the bare `proof` response key is governed by SPEC.md §7.6; producers SHOULD emit only namespaced keys, and the window is expected to close at the first KYA-OS major-version bump after this extension is finalized, no later than 2027-03-31.
+4. **Legacy bare `proof` key.** The one-major-version acceptance window for the bare `proof` response key is governed by SPEC.md §7.6, which is the single authoritative statement of that window; producers SHOULD emit only namespaced keys.
 
 ---
 
@@ -398,13 +404,13 @@ The deprecation of core Logging, alongside standardized trace-context `_meta`, m
 - [SPEC.md](./SPEC.md), the KYA-OS Protocol Specification, v1.0.0.
 - [SPEC-ENTITY-CARD.md](./SPEC-ENTITY-CARD.md), the KYA-OS Entity Card profile, v1.1.
 - [`schemas/mcp-extension-settings.json`](./schemas/mcp-extension-settings.json), the negotiation settings schema.
-- Model Context Protocol, specification version `2026-07-28`. https://modelcontextprotocol.io/specification/2026-07-28
+- Model Context Protocol, specification revision `2026-07-28` (Release Candidate; verified against the `draft` revision, 2026-07-28). https://modelcontextprotocol.io/specification/draft, expected to publish as https://modelcontextprotocol.io/specification/2026-07-28
 - SEP-2133, *Extensions framework for MCP*. https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2133
 - **[RFC2119]** / **[RFC8174]** BCP 14 conformance keywords.
 
 ### Informative
 
-- SEP-2575 (stateless core, `server/discover`), SEP-2567 (session removal), SEP-2322 (Multi Round-Trip Requests, `resultType`), SEP-2243 (`Mcp-Method`/`Mcp-Name`), SEP-414 (trace context `_meta`), SEP-2577 (deprecations), via the MCP `2026-07-28` changelog. https://modelcontextprotocol.io/specification/2026-07-28/changelog
+- SEP-2575 (stateless core, `server/discover`), SEP-2567 (session removal), SEP-2322 (Multi Round-Trip Requests, `resultType`), SEP-2243 (`Mcp-Method`/`Mcp-Name`), SEP-414 (trace context `_meta`), SEP-2577 (deprecations), via the MCP changelog (verified against the `draft` revision, 2026-07-28). https://modelcontextprotocol.io/specification/draft/changelog
 - **[RFC9449]** OAuth 2.0 Demonstrating Proof of Possession (DPoP).
 - **[RFC9207]** OAuth 2.0 Authorization Server Issuer Identification.
 - MCP `ext-auth` extensions (Enterprise-Managed Authorization; OAuth Client Credentials). https://github.com/modelcontextprotocol/ext-auth

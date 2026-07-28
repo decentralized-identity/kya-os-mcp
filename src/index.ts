@@ -370,3 +370,31 @@ export {
   ED25519_SPKI_DER_HEADER_LENGTH,
   ED25519_KEY_SIZE,
 } from './utils/index.js';
+
+// MCP extension negotiation (org.kya-os/delegation - SPEC-MCP-EXTENSION.md)
+export {
+  KYA_OS_EXTENSION_ID,
+  MCP_CLIENT_CAPABILITIES_META_KEY,
+  MISSING_REQUIRED_CLIENT_CAPABILITY_CODE,
+  EXTENSION_NOT_DECLARED_REASON,
+  KYA_OS_DOMAIN_ERROR_CODE,
+  ExtensionSettingsSchema,
+  DEFAULT_EXTENSION_SETTINGS,
+  parseExtensionSettings,
+  resolveExtensionSettings,
+  buildExtensionSettings,
+  buildExtensionsEntry,
+  readExtensionDeclaration,
+  requireExtension,
+  missingRequiredCapabilityError,
+  proofGateToJsonRpcError,
+  type KyaOsExtensionSettings,
+  type ResolvedExtensionSettings,
+  type DeclarationCarriage,
+  type ExtensionDeclaration,
+  type ReadDeclarationInput,
+  type ExtensionGateResult,
+  type ExtensionGuard,
+  type JsonRpcErrorObject,
+  type ProofGateErrorLike,
+} from './extension/index.js';

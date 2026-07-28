@@ -31,7 +31,7 @@ Breaking changes to the specification require **explicit vote**:
 
 ## Relationship to DIF TAAWG
 
-This repository implements the KYA-OS specification, donated to the **Decentralized Identity Foundation (DIF) Trust and Authorization for AI Working Group (TAAWG)** and under review there for ratification as a DIF standard.
+This repository implements the KYA-OS specification, donated to the **Decentralized Identity Foundation (DIF) Trusted AI Agents Working Group (TAAWG)** and under review there for ratification as a DIF standard.
 
 - **Spec decisions** are made in the working group
 - **Implementation decisions** are made here

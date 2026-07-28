@@ -40,8 +40,8 @@ BCP 14 [RFC2119] [RFC8174] when, and only when, they appear in all capitals, as 
 
 Two sub-primitives in this specification are marked **[TAAWG-NORMATIVE]**: the entity **type
 axis** (§3) and the per-request holder-of-key **binding** `client_id → did:web → mandate-VC`
-(§7–§8). These are the two primitives KYA-OS seeks to ratify in the DIF Trust and Authorization
-for AI Agents Working Group (TAAWG); every other normative requirement in this document is shipped
+(§7–§8). These are the two primitives KYA-OS seeks to ratify in the DIF Trusted AI Agents
+Working Group (TAAWG); every other normative requirement in this document is shipped
 as the reference implementation (§15.6).
 
 ---

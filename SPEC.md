@@ -1015,7 +1015,7 @@ reverse-DNS extension id — and hence this key — can be re-pointed without a 
 change.
 
 > **Editorial note — open for discussion.** The reverse-DNS key `org.kya-os/proof`
-> (and the corresponding proposed MCP Extension id `org.kya-os.identity`; see
+> (and the corresponding proposed MCP Extension id `org.kya-os/delegation`; see
 > §15.2) are **proposed** and not yet ratified. They remain open for
 > working-group discussion and MAY change before this revision is finalized.
 > Because the key is configurable (above), pinning the final id later does not
@@ -1601,14 +1601,14 @@ KYA-OS is designed to layer cleanly on the MCP 2026-07-28 Release Candidate.
 - **JSON Schema 2020-12.** Tool `inputSchema`/`outputSchema` and KYA-OS schemas use
   JSON Schema 2020-12 (SEP-2106); see §6.2.
 - **Extensions Track intent (SEP-2133).** KYA-OS intends to register as an MCP
-  Extension under the proposed reverse-DNS extension id `org.kya-os.identity`,
+  Extension under the proposed reverse-DNS extension id `org.kya-os/delegation`,
   with an `ext-*` repository, independent versioning, and negotiation via the
   `extensions` capability map. Once registered, the canonical proof key (§7.6
   `proofMetaKey`) and capability advertisement (§10) will use that extension id;
   the key is configurable for this reason. KYA-OS targets the SEP-2133
   Standards-Track path.
 
-  > **Editorial note — open for discussion.** The extension id `org.kya-os.identity`
+  > **Editorial note — open for discussion.** The extension id `org.kya-os/delegation`
   > and the proof key `org.kya-os/proof` (§7.6) are **proposed** and not yet
   > ratified; both remain open for working-group discussion and MAY change before
   > this revision is finalized.

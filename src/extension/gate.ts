@@ -49,6 +49,8 @@ export interface JsonRpcErrorObject {
   data: {
     /** The snake_case KYA-OS reason code - the mandatory dispatch surface (§5.2). */
     reason: string;
+    /** The core schema's -32021 payload: the capabilities the server requires (§4.2). */
+    requiredCapabilities?: Record<string, unknown>;
     /** The extension id, on negotiation failures. */
     extension?: string;
     /** The proof profile, on proof-gate failures. */
@@ -98,7 +100,11 @@ export function missingRequiredCapabilityError(
   return {
     code: MISSING_REQUIRED_CLIENT_CAPABILITY_CODE,
     message: `Missing required client capability: ${extensionId}`,
-    data: { reason: EXTENSION_NOT_DECLARED_REASON, extension: extensionId },
+    data: {
+      requiredCapabilities: { extensions: { [extensionId]: {} } },
+      reason: EXTENSION_NOT_DECLARED_REASON,
+      extension: extensionId,
+    },
   };
 }
 

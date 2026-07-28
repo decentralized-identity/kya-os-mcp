@@ -192,6 +192,7 @@ When the server requires the extension, a request whose `_meta["io.modelcontextp
     "code": -32021,
     "message": "Missing required client capability: org.kya-os/decentralized-authority",
     "data": {
+      "requiredCapabilities": { "extensions": { "org.kya-os/decentralized-authority": {} } },
       "reason": "extension_not_declared",
       "extension": "org.kya-os/decentralized-authority"
     }
@@ -200,6 +201,8 @@ When the server requires the extension, a request whose `_meta["io.modelcontextp
 ```
 
 `-32021` is `MissingRequiredClientCapabilityError`, defined by the MCP `2026-07-28` core specification for exactly this condition; this extension uses it and allocates no numeric code of its own for the case.
+`requiredCapabilities` is the core schema's payload for this error; `reason` is this extension's dispatch code (§5.2).
+Where an SDK's typed error reconstruction surfaces only `requiredCapabilities`, membership of this extension's id in `requiredCapabilities.extensions` is the fallback discriminant.
 
 ### 4.3 Stripped declarations are absent declarations
 

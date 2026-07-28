@@ -111,12 +111,22 @@ describe('requireExtension - own-settings validation', () => {
 });
 
 describe('missingRequiredCapabilityError', () => {
-  it('produces the canonical §4.2 error object', () => {
+  it('produces the canonical §4.2 error object, core requiredCapabilities included', () => {
     expect(missingRequiredCapabilityError()).toEqual({
       code: -32021,
       message: `Missing required client capability: ${KYA_OS_EXTENSION_ID}`,
-      data: { reason: EXTENSION_NOT_DECLARED_REASON, extension: KYA_OS_EXTENSION_ID },
+      data: {
+        requiredCapabilities: { extensions: { [KYA_OS_EXTENSION_ID]: {} } },
+        reason: EXTENSION_NOT_DECLARED_REASON,
+        extension: KYA_OS_EXTENSION_ID,
+      },
     });
+  });
+
+  it('keys requiredCapabilities.extensions by an overridden extension id', () => {
+    const id = 'io.modelcontextprotocol/decentralized-authority';
+    const error = missingRequiredCapabilityError(id);
+    expect(error.data.requiredCapabilities).toEqual({ extensions: { [id]: {} } });
   });
 });
 

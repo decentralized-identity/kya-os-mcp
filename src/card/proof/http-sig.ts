@@ -81,7 +81,7 @@ export function httpSignatureBaseBytes(proof: CardProofMeta): Uint8Array {
 }
 
 /**
- * Project a minted `org.kya-os/proof@1` into its RFC 9421 header set. Emits EVERY covered
+ * Project a minted `org.kya-os/proof.v1` into its RFC 9421 header set. Emits EVERY covered
  * component as a real HTTP field — `Content-Digest`/`Kya-Audience`/`Kya-Nonce` (and `Kya-Cnf`
  * when a `cnf` is present), each byte-identical to its {@link httpSignatureBase} line — plus
  * `Signature-Input` (the covered-component list + params) and `Signature` (the RAW `httpSig` as a

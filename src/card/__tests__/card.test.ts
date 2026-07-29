@@ -149,7 +149,7 @@ describe('verifyCard — live proof, revocation, and CIMD seams', () => {
     const res = await verifyCard(attestedCard, {
       capabilityVerifier: allAttested,
       accountabilityVerifier: accountable,
-      proof: { prf: 'org.kya-os/proof@1' },
+      proof: { prf: 'org.kya-os/proof.v1' },
       request,
       proofVerifier,
     });
@@ -162,7 +162,7 @@ describe('verifyCard — live proof, revocation, and CIMD seams', () => {
     const res = await verifyCard(attestedCard, {
       capabilityVerifier: allAttested,
       accountabilityVerifier: accountable,
-      proof: { prf: 'org.kya-os/proof@1' },
+      proof: { prf: 'org.kya-os/proof.v1' },
       request,
       proofVerifier,
     });
@@ -641,15 +641,15 @@ describe('parseCard', () => {
       id: 'did:web:example.com:agents:acme',
       entityType: 'agent',
       name: 'Acme',
-      proofProfile: 'org.kya-os/proof@1',
+      proofProfile: 'org.kya-os/proof.v1',
       cimd: { clientId: 'https://example.com/agents/acme', jwksUri: 'https://example.com/agents/acme/jwks.json' },
       revocation: { statusListCredential: 'https://example.com/status/1', statusListIndex: '94567' },
     });
-    expect(card.proofProfile).toBe('org.kya-os/proof@1');
+    expect(card.proofProfile).toBe('org.kya-os/proof.v1');
     expect(card.cimd?.jwksUri).toBe('https://example.com/agents/acme/jwks.json');
     expect(card.revocation?.statusListIndex).toBe('94567');
   });
-  it('rejects a proofProfile other than the org.kya-os/proof@1 literal', () => {
+  it('rejects a proofProfile other than the org.kya-os/proof.v1 literal', () => {
     expect(() =>
       parseCard({ id: 'did:web:x', entityType: 'agent', name: 'X', proofProfile: 'org.kya-os/proof@2' }),
     ).toThrow(/proofProfile/);

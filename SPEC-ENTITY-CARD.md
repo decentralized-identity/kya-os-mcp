@@ -18,7 +18,7 @@ the discovery rails the agent ecosystem already indexes: the MCP `server.json` /
 `_meta`, the A2A `AgentExtension`, and the NANDA `AgentFacts` document. Each projection points
 back to the same card, anchored by a `KyaOsEntityCard` service entry on the entity's `did:web`
 DID document. On top of that discovery layer rides a per-request, sender-constrained
-holder-of-key proof (`org.kya-os/proof@1`) carried under its own `_meta["org.kya-os/proof.v1"]`
+holder-of-key proof (`org.kya-os/proof.v1`) carried under its own `_meta["org.kya-os/request-proof"]`
 key: discover like everyone, prove like no one. An unaware peer safely ignores the KYA-OS layer;
 a KYA-OS-aware peer can verify the caller cryptographically on every request.
 
@@ -50,9 +50,9 @@ as the reference implementation (§15.6).
 
 This is a **DIF TAAWG work item** with a conformant **reference implementation** in
 `@kya-os/mcp` (v1.10.x at the time of writing). The Entity Card profile is additive over, and
-non-breaking with respect to, the KYA-OS 1.x protocol. The `org.kya-os/proof@1` profile defined
+non-breaking with respect to, the KYA-OS 1.x protocol. The `org.kya-os/proof.v1` profile defined
 here coexists with the legacy session-bound proof, and each rides its own `_meta` key:
-`org.kya-os/proof.v1` for this profile, `org.kya-os/response-proof` for the response proof (§8.1, §15.5). The
+`org.kya-os/request-proof` for this profile, `org.kya-os/response-proof` for the response proof (§8.1, §15.5). The
 card proof additionally names its profile in a `prf` field. The wire shapes in §3–§8 and
 Appendix A are stable for the 1.x line; a breaking change requires a major version bump.
 
@@ -90,7 +90,7 @@ This document specifies, normatively:
 - **anchoring** on `did:web` / `did:key` and the `KyaOsEntityCard` DID-document service (§5);
 - the four **discovery projections** and their graceful-degradation contract (§6);
 - the **CIMD on-ramp** binding `client_id ⇄ did:web`, `jwks_uri ⇄ DID keys` (§7);
-- the **per-request holder-of-key proof** `org.kya-os/proof@1`, its dual carrier, and the
+- the **per-request holder-of-key proof** `org.kya-os/proof.v1`, its dual carrier, and the
   `cnf.jkt` sender-constraint fusion (§8);
 - the **conformance ladder** L1/L2/L3 and its recompute-on-verify algorithm (§9);
 - the **accountability joins and revocation binding** Card verification consumes (§10); the
@@ -134,7 +134,7 @@ connects the two claims, from the L1 token to the L3 per-request proof, through 
 | **Principal** | The **immediate** delegator - typically the authorizing human - when it differs from the Responsible Party. Carried as `principal`. |
 | **Delegation Chain** | An ordered sequence of `DelegationCredential`s from the root delegator to the current Entity, each hop's delegate being the next hop's issuer (§10.1). |
 | **Capability** (Card field) | A declared operation NAME: what an Entity says it can do. Declaring one conveys no authority - authority is conveyed only by a delegation chain (§10), where the ZCAP-LD capability (the signed credential) is the authority object. A bare string is L1 (self-declared); an object `{ name, attestations }` is L2 (attested by a Verifiable Credential) (§4.1, §9). |
-| **Holder-of-Key Proof** | The per-request, sender-constrained `org.kya-os/proof@1` object (§8) that proves the caller currently controls the DID key bound to the Card. |
+| **Holder-of-Key Proof** | The per-request, sender-constrained `org.kya-os/proof.v1` object (§8) that proves the caller currently controls the DID key bound to the Card. |
 | **Audience** | The intended recipient of a proof - the recipient Entity's DID, read from its Card. Binds a proof to THIS recipient (anti-relay / anti-confused-deputy, §8.4). |
 | **`cnf.jkt`** | An RFC 7638 [RFC7638] JWK thumbprint used as an RFC 9449 [RFC9449] confirmation-key sender-constraint. The fusion anchor of §8.6. |
 | **CIMD** | Client ID Metadata Document (draft-ietf-oauth-client-id-metadata-document / SEP-991): the OAuth `client_id` is an HTTPS URL that serves the client's metadata. The KYA-OS L1 on-ramp (§7). |
@@ -215,7 +215,7 @@ top-level properties.
 | `delegationRef` | string | MAY | Locator for the signed delegation chain backing `responsibleParty`/`principal` (e.g. `vc_root>del_123`, hops joined by `>`); resolved, not inlined. |
 | `attestations` | array of `{type: "IdentityVerification"\|"CapabilityAttestation", vc, subject?, issuer?}` | MAY | Resolvable, signed credentials about the Entity or its `responsibleParty` (e.g. KYC/KYB). |
 | `didDocument` | string | MAY | URL of the DID document (for `did:web`, otherwise derivable, §5.3). |
-| `proofProfile` | literal `"org.kya-os/proof@1"` | MAY | Names the per-request proof profile the Entity's requests carry (§8). The proof itself is NEVER on the Card. |
+| `proofProfile` | literal `"org.kya-os/proof.v1"` | MAY | Names the per-request proof profile the Entity's requests carry (§8). The proof itself is NEVER on the Card. |
 | `cimd` | `{clientId, jwksUri}` | MAY | CIMD on-ramp coordinates (§7). |
 | `revocation` | `{statusListCredential, statusListIndex}` | MAY | W3C Bitstring Status List v1.0 entry for the Card's backing credential (§10.3). |
 
@@ -307,7 +307,7 @@ The value under the reverse-DNS key `org.kya-os/card` is EITHER an inline **clai
 
 ```json
 { "org.kya-os/card": { "id": "did:web:…", "entityType": "agent", "name": "…",
-  "capabilities": ["…"], "responsibleParty": "did:web:…", "proofProfile": "org.kya-os/proof@1" } }
+  "capabilities": ["…"], "responsibleParty": "did:web:…", "proofProfile": "org.kya-os/proof.v1" } }
 ```
 
 OR a lazy-fetch reference `{ "org.kya-os/card": { "org.kya-os/cardRef": "<https card.json>" } }`.
@@ -326,7 +326,7 @@ fail closed. The entry occupies `AgentCard.capabilities.extensions[]`:
   "description": "KYA-OS typed DID-anchored holder-of-key identity",
   "required": false,
   "params": { "id": "did:web:…", "entityType": "agent",
-    "cardUrl": "https://host/{path}/card.json", "proofProfile": "org.kya-os/proof@1" } }
+    "cardUrl": "https://host/{path}/card.json", "proofProfile": "org.kya-os/proof.v1" } }
 ```
 
 The extension version is pinned **in the URI**. `required: false` (the default) IS the
@@ -342,7 +342,7 @@ the uniquely-KYA-OS axes live under a `kya:` JSON-LD `@context`:
 { "@context": { "kya": "https://kya-os.org/ns/agentfacts/v1#" },
   "id": "did:web:…", "agent_name": "…", "kya:entityType": "agent",
   "owner": "did:web:…", "capabilities": ["…"],
-  "kya:conformanceLevel": "L2", "kya:proofProfile": "org.kya-os/proof@1",
+  "kya:conformanceLevel": "L2", "kya:proofProfile": "org.kya-os/proof.v1",
   "kya:delegationRef": "vc_root>del_123" }
 ```
 
@@ -444,8 +444,8 @@ emit `cnf`, verification degrades to **L3-minus** (§8.6, §9.4) rather than fai
 
 ## 8. Per-Request Holder-of-Key Proof (NORMATIVE) [TAAWG-NORMATIVE]
 
-`org.kya-os/proof@1` is a **self-contained**, **sender-constrained**, fail-closed proof that rides
-its own `_meta["org.kya-os/proof.v1"]` key. There is no session establishment and no handshake;
+`org.kya-os/proof.v1` is a **self-contained**, **sender-constrained**, fail-closed proof that rides
+its own `_meta["org.kya-os/request-proof"]` key. There is no session establishment and no handshake;
 every request carries its own proof.
 
 A note on the word "stateless", which earlier drafts used for this profile: the proof *object* is
@@ -460,27 +460,30 @@ stateless proof construction, never stateless verification.
 Two orthogonal proof profiles may appear on one server, each under its OWN `_meta` key: the
 **legacy session-bound** `ProofMeta` (carrying `sessionId` + a handshake nonce; retained untouched
 for 1.x back-compat) under `_meta["org.kya-os/response-proof"]` (previously `org.kya-os/proof`,
-read-accepted for one major version per SPEC.md §7.6), and the **self-contained** `org.kya-os/proof@1`
-specified here under `_meta["org.kya-os/proof.v1"]` - the profile id itself is not a legal `_meta`
-key name under MCP's key grammar (a name segment permits only alphanumerics, hyphens, underscores,
-and dots - no `@`), so the carrier key is the profile id's key-safe form, versioned with `.v1`. Distinct keys let both regimes coexist without either guard seeing -
+read-accepted for one major version per SPEC.md §7.6), and the **self-contained** `org.kya-os/proof.v1`
+specified here under `_meta["org.kya-os/request-proof"]` - the carrier key names the slot by role,
+pairing with the response proof's `org.kya-os/response-proof`, and the profile VERSION lives inside
+the object, in its `prf` field. Keys carry no versions and no `@` (which MCP's `_meta` key grammar
+forbids in a name segment anyway). Distinct keys let both regimes coexist without either guard seeing -
 or rejecting - the other's proof (a shared key made them mutually exclusive: a legacy proof failed
 the card schema and a card proof failed the legacy structure check). A Verifier reads the key for
 the profile it implements; the object still carries `prf` as a self-describing discriminator. This
-document specifies only `org.kya-os/proof@1`.
+document specifies only `org.kya-os/proof.v1`.
 
-**Backward compatibility (carrier key).** Earlier drafts used the profile id verbatim as the
-carrier key (`_meta["org.kya-os/proof@1"]`). For one major version, Verifiers MUST also accept a
-proof under that legacy key; producers MUST emit the canonical `org.kya-os/proof.v1` and,
-when targeting verifiers older than this revision, MAY additionally mirror the proof under the
-legacy key (the same one-major-version mirroring allowance as SPEC.md §7.6). When both keys are
-present, the canonical key wins.
+**Backward compatibility (carrier key and profile id).** The earlier draft used one string,
+`org.kya-os/proof@1`, as both the carrier key and the `prf` profile id. For one major version,
+Verifiers MUST accept a proof under that legacy key and MUST accept that legacy `prf` value (the
+covered claims are recomputed from the received object, so legacy-profile signatures verify
+unchanged); producers emit the canonical `org.kya-os/request-proof` key and `org.kya-os/proof.v1`
+profile id, and MAY additionally mirror the proof under the legacy key when targeting verifiers
+older than this revision (the same one-major-version allowance as SPEC.md §7.6). When both keys
+are present, the canonical key wins.
 
 ### 8.2 Object
 
 ```jsonc
 {
-  "prf": "org.kya-os/proof@1",           // profile discriminator (literal)
+  "prf": "org.kya-os/proof.v1",           // profile discriminator (literal)
   "alg": "EdDSA",                         // "EdDSA" (Ed25519) | "ES256" (P-256) - allow-list, no negotiation
   "did": "did:web:…",                     // caller DID (the accountable principal)
   "kid": "did:web:…#key-1",               // signing key id; kid.split('#')[0] MUST == did
@@ -602,7 +605,7 @@ integrator who intended L3 observe the downgrade rather than have it pass silent
 
 ### 8.8 Relationship to RFC 9449 (DPoP)
 
-`org.kya-os/proof@1` is a per-request proof-of-possession mechanism and it deliberately overlaps with
+`org.kya-os/proof.v1` is a per-request proof-of-possession mechanism and it deliberately overlaps with
 DPoP [RFC9449]: both bind a fresh, short-lived proof to every request, both carry a nonce and a
 validity window, and both express the sender-constraint as an RFC 7638 [RFC7638] `cnf.jkt` thumbprint.
 This profile does **not** aim to replace DPoP. Where an authorization server issues DPoP-sender-
@@ -669,7 +672,7 @@ implementation MUST derive the level per §9.4 / §11.1 step 7, not from this pr
 
 ### 9.3 L3 - live per-request proof-of-possession
 
-Evidence: L2 **plus** a valid sender-constrained `org.kya-os/proof@1` (§8) - `audience` === self,
+Evidence: L2 **plus** a valid sender-constrained `org.kya-os/proof.v1` (§8) - `audience` === self,
 nonce fresh, `requestHash` recomputes, and the `cnf.jkt` fusion when the AS supplies a token `cnf`
 (this is the proof floor that lifts the level to L3) - **plus** a LIVE Bitstring Status List
 freshness check on the leaf delegation/capability credentials. The leaf-invoker === `proof.did`
@@ -960,7 +963,7 @@ redirects, size/time caps. Residual: standard transport-layer DoS is out of scop
 |-----|---------|---------|
 | `org.kya-os/card` | inline Card summary or a `cardRef` on MCP `server.json`/`catalog.json` | §6.1 |
 | `org.kya-os/cardRef` | a lazy-fetch `card.json` URL (inside `org.kya-os/card`) | §6.1 |
-| `org.kya-os/proof.v1` | the self-contained per-request holder-of-key proof (§8); the key-safe carrier of the `org.kya-os/proof@1` profile (the legacy key `org.kya-os/proof@1` is accepted for one major version) | §8 |
+| `org.kya-os/request-proof` | the self-contained per-request holder-of-key proof (§8), carrying the `org.kya-os/proof.v1` profile (the legacy key and `prf` value `org.kya-os/proof@1` are accepted for one major version) | §8 |
 | `org.kya-os/response-proof` | the detached response proof (`ProofMeta`, SPEC.md §7), including the legacy session-bound era; previously `org.kya-os/proof`, read-accepted for one major version | §8.1 |
 | `org.kya-os/did` | the Entity's DID inside a CIMD document | §7.3 |
 
@@ -1027,8 +1030,8 @@ with either primitive this document marks for ratification.
 
 ANP (Agent Network Protocol) is an informative peer in the discovery-rail landscape. Within KYA-OS,
 the **legacy session-bound proof** (`ProofMeta` with `sessionId` + handshake nonce) under
-`_meta["org.kya-os/response-proof"]` coexists with `org.kya-os/proof@1` under its own distinct
-`_meta["org.kya-os/proof.v1"]` key (§8.1); it is retained unchanged for the 1.x line and is expected
+`_meta["org.kya-os/response-proof"]` coexists with `org.kya-os/proof.v1` under its own distinct
+`_meta["org.kya-os/request-proof"]` key (§8.1); it is retained unchanged for the 1.x line and is expected
 to be deprecated at 2.0 in favour of the self-contained profile.
 
 ### 15.6 Governance - standardize exactly two primitives
@@ -1089,7 +1092,7 @@ Golden, `parseCard`-valid Cards, one per type (full fixtures: the `entity-card` 
 **`mcp`**
 ```json
 { "id": "did:web:example.com:mcp:server", "entityType": "mcp", "name": "Acme MCP Server",
-  "capabilities": ["tools/list", "tools/call"], "proofProfile": "org.kya-os/proof@1" }
+  "capabilities": ["tools/list", "tools/call"], "proofProfile": "org.kya-os/proof.v1" }
 ```
 
 **`agent`** (L2 attested capability + accountability + revocation)
@@ -1101,14 +1104,14 @@ Golden, `parseCard`-valid Cards, one per type (full fixtures: the `entity-card` 
   "responsibleParty": "did:web:api.example",
   "principal": "did:web:example.com:users:alice",
   "delegationRef": "urn:zcap:root>urn:zcap:del1",
-  "proofProfile": "org.kya-os/proof@1",
+  "proofProfile": "org.kya-os/proof.v1",
   "revocation": { "statusListCredential": "https://example.com/status/cards", "statusListIndex": "3" } }
 ```
 
 **`client`** (CIMD on-ramp)
 ```json
 { "id": "did:web:app.example:clients:acme-cli", "entityType": "client", "name": "Acme CLI",
-  "proofProfile": "org.kya-os/proof@1",
+  "proofProfile": "org.kya-os/proof.v1",
   "cimd": { "clientId": "https://app.example/clients/acme-cli",
     "jwksUri": "https://app.example/clients/acme-cli/jwks.json" } }
 ```
@@ -1143,7 +1146,7 @@ reuse them.
 
 | Vector file | Contents |
 |-------------|----------|
-| `conformance/vectors/card-proof.json` | Signed `org.kya-os/proof@1` proofs + their RFC 9421 siblings, each carrying its request, the DID-keyed JWKS (`input.jwks`), audience, and window. One positive vector + five negatives (tampered body, tampered signature, wrong audience, expired, kid⇄did forgery). |
+| `conformance/vectors/card-proof.json` | Signed `org.kya-os/proof.v1` proofs + their RFC 9421 siblings, each carrying its request, the DID-keyed JWKS (`input.jwks`), audience, and window. One positive vector + five negatives (tampered body, tampered signature, wrong audience, expired, kid⇄did forgery). |
 | `conformance/vectors/entity-card.json` | Golden `parseCard`-valid Cards, one per `entityType`, plus the multi-hop VC 2.0 + ZCAP-LD delegation chain (attenuation invariants; leaf invoker === proof `did`) carried by the agent accountability vector. |
 | `conformance/card-vectors.ts` | Deterministic regenerator (TypeScript). |
 | `conformance/verify.py` | The INDEPENDENT cross-language verifier (pure Python stdlib). |
@@ -1161,7 +1164,7 @@ reuse them.
 
 ```
 KYA-OS cross-language verifier (Python 3.x, stdlib-only)
-  proof: org.kya-os/proof@1  did: did:web:example.com:agents:acme-pay
+  proof: org.kya-os/proof.v1  did: did:web:example.com:agents:acme-pay
   [PASS] requestHash JCS+SHA-256 recompute
   [PASS] detached EdDSA JWS over JCS(coveredClaims)
   [PASS] RFC 9421 httpSig over the signature base
@@ -1207,7 +1210,7 @@ Codes are snake_case, aligned to the implementation.
 
 | Code | Meaning |
 |------|---------|
-| `proof_missing` | No `org.kya-os/proof.v1` (or legacy `org.kya-os/proof@1`) in `_meta`. |
+| `proof_missing` | No `org.kya-os/request-proof` (or legacy `org.kya-os/proof@1`) in `_meta`. |
 | `proof_invalid` | The holder-of-key proof did not verify. |
 | `proof_level_insufficient` | The proof assurance is below the required `minLevel`. |
 

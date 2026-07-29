@@ -3,7 +3,7 @@
  * Deterministic generator for the Entity Card conformance vectors —
  * `conformance/vectors/card-proof.json` + `conformance/vectors/entity-card.json`.
  *
- * It signs the golden `org.kya-os/proof@1` proof (and the kid⇄did forgery) with the FIXED
+ * It signs the golden `org.kya-os/proof.v1` proof (and the kid⇄did forgery) with the FIXED
  * {@link ENTITY_KEY} at the FIXED {@link T0_MS} clock, so re-running reproduces
  * byte-identical files. Every negative variant is derived by surgical tampering or
  * a pinned mismatch, so the positive/negative relationships hold by construction.
@@ -37,7 +37,7 @@ import {
 
 const clock = (): number => T0_MS;
 
-/** Mint a signed `org.kya-os/proof@1` for {@link REQUEST} under the given identity. */
+/** Mint a signed `org.kya-os/proof.v1` for {@link REQUEST} under the given identity. */
 async function mintProof(opts: {
   did: string;
   kid: string;
@@ -91,7 +91,7 @@ export async function cardProofVectorFile(): Promise<VectorFile> {
     {
       id: 'card-proof/valid',
       category: 'card-proof',
-      description: 'A well-formed org.kya-os/proof@1 with a valid detached JWS, in-window and audience-bound',
+      description: 'A well-formed org.kya-os/proof.v1 with a valid detached JWS, in-window and audience-bound',
       expected: 'pass',
       reason: 'Every binding — signature, requestHash, audience, nonce, window, kid⇄did — holds',
       input: proofInput(valid),

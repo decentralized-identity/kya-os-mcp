@@ -12,7 +12,7 @@
     "responsibleParty": "did:web:example.com:org:acme",
     "principal": "did:web:example.com:users:alice",
     "delegationRef": "vc_root>del_123",
-    "proofProfile": "org.kya-os/proof@1"
+    "proofProfile": "org.kya-os/proof.v1"
   },
   "didServiceEntry": {
     "id": "#kya-os-card",
@@ -27,7 +27,7 @@
       "capabilities": ["handshake", "payments.transfer"],
       "responsibleParty": "did:web:example.com:org:acme",
       "delegationRef": "vc_root>del_123",
-      "proofProfile": "org.kya-os/proof@1"
+      "proofProfile": "org.kya-os/proof.v1"
     }
   },
   "serverCardMetaByRef": {
@@ -51,7 +51,7 @@
       "id": "did:web:example.com:agents:acme-pay",
       "entityType": "agent",
       "cardUrl": "https://example.com/agents/acme-pay/card.json",
-      "proofProfile": "org.kya-os/proof@1"
+      "proofProfile": "org.kya-os/proof.v1"
     }
   },
   "agentFacts": {
@@ -62,7 +62,7 @@
     "owner": "did:web:example.com:org:acme",
     "capabilities": ["handshake", "payments.transfer"],
     "kya:conformanceLevel": "L2",
-    "kya:proofProfile": "org.kya-os/proof@1",
+    "kya:proofProfile": "org.kya-os/proof.v1",
     "kya:delegationRef": "vc_root>del_123"
   }
 }

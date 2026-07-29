@@ -1,7 +1,7 @@
 /**
  * KYA-OS Entity Card proof — VERIFY (`verifyCardProof`), fail-closed.
  *
- * Recompute EVERY binding a stateless `org.kya-os/proof@1` asserts and reject on the first thing
+ * Recompute EVERY binding a stateless `org.kya-os/proof.v1` asserts and reject on the first thing
  * that does not hold. The signature only proves the proof is AUTHENTIC (signed by the holder of
  * `kid`); accountability requires binding that key to the accountable principal `did`:
  *
@@ -34,7 +34,7 @@ import {
 } from './types.js';
 
 /**
- * Verify an `org.kya-os/proof@1` against the request it should bind and the injected seams.
+ * Verify an `org.kya-os/proof.v1` against the request it should bind and the injected seams.
  * Fail-closed: returns `{ ok:false, reasons }` on any broken binding; on success returns the
  * derived assurance (`L3` on full cnf fusion, `L3-minus` without an AS `cnf`) and the principal.
  */

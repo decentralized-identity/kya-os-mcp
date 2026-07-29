@@ -35,7 +35,7 @@ async function signAdversarial(
 }
 
 describe('buildCardProof', () => {
-  it('mints an org.kya-os/proof@1 under the shipped _meta key, binding did/kid/audience/cnf', async () => {
+  it('mints an org.kya-os/proof.v1 under the shipped _meta key, binding did/kid/audience/cnf', async () => {
     const { signer } = await keypair();
     const env = await buildCardProof(REQ, signer, { audience: AUD, nonce: NONCE, now: clock });
     const proof = env[PROOF_KEY];

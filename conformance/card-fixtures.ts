@@ -10,7 +10,7 @@
 
 import type { Ed25519PrivateJwk } from '../src/card/index.js';
 
-/** The signing key behind the golden `org.kya-os/proof@1` proof (TEST-ONLY). */
+/** The signing key behind the golden `org.kya-os/proof.v1` proof (TEST-ONLY). */
 export const ENTITY_KEY: Ed25519PrivateJwk = {
   kty: 'OKP',
   crv: 'Ed25519',
@@ -113,7 +113,7 @@ export const GOLDEN_CARDS = {
     entityType: 'mcp',
     name: 'Acme MCP Server',
     capabilities: ['tools/list', 'tools/call'],
-    proofProfile: 'org.kya-os/proof@1',
+    proofProfile: 'org.kya-os/proof.v1',
   },
   agent: {
     id: ENTITY_DID,
@@ -124,14 +124,14 @@ export const GOLDEN_CARDS = {
     responsibleParty: OWNER,
     principal: 'did:web:example.com:users:alice',
     delegationRef: 'urn:zcap:root>urn:zcap:del1',
-    proofProfile: 'org.kya-os/proof@1',
+    proofProfile: 'org.kya-os/proof.v1',
     revocation: { statusListCredential: 'https://example.com/status/cards', statusListIndex: '3' },
   },
   client: {
     id: 'did:web:app.example:clients:acme-cli',
     entityType: 'client',
     name: 'Acme CLI',
-    proofProfile: 'org.kya-os/proof@1',
+    proofProfile: 'org.kya-os/proof.v1',
     cimd: { clientId: 'https://app.example/clients/acme-cli', jwksUri: 'https://app.example/clients/acme-cli/jwks.json' },
   },
   verifier: {

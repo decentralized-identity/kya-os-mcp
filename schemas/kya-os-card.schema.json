@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schema.kya-os.org/v1/protocol/identity/card/v1.1.0",
   "title": "KYA-OS Entity Card",
-  "description": "A typed, DID-anchored identity card for a KYA-OS entity (mcp | agent | client | verifier | human). One canonical card is anchored by a `KyaOsEntityCard` service entry on the entity's did:web DID document and projected onto the four discovery surfaces the ecosystem already indexes (MCP server.json / catalog.json `_meta['org.kya-os/card']`, A2A AgentExtension, NANDA AgentFacts, and the MCP catalog entry). The card asserts identity + type + declared capabilities; everything trust-bearing (accountability, attested capabilities, KYC/KYB) is proven by referenced credentials, not self-claimed (claim-minimalism). The sender-constrained holder-of-key proof (`org.kya-os/proof@1`) is NEVER on the static card — it rides per-request `_meta` on top (see detached-proof); `proofProfile` only names the profile a verifier should expect.",
+  "description": "A typed, DID-anchored identity card for a KYA-OS entity (mcp | agent | client | verifier | human). One canonical card is anchored by a `KyaOsEntityCard` service entry on the entity's did:web DID document and projected onto the four discovery surfaces the ecosystem already indexes (MCP server.json / catalog.json `_meta['org.kya-os/card']`, A2A AgentExtension, NANDA AgentFacts, and the MCP catalog entry). The card asserts identity + type + declared capabilities; everything trust-bearing (accountability, attested capabilities, KYC/KYB) is proven by referenced credentials, not self-claimed (claim-minimalism). The sender-constrained holder-of-key proof (`org.kya-os/proof.v1`) is NEVER on the static card — it rides per-request `_meta` on top (see detached-proof); `proofProfile` only names the profile a verifier should expect.",
   "type": "object",
   "required": ["id", "entityType", "name"],
   "properties": {
@@ -69,8 +69,8 @@
       "description": "URL of the entity's DID document (the trust anchor for did:web; integrity derives from domain control). The DID document carries the `KyaOsEntityCard` service entry that anchors this card."
     },
     "proofProfile": {
-      "const": "org.kya-os/proof@1",
-      "description": "Names the per-request holder-of-key proof profile this entity's requests carry — the stateless, sender-constrained `org.kya-os/proof@1` envelope (distinct from the legacy session-bound ProofMeta). The proof itself is NEVER on this static card; it rides per-request `_meta`. This field only advertises the profile a verifier should expect."
+      "enum": ["org.kya-os/proof.v1", "org.kya-os/proof@1"],
+      "description": "Names the per-request holder-of-key proof profile this entity's requests carry — the stateless, sender-constrained `org.kya-os/proof.v1` envelope (distinct from the legacy session-bound ProofMeta). The proof itself is NEVER on this static card; it rides per-request `_meta`. This field only advertises the profile a verifier should expect."
     },
     "cimd": {
       "$ref": "#/$defs/CimdBinding",
@@ -234,7 +234,7 @@
       "name": "KYA-OS Inspector (dev)",
       "capabilities": ["handshake", "signing", "verification"],
       "conformanceLevel": "L1",
-      "proofProfile": "org.kya-os/proof@1"
+      "proofProfile": "org.kya-os/proof.v1"
     },
     {
       "id": "did:web:example.com:mcp:acme-search",
@@ -255,7 +255,7 @@
       "responsibleParty": "did:web:example.com:org:acme",
       "delegationRef": "vc_root>del_mcp",
       "didDocument": "https://example.com/mcp/acme-search/did.json",
-      "proofProfile": "org.kya-os/proof@1",
+      "proofProfile": "org.kya-os/proof.v1",
       "cimd": {
         "clientId": "https://example.com/mcp/acme-search",
         "jwksUri": "https://example.com/mcp/acme-search/jwks.json"
@@ -274,7 +274,7 @@
       "conformanceLevel": "L1",
       "responsibleParty": "did:web:example.com:org:acme",
       "didDocument": "https://example.com/clients/acme-cli/did.json",
-      "proofProfile": "org.kya-os/proof@1",
+      "proofProfile": "org.kya-os/proof.v1",
       "cimd": {
         "clientId": "https://example.com/clients/acme-cli",
         "jwksUri": "https://example.com/clients/acme-cli/jwks.json"

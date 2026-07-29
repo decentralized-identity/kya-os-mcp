@@ -416,7 +416,7 @@ so it is reproducible against any implementation without re-signing.
 | `vectors/status-list.json` | StatusList2021 revocation | active (bit unset) | revoked (bit set) |
 | `vectors/did-key-resolution.json` | did:key resolution | valid Ed25519 | malformed multibase, wrong method |
 | `vectors/did-web-resolution.json` | did:web resolution | well-formed id-matched document | document id mismatch, not found |
-| `vectors/card-proof.json` | `org.kya-os/proof@1` holder-of-key proof | valid signed proof, in-window, audience-bound | tampered body, tampered signature, wrong audience, expired, kid⇄did forgery |
+| `vectors/card-proof.json` | `org.kya-os/proof.v1` holder-of-key proof | valid signed proof, in-window, audience-bound | tampered body, tampered signature, wrong audience, expired, kid⇄did forgery |
 | `vectors/entity-card.json` | Entity Card `parseCard` + `verifyCard` | golden card per `entityType`, accountable agent | malformed (unknown field), broken accountability JOIN |
 | `vectors/audit-integrity.json` | Audit JCS + domain-separated hashing + RFC 9162 | fixed Unicode event, leaf/root, inclusion and consistency paths | mutated event/proof relationships are exercised by the audit unit suites |
 
@@ -468,7 +468,7 @@ const myAdapter: ConformanceAdapter = {
   async verifyStatusList(input)       { /* ... */ },
   async resolveDidKey(input)          { /* ... */ },
   async resolveDidWeb(input)          { /* ... */ },
-  async verifyCardProof(input)        { /* org.kya-os/proof@1 holder-of-key proof */ },
+  async verifyCardProof(input)        { /* org.kya-os/proof.v1 holder-of-key proof */ },
   async verifyEntityCard(input)       { /* parseCard + verifyCard */ },
   async verifyAuditIntegrity(input)   { /* JCS event digest + RFC 9162 proofs */ },
 };
@@ -514,12 +514,12 @@ The Entity Card is a **distinct, newer layer** on top of the Level 1–3 ladder 
 a typed, DID-anchored card plus a stateless, sender-constrained per-request proof.
 It is orthogonal to the legacy session-bound proof — the two coexist, each under
 its OWN distinct `_meta` key (`_meta['org.kya-os/proof']` for the legacy
-session-bound proof, `_meta['org.kya-os/proof@1']` for the stateless card proof),
+session-bound proof, `_meta['org.kya-os/proof.v1']` for the stateless card proof),
 and each verifier reads its own key and ignores the other. Its
 conformance vectors live in the SAME harness under two categories, wired to the two
 adapter methods `verifyCardProof` and `verifyEntityCard`.
 
-### `card-proof` — the `org.kya-os/proof@1` holder-of-key proof
+### `card-proof` — the `org.kya-os/proof.v1` holder-of-key proof
 
 `vectors/card-proof.json` carries fully-formed, pre-signed proofs. Each vector's
 `input` is self-contained: the proof object, the `request` it binds, the DID-keyed
@@ -566,7 +566,7 @@ onto the same ladder:
 
 `conformance/verify.py` is the **second-language complement** to the adapter contract:
 a pure-Python-stdlib re-implementation that shares no code with the TypeScript
-reference. It verifies the positive `org.kya-os/proof@1` vector and independently
+reference. It verifies the positive `org.kya-os/proof.v1` vector and independently
 re-derives the audit event's RFC 8785 bytes, domain-separated digest, RFC 9162
 root, inclusion path, and consistency path. Ed25519 uses the RFC 8032 reference
 without `pip install`.
@@ -580,7 +580,7 @@ Expected output:
 
 ```
 KYA-OS cross-language verifier (Python 3.x, stdlib-only)
-  proof: org.kya-os/proof@1  did: did:web:example.com:agents:acme-pay
+  proof: org.kya-os/proof.v1  did: did:web:example.com:agents:acme-pay
   [PASS] requestHash JCS+SHA-256 recompute
   [PASS] detached EdDSA JWS over JCS(coveredClaims)
   [PASS] RFC 9421 httpSig over the signature base

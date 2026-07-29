@@ -9,7 +9,7 @@
       "expected": "pass",
       "reason": "A declared extension on an optional server is admitted with the extension active",
       "input": {
-        "serverSettings": { "version": "1.0.0", "proofProfiles": ["org.kya-os/proof@1"] },
+        "serverSettings": { "version": "1.0.0", "proofProfiles": ["org.kya-os/proof.v1"] },
         "request": {
           "method": "tools/call",
           "params": {
@@ -21,7 +21,7 @@
                 "extensions": {
                   "org.kya-os/decentralized-authority": {
                     "version": "1.0.0",
-                    "proofProfiles": ["org.kya-os/proof@1"],
+                    "proofProfiles": ["org.kya-os/proof.v1"],
                     "didMethods": ["did:key", "did:web"]
                   }
                 }
@@ -81,7 +81,7 @@
                 "extensions": {
                   "org.kya-os/decentralized-authority": {
                     "version": 1,
-                    "proofProfiles": "org.kya-os/proof@1"
+                    "proofProfiles": "org.kya-os/proof.v1"
                   }
                 }
               }

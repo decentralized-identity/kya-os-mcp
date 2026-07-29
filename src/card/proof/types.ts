@@ -1,8 +1,8 @@
 /**
  * KYA-OS Entity Card — stateless per-request holder-of-key proof: shapes + seams.
  *
- * `org.kya-os/proof@1` is the STATELESS, sender-constrained proof profile. It rides its OWN
- * `_meta` key ({@link KYA_OS_CARD_PROOF_META_KEY} = `org.kya-os/proof.v1`), DISTINCT from the legacy
+ * `org.kya-os/proof.v1` is the STATELESS, sender-constrained proof profile. It rides its OWN
+ * `_meta` key ({@link KYA_OS_CARD_PROOF_META_KEY} = `org.kya-os/request-proof`), DISTINCT from the legacy
  * session-bound `ProofMeta` (which carries `sessionId` + a handshake nonce under
  * `org.kya-os/proof`). Separate keys let the two regimes coexist on one server without either guard
  * seeing — or rejecting — the other's proof. Every request self-proves; there is no session state.
@@ -13,7 +13,7 @@
  */
 
 import { z } from 'zod';
-import { Did, PROOF_PROFILE_ID, type ProofPublicJwk } from '../schema.js';
+import { Did, LEGACY_PROOF_PROFILE_ID, PROOF_PROFILE_ID, type ProofPublicJwk } from '../schema.js';
 
 /** The stateless per-request proof profile tag (the `prf` discriminator). */
 export const PROOF_PROFILE_V1 = PROOF_PROFILE_ID;
@@ -24,19 +24,19 @@ export const PROOF_PROFILE_V1 = PROOF_PROFILE_ID;
  * exclusive on a server (a legacy proof failed the card schema and was 401'd; a card proof failed
  * the legacy structure check). With separate keys each guard reads its OWN key and simply does not
  * see the other's proof, so both can run on one server — genuinely additive, no legacy coupling. The
- * key is the profile id's KEY-SAFE form: MCP's `_meta` key grammar permits only alphanumerics,
- * hyphens, underscores, and dots in a key's name segment - no `@` - so the profile id itself is
- * not a legal key name. The object's `prf` field remains the self-describing discriminator.
+ * key names the slot by ROLE (the request proof), pairing with the response proof's
+ * `org.kya-os/response-proof`; the profile VERSION lives inside the object, in its `prf` field.
+ * Keys carry no versions and no `@` (which MCP's `_meta` key grammar forbids anyway).
  */
-export const KYA_OS_CARD_PROOF_META_KEY = 'org.kya-os/proof.v1';
+export const KYA_OS_CARD_PROOF_META_KEY = 'org.kya-os/request-proof';
 
 /**
- * The earlier draft carrier key, which used the profile id verbatim and therefore violated MCP's
- * `_meta` key grammar. Verifiers accept it for one major version (SPEC-ENTITY-CARD §8.1);
+ * The earlier draft carrier key, which used the then-profile-id verbatim and therefore violated
+ * MCP's `_meta` key grammar. Verifiers accept it for one major version (SPEC-ENTITY-CARD §8.1);
  * producers emit {@link KYA_OS_CARD_PROOF_META_KEY} and MAY mirror under this key for verifiers
  * older than the rename. When both keys are present, the canonical key wins.
  */
-export const LEGACY_CARD_PROOF_META_KEY = PROOF_PROFILE_V1;
+export const LEGACY_CARD_PROOF_META_KEY = LEGACY_PROOF_PROFILE_ID;
 
 /** Default proof lifetime in seconds (SPEC §8: short-lived, ≤ 60s). */
 export const DEFAULT_TTL_SEC = 60;
@@ -76,7 +76,7 @@ export const CardProofCnfSchema = z.object({
 });
 
 /**
- * The `org.kya-os/proof@1` payload. Every field except the two signatures (`jws`, `httpSig`) is a
+ * The `org.kya-os/proof.v1` payload. Every field except the two signatures (`jws`, `httpSig`) is a
  * COVERED claim: the detached EdDSA `jws` signs the RFC 8785 (JCS) canonicalization of the claims,
  * so tampering any of them fails the signature. `cnf.jkt` is OPTIONAL — present it degrades to
  * L3-minus rather than blocking when the authorization server does not emit an RFC 9449 `cnf`.
@@ -89,7 +89,7 @@ export const CardProofCnfSchema = z.object({
  * It degrades gracefully: a signer without a `signRaw` seam mints a JWS-only proof (no sibling).
  */
 export const CardProofMetaSchema = z.object({
-  prf: z.literal(PROOF_PROFILE_V1),
+  prf: z.union([z.literal(PROOF_PROFILE_V1), z.literal(LEGACY_PROOF_PROFILE_ID)]),
   alg: z.enum(['EdDSA', 'ES256']),
   did: Did,
   // The signing key reference MUST carry a `#fragment` (a verificationMethod id); the runtime also

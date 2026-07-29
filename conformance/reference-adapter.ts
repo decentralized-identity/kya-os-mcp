@@ -31,7 +31,7 @@ import {
 } from '../src/delegation/chain-enforcement.js';
 import { BitstringManager } from '../src/delegation/bitstring.js';
 import { ClockProvider, FetchProvider } from '../src/providers/base.js';
-// The Entity Card layer (`org.kya-os/proof@1` + the typed card) lives on the
+// The Entity Card layer (`org.kya-os/proof.v1` + the typed card) lives on the
 // `@kya-os/mcp/card` subpath, NOT the package root — wire its PUBLIC verify
 // primitives here exactly as the legacy ones above (no forked logic).
 import {

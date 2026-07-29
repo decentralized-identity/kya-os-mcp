@@ -19,7 +19,7 @@
  * The first five exercise the LEGACY session-bound primitives (detached
  * `ProofMeta`, `DelegationCredential` + StatusList2021, the DID resolvers). The
  * last two exercise the NEWER Entity Card layer — the stateless
- * `org.kya-os/proof@1` holder-of-key proof (`card-proof`) and the typed,
+ * `org.kya-os/proof.v1` holder-of-key proof (`card-proof`) and the typed,
  * DID-anchored card (`entity-card`) — which is a distinct, orthogonal profile.
  * `negotiation` exercises the MCP extension admission gate
  * (`org.kya-os/decentralized-authority`, SPEC-MCP-EXTENSION.md §3-§5).
@@ -135,7 +135,7 @@ export interface Ed25519PublicJwkLike {
 }
 
 /**
- * Input for the stateless Entity Card holder-of-key proof (`org.kya-os/proof@1`).
+ * Input for the stateless Entity Card holder-of-key proof (`org.kya-os/proof.v1`).
  * Carries the full, pre-signed proof plus the resolver material a verifier needs
  * to recompute every binding — the DID-keyed JWKS (the signer's public JWK[s]),
  * the recipient `expectedAudience`, and a pinned `now`/`skew` window. All fields
@@ -143,7 +143,7 @@ export interface Ed25519PublicJwkLike {
  */
 export interface CardProofInput {
   /**
-   * The `org.kya-os/proof@1` proof object: `{ prf, alg, did, kid, audience,
+   * The `org.kya-os/proof.v1` proof object: `{ prf, alg, did, kid, audience,
    * nonce, created, expires, requestHash, cnf?, jws, httpSig? }`.
    */
   proof: unknown;
@@ -277,7 +277,7 @@ export interface ConformanceAdapter {
   resolveDidWeb(input: DidResolutionInput): Promise<AdapterResult>;
 
   /**
-   * Verify a stateless `org.kya-os/proof@1` holder-of-key proof: recompute the
+   * Verify a stateless `org.kya-os/proof.v1` holder-of-key proof: recompute the
    * signature, `requestHash`, `audience`, nonce freshness, `created`/`expires`
    * window, the `kid`⇄`did` binding, and the DID-key membership.
    */

@@ -13,7 +13,7 @@
  *   - cimd        (./cimd):    BIND the L1 CIMD on-ramp — `client_id` ⇄ `did:web`, DID-keyed
  *                              JWKS, and the fail-closed origin/`alsoKnownAs` substitution graft.
  *   - proof       (./proof):   MINT + VERIFY the stateless per-request holder-of-key proof
- *                              (`org.kya-os/proof@1`) — sender-constrained, fail-closed.
+ *                              (`org.kya-os/proof.v1`) — sender-constrained, fail-closed.
  *   - delegation  (./delegation): VALIDATE the W3C VC 2.0 + ZCAP-LD delegation chain — CRISP
  *                              attenuation + continuity, `responsibleParty`/leaf-invoker, fail-closed.
  *   - builder     (./builder):  the fluent `card()` chain — the 10-minute path to a valid card.

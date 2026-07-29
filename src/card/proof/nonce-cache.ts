@@ -1,5 +1,5 @@
 /**
- * KYA-OS Entity Card — batteries-included replay defense for `org.kya-os/proof@1`.
+ * KYA-OS Entity Card — batteries-included replay defense for `org.kya-os/proof.v1`.
  *
  * The {@link ConsumeNonceIfFresh} seam is security-critical: it MUST be an ATOMIC test-AND-set
  * (record the nonce AND report whether it was already seen, in one step). Hand-rolling it is the

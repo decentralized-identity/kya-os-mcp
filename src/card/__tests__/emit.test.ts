@@ -126,7 +126,7 @@ describe('emit — bare did:web org roots can publish (finding 7: emit/resolve s
 });
 
 describe('emit — proofProfile consistent across all four projections (finding 14)', () => {
-  // Pre-fix, toA2AExtension hardcoded proofProfile: org.kya-os/proof@1 while _meta and AgentFacts
+  // Pre-fix, toA2AExtension hardcoded proofProfile: org.kya-os/proof.v1 while _meta and AgentFacts
   // gated it on card.proofProfile — so a builder-produced card (which could never set proofProfile)
   // advertised proof on the A2A rail but stayed silent on the others: one identity, divergent signals.
   const init = { did: 'did:web:example.com:agents:acme', entityType: 'agent' as const, name: 'Acme' };
@@ -142,10 +142,10 @@ describe('emit — proofProfile consistent across all four projections (finding 
 
   it('a card WITH a proof profile advertises it on ALL four rails (they agree)', () => {
     const c = cardBuilder(init).usesProof().build();
-    expect(c.proofProfile).toBe('org.kya-os/proof@1');
-    expect(toA2AExtension(c).params.proofProfile).toBe('org.kya-os/proof@1');
-    expect(summaryOf(c).proofProfile).toBe('org.kya-os/proof@1');
-    expect(toAgentFacts(c)['kya:proofProfile']).toBe('org.kya-os/proof@1');
+    expect(c.proofProfile).toBe('org.kya-os/proof.v1');
+    expect(toA2AExtension(c).params.proofProfile).toBe('org.kya-os/proof.v1');
+    expect(summaryOf(c).proofProfile).toBe('org.kya-os/proof.v1');
+    expect(toAgentFacts(c)['kya:proofProfile']).toBe('org.kya-os/proof.v1');
   });
 });
 

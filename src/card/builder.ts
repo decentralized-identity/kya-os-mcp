@@ -126,7 +126,7 @@ export class CardBuilder {
   }
 
   /**
-   * Advertise the per-request holder-of-key proof profile (`org.kya-os/proof@1`). This only NAMES
+   * Advertise the per-request holder-of-key proof profile (`org.kya-os/proof.v1`). This only NAMES
    * the profile — the proof itself is never on the static card; it rides per-request `_meta`.
    */
   usesProof(): this {

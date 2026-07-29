@@ -1,5 +1,5 @@
 /**
- * Shared fixtures for the `org.kya-os/proof@1` test suites. Not a test file (no `.test.ts`),
+ * Shared fixtures for the `org.kya-os/proof.v1` test suites. Not a test file (no `.test.ts`),
  * so vitest does not collect it; excluded from coverage as an `__tests__` module.
  */
 

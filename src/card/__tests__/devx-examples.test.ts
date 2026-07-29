@@ -49,7 +49,7 @@ describe('examples/entity-card/server.ts — the 10-minute path runs end-to-end 
     const entityCard = buildAcmeCard();
     expect(entityCard.entityType).toBe('agent');
     expect(entityCard.id).toBe(AGENT_DID);
-    expect(entityCard.proofProfile).toBe('org.kya-os/proof@1');
+    expect(entityCard.proofProfile).toBe('org.kya-os/proof.v1');
     expect(entityCard).not.toHaveProperty('conformanceLevel');
   });
 

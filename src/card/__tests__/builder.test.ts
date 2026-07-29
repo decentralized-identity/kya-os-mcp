@@ -126,9 +126,9 @@ describe('card() builder — infrastructure coordinates (finding 15)', () => {
   const DID_DOC = 'https://example.com/agents/acme/did.json';
   const JWK = { kty: 'OKP' as const, crv: 'Ed25519' as const, x: 'abc123' };
 
-  it('.usesProof() advertises the org.kya-os/proof@1 profile', () => {
+  it('.usesProof() advertises the org.kya-os/proof.v1 profile', () => {
     const built = card({ did: DID, entityType: 'agent', name: 'Acme' }).usesProof().build();
-    expect(built.proofProfile).toBe('org.kya-os/proof@1');
+    expect(built.proofProfile).toBe('org.kya-os/proof.v1');
     expect(() => parseCard(built)).not.toThrow();
   });
 
@@ -170,7 +170,7 @@ describe('card() builder — infrastructure coordinates (finding 15)', () => {
       .revocation(REVOCATION)
       .build();
     expect(() => parseCard(built)).not.toThrow();
-    expect(built.proofProfile).toBe('org.kya-os/proof@1');
+    expect(built.proofProfile).toBe('org.kya-os/proof.v1');
     expect(built.cimd).toEqual({ clientId: CLIENT_ID, jwksUri: JWKS });
     expect(built.revocation).toEqual(REVOCATION);
   });

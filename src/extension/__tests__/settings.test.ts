@@ -23,7 +23,7 @@ describe('parseExtensionSettings', () => {
   it('accepts a fully-populated settings object', () => {
     const settings = {
       version: '1.0.0',
-      proofProfiles: ['org.kya-os/proof@1'],
+      proofProfiles: ['org.kya-os/proof.v1'],
       didMethods: ['did:key', 'did:web'],
       required: true,
     };
@@ -49,7 +49,7 @@ describe('parseExtensionSettings', () => {
   it.each([
     ['a non-semver version', { version: 'v1' }],
     ['a numeric version', { version: 1 }],
-    ['a string proofProfiles', { proofProfiles: 'org.kya-os/proof@1' }],
+    ['a string proofProfiles', { proofProfiles: 'org.kya-os/proof.v1' }],
     ['an empty proofProfiles array', { proofProfiles: [] }],
     ['duplicate proofProfiles', { proofProfiles: ['p', 'p'] }],
     ['an empty proofProfiles entry', { proofProfiles: [''] }],
@@ -85,7 +85,7 @@ describe('resolveExtensionSettings', () => {
     const resolved = resolveExtensionSettings({});
     resolved.proofProfiles.push('mutated');
     resolved.didMethods.push('did:mutated');
-    expect(DEFAULT_EXTENSION_SETTINGS.proofProfiles).toEqual(['org.kya-os/proof@1']);
+    expect(DEFAULT_EXTENSION_SETTINGS.proofProfiles).toEqual(['org.kya-os/proof.v1']);
     expect(DEFAULT_EXTENSION_SETTINGS.didMethods).toEqual(['did:key', 'did:web']);
   });
 });

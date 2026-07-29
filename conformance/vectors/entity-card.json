@@ -17,7 +17,7 @@
             "tools/list",
             "tools/call"
           ],
-          "proofProfile": "org.kya-os/proof@1"
+          "proofProfile": "org.kya-os/proof.v1"
         }
       }
     },
@@ -32,7 +32,7 @@
           "id": "did:web:app.example:clients:acme-cli",
           "entityType": "client",
           "name": "Acme CLI",
-          "proofProfile": "org.kya-os/proof@1",
+          "proofProfile": "org.kya-os/proof.v1",
           "cimd": {
             "clientId": "https://app.example/clients/acme-cli",
             "jwksUri": "https://app.example/clients/acme-cli/jwks.json"
@@ -97,7 +97,7 @@
           "responsibleParty": "did:web:api.example",
           "principal": "did:web:example.com:users:alice",
           "delegationRef": "urn:zcap:root>urn:zcap:del1",
-          "proofProfile": "org.kya-os/proof@1",
+          "proofProfile": "org.kya-os/proof.v1",
           "revocation": {
             "statusListCredential": "https://example.com/status/cards",
             "statusListIndex": "3"
@@ -219,7 +219,7 @@
             "tools/list",
             "tools/call"
           ],
-          "proofProfile": "org.kya-os/proof@1",
+          "proofProfile": "org.kya-os/proof.v1",
           "bogusField": true
         }
       }
@@ -250,7 +250,7 @@
           "responsibleParty": "did:web:api.example",
           "principal": "did:web:example.com:users:alice",
           "delegationRef": "urn:zcap:root>urn:zcap:del1",
-          "proofProfile": "org.kya-os/proof@1",
+          "proofProfile": "org.kya-os/proof.v1",
           "revocation": {
             "statusListCredential": "https://example.com/status/cards",
             "statusListIndex": "3"

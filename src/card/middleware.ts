@@ -10,7 +10,7 @@
  *     both immutably (a shallow clone; a stripped `_meta` degrades to a fetch, never a failure).
  *
  *   - `requireProof(deps, { minLevel? })` — the VERIFY side. Returns a per-request guard that
- *     reads the holder-of-key proof from `_meta['org.kya-os/proof.v1']` (legacy `org.kya-os/proof@1` accepted), RECOMPUTES it via
+ *     reads the holder-of-key proof from `_meta['org.kya-os/request-proof']` (legacy `org.kya-os/proof.v1` accepted), RECOMPUTES it via
  *     `./proof` ({@link verifyCardProof}) — every binding, fail-closed — enforces a minimum
  *     assurance, and returns a 401-shaped result on any failure. The caller passes the exact
  *     `{ method, params }` the client signed (i.e. WITHOUT `_meta`), so the recomputed
@@ -159,7 +159,7 @@ const ASSURANCE_RANK: Record<ProofAssurance, number> = { 'L3-minus': 1, L3: 2 };
 
 /**
  * Build a per-request holder-of-key guard from the pre-bound proof-verification seams. The returned
- * guard reads `_meta['org.kya-os/proof.v1']` (legacy `org.kya-os/proof@1` accepted), RECOMPUTES it against the request via {@link verifyCardProof},
+ * guard reads `_meta['org.kya-os/request-proof']` (legacy `org.kya-os/proof.v1` accepted), RECOMPUTES it against the request via {@link verifyCardProof},
  * enforces `opts.minLevel`, and returns `{ ok: true, did, level }` or a 401-shaped rejection. Fail-closed
  * throughout: a missing proof, a broken binding, a throwing verifier, or an assurance below `minLevel`
  * all reject.
@@ -174,7 +174,7 @@ export function requireProof(deps: VerifyProofDeps, opts: RequireProofOptions = 
   return async (req, meta) => {
     const proof = readCardProof(meta);
     if (proof === undefined) {
-      return fail('proof_missing', 'no org.kya-os/proof.v1 in _meta', ['proof_missing']);
+      return fail('proof_missing', 'no org.kya-os/request-proof in _meta', ['proof_missing']);
     }
     const result = await recompute(proof, req, deps);
     if (!result.ok || result.did === undefined || result.level === undefined) {
@@ -195,7 +195,7 @@ export function requireProof(deps: VerifyProofDeps, opts: RequireProofOptions = 
 }
 
 /** Read the card proof out of a `_meta` record (undefined when absent / not an object). Reads the
- *  canonical `org.kya-os/proof.v1` key, falling back to the earlier draft key (`org.kya-os/proof@1`,
+ *  canonical `org.kya-os/request-proof` key, falling back to the earlier draft key (`org.kya-os/proof.v1`,
  *  accepted for one major version); the canonical key wins when both are present. A legacy session
  *  proof under `org.kya-os/proof` is a different key and is simply not seen. */
 export function readCardProof(meta: unknown): unknown {

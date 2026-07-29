@@ -102,7 +102,7 @@ export interface VerifyCardDeps {
   attestationVerifier?: AttestationVerifier;
   /** Verifies the accountability edge (delegationRef → responsibleParty, leaf-invoker join). */
   accountabilityVerifier?: AccountabilityVerifier;
-  /** The per-request holder-of-key proof that rode `_meta['org.kya-os/proof.v1']` (recomputed here). */
+  /** The per-request holder-of-key proof that rode `_meta['org.kya-os/request-proof']` (recomputed here). */
   proof?: unknown;
   /** The request the proof must bind (`method` + `params`); required alongside `proof`. */
   request?: ToolRequest;

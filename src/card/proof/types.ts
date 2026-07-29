@@ -2,7 +2,7 @@
  * KYA-OS Entity Card — stateless per-request holder-of-key proof: shapes + seams.
  *
  * `org.kya-os/proof@1` is the STATELESS, sender-constrained proof profile. It rides its OWN
- * `_meta` key ({@link KYA_OS_CARD_PROOF_META_KEY} = `org.kya-os/proof@1`), DISTINCT from the legacy
+ * `_meta` key ({@link KYA_OS_CARD_PROOF_META_KEY} = `org.kya-os/proof.v1`), DISTINCT from the legacy
  * session-bound `ProofMeta` (which carries `sessionId` + a handshake nonce under
  * `org.kya-os/proof`). Separate keys let the two regimes coexist on one server without either guard
  * seeing — or rejecting — the other's proof. Every request self-proves; there is no session state.
@@ -24,9 +24,19 @@ export const PROOF_PROFILE_V1 = PROOF_PROFILE_ID;
  * exclusive on a server (a legacy proof failed the card schema and was 401'd; a card proof failed
  * the legacy structure check). With separate keys each guard reads its OWN key and simply does not
  * see the other's proof, so both can run on one server — genuinely additive, no legacy coupling. The
- * key equals the `prf` profile id, so it is self-describing and versioned.
+ * key is the profile id's KEY-SAFE form: MCP's `_meta` key grammar permits only alphanumerics,
+ * hyphens, underscores, and dots in a key's name segment - no `@` - so the profile id itself is
+ * not a legal key name. The object's `prf` field remains the self-describing discriminator.
  */
-export const KYA_OS_CARD_PROOF_META_KEY = PROOF_PROFILE_V1;
+export const KYA_OS_CARD_PROOF_META_KEY = 'org.kya-os/proof.v1';
+
+/**
+ * The earlier draft carrier key, which used the profile id verbatim and therefore violated MCP's
+ * `_meta` key grammar. Verifiers accept it for one major version (SPEC-ENTITY-CARD §8.1);
+ * producers emit {@link KYA_OS_CARD_PROOF_META_KEY} and MAY mirror under this key for verifiers
+ * older than the rename. When both keys are present, the canonical key wins.
+ */
+export const LEGACY_CARD_PROOF_META_KEY = PROOF_PROFILE_V1;
 
 /** Default proof lifetime in seconds (SPEC §8: short-lived, ≤ 60s). */
 export const DEFAULT_TTL_SEC = 60;

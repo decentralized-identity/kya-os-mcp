@@ -7,7 +7,7 @@
  *
  * The McpServer never knows this wrapper exists. It sees a normal transport.
  * The connected client sees normal MCP responses with the detached proof added
- * under the namespaced `_meta` key `org.kya-os/proof` (see KYA_OS_PROOF_META_KEY).
+ * under the namespaced `_meta` key `org.kya-os/response-proof` (see KYA_OS_PROOF_META_KEY).
  *
  * How it works:
  *   1. Incoming `tools/call` requests are captured (by id) to record tool

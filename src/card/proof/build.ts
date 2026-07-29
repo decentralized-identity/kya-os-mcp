@@ -2,7 +2,7 @@
  * KYA-OS Entity Card proof — MINT (`buildCardProof`).
  *
  * Mint a stateless, sender-constrained `org.kya-os/proof@1` for one request and return it under the
- * card proof's OWN `_meta` key ({@link KYA_OS_CARD_PROOF_META_KEY} = `org.kya-os/proof@1`), distinct
+ * card proof's OWN `_meta` key ({@link KYA_OS_CARD_PROOF_META_KEY} = `org.kya-os/proof.v1`), distinct
  * from the legacy session proof's `org.kya-os/proof` so the two coexist. The proof binds:
  * `requestHash` → THIS body (JCS), `audience` → THIS recipient, `nonce` + `created`/`expires` → NOW,
  * `kid` → the signing DID key, and (optionally) `cnf.jkt` → the token's RFC 9449 sender-constraint.

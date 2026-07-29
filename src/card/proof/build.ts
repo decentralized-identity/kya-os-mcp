@@ -1,8 +1,8 @@
 /**
  * KYA-OS Entity Card proof — MINT (`buildCardProof`).
  *
- * Mint a stateless, sender-constrained `org.kya-os/proof@1` for one request and return it under the
- * card proof's OWN `_meta` key ({@link KYA_OS_CARD_PROOF_META_KEY} = `org.kya-os/proof.v1`), distinct
+ * Mint a stateless, sender-constrained `org.kya-os/proof.v1` for one request and return it under the
+ * card proof's OWN `_meta` key ({@link KYA_OS_CARD_PROOF_META_KEY} = `org.kya-os/request-proof`), distinct
  * from the legacy session proof's `org.kya-os/proof` so the two coexist. The proof binds:
  * `requestHash` → THIS body (JCS), `audience` → THIS recipient, `nonce` + `created`/`expires` → NOW,
  * `kid` → the signing DID key, and (optionally) `cnf.jkt` → the token's RFC 9449 sender-constraint.
@@ -23,7 +23,7 @@ import {
 } from './types.js';
 
 /**
- * Mint an `org.kya-os/proof@1` for `req`, signed by `signer`, bound to `ctx`. Returns the proof
+ * Mint an `org.kya-os/proof.v1` for `req`, signed by `signer`, bound to `ctx`. Returns the proof
  * keyed by {@link KYA_OS_CARD_PROOF_META_KEY} so it can be spread straight into an MCP request
  * `_meta`. The `cnf.jkt` is `ctx.cnfJkt` when given, else the signer's own key thumbprint, else
  * omitted (an L3-minus proof — still bound by request + audience + nonce + key).

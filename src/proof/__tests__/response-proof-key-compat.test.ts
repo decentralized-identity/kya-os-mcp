@@ -2,7 +2,7 @@
  * The response-proof `_meta` carrier key and its acceptance window (SPEC §7.5-§7.6).
  *
  * The canonical key is role-named (`org.kya-os/response-proof`) so it cannot be
- * misread as a version sibling of the request proof's `org.kya-os/proof.v1`.
+ * misread as a version sibling of the request proof's `org.kya-os/request-proof`.
  * Two prior keys stay read-accepted for one major version: the namespaced
  * `org.kya-os/proof` (canonical from 1.1 until the rename) and the original
  * bare `proof`. The newest canonical form wins when several are present.

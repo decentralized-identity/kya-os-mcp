@@ -13,11 +13,11 @@
     },
     "proofProfiles": {
       "type": "array",
-      "description": "Proof profiles the peer can mint (client) or verify (server). Defaults to [\"org.kya-os/proof@1\"].",
+      "description": "Proof profiles the peer can mint (client) or verify (server). Defaults to [\"org.kya-os/proof.v1\"].",
       "items": { "type": "string", "minLength": 1 },
       "minItems": 1,
       "uniqueItems": true,
-      "default": ["org.kya-os/proof@1"]
+      "default": ["org.kya-os/proof.v1"]
     },
     "didMethods": {
       "type": "array",

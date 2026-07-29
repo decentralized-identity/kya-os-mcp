@@ -32,7 +32,7 @@ import { ED25519_PKCS8_DER_HEADER, ED25519_KEY_SIZE } from '../utils/ed25519-con
  * so renaming the namespace — e.g. once KYA-OS registers as an MCP Extension
  * under SEP-2133 — is a one-line change. Named for its ROLE (the response
  * proof), so it cannot be misread as a version sibling of the request proof's
- * `org.kya-os/proof.v1`. See SPEC §7.5-§7.6.
+ * `org.kya-os/request-proof`. See SPEC §7.5-§7.6.
  */
 export const KYA_OS_PROOF_META_KEY = 'org.kya-os/response-proof';
 

@@ -2,7 +2,7 @@
 """KYA-OS Entity Card proof — INDEPENDENT cross-language conformance verifier.
 
 The second-language complement to the TypeScript `ConformanceAdapter` contract: a pure-Python-stdlib
-re-implementation of the `org.kya-os/proof@1` verification path that shares NO code with the reference
+re-implementation of the `org.kya-os/proof.v1` verification path that shares NO code with the reference
 adapter. It reads the SAME framework vector file the runner does (`conformance/vectors/card-proof.json`),
 selects the positive (`expected == "pass"`) vector, and against that self-contained artifact it re-derives
 the RFC 8785 (JCS) canonicalization, recomputes the SHA-256 `requestHash`, and verifies BOTH the detached

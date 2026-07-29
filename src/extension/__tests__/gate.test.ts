@@ -156,7 +156,7 @@ describe('missingRequiredCapabilityError', () => {
 describe('proofGateToJsonRpcError', () => {
   const gateError = {
     code: 'proof_missing',
-    message: 'no org.kya-os/proof.v1 in _meta',
+    message: 'no org.kya-os/request-proof in _meta',
     reasons: ['proof_missing'],
   };
 

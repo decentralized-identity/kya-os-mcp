@@ -108,11 +108,11 @@ function proofDeps(over: Partial<VerifyProofDeps> = {}): VerifyProofDeps {
   };
 }
 
-// ── card-proof/valid — the signed org.kya-os/proof@1 + its RFC 9421 sibling ──────────
-describe('conformance vector: card-proof.json (org.kya-os/proof@1)', () => {
+// ── card-proof/valid — the signed org.kya-os/proof.v1 + its RFC 9421 sibling ──────────
+describe('conformance vector: card-proof.json (org.kya-os/proof.v1)', () => {
   it('is a schema-valid CardProofMeta carrying a detached JWS + an httpSig sibling', () => {
     const parsed = CardProofMetaSchema.parse(proof);
-    expect(parsed.prf).toBe('org.kya-os/proof@1');
+    expect(parsed.prf).toBe('org.kya-os/proof.v1');
     expect(parsed.jws.split('.')[1]).toBe(''); // detached JWS: header..signature
     expect(parsed.httpSig).toBeTruthy();
   });

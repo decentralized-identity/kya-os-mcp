@@ -30,6 +30,7 @@ import {
 import {
   capabilityNames,
   PROOF_PROFILE_ID,
+  type ProofProfile,
   type BitstringStatusListEntry,
   type EntityCard,
   type EntityType,
@@ -106,7 +107,7 @@ export interface A2AExtension {
     entityType: 'agent';
     cardUrl: string;
     /** Emitted only when the card DECLARES a proof profile — consistent with the other rails. */
-    proofProfile?: typeof PROOF_PROFILE;
+    proofProfile?: ProofProfile;
   };
 }
 

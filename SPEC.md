@@ -1009,9 +1009,9 @@ therefore namespaces its own payload and MUST NOT assume exclusive ownership of
 
 **Canonical key.** KYA-OS attaches its detached response proof under the
 reverse-DNS key `org.kya-os/response-proof` (the `proofMetaKey`). The key is
-named for its role so it cannot be misread as a version sibling of the request
-proof's `org.kya-os/proof.v1` (SPEC-ENTITY-CARD §8), which carries a different
-object. This key SHOULD be configurable (e.g., a
+named for its role, pairing with the request proof's `org.kya-os/request-proof`
+(SPEC-ENTITY-CARD §8); the two keys carry different objects, and neither carries
+a version - the request proof's profile version lives inside the object (`prf`). This key SHOULD be configurable (e.g., a
 single build-time constant rather than a value scattered through the code), so
 that if and when KYA-OS is registered as an MCP Extension (SEP-2133), its
 reverse-DNS extension id — and hence this key — can be re-pointed without a wire

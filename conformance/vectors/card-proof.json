@@ -5,12 +5,12 @@
     {
       "id": "card-proof/valid",
       "category": "card-proof",
-      "description": "A well-formed org.kya-os/proof@1 with a valid detached JWS, in-window and audience-bound",
+      "description": "A well-formed org.kya-os/proof.v1 with a valid detached JWS, in-window and audience-bound",
       "expected": "pass",
       "reason": "Every binding — signature, requestHash, audience, nonce, window, kid⇄did — holds",
       "input": {
         "proof": {
-          "prf": "org.kya-os/proof@1",
+          "prf": "org.kya-os/proof.v1",
           "alg": "EdDSA",
           "did": "did:web:example.com:agents:acme-pay",
           "kid": "did:web:example.com:agents:acme-pay#key-1",
@@ -22,7 +22,7 @@
           "cnf": {
             "jkt": "0Z9PGGnrUbAvSHRWxKkBxjgrUrvu6ETEhOl2StPyW7c"
           },
-          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIn0..NFt4aac7bm-dylDH3A08Fc4s2yPiDTTJ-2m08QZPlYPhv1cfayO2XciAEJHu_M4VfqqsGBm3pOCXm70Nmn2kBw",
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIn0..wmgkENimr6GhpCJkk7gvCo7Zwgi63-SKf5tcbbQ1rIjYCUiUkLwRmYFrdft1lQijKPS9Q99EFykFVdH0p3jsCQ",
           "httpSig": "iDE_f0kDMwJUAVxNngtbVNslLGF26Ie1SeJYt-nF-UuRV4D8VPzd2fGF43TnbtBryq3X7J2AuGClgc5tidzCDA"
         },
         "request": {
@@ -59,7 +59,7 @@
       "reason": "requestHash no longer recomputes to the signed value — the body binding breaks",
       "input": {
         "proof": {
-          "prf": "org.kya-os/proof@1",
+          "prf": "org.kya-os/proof.v1",
           "alg": "EdDSA",
           "did": "did:web:example.com:agents:acme-pay",
           "kid": "did:web:example.com:agents:acme-pay#key-1",
@@ -71,7 +71,7 @@
           "cnf": {
             "jkt": "0Z9PGGnrUbAvSHRWxKkBxjgrUrvu6ETEhOl2StPyW7c"
           },
-          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIn0..NFt4aac7bm-dylDH3A08Fc4s2yPiDTTJ-2m08QZPlYPhv1cfayO2XciAEJHu_M4VfqqsGBm3pOCXm70Nmn2kBw",
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIn0..wmgkENimr6GhpCJkk7gvCo7Zwgi63-SKf5tcbbQ1rIjYCUiUkLwRmYFrdft1lQijKPS9Q99EFykFVdH0p3jsCQ",
           "httpSig": "iDE_f0kDMwJUAVxNngtbVNslLGF26Ie1SeJYt-nF-UuRV4D8VPzd2fGF43TnbtBryq3X7J2AuGClgc5tidzCDA"
         },
         "request": {
@@ -108,7 +108,7 @@
       "reason": "A mutated signature must fail EdDSA verification over the covered claims",
       "input": {
         "proof": {
-          "prf": "org.kya-os/proof@1",
+          "prf": "org.kya-os/proof.v1",
           "alg": "EdDSA",
           "did": "did:web:example.com:agents:acme-pay",
           "kid": "did:web:example.com:agents:acme-pay#key-1",
@@ -120,7 +120,7 @@
           "cnf": {
             "jkt": "0Z9PGGnrUbAvSHRWxKkBxjgrUrvu6ETEhOl2StPyW7c"
           },
-          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIn0..NFt4aac7bm-dylDH3A08Fc4s2yPiDTTJ-2m08QZPlYPhv1cfayO2XciAEJHu_M4VfqqsGBm3pOCXm70Nmn2kBA",
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIn0..wmgkENimr6GhpCJkk7gvCo7Zwgi63-SKf5tcbbQ1rIjYCUiUkLwRmYFrdft1lQijKPS9Q99EFykFVdH0p3jsCA",
           "httpSig": "iDE_f0kDMwJUAVxNngtbVNslLGF26Ie1SeJYt-nF-UuRV4D8VPzd2fGF43TnbtBryq3X7J2AuGClgc5tidzCDA"
         },
         "request": {
@@ -157,7 +157,7 @@
       "reason": "Audience binding (anti-relay / confused-deputy) must reject a mismatched recipient",
       "input": {
         "proof": {
-          "prf": "org.kya-os/proof@1",
+          "prf": "org.kya-os/proof.v1",
           "alg": "EdDSA",
           "did": "did:web:example.com:agents:acme-pay",
           "kid": "did:web:example.com:agents:acme-pay#key-1",
@@ -169,7 +169,7 @@
           "cnf": {
             "jkt": "0Z9PGGnrUbAvSHRWxKkBxjgrUrvu6ETEhOl2StPyW7c"
           },
-          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIn0..NFt4aac7bm-dylDH3A08Fc4s2yPiDTTJ-2m08QZPlYPhv1cfayO2XciAEJHu_M4VfqqsGBm3pOCXm70Nmn2kBw",
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIn0..wmgkENimr6GhpCJkk7gvCo7Zwgi63-SKf5tcbbQ1rIjYCUiUkLwRmYFrdft1lQijKPS9Q99EFykFVdH0p3jsCQ",
           "httpSig": "iDE_f0kDMwJUAVxNngtbVNslLGF26Ie1SeJYt-nF-UuRV4D8VPzd2fGF43TnbtBryq3X7J2AuGClgc5tidzCDA"
         },
         "request": {
@@ -206,7 +206,7 @@
       "reason": "A stale proof outside created/expires (±skew) must fail closed (replay guard)",
       "input": {
         "proof": {
-          "prf": "org.kya-os/proof@1",
+          "prf": "org.kya-os/proof.v1",
           "alg": "EdDSA",
           "did": "did:web:example.com:agents:acme-pay",
           "kid": "did:web:example.com:agents:acme-pay#key-1",
@@ -218,7 +218,7 @@
           "cnf": {
             "jkt": "0Z9PGGnrUbAvSHRWxKkBxjgrUrvu6ETEhOl2StPyW7c"
           },
-          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIn0..NFt4aac7bm-dylDH3A08Fc4s2yPiDTTJ-2m08QZPlYPhv1cfayO2XciAEJHu_M4VfqqsGBm3pOCXm70Nmn2kBw",
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIn0..wmgkENimr6GhpCJkk7gvCo7Zwgi63-SKf5tcbbQ1rIjYCUiUkLwRmYFrdft1lQijKPS9Q99EFykFVdH0p3jsCQ",
           "httpSig": "iDE_f0kDMwJUAVxNngtbVNslLGF26Ie1SeJYt-nF-UuRV4D8VPzd2fGF43TnbtBryq3X7J2AuGClgc5tidzCDA"
         },
         "request": {
@@ -255,7 +255,7 @@
       "reason": "kid⇄did binding (kid.split(\"#\")[0] === did) closes the forgeable-principal gap",
       "input": {
         "proof": {
-          "prf": "org.kya-os/proof@1",
+          "prf": "org.kya-os/proof.v1",
           "alg": "EdDSA",
           "did": "did:web:victim.example",
           "kid": "did:web:example.com:agents:acme-pay#key-1",
@@ -267,7 +267,7 @@
           "cnf": {
             "jkt": "0Z9PGGnrUbAvSHRWxKkBxjgrUrvu6ETEhOl2StPyW7c"
           },
-          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIn0..mEbNlkKtsmKVULYOQIqs1FoJ3TvicWeAIwswNQmQxwhmQtdzqxyOchBOJquk-KvDvhyndjC9Wf8A5GtRD7nuCw",
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIn0..DyXgfq3m_D2sKY4BzkGcXus9L79gjA9LDxUG8fU7vWrxgEPsqMkgRPBMJSyztMjA7gm8xAm38WEeXzisVIT3AQ",
           "httpSig": "EW8xp6SCcCAUPklsc_NhE_P9HpNLWd-85x6E3sUyT3X7R8S3Ti_t5EiExYXAdpRuMmC3ma8ySXgnGxqR6W2lDA"
         },
         "request": {
@@ -304,7 +304,7 @@
       "reason": "Without an atomic consumeNonceIfFresh seam there is no replay defense — fail closed (nonce_seam_missing)",
       "input": {
         "proof": {
-          "prf": "org.kya-os/proof@1",
+          "prf": "org.kya-os/proof.v1",
           "alg": "EdDSA",
           "did": "did:web:example.com:agents:acme-pay",
           "kid": "did:web:example.com:agents:acme-pay#key-1",
@@ -316,7 +316,7 @@
           "cnf": {
             "jkt": "0Z9PGGnrUbAvSHRWxKkBxjgrUrvu6ETEhOl2StPyW7c"
           },
-          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIn0..NFt4aac7bm-dylDH3A08Fc4s2yPiDTTJ-2m08QZPlYPhv1cfayO2XciAEJHu_M4VfqqsGBm3pOCXm70Nmn2kBw",
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIn0..wmgkENimr6GhpCJkk7gvCo7Zwgi63-SKf5tcbbQ1rIjYCUiUkLwRmYFrdft1lQijKPS9Q99EFykFVdH0p3jsCQ",
           "httpSig": "iDE_f0kDMwJUAVxNngtbVNslLGF26Ie1SeJYt-nF-UuRV4D8VPzd2fGF43TnbtBryq3X7J2AuGClgc5tidzCDA"
         },
         "request": {

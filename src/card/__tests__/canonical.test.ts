@@ -36,7 +36,7 @@ describe('the §8.3 pre-signing transformation (strip params._meta)', () => {
       method: REQ.method,
       params: {
         ...REQ.params,
-        _meta: { 'org.kya-os/proof@1': { prf: 'org.kya-os/proof@1', jws: 'x..y' }, progressToken: 7 },
+        _meta: { 'org.kya-os/proof.v1': { prf: 'org.kya-os/proof.v1', jws: 'x..y' }, progressToken: 7 },
       },
     });
     expect(carried).toBe(bare); // the proof's own carrier is never part of the signed material

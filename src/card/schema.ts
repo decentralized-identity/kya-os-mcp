@@ -70,15 +70,27 @@ export const AttestationSchema = z
 
 /** The canonical per-request proof profile id — the ONE source of truth every consumer
  *  references (the proof's `prf` tag, its `_meta` key, and the card's `proofProfile` field). */
-export const PROOF_PROFILE_ID = 'org.kya-os/proof@1';
+export const PROOF_PROFILE_ID = 'org.kya-os/proof.v1';
+
+/**
+ * The profile id of the earlier draft (`proof@1`), replaced because the `@`
+ * spelling collided with MCP's `_meta` key grammar and duplicated the version
+ * the `prf` field already carries. Verifiers accept it (in `prf` and in
+ * `proofProfile`) for one major version; producers emit only
+ * {@link PROOF_PROFILE_ID}.
+ */
+export const LEGACY_PROOF_PROFILE_ID = 'org.kya-os/proof@1';
 
 /**
  * Self-declared per-request holder-of-key proof profile. A card carrying this advertises
- * that its requests ride the stateless, sender-constrained `org.kya-os/proof@1` envelope
+ * that its requests ride the stateless, sender-constrained `org.kya-os/proof.v1` envelope
  * (distinct from the legacy session-bound ProofMeta). The proof itself is NEVER on the
  * static card — it rides per-request `_meta`; this field only names the profile.
  */
-export const ProofProfileSchema = z.literal(PROOF_PROFILE_ID);
+export const ProofProfileSchema = z.union([
+  z.literal(PROOF_PROFILE_ID),
+  z.literal(LEGACY_PROOF_PROFILE_ID),
+]);
 
 /**
  * CIMD (draft-ietf-oauth-client-id-metadata-document) binding — the L1 on-ramp

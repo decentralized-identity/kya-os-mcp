@@ -118,7 +118,7 @@ describe('PR #110 review — real-path regressions', () => {
 
   it('#8 the card proof and the legacy proof occupy DISTINCT _meta keys (they coexist)', () => {
     expect(KYA_OS_CARD_PROOF_META_KEY).not.toBe(KYA_OS_PROOF_META_KEY);
-    const cardProof = { prf: 'org.kya-os/proof@1', jws: 'x' };
+    const cardProof = { prf: 'org.kya-os/proof.v1', jws: 'x' };
     const legacyProof = { sessionId: 's-1', ts: 1 };
     // Both present on one server's request _meta:
     const meta = { [KYA_OS_CARD_PROOF_META_KEY]: cardProof, [KYA_OS_PROOF_META_KEY]: legacyProof };
@@ -197,7 +197,7 @@ describe('PR #110 review — real-path regressions', () => {
   // ── Round 3 (A+ review — schema hardening + fail-closed convention locks) ──────
 
   const validCardProof = (): Record<string, unknown> => ({
-    prf: 'org.kya-os/proof@1',
+    prf: 'org.kya-os/proof.v1',
     alg: 'EdDSA',
     did: 'did:web:example.com:agents:acme-pay',
     kid: 'did:web:example.com:agents:acme-pay#key-1',

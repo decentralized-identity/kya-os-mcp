@@ -61,7 +61,7 @@ Re-keying of the `_meta` registry entries (§2.2) would be specified by a succes
 | Surface | Mechanism | Defined in |
 |---|---|---|
 | Capability negotiation | `capabilities.extensions["org.kya-os/decentralized-authority"]` settings object | §3 (this document) |
-| Request proof | `_meta["org.kya-os/proof.v1"]` per-request holder-of-key proof | SPEC-ENTITY-CARD §8 |
+| Request proof | `_meta["org.kya-os/request-proof"]` per-request holder-of-key proof | SPEC-ENTITY-CARD §8 |
 | Response proof / audit | `_meta["org.kya-os/response-proof"]` detached response proof | SPEC.md §7 |
 | Consent step-up | signed `needs_authorization` challenge | SPEC.md §9 |
 | Delegated authority | W3C VC delegation chains, referenced via `delegationRef` | SPEC.md §6, §6.10 |
@@ -77,13 +77,35 @@ The reverse-DNS `_meta` keys used by this extension are the keys registered in S
 
 | Key | Carries | Direction |
 |---|---|---|
-| `org.kya-os/proof.v1` | the self-contained per-request holder-of-key proof of the `org.kya-os/proof@1` profile (SPEC-ENTITY-CARD §8; the legacy `org.kya-os/proof@1` key is accepted for one major version) | request (caller to server) |
+| `org.kya-os/request-proof` | the self-contained per-request holder-of-key proof of the `org.kya-os/proof.v1` profile (SPEC-ENTITY-CARD §8; the legacy key and `prf` value `org.kya-os/proof@1` are accepted for one major version) | request (caller to server) |
 | `org.kya-os/response-proof` | the detached response proof (SPEC.md §7), including signed `needs_authorization` challenges; previously `org.kya-os/proof`, read-accepted for one major version | response (server to caller) |
 | `org.kya-os/card` (and nested `org.kya-os/cardRef`) | inline Entity Card summary or lazy card reference on discovery documents | discovery |
 | `org.kya-os/did` | the Entity's DID inside a CIMD document | discovery |
 
 These keys coexist with the MCP-reserved `io.modelcontextprotocol/*` keys and the W3C Trace Context keys (`traceparent`, `tracestate`, `baggage`) under the coexistence rules of SPEC.md §7.6.
 A KYA-OS verifier MUST NOT reject a message because `_meta` carries foreign namespaced keys, and MUST NOT include any non-KYA-OS `_meta` key in a hash or signature computation (SPEC.md §7.6).
+
+The full request cycle, including the consent step-up that issues a delegation credential:
+
+```mermaid
+sequenceDiagram
+    participant A as Agent (MCP client)
+    participant S as MCP Server (verifier)
+    participant AS as Authorization Service
+
+    Note over A: holds DID key + delegation credential
+    A->>S: request + _meta: capability declaration<br/>+ org.kya-os/request-proof (profile proof.v1)
+    Note over S: declared? (required mode: -32021 if not)<br/>verify fail-closed: kid⇄did, audience,<br/>requestHash, window, nonce, signature<br/>designated scope ∈ delegation
+    alt delegation sufficient
+        S-->>A: result + org.kya-os/response-proof (signed receipt)
+    else insufficient delegation
+        S-->>A: signed needs_authorization challenge<br/>(responseHash binds authorizationUrl)
+        A->>AS: user grants at authorizationUrl
+        AS-->>A: issues delegation credential
+        A->>S: retry with resumeToken + credential
+        S-->>A: result + response-proof
+    end
+```
 
 ---
 
@@ -106,12 +128,12 @@ A client that supports this extension declares it inside that object's `extensio
         "extensions": {
           "org.kya-os/decentralized-authority": {
             "version": "1.0.0",
-            "proofProfiles": ["org.kya-os/proof@1"],
+            "proofProfiles": ["org.kya-os/proof.v1"],
             "didMethods": ["did:key", "did:web"]
           }
         }
       },
-      "org.kya-os/proof.v1": { "prf": "org.kya-os/proof@1", "...": "see SPEC-ENTITY-CARD §8.2" }
+      "org.kya-os/request-proof": { "prf": "org.kya-os/proof.v1", "...": "see SPEC-ENTITY-CARD §8.2" }
     }
   }
 }
@@ -127,7 +149,7 @@ A server declares the extension in the `capabilities.extensions` member of its `
     "extensions": {
       "org.kya-os/decentralized-authority": {
         "version": "1.0.0",
-        "proofProfiles": ["org.kya-os/proof@1"],
+        "proofProfiles": ["org.kya-os/proof.v1"],
         "didMethods": ["did:key", "did:web"],
         "required": true
       }
@@ -147,7 +169,7 @@ All members are OPTIONAL; per SEP-2133, an **empty object** (`{}`) means "suppor
 | Member | Type | Meaning |
 |---|---|---|
 | `version` | string (semver) | The extension-document version the peer implements. Default `"1.0.0"`. |
-| `proofProfiles` | array of strings | Proof profiles the peer can mint (client) or verify (server). Default `["org.kya-os/proof@1"]`. |
+| `proofProfiles` | array of strings | Proof profiles the peer can mint (client) or verify (server). Default `["org.kya-os/proof.v1"]`. |
 | `didMethods` | array of strings (`did:` method ids) | DID methods the peer uses (client) or resolves (server). Default `["did:key", "did:web"]`; `did:cheqd` is opt-in per SPEC.md §4.4.1. |
 | `required` | boolean | Server-side only: whether the server rejects requests from clients that do not declare this extension (§4). Default `false`. Clients MUST ignore this member if present on a client declaration. |
 
@@ -246,7 +268,7 @@ When a KYA-OS failure surfaces as a JSON-RPC error, the error's numeric `code` i
     "message": "KYA-OS proof required",
     "data": {
       "reason": "proof_missing",
-      "profile": "org.kya-os/proof@1"
+      "profile": "org.kya-os/proof.v1"
     }
   }
 }
@@ -265,10 +287,10 @@ Deployments that gate at an HTTP edge (SPEC.md §8.4) keep their HTTP semantics 
 
 ## 6. Request Proof Binding
 
-The request proof is `org.kya-os/proof@1`, specified normatively in SPEC-ENTITY-CARD §8 and verified per the exact fail-closed order of SPEC-ENTITY-CARD §11.2.
+The request proof is `org.kya-os/proof.v1`, specified normatively in SPEC-ENTITY-CARD §8 and verified per the exact fail-closed order of SPEC-ENTITY-CARD §11.2.
 The MCP-specific deltas are only these:
 
-1. **Placement.** The proof object rides `_meta["org.kya-os/proof.v1"]` inside `params` of the JSON-RPC request - the key-safe carrier of the `org.kya-os/proof@1` profile, the profile id itself not being a legal `_meta` key name (SPEC-ENTITY-CARD §8.1; the legacy `org.kya-os/proof@1` key is accepted for one major version).
+1. **Placement.** The proof object rides `_meta["org.kya-os/request-proof"]` inside `params` of the JSON-RPC request - the role-named carrier of the `org.kya-os/proof.v1` profile (SPEC-ENTITY-CARD §8.1; the legacy key and `prf` value `org.kya-os/proof@1` are accepted for one major version).
 2. **Request binding.** `requestHash` covers `{ method, params }` with `params._meta` removed (SPEC-ENTITY-CARD §8.3).
    Consequently an intermediary MAY add or rewrite `_meta` members (for example the required `io.modelcontextprotocol/*` keys) without invalidating the proof, and MUST NOT mutate `method` or any other part of `params` on a proof-bearing request, because any such mutation invalidates `requestHash`.
 3. **Transport agnosticism.** The proof is in-band JSON-RPC and verifies identically over stdio and Streamable HTTP; the OPTIONAL RFC 9421 sibling (SPEC-ENTITY-CARD §8.5) serves HTTP-edge intermediaries.
@@ -399,7 +421,7 @@ An honest comparison against composing DPoP (proof-of-possession), Workload Iden
 
 ### 13.3 Fit with the 2026-07-28 core
 
-The stateless core made per-request, self-contained verification the only identity model that works on any replica; that is what `org.kya-os/proof@1` already is.
+The stateless core made per-request, self-contained verification the only identity model that works on any replica; that is what `org.kya-os/proof.v1` already is.
 The deprecation of core Logging, alongside standardized trace-context `_meta`, moves audit concerns toward extensions; KYA-OS's proof and auditability layers (SPEC.md §7, §15.3) are that story for agent actions.
 
 ---

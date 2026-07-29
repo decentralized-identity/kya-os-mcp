@@ -1017,13 +1017,6 @@ that if and when KYA-OS is registered as an MCP Extension (SEP-2133), its
 reverse-DNS extension id — and hence this key — can be re-pointed without a wire
 change.
 
-> **Editorial note — open for discussion.** The reverse-DNS key `org.kya-os/response-proof`
-> (and the corresponding proposed MCP Extension id `org.kya-os/decentralized-authority`; see
-> §15.2) are **proposed** and not yet ratified. They remain open for
-> working-group discussion and MAY change before this revision is finalized.
-> Because the key is configurable (above), pinning the final id later does not
-> require a code change.
-
 **Backward compatibility.** Two prior keys carried this proof: bare `proof`
 (pre-1.1) and `org.kya-os/proof` (1.1 until the role-named rename). For one
 major version, verifiers MUST also accept a proof published under either prior
@@ -1612,11 +1605,6 @@ KYA-OS is designed to layer cleanly on the MCP 2026-07-28 Release Candidate.
   `proofMetaKey`) and capability advertisement (§10) will use that extension id;
   the key is configurable for this reason. KYA-OS targets the SEP-2133
   Standards-Track path.
-
-  > **Editorial note — open for discussion.** The extension id `org.kya-os/decentralized-authority`
-  > and the proof key `org.kya-os/response-proof` (§7.6) are **proposed** and not yet
-  > ratified; both remain open for working-group discussion and MAY change before
-  > this revision is finalized.
 - **Deprecations are zero-impact.** SEP-2577 deprecates MCP **Roots**, **Sampling**,
   and **Logging** on 12-month windows. KYA-OS uses **none** of these features, so
   the deprecations have **no impact** on KYA-OS implementations.

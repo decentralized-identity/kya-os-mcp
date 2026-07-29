@@ -3,7 +3,7 @@
 **`org.kya-os/decentralized-authority`: agent delegation and per-request proof as an MCP 2026-07-28 extension**
 
 Version: 1.0.0-draft
-Status: Draft (extension id proposed, pending DIF TAAWG ratification)
+Status: Draft
 Editors: KYA-OS Working Group
 Repository: https://github.com/decentralized-identity/kya-os-mcp
 Binds: the KYA-OS Protocol Specification ([SPEC.md](./SPEC.md)) and the Entity Card profile ([SPEC-ENTITY-CARD.md](./SPEC-ENTITY-CARD.md)) to the Model Context Protocol Extensions framework (SEP-2133)
@@ -39,8 +39,7 @@ org.kya-os/decentralized-authority
 The vendor prefix `org.kya-os` is the reverse-DNS form of `kya-os.org`, which the KYA-OS project controls.
 The identifier follows the SEP-2133 `{vendor-prefix}/{extension-name}` form.
 The name states the extension's distinguishing property: the authority it conveys (identity, delegation chains, per-request proofs, and their audit trail) verifies locally from signed artifacts, with no round trip to a central authorization service (§13.2).
-
-> **Editorial note - open for discussion.** The extension id `org.kya-os/decentralized-authority` is **proposed** and not yet ratified by the DIF Trusted AI Agents Working Group (TAAWG); it remains open for working-group discussion and MAY change before this revision is finalized (see SPEC.md §7.6 and §15.2).
+The identifier was settled in DIF TAAWG discussion (2026-07-28).
 
 ### 1.2 Versioning
 

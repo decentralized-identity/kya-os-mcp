@@ -62,8 +62,8 @@ Re-keying of the `_meta` registry entries (§2.2) would be specified by a succes
 | Surface | Mechanism | Defined in |
 |---|---|---|
 | Capability negotiation | `capabilities.extensions["org.kya-os/decentralized-authority"]` settings object | §3 (this document) |
-| Request proof | `_meta["org.kya-os/proof@1"]` per-request holder-of-key proof | SPEC-ENTITY-CARD §8 |
-| Response proof / audit | `_meta["org.kya-os/proof"]` detached response proof | SPEC.md §7 |
+| Request proof | `_meta["org.kya-os/proof.v1"]` per-request holder-of-key proof | SPEC-ENTITY-CARD §8 |
+| Response proof / audit | `_meta["org.kya-os/response-proof"]` detached response proof | SPEC.md §7 |
 | Consent step-up | signed `needs_authorization` challenge | SPEC.md §9 |
 | Delegated authority | W3C VC delegation chains, referenced via `delegationRef` | SPEC.md §6, §6.10 |
 | Gateway propagation | `KYA-OS-*` outbound HTTP headers; body-free routing | SPEC.md §8 |
@@ -74,13 +74,12 @@ The `_kyaos_handshake` tool and the KYA-OS session lifecycle (SPEC.md §5, §14)
 
 ### 2.2 `_meta` keys
 
-The reverse-DNS `_meta` keys used by this extension are the keys registered in SPEC-ENTITY-CARD §14.1.
-For `org.kya-os/proof`, that registry records the key's legacy session-profile role; the response-direction role described below is defined by SPEC.md §7.5-§7.6, and recording both roles in the registry is a pending amendment to the underlying specification:
+The reverse-DNS `_meta` keys used by this extension are the keys registered in SPEC-ENTITY-CARD §14.1:
 
 | Key | Carries | Direction |
 |---|---|---|
-| `org.kya-os/proof@1` | the self-contained per-request holder-of-key proof (SPEC-ENTITY-CARD §8) | request (caller to server) |
-| `org.kya-os/proof` | the detached response proof (SPEC.md §7), including signed `needs_authorization` challenges | response (server to caller) |
+| `org.kya-os/proof.v1` | the self-contained per-request holder-of-key proof of the `org.kya-os/proof@1` profile (SPEC-ENTITY-CARD §8; the legacy `org.kya-os/proof@1` key is accepted for one major version) | request (caller to server) |
+| `org.kya-os/response-proof` | the detached response proof (SPEC.md §7), including signed `needs_authorization` challenges; previously `org.kya-os/proof`, read-accepted for one major version | response (server to caller) |
 | `org.kya-os/card` (and nested `org.kya-os/cardRef`) | inline Entity Card summary or lazy card reference on discovery documents | discovery |
 | `org.kya-os/did` | the Entity's DID inside a CIMD document | discovery |
 
@@ -113,7 +112,7 @@ A client that supports this extension declares it inside that object's `extensio
           }
         }
       },
-      "org.kya-os/proof@1": { "prf": "org.kya-os/proof@1", "...": "see SPEC-ENTITY-CARD §8.2" }
+      "org.kya-os/proof.v1": { "prf": "org.kya-os/proof@1", "...": "see SPEC-ENTITY-CARD §8.2" }
     }
   }
 }
@@ -270,7 +269,7 @@ Deployments that gate at an HTTP edge (SPEC.md §8.4) keep their HTTP semantics 
 The request proof is `org.kya-os/proof@1`, specified normatively in SPEC-ENTITY-CARD §8 and verified per the exact fail-closed order of SPEC-ENTITY-CARD §11.2.
 The MCP-specific deltas are only these:
 
-1. **Placement.** The proof object rides `_meta["org.kya-os/proof@1"]` inside `params` of the JSON-RPC request (SPEC-ENTITY-CARD §8.1).
+1. **Placement.** The proof object rides `_meta["org.kya-os/proof.v1"]` inside `params` of the JSON-RPC request - the key-safe carrier of the `org.kya-os/proof@1` profile, the profile id itself not being a legal `_meta` key name (SPEC-ENTITY-CARD §8.1; the legacy `org.kya-os/proof@1` key is accepted for one major version).
 2. **Request binding.** `requestHash` covers `{ method, params }` with `params._meta` removed (SPEC-ENTITY-CARD §8.3).
    Consequently an intermediary MAY add or rewrite `_meta` members (for example the required `io.modelcontextprotocol/*` keys) without invalidating the proof, and MUST NOT mutate `method` or any other part of `params` on a proof-bearing request, because any such mutation invalidates `requestHash`.
 3. **Transport agnosticism.** The proof is in-band JSON-RPC and verifies identically over stdio and Streamable HTTP; the OPTIONAL RFC 9421 sibling (SPEC-ENTITY-CARD §8.5) serves HTTP-edge intermediaries.
@@ -369,7 +368,7 @@ Extension-specific considerations:
 
 1. **Unaware peers.** A peer that ignores this extension gets core MCP behavior end to end; every KYA-OS surface is additive `_meta`, headers, or discovery documents that the graceful-degradation contracts (§4, SPEC-ENTITY-CARD §6) cover.
 2. **`2025-11-25` peers.** The declaration is carried in the initialize-era `capabilities.extensions` field, as an additive member that revision's schema does not define (§3.1); proofs and errors are unchanged.
-3. **Legacy 1.x session profile.** The `_kyaos_handshake` tool, KYA-OS sessions, and the session-bound proof under `_meta["org.kya-os/proof"]` remain valid 1.x behavior outside this extension (SPEC.md §5, §14; SPEC-ENTITY-CARD §8.1, §15.5, Appendix D.4).
+3. **Legacy 1.x session profile.** The `_kyaos_handshake` tool, KYA-OS sessions, and the session-bound proof under `_meta["org.kya-os/response-proof"]` (historically `org.kya-os/proof`) remain valid 1.x behavior outside this extension (SPEC.md §5, §14; SPEC-ENTITY-CARD §8.1, §15.5, Appendix D.4).
    The two proof eras ride distinct keys and coexist on one server; the session profile is expected to be deprecated at KYA-OS 2.0 in favor of the self-contained profile.
 4. **Legacy bare `proof` key.** The one-major-version acceptance window for the bare `proof` response key is governed by SPEC.md §7.6, which is the single authoritative statement of that window; producers SHOULD emit only namespaced keys.
 

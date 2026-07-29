@@ -3,6 +3,7 @@ export {
   createProofResponse,
   extractCanonicalData,
   KYA_OS_PROOF_META_KEY,
+  LEGACY_NAMESPACED_PROOF_META_KEY,
   LEGACY_PROOF_META_KEY,
   type ProofAgentIdentity,
   type ToolRequest,

@@ -25,6 +25,7 @@ import { logger } from "../logging/index.js";
 import {
   computeCanonicalHashes,
   KYA_OS_PROOF_META_KEY,
+  LEGACY_NAMESPACED_PROOF_META_KEY,
   LEGACY_PROOF_META_KEY,
   type ToolRequest,
   type ToolResponse,
@@ -655,8 +656,9 @@ export function isReservedMcpMetaKey(key: string): boolean {
  * Validate _meta structure according to meta policy.
  *
  * The KYA-OS proof rides under {@link KYA_OS_PROOF_META_KEY} (reverse-DNS,
- * SEP-414); the legacy bare {@link LEGACY_PROOF_META_KEY} is still accepted for
- * back-compat. Both are treated as the proof key. Every other key is a
+ * SEP-414); the prior {@link LEGACY_NAMESPACED_PROOF_META_KEY} and the legacy
+ * bare {@link LEGACY_PROOF_META_KEY} are still accepted for back-compat. All
+ * three are treated as the proof key. Every other key is a
  * non-KYA-OS `_meta` key.
  *
  * Under MCP 2026-07-28 `_meta` is shared real estate (it also carries
@@ -682,7 +684,10 @@ export function validateMetaStructure(
   policy: MetaPolicy = 'strict'
 ): { valid: boolean; reason?: string; extraKeys?: string[] } {
   const extraKeys = Object.keys(meta).filter(
-    k => k !== KYA_OS_PROOF_META_KEY && k !== LEGACY_PROOF_META_KEY,
+    k =>
+      k !== KYA_OS_PROOF_META_KEY &&
+      k !== LEGACY_NAMESPACED_PROOF_META_KEY &&
+      k !== LEGACY_PROOF_META_KEY,
   );
 
   // allow-extensions surfaces coexisting keys; strict discards them. Neither
@@ -706,10 +711,13 @@ export function extractProofFromMeta(
   meta: Record<string, unknown>,
   policy: MetaPolicy = 'strict'
 ): { success: true; proof: DetachedProof } | { success: false; reason: string; errorCode: string } {
-  // Check for the proof field first. Prefer the namespaced key; fall back to
-  // the legacy bare key for back-compat. When both are present the namespaced
-  // key wins (SPEC §7.6).
-  const proof = meta[KYA_OS_PROOF_META_KEY] ?? meta[LEGACY_PROOF_META_KEY];
+  // Check for the proof field first. Prefer the canonical role-named key,
+  // then the prior namespaced key, then the legacy bare key — the newest
+  // canonical form wins when several are present (SPEC §7.6).
+  const proof =
+    meta[KYA_OS_PROOF_META_KEY] ??
+    meta[LEGACY_NAMESPACED_PROOF_META_KEY] ??
+    meta[LEGACY_PROOF_META_KEY];
   if (!proof) {
     return {
       success: false,

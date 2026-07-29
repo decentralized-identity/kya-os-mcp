@@ -12,7 +12,7 @@
  *                              + the NonceCacheProvider adapter) so the safe consume is the default.
  *
  * Distinct from — and orthogonal to — the legacy session-bound proof in `src/proof`: the card proof
- * rides its OWN `_meta['org.kya-os/proof@1']` key, separate from the legacy `org.kya-os/proof`, so
+ * rides its OWN `_meta['org.kya-os/proof.v1']` key, separate from the legacy `org.kya-os/proof`, so
  * both regimes can run on one server without either guard seeing the other's proof.
  */
 

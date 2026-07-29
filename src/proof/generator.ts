@@ -30,9 +30,22 @@ import { ED25519_PKCS8_DER_HEADER, ED25519_KEY_SIZE } from '../utils/ed25519-con
  * SINGLE SOURCE OF TRUTH: every emit site (middleware) and verify site
  * (`extractProofFromMeta` / `validateMetaStructure`) references this constant,
  * so renaming the namespace — e.g. once KYA-OS registers as an MCP Extension
- * under SEP-2133 — is a one-line change. See SPEC §7.6.
+ * under SEP-2133 — is a one-line change. Named for its ROLE (the response
+ * proof), so it cannot be misread as a version sibling of the request proof's
+ * `org.kya-os/proof.v1`. See SPEC §7.5-§7.6.
  */
-export const KYA_OS_PROOF_META_KEY = 'org.kya-os/proof';
+export const KYA_OS_PROOF_META_KEY = 'org.kya-os/response-proof';
+
+/**
+ * The prior namespaced key (`org.kya-os/proof`), canonical from 1.1 until the
+ * role-named rename. Reads as a lineage sibling of the request proof's
+ * versioned key, which it is not — the two carry different objects — hence the
+ * rename. For one major version verifiers MUST keep accepting a proof
+ * published here; producers emit {@link KYA_OS_PROOF_META_KEY} and MAY mirror
+ * here for older verifiers. When several keys are present the newest canonical
+ * form wins.
+ */
+export const LEGACY_NAMESPACED_PROOF_META_KEY = 'org.kya-os/proof';
 
 /**
  * Legacy bare `_meta.proof` key — the legacy `_meta.proof` mirror; drop at 2.0.

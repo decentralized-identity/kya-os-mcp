@@ -60,7 +60,7 @@ DIDs and Verifiable Credentials are the right fit for this problem:
 | **Responsible Party** | The entity ultimately accountable for the actions of an agent operating under a delegation chain. The Responsible Party is the root issuer of the chain (`issuerDid` of the root `DelegationCredential`). In personal use, the Responsible Party equals the Principal. In organizational use, the Responsible Party is the employing organization or parent entity while the Principal is the immediate human delegator within that organization. Reputation and accountability signals are scoped primarily to the Responsible Party rather than to an agent's ephemeral identity — "can this be trusted?" is ultimately a question about the accountable party. |
 | **Delegation Chain** | An ordered sequence of Delegation Credentials from a root delegator (the Responsible Party) to the current agent, where each credential's subject is the next credential's issuer. |
 | **Delegation Credential** | A W3C Verifiable Credential that grants specific permissions from an issuer (delegator) to a subject (delegate). Contains CRISP constraints defining allowed operations. |
-| **Detached Proof** | A JWS (JSON Web Signature) that cryptographically binds a tool request and response together, enabling non-repudiation and audit. Attached to responses under the reverse-DNS key `org.kya-os/proof` within the MCP `_meta` field (legacy bare `proof` accepted for backward compatibility; see §7.6). |
+| **Detached Proof** | A JWS (JSON Web Signature) that cryptographically binds a tool request and response together, enabling non-repudiation and audit. Attached to responses under the reverse-DNS key `org.kya-os/response-proof` within the MCP `_meta` field (prior keys `org.kya-os/proof` and bare `proof` accepted for backward compatibility; see §7.6). |
 | **CRISP Constraints** | **C**onstraints, **R**esources, **I**dentity, **S**cope, **P**olicy — a structured envelope defining what operations a delegation permits: allowed scopes, budget caps, temporal bounds, and audience restrictions. |
 | **Session** | An OPTIONAL, validated, time-bounded convenience context established via the `_kyaos_handshake` tool. Sessions aid replay prevention and provide a stable context for proof generation, but are **not** the durable authority — the per-request detached-JWS proof (§7) and DID-anchored grant (§6) are (see §5 preamble). KYA-OS sessions are independent of MCP's session, which was removed in MCP 2026-07-28 (SEP-2567/SEP-2575). |
 | **Handshake Nonce** | A cryptographically random value provided by the client during session establishment. Used once; prevents replay attacks. |
@@ -120,7 +120,7 @@ The following diagram illustrates the KYA-OS protocol flow:
          │  │ 4. TOOL CALL RESPONSE                    │  │
          │  │    content: [ { type: "text", ... } ]    │  │
          │  │    _meta:                                │  │
-         │  │      org.kya-os/proof:                   │  │
+         │  │      org.kya-os/response-proof:          │  │
          │  │        jws: "eyJhbGciOiJFZERTQSI..."     │  │
          │  │        meta:                             │  │
          │  │          did: "did:web:srv"              │  │
@@ -966,7 +966,7 @@ substitution — and `outcome: "needs_authorization"`:
 ### 7.5 _meta Attachment
 
 The proof is attached to tool responses under the reverse-DNS key
-`org.kya-os/proof` inside the standard MCP `_meta` field. Other `_meta` keys
+`org.kya-os/response-proof` inside the standard MCP `_meta` field. Other `_meta` keys
 (e.g. `io.modelcontextprotocol/*`, `traceparent`) MAY coexist and are ignored by
 the verifier (§7.6):
 
@@ -974,7 +974,7 @@ the verifier (§7.6):
 {
   "content": [{ "type": "text", "text": "File contents..." }],
   "_meta": {
-    "org.kya-os/proof": {
+    "org.kya-os/response-proof": {
       "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6Ii4uLiJ9.eyJhdWQiOi4uLn0.c2ln...",
       "meta": {
         "did": "did:web:server.example.com",
@@ -1007,31 +1007,36 @@ Context propagation keys (`traceparent`, `tracestate`, `baggage`). KYA-OS
 therefore namespaces its own payload and MUST NOT assume exclusive ownership of
 `_meta`.
 
-**Canonical key.** KYA-OS attaches its detached proof under the reverse-DNS key
-`org.kya-os/proof` (the `proofMetaKey`). This key SHOULD be configurable (e.g., a
+**Canonical key.** KYA-OS attaches its detached response proof under the
+reverse-DNS key `org.kya-os/response-proof` (the `proofMetaKey`). The key is
+named for its role so it cannot be misread as a version sibling of the request
+proof's `org.kya-os/proof.v1` (SPEC-ENTITY-CARD §8), which carries a different
+object. This key SHOULD be configurable (e.g., a
 single build-time constant rather than a value scattered through the code), so
 that if and when KYA-OS is registered as an MCP Extension (SEP-2133), its
 reverse-DNS extension id — and hence this key — can be re-pointed without a wire
 change.
 
-> **Editorial note — open for discussion.** The reverse-DNS key `org.kya-os/proof`
+> **Editorial note — open for discussion.** The reverse-DNS key `org.kya-os/response-proof`
 > (and the corresponding proposed MCP Extension id `org.kya-os/decentralized-authority`; see
 > §15.2) are **proposed** and not yet ratified. They remain open for
 > working-group discussion and MAY change before this revision is finalized.
 > Because the key is configurable (above), pinning the final id later does not
 > require a code change.
 
-**Backward compatibility.** For one major version, verifiers MUST also accept a
-proof published under the legacy bare key `proof`. Producers SHOULD emit
-`org.kya-os/proof`; producers targeting pre-1.1 verifiers MAY additionally
-mirror the proof under bare `proof`. When both are present and disagree, the
-namespaced key wins.
+**Backward compatibility.** Two prior keys carried this proof: bare `proof`
+(pre-1.1) and `org.kya-os/proof` (1.1 until the role-named rename). For one
+major version, verifiers MUST also accept a proof published under either prior
+key. Producers emit `org.kya-os/response-proof` and MAY additionally mirror the
+proof under a prior key when targeting older verifiers. When several keys are
+present, the newest canonical form wins (`org.kya-os/response-proof`, then
+`org.kya-os/proof`, then `proof`).
 
 **`metaPolicy` semantics.** The `session.metaPolicy` setting governs how a
 verifier treats `_meta` keys that are *not* KYA-OS's proof key:
 
 - `strict` (the default) — the verifier processes **only** the KYA-OS proof key
-  (`org.kya-os/proof`, or legacy `proof`). All other keys are **ignored**: never
+  (`org.kya-os/response-proof`, or a prior key `org.kya-os/proof` / `proof`). All other keys are **ignored**: never
   hashed, never trusted, and — critically — **never a cause for rejection**. In
   particular a `strict` verifier MUST NOT reject a response merely because
   `_meta` also carries `io.modelcontextprotocol/*`, `traceparent`, `tracestate`,
@@ -1047,7 +1052,7 @@ never covers `_meta` (§7.3).
 
 > **Note.** The proof object's shape is normatively defined by
 > `schemas/detached-proof.json` (`$schema: draft/2020-12`). The *placement* key
-> inside `_meta` is `org.kya-os/proof`; the schema describes the value
+> inside `_meta` is `org.kya-os/response-proof`; the schema describes the value
 > (`{ jws, meta }`), not the key.
 
 ### 7.7 Delegation Chain Audit Example
@@ -1092,7 +1097,7 @@ The `parentDelegation` field links this record back to the User → Agent A cred
 {
   "content": [{ "type": "text", "text": "file contents..." }],
   "_meta": {
-    "org.kya-os/proof": {
+    "org.kya-os/response-proof": {
       "jws": "eyJhbGciOiJFZERTQSJ9...",
       "meta": {
         "did": "did:web:tool-server.example.com",
@@ -1592,8 +1597,8 @@ KYA-OS is designed to layer cleanly on the MCP 2026-07-28 Release Candidate.
   and DID-anchored grant (§6). The KYA-OS session (§5) is an optional KYA-OS-owned
   convenience layer delivered via the `_kyaos_handshake` tool (§14) and is
   independent of MCP's removed session.
-- **`_meta` reserved-namespace coexistence.** KYA-OS publishes its proof under the
-  reverse-DNS key `org.kya-os/proof` and ignores all other `_meta` keys, including
+- **`_meta` reserved-namespace coexistence.** KYA-OS publishes its response proof
+  under the reverse-DNS key `org.kya-os/response-proof` and ignores all other `_meta` keys, including
   the MCP-reserved `io.modelcontextprotocol/*` and W3C Trace Context keys
   `traceparent`/`tracestate`/`baggage` (SEP-414). See §7.6.
 - **Routing headers.** KYA-OS gateways MAY use `Mcp-Method`/`Mcp-Name` (SEP-2243)
@@ -1609,7 +1614,7 @@ KYA-OS is designed to layer cleanly on the MCP 2026-07-28 Release Candidate.
   Standards-Track path.
 
   > **Editorial note — open for discussion.** The extension id `org.kya-os/decentralized-authority`
-  > and the proof key `org.kya-os/proof` (§7.6) are **proposed** and not yet
+  > and the proof key `org.kya-os/response-proof` (§7.6) are **proposed** and not yet
   > ratified; both remain open for working-group discussion and MAY change before
   > this revision is finalized.
 - **Deprecations are zero-impact.** SEP-2577 deprecates MCP **Roots**, **Sampling**,

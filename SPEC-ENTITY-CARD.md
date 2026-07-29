@@ -18,7 +18,7 @@ the discovery rails the agent ecosystem already indexes: the MCP `server.json` /
 `_meta`, the A2A `AgentExtension`, and the NANDA `AgentFacts` document. Each projection points
 back to the same card, anchored by a `KyaOsEntityCard` service entry on the entity's `did:web`
 DID document. On top of that discovery layer rides a per-request, sender-constrained
-holder-of-key proof (`org.kya-os/proof@1`) carried under its own `_meta["org.kya-os/proof@1"]`
+holder-of-key proof (`org.kya-os/proof@1`) carried under its own `_meta["org.kya-os/proof.v1"]`
 key: discover like everyone, prove like no one. An unaware peer safely ignores the KYA-OS layer;
 a KYA-OS-aware peer can verify the caller cryptographically on every request.
 
@@ -52,7 +52,7 @@ This is a **DIF TAAWG work item** with a conformant **reference implementation**
 `@kya-os/mcp` (v1.10.x at the time of writing). The Entity Card profile is additive over, and
 non-breaking with respect to, the KYA-OS 1.x protocol. The `org.kya-os/proof@1` profile defined
 here coexists with the legacy session-bound proof, and each rides its own `_meta` key:
-`org.kya-os/proof@1` for this profile, `org.kya-os/proof` for the legacy proof (§8.1, §15.5). The
+`org.kya-os/proof.v1` for this profile, `org.kya-os/response-proof` for the response proof (§8.1, §15.5). The
 card proof additionally names its profile in a `prf` field. The wire shapes in §3–§8 and
 Appendix A are stable for the 1.x line; a breaking change requires a major version bump.
 
@@ -445,7 +445,7 @@ emit `cnf`, verification degrades to **L3-minus** (§8.6, §9.4) rather than fai
 ## 8. Per-Request Holder-of-Key Proof (NORMATIVE) [TAAWG-NORMATIVE]
 
 `org.kya-os/proof@1` is a **self-contained**, **sender-constrained**, fail-closed proof that rides
-its own `_meta["org.kya-os/proof@1"]` key. There is no session establishment and no handshake;
+its own `_meta["org.kya-os/proof.v1"]` key. There is no session establishment and no handshake;
 every request carries its own proof.
 
 A note on the word "stateless", which earlier drafts used for this profile: the proof *object* is
@@ -459,13 +459,22 @@ stateless proof construction, never stateless verification.
 
 Two orthogonal proof profiles may appear on one server, each under its OWN `_meta` key: the
 **legacy session-bound** `ProofMeta` (carrying `sessionId` + a handshake nonce; retained untouched
-for 1.x back-compat) under `_meta["org.kya-os/proof"]`, and the **self-contained** `org.kya-os/proof@1`
-specified here under `_meta["org.kya-os/proof@1"]` - the key equals the profile id, so it is
-self-describing and versioned. Distinct keys let both regimes coexist without either guard seeing -
+for 1.x back-compat) under `_meta["org.kya-os/response-proof"]` (previously `org.kya-os/proof`,
+read-accepted for one major version per SPEC.md §7.6), and the **self-contained** `org.kya-os/proof@1`
+specified here under `_meta["org.kya-os/proof.v1"]` - the profile id itself is not a legal `_meta`
+key name under MCP's key grammar (a name segment permits only alphanumerics, hyphens, underscores,
+and dots - no `@`), so the carrier key is the profile id's key-safe form, versioned with `.v1`. Distinct keys let both regimes coexist without either guard seeing -
 or rejecting - the other's proof (a shared key made them mutually exclusive: a legacy proof failed
 the card schema and a card proof failed the legacy structure check). A Verifier reads the key for
 the profile it implements; the object still carries `prf` as a self-describing discriminator. This
 document specifies only `org.kya-os/proof@1`.
+
+**Backward compatibility (carrier key).** Earlier drafts used the profile id verbatim as the
+carrier key (`_meta["org.kya-os/proof@1"]`). For one major version, Verifiers MUST also accept a
+proof under that legacy key; producers MUST emit the canonical `org.kya-os/proof.v1` and,
+when targeting verifiers older than this revision, MAY additionally mirror the proof under the
+legacy key (the same one-major-version mirroring allowance as SPEC.md §7.6). When both keys are
+present, the canonical key wins.
 
 ### 8.2 Object
 
@@ -951,8 +960,8 @@ redirects, size/time caps. Residual: standard transport-layer DoS is out of scop
 |-----|---------|---------|
 | `org.kya-os/card` | inline Card summary or a `cardRef` on MCP `server.json`/`catalog.json` | §6.1 |
 | `org.kya-os/cardRef` | a lazy-fetch `card.json` URL (inside `org.kya-os/card`) | §6.1 |
-| `org.kya-os/proof@1` | the self-contained per-request holder-of-key proof (§8); the key equals the profile id | §8 |
-| `org.kya-os/proof` | the legacy session-bound proof (`ProofMeta`); a distinct key, so the two coexist | §8.1 |
+| `org.kya-os/proof.v1` | the self-contained per-request holder-of-key proof (§8); the key-safe carrier of the `org.kya-os/proof@1` profile (the legacy key `org.kya-os/proof@1` is accepted for one major version) | §8 |
+| `org.kya-os/response-proof` | the detached response proof (`ProofMeta`, SPEC.md §7), including the legacy session-bound era; previously `org.kya-os/proof`, read-accepted for one major version | §8.1 |
 | `org.kya-os/did` | the Entity's DID inside a CIMD document | §7.3 |
 
 The `org.kya-os` reverse-DNS label is outside the reserved `modelcontextprotocol/mcp` `_meta`
@@ -1018,8 +1027,8 @@ with either primitive this document marks for ratification.
 
 ANP (Agent Network Protocol) is an informative peer in the discovery-rail landscape. Within KYA-OS,
 the **legacy session-bound proof** (`ProofMeta` with `sessionId` + handshake nonce) under
-`_meta["org.kya-os/proof"]` coexists with `org.kya-os/proof@1` under its own distinct
-`_meta["org.kya-os/proof@1"]` key (§8.1); it is retained unchanged for the 1.x line and is expected
+`_meta["org.kya-os/response-proof"]` coexists with `org.kya-os/proof@1` under its own distinct
+`_meta["org.kya-os/proof.v1"]` key (§8.1); it is retained unchanged for the 1.x line and is expected
 to be deprecated at 2.0 in favour of the self-contained profile.
 
 ### 15.6 Governance - standardize exactly two primitives
@@ -1198,7 +1207,7 @@ Codes are snake_case, aligned to the implementation.
 
 | Code | Meaning |
 |------|---------|
-| `proof_missing` | No `org.kya-os/proof@1` in `_meta`. |
+| `proof_missing` | No `org.kya-os/proof.v1` (or legacy `org.kya-os/proof@1`) in `_meta`. |
 | `proof_invalid` | The holder-of-key proof did not verify. |
 | `proof_level_insufficient` | The proof assurance is below the required `minLevel`. |
 

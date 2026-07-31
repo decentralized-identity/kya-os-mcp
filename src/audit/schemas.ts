@@ -37,7 +37,7 @@ const MAX_DID_LENGTH = 2048;
 const MAX_JWS_LENGTH = 4096;
 const MAX_RECEIPT_DATA_LENGTH = 65_536;
 
-const decimalStringSchema = z.string().max(MAX_DECIMAL_LENGTH).regex(/^(0|[1-9][0-9]*)$/);
+export const decimalStringSchema = z.string().max(MAX_DECIMAL_LENGTH).regex(/^(0|[1-9][0-9]*)$/);
 export const digestSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/);
 const didSchema = z.string()
   .min(5)

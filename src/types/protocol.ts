@@ -205,6 +205,22 @@ export function wrapDelegationAsVC(
 }
 
 /**
+ * Read the signature from a credential's embedded proof.
+ *
+ * Per SPEC.md a delegation credential's proof carries its signature in
+ * `proofValue`. `jws` is the field on the *detached* per-request tool-response
+ * proof (a separate object) and never appears on a credential proof. Reading any
+ * other field here would let extraction accept a proof shape the verifier rejects,
+ * so extraction and verification share this one definition and cannot drift.
+ */
+export function readCredentialProofValue(
+  proof: Record<string, unknown> | null | undefined,
+): string {
+  const value = proof?.['proofValue'];
+  return typeof value === 'string' ? value : '';
+}
+
+/**
  * Extract a DelegationRecord from a DelegationCredential.
  */
 export function extractDelegationFromVC(vc: DelegationCredential): DelegationRecord {
@@ -221,11 +237,7 @@ export function extractDelegationFromVC(vc: DelegationCredential): DelegationRec
     );
   }
 
-  let signature = '';
-  if (vc.proof) {
-    const proof = vc.proof as Record<string, unknown>;
-    signature = (proof['proofValue'] || proof['jws'] || proof['signatureValue'] || '') as string;
-  }
+  const signature = readCredentialProofValue(vc.proof as Record<string, unknown> | undefined);
 
   return {
     id: delegation.id,

@@ -22,11 +22,15 @@ export const MCP_CLIENT_CAPABILITIES_META_KEY = 'io.modelcontextprotocol/clientC
 export const MISSING_REQUIRED_CLIENT_CAPABILITY_CODE = -32021;
 
 /**
- * The one reason code this extension defines itself (SPEC-MCP-EXTENSION.md §5.2):
- * emitted only inside the `data` member of a core `-32021` error. Every other
- * reason code is defined by SPEC-ENTITY-CARD Appendix D or SPEC.md Appendix A.
+ * The reason codes this extension defines itself (SPEC-MCP-EXTENSION.md §5.2),
+ * each riding the `data.reason` member of a core JSON-RPC error:
+ * `extension_not_declared` inside a `-32021` (required mode, no declaration) and
+ * `malformed_declaration` inside a `-32602` (required mode, a present-but-
+ * unparseable declaration). Every other reason code is defined by
+ * SPEC-ENTITY-CARD Appendix D or SPEC.md Appendix A.
  */
 export const EXTENSION_NOT_DECLARED_REASON = 'extension_not_declared';
+export const MALFORMED_DECLARATION_REASON = 'malformed_declaration';
 
 const SEMVER = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
 const DID_METHOD = /^did:[a-z0-9]+$/;

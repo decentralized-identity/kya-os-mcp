@@ -174,7 +174,7 @@ All members are OPTIONAL; per SEP-2133, an **empty object** (`{}`) means "suppor
 | `required` | boolean | Server-side only: whether the server rejects requests from clients that do not declare this extension (§4). Default `false`. Clients MUST ignore this member if present on a client declaration. |
 
 Unknown members MUST be ignored (forward compatibility).
-A peer that receives a malformed settings object MUST treat the declaration as absent (fail closed to non-declaration, §4), not guess at intent.
+A peer that receives a settings object it cannot parse - a declaration that is present but malformed, as distinct from one that is absent - MUST NOT treat it as a valid declaration, and MUST NOT guess at intent. The declaration is an untrusted, intermediary-mutable, proof-excluded `_meta` member, so its handling is mode-dependent. In **optional mode** a malformed declaration degrades to non-declaration exactly like an absent one (core MCP behavior, §4); a corrupting intermediary therefore cannot turn an otherwise-valid request into a rejection when a mere strip would let it through. In **required mode**, where a non-declaring request is rejected regardless, the server MUST reject the request with JSON-RPC `-32602` (Invalid params) carrying `reason: "malformed_declaration"`, distinguishing a garbled declaration from a genuinely absent one (`-32021`, §4).
 
 ### 3.3 Meaning of a declaration
 
@@ -277,7 +277,7 @@ When a KYA-OS failure surfaces as a JSON-RPC error, the error's numeric `code` i
 Clients MUST dispatch on `error.data.reason`, never on the implementation-defined numeric code.
 The proof-gate codes are `proof_missing`, `proof_invalid`, and `proof_level_insufficient` (SPEC-ENTITY-CARD Appendix D.2); fine-grained verification reasons (Appendix D.1) MAY additionally be surfaced under `error.data.reasons` for diagnostics.
 No new numeric codes are invented for any Appendix D code.
-This document defines exactly one reason code of its own: `extension_not_declared`, emitted only inside the `data` member of a core `-32021` error (§4.2); every other reason code this extension surfaces is defined by SPEC-ENTITY-CARD Appendix D or SPEC.md Appendix A.
+This document defines two reason codes of its own, each riding the `data.reason` member of a core JSON-RPC error: `extension_not_declared` inside a `-32021` (required mode, no declaration; §4.2) and `malformed_declaration` inside a `-32602` (required mode, a present-but-malformed declaration; §3.2). Every other reason code this extension surfaces is defined by SPEC-ENTITY-CARD Appendix D or SPEC.md Appendix A.
 
 ### 5.3 HTTP-layer failures
 

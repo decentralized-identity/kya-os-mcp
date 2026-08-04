@@ -1,15 +1,17 @@
 /**
  * The admission gate (SPEC-MCP-EXTENSION.md §4) and the JSON-RPC error surface
- * (§5): required mode answers absence with core -32021 and the
- * `extension_not_declared` reason; optional mode degrades to core behavior;
- * proof-gate failures map their snake_case codes onto `error.data.reason`
- * verbatim and never allocate from the MCP-reserved code range.
+ * (§5): required mode answers absence with core -32021 (`extension_not_declared`)
+ * and a present-but-malformed declaration with -32602 (`malformed_declaration`);
+ * optional mode degrades both to core behavior; proof-gate failures map their
+ * snake_case codes onto `error.data.reason` verbatim and never allocate from the
+ * MCP-reserved code range.
  */
 
 import { describe, it, expect } from 'vitest';
 import { PROOF_PROFILE_ID } from '../../card/schema.js';
 import {
   DEFAULT_EXEMPT_METHODS,
+  INVALID_PARAMS_CODE,
   KYA_OS_DOMAIN_ERROR_CODE,
   missingRequiredCapabilityError,
   proofGateToJsonRpcError,
@@ -18,6 +20,7 @@ import {
 import {
   EXTENSION_NOT_DECLARED_REASON,
   KYA_OS_EXTENSION_ID,
+  MALFORMED_DECLARATION_REASON,
   MCP_CLIENT_CAPABILITIES_META_KEY,
   MISSING_REQUIRED_CLIENT_CAPABILITY_CODE,
 } from '../settings.js';
@@ -75,11 +78,15 @@ describe('requireExtension - required mode', () => {
     }
   });
 
-  it('rejects a stripped-to-malformed declaration exactly like an absent one', () => {
+  it('rejects a present-but-malformed declaration with -32602, distinct from the absent -32021 case', () => {
+    // `["web"]` is not a valid DID method (the schema wants `did:...`), so the
+    // entry is present but malformed - a client-integrity error, not a missing one.
     const verdict = guard({ meta: metaDeclaring({ didMethods: ['web'] }) });
     expect(verdict.ok).toBe(false);
     if (!verdict.ok) {
-      expect(verdict.error.code).toBe(MISSING_REQUIRED_CLIENT_CAPABILITY_CODE);
+      expect(verdict.error.code).toBe(INVALID_PARAMS_CODE);
+      expect(verdict.error.data.reason).toBe(MALFORMED_DECLARATION_REASON);
+      expect(verdict.error.data.extension).toBe(KYA_OS_EXTENSION_ID);
     }
   });
 

@@ -7,25 +7,29 @@
  * extension is strictly opt-in.
  *
  *   - `required: false` (default): an undeclared peer gets core MCP behavior;
- *     the gate always admits and merely reports the declaration when present.
+ *     the gate always admits and merely reports the declaration when present. A
+ *     malformed declaration also degrades to core behavior here (§3.2), so a
+ *     corrupted untrusted `_meta` member can never reject a valid request.
  *   - `required: true`: a request without a declaration is rejected with the
- *     core MCP error `-32021` (`MissingRequiredClientCapabilityError`) carrying
- *     the core `requiredCapabilities` member plus this extension's
- *     `reason`/`extension` pair - except on exempt methods (`server/discover`,
- *     `ping` by default), which are never gated so discovery stays reachable.
+ *     core MCP error `-32021` (`MissingRequiredClientCapabilityError`); a
+ *     present-but-malformed one is rejected with `-32602` (Invalid params,
+ *     `malformed_declaration`). Both carry this extension's `reason`/`extension`
+ *     pair, and exempt methods (`server/discover`, `ping` by default) are never
+ *     gated so discovery stays reachable.
  *
- * A stripped or malformed declaration is an ABSENT declaration (fail closed,
- * §4.3) - never silent acceptance, never a guess.
+ * A stripped declaration is an ABSENT declaration (fail closed, §4.3) - never
+ * silent acceptance, never a guess.
  */
 
 import { PROOF_PROFILE_ID } from '../card/schema.js';
 import {
-  readExtensionDeclaration,
+  classifyExtensionDeclaration,
   type ExtensionDeclaration,
 } from './declaration.js';
 import {
   EXTENSION_NOT_DECLARED_REASON,
   KYA_OS_EXTENSION_ID,
+  MALFORMED_DECLARATION_REASON,
   MISSING_REQUIRED_CLIENT_CAPABILITY_CODE,
   buildExtensionSettings,
   resolveExtensionSettings,
@@ -97,17 +101,29 @@ export function requireExtension(
   const extensionId = opts.extensionId ?? KYA_OS_EXTENSION_ID;
   const exemptMethods = opts.exemptMethods ?? DEFAULT_EXEMPT_METHODS;
   return (input) => {
-    const declaration = readExtensionDeclaration({ ...input, extensionId });
-    if (declaration !== undefined) {
-      return { ok: true, declaration };
+    const classification = classifyExtensionDeclaration({ ...input, extensionId });
+    if (classification.status === 'declared') {
+      return { ok: true, declaration: classification.declaration };
     }
+    // Optional mode: both absent AND malformed degrade to core MCP behavior. The
+    // declaration is an untrusted, intermediary-mutable, proof-excluded `_meta`
+    // member (§7), so rejecting on a malformed one would let a corrupting
+    // intermediary turn an otherwise-valid request into a failure while a mere
+    // strip lets it through - the "corrupt vs. strip" asymmetry (§3.2).
     if (!settings.required) {
       return { ok: true };
     }
+    // Discovery/ping stay reachable so a non-declaring client can learn the requirement.
     if (input.method !== undefined && exemptMethods.includes(input.method)) {
       return { ok: true };
     }
-    return { ok: false, error: missingRequiredCapabilityError(extensionId) };
+    // Required mode rejects an absent declaration anyway, so surfacing the
+    // distinction carries no new DoS: a present-but-malformed declaration is a
+    // client-integrity error (-32602); a genuinely absent one is the
+    // missing-capability error (-32021).
+    return classification.status === 'malformed'
+      ? { ok: false, error: malformedDeclarationError(extensionId) }
+      : { ok: false, error: missingRequiredCapabilityError(extensionId) };
   };
 }
 
@@ -121,6 +137,29 @@ export function missingRequiredCapabilityError(
     data: {
       requiredCapabilities: { extensions: { [extensionId]: {} } },
       reason: EXTENSION_NOT_DECLARED_REASON,
+      extension: extensionId,
+    },
+  };
+}
+
+/** JSON-RPC "Invalid params" - the core code a present-but-malformed declaration rejects with (§3.2). */
+export const INVALID_PARAMS_CODE = -32602;
+
+/**
+ * The `-32602` rejection for a required-mode request whose declaration is present
+ * but malformed (SPEC-MCP-EXTENSION.md §3.2). Distinct from
+ * {@link missingRequiredCapabilityError}: a garbled declaration is a client-
+ * integrity error, not a missing one. In optional mode the gate never reaches
+ * here - a malformed declaration degrades to core behavior instead.
+ */
+export function malformedDeclarationError(
+  extensionId: string = KYA_OS_EXTENSION_ID,
+): JsonRpcErrorObject {
+  return {
+    code: INVALID_PARAMS_CODE,
+    message: `Invalid params: the ${extensionId} settings declaration is present but malformed`,
+    data: {
+      reason: MALFORMED_DECLARATION_REASON,
       extension: extensionId,
     },
   };

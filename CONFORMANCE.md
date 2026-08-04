@@ -430,6 +430,12 @@ protocol, and `negotiation` exercises the MCP extension admission gate
 A `fail` vector passes the suite only when the implementation correctly **rejects**
 it. The runner exits non-zero on any mismatch.
 
+**On `signed-proof/tampered-meta`.**
+The proof's `meta` block mirrors the claims signed inside the JWS, but it is a convenience for consumers that read the proof without decoding the token, not an authoritative copy.
+This vector leaves the JWS byte-identical to `valid-basic` and alters only the mirrored `meta.requestHash`, so the JWS signature still verifies.
+A conformant verifier MUST reconcile `meta` against the decoded JWS payload and reject on any mismatch.
+Signature validity alone does not pass this vector: it is the `requestHash` counterpart of the `responseHash` recompute rule in L2.11.
+
 ### Running the reference implementation
 
 ```bash

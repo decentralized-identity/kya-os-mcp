@@ -13,6 +13,7 @@ import type {
 import {
   isDelegationCredentialExpired,
   isDelegationCredentialNotYetValid,
+  isSupportedCredentialProofType,
   validateDelegationCredential,
 } from "../types/protocol.js";
 import type {
@@ -174,6 +175,22 @@ export async function verifySignature(
         valid: false,
         reason:
           "No DID resolver or signature verifier configured — signature cannot be verified",
+        durationMs: Date.now() - startTime,
+      };
+    }
+
+    // Bind the declared proof suite to one this path can actually verify. The
+    // embedded-proof signature check below authenticates an Ed25519 signature
+    // over `proofValue`; a credential naming an unsupported/unknown `proof.type`
+    // must not verify merely because that signature happens to validate (#151).
+    // Checked here, before resolving the issuer DID, so an unrecognized suite
+    // fails fast without a network round-trip. The VC-JWT path skips signature
+    // verification entirely (its envelope JWS is the proof), so it never reaches
+    // this check and its `JwtProof2020` marker is correctly exempt.
+    if (vc.proof && !isSupportedCredentialProofType(vc.proof.type)) {
+      return {
+        valid: false,
+        reason: `Unsupported credential proof.type: ${String(vc.proof.type)}`,
         durationMs: Date.now() - startTime,
       };
     }

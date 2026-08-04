@@ -68,7 +68,7 @@
       "category": "negotiation",
       "description": "Client declaration entry is present but malformed; server requires the extension",
       "expected": "fail",
-      "reason": "A malformed settings object MUST be treated as absent (fail closed), so a required server rejects with -32021",
+      "reason": "A required server rejects a present-but-malformed declaration with -32602 (malformed_declaration), distinct from the -32021 it returns for a genuinely absent one",
       "input": {
         "serverSettings": { "required": true },
         "request": {

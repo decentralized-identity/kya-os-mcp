@@ -9,9 +9,10 @@
  *     initialize exchange, supplied by the host as `initializeCapabilities`
  *
  * Precedence: the per-request stateless entry, when PRESENT, is final - a
- * malformed stateless entry is treated as no declaration (fail closed, §3.2)
- * and the initialize-era entry is NOT consulted as a fallback, because the
- * per-request carriage supersedes initialize-era state.
+ * malformed stateless entry is classified as `malformed` (never a silent
+ * fallback to the initialize-era entry), because the per-request carriage
+ * supersedes initialize-era state. What a malformed entry MEANS is the gate's
+ * call (§3.2): degrade-to-absent in optional mode, -32602 in required mode.
  */
 
 import { isRecord } from '../utils/guards.js';
@@ -41,29 +42,55 @@ export interface ReadDeclarationInput {
   extensionId?: string;
 }
 
+/** The three outcomes of reading a peer's declaration (SPEC-MCP-EXTENSION.md §3.2). */
+export type DeclarationClassification =
+  | { status: 'declared'; declaration: ExtensionDeclaration }
+  | { status: 'absent' }
+  | { status: 'malformed'; carriage: DeclarationCarriage };
+
 /**
- * Read and validate the peer's declaration from either carriage.
- * Returns `undefined` when the extension is not declared - including when the
- * declared settings object is malformed (treated as absent, §3.2).
+ * Classify the peer's declaration from either carriage, distinguishing a
+ * present-but-malformed entry from a genuinely absent one. That distinction is
+ * what lets the gate answer malformed with `-32602` in required mode (§3.2)
+ * while still degrading it to core behavior in optional mode - so a corrupted,
+ * untrusted, proof-excluded `_meta` member never turns an otherwise-valid
+ * optional-mode request into a rejection.
  */
-export function readExtensionDeclaration(
+export function classifyExtensionDeclaration(
   input: ReadDeclarationInput,
-): ExtensionDeclaration | undefined {
+): DeclarationClassification {
   const id = input.extensionId ?? KYA_OS_EXTENSION_ID;
 
   const stateless = extensionsEntry(clientCapabilitiesFromMeta(input.meta), id);
   if (stateless.present) {
     const settings = parseExtensionSettings(stateless.value);
-    return settings === undefined ? undefined : { settings, carriage: 'stateless' };
+    return settings === undefined
+      ? { status: 'malformed', carriage: 'stateless' }
+      : { status: 'declared', declaration: { settings, carriage: 'stateless' } };
   }
 
   const legacy = extensionsEntry(input.initializeCapabilities, id);
   if (legacy.present) {
     const settings = parseExtensionSettings(legacy.value);
-    return settings === undefined ? undefined : { settings, carriage: 'initialize' };
+    return settings === undefined
+      ? { status: 'malformed', carriage: 'initialize' }
+      : { status: 'declared', declaration: { settings, carriage: 'initialize' } };
   }
 
-  return undefined;
+  return { status: 'absent' };
+}
+
+/**
+ * Read and validate the peer's declaration from either carriage.
+ * Returns `undefined` when there is no usable declaration - including a
+ * malformed one; callers that must distinguish malformed from absent (the gate)
+ * use {@link classifyExtensionDeclaration} instead.
+ */
+export function readExtensionDeclaration(
+  input: ReadDeclarationInput,
+): ExtensionDeclaration | undefined {
+  const classification = classifyExtensionDeclaration(input);
+  return classification.status === 'declared' ? classification.declaration : undefined;
 }
 
 /** Pull `io.modelcontextprotocol/clientCapabilities` out of a `_meta` bag. */

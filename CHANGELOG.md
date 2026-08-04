@@ -7,6 +7,26 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-08-04
+
+### Added
+
+- **MCP `2026-07-28` extension binding: `org.kya-os/decentralized-authority`.**
+  Per-request admission via `requireExtension`, capability declaration via
+  `buildExtensionsEntry`, and a hand-rolled `server/discover` advertisement
+  (SEP-2133). Required mode rejects a non-declaring client with the core
+  `-32021` error carrying the `requiredCapabilities` member; discovery and ping
+  are exempt from the gate.
+- **Audit operator read/replay contract and a reference recorder.**
+
+### Changed
+
+- **Terminal proof-key naming.** Role-named `_meta` carriers
+  `org.kya-os/request-proof` and `org.kya-os/response-proof`, with the profile
+  version carried in the `org.kya-os/proof.v1` profile id. The legacy keys and
+  `prf` value (`org.kya-os/proof@1`, `org.kya-os/proof`) are read-accepted for
+  one major version, so existing producers and verifiers keep working.
+
 ## [1.11.0] - 2026-07-22
 
 ### Added

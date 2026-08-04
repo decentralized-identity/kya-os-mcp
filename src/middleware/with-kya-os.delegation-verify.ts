@@ -24,6 +24,7 @@ import { canonicalizeJSON } from "../delegation/utils.js";
 import { base64urlDecodeToBytes, bytesToBase64 } from "../utils/base64.js";
 import {
   createNeedsAuthorizationError,
+  readCredentialProofValue,
   type DelegationCredential,
   type NeedsAuthorizationError,
 } from "../types/protocol.js";
@@ -134,7 +135,7 @@ export function createDelegationVerification(
       return { valid: false, reason: "Missing proof" };
     }
 
-    const proofValue = proof["proofValue"] as string | undefined;
+    const proofValue = readCredentialProofValue(proof as Record<string, unknown>);
     if (!proofValue) {
       return { valid: false, reason: "Missing proofValue in proof" };
     }

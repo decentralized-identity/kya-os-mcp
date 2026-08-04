@@ -112,6 +112,23 @@ populates); CIMD proves key possession once, at the token endpoint (session-inte
 them type the principal, and none prove the live caller per request. The `cnf.jkt` fusion (§8.6)
 connects the two claims, from the L1 token to the L3 per-request proof, through one DID key.
 
+### 1.4 Delegation key model
+
+A delegation names a **key**, not a long-lived identity that has to be maintained. The RECOMMENDED
+delegate subject is a fresh, single-purpose `did:key` minted per delegation: the identifier *is* the
+public key, so there is nothing to rotate, and no question of whether a delegation was signed before
+or after a rotation. Possession of that key is proven on every request: the leaf delegate a Verifier
+recomputes from the chain must equal the request-proof key (`leafInvoker === proof.did`, §8, §11), so
+a captured credential is inert to anyone who does not hold the key. Delegations are short-lived and
+attenuating (the delegation profile in SPEC.md; §10), which keeps the key's exposure window small.
+
+An Entity that needs a durable, resolvable name across devices MAY instead use a `did:web` subject.
+There, key rotation is a DID-document update with superseded keys retained for historical proof
+verification, and delegations are reissued bound to a specific `kid` (§12.5); that likewise removes
+any before-or-after-rotation ambiguity. The per-request holder-of-key check for `did:web` subjects is
+the `cnf.jkt` sender-constraint fusion (§8.6), and is OPTIONAL relative to the RECOMMENDED one-off-key
+model. See also the per-delegation-keys note (§13).
+
 ---
 
 ## 2. Terminology & Roles

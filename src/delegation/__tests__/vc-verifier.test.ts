@@ -256,6 +256,37 @@ describe("DelegationCredentialVerifier", () => {
       expect(result.stage).toBe("basic");
     });
 
+    it("should reject an unsupported proof.type without invoking the signature verifier (#151)", async () => {
+      await setupDefaultContractsMocks();
+      const badVC = {
+        ...mockValidVC,
+        proof: { ...mockValidVC.proof, type: "BogusSuite2099" },
+      };
+
+      const result = await verifier.verifyDelegationCredential(badVC);
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toMatch(/proof\.type/i);
+      // Rejected before the Ed25519-over-proofValue check runs: a valid
+      // signature cannot rescue an unsupported suite.
+      expect(mockSignatureVerifier).not.toHaveBeenCalled();
+    });
+
+    it("should accept a supported proof.type (DataIntegrityProof) through the suite gate", async () => {
+      await setupDefaultContractsMocks();
+      const okVC = {
+        ...mockValidVC,
+        proof: { ...mockValidVC.proof, type: "DataIntegrityProof" },
+      };
+
+      const result = await verifier.verifyDelegationCredential(okVC);
+
+      // The proof.type gate passes; any failure now is a later stage (here, DID
+      // resolution), never the suite. Had the gate rejected, the reason would
+      // name proof.type.
+      expect(result.reason).not.toMatch(/proof\.type/i);
+    });
+
     it("should reject invalid schema at basic validation stage", async () => {
       const contractsMock = await setupDefaultContractsMocks();
       // Create a mock ZodError-like object without importing zod

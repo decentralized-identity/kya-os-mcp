@@ -221,6 +221,25 @@ export function readCredentialProofValue(
 }
 
 /**
+ * The credential-proof signature suites a verifier can actually check here: an
+ * Ed25519 signature over the RFC 8785 (JCS) canonical credential, carried in
+ * `proofValue`. `Ed25519Signature2020` and `DataIntegrityProof` (the `eddsa-jcs`
+ * cryptosuite) are the two labels the reference implementation emits for that one
+ * construction. A credential naming any other `proof.type` must be rejected rather
+ * than pass merely because its Ed25519 signature happens to validate, so the suite
+ * named in the credential is bound to the suite actually used (#151).
+ */
+export const SUPPORTED_CREDENTIAL_PROOF_TYPES: ReadonlySet<string> = new Set([
+  'Ed25519Signature2020',
+  'DataIntegrityProof',
+]);
+
+/** True iff `type` names a credential-proof suite this verifier can verify. */
+export function isSupportedCredentialProofType(type: unknown): type is string {
+  return typeof type === 'string' && SUPPORTED_CREDENTIAL_PROOF_TYPES.has(type);
+}
+
+/**
  * Extract a DelegationRecord from a DelegationCredential.
  */
 export function extractDelegationFromVC(vc: DelegationCredential): DelegationRecord {

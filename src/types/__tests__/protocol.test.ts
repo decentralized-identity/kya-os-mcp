@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   extractDelegationFromVC,
+  isSupportedCredentialProofType,
   readCredentialProofValue,
+  SUPPORTED_CREDENTIAL_PROOF_TYPES,
   type DelegationCredential,
 } from '../protocol.js';
 
@@ -64,5 +66,28 @@ describe('extractDelegationFromVC signature agreement', () => {
   it('extracts no signature when the credential has no proof', () => {
     const record = extractDelegationFromVC(credentialWithProof(undefined));
     expect(record.signature).toBe('');
+  });
+});
+
+describe('isSupportedCredentialProofType', () => {
+  it('accepts the suites the verifier can actually check', () => {
+    expect(isSupportedCredentialProofType('Ed25519Signature2020')).toBe(true);
+    expect(isSupportedCredentialProofType('DataIntegrityProof')).toBe(true);
+    for (const type of SUPPORTED_CREDENTIAL_PROOF_TYPES) {
+      expect(isSupportedCredentialProofType(type)).toBe(true);
+    }
+  });
+
+  it('rejects an unknown suite: naming it must not pass verification (#151)', () => {
+    expect(isSupportedCredentialProofType('BogusSuite2099')).toBe(false);
+    // jws-based suites are not verifiable here; the verifier checks proofValue.
+    expect(isSupportedCredentialProofType('JsonWebSignature2020')).toBe(false);
+  });
+
+  it('rejects a missing or non-string proof.type', () => {
+    expect(isSupportedCredentialProofType(undefined)).toBe(false);
+    expect(isSupportedCredentialProofType(null)).toBe(false);
+    expect(isSupportedCredentialProofType(42)).toBe(false);
+    expect(isSupportedCredentialProofType('')).toBe(false);
   });
 });

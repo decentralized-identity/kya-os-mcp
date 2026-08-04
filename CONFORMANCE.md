@@ -419,11 +419,13 @@ so it is reproducible against any implementation without re-signing.
 | `vectors/card-proof.json` | `org.kya-os/proof.v1` holder-of-key proof | valid signed proof, in-window, audience-bound | tampered body, tampered signature, wrong audience, expired, kid⇄did forgery |
 | `vectors/entity-card.json` | Entity Card `parseCard` + `verifyCard` | golden card per `entityType`, accountable agent | malformed (unknown field), broken accountability JOIN |
 | `vectors/audit-integrity.json` | Audit JCS + domain-separated hashing + RFC 9162 | fixed Unicode event, leaf/root, inclusion and consistency paths | mutated event/proof relationships are exercised by the audit unit suites |
+| `vectors/negotiation.json` | MCP extension admission gate (`org.kya-os/decentralized-authority`) | declared and malformed-degrades-to-core (optional server); empty-object and initialize-era declarations, `server/discover` exemption (required server) | absent against a required server (`-32021`), present-but-malformed against a required server (`-32602`, malformed_declaration) |
 
 The first five categories exercise the **legacy** session-bound primitives; the
 next two exercise the **Entity Card** layer (see the dedicated section below),
-and `audit-integrity` provides language-neutral bytes and hashes for the audit
-protocol.
+`audit-integrity` provides language-neutral bytes and hashes for the audit
+protocol, and `negotiation` exercises the MCP extension admission gate
+(`org.kya-os/decentralized-authority`, SPEC-MCP-EXTENSION.md §3-§5).
 
 A `fail` vector passes the suite only when the implementation correctly **rejects**
 it. The runner exits non-zero on any mismatch.

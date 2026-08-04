@@ -8,12 +8,14 @@ Editors: KYA-OS Working Group
 Repository: https://github.com/decentralized-identity/kya-os-mcp
 Binds: the KYA-OS Protocol Specification ([SPEC.md](./SPEC.md)) and the Entity Card profile ([SPEC-ENTITY-CARD.md](./SPEC-ENTITY-CARD.md)) to the Model Context Protocol Extensions framework (SEP-2133)
 
+> **Condensed edition.** A venue-shaped condensation of this binding is maintained at [submission/decentralized-authority.md](./submission/decentralized-authority.md) for MCP Extensions Track review. This document is authoritative on any conflict until an MCP extension repository adopts the binding, and changes to either document are mirrored in the same change set.
+
 ---
 
 ## Abstract
 
 This document specifies how the KYA-OS protocol operates as an optional, strictly additive extension to the Model Context Protocol, using the Extensions framework introduced in the MCP `2026-07-28` specification (SEP-2133).
-The extension is identified as `org.kya-os/decentralized-authority` and is negotiated through the standard `extensions` member of `ClientCapabilities` and `ServerCapabilities`.
+The extension is identified as `org.kya-os/decentralized-authority` and is declared through the standard `extensions` member of `ClientCapabilities` and `ServerCapabilities`.
 It adds no tools, no JSON-RPC methods, no handshake, and no session semantics.
 Its entire wire surface is: one capability entry, the reverse-DNS `_meta` keys already registered by the underlying specifications, the `KYA-OS-*` outbound HTTP headers, and the Entity Card discovery projections.
 Everything normative about identity, delegation, proofs, and verification is defined in [SPEC.md](./SPEC.md) and [SPEC-ENTITY-CARD.md](./SPEC-ENTITY-CARD.md); this document defines only the MCP binding and is intentionally thin.
@@ -43,7 +45,7 @@ The identifier was settled in DIF TAAWG discussion (2026-07-28).
 
 ### 1.2 Versioning
 
-The extension version is carried in the negotiation settings object (§3.2) and versions independently of both the MCP specification and the underlying KYA-OS protocol version.
+The extension version is carried in the settings object (§3.2) and versions independently of both the MCP specification and the underlying KYA-OS protocol version.
 Per SEP-2133, a breaking change to this extension requires a **new extension identifier**; the `1.x` line of this document is therefore strictly additive.
 
 ### 1.3 Graduation
@@ -60,7 +62,7 @@ Re-keying of the `_meta` registry entries (§2.2) would be specified by a succes
 
 | Surface | Mechanism | Defined in |
 |---|---|---|
-| Capability negotiation | `capabilities.extensions["org.kya-os/decentralized-authority"]` settings object | §3 (this document) |
+| Capability declaration | `capabilities.extensions["org.kya-os/decentralized-authority"]` settings object | §3 (this document) |
 | Request proof | `_meta["org.kya-os/request-proof"]` per-request holder-of-key proof | SPEC-ENTITY-CARD §8 |
 | Response proof / audit | `_meta["org.kya-os/response-proof"]` detached response proof | SPEC.md §7 |
 | Consent step-up | signed `needs_authorization` challenge | SPEC.md §9 |
@@ -69,7 +71,7 @@ Re-keying of the `_meta` registry entries (§2.2) would be specified by a succes
 | Discovery | Entity Card + projections; `/.well-known/mcp`; `server/discover` | SPEC-ENTITY-CARD §5-§6; SPEC.md §10; §3.4 (this document) |
 
 The extension defines **no tools** and **no new JSON-RPC methods**.
-The `_kyaos_handshake` tool and the KYA-OS session lifecycle (SPEC.md §5, §14) are **not part of this extension**; they are the legacy 1.x session profile, retained as an optional application-layer convenience outside the negotiated surface (see §11 and SPEC-ENTITY-CARD §15.5, Appendix D.4).
+The `_kyaos_handshake` tool and the KYA-OS session lifecycle (SPEC.md §5, §14) are **not part of this extension**; they are the legacy 1.x session profile, retained as an optional application-layer convenience outside the declared surface (see §11 and SPEC-ENTITY-CARD §15.5, Appendix D.4).
 
 ### 2.2 `_meta` keys
 
@@ -109,7 +111,10 @@ sequenceDiagram
 
 ---
 
-## 3. Capability Negotiation
+## 3. Capability Declaration and Selection
+
+Because the stateless MCP `2026-07-28` core has no `initialize` handshake round trip, this surface negotiates no session-wide agreement: the server **advertises** the proof profiles and DID methods it supports, the client **selects** from that set and **declares** its selection on every request, and the server **enforces** its own configured minimum on every request.
+The selection is a hint that identifies the client's active configuration; the enforcement is the security boundary.
 
 ### 3.1 Where the declaration travels
 
@@ -175,6 +180,7 @@ All members are OPTIONAL; per SEP-2133, an **empty object** (`{}`) means "suppor
 
 Unknown members MUST be ignored (forward compatibility).
 A peer that receives a settings object it cannot parse - a declaration that is present but malformed, as distinct from one that is absent - MUST NOT treat it as a valid declaration, and MUST NOT guess at intent. The declaration is an untrusted, intermediary-mutable, proof-excluded `_meta` member, so its handling is mode-dependent. In **optional mode** a malformed declaration degrades to non-declaration exactly like an absent one (core MCP behavior, §4); a corrupting intermediary therefore cannot turn an otherwise-valid request into a rejection when a mere strip would let it through. In **required mode**, where a non-declaring request is rejected regardless, the server MUST reject the request with JSON-RPC `-32602` (Invalid params) carrying `reason: "malformed_declaration"`, distinguishing a garbled declaration from a genuinely absent one (`-32021`, §4).
+An absent or stripped declaration is a distinct case: it is handled as a non-declaration, failing closed per the graceful-degradation contract (§4).
 
 ### 3.3 Meaning of a declaration
 
@@ -183,9 +189,15 @@ A declaring client SHOULD attach a proof to every request it wants authorized un
 
 A **server** declaration asserts: the server verifies proofs under the listed profiles per the fail-closed algorithm of SPEC-ENTITY-CARD §11, and (when `required` is `true`) enforces declaration as a precondition (§4).
 
+A client's declaration identifies the client's active configuration; it never sets the server's verification bar.
+A server MUST NOT weaken its verification requirements on the basis of a client's declaration.
+The declared `proofProfiles` and `didMethods` may only select among the profiles and methods the server already accepts; they can never move the server below its configured floor.
+Because the load-bearing artifact is the signed proof and not the declaration (§10 item 1), a declaration naming a weaker profile than the proof actually carries cannot make a server accept a proof it would otherwise reject: either the proof verifies under a profile the server accepts, or it fails closed.
+
 ### 3.4 Discovery before first call
 
 A client MAY call `server/discover` before any other request to learn whether a server speaks, and whether it requires, `org.kya-os/decentralized-authority`, and attach proofs from the first real request onward.
+Having learned the server's advertised `proofProfiles` and `didMethods`, a client SHOULD select from the intersection of its own and the server's advertised sets and declare that selection on each subsequent request.
 The `/.well-known/mcp` document (SPEC.md §10) and the Entity Card projections (SPEC-ENTITY-CARD §6) advertise the same facts out of band; `server/discover` is the in-protocol source of truth under `2026-07-28`.
 
 ---
@@ -236,6 +248,8 @@ The safety property is therefore fail-closed handling of absence, never silent a
 - optional mode degrades a missing or stripped declaration to core behavior (§4.1);
 - a missing or stripped **proof** on a gated call is rejected by the proof gate (`proof_missing`, §5.2), regardless of what the declaration said;
 - a stripped proof `cnf` in the presence of a token `cnf` fails closed (`cnf_required_by_token`, SPEC-ENTITY-CARD §8.6, §12.7).
+
+A declaration that is present but malformed is handled per §3.2: in optional mode it degrades to absence exactly like a stripped one, and in required mode it is rejected with `-32602` (`malformed_declaration`) rather than the `-32021` an absent declaration gets.
 
 Nothing security-relevant may ever be trusted from `_meta` without verifying the signed artifact it carries.
 
@@ -293,6 +307,7 @@ The MCP-specific deltas are only these:
 1. **Placement.** The proof object rides `_meta["org.kya-os/request-proof"]` inside `params` of the JSON-RPC request - the role-named carrier of the `org.kya-os/proof.v1` profile (SPEC-ENTITY-CARD §8.1; the legacy key and `prf` value `org.kya-os/proof@1` are accepted for one major version).
 2. **Request binding.** `requestHash` covers `{ method, params }` with `params._meta` removed (SPEC-ENTITY-CARD §8.3).
    Consequently an intermediary MAY add or rewrite `_meta` members (for example the required `io.modelcontextprotocol/*` keys) without invalidating the proof, and MUST NOT mutate `method` or any other part of `params` on a proof-bearing request, because any such mutation invalidates `requestHash`.
+   Because `_meta` is both intermediary-mutable and outside proof coverage, its contents are untrusted: a verifier derives no security decision from any `_meta` member except by verifying the signed proof that member carries.
 3. **Transport agnosticism.** The proof is in-band JSON-RPC and verifies identically over stdio and Streamable HTTP; the OPTIONAL RFC 9421 sibling (SPEC-ENTITY-CARD §8.5) serves HTTP-edge intermediaries.
 4. **Relationship to DPoP.** SPEC-ENTITY-CARD §8.8 governs; the two compose and are not alternatives.
 
@@ -310,9 +325,11 @@ A future MRTR profile (§7.3) would have to extend `responseHash` coverage to `r
 Authority is conveyed only by a verifiable delegation chain: the W3C VC model of SPEC.md §6, including the VC 2.0 + ZCAP-LD profile of SPEC.md §6.10, with the designation invariant (SPEC.md §6.4.1), revocation (SPEC.md §6.5-§6.6, SPEC-ENTITY-CARD §10.3), and the recomputed accountability joins (SPEC-ENTITY-CARD §10.2).
 A proof references its authority via `delegationRef`; declaring the extension conveys no authority by itself.
 
+Revocation status lists SHOULD be published per issuing authority - each delegation's status served from the issuer's own domain - rather than through a single centralized registry, preserving the no-central-authority property (§13.2).
+
 ### 7.2 Consent step-up
 
-The step-up flow is SPEC.md §9: a call lacking sufficient delegation returns a `needs_authorization` challenge whose content, including `authorizationUrl`, is bound by a signed response proof (`outcome: "needs_authorization"`, SPEC.md §7.4, §9.2).
+The step-up flow is SPEC.md §9: a call lacking sufficient permission returns a `needs_authorization` challenge whose content, including `authorizationUrl`, is bound by a signed response proof (`outcome: "needs_authorization"`, SPEC.md §7.4, §9.2).
 A client MUST verify the challenge proof and recompute `responseHash` over the received challenge before directing a user to `authorizationUrl` (SPEC.md §9.3), and MUST apply the RFC 9207 issuer validation of SPEC.md §9.4 on the authorization callback.
 This document binds the challenge carriage: a server delivers the SPEC.md §9.2 challenge object as the body of a `resultType: "complete"` result, so the proof's `responseHash` covers the challenge content (SPEC.md §7.3, §7.4) while the result's `resultType` member itself remains outside proof coverage (§6).
 
@@ -321,7 +338,7 @@ This document binds the challenge carriage: a server delivers the SPEC.md §9.2 
 MCP `2026-07-28` introduces the Multi Round-Trip Request pattern (SEP-2322): a server returns `resultType: "input_required"` with `inputRequests`, and the client retries the original request carrying `inputResponses`.
 The KYA-OS step-up flow is structurally the same shape: challenge out, user action, retry with `resumeToken` and a fresh delegation (SPEC.md §9.3).
 This revision carries the challenge as the body of a `resultType: "complete"` result (§7.2, this document's own binding decision; SPEC.md §9.2 defines the challenge object without a carriage statement) and does not profile it onto `input_required`, because the underlying specification defines the retry as a new request rather than an MRTR continuation.
-A future revision MAY define an MRTR profile of the consent flow; such a profile would be additive and negotiated through the settings object.
+A future revision MAY define an MRTR profile of the consent flow; such a profile would be additive and declared through the settings object.
 
 ---
 
@@ -363,6 +380,7 @@ Extension-specific considerations:
 4. **Replay containment scope.** Proof construction is stateless; verification is not (SPEC-ENTITY-CARD §8).
    Accept-once nonce enforcement is per nonce-store visibility scope: a verifier without a nonce seam MUST fail closed (`nonce_seam_missing`, SPEC-ENTITY-CARD §11.2 step 8), and multi-replica deployments MUST use an atomic, shared or replica-sticky nonce store (SPEC-ENTITY-CARD §12.2) if duplicate execution of a byte-identical request inside the 60-second window is unacceptable.
    The same bound applies to any stateless-verification scheme, including DPoP server-side `jti` tracking (RFC 9449).
+   Because every proof carries a freshness window of at most 60 seconds, observed nonces need be retained only for that window plus the verifier's maximum tolerated clock skew: a proof replayed after the window fails the freshness check independently of the nonce store, so nonce retention is bounded by the proof window, not by the delegation lifetime.
 5. **Verification cost and revocation freshness.** Warm-path verification is local CPU only (signature checks plus JCS hashing); cold paths add DID document and status-list fetches through SafeFetch.
    Revocation staleness is bounded by status-cache TTL, with short TTLs (60 seconds or less) recommended for high-privilege scopes (SPEC.md §6.5.2, §11.10); this is the same trade OAuth makes through token lifetime, relocated to a cache knob.
 
@@ -376,6 +394,8 @@ Extension-specific considerations:
 1. **Correlation.** A stable agent DID plus per-request signed proofs makes an agent's activity linkable across every server it touches, and non-repudiable indefinitely.
    That is the explicit goal of enterprise audit deployments and a real cost elsewhere.
    Implementations SHOULD support pairwise (per-audience) agent DIDs (SPEC.md §12.1, SPEC-ENTITY-CARD §13), and this extension does NOT require a globally stable DID for conformance.
+   Delegate keys SHOULD be one-off and short-lived (SPEC.md §6.9): a fresh key per delegation bounds replay and key-compromise exposure and reinforces pairwise-DID unlinkability.
+   Where an operator must revoke every delegation a principal holds in a single action (for example, offboarding a departing employee), it MAY instead bind that principal's delegations to one revocable key and revoke that key, accepting the reduced unlinkability a shared key implies.
 2. **Chain disclosure.** Delegation credentials identify delegating principals to every chain verifier.
    Issuers SHOULD prefer opaque, organization-resolvable subject identifiers over human-readable ones, and deployments SHOULD present chains pruned to the minimum depth that preserves the authority argument (see also per-delegation keys, SPEC.md §12.5).
 3. **Cards are claim-minimal.** Discovery projections carry no principal PII (SPEC-ENTITY-CARD §4.2, §13); optional fields are omitted, not nulled.
@@ -432,7 +452,7 @@ The deprecation of core Logging, alongside standardized trace-context `_meta`, m
 
 - [SPEC.md](./SPEC.md), the KYA-OS Protocol Specification, v1.0.0.
 - [SPEC-ENTITY-CARD.md](./SPEC-ENTITY-CARD.md), the KYA-OS Entity Card profile, v1.1.
-- [`schemas/mcp-extension-settings.json`](./schemas/mcp-extension-settings.json), the negotiation settings schema.
+- [`schemas/mcp-extension-settings.json`](./schemas/mcp-extension-settings.json), the extension settings schema.
 - Model Context Protocol, specification revision `2026-07-28` (Release Candidate; verified against the `draft` revision, 2026-07-28). https://modelcontextprotocol.io/specification/draft, expected to publish as https://modelcontextprotocol.io/specification/2026-07-28
 - SEP-2133, *Extensions framework for MCP*. https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2133
 - **[RFC2119]** / **[RFC8174]** BCP 14 conformance keywords.

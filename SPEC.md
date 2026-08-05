@@ -23,7 +23,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ## Status
 
-**Stable 1.0.0** — Donated to DIF TAAWG (Decentralized Identity Foundation, Trusted AI Agents Working Group). Under review for ratification as a DIF standard. The wire format is stable: any future change that breaks compatibility with this version will require a major version bump.
+**Stable 1.0.0** — Donated to DIF TAAWG (Decentralized Identity Foundation, Trusted AI Agents Working Group) and ratified as a DIF standard. The wire format is stable: any future change that breaks compatibility with this version will require a major version bump.
 
 ---
 

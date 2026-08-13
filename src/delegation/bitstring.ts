@@ -14,6 +14,12 @@
  * Related Spec: W3C Bitstring Status List v1.0 (successor to StatusList2021)
  */
 
+import {
+  MULTIBASE_BASE64URL,
+  decodeStatusListPayload,
+  readStatusBit,
+} from '../utils/statuslist-bits.js';
+
 export interface CompressionFunction {
   compress(data: Uint8Array): Promise<Uint8Array>;
 }
@@ -21,17 +27,6 @@ export interface CompressionFunction {
 export interface DecompressionFunction {
   decompress(data: Uint8Array): Promise<Uint8Array>;
 }
-
-/** Fixed ceiling on an inflated status bitstring (16 MiB ≈ 134M entries) — fail-closed against a
- *  decompression bomb. Mirrors the cap in the card revocation reader (src/card/revocation.ts). */
-const MAX_STATUS_LIST_BYTES = 16 * 1024 * 1024;
-
-/** The W3C Bitstring Status List `encodedList` multibase prefix (base64url, no padding). `encode`
- *  emits it and `base64urlDecode` strips it, so this reader is interoperable with the card
- *  revocation reader (src/card/revocation.ts) and any conformant issuer. A gzip stream's fixed
- *  magic byte (0x1f) makes its base64url start with `H`, never `u`, so a leading `u` is
- *  unambiguously the multibase code rather than payload. */
-const MULTIBASE_BASE64URL = 'u';
 
 export class BitstringManager {
   private bits: Uint8Array;
@@ -100,7 +95,9 @@ export class BitstringManager {
     compressor: CompressionFunction,
     decompressor: DecompressionFunction
   ): Promise<BitstringManager> {
-    const decompressed = await inflateStatusList(encodedList, decompressor);
+    const decompressed = await decodeStatusListPayload(encodedList, (bytes) =>
+      decompressor.decompress(bytes)
+    );
 
     const size = decompressed.length * 8;
     const manager = new BitstringManager(size, compressor, decompressor);
@@ -143,55 +140,18 @@ export class BitstringManager {
 }
 
 /**
- * Decode a base64url `encodedList`, stripping an optional leading W3C multibase `u` prefix so this
- * module's own `encode` output and a conformant issuer's `encodedList` decode identically (matches
- * src/card/revocation.ts). Standalone so both {@link BitstringManager.decode} and {@link isIndexSet}
- * share ONE reader (no private-visibility casts).
+ * Read one status bit straight off an `encodedList` (decode + bounded inflate +
+ * MSB-first read via `utils/statuslist-bits`). Fail-CLOSED: an out-of-range or
+ * NaN index cannot be proven clear, so `readStatusBit` throws rather than
+ * reading as "not set".
  */
-function decodeBase64urlMultibase(encoded: string): Uint8Array {
-  const payload = encoded[0] === MULTIBASE_BASE64URL ? encoded.slice(1) : encoded;
-  let standard = payload.replace(/-/g, '+').replace(/_/g, '/');
-  standard += '='.repeat((4 - (standard.length % 4)) % 4);
-  const binary = atob(standard);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
-/**
- * Decode + decompress a status-list `encodedList`, FAIL-CLOSED against a decompression bomb via a
- * post-inflation size cap. The single reader path shared by {@link BitstringManager.decode} and
- * {@link isIndexSet}, so both bound inflation identically. (Production decompressors SHOULD also
- * bound output DURING inflation.)
- */
-async function inflateStatusList(
-  encodedList: string,
-  decompressor: DecompressionFunction
-): Promise<Uint8Array> {
-  const decompressed = await decompressor.decompress(decodeBase64urlMultibase(encodedList));
-  if (decompressed.length > MAX_STATUS_LIST_BYTES) {
-    throw new Error(`Status list too large: ${decompressed.length} bytes exceeds ${MAX_STATUS_LIST_BYTES}`);
-  }
-  return decompressed;
-}
-
 export async function isIndexSet(
   encodedList: string,
   index: number,
   decompressor: DecompressionFunction
 ): Promise<boolean> {
-  const decompressed = await inflateStatusList(encodedList, decompressor);
-
-  const byteIndex = Math.floor(index / 8);
-  const bitIndex = index % 8;
-
-  if (!Number.isInteger(index) || index < 0 || byteIndex >= decompressed.length) {
-    // Fail-CLOSED: an out-of-range/NaN index cannot be proven clear, so it must NOT read as "not
-    // set". `!Number.isInteger` is required because `byteIndex >= length` is FALSE for a NaN index
-    // (any comparison with NaN is false), which would otherwise slip past and read bits[NaN] =
-    // undefined = live (the fail-open getBit already rejects, but this standalone reader did not).
-    throw new Error(`Bit index ${index} out of range for the status list`);
-  }
-
-  return (decompressed[byteIndex]! & (0x80 >> bitIndex)) !== 0; // MSB-first (W3C)
+  const decompressed = await decodeStatusListPayload(encodedList, (bytes) =>
+    decompressor.decompress(bytes)
+  );
+  return readStatusBit(decompressed, index);
 }

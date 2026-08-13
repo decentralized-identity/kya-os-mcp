@@ -101,6 +101,19 @@ export interface KyaOsDelegationConfig {
    * rejected — so enabling `'enforce'` never breaks did:web traffic.
    */
   holderBinding?: "off" | "warn" | "enforce";
+  /**
+   * Tuning for the delegation verifier's SIGNATURE-verification cache (the
+   * expensive DID-resolve + crypto dimension). Revocation status and basic
+   * checks (expiry) are always evaluated fresh on every call and are NOT
+   * affected by this setting. Set `ttlMs: 0` to disable signature caching
+   * entirely (e.g. when issuer key rotation must take effect immediately).
+   */
+  verificationCache?: {
+    /** Signature-result TTL in milliseconds. Default 60_000. `0` disables caching. */
+    ttlMs?: number;
+    /** Maximum cached signature results (FIFO eviction). Default 1000. */
+    maxEntries?: number;
+  };
 }
 
 export interface KyaOsConfig {

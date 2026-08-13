@@ -173,6 +173,8 @@ export function createDelegationVerification(
     didResolver,
     signatureVerifier,
     statusListResolver: delegationConfig?.statusListResolver,
+    cacheTtl: delegationConfig?.verificationCache?.ttlMs,
+    maxCacheSize: delegationConfig?.verificationCache?.maxEntries,
   });
 
   const buildDelegationErrorResponse = (

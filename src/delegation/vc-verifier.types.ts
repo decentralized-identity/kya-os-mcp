@@ -19,6 +19,18 @@ import type { CredentialStatus } from "../types/protocol.js";
  */
 export type StatusOutcome = "revoked" | "status_unresolvable";
 
+/**
+ * The signature/DID-validity dimension of a verification — the expensive,
+ * slow-changing half that the verifier caches. Shared by the Data Integrity
+ * path (`verifySignature`) and the VC-JWT path (`verifyVcJwtSignature`,
+ * whose `VcJwtSignatureResult` is structurally identical).
+ */
+export interface SignatureVerificationResult {
+  valid: boolean;
+  reason?: string;
+  durationMs?: number;
+}
+
 export interface DelegationVCVerificationResult {
   valid: boolean;
   reason?: string;
@@ -29,6 +41,13 @@ export interface DelegationVCVerificationResult {
    */
   statusOutcome?: StatusOutcome;
   stage: "basic" | "signature" | "status" | "complete";
+  /**
+   * True when the SIGNATURE verification was served from the per-instance
+   * cache. Basic checks (schema/expiry) and revocation status are always
+   * evaluated fresh on every call — only the signature/DID-validity result
+   * is ever cached. On a hit, `metrics.signatureCheckMs` reports the
+   * near-zero cache retrieval, not the original compute.
+   */
   cached?: boolean;
   metrics?: {
     basicCheckMs?: number;

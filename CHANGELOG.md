@@ -7,6 +7,34 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-08-12
+
+### Security
+
+- **Delegation verifier: revocation status and expiry are now evaluated on
+  every verification.** The per-instance cache previously stored the entire
+  verdict for `cacheTtl` (default 60 s), so a cache hit skipped the
+  credential-status check — a revoked credential kept verifying (and, on the
+  Data Integrity path, an expired one) until the entry lapsed. The cache now
+  holds only the signature/DID-validity result; basic checks and revocation
+  status run on every call, with signature and status still checked in
+  parallel. Warm-path latency now includes one status read — freshness policy
+  belongs in your `StatusListResolver`, never in the verdict. The `cached`
+  result flag now means "signature served from cache".
+
+### Added
+
+- **`withStatusCache(resolver, { maxStalenessMs, maxEntries? })`** — wraps any
+  `StatusListResolver` to cache status *bits* for an explicitly declared
+  staleness bound: the deployment names its revocation SLA instead of
+  inheriting a silent verdict cache. Throws are never cached (fail-closed
+  retry); `maxStalenessMs: 0` is a pass-through.
+- **`delegation.verificationCache` middleware config** (`{ ttlMs, maxEntries }`)
+  tuning the signature-verification cache; `ttlMs: 0` disables signature
+  caching (immediate issuer key-rotation pickup). Constructor `cacheTtl: 0`
+  is now honored (`??`, previously swallowed by `||`), and
+  `createDelegationVerifier` gains `maxCacheSize` parity.
+
 ## [1.12.0] - 2026-08-04
 
 ### Added

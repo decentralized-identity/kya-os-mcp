@@ -10,7 +10,8 @@
  *
  * The stateless checks live in `./vc-verification-checks.ts`; the shapes in
  * `./vc-verifier.types.ts` (re-exported below). This class owns orchestration
- * and the per-instance result cache.
+ * and the per-instance SIGNATURE-result cache — revocation status and basic
+ * checks (expiry) are evaluated on every call, never served from cache.
  *
  * Related Spec: KYA-OS §4.3, W3C VC Data Model 1.1
  */
@@ -23,6 +24,7 @@ import type {
   StatusListResolver,
   StatusCheckResult,
   SignatureVerificationFunction,
+  SignatureVerificationResult,
 } from "./vc-verifier.types.js";
 import {
   validateBasicProperties,
@@ -36,6 +38,7 @@ import {
 } from "./vc-jwt-verify.js";
 import type { VcJwtSignatureResult } from "./vc-jwt-verify.js";
 import { canonicalizeJson } from "../utils/canonical-json.js";
+import { TtlCache } from "../utils/ttl-cache.js";
 
 // Re-export the shared type surface so existing imports of DIDResolver /
 // SignatureVerificationFunction / StatusListResolver / … are unchanged.
@@ -45,23 +48,18 @@ export class DelegationCredentialVerifier {
   private didResolver?: DIDResolver;
   private statusListResolver?: StatusListResolver;
   private signatureVerifier?: SignatureVerificationFunction;
-  private cache = new Map<
-    string,
-    { result: DelegationVCVerificationResult; expiresAt: number }
-  >();
-  private cacheInsertionOrder: string[] = [];
-  private cacheTtl: number;
   /**
-   * Maximum number of entries in the verification cache.
-   * In production deployments, configure maxCacheSize based on expected concurrent delegations.
-   * Default of 1000 is suitable for most use cases.
+   * Signature-result cache (FIFO eviction, TTL-bounded). Holds only REAL
+   * signature verifications; size `maxCacheSize` to the expected number of
+   * DISTINCT live credentials — the default of 1000 suits most deployments.
    */
-  private maxCacheSize: number;
+  private cache: TtlCache<SignatureVerificationResult>;
 
   constructor(options?: {
     didResolver?: DIDResolver;
     statusListResolver?: StatusListResolver;
     signatureVerifier?: SignatureVerificationFunction;
+    /** Signature-result TTL in ms. `0` disables signature caching. Default 60_000. */
     cacheTtl?: number;
     /** Maximum cache entries. Default: 1000 */
     maxCacheSize?: number;
@@ -69,8 +67,11 @@ export class DelegationCredentialVerifier {
     this.didResolver = options?.didResolver;
     this.statusListResolver = options?.statusListResolver;
     this.signatureVerifier = options?.signatureVerifier;
-    this.cacheTtl = options?.cacheTtl || 60_000;
-    this.maxCacheSize = options?.maxCacheSize ?? 1000;
+    this.cache = new TtlCache<SignatureVerificationResult>({
+      // `??`, not `||`: cacheTtl 0 means "no signature caching", not "the default".
+      ttlMs: options?.cacheTtl ?? 60_000,
+      maxEntries: options?.maxCacheSize ?? 1000,
+    });
   }
 
   /**
@@ -91,13 +92,8 @@ export class DelegationCredentialVerifier {
     const startTime = Date.now();
     const cacheKey = this.cacheKeyForCredential('di', vc, options);
 
-    if (cacheKey !== null) {
-      const cached = this.getFromCache(cacheKey);
-      if (cached) {
-        return { ...cached, cached: true };
-      }
-    }
-
+    // Basic checks run on EVERY call — expiry is time-sensitive, so a warm
+    // signature cache must never carry a credential past its window.
     const basicCheckStart = Date.now();
     const basicValidation = validateBasicProperties(vc);
     const basicCheckMs = Date.now() - basicCheckStart;
@@ -118,20 +114,21 @@ export class DelegationCredentialVerifier {
       return result;
     }
 
-    const signaturePromise = !options.skipSignature
-      ? verifySignature(
-          vc,
-          options.didResolver || this.didResolver,
-          this.signatureVerifier,
-        )
-      : Promise.resolve<{
-          valid: boolean;
-          reason?: string;
-          durationMs?: number;
-        }>({
-          valid: true,
-          durationMs: 0,
-        });
+    // Both promises are constructed before either is awaited: a signature
+    // cache hit resolves instantly ALONGSIDE the live status read; a miss
+    // runs signature and status concurrently (unchanged parallelism).
+    const signaturePromise = this.cachedSignature(cacheKey, () =>
+      options.skipSignature
+        ? Promise.resolve<SignatureVerificationResult>({
+            valid: true,
+            durationMs: 0,
+          })
+        : verifySignature(
+            vc,
+            options.didResolver || this.didResolver,
+            this.signatureVerifier,
+          ),
+    );
 
     const statusPromise =
       !options.skipStatus && vc.credentialStatus
@@ -149,7 +146,6 @@ export class DelegationCredentialVerifier {
       statusPromise,
       basicCheckMs,
       startTime,
-      cacheKey,
     );
   }
 
@@ -177,21 +173,19 @@ export class DelegationCredentialVerifier {
     const { vc, issuerDid, kid, basicCheckMs } = prepared;
     const cacheKey = this.cacheKeyForJwt(jwt, vc, options);
 
-    if (cacheKey !== null) {
-      const cached = this.getFromCache(cacheKey);
-      if (cached) {
-        return { ...cached, cached: true };
-      }
-    }
-
-    const signaturePromise = !options.skipSignature
-      ? verifyVcJwtSignature(
-          jwt,
-          issuerDid,
-          kid,
-          options.didResolver || this.didResolver,
-        )
-      : Promise.resolve<VcJwtSignatureResult>({ valid: true, durationMs: 0 });
+    // Same construction as the Data Integrity path: both promises exist
+    // before either is awaited, so a cached signature races a LIVE status
+    // read and a miss keeps full signature/status parallelism.
+    const signaturePromise = this.cachedSignature(cacheKey, () =>
+      options.skipSignature
+        ? Promise.resolve<VcJwtSignatureResult>({ valid: true, durationMs: 0 })
+        : verifyVcJwtSignature(
+            jwt,
+            issuerDid,
+            kid,
+            options.didResolver || this.didResolver,
+          ),
+    );
 
     const statusPromise =
       !options.skipStatus && vc.credentialStatus
@@ -209,41 +203,64 @@ export class DelegationCredentialVerifier {
       statusPromise,
       basicCheckMs,
       startTime,
-      cacheKey,
     );
   }
 
   /**
-   * Await the parallel signature + status checks, fold them into the final
-   * result via {@link combineVerificationResult}, and cache a valid one. Shared
-   * by the Data Integrity and VC-JWT paths; both reach here only after
-   * `validateBasicProperties` has passed.
+   * Resolve the signature dimension: an unexpired cached result when
+   * available, else `run()` — cached only when valid (failures are never
+   * cached). Returned as a promise so callers can race it with the status
+   * check; a hit reports `durationMs: 0` (the retrieval, not the original
+   * compute).
+   */
+  private async cachedSignature(
+    cacheKey: string | null,
+    run: () => Promise<SignatureVerificationResult>,
+  ): Promise<{ result: SignatureVerificationResult; cached: boolean }> {
+    if (cacheKey !== null) {
+      const hit = this.cache.get(cacheKey);
+      if (hit) {
+        return { result: { ...hit, durationMs: 0 }, cached: true };
+      }
+    }
+    const result = await run();
+    if (result.valid && cacheKey !== null) {
+      this.cache.set(cacheKey, result);
+    }
+    return { result, cached: false };
+  }
+
+  /**
+   * Await the parallel signature + status checks and fold them into the final
+   * result via {@link combineVerificationResult}. The combined verdict is
+   * NEVER cached — only the signature dimension is (inside
+   * {@link cachedSignature}) — so revocation status is consulted on every
+   * call. Shared by the Data Integrity and VC-JWT paths; both reach here only
+   * after `validateBasicProperties` has passed.
    */
   private async finalizeVerification(
     signaturePromise: Promise<{
-      valid: boolean;
-      reason?: string;
-      durationMs?: number;
+      result: SignatureVerificationResult;
+      cached: boolean;
     }>,
     statusPromise: Promise<StatusCheckResult>,
     basicCheckMs: number,
     startTime: number,
-    cacheKey: string | null,
   ): Promise<DelegationVCVerificationResult> {
-    const [signatureResult, statusResult] = await Promise.all([
+    const [signature, statusResult] = await Promise.all([
       signaturePromise,
       statusPromise,
     ]);
 
     const result = combineVerificationResult(
-      signatureResult,
+      signature.result,
       statusResult,
       basicCheckMs,
       startTime,
     );
 
-    if (result.valid && cacheKey !== null) {
-      this.setInCache(cacheKey, result);
+    if (signature.cached) {
+      result.cached = true;
     }
 
     return result;
@@ -256,7 +273,7 @@ export class DelegationCredentialVerifier {
   ): string | null {
     if (!this.cacheAllowed(options)) return null;
     try {
-      return `${mode}\0${vc.id ?? ''}\0${this.verificationProfile(options)}\0${canonicalizeJson(vc)}`;
+      return `${mode}\0${vc.id ?? ''}\0${canonicalizeJson(vc)}`;
     } catch {
       return null;
     }
@@ -268,61 +285,33 @@ export class DelegationCredentialVerifier {
     options: VerifyDelegationVCOptions,
   ): string | null {
     if (!this.cacheAllowed(options)) return null;
-    return `jwt\0${vc.id ?? ''}\0${this.verificationProfile(options)}\0${jwt}`;
+    return `jwt\0${vc.id ?? ''}\0${jwt}`;
   }
 
+  /**
+   * The cache holds only REAL signature verifications: a `skipSignature` run
+   * fabricates `{ valid: true }` at zero cost, so it neither reads nor writes
+   * the cache (which is what lets the key drop the old per-profile
+   * dimension). Per-call resolver overrides also bypass — conservative,
+   * unchanged.
+   */
   private cacheAllowed(options: VerifyDelegationVCOptions): boolean {
     return !options.skipCache &&
+      !options.skipSignature &&
       options.didResolver === undefined &&
       options.statusListResolver === undefined;
   }
 
-  private verificationProfile(options: VerifyDelegationVCOptions): string {
-    return `signature:${options.skipSignature ? 'skip' : 'verify'}|status:${options.skipStatus ? 'skip' : 'verify'}`;
-  }
-
-  private getFromCache(id: string): DelegationVCVerificationResult | null {
-    const entry = this.cache.get(id);
-    if (!entry) return null;
-
-    if (Date.now() > entry.expiresAt) {
-      this.cache.delete(id);
-      return null;
-    }
-
-    return entry.result;
-  }
-
-  private setInCache(id: string, result: DelegationVCVerificationResult): void {
-    // Evict oldest entry if cache exceeds maxCacheSize (simple FIFO)
-    while (this.cache.size >= this.maxCacheSize && this.cacheInsertionOrder.length > 0) {
-      const oldestId = this.cacheInsertionOrder.shift();
-      if (oldestId) {
-        this.cache.delete(oldestId);
-      }
-    }
-
-    this.cache.set(id, {
-      result,
-      expiresAt: Date.now() + this.cacheTtl,
-    });
-    this.cacheInsertionOrder.push(id);
-  }
-
   clearCache(): void {
     this.cache.clear();
-    this.cacheInsertionOrder = [];
   }
 
   clearCacheEntry(id: string): void {
     const diPrefix = `di\0${id}\0`;
     const jwtPrefix = `jwt\0${id}\0`;
-    for (const key of [...this.cache.keys()]) {
-      if (!key.startsWith(diPrefix) && !key.startsWith(jwtPrefix)) continue;
-      this.cache.delete(key);
-      const index = this.cacheInsertionOrder.indexOf(key);
-      if (index !== -1) this.cacheInsertionOrder.splice(index, 1);
-    }
+    this.cache.deleteWhere(
+      (key) => key.startsWith(diPrefix) || key.startsWith(jwtPrefix),
+    );
   }
 }
 
@@ -330,7 +319,10 @@ export function createDelegationVerifier(options?: {
   didResolver?: DIDResolver;
   statusListResolver?: StatusListResolver;
   signatureVerifier?: SignatureVerificationFunction;
+  /** Signature-result TTL in ms. `0` disables signature caching. Default 60_000. */
   cacheTtl?: number;
+  /** Maximum cache entries. Default: 1000 */
+  maxCacheSize?: number;
 }): DelegationCredentialVerifier {
   return new DelegationCredentialVerifier(options);
 }

@@ -197,6 +197,37 @@ describe("verifyDelegationJwt (VC-JWT / compact JWS wire format)", () => {
     expect(second.cached).toBe(true);
   });
 
+  it("denies the very next call after a mid-session revocation — warm cache, no clears", async () => {
+    let revoked = false;
+    const gated = new DelegationCredentialVerifier({
+      didResolver: resolverFor(publicJwk),
+      statusListResolver: { checkStatus: async () => revoked },
+    });
+    const jwt = await mintVcJwt(
+      privateKey,
+      delegationVcClaim({
+        id: "urn:uuid:revocation-freshness-jwt",
+        credentialStatus: {
+          id: "https://status.example/1#7",
+          type: "StatusList2021Entry",
+          statusPurpose: "revocation",
+          statusListIndex: "7",
+          statusListCredential: "https://status.example/1",
+        },
+      }),
+    );
+
+    const before = await gated.verifyDelegationJwt(jwt);
+    expect(before.valid).toBe(true);
+
+    revoked = true;
+
+    const after = await gated.verifyDelegationJwt(jwt);
+    expect(after.valid).toBe(false);
+    expect(after.statusOutcome).toBe("revoked");
+    expect(after.cached).toBe(true);
+  });
+
   it("honors skipSignature (trusts the envelope without re-checking)", async () => {
     const jwt = await mintVcJwt(privateKey);
     const result = await verifier.verifyDelegationJwt(jwt, {

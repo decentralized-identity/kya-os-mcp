@@ -12,6 +12,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import {
   DelegationCredentialVerifier,
   type DIDResolver,
+  type StatusListResolver,
 } from '../vc-verifier.js';
 import { DelegationCredentialIssuer } from '../vc-issuer.js';
 import { createDidKeyResolver } from '../did-key-resolver.js';
@@ -179,6 +180,57 @@ describe('DelegationCredentialVerifier (real crypto)', () => {
 
     expect(result.valid).toBe(false);
     expect(result.stage).toBe('basic');
+  });
+
+  // ── Revocation freshness (the 2026-08 fail-open regression) ───
+
+  it('denies the very next call after a mid-session revocation — warm cache, no clears', async () => {
+    let revoked = false;
+    const flipResolver: StatusListResolver = {
+      checkStatus: async () => revoked,
+    };
+
+    const gated = new DelegationCredentialVerifier({
+      didResolver,
+      signatureVerifier: createRealSignatureVerifier(crypto),
+      statusListResolver: flipResolver,
+    });
+
+    const vc = await issuer.issueDelegationCredential(
+      {
+        id: 'del-revocation-freshness',
+        issuerDid: issuerIdentity.did,
+        subjectDid: subjectIdentity.did,
+        vcId: 'urn:uuid:revocation-freshness',
+        constraints: {
+          scopes: ['tools:read'],
+          notBefore: Math.floor(Date.now() / 1000) - 3600,
+          notAfter: Math.floor(Date.now() / 1000) + 3600,
+        },
+        signature: '',
+        status: 'active',
+        createdAt: Date.now(),
+      },
+      {
+        credentialStatus: {
+          id: 'https://status.example/1#94',
+          type: 'StatusList2021Entry',
+          statusPurpose: 'revocation',
+          statusListIndex: '94',
+          statusListCredential: 'https://status.example/1',
+        },
+      },
+    );
+
+    const before = await gated.verifyDelegationCredential(vc);
+    expect(before.valid).toBe(true);
+
+    revoked = true; // the on-chain bit flips mid-session
+
+    const after = await gated.verifyDelegationCredential(vc);
+    expect(after.valid).toBe(false);
+    expect(after.statusOutcome).toBe('revoked');
+    expect(after.cached).toBe(true); // signature from cache — status still caught it
   });
 
   // ── Metrics ───────────────────────────────────────────────────

@@ -136,6 +136,11 @@ describe("DelegationCredentialVerifier", () => {
       const verifier = createDelegationVerifier(options);
       expect(verifier).toBeInstanceOf(DelegationCredentialVerifier);
     });
+
+    it("passes maxCacheSize through the factory", () => {
+      const bounded = createDelegationVerifier({ cacheTtl: 3000, maxCacheSize: 10 });
+      expect(bounded).toBeInstanceOf(DelegationCredentialVerifier);
+    });
   });
 
   describe("verifyDelegationCredential - Basic Validation Stage", () => {
@@ -653,9 +658,8 @@ describe("DelegationCredentialVerifier", () => {
   });
 
   describe("verifyDelegationCredential - Caching", () => {
-    it("should return cached result when available", async () => {
+    it("serves the signature from cache while status stays live", async () => {
       await setupDefaultContractsMocks();
-      // First call - should verify and cache
       mockDidResolver.resolve.mockResolvedValue({
         id: "did:web:example.com:issuer",
         verificationMethod: [
@@ -674,17 +678,125 @@ describe("DelegationCredentialVerifier", () => {
       expect(result1.valid).toBe(true);
       expect(result1.cached).toBeUndefined();
 
-      // Second call - should return cached result
+      // Second call — the SIGNATURE comes from cache; nothing else does.
       mockSignatureVerifier.mockClear();
-      mockStatusListResolver.checkStatus.mockClear();
 
       const result2 = await verifier.verifyDelegationCredential(mockValidVC);
       expect(result2.valid).toBe(true);
       expect(result2.cached).toBe(true);
-
-      // Verifiers should not be called again
       expect(mockSignatureVerifier).not.toHaveBeenCalled();
-      expect(mockStatusListResolver.checkStatus).not.toHaveBeenCalled();
+    });
+
+    it("consults revocation status on every call — a cached signature never masks a fresh revocation", async () => {
+      await setupDefaultContractsMocks();
+      const vcWithStatus: DelegationCredential = {
+        ...mockValidVC,
+        credentialStatus: {
+          id: "https://example.com/status/1#94",
+          type: "StatusList2021Entry",
+          statusPurpose: "revocation",
+          statusListIndex: "94",
+          statusListCredential: "https://example.com/status/1",
+        },
+      };
+      mockDidResolver.resolve.mockResolvedValue({
+        id: "did:web:example.com:issuer",
+        verificationMethod: [
+          {
+            id: "did:web:example.com:issuer#key-1",
+            type: "Ed25519VerificationKey2020",
+            controller: "did:web:example.com:issuer",
+            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
+          },
+        ],
+      });
+      mockSignatureVerifier.mockResolvedValue({ valid: true });
+      mockStatusListResolver.checkStatus.mockResolvedValue(false); // live
+
+      const first = await verifier.verifyDelegationCredential(vcWithStatus);
+      expect(first.valid).toBe(true);
+
+      // REVOKED mid-session: no clearCache, no skipCache — the very next
+      // call must see it.
+      mockStatusListResolver.checkStatus.mockResolvedValue(true);
+
+      const second = await verifier.verifyDelegationCredential(vcWithStatus);
+      expect(second.valid).toBe(false);
+      expect(second.statusOutcome).toBe("revoked");
+      expect(second.reason).toContain("revoked");
+      expect(second.cached).toBe(true); // signature was cached — status still caught it
+      expect(mockStatusListResolver.checkStatus).toHaveBeenCalledTimes(2);
+    });
+
+    it("honors expiry on a warm signature cache (DI path no longer skips basic checks on a hit)", async () => {
+      const contractsMock = await setupDefaultContractsMocks();
+      mockDidResolver.resolve.mockResolvedValue({
+        id: "did:web:example.com:issuer",
+        verificationMethod: [
+          {
+            id: "did:web:example.com:issuer#key-1",
+            type: "Ed25519VerificationKey2020",
+            controller: "did:web:example.com:issuer",
+            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
+          },
+        ],
+      });
+      mockSignatureVerifier.mockResolvedValue({ valid: true });
+
+      const first = await verifier.verifyDelegationCredential(mockValidVC);
+      expect(first.valid).toBe(true);
+
+      // The credential expires between the calls; a warm signature cache
+      // must not carry it past its window.
+      contractsMock.isDelegationCredentialExpired.mockReturnValue(true);
+
+      const second = await verifier.verifyDelegationCredential(mockValidVC);
+      expect(second.valid).toBe(false);
+      expect(second.stage).toBe("basic");
+      expect(second.reason).toBe("Delegation credential expired");
+    });
+
+    it("cacheTtl: 0 disables signature caching (0 is honored, not defaulted)", async () => {
+      await setupDefaultContractsMocks();
+      const uncached = new DelegationCredentialVerifier({
+        didResolver: mockDidResolver as DIDResolver,
+        statusListResolver: mockStatusListResolver as StatusListResolver,
+        signatureVerifier: mockSignatureVerifier,
+        cacheTtl: 0,
+      });
+      mockDidResolver.resolve.mockResolvedValue({
+        id: "did:web:example.com:issuer",
+        verificationMethod: [
+          {
+            id: "did:web:example.com:issuer#key-1",
+            type: "Ed25519VerificationKey2020",
+            controller: "did:web:example.com:issuer",
+            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
+          },
+        ],
+      });
+      mockSignatureVerifier.mockResolvedValue({ valid: true });
+
+      const first = await uncached.verifyDelegationCredential(mockValidVC);
+      expect(first.cached).toBeUndefined();
+      const second = await uncached.verifyDelegationCredential(mockValidVC);
+      expect(second.cached).toBeUndefined();
+      expect(mockSignatureVerifier).toHaveBeenCalledTimes(2);
+    });
+
+    it("never caches a skipSignature run (the cache holds only real verifications)", async () => {
+      await setupDefaultContractsMocks();
+
+      const first = await verifier.verifyDelegationCredential(mockValidVC, {
+        skipSignature: true,
+      });
+      expect(first.valid).toBe(true);
+      expect(first.cached).toBeUndefined();
+
+      const second = await verifier.verifyDelegationCredential(mockValidVC, {
+        skipSignature: true,
+      });
+      expect(second.cached).toBeUndefined();
     });
 
     it("should skip cache when skipCache is true", async () => {

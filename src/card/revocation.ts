@@ -26,9 +26,14 @@
  * `fresh` (a live status check). NOT wired into `verifyCard` here — a later step injects it.
  */
 
-import { base64urlDecodeToBytes } from '../utils/base64.js';
 import { isRecord } from '../utils/guards.js';
 import { assertStatusPurpose } from '../utils/statuslist-purpose.js';
+import {
+  MAX_STATUS_LIST_BYTES,
+  decodeStatusListPayload,
+  parseStatusListIndex,
+  readStatusBit,
+} from '../utils/statuslist-bits.js';
 import type { SafeFetch } from '../utils/safe-fetch.js';
 import type { BitstringStatusListEntry } from './schema.js';
 
@@ -43,17 +48,12 @@ export const STATUS_PURPOSE_REVOCATION = 'revocation';
  */
 export type Decompress = (bytes: Uint8Array) => Uint8Array | Promise<Uint8Array>;
 
-/** Multibase prefix for an unpadded base64url payload (W3C Bitstring Status List `encodedList`). */
-const MULTIBASE_BASE64URL = 'u';
-
-/**
- * Hard ceiling on the INFLATED status bitstring (16 MiB ⇒ ~134M entries — far beyond any
- * herd-privacy list). A status bitstring is fixed-size, so a generous fixed cap costs nothing
- * legitimate while stopping a decompression bomb: without it, the ~786 KB of GZIP that fits
- * inside SafeFetch's 1 MiB body cap inflates to ~800 MB, blocking the event loop on a synchronous
- * `gunzipSync`. Exceeding the cap makes `gunzipSync` throw, which the checker converts to
- * FAIL_CLOSED — preserving the module's uniform fail-closed posture. */
-const MAX_STATUS_LIST_BYTES = 16 * 1024 * 1024;
+// The 16 MiB inflation cap and the multibase/base64url/bit-read mechanics live in
+// `utils/statuslist-bits` — ONE implementation shared with the delegation readers, so the two
+// paths can no longer drift. Exceeding the cap (or any malformed input) throws, which this
+// checker converts to FAIL_CLOSED — the module's uniform posture. Without the cap, the ~786 KB
+// of GZIP that fits inside SafeFetch's 1 MiB body cap inflates to ~800 MB on a synchronous
+// `gunzipSync`, blocking the event loop.
 
 /** Verdict for ONE status entry. */
 export interface RevocationStatus {
@@ -68,7 +68,16 @@ export interface RevocationStatus {
  * A runtime supplies an implementation (the default is {@link createRevocationChecker}); a
  * caller may inject a cache-backed or offline variant. Implementations MUST fail closed.
  */
-export type RevocationChecker = (entry: BitstringStatusListEntry) => Promise<RevocationStatus>;
+export type BitstringRevocationChecker = (
+  entry: BitstringStatusListEntry,
+) => Promise<RevocationStatus>;
+
+/**
+ * @deprecated Use {@link BitstringRevocationChecker}. This alias collided with the
+ * delegation-side `RevocationChecker` interface (`delegation/chain-enforcement.ts`) — two
+ * identically named exports answering different questions. Alias removed at 2.0.
+ */
+export type RevocationChecker = BitstringRevocationChecker;
 
 /** Result of a cascading root→leaf chain walk. */
 export interface RevocationChainResult {
@@ -107,7 +116,9 @@ const FAIL_CLOSED: RevocationStatus = { revoked: true, fresh: false };
  * request rides the injected {@link SafeFetch}; any failure on the path (unreachable, non-2xx,
  * malformed, wrong purpose, out-of-range index) resolves {@link FAIL_CLOSED}.
  */
-export function createRevocationChecker(deps: RevocationCheckerDeps): RevocationChecker {
+export function createRevocationChecker(
+  deps: RevocationCheckerDeps,
+): BitstringRevocationChecker {
   const clock = deps.now ?? (() => Date.now());
   const wantedPurpose = deps.statusPurpose ?? STATUS_PURPOSE_REVOCATION;
   const decompress = deps.decompress ?? defaultNodeGunzip;
@@ -116,7 +127,7 @@ export function createRevocationChecker(deps: RevocationCheckerDeps): Revocation
       const credential = await fetchStatusList(entry.statusListCredential, deps.fetch);
       assertStatusPurpose(statusListSubject(credential).statusPurpose, wantedPurpose);
       const bits = await decodeStatusList(credential, decompress);
-      const revoked = readBit(bits, parseIndex(entry.statusListIndex));
+      const revoked = readStatusBit(bits, parseStatusListIndex(entry.statusListIndex));
       return { revoked, fresh: isLive(credential, clock()) };
     } catch {
       return FAIL_CLOSED;
@@ -136,7 +147,7 @@ export function createRevocationChecker(deps: RevocationCheckerDeps): Revocation
  */
 export async function evaluateRevocationChain(
   entries: readonly BitstringStatusListEntry[],
-  check: RevocationChecker,
+  check: BitstringRevocationChecker,
 ): Promise<RevocationChainResult> {
   let fresh = entries.length > 0; // no entries ⇒ no live signal ⇒ not fresh (fail-closed for L3)
   for (const [hop, entry] of entries.entries()) {
@@ -187,9 +198,9 @@ async function defaultNodeGunzip(bytes: Uint8Array): Promise<Uint8Array> {
 }
 
 /**
- * Inflate the multibase / GZIP `encodedList` into the raw status bitstring bytes through the
- * injected {@link Decompress} seam. The 16 MiB cap is re-checked here as a POST-inflation backstop:
- * the default gunzip caps mid-stream, but an injected (edge) decompressor that does not bound its
+ * Inflate the multibase / GZIP `encodedList` into the raw status bitstring bytes via the shared
+ * `decodeStatusListPayload` primitive (strip + decode + POST-inflation 16 MiB backstop): the
+ * default gunzip caps mid-stream, but an injected (edge) decompressor that does not bound its
  * own output is still fail-closed against an oversized bitstring at this seam.
  */
 async function decodeStatusList(
@@ -200,48 +211,7 @@ async function decodeStatusList(
   if (typeof encoded !== 'string' || encoded.length === 0) {
     throw new Error('revocation: status-list has no encodedList');
   }
-  const base64url = encoded[0] === MULTIBASE_BASE64URL ? encoded.slice(1) : encoded;
-  const inflated = await decompress(base64urlDecodeToBytes(base64url));
-  if (inflated.length > MAX_STATUS_LIST_BYTES) {
-    throw new Error(
-      `revocation: status list too large: ${inflated.length} bytes exceeds ${MAX_STATUS_LIST_BYTES}`,
-    );
-  }
-  return inflated instanceof Uint8Array ? inflated : new Uint8Array(inflated);
-}
-
-/**
- * Parse the decimal `statusListIndex` (a non-negative integer expressed as a string), fail-closed.
- * MUST be canonical decimal only: `Number()` alone would coerce whitespace (`" "` → 0), hex
- * (`"0x2A"` → 42), octal, `"+42"`, and `"1e1"` → 10 — silently reading a DIFFERENT (often clear) bit
- * than the credential names, so a revoked credential could read as live. Reject anything that is not
- * `[0-9]+`.
- */
-function parseIndex(raw: string): number {
-  if (!/^[0-9]+$/.test(raw)) {
-    throw new Error(`revocation: statusListIndex must be a canonical non-negative decimal (got "${raw}")`);
-  }
-  const index = Number(raw);
-  if (!Number.isSafeInteger(index) || index < 0) {
-    throw new Error(`revocation: statusListIndex out of range "${raw}"`);
-  }
-  return index;
-}
-
-/**
- * Read the status bit at `index` — MSB-first within each byte (W3C Bitstring encoding).
- * Uses FULL-PRECISION arithmetic (`Math.floor(index / 8)`, `index % 8`) rather than the 32-bit
- * bitwise ops `>>>`/`&`, which coerce their operand to uint32 first: an index ≥ 2^32 would
- * silently wrap onto a low byte (e.g. 2^32+5 ⇒ byte 0, bit 5) and read the WRONG — often clear —
- * bit, turning an out-of-range index that MUST fail-closed into a fail-OPEN "not revoked". With
- * full-precision arithmetic an out-of-range byte offset indexes past the bitstring, yielding
- * `undefined` ⇒ throw ⇒ FAIL_CLOSED. */
-function readBit(bits: Uint8Array, index: number): boolean {
-  const byte = bits[Math.floor(index / 8)];
-  if (byte === undefined) {
-    throw new Error(`revocation: statusListIndex ${index} is out of range for the status list`);
-  }
-  return (byte & (0x80 >> (index % 8))) !== 0;
+  return decodeStatusListPayload(encoded, decompress);
 }
 
 /** True iff `nowMs` falls inside the credential's `[validFrom, validUntil]` window (if declared). */

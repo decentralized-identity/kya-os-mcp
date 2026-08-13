@@ -14,7 +14,7 @@
  * {@link MAX_DELEGATION_DEPTH}; ROOT `parentCapability` = the resource, `issuer`/`invocationTarget`
  * = (optional) resource owner / resource. THE JOIN (recomputed, asserted nowhere):
  * {@link responsiblePartyOf} = `issuer(rootVC)`, {@link leafInvokerOf} = the leaf delegate a verifier
- * asserts equals `proof.did`. Revocation reuses the injected {@link RevocationChecker} seam from
+ * asserts equals `proof.did`. Revocation reuses the injected {@link BitstringRevocationChecker} seam from
  * `./revocation` (no status-list churn reaches callers; NO `mcp-i-core` runtime dep). Per-hop
  * signature verification is a SEPARATE injected concern; this module owns the CRISP + continuity recompute.
  */
@@ -23,7 +23,7 @@ import { z } from 'zod';
 import { Did, type BitstringStatusListEntry } from './schema.js';
 import {
   evaluateRevocationChain,
-  type RevocationChecker,
+  type BitstringRevocationChecker,
   type RevocationChainResult,
 } from './revocation.js';
 
@@ -315,11 +315,11 @@ export interface DelegationChainEvaluation extends DelegationChainResult {
 }
 
 /** Validate structure AND revocation: run {@link validateDelegationChain}, then (only if it passes —
- *  fail-closed) cascade the injected {@link RevocationChecker} root→leaf via
+ *  fail-closed) cascade the injected {@link BitstringRevocationChecker} root→leaf via
  *  {@link evaluateRevocationChain}. A revoked ancestor invalidates the subtree. */
 export async function evaluateDelegationChain(
   chain: DelegationChain,
-  check: RevocationChecker,
+  check: BitstringRevocationChecker,
   ctx: DelegationChainContext = {},
 ): Promise<DelegationChainEvaluation> {
   const structural = validateDelegationChain(chain, ctx);

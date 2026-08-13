@@ -17,6 +17,25 @@ Versioning: https://semver.org/spec/v2.0.0.html
   JWK-rewriting resolver. Fail-closed: anything not provably a 32-byte
   Ed25519 key still denies.
 
+### Changed
+
+- **Status-list reading mechanics consolidated into `utils/statuslist-bits`.**
+  Canonical index parsing, the 16 MiB inflation cap, multibase/base64url
+  payload decoding, and the MSB-first bit read previously existed as separate
+  copies in the delegation readers (`bitstring.ts`, `statuslist-manager.ts`)
+  and the card revocation reader (`card/revocation.ts`) — held in sync only by
+  source comments. One shared implementation now serves both seams; each
+  seam's policy (throw → `status_unresolvable` vs `FAIL_CLOSED`, freshness)
+  is unchanged. Behavior-preserving: every existing test passes unmodified.
+
+### Deprecated
+
+- **`RevocationChecker` (card module).** Renamed to
+  `BitstringRevocationChecker` — the old name collided with the
+  delegation-side `RevocationChecker` interface (`chain-enforcement.ts`), two
+  identically named exports answering different questions. The old name
+  remains as a deprecated alias until 2.0.
+
 ## [1.13.0] - 2026-08-12
 
 ### Security

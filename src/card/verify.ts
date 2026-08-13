@@ -24,7 +24,7 @@ import {
   type Capability,
   type Attestation,
 } from './schema.js';
-import type { RevocationChecker } from './revocation.js';
+import type { BitstringRevocationChecker } from './revocation.js';
 import type { ProofAssurance, ProofVerifyResult } from './proof/index.js';
 import type { ToolRequest } from '../proof/generator.js';
 
@@ -109,7 +109,7 @@ export interface VerifyCardDeps {
   /** Recomputes `proof` against `request` (pre-bound ./proof `verifyCardProof`). Lifts L2 → L3. */
   proofVerifier?: CardProofVerifier;
   /** Live W3C Bitstring Status List v1.0 check for `card.revocation` (fail-closed). */
-  statusListChecker?: RevocationChecker;
+  statusListChecker?: BitstringRevocationChecker;
   /** True iff the caller independently proved CIMD L1 key possession (private_key_jwt ↔ jwks_uri). */
   cimdKeyProven?: boolean;
   /** Trusted issuer allowlist. Default: `DEFAULT_TRUSTED_ISSUERS`. */
@@ -263,7 +263,7 @@ interface CardRevocationVerdict {
 /** Live-check `card.revocation` via the injected seam; fail-closed (unreachable ⇒ revoked). */
 async function checkCardRevocation(
   card: EntityCard,
-  checker: RevocationChecker | undefined,
+  checker: BitstringRevocationChecker | undefined,
 ): Promise<CardRevocationVerdict> {
   if (!checker || !card.revocation) return { checked: false, revoked: false, fresh: true };
   try {

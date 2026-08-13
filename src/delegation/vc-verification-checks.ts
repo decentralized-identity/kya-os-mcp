@@ -25,6 +25,7 @@ import type {
   SignatureVerificationFunction,
   DelegationVCVerificationResult,
 } from "./vc-verifier.types.js";
+import { verificationMethodJwk } from "./verification-method-key.js";
 
 /**
  * Properties a DelegationCredential `credentialSubject` may carry. Anything
@@ -233,11 +234,12 @@ export async function verifySignature(
       };
     }
 
-    const publicKeyJwk = verificationMethod.publicKeyJwk;
+    const publicKeyJwk = verificationMethodJwk(verificationMethod);
     if (!publicKeyJwk) {
       return {
         valid: false,
-        reason: "Verification method missing publicKeyJwk",
+        reason:
+          "Verification method has no usable public key (publicKeyJwk / publicKeyMultibase / publicKeyBase58)",
         durationMs: Date.now() - startTime,
       };
     }

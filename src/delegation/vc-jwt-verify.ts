@@ -28,6 +28,7 @@ import type {
 } from "./vc-verifier.types.js";
 import { parseVCJWT } from "./utils.js";
 import { validateBasicProperties } from "./vc-verification-checks.js";
+import { verificationMethodJwk } from "./verification-method-key.js";
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -180,12 +181,16 @@ export async function verifyVcJwtSignature(
         : "DID Document has no verification method",
     );
   }
-  if (!vm.publicKeyJwk) {
-    return done(false, "Verification method missing publicKeyJwk");
+  const publicKeyJwk = verificationMethodJwk(vm);
+  if (!publicKeyJwk) {
+    return done(
+      false,
+      "Verification method has no usable public key (publicKeyJwk / publicKeyMultibase / publicKeyBase58)",
+    );
   }
 
   try {
-    const key = await importJWK(vm.publicKeyJwk as JWK, "EdDSA");
+    const key = await importJWK(publicKeyJwk as JWK, "EdDSA");
     await compactVerify(jwt, key, { algorithms: ["EdDSA"] });
     return done(true);
   } catch (err) {

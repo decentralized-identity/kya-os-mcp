@@ -233,6 +233,74 @@ describe('DelegationCredentialVerifier (real crypto)', () => {
     expect(after.cached).toBe(true); // signature from cache — status still caught it
   });
 
+  // ── Multibase verification methods (PR 2a) ────────────────────
+
+  it('verifies a signed VC when the issuer publishes only publicKeyMultibase', async () => {
+    const { base58Encode } = await import('../../utils/base58.js');
+    const { base64urlDecodeToBytes } = await import('../../utils/base64.js');
+    const didKeyDoc = await didResolver.resolve(issuerIdentity.did);
+    const jwk = didKeyDoc?.verificationMethod?.[0]?.publicKeyJwk as { x: string };
+    const rawKey = base64urlDecodeToBytes(jwk.x);
+    const multibase = `z${base58Encode(new Uint8Array([0xed, 0x01, ...rawKey]))}`;
+
+    const multibaseOnlyResolver: DIDResolver = {
+      async resolve(did: string) {
+        const doc = await didResolver.resolve(did);
+        if (!doc?.verificationMethod) return doc;
+        return {
+          ...doc,
+          verificationMethod: doc.verificationMethod.map((m) => ({
+            id: m.id,
+            type: 'Ed25519VerificationKey2020',
+            controller: m.controller,
+            publicKeyMultibase: multibase,
+          })),
+        };
+      },
+    };
+
+    const vc = await issueVC({ vcId: 'urn:uuid:multibase-only' });
+    const multibaseVerifier = new DelegationCredentialVerifier({
+      didResolver: multibaseOnlyResolver,
+      signatureVerifier: createRealSignatureVerifier(crypto),
+    });
+
+    const result = await multibaseVerifier.verifyDelegationCredential(vc, {
+      skipStatus: true,
+      skipCache: true,
+    });
+    expect(result.valid).toBe(true);
+    expect(result.checks?.signatureValid).toBe(true);
+  });
+
+  it('still denies a verification method with no usable key', async () => {
+    const keylessResolver: DIDResolver = {
+      async resolve(did: string) {
+        const doc = await didResolver.resolve(did);
+        if (!doc?.verificationMethod) return doc;
+        return {
+          ...doc,
+          verificationMethod: doc.verificationMethod.map((m) => ({
+            id: m.id,
+            type: 'Ed25519VerificationKey2020',
+            controller: m.controller,
+          })),
+        };
+      },
+    };
+    const vc = await issueVC({ vcId: 'urn:uuid:keyless' });
+    const keyless = new DelegationCredentialVerifier({
+      didResolver: keylessResolver,
+      signatureVerifier: createRealSignatureVerifier(crypto),
+    });
+    const result = await keyless.verifyDelegationCredential(vc, {
+      skipStatus: true,
+      skipCache: true,
+    });
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('no usable public key');
+  });
+
   // ── Metrics ───────────────────────────────────────────────────
 
   it('should report timing metrics for all stages', async () => {

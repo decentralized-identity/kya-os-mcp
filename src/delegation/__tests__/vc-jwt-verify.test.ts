@@ -228,6 +228,33 @@ describe("verifyDelegationJwt (VC-JWT / compact JWS wire format)", () => {
     expect(after.cached).toBe(true);
   });
 
+  it("accepts a VC-JWT when the issuer publishes only publicKeyMultibase", async () => {
+    const { base58Encode } = await import("../../utils/base58.js");
+    const raw = Buffer.from(publicJwk.x as string, "base64url");
+    const multibase = `z${base58Encode(new Uint8Array([0xed, 0x01, ...raw]))}`;
+    const multibaseResolver: DIDResolver = {
+      async resolve(did: string): Promise<DIDDocument | null> {
+        if (did !== ISSUER_DID) return null;
+        return {
+          id: ISSUER_DID,
+          verificationMethod: [
+            {
+              id: KID,
+              type: "Ed25519VerificationKey2020",
+              controller: ISSUER_DID,
+              publicKeyMultibase: multibase,
+            },
+          ],
+        };
+      },
+    };
+    const verifier = new DelegationCredentialVerifier({ didResolver: multibaseResolver });
+    const jwt = await mintVcJwt(privateKey);
+    const result = await verifier.verifyDelegationJwt(jwt, { skipCache: true });
+    expect(result.valid).toBe(true);
+    expect(result.checks?.signatureValid).toBe(true);
+  });
+
   it("honors skipSignature (trusts the envelope without re-checking)", async () => {
     const jwt = await mintVcJwt(privateKey);
     const result = await verifier.verifyDelegationJwt(jwt, {

@@ -7,8 +7,22 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-08-13
+
 ### Added
 
+- **`CheqdStatusListResolver`** (`@kya-os/mcp/cheqd`) — on-chain StatusList2021
+  revocation checks against a cheqd DID-Linked Resource, upstreamed from the
+  DEF CON 34 "REVOKED" demo as a thin consumer of the shared primitives. The
+  only status-list reader that verifies the LIST itself: issuer pinned to
+  `expectedIssuerDid` and the Ed25519Signature2020 proof checked against the
+  issuer's on-chain DID document ("the resolver returned it" is never
+  sufficient). Fail-closed on every unprovable path (the delegation verifier
+  denies as `status_unresolvable`); internal verified-document `TtlCache`
+  (default 10 s, `invalidateCache()` busts upstream HTTP caches) composable
+  with `withStatusCache` for per-bit staleness SLAs; version-independent
+  resolver URLs with header-only cache-busting (the cheqd resolver 400s on
+  query params — verified live).
 - **Multibase verification-method keys.** Both delegation signature paths
   (Data Integrity and VC-JWT) now accept verification methods that publish
   `publicKeyMultibase` (base58btc Ed25519, with or without the 0xed01

@@ -1,8 +1,12 @@
 version: 2
 updates:
-  # npm — the package itself and its tooling.
+  # npm — the package itself, its tooling, and every example workspace.
+  # The examples carry their own manifests/lockfiles; without listing them
+  # here they accumulate alerts with no update PRs (130 of them, once).
   - package-ecosystem: "npm"
-    directory: "/"
+    directories:
+      - "/"
+      - "/examples/*"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10

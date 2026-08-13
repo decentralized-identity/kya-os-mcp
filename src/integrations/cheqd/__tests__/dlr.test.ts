@@ -5,6 +5,7 @@ import {
   validateCheqdDlrArtifact,
 } from '../dlr.js';
 import type { CryptoProvider } from '../../../providers/base.js';
+import { canonicalizeJSON } from '../../../delegation/utils.js';
 
 const cryptoProvider: CryptoProvider = {
   sign: vi.fn(),
@@ -107,6 +108,66 @@ describe('cheqd DLR helpers', () => {
     expect(first.resource.type).toBe(second.resource.type);
     expect(first.resource.version).toBe('1');
     expect(second.resource.version).toBe('2');
+  });
+
+  it('anchors a signed StatusListCredential as its exact canonical bytes (demo-publisher compatible)', async () => {
+    const signedVc = {
+      '@context': ['https://www.w3.org/2018/credentials/v1'],
+      id: 'https://status.example/1',
+      type: ['VerifiableCredential', 'StatusList2021Credential'],
+      issuer: 'did:cheqd:testnet:11111111-1111-4111-8111-111111111111',
+      issuanceDate: '2026-08-13T00:00:00Z',
+      credentialSubject: {
+        id: 'https://status.example/1#list',
+        type: 'StatusList2021',
+        statusPurpose: 'revocation',
+        encodedList: 'uH4sIAAAAAAAA',
+      },
+      proof: { type: 'Ed25519Signature2020', proofValue: 'zsig' },
+    };
+
+    const prepared = await prepareCheqdDlrResource(
+      {
+        type: 'StatusListCredential',
+        subjectDid: 'did:cheqd:testnet:11111111-1111-4111-8111-111111111111',
+        name: 'kya-statuslist',
+        resourceType: 'StatusListCredential',
+        version: '2026-08-13T00-00-00Z',
+        content: signedVc,
+      },
+      cryptoProvider,
+    );
+
+    // Compatibility pin: content is the WHOLE SIGNED VC, so the canonical
+    // bytes (and therefore the contentHash and on-chain resource body) equal
+    // the hash-what-you-publish computation the vendored demo publisher used
+    // — resources already anchored on cheqd testnet stay reproducible.
+    expect(prepared.canonicalContent).toBe(canonicalizeJSON(signedVc));
+    expect(prepared.resource.data).toBe(
+      Buffer.from(new TextEncoder().encode(prepared.canonicalContent)).toString('base64'),
+    );
+    expect(prepared.resource.name).toBe('kya-statuslist');
+    expect(prepared.resource.version).toBe('2026-08-13T00-00-00Z');
+  });
+
+  it('refuses an UNSIGNED StatusListCredential artifact', () => {
+    expect(
+      validateCheqdDlrArtifact({
+        type: 'StatusListCredential',
+        subjectDid: 'did:cheqd:testnet:11111111-1111-4111-8111-111111111111',
+        content: { credentialSubject: { encodedList: 'uH4sI' } },
+      }).reason,
+    ).toContain('UNSIGNED');
+  });
+
+  it('refuses a StatusListCredential without an encodedList', () => {
+    expect(
+      validateCheqdDlrArtifact({
+        type: 'StatusListCredential',
+        subjectDid: 'did:cheqd:testnet:11111111-1111-4111-8111-111111111111',
+        content: { proof: {}, credentialSubject: {} },
+      }).reason,
+    ).toContain('encodedList');
   });
 
   it('builds resolver references by resource id or name/type query', () => {

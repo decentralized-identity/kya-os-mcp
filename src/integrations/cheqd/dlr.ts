@@ -2,13 +2,23 @@ import { canonicalize } from 'json-canonicalize';
 import type { CryptoProvider } from '../../providers/base.js';
 import { bytesToBase64 } from '../../utils/base64.js';
 import { isRecord, stripTrailingSlashes } from '../../utils/index.js';
+import { assertAnchorableStatusListCredential } from '../../utils/statuslist-bits.js';
 import type { CheqdCreateResourceBody } from './registrar.js';
 
+/**
+ * Artifact kinds KYA-OS anchors as DID-Linked Resources. The taxonomy — and
+ * the JCS-canonicalize → sha256 content addressing in
+ * {@link prepareCheqdDlrResource} — is protocol-level rather than
+ * cheqd-specific: the day a SECOND anchoring integration lands, both graduate
+ * to a central module with deprecated aliases kept here (rule-of-two,
+ * recorded now so that PR is mechanical).
+ */
 export const CHEQD_DLR_ARTIFACT_TYPES = [
   'CapabilityManifest',
   'ConformanceManifest',
   'AccessHashManifest',
   'TrustConfigManifest',
+  'StatusListCredential',
 ] as const;
 
 export type CheqdDlrArtifactType = (typeof CHEQD_DLR_ARTIFACT_TYPES)[number];
@@ -62,6 +72,21 @@ export function validateCheqdDlrArtifact(
 
   if (artifact['content'] === undefined) {
     return { valid: false, reason: 'DLR artifact content is required' };
+  }
+
+  // A status list's content is the WHOLE SIGNED VC (hash-what-you-publish:
+  // the canonical bytes anchored on-chain are exactly the credential a
+  // verifier fetches). The shared guard enforces anchor-fitness — signed,
+  // bitstring present — method-agnostically.
+  if (artifact['type'] === 'StatusListCredential') {
+    try {
+      assertAnchorableStatusListCredential(artifact['content']);
+    } catch (error) {
+      return {
+        valid: false,
+        reason: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   if (

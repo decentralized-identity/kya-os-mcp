@@ -5,6 +5,7 @@ import {
   parseStatusListIndex,
   decodeStatusListPayload,
   readStatusBit,
+  assertAnchorableStatusListCredential,
 } from '../statuslist-bits.js';
 import { base64urlEncodeFromBytes } from '../base64.js';
 
@@ -79,4 +80,38 @@ describe('readStatusBit', () => {
       expect(() => readStatusBit(bits, index)).toThrow(/out of range/);
     },
   );
+});
+
+describe('assertAnchorableStatusListCredential', () => {
+  const anchorable = {
+    type: ['VerifiableCredential', 'StatusList2021Credential'],
+    credentialSubject: { statusPurpose: 'revocation', encodedList: 'uH4sIAAAAAAAA' },
+    proof: { type: 'Ed25519Signature2020', proofValue: 'zsig' },
+  };
+
+  it('accepts a signed credential with a bitstring', () => {
+    expect(() => assertAnchorableStatusListCredential(anchorable)).not.toThrow();
+  });
+
+  it('refuses an unsigned credential (fail-closed for every future holder)', () => {
+    const { proof: _proof, ...unsigned } = anchorable;
+    expect(() => assertAnchorableStatusListCredential(unsigned)).toThrow(/UNSIGNED/);
+  });
+
+  it('refuses a missing or empty encodedList', () => {
+    expect(() =>
+      assertAnchorableStatusListCredential({ ...anchorable, credentialSubject: {} }),
+    ).toThrow(/encodedList/);
+    expect(() =>
+      assertAnchorableStatusListCredential({
+        ...anchorable,
+        credentialSubject: { encodedList: '' },
+      }),
+    ).toThrow(/encodedList/);
+  });
+
+  it('refuses non-object content', () => {
+    expect(() => assertAnchorableStatusListCredential(null)).toThrow(/must be an object/);
+    expect(() => assertAnchorableStatusListCredential('vc')).toThrow(/must be an object/);
+  });
 });

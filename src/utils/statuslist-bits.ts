@@ -1,8 +1,8 @@
 /**
- * Status-list reading primitives — the ONE home for the mechanics every W3C
- * status-list reader in this package shares (StatusList2021 / Bitstring
- * Status List v1.0): canonical index parsing, bounded payload inflation, and
- * the MSB-first bit read.
+ * Status-list primitives — the ONE home for the mechanics every W3C
+ * status-list reader AND publisher in this package shares (StatusList2021 /
+ * Bitstring Status List v1.0): canonical index parsing, bounded payload
+ * inflation, the MSB-first bit read, and the anchor-fitness guard.
  *
  * Consumers: `delegation/bitstring.ts` (+ `statuslist-manager.ts`) and
  * `card/revocation.ts` — previously each carried its own copy of exactly this
@@ -15,6 +15,7 @@
  * an unreadable bit throws rather than reading as "not revoked".
  */
 import { base64urlDecodeToBytes } from './base64.js';
+import { isRecord } from './guards.js';
 
 /**
  * Hard ceiling on an INFLATED status bitstring (16 MiB ≈ 134M entries — far
@@ -93,4 +94,32 @@ export function readStatusBit(bits: Uint8Array, index: number): boolean {
     );
   }
   return (byte & (0x80 >> index % 8)) !== 0;
+}
+
+/**
+ * Assert a status-list credential is fit to ANCHOR (publish) — signed, and
+ * actually carrying a bitstring. Method-agnostic on purpose: the cheqd DLR
+ * publisher enforces it today; any future anchoring integration (another
+ * DLR-bearing DID method, a different chain) imports the same guard rather
+ * than re-deriving "what makes a status list publishable". An unsigned or
+ * bitstring-less list anchored on-chain would be an unverifiable — and
+ * therefore fail-closed-unusable — revocation source for every holder.
+ */
+export function assertAnchorableStatusListCredential(content: unknown): void {
+  if (!isRecord(content)) {
+    throw new Error('Status list credential must be an object');
+  }
+  if (!content.proof) {
+    throw new Error('Refusing to publish an UNSIGNED status list credential');
+  }
+  const subject = content.credentialSubject;
+  if (
+    !isRecord(subject) ||
+    typeof subject.encodedList !== 'string' ||
+    subject.encodedList.length === 0
+  ) {
+    throw new Error(
+      'Status list credential is missing credentialSubject.encodedList',
+    );
+  }
 }

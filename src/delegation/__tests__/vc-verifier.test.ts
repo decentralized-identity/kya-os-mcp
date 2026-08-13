@@ -432,7 +432,9 @@ describe("DelegationCredentialVerifier", () => {
       const result = await verifier.verifyDelegationCredential(mockValidVC);
 
       expect(result.valid).toBe(false);
-      expect(result.reason).toBe("Verification method missing publicKeyJwk");
+      expect(result.reason).toBe(
+        "Verification method has no usable public key (publicKeyJwk / publicKeyMultibase / publicKeyBase58)",
+      );
       expect(result.checks?.signatureValid).toBe(false);
     });
 

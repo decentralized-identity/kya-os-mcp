@@ -7,6 +7,16 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- **Multibase verification-method keys.** Both delegation signature paths
+  (Data Integrity and VC-JWT) now accept verification methods that publish
+  `publicKeyMultibase` (base58btc Ed25519, with or without the 0xed01
+  multicodec prefix) or legacy `publicKeyBase58`, synthesizing the OKP JWK at
+  the point of use — did:cheqd issuers verify end-to-end without a
+  JWK-rewriting resolver. Fail-closed: anything not provably a 32-byte
+  Ed25519 key still denies.
+
 ## [1.13.0] - 2026-08-12
 
 ### Security

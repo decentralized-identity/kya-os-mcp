@@ -21,10 +21,10 @@ import type { DIDResolver, DIDDocument, VerificationMethod } from './vc-verifier
 import { logger } from '../logging/index.js';
 
 /** Ed25519 multicodec prefix (0xed 0x01) */
-const ED25519_MULTICODEC_PREFIX = new Uint8Array([0xed, 0x01]);
+export const ED25519_MULTICODEC_PREFIX = new Uint8Array([0xed, 0x01]);
 
 /** Ed25519 public key length */
-const ED25519_PUBLIC_KEY_LENGTH = 32;
+export const ED25519_PUBLIC_KEY_LENGTH = 32;
 
 /**
  * Check if a DID is a valid did:key with Ed25519 key

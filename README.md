@@ -188,6 +188,18 @@ Miss the proof, replay a nonce, or tamper the body and `requireProof` fails clos
 
 ## See it in action
 
+### REVOKED: an on-chain kill switch for AI agents with wallet access
+
+[![Watch the 3-minute demo: a live agent gets its spending authority revoked on-chain](./examples/revoked/docs/screenshots/revoked-page-killed.png)](https://www.loom.com/share/f32b82a292f14a6c952dba3a0a246e45)
+
+A live agent (Claude Desktop) pays invoices from a testnet wallet under a signed, scoped, revocable credential. When it goes rogue, a FIDO2 hardware touch revokes that credential on a public chain: the StatusList2021 bit flips in a cheqd DID-Linked Resource, and the agent's next transaction is refused in about half a second. Funds never move.
+
+Built in a weekend on this package (2nd place, DEF CON 34 Cryptocurrency Village), and everything the demo had to invent now ships here: the on-chain resolver, the always-fresh revocation checks, the DLR artifact type ([#165](https://github.com/decentralized-identity/kya-os-mcp/pull/165) through [#169](https://github.com/decentralized-identity/kya-os-mcp/pull/169)).
+
+Start with the 60-second path: verify a genuinely revoked credential against the live testnet, zero configuration. **[examples/revoked](./examples/revoked/)**
+
+### Run the example servers
+
 ```bash
 git clone https://github.com/decentralized-identity/kya-os-mcp.git
 cd kya-os-mcp && npm install

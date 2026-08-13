@@ -1,0 +1,65 @@
+{
+  "@context": [
+    "https://www.w3.org/2018/credentials/v1",
+    "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+  ],
+  "id": "urn:uuid:revoked-dc34-94-1786154992695",
+  "type": [
+    "VerifiableCredential",
+    "DelegationCredential"
+  ],
+  "issuer": "did:cheqd:testnet:17bc59fe-2e93-4e01-8613-c7c4560adcf2",
+  "issuanceDate": "2026-08-08T02:09:52.695Z",
+  "expirationDate": "2026-08-10T02:09:52.000Z",
+  "credentialSubject": {
+    "id": "did:key:z6Mkm4qc7NykwaqCzDjTjArmjuUsvcE9Xzfk28frpGtUdxiM",
+    "delegation": {
+      "id": "revoked-dc34-94-1786154992695",
+      "issuerDid": "did:cheqd:testnet:17bc59fe-2e93-4e01-8613-c7c4560adcf2",
+      "subjectDid": "did:key:z6Mkm4qc7NykwaqCzDjTjArmjuUsvcE9Xzfk28frpGtUdxiM",
+      "scopes": [
+        "payments.transfer"
+      ],
+      "constraints": {
+        "scopes": [
+          "payments.transfer"
+        ],
+        "notBefore": 1786154932,
+        "notAfter": 1786327792,
+        "crisp": {
+          "scopes": [
+            {
+              "resource": "payments.transfer",
+              "matcher": "exact",
+              "constraints": {
+                "maxAmountNcheq": "10000000000",
+                "denom": "ncheq",
+                "network": "cheqd-testnet"
+              }
+            }
+          ]
+        }
+      },
+      "status": "active",
+      "createdAt": 1786154992695,
+      "metadata": {
+        "tool": "wallet_send",
+        "event": "defcon-34-crypto-village"
+      }
+    }
+  },
+  "credentialStatus": {
+    "id": "https://resolver.cheqd.net/1.0/identifiers/did:cheqd:testnet:17bc59fe-2e93-4e01-8613-c7c4560adcf2?resourceName=kya-statuslist-demo&resourceType=StatusListCredential#94",
+    "type": "StatusList2021Entry",
+    "statusPurpose": "revocation",
+    "statusListIndex": "94",
+    "statusListCredential": "https://resolver.cheqd.net/1.0/identifiers/did:cheqd:testnet:17bc59fe-2e93-4e01-8613-c7c4560adcf2?resourceName=kya-statuslist-demo&resourceType=StatusListCredential"
+  },
+  "proof": {
+    "type": "Ed25519Signature2020",
+    "created": "2026-08-08T02:09:52.697Z",
+    "verificationMethod": "did:cheqd:testnet:17bc59fe-2e93-4e01-8613-c7c4560adcf2#key-1",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "7mfw9JS0K4h4cCMz06oteJ_paWJLXbCQVt7w60w_qSO0WZoHELQlDAxKNqx3JVnPUrbS3YabX3MIMSRtYSdRAw"
+  }
+}

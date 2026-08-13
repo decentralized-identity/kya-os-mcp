@@ -16,6 +16,14 @@ Versioning: https://semver.org/spec/v2.0.0.html
   the point of use — did:cheqd issuers verify end-to-end without a
   JWK-rewriting resolver. Fail-closed: anything not provably a 32-byte
   Ed25519 key still denies.
+- **`StatusListCredential` DLR artifact type.** `prepareCheqdDlrResource`
+  now anchors status lists: the artifact's `content` is the WHOLE SIGNED
+  StatusList2021 credential (hash-what-you-publish — the canonical bytes
+  anchored on-chain are exactly the credential a verifier fetches), so
+  content hashes remain byte-compatible with resources already anchored via
+  the DEF CON demo's vendored publisher. Anchor-fitness is enforced by the
+  new method-agnostic `assertAnchorableStatusListCredential` guard in
+  `utils/statuslist-bits` (refuses unsigned or bitstring-less lists).
 
 ### Changed
 

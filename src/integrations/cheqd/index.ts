@@ -43,3 +43,9 @@ export {
   type CheqdDlrReference,
   type PreparedCheqdDlrResource,
 } from './dlr.js';
+
+export {
+  CheqdStatusListResolver,
+  createCheqdStatusListResolver,
+  type CheqdStatusListResolverOptions,
+} from './statuslist-resolver.js';

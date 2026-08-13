@@ -1,0 +1,15 @@
+{
+  "_comment": "EDIT THE PATHS: replace /ABSOLUTE/PATH/TO/kya-os-mcp with the real absolute path of your clone (and the node path with `which node`). Merge the kya-wallet entry into your existing claude_desktop_config.json (macOS: ~/Library/Application Support/Claude/claude_desktop_config.json). ABSOLUTE paths are deliberate: Claude Desktop is a GUI app and does NOT have your shell's PATH, so 'npx' would not be found. This form (absolute node + tsx CLI + gateway) needs no PATH. The gateway loads keys+VC from the example's .env.local (anchored to the example dir, not cwd). Fully quit and reopen Claude Desktop after editing. The protected server must be running before you call the tool: npm run serve.",
+  "mcpServers": {
+    "kya-wallet": {
+      "command": "/ABSOLUTE/PATH/TO/node",
+      "args": [
+        "/ABSOLUTE/PATH/TO/kya-os-mcp/examples/revoked/node_modules/tsx/dist/cli.mjs",
+        "/ABSOLUTE/PATH/TO/kya-os-mcp/examples/revoked/src/gateway.ts"
+      ],
+      "env": {
+        "DEMO_PORT": "4949"
+      }
+    }
+  }
+}

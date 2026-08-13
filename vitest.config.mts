@@ -14,6 +14,10 @@ export default defineConfig({
         replacement: fileURLToPath(new URL('./src/authz/index.ts', import.meta.url)),
       },
       {
+        find: /^@kya-os\/mcp\/cheqd$/,
+        replacement: fileURLToPath(new URL('./src/integrations/cheqd/index.ts', import.meta.url)),
+      },
+      {
         find: /^@kya-os\/mcp$/,
         replacement: fileURLToPath(new URL('./src/index.ts', import.meta.url)),
       },

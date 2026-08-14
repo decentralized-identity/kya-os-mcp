@@ -47,26 +47,17 @@ jobs:
 
       - name: Round-trip a live proof over MCP and verify it
         run: |
-          SID=$(curl -s -D - -o /dev/null "$BASE/mcp" \
+          # The stateless transport issues no mcp-session-id and needs no initialize
+          # handshake, so call tools/call directly (there is no session to thread).
+          RESP=$(curl -s "$BASE/mcp" \
             -H 'content-type: application/json' \
             -H 'accept: application/json, text/event-stream' \
-            -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"live-probe","version":"0"}}}' \
-            | grep -i '^mcp-session-id:' | tr -d '\r' | awk '{print $2}')
-          test -n "$SID"
-
-          curl -s "$BASE/mcp" \
-            -H 'content-type: application/json' \
-            -H 'accept: application/json, text/event-stream' \
-            -H "mcp-session-id: $SID" \
-            -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' > /dev/null
-
-          curl -s "$BASE/mcp" \
-            -H 'content-type: application/json' \
-            -H 'accept: application/json, text/event-stream' \
-            -H "mcp-session-id: $SID" \
-            -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"vault_read","arguments":{"file":"q3-plan.md"}}}' \
-            | sed -n 's/^data: //p' \
-            | jq '.result._meta["org.kya-os/proof"]' > proof.json
+            -H 'mcp-protocol-version: 2025-11-25' \
+            -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"vault_read","arguments":{"file":"q3-plan.md"}}}')
+          # Response is plain JSON on this transport; tolerate an SSE "data:" prefix too.
+          BODY=$(printf '%s' "$RESP" | sed -n 's/^data: //p'); [ -z "$BODY" ] && BODY="$RESP"
+          # Terminal proof key is org.kya-os/response-proof; accept the legacy key one major.
+          printf '%s' "$BODY" | jq '.result._meta["org.kya-os/response-proof"] // .result._meta["org.kya-os/proof"]' > proof.json
 
           jq -e .jws proof.json > /dev/null
           # Resolves the signer DID over the public internet and checks the JWS.

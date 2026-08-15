@@ -7,6 +7,18 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.14.1] - 2026-08-15
+
+### Fixed
+
+- **Fresh installs no longer break on `json-canonicalize`.** The dependency is
+  now pinned to `2.0.0` exactly. The upstream `2.0.1` publish ships raw
+  TypeScript sources with no compiled JavaScript (its `main` points at a
+  nonexistent path), so any install resolving `^2.0.0` without a lockfile -
+  every new adopter - got a package that cannot be imported. Pinning restores
+  installability for `@kya-os/mcp` and everything downstream of it. The pin
+  can be relaxed once upstream publishes a corrected release.
+
 ## [1.14.0] - 2026-08-13
 
 ### Added

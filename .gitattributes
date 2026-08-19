@@ -1,0 +1,3 @@
+# Vector suite bytes are the conformance pin: no checkout-time eol conversion.
+conformance/vectors/*.json -text
+conformance/SUITE-MANIFEST.json -text

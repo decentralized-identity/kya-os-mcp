@@ -267,21 +267,28 @@ flows, and sessions are shared across instances and survive restarts.
 
 ## Integrations
 
-KYA-OS reaches the outside world two ways: shipped **modules** for specific
-systems and standards, and typed **adapter seams** with in-memory defaults you
-swap out. Adding one is "drop a folder under `src/integrations/`" or "implement
-this interface" — contributions welcome.
+KYA-OS integrates through typed **seams** — the adapter pattern is the whole
+model. Every external dependency is a port with an in-memory or reference
+default; bind your own backend, or drop in a shipped adapter. Adding one is
+"implement this interface" (or, for a self-contained system, "drop a folder
+under `src/integrations/`") — contributions welcome.
 
-### Modules
-
-| Module | Adds | Docs |
+| Seam (port) | Reference / default | Bring your own |
 | --- | --- | --- |
-| **cheqd** (on-chain) | `did:cheqd` resolution, StatusList2021 revocation, DID-Linked Resources + registrar | [src/integrations/cheqd](./src/integrations/cheqd/README.md) |
-| **OAuth / OIDC** | PKCE + protected-resource metadata; generic-OIDC reference adapter | [`@kya-os/mcp/authz`](./src/authz/) · [example](./examples/authz-inspector/) |
-| **Verifiable audit** | RFC 9162 ledger; local or Checkpoint recorders, on-chain anchoring | [AUDITABILITY.md](./AUDITABILITY.md) |
+| DID resolution — `DIDResolver` | `did:key`, `did:web` | `did:cheqd`, custom methods |
+| Revocation — `StatusListResolver` | not configured | cheqd StatusList2021 |
+| Authorization — `AuthorizationServerAdapter` | `GenericOidcAdapter` (OIDC + PKCE) | Auth0, Okta, your IdP ([example](./examples/authz-inspector/)) |
+| State — `GrantStore`, `SessionStore`, `NonceCacheProvider`, `PendingFlowStore` | in-memory | Redis, DynamoDB, KV, Durable Objects, DB ([multi-instance](#multi-instance-deployments)) |
+| Audit delivery — `AuditRecorder`, `AuditAnchorProvider` | local recorder | Checkpoint, on-chain anchoring ([AUDITABILITY.md](./AUDITABILITY.md)) |
+| Crypto — `CryptoProvider` | Node, WebCrypto | your KMS / HSM |
+| Policy — `PolicyEngine` | built-in default | custom engine |
 
-Enabling a module is a small config change. cheqd, for example, is a resolver
-you register under `didResolvers`:
+### cheqd: a fully-worked on-chain integration
+
+cheqd is the reference for what filling the seams looks like end to end — one
+package binds three at once: DID resolution (`did:cheqd`), revocation (on-chain
+StatusList2021), and audit anchoring (DID-Linked Resources). Enabling the
+resolver is a small config change:
 
 ```typescript
 import { cheqdResolver } from '@kya-os/mcp/cheqd';
@@ -298,19 +305,6 @@ Its full reference (registrar writes, `did:web` <-> `did:cheqd` linkage,
 DID-Linked Resource helpers, live testnet E2E) lives in
 [src/integrations/cheqd/README.md](./src/integrations/cheqd/README.md); see
 [examples/cheqd-dlr](./examples/cheqd-dlr/) for a complete operator flow.
-
-### Adapter seams (bring your own)
-
-Every external dependency is a typed interface with an in-memory default, so you
-can swap in your own backend without touching the middleware.
-
-| Seam | Default | Swap in |
-| --- | --- | --- |
-| DID resolution — `DIDResolver` | `did:key`, `did:web` | `did:cheqd`, custom |
-| Revocation — `StatusListResolver` | none | cheqd StatusList2021 |
-| State — `GrantStore`, `SessionStore`, `NonceCacheProvider`, `PendingFlowStore` | in-memory | Redis, DynamoDB, KV, Durable Objects, DB ([multi-instance](#multi-instance-deployments)) |
-| Crypto — `CryptoProvider` | Node, WebCrypto | your KMS / HSM |
-| Policy — `PolicyEngine` | default | custom |
 
 ## Links
 

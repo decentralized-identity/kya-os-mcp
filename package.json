@@ -1,6 +1,6 @@
 {
   "name": "@kya-os/mcp",
-  "version": "1.14.1",
+  "version": "1.14.2",
   "description": "Reference implementation of the KYA-OS protocol for Model Context Protocol servers: identity, delegation, proofs, sessions, and verifiable audit trails",
   "license": "MIT",
   "type": "module",

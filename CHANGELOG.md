@@ -7,6 +7,14 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.14.2] - 2026-08-19
+
+### Fixed
+
+- VC-JWT (string) delegations are now verified by their envelope signature in
+  the delegation gate before authorization, matching the embedded-proof (object)
+  path. Existing object and signed `did:key` VC-JWT flows are unaffected.
+
 ## [1.14.1] - 2026-08-15
 
 ### Fixed

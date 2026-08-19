@@ -14,11 +14,7 @@ import {
   toHolderBindingRequest,
 } from "../delegation/holder-binding.js";
 import { scopeSatisfies } from "../delegation/scope-matcher.js";
-import { parseVCJWT } from "../delegation/utils.js";
-import {
-  type DelegationCredential,
-  type DetachedProof,
-} from "../types/protocol.js";
+import { type DetachedProof } from "../types/protocol.js";
 import { logger } from "../logging/index.js";
 import { KYA_OS_ERROR_CODES } from "../errors.js";
 import type {
@@ -75,7 +71,7 @@ export function createDelegationGate(
   const { attachOutcomeProof, resolveExistingGrant, bindGrantOnSuccess } =
     wiring;
   const {
-    validateDelegationChain,
+    verifyDelegation,
     buildDelegationErrorResponse,
     buildNeedsAuthorizationChallenge,
   } = createDelegationVerification(deps);
@@ -149,67 +145,15 @@ export function createDelegationGate(
         );
       }
 
-      // Accept delegation as either a JSON object (embedded proof) or a
-      // VC-JWT string (compact JWT). The Cloudflare consent service issues
-      // VC-JWTs; examples use embedded proofs. Support both transparently.
-      let vc: DelegationCredential;
-      let isVCJWT = false;
-      if (typeof delegationArg === "string") {
-        const parsed = parseVCJWT(delegationArg);
-        if (!parsed || !parsed.payload.vc) {
-          return attachOutcomeProof(
-            buildDelegationErrorResponse(
-              KYA_OS_ERROR_CODES.delegation_invalid,
-              "Invalid VC-JWT format",
-            ),
-            toolName,
-            args,
-            sessionId,
-            "Invalid VC-JWT format",
-          );
-        }
-        vc = parsed.payload.vc as DelegationCredential;
-        // VC-JWTs don't have an embedded proof — the JWT signature is the
-        // proof. Add a marker so basic validation (which checks for proof
-        // presence) passes. The actual signature is in the JWT envelope.
-        if (!vc.proof) {
-          vc = { ...vc, proof: { type: 'JwtProof2020', jwt: delegationArg } };
-        }
-        isVCJWT = true;
-      } else {
-        vc = delegationArg as DelegationCredential;
-      }
-
-      // For VC-JWTs the embedded-signature check is skipped (the JWT envelope
-      // signature is the proof); schema/expiry/status/scope checks still apply.
-      // validateDelegationChain performs the shape check and returns
-      // { valid, reason } for malformed input, never throwing on normal or
-      // structurally-malformed credentials. This try/catch is therefore a PURE
-      // BACKSTOP — it fires only on a truly unexpected throw (e.g. a hostile
-      // getter/Proxy accessor or a provider fault): it logs the detail
-      // server-side and returns a GENERIC reason, so no internal/implementation
-      // detail (stack, raw error text) leaks to the client or the signed proof.
-      const verificationResult = await (async (): Promise<{
-        valid: boolean;
-        reason?: string;
-      }> => {
-        try {
-          return await validateDelegationChain(vc, { skipSignature: isVCJWT });
-        } catch (error) {
-          logger.error("[kya-os] Unexpected error verifying delegation", {
-            tool: toolName,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-          });
-          return { valid: false, reason: "Delegation credential could not be verified" };
-        }
-      })();
-
-      if (!verificationResult.valid) {
-        const reason = verificationResult.reason ?? "Unknown delegation validation error";
+      // Authenticate the presented delegation (object embedded-proof OR VC-JWT
+      // string) and normalize it to a verified credential. verifyDelegation owns
+      // the wire-form-specific signature checks — the gate never sets
+      // skipSignature itself, so a JWT envelope can't be silently skipped.
+      const check = await verifyDelegation(delegationArg);
+      if (!check.valid) {
         try {
           await audit?.delegation('rejected', {
-            delegationRef: rejectedDelegationRef(vc),
+            delegationRef: rejectedDelegationRef(check.vc),
             outcome: 'failed',
             reasonCode: 'DELEGATION_VERIFICATION_FAILED',
           });
@@ -220,16 +164,17 @@ export function createDelegationGate(
           });
         }
         logger.warn(
-          `[kya-os] Delegation verification failed for "${toolName}": ${sanitizeForMessage(reason)}`,
+          `[kya-os] Delegation verification failed for "${toolName}": ${sanitizeForMessage(check.reason)}`,
         );
         return attachOutcomeProof(
-          buildDelegationErrorResponse(KYA_OS_ERROR_CODES.delegation_invalid, reason),
+          buildDelegationErrorResponse(KYA_OS_ERROR_CODES.delegation_invalid, check.reason),
           toolName,
           args,
           sessionId,
-          reason,
+          check.reason,
         );
       }
+      const { vc, isJwt } = check;
 
       // Holder binding (spec §11.8): the delegation is valid, but a valid
       // *credential* is a bearer token until we also prove the caller holds the
@@ -328,7 +273,7 @@ export function createDelegationGate(
         );
       }
 
-      const serializedCredential = isVCJWT
+      const serializedCredential = isJwt
         ? new TextEncoder().encode(delegationArg as string)
         : canonicalizeJsonBytes(vc);
       const credentialDigest = await cryptoProvider.hash(serializedCredential) as Digest;
@@ -373,7 +318,7 @@ export function createDelegationGate(
 
       // Mint a durable grant from this verified delegation so the next call —
       // on any instance — resolves via resolveExistingGrant with no re-paste.
-      await bindGrantOnSuccess(vc, delegationArg, isVCJWT, sessionId, config.scopeId);
+      await bindGrantOnSuccess(vc, delegationArg, isJwt, sessionId, config.scopeId);
 
       logger.debug(
         `[kya-os] Delegation verified for "${toolName}", scope "${config.scopeId}"`,

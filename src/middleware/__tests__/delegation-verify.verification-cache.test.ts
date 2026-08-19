@@ -77,15 +77,15 @@ async function setup(
 describe('verificationCache config threading', () => {
   it('serves the signature from cache on the second call by default', async () => {
     const { verification, vc, resolveCount } = await setup();
-    expect((await verification.validateDelegationChain(vc)).valid).toBe(true);
-    expect((await verification.validateDelegationChain(vc)).valid).toBe(true);
+    expect((await verification.verifyDelegation(vc)).valid).toBe(true);
+    expect((await verification.verifyDelegation(vc)).valid).toBe(true);
     expect(resolveCount()).toBe(1);
   });
 
   it('ttlMs: 0 disables signature caching (resolver consulted every call)', async () => {
     const { verification, vc, resolveCount } = await setup({ ttlMs: 0 });
-    expect((await verification.validateDelegationChain(vc)).valid).toBe(true);
-    expect((await verification.validateDelegationChain(vc)).valid).toBe(true);
+    expect((await verification.verifyDelegation(vc)).valid).toBe(true);
+    expect((await verification.verifyDelegation(vc)).valid).toBe(true);
     expect(resolveCount()).toBe(2);
   });
 });

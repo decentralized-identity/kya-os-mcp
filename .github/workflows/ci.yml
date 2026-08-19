@@ -107,6 +107,14 @@ jobs:
       - name: Run conformance vectors
         run: pnpm run conformance
 
+      # The committed vector set is immutable at a suiteVersion: recompute the
+      # suite hash from the raw vector bytes and fail if it drifts from
+      # conformance/SUITE-MANIFEST.json without a suiteVersion bump. The vitest
+      # suite enforces the same invariant; this step keeps it visible as its
+      # own CI line.
+      - name: Verify vector-set immutability
+        run: node conformance/suite-hash.mjs --check
+
       # Independently re-verify the org.kya-os/proof@1 card-proof vector in a second
       # language (pure Python stdlib, shares no code with the TS reference) — proves
       # cross-language JCS (RFC 8785) + Ed25519 signature parity. Exits non-zero on mismatch.

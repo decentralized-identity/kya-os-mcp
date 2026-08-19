@@ -20,7 +20,7 @@ import {
 } from "../delegation/vc-verifier.js";
 import { validateDelegationChain as validateDelegationChainCore } from "../delegation/chain-enforcement.js";
 import { RuntimeFetchProvider } from "../providers/runtime-fetch.js";
-import { canonicalizeJSON } from "../delegation/utils.js";
+import { canonicalizeJSON, parseVCJWT } from "../delegation/utils.js";
 import { base64urlDecodeToBytes, bytesToBase64 } from "../utils/base64.js";
 import {
   createNeedsAuthorizationError,
@@ -42,17 +42,27 @@ export interface DelegationGateConfig {
   ) => Array<{ type: "text"; text: string }>;
 }
 
+/**
+ * Outcome of authenticating a presented delegation. On success the caller gets
+ * the normalized credential and its wire form; on failure a sanitizable reason
+ * plus the best-effort parsed credential (for audit references), if any.
+ */
+export type DelegationCheck =
+  | { valid: true; vc: DelegationCredential; isJwt: boolean }
+  | { valid: false; reason: string; vc?: DelegationCredential };
+
 export interface DelegationVerification {
   /**
-   * Thin adapter over the framework-agnostic core (chain-enforcement.ts): binds
-   * the host's injected verifier + server DID + resolver + the optional
-   * graph-backed RevocationChecker. Returns `{ valid, reason }`, never throws on
-   * normal or structurally-malformed credentials.
+   * Authenticate and normalize a presented `_kyaos_delegation`, in either wire
+   * form, into a single verified credential. A VC-JWT **string** is verified by
+   * its compact-JWS ENVELOPE signature against the issuer's published key; an
+   * **object** is verified by its embedded Data-Integrity proof. Both then run
+   * the full chain / scope-superset / expiry / status / revocation walk. Owning
+   * the `skipSignature` decision here (never at the call site) is what stops a
+   * JWT envelope from being silently skipped. Returns a {@link DelegationCheck},
+   * never throws on normal or structurally-malformed input.
    */
-  validateDelegationChain(
-    leafCredential: DelegationCredential,
-    options?: { skipSignature?: boolean },
-  ): Promise<{ valid: boolean; reason?: string }>;
+  verifyDelegation(delegationArg: unknown): Promise<DelegationCheck>;
   /** A structured `{ error, reason }` tool response with a sanitized reason. */
   buildDelegationErrorResponse(
     error: string,
@@ -206,6 +216,76 @@ export function createDelegationVerification(
       options,
     );
 
+  async function verifyDelegation(
+    delegationArg: unknown,
+  ): Promise<DelegationCheck> {
+    // Normalize to a DelegationCredential, authenticating by wire form. A VC-JWT
+    // string carries its signature in the compact-JWS ENVELOPE; an object carries
+    // an embedded Data-Integrity proof (verified inside validateDelegationChain).
+    let vc: DelegationCredential;
+    let isJwt = false;
+
+    if (typeof delegationArg === "string") {
+      const parsed = parseVCJWT(delegationArg);
+      if (!parsed || !parsed.payload.vc) {
+        return { valid: false, reason: "Invalid VC-JWT format" };
+      }
+      // Envelope-first: verify the JWT signature against the issuer's published
+      // key BEFORE the chain runs with skipSignature. Reuses the vetted verifier
+      // (EdDSA-pinned compact-JWS + iss/issuer consistency; fail-closed). Status
+      // is checked once by the chain walk below, so skip it here.
+      const envelope = await verifier.verifyDelegationJwt(delegationArg, {
+        skipStatus: true,
+      });
+      if (!envelope.valid) {
+        return {
+          valid: false,
+          reason: envelope.reason ?? "VC-JWT envelope signature is not valid",
+          vc: parsed.payload.vc as DelegationCredential,
+        };
+      }
+      vc = parsed.payload.vc as DelegationCredential;
+      // A JWT has no embedded `proof`; add a marker so basic validation (which
+      // requires proof presence) passes. The already-verified envelope is the
+      // real proof, so the chain walk runs with skipSignature (below).
+      if (!vc.proof) {
+        vc = { ...vc, proof: { type: "JwtProof2020", jwt: delegationArg } };
+      }
+      isJwt = true;
+    } else {
+      vc = delegationArg as DelegationCredential;
+    }
+
+    // Chain / scope-superset / expiry / status / revocation. skipSignature is
+    // true ONLY for a JWT (its envelope, verified above, is the proof); an object
+    // keeps it false so validateDelegationChain verifies the embedded proof.
+    // That call never throws on normal/malformed input; this backstop catches
+    // only a truly unexpected throw (hostile getter/Proxy, provider fault) and
+    // returns a GENERIC reason so no internal detail leaks to the client/proof.
+    let chain: { valid: boolean; reason?: string };
+    try {
+      chain = await validateDelegationChain(vc, { skipSignature: isJwt });
+    } catch (error) {
+      logger.error("[kya-os] Unexpected error verifying delegation", {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      chain = {
+        valid: false,
+        reason: "Delegation credential could not be verified",
+      };
+    }
+
+    if (!chain.valid) {
+      return {
+        valid: false,
+        reason: chain.reason ?? "Unknown delegation validation error",
+        vc,
+      };
+    }
+    return { valid: true, vc, isJwt };
+  }
+
   async function buildNeedsAuthorizationChallenge(
     toolName: string,
     config: DelegationGateConfig,
@@ -256,7 +336,7 @@ export function createDelegationVerification(
   }
 
   return {
-    validateDelegationChain,
+    verifyDelegation,
     buildDelegationErrorResponse,
     buildNeedsAuthorizationChallenge,
   };

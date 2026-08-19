@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { generateKeyPair, exportJWK, SignJWT } from 'jose';
 import {
   createKyaOsMiddleware,
   type KyaOsAuditTrail,
@@ -16,6 +17,8 @@ import type {
 import {
   base64ToBytes,
   base64urlEncodeFromBytes,
+  base64urlDecodeToBytes,
+  bytesToBase64,
 } from '../../utils/base64.js';
 import { AuditLogProvider, MemoryAuditLogProvider } from '../../providers/audit-log.js';
 import { cheqdResolver } from '../../integrations/cheqd/index.js';
@@ -1343,5 +1346,134 @@ describe('withPolicyGate', () => {
     const result = await handler({ table: 'users', _kyaos_approvals: [grant] });
     expect(result.isError).toBe(true);
     expect(JSON.parse(text(result)).error).toBe('needs_approval');
+  });
+});
+
+describe('wrapWithDelegation — VC-JWT (compact JWS) string form', () => {
+  // A VC-JWT carries its signature in the compact-JWS ENVELOPE, not an embedded
+  // `proof` block. The gate must verify that envelope against the issuer's
+  // published key before authorizing the call — otherwise a hand-forged string
+  // naming any subject/scope executes the tool. did:key issuers resolve to their
+  // own key material, so the built-in did:key resolver covers these tests.
+
+  const b64url = (obj: unknown): string =>
+    Buffer.from(JSON.stringify(obj)).toString('base64url');
+
+  let uniqueCounter = 0;
+  const uniqueId = (): string => `${Date.now()}-${uniqueCounter++}`;
+
+  async function didKeyAgent(): Promise<{ did: string; privateKey: CryptoKey }> {
+    const { publicKey, privateKey } = await generateKeyPair('EdDSA', {
+      extractable: true,
+    });
+    const jwk = await exportJWK(publicKey);
+    if (!jwk.x) throw new Error('exported JWK is missing x');
+    const did = generateDidKeyFromBase64(bytesToBase64(base64urlDecodeToBytes(jwk.x)));
+    return { did, privateKey };
+  }
+
+  function delegationClaim(did: string, scopes: string[]): Record<string, unknown> {
+    return {
+      '@context': ['https://www.w3.org/2018/credentials/v1'],
+      id: `urn:uuid:jwt-${uniqueId()}`,
+      type: ['VerifiableCredential', 'DelegationCredential'],
+      issuer: did,
+      issuanceDate: '2026-01-01T00:00:00.000Z',
+      expirationDate: '2099-01-01T00:00:00.000Z',
+      credentialSubject: {
+        id: did,
+        delegation: {
+          id: `del-jwt-${uniqueId()}`,
+          issuerDid: did,
+          subjectDid: did,
+          status: 'active',
+          constraints: {
+            scopes,
+            notAfter: Math.floor(Date.now() / 1000) + 3600,
+          },
+        },
+      },
+    };
+  }
+
+  async function mintVcJwt(
+    signer: CryptoKey,
+    issuerDid: string,
+    scopes: string[],
+  ): Promise<string> {
+    return new SignJWT({ vc: delegationClaim(issuerDid, scopes) })
+      .setProtectedHeader({ alg: 'EdDSA', typ: 'JWT' })
+      .setIssuer(issuerDid)
+      .setSubject(issuerDid)
+      .setIssuedAt()
+      .sign(signer);
+  }
+
+  it('accepts a correctly-signed VC-JWT string and runs the handler', async () => {
+    const { middleware: kyaos } = await createTestMiddleware();
+    const agent = await didKeyAgent();
+    const jwt = await mintVcJwt(agent.privateKey, agent.did, ['test:scope']);
+
+    const handler = kyaos.wrapWithDelegation(
+      'my-tool',
+      { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
+      async (args) => ({
+        content: [{ type: 'text', text: `Called: ${JSON.stringify(args)}` }],
+      }),
+    );
+
+    const result = await handler({ _kyaos_delegation: jwt, name: 'DIF' });
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content[0].text.replace('Called: ', ''));
+    expect(parsed['_kyaos_delegation']).toBeUndefined();
+    expect(parsed['name']).toBe('DIF');
+  });
+
+  it('SECURITY: rejects a hand-forged VC-JWT string (real issuer DID, bogus signature) and never runs the handler', async () => {
+    const { middleware: kyaos } = await createTestMiddleware();
+    // A resolvable did:key issuer, a structurally-complete delegation carrying
+    // the exact scope the tool requires, and a signature that is pure garbage.
+    const agent = await didKeyAgent();
+    const forged =
+      `${b64url({ alg: 'EdDSA', typ: 'JWT' })}.` +
+      `${b64url({ iss: agent.did, sub: agent.did, vc: delegationClaim(agent.did, ['test:scope']) })}.` +
+      'not-a-real-signature';
+
+    let handlerRan = false;
+    const handler = kyaos.wrapWithDelegation(
+      'my-tool',
+      { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
+      async () => {
+        handlerRan = true;
+        return { content: [{ type: 'text', text: 'should not reach' }] };
+      },
+    );
+
+    const result = await handler({ _kyaos_delegation: forged, name: 'attacker' });
+
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0].text).error).toBe('delegation_invalid');
+    expect(handlerRan).toBe(false);
+  });
+
+  it('SECURITY: rejects a VC-JWT signed by a key that is NOT the issuer DID key', async () => {
+    const { middleware: kyaos } = await createTestMiddleware();
+    const issuer = await didKeyAgent();
+    const attacker = await didKeyAgent();
+    // Names `issuer.did` as issuer/subject but signs with the attacker's key —
+    // the envelope must be checked against the RESOLVED issuer key.
+    const jwt = await mintVcJwt(attacker.privateKey, issuer.did, ['test:scope']);
+
+    const handler = kyaos.wrapWithDelegation(
+      'my-tool',
+      { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
+      async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
+    );
+
+    const result = await handler({ _kyaos_delegation: jwt });
+
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0].text).error).toBe('delegation_invalid');
   });
 });

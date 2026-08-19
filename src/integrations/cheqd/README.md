@@ -1,6 +1,6 @@
 # did:cheqd and DID-Linked Resources
 
-> Integration reference for the opt-in `@kya-os/mcp/cheqd` module. See the [main README](../../../README.md#optional-didcheqd-and-did-linked-resources) for how to enable it.
+> Integration reference for the opt-in `@kya-os/mcp/cheqd` module. See [Integrations](../../../README.md#integrations) in the main README for how to enable it.
 
 `did:cheqd` support is additive and opt-in. Existing `did:key` and `did:web`
 flows remain unchanged, and operators can keep `did:web` as their canonical

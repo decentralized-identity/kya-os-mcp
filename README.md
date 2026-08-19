@@ -265,12 +265,23 @@ flows, and sessions are shared across instances and survive restarts.
 
 ---
 
-## Optional did:cheqd and DID-Linked Resources
+## Integrations
 
-`did:cheqd` support is additive and opt-in. Existing `did:key` and `did:web`
-flows remain unchanged, and operators can keep `did:web` as their canonical
-identifier while linking to a cheqd DID over time. Enable it by supplying a
-`cheqd` resolver in the `didResolvers` registry:
+KYA-OS reaches the outside world two ways: shipped **modules** for specific
+systems and standards, and typed **adapter seams** with in-memory defaults you
+swap out. Adding one is "drop a folder under `src/integrations/`" or "implement
+this interface" — contributions welcome.
+
+### Modules
+
+| Module | Adds | Docs |
+| --- | --- | --- |
+| **cheqd** (on-chain) | `did:cheqd` resolution, StatusList2021 revocation, DID-Linked Resources + registrar | [src/integrations/cheqd](./src/integrations/cheqd/README.md) |
+| **OAuth / OIDC** | PKCE + protected-resource metadata; generic-OIDC reference adapter | [`@kya-os/mcp/authz`](./src/authz/) · [example](./examples/authz-inspector/) |
+| **Verifiable audit** | RFC 9162 ledger; local or Checkpoint recorders, on-chain anchoring | [AUDITABILITY.md](./AUDITABILITY.md) |
+
+Enabling a module is a small config change. cheqd, for example, is a resolver
+you register under `didResolvers`:
 
 ```typescript
 import { cheqdResolver } from '@kya-os/mcp/cheqd';
@@ -283,10 +294,23 @@ await withKyaOs(server, {
 });
 ```
 
-Resolver options, registrar writes, `did:web` <-> `did:cheqd` linkage,
-DID-Linked Resource helpers, and the live testnet E2E tests are documented in
-**[src/integrations/cheqd/README.md](./src/integrations/cheqd/README.md)**. See
+Its full reference (registrar writes, `did:web` <-> `did:cheqd` linkage,
+DID-Linked Resource helpers, live testnet E2E) lives in
+[src/integrations/cheqd/README.md](./src/integrations/cheqd/README.md); see
 [examples/cheqd-dlr](./examples/cheqd-dlr/) for a complete operator flow.
+
+### Adapter seams (bring your own)
+
+Every external dependency is a typed interface with an in-memory default, so you
+can swap in your own backend without touching the middleware.
+
+| Seam | Default | Swap in |
+| --- | --- | --- |
+| DID resolution — `DIDResolver` | `did:key`, `did:web` | `did:cheqd`, custom |
+| Revocation — `StatusListResolver` | none | cheqd StatusList2021 |
+| State — `GrantStore`, `SessionStore`, `NonceCacheProvider`, `PendingFlowStore` | in-memory | Redis, DynamoDB, KV, Durable Objects, DB ([multi-instance](#multi-instance-deployments)) |
+| Crypto — `CryptoProvider` | Node, WebCrypto | your KMS / HSM |
+| Policy — `PolicyEngine` | default | custom |
 
 ## Links
 

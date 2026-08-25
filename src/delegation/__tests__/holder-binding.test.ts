@@ -209,6 +209,32 @@ describe('generateRequestProof + toHolderBindingRequest (client mint <-> PEP ass
     expect(result.status).toBe('bound');
   });
 
+  it('a proof minted WITHOUT a sessionId still binds (sessionless request proof)', async () => {
+    // `sessionId` is optional on GenerateRequestProofInput - a request proof can
+    // precede any handshake, which is the normal case for a stateless MCP core.
+    // But `meta.sessionId` is a required NON-EMPTY string in the proof schema,
+    // so defaulting it to '' minted a proof that could never verify: the
+    // legitimate holder came back `unbound`/INVALID_PROOF_STRUCTURE, exactly
+    // like a thief. Every other test here passes a sessionId explicitly, which
+    // is why that never surfaced.
+    const args = { path: '/secret' };
+    const proof = await generateRequestProof({
+      identity: agent,
+      crypto,
+      toolName: 'read_vault',
+      args,
+      audience: AUDIENCE,
+    });
+    expect(proof.meta.sessionId).not.toBe('');
+    const result = await assertHolderBinding({
+      proof,
+      subjectDid: agent.did,
+      request: toHolderBindingRequest('read_vault', args),
+      proofVerifier: makeVerifier(),
+    });
+    expect(result.status).toBe('bound');
+  });
+
   it('a proof minted for one call does not bind a different call (content binding)', async () => {
     const proof = await generateRequestProof({
       identity: agent,

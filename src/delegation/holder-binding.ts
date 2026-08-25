@@ -98,8 +98,15 @@ export async function generateRequestProof(
   const request = toHolderBindingRequest(toolName, args);
   const nonce = base64urlEncodeFromBytes(await crypto.randomBytes(16));
   const now = Math.floor(Date.now() / 1000);
+  // `sessionId` is optional on the way in (a request proof can precede any
+  // handshake), but `meta.sessionId` is a REQUIRED non-empty string in the
+  // proof schema. Defaulting to '' therefore minted a proof that could never
+  // verify: `assertHolderBinding` rejected the LEGITIMATE holder as
+  // INVALID_PROOF_STRUCTURE, indistinguishably from a thief. Mint a per-proof
+  // id instead, so the sessionless case (the stateless MCP core) works.
+  const boundSessionId = sessionId ?? `req-${base64urlEncodeFromBytes(await crypto.randomBytes(9))}`;
   return generator.generateProof(request, undefined, {
-    sessionId: sessionId ?? '',
+    sessionId: boundSessionId,
     audience,
     nonce,
     timestamp: now,

@@ -27,7 +27,7 @@ import type {
 } from "../delegation/vc-verifier.js";
 import type { DIDResolverRegistry } from "../delegation/did-resolver-registry.js";
 import type { RevocationChecker } from "../delegation/chain-enforcement.js";
-import type { DelegationCredential } from "../types/protocol.js";
+import type { DelegationCredential, ResponseProofProfile } from "../types/protocol.js";
 
 export interface KyaOsIdentityConfig {
   did: string;
@@ -161,6 +161,26 @@ export interface KyaOsConfig {
    * dropped at 2.0.
    */
   emitLegacyProofKey?: boolean;
+  /**
+   * Response-proof profile every proof this server mints is bound under
+   * (SPEC §7.3).
+   *
+   * - `"org.kya-os/response-proof.v1"` (default): `responseHash` covers the
+   *   response BODY only (the MCP `content` array). Wire-identical to pre-v2
+   *   releases — any existing verifier keeps working.
+   * - `"org.kya-os/response-proof.v2"`: `responseHash` covers the ENTIRE result
+   *   object with the top-level `_meta` member removed, so `structuredContent`,
+   *   `isError`, and `resultType` are authenticated. Each proof carries a
+   *   signature-covered `prf` claim naming the profile, so verification cannot
+   *   silently fall back to v1 semantics.
+   *
+   * Opting into v2 requires clients whose verifiers understand `prf` (this
+   * package's verifier accepts both profiles, keyed off each proof's own
+   * claim); a pre-v2 verifier rejects v2 proofs outright rather than
+   * mis-verifying them. Default stays v1 for the 1.x line; v2 becomes the
+   * default at 2.0.
+   */
+  responseProofProfile?: ResponseProofProfile;
   /** Delegation verification overrides */
   delegation?: KyaOsDelegationConfig;
   /**

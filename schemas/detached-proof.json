@@ -83,6 +83,11 @@
         "reason": {
           "type": "string",
           "description": "Human-readable reason accompanying a denied / step-up / needs-authorization outcome."
+        },
+        "prf": {
+          "type": "string",
+          "const": "org.kya-os/response-proof.v2",
+          "description": "Response-proof profile discriminator, covered by the JWS signature. Absent on v1 proofs (body-only responseHash); present with this exact value on v2 proofs (responseHash covers the result envelope minus top-level _meta). Verifiers reject any other value fail-closed (SPEC §7.3)."
         }
       },
       "additionalProperties": false

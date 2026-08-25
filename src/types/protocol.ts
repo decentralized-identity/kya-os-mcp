@@ -469,6 +469,29 @@ export type MetaPolicy = 'strict' | 'allow-extensions';
 // Proof types (KYA-OS §5)
 // ============================================================================
 
+/**
+ * Response-proof profile v1 — the implicit original profile. A v1 proof carries
+ * NO `prf` claim (its wire shape predates the discriminator); `responseHash`
+ * covers the response BODY only (`response.data` = the MCP `content` array).
+ * The identifier exists so configuration can name the profile explicitly.
+ */
+export const RESPONSE_PROOF_PROFILE_V1 = 'org.kya-os/response-proof.v1';
+
+/**
+ * Response-proof profile v2 — envelope coverage (SPEC §7.3). `responseHash`
+ * covers the ENTIRE MCP result object with the top-level `_meta` member removed,
+ * mirroring the request side's `{method, params minus _meta}` rule, so result
+ * members like `structuredContent`, `isError`, and `resultType` are
+ * authenticated. The profile is discriminated by a signature-covered `prf`
+ * claim: stripping it breaks the signature, so a v2 proof cannot be silently
+ * downgraded to v1 semantics.
+ */
+export const RESPONSE_PROOF_PROFILE_V2 = 'org.kya-os/response-proof.v2';
+
+export type ResponseProofProfile =
+  | typeof RESPONSE_PROOF_PROFILE_V1
+  | typeof RESPONSE_PROOF_PROFILE_V2;
+
 export interface ProofMeta {
   did: string;
   kid: string;
@@ -483,6 +506,15 @@ export interface ProofMeta {
   clientDid?: string;
   outcome?: 'allowed' | 'denied' | 'step_up_required' | 'needs_authorization';
   reason?: string;
+  /**
+   * Response-proof profile discriminator, COVERED by the JWS signature. Present
+   * with the {@link RESPONSE_PROOF_PROFILE_V2} literal on v2 proofs; ABSENT on
+   * v1 proofs (their wire shape is byte-identical to pre-v2 proofs). Verifiers
+   * select the response-hash canonicalization from this claim and MUST reject
+   * any other value (fail-closed — no unknown profile falls back to weaker
+   * semantics).
+   */
+  prf?: typeof RESPONSE_PROOF_PROFILE_V2;
 }
 
 export interface DetachedProof {
@@ -711,6 +743,18 @@ export function validateDetachedProof(proof: unknown): {
       error: {
         message:
           'meta.outcome must be one of allowed | denied | step_up_required | needs_authorization',
+      },
+    };
+  }
+
+  // Optional profile discriminator (v2 proofs only). FAIL-CLOSED: any value
+  // other than the known v2 literal is rejected outright — an unknown profile
+  // must never fall back to v1 (weaker) response-hash semantics.
+  if (m['prf'] !== undefined && m['prf'] !== RESPONSE_PROOF_PROFILE_V2) {
+    return {
+      success: false,
+      error: {
+        message: `meta.prf must be "${RESPONSE_PROOF_PROFILE_V2}" when present (unknown response-proof profiles are rejected fail-closed)`,
       },
     };
   }

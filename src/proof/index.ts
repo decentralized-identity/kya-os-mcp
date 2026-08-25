@@ -2,13 +2,18 @@ export {
   ProofGenerator,
   createProofResponse,
   extractCanonicalData,
+  computeCanonicalHashes,
+  buildProofJwsPayload,
   KYA_OS_PROOF_META_KEY,
   LEGACY_NAMESPACED_PROOF_META_KEY,
   LEGACY_PROOF_META_KEY,
+  RESPONSE_PROOF_PROFILE_V1,
+  RESPONSE_PROOF_PROFILE_V2,
   type ProofAgentIdentity,
   type ToolRequest,
   type ToolResponse,
   type ProofOptions,
+  type ResponseProofProfile,
 } from './generator.js';
 
 export {

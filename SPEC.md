@@ -878,6 +878,11 @@ interface ProofMeta {
   outcome?: 'allowed' | 'denied' | 'step_up_required' | 'needs_authorization';
                          // Authorization outcome; ABSENT ⇒ implicitly 'allowed' (success)
   reason?: string;       // Human-readable reason on a non-'allowed' outcome
+  prf?: 'org.kya-os/response-proof.v2';
+                         // Response-proof profile discriminator, COVERED by the
+                         // JWS signature. ABSENT ⇒ profile v1 (body-only
+                         // responseHash, the original wire shape). Verifiers
+                         // MUST reject any other value (fail-closed; §7.3).
 }
 ```
 
@@ -895,7 +900,16 @@ Request canonicalization includes:
 }
 ```
 
-Response canonicalization is the `data` field only (excludes `_meta`).
+Response canonicalization is selected by the proof's response-proof profile, named by the signature-covered `prf` claim (§7.2):
+
+- **v1** (`prf` ABSENT — the original profile): the `data` field only (excludes `_meta`).
+  Under MCP carriage, `data` is the result's `content` array; result members outside it are NOT covered.
+- **v2** (`prf: "org.kya-os/response-proof.v2"`): the ENTIRE result object with the top-level `_meta` member removed, mirroring the request side's `{method, params minus _meta}` rule.
+  This authenticates result members such as `structuredContent`, `isError`, and `resultType` that v1 leaves uncovered, while `_meta` stays intermediary-mutable — which is what lets the proof itself be attached there after signing.
+
+A verifier derives the profile from the received proof's own `prf` claim, never from configuration, and MUST reject an unrecognized `prf` outright.
+Because `prf` is covered by the signature, stripping it from a v2 proof breaks verification — a downgrade to v1 semantics is a hard failure, not a silent fallback.
+Producers default to v1 for the 1.x line (wire compatibility with existing verifiers); v2 is an explicit opt-in (`responseProofProfile` in the middleware configuration) and becomes the default at 2.0.
 
 ### 7.4 JWS Compact Serialization
 
@@ -926,6 +940,9 @@ BASE64URL(header) . BASE64URL(payload) . BASE64URL(signature)
   "ts": 1710288000
 }
 ```
+
+A v2 proof (§7.3) additionally carries its `prf` claim in this payload — profile selection is signed, never advisory.
+Every optional `ProofMeta` member present on the proof (`scopeId`, `delegationRef`, `clientDid`, `outcome`, `reason`, `prf`) appears in the payload; the mirrored `meta` block and the decoded payload MUST reconcile exactly.
 
 **Denial** and **step-up** proofs have no response body, so `responseHash` is
 omitted and `outcome` (plus an optional `reason`) is included instead. Keys
@@ -1040,8 +1057,9 @@ verifier treats `_meta` keys that are *not* KYA-OS's proof key:
   `_meta` keys to the application layer rather than discarding them.
 
 Under no policy does a verifier include any non-proof `_meta` key in a hash or
-signature computation. The signature covers the `data`/response body only; it
-never covers `_meta` (§7.3).
+signature computation. The signature covers the profile-selected response
+material only — the `data` body under v1, the result envelope minus its
+top-level `_meta` under v2 — and never covers `_meta` itself (§7.3).
 
 > **Note.** The proof object's shape is normatively defined by
 > `schemas/detached-proof.json` (`$schema: draft/2020-12`). The *placement* key

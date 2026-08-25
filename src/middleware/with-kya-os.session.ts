@@ -600,10 +600,17 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
           toolName,
         );
         if (!proofAuditDelivered) {
+          // markAuditDegraded flips isError on the response. Under v1 that
+          // mutation is outside proof coverage, so the already-attached
+          // challenge proof stays verifiable and is kept. Under v2 the
+          // envelope binding COVERS isError — keeping the proof would ship a
+          // binding the client must reject as tampering — so the degraded
+          // path strips it (mirroring wrapWithProof's degraded semantics):
+          // a degraded v2 challenge ships unproven, never falsely "MITM'd".
           markAuditDegraded(
             response,
             'Required proof audit delivery failed for authorization outcome',
-            false,
+            bindsEnvelope,
           );
         }
       }

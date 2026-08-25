@@ -91,6 +91,16 @@ export interface SignedProofInput {
   now: number;
   /** Allowed timestamp skew in seconds for this vector. */
   skewSeconds: number;
+  /**
+   * OPTIONAL content binding (suite ≥ 1.1.0): the request/response the
+   * verifier "received", to be re-hashed under the proof's response-proof
+   * profile (the `prf` claim; absent ⇒ v1) and compared to the bound
+   * `requestHash`/`responseHash`. Absent on pure signature/skew vectors.
+   */
+  expected?: {
+    request: { method: string; params?: unknown };
+    response?: { data: unknown };
+  };
 }
 
 export interface DelegationChainInput {

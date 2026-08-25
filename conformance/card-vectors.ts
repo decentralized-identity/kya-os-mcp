@@ -146,7 +146,7 @@ export async function cardProofVectorFile(): Promise<VectorFile> {
     },
   ];
 
-  return { version: '1.0.0', category: 'card-proof', vectors };
+  return { version: '1.1.0', category: 'card-proof', vectors };
 }
 
 export function entityCardVectorFile(): VectorFile {
@@ -181,7 +181,7 @@ export function entityCardVectorFile(): VectorFile {
       input: { card: GOLDEN_CARDS.agent, accountability: { ...accountability, proofDid: 'did:web:attacker.example' } },
     },
   ];
-  return { version: '1.0.0', category: 'entity-card', vectors };
+  return { version: '1.1.0', category: 'entity-card', vectors };
 }
 
 /** A positive `entity-card` vector for a card that verifies with no injected seams. */

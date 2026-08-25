@@ -188,6 +188,18 @@ Miss the proof, replay a nonce, or tamper the body and `requireProof` fails clos
 
 ## See it in action
 
+### REVOKED: an on-chain kill switch for AI agents with wallet access
+
+[![Watch the 3-minute demo: a live agent gets its spending authority revoked on-chain](./examples/revoked/docs/screenshots/revoked-page-killed.png)](https://www.loom.com/share/f32b82a292f14a6c952dba3a0a246e45)
+
+A live agent (Claude Desktop) pays invoices from a testnet wallet under a signed, scoped, revocable credential. When it goes rogue, a FIDO2 hardware touch revokes that credential on a public chain: the StatusList2021 bit flips in a cheqd DID-Linked Resource, and the agent's next transaction is refused in about half a second. Funds never move.
+
+Built in a weekend on this package (2nd place, DEF CON 34 Cryptocurrency Village), and everything the demo had to invent now ships here: the on-chain resolver, the always-fresh revocation checks, the DLR artifact type ([#165](https://github.com/decentralized-identity/kya-os-mcp/pull/165) through [#169](https://github.com/decentralized-identity/kya-os-mcp/pull/169)).
+
+Start with the 60-second path: verify a genuinely revoked credential against the live testnet, zero configuration. **[examples/revoked](./examples/revoked/)**
+
+### Run the example servers
+
 ```bash
 git clone https://github.com/decentralized-identity/kya-os-mcp.git
 cd kya-os-mcp && npm install
@@ -253,182 +265,52 @@ flows, and sessions are shared across instances and survive restarts.
 
 ---
 
-## Optional did:cheqd and DID-Linked Resources
+## Integrations
 
-`did:cheqd` support is additive and opt-in. Existing `did:key` and `did:web`
-flows remain unchanged, and operators can keep `did:web` as their canonical
-identifier while linking to a cheqd DID over time.
+KYA-OS reaches the outside world two ways: shipped **modules** for specific
+systems and standards, and typed **adapter seams** with in-memory defaults you
+swap out. Adding one is "drop a folder under `src/integrations/`" or "implement
+this interface" — contributions welcome.
 
-### Resolver configuration
+### Modules
+
+| Module | Adds | Docs |
+| --- | --- | --- |
+| **cheqd** (on-chain) | `did:cheqd` resolution, StatusList2021 revocation, DID-Linked Resources + registrar | [src/integrations/cheqd](./src/integrations/cheqd/README.md) |
+| **OAuth / OIDC** | PKCE + protected-resource metadata; generic-OIDC reference adapter | [`@kya-os/mcp/authz`](./src/authz/) · [example](./examples/authz-inspector/) |
+| **Verifiable audit** | RFC 9162 ledger; local or Checkpoint recorders, on-chain anchoring | [AUDITABILITY.md](./AUDITABILITY.md) |
+
+Enabling a module is a small config change. cheqd, for example, is a resolver
+you register under `didResolvers`:
 
 ```typescript
-import { RuntimeFetchProvider, withKyaOs, NodeCryptoProvider } from '@kya-os/mcp';
 import { cheqdResolver } from '@kya-os/mcp/cheqd';
-
-const crypto = new NodeCryptoProvider();
-const fetchProvider = new RuntimeFetchProvider();
-const didResolvers = {
-  cheqd: cheqdResolver({ resolverUrl: 'https://resolver.cheqd.net' }),
-};
 
 await withKyaOs(server, {
   crypto,
   delegation: {
-    fetchProvider,
-    didResolvers,
+    didResolvers: { cheqd: cheqdResolver({ resolverUrl: 'https://resolver.cheqd.net' }) },
   },
 });
 ```
 
-`did:cheqd` is resolved only when a resolver for the `cheqd` DID method is
-explicitly supplied. The core middleware and fetch provider use the generic
-`didResolvers` registry; cheqd-specific URL/cache/header options live in the
-`cheqdResolver()` factory from `@kya-os/mcp/cheqd`.
-`RuntimeFetchProvider` accepts the same registry when it is used directly by a
-standalone verifier or operator script.
-Unsupported methods, malformed DIDs, fetch failures, invalid JSON, malformed DID
-Documents, and DID id mismatches fail closed by returning `null`. The resolver
-accepts both raw DID Documents and Universal Resolver-style DID Resolution
-Results (`{ didDocument: ... }`).
+Its full reference (registrar writes, `did:web` <-> `did:cheqd` linkage,
+DID-Linked Resource helpers, live testnet E2E) lives in
+[src/integrations/cheqd/README.md](./src/integrations/cheqd/README.md); see
+[examples/cheqd-dlr](./examples/cheqd-dlr/) for a complete operator flow.
 
-### Registrar writes
+### Adapter seams (bring your own)
 
-Registrar writes are explicit operator/admin actions. The package exposes
-`CheqdDidRegistrarClient` for cheqd DID Registrar `/create`, `/update`, and
-`/{did}/create-resource` flows, using cheqd's client-managed-secret pattern:
-the registrar returns a serialized payload, your signer signs it, and the
-signature is submitted back. Private keys are not sent to the registrar.
+Every external dependency is a typed interface with an in-memory default, so you
+can swap in your own backend without touching the middleware.
 
-```typescript
-import {
-  CheqdDidRegistrarClient,
-  createLocalEd25519CheqdRegistrarSigner,
-} from '@kya-os/mcp/cheqd';
-import {
-  NodeCryptoProvider,
-} from '@kya-os/mcp';
-
-const crypto = new NodeCryptoProvider();
-const registrar = new CheqdDidRegistrarClient({
-  registrarUrl: 'https://did-registrar-staging.cheqd.net/1.0',
-  fetchProvider,
-  // Optional static or async auth headers for private registrar deployments.
-  // headers: async () => ({ Authorization: `Bearer ${token}` }),
-});
-
-const signer = createLocalEd25519CheqdRegistrarSigner({
-  cryptoProvider: crypto,
-  privateKey: process.env.CHEQD_DID_PRIVATE_KEY_BASE64!,
-  verificationMethodId: 'did:cheqd:testnet:...#key-1',
-  signatureEncoding: 'base64url',
-});
-```
-
-For mainnet, run or contract against your own fee-payer registrar deployment and
-provide the signer hook from your KMS/HSM boundary. The local Ed25519 helper is
-for simple controlled deployments and tests; it still signs locally and sends
-only signatures to the registrar.
-
-Runtime proof generation does not perform registrar writes. Create/update/DLR
-publishing should be triggered by an explicit operator workflow, deployment
-step, or admin tool.
-
-### DID linkage
-
-For `did:web` <-> `did:cheqd` binding, publish reciprocal `alsoKnownAs` values
-and verify both DID Documents with `verifyDidLinkage()`. `buildDidWebDocument`
-can include the `did:cheqd` reference on the `did:web` side, while
-`updateCheqdAlsoKnownAs()` updates the cheqd side through the registrar.
-
-```typescript
-import { verifyDidLinkage } from '@kya-os/mcp';
-import { updateCheqdAlsoKnownAs } from '@kya-os/mcp/cheqd';
-
-await updateCheqdAlsoKnownAs({
-  didWeb: 'did:web:agent.example.com',
-  didCheqd: 'did:cheqd:testnet:...',
-  resolver: cheqdResolver,
-  registrar,
-  signer,
-  verificationMethodId: 'did:cheqd:testnet:...#key-1',
-});
-
-const linkage = verifyDidLinkage({
-  primaryDid: 'did:web:agent.example.com',
-  secondaryDid: 'did:cheqd:testnet:...',
-  primaryDidDocument: didWebDocument,
-  secondaryDidDocument: didCheqdDocument,
-});
-```
-
-### DID-Linked Resource helpers
-
-DID-Linked Resource helpers are intended for durable manifests only. Supported
-artifact types are:
-
-- `CapabilityManifest`
-- `ConformanceManifest`
-- `AccessHashManifest`
-- `TrustConfigManifest`
-
-`prepareCheqdDlrResource()` validates the artifact, canonicalizes its `content`
-with JSON Canonicalization Scheme, computes or validates a `sha256:<64 hex>`
-content hash, and returns a registrar resource body. Updates are modeled as new
-resource versions under the same resource `name` and `type`; prior resources are
-not overwritten. Do not write high-volume tool calls, raw operational logs, or
-normal runtime proof events to cheqd; keep those in your normal audit/hash
-stores.
-
-```typescript
-import { prepareCheqdDlrResource } from '@kya-os/mcp/cheqd';
-
-const prepared = await prepareCheqdDlrResource({
-  type: 'TrustConfigManifest',
-  subjectDid: 'did:cheqd:testnet:...',
-  name: 'agent-trust-config',
-  resourceType: 'TrustConfigManifest',
-  version: '2026-06-01',
-  content: {
-    acceptedDidMethods: ['did:web', 'did:key', 'did:cheqd'],
-    requiredLinkage: { type: 'alsoKnownAs', bidirectional: true },
-  },
-}, crypto);
-
-await registrar.createResource({
-  did: 'did:cheqd:testnet:...',
-  resource: prepared.resource,
-  signer,
-  verificationMethodId: 'did:cheqd:testnet:...#key-1',
-});
-```
-
-See [examples/cheqd-dlr](./examples/cheqd-dlr/) for a complete operator flow.
-
-### Live cheqd registrar E2E tests
-
-Live registrar coverage is opt-in because it performs real writes to cheqd
-testnet. The default endpoint is the cheqd-published testnet staging registrar;
-override it only with another testnet registrar. The live test creates a testnet
-DID, adds a realistic `did:web` alias via `alsoKnownAs`, then publishes one
-resource for each supported KYA DLR artifact type.
-
-```powershell
-$env:KYA_OS_CHEQD_E2E = '1'
-npm run test:e2e:cheqd:testnet
-Remove-Item Env:\KYA_OS_CHEQD_E2E
-```
-
-Optional environment variables:
-
-| Variable | Default |
-| --- | --- |
-| `KYA_OS_CHEQD_TESTNET_REGISTRAR_URL` | `https://did-registrar-staging.cheqd.net/1.0` |
-| `KYA_OS_CHEQD_TESTNET_RESOLVER_URL` | `https://resolver.cheqd.net` |
-| `KYA_OS_CHEQD_E2E_TIMEOUT_MS` | `180000` |
-
-Out of scope for this package: replacing `did:web` as the canonical identity,
-writing runtime proof events on-chain, KYC/KYB issuance, reputation VC snapshot
-publication, status-list backend hosting, and external registry changes.
+| Seam | Default | Swap in |
+| --- | --- | --- |
+| DID resolution — `DIDResolver` | `did:key`, `did:web` | `did:cheqd`, custom |
+| Revocation — `StatusListResolver` | none | cheqd StatusList2021 |
+| State — `GrantStore`, `SessionStore`, `NonceCacheProvider`, `PendingFlowStore` | in-memory | Redis, DynamoDB, KV, Durable Objects, DB ([multi-instance](#multi-instance-deployments)) |
+| Crypto — `CryptoProvider` | Node, WebCrypto | your KMS / HSM |
+| Policy — `PolicyEngine` | default | custom |
 
 ## Links
 

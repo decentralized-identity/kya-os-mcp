@@ -457,6 +457,16 @@ pnpm run conformance:generate
 
 Re-running mints fresh keys but preserves every positive/negative relationship by
 construction.
+Because fresh keys change the committed bytes, regenerated output MUST NOT be committed over an existing `suiteVersion` (see [Suite versioning and immutability](#suite-versioning-and-immutability)).
+
+### Suite versioning and immutability
+
+The committed vector set is immutable at a given `suiteVersion`: the vector bytes may only change together with a `suiteVersion` bump.
+`conformance/SUITE-MANIFEST.json` pins the current set (`suiteVersion`, `vectorSetHash`, `vectorCount`, per-file hashes) and is the anchor CI verifies against.
+The hash recipe: SHA-256 each vector file's raw committed bytes, sort the `[filename, hex]` pairs by filename, canonicalize the array with RFC 8785 (JCS), SHA-256 that, prefix with `sha256:`.
+CI enforces the invariant twice: a vitest guard (`conformance/__tests__/suite-immutability.test.ts`) and a dedicated step running `node conformance/suite-hash.mjs --check`.
+To change vectors intentionally, bump `suiteVersion` (including the in-file `version` fields), regenerate the manifest with `node conformance/suite-hash.mjs --json`, and keep `pinnedAt` current.
+The SIGNED public suite manifest published by the Conformance Attestation Program is a separate artifact built on this committed one.
 
 ### Running the harness against YOUR implementation
 

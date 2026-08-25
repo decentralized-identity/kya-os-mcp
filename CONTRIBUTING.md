@@ -87,8 +87,3 @@ Protocol changes should be discussed in DIF TAAWG before implementation. Open an
 
 Do NOT open public GitHub issues for security vulnerabilities. See SECURITY.md.
 
----
-
-## Code of Conduct
-
-This project follows the Contributor Covenant Code of Conduct. See CODE_OF_CONDUCT.md.

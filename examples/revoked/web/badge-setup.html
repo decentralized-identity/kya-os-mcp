@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>REVOKED — badge setup</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230a0c0f'/%3E%3Crect x='2' y='2' width='28' height='28' fill='none' stroke='%23ff3b47' stroke-width='3'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='19' font-weight='900' fill='%23ff3b47' text-anchor='middle'%3ER%3C/text%3E%3C/svg%3E">
+<style>
+  :root { --bg:#0a0c0f; --panel:#10151a; --line:#1d242c; --text:#c7d0d9; --dim:#6b7683; --bright:#e9f0f6; --ok:#34e07a; --kill:#ff3b47; --mono: ui-monospace, Menlo, Consolas, monospace; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:var(--mono); min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .card { max-width:560px; border:1px solid var(--line); background:var(--panel); padding:32px 36px; }
+  h1 { color:var(--bright); font-size:22px; letter-spacing:0.06em; margin-bottom:6px; }
+  h1 .k { color:var(--kill); }
+  .sub { color:var(--dim); font-size:12.5px; margin-bottom:22px; line-height:1.6; }
+  ol { color:var(--text); font-size:13px; line-height:1.9; margin:0 0 22px 20px; }
+  ol code { color:var(--bright); }
+  button { background:#0d1114; border:1px solid var(--kill); color:var(--kill); font-family:var(--mono); font-size:13px; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; padding:14px 20px; cursor:pointer; width:100%; }
+  button:hover:not(:disabled) { background:rgba(255,59,71,0.08); }
+  button:disabled { opacity:0.5; cursor:not-allowed; }
+  .out { margin-top:20px; font-size:12.5px; white-space:pre-wrap; overflow-wrap:anywhere; padding:12px; border:1px dashed var(--line); min-height:44px; }
+  .ok { color:var(--ok); } .err { color:var(--kill); } .dim { color:var(--dim); }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>REVOK<span class="k">ED</span> · badge registration</h1>
+  <div class="sub">One-time: register the DEF CON 34 badge as the FIDO2 authenticator that gates on-chain revocation. Server must run with <code>BADGE_SETUP=1</code>.</div>
+  <ol>
+    <li>Plug the badge in (FIDO2 mode). Smoke-test at <code>webauthn.io</code> first.</li>
+    <li>Click below. When prompted, choose the <b>external security key</b> (not Touch ID) and touch the badge.</li>
+    <li>On success, set <code>BADGE_WEBAUTHN=1</code> and restart the server — revocation now needs the badge.</li>
+  </ol>
+  <button id="go">Register this badge</button>
+  <div class="out dim" id="out">idle</div>
+</div>
+<script>
+(() => {
+  const out = document.getElementById('out');
+  const say = (msg, cls='') => { out.className = 'out ' + cls; out.textContent = msg; };
+  const b64uToBuf = (s) => { const pad='='.repeat((4-s.length%4)%4); const bin=atob((s+pad).replace(/-/g,'+').replace(/_/g,'/')); const u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i); return u.buffer; };
+  const bufToB64u = (buf) => { const b=new Uint8Array(buf); let s=''; for(const x of b)s+=String.fromCharCode(x); return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,''); };
+
+  document.getElementById('go').onclick = async () => {
+    document.getElementById('go').disabled = true;
+    try {
+      say('requesting registration options…');
+      const optsRes = await fetch('/api/badge/register/options', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
+      const o = await optsRes.json();
+      if (o.error) { say('server: ' + o.error, 'err'); document.getElementById('go').disabled=false; return; }
+
+      const publicKey = {
+        challenge: b64uToBuf(o.challenge),
+        rp: o.rp,
+        user: { id: b64uToBuf(o.user.id), name: o.user.name, displayName: o.user.displayName },
+        pubKeyCredParams: o.pubKeyCredParams,
+        timeout: o.timeout,
+        attestation: o.attestation,
+        authenticatorSelection: o.authenticatorSelection,
+        excludeCredentials: (o.excludeCredentials || []).map((c) => ({ id: b64uToBuf(c.id), type:'public-key', ...(c.transports?{transports:c.transports}:{}) })),
+      };
+      say('touch the badge…');
+      const cred = await navigator.credentials.create({ publicKey });
+      const r = cred.response;
+      const attestation = {
+        id: cred.id, rawId: bufToB64u(cred.rawId), type: cred.type,
+        clientExtensionResults: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {},
+        response: {
+          clientDataJSON: bufToB64u(r.clientDataJSON),
+          attestationObject: bufToB64u(r.attestationObject),
+          ...(r.getTransports ? { transports: r.getTransports() } : {}),
+        },
+      };
+      say('verifying…');
+      const verRes = await fetch('/api/badge/register/verify', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(attestation) });
+      const v = await verRes.json();
+      if (v.verified) {
+        let live = false;
+        try { live = !!(await (await fetch('/api/state')).json()).badgeRequired; } catch (e) {}
+        const next = live
+          ? 'Badge mode is LIVE now — reload the console; Revoke requires this badge.'
+          : 'To arm it, start the server with BADGE_WEBAUTHN=1 (flags are read at startup).';
+        say(`registered ✓  credId …${v.credIdTail}\n\n${next}`, 'ok');
+      }
+      else say('verification failed: ' + (v.error || 'unknown'), 'err');
+    } catch (e) {
+      say('cancelled / error: ' + (e && e.message ? e.message : e), 'err');
+    }
+    document.getElementById('go').disabled = false;
+  };
+})();
+</script>
+</body>
+</html>

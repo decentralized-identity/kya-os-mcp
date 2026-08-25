@@ -1,0 +1,43 @@
+{
+  "name": "kya-os-example-revoked",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "REVOKED — the DEF CON 34 Cryptocurrency Village demo as a clean example: an on-chain kill switch for AI agents with wallet access, built on KYA-OS delegations + cheqd DID-Linked Resources (Cosmos testnet), consuming the published @kya-os/mcp",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "gen:accounts": "tsx scripts/gen-accounts.ts",
+    "create:did": "tsx scripts/create-did.ts",
+    "check:a": "tsx scripts/check-a-resolver-semantics.ts",
+    "check:b": "tsx scripts/check-b-bank-send.ts",
+    "publish:statuslist": "tsx src/publish-statuslist.ts",
+    "issue:delegation": "tsx src/issue-delegation.ts",
+    "revoke": "tsx src/revoke.ts",
+    "verify:once": "tsx src/verify-once.ts",
+    "agent": "tsx src/agent.ts",
+    "gateway": "tsx src/gateway.ts",
+    "gateway:probe": "tsx scripts/gateway-probe.ts",
+    "serve": "tsx src/server.ts"
+  },
+  "dependencies": {
+    "@cosmjs/proto-signing": "^0.39.0",
+    "@cosmjs/stargate": "^0.39.0",
+    "@hono/node-server": "^2.1.0",
+    "@kya-os/mcp": "^1.14.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@simplewebauthn/server": "^13.3.2",
+    "dotenv": "^17.4.2",
+    "hono": "^4.13.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.11",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

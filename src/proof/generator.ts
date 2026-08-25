@@ -10,10 +10,13 @@
 
 import { CompactSign, importPKCS8 } from 'jose';
 import { canonicalizeJson, canonicalizeJsonBytes } from '../utils/canonical-json.js';
-import type {
-  DetachedProof,
-  ProofMeta,
-  SessionContext,
+import {
+  RESPONSE_PROOF_PROFILE_V1,
+  RESPONSE_PROOF_PROFILE_V2,
+  type DetachedProof,
+  type ProofMeta,
+  type ResponseProofProfile,
+  type SessionContext,
 } from '../types/protocol.js';
 import type { CryptoProvider } from '../providers/base.js';
 import { CryptoService, type Ed25519JWK } from '../utils/crypto-service.js';
@@ -91,15 +94,40 @@ export interface ProofOptions {
   clientDid?: string;
   outcome?: 'allowed' | 'denied' | 'step_up_required' | 'needs_authorization';
   reason?: string;
+  /**
+   * Response-proof profile to mint under. Default
+   * {@link RESPONSE_PROOF_PROFILE_V1} (body-only coverage, wire-identical to
+   * pre-v2 proofs). Under {@link RESPONSE_PROOF_PROFILE_V2} the caller passes
+   * the ENTIRE MCP result object as `response.data`; hashing covers it with the
+   * top-level `_meta` member removed, and the proof carries a signature-covered
+   * `prf` claim naming the profile. This is a minting OPTION, not a proof
+   * claim — verification always derives the profile from the proof's own `prf`.
+   */
+  profile?: ResponseProofProfile;
 }
+
+// Re-exported so proof consumers can import the profile vocabulary from the
+// module that mints and hashes proofs, without reaching into types/protocol.
+export { RESPONSE_PROOF_PROFILE_V1, RESPONSE_PROOF_PROFILE_V2 };
+export type { ResponseProofProfile };
 
 /**
  * Compute the canonical request/response hashes that bind a proof to a specific
  * invocation. This is the SINGLE source of truth for that hashing — used by both
  * the signer (`ProofGenerator`) and the verifier (`ProofVerifier`), so the two
- * cannot drift. `requestHash` = SHA-256 over RFC 8785 `canonicalize({method,params})`;
- * `responseHash` = SHA-256 over `canonicalize(response.data)` (omitted when there
- * is no response body, e.g. denial / step-up proofs).
+ * cannot drift. `requestHash` = SHA-256 over RFC 8785 `canonicalize({method,params})`.
+ *
+ * `responseHash` (omitted when there is no response body, e.g. denial /
+ * step-up proofs) depends on the response-proof profile:
+ * - v1 (default): SHA-256 over `canonicalize(response.data)` — the response
+ *   BODY only (the MCP `content` array by convention).
+ * - v2: `response.data` is the ENTIRE MCP result object; hashing covers it
+ *   with the top-level `_meta` member removed (SPEC §7.3), mirroring the
+ *   request side's `{method, params minus _meta}` rule. `_meta` stays
+ *   intermediary-mutable and is where the proof itself is attached, so
+ *   exclusion is what keeps attach-after-sign sound. Non-object `data` is
+ *   canonicalized as-is — the function stays total and signer/verifier
+ *   symmetric on every input.
  *
  * Note: RFC 8785 (via json-canonicalize) drops object members whose value is
  * `undefined`, so a field set to `undefined` hashes identically to that field
@@ -107,11 +135,14 @@ export interface ProofOptions {
  * the presence of an `undefined`-valued key to distinguish two payloads.
  *
  * @param hash - a byte → `sha256:<hex>` function (bind a `CryptoProvider.hash`)
+ * @param profile - response-proof profile selecting the response
+ *   canonicalization; the verifier derives it from the proof's `prf` claim
  */
 export async function computeCanonicalHashes(
   request: ToolRequest,
   response: ToolResponse | undefined,
   hash: (bytes: Uint8Array) => Promise<string>,
+  profile: ResponseProofProfile = RESPONSE_PROOF_PROFILE_V1,
 ): Promise<{ requestHash: string; responseHash?: string }> {
   const canonicalRequest = {
     method: request.method,
@@ -124,9 +155,69 @@ export async function computeCanonicalHashes(
     return { requestHash };
   }
   const responseHash = await hash(
-    canonicalizeJsonBytes(response.data),
+    canonicalizeJsonBytes(canonicalResponseBody(response.data, profile)),
   );
   return { requestHash, responseHash };
+}
+
+/**
+ * The profile-selected response material that `responseHash` covers. v1 hashes
+ * `data` verbatim; v2 removes the top-level `_meta` member from an object
+ * envelope (and only from an object — arrays and primitives pass through, so
+ * the mapping is total and identical for signer and verifier).
+ */
+function canonicalResponseBody(
+  data: unknown,
+  profile: ResponseProofProfile,
+): unknown {
+  if (
+    profile !== RESPONSE_PROOF_PROFILE_V2 ||
+    data === null ||
+    typeof data !== 'object' ||
+    Array.isArray(data)
+  ) {
+    return data;
+  }
+  const envelope: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (key !== '_meta') envelope[key] = value;
+  }
+  return envelope;
+}
+
+/**
+ * Build the exact JWS payload object a proof signs over, from its `ProofMeta`.
+ * SINGLE source of truth for the payload SHAPE — the signer
+ * (`ProofGenerator.generateJWS`) serializes it and the verifier
+ * (`ProofVerifier.buildCanonicalPayload`) reconstructs it from received meta,
+ * so a claim added in one place can never silently go uncovered in the other.
+ * Serialization is always RFC 8785 (`canonicalizeJson`), never `JSON.stringify`.
+ */
+export function buildProofJwsPayload(meta: ProofMeta): Record<string, unknown> {
+  return {
+    // Standard JWT claims (RFC 7519)
+    aud: meta.audience,
+    sub: meta.did,
+    iss: meta.did,
+
+    // KYA-OS proof claims
+    requestHash: meta.requestHash,
+    // responseHash is absent on denial / step-up proofs (no response).
+    ...(meta.responseHash !== undefined && { responseHash: meta.responseHash }),
+    ts: meta.ts,
+    nonce: meta.nonce,
+    sessionId: meta.sessionId,
+
+    // Optional claims (only include if present)
+    ...(meta.scopeId && { scopeId: meta.scopeId }),
+    ...(meta.delegationRef && { delegationRef: meta.delegationRef }),
+    ...(meta.clientDid && { clientDid: meta.clientDid }),
+    ...(meta.outcome && { outcome: meta.outcome }),
+    ...(meta.reason && { reason: meta.reason }),
+    // Profile discriminator (v2 proofs only) — covered by the signature so it
+    // cannot be stripped to downgrade the proof to v1 semantics.
+    ...(meta.prf && { prf: meta.prf }),
+  };
 }
 
 export class ProofGenerator {
@@ -157,7 +248,11 @@ export class ProofGenerator {
     session: SessionContext,
     options: ProofOptions = {}
   ): Promise<DetachedProof> {
-    const hashes = await this.generateCanonicalHashes(request, response);
+    // `profile` is a minting option, not a proof claim — destructure it out so
+    // the spread below can never leak a `profile` key into the signed meta. The
+    // claim form is `prf`, set only for v2 (v1 stays byte-identical on the wire).
+    const { profile = RESPONSE_PROOF_PROFILE_V1, ...metaOptions } = options;
+    const hashes = await this.generateCanonicalHashes(request, response, profile);
     const proofNonce = base64urlEncodeFromBytes(
       await this.cryptoProvider.randomBytes(16),
     );
@@ -173,7 +268,10 @@ export class ProofGenerator {
       ...(hashes.responseHash !== undefined
         ? { responseHash: hashes.responseHash }
         : {}),
-      ...options,
+      ...(profile === RESPONSE_PROOF_PROFILE_V2
+        ? { prf: RESPONSE_PROOF_PROFILE_V2 }
+        : {}),
+      ...metaOptions,
     };
 
     const jws = await this.generateJWS(meta);
@@ -191,10 +289,14 @@ export class ProofGenerator {
 
   private async generateCanonicalHashes(
     request: ToolRequest,
-    response?: ToolResponse
+    response?: ToolResponse,
+    profile?: ResponseProofProfile,
   ): Promise<{ requestHash: string; responseHash?: string }> {
-    return computeCanonicalHashes(request, response, (bytes) =>
-      this.cryptoProvider.hash(bytes),
+    return computeCanonicalHashes(
+      request,
+      response,
+      (bytes) => this.cryptoProvider.hash(bytes),
+      profile,
     );
   }
 
@@ -219,21 +321,9 @@ export class ProofGenerator {
       // same regardless of how the signing key was supplied.
       const privateKey = await this.resolveSigningKey();
 
-      const payload = {
-        aud: meta.audience,
-        sub: meta.did,
-        iss: meta.did,
-        requestHash: meta.requestHash,
-        ...(meta.responseHash !== undefined && { responseHash: meta.responseHash }),
-        ts: meta.ts,
-        nonce: meta.nonce,
-        sessionId: meta.sessionId,
-        ...(meta.scopeId && { scopeId: meta.scopeId }),
-        ...(meta.delegationRef && { delegationRef: meta.delegationRef }),
-        ...(meta.clientDid && { clientDid: meta.clientDid }),
-        ...(meta.outcome && { outcome: meta.outcome }),
-        ...(meta.reason && { reason: meta.reason }),
-      };
+      // Shared payload shape (buildProofJwsPayload) — the verifier reconstructs
+      // this exact object from received meta, so the two cannot drift.
+      const payload = buildProofJwsPayload(meta);
 
       // Use canonicalized JSON (RFC 8785) for deterministic payload serialization.
       // This ensures signature verification succeeds regardless of JSON key ordering.
@@ -282,7 +372,14 @@ export class ProofGenerator {
     response?: ToolResponse
   ): Promise<boolean> {
     try {
-      const expectedHashes = await this.generateCanonicalHashes(request, response);
+      // The profile is always derived from the proof's own signature-covered
+      // `prf` claim — never from generator configuration — so a v2 proof is
+      // checked with envelope hashing and a v1 proof with body hashing.
+      const expectedHashes = await this.generateCanonicalHashes(
+        request,
+        response,
+        proof.meta.prf ?? RESPONSE_PROOF_PROFILE_V1,
+      );
 
       if (proof.meta.requestHash !== expectedHashes.requestHash) {
         return false;

@@ -23,10 +23,12 @@ import {
 } from "./errors.js";
 import { logger } from "../logging/index.js";
 import {
+  buildProofJwsPayload,
   computeCanonicalHashes,
   KYA_OS_PROOF_META_KEY,
   LEGACY_NAMESPACED_PROOF_META_KEY,
   LEGACY_PROOF_META_KEY,
+  RESPONSE_PROOF_PROFILE_V1,
   type ToolRequest,
   type ToolResponse,
 } from "./generator.js";
@@ -118,7 +120,12 @@ export class ProofVerifier {
    *   bound hashes. FAIL-CLOSED: if the proof binds a `responseHash` (success and
    *   needs_authorization proofs), `response` is REQUIRED — omitting it fails with
    *   CONTENT_BINDING_MISMATCH, so the URL-bearing body cannot go silently
-   *   unverified.
+   *   unverified. WHAT to pass as `response.data` depends on the proof's own
+   *   `prf` claim: for a v1 proof (no `prf`) pass the response BODY (the MCP
+   *   `content` array); for a v2 proof (`prf: "org.kya-os/response-proof.v2"`)
+   *   pass the ENTIRE received result object — the verifier removes the
+   *   top-level `_meta` member itself, so passing the result as received (proof
+   *   attachment included) is correct.
    * @returns Verification result
    */
   async verifyProof(
@@ -293,10 +300,17 @@ export class ProofVerifier {
     proof: DetachedProof,
     expected: { request: ToolRequest; response?: ToolResponse }
   ): Promise<ProofVerificationResult> {
+    // The response-hash profile comes from the proof's own signature-covered
+    // `prf` claim (validated fail-closed in validateProofStructure): a v2 proof
+    // is checked with envelope hashing (result minus top-level `_meta`), a v1
+    // proof (no `prf`) with body hashing. Deriving from the proof — never from
+    // verifier configuration — is what lets one verifier accept both profiles
+    // without a downgrade path.
     const { requestHash, responseHash } = await computeCanonicalHashes(
       expected.request,
       expected.response,
-      (bytes) => this.cryptoProvider.hash(bytes)
+      (bytes) => this.cryptoProvider.hash(bytes),
+      proof.meta.prf ?? RESPONSE_PROOF_PROFILE_V1,
     );
     if (proof.meta.requestHash !== requestHash) {
       return {
@@ -599,33 +613,12 @@ export class ProofVerifier {
    * @returns Canonical JSON string matching the original JWS payload structure
    */
   buildCanonicalPayload(meta: DetachedProof["meta"]): string {
-    // Reconstruct the original JWS payload structure that was signed
-    // This matches the structure used in proof generation (proof.ts, proof-generator.ts)
-    const payload = {
-      // Standard JWT claims (RFC 7519) - these are what was actually signed
-      aud: meta.audience, // Audience (who the token is for)
-      sub: meta.did, // Subject (agent DID)
-      iss: meta.did, // Issuer (agent DID - self-issued)
-
-      // Custom KYA-OS proof claims
-      requestHash: meta.requestHash,
-      // responseHash is absent on denial / step-up proofs (no response).
-      ...(meta.responseHash !== undefined && { responseHash: meta.responseHash }),
-      ts: meta.ts,
-      nonce: meta.nonce,
-      sessionId: meta.sessionId,
-
-      // Optional claims (only include if present)
-      ...(meta.scopeId && { scopeId: meta.scopeId }),
-      ...(meta.delegationRef && { delegationRef: meta.delegationRef }),
-      ...(meta.clientDid && { clientDid: meta.clientDid }),
-      ...(meta.outcome && { outcome: meta.outcome }),
-      ...(meta.reason && { reason: meta.reason }),
-    };
-
-    // Canonicalize the reconstructed payload using the same function as proof generation
-    // CRITICAL: Must use json-canonicalize canonicalize() to match proof.ts exactly
-    return canonicalizeJson(payload);
+    // Reconstruct the exact JWS payload the signer serialized: the SHAPE comes
+    // from the shared buildProofJwsPayload (single source of truth with the
+    // generator, so a claim — e.g. the v2 `prf` discriminator — can never be
+    // covered on one side and dropped on the other), and the serialization is
+    // the same RFC 8785 canonicalization the signer used.
+    return canonicalizeJson(buildProofJwsPayload(meta));
   }
 }
 

@@ -10,6 +10,7 @@
 import {
   KYA_OS_PROOF_META_KEY,
   LEGACY_PROOF_META_KEY,
+  RESPONSE_PROOF_PROFILE_V2,
   type ToolRequest,
   type ToolResponse,
 } from "../proof/generator.js";
@@ -60,7 +61,9 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     auditLog,
     audit,
     emitLegacyProofKey,
+    responseProofProfile,
   } = deps;
+  const bindsEnvelope = responseProofProfile === RESPONSE_PROOF_PROFILE_V2;
   const auditedTerminalResponses = new WeakSet<object>();
   const auditMetaKey = 'org.kya-os/audit';
 
@@ -413,13 +416,18 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
 
       try {
         const request: ToolRequest = { method: toolName, params: args };
-        const response: ToolResponse = { data: result.content };
+        // v2 binds the FULL result envelope (hashing strips the top-level
+        // `_meta`, where the proof itself is attached below); v1 binds the
+        // content array only — the pre-v2 wire contract.
+        const response: ToolResponse = {
+          data: bindsEnvelope ? result : result.content,
+        };
 
         const proof = await proofGenerator.generateProof(
           request,
           response,
           session,
-          { scopeId: context?.scopeId },
+          { scopeId: context?.scopeId, profile: responseProofProfile },
         );
 
         // Attach proof under the namespaced _meta key (rendered by MCP
@@ -566,11 +574,20 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       }
 
       const request: ToolRequest = { method: toolName, params: cleanArgs };
+      // `responseData !== undefined` signals this outcome has a body to bind
+      // (the needs_authorization challenge); denial / step-up proofs stay
+      // body-free under every profile. WHAT gets bound is profile-selected:
+      // v2 binds the full response envelope the client receives (hashing
+      // strips `_meta`, where the proof lands below), v1 the bare challenge
+      // content — the pre-v2 wire contract.
       const proofResponse: ToolResponse | undefined =
-        responseData !== undefined ? { data: responseData } : undefined;
+        responseData !== undefined
+          ? { data: bindsEnvelope ? response : responseData }
+          : undefined;
       const proof = await proofGenerator.generateProof(request, proofResponse, session, {
         outcome,
         reason: sanitizeForMessage(reason),
+        profile: responseProofProfile,
       });
       response._meta = withProofMeta(
         (response._meta as Record<string, unknown> | undefined) ?? {},

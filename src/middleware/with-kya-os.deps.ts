@@ -12,6 +12,7 @@ import type { GrantStore } from "../providers/grant-store.js";
 import type { SessionManager } from "../session/manager.js";
 import type { ProofGenerator, ProofAgentIdentity } from "../proof/generator.js";
 import type { ProofVerifier } from "../proof/verifier.js";
+import type { ResponseProofProfile } from "../types/protocol.js";
 import type { McpAuditEventAdapter } from "../audit/adapters/mcp.js";
 import type {
   KyaOsConfig,
@@ -54,4 +55,10 @@ export interface MiddlewareDeps {
   holderBindingVerifier: ProofVerifier | undefined;
   /** Mirror the proof under the legacy bare `_meta.proof` key (pre-1.1 back-compat). */
   emitLegacyProofKey: boolean;
+  /**
+   * Response-proof profile every minted proof is bound under (resolved from
+   * `config.responseProofProfile`, default v1). v2 binds the full result
+   * envelope minus `_meta`; v1 binds the content array only.
+   */
+  responseProofProfile: ResponseProofProfile;
 }

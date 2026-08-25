@@ -48,6 +48,7 @@ export type {
   SessionIdentityState,
   DetachedProof,
   ProofMeta,
+  ResponseProofProfile,
   CanonicalHashes,
   AuditRecord,
   AuditContext,
@@ -76,6 +77,8 @@ export {
   NONCE_LENGTH_BYTES,
   AUTH_NONCE_TTL_MS,
   ANON_NONCE_TTL_MS,
+  RESPONSE_PROOF_PROFILE_V1,
+  RESPONSE_PROOF_PROFILE_V2,
   type MetaPolicy,
 } from './types/protocol.js';
 
@@ -244,6 +247,8 @@ export {
   ProofGenerator,
   createProofResponse,
   extractCanonicalData,
+  computeCanonicalHashes,
+  buildProofJwsPayload,
   KYA_OS_PROOF_META_KEY,
   LEGACY_NAMESPACED_PROOF_META_KEY,
   LEGACY_PROOF_META_KEY,

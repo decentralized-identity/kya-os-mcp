@@ -10,6 +10,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { canonicalize } from 'json-canonicalize';
+import type { AuditTrailService } from '../../audit/service.js';
 import { createKyaOsMiddleware } from '../with-kya-os.js';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
 import { generateDidKeyFromBase64 } from '../../utils/did-helpers.js';
@@ -21,6 +22,7 @@ import type { DetachedProof, ResponseProofProfile } from '../../types/protocol.j
 
 async function createTestMiddleware(options?: {
   responseProofProfile?: ResponseProofProfile;
+  auditRecord?: Pick<AuditTrailService, 'record'>['record'];
 }) {
   const crypto = new NodeCryptoProvider();
   const keyPair = await crypto.generateKeyPair();
@@ -33,6 +35,9 @@ async function createTestMiddleware(options?: {
       session: { sessionTtlMinutes: 60 },
       ...(options?.responseProofProfile !== undefined
         ? { responseProofProfile: options.responseProofProfile }
+        : {}),
+      ...(options?.auditRecord !== undefined
+        ? { audit: { record: options.auditRecord } }
         : {}),
     },
     crypto,
@@ -185,5 +190,45 @@ describe('responseProofProfile — needs_authorization challenge', () => {
     // The profile declaration is uniform across every proof the server mints —
     // inert on a body-free proof, but it keeps "this server emits v2" coherent.
     expect(proof.meta.prf).toBe(RESPONSE_PROOF_PROFILE_V2);
+  });
+
+  it('never ships a v2 challenge proof whose binding the degraded-audit isError flip broke', async () => {
+    // When required proof-audit delivery fails AFTER the challenge proof is
+    // attached, markAuditDegraded sets isError on the response. Under v1 that
+    // mutation is outside proof coverage; under v2 it is covered, so a kept
+    // proof would fail the client's binding check and read as a MITM. The
+    // degraded path must therefore strip the proof under v2 (matching the
+    // wrapWithProof degraded semantics) rather than ship a broken binding.
+    const { middleware, did } = await createTestMiddleware({
+      responseProofProfile: RESPONSE_PROOF_PROFILE_V2,
+      auditRecord: async (event) => {
+        if (event.eventType === 'proof.generated') {
+          throw new Error('audit sink unavailable');
+        }
+        return { status: 'pending', event: event as never };
+      },
+    });
+    const sessionId = await handshake(middleware, did);
+
+    const handler = middleware.wrapWithDelegation(
+      'my-tool',
+      { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
+      async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
+    );
+    const result = await handler({ name: 'world' }, sessionId);
+
+    // Degraded marking happened (isError flipped on)...
+    expect(result.isError).toBe(true);
+    const meta = result._meta as Record<string, unknown>;
+    // ...and no proof ships whose responseHash no longer matches the envelope.
+    const shipped = meta['org.kya-os/response-proof'] as
+      | { meta: { responseHash?: string } }
+      | undefined;
+    if (shipped?.meta.responseHash !== undefined) {
+      const { _meta: _m, ...received } = result as Record<string, unknown>;
+      expect(shipped.meta.responseHash).toBe(
+        await sha256Of(new NodeCryptoProvider(), received),
+      );
+    }
   });
 });

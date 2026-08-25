@@ -158,6 +158,10 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
       const result = await verifier.verifyProof(
         input.proof as Parameters<ProofVerifier['verifyProof']>[0],
         input.publicKeyJwk as Ed25519JWK,
+        // Content binding (suite ≥ 1.1.0): when the vector says what the
+        // verifier "received", re-hash it under the proof's own `prf` profile
+        // and compare to the bound hashes.
+        input.expected as Parameters<ProofVerifier['verifyProof']>[2],
       );
       return result.valid ? PASS : fail(result.reason ?? 'proof rejected');
     } catch (error) {

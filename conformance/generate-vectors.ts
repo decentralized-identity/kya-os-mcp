@@ -24,11 +24,13 @@ import { ED25519_PKCS8_DER_HEADER, ED25519_KEY_SIZE } from '../src/utils/ed25519
 import { base64ToBytes, bytesToBase64 } from '../src/utils/base64.js';
 import {
   ProofGenerator,
+  buildProofJwsPayload,
   generateDidKeyFromBase64,
   didKeyFragment,
   wrapDelegationAsVC,
   BitstringManager,
   buildDidWebDocument,
+  RESPONSE_PROOF_PROFILE_V2,
   type DelegationCredential,
   type StatusList2021Credential,
   type CredentialStatus,
@@ -122,6 +124,37 @@ async function signedProofVectors(): Promise<VectorFile> {
   // Negative: timestamp outside the skew window (authentically signed at a stale ts).
   const staleSigned = await signProofMeta(agent, { ...validRetimed.meta, ts: NOW - 10_000 });
 
+  // ── Response-proof profile v2 (`prf`, suite ≥ 1.1.0) ────────────────────────
+  // v2 binds `responseHash` over the FULL result envelope minus the top-level
+  // `_meta` member; the profile is named by a signature-covered `prf` claim.
+  const v2Request = { method: 'tools/call', params: { name: 'echo', arguments: { msg: 'hi' } } };
+  const v2Envelope = {
+    content: [{ type: 'text', text: 'hi' }],
+    structuredContent: { msg: 'hi' },
+    isError: false,
+    resultType: 'complete',
+  };
+  const v2Draft = await gen.generateProof(
+    v2Request,
+    { data: v2Envelope },
+    session,
+    { profile: RESPONSE_PROOF_PROFILE_V2 },
+  );
+  const v2Valid = await signProofMeta(agent, { ...v2Draft.meta, ts: NOW });
+
+  // Negative: `prf` stripped after signing — reconstructing a v1 payload no
+  // longer matches the signature, so the downgrade is a hard fail, not a
+  // silent fallback to weaker (body-only) coverage.
+  const v2Meta = { ...v2Valid.meta };
+  delete (v2Meta as Record<string, unknown>)['prf'];
+  const v2PrfStripped: DetachedProof = { jws: v2Valid.jws, meta: v2Meta };
+
+  // Negative: unknown profile value — structure validation rejects fail-closed.
+  const v2UnknownProfile: DetachedProof = {
+    ...v2Valid,
+    meta: { ...v2Valid.meta, prf: 'org.example/unknown-profile.v9' as never },
+  };
+
   const vectors: ConformanceVector[] = [
     {
       id: 'signed-proof/valid-basic',
@@ -163,9 +196,65 @@ async function signedProofVectors(): Promise<VectorFile> {
       reason: 'ts is 10000s before now with a 300s skew — replay/stale guard must reject',
       input: { proof: staleSigned, publicKeyJwk: jwk, now: NOW, skewSeconds: 300 },
     },
+    {
+      id: 'signed-proof/v2-envelope-binding',
+      category: 'signed-proof',
+      description:
+        'v2 proof (prf claim) whose responseHash binds the full result envelope; verified against the received result with a mutated _meta',
+      expected: 'pass',
+      reason:
+        'Under prf=org.kya-os/response-proof.v2 the verifier hashes the received result with the top-level _meta removed, so a _meta-only mutation never invalidates the binding',
+      input: {
+        proof: v2Valid,
+        publicKeyJwk: jwk,
+        now: NOW,
+        skewSeconds: 300,
+        expected: {
+          request: v2Request,
+          response: { data: { ...v2Envelope, _meta: { 'io.modelcontextprotocol/trace': 'added-in-flight' } } },
+        },
+      },
+    },
+    {
+      id: 'signed-proof/v2-tampered-structured-content',
+      category: 'signed-proof',
+      description:
+        'v2 proof verified against a result whose structuredContent was swapped in flight (unauthenticated under v1)',
+      expected: 'fail',
+      reason:
+        'v2 envelope coverage authenticates structuredContent/isError/resultType — the recomputed responseHash must mismatch the bound one',
+      input: {
+        proof: v2Valid,
+        publicKeyJwk: jwk,
+        now: NOW,
+        skewSeconds: 300,
+        expected: {
+          request: v2Request,
+          response: { data: { ...v2Envelope, structuredContent: { msg: 'TAMPERED' } } },
+        },
+      },
+    },
+    {
+      id: 'signed-proof/v2-prf-stripped-downgrade',
+      category: 'signed-proof',
+      description: 'v2 proof whose signature-covered prf claim was stripped after signing',
+      expected: 'fail',
+      reason:
+        'prf is a covered claim: without it the reconstructed payload no longer matches the signature — a downgrade to v1 semantics must be a hard fail',
+      input: { proof: v2PrfStripped, publicKeyJwk: jwk, now: NOW, skewSeconds: 300 },
+    },
+    {
+      id: 'signed-proof/v2-unknown-profile',
+      category: 'signed-proof',
+      description: 'Proof carrying an unrecognized prf value',
+      expected: 'fail',
+      reason:
+        'Unknown response-proof profiles are rejected fail-closed — never verified under weaker (v1) semantics',
+      input: { proof: v2UnknownProfile, publicKeyJwk: jwk, now: NOW, skewSeconds: 300 },
+    },
   ];
 
-  return { version: '1.0.0', category: 'signed-proof', vectors };
+  return { version: '1.1.0', category: 'signed-proof', vectors };
 }
 
 /**
@@ -175,21 +264,11 @@ async function signedProofVectors(): Promise<VectorFile> {
  * Date.now(), so the generator reproduces the documented payload shape directly.
  */
 async function signProofMeta(party: Party, meta: DetachedProof['meta']): Promise<DetachedProof> {
-  const payload = {
-    aud: meta.audience,
-    sub: meta.did,
-    iss: meta.did,
-    requestHash: meta.requestHash,
-    ...(meta.responseHash !== undefined && { responseHash: meta.responseHash }),
-    ts: meta.ts,
-    nonce: meta.nonce,
-    sessionId: meta.sessionId,
-    ...(meta.scopeId && { scopeId: meta.scopeId }),
-    ...(meta.delegationRef && { delegationRef: meta.delegationRef }),
-    ...(meta.clientDid && { clientDid: meta.clientDid }),
-    ...(meta.outcome && { outcome: meta.outcome }),
-    ...(meta.reason && { reason: meta.reason }),
-  };
+  // The payload SHAPE comes from the library's own buildProofJwsPayload — the
+  // single source of truth shared with ProofGenerator/ProofVerifier — so a
+  // covered claim (e.g. the v2 `prf` discriminator) can never drift between
+  // the library and the committed vectors.
+  const payload = buildProofJwsPayload(meta);
   const canonical = canonicalize(payload as Parameters<typeof canonicalize>[0]);
   const pem = formatPrivateKeyAsPEM(party.privateKey);
   const key = await importPKCS8(pem, 'EdDSA');
@@ -390,7 +469,7 @@ async function delegationChainVectors(): Promise<VectorFile> {
     },
   ];
 
-  return { version: '1.0.0', category: 'delegation-chain', vectors };
+  return { version: '1.1.0', category: 'delegation-chain', vectors };
 }
 
 function flipB64url(value: string): string {
@@ -466,7 +545,7 @@ async function statusListVectors(): Promise<VectorFile> {
     },
   ];
 
-  return { version: '1.0.0', category: 'status-list', vectors };
+  return { version: '1.1.0', category: 'status-list', vectors };
 }
 
 async function buildSignedDelegationWith(
@@ -515,7 +594,7 @@ async function didKeyVectors(): Promise<VectorFile> {
       input: { did: 'did:web:example.com' },
     },
   ];
-  return { version: '1.0.0', category: 'did-key-resolution', vectors };
+  return { version: '1.1.0', category: 'did-key-resolution', vectors };
 }
 
 // ── did:web resolution vectors ──────────────────────────────────────────────────
@@ -560,7 +639,7 @@ async function didWebVectors(): Promise<VectorFile> {
       input: { did: webDid },
     },
   ];
-  return { version: '1.0.0', category: 'did-web-resolution', vectors };
+  return { version: '1.1.0', category: 'did-web-resolution', vectors };
 }
 
 // ── orchestration ───────────────────────────────────────────────────────────────

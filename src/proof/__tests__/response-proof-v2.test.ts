@@ -232,6 +232,23 @@ describe("ProofGenerator — v2 profile", () => {
     expect("profile" in proof.meta).toBe(false);
   });
 
+  it("a caller-supplied `prf` in options can never override the profile-derived claim", async () => {
+    // TypeScript forbids this shape; a plain-JS caller could still pass it.
+    // The claim must come only from the `profile` option — under v1 no prf,
+    // regardless of what rides in the options bag.
+    const proof = await generator.generateProof(
+      REQUEST,
+      { data: RESULT_ENVELOPE.content },
+      session,
+      { prf: "org.evil/other.v9" } as never,
+    );
+    expect(proof.meta.prf).toBeUndefined();
+    const payloadJson = JSON.parse(
+      Buffer.from(proof.jws.split(".")[1]!, "base64url").toString("utf8"),
+    ) as Record<string, unknown>;
+    expect("prf" in payloadJson).toBe(false);
+  });
+
   it("generator.verifyProof derives the profile from the proof itself", async () => {
     const proof = await generator.generateProof(
       REQUEST,

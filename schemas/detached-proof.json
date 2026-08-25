@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schema.kya-os.org/v1/protocol/proof/detached/v1.0.0",
+  "$id": "https://schema.kya-os.org/v1/protocol/proof/detached/v1.1.0",
   "title": "KYA-OS Detached Proof",
   "description": "Cryptographic proof binding an MCP tool request/response pair to an agent's identity and session context.",
   "type": "object",

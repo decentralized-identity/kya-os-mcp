@@ -252,6 +252,10 @@ export class ProofGenerator {
     // the spread below can never leak a `profile` key into the signed meta. The
     // claim form is `prf`, set only for v2 (v1 stays byte-identical on the wire).
     const { profile = RESPONSE_PROOF_PROFILE_V1, ...metaOptions } = options;
+    // The `prf` claim derives ONLY from `profile`. TypeScript keeps `prf` out
+    // of ProofOptions, but a plain-JS caller could still pass one — strip it so
+    // a foreign profile value can never ride the spread into the signed payload.
+    Reflect.deleteProperty(metaOptions, 'prf');
     const hashes = await this.generateCanonicalHashes(request, response, profile);
     const proofNonce = base64urlEncodeFromBytes(
       await this.cryptoProvider.randomBytes(16),

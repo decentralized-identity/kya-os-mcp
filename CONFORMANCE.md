@@ -411,7 +411,7 @@ so it is reproducible against any implementation without re-signing.
 
 | File | Category | Positive | Negative |
 |------|----------|----------|----------|
-| `vectors/signed-proof.json` | Detached proof verification | valid signature + in-window ts; v2 (`prf`) envelope content binding | tampered signature, tampered meta, wrong key, timestamp skew exceeded; v2 tampered `structuredContent`, `prf` stripped (downgrade), unknown profile |
+| `vectors/signed-proof.json` | Detached proof verification | valid signature + in-window ts; envelope content binding (profile `org.kya-os/response-proof.v2`) | tampered signature, tampered meta, wrong key, timestamp skew exceeded; tampered `structuredContent` under envelope coverage, `prf` stripped (downgrade), unknown profile |
 | `vectors/delegation-chain.json` | Delegation chain verification | single-hop, two-hop attenuated | broken issuer↔subject linkage, scope widening, tampered signature, audience mismatch |
 | `vectors/status-list.json` | StatusList2021 revocation | active (bit unset) | revoked (bit set) |
 | `vectors/did-key-resolution.json` | did:key resolution | valid Ed25519 | malformed multibase, wrong method |
@@ -430,10 +430,10 @@ protocol, and `negotiation` exercises the MCP extension admission gate
 A `fail` vector passes the suite only when the implementation correctly **rejects**
 it. The runner exits non-zero on any mismatch.
 
-**On the `signed-proof/v2-*` vectors (suite ≥ 1.1.0).**
+**On the envelope-profile vectors (`signed-proof/envelope-*`, `prf-stripped-downgrade`, `unknown-profile`; suite ≥ 1.1.0).**
 These exercise the `org.kya-os/response-proof.v2` profile (SPEC.md §7.3): `responseHash` covers the full result envelope with the top-level `_meta` member removed, discriminated by a signature-covered `prf` claim.
 Their inputs carry an OPTIONAL `expected` member (`{ request, response }`) — the content the verifier "received" — which a conformant verifier re-hashes under the proof's own `prf` profile and reconciles against the bound hashes.
-Vectors without `expected` remain pure signature/skew checks, so pre-1.1.0 adapters are unaffected by the addition.
+Vectors without `expected` remain pure signature/skew checks.
 
 **On `signed-proof/tampered-meta`.**
 The proof's `meta` block mirrors the claims signed inside the JWS, but it is a convenience for consumers that read the proof without decoding the token, not an authoritative copy.

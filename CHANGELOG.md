@@ -7,6 +7,65 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-08-25
+
+### Added
+
+- **Response-proof `envelope` profile** (`org.kya-os/response-proof.envelope`).
+  The `body` profile binds `responseHash` over the response body only, leaving
+  result members such as `structuredContent`, `isError` and `resultType`
+  unauthenticated - an in-path intermediary could rewrite them under a still
+  valid proof. The envelope profile covers the ENTIRE result object with the
+  top-level `_meta` member removed, mirroring the request side's
+  `{method, params minus _meta}` rule, so every present and future result
+  member is authenticated while `_meta` stays intermediary-mutable (which is
+  what keeps attach-after-sign sound). The profile is discriminated by a `prf`
+  claim COVERED by the JWS signature, so a proof cannot be silently downgraded
+  to body semantics, and `validateDetachedProof` rejects unknown `prf` values
+  fail-closed. Verification always derives the profile from the proof's own
+  claim, never from configuration, so one verifier accepts both.
+- **Conformance vector-set immutability.** `conformance/SUITE-MANIFEST.json`
+  pins the vector set by hash, `scripts/suite-hash.mjs` computes and checks it,
+  and CI enforces it as its own line - a published vector set can no longer be
+  edited in place without the check failing. Suite is at 1.1.0.
+- **`DEPRECATIONS.md`** - an internal ledger of deferred breaking changes.
+
+### Fixed
+
+- **Sessionless request proofs now bind.** `generateRequestProof` defaulted
+  `meta.sessionId` to `''` when the caller omitted it, but `sessionId` is a
+  required non-empty string in the proof meta schema, so the proof failed
+  validation as `INVALID_PROOF_STRUCTURE` and `assertHolderBinding` returned
+  `unbound` for the LEGITIMATE holder - indistinguishable from the thief the
+  gate exists to catch. `sessionId` is documented as optional and a request
+  proof routinely precedes any handshake on a stateless core, so this was the
+  normal path rather than an edge case. It failed closed (nothing was wrongly
+  admitted), but phase-1 holder binding was unusable without a `sessionId` the
+  signature never said was mandatory. A per-proof id is now minted when none is
+  supplied; verification, the schema and the conformance vectors are unchanged.
+- The `prf` claim is derived only from the profile option, and the proof schema
+  id is bumped accordingly.
+- A challenge proof that the degraded-audit `isError` flip would have broken is
+  now stripped rather than emitted.
+- `suite-hash` hashes the committed blob bytes rather than the working tree, so
+  a dirty checkout cannot produce a passing hash.
+
+### Changed
+
+- **Response-proof profiles are named by mechanism, not sequence**:
+  `org.kya-os/response-proof.v2` -> `.envelope`, `.v1` -> `.body`, and
+  `RESPONSE_PROOF_PROFILE_V2`/`_V1` -> `_ENVELOPE`/`_BODY`. The sequence
+  framing was wrong on its own terms - original proofs carry no profile
+  identifier at all, so the first wire identifier would have debuted as `.v2`
+  naming a v1 that never existed. **No published API changes**: these
+  identifiers and constants are new in this release and never shipped in
+  1.14.2, so nothing downstream can be pinned to the old names. The
+  request-proof profile keeps its shipped `org.kya-os/proof.v1` name.
+- Conformance vectors use semantic names and a more robust signature-tamper
+  case.
+- Dependency bumps across the minor-and-patch group.
+- README restructures `did:cheqd` into a hierarchical Integrations section.
+
 ## [1.14.2] - 2026-08-19
 
 ### Fixed

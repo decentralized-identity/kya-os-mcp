@@ -108,7 +108,7 @@ async function signedProofVectors(): Promise<VectorFile> {
   // Negative: tampered signature (flip the JWS).
   const tamperedSig: DetachedProof = {
     ...validRetimed,
-    jws: flipLastChar(validRetimed.jws),
+    jws: flipSignatureChar(validRetimed.jws),
   };
 
   // Negative: tampered meta (requestHash mutated; signature no longer matches).
@@ -124,35 +124,35 @@ async function signedProofVectors(): Promise<VectorFile> {
   // Negative: timestamp outside the skew window (authentically signed at a stale ts).
   const staleSigned = await signProofMeta(agent, { ...validRetimed.meta, ts: NOW - 10_000 });
 
-  // ── Response-proof profile v2 (`prf`, suite ≥ 1.1.0) ────────────────────────
-  // v2 binds `responseHash` over the FULL result envelope minus the top-level
-  // `_meta` member; the profile is named by a signature-covered `prf` claim.
-  const v2Request = { method: 'tools/call', params: { name: 'echo', arguments: { msg: 'hi' } } };
-  const v2Envelope = {
+  // ── Envelope-coverage profile (`org.kya-os/response-proof.v2`, suite ≥ 1.1.0) ─
+  // The profile binds `responseHash` over the FULL result envelope minus the
+  // top-level `_meta` member; it is named by a signature-covered `prf` claim.
+  const envelopeRequest = { method: 'tools/call', params: { name: 'echo', arguments: { msg: 'hi' } } };
+  const resultEnvelope = {
     content: [{ type: 'text', text: 'hi' }],
     structuredContent: { msg: 'hi' },
     isError: false,
     resultType: 'complete',
   };
-  const v2Draft = await gen.generateProof(
-    v2Request,
-    { data: v2Envelope },
+  const envelopeDraft = await gen.generateProof(
+    envelopeRequest,
+    { data: resultEnvelope },
     session,
     { profile: RESPONSE_PROOF_PROFILE_V2 },
   );
-  const v2Valid = await signProofMeta(agent, { ...v2Draft.meta, ts: NOW });
+  const envelopeProof = await signProofMeta(agent, { ...envelopeDraft.meta, ts: NOW });
 
-  // Negative: `prf` stripped after signing — reconstructing a v1 payload no
-  // longer matches the signature, so the downgrade is a hard fail, not a
-  // silent fallback to weaker (body-only) coverage.
-  const v2Meta = { ...v2Valid.meta };
-  delete (v2Meta as Record<string, unknown>)['prf'];
-  const v2PrfStripped: DetachedProof = { jws: v2Valid.jws, meta: v2Meta };
+  // Negative: `prf` stripped after signing — reconstructing a body-only
+  // payload no longer matches the signature, so the downgrade is a hard fail,
+  // not a silent fallback to weaker (body-only) coverage.
+  const strippedMeta = { ...envelopeProof.meta };
+  delete (strippedMeta as Record<string, unknown>)['prf'];
+  const prfStrippedProof: DetachedProof = { jws: envelopeProof.jws, meta: strippedMeta };
 
   // Negative: unknown profile value — structure validation rejects fail-closed.
-  const v2UnknownProfile: DetachedProof = {
-    ...v2Valid,
-    meta: { ...v2Valid.meta, prf: 'org.example/unknown-profile.v9' as never },
+  const unknownProfileProof: DetachedProof = {
+    ...envelopeProof,
+    meta: { ...envelopeProof.meta, prf: 'org.example/unknown-profile.v9' as never },
   };
 
   const vectors: ConformanceVector[] = [
@@ -197,60 +197,60 @@ async function signedProofVectors(): Promise<VectorFile> {
       input: { proof: staleSigned, publicKeyJwk: jwk, now: NOW, skewSeconds: 300 },
     },
     {
-      id: 'signed-proof/v2-envelope-binding',
+      id: 'signed-proof/envelope-binding',
       category: 'signed-proof',
       description:
-        'v2 proof (prf claim) whose responseHash binds the full result envelope; verified against the received result with a mutated _meta',
+        'Proof under profile org.kya-os/response-proof.v2 whose responseHash binds the full result envelope; verified against the received result with a mutated _meta',
       expected: 'pass',
       reason:
         'Under prf=org.kya-os/response-proof.v2 the verifier hashes the received result with the top-level _meta removed, so a _meta-only mutation never invalidates the binding',
       input: {
-        proof: v2Valid,
+        proof: envelopeProof,
         publicKeyJwk: jwk,
         now: NOW,
         skewSeconds: 300,
         expected: {
-          request: v2Request,
-          response: { data: { ...v2Envelope, _meta: { 'io.modelcontextprotocol/trace': 'added-in-flight' } } },
+          request: envelopeRequest,
+          response: { data: { ...resultEnvelope, _meta: { 'io.modelcontextprotocol/trace': 'added-in-flight' } } },
         },
       },
     },
     {
-      id: 'signed-proof/v2-tampered-structured-content',
+      id: 'signed-proof/envelope-tampered-structured-content',
       category: 'signed-proof',
       description:
-        'v2 proof verified against a result whose structuredContent was swapped in flight (unauthenticated under v1)',
+        'Envelope-profile proof verified against a result whose structuredContent was swapped in flight (unauthenticated under the body-only profile)',
       expected: 'fail',
       reason:
-        'v2 envelope coverage authenticates structuredContent/isError/resultType — the recomputed responseHash must mismatch the bound one',
+        'Envelope coverage authenticates structuredContent/isError/resultType — the recomputed responseHash must mismatch the bound one',
       input: {
-        proof: v2Valid,
+        proof: envelopeProof,
         publicKeyJwk: jwk,
         now: NOW,
         skewSeconds: 300,
         expected: {
-          request: v2Request,
-          response: { data: { ...v2Envelope, structuredContent: { msg: 'TAMPERED' } } },
+          request: envelopeRequest,
+          response: { data: { ...resultEnvelope, structuredContent: { msg: 'TAMPERED' } } },
         },
       },
     },
     {
-      id: 'signed-proof/v2-prf-stripped-downgrade',
+      id: 'signed-proof/prf-stripped-downgrade',
       category: 'signed-proof',
-      description: 'v2 proof whose signature-covered prf claim was stripped after signing',
+      description: 'Envelope-profile proof whose signature-covered prf claim was stripped after signing',
       expected: 'fail',
       reason:
-        'prf is a covered claim: without it the reconstructed payload no longer matches the signature — a downgrade to v1 semantics must be a hard fail',
-      input: { proof: v2PrfStripped, publicKeyJwk: jwk, now: NOW, skewSeconds: 300 },
+        'prf is a covered claim: without it the reconstructed payload no longer matches the signature — a downgrade to body-only semantics must be a hard fail',
+      input: { proof: prfStrippedProof, publicKeyJwk: jwk, now: NOW, skewSeconds: 300 },
     },
     {
-      id: 'signed-proof/v2-unknown-profile',
+      id: 'signed-proof/unknown-profile',
       category: 'signed-proof',
       description: 'Proof carrying an unrecognized prf value',
       expected: 'fail',
       reason:
-        'Unknown response-proof profiles are rejected fail-closed — never verified under weaker (v1) semantics',
-      input: { proof: v2UnknownProfile, publicKeyJwk: jwk, now: NOW, skewSeconds: 300 },
+        'Unknown response-proof profiles are rejected fail-closed — never verified under weaker (body-only) semantics',
+      input: { proof: unknownProfileProof, publicKeyJwk: jwk, now: NOW, skewSeconds: 300 },
     },
   ];
 
@@ -289,10 +289,20 @@ function formatPrivateKeyAsPEM(base64PrivateKey: string): string {
   return `-----BEGIN PRIVATE KEY-----\n${formatted}\n-----END PRIVATE KEY-----`;
 }
 
-function flipLastChar(jws: string): string {
-  const last = jws[jws.length - 1];
-  const swap = last === 'A' ? 'B' : 'A';
-  return jws.slice(0, -1) + swap;
+/**
+ * Corrupt a JWS signature by flipping the FIRST character of its signature
+ * segment. The first character's bits are all significant, so the decoded
+ * signature bytes are guaranteed to change. (Flipping the LAST character is
+ * not a reliable tamper: an 86-char base64url segment for a 64-byte Ed25519
+ * signature carries only 2 significant bits in its final character, and
+ * lenient decoders ignore the 4 padding bits — an 'A'↔'B' swap there can
+ * decode to the identical signature.)
+ */
+function flipSignatureChar(jws: string): string {
+  const [header, payload, signature] = jws.split('.');
+  const first = signature![0];
+  const swap = first === 'A' ? 'B' : 'A';
+  return `${header}.${payload}.${swap}${signature!.slice(1)}`;
 }
 
 // ── delegation-chain vectors ───────────────────────────────────────────────────

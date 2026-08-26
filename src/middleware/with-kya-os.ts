@@ -24,7 +24,7 @@ import { MemoryGrantStore } from "../providers/grant-store.js";
 import { SessionManager } from "../session/manager.js";
 import {
   ProofGenerator,
-  RESPONSE_PROOF_PROFILE_V1,
+  RESPONSE_PROOF_PROFILE_BODY,
   type ProofAgentIdentity,
 } from "../proof/generator.js";
 import { ProofVerifier } from "../proof/verifier.js";
@@ -121,11 +121,11 @@ export function createKyaOsMiddleware(
   // hashed (§7.6), so the mirror is purely additive.
   const emitLegacyProofKey = config.emitLegacyProofKey ?? true;
 
-  // Response-proof profile: v1 (body-only responseHash) stays the default so
-  // existing verifiers keep working; v2 (envelope coverage) is an explicit
+  // Response-proof profile: body-only coverage stays the default so
+  // existing verifiers keep working; envelope coverage is an explicit
   // opt-in. See KyaOsConfig.responseProofProfile.
   const responseProofProfile =
-    config.responseProofProfile ?? RESPONSE_PROOF_PROFILE_V1;
+    config.responseProofProfile ?? RESPONSE_PROOF_PROFILE_BODY;
 
   // Durable grant store for the no-paste retry. Defaults to in-memory; inject a
   // shared, durable store for multi-instance / restart survival (mirrors the

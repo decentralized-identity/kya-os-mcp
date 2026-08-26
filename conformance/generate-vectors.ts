@@ -30,7 +30,7 @@ import {
   wrapDelegationAsVC,
   BitstringManager,
   buildDidWebDocument,
-  RESPONSE_PROOF_PROFILE_V2,
+  RESPONSE_PROOF_PROFILE_ENVELOPE,
   type DelegationCredential,
   type StatusList2021Credential,
   type CredentialStatus,
@@ -124,7 +124,7 @@ async function signedProofVectors(): Promise<VectorFile> {
   // Negative: timestamp outside the skew window (authentically signed at a stale ts).
   const staleSigned = await signProofMeta(agent, { ...validRetimed.meta, ts: NOW - 10_000 });
 
-  // ── Envelope-coverage profile (`org.kya-os/response-proof.v2`, suite ≥ 1.1.0) ─
+  // ── Envelope-coverage profile (`org.kya-os/response-proof.envelope`, suite ≥ 1.1.0) ─
   // The profile binds `responseHash` over the FULL result envelope minus the
   // top-level `_meta` member; it is named by a signature-covered `prf` claim.
   const envelopeRequest = { method: 'tools/call', params: { name: 'echo', arguments: { msg: 'hi' } } };
@@ -138,7 +138,7 @@ async function signedProofVectors(): Promise<VectorFile> {
     envelopeRequest,
     { data: resultEnvelope },
     session,
-    { profile: RESPONSE_PROOF_PROFILE_V2 },
+    { profile: RESPONSE_PROOF_PROFILE_ENVELOPE },
   );
   const envelopeProof = await signProofMeta(agent, { ...envelopeDraft.meta, ts: NOW });
 
@@ -200,10 +200,10 @@ async function signedProofVectors(): Promise<VectorFile> {
       id: 'signed-proof/envelope-binding',
       category: 'signed-proof',
       description:
-        'Proof under profile org.kya-os/response-proof.v2 whose responseHash binds the full result envelope; verified against the received result with a mutated _meta',
+        'Proof under profile org.kya-os/response-proof.envelope whose responseHash binds the full result envelope; verified against the received result with a mutated _meta',
       expected: 'pass',
       reason:
-        'Under prf=org.kya-os/response-proof.v2 the verifier hashes the received result with the top-level _meta removed, so a _meta-only mutation never invalidates the binding',
+        'Under prf=org.kya-os/response-proof.envelope the verifier hashes the received result with the top-level _meta removed, so a _meta-only mutation never invalidates the binding',
       input: {
         proof: envelopeProof,
         publicKeyJwk: jwk,
@@ -266,7 +266,7 @@ async function signedProofVectors(): Promise<VectorFile> {
 async function signProofMeta(party: Party, meta: DetachedProof['meta']): Promise<DetachedProof> {
   // The payload SHAPE comes from the library's own buildProofJwsPayload — the
   // single source of truth shared with ProofGenerator/ProofVerifier — so a
-  // covered claim (e.g. the v2 `prf` discriminator) can never drift between
+  // covered claim (e.g. the envelope profile's `prf` discriminator) can never drift between
   // the library and the committed vectors.
   const payload = buildProofJwsPayload(meta);
   const canonical = canonicalize(payload as Parameters<typeof canonicalize>[0]);

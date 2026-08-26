@@ -313,14 +313,14 @@ The MCP-specific deltas are only these:
 
 Response-side proof coverage (SPEC.md §7) is profile-selected by the proof's signature-covered `prf` claim (SPEC.md §7.3):
 
-- Under **v1** (`prf` absent — the original profile) `responseHash` covers the response body only: the result's `content` array.
-  Under MCP `2026-07-28` every result carries a `resultType` member (SEP-2322); `resultType`, `isError`, and `structuredContent` sit outside v1 coverage, are unauthenticated, and clients MUST NOT treat them as proof-covered.
-- Under **v2** (`prf: "org.kya-os/response-proof.v2"`) `responseHash` covers the ENTIRE result object with the top-level `_meta` member removed — `resultType`, `isError`, `structuredContent`, and any future result member are authenticated, closing the v1 gap.
+- Under the **body profile** (`prf` absent — the original profile) `responseHash` covers the response body only: the result's `content` array.
+  Under MCP `2026-07-28` every result carries a `resultType` member (SEP-2322); `resultType`, `isError`, and `structuredContent` sit outside body-profile coverage, are unauthenticated, and clients MUST NOT treat them as proof-covered.
+- Under the **envelope profile** (`prf: "org.kya-os/response-proof.envelope"`) `responseHash` covers the ENTIRE result object with the top-level `_meta` member removed — `resultType`, `isError`, `structuredContent`, and any future result member are authenticated, closing the body-profile gap.
   `_meta` remains intermediary-mutable (it is where the proof itself rides), consistent with the request-side rule of item 2 above.
-  A v2 verifier recomputes `responseHash` over the result as received, minus `_meta`, and derives the profile from the proof's own `prf` claim; an unrecognized `prf` is rejected fail-closed, and a stripped `prf` breaks the signature — there is no silent downgrade to v1 semantics.
+  An envelope-profile verifier recomputes `responseHash` over the result as received, minus `_meta`, and derives the profile from the proof's own `prf` claim; an unrecognized `prf` is rejected fail-closed, and a stripped `prf` breaks the signature — there is no silent downgrade to body-only semantics.
 
-Servers SHOULD emit v2 where their client population verifies it (`responseProofProfile` in the middleware configuration); v1 remains the wire default.
-An MRTR profile (§7.3) additionally requires `inputRequests` under proof coverage before the consent flow could ride `input_required`; v2's envelope coverage provides exactly that, so the remaining MRTR gap is flow design, not hash coverage.
+Servers SHOULD emit the envelope profile where their client population verifies it (`responseProofProfile` in the middleware configuration); the body profile remains the wire default.
+An MRTR profile (§7.3) additionally requires `inputRequests` under proof coverage before the consent flow could ride `input_required`; the envelope profile provides exactly that, so the remaining MRTR gap is flow design, not hash coverage.
 
 ---
 
@@ -338,14 +338,14 @@ Revocation status lists SHOULD be published per issuing authority - each delegat
 The step-up flow is SPEC.md §9: a call lacking sufficient permission returns a `needs_authorization` challenge whose content, including `authorizationUrl`, is bound by a signed response proof (`outcome: "needs_authorization"`, SPEC.md §7.4, §9.2).
 A client MUST verify the challenge proof and recompute `responseHash` over the received challenge before directing a user to `authorizationUrl` (SPEC.md §9.3), and MUST apply the RFC 9207 issuer validation of SPEC.md §9.4 on the authorization callback.
 This document binds the challenge carriage: a server delivers the SPEC.md §9.2 challenge object as the body of a `resultType: "complete"` result, so the proof's `responseHash` covers the challenge content (SPEC.md §7.3, §7.4).
-Under profile v1 the result's `resultType` member itself remains outside proof coverage; under profile v2 the full challenge result envelope — `resultType` included — is covered (§6).
+Under the body profile the result's `resultType` member itself remains outside proof coverage; under the envelope profile the full challenge result envelope — `resultType` included — is covered (§6).
 
 ### 7.3 Relationship to Multi Round-Trip Requests (informative)
 
 MCP `2026-07-28` introduces the Multi Round-Trip Request pattern (SEP-2322): a server returns `resultType: "input_required"` with `inputRequests`, and the client retries the original request carrying `inputResponses`.
 The KYA-OS step-up flow is structurally the same shape: challenge out, user action, retry with `resumeToken` and a fresh delegation (SPEC.md §9.3).
 This revision carries the challenge as the body of a `resultType: "complete"` result (§7.2, this document's own binding decision; SPEC.md §9.2 defines the challenge object without a carriage statement) and does not profile it onto `input_required`, because the underlying specification defines the retry as a new request rather than an MRTR continuation.
-A future revision MAY define an MRTR profile of the consent flow; such a profile would be additive, declared through the settings object, and would REQUIRE response-proof profile v2 (§6), whose envelope coverage authenticates `resultType` and `inputRequests`.
+A future revision MAY define an MRTR profile of the consent flow; such a profile would be additive, declared through the settings object, and would REQUIRE the envelope response-proof profile (§6), which authenticates `resultType` and `inputRequests`.
 
 ---
 

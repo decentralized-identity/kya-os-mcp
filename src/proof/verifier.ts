@@ -28,7 +28,7 @@ import {
   KYA_OS_PROOF_META_KEY,
   LEGACY_NAMESPACED_PROOF_META_KEY,
   LEGACY_PROOF_META_KEY,
-  RESPONSE_PROOF_PROFILE_V1,
+  RESPONSE_PROOF_PROFILE_BODY,
   type ToolRequest,
   type ToolResponse,
 } from "./generator.js";
@@ -121,8 +121,8 @@ export class ProofVerifier {
    *   needs_authorization proofs), `response` is REQUIRED — omitting it fails with
    *   CONTENT_BINDING_MISMATCH, so the URL-bearing body cannot go silently
    *   unverified. WHAT to pass as `response.data` depends on the proof's own
-   *   `prf` claim: for a v1 proof (no `prf`) pass the response BODY (the MCP
-   *   `content` array); for a v2 proof (`prf: "org.kya-os/response-proof.v2"`)
+   *   `prf` claim: for a body-profile proof (no `prf`) pass the response BODY (the MCP
+   *   `content` array); for an envelope-profile proof (`prf: "org.kya-os/response-proof.envelope"`)
    *   pass the ENTIRE received result object — the verifier removes the
    *   top-level `_meta` member itself, so passing the result as received (proof
    *   attachment included) is correct.
@@ -301,8 +301,8 @@ export class ProofVerifier {
     expected: { request: ToolRequest; response?: ToolResponse }
   ): Promise<ProofVerificationResult> {
     // The response-hash profile comes from the proof's own signature-covered
-    // `prf` claim (validated fail-closed in validateProofStructure): a v2 proof
-    // is checked with envelope hashing (result minus top-level `_meta`), a v1
+    // `prf` claim (validated fail-closed in validateProofStructure): an envelope-profile proof
+    // is checked with envelope hashing (result minus top-level `_meta`), a body-profile
     // proof (no `prf`) with body hashing. Deriving from the proof — never from
     // verifier configuration — is what lets one verifier accept both profiles
     // without a downgrade path.
@@ -310,7 +310,7 @@ export class ProofVerifier {
       expected.request,
       expected.response,
       (bytes) => this.cryptoProvider.hash(bytes),
-      proof.meta.prf ?? RESPONSE_PROOF_PROFILE_V1,
+      proof.meta.prf ?? RESPONSE_PROOF_PROFILE_BODY,
     );
     if (proof.meta.requestHash !== requestHash) {
       return {
@@ -615,7 +615,7 @@ export class ProofVerifier {
   buildCanonicalPayload(meta: DetachedProof["meta"]): string {
     // Reconstruct the exact JWS payload the signer serialized: the SHAPE comes
     // from the shared buildProofJwsPayload (single source of truth with the
-    // generator, so a claim — e.g. the v2 `prf` discriminator — can never be
+    // generator, so a claim — e.g. the envelope profile's `prf` discriminator — can never be
     // covered on one side and dropped on the other), and the serialization is
     // the same RFC 8785 canonicalization the signer used.
     return canonicalizeJson(buildProofJwsPayload(meta));

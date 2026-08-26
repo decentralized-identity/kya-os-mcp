@@ -57,8 +57,8 @@ export interface MiddlewareDeps {
   emitLegacyProofKey: boolean;
   /**
    * Response-proof profile every minted proof is bound under (resolved from
-   * `config.responseProofProfile`, default v1). v2 binds the full result
-   * envelope minus `_meta`; v1 binds the content array only.
+   * `config.responseProofProfile`, default body-only). The envelope profile binds the full result
+   * envelope minus `_meta`; the body profile binds the content array only.
    */
   responseProofProfile: ResponseProofProfile;
 }

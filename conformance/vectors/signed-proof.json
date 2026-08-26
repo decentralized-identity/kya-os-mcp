@@ -10,12 +10,12 @@
       "reason": "Signature verifies against the signer key and ts is within skew",
       "input": {
         "proof": {
-          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3ROdEt5RnBiTFhvNUtMR1NQckRERTNZOVI3UGtyUmo2bnlCM0s4blc3cFNjI3o2TWt0TnRLeUZwYkxYbzVLTEdTUHJEREUzWTlSN1BrclJqNm55QjNLOG5XN3BTYyJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3ROdEt5RnBiTFhvNUtMR1NQckRERTNZOVI3UGtyUmo2bnlCM0s4blc3cFNjIiwibm9uY2UiOiJ1OTBfQ3lCSFZtUVJUeTRsdF90Nnl3IiwicmVxdWVzdEhhc2giOiJzaGEyNTY6YzhmM2Q1OTk1OWM5MjQ3MjExZGU4Yzc2Yjk0ZWYxN2YwYzI3OWYwOTM2MjM1MGNlZDY3ZjY5ZWNkYjg5ZDZjNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1Njo0YmNmYTVkNzg4NjczZDBhMmE3OTZkMjJiMGFkMjhiYmI0ODJlYzA4Nzc3MGNkODcwZDZhOGNlMmU5MGVjMTQyIiwic2Vzc2lvbklkIjoic2Vzc19jb25mb3JtYW5jZSIsInN1YiI6ImRpZDprZXk6ejZNa3ROdEt5RnBiTFhvNUtMR1NQckRERTNZOVI3UGtyUmo2bnlCM0s4blc3cFNjIiwidHMiOjE3NTAwMDAwMDB9.33LOUGq6BzCPVMaCtd6x2hAo2S9qfOYtBwhnjIDnDN4TWc32Duy4yjGqAUH8XhkfuC8K4lB99HOPAHI6sS7ABA",
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3BkMXJCTWl5aGRvM1dyVVNzc0RXYTFmMVZzc3V4REdjdTZTcFRhbVhKc2V4I3o2TWtwZDFyQk1peWhkbzNXclVTc3NEV2ExZjFWc3N1eERHY3U2U3BUYW1YSnNleCJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3BkMXJCTWl5aGRvM1dyVVNzc0RXYTFmMVZzc3V4REdjdTZTcFRhbVhKc2V4Iiwibm9uY2UiOiJ1b3VPRzJmQW1tOEpuQjlQRlhDYktnIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6YzhmM2Q1OTk1OWM5MjQ3MjExZGU4Yzc2Yjk0ZWYxN2YwYzI3OWYwOTM2MjM1MGNlZDY3ZjY5ZWNkYjg5ZDZjNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1Njo0YmNmYTVkNzg4NjczZDBhMmE3OTZkMjJiMGFkMjhiYmI0ODJlYzA4Nzc3MGNkODcwZDZhOGNlMmU5MGVjMTQyIiwic2Vzc2lvbklkIjoic2Vzc19jb25mb3JtYW5jZSIsInN1YiI6ImRpZDprZXk6ejZNa3BkMXJCTWl5aGRvM1dyVVNzc0RXYTFmMVZzc3V4REdjdTZTcFRhbVhKc2V4IiwidHMiOjE3NTAwMDAwMDB9.BBKeemNnDrzICjebfPGVygc5KCSQo0b6Ds2eM17AOEOMaAY-cyczLrXpGGBXOMP0u3VRrMHiB1dYmHBknjzCBw",
           "meta": {
-            "did": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc",
-            "kid": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc#z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc",
+            "did": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex",
+            "kid": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex#z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex",
             "ts": 1750000000,
-            "nonce": "u90_CyBHVmQRTy4lt_t6yw",
+            "nonce": "uouOG2fAmm8JnB9PFXCbKg",
             "audience": "did:web:server.example.com",
             "sessionId": "sess_conformance",
             "requestHash": "sha256:c8f3d59959c9247211de8c76b94ef17f0c279f09362350ced67f69ecdb89d6c7",
@@ -25,8 +25,8 @@
         "publicKeyJwk": {
           "kty": "OKP",
           "crv": "Ed25519",
-          "x": "zuS80Vqo52EeCEye0Cm9F7aPwwY_ClJHTX9JfviOWwk",
-          "kid": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc#z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc"
+          "x": "lxSgAgLu-8N4lC2UH1ox8mH08DBnwjqnArqEE0Os0ek",
+          "kid": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex#z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex"
         },
         "now": 1750000000,
         "skewSeconds": 300
@@ -40,12 +40,12 @@
       "reason": "A mutated signature must fail EdDSA verification",
       "input": {
         "proof": {
-          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3ROdEt5RnBiTFhvNUtMR1NQckRERTNZOVI3UGtyUmo2bnlCM0s4blc3cFNjI3o2TWt0TnRLeUZwYkxYbzVLTEdTUHJEREUzWTlSN1BrclJqNm55QjNLOG5XN3BTYyJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3ROdEt5RnBiTFhvNUtMR1NQckRERTNZOVI3UGtyUmo2bnlCM0s4blc3cFNjIiwibm9uY2UiOiJ1OTBfQ3lCSFZtUVJUeTRsdF90Nnl3IiwicmVxdWVzdEhhc2giOiJzaGEyNTY6YzhmM2Q1OTk1OWM5MjQ3MjExZGU4Yzc2Yjk0ZWYxN2YwYzI3OWYwOTM2MjM1MGNlZDY3ZjY5ZWNkYjg5ZDZjNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1Njo0YmNmYTVkNzg4NjczZDBhMmE3OTZkMjJiMGFkMjhiYmI0ODJlYzA4Nzc3MGNkODcwZDZhOGNlMmU5MGVjMTQyIiwic2Vzc2lvbklkIjoic2Vzc19jb25mb3JtYW5jZSIsInN1YiI6ImRpZDprZXk6ejZNa3ROdEt5RnBiTFhvNUtMR1NQckRERTNZOVI3UGtyUmo2bnlCM0s4blc3cFNjIiwidHMiOjE3NTAwMDAwMDB9.A3LOUGq6BzCPVMaCtd6x2hAo2S9qfOYtBwhnjIDnDN4TWc32Duy4yjGqAUH8XhkfuC8K4lB99HOPAHI6sS7ABA",
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3BkMXJCTWl5aGRvM1dyVVNzc0RXYTFmMVZzc3V4REdjdTZTcFRhbVhKc2V4I3o2TWtwZDFyQk1peWhkbzNXclVTc3NEV2ExZjFWc3N1eERHY3U2U3BUYW1YSnNleCJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3BkMXJCTWl5aGRvM1dyVVNzc0RXYTFmMVZzc3V4REdjdTZTcFRhbVhKc2V4Iiwibm9uY2UiOiJ1b3VPRzJmQW1tOEpuQjlQRlhDYktnIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6YzhmM2Q1OTk1OWM5MjQ3MjExZGU4Yzc2Yjk0ZWYxN2YwYzI3OWYwOTM2MjM1MGNlZDY3ZjY5ZWNkYjg5ZDZjNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1Njo0YmNmYTVkNzg4NjczZDBhMmE3OTZkMjJiMGFkMjhiYmI0ODJlYzA4Nzc3MGNkODcwZDZhOGNlMmU5MGVjMTQyIiwic2Vzc2lvbklkIjoic2Vzc19jb25mb3JtYW5jZSIsInN1YiI6ImRpZDprZXk6ejZNa3BkMXJCTWl5aGRvM1dyVVNzc0RXYTFmMVZzc3V4REdjdTZTcFRhbVhKc2V4IiwidHMiOjE3NTAwMDAwMDB9.ABKeemNnDrzICjebfPGVygc5KCSQo0b6Ds2eM17AOEOMaAY-cyczLrXpGGBXOMP0u3VRrMHiB1dYmHBknjzCBw",
           "meta": {
-            "did": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc",
-            "kid": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc#z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc",
+            "did": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex",
+            "kid": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex#z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex",
             "ts": 1750000000,
-            "nonce": "u90_CyBHVmQRTy4lt_t6yw",
+            "nonce": "uouOG2fAmm8JnB9PFXCbKg",
             "audience": "did:web:server.example.com",
             "sessionId": "sess_conformance",
             "requestHash": "sha256:c8f3d59959c9247211de8c76b94ef17f0c279f09362350ced67f69ecdb89d6c7",
@@ -55,8 +55,8 @@
         "publicKeyJwk": {
           "kty": "OKP",
           "crv": "Ed25519",
-          "x": "zuS80Vqo52EeCEye0Cm9F7aPwwY_ClJHTX9JfviOWwk",
-          "kid": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc#z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc"
+          "x": "lxSgAgLu-8N4lC2UH1ox8mH08DBnwjqnArqEE0Os0ek",
+          "kid": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex#z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex"
         },
         "now": 1750000000,
         "skewSeconds": 300
@@ -70,12 +70,12 @@
       "reason": "The reconstructed canonical payload no longer matches the signature",
       "input": {
         "proof": {
-          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3ROdEt5RnBiTFhvNUtMR1NQckRERTNZOVI3UGtyUmo2bnlCM0s4blc3cFNjI3o2TWt0TnRLeUZwYkxYbzVLTEdTUHJEREUzWTlSN1BrclJqNm55QjNLOG5XN3BTYyJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3ROdEt5RnBiTFhvNUtMR1NQckRERTNZOVI3UGtyUmo2bnlCM0s4blc3cFNjIiwibm9uY2UiOiJ1OTBfQ3lCSFZtUVJUeTRsdF90Nnl3IiwicmVxdWVzdEhhc2giOiJzaGEyNTY6YzhmM2Q1OTk1OWM5MjQ3MjExZGU4Yzc2Yjk0ZWYxN2YwYzI3OWYwOTM2MjM1MGNlZDY3ZjY5ZWNkYjg5ZDZjNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1Njo0YmNmYTVkNzg4NjczZDBhMmE3OTZkMjJiMGFkMjhiYmI0ODJlYzA4Nzc3MGNkODcwZDZhOGNlMmU5MGVjMTQyIiwic2Vzc2lvbklkIjoic2Vzc19jb25mb3JtYW5jZSIsInN1YiI6ImRpZDprZXk6ejZNa3ROdEt5RnBiTFhvNUtMR1NQckRERTNZOVI3UGtyUmo2bnlCM0s4blc3cFNjIiwidHMiOjE3NTAwMDAwMDB9.33LOUGq6BzCPVMaCtd6x2hAo2S9qfOYtBwhnjIDnDN4TWc32Duy4yjGqAUH8XhkfuC8K4lB99HOPAHI6sS7ABA",
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3BkMXJCTWl5aGRvM1dyVVNzc0RXYTFmMVZzc3V4REdjdTZTcFRhbVhKc2V4I3o2TWtwZDFyQk1peWhkbzNXclVTc3NEV2ExZjFWc3N1eERHY3U2U3BUYW1YSnNleCJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3BkMXJCTWl5aGRvM1dyVVNzc0RXYTFmMVZzc3V4REdjdTZTcFRhbVhKc2V4Iiwibm9uY2UiOiJ1b3VPRzJmQW1tOEpuQjlQRlhDYktnIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6YzhmM2Q1OTk1OWM5MjQ3MjExZGU4Yzc2Yjk0ZWYxN2YwYzI3OWYwOTM2MjM1MGNlZDY3ZjY5ZWNkYjg5ZDZjNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1Njo0YmNmYTVkNzg4NjczZDBhMmE3OTZkMjJiMGFkMjhiYmI0ODJlYzA4Nzc3MGNkODcwZDZhOGNlMmU5MGVjMTQyIiwic2Vzc2lvbklkIjoic2Vzc19jb25mb3JtYW5jZSIsInN1YiI6ImRpZDprZXk6ejZNa3BkMXJCTWl5aGRvM1dyVVNzc0RXYTFmMVZzc3V4REdjdTZTcFRhbVhKc2V4IiwidHMiOjE3NTAwMDAwMDB9.BBKeemNnDrzICjebfPGVygc5KCSQo0b6Ds2eM17AOEOMaAY-cyczLrXpGGBXOMP0u3VRrMHiB1dYmHBknjzCBw",
           "meta": {
-            "did": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc",
-            "kid": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc#z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc",
+            "did": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex",
+            "kid": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex#z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex",
             "ts": 1750000000,
-            "nonce": "u90_CyBHVmQRTy4lt_t6yw",
+            "nonce": "uouOG2fAmm8JnB9PFXCbKg",
             "audience": "did:web:server.example.com",
             "sessionId": "sess_conformance",
             "requestHash": "sha256:dededededededededededededededededededededededededededededededede",
@@ -85,8 +85,8 @@
         "publicKeyJwk": {
           "kty": "OKP",
           "crv": "Ed25519",
-          "x": "zuS80Vqo52EeCEye0Cm9F7aPwwY_ClJHTX9JfviOWwk",
-          "kid": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc#z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc"
+          "x": "lxSgAgLu-8N4lC2UH1ox8mH08DBnwjqnArqEE0Os0ek",
+          "kid": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex#z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex"
         },
         "now": 1750000000,
         "skewSeconds": 300
@@ -100,12 +100,12 @@
       "reason": "Signature does not verify under an unrelated key",
       "input": {
         "proof": {
-          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3ROdEt5RnBiTFhvNUtMR1NQckRERTNZOVI3UGtyUmo2bnlCM0s4blc3cFNjI3o2TWt0TnRLeUZwYkxYbzVLTEdTUHJEREUzWTlSN1BrclJqNm55QjNLOG5XN3BTYyJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3ROdEt5RnBiTFhvNUtMR1NQckRERTNZOVI3UGtyUmo2bnlCM0s4blc3cFNjIiwibm9uY2UiOiJ1OTBfQ3lCSFZtUVJUeTRsdF90Nnl3IiwicmVxdWVzdEhhc2giOiJzaGEyNTY6YzhmM2Q1OTk1OWM5MjQ3MjExZGU4Yzc2Yjk0ZWYxN2YwYzI3OWYwOTM2MjM1MGNlZDY3ZjY5ZWNkYjg5ZDZjNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1Njo0YmNmYTVkNzg4NjczZDBhMmE3OTZkMjJiMGFkMjhiYmI0ODJlYzA4Nzc3MGNkODcwZDZhOGNlMmU5MGVjMTQyIiwic2Vzc2lvbklkIjoic2Vzc19jb25mb3JtYW5jZSIsInN1YiI6ImRpZDprZXk6ejZNa3ROdEt5RnBiTFhvNUtMR1NQckRERTNZOVI3UGtyUmo2bnlCM0s4blc3cFNjIiwidHMiOjE3NTAwMDAwMDB9.33LOUGq6BzCPVMaCtd6x2hAo2S9qfOYtBwhnjIDnDN4TWc32Duy4yjGqAUH8XhkfuC8K4lB99HOPAHI6sS7ABA",
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3BkMXJCTWl5aGRvM1dyVVNzc0RXYTFmMVZzc3V4REdjdTZTcFRhbVhKc2V4I3o2TWtwZDFyQk1peWhkbzNXclVTc3NEV2ExZjFWc3N1eERHY3U2U3BUYW1YSnNleCJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3BkMXJCTWl5aGRvM1dyVVNzc0RXYTFmMVZzc3V4REdjdTZTcFRhbVhKc2V4Iiwibm9uY2UiOiJ1b3VPRzJmQW1tOEpuQjlQRlhDYktnIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6YzhmM2Q1OTk1OWM5MjQ3MjExZGU4Yzc2Yjk0ZWYxN2YwYzI3OWYwOTM2MjM1MGNlZDY3ZjY5ZWNkYjg5ZDZjNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1Njo0YmNmYTVkNzg4NjczZDBhMmE3OTZkMjJiMGFkMjhiYmI0ODJlYzA4Nzc3MGNkODcwZDZhOGNlMmU5MGVjMTQyIiwic2Vzc2lvbklkIjoic2Vzc19jb25mb3JtYW5jZSIsInN1YiI6ImRpZDprZXk6ejZNa3BkMXJCTWl5aGRvM1dyVVNzc0RXYTFmMVZzc3V4REdjdTZTcFRhbVhKc2V4IiwidHMiOjE3NTAwMDAwMDB9.BBKeemNnDrzICjebfPGVygc5KCSQo0b6Ds2eM17AOEOMaAY-cyczLrXpGGBXOMP0u3VRrMHiB1dYmHBknjzCBw",
           "meta": {
-            "did": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc",
-            "kid": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc#z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc",
+            "did": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex",
+            "kid": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex#z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex",
             "ts": 1750000000,
-            "nonce": "u90_CyBHVmQRTy4lt_t6yw",
+            "nonce": "uouOG2fAmm8JnB9PFXCbKg",
             "audience": "did:web:server.example.com",
             "sessionId": "sess_conformance",
             "requestHash": "sha256:c8f3d59959c9247211de8c76b94ef17f0c279f09362350ced67f69ecdb89d6c7",
@@ -115,8 +115,8 @@
         "publicKeyJwk": {
           "kty": "OKP",
           "crv": "Ed25519",
-          "x": "wbx3O6H-AueuF_s15StEjZ7XU-lrHvCwnb0csaAHuwc",
-          "kid": "did:key:z6MksVXQoai1242GnUsXsPygzLm2scvSjVcTjSQPJyYm8hfL#z6MksVXQoai1242GnUsXsPygzLm2scvSjVcTjSQPJyYm8hfL"
+          "x": "a48D8CjYpCCq87w7g4bUu8G0bBt752wvOLYzjTJi6QQ",
+          "kid": "did:key:z6Mkmh89oqPbqYLWZXXgxuSFeeuAEwLe4RdgAZa8nyAmFwLF#z6Mkmh89oqPbqYLWZXXgxuSFeeuAEwLe4RdgAZa8nyAmFwLF"
         },
         "now": 1750000000,
         "skewSeconds": 300
@@ -130,12 +130,12 @@
       "reason": "ts is 10000s before now with a 300s skew — replay/stale guard must reject",
       "input": {
         "proof": {
-          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3ROdEt5RnBiTFhvNUtMR1NQckRERTNZOVI3UGtyUmo2bnlCM0s4blc3cFNjI3o2TWt0TnRLeUZwYkxYbzVLTEdTUHJEREUzWTlSN1BrclJqNm55QjNLOG5XN3BTYyJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3ROdEt5RnBiTFhvNUtMR1NQckRERTNZOVI3UGtyUmo2bnlCM0s4blc3cFNjIiwibm9uY2UiOiJ1OTBfQ3lCSFZtUVJUeTRsdF90Nnl3IiwicmVxdWVzdEhhc2giOiJzaGEyNTY6YzhmM2Q1OTk1OWM5MjQ3MjExZGU4Yzc2Yjk0ZWYxN2YwYzI3OWYwOTM2MjM1MGNlZDY3ZjY5ZWNkYjg5ZDZjNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1Njo0YmNmYTVkNzg4NjczZDBhMmE3OTZkMjJiMGFkMjhiYmI0ODJlYzA4Nzc3MGNkODcwZDZhOGNlMmU5MGVjMTQyIiwic2Vzc2lvbklkIjoic2Vzc19jb25mb3JtYW5jZSIsInN1YiI6ImRpZDprZXk6ejZNa3ROdEt5RnBiTFhvNUtMR1NQckRERTNZOVI3UGtyUmo2bnlCM0s4blc3cFNjIiwidHMiOjE3NDk5OTAwMDB9.KlxF7oNYOc6ZqZX0EiLFHe92NGu2Bv2EYSvUvICV2Xvel20sBDzKtOp6sGzIL6bWxYVkdaLeSn5ad3-dSvo3CA",
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3BkMXJCTWl5aGRvM1dyVVNzc0RXYTFmMVZzc3V4REdjdTZTcFRhbVhKc2V4I3o2TWtwZDFyQk1peWhkbzNXclVTc3NEV2ExZjFWc3N1eERHY3U2U3BUYW1YSnNleCJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3BkMXJCTWl5aGRvM1dyVVNzc0RXYTFmMVZzc3V4REdjdTZTcFRhbVhKc2V4Iiwibm9uY2UiOiJ1b3VPRzJmQW1tOEpuQjlQRlhDYktnIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6YzhmM2Q1OTk1OWM5MjQ3MjExZGU4Yzc2Yjk0ZWYxN2YwYzI3OWYwOTM2MjM1MGNlZDY3ZjY5ZWNkYjg5ZDZjNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1Njo0YmNmYTVkNzg4NjczZDBhMmE3OTZkMjJiMGFkMjhiYmI0ODJlYzA4Nzc3MGNkODcwZDZhOGNlMmU5MGVjMTQyIiwic2Vzc2lvbklkIjoic2Vzc19jb25mb3JtYW5jZSIsInN1YiI6ImRpZDprZXk6ejZNa3BkMXJCTWl5aGRvM1dyVVNzc0RXYTFmMVZzc3V4REdjdTZTcFRhbVhKc2V4IiwidHMiOjE3NDk5OTAwMDB9.G5oIcLr1xX_Tn5fIujIMbzZxWGTxot93VI-xvRKUca879RyKInWNzTedgXQo8cpnFUu_gjOuTnwN80c7orGpDQ",
           "meta": {
-            "did": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc",
-            "kid": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc#z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc",
+            "did": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex",
+            "kid": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex#z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex",
             "ts": 1749990000,
-            "nonce": "u90_CyBHVmQRTy4lt_t6yw",
+            "nonce": "uouOG2fAmm8JnB9PFXCbKg",
             "audience": "did:web:server.example.com",
             "sessionId": "sess_conformance",
             "requestHash": "sha256:c8f3d59959c9247211de8c76b94ef17f0c279f09362350ced67f69ecdb89d6c7",
@@ -145,8 +145,8 @@
         "publicKeyJwk": {
           "kty": "OKP",
           "crv": "Ed25519",
-          "x": "zuS80Vqo52EeCEye0Cm9F7aPwwY_ClJHTX9JfviOWwk",
-          "kid": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc#z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc"
+          "x": "lxSgAgLu-8N4lC2UH1ox8mH08DBnwjqnArqEE0Os0ek",
+          "kid": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex#z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex"
         },
         "now": 1750000000,
         "skewSeconds": 300
@@ -155,29 +155,29 @@
     {
       "id": "signed-proof/envelope-binding",
       "category": "signed-proof",
-      "description": "Proof under profile org.kya-os/response-proof.v2 whose responseHash binds the full result envelope; verified against the received result with a mutated _meta",
+      "description": "Proof under profile org.kya-os/response-proof.envelope whose responseHash binds the full result envelope; verified against the received result with a mutated _meta",
       "expected": "pass",
-      "reason": "Under prf=org.kya-os/response-proof.v2 the verifier hashes the received result with the top-level _meta removed, so a _meta-only mutation never invalidates the binding",
+      "reason": "Under prf=org.kya-os/response-proof.envelope the verifier hashes the received result with the top-level _meta removed, so a _meta-only mutation never invalidates the binding",
       "input": {
         "proof": {
-          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3ROdEt5RnBiTFhvNUtMR1NQckRERTNZOVI3UGtyUmo2bnlCM0s4blc3cFNjI3o2TWt0TnRLeUZwYkxYbzVLTEdTUHJEREUzWTlSN1BrclJqNm55QjNLOG5XN3BTYyJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3ROdEt5RnBiTFhvNUtMR1NQckRERTNZOVI3UGtyUmo2bnlCM0s4blc3cFNjIiwibm9uY2UiOiJvcDgyQUtNLVhXODZ2SkxBaXE0dUhnIiwicHJmIjoib3JnLmt5YS1vcy9yZXNwb25zZS1wcm9vZi52MiIsInJlcXVlc3RIYXNoIjoic2hhMjU2OmM4ZjNkNTk5NTljOTI0NzIxMWRlOGM3NmI5NGVmMTdmMGMyNzlmMDkzNjIzNTBjZWQ2N2Y2OWVjZGI4OWQ2YzciLCJyZXNwb25zZUhhc2giOiJzaGEyNTY6OTUwNWVkZDUwZmY4ZDNlMmI4Njk5NzRiZDhmYWNiMGE1NjNiN2Q0ZTAzNmI5NTBlM2QwYzNlNGFjM2ZjMzQ3NiIsInNlc3Npb25JZCI6InNlc3NfY29uZm9ybWFuY2UiLCJzdWIiOiJkaWQ6a2V5Ono2TWt0TnRLeUZwYkxYbzVLTEdTUHJEREUzWTlSN1BrclJqNm55QjNLOG5XN3BTYyIsInRzIjoxNzUwMDAwMDAwfQ.xw_MCErAtpvWFZz1hrq6b2Otn5ZimhaCtPiP5MAjX6FJAdG5JEvRCJb7yfs5JRuvuP-q1R7nSd86sge4g5u-Dg",
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3BkMXJCTWl5aGRvM1dyVVNzc0RXYTFmMVZzc3V4REdjdTZTcFRhbVhKc2V4I3o2TWtwZDFyQk1peWhkbzNXclVTc3NEV2ExZjFWc3N1eERHY3U2U3BUYW1YSnNleCJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3BkMXJCTWl5aGRvM1dyVVNzc0RXYTFmMVZzc3V4REdjdTZTcFRhbVhKc2V4Iiwibm9uY2UiOiJkblA2ME5Sd29aYWRzem03aVg0REpRIiwicHJmIjoib3JnLmt5YS1vcy9yZXNwb25zZS1wcm9vZi5lbnZlbG9wZSIsInJlcXVlc3RIYXNoIjoic2hhMjU2OmM4ZjNkNTk5NTljOTI0NzIxMWRlOGM3NmI5NGVmMTdmMGMyNzlmMDkzNjIzNTBjZWQ2N2Y2OWVjZGI4OWQ2YzciLCJyZXNwb25zZUhhc2giOiJzaGEyNTY6OTUwNWVkZDUwZmY4ZDNlMmI4Njk5NzRiZDhmYWNiMGE1NjNiN2Q0ZTAzNmI5NTBlM2QwYzNlNGFjM2ZjMzQ3NiIsInNlc3Npb25JZCI6InNlc3NfY29uZm9ybWFuY2UiLCJzdWIiOiJkaWQ6a2V5Ono2TWtwZDFyQk1peWhkbzNXclVTc3NEV2ExZjFWc3N1eERHY3U2U3BUYW1YSnNleCIsInRzIjoxNzUwMDAwMDAwfQ.XqoChMzkmgMxTdOK0IbZ_bSROIitmgeL2doK9mfdawQFkN4VmUan4vZph9ZZUupPJjeNVk6thD61pfPzKSUGBA",
           "meta": {
-            "did": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc",
-            "kid": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc#z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc",
+            "did": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex",
+            "kid": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex#z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex",
             "ts": 1750000000,
-            "nonce": "op82AKM-XW86vJLAiq4uHg",
+            "nonce": "dnP60NRwoZadszm7iX4DJQ",
             "audience": "did:web:server.example.com",
             "sessionId": "sess_conformance",
             "requestHash": "sha256:c8f3d59959c9247211de8c76b94ef17f0c279f09362350ced67f69ecdb89d6c7",
             "responseHash": "sha256:9505edd50ff8d3e2b869974bd8facb0a563b7d4e036b950e3d0c3e4ac3fc3476",
-            "prf": "org.kya-os/response-proof.v2"
+            "prf": "org.kya-os/response-proof.envelope"
           }
         },
         "publicKeyJwk": {
           "kty": "OKP",
           "crv": "Ed25519",
-          "x": "zuS80Vqo52EeCEye0Cm9F7aPwwY_ClJHTX9JfviOWwk",
-          "kid": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc#z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc"
+          "x": "lxSgAgLu-8N4lC2UH1ox8mH08DBnwjqnArqEE0Os0ek",
+          "kid": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex#z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex"
         },
         "now": 1750000000,
         "skewSeconds": 300,
@@ -220,24 +220,24 @@
       "reason": "Envelope coverage authenticates structuredContent/isError/resultType — the recomputed responseHash must mismatch the bound one",
       "input": {
         "proof": {
-          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3ROdEt5RnBiTFhvNUtMR1NQckRERTNZOVI3UGtyUmo2bnlCM0s4blc3cFNjI3o2TWt0TnRLeUZwYkxYbzVLTEdTUHJEREUzWTlSN1BrclJqNm55QjNLOG5XN3BTYyJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3ROdEt5RnBiTFhvNUtMR1NQckRERTNZOVI3UGtyUmo2bnlCM0s4blc3cFNjIiwibm9uY2UiOiJvcDgyQUtNLVhXODZ2SkxBaXE0dUhnIiwicHJmIjoib3JnLmt5YS1vcy9yZXNwb25zZS1wcm9vZi52MiIsInJlcXVlc3RIYXNoIjoic2hhMjU2OmM4ZjNkNTk5NTljOTI0NzIxMWRlOGM3NmI5NGVmMTdmMGMyNzlmMDkzNjIzNTBjZWQ2N2Y2OWVjZGI4OWQ2YzciLCJyZXNwb25zZUhhc2giOiJzaGEyNTY6OTUwNWVkZDUwZmY4ZDNlMmI4Njk5NzRiZDhmYWNiMGE1NjNiN2Q0ZTAzNmI5NTBlM2QwYzNlNGFjM2ZjMzQ3NiIsInNlc3Npb25JZCI6InNlc3NfY29uZm9ybWFuY2UiLCJzdWIiOiJkaWQ6a2V5Ono2TWt0TnRLeUZwYkxYbzVLTEdTUHJEREUzWTlSN1BrclJqNm55QjNLOG5XN3BTYyIsInRzIjoxNzUwMDAwMDAwfQ.xw_MCErAtpvWFZz1hrq6b2Otn5ZimhaCtPiP5MAjX6FJAdG5JEvRCJb7yfs5JRuvuP-q1R7nSd86sge4g5u-Dg",
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3BkMXJCTWl5aGRvM1dyVVNzc0RXYTFmMVZzc3V4REdjdTZTcFRhbVhKc2V4I3o2TWtwZDFyQk1peWhkbzNXclVTc3NEV2ExZjFWc3N1eERHY3U2U3BUYW1YSnNleCJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3BkMXJCTWl5aGRvM1dyVVNzc0RXYTFmMVZzc3V4REdjdTZTcFRhbVhKc2V4Iiwibm9uY2UiOiJkblA2ME5Sd29aYWRzem03aVg0REpRIiwicHJmIjoib3JnLmt5YS1vcy9yZXNwb25zZS1wcm9vZi5lbnZlbG9wZSIsInJlcXVlc3RIYXNoIjoic2hhMjU2OmM4ZjNkNTk5NTljOTI0NzIxMWRlOGM3NmI5NGVmMTdmMGMyNzlmMDkzNjIzNTBjZWQ2N2Y2OWVjZGI4OWQ2YzciLCJyZXNwb25zZUhhc2giOiJzaGEyNTY6OTUwNWVkZDUwZmY4ZDNlMmI4Njk5NzRiZDhmYWNiMGE1NjNiN2Q0ZTAzNmI5NTBlM2QwYzNlNGFjM2ZjMzQ3NiIsInNlc3Npb25JZCI6InNlc3NfY29uZm9ybWFuY2UiLCJzdWIiOiJkaWQ6a2V5Ono2TWtwZDFyQk1peWhkbzNXclVTc3NEV2ExZjFWc3N1eERHY3U2U3BUYW1YSnNleCIsInRzIjoxNzUwMDAwMDAwfQ.XqoChMzkmgMxTdOK0IbZ_bSROIitmgeL2doK9mfdawQFkN4VmUan4vZph9ZZUupPJjeNVk6thD61pfPzKSUGBA",
           "meta": {
-            "did": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc",
-            "kid": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc#z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc",
+            "did": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex",
+            "kid": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex#z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex",
             "ts": 1750000000,
-            "nonce": "op82AKM-XW86vJLAiq4uHg",
+            "nonce": "dnP60NRwoZadszm7iX4DJQ",
             "audience": "did:web:server.example.com",
             "sessionId": "sess_conformance",
             "requestHash": "sha256:c8f3d59959c9247211de8c76b94ef17f0c279f09362350ced67f69ecdb89d6c7",
             "responseHash": "sha256:9505edd50ff8d3e2b869974bd8facb0a563b7d4e036b950e3d0c3e4ac3fc3476",
-            "prf": "org.kya-os/response-proof.v2"
+            "prf": "org.kya-os/response-proof.envelope"
           }
         },
         "publicKeyJwk": {
           "kty": "OKP",
           "crv": "Ed25519",
-          "x": "zuS80Vqo52EeCEye0Cm9F7aPwwY_ClJHTX9JfviOWwk",
-          "kid": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc#z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc"
+          "x": "lxSgAgLu-8N4lC2UH1ox8mH08DBnwjqnArqEE0Os0ek",
+          "kid": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex#z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex"
         },
         "now": 1750000000,
         "skewSeconds": 300,
@@ -277,12 +277,12 @@
       "reason": "prf is a covered claim: without it the reconstructed payload no longer matches the signature — a downgrade to body-only semantics must be a hard fail",
       "input": {
         "proof": {
-          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3ROdEt5RnBiTFhvNUtMR1NQckRERTNZOVI3UGtyUmo2bnlCM0s4blc3cFNjI3o2TWt0TnRLeUZwYkxYbzVLTEdTUHJEREUzWTlSN1BrclJqNm55QjNLOG5XN3BTYyJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3ROdEt5RnBiTFhvNUtMR1NQckRERTNZOVI3UGtyUmo2bnlCM0s4blc3cFNjIiwibm9uY2UiOiJvcDgyQUtNLVhXODZ2SkxBaXE0dUhnIiwicHJmIjoib3JnLmt5YS1vcy9yZXNwb25zZS1wcm9vZi52MiIsInJlcXVlc3RIYXNoIjoic2hhMjU2OmM4ZjNkNTk5NTljOTI0NzIxMWRlOGM3NmI5NGVmMTdmMGMyNzlmMDkzNjIzNTBjZWQ2N2Y2OWVjZGI4OWQ2YzciLCJyZXNwb25zZUhhc2giOiJzaGEyNTY6OTUwNWVkZDUwZmY4ZDNlMmI4Njk5NzRiZDhmYWNiMGE1NjNiN2Q0ZTAzNmI5NTBlM2QwYzNlNGFjM2ZjMzQ3NiIsInNlc3Npb25JZCI6InNlc3NfY29uZm9ybWFuY2UiLCJzdWIiOiJkaWQ6a2V5Ono2TWt0TnRLeUZwYkxYbzVLTEdTUHJEREUzWTlSN1BrclJqNm55QjNLOG5XN3BTYyIsInRzIjoxNzUwMDAwMDAwfQ.xw_MCErAtpvWFZz1hrq6b2Otn5ZimhaCtPiP5MAjX6FJAdG5JEvRCJb7yfs5JRuvuP-q1R7nSd86sge4g5u-Dg",
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3BkMXJCTWl5aGRvM1dyVVNzc0RXYTFmMVZzc3V4REdjdTZTcFRhbVhKc2V4I3o2TWtwZDFyQk1peWhkbzNXclVTc3NEV2ExZjFWc3N1eERHY3U2U3BUYW1YSnNleCJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3BkMXJCTWl5aGRvM1dyVVNzc0RXYTFmMVZzc3V4REdjdTZTcFRhbVhKc2V4Iiwibm9uY2UiOiJkblA2ME5Sd29aYWRzem03aVg0REpRIiwicHJmIjoib3JnLmt5YS1vcy9yZXNwb25zZS1wcm9vZi5lbnZlbG9wZSIsInJlcXVlc3RIYXNoIjoic2hhMjU2OmM4ZjNkNTk5NTljOTI0NzIxMWRlOGM3NmI5NGVmMTdmMGMyNzlmMDkzNjIzNTBjZWQ2N2Y2OWVjZGI4OWQ2YzciLCJyZXNwb25zZUhhc2giOiJzaGEyNTY6OTUwNWVkZDUwZmY4ZDNlMmI4Njk5NzRiZDhmYWNiMGE1NjNiN2Q0ZTAzNmI5NTBlM2QwYzNlNGFjM2ZjMzQ3NiIsInNlc3Npb25JZCI6InNlc3NfY29uZm9ybWFuY2UiLCJzdWIiOiJkaWQ6a2V5Ono2TWtwZDFyQk1peWhkbzNXclVTc3NEV2ExZjFWc3N1eERHY3U2U3BUYW1YSnNleCIsInRzIjoxNzUwMDAwMDAwfQ.XqoChMzkmgMxTdOK0IbZ_bSROIitmgeL2doK9mfdawQFkN4VmUan4vZph9ZZUupPJjeNVk6thD61pfPzKSUGBA",
           "meta": {
-            "did": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc",
-            "kid": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc#z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc",
+            "did": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex",
+            "kid": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex#z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex",
             "ts": 1750000000,
-            "nonce": "op82AKM-XW86vJLAiq4uHg",
+            "nonce": "dnP60NRwoZadszm7iX4DJQ",
             "audience": "did:web:server.example.com",
             "sessionId": "sess_conformance",
             "requestHash": "sha256:c8f3d59959c9247211de8c76b94ef17f0c279f09362350ced67f69ecdb89d6c7",
@@ -292,8 +292,8 @@
         "publicKeyJwk": {
           "kty": "OKP",
           "crv": "Ed25519",
-          "x": "zuS80Vqo52EeCEye0Cm9F7aPwwY_ClJHTX9JfviOWwk",
-          "kid": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc#z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc"
+          "x": "lxSgAgLu-8N4lC2UH1ox8mH08DBnwjqnArqEE0Os0ek",
+          "kid": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex#z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex"
         },
         "now": 1750000000,
         "skewSeconds": 300
@@ -307,12 +307,12 @@
       "reason": "Unknown response-proof profiles are rejected fail-closed — never verified under weaker (body-only) semantics",
       "input": {
         "proof": {
-          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3ROdEt5RnBiTFhvNUtMR1NQckRERTNZOVI3UGtyUmo2bnlCM0s4blc3cFNjI3o2TWt0TnRLeUZwYkxYbzVLTEdTUHJEREUzWTlSN1BrclJqNm55QjNLOG5XN3BTYyJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3ROdEt5RnBiTFhvNUtMR1NQckRERTNZOVI3UGtyUmo2bnlCM0s4blc3cFNjIiwibm9uY2UiOiJvcDgyQUtNLVhXODZ2SkxBaXE0dUhnIiwicHJmIjoib3JnLmt5YS1vcy9yZXNwb25zZS1wcm9vZi52MiIsInJlcXVlc3RIYXNoIjoic2hhMjU2OmM4ZjNkNTk5NTljOTI0NzIxMWRlOGM3NmI5NGVmMTdmMGMyNzlmMDkzNjIzNTBjZWQ2N2Y2OWVjZGI4OWQ2YzciLCJyZXNwb25zZUhhc2giOiJzaGEyNTY6OTUwNWVkZDUwZmY4ZDNlMmI4Njk5NzRiZDhmYWNiMGE1NjNiN2Q0ZTAzNmI5NTBlM2QwYzNlNGFjM2ZjMzQ3NiIsInNlc3Npb25JZCI6InNlc3NfY29uZm9ybWFuY2UiLCJzdWIiOiJkaWQ6a2V5Ono2TWt0TnRLeUZwYkxYbzVLTEdTUHJEREUzWTlSN1BrclJqNm55QjNLOG5XN3BTYyIsInRzIjoxNzUwMDAwMDAwfQ.xw_MCErAtpvWFZz1hrq6b2Otn5ZimhaCtPiP5MAjX6FJAdG5JEvRCJb7yfs5JRuvuP-q1R7nSd86sge4g5u-Dg",
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3BkMXJCTWl5aGRvM1dyVVNzc0RXYTFmMVZzc3V4REdjdTZTcFRhbVhKc2V4I3o2TWtwZDFyQk1peWhkbzNXclVTc3NEV2ExZjFWc3N1eERHY3U2U3BUYW1YSnNleCJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3BkMXJCTWl5aGRvM1dyVVNzc0RXYTFmMVZzc3V4REdjdTZTcFRhbVhKc2V4Iiwibm9uY2UiOiJkblA2ME5Sd29aYWRzem03aVg0REpRIiwicHJmIjoib3JnLmt5YS1vcy9yZXNwb25zZS1wcm9vZi5lbnZlbG9wZSIsInJlcXVlc3RIYXNoIjoic2hhMjU2OmM4ZjNkNTk5NTljOTI0NzIxMWRlOGM3NmI5NGVmMTdmMGMyNzlmMDkzNjIzNTBjZWQ2N2Y2OWVjZGI4OWQ2YzciLCJyZXNwb25zZUhhc2giOiJzaGEyNTY6OTUwNWVkZDUwZmY4ZDNlMmI4Njk5NzRiZDhmYWNiMGE1NjNiN2Q0ZTAzNmI5NTBlM2QwYzNlNGFjM2ZjMzQ3NiIsInNlc3Npb25JZCI6InNlc3NfY29uZm9ybWFuY2UiLCJzdWIiOiJkaWQ6a2V5Ono2TWtwZDFyQk1peWhkbzNXclVTc3NEV2ExZjFWc3N1eERHY3U2U3BUYW1YSnNleCIsInRzIjoxNzUwMDAwMDAwfQ.XqoChMzkmgMxTdOK0IbZ_bSROIitmgeL2doK9mfdawQFkN4VmUan4vZph9ZZUupPJjeNVk6thD61pfPzKSUGBA",
           "meta": {
-            "did": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc",
-            "kid": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc#z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc",
+            "did": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex",
+            "kid": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex#z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex",
             "ts": 1750000000,
-            "nonce": "op82AKM-XW86vJLAiq4uHg",
+            "nonce": "dnP60NRwoZadszm7iX4DJQ",
             "audience": "did:web:server.example.com",
             "sessionId": "sess_conformance",
             "requestHash": "sha256:c8f3d59959c9247211de8c76b94ef17f0c279f09362350ced67f69ecdb89d6c7",
@@ -323,8 +323,8 @@
         "publicKeyJwk": {
           "kty": "OKP",
           "crv": "Ed25519",
-          "x": "zuS80Vqo52EeCEye0Cm9F7aPwwY_ClJHTX9JfviOWwk",
-          "kid": "did:key:z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc#z6MktNtKyFpbLXo5KLGSPrDDE3Y9R7PkrRj6nyB3K8nW7pSc"
+          "x": "lxSgAgLu-8N4lC2UH1ox8mH08DBnwjqnArqEE0Os0ek",
+          "kid": "did:key:z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex#z6Mkpd1rBMiyhdo3WrUSssDWa1f1VssuxDGcu6SpTamXJsex"
         },
         "now": 1750000000,
         "skewSeconds": 300

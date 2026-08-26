@@ -470,27 +470,27 @@ export type MetaPolicy = 'strict' | 'allow-extensions';
 // ============================================================================
 
 /**
- * Response-proof profile v1 — the implicit original profile. A v1 proof carries
+ * The body profile — the implicit original response-proof profile. A body-profile proof carries
  * NO `prf` claim (its wire shape predates the discriminator); `responseHash`
  * covers the response BODY only (`response.data` = the MCP `content` array).
  * The identifier exists so configuration can name the profile explicitly.
  */
-export const RESPONSE_PROOF_PROFILE_V1 = 'org.kya-os/response-proof.v1';
+export const RESPONSE_PROOF_PROFILE_BODY = 'org.kya-os/response-proof.body';
 
 /**
- * Response-proof profile v2 — envelope coverage (SPEC §7.3). `responseHash`
+ * The envelope profile (SPEC §7.3). `responseHash`
  * covers the ENTIRE MCP result object with the top-level `_meta` member removed,
  * mirroring the request side's `{method, params minus _meta}` rule, so result
  * members like `structuredContent`, `isError`, and `resultType` are
  * authenticated. The profile is discriminated by a signature-covered `prf`
- * claim: stripping it breaks the signature, so a v2 proof cannot be silently
- * downgraded to v1 semantics.
+ * claim: stripping it breaks the signature, so an envelope-profile proof cannot be silently
+ * downgraded to body-only semantics.
  */
-export const RESPONSE_PROOF_PROFILE_V2 = 'org.kya-os/response-proof.v2';
+export const RESPONSE_PROOF_PROFILE_ENVELOPE = 'org.kya-os/response-proof.envelope';
 
 export type ResponseProofProfile =
-  | typeof RESPONSE_PROOF_PROFILE_V1
-  | typeof RESPONSE_PROOF_PROFILE_V2;
+  | typeof RESPONSE_PROOF_PROFILE_BODY
+  | typeof RESPONSE_PROOF_PROFILE_ENVELOPE;
 
 export interface ProofMeta {
   did: string;
@@ -508,13 +508,13 @@ export interface ProofMeta {
   reason?: string;
   /**
    * Response-proof profile discriminator, COVERED by the JWS signature. Present
-   * with the {@link RESPONSE_PROOF_PROFILE_V2} literal on v2 proofs; ABSENT on
-   * v1 proofs (their wire shape is byte-identical to pre-v2 proofs). Verifiers
+   * with the {@link RESPONSE_PROOF_PROFILE_ENVELOPE} literal on envelope-profile proofs; ABSENT on
+   * body-profile proofs (their wire shape is byte-identical to earlier releases). Verifiers
    * select the response-hash canonicalization from this claim and MUST reject
    * any other value (fail-closed — no unknown profile falls back to weaker
    * semantics).
    */
-  prf?: typeof RESPONSE_PROOF_PROFILE_V2;
+  prf?: typeof RESPONSE_PROOF_PROFILE_ENVELOPE;
 }
 
 export interface DetachedProof {
@@ -747,14 +747,14 @@ export function validateDetachedProof(proof: unknown): {
     };
   }
 
-  // Optional profile discriminator (v2 proofs only). FAIL-CLOSED: any value
-  // other than the known v2 literal is rejected outright — an unknown profile
-  // must never fall back to v1 (weaker) response-hash semantics.
-  if (m['prf'] !== undefined && m['prf'] !== RESPONSE_PROOF_PROFILE_V2) {
+  // Optional profile discriminator (envelope-profile proofs only). FAIL-CLOSED: any value
+  // other than the known envelope-profile literal is rejected outright — an unknown profile
+  // must never fall back to the weaker body-only response-hash semantics.
+  if (m['prf'] !== undefined && m['prf'] !== RESPONSE_PROOF_PROFILE_ENVELOPE) {
     return {
       success: false,
       error: {
-        message: `meta.prf must be "${RESPONSE_PROOF_PROFILE_V2}" when present (unknown response-proof profiles are rejected fail-closed)`,
+        message: `meta.prf must be "${RESPONSE_PROOF_PROFILE_ENVELOPE}" when present (unknown response-proof profiles are rejected fail-closed)`,
       },
     };
   }

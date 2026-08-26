@@ -10,7 +10,7 @@
 import {
   KYA_OS_PROOF_META_KEY,
   LEGACY_PROOF_META_KEY,
-  RESPONSE_PROOF_PROFILE_V2,
+  RESPONSE_PROOF_PROFILE_ENVELOPE,
   type ToolRequest,
   type ToolResponse,
 } from "../proof/generator.js";
@@ -63,7 +63,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     emitLegacyProofKey,
     responseProofProfile,
   } = deps;
-  const bindsEnvelope = responseProofProfile === RESPONSE_PROOF_PROFILE_V2;
+  const bindsEnvelope = responseProofProfile === RESPONSE_PROOF_PROFILE_ENVELOPE;
   const auditedTerminalResponses = new WeakSet<object>();
   const auditMetaKey = 'org.kya-os/audit';
 
@@ -416,9 +416,9 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
 
       try {
         const request: ToolRequest = { method: toolName, params: args };
-        // v2 binds the FULL result envelope (hashing strips the top-level
-        // `_meta`, where the proof itself is attached below); v1 binds the
-        // content array only — the pre-v2 wire contract.
+        // The envelope profile binds the FULL result envelope (hashing strips the top-level
+        // `_meta`, where the proof itself is attached below); the body profile binds the
+        // content array only — the original wire contract.
         const response: ToolResponse = {
           data: bindsEnvelope ? result : result.content,
         };
@@ -577,9 +577,9 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       // `responseData !== undefined` signals this outcome has a body to bind
       // (the needs_authorization challenge); denial / step-up proofs stay
       // body-free under every profile. WHAT gets bound is profile-selected:
-      // v2 binds the full response envelope the client receives (hashing
-      // strips `_meta`, where the proof lands below), v1 the bare challenge
-      // content — the pre-v2 wire contract.
+      // the envelope profile binds the full response envelope the client receives (hashing
+      // strips `_meta`, where the proof lands below), the body profile the bare challenge
+      // content — the original wire contract.
       const proofResponse: ToolResponse | undefined =
         responseData !== undefined
           ? { data: bindsEnvelope ? response : responseData }
@@ -600,13 +600,13 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
           toolName,
         );
         if (!proofAuditDelivered) {
-          // markAuditDegraded flips isError on the response. Under v1 that
+          // markAuditDegraded flips isError on the response. Under the body profile that
           // mutation is outside proof coverage, so the already-attached
-          // challenge proof stays verifiable and is kept. Under v2 the
+          // challenge proof stays verifiable and is kept. Under the envelope profile the
           // envelope binding COVERS isError — keeping the proof would ship a
           // binding the client must reject as tampering — so the degraded
           // path strips it (mirroring wrapWithProof's degraded semantics):
-          // a degraded v2 challenge ships unproven, never falsely "MITM'd".
+          // a degraded envelope-profile challenge ships unproven, never falsely "MITM'd".
           markAuditDegraded(
             response,
             'Required proof audit delivery failed for authorization outcome',

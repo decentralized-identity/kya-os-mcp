@@ -165,20 +165,21 @@ export interface KyaOsConfig {
    * Response-proof profile every proof this server mints is bound under
    * (SPEC §7.3).
    *
-   * - `"org.kya-os/response-proof.v1"` (default): `responseHash` covers the
-   *   response BODY only (the MCP `content` array). Wire-identical to pre-v2
+   * - `"org.kya-os/response-proof.body"` (default): `responseHash` covers the
+   *   response BODY only (the MCP `content` array). Wire-identical to earlier
    *   releases — any existing verifier keeps working.
-   * - `"org.kya-os/response-proof.v2"`: `responseHash` covers the ENTIRE result
+   * - `"org.kya-os/response-proof.envelope"`: `responseHash` covers the ENTIRE result
    *   object with the top-level `_meta` member removed, so `structuredContent`,
    *   `isError`, and `resultType` are authenticated. Each proof carries a
    *   signature-covered `prf` claim naming the profile, so verification cannot
-   *   silently fall back to v1 semantics.
+   *   silently fall back to body-only semantics.
    *
-   * Opting into v2 requires clients whose verifiers understand `prf` (this
-   * package's verifier accepts both profiles, keyed off each proof's own
-   * claim); a pre-v2 verifier rejects v2 proofs outright rather than
-   * mis-verifying them. The default stays v1 so existing verifiers keep
-   * working; opt in once your client population verifies v2.
+   * Opting into the envelope profile requires clients whose verifiers
+   * understand `prf` (this package's verifier accepts both profiles, keyed off
+   * each proof's own claim); an older verifier rejects envelope-profile proofs
+   * outright rather than mis-verifying them. The default stays body-only so
+   * existing verifiers keep working; opt in once your client population
+   * verifies the envelope profile.
    */
   responseProofProfile?: ResponseProofProfile;
   /** Delegation verification overrides */

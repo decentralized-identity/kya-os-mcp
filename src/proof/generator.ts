@@ -11,8 +11,8 @@
 import { CompactSign, importPKCS8 } from 'jose';
 import { canonicalizeJson, canonicalizeJsonBytes } from '../utils/canonical-json.js';
 import {
-  RESPONSE_PROOF_PROFILE_V1,
-  RESPONSE_PROOF_PROFILE_V2,
+  RESPONSE_PROOF_PROFILE_BODY,
+  RESPONSE_PROOF_PROFILE_ENVELOPE,
   type DetachedProof,
   type ProofMeta,
   type ResponseProofProfile,
@@ -96,8 +96,8 @@ export interface ProofOptions {
   reason?: string;
   /**
    * Response-proof profile to mint under. Default
-   * {@link RESPONSE_PROOF_PROFILE_V1} (body-only coverage, wire-identical to
-   * pre-v2 proofs). Under {@link RESPONSE_PROOF_PROFILE_V2} the caller passes
+   * {@link RESPONSE_PROOF_PROFILE_BODY} (body-only coverage, wire-identical to
+   * earlier releases). Under {@link RESPONSE_PROOF_PROFILE_ENVELOPE} the caller passes
    * the ENTIRE MCP result object as `response.data`; hashing covers it with the
    * top-level `_meta` member removed, and the proof carries a signature-covered
    * `prf` claim naming the profile. This is a minting OPTION, not a proof
@@ -108,7 +108,7 @@ export interface ProofOptions {
 
 // Re-exported so proof consumers can import the profile vocabulary from the
 // module that mints and hashes proofs, without reaching into types/protocol.
-export { RESPONSE_PROOF_PROFILE_V1, RESPONSE_PROOF_PROFILE_V2 };
+export { RESPONSE_PROOF_PROFILE_BODY, RESPONSE_PROOF_PROFILE_ENVELOPE };
 export type { ResponseProofProfile };
 
 /**
@@ -119,9 +119,9 @@ export type { ResponseProofProfile };
  *
  * `responseHash` (omitted when there is no response body, e.g. denial /
  * step-up proofs) depends on the response-proof profile:
- * - v1 (default): SHA-256 over `canonicalize(response.data)` — the response
+ * - body (default): SHA-256 over `canonicalize(response.data)` — the response
  *   BODY only (the MCP `content` array by convention).
- * - v2: `response.data` is the ENTIRE MCP result object; hashing covers it
+ * - envelope: `response.data` is the ENTIRE MCP result object; hashing covers it
  *   with the top-level `_meta` member removed (SPEC §7.3), mirroring the
  *   request side's `{method, params minus _meta}` rule. `_meta` stays
  *   intermediary-mutable and is where the proof itself is attached, so
@@ -142,7 +142,7 @@ export async function computeCanonicalHashes(
   request: ToolRequest,
   response: ToolResponse | undefined,
   hash: (bytes: Uint8Array) => Promise<string>,
-  profile: ResponseProofProfile = RESPONSE_PROOF_PROFILE_V1,
+  profile: ResponseProofProfile = RESPONSE_PROOF_PROFILE_BODY,
 ): Promise<{ requestHash: string; responseHash?: string }> {
   const canonicalRequest = {
     method: request.method,
@@ -161,8 +161,8 @@ export async function computeCanonicalHashes(
 }
 
 /**
- * The profile-selected response material that `responseHash` covers. v1 hashes
- * `data` verbatim; v2 removes the top-level `_meta` member from an object
+ * The profile-selected response material that `responseHash` covers. The body profile hashes
+ * `data` verbatim; the envelope profile removes the top-level `_meta` member from an object
  * envelope (and only from an object — arrays and primitives pass through, so
  * the mapping is total and identical for signer and verifier).
  */
@@ -171,7 +171,7 @@ function canonicalResponseBody(
   profile: ResponseProofProfile,
 ): unknown {
   if (
-    profile !== RESPONSE_PROOF_PROFILE_V2 ||
+    profile !== RESPONSE_PROOF_PROFILE_ENVELOPE ||
     data === null ||
     typeof data !== 'object' ||
     Array.isArray(data)
@@ -214,8 +214,8 @@ export function buildProofJwsPayload(meta: ProofMeta): Record<string, unknown> {
     ...(meta.clientDid && { clientDid: meta.clientDid }),
     ...(meta.outcome && { outcome: meta.outcome }),
     ...(meta.reason && { reason: meta.reason }),
-    // Profile discriminator (v2 proofs only) — covered by the signature so it
-    // cannot be stripped to downgrade the proof to v1 semantics.
+    // Profile discriminator (envelope-profile proofs only) — covered by the signature so it
+    // cannot be stripped to downgrade the proof to body-only semantics.
     ...(meta.prf && { prf: meta.prf }),
   };
 }
@@ -250,8 +250,8 @@ export class ProofGenerator {
   ): Promise<DetachedProof> {
     // `profile` is a minting option, not a proof claim — destructure it out so
     // the spread below can never leak a `profile` key into the signed meta. The
-    // claim form is `prf`, set only for v2 (v1 stays byte-identical on the wire).
-    const { profile = RESPONSE_PROOF_PROFILE_V1, ...metaOptions } = options;
+    // claim form is `prf`, set only for the envelope profile (the body profile stays byte-identical on the wire).
+    const { profile = RESPONSE_PROOF_PROFILE_BODY, ...metaOptions } = options;
     // The `prf` claim derives ONLY from `profile`. TypeScript keeps `prf` out
     // of ProofOptions, but a plain-JS caller could still pass one — strip it so
     // a foreign profile value can never ride the spread into the signed payload.
@@ -272,8 +272,8 @@ export class ProofGenerator {
       ...(hashes.responseHash !== undefined
         ? { responseHash: hashes.responseHash }
         : {}),
-      ...(profile === RESPONSE_PROOF_PROFILE_V2
-        ? { prf: RESPONSE_PROOF_PROFILE_V2 }
+      ...(profile === RESPONSE_PROOF_PROFILE_ENVELOPE
+        ? { prf: RESPONSE_PROOF_PROFILE_ENVELOPE }
         : {}),
       ...metaOptions,
     };
@@ -377,12 +377,12 @@ export class ProofGenerator {
   ): Promise<boolean> {
     try {
       // The profile is always derived from the proof's own signature-covered
-      // `prf` claim — never from generator configuration — so a v2 proof is
-      // checked with envelope hashing and a v1 proof with body hashing.
+      // `prf` claim — never from generator configuration — so an envelope-profile proof is
+      // checked with envelope hashing and a body-profile proof with body hashing.
       const expectedHashes = await this.generateCanonicalHashes(
         request,
         response,
-        proof.meta.prf ?? RESPONSE_PROOF_PROFILE_V1,
+        proof.meta.prf ?? RESPONSE_PROOF_PROFILE_BODY,
       );
 
       if (proof.meta.requestHash !== expectedHashes.requestHash) {

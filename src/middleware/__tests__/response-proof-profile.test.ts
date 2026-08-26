@@ -1,10 +1,10 @@
 /**
  * Middleware plumbing for the response-proof profile (`responseProofProfile`).
  *
- * Default is v1 — proofs stay wire-identical to pre-v2 releases (no `prf`,
- * `responseHash` over the content array). Opting into v2 makes every emitted
+ * Default is the body profile — proofs stay wire-identical to earlier releases (no `prf`,
+ * `responseHash` over the content array). Opting into the envelope profile makes every emitted
  * proof carry the signature-covered `prf` discriminator and bind the FULL
- * result envelope (minus top-level `_meta`), closing the v1 blind spot where
+ * result envelope (minus top-level `_meta`), closing the body-profile blind spot where
  * `structuredContent` / `isError` / `resultType` were unauthenticated.
  */
 
@@ -16,7 +16,7 @@ import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.j
 import { generateDidKeyFromBase64 } from '../../utils/did-helpers.js';
 import {
   KYA_OS_PROOF_META_KEY,
-  RESPONSE_PROOF_PROFILE_V2,
+  RESPONSE_PROOF_PROFILE_ENVELOPE,
 } from '../../proof/index.js';
 import type { DetachedProof, ResponseProofProfile } from '../../types/protocol.js';
 
@@ -63,7 +63,7 @@ async function sha256Of(crypto: NodeCryptoProvider, value: unknown): Promise<str
   return crypto.hash(new TextEncoder().encode(canonicalize(value)));
 }
 
-/** A tool result with members OUTSIDE the v1-covered content array. */
+/** A tool result with members OUTSIDE the body-profile-covered content array. */
 const RICH_RESULT = {
   content: [{ type: 'text', text: 'hi' }],
   structuredContent: { msg: 'hi' },
@@ -72,7 +72,7 @@ const RICH_RESULT = {
 };
 
 describe('responseProofProfile — wrapWithProof', () => {
-  it('defaults to v1: no prf, responseHash over the content array only', async () => {
+  it('defaults to the body profile: no prf, responseHash over the content array only', async () => {
     const { middleware, did, crypto } = await createTestMiddleware();
     const sessionId = await handshake(middleware, did);
 
@@ -84,9 +84,9 @@ describe('responseProofProfile — wrapWithProof', () => {
     expect(proof.meta.responseHash).toBe(await sha256Of(crypto, RICH_RESULT.content));
   });
 
-  it('v2: prf present, responseHash over the full envelope minus _meta', async () => {
+  it('envelope profile: prf present, responseHash over the full envelope minus _meta', async () => {
     const { middleware, did, crypto } = await createTestMiddleware({
-      responseProofProfile: RESPONSE_PROOF_PROFILE_V2,
+      responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE,
     });
     const sessionId = await handshake(middleware, did);
 
@@ -94,19 +94,19 @@ describe('responseProofProfile — wrapWithProof', () => {
     const result = await handler({ q: 1 }, sessionId);
 
     const proof = proofOf(result);
-    expect(proof.meta.prf).toBe(RESPONSE_PROOF_PROFILE_V2);
+    expect(proof.meta.prf).toBe(RESPONSE_PROOF_PROFILE_ENVELOPE);
     // The envelope the client receives, minus _meta (where this proof rides).
     const { _meta: _m, ...received } = result as Record<string, unknown>;
     expect(proof.meta.responseHash).toBe(await sha256Of(crypto, received));
-    // And that hash genuinely covers the v1 blind-spot members.
+    // And that hash genuinely covers the body-profile blind-spot members.
     expect(proof.meta.responseHash).not.toBe(
       await sha256Of(crypto, { ...received, structuredContent: { msg: 'TAMPERED' } }),
     );
   });
 
-  it('v2 round-trips through the generator verify path with the received result', async () => {
+  it('envelope profile round-trips through the generator verify path with the received result', async () => {
     const { middleware, did } = await createTestMiddleware({
-      responseProofProfile: RESPONSE_PROOF_PROFILE_V2,
+      responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE,
     });
     const sessionId = await handshake(middleware, did);
 
@@ -131,9 +131,9 @@ describe('responseProofProfile — wrapWithProof', () => {
 });
 
 describe('responseProofProfile — needs_authorization challenge', () => {
-  it('v2 challenge proof binds the challenge envelope (minus _meta) and carries prf', async () => {
+  it('envelope-profile challenge proof binds the challenge envelope (minus _meta) and carries prf', async () => {
     const { middleware, did, crypto } = await createTestMiddleware({
-      responseProofProfile: RESPONSE_PROOF_PROFILE_V2,
+      responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE,
     });
     const sessionId = await handshake(middleware, did);
 
@@ -148,13 +148,13 @@ describe('responseProofProfile — needs_authorization challenge', () => {
     expect(parsed.error).toBe('needs_authorization');
 
     const proof = proofOf(result);
-    expect(proof.meta.prf).toBe(RESPONSE_PROOF_PROFILE_V2);
+    expect(proof.meta.prf).toBe(RESPONSE_PROOF_PROFILE_ENVELOPE);
     expect(proof.meta.outcome).toBe('needs_authorization');
     const { _meta: _m, ...received } = result as Record<string, unknown>;
     expect(proof.meta.responseHash).toBe(await sha256Of(crypto, received));
   });
 
-  it('v1 (default) challenge proof still binds the bare challenge content — unchanged', async () => {
+  it('default challenge proof still binds the bare challenge content — unchanged', async () => {
     const { middleware, did, crypto } = await createTestMiddleware();
     const sessionId = await handshake(middleware, did);
 
@@ -170,9 +170,9 @@ describe('responseProofProfile — needs_authorization challenge', () => {
     expect(proof.meta.responseHash).toBe(await sha256Of(crypto, result.content));
   });
 
-  it('denial proofs remain body-free under v2 (no responseHash, prf still declared)', async () => {
+  it('denial proofs remain body-free under the envelope profile (no responseHash, prf still declared)', async () => {
     const { middleware, did } = await createTestMiddleware({
-      responseProofProfile: RESPONSE_PROOF_PROFILE_V2,
+      responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE,
     });
     const sessionId = await handshake(middleware, did);
 
@@ -188,19 +188,19 @@ describe('responseProofProfile — needs_authorization challenge', () => {
     expect(proof.meta.outcome).toBe('denied');
     expect(proof.meta.responseHash).toBeUndefined();
     // The profile declaration is uniform across every proof the server mints —
-    // inert on a body-free proof, but it keeps "this server emits v2" coherent.
-    expect(proof.meta.prf).toBe(RESPONSE_PROOF_PROFILE_V2);
+    // inert on a body-free proof, but it keeps "this server emits the envelope profile" coherent.
+    expect(proof.meta.prf).toBe(RESPONSE_PROOF_PROFILE_ENVELOPE);
   });
 
-  it('never ships a v2 challenge proof whose binding the degraded-audit isError flip broke', async () => {
+  it('never ships an envelope-profile challenge proof whose binding the degraded-audit isError flip broke', async () => {
     // When required proof-audit delivery fails AFTER the challenge proof is
-    // attached, markAuditDegraded sets isError on the response. Under v1 that
-    // mutation is outside proof coverage; under v2 it is covered, so a kept
+    // attached, markAuditDegraded sets isError on the response. Under the body profile that
+    // mutation is outside proof coverage; under the envelope profile it is covered, so a kept
     // proof would fail the client's binding check and read as a MITM. The
-    // degraded path must therefore strip the proof under v2 (matching the
+    // degraded path must therefore strip the proof under the envelope profile (matching the
     // wrapWithProof degraded semantics) rather than ship a broken binding.
     const { middleware, did } = await createTestMiddleware({
-      responseProofProfile: RESPONSE_PROOF_PROFILE_V2,
+      responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE,
       auditRecord: async (event) => {
         if (event.eventType === 'proof.generated') {
           throw new Error('audit sink unavailable');

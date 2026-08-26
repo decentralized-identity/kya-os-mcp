@@ -319,7 +319,7 @@ Response-side proof coverage (SPEC.md §7) is profile-selected by the proof's si
   `_meta` remains intermediary-mutable (it is where the proof itself rides), consistent with the request-side rule of item 2 above.
   A v2 verifier recomputes `responseHash` over the result as received, minus `_meta`, and derives the profile from the proof's own `prf` claim; an unrecognized `prf` is rejected fail-closed, and a stripped `prf` breaks the signature — there is no silent downgrade to v1 semantics.
 
-Servers SHOULD emit v2 where their client population verifies it (`responseProofProfile` in the middleware configuration); v1 remains the wire default for the 1.x line.
+Servers SHOULD emit v2 where their client population verifies it (`responseProofProfile` in the middleware configuration); v1 remains the wire default.
 An MRTR profile (§7.3) additionally requires `inputRequests` under proof coverage before the consent flow could ride `input_required`; v2's envelope coverage provides exactly that, so the remaining MRTR gap is flow design, not hash coverage.
 
 ---

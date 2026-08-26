@@ -909,7 +909,7 @@ Response canonicalization is selected by the proof's response-proof profile, nam
 
 A verifier derives the profile from the received proof's own `prf` claim, never from configuration, and MUST reject an unrecognized `prf` outright.
 Because `prf` is covered by the signature, stripping it from a v2 proof breaks verification — a downgrade to v1 semantics is a hard failure, not a silent fallback.
-Producers default to v1 for the 1.x line (wire compatibility with existing verifiers); v2 is an explicit opt-in (`responseProofProfile` in the middleware configuration) and becomes the default at 2.0.
+Producers default to v1 (wire compatibility with existing verifiers); v2 is an explicit opt-in (`responseProofProfile` in the middleware configuration).
 
 ### 7.4 JWS Compact Serialization
 

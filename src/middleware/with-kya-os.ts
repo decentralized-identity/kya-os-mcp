@@ -121,9 +121,9 @@ export function createKyaOsMiddleware(
   // hashed (§7.6), so the mirror is purely additive.
   const emitLegacyProofKey = config.emitLegacyProofKey ?? true;
 
-  // Response-proof profile: v1 (body-only responseHash) stays the default for
-  // the 1.x line so existing verifiers keep working; v2 (envelope coverage) is
-  // an explicit opt-in. See KyaOsConfig.responseProofProfile.
+  // Response-proof profile: v1 (body-only responseHash) stays the default so
+  // existing verifiers keep working; v2 (envelope coverage) is an explicit
+  // opt-in. See KyaOsConfig.responseProofProfile.
   const responseProofProfile =
     config.responseProofProfile ?? RESPONSE_PROOF_PROFILE_V1;
 

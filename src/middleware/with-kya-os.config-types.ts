@@ -177,8 +177,8 @@ export interface KyaOsConfig {
    * Opting into v2 requires clients whose verifiers understand `prf` (this
    * package's verifier accepts both profiles, keyed off each proof's own
    * claim); a pre-v2 verifier rejects v2 proofs outright rather than
-   * mis-verifying them. Default stays v1 for the 1.x line; v2 becomes the
-   * default at 2.0.
+   * mis-verifying them. The default stays v1 so existing verifiers keep
+   * working; opt in once your client population verifies v2.
    */
   responseProofProfile?: ResponseProofProfile;
   /** Delegation verification overrides */

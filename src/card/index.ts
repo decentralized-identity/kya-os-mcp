@@ -39,6 +39,7 @@ export * from './proof/index.js';
 export * from './delegation.js';
 export * from './builder.js';
 export * from './middleware.js';
+export * from './invocation.js';
 export * from './revocation.js';
 
 // The SSRF-hardened fetch is the card's production wiring for resolveCard / status-list

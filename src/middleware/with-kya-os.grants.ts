@@ -128,7 +128,12 @@ export function createGrantResolution(deps: MiddlewareDeps): GrantResolution {
     // A session-bound grant is usable only from its own session; an
     // agent-anchored (session-less) grant is portable across transports.
     return grants.find(
-      (g) => g.sessionId === undefined || g.sessionId === sessionId,
+      (g) =>
+        g.agentDid === agentDid &&
+        g.status === "active" &&
+        (g.expiresAt === undefined || g.expiresAt > Date.now()) &&
+        g.scopes.includes(scopeId) &&
+        (g.sessionId === undefined || g.sessionId === sessionId),
     );
   }
 
@@ -140,6 +145,10 @@ export function createGrantResolution(deps: MiddlewareDeps): GrantResolution {
   ): Promise<Grant | undefined> {
     const agentGrant = await resolveAgentGrant(toolName, args, sessionId, scopeId);
     if (agentGrant) return agentGrant;
+
+    // A session lookup proves only bearer possession. It must not turn a
+    // missing, tampered, or replayed holder proof into an authorized retry.
+    if (holderBindingMode === "enforce") return undefined;
 
     if (sessionId) {
       const [sessionGrant] = await grantStore.getBySession(sessionId, [scopeId]);

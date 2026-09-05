@@ -179,8 +179,8 @@ export function createDelegationGate(
       // Holder binding (spec §11.8): the delegation is valid, but a valid
       // *credential* is a bearer token until we also prove the caller holds the
       // delegation SUBJECT's key. Opt-in via `delegation.holderBinding`. did:key
-      // subjects are bound here; did:web is deferred to cnf binding (phase 2) and
-      // logged, never rejected. Runs after identity is established, before scope.
+      // subjects are bound here; unsupported profiles reject in enforce mode.
+      // Runs after identity is established, before scope.
       if (holderBindingMode !== "off" && holderBindingVerifier) {
         const subjectDid = vc.credentialSubject?.id;
         if (subjectDid && isHolderBindingApplicable(subjectDid)) {
@@ -241,8 +241,16 @@ export function createDelegationGate(
             }
           }
         } else if (subjectDid) {
-          // Non-did:key subject — phase 1 cannot pin its key; defer to cnf
-          // binding (phase 2) rather than reject legitimate traffic.
+          // This legacy proof profile cannot establish named-DID binding.
+          // Enforce must reject until a supported proof profile establishes it;
+          // a warning is not proof that the caller holds the named DID's key.
+          const reason = "This delegation subject requires a supported holder-binding proof profile";
+          if (holderBindingMode === "enforce") {
+            return attachOutcomeProof(
+              buildDelegationErrorResponse(KYA_OS_ERROR_CODES.holder_binding_failed, reason),
+              toolName, args, sessionId, reason,
+            );
+          }
           logger.warn(
             `[kya-os] Holder binding: subject "${subjectDid}" is not did:key; deferring to cnf binding (phase 2)`,
           );

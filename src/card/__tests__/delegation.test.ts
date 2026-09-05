@@ -257,6 +257,18 @@ describe('attenuates + accessors', () => {
     expect(attenuates(root(), child({ allowedAction: ['admin.reset'] })).length).toBeGreaterThan(0);
   });
 
+  it.each([
+    ['0.0000001', '0.0000009', false],
+    ['1.000000000000000001', '1.000000000000000002', false],
+    ['100000000000000000000.01', '100000000000000000000.02', false],
+    ['0001.0100', '1.01', true],
+    ['10', '9.9999999999999999999', true],
+  ])('compares the entire MaxAmount decimal %s -> %s', (parent, amount, allowed) => {
+    const p = root({ caveats: [maxAmount(parent)] });
+    const c = child({ caveats: [maxAmount(amount)] });
+    expect(attenuates(p, c).length === 0).toBe(allowed);
+  });
+
   it('MaxAmount: a currency-LESS parent is narrowed by a child that pins a currency (adds a constraint)', () => {
     const p = root({ caveats: [{ type: 'MaxAmount', limit: '1000.00' }] }); // any currency, ≤ 1000
     const c = child({ caveats: [maxAmount('500.00', 'USD')] }); // pins USD and tightens the amount

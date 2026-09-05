@@ -96,9 +96,11 @@ export interface KyaOsDelegationConfig {
    *   subject. **Breaking for callers that don't yet send `_kyaos_proof`** — opt
    *   in only once your agents mint request proofs.
    *
-   * Scope is did:key subjects (the DID encodes the key). did:web and other
-   * subjects are deferred to cnf-based binding (phase 2) and logged, never
-   * rejected — so enabling `'enforce'` never breaks did:web traffic.
+   * This legacy proof profile supports did:key subjects only. In `'enforce'`
+   * mode unsupported subjects are rejected and durable session grants cannot
+   * bypass the per-request proof requirement. Named DID subjects need a
+   * supported proof profile, such as the Card request-proof guard with an
+   * authenticated DID resolver. `'warn'` retains migration-only permissiveness.
    */
   holderBinding?: "off" | "warn" | "enforce";
   /**

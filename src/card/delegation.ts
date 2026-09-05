@@ -121,22 +121,23 @@ export function statusEntryOf(vc: DelegationCredential): BitstringStatusListEntr
   return { statusListCredential: status.statusListCredential, statusListIndex: status.statusListIndex };
 }
 
-function toScaled(dec: string): bigint | undefined {
+function decimalParts(dec: string): [string, string] | undefined {
   const match = /^(\d+)(?:\.(\d+))?$/.exec(dec.trim());
   if (!match?.[1]) return undefined;
-  const frac = (match[2] ?? '').padEnd(6, '0').slice(0, 6);
-  try {
-    return BigInt(match[1]) * 1_000_000n + BigInt(frac);
-  } catch {
-    return undefined;
-  }
+  return [match[1].replace(/^0+(?=\d)/, ''), match[2] ?? ''];
 }
 
 // `child ≤ parent`, fail-closed (any unparseable value ⇒ false).
 function decimalLte(child: string, parent: string): boolean {
-  const c = toScaled(child);
-  const p = toScaled(parent);
-  return c !== undefined && p !== undefined && c <= p;
+  const c = decimalParts(child);
+  const p = decimalParts(parent);
+  if (!c || !p) return false;
+  if (c[0].length !== p[0].length) return c[0].length < p[0].length;
+  if (c[0] !== p[0]) return c[0] < p[0];
+  // Compare all fractional digits; rounding or truncating permits a child to
+  // increase a finely denominated budget while appearing to attenuate it.
+  const precision = Math.max(c[1].length, p[1].length);
+  return c[1].padEnd(precision, '0') <= p[1].padEnd(precision, '0');
 }
 function dateLte(child: string, parent: string): boolean {
   const c = Date.parse(child);

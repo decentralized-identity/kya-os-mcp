@@ -158,6 +158,49 @@ function delegationHandler(middleware: Awaited<ReturnType<typeof makeServer>>['m
 }
 
 describe('wrapWithDelegation — grant retry resolution', () => {
+  it('enforce: a session grant cannot bypass missing, altered, foreign or replayed holder proofs', async () => {
+    const store = new MemoryGrantStore();
+    const agent = await makeIdentity();
+    const stranger = await makeIdentity();
+    const { server, middleware } = await makeServer({ holderBinding: 'enforce', grantStore: store });
+    const sessionId = await openSession(middleware, server.did);
+    store.bind(activeGrant({ agentDid: agent.did, sessionId }));
+    const handler = delegationHandler(middleware);
+    const args = { item: 'laptop' };
+    const sign = (identity: ProofAgentIdentity = agent) => generateRequestProof({
+      identity, crypto, toolName: TOOL, args, audience: server.did, sessionId,
+    });
+
+    expect(challenged(await handler(args, sessionId))).toBe(true);
+    expect(challenged(await handler({ item: 'different', _kyaos_proof: await sign() }, sessionId))).toBe(true);
+    expect(challenged(await handler({ ...args, _kyaos_proof: await sign(stranger) }, sessionId))).toBe(true);
+
+    const proof = await sign();
+    expect(reached(await handler({ ...args, _kyaos_proof: proof }, sessionId))).toBe(true);
+    expect(challenged(await handler({ ...args, _kyaos_proof: proof }, sessionId))).toBe(true);
+    // Reusable authority still works when each retry has its own fresh proof.
+    expect(reached(await handler({ ...args, _kyaos_proof: await sign() }, sessionId))).toBe(true);
+  });
+
+  it.each([
+    { agentDid: 'did:key:zOther' },
+    { status: 'revoked' as const },
+    { expiresAt: 0 },
+    { scopes: ['cart:read'] },
+    { sessionId: 'different-session' },
+  ])('enforce: rejects an inconsistent store result %j', async (override) => {
+    const agent = await makeIdentity();
+    const store = new MemoryGrantStore();
+    // A durable adapter must not be able to broaden the verified principal or scope.
+    store.getByAgent = async () => [activeGrant({ agentDid: agent.did, ...override })];
+    const { server, middleware } = await makeServer({ holderBinding: 'enforce', grantStore: store });
+    const args = { item: 'laptop' };
+    const proof = await generateRequestProof({
+      identity: agent, crypto, toolName: TOOL, args, audience: server.did, sessionId: 'local-session',
+    });
+    expect(challenged(await delegationHandler(middleware)({ ...args, _kyaos_proof: proof }))).toBe(true);
+  });
+
   it('getBySession: a no-delegation retry on the same session reuses the grant (no re-paste)', async () => {
     const store = new MemoryGrantStore();
     const { server, middleware } = await makeServer({ grantStore: store });

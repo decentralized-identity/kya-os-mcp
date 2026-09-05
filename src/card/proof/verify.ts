@@ -65,12 +65,18 @@ export async function verifyCardProof(
   if (meta.audience !== deps.expectedAudience) reasons.push('audience_mismatch');
   if (meta.requestHash !== computedHash) reasons.push('request_hash_mismatch');
   checkWindow(meta, deps, reasons);
-  await consumeNonce(meta, deps, reasons);
   if (key && algOk && !(await verifyDetachedJws(meta, key))) reasons.push('invalid_signature');
 
   const warnings: string[] = [];
   let level: ProofAssurance = 'L3-minus';
   if (key) level = await checkCnfFusion(meta, key, deps, reasons, warnings);
+
+  // Only authenticated, correctly bound requests may spend a holder's nonce.
+  // Otherwise a forged proof can burn the legitimate request's nonce before
+  // its signature is checked. The final atomic claim still excludes concurrent
+  // valid replays before either caller receives an allow result.
+  if (!deps.consumeNonceIfFresh) reasons.push('nonce_seam_missing');
+  else if (reasons.length === 0) await consumeNonce(meta, deps, reasons);
 
   const ok = reasons.length === 0;
   const withWarnings = warnings.length > 0 ? { warnings } : {};

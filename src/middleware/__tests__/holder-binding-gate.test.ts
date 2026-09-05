@@ -192,7 +192,7 @@ describe('wrapWithDelegation — holder binding', () => {
     expect(result.content[0].text).toBe('reached-handler');
   });
 
-  it('enforce: a non-did:key (did:web) subject is deferred (not_applicable), not rejected', async () => {
+  it('enforce: an unsupported did:web subject is rejected without holder proof', async () => {
     const { server, middleware } = await makeServer('enforce');
     const vc = await issueVC('did:web:agent.example.com');
     const sessionId = await openSession(middleware, server.did);
@@ -202,11 +202,11 @@ describe('wrapWithDelegation — holder binding', () => {
       { scopeId: SCOPE, consentUrl: 'https://example.com/consent' },
       handlerThatRuns,
     );
-    // No proof, did:web subject → phase-1 cannot bind it → deferred (allowed).
+    // An unsupported proof profile cannot satisfy an explicit enforcement floor.
     const result = await handler({ path: '/secret', _kyaos_delegation: vc }, sessionId);
 
-    expect(result.isError).toBeUndefined();
-    expect(result.content[0].text).toBe('reached-handler');
+    expect(result.isError).toBe(true);
+    expect(parse(result).error).toBe('holder_binding_failed');
   });
 
   it('enforce: a proof minted for a DIFFERENT server (wrong audience) is rejected', async () => {

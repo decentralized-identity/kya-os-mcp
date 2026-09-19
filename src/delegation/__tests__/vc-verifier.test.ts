@@ -395,7 +395,7 @@ describe("DelegationCredentialVerifier", () => {
       expect(result.reason).toBe(
         "Could not resolve issuer DID: did:web:example.com:issuer"
       );
-      expect(result.stage).toBe("complete");
+      expect(result.stage).toBe("signature");
       expect(result.checks?.signatureValid).toBe(false);
     });
 
@@ -620,8 +620,9 @@ describe("DelegationCredentialVerifier", () => {
 
       expect(result.valid).toBe(false);
       expect(result.reason).toBe(
-        "Credential revoked via StatusList2021 (revocation)"
+        "Credential revoked via StatusList2021Entry (revocation)"
       );
+      expect(result.stage).toBe("status");
       expect(result.checks?.statusValid).toBe(false);
     });
 

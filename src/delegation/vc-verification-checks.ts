@@ -138,13 +138,21 @@ export function combineVerificationResult(
   startTime: number,
 ): DelegationVCVerificationResult {
   const allValid = signatureResult.valid && statusResult.valid;
+  // A failed verdict names the check that failed (signature first, since a
+  // bad signature makes the status answer moot); "complete" is reserved for
+  // a verdict where both checks ran and passed.
+  const stage: DelegationVCVerificationResult["stage"] = allValid
+    ? "complete"
+    : signatureResult.valid
+      ? "status"
+      : "signature";
   return {
     valid: allValid,
     reason: !allValid
       ? signatureResult.reason || statusResult.reason || "Unknown failure"
       : undefined,
     statusOutcome: statusResult.outcome,
-    stage: "complete",
+    stage,
     metrics: {
       basicCheckMs,
       signatureCheckMs: signatureResult.durationMs || 0,
@@ -289,7 +297,7 @@ export async function checkCredentialStatus(
     if (isRevoked) {
       return {
         valid: false,
-        reason: `Credential revoked via StatusList2021 (${status.statusPurpose})`,
+        reason: `Credential revoked via ${status.type} (${status.statusPurpose})`,
         outcome: "revoked",
         durationMs: Date.now() - startTime,
       };

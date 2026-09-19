@@ -10,7 +10,7 @@ const MAX_VALUE_LEN = 256;
  */
 const NESTED_QUANTIFIER = /\([^()]*[+*?{][^()]*\)\s*[+*{]/;
 
-export type ScopeMatcher = 'exact' | 'prefix' | 'regex';
+export type ScopeMatcher = 'exact' | 'prefix' | 'path-prefix' | 'regex';
 
 /**
  * Match a single requested scope/resource value against a pattern by matcher kind.
@@ -18,7 +18,12 @@ export type ScopeMatcher = 'exact' | 'prefix' | 'regex';
  * - `exact`  : strict string equality.
  * - `prefix` : value starts with the pattern (a single trailing `*` is optional sugar).
  *              An empty base ('' or lone '*') matches nothing — it will NOT grant
- *              universal scope.
+ *              universal scope. Character-level: `notes` matches `notesx/secret.md`.
+ *              Use it for scope ids, where the value is an identifier, not a path.
+ * - `path-prefix` : the value IS the pattern, or lies under it as a `/`-separated
+ *              path (`notes` matches `notes` and `notes/a/b.md`, never
+ *              `notesx/secret.md`). Trailing `/` or `/*` on the pattern is optional
+ *              sugar; an empty base matches nothing. Use it for resource paths.
  * - `regex`  : anchored full-string match; never throws (invalid patterns → false).
  *
  * SECURITY: the regex pattern is supplied by the credential ISSUER. JS `RegExp`
@@ -37,6 +42,13 @@ export function matchScope(pattern: string, matcher: ScopeMatcher, value: string
       // Refuse to grant universal scope via an empty/`*`-only prefix.
       if (base.length === 0) return false;
       return value.startsWith(base);
+    }
+    case 'path-prefix': {
+      let base = pattern.endsWith('*') ? pattern.slice(0, -1) : pattern;
+      while (base.endsWith('/')) base = base.slice(0, -1);
+      // Refuse to grant universal scope via an empty/`*`-only prefix.
+      if (base.length === 0) return false;
+      return value === base || value.startsWith(`${base}/`);
     }
     case 'regex': {
       if (pattern.length > MAX_REGEX_LEN || value.length > MAX_VALUE_LEN) return false;
@@ -71,7 +83,7 @@ function crispScopes(credential: DelegationCredential): CrispScope[] {
 export interface ScopeSatisfaction {
   satisfied: boolean;
   /**
-   * True when satisfaction came via a non-exact (prefix|regex) CrispScope matcher.
+   * True when satisfaction came via a non-exact (prefix|path-prefix|regex) CrispScope matcher.
    * Callers should surface a warning — non-exact matchers widen effective authority.
    */
   usedNonExactMatcher: boolean;

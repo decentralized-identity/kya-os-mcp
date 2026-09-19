@@ -22,7 +22,7 @@ export interface CrispBudget {
 
 export interface CrispScope {
   resource: string;
-  matcher: 'exact' | 'prefix' | 'regex';
+  matcher: 'exact' | 'prefix' | 'path-prefix' | 'regex';
   constraints?: Record<string, unknown>;
 }
 

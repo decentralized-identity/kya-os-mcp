@@ -18,6 +18,27 @@ describe('matchScope', () => {
     expect(matchScope('*', 'prefix', 'anything')).toBe(false);
   });
 
+  it('path-prefix: matches the path itself and anything beneath it', () => {
+    expect(matchScope('notes', 'path-prefix', 'notes')).toBe(true);
+    expect(matchScope('notes', 'path-prefix', 'notes/plan.md')).toBe(true);
+    expect(matchScope('notes', 'path-prefix', 'notes/2026/plan.md')).toBe(true);
+    expect(matchScope('notes/', 'path-prefix', 'notes/plan.md')).toBe(true);
+    expect(matchScope('notes/*', 'path-prefix', 'notes/plan.md')).toBe(true);
+  });
+
+  it('path-prefix: never escapes the directory boundary (unlike prefix)', () => {
+    expect(matchScope('notes', 'path-prefix', 'notesx/secret.md')).toBe(false);
+    expect(matchScope('notes', 'path-prefix', 'notes.md')).toBe(false);
+    expect(matchScope('notes', 'prefix', 'notesx/secret.md')).toBe(true); // the contrast
+  });
+
+  it('path-prefix: refuses an empty / "*"-only / "/"-only base (no universal grant)', () => {
+    expect(matchScope('', 'path-prefix', 'anything')).toBe(false);
+    expect(matchScope('*', 'path-prefix', 'anything')).toBe(false);
+    expect(matchScope('/', 'path-prefix', 'anything')).toBe(false);
+    expect(matchScope('/*', 'path-prefix', 'anything')).toBe(false);
+  });
+
   it('regex: matches anchored pattern', () => {
     expect(matchScope('repo:(read|write)', 'regex', 'repo:write')).toBe(true);
     expect(matchScope('repo:(read|write)', 'regex', 'repo:delete')).toBe(false);
@@ -73,6 +94,12 @@ describe('scopeSatisfies', () => {
     const r = scopeSatisfies('repo:write', cred([], [{ resource: 'repo:', matcher: 'prefix' }]));
     expect(r.satisfied).toBe(true);
     expect(r.usedNonExactMatcher).toBe(true);
+  });
+
+  it('honors crisp.scopes path-prefix matcher and flags non-exact use', () => {
+    const vc = cred([], [{ resource: 'notes', matcher: 'path-prefix' }]);
+    expect(scopeSatisfies('notes/plan.md', vc)).toEqual({ satisfied: true, usedNonExactMatcher: true });
+    expect(scopeSatisfies('notesx/secret.md', vc).satisfied).toBe(false);
   });
 
   it('exact crisp matcher does not flag non-exact use', () => {

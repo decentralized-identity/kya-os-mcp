@@ -7,6 +7,31 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Fixed
+
+- **`DelegationVCVerificationResult.stage` names the failing check.** A failed
+  verdict from `verifyDelegationCredential` / `verifyDelegationJwt` reported
+  `stage: "complete"` once both the signature and status checks had run, leaving
+  only the `checks` flags to say which one failed. It now reports `"signature"` or
+  `"status"`; `"complete"` accompanies `valid: true` only.
+- The revocation reason names the status method on the credential
+  (`Credential revoked via <credentialStatus.type> (…)`) instead of always
+  saying `StatusList2021`.
+- `schemas/well-known-mcpi.json`: `version` accepts the three-part protocol
+  version the reference implementation advertises (`1.0.0`); `endpoints.handshake`
+  is no longer required — it belongs to the legacy 1.x session profile
+  (SPEC-MCP-EXTENSION.md §4).
+
+### Documentation
+
+- SPEC.md §10: the discovery example now validates against the schema
+  (`serverDid`, not `did`; schema capability names; `statusListCredential`;
+  camelCase advisory fields) and says when `endpoints.handshake` applies.
+- CONFORMANCE.md: names the three ladders (Core L1–L3, Card L1–L3, AAP-0–4) and
+  asks claims to say which; the Entity Card section uses the terminal `_meta`
+  key names (`org.kya-os/response-proof`, `org.kya-os/request-proof` carrying
+  `prf: "org.kya-os/proof.v1"`).
+
 ## [1.15.0] - 2026-08-25
 
 ### Added

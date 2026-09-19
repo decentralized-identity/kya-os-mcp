@@ -8,8 +8,8 @@
   "properties": {
     "version": {
       "type": "string",
-      "pattern": "^\\d+\\.\\d+$",
-      "description": "KYA-OS protocol version supported by this server."
+      "pattern": "^\\d+\\.\\d+(\\.\\d+)?$",
+      "description": "KYA-OS protocol version supported by this server (the reference implementation advertises \"1.0.0\")."
     },
     "serverDid": {
       "type": "string",
@@ -18,12 +18,11 @@
     },
     "endpoints": {
       "type": "object",
-      "required": ["handshake"],
       "properties": {
         "handshake": {
           "type": "string",
           "format": "uri-reference",
-          "description": "Relative or absolute URL for the handshake endpoint."
+          "description": "Relative or absolute URL for the handshake endpoint. Legacy 1.x session profile only (SPEC-MCP-EXTENSION.md §4); servers on the stateless card-proof profile omit it."
         },
         "tools": {
           "type": "string",

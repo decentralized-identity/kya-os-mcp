@@ -11,6 +11,17 @@ Status: Stable
 
 This document defines three compliance levels for KYA-OS implementations. Each level builds on the previous, with increasing capability requirements. Implementations MUST pass all tests for a given level to claim conformance at that level.
 
+Three independent ladders live in this document, and two of them reuse the
+names L1–L3. A conformance claim MUST name its ladder:
+
+| Ladder | Levels | Measures |
+|--------|--------|----------|
+| Core (this section onward) | Core L1 / L2 / L3 | Crypto primitives, the legacy session-bound proof, W3C delegation credentials |
+| Entity Card (§ Entity Card Conformance) | Card L1 / L2 / L3 | The typed card and the stateless `org.kya-os/proof.v1` request proof |
+| Audit Assurance Profile (§ Audit Assurance Profile conformance) | AAP-0 … AAP-4 | Auditability mechanics an implementation can truthfully advertise |
+
+A bare "L2" is ambiguous; write "Core L2", "Card L2", or "AAP-2".
+
 ---
 
 ## Level 1 — Core Crypto
@@ -536,8 +547,9 @@ deployment satisfies its operational durability or independence claims.
 The Entity Card is a **distinct, newer layer** on top of the Level 1–3 ladder above:
 a typed, DID-anchored card plus a stateless, sender-constrained per-request proof.
 It is orthogonal to the legacy session-bound proof — the two coexist, each under
-its OWN distinct `_meta` key (`_meta['org.kya-os/proof']` for the legacy
-session-bound proof, `_meta['org.kya-os/proof.v1']` for the stateless card proof),
+its OWN distinct `_meta` key (`_meta["org.kya-os/response-proof"]` for the legacy
+session-bound proof, historically `org.kya-os/proof`; `_meta["org.kya-os/request-proof"]`
+for the stateless card proof, whose object carries `prf: "org.kya-os/proof.v1"`),
 and each verifier reads its own key and ignores the other. Its
 conformance vectors live in the SAME harness under two categories, wired to the two
 adapter methods `verifyCardProof` and `verifyEntityCard`.

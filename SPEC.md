@@ -548,12 +548,25 @@ interface DelegationConstraints {
     };
     scopes: Array<{
       resource: string;
-      matcher: 'exact' | 'prefix' | 'regex';
+      matcher: 'exact' | 'prefix' | 'path-prefix' | 'regex';
       constraints?: Record<string, unknown>;
     }>;
   };
 }
 ```
+
+#### CRISP scope matchers
+
+| `matcher` | Semantics | Intended value |
+|-----------|-----------|----------------|
+| `exact` | Strict string equality. | Any. Preferred for sensitive resources (§11.4). |
+| `prefix` | Character-level: the value starts with the pattern; one trailing `*` is optional sugar. An empty base grants nothing. | Scope **identifiers** (`repo:` matches `repo:write`). |
+| `path-prefix` | Path-level: the value equals the pattern or lies beneath it as a `/`-separated path. `notes` matches `notes` and `notes/2026/plan.md`, never `notesx/secret.md`. A trailing `/` or `/*` is optional sugar; an empty base grants nothing. | Resource **paths** (files, folders, URL paths). |
+| `regex` | Anchored full-string match; invalid patterns never match. Verifiers bound pattern and value length and reject nested-quantifier patterns. | Any; issuers accepting patterns from untrusted parties SHOULD prefer the other three. |
+
+Verifiers MUST treat `prefix` and `path-prefix` as distinct: applying `prefix`
+to a resource path lets a grant for `notes` authorize `notesx/secret.md`, which
+is a boundary escape, not a match.
 
 ### 6.4 Delegation Graph
 
@@ -582,7 +595,7 @@ Delegations form a directed acyclic graph (DAG):
 
 A `DelegationCredential` may authorize multiple resources, either via a list
 of explicit scope strings (`constraints.scopes[]`) or via pattern matchers
-(`constraints.crisp.scopes[].matcher`: `'exact' | 'prefix' | 'regex'`). When
+(`constraints.crisp.scopes[].matcher`: `'exact' | 'prefix' | 'path-prefix' | 'regex'`). When
 the credential is used to invoke a specific tool or resource, the invocation
 MUST designate the specific scope being exercised, and verifiers MUST confirm
 that the designated scope is a member of (or matches a pattern in) the

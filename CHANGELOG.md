@@ -7,6 +7,15 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- **`path-prefix` CRISP scope matcher.** `prefix` is character-level and right
+  for scope identifiers, but applied to a resource path it lets a grant for
+  `notes` authorize `notesx/secret.md`. `path-prefix` matches the path itself
+  or anything beneath it as a `/`-separated path, with an optional trailing `/`
+  or `/*`; an empty base grants nothing. Added to `matchScope`, the `CrispScope`
+  type, `schemas/delegation-credential.json`, and SPEC.md §6.3/§6.4.1.
+
 ### Fixed
 
 - **`DelegationVCVerificationResult.stage` names the failing check.** A failed

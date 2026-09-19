@@ -1293,26 +1293,34 @@ sufficient on its own: the resulting DelegationCredential is still verified per
 
 ## 10. Well-Known Endpoint
 
-KYA-OS servers SHOULD expose `/.well-known/mcp`:
+KYA-OS servers SHOULD expose `/.well-known/mcp`. The normative shape is
+`schemas/well-known-mcpi.json`; the example below validates against it:
 
 ```json
 {
-  "did": "did:web:mcp-server.example.com",
   "version": "1.0.0",
+  "serverDid": "did:web:mcp-server.example.com",
   "capabilities": {
+    "proofs": true,
     "delegation": true,
-    "proof": true,
-    "revocation": true
+    "statusList": true,
+    "crisp": true
   },
-  "supported_did_methods": ["did:key", "did:web", "did:cheqd"],
-  "proof_algorithms": ["EdDSA"],
   "clockSkewSeconds": 120,
   "endpoints": {
-    "handshake": "/_kya-os/handshake",
-    "status_list": "/.well-known/status/1"
-  }
+    "tools": "/mcp"
+  },
+  "statusListCredential": "https://mcp-server.example.com/.well-known/status/1",
+  "supportedDidMethods": ["did:key", "did:web", "did:cheqd"],
+  "proofAlgorithms": ["EdDSA"]
 }
 ```
+
+`serverDid` is the server's own DID, the audience a client binds proofs to.
+`supportedDidMethods` and `proofAlgorithms` are advisory additional properties
+(the schema permits them; it does not require them). Servers running the legacy
+1.x session profile additionally list `endpoints.handshake`
+(SPEC-MCP-EXTENSION.md §4); servers on the stateless card-proof profile omit it.
 
 Servers SHOULD list `did:cheqd` only when cheqd resolution has been explicitly
 configured for that deployment.

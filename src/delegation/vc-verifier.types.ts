@@ -40,6 +40,10 @@ export interface DelegationVCVerificationResult {
    * fail-closed — both still deny (see {@link StatusOutcome}).
    */
   statusOutcome?: StatusOutcome;
+  /**
+   * On failure, the check that failed. `complete` only ever accompanies
+   * `valid: true` (both signature and status ran and passed).
+   */
   stage: "basic" | "signature" | "status" | "complete";
   /**
    * True when the SIGNATURE verification was served from the per-instance

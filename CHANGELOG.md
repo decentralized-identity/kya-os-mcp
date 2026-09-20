@@ -7,6 +7,8 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.16.0] - 2026-09-19
+
 ### Added
 
 - **`path-prefix` CRISP scope matcher.** `prefix` is character-level and right

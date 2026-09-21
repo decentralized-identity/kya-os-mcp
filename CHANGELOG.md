@@ -7,6 +7,16 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Changed
+
+- **`schemas/delegation-credential.json` accepts a Bitstring status entry.**
+  Its `CredentialStatus` definition pinned `type` to `StatusList2021Entry`
+  with `id` required, while `card-delegation-credential.json` and the
+  TypeScript type (1.16.1) already describe the Bitstring Status List v1.0
+  entry. The published schema now admits either `type` and makes `id`
+  optional, so a credential carrying a Bitstring entry validates against the
+  same schema the runtime parser accepts.
+
 ## [1.16.1] - 2026-09-21
 
 ### Changed

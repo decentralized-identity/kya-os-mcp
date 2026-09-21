@@ -7,6 +7,8 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.16.2] - 2026-09-21
+
 ### Changed
 
 - **`schemas/delegation-credential.json` accepts a Bitstring status entry.**

@@ -88,3 +88,35 @@ describe('conformance vector-set immutability (SUITE-MANIFEST.json)', () => {
     }
   });
 });
+
+/**
+ * Prose counts drift silently. The manifest's own `vectorCount` was guarded
+ * above from the day it was introduced, but the vector count QUOTED in the DIF
+ * submission was not, and it sat at 44 after the suite grew to 48. That is the
+ * document a standards body reads, so an unguarded number there is the most
+ * expensive kind to leave stale.
+ *
+ * Any document that states a vector total must state the manifest's.
+ */
+describe('documented vector counts', () => {
+  const REPO_ROOT = join(VECTORS_DIR, '..', '..');
+  const DOCUMENTS = ['submission/0000-decentralized-authority.md'];
+
+  it.each(DOCUMENTS)('%s quotes the manifest vector count', (relativePath) => {
+    const text = readFileSync(join(REPO_ROOT, relativePath), 'utf8');
+    const quoted = [
+      ...text.matchAll(/(\d+)[- ]vector\b/gi),
+    ].map((match) => Number(match[1]));
+
+    expect(
+      quoted.length,
+      `${relativePath} states no vector count; drop it from DOCUMENTS if that is intended`,
+    ).toBeGreaterThan(0);
+
+    const wrong = quoted.filter((count) => count !== manifest.vectorCount);
+    expect(
+      wrong,
+      `${relativePath} claims ${wrong.join(', ')} vectors; the suite has ${manifest.vectorCount}`,
+    ).toEqual([]);
+  });
+});

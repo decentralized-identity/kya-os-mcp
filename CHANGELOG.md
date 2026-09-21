@@ -7,6 +7,8 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.16.1] - 2026-09-21
+
 ### Changed
 
 - **`CredentialStatus` matches the wire schema.** The TypeScript type said

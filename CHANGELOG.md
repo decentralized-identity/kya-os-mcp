@@ -7,6 +7,16 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Changed
+
+- **`CredentialStatus` matches the wire schema.** The TypeScript type said
+  `type: 'StatusList2021Entry'` with `id` required, while
+  `DelegationCredentialStatusSchema` has accepted `BitstringStatusListEntry`
+  (the StatusList2021 successor) with `id` optional. The type now admits
+  either `type` and makes `id` optional, so a wallet can stamp a Bitstring
+  entry without casting. `statusPurpose` stays required: both specs require
+  it and the purpose-parity check depends on it. Nothing on the wire changes.
+
 ## [1.16.0] - 2026-09-19
 
 ### Added

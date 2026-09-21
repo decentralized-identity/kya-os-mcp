@@ -12,8 +12,8 @@ importers:
         specifier: ^6.2.8
         version: 6.2.12
       json-canonicalize:
-        specifier: 2.0.0
-        version: 2.0.0
+        specifier: 3.0.1
+        version: 3.0.1
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1032,8 +1032,9 @@ packages:
   js-tokens@10.0.0:
     resolution: {integrity: sha512-lM/UBzQmfJRo9ABXbPWemivdCW8V2G8FHaHdypQaIy523snUjog0W71ayWXTjiR+ixeMyVHN2XcpnTd/liPg/Q==}
 
-  json-canonicalize@2.0.0:
-    resolution: {integrity: sha512-yyrnK/mEm6Na3ChbJUWueXdapueW0p380RUyTW87XGb1ww8l8hU0pRrGC3vSWHe9CxrbPHX2fGUOZpNiHR0IIg==}
+  json-canonicalize@3.0.1:
+    resolution: {integrity: sha512-xEzkTucfHhDooWOSMOvrlll9oTk6/mXZIerF2DFWA2chHZsnc2zrmAKjVOyDbSYHr0e3Djx9F89nZ3U2Bn+lSw==}
+    engines: {node: '>=8.5'}
 
   json-schema-traverse@0.4.1:
     resolution: {integrity: sha512-xbbCH5dCYU5T8LcEhhuh7HJ88HXuW3qsI3Y0zOZFKfZEHcpWiHU/Jxzk629Brsab/mMiHQti9wMP+845RPe3Vg==}
@@ -2497,7 +2498,7 @@ snapshots:
 
   js-tokens@10.0.0: {}
 
-  json-canonicalize@2.0.0: {}
+  json-canonicalize@3.0.1: {}
 
   json-schema-traverse@0.4.1: {}
 

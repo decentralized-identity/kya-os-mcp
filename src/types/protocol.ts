@@ -76,9 +76,18 @@ export interface Proof {
   [key: string]: unknown;
 }
 
+/**
+ * `credentialStatus` on a delegation credential. The wire schema
+ * (`DelegationCredentialStatusSchema` in `card/delegation.ts`) accepts the
+ * W3C Bitstring Status List v1.0 entry, the StatusList2021 successor; this
+ * type matches it. `StatusList2021Entry` stays accepted for credentials
+ * minted before the successor landed. `id` is optional per the Bitstring
+ * spec; `statusPurpose` is required by both specs and the purpose-parity
+ * check relies on it.
+ */
 export interface CredentialStatus {
-  id: string;
-  type: 'StatusList2021Entry';
+  id?: string;
+  type: 'BitstringStatusListEntry' | 'StatusList2021Entry';
   statusPurpose: 'revocation' | 'suspension';
   statusListIndex: string;
   statusListCredential: string;

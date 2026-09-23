@@ -199,11 +199,11 @@ describe("validateDelegationChain", () => {
       expect((await validateDelegationChain(root, { ...baseDeps, revocationChecker: checker })).valid).toBe(true);
     });
   });
-  it('only skips the presented leaf signature and never substitutes a resolver leaf', async () => {
-    const root = cred({ id: 'root', issuerDid: 'did:a', subjectDid: 'did:agent', scopes: ['read'] });
-    const leaf = cred({ id: 'leaf', issuerDid: 'did:agent', subjectDid: 'did:sub', parentId: 'root', audience: SERVER, scopes: ['read'] });
+  it("only skips the presented leaf signature and never substitutes a resolver leaf", async () => {
+    const root = cred({ id: "root", issuerDid: "did:a", subjectDid: "did:agent", scopes: ["read"] });
+    const leaf = cred({ id: "leaf", issuerDid: "did:agent", subjectDid: "did:sub", parentId: "root", audience: SERVER, scopes: ["read"] });
     const resolverLeaf = structuredClone(leaf);
-    const verifyDelegationCredential = vi.fn<DelegationCredentialVerifierPort['verifyDelegationCredential']>(async () => ({ valid: true }));
+    const verifyDelegationCredential = vi.fn<DelegationCredentialVerifierPort["verifyDelegationCredential"]>(async () => ({ valid: true }));
     const result = await validateDelegationChain(leaf, {
       ...baseDeps, verifier: { verifyDelegationCredential }, resolveDelegationChain: async () => [root, resolverLeaf],
     }, { skipSignature: true });
@@ -213,13 +213,77 @@ describe("validateDelegationChain", () => {
     expect(verifyDelegationCredential.mock.calls[1]?.[0]).toBe(leaf);
   });
 
-  it('returns the earliest verified date or constraint across the chain', async () => {
-    const root = cred({ id: 'root', issuerDid: 'did:a', subjectDid: 'did:agent', scopes: ['read'] });
-    const leaf = cred({ id: 'leaf', issuerDid: 'did:agent', subjectDid: 'did:sub', parentId: 'root', audience: SERVER, scopes: ['read'] });
-    root.expirationDate = '2026-09-22T12:00:00.000Z';
+  it("returns the earliest verified date or constraint across the chain", async () => {
+    const root = cred({ id: "root", issuerDid: "did:a", subjectDid: "did:agent", scopes: ["read"] });
+    const leaf = cred({ id: "leaf", issuerDid: "did:agent", subjectDid: "did:sub", parentId: "root", audience: SERVER, scopes: ["read"] });
+    root.expirationDate = "2026-09-22T12:00:00.000Z";
     root.credentialSubject.delegation.constraints.notAfter = Date.parse(root.expirationDate) / 1000 + 60;
     leaf.credentialSubject.delegation.constraints.notAfter = Date.parse(root.expirationDate) / 1000 + 600;
     expect((await validateDelegationChain(leaf, { ...baseDeps, resolveDelegationChain: async () => [root] })).expiresAt).toBe(Date.parse(root.expirationDate));
   });
 
+});
+
+describe("validateDelegationChain: who actually issued each link", () => {
+  const root = cred({ id: "root", issuerDid: "did:user", subjectDid: "did:agent", scopes: ["read"] });
+  const chainDeps: ChainEnforcementDeps = { ...baseDeps, resolveDelegationChain: async () => [root] };
+
+  it("accepts a re-delegation signed by the parent's subject", async () => {
+    const leaf = cred({ id: "leaf", issuerDid: "did:agent", subjectDid: "did:sub", parentId: "root", audience: SERVER, scopes: ["read"] });
+    expect((await validateDelegationChain(leaf, chainDeps)).valid).toBe(true);
+  });
+
+  it("rejects a leaf signed by an outsider that only claims the parent's subject as issuer", async () => {
+    const forged = {
+      ...cred({ id: "leaf", issuerDid: "did:agent", subjectDid: "did:mallory", parentId: "root", audience: SERVER, scopes: ["read"] }),
+      issuer: "did:mallory",
+    };
+    const result = await validateDelegationChain(forged, chainDeps);
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain("is signed by did:mallory but parent subject is did:agent");
+  });
+
+  it("applies the signer check to a JWT leaf whose envelope was verified by the caller", async () => {
+    const forged = {
+      ...cred({ id: "leaf", issuerDid: "did:agent", subjectDid: "did:mallory", parentId: "root", audience: SERVER, scopes: ["read"] }),
+      issuer: "did:mallory",
+    };
+    expect((await validateDelegationChain(forged, chainDeps, { skipSignature: true })).valid).toBe(false);
+  });
+
+  it("accepts a root whose claimed issuerDid is not its signer, and reports it", async () => {
+    const mismatched = { ...cred({ id: "solo", issuerDid: "did:user", subjectDid: "did:agent", scopes: ["read"] }), issuer: "did:signing-key" };
+    const result = await validateDelegationChain(mismatched, baseDeps);
+    expect(result.valid).toBe(true);
+    expect(result.warnings).toEqual(["Root delegation solo names issuerDid did:user but is signed by did:signing-key"]);
+  });
+
+  it("reports no warnings for a consistent chain", async () => {
+    expect((await validateDelegationChain(root, baseDeps)).warnings).toBeUndefined();
+  });
+
+  describe("trustedRootIssuers", () => {
+    it("accepts a root signed by a trusted issuer, and chains below it", async () => {
+      const trusted = { ...chainDeps, trustedRootIssuers: ["did:user"] };
+      const leaf = cred({ id: "leaf", issuerDid: "did:agent", subjectDid: "did:sub", parentId: "root", audience: SERVER, scopes: ["read"] });
+      expect((await validateDelegationChain(root, trusted)).valid).toBe(true);
+      expect((await validateDelegationChain(leaf, trusted)).valid).toBe(true);
+    });
+
+    it("rejects a self-issued root from an issuer outside the list", async () => {
+      const selfIssued = cred({ id: "self", issuerDid: "did:rogue", subjectDid: "did:rogue", scopes: ["read"] });
+      const result = await validateDelegationChain(selfIssued, { ...baseDeps, trustedRootIssuers: ["did:user"] });
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain("did:rogue, which is not a trusted root issuer");
+    });
+
+    it("judges the root by its signer, not its claimed issuerDid", async () => {
+      const claimsTrusted = { ...cred({ id: "claim", issuerDid: "did:user", subjectDid: "did:rogue", scopes: ["read"] }), issuer: "did:rogue" };
+      expect((await validateDelegationChain(claimsTrusted, { ...baseDeps, trustedRootIssuers: ["did:user"] })).valid).toBe(false);
+    });
+
+    it("trusts no issuer when the list is empty", async () => {
+      expect((await validateDelegationChain(root, { ...baseDeps, trustedRootIssuers: [] })).valid).toBe(false);
+    });
+  });
 });

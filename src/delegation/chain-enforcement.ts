@@ -17,6 +17,7 @@ import {
   type DelegationRecord,
 } from "../types/protocol.js";
 import { verifyDelegationAudience } from "./audience-validator.js";
+import { credentialIssuerDid } from "./vc-jwt-verify.js";
 
 /** Union of a credential's delegation scopes and its constraint scopes. */
 export function getDelegationScopes(credential: DelegationCredential): string[] {
@@ -132,6 +133,12 @@ export interface ChainEnforcementDeps {
   statusListConfigured: boolean;
   /** Optional graph-backed ancestor-revocation check (see {@link RevocationChecker}). */
   revocationChecker?: RevocationChecker;
+  /**
+   * DIDs allowed to sign the chain's root credential (its Responsible Party).
+   * When set, a root signed by any other DID is rejected. Omit to accept any
+   * root issuer.
+   */
+  trustedRootIssuers?: readonly string[];
 }
 
 export interface ChainValidationResult {
@@ -139,6 +146,8 @@ export interface ChainValidationResult {
   reason?: string;
   /** Earliest verified credential/constraint expiry across the chain (ms epoch). */
   expiresAt?: number;
+  /** Non-fatal inconsistencies worth logging, such as a root whose issuerDid is not its signer. */
+  warnings?: string[];
 }
 
 /**
@@ -149,6 +158,9 @@ export interface ChainValidationResult {
  * and — when a {@link RevocationChecker} is supplied — graph-backed ancestor
  * revocation. `skipSignature` applies only to the presented leaf whose JWT
  * envelope the caller has verified; ancestors always require verification.
+ * Each child must also be signed by its parent's subject: the claimed
+ * `issuerDid` alone is not signed evidence of who issued it. When
+ * `trustedRootIssuers` is set, the root must be signed by one of them.
  * Success includes the earliest applicable expiry for downstream grant storage.
  * Never throws on a malformed input; returns `{ valid, reason }`.
  */
@@ -226,6 +238,7 @@ export async function validateDelegationChain(
   }
 
   let expiresAt: number | undefined;
+  const warnings: string[] = [];
   const seenIds = new Set<string>();
   let previousDelegation: DelegationRecord | undefined;
   let previousCredential: DelegationCredential | undefined;
@@ -295,12 +308,33 @@ export async function validateDelegationChain(
       };
     }
 
+    // The DID whose key the verifier checked this credential against. Unlike
+    // `delegation.issuerDid`, which is only a claim inside the signed body,
+    // this is who actually issued it.
+    const signerDid = credentialIssuerDid(credential);
+
     if (!previousDelegation || !previousCredential) {
       if (delegation.parentId) {
         return {
           valid: false,
           reason: `Resolved delegation chain is incomplete: root delegation ${delegation.id} still references parent ${delegation.parentId}`,
         };
+      }
+
+      if (
+        deps.trustedRootIssuers &&
+        (signerDid === undefined || !deps.trustedRootIssuers.includes(signerDid))
+      ) {
+        return {
+          valid: false,
+          reason: `Root delegation ${delegation.id} is issued by ${signerDid ?? "an unidentified issuer"}, which is not a trusted root issuer`,
+        };
+      }
+
+      if (signerDid !== delegation.issuerDid) {
+        warnings.push(
+          `Root delegation ${delegation.id} names issuerDid ${delegation.issuerDid} but is signed by ${signerDid ?? "an unidentified issuer"}`,
+        );
       }
 
       previousDelegation = delegation;
@@ -319,6 +353,15 @@ export async function validateDelegationChain(
       return {
         valid: false,
         reason: `Delegation ${delegation.id} issued by ${delegation.issuerDid} but parent subject is ${previousDelegation.subjectDid}`,
+      };
+    }
+
+    // Only the parent's delegate may re-delegate. Without this, anyone could
+    // sign a child that merely claims the parent's subject as its issuer.
+    if (signerDid !== previousDelegation.subjectDid) {
+      return {
+        valid: false,
+        reason: `Delegation ${delegation.id} is signed by ${signerDid ?? "an unidentified issuer"} but parent subject is ${previousDelegation.subjectDid}`,
       };
     }
 
@@ -355,5 +398,9 @@ export async function validateDelegationChain(
     }
   }
 
-  return { valid: true, ...(expiresAt !== undefined ? { expiresAt } : {}) };
+  return {
+    valid: true,
+    ...(expiresAt !== undefined ? { expiresAt } : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
+  };
 }

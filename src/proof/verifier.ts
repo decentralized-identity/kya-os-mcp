@@ -9,7 +9,8 @@ import { CryptoService, type Ed25519JWK } from "../utils/crypto-service.js";
 import { CryptoProvider } from "../providers/base.js";
 import { ClockProvider } from "../providers/base.js";
 import { NonceCacheProvider } from "../providers/base.js";
-import { nonceRetentionSeconds } from '../providers/nonce-retention.js';
+import { nonceRetentionSeconds } from "../providers/nonce-retention.js";
+import { admitNonce, checkNonceStore } from "../providers/nonce-admission.js";
 import { FetchProvider } from "../providers/base.js";
 import {
   validateDetachedProof,
@@ -48,8 +49,16 @@ export interface ProofVerifierConfig {
   nonceCacheProvider: NonceCacheProvider;
   fetchProvider: FetchProvider;
   timestampSkewSeconds?: number;
-  /** Minimum retention; raised to cover the proof's accepted lifetime and supported skew updates. */
+  /**
+   * Minimum retention in seconds; raised to cover the proof's accepted lifetime
+   * and supported skew updates. 0 keeps each nonce for that window only.
+   */
   nonceTtlSeconds?: number;
+  /**
+   * Refuse nonce caches without an atomic `consume()` instead of falling back
+   * to `has()` then `add()`. The constructor throws for such a cache.
+   */
+  requireAtomicNonce?: boolean;
 }
 
 /** Default timestamp skew for proof verification (seconds) */
@@ -59,6 +68,14 @@ export const MIN_CLOCK_SKEW_SECONDS = 30;
 /** Maximum allowed clock skew (seconds) */
 export const MAX_CLOCK_SKEW_SECONDS = 600;
 
+/** Reject a non-finite or negative duration at construction, not on every request. */
+function requireNonNegativeSeconds(name: string, value: number): number {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new RangeError(`${name} must be a finite, non-negative number of seconds`);
+  }
+  return value;
+}
+
 export class ProofVerifier {
   private cryptoService: CryptoService;
   private clock: ClockProvider;
@@ -66,6 +83,7 @@ export class ProofVerifier {
   private fetch: FetchProvider;
   private timestampSkewSeconds: number;
   private nonceTtlSeconds: number;
+  private requireAtomicNonce: boolean;
   private cryptoProvider: CryptoProvider;
 
   constructor(config: ProofVerifierConfig) {
@@ -74,8 +92,16 @@ export class ProofVerifier {
     this.clock = config.clockProvider;
     this.nonceCache = config.nonceCacheProvider;
     this.fetch = config.fetchProvider;
-    this.timestampSkewSeconds = config.timestampSkewSeconds ?? DEFAULT_CLOCK_SKEW_SECONDS;
-    this.nonceTtlSeconds = config.nonceTtlSeconds ?? 300; // Default 5 minutes
+    this.timestampSkewSeconds = requireNonNegativeSeconds(
+      "timestampSkewSeconds",
+      config.timestampSkewSeconds ?? DEFAULT_CLOCK_SKEW_SECONDS,
+    );
+    this.nonceTtlSeconds = requireNonNegativeSeconds(
+      "nonceTtlSeconds",
+      config.nonceTtlSeconds ?? 300, // Default 5 minutes
+    );
+    this.requireAtomicNonce = config.requireAtomicNonce ?? false;
+    checkNonceStore(this.nonceCache, { requireAtomicNonce: this.requireAtomicNonce });
   }
 
   /**
@@ -388,7 +414,8 @@ export class ProofVerifier {
   }
 
   /**
-   * Atomically consume the nonce after all proof checks pass.
+   * Admit the nonce once every other proof check has passed: atomically through
+   * the cache's consume(), or through the has()/add() fallback without it.
    * @private
    */
   private async consumeNonce(
@@ -402,8 +429,10 @@ export class ProofVerifier {
       timestamp + Math.max(this.timestampSkewSeconds, MAX_CLOCK_SKEW_SECONDS),
       this.clock.now(),
     );
-    const consumed = await this.nonceCache.consume(nonce, ttl, agentDid);
-    if (consumed !== true) {
+    const consumed = await admitNonce(this.nonceCache, nonce, ttl, agentDid, {
+      requireAtomicNonce: this.requireAtomicNonce,
+    });
+    if (!consumed) {
       return {
         valid: false,
         reason: "Nonce already used (replay attack detected)",

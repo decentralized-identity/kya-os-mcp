@@ -3,10 +3,13 @@ import { createKyaOsMiddleware, type KyaOsDelegationConfig } from '../with-kya-o
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
 import { generateDidKeyFromBase64 } from '../../utils/did-helpers.js';
 import { DelegationCredentialIssuer, type IssueDelegationOptions } from '../../delegation/vc-issuer.js';
-import { createUnsignedVCJWT, completeVCJWT } from '../../delegation/utils.js';
+import { createUnsignedVCJWT, completeVCJWT, canonicalizeJSON } from '../../delegation/utils.js';
+import { JWT_NBF_LEEWAY_SECONDS } from '../../delegation/vc-jwt-verify.js';
 import { generateRequestProof } from '../../delegation/holder-binding.js';
 import { MemoryGrantStore, type Grant } from '../../providers/grant-store.js';
-import type { DelegationCredential, Proof } from '../../types/protocol.js';
+import { wrapDelegationAsVC, type DelegationCredential, type Proof } from '../../types/protocol.js';
+import type { NonceCacheProvider } from '../../providers/base.js';
+import { logger } from '../../logging/index.js';
 import type { ProofAgentIdentity } from '../../proof/generator.js';
 import type { AuditTrailService } from '../../audit/service.js';
 import { base64urlEncodeFromBytes } from '../../utils/base64.js';
@@ -562,6 +565,56 @@ describe('durable delegation grant validation', () => {
     expect(checkStatus).toHaveBeenCalledTimes(4);
   });
 
+  it('does not reuse a grant past its recorded expiry, even when a store returns it', async () => {
+    const agent = await makeIdentity();
+    const vc = await issueVC(agent.did);
+    class UnfilteredStore extends MemoryGrantStore {
+      override async getBySession(): Promise<Grant[]> {
+        return [activeGrant({ agentDid: agent.did, sessionId: 'session', expiresAt: Date.now() - 1000, delegationCredential: vc })];
+      }
+    }
+    const { middleware } = await makeServer({ grantStore: new UnfilteredStore() });
+    expect(challenged(await delegationHandler(middleware)({}, 'session'))).toBe(true);
+  });
+
+  it('ignores a grant a store returns for a different session', async () => {
+    const agent = await makeIdentity();
+    const vc = await issueVC(agent.did);
+    class LooseStore extends MemoryGrantStore {
+      override async getBySession(): Promise<Grant[]> {
+        return [activeGrant({ agentDid: agent.did, sessionId: 'someone-else', delegationCredential: vc })];
+      }
+    }
+    const { middleware } = await makeServer({ grantStore: new LooseStore() });
+    expect(challenged(await delegationHandler(middleware)({}, 'session'))).toBe(true);
+  });
+
+  it('denies reuse when re-verifying the stored credential fails outright', async () => {
+    let resolverDown = false;
+    const store = new MemoryGrantStore();
+    const agent = await makeIdentity();
+    const { middleware } = await makeServer({
+      grantStore: store,
+      delegation: {
+        // Null falls back to built-in did:key resolution; throwing simulates an outage.
+        didResolver: { resolve: async () => { if (resolverDown) throw new Error('resolver down'); return null; } },
+        verificationCache: { ttlMs: 0 },
+      },
+    });
+    const handler = delegationHandler(middleware);
+    expect(reached(await handler({ _kyaos_delegation: await issueVCJWT(agent.did) }, 'session'))).toBe(true);
+    resolverDown = true;
+    expect(challenged(await handler({}, 'session'))).toBe(true);
+  });
+
+  it('does not authorize a holder proof alone when no grant exists', async () => {
+    const agent = await makeIdentity();
+    const { server, middleware } = await makeServer({ holderBinding: 'enforce', grantStore: new MemoryGrantStore() });
+    const args = { item: 'laptop' };
+    const proof = await generateRequestProof({ identity: agent, crypto, toolName: TOOL, args, audience: server.did, sessionId: 'session' });
+    expect(challenged(await delegationHandler(middleware)({ ...args, _kyaos_proof: proof }, 'session'))).toBe(true);
+  });
+
   it('does not rely on custom stores to filter inactive records', async () => {
     const agent = await makeIdentity();
     const vc = await issueVC(agent.did);
@@ -624,7 +677,8 @@ describe('durable delegation grant validation', () => {
     vi.setSystemTime(new Date('2026-09-22T12:00:00.000Z'));
     const store = new MemoryGrantStore();
     const agent = await makeIdentity();
-    const jwt = await issueVCJWT(agent.did, [SCOPE], {}, { nbf: Date.now() / 1000 + 5 });
+    // Beyond the nbf clock-skew leeway, so the grant starts out not yet valid.
+    const jwt = await issueVCJWT(agent.did, [SCOPE], {}, { nbf: Date.now() / 1000 + JWT_NBF_LEEWAY_SECONDS + 5 });
     await store.bind(activeGrant({ agentDid: agent.did, sessionId: 'session', credentialJwt: jwt }));
     const { middleware } = await makeServer({ grantStore: store });
     const handler = delegationHandler(middleware);
@@ -664,5 +718,130 @@ describe('durable delegation grant validation', () => {
     unavailable = true;
     expect(challenged(await handler({}, 'session'))).toBe(true);
     expect(resolveDelegationChain).toHaveBeenCalledTimes(5);
+  });
+});
+
+describe('delegation issuer anchoring and nonce admission settings', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  /** Sign an arbitrary unsigned VC with `signer`, the way an attacker would. */
+  async function signAs(signer: ProofAgentIdentity, unsigned: Record<string, unknown>): Promise<DelegationCredential> {
+    const sig = await crypto.sign(new TextEncoder().encode(canonicalizeJSON(unsigned)), signer.privateKey);
+    const proof: Proof = {
+      type: 'Ed25519Signature2020', created: new Date().toISOString(), verificationMethod: signer.kid,
+      proofPurpose: 'assertionMethod', proofValue: base64urlEncodeFromBytes(sig),
+    };
+    return { ...unsigned, proof } as DelegationCredential;
+  }
+
+  it('rejects an outsider-signed re-delegation that claims the parent subject as its issuer', async () => {
+    const server = await makeIdentity();
+    const user = await makeIdentity();
+    const agent = await makeIdentity();
+    const attacker = await makeIdentity();
+    const parent = await issueVC(agent.did, [SCOPE], undefined, undefined, { issuer: user });
+    const unsigned = {
+      ...wrapDelegationAsVC({
+        id: 'del-forged', issuerDid: agent.did, subjectDid: attacker.did, controller: user.did,
+        vcId: 'urn:uuid:del-forged', parentId: parent.credentialSubject.delegation.id,
+        constraints: { scopes: [SCOPE], audience: server.did, notAfter: Math.floor(Date.now() / 1000) + 3600 },
+        signature: '', status: 'active', createdAt: Date.now(),
+      }),
+      issuer: attacker.did,
+    } as Record<string, unknown>;
+    const forged = await signAs(attacker, unsigned);
+    const { middleware } = await makeServer({ server, delegation: { resolveDelegationChain: async () => [parent] } });
+    const result = await delegationHandler(middleware)({ _kyaos_delegation: forged }, 'session');
+    expect(reached(result)).toBe(false);
+    expect(JSON.parse(result.content[0]!.text).error).toBe('delegation_invalid');
+  });
+
+  it('rejects a self-issued root outside trustedRootIssuers, on direct use and on grant reuse', async () => {
+    const server = await makeIdentity();
+    const user = await makeIdentity();
+    const rogue = await makeIdentity();
+    const store = new MemoryGrantStore();
+    const { middleware } = await makeServer({ server, grantStore: store, delegation: { trustedRootIssuers: [user.did] } });
+    const handler = delegationHandler(middleware);
+
+    const selfIssued = await issueVC(rogue.did, [SCOPE], 'did:web:victim.example', undefined, { issuer: rogue });
+    expect(JSON.parse((await handler({ _kyaos_delegation: selfIssued }, 'session')).content[0]!.text).error).toBe('delegation_invalid');
+
+    // A row written straight into a shared store still has to pass the anchor on reuse.
+    await store.bind(activeGrant({ agentDid: rogue.did, userDid: 'did:web:victim.example', sessionId: 'session', delegationCredential: selfIssued }));
+    expect(challenged(await handler({}, 'session'))).toBe(true);
+
+    const granted = await issueVC(rogue.did, [SCOPE], undefined, undefined, { issuer: user });
+    expect(reached(await handler({ _kyaos_delegation: granted }, 'session'))).toBe(true);
+    expect(reached(await handler({}, 'session'))).toBe(true);
+  });
+
+  it('accepts a root whose issuerDid is not its signer, logging it once', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const server = await makeIdentity();
+    const signer = await makeIdentity();
+    const agent = await makeIdentity();
+    const mismatched = await signAs(signer, {
+      ...wrapDelegationAsVC({
+        id: 'del-mismatch', issuerDid: 'did:web:user.example', subjectDid: agent.did,
+        vcId: 'urn:uuid:del-mismatch',
+        constraints: { scopes: [SCOPE], audience: server.did, notAfter: Math.floor(Date.now() / 1000) + 3600 },
+        signature: '', status: 'active', createdAt: Date.now(),
+      }),
+      issuer: signer.did,
+    } as Record<string, unknown>);
+    const { middleware } = await makeServer({ server });
+    const handler = delegationHandler(middleware);
+    expect(reached(await handler({ _kyaos_delegation: mismatched }, 'first'))).toBe(true);
+    expect(reached(await handler({ _kyaos_delegation: mismatched }, 'second'))).toBe(true);
+    const reports = warn.mock.calls.filter(([message]) => String(message).includes('names issuerDid did:web:user.example'));
+    expect(reports).toHaveLength(1);
+  });
+
+  it('warns at startup when trustedRootIssuers is unset, and not when it is set', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    await makeServer();
+    expect(warn.mock.calls.some(([message]) => String(message).includes('trustedRootIssuers is not set'))).toBe(true);
+    warn.mockClear();
+    const issuer = await makeIdentity();
+    await makeServer({ delegation: { trustedRootIssuers: [issuer.did] } });
+    expect(warn.mock.calls.some(([message]) => String(message).includes('trustedRootIssuers is not set'))).toBe(false);
+  });
+
+  describe('nonce caches without consume', () => {
+    function legacyCache(): NonceCacheProvider {
+      const seen = new Set<string>();
+      return {
+        has: async (nonce: string, did?: string) => seen.has(`${did}\0${nonce}`),
+        add: async (nonce: string, _ttl: number, did?: string) => { seen.add(`${did}\0${nonce}`); },
+        cleanup: async () => undefined,
+        destroy: async () => undefined,
+      } as unknown as NonceCacheProvider;
+    }
+
+    it('keep working, with a startup warning', async () => {
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      const server = await makeIdentity();
+      const middleware = createKyaOsMiddleware({ identity: server, session: { sessionTtlMinutes: 60 }, nonceCache: legacyCache() }, crypto);
+      expect(warn.mock.calls.some(([message]) => String(message).includes('no atomic consume()'))).toBe(true);
+      const nonce = `hs-${Math.random().toString(16).slice(2)}`;
+      const first = await middleware.handleHandshake({ nonce, audience: server.did, timestamp: Math.floor(Date.now() / 1000) });
+      expect(JSON.parse(first.content[0]!.text).sessionId).toEqual(expect.any(String));
+      const replay = await middleware.handleHandshake({ nonce, audience: server.did, timestamp: Math.floor(Date.now() / 1000) });
+      expect(JSON.parse(replay.content[0]!.text).sessionId).toBeUndefined();
+    });
+
+    it('are refused at creation when requireAtomicNonce is set', async () => {
+      const server = await makeIdentity();
+      expect(() => createKyaOsMiddleware(
+        { identity: server, nonceCache: legacyCache(), requireAtomicNonce: true },
+        crypto,
+      )).toThrow('requireAtomicNonce');
+    });
+
+    it('do not affect the default in-memory cache under requireAtomicNonce', async () => {
+      const server = await makeIdentity();
+      expect(() => createKyaOsMiddleware({ identity: server, requireAtomicNonce: true }, crypto)).not.toThrow();
+    });
   });
 });

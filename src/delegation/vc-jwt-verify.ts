@@ -69,6 +69,13 @@ function jwtBasicFailure(
 }
 
 /**
+ * Clock-skew allowance for `nbf` (RFC 7519 section 4.1.5 permits "some small
+ * leeway"). A wallet that stamps `nbf` at issuance must not fail on a verifier
+ * whose clock runs a few seconds behind. `exp` gets no leeway.
+ */
+export const JWT_NBF_LEEWAY_SECONDS = 30;
+
+/**
  * JWT time claims are independent of the embedded VC's constraints (RFC 7519
  * sections 4.1.4/4.1.5). Check them on every invocation, outside the signature
  * cache. Missing claims remain compatible; a present claim must be NumericDate.
@@ -82,7 +89,9 @@ function validateJwtTimeBounds(payload: VCJWTPayload, nowMs: number): string | u
   }
   const nowSeconds = nowMs / 1000;
   if (payload.exp !== undefined && nowSeconds >= payload.exp) return "JWT expired (exp)";
-  if (payload.nbf !== undefined && nowSeconds < payload.nbf) return "JWT not yet valid (nbf)";
+  if (payload.nbf !== undefined && nowSeconds + JWT_NBF_LEEWAY_SECONDS < payload.nbf) {
+    return "JWT not yet valid (nbf)";
+  }
   return undefined;
 }
 

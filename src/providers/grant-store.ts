@@ -21,7 +21,7 @@
  * over the request (holder-of-key). Storing a grant never substitutes for that.
  */
 
-import type { DelegationCredential } from "../types/protocol.js";
+import type { DelegationCredential } from '../types/protocol.js';
 
 export interface Grant {
   /** Stable id for this grant (used for revocation). */

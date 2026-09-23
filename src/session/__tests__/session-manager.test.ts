@@ -15,7 +15,7 @@ import { SessionManager, createHandshakeRequest, validateHandshakeFormat } from 
 import type { SessionConfig } from "../manager.js";
 import { MemorySessionStore } from "../session-store.js";
 import type { HandshakeRequest, NonceCache } from "../../types/protocol.js";
-import { MemoryNonceCacheProvider } from '../../providers/memory.js';
+import { MemoryNonceCacheProvider } from "../../providers/memory.js";
 import { AUTH_NONCE_TTL_MS, ANON_NONCE_TTL_MS } from "../../types/protocol.js";
 
 // NodeCryptoProvider for test environment (Node.js)
@@ -67,39 +67,51 @@ describe("SessionManager", () => {
   });
 
   describe("Handshake validation", () => {
-    it('admits once across managers sharing the same atomic provider', async () => {
+    it("admits once across managers sharing the same atomic provider", async () => {
       const nonceCache = new MemoryNonceCacheProvider();
       const first = makeSessionManager({ nonceCache });
       const second = makeSessionManager({ nonceCache });
       const request = makeRequest();
       const results = await Promise.all([first.validateHandshake(request), second.validateHandshake(request)]);
       expect(results.filter(result => result.success)).toHaveLength(1);
-      expect(results.find(result => !result.success)?.error?.code).toBe('nonce_replay');
+      expect(results.find(result => !result.success)?.error?.code).toBe("nonce_replay");
     });
 
-    it('does not consume a nonce for a wrong audience', async () => {
+    it("does not consume a nonce for a wrong audience", async () => {
       const nonceCache = new MemoryNonceCacheProvider();
-      const consume = vi.spyOn(nonceCache, 'consume');
-      const server = makeSessionManager({ nonceCache, serverDid: 'did:web:server.example' });
+      const consume = vi.spyOn(nonceCache, "consume");
+      const server = makeSessionManager({ nonceCache, serverDid: "did:web:server.example" });
       const request = makeRequest();
       expect((await server.validateHandshake(request)).success).toBe(false);
       expect(consume).not.toHaveBeenCalled();
-      expect((await server.validateHandshake({ ...request, audience: 'did:web:server.example' })).success).toBe(true);
+      expect((await server.validateHandshake({ ...request, audience: "did:web:server.example" })).success).toBe(true);
     });
 
-    it('fails closed when the provider lacks atomic consume', async () => {
-      const legacy = { has: vi.fn().mockResolvedValue(false), add: vi.fn(), cleanup: vi.fn() };
+    it("falls back to has/add for a provider without consume and rejects a sequential replay", async () => {
+      const seen = new Set<string>();
+      const legacy = {
+        has: vi.fn(async (nonce: string, did?: string) => seen.has(`${did}\0${nonce}`)),
+        add: vi.fn(async (nonce: string, _ttl: number, did?: string) => { seen.add(`${did}\0${nonce}`); }),
+        cleanup: vi.fn(),
+      };
       const server = makeSessionManager({ nonceCache: legacy as unknown as NonceCache });
-      const result = await server.validateHandshake(makeRequest());
-      expect(result.success).toBe(false);
-      expect(result.error?.code).toBe('handshake_failed');
-      expect(legacy.has).not.toHaveBeenCalled();
-      expect(legacy.add).not.toHaveBeenCalled();
+      const request = makeRequest();
+      expect((await server.validateHandshake(request)).success).toBe(true);
+      expect((await server.validateHandshake(request)).error?.code).toBe("nonce_replay");
+      expect(legacy.add).toHaveBeenCalledOnce();
     });
 
-    it('fails closed when atomic storage is unavailable', async () => {
+    it("refuses a provider without consume at construction when requireAtomicNonce is set", () => {
+      const legacy = { has: vi.fn().mockResolvedValue(false), add: vi.fn(), cleanup: vi.fn() };
+      expect(() => makeSessionManager({
+        nonceCache: legacy as unknown as NonceCache,
+        requireAtomicNonce: true,
+      })).toThrow("requireAtomicNonce");
+    });
+
+    it("fails closed when atomic storage is unavailable", async () => {
       const nonceCache = new MemoryNonceCacheProvider();
-      vi.spyOn(nonceCache, 'consume').mockRejectedValue(new Error('Storage unavailable'));
+      vi.spyOn(nonceCache, "consume").mockRejectedValue(new Error("Storage unavailable"));
       const server = makeSessionManager({ nonceCache });
       const result = await server.validateHandshake(makeRequest());
       expect(result.success).toBe(false);
@@ -412,16 +424,16 @@ describe("Handshake nonce retention", () => {
     vi.useRealTimers();
   });
 
-  it.each([undefined, 'did:key:zAgent'])('covers future timestamps through the final accepted second (%s)', async (agentDid) => {
+  it.each([undefined, "did:key:zAgent"])("covers future timestamps through the final accepted second (%s)", async (agentDid) => {
     vi.setSystemTime(1_800_000_000_000);
     const manager = makeSessionManager();
     const request = makeRequest({ agentDid, timestamp: Math.floor(Date.now() / 1000) + 120 });
     expect((await manager.validateHandshake(request)).success).toBe(true);
     vi.advanceTimersByTime(240_999);
     await manager.cleanup();
-    expect((await manager.validateHandshake(request)).error?.code).toBe('nonce_replay');
+    expect((await manager.validateHandshake(request)).error?.code).toBe("nonce_replay");
     vi.advanceTimersByTime(1);
-    expect((await manager.validateHandshake(request)).error?.code).toBe('handshake_failed');
+    expect((await manager.validateHandshake(request)).error?.code).toBe("handshake_failed");
   });
 
   it("preserves the 60s anonymous minimum when it exceeds the validity window", async () => {

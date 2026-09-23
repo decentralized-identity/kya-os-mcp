@@ -447,8 +447,11 @@ export interface SessionContext {
  * Nonce cache interface for replay prevention.
  */
 export interface NonceCache {
-  /** Atomic test-and-set; see NonceCacheProvider.consume. No has/add fallback. */
-  consume(nonce: string, ttlSeconds: number, agentDid?: string): Promise<boolean>;
+  /**
+   * Optional atomic test-and-set; see NonceCacheProvider.consume. When absent,
+   * handshakes fall back to has() then add() unless requireAtomicNonce is set.
+   */
+  consume?(nonce: string, ttlSeconds: number, agentDid?: string): Promise<boolean>;
   has(nonce: string, agentDid?: string): Promise<boolean>;
   add(nonce: string, ttl: number, agentDid?: string): Promise<void>;
   cleanup(): Promise<void>;

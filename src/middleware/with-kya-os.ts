@@ -101,11 +101,15 @@ export function createKyaOsMiddleware(
   // One replay-protection store, shared by the handshake and holder binding.
   // Defaults to in-memory; SessionManager.cleanup() drives its expiry sweep.
   const nonceCache = config.nonceCache ?? new MemoryNonceCacheProvider();
+  // SessionManager and ProofVerifier each check the cache at construction:
+  // refused under requireAtomicNonce, otherwise one warning if not atomic.
+  const requireAtomicNonce = config.requireAtomicNonce ?? false;
 
   const sessionManager = new SessionManager(cryptoProvider, {
     ...config.session,
     serverDid: identity.did,
     nonceCache,
+    requireAtomicNonce,
   });
 
   const proofGenerator = new ProofGenerator(identity, cryptoProvider);
@@ -152,6 +156,7 @@ export function createKyaOsMiddleware(
           cryptoProvider,
           clockProvider: new SystemClockProvider(),
           nonceCacheProvider: nonceCache,
+          requireAtomicNonce,
           fetchProvider:
             delegationConfig?.fetchProvider ??
             (typeof globalThis.fetch === "function"
@@ -183,8 +188,10 @@ export function createKyaOsMiddleware(
     handleHandshake: session.handleHandshake,
   });
 
-  // Durable-grant resolution (the no-paste retry). Depends only on the immutable
-  // deps above, so it lifts out cleanly with no shared session state.
+  // Durable-grant resolution (the no-paste retry) re-verifies stored evidence
+  // with the same delegation verification the gate applies to presented
+  // credentials. Both depend only on the immutable deps above, so they lift out
+  // cleanly with no shared session state.
   const delegationVerification = createDelegationVerification(deps);
   const { resolveExistingGrant, bindGrantOnSuccess } =
     createGrantResolution(deps, delegationVerification.verifyDelegation);

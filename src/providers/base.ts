@@ -53,11 +53,17 @@ export abstract class NonceCacheProvider {
    * Retain a successful claim for at least ttlSeconds. Verifiers sharing this
    * cache must agree on acceptance windows; changing them requires a rollout
    * that also preserves previously admitted records for the new window.
+   *
+   * Optional for compatibility. Verifiers use it when present. Without it they
+   * fall back to has() then add(), which cannot stop concurrent duplicates of
+   * one proof, and log a warning once per provider. Set `requireAtomicNonce`
+   * on the verifier or middleware to refuse that fallback. Implement this for
+   * any deployment that serves concurrent requests.
    */
-  abstract consume(nonce: string, ttlSeconds: number, agentDid?: string): Promise<boolean>;
-  /** Inspection only; use consume for replay admission. */
+  consume?(nonce: string, ttlSeconds: number, agentDid?: string): Promise<boolean>;
+  /** Inspection, and the non-atomic fallback when consume is absent. */
   abstract has(nonce: string, agentDid?: string): Promise<boolean>;
-  /** Unconditional write; use consume for replay admission. */
+  /** Unconditional write, and the non-atomic fallback when consume is absent. */
   abstract add(nonce: string, ttlSeconds: number, agentDid?: string): Promise<void>;
   abstract cleanup(): Promise<void>;
   abstract destroy(): Promise<void>;

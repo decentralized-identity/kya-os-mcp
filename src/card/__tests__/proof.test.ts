@@ -311,17 +311,37 @@ describe('verifyCardProof — replay defense (atomic consume seam, SPEC §12.2)'
     },
   );
 
-  it('denies a legacy provider without falling back to separate read/write', async () => {
+  it('falls back to has/add for a provider without consume and still rejects a sequential replay', async () => {
     const { signer, publicJwk } = await keypair();
-    const has = vi.fn().mockResolvedValue(false);
-    const add = vi.fn().mockResolvedValue(undefined);
+    const seen = new Set<string>();
+    const has = vi.fn(async (nonce: string, did?: string) => seen.has(`${did}\0${nonce}`));
+    const add = vi.fn(async (nonce: string, _ttl: number, did?: string) => { seen.add(`${did}\0${nonce}`); });
     const legacy = { has, add } as unknown as NonceCacheProvider;
-    const result = await verifyCardProof(await mint(signer), REQ, deps(publicJwk, {
-      consumeNonceIfFresh: consumeFromNonceCacheProvider(legacy),
-    }));
+    const d = deps(publicJwk, { consumeNonceIfFresh: consumeFromNonceCacheProvider(legacy) });
+    const proof = await mint(signer);
+    expect((await verifyCardProof(proof, REQ, d)).ok).toBe(true);
+    expect((await verifyCardProof(proof, REQ, d)).reasons).toContain('nonce_replayed');
+    expect(has).toHaveBeenCalledTimes(2);
+    expect(add).toHaveBeenCalledOnce();
+  });
+
+  it('refuses a provider without consume at wiring time when requireAtomicNonce is set', () => {
+    const legacy = { has: vi.fn(), add: vi.fn() } as unknown as NonceCacheProvider;
+    expect(() => consumeFromNonceCacheProvider(legacy, { requireAtomicNonce: true })).toThrow('requireAtomicNonce');
+  });
+
+  it('denies at admission when requireAtomicNonce is set and consume later disappears', async () => {
+    const { signer, publicJwk } = await keypair();
+    const store = { consume: vi.fn(), has: vi.fn(), add: vi.fn() };
+    const consumeNonceIfFresh = consumeFromNonceCacheProvider(
+      store as unknown as NonceCacheProvider,
+      { requireAtomicNonce: true },
+    );
+    Reflect.deleteProperty(store, 'consume');
+    const result = await verifyCardProof(await mint(signer), REQ, deps(publicJwk, { consumeNonceIfFresh }));
     expect(result).toMatchObject({ ok: false, reasons: ['nonce_cache_unavailable'] });
-    expect(has).not.toHaveBeenCalled();
-    expect(add).not.toHaveBeenCalled();
+    expect(store.has).not.toHaveBeenCalled();
+    expect(store.add).not.toHaveBeenCalled();
   });
 
   it('returns a denial when atomic storage fails', async () => {

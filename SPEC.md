@@ -421,7 +421,7 @@ The nonce cache implementation MUST:
 - Store (nonce, agentDid, expiry) tuples
 - Support TTL-based automatic expiry
 - Be atomic to prevent race conditions in concurrent environments
-- For distributed deployments: use Redis, DynamoDB, or Cloudflare KV (not in-memory)
+- For distributed deployments: use a shared store with an atomic conditional insert and expiry, such as Redis `SET NX PX`, a DynamoDB conditional write or a Durable Object transaction (not in-memory). Eventually consistent stores such as Cloudflare Workers KV cannot provide the atomic check-and-set on their own.
 
 Nonce lifetime MUST exceed the session TTL. Servers MUST NOT drop nonces before the lifetime expires, to prevent replay attacks via early eviction.
 

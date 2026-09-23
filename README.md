@@ -263,57 +263,49 @@ implementation for **every** runtime-state seam — the nonce cache
 `PendingFlowStore`, `SessionStore`) — so replay protection, grants, pending OAuth
 flows, and sessions are shared across instances and survive restarts.
 
-Delegation grants must retain their original signed evidence: `credentialJwt`
-for VC-JWTs, or `delegationCredential` for object VCs. `wrapWithDelegation`
-revalidates that evidence with the same verifier as a directly presented
-credential on every reuse, including chain resolution, audience, scope, expiry,
-and configured status/revocation checks. Store providers must preserve these
-fields and return only active grants; cache availability alone does not authorize
-a request. Grant expiry is bounded by the earliest credential or constraint
-expiry in the verified chain.
+Delegation grants must retain their original signed evidence: `credentialJwt` for VC-JWTs, or `delegationCredential` for object VCs.
+`wrapWithDelegation` revalidates that evidence with the same verifier as a directly presented credential on every reuse, including chain resolution, audience, scope, expiry, and configured status/revocation checks.
+Store providers must preserve these fields and return only active grants; cache availability alone does not authorize a request.
+Grant expiry is bounded by the earliest credential or constraint expiry in the verified chain.
 
-**Upgrade compatibility:** legacy grants without signed evidence intentionally
-return `needs_authorization`; re-present a valid delegation or complete the
-normal consent flow to replace them. Do not reconstruct unsigned credentials
-from cached metadata. Under `holderBinding: 'enforce'`, did:key session retries
-also require a fresh holder proof. `off` and `warn` retain their documented
-session behavior, and non-did:key binding remains deferred; neither provides an
-enforced proof-of-possession guarantee for those requests. Status and chain
-providers now receive reads on grant reuse as they do on direct calls, and an
-unavailable required provider prevents reuse. This does not strengthen a
-provider's own status-cache freshness policy.
+**Upgrade compatibility:** legacy grants without signed evidence intentionally return `needs_authorization`; re-present a valid delegation or complete the normal consent flow to replace them.
+Do not reconstruct unsigned credentials from cached metadata.
+Under `holderBinding: 'enforce'`, did:key session retries also require a fresh holder proof.
+`off` and `warn` retain their documented session behavior, and non-did:key binding remains deferred; neither provides an enforced proof-of-possession guarantee for those requests.
+Status and chain providers now receive reads on grant reuse as they do on direct calls, and an unavailable required provider prevents reuse.
+This does not strengthen a provider's own status-cache freshness policy.
 
-VC-JWT envelope `exp` and `nbf` are checked on every verification, including
-signature-cache hits and grant reuse. Omitted claims remain supported. A
-present claim must be a finite NumericDate; an expired envelope or a future
-not-before time denies authorization even when the embedded VC is otherwise
-current. Verified envelope expiry can shorten the cached grant's lifetime.
+VC-JWT envelope `exp` and `nbf` are checked on every verification, including signature-cache hits and grant reuse.
+Omitted claims remain supported.
+A present claim must be a finite NumericDate.
+An expired envelope denies authorization even when the embedded VC is otherwise current, and verified envelope expiry can shorten the cached grant's lifetime.
+`nbf` allows `JWT_NBF_LEEWAY_SECONDS` (30 seconds) of clock skew; `exp` allows none.
 
-**Nonce provider migration:** `NonceCacheProvider.consume(nonce, ttlSeconds,
-agentDid?)` is now required. It must atomically record an unseen `(agentDid,
-nonce)` and return literal `true` only to the winning call. Existing `has` and
-`add` methods remain for inspection/unconditional writes; they are never a
-fallback for admission. An old provider without `consume`, a storage failure,
-or any result other than `true` denies admission. Custom providers must be
-updated before upgrading this package. Implement the claim in the shared
-backend (for example, a conditional insert with expiry), not with a local
-mutex around remote reads and writes. Eventually consistent KV alone cannot
-provide this guarantee. The bundled memory implementations protect only one
-cache instance and lose their state on restart.
+**Delegation issuers:** each re-delegation must be signed by its parent's subject.
+The `issuerDid` inside a credential is only a claim, so the chain walk also checks who signed it.
+Set `delegation.trustedRootIssuers` to the DIDs allowed to issue root delegations, the Responsible Party for the whole chain.
+With it set, a chain whose root is signed by any other DID is rejected, including when a stored grant is reused.
+Without it, any issuer is accepted, including an agent signing a delegation for itself, and the middleware logs a warning at startup.
+A root whose claimed `issuerDid` differs from its signer is still accepted, and logged.
 
-Providers must honor the requested retention duration. The verifiers retain
-nonces through the final accepted second, including future timestamps and clock
-skew, while preserving a longer configured TTL. The detached verifier also
-covers later increases up to its supported `setTimestampSkew` maximum. Custom
-card `consumeNonceIfFresh` callbacks must honor the new third `minTtlSec`
-argument; the bundled card cache and provider adapter do so. Instances sharing
-a replay namespace must agree on the longest proof-acceptance policy and retain
-state accordingly. Retire old non-atomic writers before claiming atomic
-protection. Preserve or extend existing records through the full remaining
-acceptance window; merely keeping their old, shorter TTLs is insufficient.
-If the backend cannot extend them safely, pause affected admission and wait out
-that window before cutover. Do not clear records while their proofs may still
-be accepted.
+**Nonce providers:** give your `NonceCacheProvider` an atomic `consume(nonce, ttlSeconds, agentDid?)`.
+It must record an unseen `(agentDid, nonce)`, return literal `true` only to the call that recorded it, and reject on storage failure.
+Implement the claim in the shared backend with a conditional insert and expiry, not with a local mutex around remote reads and writes.
+Eventually consistent KV alone cannot provide it.
+The bundled memory provider implements `consume`, but it protects only one cache instance and loses its state on restart.
+`consume` is optional: a provider without it keeps working by falling back to `has` then `add`, which cannot stop concurrent duplicates of one signed request, and a warning is logged once.
+Set `requireAtomicNonce: true` on the middleware, `ProofVerifier`, `SessionManager` or `consumeFromNonceCacheProvider` to refuse that fallback; each then throws at construction for a provider without `consume`.
+Any result other than literal `true`, or a storage failure, denies admission.
+
+Providers must honor the requested retention duration.
+The verifiers retain nonces through the final accepted second, including future timestamps and clock skew, while preserving a longer configured TTL.
+The detached verifier also covers later increases up to its supported `setTimestampSkew` maximum.
+Custom card `consumeNonceIfFresh` callbacks must honor the new third `minTtlSec` argument; the bundled card cache and provider adapter do so.
+Instances sharing a replay namespace must agree on the longest proof-acceptance policy and retain state accordingly.
+Retire old non-atomic writers before claiming atomic protection.
+Preserve or extend existing records through the full remaining acceptance window; merely keeping their old, shorter TTLs is insufficient.
+If the backend cannot extend them safely, pause affected admission and wait out that window before cutover.
+Do not clear records while their proofs may still be accepted.
 
 ---
 
@@ -330,7 +322,7 @@ under `src/integrations/`") — contributions welcome.
 | DID resolution — `DIDResolver` | `did:key`, `did:web` | `did:cheqd`, custom methods |
 | Revocation — `StatusListResolver` | not configured | cheqd StatusList2021 |
 | Authorization — `AuthorizationServerAdapter` | `GenericOidcAdapter` (OIDC + PKCE) | Auth0, Okta, your IdP ([example](./examples/authz-inspector/)) |
-| State — `GrantStore`, `SessionStore`, `NonceCacheProvider`, `PendingFlowStore` | in-memory | Redis, DynamoDB, Durable Objects, DB; atomic consumption required for replay/pending state ([multi-instance](#multi-instance-deployments)) |
+| State — `GrantStore`, `SessionStore`, `NonceCacheProvider`, `PendingFlowStore` | in-memory | Redis, DynamoDB, Durable Objects, DB; atomic consumption for replay and pending state ([multi-instance](#multi-instance-deployments)) |
 | Audit delivery — `AuditRecorder`, `AuditAnchorProvider` | local recorder | Checkpoint, on-chain anchoring ([AUDITABILITY.md](./AUDITABILITY.md)) |
 | Crypto — `CryptoProvider` | Node, WebCrypto | your KMS / HSM |
 | Policy — `PolicyEngine` | built-in default | custom engine |

@@ -32,6 +32,7 @@ import {
   type NeedsAuthorizationError,
 } from "../types/protocol.js";
 import { logger } from "../logging/index.js";
+import { TtlCache } from "../utils/ttl-cache.js";
 import type { KyaOsToolHandler } from "./with-kya-os.types.js";
 import type { MiddlewareDeps } from "./with-kya-os.deps.js";
 import { sanitizeForMessage } from "./with-kya-os.helpers.js";
@@ -203,11 +204,31 @@ export function createDelegationVerification(
     isError: true,
   });
 
-  const validateDelegationChain = (
+  const trustedRootIssuers = delegationConfig?.trustedRootIssuers;
+  if (trustedRootIssuers === undefined) {
+    logger.warn(
+      "[kya-os] delegation.trustedRootIssuers is not set, so a delegation from any issuer is " +
+        "accepted, including one an agent signs for itself. Set it to the DIDs allowed to grant authority.",
+    );
+  }
+
+  // Root credentials whose claimed issuerDid is not their signer are accepted
+  // for compatibility but reported: each distinct message at most once an hour,
+  // with the oldest evicted first so the set stays bounded.
+  const reportedChainWarnings = new TtlCache<true>({ ttlMs: 60 * 60 * 1000, maxEntries: 256 });
+  const reportChainWarnings = (warnings: readonly string[] | undefined): void => {
+    for (const warning of warnings ?? []) {
+      if (reportedChainWarnings.get(warning)) continue;
+      reportedChainWarnings.set(warning, true);
+      logger.warn(`[kya-os] ${sanitizeForMessage(warning)}`);
+    }
+  };
+
+  const validateDelegationChain = async (
     leafCredential: DelegationCredential,
     options?: { skipSignature?: boolean },
-  ): Promise<ChainValidationResult> =>
-    validateDelegationChainCore(
+  ): Promise<ChainValidationResult> => {
+    const result = await validateDelegationChainCore(
       leafCredential,
       {
         serverDid: identity.did,
@@ -215,9 +236,13 @@ export function createDelegationVerification(
         resolveDelegationChain: delegationConfig?.resolveDelegationChain,
         statusListConfigured: !!delegationConfig?.statusListResolver,
         revocationChecker: delegationConfig?.revocationChecker,
+        ...(trustedRootIssuers !== undefined ? { trustedRootIssuers } : {}),
       },
       options,
     );
+    if (result.valid) reportChainWarnings(result.warnings);
+    return result;
+  };
 
   async function verifyDelegation(
     delegationArg: unknown,

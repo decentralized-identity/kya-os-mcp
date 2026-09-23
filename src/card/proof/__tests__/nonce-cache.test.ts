@@ -19,6 +19,14 @@ describe('consumeFromNonceCacheProvider', () => {
 });
 
 describe('InMemoryNonceCache', () => {
+  it.each([
+    ['a zero TTL with no verifier floor', 0, 0],
+    ['a non-finite verifier floor', 0, Number.NaN],
+  ])('refuses %s instead of storing a nonce that never expires', (_label, ttlSec, minTtlSec) => {
+    const cache = new InMemoryNonceCache({ ttlSec, now: () => 1_750_000_000_000 });
+    expect(() => cache.consume('nonce-1', 'did:key:zA', minTtlSec)).toThrow(RangeError);
+  });
+
   it('rejects a replay within the retention window and forgets it after expiry', () => {
     let now = 1_750_000_000_000;
     const cache = new InMemoryNonceCache({ ttlSec: 10, now: () => now });

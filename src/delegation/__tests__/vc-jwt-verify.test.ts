@@ -17,7 +17,7 @@ import {
   type DIDResolver,
   type DIDDocument,
 } from "../vc-verifier.js";
-import { credentialIssuerDid } from "../vc-jwt-verify.js";
+import { credentialIssuerDid, JWT_NBF_LEEWAY_SECONDS } from "../vc-jwt-verify.js";
 import type { DelegationCredential } from "../../types/protocol.js";
 
 const ISSUER_DID = "did:web:example.com:u:alice";
@@ -96,7 +96,8 @@ describe("verifyDelegationJwt (VC-JWT / compact JWS wire format)", () => {
 
   it.each([
     ["exp", -1, false], ["exp", 0, false], ["exp", 0.5, true],
-    ["nbf", -0.5, true], ["nbf", 0, true], ["nbf", 1, false],
+    ["nbf", -0.5, true], ["nbf", 0, true], ["nbf", 1, true],
+    ["nbf", JWT_NBF_LEEWAY_SECONDS, true], ["nbf", JWT_NBF_LEEWAY_SECONDS + 1, false],
   ] as const)("checks envelope %s at offset %s independently of the inner VC", async (claim, offset, valid) => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-22T12:00:00.000Z"));

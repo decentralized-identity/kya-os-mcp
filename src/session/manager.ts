@@ -23,6 +23,7 @@ import {
 import type { CryptoProvider } from '../providers/base.js';
 import { MemoryNonceCacheProvider } from '../providers/memory.js';
 import { nonceRetentionSeconds } from '../providers/nonce-retention.js';
+import { admitNonce, checkNonceStore } from '../providers/nonce-admission.js';
 import { SessionStore, MemorySessionStore } from './session-store.js';
 import { logger } from '../logging/index.js';
 
@@ -31,6 +32,11 @@ export interface SessionConfig {
   sessionTtlMinutes?: number;
   absoluteSessionLifetime?: number;
   nonceCache?: NonceCache;
+  /**
+   * Refuse a nonce cache without an atomic `consume()` instead of falling back
+   * to `has()` then `add()`. The constructor throws for such a cache.
+   */
+  requireAtomicNonce?: boolean;
   serverDid?: string;
   /** Maximum number of concurrent sessions. Oldest sessions are evicted when exceeded. Default: 10000 */
   maxSessions?: number;
@@ -79,12 +85,17 @@ export class SessionManager {
       timestampSkewSeconds: config.timestampSkewSeconds ?? 120,
       sessionTtlMinutes: config.sessionTtlMinutes ?? 30,
       nonceCache: config.nonceCache ?? new MemoryNonceCacheProvider(),
+      requireAtomicNonce: config.requireAtomicNonce ?? false,
       metaPolicy: config.metaPolicy ?? 'strict',
       ...(config.absoluteSessionLifetime !== undefined && {
         absoluteSessionLifetime: config.absoluteSessionLifetime,
       }),
       ...(config.serverDid !== undefined && { serverDid: config.serverDid }),
     };
+
+    checkNonceStore(this.config.nonceCache, {
+      requireAtomicNonce: this.config.requireAtomicNonce,
+    });
 
     if (this.config.nonceCache instanceof MemoryNonceCacheProvider) {
       logger.warn(
@@ -145,12 +156,14 @@ export class SessionManager {
         request.timestamp + this.config.timestampSkewSeconds,
         Date.now(),
       );
-      const consumed = await this.config.nonceCache.consume(
+      const consumed = await admitNonce(
+        this.config.nonceCache,
         request.nonce,
         nonceTtlSeconds,
-        request.agentDid
+        request.agentDid,
+        { requireAtomicNonce: this.config.requireAtomicNonce },
       );
-      if (consumed !== true) {
+      if (!consumed) {
         return {
           success: false,
           error: {

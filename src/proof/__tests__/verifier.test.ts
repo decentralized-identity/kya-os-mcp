@@ -203,13 +203,62 @@ describe('ProofVerifier Security', () => {
       expect(mockNonceCache.consume).not.toHaveBeenCalled();
     });
 
-    it('fails closed for a legacy provider lacking atomic consume', async () => {
+    it('falls back to has/add after validation for a provider without consume', async () => {
       Reflect.deleteProperty(mockNonceCache, 'consume');
-      const result = await proofVerifier.verifyProof(createValidProof(), validJwk);
+      const proof = createValidProof();
+      const result = await proofVerifier.verifyProof(proof, validJwk);
+      expect(result.valid).toBe(true);
+      expect(mockNonceCache.has).toHaveBeenCalledWith('nonce123', 'did:key:z123');
+      expect(mockNonceCache.add).toHaveBeenCalledWith('nonce123', expect.any(Number), 'did:key:z123');
+
+      mockNonceCache.has = vi.fn().mockResolvedValue(true);
+      const replay = await proofVerifier.verifyProof(proof, validJwk);
+      expect(replay.errorCode).toBe(PROOF_VERIFICATION_ERROR_CODES.NONCE_REPLAY_DETECTED);
+    });
+
+    it('refuses a provider without consume at construction when requireAtomicNonce is set', () => {
+      Reflect.deleteProperty(mockNonceCache, 'consume');
+      expect(() => new ProofVerifier({
+        cryptoProvider: mockCryptoProvider, clockProvider: mockClockProvider,
+        nonceCacheProvider: mockNonceCache, fetchProvider: mockFetchProvider,
+        requireAtomicNonce: true,
+      })).toThrow('requireAtomicNonce');
+    });
+
+    it('denies at admission when requireAtomicNonce is set and consume later disappears', async () => {
+      const verifier = new ProofVerifier({
+        cryptoProvider: mockCryptoProvider, clockProvider: mockClockProvider,
+        nonceCacheProvider: mockNonceCache, fetchProvider: mockFetchProvider,
+        requireAtomicNonce: true,
+      });
+      Reflect.deleteProperty(mockNonceCache, 'consume');
+      const result = await verifier.verifyProof(createValidProof(), validJwk);
       expect(result.valid).toBe(false);
-      expect(result.errorCode).toBe(PROOF_VERIFICATION_ERROR_CODES.VERIFICATION_ERROR);
       expect(mockNonceCache.has).not.toHaveBeenCalled();
       expect(mockNonceCache.add).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['nonceTtlSeconds', -1], ['nonceTtlSeconds', Number.NaN], ['nonceTtlSeconds', Number.POSITIVE_INFINITY],
+      ['timestampSkewSeconds', -1], ['timestampSkewSeconds', Number.NaN],
+    ] as const)('rejects %s = %s at construction', (field, value) => {
+      expect(() => new ProofVerifier({
+        cryptoProvider: mockCryptoProvider, clockProvider: mockClockProvider,
+        nonceCacheProvider: mockNonceCache, fetchProvider: mockFetchProvider,
+        [field]: value,
+      })).toThrow(RangeError);
+    });
+
+    it('keeps a nonce for the acceptance window only when nonceTtlSeconds is 0', async () => {
+      const proof = createValidProof();
+      mockClockProvider.now = vi.fn().mockReturnValue(proof.meta.ts * 1000);
+      const verifier = new ProofVerifier({
+        cryptoProvider: mockCryptoProvider, clockProvider: mockClockProvider,
+        nonceCacheProvider: mockNonceCache, fetchProvider: mockFetchProvider,
+        nonceTtlSeconds: 0,
+      });
+      expect((await verifier.verifyProof(proof, validJwk)).valid).toBe(true);
+      expect(mockNonceCache.consume).toHaveBeenCalledWith('nonce123', 601, 'did:key:z123');
     });
 
     it.each([1, 2000])('retains future-dated proofs through their accepted lifetime (configured TTL %s)', async (ttl) => {

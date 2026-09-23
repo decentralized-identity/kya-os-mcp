@@ -85,6 +85,15 @@ export interface KyaOsDelegationConfig {
    */
   revocationChecker?: RevocationChecker;
   /**
+   * DIDs allowed to issue root delegations, the chain's Responsible Party
+   * (SPEC §6). When set, a delegation whose root credential is signed by any
+   * other DID is rejected, both when presented and when a stored grant is
+   * reused. Compared as exact strings against the verified signer. An empty
+   * list trusts no issuer. When unset, any issuer is accepted and the
+   * middleware logs a warning at startup; set it for production.
+   */
+  trustedRootIssuers?: readonly string[];
+  /**
    * Holder-of-key enforcement for inbound calls (spec §11.8). A valid delegation
    * is a *bearer* credential; holder binding additionally requires the caller to
    * present a per-request proof (`_kyaos_proof`) signed by the delegation
@@ -124,11 +133,21 @@ export interface KyaOsConfig {
   /**
    * Replay-protection store, shared by the session handshake AND inbound holder
    * binding so both draw on one nonce namespace. Defaults to an in-memory store
-   * (single-process only); inject a Redis / Durable Object / KV-backed
-   * {@link NonceCacheProvider} for multi-instance deployments. Set here, not on
-   * `session`, so there is exactly one cache and the two cannot diverge.
+   * (single-process only). For multi-instance deployments inject a shared
+   * {@link NonceCacheProvider} whose `consume()` is an atomic conditional insert
+   * with expiry (Redis `SET NX PX`, a DynamoDB conditional write, a Durable
+   * Object transaction). Eventually consistent stores such as Workers KV cannot
+   * make that claim atomic on their own. Set here, not on `session`, so there is
+   * exactly one cache and the two cannot diverge.
    */
   nonceCache?: NonceCacheProvider;
+  /**
+   * Refuse a `nonceCache` without an atomic `consume()`: middleware creation
+   * throws instead of falling back to `has()` then `add()`, which lets concurrent
+   * duplicates of one signed request through. Applies to the handshake and to
+   * holder binding. Default false, with a startup warning for such a cache.
+   */
+  requireAtomicNonce?: boolean;
   /**
    * Durable store for approved authorization grants, enabling the no-paste
    * retry: an agent that already obtained a grant can call again — even on a

@@ -9,13 +9,15 @@
  *     one synchronous critical section (no `await` between read and write), so it cannot interleave
  *     with a concurrent replay within one process. Use it for a single instance / dev.
  *   - {@link consumeFromNonceCacheProvider} — delegates to `NonceCacheProvider.consume`, which
- *     a shared/distributed provider must implement atomically in its backend.
+ *     a shared/distributed provider should implement atomically in its backend. Providers
+ *     without it fall back to `has()` then `add()` unless `requireAtomicNonce` is set.
  *
- * Type-only import of `NonceCacheProvider` — no runtime coupling to the legacy proof engine and no
- * `mcp-i-core` dependency.
+ * Type-only import of `NonceCacheProvider`. The shared admission helper is the only runtime
+ * dependency: no coupling to the legacy proof engine and no `mcp-i-core` dependency.
  */
 
 import type { NonceCacheProvider } from '../../providers/base.js';
+import { admitNonce, checkNonceStore } from '../../providers/nonce-admission.js';
 import { NONCE_RETENTION_SEC, type ConsumeNonceIfFresh } from './types.js';
 
 /** Inserts between amortised expired-entry sweeps (bounds memory without a timer/lifecycle). */
@@ -87,20 +89,27 @@ export class InMemoryNonceCache {
 export interface NonceCacheProviderAdapterOptions {
   /** Minimum TTL in seconds (default {@link NONCE_RETENTION_SEC}); verifier floors may raise it. */
   ttlSec?: number;
+  /** Refuse a provider without `consume()` instead of falling back to `has()` then `add()`. */
+  requireAtomicNonce?: boolean;
 }
 
 /**
  * Adapt {@link NonceCacheProvider.consume} into the {@link ConsumeNonceIfFresh} seam.
  *
- * Requires a backend-native atomic test-and-set (SPEC §12.2). There is deliberately no has/add
- * fallback: serializing a pair locally cannot protect a shared store. Missing capability or
- * storage failure rejects the call, which the verifier handles as failed nonce admission.
- * The bundled {@link MemoryNonceCacheProvider} is atomic only within one cache instance.
+ * Uses the provider's backend-native atomic test-and-set (SPEC §12.2) when it has one. A
+ * provider without `consume()` falls back to `has()` then `add()`, which cannot stop
+ * concurrent duplicates, and logs a warning once; under `requireAtomicNonce` this factory
+ * throws for such a provider instead. Storage failure rejects the call, which the verifier
+ * handles as failed nonce admission. The bundled {@link MemoryNonceCacheProvider} is atomic
+ * only within one cache instance.
  */
 export function consumeFromNonceCacheProvider(
   provider: NonceCacheProvider,
   opts: NonceCacheProviderAdapterOptions = {},
 ): ConsumeNonceIfFresh {
   const ttlSec = opts.ttlSec ?? NONCE_RETENTION_SEC;
-  return (nonce, did, minTtlSec = 0) => provider.consume(nonce, Math.max(ttlSec, minTtlSec), did);
+  const admission = { requireAtomicNonce: opts.requireAtomicNonce ?? false };
+  checkNonceStore(provider, admission);
+  return (nonce, did, minTtlSec = 0) =>
+    admitNonce(provider, nonce, Math.max(ttlSec, minTtlSec), did, admission);
 }

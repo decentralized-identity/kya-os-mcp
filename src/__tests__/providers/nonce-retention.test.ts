@@ -12,8 +12,13 @@ describe('nonce retention floor', () => {
     expect(nonceRetentionSeconds(500, 120, 0)).toBe(500);
   });
 
+  it('treats a configured TTL of 0 as the acceptance window alone, never below one second', () => {
+    expect(nonceRetentionSeconds(0, 120, 0)).toBe(121);
+    expect(nonceRetentionSeconds(0, 0, 5_000)).toBe(1);
+  });
+
   it.each([
-    [0, 120, 0], [-1, 120, 0], [NaN, 120, 0], [Infinity, 120, 0],
+    [-1, 120, 0], [NaN, 120, 0], [Infinity, 120, 0],
     [1, Infinity, 0], [1, NaN, 0], [1, 120, NaN],
   ])('rejects an unbounded or invalid configuration (%s, %s, %s)', (ttl, end, now) => {
     expect(() => nonceRetentionSeconds(ttl!, end!, now!)).toThrow('bounded acceptance window');

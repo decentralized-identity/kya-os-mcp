@@ -83,4 +83,28 @@ describe('MemoryGrantStore', () => {
     expect(await store.getBySession('sess-1', ['vault:read'])).toHaveLength(1);
     expect(await store.getBySession('sess-1', ['vault:write'])).toEqual([]);
   });
+  it.each([undefined, 10_000])('does not resolve an explicitly expired status with deadline %s', async (expiresAt) => {
+    const store = new MemoryGrantStore({ now: () => 5_000 });
+    await store.bind(grant({ sessionId: 'session', status: 'expired', expiresAt }));
+    expect(await store.getByAgent('did:key:zAgentA')).toEqual([]);
+    expect(await store.getBySession('session')).toEqual([]);
+    expect((await store.getById('grant-1'))?.status).toBe('expired');
+  });
+
+  it('snapshots nested values on bind and every read', async () => {
+    const store = new MemoryGrantStore();
+    const input = grant({ sessionId: 'session', authorization: { type: 'delegation' } });
+    await store.bind(input);
+    input.scopes.push('admin');
+    input.authorization!.type = 'changed';
+    const first = (await store.getByAgent(input.agentDid))[0]!;
+    expect(first.scopes).toEqual(['vault:read']);
+    expect(first.authorization?.type).toBe('delegation');
+    first.scopes.push('admin');
+    const byId = (await store.getById(input.id))!;
+    expect(byId.scopes).toEqual(['vault:read']);
+    byId.scopes.push('admin');
+    expect((await store.getBySession('session'))[0]?.scopes).toEqual(['vault:read']);
+  });
+
 });

@@ -10,7 +10,7 @@
  * surfaced against the Hobbsidian wallet.
  */
 
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { generateKeyPair, exportJWK, SignJWT, type JWK } from "jose";
 import {
   DelegationCredentialVerifier,
@@ -73,8 +73,9 @@ describe("verifyDelegationJwt (VC-JWT / compact JWS wire format)", () => {
   async function mintVcJwt(
     signer: CryptoKey,
     vcClaim: Record<string, unknown> = delegationVcClaim(),
+    timeClaims: Record<string, unknown> = {},
   ): Promise<string> {
-    return new SignJWT({ vc: vcClaim })
+    return new SignJWT({ vc: vcClaim, ...timeClaims })
       .setProtectedHeader({ alg: "EdDSA", typ: "JWT", kid: KID })
       .setIssuer(ISSUER_DID)
       .setSubject(ISSUER_DID)
@@ -89,6 +90,43 @@ describe("verifyDelegationJwt (VC-JWT / compact JWS wire format)", () => {
     verifier = new DelegationCredentialVerifier({
       didResolver: resolverFor(publicJwk),
     });
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  it.each([
+    ["exp", -1, false], ["exp", 0, false], ["exp", 0.5, true],
+    ["nbf", -0.5, true], ["nbf", 0, true], ["nbf", 1, false],
+  ] as const)("checks envelope %s at offset %s independently of the inner VC", async (claim, offset, valid) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-22T12:00:00.000Z"));
+    const jwt = await mintVcJwt(privateKey, delegationVcClaim(), { [claim]: Date.now() / 1000 + offset });
+    const result = await verifier.verifyDelegationJwt(jwt);
+    expect(result.valid).toBe(valid);
+    if (!valid) {
+      expect(result.stage).toBe("basic");
+      expect(result.reason).toContain(claim);
+    }
+  });
+
+  it.each(["exp", "nbf"] as const)("rejects malformed %s values rather than treating them as omitted", async (claim) => {
+    for (const value of [null, "1800000000", true, [], {}]) {
+      const jwt = await mintVcJwt(privateKey, delegationVcClaim(), { [claim]: value });
+      const result = await verifier.verifyDelegationJwt(jwt);
+      expect(result).toMatchObject({ valid: false, stage: "basic" });
+      expect(result.reason).toContain(`JWT ${claim} must be a finite NumericDate`);
+    }
+  });
+
+  it("checks envelope expiration on a warm signature cache", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-22T12:00:00.000Z"));
+    const isolated = new DelegationCredentialVerifier({ didResolver: resolverFor(publicJwk) });
+    const jwt = await mintVcJwt(privateKey, delegationVcClaim(), { exp: Date.now() / 1000 + 5 });
+    expect((await isolated.verifyDelegationJwt(jwt)).valid).toBe(true);
+    expect((await isolated.verifyDelegationJwt(jwt)).cached).toBe(true);
+    vi.advanceTimersByTime(5000);
+    expect(await isolated.verifyDelegationJwt(jwt)).toMatchObject({ valid: false, stage: "basic", reason: "JWT expired (exp)" });
   });
 
   it("accepts a valid VC-JWT that carries NO embedded proof", async () => {

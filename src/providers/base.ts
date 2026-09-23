@@ -44,7 +44,20 @@ export abstract class StorageProvider {
 }
 
 export abstract class NonceCacheProvider {
+  /**
+   * Atomically record an unseen (agentDid, nonce) for ttlSeconds. Return true only
+   * when this call records it, false when an unexpired record already exists.
+   * Reject on storage failure; never implement this as separate has/add calls.
+   * Shared deployments must implement the operation atomically in their shared
+   * backend (for example, a conditional insert with expiry), not a local mutex.
+   * Retain a successful claim for at least ttlSeconds. Verifiers sharing this
+   * cache must agree on acceptance windows; changing them requires a rollout
+   * that also preserves previously admitted records for the new window.
+   */
+  abstract consume(nonce: string, ttlSeconds: number, agentDid?: string): Promise<boolean>;
+  /** Inspection only; use consume for replay admission. */
   abstract has(nonce: string, agentDid?: string): Promise<boolean>;
+  /** Unconditional write; use consume for replay admission. */
   abstract add(nonce: string, ttlSeconds: number, agentDid?: string): Promise<void>;
   abstract cleanup(): Promise<void>;
   abstract destroy(): Promise<void>;

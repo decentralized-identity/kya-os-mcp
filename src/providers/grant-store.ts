@@ -21,6 +21,8 @@
  * over the request (holder-of-key). Storing a grant never substitutes for that.
  */
 
+import type { DelegationCredential } from "../types/protocol.js";
+
 export interface Grant {
   /** Stable id for this grant (used for revocation). */
   id: string;
@@ -40,6 +42,12 @@ export interface Grant {
   authorization?: { type: string; provider?: string };
   /** The delegation credential (VC-JWT), when one was minted. */
   credentialJwt?: string;
+  /**
+   * Original signed object credential. Delegation gates reverify this evidence
+   * (or credentialJwt) on every reuse; opaque legacy grants re-challenge.
+   * Durable providers must preserve the full credential, including its proof.
+   */
+  delegationCredential?: DelegationCredential;
   /** When the grant was issued (ms epoch). */
   issuedAt: number;
   /** When the grant expires (ms epoch); omitted means no expiry. */
@@ -101,7 +109,7 @@ export class MemoryGrantStore extends GrantStore {
   }
 
   async bind(grant: Grant): Promise<void> {
-    this.grants.set(grant.id, { ...grant });
+    this.grants.set(grant.id, structuredClone(grant));
   }
 
   async getByAgent(agentDid: string, requiredScopes?: string[]): Promise<Grant[]> {
@@ -118,7 +126,7 @@ export class MemoryGrantStore extends GrantStore {
 
   async getById(id: string): Promise<Grant | undefined> {
     const grant = this.grants.get(id);
-    return grant ? { ...grant } : undefined;
+    return grant ? structuredClone(grant) : undefined;
   }
 
   async revoke(id: string, reason?: string): Promise<void> {
@@ -137,14 +145,14 @@ export class MemoryGrantStore extends GrantStore {
     }
   }
 
-  /** Active = not revoked and not past expiry. */
+  /** Active = explicitly active and not past expiry. */
   private activeGrants(): Grant[] {
     const now = this.now();
     const out: Grant[] = [];
     for (const grant of this.grants.values()) {
-      if (grant.status === 'revoked') continue;
+      if (grant.status !== 'active') continue;
       if (grant.expiresAt !== undefined && grant.expiresAt <= now) continue;
-      out.push({ ...grant });
+      out.push(structuredClone(grant));
     }
     return out;
   }

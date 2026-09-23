@@ -137,6 +137,8 @@ export interface ChainEnforcementDeps {
 export interface ChainValidationResult {
   valid: boolean;
   reason?: string;
+  /** Earliest verified credential/constraint expiry across the chain (ms epoch). */
+  expiresAt?: number;
 }
 
 /**
@@ -145,7 +147,10 @@ export interface ChainValidationResult {
  * the §11.6 re-delegation audience-constraint requirement, parent↔child linkage
  * (parentId + issuerDid==parent.subjectDid), cycle detection, scope attenuation,
  * and — when a {@link RevocationChecker} is supplied — graph-backed ancestor
- * revocation. Never throws on a malformed input; returns `{ valid, reason }`.
+ * revocation. `skipSignature` applies only to the presented leaf whose JWT
+ * envelope the caller has verified; ancestors always require verification.
+ * Success includes the earliest applicable expiry for downstream grant storage.
+ * Never throws on a malformed input; returns `{ valid, reason }`.
  */
 export async function validateDelegationChain(
   leafCredential: DelegationCredential,
@@ -212,9 +217,15 @@ export async function validateDelegationChain(
       };
     }
 
-    chain = leafIndex === -1 ? [...resolvedChain, leafCredential] : resolvedChain;
+    // Always validate the presented leaf. A resolver may return a copy, but it
+    // must not replace the credential whose JWT envelope was authenticated.
+    chain = [
+      ...(leafIndex === -1 ? resolvedChain : resolvedChain.slice(0, -1)),
+      leafCredential,
+    ];
   }
 
+  let expiresAt: number | undefined;
   const seenIds = new Set<string>();
   let previousDelegation: DelegationRecord | undefined;
   let previousCredential: DelegationCredential | undefined;
@@ -240,7 +251,9 @@ export async function validateDelegationChain(
     const credentialVerification = await deps.verifier.verifyDelegationCredential(
       credential,
       {
-        ...(options?.skipSignature ? { skipSignature: true } : {}),
+        ...(options?.skipSignature && credential === leafCredential
+          ? { skipSignature: true }
+          : {}),
       },
     );
     if (!credentialVerification.valid) {
@@ -248,6 +261,20 @@ export async function validateDelegationChain(
         valid: false,
         reason: `Delegation ${delegation.id} invalid: ${credentialVerification.reason}`,
       };
+    }
+
+    // Use the already-verified walk so grant lifetime cannot outlive a shorter
+    // ancestor or constraint. Expiry/status are still rechecked on every call.
+    const deadlines = [
+      credential.expirationDate ? Date.parse(credential.expirationDate) : undefined,
+      delegation.constraints.notAfter !== undefined
+        ? delegation.constraints.notAfter * 1000
+        : undefined,
+    ];
+    for (const deadline of deadlines) {
+      if (deadline !== undefined && Number.isFinite(deadline)) {
+        expiresAt = Math.min(expiresAt ?? deadline, deadline);
+      }
     }
 
     if (!verifyDelegationAudience(delegation, deps.serverDid)) {
@@ -328,5 +355,5 @@ export async function validateDelegationChain(
     }
   }
 
-  return { valid: true };
+  return { valid: true, ...(expiresAt !== undefined ? { expiresAt } : {}) };
 }

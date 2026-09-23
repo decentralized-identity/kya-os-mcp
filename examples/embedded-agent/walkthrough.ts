@@ -192,7 +192,7 @@ async function approve(server: Identity, agentDid: string, grantStore: MemoryGra
     sign,
   );
   const notAfter = Math.floor(Date.now() / 1000) + 3600;
-  await issuer.createAndIssueDelegation({
+  const delegationCredential = await issuer.createAndIssueDelegation({
     id: `del-${Date.now()}`,
     issuerDid: server.did,
     subjectDid: agentDid,
@@ -202,6 +202,7 @@ async function approve(server: Identity, agentDid: string, grantStore: MemoryGra
   // Agent-anchored grant (no sessionId) — resolved per request via getByAgent
   // behind the agent's holder-of-key proof.
   const grant: Grant = {
+    delegationCredential,
     id: `grant_${Date.now()}`,
     agentDid,
     scopes: [SCOPE],

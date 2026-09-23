@@ -26,7 +26,7 @@ import type {
   VerificationMethod,
   DelegationVCVerificationResult,
 } from "./vc-verifier.types.js";
-import { parseVCJWT } from "./utils.js";
+import { parseVCJWT, type VCJWTPayload } from "./utils.js";
 import { validateBasicProperties } from "./vc-verification-checks.js";
 import { verificationMethodJwk } from "./verification-method-key.js";
 
@@ -68,6 +68,24 @@ function jwtBasicFailure(
   };
 }
 
+/**
+ * JWT time claims are independent of the embedded VC's constraints (RFC 7519
+ * sections 4.1.4/4.1.5). Check them on every invocation, outside the signature
+ * cache. Missing claims remain compatible; a present claim must be NumericDate.
+ */
+function validateJwtTimeBounds(payload: VCJWTPayload, nowMs: number): string | undefined {
+  for (const claim of ["exp", "nbf"] as const) {
+    const value = payload[claim];
+    if (value !== undefined && (typeof value !== "number" || !Number.isFinite(value))) {
+      return `JWT ${claim} must be a finite NumericDate`;
+    }
+  }
+  const nowSeconds = nowMs / 1000;
+  if (payload.exp !== undefined && nowSeconds >= payload.exp) return "JWT expired (exp)";
+  if (payload.nbf !== undefined && nowSeconds < payload.nbf) return "JWT not yet valid (nbf)";
+  return undefined;
+}
+
 /** A parsed, structurally-valid VC-JWT plus the coordinates to look up its key. */
 export type PreparedVcJwt =
   | {
@@ -91,11 +109,15 @@ export function prepareVcJwtCredential(
   startTime: number,
 ): PreparedVcJwt {
   const parsed = parseVCJWT(jwt);
-  if (!parsed) {
+  if (!parsed || !parsed.payload || typeof parsed.payload !== "object" || Array.isArray(parsed.payload)) {
     return { failure: jwtBasicFailure("Not a valid VC-JWT (parse failed)", startTime) };
   }
 
   const basicCheckStart = Date.now();
+  const timeFailure = validateJwtTimeBounds(parsed.payload, basicCheckStart);
+  if (timeFailure) {
+    return { failure: jwtBasicFailure(timeFailure, startTime, Date.now() - basicCheckStart) };
+  }
   const vc = parsed.payload.vc as DelegationCredential;
   const basicValidation = validateBasicProperties(vc, {
     requireEmbeddedProof: false,

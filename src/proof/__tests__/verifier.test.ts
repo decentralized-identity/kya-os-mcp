@@ -108,6 +108,7 @@ describe('ProofVerifier Security', () => {
     };
 
     mockNonceCache = {
+      consume: vi.fn().mockResolvedValue(true),
       has: vi.fn().mockResolvedValue(false),
       add: vi.fn().mockResolvedValue(undefined),
       cleanup: vi.fn().mockResolvedValue(undefined),
@@ -166,15 +167,17 @@ describe('ProofVerifier Security', () => {
 
     it('should prevent nonce replay attacks', async () => {
       const proof = createValidProof();
+      mockClockProvider.now = vi.fn().mockReturnValue(proof.meta.ts * 1000);
 
       // First verification should succeed
       const result1 = await proofVerifier.verifyProof(proof, validJwk);
       expect(result1.valid).toBe(true);
-      expect(mockNonceCache.has).toHaveBeenCalledWith('nonce123', 'did:key:z123');
-      expect(mockNonceCache.add).toHaveBeenCalled();
+      expect(mockNonceCache.consume).toHaveBeenCalledWith('nonce123', 601, 'did:key:z123');
+      expect(mockNonceCache.has).not.toHaveBeenCalled();
+      expect(mockNonceCache.add).not.toHaveBeenCalled();
 
       // Reset mock to simulate second attempt
-      mockNonceCache.has = vi.fn().mockResolvedValue(true);
+      mockNonceCache.consume = vi.fn().mockResolvedValue(false);
 
       // Second verification with same nonce should fail
       const result2 = await proofVerifier.verifyProof(proof, validJwk);
@@ -182,16 +185,45 @@ describe('ProofVerifier Security', () => {
       expect(result2.reason).toContain('replay');
     });
 
-    it('should add nonce to cache after successful verification', async () => {
+    it('should atomically consume nonce after successful verification', async () => {
       const proof = createValidProof();
 
       await proofVerifier.verifyProof(proof, validJwk);
 
-      expect(mockNonceCache.add).toHaveBeenCalledWith(
+      expect(mockNonceCache.consume).toHaveBeenCalledWith(
         'nonce123',
         expect.any(Number),
         'did:key:z123'
       );
+    });
+
+    it('does not claim a nonce when signature validation fails', async () => {
+      mockCryptoProvider.verify = vi.fn().mockResolvedValue(false);
+      expect((await proofVerifier.verifyProof(createValidProof(), validJwk)).valid).toBe(false);
+      expect(mockNonceCache.consume).not.toHaveBeenCalled();
+    });
+
+    it('fails closed for a legacy provider lacking atomic consume', async () => {
+      Reflect.deleteProperty(mockNonceCache, 'consume');
+      const result = await proofVerifier.verifyProof(createValidProof(), validJwk);
+      expect(result.valid).toBe(false);
+      expect(result.errorCode).toBe(PROOF_VERIFICATION_ERROR_CODES.VERIFICATION_ERROR);
+      expect(mockNonceCache.has).not.toHaveBeenCalled();
+      expect(mockNonceCache.add).not.toHaveBeenCalled();
+    });
+
+    it.each([1, 2000])('retains future-dated proofs through their accepted lifetime (configured TTL %s)', async (ttl) => {
+      const now = 1_800_000_000_000;
+      mockClockProvider.now = vi.fn().mockReturnValue(now);
+      const verifier = new ProofVerifier({
+        cryptoProvider: mockCryptoProvider, clockProvider: mockClockProvider,
+        nonceCacheProvider: mockNonceCache, fetchProvider: mockFetchProvider,
+        timestampSkewSeconds: 600, nonceTtlSeconds: ttl,
+      });
+      const proof = createValidProof();
+      proof.meta.ts = now / 1000 + 600;
+      expect((await verifier.verifyProof(proof, validJwk)).valid).toBe(true);
+      expect(mockNonceCache.consume).toHaveBeenCalledWith('nonce123', Math.max(ttl, 1201), 'did:key:z123');
     });
   });
 
@@ -199,7 +231,7 @@ describe('ProofVerifier Security', () => {
     it('verifies cryptographic evidence without consuming live replay or freshness state', async () => {
       const proof = createValidProof();
       proof.meta.ts = 1;
-      mockNonceCache.has = vi.fn().mockResolvedValue(true);
+      mockNonceCache.consume = vi.fn().mockResolvedValue(false);
       mockClockProvider.isWithinSkew = vi.fn().mockReturnValue(false);
 
       const result = await proofVerifier.verifyProofArtifact(proof, validJwk);
@@ -207,6 +239,7 @@ describe('ProofVerifier Security', () => {
       expect(result.valid).toBe(true);
       expect(mockNonceCache.has).not.toHaveBeenCalled();
       expect(mockNonceCache.add).not.toHaveBeenCalled();
+      expect(mockNonceCache.consume).not.toHaveBeenCalled();
       expect(mockClockProvider.isWithinSkew).not.toHaveBeenCalled();
       expect(mockCryptoProvider.verify).toHaveBeenCalled();
     });
@@ -544,7 +577,7 @@ describe('ProofVerifier Security', () => {
       expect(result1.valid).toBe(true);
 
       // Second verification should fail
-      mockNonceCache.has = vi.fn().mockResolvedValue(true);
+      mockNonceCache.consume = vi.fn().mockResolvedValue(false);
       const result2 = await proofVerifier.verifyProofDetached(
         proof,
         canonicalPayload,
@@ -581,7 +614,7 @@ describe('ProofVerifier Security', () => {
       const proof = createValidProof();
 
       // Simulate various error conditions
-      mockNonceCache.has = vi.fn().mockRejectedValue(new Error('Cache error'));
+      mockNonceCache.consume = vi.fn().mockRejectedValue(new Error('Cache error'));
 
       const result = await proofVerifier.verifyProof(proof, validJwk);
 

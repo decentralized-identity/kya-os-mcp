@@ -38,7 +38,7 @@ export async function approve(input: ApproveInput): Promise<ApproveResult> {
   const notAfter = Math.floor(Date.now() / 1000) + ttlSeconds;
 
   // Mint the delegation VC — the durable proof of authority the grant caches.
-  await issuer.createAndIssueDelegation({
+  const delegationCredential = await issuer.createAndIssueDelegation({
     id: `del-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     issuerDid: input.identity.did,
     subjectDid: input.agentDid,
@@ -53,6 +53,7 @@ export async function approve(input: ApproveInput): Promise<ApproveResult> {
   // Agent-anchored grant — NO sessionId — so it is portable: a retry resolves it
   // via getByAgent (behind the agent's holder-of-key proof) on any instance.
   const grant: Grant = {
+    delegationCredential,
     id: grantId,
     agentDid: input.agentDid,
     scopes: input.scopes,

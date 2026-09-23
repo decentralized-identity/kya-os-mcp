@@ -22,6 +22,7 @@ import {
 } from '../types/protocol.js';
 import type { CryptoProvider } from '../providers/base.js';
 import { MemoryNonceCacheProvider } from '../providers/memory.js';
+import { nonceRetentionSeconds } from '../providers/nonce-retention.js';
 import { SessionStore, MemorySessionStore } from './session-store.js';
 import { logger } from '../logging/index.js';
 
@@ -88,8 +89,8 @@ export class SessionManager {
     if (this.config.nonceCache instanceof MemoryNonceCacheProvider) {
       logger.warn(
         '[SessionManager] Using MemoryNonceCacheProvider — not suitable for ' +
-          'multi-instance deployments. Use Redis, DynamoDB, or Cloudflare KV ' +
-          'for production.'
+          'multi-instance deployments. Use a shared provider with an atomic ' +
+          'consume operation for production.'
       );
     }
   }
@@ -136,11 +137,20 @@ export class SessionManager {
         };
       }
 
-      const nonceExists = await this.config.nonceCache.has(
+      // Use different TTLs for anonymous vs authenticated nonces (SPEC.md §5.2).
+      const isAnonymous = !request.agentDid;
+      const nonceTtlMs = isAnonymous ? ANON_NONCE_TTL_MS : AUTH_NONCE_TTL_MS;
+      const nonceTtlSeconds = nonceRetentionSeconds(
+        Math.ceil(nonceTtlMs / 1000),
+        request.timestamp + this.config.timestampSkewSeconds,
+        Date.now(),
+      );
+      const consumed = await this.config.nonceCache.consume(
         request.nonce,
+        nonceTtlSeconds,
         request.agentDid
       );
-      if (nonceExists) {
+      if (consumed !== true) {
         return {
           success: false,
           error: {
@@ -150,16 +160,6 @@ export class SessionManager {
           },
         };
       }
-
-      // Use different TTLs for anonymous vs authenticated nonces (SPEC.md §5.2)
-      const isAnonymous = !request.agentDid;
-      const nonceTtlMs = isAnonymous ? ANON_NONCE_TTL_MS : AUTH_NONCE_TTL_MS;
-      const nonceTtlSeconds = Math.ceil(nonceTtlMs / 1000);
-      await this.config.nonceCache.add(
-        request.nonce,
-        nonceTtlSeconds,
-        request.agentDid
-      );
 
       const sessionId = await this.generateSessionId();
       const clientInfo = await this.buildClientInfo(request);

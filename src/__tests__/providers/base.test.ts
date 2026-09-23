@@ -127,6 +127,7 @@ describe('Base Provider Classes', () => {
       class TestNonceCache extends NonceCacheProvider {}
       const instance = new TestNonceCache();
 
+      expect(instance.consume).toBeUndefined();
       expect(instance.has).toBeUndefined();
       expect(instance.add).toBeUndefined();
       expect(instance.cleanup).toBeUndefined();

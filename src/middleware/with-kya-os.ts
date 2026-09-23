@@ -36,6 +36,7 @@ import {
   type KyaOsMiddleware,
 } from "./with-kya-os.types.js";
 import type { MiddlewareDeps } from "./with-kya-os.deps.js";
+import { createDelegationVerification } from "./with-kya-os.delegation-verify.js";
 import { createGrantResolution } from "./with-kya-os.grants.js";
 import { createPolicyGate } from "./with-kya-os.policy-gate.js";
 import { createDelegationGate } from "./with-kya-os.delegation-gate.js";
@@ -184,10 +185,12 @@ export function createKyaOsMiddleware(
 
   // Durable-grant resolution (the no-paste retry). Depends only on the immutable
   // deps above, so it lifts out cleanly with no shared session state.
+  const delegationVerification = createDelegationVerification(deps);
   const { resolveExistingGrant, bindGrantOnSuccess } =
-    createGrantResolution(deps);
+    createGrantResolution(deps, delegationVerification.verifyDelegation);
 
   const { wrapWithDelegation } = createDelegationGate(deps, {
+    delegationVerification,
     attachOutcomeProof: session.attachOutcomeProof,
     resolveExistingGrant,
     bindGrantOnSuccess,

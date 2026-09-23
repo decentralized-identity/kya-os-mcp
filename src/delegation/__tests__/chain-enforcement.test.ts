@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 import {
   validateDelegationChain,
@@ -199,4 +199,27 @@ describe("validateDelegationChain", () => {
       expect((await validateDelegationChain(root, { ...baseDeps, revocationChecker: checker })).valid).toBe(true);
     });
   });
+  it('only skips the presented leaf signature and never substitutes a resolver leaf', async () => {
+    const root = cred({ id: 'root', issuerDid: 'did:a', subjectDid: 'did:agent', scopes: ['read'] });
+    const leaf = cred({ id: 'leaf', issuerDid: 'did:agent', subjectDid: 'did:sub', parentId: 'root', audience: SERVER, scopes: ['read'] });
+    const resolverLeaf = structuredClone(leaf);
+    const verifyDelegationCredential = vi.fn<DelegationCredentialVerifierPort['verifyDelegationCredential']>(async () => ({ valid: true }));
+    const result = await validateDelegationChain(leaf, {
+      ...baseDeps, verifier: { verifyDelegationCredential }, resolveDelegationChain: async () => [root, resolverLeaf],
+    }, { skipSignature: true });
+    expect(result.valid).toBe(true);
+    expect(verifyDelegationCredential).toHaveBeenNthCalledWith(1, root, {});
+    expect(verifyDelegationCredential).toHaveBeenNthCalledWith(2, leaf, { skipSignature: true });
+    expect(verifyDelegationCredential.mock.calls[1]?.[0]).toBe(leaf);
+  });
+
+  it('returns the earliest verified date or constraint across the chain', async () => {
+    const root = cred({ id: 'root', issuerDid: 'did:a', subjectDid: 'did:agent', scopes: ['read'] });
+    const leaf = cred({ id: 'leaf', issuerDid: 'did:agent', subjectDid: 'did:sub', parentId: 'root', audience: SERVER, scopes: ['read'] });
+    root.expirationDate = '2026-09-22T12:00:00.000Z';
+    root.credentialSubject.delegation.constraints.notAfter = Date.parse(root.expirationDate) / 1000 + 60;
+    leaf.credentialSubject.delegation.constraints.notAfter = Date.parse(root.expirationDate) / 1000 + 600;
+    expect((await validateDelegationChain(leaf, { ...baseDeps, resolveDelegationChain: async () => [root] })).expiresAt).toBe(Date.parse(root.expirationDate));
+  });
+
 });

@@ -184,6 +184,15 @@ export class MockNonceCacheProvider extends NonceCacheProvider {
     this.clock = clock;
   }
 
+  async consume(nonce: string, ttlSeconds: number, agentDid?: string): Promise<boolean> {
+    const key = agentDid ? `nonce:${agentDid}:${nonce}` : `nonce:${nonce}`;
+    const now = this.clock ? this.clock.now() : Date.now();
+    const expiry = this.nonces.get(key);
+    if (expiry !== undefined && expiry > now) return false;
+    this.nonces.set(key, now + ttlSeconds * 1000);
+    return true;
+  }
+
   async has(nonce: string, agentDid?: string): Promise<boolean> {
     const key = agentDid ? `nonce:${agentDid}:${nonce}` : `nonce:${nonce}`;
     const expiry = this.nonces.get(key);

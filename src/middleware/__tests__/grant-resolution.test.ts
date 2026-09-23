@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createKyaOsMiddleware, type KyaOsDelegationConfig } from '../with-kya-os.js';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
 import { generateDidKeyFromBase64 } from '../../utils/did-helpers.js';
-import { DelegationCredentialIssuer } from '../../delegation/vc-issuer.js';
+import { DelegationCredentialIssuer, type IssueDelegationOptions } from '../../delegation/vc-issuer.js';
 import { createUnsignedVCJWT, completeVCJWT } from '../../delegation/utils.js';
 import { generateRequestProof } from '../../delegation/holder-binding.js';
 import { MemoryGrantStore, type Grant } from '../../providers/grant-store.js';
@@ -39,6 +39,7 @@ async function makeServer(opts: {
   server?: ProofAgentIdentity;
   holderBinding?: KyaOsDelegationConfig['holderBinding'];
   grantStore?: MemoryGrantStore;
+  delegation?: KyaOsDelegationConfig;
   auditRecord?: Pick<AuditTrailService, 'record'>['record'];
 } = {}) {
   const server = opts.server ?? (await makeIdentity());
@@ -46,7 +47,7 @@ async function makeServer(opts: {
     {
       identity: server,
       session: { sessionTtlMinutes: 60 },
-      ...(opts.holderBinding ? { delegation: { holderBinding: opts.holderBinding } } : {}),
+      delegation: { ...opts.delegation, ...(opts.holderBinding ? { holderBinding: opts.holderBinding } : {}) },
       ...(opts.grantStore ? { grantStore: opts.grantStore } : {}),
       ...(opts.auditRecord ? { audit: { record: opts.auditRecord } } : {}),
     },
@@ -55,14 +56,22 @@ async function makeServer(opts: {
   return { server, middleware };
 }
 
+type TestCredentialOptions = {
+  issuer?: ProofAgentIdentity;
+  constraints?: Partial<DelegationCredential['credentialSubject']['delegation']['constraints']>;
+  parentId?: string;
+  issuance?: IssueDelegationOptions;
+};
+
 /** Issue a delegation VC (issuer-signed) naming `subjectDid` as the holder. */
 async function issueVC(
   subjectDid: string,
   scopes: string[] = [SCOPE],
   controller?: string,
   crisp?: { resource: string; matcher: 'exact' | 'prefix' | 'regex' }[],
+  opts: TestCredentialOptions = {},
 ): Promise<DelegationCredential> {
-  const issuer = await makeIdentity();
+  const issuer = opts.issuer ?? await makeIdentity();
   const signingFn = async (canonicalVC: string, _issuerDid: string, kid: string): Promise<Proof> => {
     const sig = await crypto.sign(new TextEncoder().encode(canonicalVC), issuer.privateKey);
     return {
@@ -82,40 +91,30 @@ async function issueVC(
     issuerDid: issuer.did,
     subjectDid,
     ...(controller ? { controller } : {}),
+    ...(opts.parentId ? { parentId: opts.parentId } : {}),
     constraints: {
       scopes,
       ...(crisp ? { crisp: { scopes: crisp } } : {}),
       notAfter: Math.floor(Date.now() / 1000) + 3600,
+      ...opts.constraints,
     },
-  });
+  }, opts.issuance);
 }
 
 /** Issue a delegation as a VC-JWT string (compact JWT), naming `subjectDid`. */
-async function issueVCJWT(subjectDid: string, scopes: string[] = [SCOPE]): Promise<string> {
-  const issuer = await makeIdentity();
-  const signingFn = async (canonicalVC: string, _issuerDid: string, kid: string): Promise<Proof> => {
-    const sig = await crypto.sign(new TextEncoder().encode(canonicalVC), issuer.privateKey);
-    return {
-      type: 'Ed25519Signature2020',
-      created: new Date().toISOString(),
-      verificationMethod: kid,
-      proofPurpose: 'assertionMethod',
-      proofValue: base64urlEncodeFromBytes(sig),
-    };
-  };
-  const credentialIssuer = new DelegationCredentialIssuer(
-    { getDid: () => issuer.did, getKeyId: () => issuer.kid, getPrivateKey: () => issuer.privateKey },
-    signingFn,
-  );
-  const vc = await credentialIssuer.createAndIssueDelegation({
-    id: `del-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    issuerDid: issuer.did,
-    subjectDid,
-    constraints: { scopes, notAfter: Math.floor(Date.now() / 1000) + 3600 },
-  });
+async function issueVCJWT(
+  subjectDid: string,
+  scopes: string[] = [SCOPE],
+  opts: TestCredentialOptions = {},
+  timeClaims: { exp?: number; nbf?: number } = {},
+): Promise<string> {
+  const issuer = opts.issuer ?? await makeIdentity();
+  const vc = await issueVC(subjectDid, scopes, undefined, undefined, { ...opts, issuer });
   const vcWithoutProof = { ...vc } as Record<string, unknown>;
   delete vcWithoutProof['proof'];
-  const { signingInput } = createUnsignedVCJWT(vcWithoutProof, { keyId: issuer.kid });
+  const { encodedHeader, payload } = createUnsignedVCJWT(vcWithoutProof, { keyId: issuer.kid });
+  const encodedPayload = base64urlEncodeFromBytes(new TextEncoder().encode(JSON.stringify({ ...payload, ...timeClaims })));
+  const signingInput = `${encodedHeader}.${encodedPayload}`;
   const sig = await crypto.sign(new TextEncoder().encode(signingInput), issuer.privateKey);
   return completeVCJWT(signingInput, base64urlEncodeFromBytes(sig));
 }
@@ -162,7 +161,7 @@ describe('wrapWithDelegation — grant retry resolution', () => {
     const store = new MemoryGrantStore();
     const { server, middleware } = await makeServer({ grantStore: store });
     const sessionId = await openSession(middleware, server.did);
-    store.bind(activeGrant({ agentDid: 'did:key:zAgent', sessionId }));
+    await store.bind(activeGrant({ agentDid: 'did:key:zAgent', sessionId, delegationCredential: await issueVC('did:key:zAgent') }));
 
     const result = await delegationHandler(middleware)({ item: 'laptop' }, sessionId);
     expect(reached(result)).toBe(true);
@@ -182,6 +181,7 @@ describe('wrapWithDelegation — grant retry resolution', () => {
     store.bind(activeGrant({
       agentDid: 'did:key:zAgent',
       userDid: 'did:example:responsible-party',
+      delegationCredential: await issueVC('did:key:zAgent', [SCOPE], 'did:example:responsible-party'),
       sessionId,
     }));
 
@@ -201,7 +201,7 @@ describe('wrapWithDelegation — grant retry resolution', () => {
     const store = new MemoryGrantStore();
     const agent = await makeIdentity();
     const { server, middleware } = await makeServer({ holderBinding: 'enforce', grantStore: store });
-    store.bind(activeGrant({ agentDid: agent.did })); // no sessionId → agent-anchored
+    await store.bind(activeGrant({ agentDid: agent.did, delegationCredential: await issueVC(agent.did) })); // no sessionId → agent-anchored
 
     const args = { item: 'laptop' };
     // The proof carries the agent's own session id (for structural validity);
@@ -323,7 +323,7 @@ describe('wrapWithDelegation — grant retry resolution', () => {
     const store = new MemoryGrantStore();
     const agent = await makeIdentity();
     const { server, middleware } = await makeServer({ holderBinding: 'enforce', grantStore: store });
-    store.bind(activeGrant({ agentDid: agent.did }));
+    await store.bind(activeGrant({ agentDid: agent.did, delegationCredential: await issueVC(agent.did) }));
 
     const args = { item: 'laptop' };
     const proof = await generateRequestProof({
@@ -425,6 +425,7 @@ describe('wrapWithDelegation — grant retry resolution', () => {
 
     const [bound] = await store.getByAgent(agent.did, [SCOPE]);
     expect(bound?.credentialJwt).toBe(jwt);
+    expect(reached(await delegationHandler(middleware)({ item: 'laptop' }, sessionId))).toBe(true);
   });
 
   it('resolveAgentGrant ignores a proof with no subject DID', async () => {
@@ -467,5 +468,201 @@ describe('wrapWithDelegation — grant retry resolution', () => {
     );
     // bindGrantOnSuccess swallows the store failure — the handler still runs.
     expect(reached(result)).toBe(true);
+  });
+});
+
+
+describe('durable delegation grant validation', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('requests authorization for opaque legacy rows', async () => {
+    const store = new MemoryGrantStore();
+    const { middleware } = await makeServer({ grantStore: store });
+    await store.bind(activeGrant({ sessionId: 'legacy-session' }));
+    expect(challenged(await delegationHandler(middleware)({}, 'legacy-session'))).toBe(true);
+  });
+
+  it.each(['off', 'warn'] as const)('preserves %s session reuse with current signed evidence', async (holderBinding) => {
+    const store = new MemoryGrantStore();
+    const agent = await makeIdentity();
+    const { middleware } = await makeServer({ grantStore: store, holderBinding });
+    const handler = delegationHandler(middleware);
+    expect(reached(await handler({ _kyaos_delegation: await issueVC(agent.did) }, 'session'))).toBe(true);
+    expect(reached(await handler({}, 'session'))).toBe(true);
+  });
+
+  it('keeps non-did:key session reuse under the documented deferred binding policy', async () => {
+    const store = new MemoryGrantStore();
+    const { middleware } = await makeServer({ grantStore: store, holderBinding: 'enforce' });
+    const handler = delegationHandler(middleware);
+    const vc = await issueVC('did:web:agent.example.com');
+    expect(reached(await handler({ _kyaos_delegation: vc }, 'session'))).toBe(true);
+    expect(reached(await handler({}, 'session'))).toBe(true);
+  });
+
+  it('requires a current holder proof when enforce reuses a did:key session grant', async () => {
+    const store = new MemoryGrantStore();
+    const agent = await makeIdentity();
+    const server = await makeIdentity();
+    const initial = await makeServer({ server, grantStore: store });
+    expect(reached(await delegationHandler(initial.middleware)({ _kyaos_delegation: await issueVC(agent.did) }, 'session'))).toBe(true);
+    const enforced = await makeServer({ server, grantStore: store, holderBinding: 'enforce' });
+    const handler = delegationHandler(enforced.middleware);
+    expect(challenged(await handler({}, 'session'))).toBe(true);
+    const proof = await generateRequestProof({ identity: agent, crypto, toolName: TOOL, args: {}, audience: server.did, sessionId: 'session' });
+    expect(reached(await handler({ _kyaos_proof: proof }, 'session'))).toBe(true);
+  });
+
+  it.each(['subject', 'controller', 'scope'] as const)('revalidates the signed %s against cached grant metadata', async (mismatch) => {
+    const store = new MemoryGrantStore();
+    const agent = await makeIdentity();
+    const { middleware } = await makeServer({ grantStore: store });
+    const vc = await issueVC(agent.did, mismatch === 'scope' ? ['cart:read'] : [SCOPE]);
+    await store.bind(activeGrant({
+      agentDid: mismatch === 'subject' ? 'did:key:other' : agent.did,
+      ...(mismatch === 'controller' ? { userDid: 'did:web:other.example' } : {}),
+      delegationCredential: vc,
+      sessionId: 'session',
+    }));
+    expect(challenged(await delegationHandler(middleware)({}, 'session'))).toBe(true);
+  });
+
+  it('rechecks audience on a different middleware identity', async () => {
+    const store = new MemoryGrantStore();
+    const agent = await makeIdentity();
+    const a = await makeServer({ grantStore: store });
+    const b = await makeServer({ grantStore: store });
+    const vc = await issueVC(agent.did, [SCOPE], undefined, undefined, { constraints: { audience: a.server.did } });
+    expect(reached(await delegationHandler(a.middleware)({ _kyaos_delegation: vc }, 'session'))).toBe(true);
+    expect(challenged(await delegationHandler(b.middleware)({}, 'session'))).toBe(true);
+  });
+
+  it.each([['object', 'revoked'], ['object', 'unavailable'], ['jwt', 'revoked'], ['jwt', 'unavailable']] as const)('rechecks live status on direct calls and grant reuse: %s %s', async (format, state) => {
+    let allowed = true;
+    const checkStatus = vi.fn(async () => {
+      if (!allowed && state === 'unavailable') throw new Error('status provider unavailable');
+      return !allowed; // StatusList resolver returns whether the revocation bit is set.
+    });
+    const store = new MemoryGrantStore();
+    const { middleware } = await makeServer({ grantStore: store, delegation: { statusListResolver: { checkStatus } } });
+    const credentialOptions: TestCredentialOptions = { issuance: { credentialStatus: {
+      id: 'https://status.example/1#0', type: 'StatusList2021Entry', statusPurpose: 'revocation',
+      statusListIndex: '0', statusListCredential: 'https://status.example/1',
+    } } };
+    const subject = (await makeIdentity()).did;
+    const vc = format === 'jwt'
+      ? await issueVCJWT(subject, [SCOPE], credentialOptions)
+      : await issueVC(subject, [SCOPE], undefined, undefined, credentialOptions);
+    const handler = delegationHandler(middleware);
+    expect(reached(await handler({ _kyaos_delegation: vc }, 'session'))).toBe(true);
+    expect(reached(await handler({}, 'session'))).toBe(true);
+    allowed = false;
+    expect(challenged(await handler({}, 'session'))).toBe(true);
+    expect(JSON.parse((await handler({ _kyaos_delegation: vc }, 'session')).content[0]!.text).error).toBe('delegation_invalid');
+    expect(checkStatus).toHaveBeenCalledTimes(4);
+  });
+
+  it('does not rely on custom stores to filter inactive records', async () => {
+    const agent = await makeIdentity();
+    const vc = await issueVC(agent.did);
+    class UnfilteredStore extends MemoryGrantStore {
+      override async getBySession(): Promise<Grant[]> {
+        return [activeGrant({ agentDid: agent.did, sessionId: 'session', status: 'expired', delegationCredential: vc })];
+      }
+    }
+    const { middleware } = await makeServer({ grantStore: new UnfilteredStore() });
+    expect(challenged(await delegationHandler(middleware)({}, 'session'))).toBe(true);
+  });
+
+  it('retains a snapshot of the object credential and applies its earliest leaf expiry', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-22T12:00:00.000Z'));
+    const notAfter = Math.floor(Date.now() / 1000) + 60;
+    const store = new MemoryGrantStore();
+    const agent = await makeIdentity();
+    const { middleware } = await makeServer({ grantStore: store });
+    const vc = await issueVC(agent.did, [SCOPE], undefined, undefined, {
+      constraints: { notAfter }, issuance: { expirationDate: new Date(Date.now() + 600_000).toISOString() },
+    });
+    const handler = delegationHandler(middleware);
+    expect(reached(await handler({ _kyaos_delegation: vc }, 'session'))).toBe(true);
+    const [grant] = await store.getBySession('session');
+    expect(grant?.expiresAt).toBe(notAfter * 1000);
+    expect(grant?.delegationCredential).toEqual(vc);
+    vc.credentialSubject.id = 'did:key:modified-input';
+    expect(reached(await handler({}, 'session'))).toBe(true);
+    vi.setSystemTime(new Date((notAfter + 1) * 1000));
+    expect(challenged(await handler({}, 'session'))).toBe(true);
+    expect(JSON.parse((await handler({ _kyaos_delegation: grant!.delegationCredential }, 'session')).content[0]!.text).error).toBe('delegation_invalid');
+  });
+
+  it.each([5, 600])('bounds JWT grants by the earlier envelope or VC expiry (envelope +%ss)', async (jwtLifetime) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-22T12:00:00.000Z'));
+    const now = Date.now() / 1000;
+    const store = new MemoryGrantStore();
+    const agent = await makeIdentity();
+    const { middleware } = await makeServer({ grantStore: store });
+    const jwt = await issueVCJWT(agent.did, [SCOPE], { constraints: { notAfter: now + 60 } }, { exp: now + jwtLifetime });
+    const handler = delegationHandler(middleware);
+    expect(reached(await handler({ _kyaos_delegation: jwt }, 'session'))).toBe(true);
+    const [grant] = await store.getBySession('session');
+    expect(grant?.expiresAt).toBe((now + Math.min(jwtLifetime, 60)) * 1000);
+    expect(reached(await handler({}, 'session'))).toBe(true);
+    if (jwtLifetime === 5) {
+      vi.advanceTimersByTime(5000);
+      expect(challenged(await handler({}, 'session'))).toBe(true);
+      expect(JSON.parse((await handler({ _kyaos_delegation: jwt }, 'session')).content[0]!.text).error).toBe('delegation_invalid');
+      // Even an externally persisted row with a longer TTL must revalidate its JWT.
+      await store.bind({ ...grant!, expiresAt: (now + 60) * 1000 });
+      expect(challenged(await handler({}, 'session'))).toBe(true);
+    }
+  });
+
+  it('rechecks JWT not-before constraints on externally retained grant evidence', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-22T12:00:00.000Z'));
+    const store = new MemoryGrantStore();
+    const agent = await makeIdentity();
+    const jwt = await issueVCJWT(agent.did, [SCOPE], {}, { nbf: Date.now() / 1000 + 5 });
+    await store.bind(activeGrant({ agentDid: agent.did, sessionId: 'session', credentialJwt: jwt }));
+    const { middleware } = await makeServer({ grantStore: store });
+    const handler = delegationHandler(middleware);
+    expect(challenged(await handler({}, 'session'))).toBe(true);
+    vi.advanceTimersByTime(5000);
+    expect(reached(await handler({}, 'session'))).toBe(true);
+  });
+
+  it('revalidates ancestor resolution and revocation, with the shortest chain lifetime', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const middle = await makeIdentity();
+    const agent = await makeIdentity();
+    const server = await makeIdentity();
+    const parent = await issueVC(middle.did, [SCOPE], undefined, undefined, { constraints: { notAfter: now + 60 } });
+    const leaf = await issueVC(agent.did, [SCOPE], undefined, undefined, {
+      issuer: middle, parentId: parent.credentialSubject.delegation.id,
+      constraints: { audience: server.did, notAfter: now + 600 },
+    });
+    let revoked = false;
+    let unavailable = false;
+    const resolveDelegationChain = vi.fn(async () => {
+      if (unavailable) throw new Error('chain unavailable');
+      return [parent];
+    });
+    const store = new MemoryGrantStore();
+    const { middleware } = await makeServer({ server, grantStore: store, delegation: {
+      resolveDelegationChain, revocationChecker: { isRevoked: async () => ({ revoked, revokedAncestor: parent.credentialSubject.delegation.id }) },
+    } });
+    const handler = delegationHandler(middleware);
+    expect(reached(await handler({ _kyaos_delegation: leaf }, 'session'))).toBe(true);
+    expect((await store.getBySession('session'))[0]?.expiresAt).toBe((now + 60) * 1000);
+    expect(reached(await handler({}, 'session'))).toBe(true);
+    revoked = true;
+    expect(challenged(await handler({}, 'session'))).toBe(true);
+    expect(JSON.parse((await handler({ _kyaos_delegation: leaf }, 'session')).content[0]!.text).error).toBe('delegation_invalid');
+    revoked = false;
+    unavailable = true;
+    expect(challenged(await handler({}, 'session'))).toBe(true);
+    expect(resolveDelegationChain).toHaveBeenCalledTimes(5);
   });
 });

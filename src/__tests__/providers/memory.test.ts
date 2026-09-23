@@ -131,6 +131,41 @@ describe('MemoryNonceCacheProvider', () => {
     vi.useRealTimers();
   });
 
+  describe('consume', () => {
+    it('admits exactly one concurrent claim without calling has/add', async () => {
+      const has = vi.spyOn(provider, 'has');
+      const add = vi.spyOn(provider, 'add');
+      const results = await Promise.all([
+        provider.consume('nonce', 5, 'did:key:zA'),
+        provider.consume('nonce', 5, 'did:key:zA'),
+      ]);
+      expect(results).toEqual([true, false]);
+      expect(has).not.toHaveBeenCalled();
+      expect(add).not.toHaveBeenCalled();
+    });
+
+    it('preserves the first expiry and permits a claim exactly at expiry', async () => {
+      expect(await provider.consume('nonce', 5)).toBe(true);
+      vi.advanceTimersByTime(4000);
+      expect(await provider.consume('nonce', 100)).toBe(false);
+      vi.advanceTimersByTime(1000);
+      expect(await provider.has('nonce')).toBe(false);
+      expect(await provider.consume('nonce', 5)).toBe(true);
+    });
+
+    it('isolates nonce values by the complete DID and anonymous namespace', async () => {
+      expect(await provider.consume('nonce', 5, 'did:key:zA')).toBe(true);
+      expect(await provider.consume('nonce', 5, 'did:key:zB')).toBe(true);
+      expect(await provider.consume('nonce', 5)).toBe(true);
+      expect(await provider.consume('nonce', 5, 'did:key:zA')).toBe(false);
+    });
+
+    it.each([0, -1, NaN, Infinity])('rejects invalid TTL %s without claiming', async (ttl) => {
+      await expect(provider.consume('nonce', ttl)).rejects.toThrow('TTL');
+      expect(await provider.has('nonce')).toBe(false);
+    });
+  });
+
   describe('has', () => {
     it('should return false for non-existent nonces', async () => {
       const has = await provider.has('nonexistent');

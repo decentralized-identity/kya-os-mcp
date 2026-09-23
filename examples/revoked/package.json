@@ -31,7 +31,7 @@
     "@kya-os/mcp": "^1.14.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@simplewebauthn/server": "^13.3.2",
-    "dotenv": "^17.4.2",
+    "dotenv": "^18.0.1",
     "hono": "^4.13.8"
   },
   "devDependencies": {

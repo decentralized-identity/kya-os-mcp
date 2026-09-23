@@ -9,6 +9,7 @@ import { CryptoService, type Ed25519JWK } from "../utils/crypto-service.js";
 import { CryptoProvider } from "../providers/base.js";
 import { ClockProvider } from "../providers/base.js";
 import { NonceCacheProvider } from "../providers/base.js";
+import { nonceRetentionSeconds } from '../providers/nonce-retention.js';
 import { FetchProvider } from "../providers/base.js";
 import {
   validateDetachedProof,
@@ -47,6 +48,7 @@ export interface ProofVerifierConfig {
   nonceCacheProvider: NonceCacheProvider;
   fetchProvider: FetchProvider;
   timestampSkewSeconds?: number;
+  /** Minimum retention; raised to cover the proof's accepted lifetime and supported skew updates. */
   nonceTtlSeconds?: number;
 }
 
@@ -235,16 +237,7 @@ export class ProofVerifier {
     }
     const validatedProof = structureValidation.proof!;
 
-    // 2. Check nonce replay protection (scoped to agent DID to prevent cross-agent replay attacks)
-    const nonceValidation = await this.validateNonce(
-      validatedProof.meta.nonce,
-      validatedProof.meta.did
-    );
-    if (!nonceValidation.valid) {
-      return nonceValidation;
-    }
-
-    // 3. Check timestamp skew
+    // 2. Check timestamp skew
     const timestampValidation = await this.validateTimestamp(
       validatedProof.meta.ts
     );
@@ -252,7 +245,7 @@ export class ProofVerifier {
       return timestampValidation;
     }
 
-    // 4. Verify JWS signature with canonical payload
+    // 3. Verify JWS signature with canonical payload
     const signatureValidation = await this.verifySignature(
       validatedProof.jws,
       publicKeyJwk,
@@ -263,7 +256,7 @@ export class ProofVerifier {
       return signatureValidation;
     }
 
-    // 4b. Content binding (optional): the signature proves the proof is
+    // 4. Content binding (optional): the signature proves the proof is
     // AUTHENTIC, but not that the request/response WE received matches what was
     // signed. When the caller supplies what it actually saw, recompute the
     // canonical hashes and confirm they match the bound hashes — this is what
@@ -280,13 +273,14 @@ export class ProofVerifier {
       }
     }
 
-    // 5. Add nonce to cache to prevent replay (scoped to agent DID)
-    await this.addNonceToCache(
+    // 5. Atomically admit the validated proof (scoped to agent DID). Invalid
+    // signatures/bindings must not consume state, and has/add cannot serialize
+    // admission across concurrent verifications or distributed instances.
+    return this.consumeNonce(
       validatedProof.meta.nonce,
-      validatedProof.meta.did
+      validatedProof.meta.did,
+      validatedProof.meta.ts
     );
-
-    return { valid: true };
   }
 
   /**
@@ -394,15 +388,22 @@ export class ProofVerifier {
   }
 
   /**
-   * Validate nonce replay protection
+   * Atomically consume the nonce after all proof checks pass.
    * @private
    */
-  private async validateNonce(
+  private async consumeNonce(
     nonce: string,
-    agentDid?: string
+    agentDid: string,
+    timestamp: number
   ): Promise<ProofVerificationResult> {
-    const nonceUsed = await this.nonceCache.has(nonce, agentDid);
-    if (nonceUsed) {
+    // Cover later setTimestampSkew increases too: its supported ceiling is 600s.
+    const ttl = nonceRetentionSeconds(
+      this.nonceTtlSeconds,
+      timestamp + Math.max(this.timestampSkewSeconds, MAX_CLOCK_SKEW_SECONDS),
+      this.clock.now(),
+    );
+    const consumed = await this.nonceCache.consume(nonce, ttl, agentDid);
+    if (consumed !== true) {
       return {
         valid: false,
         reason: "Nonce already used (replay attack detected)",
@@ -475,18 +476,6 @@ export class ProofVerifier {
     }
 
     return { valid: true };
-  }
-
-  /**
-   * Add nonce to cache to prevent replay (scoped to agent DID)
-   * @private
-   */
-  private async addNonceToCache(
-    nonce: string,
-    agentDid: string
-  ): Promise<void> {
-    // Pass TTL in seconds, not absolute timestamp
-    await this.nonceCache.add(nonce, this.nonceTtlSeconds, agentDid);
   }
 
   /**

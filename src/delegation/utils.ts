@@ -33,6 +33,7 @@ export interface VCJWTPayload {
   sub?: string;
   aud?: string | string[];
   exp?: number;
+  nbf?: number;
   iat?: number;
   jti?: string;
   vc: Record<string, unknown>;

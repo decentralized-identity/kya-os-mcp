@@ -18,7 +18,10 @@ import {
   type DIDResolver,
   type SignatureVerificationFunction,
 } from "../delegation/vc-verifier.js";
-import { validateDelegationChain as validateDelegationChainCore } from "../delegation/chain-enforcement.js";
+import {
+  validateDelegationChain as validateDelegationChainCore,
+  type ChainValidationResult,
+} from "../delegation/chain-enforcement.js";
 import { RuntimeFetchProvider } from "../providers/runtime-fetch.js";
 import { canonicalizeJSON, parseVCJWT } from "../delegation/utils.js";
 import { base64urlDecodeToBytes, bytesToBase64 } from "../utils/base64.js";
@@ -48,7 +51,7 @@ export interface DelegationGateConfig {
  * plus the best-effort parsed credential (for audit references), if any.
  */
 export type DelegationCheck =
-  | { valid: true; vc: DelegationCredential; isJwt: boolean }
+  | { valid: true; vc: DelegationCredential; isJwt: boolean; expiresAt?: number }
   | { valid: false; reason: string; vc?: DelegationCredential };
 
 export interface DelegationVerification {
@@ -203,7 +206,7 @@ export function createDelegationVerification(
   const validateDelegationChain = (
     leafCredential: DelegationCredential,
     options?: { skipSignature?: boolean },
-  ): Promise<{ valid: boolean; reason?: string }> =>
+  ): Promise<ChainValidationResult> =>
     validateDelegationChainCore(
       leafCredential,
       {
@@ -224,6 +227,7 @@ export function createDelegationVerification(
     // an embedded Data-Integrity proof (verified inside validateDelegationChain).
     let vc: DelegationCredential;
     let isJwt = false;
+    let jwtExpiresAt: number | undefined;
 
     if (typeof delegationArg === "string") {
       const parsed = parseVCJWT(delegationArg);
@@ -244,6 +248,9 @@ export function createDelegationVerification(
           vc: parsed.payload.vc as DelegationCredential,
         };
       }
+      // This exact JWT's optional exp has passed the envelope verifier's live
+      // time checks. Preserve its narrower deadline when caching the grant.
+      jwtExpiresAt = parsed.payload.exp !== undefined ? parsed.payload.exp * 1000 : undefined;
       vc = parsed.payload.vc as DelegationCredential;
       // A JWT has no embedded `proof`; add a marker so basic validation (which
       // requires proof presence) passes. The already-verified envelope is the
@@ -262,7 +269,7 @@ export function createDelegationVerification(
     // That call never throws on normal/malformed input; this backstop catches
     // only a truly unexpected throw (hostile getter/Proxy, provider fault) and
     // returns a GENERIC reason so no internal detail leaks to the client/proof.
-    let chain: { valid: boolean; reason?: string };
+    let chain: ChainValidationResult;
     try {
       chain = await validateDelegationChain(vc, { skipSignature: isJwt });
     } catch (error) {
@@ -283,7 +290,15 @@ export function createDelegationVerification(
         vc,
       };
     }
-    return { valid: true, vc, isJwt };
+    const expiresAt = jwtExpiresAt === undefined
+      ? chain.expiresAt
+      : Math.min(jwtExpiresAt, chain.expiresAt ?? jwtExpiresAt);
+    return {
+      valid: true,
+      vc,
+      isJwt,
+      ...(expiresAt !== undefined ? { expiresAt } : {}),
+    };
   }
 
   async function buildNeedsAuthorizationChallenge(

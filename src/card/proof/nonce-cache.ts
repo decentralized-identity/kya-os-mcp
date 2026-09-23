@@ -8,9 +8,8 @@
  *   - {@link InMemoryNonceCache} — a single-process, race-free TTL cache. The check-and-set runs in
  *     one synchronous critical section (no `await` between read and write), so it cannot interleave
  *     with a concurrent replay within one process. Use it for a single instance / dev.
- *   - {@link consumeFromNonceCacheProvider} — composes the two-method `NonceCacheProvider`
- *     (`has()` + `add()`) into the atomic seam for a shared/distributed store (see the atomicity
- *     note on the function).
+ *   - {@link consumeFromNonceCacheProvider} — delegates to `NonceCacheProvider.consume`, which
+ *     a shared/distributed provider must implement atomically in its backend.
  *
  * Type-only import of `NonceCacheProvider` — no runtime coupling to the legacy proof engine and no
  * `mcp-i-core` dependency.
@@ -55,7 +54,7 @@ export class InMemoryNonceCache {
    * critical section — no `await` between the read and the write — so it is race-free within one
    * process. Arrow field so it stays bound when passed directly as the seam.
    */
-  readonly consume: ConsumeNonceIfFresh = (nonce, did) => {
+  readonly consume: ConsumeNonceIfFresh = (nonce, did, minTtlSec = 0) => {
     // NUL (`\0`) delimiter: `did` and `nonce` are opaque strings, so an ambiguous separator
     // (e.g. a space) could let one (did, nonce) pair collide with another. `\0` cannot appear
     // in a DID and is not a valid nonce byte, so the composite key stays unambiguous.
@@ -63,7 +62,11 @@ export class InMemoryNonceCache {
     const now = this.clock();
     const expiry = this.seen.get(key);
     if (expiry !== undefined && expiry > now) return false;
-    this.seen.set(key, now + this.ttlMs);
+    const ttlMs = Math.max(this.ttlMs, minTtlSec * 1000);
+    if (!Number.isFinite(ttlMs) || ttlMs <= 0) {
+      throw new RangeError('Nonce retention must be positive and finite');
+    }
+    this.seen.set(key, now + ttlMs);
     // Amortised eviction: sweep expired entries every SWEEP_EVERY inserts so a long-running
     // process cannot accumulate dead nonces unboundedly — no timer or lifecycle to manage.
     if (++this.insertsSinceSweep >= SWEEP_EVERY) {
@@ -82,28 +85,22 @@ export class InMemoryNonceCache {
 
 /** Options for {@link consumeFromNonceCacheProvider}. */
 export interface NonceCacheProviderAdapterOptions {
-  /** TTL applied to each recorded nonce, in seconds (default {@link NONCE_RETENTION_SEC}). */
+  /** Minimum TTL in seconds (default {@link NONCE_RETENTION_SEC}); verifier floors may raise it. */
   ttlSec?: number;
 }
 
 /**
- * Adapt a two-method {@link NonceCacheProvider} (`has()` + `add()`) into the atomic
- * {@link ConsumeNonceIfFresh} seam.
+ * Adapt {@link NonceCacheProvider.consume} into the {@link ConsumeNonceIfFresh} seam.
  *
- * ATOMICITY: `has()` then `add()` is only race-free when the provider serialises the pair — a
- * single-process store, or a backend with a native compare-and-set. For a SHARED distributed cache,
- * back it with a store that enforces atomic check-and-set (SPEC §12.2); otherwise two concurrent
- * replays can both observe `has() === false` before either `add()`s. The bundled
- * {@link InMemoryNonceCache} is race-free by construction and is the safer single-process default.
+ * Requires a backend-native atomic test-and-set (SPEC §12.2). There is deliberately no has/add
+ * fallback: serializing a pair locally cannot protect a shared store. Missing capability or
+ * storage failure rejects the call, which the verifier handles as failed nonce admission.
+ * The bundled {@link MemoryNonceCacheProvider} is atomic only within one cache instance.
  */
 export function consumeFromNonceCacheProvider(
   provider: NonceCacheProvider,
   opts: NonceCacheProviderAdapterOptions = {},
 ): ConsumeNonceIfFresh {
   const ttlSec = opts.ttlSec ?? NONCE_RETENTION_SEC;
-  return async (nonce, did) => {
-    if (await provider.has(nonce, did)) return false;
-    await provider.add(nonce, ttlSec, did);
-    return true;
-  };
+  return (nonce, did, minTtlSec = 0) => provider.consume(nonce, Math.max(ttlSec, minTtlSec), did);
 }

@@ -21,6 +21,7 @@ import { calculateJwkThumbprint, flattenedVerify, importJWK } from 'jose';
 import type { JWK } from 'jose';
 import { base64urlDecodeToString, base64urlEncodeFromBytes } from '../../utils/base64.js';
 import type { ToolRequest } from '../../proof/generator.js';
+import { nonceRetentionSeconds } from '../../providers/nonce-retention.js';
 import type { ProofPublicJwk } from '../schema.js';
 import { canonicalPayloadBytes, computeRequestHash } from './canonical.js';
 import {
@@ -65,12 +66,15 @@ export async function verifyCardProof(
   if (meta.audience !== deps.expectedAudience) reasons.push('audience_mismatch');
   if (meta.requestHash !== computedHash) reasons.push('request_hash_mismatch');
   checkWindow(meta, deps, reasons);
-  await consumeNonce(meta, deps, reasons);
   if (key && algOk && !(await verifyDetachedJws(meta, key))) reasons.push('invalid_signature');
 
   const warnings: string[] = [];
   let level: ProofAssurance = 'L3-minus';
   if (key) level = await checkCnfFusion(meta, key, deps, reasons, warnings);
+
+  // Authenticate every binding before claiming state. The shared cache must
+  // atomically decide which validated request, if any, first admits this nonce.
+  if (reasons.length === 0) await consumeNonce(meta, deps, reasons);
 
   const ok = reasons.length === 0;
   const withWarnings = warnings.length > 0 ? { warnings } : {};
@@ -150,7 +154,16 @@ async function consumeNonce(
     reasons.push('nonce_seam_missing');
     return;
   }
-  if (!(await consume(meta.nonce, meta.did))) reasons.push('nonce_replayed');
+  try {
+    const minTtlSec = nonceRetentionSeconds(
+      1,
+      meta.expires + (deps.skewSec ?? DEFAULT_SKEW_SEC),
+      deps.now?.() ?? Date.now(),
+    );
+    if ((await consume(meta.nonce, meta.did, minTtlSec)) !== true) reasons.push('nonce_replayed');
+  } catch {
+    reasons.push('nonce_cache_unavailable');
+  }
 }
 
 /** Enforce the created/expires window: sane bounds, capped TTL, and ±skew freshness. */

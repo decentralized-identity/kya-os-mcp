@@ -55,8 +55,8 @@ export const DEFAULT_SKEW_SEC = 5;
  * accepting second is honoured in full (up to +999 ms), while a nonce first consumed at the very
  * start of the `created - skew` second is retained from there. Retaining for exactly `ttl + 2·skew`
  * therefore leaves a sub-second tail in which an evicted nonce lets a still-valid proof replay; the
- * `+ 1` closes it. Retention is measured from FIRST use. If a verifier widens `skewSec` beyond
- * {@link DEFAULT_SKEW_SEC}, widen the cache TTL to match.
+ * `+ 1` closes it. Retention is measured from FIRST use. The verifier also passes a retention
+ * floor for its effective skew to the consume seam; custom implementations MUST honor it.
  */
 export const NONCE_RETENTION_SEC = MAX_TTL_SEC + 2 * DEFAULT_SKEW_SEC + 1;
 
@@ -190,10 +190,20 @@ export type ResolveDidKeys = (did: string) => ProofPublicJwk[] | Promise<ProofPu
  * the verifier treats a `true` return as proof the nonce is single-use, so a pure read that never
  * persists the nonce (e.g. `(n) => !seen.has(n)` where `seen` is never written) is a replay HOLE —
  * it compiles and provides ZERO protection. Scope the record by `did` to prevent cross-DID replay.
+ * The verifier supplies `minTtlSec`: retain the successful claim for AT LEAST that duration,
+ * preserving any longer configured TTL. Existing two-argument callbacks must be updated to
+ * honor this argument; their continued TypeScript assignability does not establish safety.
+ * Verifiers sharing a cache must agree on the acceptance window; widening that policy after
+ * records were admitted needs a retention-aware rollout.
  * Reach for the batteries-included {@link InMemoryNonceCache} (race-free) or
  * {@link consumeFromNonceCacheProvider} rather than hand-rolling this.
  */
-export type ConsumeNonceIfFresh = (nonce: string, did: string) => boolean | Promise<boolean>;
+export type ConsumeNonceIfFresh = (
+  nonce: string,
+  did: string,
+  /** Verifier-derived retention floor; implementations MUST retain at least this long. */
+  minTtlSec?: number,
+) => boolean | Promise<boolean>;
 
 /**
  * The verification seams. `resolveKey` resolves the signing key by `kid`. `resolveDidKeys` is the

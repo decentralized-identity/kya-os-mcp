@@ -44,12 +44,29 @@ export class MemoryStorageProvider extends StorageProvider {
 export class MemoryNonceCacheProvider extends NonceCacheProvider {
   private nonces: Map<string, number> = new Map();
 
+  /** Atomic within this cache instance: no await separates the read and write. */
+  async consume(nonce: string, ttlSeconds: number, agentDid?: string): Promise<boolean> {
+    if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) {
+      throw new RangeError('Nonce TTL must be a positive finite number');
+    }
+    const key = this.key(nonce, agentDid);
+    const now = Date.now();
+    const expiry = this.nonces.get(key);
+    if (expiry !== undefined && expiry > now) return false;
+    this.nonces.set(key, now + ttlSeconds * 1000);
+    return true;
+  }
+
+  private key(nonce: string, agentDid?: string): string {
+    return JSON.stringify([agentDid ?? null, nonce]);
+  }
+
   async has(nonce: string, agentDid?: string): Promise<boolean> {
-    const key = agentDid ? `nonce:${agentDid}:${nonce}` : `nonce:${nonce}`;
+    const key = this.key(nonce, agentDid);
     const expiry = this.nonces.get(key);
     if (!expiry) return false;
 
-    if (Date.now() > expiry) {
+    if (Date.now() >= expiry) {
       this.nonces.delete(key);
       return false;
     }
@@ -58,7 +75,7 @@ export class MemoryNonceCacheProvider extends NonceCacheProvider {
   }
 
   async add(nonce: string, ttlSeconds: number, agentDid?: string): Promise<void> {
-    const key = agentDid ? `nonce:${agentDid}:${nonce}` : `nonce:${nonce}`;
+    const key = this.key(nonce, agentDid);
     const expiresAt = Date.now() + ttlSeconds * 1000;
     this.nonces.set(key, expiresAt);
   }
@@ -66,7 +83,7 @@ export class MemoryNonceCacheProvider extends NonceCacheProvider {
   async cleanup(): Promise<void> {
     const now = Date.now();
     for (const [nonce, expiry] of this.nonces) {
-      if (now > expiry) {
+      if (now >= expiry) {
         this.nonces.delete(nonce);
       }
     }

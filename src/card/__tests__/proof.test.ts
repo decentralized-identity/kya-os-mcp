@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   buildCardProof,
   verifyCardProof,
@@ -10,6 +10,7 @@ import {
   type ProofSigner,
   type VerifyProofDeps,
 } from '../index.js';
+import type { NonceCacheProvider } from '../../providers/base.js';
 import { MemoryNonceCacheProvider } from '../../providers/memory.js';
 import { canonicalPayloadBytes } from '../proof/canonical.js';
 import { AUD, DID, KID, NONCE, PROOF_KEY, REQ, T0, clock, deps, keypair } from './proof-helpers.js';
@@ -274,6 +275,76 @@ describe('verifyCardProof — thumbprint failure fails CLOSED (never throws)', (
 });
 
 describe('verifyCardProof — replay defense (atomic consume seam, SPEC §12.2)', () => {
+  it('admits a valid proof once through independently adapted verifier dependencies', async () => {
+    const { signer, publicJwk } = await keypair();
+    const provider = new MemoryNonceCacheProvider();
+    const first = deps(publicJwk, { consumeNonceIfFresh: consumeFromNonceCacheProvider(provider) });
+    const second = deps(publicJwk, { consumeNonceIfFresh: consumeFromNonceCacheProvider(provider) });
+    const proof = await mint(signer);
+    const results = await Promise.all([
+      verifyCardProof(proof, REQ, first),
+      verifyCardProof(proof, REQ, second),
+    ]);
+    expect(results.filter(result => result.ok)).toHaveLength(1);
+    expect(results.find(result => !result.ok)?.reasons).toContain('nonce_replayed');
+  });
+
+  it.each(['signature', 'audience', 'request', 'cnf'] as const)(
+    'rejects invalid %s before consuming a nonce, allowing the valid proof afterward', async (invalid) => {
+      const { signer, publicJwk } = await keypair();
+      const proof = await mint(signer);
+      const consumeNonceIfFresh = vi.fn(new InMemoryNonceCache({ now: clock }).consume);
+      const validDeps = deps(publicJwk, { consumeNonceIfFresh });
+      const result = await verifyCardProof(
+        invalid === 'signature' ? { ...proof, jws: 'invalid..signature' } : proof,
+        invalid === 'request' ? { method: 'tools/list' } : REQ,
+        {
+          ...validDeps,
+          ...(invalid === 'audience' ? { expectedAudience: 'did:web:another.example' } : {}),
+          ...(invalid === 'cnf' ? { tokenCnfJkt: 'not-the-thumbprint' } : {}),
+        },
+      );
+      expect(result.ok).toBe(false);
+      expect(consumeNonceIfFresh).not.toHaveBeenCalled();
+      expect((await verifyCardProof(proof, REQ, validDeps)).ok).toBe(true);
+      expect(consumeNonceIfFresh).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('denies a legacy provider without falling back to separate read/write', async () => {
+    const { signer, publicJwk } = await keypair();
+    const has = vi.fn().mockResolvedValue(false);
+    const add = vi.fn().mockResolvedValue(undefined);
+    const legacy = { has, add } as unknown as NonceCacheProvider;
+    const result = await verifyCardProof(await mint(signer), REQ, deps(publicJwk, {
+      consumeNonceIfFresh: consumeFromNonceCacheProvider(legacy),
+    }));
+    expect(result).toMatchObject({ ok: false, reasons: ['nonce_cache_unavailable'] });
+    expect(has).not.toHaveBeenCalled();
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('returns a denial when atomic storage fails', async () => {
+    const { signer, publicJwk } = await keypair();
+    const result = await verifyCardProof(await mint(signer), REQ, deps(publicJwk, {
+      consumeNonceIfFresh: () => { throw new Error('Storage unavailable'); },
+    }));
+    expect(result).toMatchObject({ ok: false, reasons: ['nonce_cache_unavailable'] });
+  });
+
+  it('retains through an inclusive expiry with widened skew and a shorter configured TTL', async () => {
+    const { signer, publicJwk } = await keypair();
+    const proof = await mint(signer);
+    let now = T0 - 20_000;
+    const cache = new InMemoryNonceCache({ ttlSec: 1, now: () => now });
+    const d = deps(publicJwk, { now: () => now, skewSec: 20, consumeNonceIfFresh: cache.consume });
+    expect((await verifyCardProof(proof, REQ, d)).ok).toBe(true);
+    now = T0 + 80_999;
+    expect((await verifyCardProof(proof, REQ, d)).reasons).toContain('nonce_replayed');
+    now = T0 + 81_000;
+    expect((await verifyCardProof(proof, REQ, d)).reasons).toContain('expired');
+  });
+
   it('REJECTS a replayed nonce wired to the batteries-included InMemoryNonceCache (test-AND-set)', async () => {
     // Regression for the fail-open where the seam was a pure read: the FIRST verify must consume the
     // nonce so the SECOND (same nonce, same request) is rejected as a replay — no window reliance.
@@ -288,7 +359,7 @@ describe('verifyCardProof — replay defense (atomic consume seam, SPEC §12.2)'
     expect(replay.reasons).toContain('nonce_replayed');
   });
 
-  it('the NonceCacheProvider adapter composes has()+add() into an atomic consume (replay rejected)', async () => {
+  it('the NonceCacheProvider adapter delegates atomic consumption (replay rejected)', async () => {
     const { signer, publicJwk } = await keypair();
     const consumeNonceIfFresh = consumeFromNonceCacheProvider(new MemoryNonceCacheProvider());
     const proof = await mint(signer);
@@ -299,7 +370,7 @@ describe('verifyCardProof — replay defense (atomic consume seam, SPEC §12.2)'
 
   it('FAILS CLOSED when NO replay seam is supplied — never fail-open (nonce_seam_missing)', async () => {
     const { signer, publicJwk } = await keypair();
-    const bare: VerifyProofDeps = { resolveKey: () => publicJwk, expectedAudience: AUD, now: clock };
+    const bare: VerifyProofDeps = deps(publicJwk, { consumeNonceIfFresh: undefined });
     const res = await verifyCardProof(await mint(signer), REQ, bare);
     expect(res.ok).toBe(false);
     expect(res.reasons).toContain('nonce_seam_missing');

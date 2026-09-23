@@ -45,12 +45,13 @@ function makeServer(
   }));
 }
 
-/** A nonce cache that records every nonce added, to prove one instance is shared. */
+/** A nonce cache that records every successful claim, to prove one instance is shared. */
 class RecordingNonceCache extends MemoryNonceCacheProvider {
-  readonly added = new Set<string>();
-  async add(nonce: string, ttlSeconds: number, agentDid?: string): Promise<void> {
-    this.added.add(nonce);
-    return super.add(nonce, ttlSeconds, agentDid);
+  readonly consumed = new Set<string>();
+  async consume(nonce: string, ttlSeconds: number, agentDid?: string): Promise<boolean> {
+    const admitted = await super.consume(nonce, ttlSeconds, agentDid);
+    if (admitted) this.consumed.add(nonce);
+    return admitted;
   }
 }
 
@@ -265,7 +266,7 @@ describe('wrapWithDelegation — holder binding', () => {
     const { server, middleware } = await makeServer('enforce', cache);
     const agent = await makeIdentity();
     const vc = await issueVC(agent.did);
-    const sessionId = await openSession(middleware, server.did); // handshake adds a nonce
+    const sessionId = await openSession(middleware, server.did); // handshake claims a nonce
 
     const args = { path: '/secret', _kyaos_delegation: vc };
     const proof = await generateRequestProof({
@@ -276,11 +277,11 @@ describe('wrapWithDelegation — holder binding', () => {
       { scopeId: SCOPE, consentUrl: 'https://example.com/consent' },
       handlerThatRuns,
     );
-    await handler({ ...args, _kyaos_proof: proof }, sessionId); // holder binding adds the proof nonce
+    await handler({ ...args, _kyaos_proof: proof }, sessionId); // holder binding claims the proof nonce
 
     // ONE injected instance saw both the handshake nonce and the holder-binding proof nonce.
-    expect(cache.added.has(proof.meta.nonce)).toBe(true);
-    expect(cache.added.size).toBeGreaterThanOrEqual(2);
+    expect(cache.consumed.has(proof.meta.nonce)).toBe(true);
+    expect(cache.consumed.size).toBeGreaterThanOrEqual(2);
   });
 
   it('enforce: the _kyaos_proof control arg never leaks into the handler args', async () => {

@@ -27,7 +27,7 @@ import { sanitizeForMessage } from "./with-kya-os.helpers.js";
 import { canonicalizeJsonBytes } from "../utils/canonical-json.js";
 import type { Digest } from "../audit/types.js";
 import {
-  createDelegationVerification,
+  type DelegationVerification,
   type DelegationGateConfig,
 } from "./with-kya-os.delegation-verify.js";
 
@@ -58,6 +58,7 @@ function rejectedDelegationRef(value: unknown): string {
 
 /** Collaborators the delegation gate borrows from its sibling sub-factories. */
 export interface DelegationGateWiring {
+  delegationVerification: DelegationVerification;
   attachOutcomeProof: AttachOutcomeProof;
   resolveExistingGrant: GrantResolution["resolveExistingGrant"];
   bindGrantOnSuccess: GrantResolution["bindGrantOnSuccess"];
@@ -74,7 +75,7 @@ export function createDelegationGate(
     verifyDelegation,
     buildDelegationErrorResponse,
     buildNeedsAuthorizationChallenge,
-  } = createDelegationVerification(deps);
+  } = wiring.delegationVerification;
 
   function wrapWithDelegation(
     toolName: string,
@@ -87,8 +88,8 @@ export function createDelegationGate(
       if (delegationArg === undefined || delegationArg === null) {
         // No delegation pasted — a durable grant may already authorize this call
         // (the no-paste retry), even on a fresh instance with empty memory.
-        // Holder-of-key first (agent-anchored, proof-gated), then the session
-        // bearer capability. On a hit, skip the challenge and run the handler
+        // Holder-of-key first, then policy-permitted session reuse. The resolver
+        // revalidates signed evidence on both paths. On a hit, run the handler
         // with exactly the call shape a verified delegation would have produced.
         const existingGrant = await resolveExistingGrant(
           toolName,
@@ -318,7 +319,9 @@ export function createDelegationGate(
 
       // Mint a durable grant from this verified delegation so the next call —
       // on any instance — resolves via resolveExistingGrant with no re-paste.
-      await bindGrantOnSuccess(vc, delegationArg, isJwt, sessionId, config.scopeId);
+      await bindGrantOnSuccess(
+        vc, delegationArg, isJwt, sessionId, config.scopeId, check.expiresAt,
+      );
 
       logger.debug(
         `[kya-os] Delegation verified for "${toolName}", scope "${config.scopeId}"`,

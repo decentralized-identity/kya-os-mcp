@@ -1,5 +1,22 @@
-import { describe, expect, it } from 'vitest';
-import { InMemoryNonceCache } from '../nonce-cache.js';
+import { describe, expect, it, vi } from 'vitest';
+import { InMemoryNonceCache, consumeFromNonceCacheProvider } from '../nonce-cache.js';
+import { MemoryNonceCacheProvider } from '../../../providers/memory.js';
+
+describe('consumeFromNonceCacheProvider', () => {
+  it('delegates the retention floor to one atomic operation, preserving longer configured TTL', async () => {
+    const provider = new MemoryNonceCacheProvider();
+    const consume = vi.spyOn(provider, 'consume');
+    const has = vi.spyOn(provider, 'has');
+    const add = vi.spyOn(provider, 'add');
+    const adapter = consumeFromNonceCacheProvider(provider, { ttlSec: 90 });
+    expect(await adapter('nonce-a', 'did:key:zA', 100)).toBe(true);
+    expect(consume).toHaveBeenLastCalledWith('nonce-a', 100, 'did:key:zA');
+    expect(await adapter('nonce-b', 'did:key:zA', 10)).toBe(true);
+    expect(consume).toHaveBeenLastCalledWith('nonce-b', 90, 'did:key:zA');
+    expect(has).not.toHaveBeenCalled();
+    expect(add).not.toHaveBeenCalled();
+  });
+});
 
 describe('InMemoryNonceCache', () => {
   it('rejects a replay within the retention window and forgets it after expiry', () => {

@@ -37,8 +37,7 @@ describe('ProofVerifier (real crypto)', () => {
     otherAgent = await createRealIdentity(crypto);
   });
 
-  function makeVerifier(): { verifier: ProofVerifier; nonceCache: MemoryNonceCacheProvider } {
-    const nonceCache = new MemoryNonceCacheProvider();
+  function makeVerifier(nonceCache = new MemoryNonceCacheProvider()): { verifier: ProofVerifier; nonceCache: MemoryNonceCacheProvider } {
     const verifier = new ProofVerifier({
       cryptoProvider: crypto,
       clockProvider: new RealClockProvider(),
@@ -318,6 +317,47 @@ describe('ProofVerifier (real crypto)', () => {
   });
 
   // ── Nonce Replay (real cache) ─────────────────────────────────
+
+  it('retains a claim across a supported skew increase through the final accepted instant', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_800_000_000_000);
+      const { verifier } = makeVerifier();
+      const proof = await generateProof(agent);
+      expect((await verifier.verifyProof(proof, getJwk(agent))).valid).toBe(true);
+      verifier.setTimestampSkew(600);
+      vi.advanceTimersByTime(600_000);
+      expect((await verifier.verifyProof(proof, getJwk(agent))).reason).toContain('replay');
+      vi.advanceTimersByTime(1);
+      expect((await verifier.verifyProof(proof, getJwk(agent))).reason).toContain('skew');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shares atomic admission between independent verifier instances', async () => {
+    const cache = new MemoryNonceCacheProvider();
+    const first = makeVerifier(cache).verifier;
+    const second = makeVerifier(cache).verifier;
+    const proof = await generateProof(agent);
+    const results = await Promise.all([
+      first.verifyProof(proof, getJwk(agent)),
+      second.verifyProof(proof, getJwk(agent)),
+    ]);
+    expect(results.filter(result => result.valid)).toHaveLength(1);
+    expect(results.find(result => !result.valid)?.reason).toContain('replay');
+  });
+
+  it('does not consume valid proof state when observed content is mismatched', async () => {
+    const { verifier, nonceCache } = makeVerifier();
+    const proof = await generateProof(agent);
+    const wrongContent = await verifier.verifyProof(proof, getJwk(agent), {
+      request: { method: 'tools/list' }, response: { data: {} },
+    });
+    expect(wrongContent.valid).toBe(false);
+    expect(await nonceCache.has(proof.meta.nonce, agent.did)).toBe(false);
+    expect((await verifier.verifyProof(proof, getJwk(agent))).valid).toBe(true);
+  });
 
   it('should prevent nonce replay with real MemoryNonceCacheProvider', async () => {
     const { verifier } = makeVerifier();

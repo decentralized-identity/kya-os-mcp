@@ -12,6 +12,8 @@ import type {
   DelegationCredential,
   DetachedProof,
 } from "../types/protocol.js";
+import { scopeSatisfies } from "../delegation/scope-matcher.js";
+import type { DelegationVerification } from "./with-kya-os.delegation-verify.js";
 import { getDelegationScopes } from "../delegation/chain-enforcement.js";
 import {
   assertHolderBinding,
@@ -25,8 +27,9 @@ export interface GrantResolution {
   /**
    * Resolve an existing durable grant for a no-delegation (retry) call, so a
    * fresh instance with empty memory authorizes the retry from the shared store.
-   * Fail-closed, holder-of-key first (agent-anchored, portable), then the
-   * session bearer capability. Returns undefined to fall through to the
+   * Fail-closed, holder-of-key first (agent-anchored, portable), then session
+   * reuse only where the configured binding policy permits it. Every path
+   * revalidates the retained delegation. Returns undefined to fall through to the
    * needs_authorization challenge.
    */
   resolveExistingGrant(
@@ -47,10 +50,14 @@ export interface GrantResolution {
     isVCJWT: boolean,
     sessionId: string | undefined,
     scopeId: string,
+    expiresAt?: number,
   ): Promise<void>;
 }
 
-export function createGrantResolution(deps: MiddlewareDeps): GrantResolution {
+export function createGrantResolution(
+  deps: MiddlewareDeps,
+  verifyDelegation: DelegationVerification["verifyDelegation"],
+): GrantResolution {
   const {
     identity,
     cryptoProvider,
@@ -74,15 +81,31 @@ export function createGrantResolution(deps: MiddlewareDeps): GrantResolution {
     return `grant_${digest.replace(/^sha256:/, "")}`;
   }
 
-  /** Grant expiry (ms epoch) derived from the VC, or undefined for no expiry. */
-  function delegationExpiryMs(vc: DelegationCredential): number | undefined {
-    if (vc.expirationDate) {
-      const parsed = Date.parse(vc.expirationDate);
-      if (!Number.isNaN(parsed)) return parsed;
+  /** A grant caches evidence, never a permanent authorization decision. */
+  async function isGrantAuthorized(grant: Grant, scopeId: string): Promise<boolean> {
+    if (grant.status !== "active" || !grant.scopes.includes(scopeId)) return false;
+    if (
+      grant.expiresAt !== undefined &&
+      (!Number.isFinite(grant.expiresAt) || grant.expiresAt <= Date.now())
+    ) return false;
+
+    // Prefer the original JWT wire form when present: its envelope is the proof.
+    // Legacy rows without signed evidence intentionally require authorization again.
+    const evidence = grant.credentialJwt ?? grant.delegationCredential;
+    if (evidence === undefined) return false;
+    try {
+      const check = await verifyDelegation(evidence);
+      if (!check.valid) return false;
+      const subject = check.vc.credentialSubject;
+      return (
+        subject.id === grant.agentDid &&
+        subject.delegation.controller === grant.userDid &&
+        scopeSatisfies(scopeId, check.vc).satisfied
+      );
+    } catch {
+      // Resolver/provider failures must not turn cached authority into a bypass.
+      return false;
     }
-    const notAfter = vc.credentialSubject?.delegation?.constraints?.notAfter;
-    if (typeof notAfter === "number") return notAfter * 1000;
-    return undefined;
   }
 
   /**
@@ -127,9 +150,14 @@ export function createGrantResolution(deps: MiddlewareDeps): GrantResolution {
     const grants = await grantStore.getByAgent(agentDid, [scopeId]);
     // A session-bound grant is usable only from its own session; an
     // agent-anchored (session-less) grant is portable across transports.
-    return grants.find(
-      (g) => g.sessionId === undefined || g.sessionId === sessionId,
-    );
+    for (const grant of grants) {
+      if (
+        grant.agentDid === agentDid &&
+        (grant.sessionId === undefined || grant.sessionId === sessionId) &&
+        await isGrantAuthorized(grant, scopeId)
+      ) return grant;
+    }
+    return undefined;
   }
 
   async function resolveExistingGrant(
@@ -142,8 +170,17 @@ export function createGrantResolution(deps: MiddlewareDeps): GrantResolution {
     if (agentGrant) return agentGrant;
 
     if (sessionId) {
-      const [sessionGrant] = await grantStore.getBySession(sessionId, [scopeId]);
-      if (sessionGrant) return sessionGrant;
+      const grants = await grantStore.getBySession(sessionId, [scopeId]);
+      for (const grant of grants) {
+        if (grant.sessionId !== sessionId) continue;
+        // Enforce applies to every did:key retry, even with a session bearer.
+        // A verified proof would already have resolved it through the agent path.
+        if (
+          holderBindingMode === "enforce" &&
+          isHolderBindingApplicable(grant.agentDid)
+        ) continue;
+        if (await isGrantAuthorized(grant, scopeId)) return grant;
+      }
     }
     return undefined;
   }
@@ -154,6 +191,7 @@ export function createGrantResolution(deps: MiddlewareDeps): GrantResolution {
     isVCJWT: boolean,
     sessionId: string | undefined,
     scopeId: string,
+    expiresAt?: number,
   ): Promise<void> {
     try {
       const agentDid = vc.credentialSubject?.id;
@@ -185,7 +223,6 @@ export function createGrantResolution(deps: MiddlewareDeps): GrantResolution {
       // re-challenge. Including scopeId makes the grant resolvable.
       const scopes = Array.from(new Set([scopeId, ...delegatedScopes]));
       const userDid = vc.credentialSubject?.delegation?.controller;
-      const expiresAt = delegationExpiryMs(vc);
 
       const grant: Grant = {
         id: await grantId(agentDid, sessionId, scopes),
@@ -196,7 +233,7 @@ export function createGrantResolution(deps: MiddlewareDeps): GrantResolution {
         authorization: { type: "delegation" },
         ...(isVCJWT && typeof delegationArg === "string"
           ? { credentialJwt: delegationArg }
-          : {}),
+          : { delegationCredential: structuredClone(vc) }),
         issuedAt: Date.now(),
         ...(expiresAt !== undefined ? { expiresAt } : {}),
         status: "active",

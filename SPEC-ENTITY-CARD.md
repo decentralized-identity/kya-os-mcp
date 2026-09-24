@@ -4,7 +4,7 @@
 
 Version: 1.1 (Entity Card profile)
 Reference implementation: `@kya-os/mcp` v1.10.x (subpath `@kya-os/mcp/card`)
-Status: **DIF TAAWG work item / reference implementation**
+Status: **Ratified DIF standard (DIF TAAWG), part of KYA-OS v1 / reference implementation**
 Editors: KYA-OS Working Group
 Repository: https://github.com/decentralized-identity/kya-os-mcp
 Profiles: the KYA-OS Protocol Specification ([SPEC.md](./SPEC.md))
@@ -40,15 +40,16 @@ BCP 14 [RFC2119] [RFC8174] when, and only when, they appear in all capitals, as 
 
 Two sub-primitives in this specification are marked **[TAAWG-NORMATIVE]**: the entity **type
 axis** (§3) and the per-request holder-of-key **binding** `client_id → did:web → mandate-VC`
-(§7–§8). These are the two primitives KYA-OS seeks to ratify in the DIF Trusted AI Agents
-Working Group (TAAWG); every other normative requirement in this document is shipped
+(§7–§8). These are the two primitives ratified by the DIF Trusted AI Agents Working Group (TAAWG)
+as part of KYA-OS v1; every other normative requirement in this document is shipped
 as the reference implementation (§15.6).
 
 ---
 
 ## Status of This Document
 
-This is a **DIF TAAWG work item** with a conformant **reference implementation** in
+This profile is part of **KYA-OS v1, ratified as a DIF standard by the DIF Trusted AI Agents
+Working Group (TAAWG)**, with a conformant **reference implementation** in
 `@kya-os/mcp` (v1.10.x at the time of writing). The Entity Card profile is additive over, and
 non-breaking with respect to, the KYA-OS 1.x protocol. The `org.kya-os/proof.v1` profile defined
 here coexists with the legacy session-bound proof, and each rides its own `_meta` key:
@@ -1041,7 +1042,7 @@ The AIP "Agent Interaction Protocol" capability-token work (**arXiv:2603.24775**
 typed entities and **not** DID-anchored discoverable cards. It is complementary, not overlapping:
 it constrains *what a token may invoke*; KYA-OS types the *principal* and proves the *live caller*.
 AIP defines neither typed entities nor DID-anchored discoverable cards, so it does not overlap
-with either primitive this document marks for ratification.
+with either primitive this document ratifies.
 
 ### 15.5 ANP and legacy KYA-OS session profile
 
@@ -1058,24 +1059,24 @@ per-request holder-of-key **binding** `client_id → did:web → mandate-VC` (§
 These are the only two properties this survey (§15.1–§15.5) confirmed *unfilled*: nobody else types
 the principal, and nobody else proves the live caller per request. Every other requirement in this
 document is KYA-OS **profiling or projecting** standards it does not own, so it ships as
-implementation, not as a new primitive to ratify.
+implementation, not as a ratified primitive.
 
-**The standardize-now / ship-now split.**
+**The ratified / shipped split.**
 
-| Standardize now (seek DIF TAAWG ratification) | Ship now (DIF reference implementation) |
+| Ratified (DIF TAAWG, KYA-OS v1) | Shipped (DIF reference implementation) |
 |---|---|
 | The `entityType` vocabulary and its closed value space (§3). | Discovery projections onto MCP `_meta`, A2A, NANDA, catalog (§6). |
 | The `client_id → did:web → mandate-VC` binding and its `cnf.jkt` fusion (§7–§8, §8.6). | The CIMD document, proof wire-format, and RFC 9421 sibling mechanics (§7–§8). |
 | The machine-checkable conformance vectors that pin both (Appendix C). | The L1/L2/L3 ladder (§9), ZCAP-LD delegation (§10), revocation (§10.3), verification order (§11), SafeFetch (§6.6). |
 
-Standardizing the vectors alongside the two primitives is deliberate: a vocabulary and a binding are
+Ratifying the vectors alongside the two primitives was deliberate: a vocabulary and a binding are
 only interoperable once a second implementation can reproduce them byte-for-byte (§8.3), so the
-vectors *are* the ratifiable artifact.
+vectors *are* the ratified artifact.
 
 **Timing.** NANDA v1.3 (VC + ZK selective disclosure, §15.3) and A2A's `AgentExtension` momentum
-(§15.2) are converging on the same identity seam, so the working group should treat recognition of
-the two primitives (type vocabulary first, then the binding, then the vectors) as time-sensitive:
-once a peer rail ships an equivalent, the axis stops being available to standardize here.
+(§15.2) are converging on the same identity seam; ratifying the two primitives (the type
+vocabulary, the binding, and the vectors) in TAAWG fixed their definitions before a peer rail
+shipped an equivalent.
 
 ### 15.7 Open coordination items
 

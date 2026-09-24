@@ -62,6 +62,15 @@ describe('GenericOidcAdapter.initiateFlow', () => {
     expect(challenge.expiresAt).toBeGreaterThan(0);
   });
 
+  it('states expiresAt in Unix seconds, per the needs-authorization schema', async () => {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const challenge = await new GenericOidcAdapter(config).initiateFlow(flowParams);
+
+    expect(Number.isInteger(challenge.expiresAt)).toBe(true);
+    expect(challenge.expiresAt).toBeGreaterThan(nowSeconds);
+    expect(challenge.expiresAt).toBeLessThan(nowSeconds + 24 * 60 * 60);
+  });
+
   it('binds the code_verifier to the resumeToken so the token exchange can complete', async () => {
     const adapter = new GenericOidcAdapter(config);
     const challenge = await adapter.initiateFlow(flowParams);

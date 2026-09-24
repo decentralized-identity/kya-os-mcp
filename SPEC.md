@@ -1243,7 +1243,7 @@ interface NeedsAuthorizationError {
   message: string;
   authorizationUrl: string;  // URL where user can grant authorization
   resumeToken: string;       // Token to resume flow after authorization
-  expiresAt: number;         // Unix epoch when resumeToken expires
+  expiresAt: number;         // Unix timestamp in seconds when resumeToken expires
   scopes: string[];          // Scopes being requested
   display?: {
     title?: string;

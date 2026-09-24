@@ -112,7 +112,7 @@ export class GenericOidcAdapter implements AuthorizationServerAdapter {
       message: `Authorization required for "${params.protection.toolName}".`,
       authorizationUrl,
       resumeToken,
-      expiresAt: nowMs() + ttlMs,
+      expiresAt: Math.floor((nowMs() + ttlMs) / 1000),
       scopes,
     });
   }

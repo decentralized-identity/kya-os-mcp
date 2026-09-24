@@ -188,3 +188,46 @@ describe('verifyOrHints — unknownAgentPolicy', () => {
     });
   });
 });
+
+describe('verifyOrHints — needs_authorization challenge', () => {
+  const agentDid = 'did:key:z6MkTest';
+  const scopes = ['read:data'];
+
+  async function challenge() {
+    const config: AuthHandshakeConfig = {
+      delegationVerifier: {
+        verify: vi.fn().mockResolvedValue({ valid: false, reason: 'No delegation' }),
+      },
+      resumeTokenStore: new MemoryResumeTokenStore(),
+      authorization: { authorizationUrl: 'https://example.com/consent' },
+    };
+    const result = await verifyOrHints(agentDid, scopes, config);
+    if (!result.authError) throw new Error('expected a needs_authorization challenge');
+    return result.authError;
+  }
+
+  it('states expiresAt in Unix seconds, per the needs-authorization schema', async () => {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const { expiresAt } = await challenge();
+
+    expect(Number.isInteger(expiresAt)).toBe(true);
+    expect(expiresAt).toBeGreaterThan(nowSeconds);
+    expect(expiresAt).toBeLessThanOrEqual(nowSeconds + 600);
+  });
+
+  it('keeps the resume token out of third-party QR services', async () => {
+    const authError = await challenge();
+
+    // qrUrl is the URL to encode as a QR code; the client renders it locally.
+    expect(authError.display?.qrUrl).toBe(authError.authorizationUrl);
+    expect(new URL(authError.display!.qrUrl!).origin).toBe('https://example.com');
+  });
+
+  it('does not derive a display code from the resume token', async () => {
+    const authError = await challenge();
+    const prefix = authError.resumeToken.substring(0, 8).toUpperCase();
+
+    expect(authError.display?.authorizationCode).toBeUndefined();
+    expect(JSON.stringify(authError.display)).not.toContain(prefix);
+  });
+});

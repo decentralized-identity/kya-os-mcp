@@ -435,20 +435,22 @@ async function buildNeedsAuthorizationError(
     requestedAt: Date.now(),
   });
 
-  const expiresAt = Date.now() + (config.authorization.resumeTokenTtl ?? 600_000);
+  // resumeTokenTtl is in milliseconds; the wire field is Unix seconds.
+  const expiresAt = Math.floor(
+    (Date.now() + (config.authorization.resumeTokenTtl ?? 600_000)) / 1000
+  );
 
   const authUrl = new URL(config.authorization.authorizationUrl);
   authUrl.searchParams.set('agent_did', agentDid);
   authUrl.searchParams.set('scopes', scopes.join(','));
   authUrl.searchParams.set('resume_token', resumeToken);
 
-  const authCode = resumeToken.substring(0, 8).toUpperCase();
-
+  // qrUrl is the URL to encode, rendered by the client. It carries the resume
+  // token, so it is never handed to a third-party QR image service.
   const display: AuthorizationDisplay = {
     title: 'Authorization Required',
     hint: ['link', 'qr'],
-    authorizationCode: authCode,
-    qrUrl: `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(authUrl.toString())}`,
+    qrUrl: authUrl.toString(),
   };
 
   return createNeedsAuthorizationError({

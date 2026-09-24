@@ -24,7 +24,7 @@ This SEP proposes an Extensions Track extension, `org.kya-os/decentralized-autho
 Every artifact verifies locally from signatures, with no round trip to a central authorization service; the default DID methods are `did:key` and `did:web`, and no distributed ledger is required or referenced.
 The extension is strictly additive: no tools, no new methods, no sessions, no use of the `Authorization` header.
 It is negotiated through the standard `extensions` capability map, degrades gracefully for unaware peers, and rejects undeclared clients in required mode using core `-32021`.
-The wire binding is one short document; the underlying protocol is specified externally as a DIF TAAWG work item, with the implementation evidence described in Reference Implementation.
+The wire binding is one short document; the underlying protocol is specified externally as a ratified DIF standard (DIF TAAWG), with the implementation evidence described in Reference Implementation.
 
 ## Motivation
 
@@ -86,7 +86,7 @@ The alternative authorization models in the table above were design inputs rathe
 As drafted, this is a vendor-prefixed extension whose normative core is externally governed, which SEP-2133 does not yet define a track for.
 The proposed resolution, stated head-on: the intended entry path is `experimental-ext-` incubation with the associated interest group; on graduation through this SEP, the MCP binding document transfers to extension-repository governance under an `io.modelcontextprotocol` identifier, with MCP core maintainers holding ultimate authority over the binding, while the underlying KYA-OS specifications remain externally governed, the way EMA's profiled token machinery remains at the IETF.
 The `org.kya-os/*` namespace then survives as the `_meta` key namespace of the underlying proof profile; core expects official extensions to define keys under `io.modelcontextprotocol/`, so whether those keys also re-point on graduation is an adoption-time decision the configurable `proofMetaKey` (KYA-OS Spec §7.6) leaves open.
-One distinction is owed precision: the underlying specifications are DIF TAAWG work items under ratification review, not yet ratified standards; the SEP's claims rest on the published documents and shipped implementations, not on that pending status.
+One distinction is owed precision: the KYA-OS Protocol Specification v1 was ratified as a DIF standard by the DIF Trusted AI Agents Working Group (TAAWG), while the Entity Card profile remains a TAAWG work item on its own track; the SEP's claims rest on the published documents and shipped implementations.
 Stewardship is active rather than nominal: the TAAWG task force meets weekly, working-group review has already changed the specification (the proof-key separation and the exact request-hash canonicalization were external review findings, resolved in the 1.11.0 release), and the conformance suite gates every change in CI.
 The identifier was settled in DIF TAAWG discussion (2026-07-28); it was chosen because "authority" covers identity, delegation, proof, and audit together, where "delegation" alone did not.
 

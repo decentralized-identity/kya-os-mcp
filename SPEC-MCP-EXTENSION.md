@@ -4,7 +4,7 @@
 
 Version: 1.0.0-draft
 Status: Draft
-Editors: KYA-OS Working Group
+Editors: Dylan Hobbs ([@H0BB5](https://github.com/H0BB5)), KYA-OS Working Group
 Repository: https://github.com/decentralized-identity/kya-os-mcp
 Binds: the KYA-OS Protocol Specification ([SPEC.md](./SPEC.md)) and the Entity Card profile ([SPEC-ENTITY-CARD.md](./SPEC-ENTITY-CARD.md)) to the Model Context Protocol Extensions framework (SEP-2133)
 

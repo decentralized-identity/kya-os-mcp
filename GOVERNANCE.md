@@ -6,9 +6,9 @@ This repository is the **DIF TAAWG protocol reference implementation** for the K
 
 ## Maintainers
 
-| Name        | Email                 | Role               |
-| ----------- | --------------------- | ------------------ |
-| Dylan Hobbs | dylan.hobbs@vouched.id | Initial Maintainer |
+| Name        | GitHub                                 | Email                  | Role                       |
+| ----------- | -------------------------------------- | ---------------------- | -------------------------- |
+| Dylan Hobbs | [@H0BB5](https://github.com/H0BB5)     | dylan.hobbs@vouched.id | Initial Maintainer, Editor |
 
 ## Decision Making
 

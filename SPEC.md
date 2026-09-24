@@ -4,7 +4,7 @@
 
 Version: 1.0.0
 Status: Stable
-Editors: KYA-OS Working Group
+Editors: Dylan Hobbs ([@H0BB5](https://github.com/H0BB5)), KYA-OS Working Group
 Repository: https://github.com/decentralized-identity/kya-os-mcp
 
 ---

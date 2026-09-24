@@ -5,7 +5,7 @@
 Version: 1.0 (Audit Read profile)
 Reference implementation: `@kya-os/mcp` (subpath `@kya-os/mcp/audit`)
 Status: **Draft / reference implementation**
-Editors: KYA-OS Working Group
+Editors: Dylan Hobbs ([@H0BB5](https://github.com/H0BB5)), KYA-OS Working Group
 Repository: https://github.com/decentralized-identity/kya-os-mcp
 Profiles: the KYA-OS Auditability Protocol (the `@kya-os/mcp/audit` recorder, checkpoint, and verifier types)
 

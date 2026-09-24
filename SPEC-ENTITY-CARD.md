@@ -5,7 +5,7 @@
 Version: 1.1 (Entity Card profile)
 Reference implementation: `@kya-os/mcp` v1.10.x (subpath `@kya-os/mcp/card`)
 Status: **Ratified DIF standard (DIF TAAWG), part of KYA-OS v1 / reference implementation**
-Editors: KYA-OS Working Group
+Editors: Dylan Hobbs ([@H0BB5](https://github.com/H0BB5)), KYA-OS Working Group
 Repository: https://github.com/decentralized-identity/kya-os-mcp
 Profiles: the KYA-OS Protocol Specification ([SPEC.md](./SPEC.md))
 

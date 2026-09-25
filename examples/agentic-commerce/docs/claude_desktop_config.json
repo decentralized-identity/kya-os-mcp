@@ -1,0 +1,17 @@
+{
+  "_comment": "EDIT THE PATHS: replace /users/dylanhobbs/documents/@kya-os/kya-os-mcp with your clone path and /users/dylanhobbs/documents/@kya-os/node with the result of `which node`. Merge this entry into your existing Claude Desktop config (macOS: ~/Library/Application Support/Claude/claude_desktop_config.json). Absolute paths are required because Claude Desktop does not inherit your shell PATH. Run `npm run setup && npm run demo` first. Setup creates agent keys but no active grant. The gateway exposes only browse_catalog and place_order, verifies the signed authorizationUrl, and picks up the approved credential over authenticated RP HTTP and presents it with a fresh holder proof for each order within the grant's product class and cap. The resume token is used only for RP consent and pickup. The workshop script repeats the same order for clarity. Fully quit and reopen Claude Desktop after editing. The gateway loads .env.local and var/ relative to the example directory regardless of its working directory.",
+  "mcpServers": {
+    "kya-shopping-agent": {
+      "command": "/opt/homebrew/bin/node",
+      "args": [
+        "/users/dylanhobbs/documents/@kya-os/kya-os-mcp/examples/agentic-commerce/node_modules/tsx/dist/cli.mjs",
+        "/users/dylanhobbs/documents/@kya-os/kya-os-mcp/examples/agentic-commerce/src/agent/gateway.ts"
+      ],
+      "env": {
+        "MERCHANT_PORT": "4949",
+        "RP_PORT": "4950",
+        "RP_ORIGIN": "http://127.0.0.1:4950"
+      }
+    }
+  }
+}

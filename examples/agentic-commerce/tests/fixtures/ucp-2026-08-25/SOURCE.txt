@@ -1,0 +1,5 @@
+Unmodified UCP JSON Schema fixtures.
+Source: https://github.com/Universal-Commerce-Protocol/ucp/tree/3b114a1d74c702e404abada75b4ad7b3955a562d/source/schemas
+Protocol release: 2026-08-25
+Copyright 2026 UCP Authors. Apache License 2.0 (see LICENSE).
+The source schemas retain their canonical unversioned $id values.

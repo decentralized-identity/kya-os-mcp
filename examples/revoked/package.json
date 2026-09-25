@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "REVOKED — the DEF CON 34 Cryptocurrency Village demo as a clean example: an on-chain kill switch for AI agents with wallet access, built on KYA-OS delegations + cheqd DID-Linked Resources (Cosmos testnet), consuming the published @kya-os/mcp",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=20"
   },

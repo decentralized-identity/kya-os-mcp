@@ -9,7 +9,7 @@
 | **Extension id** | `org.kya-os/decentralized-authority` |
 | **Version** | 1.0.0-draft |
 | **Status** | Draft, prepared for MCP Extensions Track review |
-| **License** | Apache-2.0 (this document, per the SPDX grant above; the host repository is otherwise MIT) |
+| **License** | Apache-2.0 (this document and the host repository) |
 | **Governing specifications** | [KYA-OS Protocol Specification](https://github.com/decentralized-identity/kya-os-mcp/blob/main/SPEC.md) and [Entity Card profile](https://github.com/decentralized-identity/kya-os-mcp/blob/main/SPEC-ENTITY-CARD.md), developed by the KYA-OS project, donated to the DIF Trusted AI Agents Working Group (TAAWG), and ratified there as a DIF standard |
 | **Reference implementations** | [`@kya-os/mcp`](https://www.npmjs.com/package/@kya-os/mcp) (TypeScript; 1.11.0 on npm, negotiation module on repository `main` pending the next release), [`kya-os-verify` 0.2.0, beta](https://pypi.org/project/kya-os-verify/) (Python, verify-side, cross-language parity) |
 

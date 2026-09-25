@@ -30,7 +30,7 @@
     "@hono/node-server": "^2.1.1",
     "@kya-os/mcp": "^1.14.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "@simplewebauthn/server": "^13.3.2",
+    "@simplewebauthn/server": "^14.0.2",
     "dotenv": "^18.0.1",
     "hono": "^4.13.8"
   },

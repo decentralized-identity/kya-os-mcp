@@ -27,6 +27,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      # The bundled-entries test bundles dist/ as published.
+      - name: Build
+        run: pnpm build
+
       # Run coverage on the PR branch (json reporter gives us test counts for free)
       - name: Run coverage (PR)
         run: npx vitest run --coverage --coverage.reporter=json-summary --reporter=json --outputFile=/tmp/pr-vitest-output.json --coverage.reportOnFailure

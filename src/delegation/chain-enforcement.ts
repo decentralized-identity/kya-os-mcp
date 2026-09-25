@@ -13,10 +13,12 @@
  */
 import {
   extractDelegationFromVC,
+  type CrispScope,
   type DelegationCredential,
   type DelegationRecord,
 } from "../types/protocol.js";
 import { verifyDelegationAudience } from "./audience-validator.js";
+import { crispScopes, matcherContains, scopeAuthority } from "./scope-matcher.js";
 import { credentialIssuerDid } from "./vc-jwt-verify.js";
 
 /** Union of a credential's delegation scopes and its constraint scopes. */
@@ -32,55 +34,52 @@ export function getDelegationScopes(credential: DelegationCredential): string[] 
 }
 
 /**
- * A child re-delegation may only narrow (attenuate) its parent's authority.
- * Enforces flat-scope subset AND crisp-matcher subset (by matcher+resource),
- * failing closed on any widening. Pure; never throws.
+ * A child re-delegation may only narrow (attenuate) its parent's authority
+ * (SPEC.md §6.4). Scope authority comes in two representations (SPEC.md §6.3):
+ * flat scopes, matched exactly, and CRISP scope matchers. Both credentials are
+ * read as one typed authority ({@link scopeAuthority}), and every flat scope and
+ * matcher the child grants must be proven inside the parent's authority
+ * ({@link matcherContains}), whichever representation either side uses;
+ * anything unprovable fails closed. A credential with no scopes of either kind
+ * is not scope-restricted: such a parent accepts any child, and such a child
+ * never attenuates a restricted parent. Pure; never throws.
  */
 export function validateScopeAttenuation(
   parentCredential: DelegationCredential,
   childCredential: DelegationCredential,
 ): { valid: boolean; reason?: string } {
-  const parentScopes = getDelegationScopes(parentCredential);
-  const childScopes = getDelegationScopes(childCredential);
-  const childDelegation = childCredential.credentialSubject.delegation;
+  const parentId = parentCredential.credentialSubject.delegation.id;
+  const childId = childCredential.credentialSubject.delegation.id;
+  const parentAuthority = scopeAuthority(parentCredential);
+  if (parentAuthority.length === 0) {
+    return { valid: true };
+  }
 
-  // CRISP matcher attenuation: getDelegationScopes does NOT see constraints.crisp.scopes,
-  // so a re-delegation could otherwise widen authority by introducing a broad
-  // prefix/regex matcher (e.g. resource:"" matches every scope). Require the child's
-  // crisp matchers to be a subset of the parent's (by matcher+resource). Fail closed.
-  const crispKey = (s: { resource: string; matcher: string }): string => `${s.matcher}\u0000${s.resource}`;
-  const parentCrisp = new Set(
-    (parentCredential.credentialSubject.delegation.constraints.crisp?.scopes ?? []).map(crispKey),
-  );
-  const widenedCrisp = (childDelegation.constraints.crisp?.scopes ?? []).filter(
-    (s) => !parentCrisp.has(crispKey(s)),
-  );
-  if (widenedCrisp.length > 0) {
+  const childScopes = getDelegationScopes(childCredential);
+  const childMatchers = crispScopes(childCredential);
+  if (childScopes.length === 0 && childMatchers.length === 0) {
     return {
       valid: false,
-      reason: `Delegation ${childDelegation.id} introduces crisp scope matcher(s) absent from parent ${parentCredential.credentialSubject.delegation.id}: ${widenedCrisp
+      reason: `Delegation ${childId} omits scopes required to prove attenuation from parent ${parentId}`,
+    };
+  }
+
+  const outsideParent = (scope: CrispScope): boolean =>
+    !parentAuthority.some((granted) => matcherContains(granted, scope));
+  const widenedMatchers = childMatchers.filter(outsideParent);
+  if (widenedMatchers.length > 0) {
+    return {
+      valid: false,
+      reason: `Delegation ${childId} introduces crisp scope matcher(s) outside parent ${parentId}: ${widenedMatchers
         .map((s) => `${s.matcher}:${s.resource}`)
         .join(", ")}`,
     };
   }
-
-  if (parentScopes.length === 0) {
-    return { valid: true };
-  }
-
-  if (childScopes.length === 0) {
-    return {
-      valid: false,
-      reason: `Delegation ${childDelegation.id} omits scopes required to prove attenuation from parent ${parentCredential.credentialSubject.delegation.id}`,
-    };
-  }
-
-  const parentScopeSet = new Set(parentScopes);
-  const widenedScopes = childScopes.filter((scope) => !parentScopeSet.has(scope));
+  const widenedScopes = childScopes.filter((scope) => outsideParent({ resource: scope, matcher: "exact" }));
   if (widenedScopes.length > 0) {
     return {
       valid: false,
-      reason: `Delegation ${childDelegation.id} widens scopes beyond parent ${parentCredential.credentialSubject.delegation.id}: ${widenedScopes.join(", ")}`,
+      reason: `Delegation ${childId} widens scopes beyond parent ${parentId}: ${widenedScopes.join(", ")}`,
     };
   }
 

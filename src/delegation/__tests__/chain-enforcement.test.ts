@@ -9,6 +9,7 @@ import {
   type RevocationChecker,
 } from "../chain-enforcement.js";
 import type { CrispScope, DelegationCredential } from "../../types/protocol.js";
+import { scopeSatisfies } from "../scope-matcher.js";
 
 const SERVER = "did:web:server.example";
 
@@ -87,6 +88,70 @@ describe("validateScopeAttenuation (pure)", () => {
       crisp: [{ resource: "", matcher: "prefix" }],
     });
     expect(validateScopeAttenuation(parent, child).valid).toBe(false);
+  });
+});
+
+describe("validateScopeAttenuation across scope representations (SPEC.md §6.3, §6.4)", () => {
+  type Scopes = { scopes?: string[]; crisp?: CrispScope[] };
+  const attenuate = (parent: Scopes, child: Scopes) =>
+    validateScopeAttenuation(
+      cred({ id: "p", issuerDid: "did:a", subjectDid: "did:b", ...parent }),
+      cred({ id: "c", issuerDid: "did:b", subjectDid: "did:c", ...child }),
+    );
+
+  it("rejects a flat scope a parent restricted only by CRISP matchers does not grant", () => {
+    const r = attenuate({ crisp: [{ resource: "safe:", matcher: "prefix" }] }, { scopes: ["admin:root"] });
+    expect(r.valid).toBe(false);
+    expect(r.reason).toContain("widens scopes beyond parent p: admin:root");
+  });
+
+  it("accepts authority the parent grants in the other representation", () => {
+    expect(attenuate({ crisp: [{ resource: "safe:", matcher: "prefix" }] }, { scopes: ["safe:read"] }).valid).toBe(true);
+    expect(attenuate({ scopes: ["read"] }, { crisp: [{ resource: "read", matcher: "exact" }] }).valid).toBe(true);
+    expect(attenuate({ crisp: [{ resource: "repo:", matcher: "prefix" }] }, { crisp: [{ resource: "repo:read", matcher: "prefix" }] }).valid).toBe(true);
+  });
+
+  it("rejects a matcher the parent's scopes do not provably contain", () => {
+    const r = attenuate({ scopes: ["repo:read"] }, { crisp: [{ resource: "repo:", matcher: "prefix" }] });
+    expect(r.valid).toBe(false);
+    expect(r.reason).toContain("crisp scope matcher");
+    expect(attenuate({ crisp: [{ resource: "notes", matcher: "path-prefix" }] }, { crisp: [{ resource: "notes", matcher: "prefix" }] }).valid).toBe(false);
+  });
+
+  it("keeps a parent with no scopes of either kind unrestricted, and never lets an unscoped child attenuate a scoped parent", () => {
+    expect(attenuate({}, { scopes: ["anything"] }).valid).toBe(true);
+    expect(attenuate({ crisp: [{ resource: "safe:", matcher: "prefix" }] }, {}).valid).toBe(false);
+  });
+
+  it("rejects the bypass through the full chain walk", async () => {
+    const root = cred({ id: "root", issuerDid: "did:a", subjectDid: "did:agent", crisp: [{ resource: "safe:", matcher: "prefix" }] });
+    const leaf = cred({ id: "leaf", issuerDid: "did:agent", subjectDid: "did:sub", parentId: "root", audience: SERVER, scopes: ["admin:root"] });
+    const r = await validateDelegationChain(leaf, { ...baseDeps, resolveDelegationChain: async () => [root, leaf] });
+    expect(r.valid).toBe(false);
+    expect(r.reason).toMatch(/widens scopes beyond parent root: admin:root/);
+  });
+
+  it("is sound: every scope a valid child grants, its parent grants too", () => {
+    const authorities: Scopes[] = [
+      {}, { scopes: ["safe:read"] }, { scopes: ["admin:root"] },
+      { crisp: [{ resource: "safe:", matcher: "prefix" }] }, { crisp: [{ resource: "safe:read", matcher: "exact" }] },
+      { crisp: [{ resource: "notes", matcher: "path-prefix" }] }, { crisp: [{ resource: "safe:(read|x)", matcher: "regex" }] },
+      { scopes: ["admin:root"], crisp: [{ resource: "notes", matcher: "prefix" }] },
+    ];
+    const values = ["safe:read", "safe:x", "admin:root", "notes", "notes/a", "notesx/b", "anything"];
+    let accepted = 0;
+    for (const parent of authorities) {
+      if (!parent.scopes && !parent.crisp) continue; // unrestricted by definition
+      for (const child of authorities) {
+        if (!attenuate(parent, child).valid) continue;
+        accepted += 1;
+        const [p, c] = [cred({ id: "p", issuerDid: "did:a", subjectDid: "did:b", ...parent }), cred({ id: "c", issuerDid: "did:b", subjectDid: "did:c", ...child })];
+        for (const v of values) {
+          if (scopeSatisfies(v, c).satisfied) expect(scopeSatisfies(v, p).satisfied, `${JSON.stringify(child)} widens ${JSON.stringify(parent)} at ${v}`).toBe(true);
+        }
+      }
+    }
+    expect(accepted).toBeGreaterThan(authorities.length);
   });
 });
 

@@ -12,6 +12,18 @@ const NESTED_QUANTIFIER = /\([^()]*[+*?{][^()]*\)\s*[+*{]/;
 
 export type ScopeMatcher = 'exact' | 'prefix' | 'path-prefix' | 'regex';
 
+/** A `prefix` pattern's base: one trailing `*` is optional sugar. */
+function prefixBase(pattern: string): string {
+  return pattern.endsWith('*') ? pattern.slice(0, -1) : pattern;
+}
+
+/** A `path-prefix` pattern's base: a trailing `*` and trailing `/`s are optional sugar. */
+function pathBase(pattern: string): string {
+  let base = prefixBase(pattern);
+  while (base.endsWith('/')) base = base.slice(0, -1);
+  return base;
+}
+
 /**
  * Match a single requested scope/resource value against a pattern by matcher kind.
  *
@@ -38,14 +50,13 @@ export function matchScope(pattern: string, matcher: ScopeMatcher, value: string
     case 'exact':
       return pattern === value;
     case 'prefix': {
-      const base = pattern.endsWith('*') ? pattern.slice(0, -1) : pattern;
+      const base = prefixBase(pattern);
       // Refuse to grant universal scope via an empty/`*`-only prefix.
       if (base.length === 0) return false;
       return value.startsWith(base);
     }
     case 'path-prefix': {
-      let base = pattern.endsWith('*') ? pattern.slice(0, -1) : pattern;
-      while (base.endsWith('/')) base = base.slice(0, -1);
+      const base = pathBase(pattern);
       // Refuse to grant universal scope via an empty/`*`-only prefix.
       if (base.length === 0) return false;
       return value === base || value.startsWith(`${base}/`);
@@ -76,8 +87,50 @@ function flatScopes(credential: DelegationCredential): string[] {
 }
 
 /** Opt-in CrispScope[] entries (constraints.crisp.scopes), if any. Null-safe. */
-function crispScopes(credential: DelegationCredential): CrispScope[] {
+export function crispScopes(credential: DelegationCredential): CrispScope[] {
   return credential?.credentialSubject?.delegation?.constraints?.crisp?.scopes ?? [];
+}
+
+/**
+ * A credential's whole scope authority in one typed form: its flat scopes as
+ * `exact` matchers, then its CRISP matchers (SPEC.md §6.3). A value is granted
+ * exactly when one of these matches it, which is what {@link scopeSatisfies}
+ * decides. Null-safe.
+ */
+export function scopeAuthority(credential: DelegationCredential): CrispScope[] {
+  return [
+    ...flatScopes(credential).map((resource): CrispScope => ({ resource, matcher: 'exact' })),
+    ...crispScopes(credential),
+  ];
+}
+
+/**
+ * Sound containment rules for pattern matchers, keyed `<inner>:<outer>` and
+ * applied to non-empty bases: each holds only when every value the inner
+ * pattern matches, the outer one matches too.
+ */
+const CONTAINMENT: ReadonlyMap<string, (inner: string, outer: string) => boolean> = new Map([
+  ['prefix:prefix', (inner: string, outer: string) => inner.startsWith(outer)],
+  ['path-prefix:path-prefix', (inner: string, outer: string) => inner === outer || inner.startsWith(`${outer}/`)],
+  ['path-prefix:prefix', (inner: string, outer: string) => inner.startsWith(outer)],
+  ['prefix:path-prefix', (inner: string, outer: string) => inner.startsWith(`${outer}/`)],
+]);
+
+const baseOf = (scope: CrispScope): string =>
+  scope.matcher === 'path-prefix' ? pathBase(scope.resource) : prefixBase(scope.resource);
+
+/**
+ * Whether `outer` grants every value `inner` grants, proven by a sound rule and
+ * never by sampling. An `exact` inner is decided by {@link matchScope} itself.
+ * Only an identical pattern contains a `regex`, and an empty base proves
+ * nothing, so an unprovable case is `false` and attenuation fails closed.
+ */
+export function matcherContains(outer: CrispScope, inner: CrispScope): boolean {
+  if (outer.matcher === inner.matcher && outer.resource === inner.resource) return true;
+  if (inner.matcher === 'exact') return matchScope(outer.resource, outer.matcher, inner.resource);
+  const rule = CONTAINMENT.get(`${inner.matcher}:${outer.matcher}`);
+  const [innerBase, outerBase] = [baseOf(inner), baseOf(outer)];
+  return rule !== undefined && innerBase.length > 0 && outerBase.length > 0 && rule(innerBase, outerBase);
 }
 
 export interface ScopeSatisfaction {

@@ -7,6 +7,22 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Security
+
+- **Scope attenuation across scope representations.** `validateScopeAttenuation`
+  treated a parent credential that restricts scope only through
+  `constraints.crisp.scopes` matchers as unrestricted, because its flat scope
+  list was empty. A re-delegated child could then claim any flat scope (for
+  example `admin:root` under a parent limited to the `safe:` prefix), and the
+  chain validated. Both credentials are now read as one typed authority (flat
+  scopes as `exact` matchers, plus CRISP matchers), and every scope and matcher
+  the child grants must be proven inside the parent's authority by sound
+  containment rules; anything unprovable is rejected. Sound narrowings that
+  were rejected before are now accepted: a flat scope that a parent's matcher
+  grants, an `exact` matcher for a parent's flat scope, and a narrower `prefix`
+  or `path-prefix` under the parent's. A parent with no scopes of either kind
+  stays scope-unrestricted, as before (SPEC.md §6.3, §6.4).
+
 ## [1.16.2] - 2026-09-21
 
 ### Changed

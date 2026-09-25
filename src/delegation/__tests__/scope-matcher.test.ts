@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { matchScope, scopeSatisfies } from '../scope-matcher.js';
+import type { CrispScope } from '../../types/protocol.js';
+import { matchScope, matcherContains, scopeSatisfies } from '../scope-matcher.js';
 
 describe('matchScope', () => {
   it('exact: matches identical strings only', () => {
@@ -110,5 +111,64 @@ describe('scopeSatisfies', () => {
 
   it('denies when nothing matches', () => {
     expect(scopeSatisfies('billing:write', cred(['repo:write'])).satisfied).toBe(false);
+  });
+});
+
+describe('matcherContains (attenuation across matcher kinds)', () => {
+  const m = (matcher: CrispScope['matcher'], resource: string): CrispScope => ({ matcher, resource });
+
+  it('proves identity for every kind, including regex', () => {
+    for (const kind of ['exact', 'prefix', 'path-prefix', 'regex'] as const) {
+      expect(matcherContains(m(kind, 'repo:(read)'), m(kind, 'repo:(read)'))).toBe(true);
+    }
+  });
+
+  it('decides an exact scope by the runtime matcher itself', () => {
+    expect(matcherContains(m('prefix', 'repo:'), m('exact', 'repo:read'))).toBe(true);
+    expect(matcherContains(m('path-prefix', 'notes'), m('exact', 'notes/2026/plan.md'))).toBe(true);
+    expect(matcherContains(m('regex', 'repo:(read|write)'), m('exact', 'repo:read'))).toBe(true);
+    expect(matcherContains(m('prefix', 'safe:'), m('exact', 'admin:root'))).toBe(false);
+  });
+
+  it('proves a narrower prefix or path, never a wider one or one across the path boundary', () => {
+    expect(matcherContains(m('prefix', 'repo:*'), m('prefix', 'repo:read'))).toBe(true);
+    expect(matcherContains(m('path-prefix', 'notes/'), m('path-prefix', 'notes/2026'))).toBe(true);
+    expect(matcherContains(m('prefix', 'notes'), m('path-prefix', 'notes/2026'))).toBe(true);
+    expect(matcherContains(m('path-prefix', 'notes'), m('prefix', 'notes/'))).toBe(true);
+    expect(matcherContains(m('prefix', 'repo:read'), m('prefix', 'repo:'))).toBe(false);
+    expect(matcherContains(m('path-prefix', 'notes'), m('path-prefix', 'notesx'))).toBe(false);
+    expect(matcherContains(m('path-prefix', 'notes'), m('prefix', 'notes'))).toBe(false);
+  });
+
+  it('never proves a regex, an empty base, or a pattern under an exact scope', () => {
+    expect(matcherContains(m('regex', 'repo:(read|write)'), m('regex', 'repo:read'))).toBe(false);
+    expect(matcherContains(m('prefix', 'repo:'), m('regex', 'repo:read'))).toBe(false);
+    expect(matcherContains(m('prefix', 'repo:'), m('prefix', ''))).toBe(false);
+    expect(matcherContains(m('prefix', '*'), m('prefix', 'repo:'))).toBe(false);
+    expect(matcherContains(m('exact', 'repo:'), m('prefix', 'repo:'))).toBe(false);
+  });
+
+  it('is sound: whatever the inner matcher matches, the outer one matches too', () => {
+    const pool = [
+      m('exact', 'repo:read'), m('exact', 'notes'), m('prefix', 'repo:'), m('prefix', 'repo:read'),
+      m('prefix', 're'), m('prefix', 'notes'), m('prefix', 'notes/'), m('prefix', ''), m('prefix', '*'),
+      m('path-prefix', 'notes'), m('path-prefix', 'notes/2026'), m('path-prefix', 'notesx'),
+      m('path-prefix', 'notes/*'), m('regex', 'repo:(read|write)'), m('regex', 'repo:read'),
+    ];
+    const values = ['repo:read', 'repo:write', 'repo:readme', 're', 'rex', 'notes', 'notes/', 'notes/2026',
+      'notes/2026/plan.md', 'notesx/secret.md', 'admin:root', ''];
+    let proven = 0;
+    for (const outer of pool) {
+      for (const inner of pool) {
+        if (!matcherContains(outer, inner)) continue;
+        proven += 1;
+        for (const value of values) {
+          if (matchScope(inner.resource, inner.matcher, value)) {
+            expect(matchScope(outer.resource, outer.matcher, value), `${inner.matcher}:${inner.resource} ⊄ ${outer.matcher}:${outer.resource} at "${value}"`).toBe(true);
+          }
+        }
+      }
+    }
+    expect(proven).toBeGreaterThan(pool.length); // identities plus real narrowings, not vacuous
   });
 });

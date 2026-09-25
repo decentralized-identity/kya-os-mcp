@@ -119,18 +119,43 @@ const CONTAINMENT: ReadonlyMap<string, (inner: string, outer: string) => boolean
 const baseOf = (scope: CrispScope): string =>
   scope.matcher === 'path-prefix' ? pathBase(scope.resource) : prefixBase(scope.resource);
 
+/** Credentials are untrusted input: an entry without a string resource and matcher is not a scope. */
+function isCrispScope(scope: unknown): scope is CrispScope {
+  const entry = scope as Partial<CrispScope> | null | undefined;
+  return typeof entry?.resource === 'string' && typeof entry.matcher === 'string';
+}
+
+const scopeKey = (scope: CrispScope): string => `${scope.matcher}\u0000${scope.resource}`;
+
 /**
  * Whether `outer` grants every value `inner` grants, proven by a sound rule and
  * never by sampling. An `exact` inner is decided by {@link matchScope} itself.
- * Only an identical pattern contains a `regex`, and an empty base proves
- * nothing, so an unprovable case is `false` and attenuation fails closed.
+ * Only an identical pattern contains a `regex`, and an empty base or a
+ * malformed entry proves nothing, so an unprovable case is `false` and
+ * attenuation fails closed. Never throws.
  */
 export function matcherContains(outer: CrispScope, inner: CrispScope): boolean {
+  if (!isCrispScope(outer) || !isCrispScope(inner)) return false;
   if (outer.matcher === inner.matcher && outer.resource === inner.resource) return true;
   if (inner.matcher === 'exact') return matchScope(outer.resource, outer.matcher, inner.resource);
   const rule = CONTAINMENT.get(`${inner.matcher}:${outer.matcher}`);
   const [innerBase, outerBase] = [baseOf(inner), baseOf(outer)];
   return rule !== undefined && innerBase.length > 0 && outerBase.length > 0 && rule(innerBase, outerBase);
+}
+
+/**
+ * Whether some entry of `authority` contains `scope` ({@link matcherContains}),
+ * built once per authority so a check stays linear in the common cases: an
+ * identical entry is found in a set, and only pattern entries are searched,
+ * because an `exact` entry contains nothing but itself.
+ */
+export function authorityContains(authority: readonly CrispScope[]): (scope: CrispScope) => boolean {
+  const granted = authority.filter(isCrispScope);
+  const identical = new Set(granted.map(scopeKey));
+  const patterns = granted.filter((entry) => entry.matcher !== 'exact');
+  return (scope) =>
+    isCrispScope(scope) &&
+    (identical.has(scopeKey(scope)) || patterns.some((entry) => matcherContains(entry, scope)));
 }
 
 export interface ScopeSatisfaction {

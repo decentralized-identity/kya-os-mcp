@@ -13,12 +13,11 @@
  */
 import {
   extractDelegationFromVC,
-  type CrispScope,
   type DelegationCredential,
   type DelegationRecord,
 } from "../types/protocol.js";
 import { verifyDelegationAudience } from "./audience-validator.js";
-import { crispScopes, matcherContains, scopeAuthority } from "./scope-matcher.js";
+import { authorityContains, crispScopes, scopeAuthority } from "./scope-matcher.js";
 import { credentialIssuerDid } from "./vc-jwt-verify.js";
 
 /** Union of a credential's delegation scopes and its constraint scopes. */
@@ -39,10 +38,10 @@ export function getDelegationScopes(credential: DelegationCredential): string[] 
  * flat scopes, matched exactly, and CRISP scope matchers. Both credentials are
  * read as one typed authority ({@link scopeAuthority}), and every flat scope and
  * matcher the child grants must be proven inside the parent's authority
- * ({@link matcherContains}), whichever representation either side uses;
- * anything unprovable fails closed. A credential with no scopes of either kind
- * is not scope-restricted: such a parent accepts any child, and such a child
- * never attenuates a restricted parent. Pure; never throws.
+ * ({@link authorityContains}), whichever representation either side uses;
+ * anything unprovable, including a malformed entry, fails closed. A credential
+ * with no scopes of either kind is not scope-restricted: such a parent accepts
+ * any child, and such a child never attenuates a restricted parent. Pure.
  */
 export function validateScopeAttenuation(
   parentCredential: DelegationCredential,
@@ -64,18 +63,17 @@ export function validateScopeAttenuation(
     };
   }
 
-  const outsideParent = (scope: CrispScope): boolean =>
-    !parentAuthority.some((granted) => matcherContains(granted, scope));
-  const widenedMatchers = childMatchers.filter(outsideParent);
+  const withinParent = authorityContains(parentAuthority);
+  const widenedMatchers = childMatchers.filter((scope) => !withinParent(scope));
   if (widenedMatchers.length > 0) {
     return {
       valid: false,
       reason: `Delegation ${childId} introduces crisp scope matcher(s) outside parent ${parentId}: ${widenedMatchers
-        .map((s) => `${s.matcher}:${s.resource}`)
+        .map((s) => `${s?.matcher}:${s?.resource}`)
         .join(", ")}`,
     };
   }
-  const widenedScopes = childScopes.filter((scope) => outsideParent({ resource: scope, matcher: "exact" }));
+  const widenedScopes = childScopes.filter((scope) => !withinParent({ resource: scope, matcher: "exact" }));
   if (widenedScopes.length > 0) {
     return {
       valid: false,

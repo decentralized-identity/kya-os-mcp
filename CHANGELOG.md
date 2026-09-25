@@ -11,7 +11,8 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 - **Scope helpers in `@kya-os/mcp/delegation`.** `matcherContains(outer,
   inner)` decides, by sound rules only, whether one scope matcher grants
-  everything another grants. `scopeAuthority(credential)` returns a
+  everything another grants. `authorityContains(authority)` builds that check
+  once for a whole list of matchers. `scopeAuthority(credential)` returns a
   credential's flat scopes and CRISP matchers as one list of matchers.
   `crispScopes(credential)` returns its CRISP matchers. Scope attenuation
   below is built on them.
@@ -29,8 +30,9 @@ Versioning: https://semver.org/spec/v2.0.0.html
   containment rules; anything unprovable is rejected. Sound narrowings that
   were rejected before are now accepted: a flat scope that a parent's matcher
   grants, an `exact` matcher for a parent's flat scope, and a narrower `prefix`
-  or `path-prefix` under the parent's. A parent with no scopes of either kind
-  stays scope-unrestricted, as before (SPEC.md §6.3, §6.4).
+  or `path-prefix` under the parent's. A malformed scope entry proves nothing,
+  so it fails closed instead of throwing. A parent with no scopes of either
+  kind stays scope-unrestricted, as before (SPEC.md §6.3, §6.4).
 
 ## [1.16.2] - 2026-09-21
 

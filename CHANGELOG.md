@@ -7,6 +7,15 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- **Scope helpers in `@kya-os/mcp/delegation`.** `matcherContains(outer,
+  inner)` decides, by sound rules only, whether one scope matcher grants
+  everything another grants. `scopeAuthority(credential)` returns a
+  credential's flat scopes and CRISP matchers as one list of matchers.
+  `crispScopes(credential)` returns its CRISP matchers. Scope attenuation
+  below is built on them.
+
 ### Security
 
 - **Scope attenuation across scope representations.** `validateScopeAttenuation`

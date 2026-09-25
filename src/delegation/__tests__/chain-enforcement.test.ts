@@ -123,6 +123,22 @@ describe("validateScopeAttenuation across scope representations (SPEC.md §6.3, 
     expect(attenuate({ crisp: [{ resource: "safe:", matcher: "prefix" }] }, {}).valid).toBe(false);
   });
 
+  it("fails closed on a malformed scope entry instead of throwing", () => {
+    const bad = (...entries: unknown[]) => entries as CrispScope[];
+    const safe: CrispScope[] = [{ resource: "safe:", matcher: "prefix" }];
+    const cases: Array<[Scopes, Scopes, boolean]> = [
+      [{ crisp: safe }, { crisp: bad({ resource: 42, matcher: "prefix" }) }, false],
+      [{ crisp: safe }, { crisp: bad(null) }, false],
+      [{ crisp: safe }, { scopes: bad(42) as unknown as string[] }, false],
+      [{ crisp: bad({ resource: 42, matcher: "prefix" }) }, { scopes: ["safe:x"] }, false],
+      [{ crisp: bad({ resource: 42, matcher: "prefix" }) }, { crisp: bad({ resource: 42, matcher: "prefix" }) }, false],
+      [{ crisp: [...bad({ resource: 42, matcher: "prefix" }), ...safe] }, { crisp: [{ resource: "safe:read", matcher: "prefix" }] }, true],
+    ];
+    for (const [parent, child, valid] of cases) {
+      expect(attenuate(parent, child).valid, JSON.stringify({ parent, child })).toBe(valid);
+    }
+  });
+
   it("rejects the bypass through the full chain walk", async () => {
     const root = cred({ id: "root", issuerDid: "did:a", subjectDid: "did:agent", crisp: [{ resource: "safe:", matcher: "prefix" }] });
     const leaf = cred({ id: "leaf", issuerDid: "did:agent", subjectDid: "did:sub", parentId: "root", audience: SERVER, scopes: ["admin:root"] });

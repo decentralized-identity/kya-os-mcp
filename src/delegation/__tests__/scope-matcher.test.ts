@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { CrispScope } from '../../types/protocol.js';
-import { matchScope, matcherContains, scopeSatisfies } from '../scope-matcher.js';
+import { authorityContains, matchScope, matcherContains, scopeSatisfies } from '../scope-matcher.js';
 
 describe('matchScope', () => {
   it('exact: matches identical strings only', () => {
@@ -116,6 +116,19 @@ describe('scopeSatisfies', () => {
 
 describe('matcherContains (attenuation across matcher kinds)', () => {
   const m = (matcher: CrispScope['matcher'], resource: string): CrispScope => ({ matcher, resource });
+  const pool = [
+    m('exact', 'repo:read'), m('exact', 'notes'), m('prefix', 'repo:'), m('prefix', 'repo:read'),
+    m('prefix', 're'), m('prefix', 'notes'), m('prefix', 'notes/'), m('prefix', ''), m('prefix', '*'),
+    m('path-prefix', 'notes'), m('path-prefix', 'notes/2026'), m('path-prefix', 'notesx'),
+    m('path-prefix', 'notes/*'), m('regex', 'repo:(read|write)'), m('regex', 'repo:read'),
+  ];
+  const values = ['repo:read', 'repo:write', 'repo:readme', 're', 'rex', 'notes', 'notes/', 'notes/2026',
+    'notes/2026/plan.md', 'notesx/secret.md', 'admin:root', ''];
+  /** Entries a credential can carry that are not scopes. */
+  const malformed = [
+    { matcher: 'prefix', resource: 42 }, { matcher: 'regex', resource: null }, { matcher: 'prefix' },
+    { resource: 'repo:' }, null,
+  ] as unknown as CrispScope[];
 
   it('proves identity for every kind, including regex', () => {
     for (const kind of ['exact', 'prefix', 'path-prefix', 'regex'] as const) {
@@ -149,14 +162,6 @@ describe('matcherContains (attenuation across matcher kinds)', () => {
   });
 
   it('is sound: whatever the inner matcher matches, the outer one matches too', () => {
-    const pool = [
-      m('exact', 'repo:read'), m('exact', 'notes'), m('prefix', 'repo:'), m('prefix', 'repo:read'),
-      m('prefix', 're'), m('prefix', 'notes'), m('prefix', 'notes/'), m('prefix', ''), m('prefix', '*'),
-      m('path-prefix', 'notes'), m('path-prefix', 'notes/2026'), m('path-prefix', 'notesx'),
-      m('path-prefix', 'notes/*'), m('regex', 'repo:(read|write)'), m('regex', 'repo:read'),
-    ];
-    const values = ['repo:read', 'repo:write', 'repo:readme', 're', 'rex', 'notes', 'notes/', 'notes/2026',
-      'notes/2026/plan.md', 'notesx/secret.md', 'admin:root', ''];
     let proven = 0;
     for (const outer of pool) {
       for (const inner of pool) {
@@ -170,5 +175,25 @@ describe('matcherContains (attenuation across matcher kinds)', () => {
       }
     }
     expect(proven).toBeGreaterThan(pool.length); // identities plus real narrowings, not vacuous
+  });
+
+  it('proves nothing from or about a malformed entry, and never throws', () => {
+    for (const bad of malformed) {
+      expect(matcherContains(bad, bad)).toBe(false);
+      for (const scope of pool) {
+        expect(matcherContains(bad, scope)).toBe(false);
+        expect(matcherContains(scope, bad)).toBe(false);
+      }
+    }
+  });
+
+  it('authorityContains agrees with matcherContains over every entry of the authority', () => {
+    const authorities = [[], ...pool.map((scope) => [scope]), pool, malformed, [...malformed, m('prefix', 'repo:')]];
+    for (const authority of authorities) {
+      const contains = authorityContains(authority);
+      for (const inner of [...pool, ...malformed]) {
+        expect(contains(inner), JSON.stringify({ authority, inner })).toBe(authority.some((entry) => matcherContains(entry, inner)));
+      }
+    }
   });
 });

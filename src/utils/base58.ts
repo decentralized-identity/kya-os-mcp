@@ -52,13 +52,36 @@ export function base58Encode(bytes: Uint8Array): string {
 }
 
 /**
+ * A `maxLength` for {@link base58Decode} on untrusted key material, in
+ * characters. Decoding cost grows quadratically with input length, and key
+ * material (did:key, `publicKeyMultibase`, `publicKeyBase58`) is read from
+ * counterparty-controlled DIDs and DID documents; the package's own decoders
+ * of it pass this bound or a tighter one. 1024 characters (~750 bytes) holds
+ * any public key a DID publishes, RSA-4096 included, and decodes in well
+ * under a millisecond.
+ */
+export const MAX_BASE58_DECODE_LENGTH = 1024;
+
+/**
  * Decode Base58 (Bitcoin alphabet) to bytes
  *
  * @param encoded - Base58-encoded string
+ * @param maxLength - Longest input accepted, in characters, checked before any
+ *   decoding work. Unbounded when omitted; pass
+ *   {@link MAX_BASE58_DECODE_LENGTH} (or tighter) for untrusted input.
  * @returns Decoded bytes
- * @throws Error if input contains invalid characters
+ * @throws Error if input contains invalid characters or exceeds `maxLength`
+ * @throws RangeError if `maxLength` is given but is not a non-negative integer
  */
-export function base58Decode(encoded: string): Uint8Array {
+export function base58Decode(encoded: string, maxLength?: number): Uint8Array {
+  // A NaN bound compares false and would silently mean "unbounded"; a
+  // negative or fractional one is a caller bug either way.
+  if (maxLength !== undefined && (!Number.isInteger(maxLength) || maxLength < 0)) {
+    throw new RangeError(`base58Decode maxLength must be a non-negative integer, got ${maxLength}`);
+  }
+  if (maxLength !== undefined && encoded.length > maxLength) {
+    throw new Error(`Base58 input exceeds ${maxLength} characters`);
+  }
   if (encoded.length === 0) return new Uint8Array(0);
 
   // Convert base58 to big integer
@@ -71,12 +94,10 @@ export function base58Decode(encoded: string): Uint8Array {
     num = num * BigInt(58) + BigInt(value);
   }
 
-  // Convert big integer to bytes
-  const bytes: number[] = [];
-  while (num > 0) {
-    bytes.unshift(Number(num % BigInt(256)));
-    num = num / BigInt(256);
-  }
+  // Convert big integer to bytes. Hex is a power-of-two radix, so toString(16)
+  // is linear; repeated `% 256` / `/ 256` (and `unshift`) would be quadratic.
+  let hex = num === BigInt(0) ? '' : num.toString(16);
+  if (hex.length % 2 === 1) hex = `0${hex}`;
 
   // Count leading zeros in input (encoded as '1')
   let leadingZeros = 0;
@@ -88,10 +109,11 @@ export function base58Decode(encoded: string): Uint8Array {
     }
   }
 
-  // Prepend leading zero bytes
-  const result = new Uint8Array(leadingZeros + bytes.length);
-  // Leading zeros are already 0 in Uint8Array
-  result.set(bytes, leadingZeros);
+  // Leading zero bytes are already 0 in a fresh Uint8Array
+  const result = new Uint8Array(leadingZeros + hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    result[leadingZeros + i / 2] = parseInt(hex.slice(i, i + 2), 16);
+  }
 
   return result;
 }

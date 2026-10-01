@@ -99,7 +99,7 @@ export function createKyaOsMiddleware(
   };
 
   // One replay-protection store, shared by the handshake and holder binding.
-  // Defaults to in-memory; SessionManager.cleanup() drives its expiry sweep.
+  // Defaults to in-memory, which sweeps its own expired entries as it is written to.
   const nonceCache = config.nonceCache ?? new MemoryNonceCacheProvider();
   // SessionManager and ProofVerifier each check the cache at construction:
   // refused under requireAtomicNonce, otherwise one warning if not atomic.

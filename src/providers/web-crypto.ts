@@ -24,6 +24,7 @@
 
 import { CryptoProvider } from "./base.js";
 import { base64ToBytes, bytesToBase64 } from "../utils/base64.js";
+import { decodeEd25519PublicKey } from "../utils/ed25519-public-key.js";
 
 const ALG = "Ed25519" as const;
 
@@ -86,8 +87,13 @@ export class WebCryptoProvider extends CryptoProvider {
     signature: Uint8Array,
     publicKeyBase64: string,
   ): Promise<boolean> {
+    // Same strict decode as NodeCryptoProvider: exactly 32 bytes, and never a
+    // small-order key (WebCrypto accepts those, and they verify a forgery).
+    const raw = decodeEd25519PublicKey(publicKeyBase64);
+    if (!raw) {
+      return false;
+    }
     try {
-      const raw = base64ToBytes(publicKeyBase64);
       const key = await getCrypto().subtle.importKey(
         "raw",
         toBufferSource(raw),

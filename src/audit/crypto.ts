@@ -1,6 +1,7 @@
-import { CompactSign, compactVerify, type JWK } from 'jose';
+import { CompactSign, compactVerify, importJWK, type JWK } from 'jose';
 import type { CryptoProvider } from '../providers/base.js';
 import { canonicalizeJsonBytes } from '../utils/canonical-json.js';
+import { isSmallOrderEd25519CryptoKey } from '../utils/ed25519-public-key.js';
 import type { Digest, SignerRef } from './types.js';
 
 const encoder = new TextEncoder();
@@ -44,8 +45,12 @@ export class CompactJwsAuditSignatureVerifier implements AuditSignatureVerifier 
   async verify(payload: Uint8Array, jws: string, signer: SignerRef): Promise<boolean> {
     try {
       if (!signer.kid.startsWith(`${signer.did}#`)) return false;
-      const key = await this.keys.resolve(signer);
-      if (key === null) return false;
+      const resolved = await this.keys.resolve(signer);
+      if (resolved === null) return false;
+      // Imported here rather than inside compactVerify so the key can be checked:
+      // under a small-order Ed25519 key one signature fits every payload.
+      const key = isJwk(resolved) ? await importJWK(resolved, signer.alg) : resolved;
+      if (await isSmallOrderEd25519CryptoKey(key)) return false;
       const result = await compactVerify(jws, key, { algorithms: [signer.alg] });
       if (result.protectedHeader.alg !== signer.alg ||
         result.protectedHeader.kid !== signer.kid ||
@@ -55,6 +60,10 @@ export class CompactJwsAuditSignatureVerifier implements AuditSignatureVerifier 
       return false;
     }
   }
+}
+
+function isJwk(key: AuditVerificationKey): key is JWK {
+  return !(key instanceof Uint8Array) && 'kty' in key;
 }
 
 /** Reference JWS signer for local WebCrypto/KMS-compatible CryptoKey handles. */

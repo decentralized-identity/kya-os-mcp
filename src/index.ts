@@ -213,6 +213,7 @@ export {
   base58Encode,
   base58Decode,
   isValidBase58,
+  MAX_BASE58_DECODE_LENGTH,
 } from './utils/base58.js';
 
 export {

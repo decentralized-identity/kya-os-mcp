@@ -78,6 +78,19 @@ describe('MemoryPendingFlowStore', () => {
     expect(await store.get('b')).toBeDefined();
   });
 
+  it('sweeps abandoned flows as new ones are put, without cleanup()', async () => {
+    // Most initiated flows are never completed; nothing schedules cleanup().
+    let t = 0;
+    const store = new MemoryPendingFlowStore({ now: () => t });
+    const size = () =>
+      (store as unknown as { pending: Map<string, unknown> }).pending.size;
+    for (let i = 0; i < 5_000; i++) await store.put(`abandoned-${i}`, flow(), 600_000);
+    t = 24 * 60 * 60 * 1000;
+    await store.put('fresh', flow(), 600_000);
+    expect(size()).toBe(1);
+    expect(await store.get('fresh')).toBeDefined();
+  });
+
   it('returns a copy — mutating the result does not corrupt the store', async () => {
     const store = new MemoryPendingFlowStore();
     await store.put('tok', flow({ codeVerifier: 'v1' }), 60_000);

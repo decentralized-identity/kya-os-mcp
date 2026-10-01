@@ -22,6 +22,7 @@ import type { JWK } from 'jose';
 import { base64urlDecodeToString, base64urlEncodeFromBytes } from '../../utils/base64.js';
 import type { ToolRequest } from '../../proof/generator.js';
 import { nonceRetentionSeconds } from '../../providers/nonce-retention.js';
+import { isSmallOrderEd25519CryptoKey } from '../../utils/ed25519-public-key.js';
 import type { ProofPublicJwk } from '../schema.js';
 import { canonicalPayloadBytes, computeRequestHash } from './canonical.js';
 import {
@@ -190,6 +191,8 @@ async function verifyDetachedJws(meta: CardProofMeta, key: ProofPublicJwk): Prom
   if (!header || header.alg !== meta.alg || header.kid !== meta.kid) return false;
   try {
     const pub = await importJWK(toJwk(key), meta.alg);
+    // jose verifies under a small-order Ed25519 key, where one signature fits every payload.
+    if (await isSmallOrderEd25519CryptoKey(pub)) return false;
     await flattenedVerify(
       {
         protected: protectedB64,

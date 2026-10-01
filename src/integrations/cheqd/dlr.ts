@@ -121,10 +121,17 @@ export async function prepareCheqdDlrResource(
 
   const canonicalContent = canonicalize(artifact.content as Parameters<typeof canonicalize>[0]);
   const contentBytes = new TextEncoder().encode(canonicalContent);
-  const contentHash = artifact.contentHash ?? await cryptoProvider.hash(contentBytes);
+  // The hash is the artifact's content address, so it is always computed from
+  // the bytes anchored; a supplied one is only a cross-check.
+  const contentHash = await cryptoProvider.hash(contentBytes);
 
   if (!SHA256_HASH_REGEX.test(contentHash)) {
     throw new Error('DLR content hash must match sha256:<64 hex chars>');
+  }
+  if (artifact.contentHash !== undefined && artifact.contentHash !== contentHash) {
+    throw new Error(
+      `DLR artifact contentHash ${artifact.contentHash} does not match the canonical content (${contentHash})`,
+    );
   }
 
   const normalizedArtifact: CheqdDlrArtifact = {

@@ -27,6 +27,15 @@ export const ED25519_MULTICODEC_PREFIX = new Uint8Array([0xed, 0x01]);
 export const ED25519_PUBLIC_KEY_LENGTH = 32;
 
 /**
+ * Longest base58btc part (after `did:key:z`) worth decoding. Every Ed25519
+ * did:key encodes exactly 34 bytes (the 0xed01 prefix and the 32-byte key),
+ * which is always 47 characters, so a longer string cannot be one. The bound
+ * leaves headroom over 47 while keeping an attacker-sized DID (a proof's
+ * `meta.did`, a credential's issuer or subject) away from the decoder.
+ */
+const MAX_DID_KEY_BASE58_LENGTH = 64;
+
+/**
  * Check if a DID is a valid did:key with Ed25519 key
  *
  * Ed25519 keys in did:key start with 'z6Mk' after the method prefix.
@@ -58,12 +67,15 @@ export function extractPublicKeyFromDidKey(did: string): Uint8Array | null {
     // Remove the 'z' multibase prefix (base58btc)
     const base58Encoded = multibaseKey.slice(1);
 
-    // Decode from base58
-    const multicodecBytes = base58Decode(base58Encoded);
+    // Bounded before decoding (base58 decoding is quadratic in input length):
+    // anything longer than an Ed25519 did:key throws here, unread, and the
+    // catch below returns null.
+    const multicodecBytes = base58Decode(base58Encoded, MAX_DID_KEY_BASE58_LENGTH);
 
-    // Check for Ed25519 multicodec prefix (0xed 0x01)
+    // Exactly the Ed25519 multicodec prefix (0xed 0x01) and a 32-byte key:
+    // trailing bytes are not part of any key.
     if (
-      multicodecBytes.length < ED25519_MULTICODEC_PREFIX.length + ED25519_PUBLIC_KEY_LENGTH ||
+      multicodecBytes.length !== ED25519_MULTICODEC_PREFIX.length + ED25519_PUBLIC_KEY_LENGTH ||
       multicodecBytes[0] !== ED25519_MULTICODEC_PREFIX[0] ||
       multicodecBytes[1] !== ED25519_MULTICODEC_PREFIX[1]
     ) {

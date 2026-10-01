@@ -76,4 +76,28 @@ describe('verifyApprovalQuorum', () => {
     const r = await verifyApprovalQuorum(grants, 'sha256:abc', { n: 1, approvers: ['did:insider'] }, validSig);
     expect(r.satisfied).toBe(false);
   });
+
+  it('reports the distinct approvers whose grants verified, met or not', async () => {
+    const grants = [
+      grant({ approverDid: 'did:a' }),
+      grant({ approverDid: 'did:a' }),
+      grant({ approverDid: 'did:b', requestHash: 'sha256:OTHER' }),
+      grant({ approverDid: 'did:c', decision: 'deny' }),
+      grant({ approverDid: 'did:outsider' }),
+    ];
+    const quorum = { n: 2, approvers: ['did:a', 'did:b', 'did:c'] };
+    const short = await verifyApprovalQuorum(grants, 'sha256:abc', quorum, validSig);
+    expect(short).toMatchObject({ satisfied: false, approvers: ['did:a'] });
+
+    const met = await verifyApprovalQuorum(
+      [...grants, grant({ approverDid: 'did:b' })],
+      'sha256:abc',
+      quorum,
+      validSig,
+    );
+    expect(met).toMatchObject({ satisfied: true, approvers: ['did:a', 'did:b'] });
+
+    const invalid = await verifyApprovalQuorum(grants, 'sha256:abc', { n: 0, approvers: [] }, validSig);
+    expect(invalid.approvers).toEqual([]);
+  });
 });

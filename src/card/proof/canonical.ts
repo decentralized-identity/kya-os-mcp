@@ -13,6 +13,7 @@
 import { canonicalize } from 'json-canonicalize';
 import type { ToolRequest } from '../../proof/generator.js';
 import { base64ToBytes, base64urlDecodeToBytes, bytesToBase64 } from '../../utils/base64.js';
+import { isSmallOrderEd25519CryptoKey } from '../../utils/ed25519-public-key.js';
 import type { CardProofMeta } from './types.js';
 
 const encoder = new TextEncoder();
@@ -84,7 +85,10 @@ export async function ed25519VerifyRaw(
 ): Promise<boolean> {
   try {
     const s = subtle();
-    const key = await s.importKey('jwk', { kty: publicJwk.kty, crv: publicJwk.crv, x: publicJwk.x }, ED25519, false, ['verify']);
+    // Extractable (it is a public key) so the small-order check can read it back:
+    // WebCrypto verifies under a small-order key, where one signature fits every message.
+    const key = await s.importKey('jwk', { kty: publicJwk.kty, crv: publicJwk.crv, x: publicJwk.x }, ED25519, true, ['verify']);
+    if (await isSmallOrderEd25519CryptoKey(key)) return false;
     return await s.verify(ED25519, key, signature, data);
   } catch {
     return false;

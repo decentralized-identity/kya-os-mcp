@@ -147,6 +147,79 @@ describe('GenericOidcAdapter.verifyAuthorization', () => {
   });
 });
 
+describe('GenericOidcAdapter.verifyAuthorization: only a real token response is a grant', () => {
+  async function exchange(body: unknown) {
+    const fetchImpl = vi.fn(async () => jsonResponse(body));
+    const adapter = new GenericOidcAdapter({ ...config, fetchImpl });
+    const challenge = await adapter.initiateFlow(flowParams);
+    return adapter.verifyAuthorization(challenge.resumeToken, { code: 'c', state: 'state-xyz' });
+  }
+
+  it('rejects a 2xx response that carries an OAuth error and no access_token', async () => {
+    // Some IdPs answer a bad or replayed code with HTTP 200 and an error body.
+    const result = await exchange({
+      error: 'bad_verification_code',
+      error_description: 'The code passed is incorrect or expired.',
+    });
+    expect(result.valid).toBe(false);
+    expect(result.reason).toMatch(/OAuth error/);
+  });
+
+  it('rejects an error member even next to an access_token', async () => {
+    const result = await exchange({ access_token: 'at', token_type: 'Bearer', error: 'invalid_grant' });
+    expect(result.valid).toBe(false);
+  });
+
+  it.each([
+    ['an empty object', {}],
+    ['a response with no access_token', { token_type: 'Bearer', scope: 'vault:read' }],
+    ['an empty access_token', { access_token: '', token_type: 'Bearer' }],
+    ['a non-string access_token', { access_token: 42, token_type: 'Bearer' }],
+    ['an array', [{ access_token: 'at', token_type: 'Bearer' }]],
+    ['null', null],
+  ])('rejects %s', async (_label, body) => {
+    const result = await exchange(body);
+    expect(result.valid).toBe(false);
+    expect(result.reason).toMatch(/access_token|not a JSON object/);
+  });
+
+  it('accepts a non-Bearer token_type such as "bot" (deployed providers send them)', async () => {
+    const result = await exchange({ access_token: 'at', token_type: 'bot', scope: 'vault:read' });
+    expect(result.valid).toBe(true);
+    expect(result.credential?.scopes).toEqual(['vault:read']);
+  });
+
+  it('accepts a response with no token_type or scope; the requested scopes stand', async () => {
+    const result = await exchange({ access_token: 'at' });
+    expect(result.valid).toBe(true);
+    expect(result.credential?.scopes).toEqual(config.scopes);
+  });
+
+  it.each([
+    ['a space-delimited string', 'vault:read vault:write', ['vault:read', 'vault:write']],
+    ['a string with stray whitespace', ' vault:read \t vault:write ', ['vault:read', 'vault:write']],
+    ['an empty string (grants none)', '', []],
+    ['a list of strings', ['vault:read', 'vault:write'], ['vault:read', 'vault:write']],
+    ['an empty list (grants none)', [], []],
+  ])('reads a scope that is %s', async (_label, scope, granted) => {
+    const result = await exchange({ access_token: 'at', token_type: 'Bearer', scope });
+    expect(result.valid).toBe(true);
+    expect(result.credential?.scopes).toEqual(granted);
+  });
+
+  it.each([
+    ['a number', 7],
+    ['an object', { granted: 'vault:write' }],
+    ['null', null],
+    ['a list holding a non-string', ['vault:read', 7]],
+  ])('rejects a scope that is %s instead of granting the requested scopes', async (_label, scope) => {
+    const result = await exchange({ access_token: 'at', token_type: 'Bearer', scope });
+    expect(result.valid).toBe(false);
+    expect(result.reason).toMatch(/scope/);
+    expect(result.credential).toBeUndefined();
+  });
+});
+
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status: 200,

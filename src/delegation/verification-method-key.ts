@@ -12,7 +12,7 @@
  * non-`z` multibase, wrong multicodec, wrong length, malformed base58 —
  * returns `undefined`, and the caller denies with its usual reason.
  */
-import { base58Decode } from '../utils/base58.js';
+import { base58Decode, MAX_BASE58_DECODE_LENGTH } from '../utils/base58.js';
 import {
   publicKeyToJwk,
   ED25519_MULTICODEC_PREFIX,
@@ -46,7 +46,8 @@ export function verificationMethodJwk(
 function rawEd25519Key(method: VerificationMethod): Uint8Array | undefined {
   try {
     if (method.publicKeyMultibase?.startsWith(MULTIBASE_BASE58BTC)) {
-      const decoded = base58Decode(method.publicKeyMultibase.slice(1));
+      // DID documents are counterparty data: bound the decode before it runs.
+      const decoded = base58Decode(method.publicKeyMultibase.slice(1), MAX_BASE58_DECODE_LENGTH);
       const stripped =
         decoded.length === ED25519_PUBLIC_KEY_LENGTH + ED25519_MULTICODEC_PREFIX.length &&
         decoded[0] === ED25519_MULTICODEC_PREFIX[0] &&
@@ -56,7 +57,7 @@ function rawEd25519Key(method: VerificationMethod): Uint8Array | undefined {
       return stripped.length === ED25519_PUBLIC_KEY_LENGTH ? stripped : undefined;
     }
     if (method.publicKeyBase58) {
-      const decoded = base58Decode(method.publicKeyBase58);
+      const decoded = base58Decode(method.publicKeyBase58, MAX_BASE58_DECODE_LENGTH);
       return decoded.length === ED25519_PUBLIC_KEY_LENGTH ? decoded : undefined;
     }
   } catch {

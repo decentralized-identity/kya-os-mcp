@@ -13,6 +13,11 @@ import {
 } from './base.js';
 import { generateDidKeyFromBase64, didKeyFragment } from '../utils/did-helpers.js';
 
+/** Writes between amortised expired-entry sweeps (bounds memory without a timer). */
+const SWEEP_EVERY = 1000;
+/** Longest a cache goes between sweeps while written to, so low traffic also frees memory. */
+const SWEEP_INTERVAL_MS = 60_000;
+
 export class MemoryStorageProvider extends StorageProvider {
   private store: Map<string, string> = new Map();
 
@@ -41,8 +46,17 @@ export class MemoryStorageProvider extends StorageProvider {
   }
 }
 
+/**
+ * In-memory replay store, and the default one for `withKyaOs` and
+ * `SessionManager`. Single process only. Expired entries are swept as the
+ * cache is written to (every {@link SWEEP_EVERY} writes, or after
+ * {@link SWEEP_INTERVAL_MS}), so a long-running server stays bounded by its
+ * live nonces without anyone scheduling {@link cleanup}.
+ */
 export class MemoryNonceCacheProvider extends NonceCacheProvider {
   private nonces: Map<string, number> = new Map();
+  private writesSinceSweep = 0;
+  private lastSweepAt = Date.now();
 
   /** Atomic within this cache instance: no await separates the read and write. */
   async consume(nonce: string, ttlSeconds: number, agentDid?: string): Promise<boolean> {
@@ -54,6 +68,7 @@ export class MemoryNonceCacheProvider extends NonceCacheProvider {
     const expiry = this.nonces.get(key);
     if (expiry !== undefined && expiry > now) return false;
     this.nonces.set(key, now + ttlSeconds * 1000);
+    this.sweepIfDue(now);
     return true;
   }
 
@@ -76,12 +91,30 @@ export class MemoryNonceCacheProvider extends NonceCacheProvider {
 
   async add(nonce: string, ttlSeconds: number, agentDid?: string): Promise<void> {
     const key = this.key(nonce, agentDid);
-    const expiresAt = Date.now() + ttlSeconds * 1000;
-    this.nonces.set(key, expiresAt);
+    const now = Date.now();
+    this.nonces.set(key, now + ttlSeconds * 1000);
+    this.sweepIfDue(now);
   }
 
   async cleanup(): Promise<void> {
-    const now = Date.now();
+    this.evictExpired(Date.now());
+  }
+
+  /**
+   * Amortised eviction: every admitted nonce is a write, so sweeping on writes
+   * keeps the map bounded by live entries. The count trigger bounds a busy
+   * cache; the interval trigger releases a quiet one's dead entries too.
+   */
+  private sweepIfDue(now: number): void {
+    if (++this.writesSinceSweep < SWEEP_EVERY && now - this.lastSweepAt < SWEEP_INTERVAL_MS) {
+      return;
+    }
+    this.writesSinceSweep = 0;
+    this.lastSweepAt = now;
+    this.evictExpired(now);
+  }
+
+  private evictExpired(now: number): void {
     for (const [nonce, expiry] of this.nonces) {
       if (now >= expiry) {
         this.nonces.delete(nonce);

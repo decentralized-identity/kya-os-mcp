@@ -119,9 +119,10 @@ artifact types are:
 - `TrustConfigManifest`
 
 `prepareCheqdDlrResource()` validates the artifact, canonicalizes its `content`
-with JSON Canonicalization Scheme, computes or validates a `sha256:<64 hex>`
-content hash, and returns a registrar resource body. Updates are modeled as new
-resource versions under the same resource `name` and `type`; prior resources are
+with JSON Canonicalization Scheme, computes its `sha256:<64 hex>` content
+hash, and returns a registrar resource body. A `contentHash` supplied on the
+artifact must equal the computed one, or the call throws. Updates are modeled
+as new resource versions under the same resource `name` and `type`; prior resources are
 not overwritten. Do not write high-volume tool calls, raw operational logs, or
 normal runtime proof events to cheqd; keep those in your normal audit/hash
 stores.

@@ -20,6 +20,14 @@ export interface ApprovalGrant {
 export interface QuorumResult {
   satisfied: boolean;
   reason?: string;
+  /**
+   * The distinct approver DIDs whose grants verified (allowlisted, bound to the
+   * request, signature accepted), whether or not they reached the quorum. The
+   * only set a policy engine's `humanApprovals` should be built from.
+   * `verifyApprovalQuorum` always sets it; it is optional so that code
+   * building its own `QuorumResult` keeps compiling.
+   */
+  approvers?: string[];
 }
 
 export interface Quorum {
@@ -49,7 +57,7 @@ export async function verifyApprovalQuorum(
   // A non-positive quorum is a misconfiguration (e.g. a third-party engine
   // returning {n:0}); treat it as never-satisfiable rather than auto-passing.
   if (quorum.n <= 0) {
-    return { satisfied: false, reason: 'invalid_quorum:n<=0' };
+    return { satisfied: false, reason: 'invalid_quorum:n<=0', approvers: [] };
   }
 
   const approvers = new Set<string>();
@@ -63,7 +71,11 @@ export async function verifyApprovalQuorum(
   }
 
   if (approvers.size >= quorum.n) {
-    return { satisfied: true };
+    return { satisfied: true, approvers: [...approvers] };
   }
-  return { satisfied: false, reason: `quorum_not_met:${approvers.size}/${quorum.n}` };
+  return {
+    satisfied: false,
+    reason: `quorum_not_met:${approvers.size}/${quorum.n}`,
+    approvers: [...approvers],
+  };
 }

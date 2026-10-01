@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 
 import { WebCryptoProvider } from "../web-crypto.js";
 import { NodeCryptoProvider } from "../node-crypto.js";
-import { bytesToBase64 } from "../../utils/base64.js";
+import { base64ToBytes, base64urlEncodeFromBytes, bytesToBase64 } from "../../utils/base64.js";
+import { generateDidKeyFromBytes } from "../../utils/did-helpers.js";
 
 const web = new WebCryptoProvider();
 const node = new NodeCryptoProvider();
@@ -62,6 +63,59 @@ describe("WebCryptoProvider", () => {
       const sigNode = await node.sign(msg, privateKey);
       const sigWeb = await web.sign(msg, privateKey);
       expect(bytesToBase64(sigWeb)).toBe(bytesToBase64(sigNode));
+    });
+
+    it("both reject a 64-byte public key (key || junk)", async () => {
+      const kp = await node.generateKeyPair();
+      const msg = enc("m");
+      const sig = await node.sign(msg, kp.privateKey);
+      const padded = bytesToBase64(
+        new Uint8Array([...base64ToBytes(kp.publicKey), ...new Uint8Array(32).fill(7)]),
+      );
+      expect(await web.verify(msg, sig, padded)).toBe(false);
+      expect(await node.verify(msg, sig, padded)).toBe(false);
+    });
+
+    it("both reject a public key with trailing non-base64 characters", async () => {
+      const kp = await node.generateKeyPair();
+      const msg = enc("m");
+      const sig = await node.sign(msg, kp.privateKey);
+      const junk = `${kp.publicKey}!!!!`;
+      expect(await web.verify(msg, sig, junk)).toBe(false);
+      expect(await node.verify(msg, sig, junk)).toBe(false);
+    });
+
+    it("both accept the same key unpadded or in base64url", async () => {
+      const kp = await node.generateKeyPair();
+      const msg = enc("m");
+      const sig = await node.sign(msg, kp.privateKey);
+      const url = base64urlEncodeFromBytes(base64ToBytes(kp.publicKey));
+      for (const provider of [node, web]) {
+        expect(await provider.verify(msg, sig, url)).toBe(true);
+      }
+    });
+  });
+
+  describe("small-order public keys", () => {
+    // A = identity (small order). With R = identity and S = 0 the verification
+    // equation [S]B == R + [k]A holds for EVERY message, so anyone could sign
+    // anything as a did:key built from this key.
+    const identity = new Uint8Array(32);
+    identity[0] = 1;
+    const universalSig = new Uint8Array(64);
+    universalSig[0] = 1;
+    const pub = bytesToBase64(identity);
+
+    it("the weak key is a well-formed did:key (nothing upstream rejects it)", () => {
+      expect(generateDidKeyFromBytes(identity)).toMatch(/^did:key:z6Mk/);
+    });
+
+    it.each([
+      ["NodeCryptoProvider", node],
+      ["WebCryptoProvider", web],
+    ] as const)("%s rejects a universal signature under a small-order key", async (_name, provider) => {
+      expect(await provider.verify(enc("transfer $1 to alice"), universalSig, pub)).toBe(false);
+      expect(await provider.verify(enc("transfer $1M to mallory"), universalSig, pub)).toBe(false);
     });
   });
 });

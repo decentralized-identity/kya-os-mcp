@@ -59,6 +59,11 @@ export abstract class PendingFlowStore {
   abstract cleanup(): Promise<void>;
 }
 
+/** Writes between amortised expired-entry sweeps (bounds memory without a timer). */
+const SWEEP_EVERY = 1000;
+/** Longest the store goes between sweeps while written to, so low traffic also frees memory. */
+const SWEEP_INTERVAL_MS = 60_000;
+
 export interface MemoryPendingFlowStoreOptions {
   /** Clock injection for tests; defaults to Date.now. */
   now?: () => number;
@@ -70,18 +75,32 @@ export interface MemoryPendingFlowStoreOptions {
  * NOT for production: pending flows are lost on restart and are invisible to a
  * sibling instance, so a callback that lands elsewhere cannot complete. Inject a
  * Redis / Durable Object / database-backed store for multi-instance deployments.
+ *
+ * Most initiated flows are never completed, so expired entries are swept as
+ * the store is written to rather than only on a matching read.
  */
 export class MemoryPendingFlowStore extends PendingFlowStore {
   private readonly pending = new Map<string, { flow: PendingFlow; expiresAt: number }>();
   private readonly now: () => number;
+  private writesSinceSweep = 0;
+  private lastSweepAt: number;
 
   constructor(options: MemoryPendingFlowStoreOptions = {}) {
     super();
     this.now = options.now ?? (() => Date.now());
+    this.lastSweepAt = this.now();
   }
 
   async put(token: string, flow: PendingFlow, ttlMs: number): Promise<void> {
-    this.pending.set(token, { flow: { ...flow }, expiresAt: this.now() + ttlMs });
+    const now = this.now();
+    this.pending.set(token, { flow: { ...flow }, expiresAt: now + ttlMs });
+    // Amortised eviction (count or interval, whichever comes first), so
+    // abandoned flows cannot accumulate without a scheduled cleanup().
+    if (++this.writesSinceSweep >= SWEEP_EVERY || now - this.lastSweepAt >= SWEEP_INTERVAL_MS) {
+      this.writesSinceSweep = 0;
+      this.lastSweepAt = now;
+      this.evictExpired(now);
+    }
   }
 
   async get(token: string): Promise<PendingFlow | undefined> {
@@ -109,7 +128,10 @@ export class MemoryPendingFlowStore extends PendingFlowStore {
   }
 
   async cleanup(): Promise<void> {
-    const now = this.now();
+    this.evictExpired(this.now());
+  }
+
+  private evictExpired(now: number): void {
     for (const [token, entry] of this.pending) {
       if (entry.expiresAt <= now) this.pending.delete(token);
     }

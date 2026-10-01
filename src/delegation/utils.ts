@@ -10,10 +10,10 @@ import { canonicalizeJson } from '../utils/canonical-json.js';
 /**
  * Canonicalize a JSON value using RFC 8785 (JSON Canonicalization Scheme).
  *
- * Wraps `json-canonicalize` with input validation to reject values that are
- * not representable in JSON (Infinity, NaN, undefined, functions, symbols,
- * bigints). The underlying library silently coerces these to `"null"` or
- * `"undefined"`, which is dangerous for cryptographic canonicalization where
+ * Delegates to the strict canonicalizer, which rejects values that are not
+ * representable in JSON (Infinity, NaN, undefined, functions, symbols,
+ * bigints) instead of coercing them to `"null"` or `"undefined"` as JSON
+ * serialization does. That matters for cryptographic canonicalization, where
  * distinct inputs must produce distinct outputs.
  *
  * @throws {TypeError} If `obj` is not a valid JSON value

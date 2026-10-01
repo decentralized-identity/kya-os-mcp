@@ -121,6 +121,69 @@ Versioning: https://semver.org/spec/v2.0.0.html
   call context, and the policy gate prefers them. Approvals stay outside the
   holder-binding request hash. A policy gate used on its own behaves as
   before.
+- **did:key and base58 input is bounded before decoding.** The did:key path
+  decoded the whole counterparty-supplied DID before checking it was a 34-byte
+  key, and `base58Decode` had no input limit and quadratic cost: one 100 KB
+  `did:key:z…` in a tool call held the event loop for seconds. A did:key whose
+  base58 part is longer than 64 characters (an Ed25519 key is always 47) is
+  now rejected unread, and its payload must be exactly the prefix and 32-byte
+  key. `publicKeyMultibase` and `publicKeyBase58` in DID documents are decoded
+  only up to 1024 characters, enough for any published public key.
+  `base58Decode` takes that bound as a new optional `maxLength` argument (the
+  package root exports 1024 as `MAX_BASE58_DECODE_LENGTH`), and a `maxLength`
+  that is not a non-negative integer throws a `RangeError`. Called without
+  it, `base58Decode` decodes any length, as before. Its byte conversion is now
+  linear; accumulating the digits stays quadratic, which the bound keeps
+  small. Every well-formed Ed25519 did:key and verification method resolves
+  as before.
+- **`GenericOidcAdapter` accepts only a real token response.** Any 2xx JSON
+  body from the token endpoint was a successful authorization, including `{}`
+  and the HTTP 200 `{"error":"bad_verification_code"}` some providers return
+  for a bad or replayed code. The body must now be a JSON object with no
+  `error` member and a non-empty string `access_token` (RFC 6749 §5.1). A
+  non-Bearer `token_type` (some providers send `bot`) is accepted. The granted
+  scopes are read strictly: an absent `scope` means the requested scopes
+  (RFC 6749 §5.1), a string is split on whitespace, so `""` grants none, a
+  list of strings is taken as is, and any other `scope` fails the
+  authorization instead of granting the requested scopes.
+- **`DefaultPolicyEngine` step-up counts distinct, allowed approvers.** One
+  approver listed twice in `humanApprovals` satisfied a quorum of two, and
+  `stepUpApprovers` was returned in the step-up challenge but not enforced.
+  Only distinct approvers, and only those on the allowlist when one is set,
+  now count toward `stepUpQuorum`. `verifyApprovalQuorum` reports the verified
+  approvers as `QuorumResult.approvers`, the set `humanApprovals` should be
+  built from. It always sets the field; the field is optional, so code that
+  builds its own `QuorumResult` still compiles. The `stepUpQuorum` value
+  itself is read as before, and distinct, allowed approvals decide as before.
+- **Small-order Ed25519 public keys are rejected.** Under such a key one
+  signature verifies for every message, so anyone could sign as a did:key
+  built from it, and OpenSSL, WebCrypto and `jose` all accept it.
+  `NodeCryptoProvider` and `WebCryptoProvider` now refuse the small-order
+  encodings libsodium blocks, and so does every path that imports a key
+  itself: VC-JWT verification, Entity Card proofs and their HTTP message
+  signatures, and `CompactJwsAuditSignatureVerifier`. Those check the imported
+  key rather than the JWK, because Node's JWK import tolerates junk in `x`.
+  The audit verifier cannot read back a public key its resolver imported as
+  non-extractable, and verifies under such a key as before.
+  `NodeCryptoProvider` also decodes keys strictly, as `WebCryptoProvider`
+  already did: a 64-byte key or a key with trailing junk no longer verifies.
+  ASCII whitespace in a key is still ignored, as both decoders did, so a key
+  read from a file with its newline verifies as before, and so does a 32-byte
+  key in base64, unpadded base64, or base64url.
+- **Strict canonicalization never honours `toJSON`.** `canonicalizeJson` and
+  `canonicalizeJsonBytes` validated their input and then serialized it with
+  `json-canonicalize`, which hands any object with a `toJSON` member to
+  `JSON.stringify`: `{"toJSON":"x", ...}` came out unsorted (not RFC 8785),
+  and a hidden `toJSON` function, or one on an array, replaced the value that
+  was hashed or signed. They now serialize the validated value themselves, in
+  one pass linear in the size of the input. Properties JSON does not carry
+  (non-enumerable ones, and an array's non-index ones such as a `toJSON`) are
+  ignored, as before, and never consulted, so `'abc'.match(/b/)` still
+  serializes as `["b"]`. An accessor array element is now refused, as an
+  accessor member already was, because the value checked could differ from
+  the value written. Output is byte-identical to `json-canonicalize` for plain
+  JSON (anything `JSON.parse` returns or an object literal builds), and the
+  conformance vectors are unchanged.
 
 - **Graph revocation is checked for the whole chain.** `validateDelegationChain`
   asked its `RevocationChecker` about the leaf only, so a leaf minted after an
@@ -278,6 +341,22 @@ Versioning: https://semver.org/spec/v2.0.0.html
   implementation already does, and says why the bound holds on every
   nonce-checked path. CONFORMANCE.md L2.5 follows, and L2.11 describes the
   per-proof nonce and both request-hash shapes.
+- **In-memory replay and pending-flow stores evict on their own.**
+  `MemoryNonceCacheProvider`, the default replay store for `withKyaOs` and
+  `SessionManager`, and `MemoryPendingFlowStore` freed expired entries only on
+  an explicit `cleanup()`, which nothing schedules, so every handshake nonce
+  and abandoned authorization flow stayed resident. Both now sweep expired
+  entries as they are written to: every 1000 writes, or after a minute. A live
+  entry is never swept, and `cleanup()` works as before.
+- **`@kya-os/mcp/providers` bundles for browsers and Workers again.** The
+  entry documented for `WebCryptoProvider` also exports `NodeCryptoProvider`,
+  which imported `node:crypto` at module load and broke every browser bundle.
+  `node:crypto` now loads on first use; the exports are unchanged.
+- **cheqd DLR content hashes are always computed.** `prepareCheqdDlrResource`
+  returned a caller-supplied `contentHash` as the artifact's content address
+  without checking it against the bytes being anchored. The hash is now
+  always computed from the canonical content bytes, and a supplied one that
+  differs throws. Canonicalization of the content is unchanged.
 
 - **Status list indexes stay inside the list.** `updateStatus` parsed
   `statusListIndex` with `parseInt`, so revoking `"5abc"` flipped bit 5, which

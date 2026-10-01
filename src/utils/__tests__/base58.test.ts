@@ -3,7 +3,19 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { base58Encode, base58Decode, isValidBase58 } from "../base58.js";
+import {
+  base58Encode,
+  base58Decode,
+  isValidBase58,
+  MAX_BASE58_DECODE_LENGTH,
+} from "../base58.js";
+import { extractPublicKeyFromDidKey } from "../../delegation/did-key-resolver.js";
+import { verificationMethodJwk } from "../../delegation/verification-method-key.js";
+import { DelegationCredentialIssuer } from "../../delegation/vc-issuer.js";
+import { createKyaOsMiddleware } from "../../middleware/with-kya-os.js";
+import { NodeCryptoProvider } from "../../providers/node-crypto.js";
+import { base64urlEncodeFromBytes } from "../base64.js";
+import { generateDidKeyFromBase64, generateDidKeyFromBytes } from "../did-helpers.js";
 
 describe("Base58 Utilities", () => {
   describe("base58Encode", () => {
@@ -276,6 +288,115 @@ describe("Base58 Utilities", () => {
 
       const decoded = base58Decode(encoded);
       expect(decoded).toEqual(ed25519Key);
+    });
+  });
+
+  describe("decode cost is bounded (inputs come from counterparty DIDs)", () => {
+    it("round-trips random bytes, including leading zero bytes", () => {
+      for (let i = 0; i < 200; i++) {
+        const bytes = new Uint8Array(1 + (i % 40));
+        crypto.getRandomValues(bytes);
+        bytes.fill(0, 0, i % 4); // 0-3 leading zero bytes
+        expect(base58Decode(base58Encode(bytes))).toEqual(bytes);
+      }
+    });
+
+    it("decodes without a length limit when no maxLength is passed, as before", () => {
+      expect(base58Decode("2".repeat(2_000)).length).toBeGreaterThan(0);
+    });
+
+    it("refuses input over an explicit maxLength before decoding it", () => {
+      const bound = MAX_BASE58_DECODE_LENGTH;
+      expect(base58Decode("2".repeat(bound), bound).length).toBeGreaterThan(0);
+      const t0 = performance.now();
+      expect(() => base58Decode("2".repeat(50_000), bound)).toThrow(/exceeds 1024 characters/);
+      expect(performance.now() - t0).toBeLessThan(250);
+      expect(() => base58Decode("22", 1)).toThrow(/exceeds 1 characters/);
+    });
+
+    it.each([Number.NaN, -1, 1.5, Number.POSITIVE_INFINITY])(
+      "rejects a maxLength of %s instead of treating it as unbounded",
+      (maxLength) => {
+        expect(() => base58Decode("22", maxLength)).toThrow(RangeError);
+      },
+    );
+
+    it("accepts a maxLength of 0 for empty input only", () => {
+      expect(base58Decode("", 0)).toEqual(new Uint8Array(0));
+      expect(() => base58Decode("2", 0)).toThrow(/exceeds 0 characters/);
+    });
+
+    it.each(["publicKeyMultibase", "publicKeyBase58"] as const)(
+      "rejects a 100 KB %s in a DID document without decoding it",
+      (field) => {
+        const huge = "2".repeat(100_000);
+        const method = {
+          id: "did:web:example.com#k",
+          type: "Ed25519VerificationKey2020",
+          controller: "did:web:example.com",
+          [field]: field === "publicKeyMultibase" ? `z${huge}` : huge,
+        };
+        const t0 = performance.now();
+        expect(verificationMethodJwk(method)).toBeUndefined();
+        expect(performance.now() - t0).toBeLessThan(250);
+      },
+    );
+
+    it("rejects a 100 KB did:key without decoding it", () => {
+      const t0 = performance.now();
+      expect(extractPublicKeyFromDidKey("did:key:z6Mk" + "2".repeat(100_000))).toBeNull();
+      expect(performance.now() - t0).toBeLessThan(250);
+    });
+
+    it("rejects a did:key whose payload carries bytes beyond the 32-byte key", () => {
+      const key = new Uint8Array(32).fill(7);
+      const did = generateDidKeyFromBytes(key);
+      expect(extractPublicKeyFromDidKey(did)).toEqual(key);
+      // The right multicodec prefix, then one byte too many.
+      const padded = `did:key:z${base58Encode(new Uint8Array([0xed, 0x01, ...key, 0x00]))}`;
+      expect(extractPublicKeyFromDidKey(padded)).toBeNull();
+    });
+
+    it("end-to-end: a tool call carrying a 100 KB did:key issuer does not pin the event loop", async () => {
+      const crypto = new NodeCryptoProvider();
+      const server = await crypto.generateKeyPair();
+      const serverDid = generateDidKeyFromBase64(server.publicKey);
+      const mw = createKyaOsMiddleware(
+        {
+          identity: { did: serverDid, kid: `${serverDid}#k`, privateKey: server.privateKey, publicKey: server.publicKey },
+          session: { sessionTtlMinutes: 60 },
+        },
+        crypto,
+      );
+      const attacker = await crypto.generateKeyPair();
+      const issuerDid = "did:key:z6Mk" + "2".repeat(100_000);
+      const issuer = new DelegationCredentialIssuer(
+        { getDid: () => issuerDid, getKeyId: () => `${issuerDid}#k`, getPrivateKey: () => attacker.privateKey },
+        async (canonical: string, _d: string, kid: string) => ({
+          type: "Ed25519Signature2020",
+          created: new Date().toISOString(),
+          verificationMethod: kid,
+          proofPurpose: "assertionMethod",
+          proofValue: base64urlEncodeFromBytes(
+            await crypto.sign(new TextEncoder().encode(canonical), attacker.privateKey),
+          ),
+        }),
+      );
+      const vc = await issuer.createAndIssueDelegation({
+        id: "d-1",
+        issuerDid,
+        subjectDid: issuerDid,
+        constraints: { scopes: ["t:s"], notAfter: Math.floor(Date.now() / 1000) + 3600 },
+      });
+      const handler = mw.wrapWithDelegation("tool", { scopeId: "t:s", consentUrl: "https://example.com/c" }, async () => ({
+        content: [{ type: "text", text: "ok" }],
+      }));
+
+      const t0 = performance.now();
+      const res = await handler({ _kyaos_delegation: vc });
+      expect(res.isError).toBe(true);
+      // Unbounded, this took seconds before any signature check ran.
+      expect(performance.now() - t0).toBeLessThan(1_000);
     });
   });
 });

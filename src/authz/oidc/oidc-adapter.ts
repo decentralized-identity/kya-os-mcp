@@ -145,7 +145,7 @@ export class GenericOidcAdapter implements AuthorizationServerAdapter {
     if (this.config.resource) body.set('resource', this.config.resource);
     if (this.config.clientSecret) body.set('client_secret', this.config.clientSecret);
 
-    let token: { scope?: string; access_token?: string };
+    let token: unknown;
     try {
       const response = await this.fetchImpl(this.config.tokenEndpoint, {
         method: 'POST',
@@ -155,13 +155,23 @@ export class GenericOidcAdapter implements AuthorizationServerAdapter {
       if (!response.ok) {
         return { valid: false, reason: `token endpoint returned ${response.status}` };
       }
-      token = (await response.json()) as { scope?: string; access_token?: string };
+      token = await response.json();
     } catch (error) {
       return { valid: false, reason: `token exchange failed: ${(error as Error).message}` };
     }
 
+    // A 2xx is not a grant: some servers answer a bad or replayed code with
+    // 200 and an `error` member.
+    const tokenProblem = tokenResponseProblem(token);
+    if (tokenProblem) {
+      return { valid: false, reason: tokenProblem };
+    }
+    const grantedScopes = grantedScopesOf((token as Record<string, unknown>)['scope'], pending.scopes);
+    if (!grantedScopes) {
+      return { valid: false, reason: 'token response scope is neither a string nor a list of strings' };
+    }
+
     // The flow was already atomically consumed above (one-time use).
-    const grantedScopes = token.scope ? token.scope.split(' ') : pending.scopes;
     return {
       valid: true,
       credential: {
@@ -177,6 +187,47 @@ export class GenericOidcAdapter implements AuthorizationServerAdapter {
   async pendingVerifierFor(resumeToken: string): Promise<string | undefined> {
     return (await this.pendingFlowStore.get(resumeToken))?.codeVerifier;
   }
+}
+
+/**
+ * Why `body` is not a successful token response, or undefined when it is: a
+ * JSON object with no `error` member and a non-empty string `access_token`
+ * (RFC 6749 §5.1). `token_type` is deliberately not checked: deployed
+ * providers send non-Bearer types (`bot`, for one), and this adapter never
+ * presents the token, so rejecting them would refuse real grants for no gain.
+ */
+function tokenResponseProblem(body: unknown): string | undefined {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    return 'token response is not a JSON object';
+  }
+  const token = body as Record<string, unknown>;
+  if (token['error'] !== undefined) {
+    return 'token endpoint returned an OAuth error';
+  }
+  if (typeof token['access_token'] !== 'string' || token['access_token'].length === 0) {
+    return 'token response has no access_token';
+  }
+  return undefined;
+}
+
+/**
+ * The scopes a token response grants, or undefined when its `scope` cannot be
+ * read. Absent means the requested scopes (RFC 6749 §5.1). A string is split
+ * on whitespace, so `""` grants none. Some providers send a list of strings,
+ * taken as is. Anything else is unreadable, and guessing would grant scopes
+ * the server may not have.
+ */
+function grantedScopesOf(scope: unknown, requested: string[]): string[] | undefined {
+  if (scope === undefined) {
+    return requested;
+  }
+  if (typeof scope === 'string') {
+    return scope.split(/\s+/).filter((entry) => entry.length > 0);
+  }
+  if (Array.isArray(scope) && scope.every((entry) => typeof entry === 'string')) {
+    return [...scope];
+  }
+  return undefined;
 }
 
 function randomToken(byteLength: number): string {

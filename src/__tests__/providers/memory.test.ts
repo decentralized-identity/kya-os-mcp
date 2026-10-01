@@ -9,6 +9,10 @@ import {
   MemoryIdentityProvider
 } from '../../providers/memory.js';
 import { MockCryptoProvider } from '../utils/mock-providers.js';
+import { NodeCryptoProvider } from '../utils/node-crypto-provider.js';
+import { SessionManager } from '../../session/manager.js';
+import { createKyaOsMiddleware } from '../../middleware/with-kya-os.js';
+import { generateDidKeyFromBase64 } from '../../utils/did-helpers.js';
 
 describe('MemoryStorageProvider', () => {
   let provider: MemoryStorageProvider;
@@ -226,6 +230,91 @@ describe('MemoryNonceCacheProvider', () => {
 
     it('should handle empty cache', async () => {
       await expect(provider.cleanup()).resolves.toBeUndefined();
+    });
+  });
+
+  describe('expiry without cleanup()', () => {
+    // withKyaOs and SessionManager default to this cache and nothing schedules
+    // cleanup(), so the cache has to release dead entries on its own.
+    const size = (cache: MemoryNonceCacheProvider) =>
+      (cache as unknown as { nonces: Map<string, number> }).nonces.size;
+
+    it('sweeps expired nonces as a busy cache is written to', async () => {
+      vi.setSystemTime(0);
+      const cache = new MemoryNonceCacheProvider();
+      // Any self-issued did:key can mint signed, admitted nonces like these.
+      for (let i = 0; i < 20_000; i++) {
+        await cache.consume(`nonce-${i}`, 60, 'did:key:zAttacker');
+      }
+      vi.setSystemTime(24 * 60 * 60 * 1000);
+      for (let i = 0; i < 2_000; i++) {
+        await cache.consume(`later-${i}`, 60, 'did:key:zAttacker');
+      }
+      expect(size(cache)).toBeLessThanOrEqual(2_000);
+    });
+
+    it('releases expired nonces in a quiet cache on its next write', async () => {
+      const cache = new MemoryNonceCacheProvider();
+      for (let i = 0; i < 50; i++) await cache.add(`n-${i}`, 60);
+      vi.advanceTimersByTime(24 * 60 * 60 * 1000);
+      await cache.add('fresh', 60);
+      expect(size(cache)).toBe(1);
+      expect(await cache.has('fresh')).toBe(true);
+    });
+
+    it('SessionManager: expired handshake nonces are evicted without a cleanup() call', async () => {
+      vi.setSystemTime(new Date('2026-09-30T00:00:00Z'));
+      const nonceCache = new MemoryNonceCacheProvider();
+      const manager = new SessionManager(new NodeCryptoProvider(), {
+        serverDid: 'did:web:server.example.com',
+        nonceCache,
+        maxSessions: 100,
+      });
+      // Unauthenticated callers: 2,000 handshakes spread over ~33 hours.
+      for (let i = 0; i < 2_000; i++) {
+        const r = await manager.validateHandshake({
+          nonce: SessionManager.generateNonce(),
+          audience: 'did:web:server.example.com',
+          timestamp: Math.floor(Date.now() / 1000),
+        });
+        expect(r.success).toBe(true);
+        vi.advanceTimersByTime(60_000);
+      }
+      expect(manager.getStats().activeSessions).toBeLessThanOrEqual(100);
+      expect(size(nonceCache)).toBeLessThan(2_000);
+    });
+
+    it('withKyaOs: expired handshake nonces are eventually released', async () => {
+      vi.setSystemTime(new Date('2026-09-30T00:00:00Z'));
+      const crypto = new NodeCryptoProvider();
+      const kp = await crypto.generateKeyPair();
+      const did = generateDidKeyFromBase64(kp.publicKey);
+      const nonceCache = new MemoryNonceCacheProvider();
+      const kyaos = createKyaOsMiddleware(
+        { identity: { did, kid: `${did}#key-1`, privateKey: kp.privateKey, publicKey: kp.publicKey }, nonceCache },
+        crypto,
+      );
+      const handshake = (i: number) =>
+        kyaos.handleHandshake({
+          nonce: `handshake-nonce-${Date.now()}-${i}`,
+          audience: did,
+          timestamp: Math.floor(Date.now() / 1000),
+        });
+
+      for (let i = 0; i < 50; i++) await handshake(i);
+      vi.setSystemTime(new Date('2026-10-01T00:00:00Z')); // a day later: all long expired
+      for (let i = 0; i < 50; i++) await handshake(i);
+
+      expect(size(nonceCache)).toBeLessThanOrEqual(50);
+    });
+
+    it('never sweeps a live nonce, so replay protection holds across sweeps', async () => {
+      const cache = new MemoryNonceCacheProvider();
+      expect(await cache.consume('live', 3600, 'did:key:zA')).toBe(true);
+      for (let i = 0; i < 2_500; i++) await cache.consume(`n-${i}`, 1, 'did:key:zA');
+      vi.advanceTimersByTime(120_000);
+      await cache.consume('trigger', 1, 'did:key:zA');
+      expect(await cache.consume('live', 3600, 'did:key:zA')).toBe(false);
     });
   });
 

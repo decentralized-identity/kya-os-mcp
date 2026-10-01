@@ -60,4 +60,22 @@ describe('DefaultPolicyEngine', () => {
     );
     expect(two.decision).toBe('allow');
   });
+
+  describe('step-up quorum counts distinct, allowed approvers', () => {
+    const destructive = (humanApprovals: string[] = []) =>
+      req({ reversibility: 'irreversible', severity: 'catastrophic', humanApprovals });
+
+    it('counts distinct approvers: a duplicated approver does not satisfy n = 2', async () => {
+      const engine = new DefaultPolicyEngine({ stepUpQuorum: 2 });
+      expect((await engine.evaluate(destructive(['did:alice', 'did:alice']))).decision).toBe('step_up');
+      expect((await engine.evaluate(destructive(['did:alice', 'did:bob', 'did:alice']))).decision).toBe('allow');
+    });
+
+    it('counts only approvers on the stepUpApprovers allowlist', async () => {
+      const engine = new DefaultPolicyEngine({ stepUpQuorum: 1, stepUpApprovers: ['did:admin'] });
+      const outsider = await engine.evaluate(destructive(['did:mallory']));
+      expect(outsider).toMatchObject({ decision: 'step_up', quorum: { n: 1, approvers: ['did:admin'] } });
+      expect((await engine.evaluate(destructive(['did:mallory', 'did:admin']))).decision).toBe('allow');
+    });
+  });
 });

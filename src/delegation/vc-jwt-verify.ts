@@ -30,6 +30,7 @@ import type {
 import { parseVCJWT, type VCJWTPayload } from "./utils.js";
 import { validateBasicProperties } from "./vc-verification-checks.js";
 import { verificationMethodJwk } from "./verification-method-key.js";
+import { isSmallOrderEd25519CryptoKey } from "../utils/ed25519-public-key.js";
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -242,6 +243,10 @@ export async function verifyVcJwtSignature(
 
   try {
     const key = await importJWK(publicKeyJwk as JWK, "EdDSA");
+    // jose verifies under a small-order key, where one signature fits every payload.
+    if (await isSmallOrderEd25519CryptoKey(key)) {
+      return done(false, "Verification method key is a small-order Ed25519 point");
+    }
     await compactVerify(jwt, key, { algorithms: ["EdDSA"] });
     return done(true);
   } catch (err) {

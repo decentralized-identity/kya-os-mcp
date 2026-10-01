@@ -5,6 +5,7 @@ import {
   validateCheqdDlrArtifact,
 } from '../dlr.js';
 import type { CryptoProvider } from '../../../providers/base.js';
+import { NodeCryptoProvider } from '../../../providers/node-crypto.js';
 import { canonicalizeJSON } from '../../../delegation/utils.js';
 
 const cryptoProvider: CryptoProvider = {
@@ -78,6 +79,46 @@ describe('cheqd DLR helpers', () => {
       mediaType: 'application/json',
     });
     expect(prepared.resource.data).toBe('eyJsZXZlbCI6IkwyIiwic2NvcGVzIjpbInByb29mcyJdfQ==');
+  });
+
+  describe('content hash', () => {
+    const SUBJECT = 'did:cheqd:testnet:11111111-1111-4111-8111-111111111111';
+    const content = { acceptedMethods: ['did:web', 'did:cheqd'] };
+    const realCrypto = new NodeCryptoProvider();
+
+    it('rejects a supplied contentHash that does not match the canonical content', async () => {
+      await expect(
+        prepareCheqdDlrResource(
+          { type: 'TrustConfigManifest', subjectDid: SUBJECT, content, contentHash: `sha256:${'0'.repeat(64)}` },
+          realCrypto,
+        ),
+      ).rejects.toThrow(/does not match the canonical content/);
+    });
+
+    it('accepts a supplied contentHash that matches, and always returns the computed one', async () => {
+      const computed = await realCrypto.hash(new TextEncoder().encode(canonicalizeJSON(content)));
+      const prepared = await prepareCheqdDlrResource(
+        { type: 'TrustConfigManifest', subjectDid: SUBJECT, content, contentHash: computed },
+        realCrypto,
+      );
+      expect(prepared.contentHash).toBe(computed);
+      expect(prepared.artifact.contentHash).toBe(computed);
+    });
+
+    it('canonicalizes content as before: an undefined member is dropped, a Date is its ISO string', async () => {
+      const prepared = await prepareCheqdDlrResource(
+        {
+          type: 'CapabilityManifest',
+          subjectDid: SUBJECT,
+          content: { tools: ['search'], note: undefined, at: new Date(0) },
+        },
+        realCrypto,
+      );
+      expect(prepared.canonicalContent).toBe('{"at":"1970-01-01T00:00:00.000Z","tools":["search"]}');
+      expect(prepared.contentHash).toBe(
+        await realCrypto.hash(new TextEncoder().encode(prepared.canonicalContent)),
+      );
+    });
   });
 
   it('keeps resource name and type stable across versions', async () => {

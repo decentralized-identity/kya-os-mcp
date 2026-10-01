@@ -5,6 +5,7 @@ import {
   type DelegationNode,
   type DelegationGraphStorageProvider,
 } from "../delegation-graph.js";
+import { MemoryDelegationGraphStorage } from "../storage/memory-graph-storage.js";
 
 describe("DelegationGraphManager", () => {
   let storage: DelegationGraphStorageProvider;
@@ -165,6 +166,175 @@ describe("DelegationGraphManager", () => {
         expect.objectContaining({ id: "del-child" })
       );
       expect(storage.deleteNode).toHaveBeenCalledWith("del-child");
+    });
+
+    it("should reject a stored delegation re-registered as its own parent", async () => {
+      await graph.registerDelegation({
+        id: "del-self",
+        parentId: null,
+        issuerDid: "did:web:example.com:issuer",
+        subjectDid: "did:web:example.com:subject",
+      });
+      vi.clearAllMocks();
+
+      await expect(
+        graph.registerDelegation({
+          id: "del-self",
+          parentId: "del-self",
+          issuerDid: "did:web:example.com:issuer",
+          subjectDid: "did:web:example.com:subject",
+        })
+      ).rejects.toThrow("Delegation del-self cannot be its own parent");
+      expect(storage.setNode).not.toHaveBeenCalled();
+      expect((await graph.getNode("del-self"))?.parentId).toBeNull();
+    });
+  });
+
+  describe("registerDelegation with an id that is already registered", () => {
+    const root = {
+      id: "p",
+      parentId: null,
+      issuerDid: "did:web:example.com:issuer",
+      subjectDid: "did:web:example.com:a",
+      credentialStatusId: "https://status.example/revocation/v1#3",
+    };
+
+    async function registerRevokedRootWithChild(manager: DelegationGraphManager): Promise<void> {
+      await manager.registerDelegation(root);
+      await manager.registerDelegation({
+        id: "c",
+        parentId: "p",
+        issuerDid: "did:web:example.com:a",
+        subjectDid: "did:web:example.com:b",
+      });
+      await manager.setRevoked("p", true);
+    }
+
+    it("treats an identical registration as a no-op that keeps children and revocation", async () => {
+      await registerRevokedRootWithChild(graph);
+      vi.clearAllMocks();
+
+      const node = await graph.registerDelegation({ ...root });
+
+      expect(storage.setNode).not.toHaveBeenCalled();
+      expect(node).toMatchObject({ id: "p", children: ["c"], revoked: true });
+      expect(await graph.getNode("p")).toMatchObject({ children: ["c"], revoked: true });
+    });
+
+    it("compares registered fields only: an omitted and an undefined field are the same", async () => {
+      const status = {
+        id: "https://status.example/revocation/v1#3",
+        type: "BitstringStatusListEntry" as const,
+        statusPurpose: "revocation",
+        statusListIndex: "3",
+        statusListCredential: "https://status.example/revocation/v1",
+      };
+      await graph.registerDelegation({ ...root, credentialStatusId: undefined, credentialStatus: status });
+      await graph.registerDelegation({
+        id: "c",
+        parentId: "p",
+        issuerDid: "did:web:example.com:a",
+        subjectDid: "did:web:example.com:b",
+      });
+
+      // Same entry, members in a different order, and no credentialStatusId key at all.
+      await graph.registerDelegation({
+        id: root.id,
+        parentId: root.parentId,
+        issuerDid: root.issuerDid,
+        subjectDid: root.subjectDid,
+        credentialStatus: {
+          statusListCredential: status.statusListCredential,
+          statusListIndex: status.statusListIndex,
+          statusPurpose: status.statusPurpose,
+          type: status.type,
+          id: status.id,
+        },
+      });
+
+      expect((await graph.getNode("p"))?.children).toEqual(["c"]);
+    });
+
+    it("rejects a conflicting registration and leaves the stored node untouched", async () => {
+      await registerRevokedRootWithChild(graph);
+      const stored = structuredClone(await graph.getNode("p"));
+      vi.clearAllMocks();
+
+      for (const [change, field] of [
+        [{ subjectDid: "did:web:example.com:x" }, "subjectDid"],
+        [{ issuerDid: "did:web:example.com:a" }, "issuerDid"],
+        [{ credentialStatusId: undefined }, "credentialStatusId"],
+        [{ credentialStatusId: "https://status.example/revocation/v1#4" }, "credentialStatusId"],
+        [
+          {
+            credentialStatus: {
+              type: "BitstringStatusListEntry" as const,
+              statusPurpose: "revocation",
+              statusListIndex: "3",
+              statusListCredential: "https://status.example/revocation/v1",
+            },
+          },
+          "credentialStatus",
+        ],
+      ] as const) {
+        await expect(graph.registerDelegation({ ...root, ...change })).rejects.toThrow(
+          `Delegation p is already registered with a different ${field}`
+        );
+      }
+      expect(storage.setNode).not.toHaveBeenCalled();
+      expect(await graph.getNode("p")).toEqual(stored);
+    });
+
+    it("applies the same rule over atomic storage", async () => {
+      const memory = new MemoryDelegationGraphStorage();
+      const atomic = new DelegationGraphManager(memory);
+      await registerRevokedRootWithChild(atomic);
+
+      await expect(atomic.registerDelegation({ ...root })).resolves.toMatchObject({
+        children: ["c"],
+        revoked: true,
+      });
+      // A delegate reusing the id for a delegation of its own.
+      await expect(
+        atomic.registerDelegation({ ...root, issuerDid: "did:web:example.com:a", subjectDid: "did:web:example.com:x" })
+      ).rejects.toThrow("Delegation p is already registered with a different issuerDid");
+
+      expect(await memory.getNode("p")).toMatchObject({
+        revoked: true,
+        children: ["c"],
+        issuerDid: "did:web:example.com:issuer",
+      });
+    });
+
+    it("cannot be used to link a node under its own descendant", async () => {
+      const memory = new MemoryDelegationGraphStorage();
+      const atomic = new DelegationGraphManager(memory);
+      await atomic.registerDelegation({ id: "a", parentId: null, issuerDid: "did:u", subjectDid: "did:a" });
+      await atomic.registerDelegation({ id: "b", parentId: "a", issuerDid: "did:a", subjectDid: "did:b" });
+
+      await expect(
+        atomic.registerDelegation({ id: "a", parentId: "b", issuerDid: "did:u", subjectDid: "did:a" })
+      ).rejects.toThrow("Delegation a is already registered with a different parentId");
+
+      expect((await atomic.getChain("b")).map((node) => node.id)).toEqual(["a", "b"]);
+    });
+  });
+
+  describe("setRevoked", () => {
+    it("marks and clears one node without touching its links", async () => {
+      await graph.registerDelegation({ id: "p", parentId: null, issuerDid: "did:user", subjectDid: "did:a" });
+      await graph.registerDelegation({ id: "c", parentId: "p", issuerDid: "did:a", subjectDid: "did:b" });
+
+      await graph.setRevoked("p", true);
+      expect(await graph.getNode("p")).toMatchObject({ revoked: true, children: ["c"] });
+      expect((await graph.getNode("c"))?.revoked).toBeUndefined();
+
+      await graph.setRevoked("p", false);
+      expect((await graph.getNode("p"))?.revoked).toBe(false);
+    });
+
+    it("throws for an unknown delegation", async () => {
+      await expect(graph.setRevoked("missing", true)).rejects.toThrow("Delegation not found: missing");
     });
   });
 

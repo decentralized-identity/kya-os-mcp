@@ -10,6 +10,12 @@ import {
 } from "../chain-enforcement.js";
 import type { CrispScope, DelegationCredential } from "../../types/protocol.js";
 import { scopeSatisfies } from "../scope-matcher.js";
+import { gzipSync, gunzipSync } from "node:zlib";
+import { DelegationGraphManager } from "../delegation-graph.js";
+import { MemoryDelegationGraphStorage } from "../storage/memory-graph-storage.js";
+import { MemoryStatusListStorage } from "../storage/memory-statuslist-storage.js";
+import { StatusList2021Manager } from "../statuslist-manager.js";
+import { CascadingRevocationManager } from "../cascading-revocation.js";
 
 const SERVER = "did:web:server.example";
 
@@ -278,6 +284,93 @@ describe("validateDelegationChain", () => {
     it("passes a clean chain through the revocation checker", async () => {
       const checker: RevocationChecker = { isRevoked: async () => ({ revoked: false }) };
       expect((await validateDelegationChain(root, { ...baseDeps, revocationChecker: checker })).valid).toBe(true);
+    });
+
+    const parent = cred({ id: "p", issuerDid: "did:user", subjectDid: "did:a", scopes: ["read"], audience: SERVER });
+    const freshChild = cred({ id: "fresh-child", issuerDid: "did:a", subjectDid: "did:b", parentId: "p", scopes: ["read"], audience: SERVER });
+
+    it("rejects a leaf the graph has never seen when an ancestor in its chain is revoked", async () => {
+      const gzip = {
+        compress: async (d: Uint8Array) => new Uint8Array(gzipSync(d)),
+        decompress: async (d: Uint8Array) => new Uint8Array(gunzipSync(d)),
+      };
+      const statusList = new StatusList2021Manager(
+        new MemoryStatusListStorage(),
+        { getDid: () => "did:web:issuer.example", getKeyId: () => "did:web:issuer.example#k" },
+        async () => ({ type: "Ed25519Signature2020", proofValue: "x" }),
+        gzip,
+        gzip,
+        { statusListBaseUrl: "https://status.example", defaultListSize: 1024 },
+      );
+      const graph = new DelegationGraphManager(new MemoryDelegationGraphStorage());
+      const revocation = new CascadingRevocationManager(graph, statusList);
+      await graph.registerDelegation({
+        id: "p",
+        parentId: null,
+        issuerDid: "did:user",
+        subjectDid: "did:a",
+        credentialStatusId: (await statusList.allocateStatusEntry("revocation")).id,
+      });
+      await revocation.revokeDelegation("p");
+
+      // Minted by p's subject after the revocation, so never registered.
+      const r = await validateDelegationChain(freshChild, {
+        ...baseDeps,
+        resolveDelegationChain: async () => [parent],
+        revocationChecker: revocation,
+      });
+      expect(r.valid).toBe(false);
+      expect(r.reason).toBe("Delegation fresh-child is revoked via ancestor p");
+    });
+
+    it("asks about every credential in the verified chain, root first, and names the one revoked", async () => {
+      const asked: string[] = [];
+      const checker: RevocationChecker = {
+        isRevoked: async (id) => {
+          asked.push(id);
+          return { revoked: false };
+        },
+      };
+      const deps = { ...baseDeps, resolveDelegationChain: async () => [parent] };
+      const r = await validateDelegationChain(freshChild, { ...deps, revocationChecker: checker });
+      expect(r.valid).toBe(true);
+      expect(asked).toEqual(["p", "fresh-child"]);
+
+      // Only the leaf revoked: reported as revoked itself, with the checker's reason when it gives one.
+      const leafOnly = (reason?: string): RevocationChecker => ({
+        isRevoked: async (id) => (id === "fresh-child" ? { revoked: true, ...(reason ? { reason } : {}) } : { revoked: false }),
+      });
+      expect(await validateDelegationChain(freshChild, { ...deps, revocationChecker: leafOnly("Directly revoked") })).toEqual({
+        valid: false,
+        reason: "Delegation fresh-child is revoked: Directly revoked",
+      });
+      expect(await validateDelegationChain(freshChild, { ...deps, revocationChecker: leafOnly() })).toEqual({
+        valid: false,
+        reason: "Delegation fresh-child is revoked",
+      });
+    });
+
+    it("fails closed, without throwing, when the revocation checker throws", async () => {
+      const checker: RevocationChecker = {
+        isRevoked: async () => {
+          throw new Error("status list unavailable");
+        },
+      };
+      const r = await validateDelegationChain(root, { ...baseDeps, revocationChecker: checker });
+      expect(r).toEqual({
+        valid: false,
+        reason: "Revocation check failed for delegation root: status list unavailable",
+      });
+
+      const throwsNonError: RevocationChecker = {
+        isRevoked: async () => {
+          throw "unavailable";
+        },
+      };
+      expect(await validateDelegationChain(root, { ...baseDeps, revocationChecker: throwsNonError })).toEqual({
+        valid: false,
+        reason: "Revocation check failed for delegation root: Unknown error",
+      });
     });
   });
   it("only skips the presented leaf signature and never substitutes a resolver leaf", async () => {

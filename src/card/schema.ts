@@ -43,11 +43,15 @@ const VcValue = z.union([z.string(), z.record(z.string(), z.unknown())]);
 
 /**
  * Deliberately NON-strict: the JSON Schema marks `CapabilityAttestation` as
- * `additionalProperties: true`, so extra keys alongside `vc` are permitted here.
+ * `additionalProperties: true`, so extra keys alongside `vc` are permitted here — and PRESERVED.
+ * A plain `z.object` strips unknown keys, which would hand the capability verifier an attestation
+ * missing sidecar members it may need (a `credentialStatus`, say).
  */
-export const CapabilityAttestationSchema = z.object({
-  vc: VcValue,
-});
+export const CapabilityAttestationSchema = z
+  .object({
+    vc: VcValue,
+  })
+  .passthrough();
 
 export const Level2CapabilitySchema = z
   .object({

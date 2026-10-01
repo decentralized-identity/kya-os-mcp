@@ -381,15 +381,33 @@ export async function validateDelegationChain(
 
   // E3.1: graph-backed ancestor revocation. Independent of how the chain above
   // was resolved — catches a cascade-revoked ANCESTOR even when the leaf's own
-  // credentialStatus bit was never flipped. Opt-in: only runs when a checker is
-  // wired, so existing callers are unaffected.
+  // credentialStatus bit was never flipped. Every credential in the verified
+  // chain is asked about, root first: a leaf minted after its ancestor was
+  // revoked was never registered, so the graph cannot reach the ancestor
+  // from the leaf's id alone. Opt-in: only runs when a checker is wired, so
+  // existing callers are unaffected.
   if (deps.revocationChecker) {
-    const revocation = await deps.revocationChecker.isRevoked(leafDelegation.id);
-    if (revocation.revoked) {
+    for (const credential of chain) {
+      const delegationId = credential.credentialSubject.delegation.id;
+      let revocation: Awaited<ReturnType<RevocationChecker["isRevoked"]>>;
+      try {
+        revocation = await deps.revocationChecker.isRevoked(delegationId);
+      } catch (error) {
+        return {
+          valid: false,
+          reason: `Revocation check failed for delegation ${delegationId}: ${error instanceof Error ? error.message : "Unknown error"}`,
+        };
+      }
+      if (!revocation.revoked) {
+        continue;
+      }
+      const revokedAncestor =
+        revocation.revokedAncestor ??
+        (delegationId === leafDelegation.id ? undefined : delegationId);
       return {
         valid: false,
-        reason: revocation.revokedAncestor
-          ? `Delegation ${leafDelegation.id} is revoked via ancestor ${revocation.revokedAncestor}`
+        reason: revokedAncestor
+          ? `Delegation ${leafDelegation.id} is revoked via ancestor ${revokedAncestor}`
           : `Delegation ${leafDelegation.id} is revoked${revocation.reason ? `: ${revocation.reason}` : ""}`,
       };
     }

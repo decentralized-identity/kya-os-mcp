@@ -22,6 +22,7 @@ import { compactVerify, importJWK } from "jose";
 import type { JWK } from "jose";
 import type { DelegationCredential } from "../types/protocol.js";
 import type {
+  DIDDocument,
   DIDResolver,
   VerificationMethod,
   DelegationVCVerificationResult,
@@ -95,6 +96,15 @@ function validateJwtTimeBounds(payload: VCJWTPayload, nowMs: number): string | u
   return undefined;
 }
 
+/**
+ * A JOSE header and a JWT claims set are JSON objects (RFC 7515 §4,
+ * RFC 7519 §7.2). Both segments are attacker-supplied, and `null` or an array
+ * parses as valid JSON, so check before reading a member.
+ */
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /** A parsed, structurally-valid VC-JWT plus the coordinates to look up its key. */
 export type PreparedVcJwt =
   | {
@@ -118,7 +128,12 @@ export function prepareVcJwtCredential(
   startTime: number,
 ): PreparedVcJwt {
   const parsed = parseVCJWT(jwt);
-  if (!parsed || !parsed.payload || typeof parsed.payload !== "object" || Array.isArray(parsed.payload)) {
+  if (
+    !parsed ||
+    !isJsonObject(parsed.header) ||
+    !isJsonObject(parsed.payload) ||
+    (parsed.header.kid !== undefined && typeof parsed.header.kid !== "string")
+  ) {
     return { failure: jwtBasicFailure("Not a valid VC-JWT (parse failed)", startTime) };
   }
 
@@ -176,7 +191,7 @@ function selectVerificationMethod(
  * (or the first when `kid` is absent), imports its `publicKeyJwk`, and checks
  * the compact JWS with `jose` — `algorithms` pinned to `EdDSA`, so a token
  * cannot downgrade the suite or claim `alg: none`. Fail-closed: any
- * resolution, key-import, or verification problem denies.
+ * resolution, key-import, or verification problem denies, and none throws.
  */
 export async function verifyVcJwtSignature(
   jwt: string,
@@ -198,7 +213,12 @@ export async function verifyVcJwtSignature(
     );
   }
 
-  const didDoc = await didResolver.resolve(issuerDid);
+  let didDoc: DIDDocument | null;
+  try {
+    didDoc = await didResolver.resolve(issuerDid);
+  } catch (err) {
+    return done(false, `Could not resolve issuer DID ${issuerDid}: ${errMsg(err)}`);
+  }
   if (!didDoc) {
     return done(false, `Could not resolve issuer DID: ${issuerDid}`);
   }

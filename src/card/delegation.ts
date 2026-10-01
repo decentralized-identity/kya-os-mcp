@@ -75,12 +75,24 @@ export const DataIntegrityProofSchema = z
   .passthrough();
 const IssuerSchema = z.union([Did, z.object({ id: Did }).passthrough()]);
 
+/**
+ * VC `type`: MUST name both `VerifiableCredential` and `DelegationCredential`. Without the second,
+ * any VC whose subject happens to look like a ZCAP (a capability attestation, say) would be read as
+ * a delegation hop — type confusion.
+ */
+const DelegationCredentialTypeSchema = z
+  .array(z.string())
+  .min(2)
+  .refine((types) => types.includes('VerifiableCredential') && types.includes(DELEGATION_CREDENTIAL_TYPE), {
+    message: `type MUST include "VerifiableCredential" and "${DELEGATION_CREDENTIAL_TYPE}"`,
+  });
+
 export const DelegationCredentialSchema = z
   .object({
     // >= 2 to match the published JSON Schema (VC 2.0 base + the ZCAP/KYA-OS delegation contexts).
     '@context': z.array(z.union([z.string(), z.record(z.string(), z.unknown())])).min(2),
     id: z.string().optional(),
-    type: z.array(z.string()),
+    type: DelegationCredentialTypeSchema,
     issuer: IssuerSchema,
     validFrom: z.string().optional(),
     validUntil: z.string().optional(),
@@ -121,22 +133,23 @@ export function statusEntryOf(vc: DelegationCredential): BitstringStatusListEntr
   return { statusListCredential: status.statusListCredential, statusListIndex: status.statusListIndex };
 }
 
-function toScaled(dec: string): bigint | undefined {
+/** A non-negative decimal split into its digit strings, or `undefined` when it is not one. */
+function decimalParts(dec: string): { whole: string; fraction: string } | undefined {
   const match = /^(\d+)(?:\.(\d+))?$/.exec(dec.trim());
-  if (!match?.[1]) return undefined;
-  const frac = (match[2] ?? '').padEnd(6, '0').slice(0, 6);
-  try {
-    return BigInt(match[1]) * 1_000_000n + BigInt(frac);
-  } catch {
-    return undefined;
-  }
+  return match?.[1] ? { whole: match[1], fraction: match[2] ?? '' } : undefined;
 }
 
-// `child ≤ parent`, fail-closed (any unparseable value ⇒ false).
+// `child ≤ parent`, compared EXACTLY, fail-closed (any unparseable value ⇒ false). Both sides are
+// scaled to the longer fraction, never truncated: rounding to a fixed precision would let a child
+// whose excess sits below that precision (100.0000009 under a parent of 100) pass as a narrowing.
 function decimalLte(child: string, parent: string): boolean {
-  const c = toScaled(child);
-  const p = toScaled(parent);
-  return c !== undefined && p !== undefined && c <= p;
+  const c = decimalParts(child);
+  const p = decimalParts(parent);
+  if (!c || !p) return false;
+  const scale = Math.max(c.fraction.length, p.fraction.length);
+  const scaled = ({ whole, fraction }: { whole: string; fraction: string }): bigint =>
+    BigInt(whole + fraction.padEnd(scale, '0'));
+  return scaled(c) <= scaled(p);
 }
 function dateLte(child: string, parent: string): boolean {
   const c = Date.parse(child);

@@ -111,6 +111,40 @@ describe('did:web URL Construction', () => {
       expect(didWebToUrl('did:web:')).toBeNull();
       expect(didWebToUrl('')).toBeNull();
     });
+
+    it('should not let an encoded `@` turn the host label into userinfo', () => {
+      // Decoded wholesale this was https://trusted.example@attacker.example/...,
+      // which fetches from attacker.example.
+      expect(didWebToUrl('did:web:trusted.example%40attacker.example')).toBeNull();
+      expect(didWebToUrl('did:web:trusted.example@attacker.example')).toBeNull();
+    });
+
+    it('should not let the host label inject a path, query or fragment', () => {
+      expect(didWebToUrl('did:web:attacker.example%2Fanything%23')).toBeNull();
+      expect(didWebToUrl('did:web:attacker.example%2F..%3Fx%3D')).toBeNull();
+      expect(didWebToUrl('did:web:attacker.example%5Cinternal')).toBeNull();
+    });
+
+    it('should decode only the port colon in the host', () => {
+      expect(didWebToUrl('did:web:example%2Ecom')).toBeNull();
+      expect(didWebToUrl('did:web:localhost%3A3000:agents:bot')).toBe(
+        'https://localhost:3000/agents/bot/did.json'
+      );
+      expect(didWebToUrl('did:web:Example.com')).toBe('https://Example.com/.well-known/did.json');
+    });
+
+    it('should reject a malformed port or percent-escape instead of throwing', () => {
+      expect(didWebToUrl('did:web:example.com%3A99999')).toBeNull();
+      expect(didWebToUrl('did:web:example.com%3Ahttp')).toBeNull();
+      expect(didWebToUrl('did:web:example.com:users:%E0%A4%A')).toBeNull();
+    });
+
+    it('should keep each path component a single segment', () => {
+      expect(didWebToUrl('did:web:example.com:users:..:admin')).toBeNull();
+      expect(didWebToUrl('did:web:example.com:users%2F..%2Fadmin')).toBeNull();
+      expect(didWebToUrl('did:web:example.com:users:alice%3Fx')).toBeNull();
+      expect(didWebToUrl('did:web:example.com::alice')).toBeNull();
+    });
   });
 });
 

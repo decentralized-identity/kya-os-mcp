@@ -7,8 +7,8 @@
  * Related Spec: KYA-OS §4.4, Delegation Chains
  */
 
-import type { CredentialStatus } from '../types/protocol.js';
 import { DelegationGraphManager, type DelegationNode } from './delegation-graph.js';
+import { nodeStatusEntry } from './delegation-status-entry.js';
 import { StatusList2021Manager } from './statuslist-manager.js';
 
 export interface RevocationEvent {
@@ -102,11 +102,15 @@ export class CascadingRevocationManager {
       return event;
     }
 
-    if (node.credentialStatusId) {
-      const credentialStatus = this.parseCredentialStatus(node.credentialStatusId);
-      if (credentialStatus) {
-        await this.statusList.updateStatus(credentialStatus, true);
-      }
+    // Mark the graph first (SPEC.md §6.5 step 1): it holds even when the node
+    // has no status list entry to flip (no status id, or one such as
+    // urn:uuid:… that names no list and index), or when publishing the bit
+    // below fails.
+    await this.graph.setRevoked(node.id, true);
+
+    const credentialStatus = nodeStatusEntry(node);
+    if (credentialStatus) {
+      await this.statusList.updateStatus(credentialStatus, true);
     }
 
     return event;
@@ -125,12 +129,13 @@ export class CascadingRevocationManager {
       reason: 'Restored',
     };
 
-    if (node.credentialStatusId) {
-      const credentialStatus = this.parseCredentialStatus(node.credentialStatusId);
-      if (credentialStatus) {
-        await this.statusList.updateStatus(credentialStatus, false);
-      }
+    // Clear the graph mark last: if clearing the status bit fails, the
+    // delegation still reads as revoked.
+    const credentialStatus = nodeStatusEntry(node);
+    if (credentialStatus) {
+      await this.statusList.updateStatus(credentialStatus, false);
     }
+    await this.graph.setRevoked(node.id, false);
 
     return event;
   }
@@ -142,25 +147,26 @@ export class CascadingRevocationManager {
   }> {
     // Walk root → target so ancestor revocation is detected before the
     // target's own (cascade-set) bit. getChain() already returns root-first order.
+    // A node counts as revoked when the graph marks it or its status bit is
+    // set; a node with no status list entry is read from the mark alone.
     const chain = await this.graph.getChain(delegationId);
 
     for (const node of chain) {
-      if (node.credentialStatusId) {
-        const credentialStatus = this.parseCredentialStatus(node.credentialStatusId);
-        if (credentialStatus) {
-          const isRevoked = await this.statusList.checkStatus(credentialStatus);
-          if (isRevoked) {
-            return {
-              revoked: true,
-              reason: node.id === delegationId ? 'Directly revoked' : 'Ancestor revoked',
-              revokedAncestor: node.id === delegationId ? undefined : node.id,
-            };
-          }
-        }
+      if (node.revoked || (await this.isStatusBitSet(node))) {
+        return {
+          revoked: true,
+          reason: node.id === delegationId ? 'Directly revoked' : 'Ancestor revoked',
+          revokedAncestor: node.id === delegationId ? undefined : node.id,
+        };
       }
     }
 
     return { revoked: false };
+  }
+
+  private async isStatusBitSet(node: DelegationNode): Promise<boolean> {
+    const credentialStatus = nodeStatusEntry(node);
+    return credentialStatus ? this.statusList.checkStatus(credentialStatus) : false;
   }
 
   async getRevokedInSubtree(rootId: string): Promise<string[]> {
@@ -180,22 +186,6 @@ export class CascadingRevocationManager {
     }
 
     return revoked;
-  }
-
-  private parseCredentialStatus(credentialStatusId: string): CredentialStatus | null {
-    const match = credentialStatusId.match(/^(.+)#(\d+)$/);
-    if (!match) return null;
-
-    const [, statusListCredential, indexStr] = match;
-    const index = parseInt(indexStr!, 10);
-
-    return {
-      id: credentialStatusId,
-      type: 'StatusList2021Entry',
-      statusPurpose: 'revocation',
-      statusListIndex: index.toString(),
-      statusListCredential: statusListCredential!,
-    };
   }
 
   async validateDelegation(delegationId: string): Promise<{ valid: boolean; reason?: string }> {

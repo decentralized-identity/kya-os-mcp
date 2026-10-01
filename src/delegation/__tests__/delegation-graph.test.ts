@@ -325,12 +325,26 @@ describe("DelegationGraphManager", () => {
       await graph.registerDelegation({ id: "p", parentId: null, issuerDid: "did:user", subjectDid: "did:a" });
       await graph.registerDelegation({ id: "c", parentId: "p", issuerDid: "did:a", subjectDid: "did:b" });
 
-      await graph.setRevoked("p", true);
+      expect(await graph.setRevoked("p", true)).toBe(true);
       expect(await graph.getNode("p")).toMatchObject({ revoked: true, children: ["c"] });
       expect((await graph.getNode("c"))?.revoked).toBeUndefined();
 
-      await graph.setRevoked("p", false);
+      expect(await graph.setRevoked("p", false)).toBe(true);
       expect((await graph.getNode("p"))?.revoked).toBe(false);
+    });
+
+    it("reports a mark the storage provider did not persist", async () => {
+      // A provider that stores a fixed set of fields drops `revoked` on write.
+      vi.mocked(storage.setNode).mockImplementation(async () => undefined);
+      vi.mocked(storage.getNode).mockResolvedValue({
+        id: "p",
+        parentId: null,
+        children: [],
+        issuerDid: "did:user",
+        subjectDid: "did:a",
+      });
+
+      expect(await graph.setRevoked("p", true)).toBe(false);
     });
 
     it("throws for an unknown delegation", async () => {

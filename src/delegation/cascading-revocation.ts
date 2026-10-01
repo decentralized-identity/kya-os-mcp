@@ -106,9 +106,18 @@ export class CascadingRevocationManager {
     // has no status list entry to flip (no status id, or one such as
     // urn:uuid:… that names no list and index), or when publishing the bit
     // below fails.
-    await this.graph.setRevoked(node.id, true);
+    const marked = await this.graph.setRevoked(node.id, true);
 
     const credentialStatus = nodeStatusEntry(node);
+    // With no bit to flip, the mark is the only record. If the storage
+    // provider dropped it, reporting success would leave the delegation live.
+    if (!marked && !credentialStatus) {
+      throw new Error(
+        `Revocation of delegation ${node.id} was not recorded: it has no status list entry, and the ` +
+          `graph storage provider did not persist DelegationNode.revoked. A DelegationGraphStorageProvider ` +
+          `must store the revoked field to revoke delegations without a status list entry.`
+      );
+    }
     if (credentialStatus) {
       await this.statusList.updateStatus(credentialStatus, true);
     }

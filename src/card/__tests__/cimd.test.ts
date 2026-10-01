@@ -123,7 +123,7 @@ describe('cardFromClientMetadata (CIMD document → L1 card)', () => {
     expect(() => cardFromClientMetadata({ client_name: 'x' })).toThrow(/client_id/);
   });
 
-  it('REJECTS a document that declares a DID other than the did:web its client_id names (substitution)', () => {
+  it('REJECTS a document that declares a did:web on another origin (substitution)', () => {
     // Served from attacker.example, claiming the victim's DID: the card would carry the victim's id.
     const hostile = {
       client_id: 'https://attacker.example/clients/x',
@@ -131,31 +131,38 @@ describe('cardFromClientMetadata (CIMD document → L1 card)', () => {
       jwks_uri: 'https://attacker.example/clients/x/jwks.json',
       _meta: { [KYA_OS_DID_META_KEY]: 'did:web:victim.example:clients:acme' },
     };
-    expect(() => cardFromClientMetadata(hostile)).toThrow(/not the did:web of client_id/);
-    // Same origin, different path is still a different entity.
-    const sibling = { client_id: clientId, _meta: { [KYA_OS_DID_META_KEY]: 'did:web:example.com:clients:other' } };
-    expect(() => cardFromClientMetadata(sibling)).toThrow(/not the did:web of client_id/);
-    // The DID the client_id does name, ported or not, is still accepted.
-    const ported = cardFromClientMetadata({
-      client_id: 'https://localhost:3000/agents/bot',
-      _meta: { [KYA_OS_DID_META_KEY]: 'did:web:localhost%3A3000:agents:bot' },
-    });
-    expect(ported.id).toBe('did:web:localhost%3A3000:agents:bot');
-  });
-
-  it('REJECTS a declared did:key (it has no HTTPS form, so the client_id cannot vouch for it)', () => {
-    const meta = { client_id: clientId, _meta: { [KYA_OS_DID_META_KEY]: 'did:key:z6Mkabc' } };
-    expect(() => cardFromClientMetadata(meta)).toThrow(/not the did:web of client_id/);
+    expect(() => cardFromClientMetadata(hostile)).toThrow(/not on the origin of client_id/);
+    // A port is part of the origin.
+    const otherPort = { client_id: 'https://example.com:8443/clients/acme', _meta: { [KYA_OS_DID_META_KEY]: did } };
+    expect(() => cardFromClientMetadata(otherPort)).toThrow(/not on the origin of client_id/);
+    // A client_id with no origin cannot vouch for any did:web.
+    const opaque = { client_id: 'urn:client:acme', _meta: { [KYA_OS_DID_META_KEY]: did } };
+    expect(() => cardFromClientMetadata(opaque)).toThrow(/not on the origin of client_id/);
   });
 
   it.each([
-    ['a query', `${clientId}?tenant=victim`],
-    ['a fragment', `${clientId}#frag`],
-    ['userinfo', 'https://victim@example.com/clients/acme'],
-    ['a trailing slash', `${clientId}/`],
-  ])('REJECTS a client_id with %s (no exact did:web form; it would round to a neighbour)', (_label, id) => {
-    expect(() => cardFromClientMetadata({ client_id: id })).toThrow(/no exact did:web form/);
-    expect(() => cardFromClientMetadata({ client_id: id, _meta: { [KYA_OS_DID_META_KEY]: did } })).toThrow();
+    ['the exact HTTPS form', clientId, did],
+    ['a ported DID', 'https://localhost:3000/agents/bot', 'did:web:localhost%3A3000:agents:bot'],
+    ['a root with a trailing slash', 'https://example.com/', 'did:web:example.com'],
+    ['a query', `${clientId}?tenant=acme`, did],
+    ['an explicit default port', 'https://example.com:443/clients/acme', did],
+    ['a root DID declared on a path client_id', 'https://example.com/oauth/client.json', 'did:web:example.com'],
+    ['a host in another case', 'https://Example.com/clients/acme', did],
+  ])('still accepts a declared did:web on the client_id origin: %s', (_label, id, declared) => {
+    expect(cardFromClientMetadata({ client_id: id, _meta: { [KYA_OS_DID_META_KEY]: declared } }).id).toBe(declared);
+  });
+
+  it('still accepts a declared did:key (an L1-only client has no origin to bind)', () => {
+    const meta = { client_id: clientId, _meta: { [KYA_OS_DID_META_KEY]: 'did:key:z6Mkabc' } };
+    expect(cardFromClientMetadata(meta).id).toBe('did:key:z6Mkabc');
+  });
+
+  it.each([
+    ['a root with a trailing slash', 'https://example.com/', 'did:web:example.com'],
+    ['a query', `${clientId}?tenant=acme`, did],
+    ['an explicit default port', 'https://example.com:443/clients/acme', did],
+  ])('still mints a DID from a client_id with %s', (_label, id, minted) => {
+    expect(cardFromClientMetadata({ client_id: id }).id).toBe(minted);
   });
 });
 
@@ -215,12 +222,86 @@ describe('verifyCimdBind (anti-substitution, FAIL-CLOSED)', () => {
     expect(verifyCimdBind(cimd, didDoc, card.id)).toEqual({ ok: true, reasons: [] });
   });
 
-  it('REJECTS a client_id on the DID origin that is not EXACTLY the DID\'s HTTPS form (bijection, not just origin)', () => {
+  it("given the card's DID, REJECTS a client_id on its origin that is not the DID's HTTPS form", () => {
     const sibling = { clientId: 'https://example.com/clients/other', jwksUri };
     const doc = { ...didDoc, alsoKnownAs: ['https://example.com/clients/other'] };
-    for (const result of [verifyCimdBind(sibling, doc), verifyCimdBind(sibling, doc, did)]) {
+    const result = verifyCimdBind(sibling, doc, did);
+    expect(result.ok).toBe(false);
+    expect(result.reasons.some((r) => /is not the HTTPS form of/.test(r))).toBe(true);
+    // Without the card's DID the check is origin-only, as before.
+    expect(verifyCimdBind(sibling, doc)).toEqual({ ok: true, reasons: [] });
+  });
+
+  it.each([
+    ['a trailing slash', 'https://example.com/'],
+    ['an explicit default port', 'https://example.com:443'],
+    ['a host in another case', 'https://Example.com'],
+  ])("given the card's DID, compares client_id as a normalized URL: %s", (_label, rootClientId) => {
+    const rootDid = 'did:web:example.com';
+    const doc = { id: rootDid, alsoKnownAs: [rootClientId] };
+    const bind = { clientId: rootClientId, jwksUri: 'https://example.com/jwks.json' };
+    expect(verifyCimdBind(bind, doc, rootDid)).toEqual({ ok: true, reasons: [] });
+  });
+
+  it.each([
+    'https://example.com/',
+    'https://example.com/oauth/client.json',
+    'https://example.com:443',
+    'https://Example.com',
+  ])('without the card\'s DID, accepts any same-origin client_id as before: %s', (sameOriginClientId) => {
+    const doc = { id: 'did:web:example.com', alsoKnownAs: [sameOriginClientId] };
+    const bind = { clientId: sameOriginClientId, jwksUri: 'https://example.com/jwks.json' };
+    expect(verifyCimdBind(bind, doc)).toEqual({ ok: true, reasons: [] });
+  });
+});
+
+describe('CIMD inputs that cannot be parsed fail closed', () => {
+  const cimd = { clientId, jwksUri };
+
+  it('bindClientId refuses a did:web with no host authority', () => {
+    expect(() => bindClientId('did:web:')).toThrow(/no host authority/);
+  });
+
+  it('didFromClientId refuses a client_id that is not a URL', () => {
+    expect(() => didFromClientId('not a url')).toThrow(/not a valid URL/);
+  });
+
+  it('cardFromClientMetadata refuses metadata that is not an object', () => {
+    expect(() => cardFromClientMetadata(null)).toThrow(/must be an object/);
+    expect(() => cardFromClientMetadata(['client'])).toThrow(/must be an object/);
+  });
+
+  it('cardFromClientMetadata refuses a declared did:web that has no origin', () => {
+    const meta = { client_id: clientId, _meta: { [KYA_OS_DID_META_KEY]: 'did:web:' } };
+    expect(() => cardFromClientMetadata(meta)).toThrow(/is not on the origin of client_id/);
+  });
+
+  it('verifyCimdBind reads a missing or non-object DID document as no binding', () => {
+    for (const doc of [null, 'did:web:example.com', { id: 42, alsoKnownAs: [clientId] }]) {
+      const result = verifyCimdBind(cimd, doc);
       expect(result.ok).toBe(false);
-      expect(result.reasons.some((r) => /is not the HTTPS form of/.test(r))).toBe(true);
+      expect(result.reasons.some((r) => /not a did:web/.test(r))).toBe(true);
+    }
+  });
+
+  it('verifyCimdBind reports a did:web id with no resolvable origin', () => {
+    const result = verifyCimdBind(cimd, { ...didDoc, id: 'did:web:' });
+    expect(result.ok).toBe(false);
+    expect(result.reasons.some((r) => /no resolvable origin/.test(r))).toBe(true);
+  });
+
+  it('verifyCimdBind reports a client_id or jwks_uri that is not a URL', () => {
+    const result = verifyCimdBind({ clientId: 'not a url', jwksUri: '::' }, didDoc);
+    expect(result.ok).toBe(false);
+    expect(result.reasons.some((r) => /client_id is not a valid URL/.test(r))).toBe(true);
+    expect(result.reasons.some((r) => /jwks_uri is not a valid URL/.test(r))).toBe(true);
+  });
+
+  it('verifyCimdBind finds no reciprocal bind in a non-array or unparseable alsoKnownAs', () => {
+    for (const alsoKnownAs of [clientId, ['not a url'], [42]]) {
+      const result = verifyCimdBind(cimd, { ...didDoc, alsoKnownAs });
+      expect(result.ok).toBe(false);
+      expect(result.reasons.some((r) => /alsoKnownAs does not list/.test(r))).toBe(true);
     }
   });
 });

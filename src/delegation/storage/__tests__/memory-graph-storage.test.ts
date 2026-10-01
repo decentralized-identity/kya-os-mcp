@@ -223,6 +223,15 @@ describe("MemoryDelegationGraphStorage", () => {
     it("should throw on a parent cycle instead of walking it forever", async () => {
       await storage.setNode(createMockNode("del-a", "del-b"));
       await storage.setNode(createMockNode("del-b", "del-a"));
+      // The walk is synchronous, so a regression would hang the run rather
+      // than fail it: cap the node lookups so it fails fast instead.
+      const nodes = (storage as unknown as { nodes: Map<string, DelegationNode> }).nodes;
+      const lookup = nodes.get.bind(nodes);
+      let lookups = 0;
+      nodes.get = (id: string) => {
+        if (++lookups > 1000) throw new Error("chain walk did not stop at the cycle");
+        return lookup(id);
+      };
 
       await expect(storage.getChain("del-a")).rejects.toThrow(
         "Delegation graph has a parent cycle at del-a"

@@ -15,12 +15,13 @@
  *   - `toClientMetadata`    — PROJECT the card into the CIMD doc served at the `client_id` URL
  *     (`token_endpoint_auth_method: private_key_jwt`, `_meta['org.kya-os/did']` = the DID).
  *   - `cardFromClientMetadata` — DERIVE the L1 card from a CIMD doc (a pure-CIMD client with
- *     no DID still onboards: a `did:web` is minted from its `client_id`); a declared DID must be
- *     the one `client_id` names, so a document cannot mint a card for another origin's DID.
- *   - `verifyCimdBind`      — the anti-substitution graft, FAIL-CLOSED: the DID document is the
- *     card's and `client_id` is exactly its HTTPS form, origin-equality (`did:web` host ===
- *     `client_id` origin === `jwks_uri` origin), AND a reciprocal `alsoKnownAs` bind, so a hostile
- *     CIMD pointing `jwks_uri` at someone else's keys (or claiming a victim's DID) fails closed.
+ *     no DID still onboards: a `did:web` is minted from its `client_id`); a declared `did:web` must
+ *     be on the `client_id`'s origin, so a document cannot mint a card for another origin's DID.
+ *   - `verifyCimdBind`      — the anti-substitution graft, FAIL-CLOSED: origin-equality
+ *     (`did:web` host === `client_id` origin === `jwks_uri` origin) AND a reciprocal
+ *     `alsoKnownAs` bind, so a hostile CIMD pointing `jwks_uri` at someone else's keys (or
+ *     claiming a victim's DID) fails closed; given the card's DID, also that the DID document is
+ *     the card's and `client_id` is that DID's HTTPS form.
  *
  * Pure + deterministic — no I/O, no crypto. All key material is projected, never minted, so
  * no runtime (mcp-i-core) dependency leaks into `@kya-os/mcp`.
@@ -139,12 +140,13 @@ export function toClientMetadata(card: EntityCard, opts: { jwksUri: string }): C
  * when present, else MINTED from the `client_id` (a pure-CIMD client still onboards). The
  * card is `entityType: 'client'` and carries the CIMD coordinates when a `jwks_uri` is given.
  *
- * Fail-closed on the §7.1 bijection: the document is served from `client_id`, so it can only speak
- * for the `did:web` whose HTTPS form IS `client_id`. A declared DID must satisfy
- * `bindClientId(did) === client_id` (anything else is a document on one origin claiming another
- * origin's identity), and a `client_id` with no exact `did:web` form — a query, fragment,
- * userinfo, or trailing slash that `didFromClientId` would silently drop — is rejected rather
- * than rounded to a neighbouring DID. The result is validated through `parseCard`.
+ * Fail-closed on origin: the document is served from `client_id`, so it can only speak for a
+ * `did:web` on that origin. A declared `did:web` whose origin (host and port) differs from the
+ * `client_id`'s is rejected: it would be a document on one origin claiming another origin's
+ * identity. Any `client_id` shape the CIMD draft allows on the same origin (a root with a trailing
+ * slash, a query, an explicit `:443`, a root DID declared on a path `client_id`) is accepted. A
+ * declared DID of another method (an L1-only `did:key` client) has no origin to bind and is taken
+ * as declared. The result is validated through `parseCard`.
  */
 export function cardFromClientMetadata(meta: unknown): EntityCard {
   if (!isRecord(meta)) {
@@ -169,16 +171,16 @@ export function cardFromClientMetadata(meta: unknown): EntityCard {
 
 /**
  * Verify a CIMD binding against the entity's DID document, FAIL-CLOSED. Enforces:
- *   1. the DID binding — when `expectedDid` (the card's `id`) is given, the DID document MUST be
- *      that DID's (`didDoc.id === expectedDid`), and `client_id` MUST be exactly the DID's HTTPS
- *      form (`bindClientId(did) === client_id`, the §7.1 bijection — not merely the same origin);
- *   2. origin-equality — `did:web` host === `client_id` origin === `jwks_uri` origin
+ *   1. origin-equality — `did:web` host === `client_id` origin === `jwks_uri` origin
  *      (a hostile CIMD pointing `jwks_uri` at another origin's keys fails here);
- *   3. a reciprocal `alsoKnownAs` bind — the DID document lists the `client_id` URL, so a
+ *   2. a reciprocal `alsoKnownAs` bind — the DID document lists the `client_id` URL, so a
  *      CIMD cannot unilaterally claim a DID it does not control.
- * Pass the card's `id` as `expectedDid`: without it the DID is read from the document itself, which
- * proves the document and the `client_id` agree but not that either belongs to the card being
- * verified (a card naming a victim's DID next to an attacker's self-consistent CIMD would pass).
+ * With `expectedDid` (the card's `id`), it also enforces the DID binding: the DID document MUST be
+ * that DID's (`didDoc.id === expectedDid`), and `client_id` MUST be the DID's HTTPS form (the §7.1
+ * bijection, compared as normalized URLs, so a trailing slash, a default port or host case does not
+ * matter). Without it the DID is read from the document itself, which proves the document and the
+ * `client_id` agree but not that either belongs to the card being verified (a card naming a
+ * victim's DID next to an attacker's self-consistent CIMD would pass).
  * `ok` is true iff there are no `reasons`.
  */
 export function verifyCimdBind(cimd: CimdBinding, didDoc: unknown, expectedDid?: string): CimdBindResult {
@@ -196,7 +198,7 @@ export function verifyCimdBind(cimd: CimdBinding, didDoc: unknown, expectedDid?:
 
   if (didOrigin && clientOrigin && didOrigin !== clientOrigin) {
     reasons.push(`origin mismatch: did:web (${didOrigin}) !== client_id (${clientOrigin})`);
-  } else if (didOrigin && clientOrigin && bindClientId(did) !== cimd.clientId) {
+  } else if (expectedDid !== undefined && didOrigin && clientOrigin && !sameUrl(bindClientId(did), cimd.clientId)) {
     reasons.push(`client_id "${cimd.clientId}" is not the HTTPS form of ${did} ("${bindClientId(did)}")`);
   }
   if (clientOrigin && jwksOrigin && clientOrigin !== jwksOrigin) {
@@ -219,27 +221,33 @@ function didWebSegments(did: string): string[] {
 
 /**
  * The DID for a derived card: a declared `_meta['org.kya-os/did']`, else minted from client_id.
- * Either way it is bound to `client_id` by the exact bijection, fail-closed (see
+ * A declared `did:web` must share the `client_id`'s origin, fail-closed (see
  * {@link cardFromClientMetadata}).
  */
 function didFromMeta(meta: Record<string, unknown>, clientId: string): string {
-  const minted = didFromClientId(clientId);
-  if (bindClientId(minted) !== clientId) {
-    throw new Error(
-      `cardFromClientMetadata: client_id "${clientId}" has no exact did:web form ` +
-        `(it would bind as "${bindClientId(minted)}"; a query, fragment, userinfo, or trailing slash cannot round-trip)`,
-    );
-  }
   const block = isRecord(meta._meta) ? meta._meta : undefined;
   const declared = block?.[KYA_OS_DID_META_KEY];
-  if (declared === undefined) return minted;
-  if (typeof declared !== 'string' || !declared.startsWith(DID_WEB_PREFIX) || bindClientId(declared) !== clientId) {
-    throw new Error(
-      `cardFromClientMetadata: declared ${KYA_OS_DID_META_KEY} "${String(declared)}" is not the did:web of ` +
-        `client_id "${clientId}" (a CIMD document can only speak for ${minted})`,
-    );
+  if (typeof declared !== 'string') return didFromClientId(clientId);
+  if (declared.startsWith(DID_WEB_PREFIX)) {
+    const declaredOrigin = urlOrigin(() => bindClientId(declared));
+    const clientOrigin = urlOrigin(() => clientId);
+    if (declaredOrigin === null || declaredOrigin !== clientOrigin) {
+      throw new Error(
+        `cardFromClientMetadata: declared ${KYA_OS_DID_META_KEY} "${declared}" is not on the origin of ` +
+          `client_id "${clientId}" (a CIMD document can only speak for its own origin)`,
+      );
+    }
   }
   return declared;
+}
+
+/** The normalized origin of the URL `url()` returns, or null when it throws or does not parse. */
+function urlOrigin(url: () => string): string | null {
+  try {
+    return new URL(url()).origin;
+  } catch {
+    return null;
+  }
 }
 
 /** Project one verification method to a public OKP JWK (Ed25519 only; `d` stripped), or null. */

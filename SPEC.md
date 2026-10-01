@@ -202,8 +202,10 @@ example above:
 did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK#z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK
 ```
 
-No other fragment (such as `#keys-1`) identifies a `did:key` verification
-method.
+This fragment identifies the Ed25519 verification method; `#keys-1` does not.
+A `did:key` document may also carry an X25519 `keyAgreement` method derived
+from the same key; its fragment is the X25519 key's own multibase value
+(`#z6LS…`).
 
 ### 4.4 did:web Resolution
 

@@ -637,19 +637,32 @@ describe('durable delegation grant validation', () => {
     expect(challenged(await handler({}, 'session'))).toBe(true);
   });
 
-  it('denies reuse when stored evidence makes re-verification throw', async () => {
+  it('denies reuse of malformed stored evidence without resolving its issuer', async () => {
     const agent = await makeIdentity();
-    // A JSON `null` claims set parses, then fails on the first member read: a
-    // corrupted row must read as unauthorized, never as an exception or a pass.
+    const resolve = vi.fn(async () => null);
     const segment = (json: string) => base64urlEncodeFromBytes(new TextEncoder().encode(json));
-    const corrupted = `${segment('{"alg":"EdDSA"}')}.${segment('null')}.sig`;
-    class CorruptedStore extends MemoryGrantStore {
-      override async getBySession(): Promise<Grant[]> {
-        return [activeGrant({ agentDid: agent.did, sessionId: 'session', credentialJwt: corrupted })];
+    const [, claims, signature] = (await issueVCJWT(agent.did)).split('.');
+    const malformed = [
+      // A `kid` that is not a string is malformed (RFC 7515 §4.1.4), so the
+      // token is rejected before any issuer key is looked up.
+      `${segment('{"alg":"EdDSA","typ":"JWT","kid":42}')}.${claims}.${signature}`,
+      // A JSON `null` claims set fails the middleware's own read of `vc`; the
+      // grant gate maps that throw to unauthorized, never to a pass.
+      `${segment('{"alg":"EdDSA"}')}.${segment('null')}.sig`,
+    ];
+    for (const credentialJwt of malformed) {
+      class StoredEvidence extends MemoryGrantStore {
+        override async getBySession(): Promise<Grant[]> {
+          return [activeGrant({ agentDid: agent.did, sessionId: 'session', credentialJwt })];
+        }
       }
+      const { middleware } = await makeServer({
+        grantStore: new StoredEvidence(),
+        delegation: { didResolver: { resolve }, verificationCache: { ttlMs: 0 } },
+      });
+      expect(challenged(await delegationHandler(middleware)({}, 'session'))).toBe(true);
     }
-    const { middleware } = await makeServer({ grantStore: new CorruptedStore() });
-    expect(challenged(await delegationHandler(middleware)({}, 'session'))).toBe(true);
+    expect(resolve).not.toHaveBeenCalled();
   });
 
   it('does not authorize a holder proof alone when no grant exists', async () => {

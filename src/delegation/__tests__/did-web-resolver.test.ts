@@ -123,19 +123,31 @@ describe('did:web URL Construction', () => {
       expect(didWebToUrl('did:web:attacker.example%2Fanything%23')).toBeNull();
       expect(didWebToUrl('did:web:attacker.example%2F..%3Fx%3D')).toBeNull();
       expect(didWebToUrl('did:web:attacker.example%5Cinternal')).toBeNull();
+      expect(didWebToUrl('did:web:attacker.example%3Ftrusted.example')).toBeNull();
     });
 
-    it('should decode only the port colon in the host', () => {
-      expect(didWebToUrl('did:web:example%2Ecom')).toBeNull();
+    it('should reject whitespace, control characters and extra colons in the host', () => {
+      expect(didWebToUrl('did:web:trusted.example%20attacker.example')).toBeNull();
+      expect(didWebToUrl('did:web:trusted.example%09')).toBeNull();
+      expect(didWebToUrl('did:web:trusted.example%0A')).toBeNull();
+      expect(didWebToUrl('did:web:trusted.example%00')).toBeNull();
+      expect(didWebToUrl('did:web:example.com%3A80%3A443')).toBeNull();
+      expect(didWebToUrl('did:web:%5B%3A%3A1%5D%3A80%3A443')).toBeNull();
+    });
+
+    it('should still decode ports, IP literals and internationalized hosts', () => {
       expect(didWebToUrl('did:web:localhost%3A3000:agents:bot')).toBe(
         'https://localhost:3000/agents/bot/did.json'
       );
       expect(didWebToUrl('did:web:Example.com')).toBe('https://Example.com/.well-known/did.json');
+      expect(didWebToUrl('did:web:%5B%3A%3A1%5D')).toBe('https://[::1]/.well-known/did.json');
+      expect(didWebToUrl('did:web:[%3A%3A1]%3A8443')).toBe('https://[::1]:8443/.well-known/did.json');
+      expect(didWebToUrl('did:web:127.0.0.1%3A8443')).toBe('https://127.0.0.1:8443/.well-known/did.json');
+      expect(didWebToUrl('did:web:m%C3%BCnchen.example')).toBe('https://münchen.example/.well-known/did.json');
     });
 
-    it('should reject a malformed port or percent-escape instead of throwing', () => {
-      expect(didWebToUrl('did:web:example.com%3A99999')).toBeNull();
-      expect(didWebToUrl('did:web:example.com%3Ahttp')).toBeNull();
+    it('should reject a malformed percent-escape instead of throwing', () => {
+      expect(didWebToUrl('did:web:example.com%E0%A4%A')).toBeNull();
       expect(didWebToUrl('did:web:example.com:users:%E0%A4%A')).toBeNull();
     });
 
@@ -421,6 +433,22 @@ describe('DidWebResolver', () => {
       const result = await resolver.resolve('did:web:example.com');
 
       expect(result).toBeNull();
+    });
+
+    it.each([
+      ['is not an object', 'did:web:example.com#key-1'],
+      ['has no type', { id: 'did:web:example.com#key-1', controller: 'did:web:example.com' }],
+      ['has no controller', { id: 'did:web:example.com#key-1', type: 'Ed25519VerificationKey2020' }],
+    ])('should return null when a verificationMethod entry %s', async (_label, entry) => {
+      mockFetchProvider = createMockFetchProvider({ id: 'did:web:example.com', verificationMethod: [entry] });
+      resolver = new DidWebResolver(mockFetchProvider);
+
+      expect(await resolver.resolve('did:web:example.com')).toBeNull();
+    });
+
+    it('should return null without fetching when the did:web host is an injection form', async () => {
+      expect(await resolver.resolve('did:web:trusted.example%40attacker.example')).toBeNull();
+      expect(mockFetchProvider.fetch).not.toHaveBeenCalled();
     });
   });
 

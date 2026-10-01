@@ -37,6 +37,24 @@ Versioning: https://semver.org/spec/v2.0.0.html
   argument may be a list of hashes that identify the one suspended action; a
   grant over any of them counts. A single string works as before.
 
+- **Audit verification and delivery hooks, all optional.**
+  `AuditArtifactVerifier` gains `verifySignedCheckpoint` (a checkpoint without
+  its leaves), `verifyCurrentKeys` (over `AuditSignedArtifacts`), a
+  `maxClockSkewMs` option, and an optional
+  `AuditVerificationContext` argument on `verifyEntries`, `verifyCheckpoint`,
+  and `verifyObservation` that carries the checkpoints a policy's checkpoint
+  bounds name. `applyRequiredAuditProfile` applies a policy's
+  `requiredAuditProfile` to a report. `AUDIT_REASON_CODES` gains
+  `KEY_BOUNDARY_UNRESOLVED`, `KEY_NOT_CURRENT`, `MERKLE_PROOF_MISSING`,
+  `OBSERVATION_FUTURE_DATED`, and `REQUIRED_PROFILE_UNMET`. On the write path,
+  `AuditOutboxItemKey` and `auditOutboxItemKey` identify an outbox item by
+  source and event ID, `AuditOutboxProvider.capabilities.keyedBySource` opts an
+  adapter into receiving that key, `AuditTrailConfiguration` gains
+  `onAcknowledgementFailure`, `AuditSourceStateProvider` gains an optional
+  `abandonClaim`, and `MemoryAuditSourceState` takes a `redeliveryWindow`.
+  Every new provider member is optional, so existing adapters still implement
+  their interfaces.
+
 ### Changed
 
 - **SPEC.md: the `did:key` verification method id is `<did>#<multibase>`.**
@@ -215,6 +233,77 @@ Versioning: https://semver.org/spec/v2.0.0.html
   too. Both limits are now scaled to the longer fraction and compared exactly
   (SPEC.md §6.10).
 
+- **Audit checkpoints no longer sign a rewritten history.**
+  `AuditCheckpointBuilder.createCheckpoint` compared the journal with the latest
+  checkpoint only when both had the same tree size. A journal that had been
+  rewritten or restored and had since grown got a new signed checkpoint chained
+  to the old one, which it does not extend: a split view carrying the
+  recorder's own signature. The builder now checks that the journal still holds
+  the latest checkpoint's exact tree as its prefix and fails with
+  `AUDIT_CHECKPOINT_CONFLICT` otherwise.
+
+- **Audit verification policies are enforced instead of ignored.** The
+  `validFromCheckpoint` / `validUntilCheckpoint` bounds (on recorder, observer,
+  and exporter keys and on trusted ledger epochs), `requiredAuditProfile`, and
+  `keyRevocationMode` were schema-valid but never read, so an entry signed after
+  its key's validity boundary verified, and a bundle without checkpoints passed
+  an AAP-4 policy with exit code 0. Checkpoint bounds now place each artifact by
+  tree position against checkpoints resolved by digest; a bound that cannot be
+  placed (a missing boundary, one in another epoch, or any bound on an exporter
+  key, since an export has no ledger position) makes the dimension
+  `indeterminate`, never `valid`. A required profile marks each dimension it
+  depends on `invalid` unless it is `valid`. Under `keyRevocationMode`
+  `current` or `both`, every signing key must also still be valid at
+  `verifiedAt`, reported in `currentAuthorization` (`AUDIT_KEY_NOT_CURRENT`);
+  `as_observed` is unchanged. Every policy that 1.16 accepted is still
+  accepted; none is rejected for the constraints it uses.
+
+- **A predecessor epoch ends at the terminal checkpoint its successor
+  committed.** The bundle verifier only checked that the committed terminal
+  checkpoint was present, so a stale authority that kept checkpointing the old
+  epoch after rollover verified as valid. A predecessor checkpoint over a larger
+  tree than that terminal now reports `AUDIT_CHECKPOINT_FORK_DETECTED`. Entries
+  past the terminal alone are not a fork, since the terminal checkpoint's own
+  `checkpoint.created` event follows it.
+
+- **The recorder fails closed when its journal moves backwards.** After a
+  failover to a lagging primary or a restore, `AuditRecorderService` appended on
+  the lower head and signed a second, different entry at an already receipted
+  sequence. A head read below this recorder's own commits is now raised to its
+  committed head for the compare-and-append, so a stale read replica still only
+  costs a retry, and a journal whose compare-and-append answer reports a head
+  below that committed head, or a different digest at a sequence it already
+  reported, fails with `AUDIT_JOURNAL_FAILURE` before anything is appended.
+
+- **Hostile references can no longer keep an MCP audit event out of the
+  ledger.** `McpAuditEventAdapter` truncated references by UTF-16 code units and
+  passed context references through unbounded, so a presented credential ID
+  with a lone surrogate, a split surrogate pair, or more than 256 characters
+  made the event fail canonicalization or schema validation, even in
+  best-effort mode, and a rejected delegation went unrecorded. Every caller
+  reference, including `authorization.*` and correlation/causation IDs, is now
+  kept verbatim when well-formed and within bounds, and otherwise recorded as
+  the `sha256:` digest of its UTF-8 encoding. An over-long tool name or
+  reference that 1.16 truncated is recorded as that digest instead.
+  `wrapWithDelegation` still truncates a rejected credential's ID to 256 code
+  units before the adapter sees it, as in 1.16.
+
+- **A failed append no longer disposes evidence a committed entry still uses.**
+  The recorder's cleanup after a failed append disposed every submitted
+  evidence object, including one that already existed and that an earlier
+  committed entry references (a session's shared actor object, for example).
+  Only objects that the failed submission newly stored are disposed now, and
+  never one that a concurrent submission to the same recorder held at the same
+  time, since that submission may have committed a reference to it.
+
+- **A projection built from a forked history is never reported verified.**
+  `AuditProjectionWorker.reconcile` reported a lagging projection as `pending`
+  without checking its offset digest, and `synchronize` appended entries that do
+  not chain from that offset. Reconciliation now compares the offset with the
+  journal entry at that sequence (`gap_detected` on mismatch), and
+  synchronization fails with `AUDIT_PROJECTION_CONFLICT` instead of extending a
+  foreign prefix.
+
 ### Fixed
 
 - **A `requestHash` over the request as sent now verifies.** SPEC.md §7.3 and
@@ -299,6 +388,91 @@ Versioning: https://semver.org/spec/v2.0.0.html
   `DelegationCredential`, so another VC with a ZCAP-shaped subject is not read
   as a delegation hop. `schemas/card-delegation-credential.json` enforces the
   same two types it already documented.
+
+- **`getInclusionProof` works for sequence 1.** The entry lookup started its
+  range read after sequence 1 for any sequence up to 1, so the first entry after
+  genesis could never be proven.
+
+- **`listEntries` pages are bounded by the head they echo.** The head was read
+  after the page, so a concurrent append could return `nextAfterSequence: null`
+  with a head beyond the last entry, contrary to SPEC-AUDIT-READ §2.2. The head
+  is now read first and bounds the page.
+
+- **Subset replay bundles verify.** A checkpoint was verified only against every
+  leaf of its tree, and included checkpoints had to link directly, so a
+  legitimate export of a sequence range or of non-adjacent checkpoints was
+  invalid. Without its complete prefix, a checkpoint is now verified by
+  signature, digest, trust, and declared range, and each covered entry needs a
+  verified inclusion proof (`AUDIT_MERKLE_PROOF_MISSING` otherwise).
+  Checkpoints that could have omitted ones between them may be bound by a
+  verified consistency proof instead of a direct `previousCheckpointDigest`
+  link, the rule independent observers already apply.
+
+- **Concurrent checkpoints on one builder chain in order.** Two concurrent
+  `createCheckpoint` calls at different sizes could both chain to the same
+  predecessor. A builder now serializes its calls per ledger epoch. The
+  `AuditCheckpointStore` contract is unchanged.
+
+- **A failed checkpoint lifecycle hook runs again.** When `onCheckpointCreated`
+  threw after the checkpoint was stored, a retry returned the stored checkpoint
+  without calling the hook, losing the lifecycle event. The builder's next
+  `createCheckpoint` call now runs the hook again for every checkpoint whose
+  hook failed, oldest first and before any newer checkpoint's, even when the
+  ledger has grown in between; the hook should be idempotent on the checkpoint
+  digest. A hook that completed is not repeated.
+
+- **A future-dated observation is not fresh.** With a freshness requirement,
+  an observation dated after `verifiedAt` passed. One dated beyond the clock
+  skew allowance (`maxClockSkewMs`, default 120 s) is now `invalid` with
+  `AUDIT_OBSERVATION_FUTURE_DATED`.
+
+- **Redelivering a stable event ID returns the original receipt.**
+  `MemoryAuditSourceState` dropped the claims of receipted events, so an
+  at-least-once redelivery after later events got a new source sequence and was
+  rejected as `AUDIT_EVENT_ID_CONFLICT`. Receipted claims are now retained for a
+  bounded `redeliveryWindow` (default 1024 per source). Different content under
+  a retained event ID is still an `AuditProtocolError` with
+  `AUDIT_EVENT_ID_CONFLICT`, now raised by the source state; it was a plain
+  `Error` there before.
+
+- **Rejected input no longer consumes a source sequence.** The trail claimed a
+  source sequence before validating the event, so schema-invalid input, a lone
+  surrogate, or an unreferenced evidence object left a permanent gap and a
+  broken `previousSourceEventDigest` link. Validation now runs first, and a
+  claim whose event cannot be emitted is released through the optional
+  `abandonClaim`.
+
+- **Source state no longer leaks behind an open gap.** One unreceipted sequence
+  stopped `MemoryAuditSourceState` from pruning anything after it. It now keeps
+  only pending events plus the redelivery window.
+
+- **A replica that loses the cold-start genesis race recovers.** When every read
+  was stale, the losing genesis surfaced as an idempotency conflict and failed
+  with `AUDIT_EVENT_ID_CONFLICT`; it is now validated against the epoch
+  configuration like any raced genesis.
+
+- **A committed outbox item is never reported as a delivery failure.** If
+  `markDelivered` threw after the recorder committed, `flush()` called
+  `markFailed` and `onDeliveryFailure`. The item now counts as delivered, the
+  error goes to the new `onAcknowledgementFailure` callback, and redelivery
+  resolves to the same receipt.
+
+- **Outbox items are identified by source and event ID.** Event IDs are unique
+  only within a source, but `MemoryAuditOutbox` keyed items by event ID alone,
+  so one source could acknowledge or displace another's pending item.
+  `markDelivered` and `markFailed` now accept an `AuditOutboxItemKey` as well as
+  a bare event ID, and the trail passes the key to an outbox that declares
+  `capabilities.keyedBySource`, as `MemoryAuditOutbox` now does. An adapter
+  that implements `markDelivered(eventId: string)` still type-checks and still
+  receives the bare event ID, and so does a `MemoryAuditOutbox` subclass that
+  overrides `markDelivered` or `markFailed`: the memory outbox declares the
+  capability only for its own implementations, unless the subclass declares it
+  again. `MemoryAuditOutbox` throws on a bare event ID that more than one source
+  has pending instead of guessing.
+
+- **Default audit event IDs are random.** `audit_<time>_<counter>` was unique
+  only per trail instance, so two trails sharing an outbox collided. Defaults
+  are now `audit_<uuid>`; `eventIdFactory` still overrides them.
 
 ### Deprecated
 

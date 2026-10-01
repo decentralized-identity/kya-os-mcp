@@ -174,6 +174,16 @@ production adapter must provide:
 - no ordinary update or delete operation;
 - truthful durability and atomicity capabilities.
 
+A head read is only a hint. When one is behind the highest head this recorder
+has appended (a lagging read replica), the recorder compares-and-appends against
+its own committed head instead, so a stale read costs a retry, as it always has.
+If the journal's compare-and-append answer then reports a head below that
+committed head, or a different digest at a sequence the journal already
+reported (a failover to a lagging primary, or a restore), the recorder fails
+closed with `AUDIT_JOURNAL_FAILURE` instead of signing a second entry at a
+receipted sequence. Restoring a journal is an epoch transition, not a silent
+rewind.
+
 Run the provider contract kit for every adapter:
 
 ```ts
@@ -215,12 +225,19 @@ a caller that retries `record()` with a stable event ID must also pin
 `occurredAt`, otherwise the recorder rejects the drifted content as an
 event-identity conflict. Buffered outbox redelivery is always byte-stable, and
 `flush()` receipts each delivered item against the item's own producer source.
+An event without a caller-supplied ID gets a random `audit_<uuid>` ID, so two
+trails sharing an outbox or a recorder never mint the same one.
 
 Evidence is persisted write-ahead of its committing entry. If the append then
-permanently fails, the recorder best-effort disposes the orphaned ciphertext
-after re-confirming that no committed entry claims the event identity; a
-disposal failure retains the orphan for operator retention tooling rather than
-risking a racing committed reference.
+permanently fails, the recorder best-effort disposes the ciphertext that this
+submission newly stored, after re-confirming that no committed entry claims the
+event identity. An object that already existed, such as an encrypted actor
+reference shared by every event of a session, is never disposed, because a
+committed entry may reference it. Nor is one that another submission to the
+same recorder held while this one did: both may have seen it as new, and the
+other may have committed a reference to it. A disposal failure retains the
+orphan for operator retention tooling rather than risking a racing committed
+reference.
 
 The outbox contract persists an `attempts` count and yields only delivery-eligible
 items. Retry cadence, attempt caps, and dead-letter routing are provider policy,
@@ -229,11 +246,38 @@ adapter must remove dead-lettered items from `pending()` while retaining them fo
 operator inspection and recovery; the in-memory development adapter intentionally
 has no retry cap.
 
+Event IDs are unique only within a producer source. An outbox that declares
+`capabilities.keyedBySource` deduplicates, acknowledges, and fails items by
+`(sourceId, eventId)` (`AuditOutboxItemKey`, see `auditOutboxItemKey`), and the
+trail passes it that key. An adapter without the capability keeps receiving the
+bare event ID its `markDelivered(eventId: string)` signature expects; the
+interface accepts either. `MemoryAuditOutbox` declares the capability, except
+in a subclass that overrides `markDelivered` or `markFailed`: such a subclass
+may have been written for the bare event ID, so it keeps receiving one unless
+it declares the capability itself. It still accepts a bare event ID from direct
+callers, but only while exactly one pending item carries it: with several
+sources pending, it throws rather than guess whose item to acknowledge. Once
+the recorder has committed an item, `flush()` counts
+it as delivered: a failure to acknowledge it reaches `onAcknowledgementFailure`,
+never `markFailed` or `onDeliveryFailure`, and the item's later redelivery
+resolves to the same receipt.
+
 Each producer event receives an atomically claimed source sequence. Consecutive
 events also carry `previousSourceEventDigest`. `recordSourceHighWater()` emits
 the producer's current high-water mark through the same recorder path. The
 source-state provider tracks highest emitted, highest contiguously receipted,
 and explicit pending gaps. AAP-3 requires durable source state.
+
+The trail validates an event (schema, canonical JSON, evidence references)
+before it claims a source sequence, so rejected input never consumes a sequence
+or breaks predecessor linkage; a claim whose event then fails to build is
+released through the optional `abandonClaim` where the provider supports it.
+Re-claiming an event ID the provider still retains returns the original claim,
+so an at-least-once redelivery of a stable event ID rebuilds the identical
+event and resolves to its original receipt. `MemoryAuditSourceState` retains
+receipted claims for a bounded redelivery window (`redeliveryWindow`, default
+1024 per source) and otherwise keeps only pending events, so one unreceipted
+gap does not stop it from releasing memory.
 
 ## Event and privacy model
 
@@ -244,8 +288,17 @@ Every detail payload is a strict discriminated union. Arbitrary integrity-core
 metadata and unknown fields fail closed.
 
 The MCP adapter excludes raw arguments, response bodies, error text, and tool
-names by default. `includeToolNames` is an explicit policy decision. Identity
-and resource references declare their privacy form:
+names by default. `includeToolNames` is an explicit policy decision. References
+a caller presents (delegation, grant, consent, scope, and policy references,
+correlation and causation IDs, tool names) are untrusted: one that is empty,
+over the schema bound, or not well-formed UTF-16 is recorded as the `sha256:`
+digest of its UTF-8 encoding, so a hostile identifier cannot keep the event out
+of the ledger, and a long reference handed to the adapter cannot collide with
+another that shares its prefix. One caller still shortens a reference first:
+`wrapWithDelegation` truncates the ID of a rejected delegation credential to
+256 UTF-16 code units, so two rejected credentials whose IDs share that prefix
+are recorded with the same `delegationRef`.
+Identity and resource references declare their privacy form:
 
 - `public_did` for intentionally public correlation;
 - `pairwise_did` for relationship-specific identity;
@@ -288,6 +341,16 @@ consistency proofs. Checkpoint lifecycle events are appended only after the
 snapshot is signed, so they can appear in a later checkpoint and cannot recurse
 into the checkpoint they describe.
 
+Before signing, the builder confirms that the journal still contains the latest
+checkpoint's exact tree as its prefix; a rewritten or restored history fails
+with `AUDIT_CHECKPOINT_CONFLICT` instead of producing a signed checkpoint that
+chains to a tree it does not extend. A builder serializes its calls per ledger
+epoch, so concurrent calls chain in tree-size order rather than both naming the
+same predecessor. If `onCheckpointCreated` throws after the checkpoint was
+stored, the builder's next `createCheckpoint` call runs the hook again for that
+checkpoint, before any newer one, even when the ledger has grown in between;
+the hook must therefore be idempotent on the checkpoint digest.
+
 `AuditCheckpointCoordinator` publishes a committed checkpoint to independent
 observers and supporting anchors. Publication is retryable and may enforce a
 minimum observer count and required anchor kinds. Failure does not roll back the
@@ -326,6 +389,59 @@ nonce caches. It verifies:
 - supporting-anchor trust and an injected adapter verifier;
 - declared range completeness and explicit omission dispositions.
 
+A subset export need not carry every leaf. A checkpoint whose complete prefix is
+present has its root recomputed; otherwise its signature, digest, issuer trust,
+and declared range are verified (`AuditArtifactVerifier.verifySignedCheckpoint`),
+and every included entry it covers must carry a verified inclusion proof against
+it (`AUDIT_MERKLE_PROOF_MISSING` otherwise). Two included checkpoints of one
+epoch must either link directly through `previousCheckpointDigest`, or, when the
+export omits checkpoints that could sit between them, be bound by a verified
+consistency proof; the proof, not the chain link, is the split-view guarantee,
+as for an observer catching up. A successor genesis commits where its
+predecessor epoch ends, so a predecessor checkpoint over a larger tree than
+that terminal checkpoint is reported as `AUDIT_CHECKPOINT_FORK_DETECTED`.
+Predecessor entries past the terminal are not by themselves a fork: the
+terminal checkpoint's own `checkpoint.created` event is appended after it is
+signed.
+
+The verifier enforces every verification-policy constraint it can evaluate and
+never treats one it cannot evaluate as satisfied. No schema-valid policy is
+rejected for the constraints it uses:
+
+- `validFromCheckpoint` and `validUntilCheckpoint`, on a recorder or observer key
+  or on a trusted ledger epoch, are resolved by digest against supplied
+  checkpoints (`AuditVerificationContext`; a bundle supplies its own). An entry
+  at sequence `s` sits at tree position `s + 1`, a checkpoint or an observation
+  of one at its tree size; a key valid until checkpoint `C` covers positions up
+  to `C`'s tree size, and a key valid from `C` covers positions after it.
+  Outside the bound the signer is untrusted. A boundary that is absent, or that
+  belongs to another ledger epoch, makes the dimension `indeterminate`
+  (`AUDIT_KEY_BOUNDARY_UNRESOLVED`), never `valid`. An export has no ledger
+  position, so a checkpoint bound on the exporter key that authorizes a bundle
+  leaves cryptographic integrity `indeterminate` the same way.
+- `requiredAuditProfile` marks every dimension the profile depends on
+  `invalid` (`AUDIT_REQUIRED_PROFILE_UNMET`) unless it is `valid`: AAP-1 needs
+  cryptographic integrity, AAP-2 adds chain integrity, AAP-3 checkpoint
+  integrity, and AAP-4 observation integrity plus at least one supporting
+  anchor receipt.
+- `keyRevocationMode` selects when key status is evaluated. The integrity
+  dimensions always evaluate a key as observed, at the artifact's signing time
+  and ledger position, because revocation does not rewrite what was observed;
+  `as_observed` stops there. `current` and `both` also require every key that
+  signed an entry, checkpoint, observation, or the bundle manifest to be valid
+  at `verifiedAt` (within `validFrom`/`validUntil`, and without a
+  `validUntilCheckpoint`, which names a checkpoint the key was retired at), and
+  report the result in `currentAuthorization`: `invalid`
+  (`AUDIT_KEY_NOT_CURRENT`) when a key is no longer valid, `indeterminate`
+  (`AUDIT_NOT_EVALUATED`) when the verifier has no `verifiedAt` clock. As the
+  as-observed check is never waived, `current` and `both` evaluate the same
+  keys. Current key status alone never makes `currentAuthorization` `valid`;
+  that still takes the injected authorization verifier.
+
+When a policy requires observation freshness, an observation dated more than
+the verifier's clock-skew allowance (`maxClockSkewMs`, default 120 s) after
+`verifiedAt` is `invalid` (`AUDIT_OBSERVATION_FUTURE_DATED`), not fresh.
+
 The report keeps these dimensions separate: cryptographic integrity, chain
 integrity, checkpoint integrity, anchor/observation integrity, committed-scope
 completeness, authorization as observed, and current authorization. Missing
@@ -354,8 +470,13 @@ by the relying party's policy.
 `AuditProjectionWorker` derives a minimal timeline projection with an atomic
 offset. It supports incremental synchronization, deterministic reset/rebuild,
 and head reconciliation with four honest states: `empty`, `pending`,
-`verified`, and `gap_detected`. The projection is disposable. The journal plus
-declared enrichment inputs remain the source of truth.
+`verified`, and `gap_detected`. A projection behind the journal is `pending`
+only when its offset digest matches the journal entry at that sequence, and
+synchronization refuses (`AUDIT_PROJECTION_CONFLICT`) to apply an entry whose
+predecessor is not the projection offset; a projection built from a forked
+history is never reported verified and must be rebuilt. The projection is
+disposable. The journal plus declared enrichment inputs remain the source of
+truth.
 
 Checkpoint should ingest exact signed envelopes through the mirror or recorder
 path, store raw integrity objects separately from query projections, and expose

@@ -7,7 +7,11 @@ import { MemoryAuditJournal } from '../providers/memory-journal.js';
 import { MemoryAuditEvidenceProvider } from '../evidence.js';
 import type { AuditEvidenceProvider } from '../providers/evidence.js';
 import { LocalAuditRecorderClient } from '../providers/recorder-client.js';
-import type { AuditOutboxItem, AuditOutboxProvider } from '../providers/outbox.js';
+import type {
+  AuditOutboxItem,
+  AuditOutboxItemKey,
+  AuditOutboxProvider,
+} from '../providers/outbox.js';
 import { MemoryAuditOutbox } from '../providers/outbox.js';
 import { MemoryAuditSourceState } from '../providers/source-state.js';
 import { AuditRecorderService } from '../recorder-service.js';
@@ -69,6 +73,25 @@ class DurableTestOutbox implements AuditOutboxProvider {
   async *pending(): AsyncIterable<AuditOutboxItem> { yield* [...this.items]; }
   async markDelivered(eventId: string): Promise<void> {
     const index = this.items.findIndex((item) => item.eventId === eventId);
+    if (index >= 0) this.items.splice(index, 1);
+  }
+  async markFailed(): Promise<void> {}
+}
+
+/** A durable outbox that declares source-scoped keys and records each acknowledgement. */
+class KeyedTestOutbox implements AuditOutboxProvider {
+  readonly capabilities = {
+    durability: 'durable' as const, fifoPerSource: true as const, keyedBySource: true as const,
+  };
+  readonly items: AuditOutboxItem[] = [];
+  readonly acknowledged: Array<AuditOutboxItemKey | string> = [];
+  async enqueue(item: AuditOutboxItem): Promise<void> { this.items.push(item); }
+  async *pending(): AsyncIterable<AuditOutboxItem> { yield* [...this.items]; }
+  async markDelivered(key: AuditOutboxItemKey | string): Promise<void> {
+    this.acknowledged.push(key);
+    if (typeof key === 'string') throw new Error('expected an item key');
+    const index = this.items.findIndex((item) => item.eventId === key.eventId &&
+      item.submission.producerEvent.source.sourceId === key.sourceId);
     if (index >= 0) this.items.splice(index, 1);
   }
   async markFailed(): Promise<void> {}
@@ -624,5 +647,275 @@ describe('AuditTrailService delivery modes', () => {
         status: 'recorded',
         entry: { core: { ledgerEpochId: 'epoch_0' } },
       });
+  });
+
+  it('mints default event IDs that two trails sharing one outbox cannot collide on', async () => {
+    const { trail } = local();
+    const outbox = new MemoryAuditOutbox();
+    const durable: AuditOutboxProvider = Object.assign(
+      Object.create(outbox) as AuditOutboxProvider,
+      { capabilities: { durability: 'durable' as const, fifoPerSource: true as const } },
+    );
+    const shared = { ...trail.configuration, delivery: 'buffered' as const, outbox: durable };
+    // Same clock reading and a fresh trail each: a time/counter ID would repeat.
+    const trailA = createAuditTrail({
+      ...shared, sourceId: 'source-a', sourceState: new MemoryAuditSourceState(),
+    });
+    const trailB = createAuditTrail({
+      ...shared, sourceId: 'source-b', sourceState: new MemoryAuditSourceState(),
+    });
+    const first = await trailA.record(baseEvent);
+    const second = await trailB.record(baseEvent);
+    expect(first.event.eventId).not.toBe(second.event.eventId);
+    expect(first.event.eventId).toMatch(/^audit_[0-9a-f-]{36}$/);
+  });
+
+  it('acknowledges by item key an outbox that declares it, and by bare event ID otherwise', async () => {
+    const { trail, journal } = local();
+    const outbox = new KeyedTestOutbox();
+    const recorder = {
+      submit: async (submission: AuditRecorderSubmission) => {
+        if (submission.producerEvent.source.sourceId === 'source-a') {
+          throw new Error('source-a recorder route offline');
+        }
+        return trail.configuration.recorder.submit(submission);
+      },
+    };
+    const shared = {
+      ...trail.configuration, recorder, delivery: 'buffered' as const, outbox,
+    };
+    const trailA = createAuditTrail({
+      ...shared, sourceId: 'source-a', sourceState: new MemoryAuditSourceState(),
+    });
+    const trailB = createAuditTrail({
+      ...shared, sourceId: 'source-b', sourceState: new MemoryAuditSourceState(),
+    });
+    // A caller-chosen event ID is unique only within its own source.
+    await trailA.record({ ...baseEvent, eventId: 'evt_shared_name' });
+    await trailB.record({ ...baseEvent, eventId: 'evt_shared_name' });
+
+    await expect(trailA.flush()).resolves.toEqual({ delivered: 1, failed: 1 });
+    expect(outbox.acknowledged).toEqual([{ sourceId: 'source-b', eventId: 'evt_shared_name' }]);
+    expect(outbox.items.map((item) => item.submission.producerEvent.source.sourceId))
+      .toEqual(['source-a']);
+    await expect(journal.snapshot({
+      ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1',
+    })).resolves.toHaveLength(2);
+
+    // An adapter written against `markDelivered(eventId: string)` still gets one.
+    const legacy = new DurableTestOutbox();
+    const delivered = vi.spyOn(legacy, 'markDelivered');
+    const legacyTrail = createAuditTrail({
+      ...trail.configuration, delivery: 'buffered', outbox: legacy,
+    });
+    await legacyTrail.record({ ...baseEvent, eventId: 'evt_legacy_outbox' });
+    await expect(legacyTrail.flush()).resolves.toEqual({ delivered: 1, failed: 0 });
+    expect(delivered).toHaveBeenCalledWith('evt_legacy_outbox');
+    expect(legacy.items).toHaveLength(0);
+  });
+
+  it('hands a MemoryAuditOutbox subclass that overrides acknowledgement the bare event ID', async () => {
+    const { trail } = local();
+    // Written against 1.16: acknowledges by `eventId: string`.
+    class EventIdMemoryOutbox extends MemoryAuditOutbox {
+      readonly acknowledged: unknown[] = [];
+      override async markDelivered(eventId: string): Promise<void> {
+        this.acknowledged.push(eventId);
+        await super.markDelivered(eventId);
+      }
+    }
+    class FailureCountingOutbox extends MemoryAuditOutbox {
+      override async markFailed(eventId: string): Promise<void> {
+        await super.markFailed(eventId);
+      }
+    }
+    class KeyAwareOutbox extends MemoryAuditOutbox {
+      override readonly capabilities = {
+        durability: 'ephemeral' as const, fifoPerSource: true as const, keyedBySource: true as const,
+      };
+      override async markDelivered(key: AuditOutboxItemKey | string): Promise<void> {
+        await super.markDelivered(key);
+      }
+    }
+    expect(new MemoryAuditOutbox().capabilities.keyedBySource).toBe(true);
+    expect(new (class extends MemoryAuditOutbox {})().capabilities.keyedBySource).toBe(true);
+    expect(new EventIdMemoryOutbox().capabilities.keyedBySource).toBeUndefined();
+    expect(new FailureCountingOutbox().capabilities.keyedBySource).toBeUndefined();
+    expect(new KeyAwareOutbox().capabilities.keyedBySource).toBe(true);
+
+    const outbox = new EventIdMemoryOutbox();
+    // Buffered delivery needs a durable outbox; the memory outbox stands in.
+    Object.assign(outbox, { capabilities: { ...outbox.capabilities, durability: 'durable' } });
+    const buffered = createAuditTrail({ ...trail.configuration, delivery: 'buffered', outbox });
+    await buffered.record({ ...baseEvent, eventId: 'evt_subclassed_outbox' });
+    await expect(buffered.flush()).resolves.toEqual({ delivered: 1, failed: 0 });
+    expect(outbox.acknowledged).toEqual(['evt_subclassed_outbox']);
+    const remaining: AuditOutboxItem[] = [];
+    for await (const item of outbox.pending()) remaining.push(item);
+    expect(remaining).toEqual([]);
+  });
+
+  it('resolves a stable event ID redelivered after later events to its original receipt', async () => {
+    const { trail, journal } = local();
+    const first = await trail.record({
+      ...baseEvent, eventId: 'order-42-completed', occurredAt: 1,
+    });
+    await trail.record({ ...baseEvent, eventId: 'order-43-completed', occurredAt: 2 });
+    // At-least-once upstream delivery repeats order 42 with identical input.
+    const retry = await trail.record({
+      ...baseEvent, eventId: 'order-42-completed', occurredAt: 1,
+    });
+
+    expect(retry).toEqual(first);
+    await expect(journal.snapshot({
+      ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1',
+    })).resolves.toHaveLength(3);
+    await expect(trail.getSourceState()).resolves.toMatchObject({
+      highestEmitted: '2', highestReceipted: '2', pendingSequences: [],
+    });
+  });
+
+  it('reports a redelivered event ID with different content as an event-ID conflict', async () => {
+    const { trail } = local();
+    await trail.record({ ...baseEvent, eventId: 'order-42-completed', occurredAt: 1 });
+    await trail.record({ ...baseEvent, eventId: 'order-43-completed', occurredAt: 2 });
+    // Drifted content under a retained claim, for an older and the latest event.
+    for (const eventId of ['order-42-completed', 'order-43-completed']) {
+      await expect(trail.record({ ...baseEvent, eventId, occurredAt: 99 })).rejects.toMatchObject({
+        code: 'AUDIT_EVENT_ID_CONFLICT',
+        message: `Source event identity collision: ${eventId}`,
+      });
+    }
+    await expect(trail.getSourceState()).resolves.toMatchObject({
+      highestEmitted: '2', pendingSequences: [],
+    });
+  });
+
+  it('rejects invalid input before claiming a source sequence, keeping linkage intact', async () => {
+    const { trail, hasher } = local();
+    const first = await trail.record({ ...baseEvent, eventId: 'evt_valid_before' });
+    await expect(trail.record({
+      ...baseEvent, eventId: 'evt_schema_invalid', reason: { code: 'X'.repeat(200) },
+    })).rejects.toThrow();
+    await expect(trail.record({
+      ...baseEvent, eventId: 'evt_lone_surrogate', correlationId: JSON.parse('"\\ud800"'),
+    })).rejects.toThrow();
+    await expect(trail.record({ ...baseEvent, eventId: 'evt_unreferenced_evidence' }, {
+      encryptedEvidence: [{
+        ref: {
+          objectId: 'evi_unreferenced',
+          ciphertextDigest: `sha256:${'a'.repeat(64)}`,
+          mediaType: 'application/octet-stream',
+          size: '1',
+          encryption: {
+            suite: 'A256GCM', keyId: 'k1', nonce: 'AAAAAAAAAAAAAAAA',
+            aadDigest: `sha256:${'b'.repeat(64)}`,
+          },
+        },
+        ciphertext: Uint8Array.of(1),
+      }],
+    })).rejects.toMatchObject({ code: 'AUDIT_EVIDENCE_FAILURE' });
+    const next = await trail.record({ ...baseEvent, eventId: 'evt_valid_after' });
+
+    expect(next.event.source.sourceSequence).toBe('2');
+    expect(next.event.source.previousSourceEventDigest)
+      .toBe(await digestAuditEvent(hasher, first.event));
+    await expect(trail.getSourceState()).resolves.toMatchObject({ pendingSequences: [] });
+  });
+
+  it('releases a claim whose event could not be emitted', async () => {
+    const { trail, hasher } = local();
+    const sourceState = new MemoryAuditSourceState();
+    const configured = createAuditTrail({ ...trail.configuration, sourceState });
+    const first = await configured.record({ ...baseEvent, eventId: 'evt_emitted' });
+    vi.spyOn(sourceState, 'markEmitted').mockRejectedValueOnce(new Error('state store offline'));
+    await expect(configured.record({ ...baseEvent, eventId: 'evt_not_emitted' }))
+      .rejects.toThrow('state store offline');
+    const next = await configured.record({ ...baseEvent, eventId: 'evt_after_release' });
+
+    expect(next.event.source.sourceSequence).toBe('2');
+    expect(next.event.source.previousSourceEventDigest)
+      .toBe(await digestAuditEvent(hasher, first.event));
+  });
+
+  it('surfaces the emission failure, not a failed release, and keeps the gap visible', async () => {
+    const { trail } = local();
+    const sourceState = new MemoryAuditSourceState();
+    const configured = createAuditTrail({ ...trail.configuration, sourceState });
+    await configured.record({ ...baseEvent, eventId: 'evt_emitted' });
+    vi.spyOn(sourceState, 'markEmitted').mockRejectedValueOnce(new Error('state store offline'));
+    vi.spyOn(sourceState, 'abandonClaim').mockRejectedValueOnce(new Error('release failed'));
+    await expect(configured.record({ ...baseEvent, eventId: 'evt_not_emitted' }))
+      .rejects.toThrow('state store offline');
+    await expect(configured.getSourceState()).resolves.toMatchObject({
+      highestEmitted: '2', pendingSequences: ['2'],
+    });
+  });
+
+  it('bounds source-state memory by pending events and the redelivery window', async () => {
+    const { trail } = local();
+    let calls = 0;
+    const flaky = {
+      submit: async (submission: AuditRecorderSubmission) => {
+        calls += 1;
+        if (calls === 1) throw new Error('recorder briefly unavailable');
+        return trail.configuration.recorder.submit(submission);
+      },
+    };
+    const sourceState = new MemoryAuditSourceState({ redeliveryWindow: 4 });
+    const bestEffort = createAuditTrail({
+      ...trail.configuration, recorder: flaky, delivery: 'best-effort', sourceState,
+    });
+    await expect(bestEffort.record(baseEvent)).resolves.toMatchObject({ status: 'failed' });
+    for (let index = 0; index < 200; index += 1) {
+      await expect(bestEffort.record(baseEvent)).resolves.toMatchObject({ status: 'recorded' });
+    }
+
+    // One sequence stays an open gap, which must not stop pruning everything after it.
+    await expect(bestEffort.getSourceState()).resolves.toEqual({
+      sourceId: 'mcp-server-1',
+      highestEmitted: '201',
+      highestReceipted: '0',
+      pendingSequences: ['1'],
+    });
+    const internal = (sourceState as unknown as {
+      states: Map<string, { claims: Map<string, unknown>; pending: Map<bigint, string> }>;
+    }).states.get('mcp-server-1')!;
+    expect(internal.pending.size).toBe(1);
+    expect(internal.claims.size).toBe(1 + 4);
+    expect(() => new MemoryAuditSourceState({ redeliveryWindow: -1 })).toThrow(RangeError);
+  });
+
+  it('counts a committed outbox item as delivered when only its acknowledgement fails', async () => {
+    const { trail, journal } = local();
+    const outbox = new DurableTestOutbox();
+    const markFailed = vi.spyOn(outbox, 'markFailed');
+    const acknowledge = outbox.markDelivered.bind(outbox);
+    let acknowledgementFailures = 1;
+    outbox.markDelivered = async (eventId) => {
+      if (acknowledgementFailures-- > 0) throw new Error('outbox ack timeout');
+      await acknowledge(eventId);
+    };
+    const onDeliveryFailure = vi.fn();
+    const onAcknowledgementFailure = vi.fn();
+    const buffered = createAuditTrail({
+      ...trail.configuration,
+      delivery: 'buffered',
+      outbox,
+      onDeliveryFailure,
+      onAcknowledgementFailure,
+    });
+    await buffered.record({ ...baseEvent, eventId: 'evt_unacknowledged' });
+
+    await expect(buffered.flush()).resolves.toEqual({ delivered: 1, failed: 0 });
+    expect(markFailed).not.toHaveBeenCalled();
+    expect(onDeliveryFailure).not.toHaveBeenCalled();
+    expect(onAcknowledgementFailure).toHaveBeenCalledOnce();
+    // The item stays pending; redelivery resolves to the same receipt.
+    await expect(buffered.flush()).resolves.toEqual({ delivered: 1, failed: 0 });
+    expect(outbox.items).toHaveLength(0);
+    await expect(journal.snapshot({
+      ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1',
+    })).resolves.toHaveLength(2);
   });
 });

@@ -177,6 +177,15 @@ export class AuditProjectionWorker {
       ...ledger,
       ...(offset === null ? {} : { afterSequence: offset.sequence }),
     })) {
+      // The offset digest must be the predecessor the journal itself records;
+      // otherwise the projection was built from a different (forked) history.
+      if (entry.core.previousEntryDigest !== (offset?.entryDigest ?? null)) {
+        throw new AuditProtocolError(
+          AUDIT_ERROR_CODES.PROJECTION_CONFLICT,
+          'Journal entry does not chain from the projection offset',
+          { sequence: entry.core.sequence, expectedOffset: offset },
+        );
+      }
       const result = await this.options.projections.compareAndApply({
         projectionId: this.options.projectionId,
         ledger,
@@ -220,11 +229,30 @@ export class AuditProjectionWorker {
       status = journalHead.entryDigest === projectionHead.entryDigest
         ? 'verified'
         : 'gap_detected';
-    } else {
-      status = BigInt(projectionHead.sequence) < BigInt(journalHead.sequence)
+    } else if (BigInt(projectionHead.sequence) < BigInt(journalHead.sequence)) {
+      // Behind is only `pending` when the projected prefix is the journal's.
+      const journalEntry = await this.entryAt(ledger, projectionHead.sequence);
+      status = journalEntry?.entryDigest === projectionHead.entryDigest
         ? 'pending'
         : 'gap_detected';
+    } else {
+      status = 'gap_detected';
     }
     return { status, journalHead, projectionHead };
+  }
+
+  private async entryAt(
+    ledger: AuditLedgerRef,
+    sequence: string,
+  ): Promise<SignedAuditEntryV1 | undefined> {
+    const value = BigInt(sequence);
+    for await (const entry of this.options.journal.readRange({
+      ...ledger,
+      ...(value > 0n ? { afterSequence: String(value - 1n) } : {}),
+      limit: 1,
+    })) {
+      return entry.core.sequence === sequence ? entry : undefined;
+    }
+    return undefined;
   }
 }

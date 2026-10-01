@@ -93,6 +93,13 @@ function sameHead(left: AuditHead | null, right: AuditHead | null): boolean {
   return left.entryDigest === right.entryDigest && left.sequence === right.sequence;
 }
 
+/** The later of two heads; at an equal sequence the first one is kept. */
+function higherHead(current: AuditHead | null, candidate: AuditHead | null): AuditHead | null {
+  if (candidate === null) return current;
+  if (current === null) return candidate;
+  return BigInt(candidate.sequence) > BigInt(current.sequence) ? candidate : current;
+}
+
 function sameSigner(left: AuditSigner['ref'], right: AuditSigner['ref']): boolean {
   return left.did === right.did && left.kid === right.kid && left.alg === right.alg;
 }
@@ -114,6 +121,12 @@ function authorityMatchesParty(
 export class AuditRecorderService {
   private readonly maxAppendConflicts: number;
   private initialization?: Promise<SignedAuditEntryV1>;
+  /** Highest head this recorder has itself appended in its epoch. */
+  private committedHead: AuditHead | null = null;
+  /** Highest head the journal has reported in a compare-and-append result. */
+  private reportedHead: AuditHead | null = null;
+  /** Write-ahead evidence objects held by submissions in flight, by object ID. */
+  private readonly heldEvidence = new Map<string, { holders: number; shared: boolean }>();
 
   constructor(private readonly config: AuditRecorderServiceConfig) {
     if ((config.previousEpochId === undefined) !==
@@ -163,33 +176,69 @@ export class AuditRecorderService {
     }
 
     await this.ensureInitialized();
-    await this.persistSubmittedEvidence(submission.encryptedEvidence, producerEvent);
+    const held = this.holdEvidence(submission.encryptedEvidence);
     try {
-      return await this.appendEvent(producerEvent, context, false, identity);
-    } catch (error) {
-      await this.disposeUncommittedEvidence(submission.encryptedEvidence, identity);
-      throw error;
+      const stored = await this.persistSubmittedEvidence(
+        submission.encryptedEvidence,
+        producerEvent,
+      );
+      try {
+        return await this.appendEvent(producerEvent, context, false, identity);
+      } catch (error) {
+        await this.disposeUncommittedEvidence(stored, identity);
+        throw error;
+      }
+    } finally {
+      this.releaseEvidence(held);
     }
   }
 
   /**
-   * Best-effort compensation for write-ahead evidence whose append failed: the
-   * ciphertext is disposed only after re-confirming that no committed entry
-   * claims this event identity, so a raced idempotent commit is never stripped
-   * of its evidence. Failures here leave orphans for operator retention tooling.
+   * Registers this submission as a holder of each evidence object it carries.
+   * An object two submissions hold at once is marked shared for as long as
+   * either still holds it: both may have seen it as new, and the other may
+   * already have committed a reference to it.
+   */
+  private holdEvidence(evidence: readonly EncryptedEvidenceInput[]): string[] {
+    const objectIds = [...new Set(evidence.map((item) => item.ref.objectId))];
+    for (const objectId of objectIds) {
+      const hold = this.heldEvidence.get(objectId);
+      if (hold === undefined) this.heldEvidence.set(objectId, { holders: 1, shared: false });
+      else this.heldEvidence.set(objectId, { holders: hold.holders + 1, shared: true });
+    }
+    return objectIds;
+  }
+
+  private releaseEvidence(objectIds: readonly string[]): void {
+    for (const objectId of objectIds) {
+      const hold = this.heldEvidence.get(objectId)!;
+      if (hold.holders === 1) this.heldEvidence.delete(objectId);
+      else this.heldEvidence.set(objectId, { ...hold, holders: hold.holders - 1 });
+    }
+  }
+
+  /**
+   * Best-effort compensation for write-ahead evidence whose append failed. Only
+   * objects this submission newly stored are disposed: an object that already
+   * existed may be referenced by another committed entry, and so may one that
+   * a concurrent submission held at the same time. They are disposed only
+   * after re-confirming that no committed entry claims this event identity, so
+   * a raced idempotent commit is never stripped of its evidence. Failures here
+   * leave orphans for operator retention tooling.
    */
   private async disposeUncommittedEvidence(
-    evidence: readonly EncryptedEvidenceInput[],
+    stored: readonly EncryptedEvidenceInput[],
     identity: { idempotencyKey: Digest },
   ): Promise<void> {
-    if (evidence.length === 0 || this.config.evidence === undefined) return;
+    if (stored.length === 0 || this.config.evidence === undefined) return;
     try {
       const committed = await this.config.journal.getByIdempotencyKey(
         this.config.ledgerId,
         identity.idempotencyKey,
       );
       if (committed !== null) return;
-      for (const item of evidence) {
+      for (const item of stored) {
+        if (this.heldEvidence.get(item.ref.objectId)?.shared === true) continue;
         await this.config.evidence.applyRetention({
           kind: 'dispose',
           ref: item.ref,
@@ -240,11 +289,12 @@ export class AuditRecorderService {
     }
   }
 
+  /** Persists write-ahead evidence and returns the objects that did not exist before. */
   private async persistSubmittedEvidence(
     evidence: readonly EncryptedEvidenceInput[],
     event: AuditProducerEventCoreV1,
-  ): Promise<void> {
-    if (evidence.length === 0) return;
+  ): Promise<EncryptedEvidenceInput[]> {
+    if (evidence.length === 0) return [];
     if (this.config.evidence === undefined) {
       throw new AuditProtocolError(
         AUDIT_ERROR_CODES.EVIDENCE_FAILURE,
@@ -254,6 +304,7 @@ export class AuditRecorderService {
     try {
       const refs = new Map(collectAuditEvidenceRefs(event).map((ref) => [ref.objectId, ref]));
       const submitted = new Set<string>();
+      const stored: EncryptedEvidenceInput[] = [];
       for (const item of evidence) {
         const referenced = refs.get(item.ref.objectId);
         if (submitted.has(item.ref.objectId) || referenced === undefined ||
@@ -265,8 +316,11 @@ export class AuditRecorderService {
           );
         }
         submitted.add(item.ref.objectId);
+        const existed = await this.config.evidence.has(item.ref);
         await this.config.evidence.putIfAbsent(item);
+        if (!existed) stored.push(item);
       }
+      return stored;
     } catch (error) {
       if (error instanceof AuditProtocolError &&
         error.code === AUDIT_ERROR_CODES.EVIDENCE_FAILURE) throw error;
@@ -406,7 +460,14 @@ export class AuditRecorderService {
 
     const ledger = this.ledgerRef();
     for (let attempt = 0; attempt <= this.maxAppendConflicts; attempt += 1) {
-      const head = await this.config.journal.getHead(ledger);
+      // A read behind this recorder's own commits (a lagging replica) is not
+      // an append position: compare-and-append against the committed head, so
+      // a stale read costs one retry and a journal that really moved backwards
+      // answers with a conflict that proves it instead of accepting a second
+      // entry at a receipted sequence.
+      const committed = this.committedHead;
+      const reported = this.reportedHead;
+      const head = higherHead(committed, await this.config.journal.getHead(ledger));
       if (genesis && head !== null) {
         const raced = await this.config.journal.getByIdempotencyKey(
           this.config.ledgerId,
@@ -433,14 +494,27 @@ export class AuditRecorderService {
         );
       }
 
-      if (result.kind === 'appended' || result.kind === 'duplicate') {
-        return result.kind === 'duplicate'
-          ? this.resolveDuplicate(result.entry, eventDigest)
-          : result.entry;
+      if (result.kind === 'appended') {
+        const appended = {
+          ...ledger,
+          sequence: result.entry.core.sequence,
+          entryDigest: result.entry.entryDigest,
+        };
+        this.committedHead = higherHead(this.committedHead, appended);
+        this.reportedHead = higherHead(this.reportedHead, appended);
+        return result.entry;
       }
-      if (result.kind === 'idempotency_conflict') {
-        return this.resolveDuplicate(result.existing, eventDigest);
+      if (result.kind === 'duplicate' || result.kind === 'idempotency_conflict') {
+        const existing = result.kind === 'duplicate' ? result.entry : result.existing;
+        // A replica that lost the cold-start genesis race finds a genesis that
+        // differs only in recorder-authored timing; it is accepted on epoch
+        // configuration, never as an event-identity conflict.
+        return genesis
+          ? this.validateExistingGenesis(existing)
+          : this.resolveDuplicate(existing, eventDigest);
       }
+      this.assertNoRegression(result.actualHead, committed, reported);
+      this.reportedHead = higherHead(this.reportedHead, result.actualHead);
       if (sameHead(head, result.actualHead)) {
         throw new AuditProtocolError(
           AUDIT_ERROR_CODES.JOURNAL_FAILURE,
@@ -453,6 +527,34 @@ export class AuditRecorderService {
       AUDIT_ERROR_CODES.APPEND_CONFLICT_EXHAUSTED,
       'Audit append conflict retry budget exhausted',
     );
+  }
+
+  /**
+   * The compare-and-append result is the journal's authoritative head. One
+   * below a head this recorder had committed before issuing the append, or a
+   * different digest at a sequence the journal already reported, means a
+   * failover to a lagging primary or a restore. Retrying there would sign a
+   * second entry at a receipted sequence, so the recorder fails closed. The
+   * heads compared are the ones known when the append was issued, so a
+   * concurrent submission's later commit never makes a correct answer look
+   * stale.
+   */
+  private assertNoRegression(
+    actual: AuditHead | null,
+    committed: AuditHead | null,
+    reported: AuditHead | null,
+  ): void {
+    const forks = (known: AuditHead | null): boolean => known !== null && actual !== null &&
+      known.sequence === actual.sequence && known.entryDigest !== actual.entryDigest;
+    if ((committed !== null &&
+      (actual === null || BigInt(actual.sequence) < BigInt(committed.sequence))) ||
+      forks(committed) || forks(reported)) {
+      throw new AuditProtocolError(
+        AUDIT_ERROR_CODES.JOURNAL_FAILURE,
+        'Audit journal head moved behind a head this recorder already committed or saw',
+        { committedSequence: committed?.sequence, reportedSequence: actual?.sequence },
+      );
+    }
   }
 
   private async identifyEvent(

@@ -6,7 +6,12 @@ import type {
 } from '../providers/evidence.js';
 import type { AuditJournalProvider } from '../providers/journal.js';
 import type { AuditCheckpointObserverProvider } from '../providers/observer.js';
-import type { AuditOutboxItem, AuditOutboxProvider } from '../providers/outbox.js';
+import {
+  auditOutboxItemKey,
+  type AuditOutboxItem,
+  type AuditOutboxItemKey,
+  type AuditOutboxProvider,
+} from '../providers/outbox.js';
 import type {
   AuditLedgerRef,
   Digest,
@@ -472,9 +477,17 @@ export async function evaluateAuditOutboxProviderContract(
     for await (const value of provider.pending()) values.push(value);
     return values;
   };
+  // Acknowledge the way the trail does: by key when the adapter declares it.
+  const keyOf = (
+    provider: AuditOutboxProvider,
+    value: AuditOutboxItem,
+  ): AuditOutboxItemKey | string =>
+    provider.capabilities.keyedBySource === true ? auditOutboxItemKey(value) : value.eventId;
 
+  let keyedBySource = false;
   await check(checks, 'declares and preserves FIFO order per source', async () => {
     const provider = await createProvider();
+    keyedBySource = provider.capabilities.keyedBySource === true;
     expectContract(provider.capabilities.fifoPerSource === true, 'fifoPerSource must be true');
     await provider.enqueue(item(firstEntry));
     await provider.enqueue(item(secondEntry));
@@ -513,16 +526,48 @@ export async function evaluateAuditOutboxProviderContract(
     const provider = await createProvider();
     await provider.enqueue(item(firstEntry));
     await provider.enqueue(item(secondEntry));
-    await provider.markFailed(firstEntry.core.event.eventId, new Error('offline'));
+    await provider.markFailed(keyOf(provider, item(firstEntry)), new Error('offline'));
     let pending = await collect(provider);
     expectContract(pending[0]?.attempts === 1, 'failed delivery attempt was not persisted');
-    await provider.markDelivered(firstEntry.core.event.eventId);
+    await provider.markDelivered(keyOf(provider, item(firstEntry)));
     pending = await collect(provider);
     expectContract(
       pending.length === 1 && pending[0]?.eventId === secondEntry.core.event.eventId,
       'acknowledgement removed the wrong pending item',
     );
   });
+
+  // Only an adapter that declares source-scoped keys promises to keep two
+  // sources' items with one event ID apart.
+  if (keyedBySource) {
+    await check(checks, 'keys items by producer source and event identity', async () => {
+      const provider = await createProvider();
+      const own = item(firstEntry);
+      const otherSource: AuditOutboxItem = {
+        ...own,
+        submission: {
+          ...own.submission,
+          producerEvent: {
+            ...own.submission.producerEvent,
+            source: { ...own.submission.producerEvent.source, sourceId: 'contract-source-2' },
+          },
+        },
+      };
+      await provider.enqueue(own);
+      await provider.enqueue(otherSource);
+      expectContract(
+        (await collect(provider)).length === 2,
+        'an event ID from one source displaced another source\'s pending item',
+      );
+      await provider.markDelivered(auditOutboxItemKey(own));
+      const pending = await collect(provider);
+      expectContract(
+        pending.length === 1 &&
+          pending[0]?.submission.producerEvent.source.sourceId === 'contract-source-2',
+        'acknowledging one source removed another source\'s pending item',
+      );
+    });
+  }
 
   return report('outbox', checks);
 }

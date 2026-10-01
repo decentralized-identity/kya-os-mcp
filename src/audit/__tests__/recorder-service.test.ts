@@ -451,6 +451,275 @@ describe('AuditRecorderService', () => {
     await expect(evidence.has(ref)).resolves.toBe(false);
   });
 
+  it('keeps write-ahead evidence that a committed entry references when a later append fails', async () => {
+    const hasher = new CryptoProviderAuditHasher(new NodeCryptoProvider());
+    const evidence = new MemoryAuditEvidenceProvider(hasher);
+    const journal = new MemoryAuditJournal();
+    let appends = 0;
+    const flakyJournal: AuditJournalProvider = {
+      capabilities: journal.capabilities,
+      getHead: (ledger) => journal.getHead(ledger),
+      readRange: (input) => journal.readRange(input),
+      getByIdempotencyKey: (ledgerId, key) => journal.getByIdempotencyKey(ledgerId, key),
+      compareAndAppend: async (input) => {
+        appends += 1;
+        // Genesis and the first event commit; the second event hits an outage.
+        if (appends === 3) throw new Error('transient journal outage');
+        return journal.compareAndAppend(input);
+      },
+    };
+    const recorder = new AuditRecorderService({
+      ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1', tenantRef,
+      binding: 'urn:kya-os:audit-binding:mcp:2025-11-25', sourceId: 'recorder-1',
+      journal: flakyJournal, signer: new TestSigner(), hasher,
+      clock: new MutableClock(), evidence,
+    });
+    const ciphertext = Uint8Array.of(9, 8, 7, 6);
+    const ref = {
+      objectId: 'evi_shared_session_identity',
+      ciphertextDigest: await hasher.sha256(ciphertext),
+      mediaType: 'application/octet-stream',
+      size: '4',
+      encryption: {
+        suite: 'A256GCM' as const,
+        keyId: 'tenant-key-v1',
+        nonce: 'AAAAAAAAAAAAAAAA',
+        aadDigest: await hasher.sha256(Uint8Array.of(1)),
+      },
+    };
+    // One encrypted actor object is attached to every event of a session.
+    const actor: PartyRef = { kind: 'evidence_ref', ref };
+
+    await recorder.submitAuthenticated({
+      ledgerId: 'kya:tenant:prod:primary',
+      producerEvent: { ...event('evt_shared_first', 1), actor },
+      encryptedEvidence: [{ ref, ciphertext }],
+    }, context);
+    await expect(recorder.submitAuthenticated({
+      ledgerId: 'kya:tenant:prod:primary',
+      producerEvent: { ...event('evt_shared_second', 2), actor },
+      encryptedEvidence: [{ ref, ciphertext }],
+    }, context)).rejects.toMatchObject({ code: 'AUDIT_JOURNAL_FAILURE' });
+
+    await expect(evidence.has(ref)).resolves.toBe(true);
+  });
+
+  it('keeps an evidence object a concurrent submission committed while this one failed', async () => {
+    const hasher = new CryptoProviderAuditHasher(new NodeCryptoProvider());
+    const inner = new MemoryAuditEvidenceProvider(hasher);
+    // Barrier: neither submission stores the object until both have checked it,
+    // so each sees it as new.
+    let checks = 0;
+    let bothChecked!: () => void;
+    const checked = new Promise<void>((resolve) => { bothChecked = resolve; });
+    const evidence: AuditEvidenceProvider = {
+      putIfAbsent: (input) => inner.putIfAbsent(input),
+      get: (ref, access) => inner.get(ref, access),
+      applyRetention: (command) => inner.applyRetention(command),
+      has: async (ref) => {
+        const present = await inner.has(ref);
+        if ((checks += 1) === 2) bothChecked();
+        await checked;
+        return present;
+      },
+    };
+    // The loser's append fails only after the winner committed and returned.
+    let winnerReturned!: () => void;
+    const returned = new Promise<void>((resolve) => { winnerReturned = resolve; });
+    const journal = new MemoryAuditJournal();
+    const racing: AuditJournalProvider = {
+      capabilities: journal.capabilities,
+      getHead: (ledger) => journal.getHead(ledger),
+      readRange: (input) => journal.readRange(input),
+      getByIdempotencyKey: (ledgerId, key) => journal.getByIdempotencyKey(ledgerId, key),
+      compareAndAppend: async (input) => {
+        if (input.entry.core.event.eventId !== 'evt_race_loser') {
+          return journal.compareAndAppend(input);
+        }
+        await returned;
+        throw new Error('transient journal outage');
+      },
+    };
+    const recorder = new AuditRecorderService({
+      ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1', tenantRef,
+      binding: 'urn:kya-os:audit-binding:mcp:2025-11-25', sourceId: 'recorder-1',
+      journal: racing, signer: new TestSigner(), hasher, clock: new MutableClock(), evidence,
+    });
+    await recorder.submitAuthenticated({
+      ledgerId: 'kya:tenant:prod:primary', producerEvent: event('evt_race_warmup', 1),
+      encryptedEvidence: [],
+    }, context);
+    const ciphertext = Uint8Array.of(5, 4, 3, 2);
+    const ref = {
+      objectId: 'evi_concurrent_session_identity',
+      ciphertextDigest: await hasher.sha256(ciphertext),
+      mediaType: 'application/octet-stream',
+      size: '4',
+      encryption: {
+        suite: 'A256GCM' as const, keyId: 'tenant-key-v1', nonce: 'AAAAAAAAAAAAAAAA',
+        aadDigest: await hasher.sha256(Uint8Array.of(1)),
+      },
+    };
+    const actor: PartyRef = { kind: 'evidence_ref', ref };
+    const submit = (eventId: string, sequence: number) => recorder.submitAuthenticated({
+      ledgerId: 'kya:tenant:prod:primary',
+      producerEvent: { ...event(eventId, sequence), actor },
+      encryptedEvidence: [{ ref, ciphertext }],
+    }, context);
+
+    const winner = submit('evt_race_winner', 2).finally(winnerReturned);
+    const loser = submit('evt_race_loser', 3);
+    await expect(winner).resolves.toMatchObject({ core: { sequence: '2' } });
+    await expect(loser).rejects.toMatchObject({ code: 'AUDIT_JOURNAL_FAILURE' });
+    await expect(inner.has(ref)).resolves.toBe(true);
+  });
+
+  it('fails closed instead of re-signing a receipted sequence when the journal head regresses', async () => {
+    const ledger = { ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1' };
+    let backing = new MemoryAuditJournal();
+    // A failover to a lagging replica, or a restore, without an epoch change.
+    const restoredTo = async (source: MemoryAuditJournal, size: number) => {
+      const copy = new MemoryAuditJournal();
+      for (const entry of (await source.snapshot(ledger)).slice(0, size)) {
+        await copy.compareAndAppend({
+          ledger, expectedHead: await copy.getHead(ledger), entry,
+          idempotencyKey: `sha256:${entry.entryDigest.slice('sha256:'.length)}`,
+        });
+      }
+      return copy;
+    };
+    const journal: AuditJournalProvider = {
+      capabilities: { durability: 'durable', atomicAppend: true, orderedRead: true },
+      getHead: (input) => backing.getHead(input),
+      getByIdempotencyKey: (ledgerId, key) => backing.getByIdempotencyKey(ledgerId, key),
+      readRange: (query) => backing.readRange(query),
+      compareAndAppend: (input) => backing.compareAndAppend(input),
+    };
+    const recorder = serviceWithJournal(journal);
+    const submit = (id: string, sequence: number) => recorder.submitAuthenticated({
+      ledgerId: 'kya:tenant:prod:primary',
+      producerEvent: event(id, sequence),
+      encryptedEvidence: [],
+    }, context);
+    await submit('evt_before_restore_1', 1);
+    expect((await submit('evt_before_restore_2', 2)).core.sequence).toBe('2');
+
+    // The restored journal reads one append behind this recorder's commits.
+    // The append targets the committed head, so the journal's own conflict
+    // answer proves the regression and nothing is signed at sequence 2 again.
+    backing = await restoredTo(backing, 2);
+    await expect(submit('evt_after_restore', 3)).rejects.toMatchObject({
+      code: 'AUDIT_JOURNAL_FAILURE',
+    });
+    expect(await backing.snapshot(ledger)).toHaveLength(2);
+
+    // A different digest at a sequence the journal already reported is a fork.
+    const fresh = new MemoryAuditJournal();
+    let forkAnswer = false;
+    const forking: AuditJournalProvider = {
+      capabilities: fresh.capabilities,
+      getHead: (input) => fresh.getHead(input),
+      getByIdempotencyKey: (ledgerId, key) => fresh.getByIdempotencyKey(ledgerId, key),
+      readRange: (query) => fresh.readRange(query),
+      compareAndAppend: async (input) => {
+        const head = await fresh.getHead(input.ledger);
+        return forkAnswer && head !== null
+          ? { kind: 'head_conflict', actualHead: { ...head, entryDigest: `sha256:${'f'.repeat(64)}` } }
+          : fresh.compareAndAppend(input);
+      },
+    };
+    const forkObserver = serviceWithJournal(forking);
+    const submitForked = (id: string, sequence: number) => forkObserver.submitAuthenticated({
+      ledgerId: 'kya:tenant:prod:primary',
+      producerEvent: event(id, sequence),
+      encryptedEvidence: [],
+    }, context);
+    await submitForked('evt_before_fork', 1);
+    forkAnswer = true;
+    await expect(submitForked('evt_after_fork', 2)).rejects.toMatchObject({
+      code: 'AUDIT_JOURNAL_FAILURE',
+    });
+  });
+
+  it('retries past a stale head read instead of failing, as compare-and-append intends', async () => {
+    const ledger = { ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1' };
+    const backing = new MemoryAuditJournal();
+    // A read replica one append behind, and one that misreports the head digest.
+    let misreport = false;
+    const lagging: AuditJournalProvider = {
+      capabilities: backing.capabilities,
+      getHead: async () => {
+        const entries = await backing.snapshot(ledger);
+        const behind = entries.at(-2);
+        if (misreport && entries.length > 0) {
+          return { ...ledger, sequence: entries.at(-1)!.core.sequence, entryDigest: `sha256:${'e'.repeat(64)}` };
+        }
+        return behind === undefined
+          ? null
+          : { ...ledger, sequence: behind.core.sequence, entryDigest: behind.entryDigest };
+      },
+      getByIdempotencyKey: (ledgerId, key) => backing.getByIdempotencyKey(ledgerId, key),
+      readRange: (query) => backing.readRange(query),
+      compareAndAppend: (input) => backing.compareAndAppend(input),
+    };
+    const recorder = serviceWithJournal(lagging);
+    const submit = (id: string, sequence: number) => recorder.submitAuthenticated({
+      ledgerId: 'kya:tenant:prod:primary',
+      producerEvent: event(id, sequence),
+      encryptedEvidence: [],
+    }, context);
+
+    for (let sequence = 1; sequence <= 3; sequence += 1) {
+      expect((await submit(`evt_lagging_${sequence}`, sequence)).core.sequence)
+        .toBe(String(sequence));
+    }
+    misreport = true;
+    expect((await submit('evt_misreported', 4)).core.sequence).toBe('4');
+    const entries = await backing.snapshot(ledger);
+    for (let index = 1; index < entries.length; index += 1) {
+      expect(entries[index]!.core.previousEntryDigest).toBe(entries[index - 1]!.entryDigest);
+    }
+  });
+
+  it('accepts a lost cold-start genesis race even when every replica read was stale', async () => {
+    const journal = new MemoryAuditJournal();
+    const primary = service({ journal }).recorder;
+    await primary.submitAuthenticated({
+      ledgerId: 'kya:tenant:prod:primary',
+      producerEvent: event('evt_primary_cold_start', 1),
+      encryptedEvidence: [],
+    }, context);
+
+    // The replica finished all reads before the primary genesis was visible to
+    // it, so the race surfaces only as an idempotency conflict at append time.
+    let staleReads = true;
+    const replicaJournal: AuditJournalProvider = {
+      capabilities: journal.capabilities,
+      getHead: async (ledger) => (staleReads ? null : journal.getHead(ledger)),
+      getByIdempotencyKey: async (ledgerId, key) =>
+        (staleReads ? null : journal.getByIdempotencyKey(ledgerId, key)),
+      readRange: (input) => journal.readRange(input),
+      compareAndAppend: async (input) => {
+        staleReads = false;
+        return journal.compareAndAppend(input);
+      },
+    };
+    const replica = new AuditRecorderService({
+      ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1', tenantRef,
+      binding: 'urn:kya-os:audit-binding:mcp:2025-11-25', sourceId: 'recorder-1',
+      journal: replicaJournal, signer: new TestSigner(),
+      hasher: new CryptoProviderAuditHasher(new NodeCryptoProvider()),
+      clock: new MutableClock(1_750_000_000_123),
+    });
+
+    const appended = await replica.submitAuthenticated({
+      ledgerId: 'kya:tenant:prod:primary',
+      producerEvent: event('evt_replica_cold_start', 2),
+      encryptedEvidence: [],
+    }, context);
+    expect(appended.core.sequence).toBe('2');
+  });
+
   it('requires an authorized, atomic predecessor seal before starting a linked epoch', async () => {
     const calls: unknown[] = [];
     let evidenceWrites = 0;

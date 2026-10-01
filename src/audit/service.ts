@@ -5,7 +5,7 @@ import type { AuditHasher } from './crypto.js';
 import { AuditProtocolError, AUDIT_ERROR_CODES } from './errors.js';
 import { collectAuditEvidenceRefs, digestAuditEvent } from './integrity.js';
 import type { EncryptedEvidenceInput } from './providers/evidence.js';
-import type { AuditOutboxProvider } from './providers/outbox.js';
+import { auditOutboxItemKey, type AuditOutboxProvider } from './providers/outbox.js';
 import type {
   AuditRecorderClient,
   AuditRecorderSubmission,
@@ -56,6 +56,11 @@ export interface AuditTrailConfiguration {
   onDeliveryFailure?: (error: unknown, event: AuditProducerEventCoreV1) => void;
   /** Called when an event is committed but the local source watermark cannot advance. */
   onSourceStateFailure?: (error: unknown, event: AuditProducerEventCoreV1) => void;
+  /**
+   * Called when a committed outbox item cannot be acknowledged. The item stays
+   * pending, and its redelivery resolves to the same recorder receipt.
+   */
+  onAcknowledgementFailure?: (error: unknown, event: AuditProducerEventCoreV1) => void;
   /** Optional deployment claim; validated against configured delivery at startup. */
   capabilities?: AuditCapabilities;
   /**
@@ -77,7 +82,6 @@ export interface AuditRecordOptions {
 /** Producer-side service: creates frozen events and applies declared delivery semantics. */
 export class AuditTrailService {
   readonly configuration: Readonly<AuditTrailConfiguration>;
-  private idCounter = 0n;
   private readonly sourceState: AuditSourceStateProvider;
   private sourceConstructionTail: Promise<void> = Promise.resolve();
 
@@ -131,8 +135,7 @@ export class AuditTrailService {
     const encryptedEvidence = options.encryptedEvidence ?? [];
     const buffered = this.configuration.delivery === 'buffered';
     const { event, submission } = await this.withSourceConstruction(async () => {
-      const builtEvent = await this.buildAndLinkEvent(input, eventId);
-      this.assertEvidenceIsReferenced(builtEvent, encryptedEvidence);
+      const builtEvent = await this.buildAndLinkEvent(input, eventId, encryptedEvidence);
       const frozenSubmission: AuditRecorderSubmission = Object.freeze({
         ledgerId: this.configuration.ledgerId,
         // Buffered submissions are never epoch-pinned: a durable outbox item may
@@ -185,28 +188,42 @@ export class AuditTrailService {
     if (this.configuration.delivery !== 'buffered') return { delivered: 0, failed: 0 };
     let delivered = 0;
     let failed = 0;
+    const outbox = this.configuration.outbox!;
     const blockedSources = new Set<string>();
-    for await (const item of this.configuration.outbox!.pending(limit)) {
+    for await (const item of outbox.pending(limit)) {
       const sourceId = item.submission.producerEvent.source.sourceId;
       if (blockedSources.has(sourceId)) continue;
+      // An adapter that predates AuditOutboxItemKey matches items by event ID
+      // alone, so it is handed the bare ID it was written for.
+      const key = outbox.capabilities.keyedBySource === true
+        ? auditOutboxItemKey(item)
+        : item.eventId;
+      let entry: SignedAuditEntryV1;
       try {
-        const entry = await this.submitAndValidate(item.submission);
-        try {
-          await this.sourceState.markReceipted(
-            sourceId,
-            item.submission.producerEvent.source.sourceSequence!,
-            entry.entryDigest,
-          );
-        } catch (error) {
-          this.configuration.onSourceStateFailure?.(error, item.submission.producerEvent);
-        }
-        await this.configuration.outbox!.markDelivered(item.eventId);
-        delivered += 1;
+        entry = await this.submitAndValidate(item.submission);
       } catch (error) {
-        await this.configuration.outbox!.markFailed(item.eventId, error);
+        await outbox.markFailed(key, error);
         this.configuration.onDeliveryFailure?.(error, item.submission.producerEvent);
         blockedSources.add(sourceId);
         failed += 1;
+        continue;
+      }
+      // The recorder commit is authoritative from here on: later bookkeeping
+      // failures must never be reported as a delivery failure.
+      delivered += 1;
+      try {
+        await this.sourceState.markReceipted(
+          sourceId,
+          item.submission.producerEvent.source.sourceSequence!,
+          entry.entryDigest,
+        );
+      } catch (error) {
+        this.configuration.onSourceStateFailure?.(error, item.submission.producerEvent);
+      }
+      try {
+        await outbox.markDelivered(key);
+      } catch (error) {
+        this.configuration.onAcknowledgementFailure?.(error, item.submission.producerEvent);
       }
     }
     return { delivered, failed };
@@ -250,22 +267,35 @@ export class AuditTrailService {
   private async buildAndLinkEvent(
     input: AuditTrailEventInput,
     eventId: string,
+    encryptedEvidence: readonly EncryptedEvidenceInput[],
   ): Promise<AuditProducerEventCoreV1> {
-    const claim = await this.sourceState.claimEvent(this.configuration.sourceId, eventId);
-    const event = this.buildEvent(input, eventId, claim);
-    const eventDigest = await digestAuditEvent(this.configuration.hasher, event);
-    await this.sourceState.markEmitted(
-      this.configuration.sourceId,
-      eventId,
-      claim.sequence,
-      eventDigest,
-    );
-    return event;
+    const sourceId = this.configuration.sourceId;
+    const occurredAt = input.occurredAt ?? this.configuration.clock.now();
+    // Everything the source claim does not decide is validated first, so locally
+    // rejected input never burns a source sequence or breaks predecessor linkage.
+    const provisional = this.buildEvent(input, eventId, occurredAt, { sequence: '0' });
+    canonicalizeJson(provisional);
+    this.assertEvidenceIsReferenced(provisional, encryptedEvidence);
+
+    const claim = await this.sourceState.claimEvent(sourceId, eventId);
+    try {
+      const event = this.buildEvent(input, eventId, occurredAt, claim);
+      const eventDigest = await digestAuditEvent(this.configuration.hasher, event);
+      await this.sourceState.markEmitted(sourceId, eventId, claim.sequence, eventDigest);
+      return event;
+    } catch (error) {
+      // The build failure is what the caller must see; a claim that cannot be
+      // released stays visible as a pending source gap.
+      await this.sourceState.abandonClaim?.(sourceId, eventId, claim.sequence)
+        .catch(() => undefined);
+      throw error;
+    }
   }
 
   private buildEvent(
     input: AuditTrailEventInput,
     eventId: string,
+    occurredAt: number,
     sourceClaim: { sequence: string; previousSourceEventDigest?: `sha256:${string}` },
   ): AuditProducerEventCoreV1 {
     return parseAuditProducerEvent({
@@ -274,7 +304,7 @@ export class AuditTrailService {
       eventId,
       eventVersion: '1.0.0',
       binding: this.configuration.binding,
-      occurredAt: input.occurredAt ?? this.configuration.clock.now(),
+      occurredAt,
       tenantRef: this.configuration.tenantRef,
       source: {
         producer: this.configuration.producer,
@@ -292,8 +322,9 @@ export class AuditTrailService {
     if (this.configuration.eventIdFactory !== undefined) {
       return this.configuration.eventIdFactory();
     }
-    this.idCounter += 1n;
-    return `audit_${this.configuration.clock.now()}_${this.idCounter}`;
+    // Random rather than clock/counter based: trails sharing an outbox or a
+    // recorder must never mint the same default event ID.
+    return `audit_${crypto.randomUUID()}`;
   }
 
   private assertEvidenceIsReferenced(

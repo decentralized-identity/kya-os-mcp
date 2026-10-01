@@ -20,6 +20,7 @@ import type {
   AuditBundleDisposition,
   AuditBundleInclusionProofV1,
   AuditBundleManifestCoreV1,
+  AuditLedgerRef,
   AuditObservationReceiptV1,
   AuditBundleSelectionV1,
   AuditAnchorReceipt,
@@ -34,7 +35,9 @@ import type {
 import {
   AUDIT_REASON_CODES,
   AuditArtifactVerifier,
+  applyRequiredAuditProfile,
   mergeAuditDimensions,
+  type AuditVerificationContext,
 } from './verifier.js';
 
 const BUNDLE_SCHEMA =
@@ -207,16 +210,29 @@ export interface VerifyAuditBundleDependencies {
   ) => Promise<boolean>;
 }
 
-function exporterAuthorized(
+/**
+ * An export has no ledger position, so an exporter key bounded by
+ * `validFromCheckpoint` or `validUntilCheckpoint` can neither be confirmed nor
+ * refuted here: such a key leaves the exporter `unresolved`, never authorized.
+ */
+function exporterAuthorization(
   core: AuditBundleManifestCoreV1,
   policy: AuditVerificationPolicyV1,
-): boolean {
-  return policy.authorizedExporters.some((authorization) =>
-    authorization.allowedPurposes.includes(core.purpose) &&
-    core.selections.every((selection) =>
-      authorization.allowedLedgerIds.includes(selection.ledgerId)) &&
-    authorization.signerKeys.some((key) =>
-      sameSigner(key.signer, core.exporter) && atTime(key, core.exportedAt)));
+): 'authorized' | 'unresolved' | 'unauthorized' {
+  let result: 'unresolved' | 'unauthorized' = 'unauthorized';
+  for (const authorization of policy.authorizedExporters) {
+    if (!authorization.allowedPurposes.includes(core.purpose) ||
+      !core.selections.every((selection) =>
+        authorization.allowedLedgerIds.includes(selection.ledgerId))) continue;
+    for (const key of authorization.signerKeys) {
+      if (!sameSigner(key.signer, core.exporter) || !atTime(key, core.exportedAt)) continue;
+      if (key.validFromCheckpoint === undefined && key.validUntilCheckpoint === undefined) {
+        return 'authorized';
+      }
+      result = 'unresolved';
+    }
+  }
+  return result;
 }
 
 function componentMetadata(component: AuditBundleComponentV1): Omit<AuditBundleComponentV1, 'content'> {
@@ -247,16 +263,35 @@ function ledgerEpochKey(value: { ledgerId: string; ledgerEpochId: string }): str
   return `${value.ledgerId}\0${value.ledgerEpochId}`;
 }
 
+function sameLedgerEpoch(left: AuditLedgerRef, right: AuditLedgerRef): boolean {
+  return left.ledgerId === right.ledgerId && left.ledgerEpochId === right.ledgerEpochId;
+}
+
 function compareDecimal(left: string, right: string): number {
   const a = BigInt(left);
   const b = BigInt(right);
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+function inclusionKey(checkpointDigest: string, entryDigest: string, sequence: string): string {
+  return `${checkpointDigest}\0${entryDigest}\0${sequence}`;
+}
+
+function consistencyKey(oldCheckpointDigest: string, newCheckpointDigest: string): string {
+  return `${oldCheckpointDigest}\0${newCheckpointDigest}`;
+}
+
+/** True when the entries are exactly the leaves 0..treeSize-1, in order. */
+function isCompletePrefix(entries: readonly SignedAuditEntryV1[], treeSize: string): boolean {
+  return BigInt(entries.length) === BigInt(treeSize) &&
+    entries.every((entry, index) => entry.core.sequence === String(index));
+}
+
 async function verifyEntryGroups(
   entries: readonly unknown[],
   policy: AuditVerificationPolicyV1,
   artifacts: AuditArtifactVerifier,
+  context: AuditVerificationContext,
 ): Promise<AuditVerificationReportV1> {
   const groups = new Map<string, SignedAuditEntryV1[]>();
   const malformed: unknown[] = [];
@@ -272,10 +307,10 @@ async function verifyEntryGroups(
     groups.set(key, group);
   }
   const reports = await Promise.all([
-    ...[...groups.values()].map((group) => artifacts.verifyEntries(group, policy)),
-    ...(malformed.length === 0 ? [] : [artifacts.verifyEntries(malformed, policy)]),
+    ...[...groups.values()].map((group) => artifacts.verifyEntries(group, policy, context)),
+    ...(malformed.length === 0 ? [] : [artifacts.verifyEntries(malformed, policy, context)]),
   ]);
-  if (reports.length === 0) return artifacts.verifyEntries([], policy);
+  if (reports.length === 0) return artifacts.verifyEntries([], policy, context);
   const first = reports[0]!;
   return {
     ...first,
@@ -303,6 +338,7 @@ function verifyCheckpointHistory(
   checkpoints: readonly SignedAuditCheckpointV1[],
   entries: readonly SignedAuditEntryV1[],
   selections: readonly AuditBundleSelectionV1[],
+  verifiedConsistency: ReadonlySet<string>,
 ): AuditVerificationDimension {
   const reasons = new Set<string>();
   const groups = new Map<string, SignedAuditCheckpointV1[]>();
@@ -314,17 +350,27 @@ function verifyCheckpointHistory(
   }
 
   for (const group of groups.values()) {
-    group.sort((left, right) => {
-      const a = BigInt(left.core.treeSize);
-      const b = BigInt(right.core.treeSize);
-      return a < b ? -1 : a > b ? 1 : 0;
-    });
+    group.sort((left, right) => compareDecimal(left.core.treeSize, right.core.treeSize));
+    const included = new Set(group.map((checkpoint) => checkpoint.checkpointDigest));
     for (let index = 1; index < group.length; index += 1) {
       const previous = group[index - 1]!;
       const current = group[index]!;
       if (current.core.treeSize === previous.core.treeSize) {
         reasons.add(AUDIT_REASON_CODES.CHECKPOINT_FORK_DETECTED);
-      } else if (current.core.previousCheckpointDigest !== previous.checkpointDigest) {
+        continue;
+      }
+      const claimed = current.core.previousCheckpointDigest;
+      if (claimed === previous.checkpointDigest) continue;
+      // A subset export may omit intermediate checkpoints. An unlinked pair is
+      // accepted only when an omitted checkpoint could sit between the two and
+      // a verified consistency proof binds them: the proof, not the chain link,
+      // is the split-view guarantee. Naming another included checkpoint, or
+      // none, is a forked checkpoint chain.
+      const omittable = claimed !== null && !included.has(claimed) &&
+        BigInt(current.core.treeSize) - BigInt(previous.core.treeSize) > 1n;
+      if (!omittable || !verifiedConsistency.has(
+        consistencyKey(previous.checkpointDigest, current.checkpointDigest),
+      )) {
         reasons.add(AUDIT_REASON_CODES.CHECKPOINT_CHAIN_MISMATCH);
       }
     }
@@ -347,18 +393,39 @@ function verifyCheckpointHistory(
     const details = entry.core.event.details;
     if (details.previousEpochId === undefined ||
       details.previousTerminalCheckpointDigest === undefined) continue;
-    const predecessorSelected = selections.some((selection) =>
-      selection.ledgerId === entry.core.ledgerId &&
-      selection.ledgerEpochId === details.previousEpochId);
-    if (predecessorSelected && !checkpoints.some((checkpoint) =>
-      checkpoint.core.ledgerId === entry.core.ledgerId &&
-      checkpoint.core.ledgerEpochId === details.previousEpochId &&
-      checkpoint.checkpointDigest === details.previousTerminalCheckpointDigest)) {
+    const predecessor = {
+      ledgerId: entry.core.ledgerId,
+      ledgerEpochId: details.previousEpochId,
+    };
+    if (!selections.some((selection) => sameLedgerEpoch(selection, predecessor))) continue;
+    const terminal = checkpoints.find((checkpoint) =>
+      sameLedgerEpoch(checkpoint.core, predecessor) &&
+      checkpoint.checkpointDigest === details.previousTerminalCheckpointDigest);
+    if (terminal === undefined) {
       reasons.add(AUDIT_REASON_CODES.CHECKPOINT_CHAIN_MISMATCH);
+      continue;
+    }
+    // The successor genesis commits where the predecessor epoch ends, so a
+    // predecessor checkpoint signed over a larger tree is a second authority
+    // still checkpointing after rollover. Entries past the terminal are not:
+    // the terminal checkpoint's own lifecycle event lands there legitimately.
+    const terminalSize = BigInt(terminal.core.treeSize);
+    if (checkpoints.some((checkpoint) =>
+      sameLedgerEpoch(checkpoint.core, predecessor) &&
+      BigInt(checkpoint.core.treeSize) > terminalSize)) {
+      reasons.add(AUDIT_REASON_CODES.CHECKPOINT_FORK_DETECTED);
     }
   }
 
   return dim(reasons.size === 0 ? 'valid' : 'invalid', reasons);
+}
+
+interface MerkleProofVerification {
+  dimension: AuditVerificationDimension;
+  /** Inclusion proofs that verified, keyed by checkpoint, entry digest, and sequence. */
+  inclusions: Set<string>;
+  /** Consistency proofs that verified, keyed by old and new checkpoint digest. */
+  consistencies: Set<string>;
 }
 
 async function verifyMerkleProofComponents(
@@ -366,8 +433,10 @@ async function verifyMerkleProofComponents(
   entries: readonly SignedAuditEntryV1[],
   checkpoints: readonly SignedAuditCheckpointV1[],
   hasher: AuditHasher,
-): Promise<AuditVerificationDimension> {
+): Promise<MerkleProofVerification> {
   const reasons = new Set<string>();
+  const inclusions = new Set<string>();
+  const consistencies = new Set<string>();
   const tree = new Rfc9162MerkleTree(hasher);
   const inclusionCandidates = includedArrays<unknown>(
     bundle,
@@ -401,6 +470,8 @@ async function verifyMerkleProofComponents(
         auditPath: item.proof.auditPath,
       }))) {
       reasons.add(AUDIT_REASON_CODES.MERKLE_PROOF_INVALID);
+    } else {
+      inclusions.add(inclusionKey(item.checkpointDigest, item.entryDigest, item.sequence));
     }
   }
 
@@ -433,6 +504,38 @@ async function verifyMerkleProofComponents(
         auditPath: item.proof.auditPath,
       }))) {
       reasons.add(AUDIT_REASON_CODES.MERKLE_PROOF_INVALID);
+    } else {
+      consistencies.add(consistencyKey(item.oldCheckpointDigest, item.newCheckpointDigest));
+    }
+  }
+  return {
+    dimension: dim(reasons.size === 0 ? 'valid' : 'invalid', reasons),
+    inclusions,
+    consistencies,
+  };
+}
+
+/**
+ * Without the complete leaf prefix a checkpoint's root cannot be recomputed,
+ * so every entry it covers must instead carry a verified inclusion proof
+ * against it, and a covered head entry must be the one the checkpoint signed.
+ */
+function verifyInclusionBinding(
+  checkpoint: SignedAuditCheckpointV1,
+  covered: readonly SignedAuditEntryV1[],
+  verifiedInclusions: ReadonlySet<string>,
+): AuditVerificationDimension {
+  const reasons = new Set<string>();
+  const headSequence = String(BigInt(checkpoint.core.treeSize) - 1n);
+  for (const entry of covered) {
+    if (!verifiedInclusions.has(
+      inclusionKey(checkpoint.checkpointDigest, entry.entryDigest, entry.core.sequence),
+    )) {
+      reasons.add(AUDIT_REASON_CODES.MERKLE_PROOF_MISSING);
+    }
+    if (entry.core.sequence === headSequence &&
+      entry.entryDigest !== checkpoint.core.headEntryDigest) {
+      reasons.add(AUDIT_REASON_CODES.CHECKPOINT_RANGE_MISMATCH);
     }
   }
   return dim(reasons.size === 0 ? 'valid' : 'invalid', reasons);
@@ -573,7 +676,7 @@ export async function verifyAuditBundle(
     };
   }
   if (!auditReplayBundleSchema.safeParse(bundle).success) {
-    return malformedBundleReport(policy);
+    return applyRequiredAuditProfile(malformedBundleReport(policy), policy);
   }
   const replayBundle = bundle as AuditReplayBundleV1;
   const reasons = new Set<string>();
@@ -587,9 +690,9 @@ export async function verifyAuditBundle(
   if (core === undefined || !policy.acceptedAlgorithms.includes(core.exporter.alg)) {
     reasons.add(AUDIT_REASON_CODES.UNSUPPORTED_ALGORITHM);
   }
-  if (core === undefined || !exporterAuthorized(core, policy)) {
-    reasons.add(AUDIT_REASON_CODES.BUNDLE_EXPORTER_UNAUTHORIZED);
-  }
+  const exporter = core === undefined ? 'unauthorized' : exporterAuthorization(core, policy);
+  if (exporter === 'unauthorized') reasons.add(AUDIT_REASON_CODES.BUNDLE_EXPORTER_UNAUTHORIZED);
+  if (exporter === 'unresolved') reasons.add(AUDIT_REASON_CODES.KEY_BOUNDARY_UNRESOLVED);
 
   if (core !== undefined) {
     const [manifestDigest, policyDigest] = await Promise.all([
@@ -665,16 +768,28 @@ export async function verifyAuditBundle(
     replayBundle,
     AUDIT_BUNDLE_MEDIA_TYPES.anchors,
   );
-  const artifacts = dependencies.artifacts ?? new AuditArtifactVerifier(dependencies);
-  const artifactReport = await verifyEntryGroups(entryCandidates, policy, artifacts);
   const entries = entryCandidates.filter((candidate): candidate is SignedAuditEntryV1 =>
     signedAuditEntrySchema.safeParse(candidate).success);
   const checkpoints = checkpointCandidates.filter(
     (candidate): candidate is SignedAuditCheckpointV1 =>
       signedAuditCheckpointSchema.safeParse(candidate).success,
   );
+  const observations = observationCandidates.filter(
+    (candidate): candidate is AuditObservationReceiptV1 =>
+      auditObservationReceiptSchema.safeParse(candidate).success,
+  );
+  // The bundle's own checkpoints are what checkpoint-bounded key policies name.
+  const context: AuditVerificationContext = { checkpoints };
+  const artifacts = dependencies.artifacts ?? new AuditArtifactVerifier(dependencies);
+  const artifactReport = await verifyEntryGroups(entryCandidates, policy, artifacts, context);
   let checkpointDimension = artifactReport.checkpointIntegrity;
   if (checkpointCandidates.length > 0) {
+    const proofs = await verifyMerkleProofComponents(
+      replayBundle,
+      entries,
+      checkpoints,
+      dependencies.hasher,
+    );
     const checkpointResults: AuditVerificationDimension[] = [];
     for (const candidate of checkpointCandidates) {
       if (!signedAuditCheckpointSchema.safeParse(candidate).success) {
@@ -682,16 +797,22 @@ export async function verifyAuditBundle(
         continue;
       }
       const checkpoint = candidate as SignedAuditCheckpointV1;
-      const checkpointEntries = entries.filter((entry) =>
-        entry.core.ledgerId === checkpoint.core.ledgerId &&
-        entry.core.ledgerEpochId === checkpoint.core.ledgerEpochId &&
+      const covered = entries.filter((entry) =>
+        sameLedgerEpoch(entry.core, checkpoint.core) &&
         BigInt(entry.core.sequence) < BigInt(checkpoint.core.treeSize));
-      checkpointResults.push(await artifacts.verifyCheckpoint(checkpoint, checkpointEntries, policy));
+      // A subset export (a sequence range, or no entries at all) cannot
+      // recompute the root, so its entries are bound by inclusion proofs.
+      checkpointResults.push(isCompletePrefix(covered, checkpoint.core.treeSize)
+        ? await artifacts.verifyCheckpoint(checkpoint, covered, policy, context)
+        : mergeAuditDimensions(
+            await artifacts.verifySignedCheckpoint(checkpoint, policy, context),
+            verifyInclusionBinding(checkpoint, covered, proofs.inclusions),
+          ));
     }
     checkpointDimension = mergeAuditDimensions(
       ...checkpointResults,
-      verifyCheckpointHistory(checkpoints, entries, core.selections),
-      await verifyMerkleProofComponents(replayBundle, entries, checkpoints, dependencies.hasher),
+      verifyCheckpointHistory(checkpoints, entries, core.selections, proofs.consistencies),
+      proofs.dimension,
     );
   } else if (core.selections.some((selection) => selection.checkpointTreeSizes.length > 0)) {
     checkpointDimension = dim('invalid', [AUDIT_REASON_CODES.CHECKPOINT_MISSING]);
@@ -709,15 +830,11 @@ export async function verifyAuditBundle(
         candidate.checkpointDigest === receipt.core.checkpointDigest);
       observationResults.push(checkpoint === undefined
         ? dim('invalid', [AUDIT_REASON_CODES.OBSERVATION_SCOPE_MISMATCH])
-        : await artifacts.verifyObservation(checkpoint, receipt, policy));
+        : await artifacts.verifyObservation(checkpoint, receipt, policy, context));
     }
-    const validObservations = observationCandidates.filter(
-      (candidate): candidate is AuditObservationReceiptV1 =>
-        auditObservationReceiptSchema.safeParse(candidate).success,
-    );
     anchorDimension = mergeAuditDimensions(
       ...observationResults,
-      verifyObservationHistory(validObservations),
+      verifyObservationHistory(observations),
     );
   }
   if (anchorCandidates.length > 0) {
@@ -732,8 +849,23 @@ export async function verifyAuditBundle(
     );
   }
 
-  const manifestDimension = dim(reasons.size === 0 ? 'valid' : 'invalid', reasons);
-  return {
+  // An exporter key bound that cannot be placed leaves the manifest
+  // undecided, never valid; any other manifest reason is a failure.
+  const manifestDimension = dim(
+    reasons.size === 0
+      ? 'valid'
+      : [...reasons].every((reason) => reason === AUDIT_REASON_CODES.KEY_BOUNDARY_UNRESOLVED)
+        ? 'indeterminate'
+        : 'invalid',
+    reasons,
+  );
+  // Entry recorder keys were already evaluated per ledger epoch group.
+  const currentKeys = artifacts.verifyCurrentKeys(policy, {
+    checkpoints,
+    observations,
+    exporter: core.exporter,
+  });
+  return applyRequiredAuditProfile({
     ...artifactReport,
     cryptographicIntegrity: mergeAuditDimensions(
       manifestDimension,
@@ -746,5 +878,8 @@ export async function verifyAuditBundle(
       entries,
       replayBundle.components.filter((component) => component.disposition !== 'included'),
     ),
-  };
+    currentAuthorization: currentKeys === undefined
+      ? artifactReport.currentAuthorization
+      : mergeAuditDimensions(artifactReport.currentAuthorization, currentKeys),
+  }, policy, { supportingAnchors: anchorCandidates.length > 0 });
 }

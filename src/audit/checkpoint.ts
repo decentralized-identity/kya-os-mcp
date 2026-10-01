@@ -111,6 +111,11 @@ export interface AuditCheckpointBuilderOptions {
   signer: AuditSigner;
   hasher: AuditHasher;
   clock?: { now(): number };
+  /**
+   * Lifecycle hook for a newly stored checkpoint. If it throws, this builder's
+   * next `createCheckpoint` call runs it again for that checkpoint, before any
+   * newer one, so it must be idempotent on the checkpoint digest.
+   */
   onCheckpointCreated?: (checkpoint: SignedAuditCheckpointV1) => Promise<void> | void;
 }
 
@@ -118,6 +123,9 @@ export interface AuditCheckpointBuilderOptions {
 export class AuditCheckpointBuilder {
   private readonly tree: Rfc9162MerkleTree;
   private readonly clock: { now(): number };
+  private readonly ledgerTails = new Map<string, Promise<void>>();
+  /** Per ledger, stored checkpoints whose lifecycle hook has not completed, oldest first. */
+  private readonly failedHooks = new Map<string, SignedAuditCheckpointV1[]>();
 
   constructor(private readonly options: AuditCheckpointBuilderOptions) {
     this.tree = new Rfc9162MerkleTree(options.hasher);
@@ -125,6 +133,52 @@ export class AuditCheckpointBuilder {
   }
 
   async createCheckpoint(ledger: AuditLedgerRef): Promise<SignedAuditCheckpointV1> {
+    // Serialized per ledger so concurrent calls chain to each other in tree-size
+    // order instead of both chaining to the same predecessor. The lifecycle hook
+    // runs outside the lock because it typically appends to the same journal.
+    const { checkpoint, inserted } = await this.serialized(
+      ledger,
+      () => this.storeCheckpoint(ledger),
+    );
+    const hook = this.options.onCheckpointCreated;
+    if (hook === undefined) return checkpoint;
+    // A stored checkpoint is never inserted again, so a hook that failed would
+    // otherwise be lost. Failed hooks run again first, in order, on the next
+    // call, whether or not the ledger has grown since.
+    const key = ledgerKey(ledger);
+    const due = this.failedHooks.get(key) ?? [];
+    this.failedHooks.delete(key);
+    if (inserted) due.push(checkpoint);
+    for (let index = 0; index < due.length; index += 1) {
+      try {
+        await hook(due[index]!);
+      } catch (error) {
+        this.failedHooks.set(key, [...due.slice(index), ...(this.failedHooks.get(key) ?? [])]);
+        throw error;
+      }
+    }
+    return checkpoint;
+  }
+
+  private async serialized<T>(ledger: AuditLedgerRef, operation: () => Promise<T>): Promise<T> {
+    const key = ledgerKey(ledger);
+    const previous = this.ledgerTails.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const tail = previous.then(() => gate);
+    this.ledgerTails.set(key, tail);
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.ledgerTails.get(key) === tail) this.ledgerTails.delete(key);
+    }
+  }
+
+  private async storeCheckpoint(
+    ledger: AuditLedgerRef,
+  ): Promise<{ checkpoint: SignedAuditCheckpointV1; inserted: boolean }> {
     const entries = await this.snapshotAtHead(ledger);
     if (entries.length === 0) {
       throw new AuditProtocolError(
@@ -136,26 +190,57 @@ export class AuditCheckpointBuilder {
     const treeSize = String(entries.length);
     const previous = await this.options.store.getLatest(ledger);
     if (previous !== null) {
-      const previousSize = parseDecimal(previous.core.treeSize, 'Previous tree size');
-      if (previousSize > BigInt(entries.length)) {
-        throw new AuditProtocolError(
-          AUDIT_ERROR_CODES.CHECKPOINT_ROLLBACK,
-          'Journal tree size is behind the latest signed checkpoint',
-        );
-      }
-      if (previousSize === BigInt(entries.length)) {
-        const currentRoot = await this.tree.root(entries.map((entry) => entry.entryDigest));
-        if (previous.core.rootDigest !== currentRoot ||
-          previous.core.headEntryDigest !== entries[entries.length - 1]!.entryDigest) {
-          throw new AuditProtocolError(
-            AUDIT_ERROR_CODES.CHECKPOINT_CONFLICT,
-            'Journal content forked at the latest checkpointed tree size',
-          );
-        }
-        return previous;
-      }
+      await this.assertExtends(previous, entries);
+      if (previous.core.treeSize === treeSize) return { checkpoint: previous, inserted: false };
     }
 
+    const result = await this.options.store.putIfAbsent(
+      await this.signCheckpoint(ledger, entries, previous),
+    );
+    if (result.kind === 'conflict') {
+      throw new AuditProtocolError(
+        AUDIT_ERROR_CODES.CHECKPOINT_CONFLICT,
+        'A different checkpoint already exists at this tree size',
+        { treeSize },
+      );
+    }
+    return { checkpoint: result.checkpoint, inserted: result.kind === 'inserted' };
+  }
+
+  /**
+   * A journal that has grown since the latest checkpoint must still hold that
+   * checkpoint's exact tree as its prefix. Otherwise the history was rewritten
+   * or restored, and chaining a new checkpoint to it would sign a split view.
+   */
+  private async assertExtends(
+    previous: SignedAuditCheckpointV1,
+    entries: readonly SignedAuditEntryV1[],
+  ): Promise<void> {
+    const previousSize = parseDecimal(previous.core.treeSize, 'Previous tree size');
+    if (previousSize > BigInt(entries.length)) {
+      throw new AuditProtocolError(
+        AUDIT_ERROR_CODES.CHECKPOINT_ROLLBACK,
+        'Journal tree size is behind the latest signed checkpoint',
+      );
+    }
+    const prefix = entries.slice(0, Number(previousSize));
+    const prefixRoot = await this.tree.root(prefix.map((entry) => entry.entryDigest));
+    if (previous.core.rootDigest !== prefixRoot ||
+      previous.core.headEntryDigest !== prefix[prefix.length - 1]?.entryDigest) {
+      throw new AuditProtocolError(
+        AUDIT_ERROR_CODES.CHECKPOINT_CONFLICT,
+        'Journal content forked at or below the latest checkpointed tree size',
+        { treeSize: previous.core.treeSize },
+      );
+    }
+  }
+
+  private async signCheckpoint(
+    ledger: AuditLedgerRef,
+    entries: readonly SignedAuditEntryV1[],
+    previous: SignedAuditCheckpointV1 | null,
+  ): Promise<SignedAuditCheckpointV1> {
+    const treeSize = String(entries.length);
     const first = entries[0]!;
     const last = entries[entries.length - 1]!;
     const core = parseAuditCheckpointCore({
@@ -177,23 +262,11 @@ export class AuditCheckpointBuilder {
       AUDIT_DIGEST_DOMAINS.checkpoint,
       core,
     );
-    const candidate = deepFreeze({
+    return deepFreeze({
       core,
       checkpointDigest,
       jws: await this.options.signer.sign(canonicalizeJsonBytes(core)),
     });
-    const result = await this.options.store.putIfAbsent(candidate);
-    if (result.kind === 'conflict') {
-      throw new AuditProtocolError(
-        AUDIT_ERROR_CODES.CHECKPOINT_CONFLICT,
-        'A different checkpoint already exists at this tree size',
-        { treeSize },
-      );
-    }
-    if (result.kind === 'inserted') {
-      await this.options.onCheckpointCreated?.(result.checkpoint);
-    }
-    return result.checkpoint;
   }
 
   async inclusionProof(

@@ -1,7 +1,42 @@
 import { describe, expect, it } from 'vitest';
+import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
 import { McpAuditEventAdapter } from '../adapters/mcp.js';
-import type { AuditTrailService } from '../service.js';
-import type { AuditProducerEventCoreV1 } from '../types.js';
+import { CryptoProviderAuditHasher } from '../crypto.js';
+import { MemoryAuditJournal } from '../providers/memory-journal.js';
+import { LocalAuditRecorderClient } from '../providers/recorder-client.js';
+import { MemoryAuditSourceState } from '../providers/source-state.js';
+import { AuditRecorderService } from '../recorder-service.js';
+import { createAuditTrail, type AuditTrailService } from '../service.js';
+import type { AuditProducerEventCoreV1, PartyRef } from '../types.js';
+
+const tenantRef: PartyRef = {
+  kind: 'keyed_commitment', value: `sha256:${'a'.repeat(64)}`, keyId: 'tenant-key-1',
+};
+const ledger = { ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1' };
+
+function recordedTrail() {
+  const hasher = new CryptoProviderAuditHasher(new NodeCryptoProvider());
+  const journal = new MemoryAuditJournal();
+  const recorder = new AuditRecorderService({
+    ...ledger, tenantRef, binding: 'urn:kya-os:audit-binding:mcp:2025-11-25',
+    sourceId: 'recorder-1', journal, hasher, clock: { now: () => 1_750_000_000_000 },
+    signer: {
+      ref: { did: 'did:key:zRecorder', kid: 'did:key:zRecorder#zRecorder', alg: 'EdDSA' },
+      sign: async (payload) => `test.${Buffer.from(payload).toString('base64url')}.signature`,
+    },
+  });
+  const trail = createAuditTrail({
+    recorder: new LocalAuditRecorderClient(recorder, () => ({
+      producerAuthority: 'did:key:zProducer', tenantAuthority: 'tenant-1', tenantRef,
+    })),
+    delivery: 'best-effort', hasher, ledgerId: ledger.ledgerId, tenantRef,
+    producer: { kind: 'pairwise_did', did: 'did:key:zProducer' },
+    sourceId: 'mcp-server-1', binding: 'urn:kya-os:audit-binding:mcp:2025-11-25',
+    privacy: { classification: 'internal', retentionClass: 'audit-365d' },
+    clock: { now: () => 1_750_000_000_000 }, sourceState: new MemoryAuditSourceState(),
+  });
+  return { journal, hasher, adapter: new McpAuditEventAdapter(trail) };
+}
 
 describe('MCP audit event adapter catalog', () => {
   it('maps consent, credential, key, ledger, and administration lifecycle signals', async () => {
@@ -108,5 +143,59 @@ describe('MCP audit event adapter catalog', () => {
       'configuration.changed', 'ledger.epoch.transitioned', 'checkpoint.anchor_failed',
       'audit.source_high_water', 'audit.accessed',
     ]);
+  });
+
+  it('records a rejected delegation whatever identifier the caller presented', async () => {
+    const { journal, hasher, adapter } = recordedTrail();
+    const presented = [
+      // A pair that a code-unit truncation at 256 would split.
+      `urn:uuid:${'a'.repeat(246)}\u{1F600}`,
+      // A lone surrogate is legal JSON but cannot be canonicalized.
+      JSON.parse('"urn:uuid:\\ud800"') as string,
+      '',
+    ];
+    for (const delegationRef of presented) {
+      await expect(adapter.delegation('rejected', {
+        delegationRef, outcome: 'failed', reasonCode: 'DELEGATION_VERIFICATION_FAILED',
+      })).resolves.toBeUndefined();
+    }
+
+    const refs = (await journal.snapshot(ledger))
+      .filter((entry) => entry.core.event.eventType === 'delegation.rejected')
+      .map((entry) => entry.core.event.details.family === 'delegation'
+        ? entry.core.event.details.delegationRef
+        : undefined);
+    expect(refs).toEqual([
+      await hasher.sha256(new TextEncoder().encode(presented[0])),
+      await hasher.sha256(new TextEncoder().encode('urn:uuid:�')),
+      await hasher.sha256(new Uint8Array()),
+    ]);
+  });
+
+  it('bounds caller-supplied context references so best-effort audit never throws', async () => {
+    const { journal, adapter } = recordedTrail();
+    const longId = `urn:example:delegation:${'d'.repeat(300)}`;
+    await expect(adapter.delegation('verified', {
+      delegationRef: longId,
+      outcome: 'succeeded',
+      context: {
+        authorization: {
+          source: 'delegation', decision: 'allowed', delegationRef: longId,
+          scopeId: 'orders:write', verificationCode: 'V'.repeat(200),
+        },
+        correlationId: longId,
+        causationId: 'causation-1',
+      },
+    })).resolves.toBeUndefined();
+
+    const event = (await journal.snapshot(ledger)).at(-1)!.core.event;
+    expect(event.eventType).toBe('delegation.verified');
+    expect(event.authorization).toMatchObject({
+      delegationRef: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+      scopeId: 'orders:write',
+      verificationCode: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+    });
+    expect(event.correlationId).toBe(event.authorization?.delegationRef);
+    expect(event.causationId).toBe('causation-1');
   });
 });

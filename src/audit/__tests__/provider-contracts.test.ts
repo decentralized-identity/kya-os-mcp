@@ -14,6 +14,11 @@ import {
   evaluateAuditOutboxProviderContract,
 } from '../testing/provider-contracts.js';
 import { MemoryAuditOutbox } from '../providers/outbox.js';
+import type {
+  AuditOutboxItem,
+  AuditOutboxItemKey,
+  AuditOutboxProvider,
+} from '../providers/outbox.js';
 import type { Digest, SignedAuditCheckpointV1 } from '../types.js';
 
 const digest = (character: string) => `sha256:${character.repeat(64)}` as Digest;
@@ -97,5 +102,53 @@ describe('audit provider contract kit', () => {
   it('holds the memory outbox to FIFO and retry-accounting semantics', async () => {
     const report = await evaluateAuditOutboxProviderContract(() => new MemoryAuditOutbox());
     expect(report.passed).toBe(true);
+  });
+
+  it('holds source-keyed outboxes to per-source identity and leaves bare-ID adapters as they were', async () => {
+    const keyedCheck = 'keys items by producer source and event identity';
+    // An adapter written before AuditOutboxItemKey: it matches items by event ID alone.
+    class EventIdOutbox implements AuditOutboxProvider {
+      readonly capabilities: AuditOutboxProvider['capabilities'] = {
+        durability: 'durable', fifoPerSource: true,
+      };
+      private readonly items = new Map<string, AuditOutboxItem>();
+      async enqueue(item: AuditOutboxItem): Promise<void> {
+        const existing = this.items.get(item.eventId);
+        if (existing !== undefined &&
+          JSON.stringify(existing.submission) !== JSON.stringify(item.submission)) {
+          throw new Error('event identity collision');
+        }
+        if (existing === undefined) this.items.set(item.eventId, item);
+      }
+      async *pending(): AsyncIterable<AuditOutboxItem> { yield* [...this.items.values()]; }
+      async markDelivered(eventId: string): Promise<void> { this.items.delete(eventId); }
+      async markFailed(eventId: string): Promise<void> {
+        const item = this.items.get(eventId);
+        if (item !== undefined) this.items.set(eventId, { ...item, attempts: item.attempts + 1 });
+      }
+    }
+
+    const legacy = await evaluateAuditOutboxProviderContract(() => new EventIdOutbox());
+    expect(legacy.passed).toBe(true);
+    expect(legacy.checks.map((item) => item.name)).not.toContain(keyedCheck);
+
+    const memory = await evaluateAuditOutboxProviderContract(() => new MemoryAuditOutbox());
+    expect(memory.checks.find((item) => item.name === keyedCheck)).toMatchObject({ passed: true });
+
+    // Declaring source keys while still keying by event ID alone is caught.
+    class KeyedInNameOnly extends EventIdOutbox {
+      override readonly capabilities: AuditOutboxProvider['capabilities'] = {
+        durability: 'durable', fifoPerSource: true, keyedBySource: true,
+      };
+      override async markDelivered(key: AuditOutboxItemKey | string): Promise<void> {
+        await super.markDelivered(typeof key === 'string' ? key : key.eventId);
+      }
+      override async markFailed(key: AuditOutboxItemKey | string): Promise<void> {
+        await super.markFailed(typeof key === 'string' ? key : key.eventId);
+      }
+    }
+    const claimsKeys = await evaluateAuditOutboxProviderContract(() => new KeyedInNameOnly());
+    expect(claimsKeys.checks.find((item) => item.name === keyedCheck))
+      .toMatchObject({ passed: false });
   });
 });

@@ -455,6 +455,29 @@ describe('CryptoService', () => {
       expect(mockCryptoProvider.verify).toHaveBeenCalled();
     });
 
+    it('requires an embedded payload to be the one the signature covers', async () => {
+      const jws = createValidJWS();
+      const [headerB64, embeddedB64] = jws.split('.') as [string, string];
+      const embedded = Buffer.from(embeddedB64, 'base64url').toString();
+      // Like a real signature, the mocked one verifies exactly one signing input.
+      const signOver = (payload: string) => {
+        const input = `${headerB64}.${Buffer.from(payload).toString('base64url')}`;
+        mockCryptoProvider.verify = vi.fn(
+          async (data: Uint8Array) => new TextDecoder().decode(data) === input,
+        );
+      };
+
+      signOver(embedded);
+      expect(await cryptoService.verifyJWS(jws, validJwk, { detachedPayload: embedded })).toBe(true);
+      expect(mockCryptoProvider.verify).toHaveBeenCalledTimes(1);
+
+      // Signed over a different payload than the one embedded: a reader of the
+      // JWS alone would see claims the verified signature never covered.
+      const signed = JSON.stringify({ sub: 'did:key:z123', iss: 'did:key:other' });
+      signOver(signed);
+      expect(await cryptoService.verifyJWS(jws, validJwk, { detachedPayload: signed })).toBe(false);
+    });
+
     it('should handle signature verification failure', async () => {
       mockCryptoProvider.verify = vi.fn().mockResolvedValue(false);
       const validJws = createValidJWS();

@@ -352,6 +352,23 @@ describe('createKyaOsMiddleware', () => {
       expect(proof.meta.responseHash).toMatch(/^sha256:[a-f0-9]{64}$/);
     });
 
+    it('keeps handler-supplied _meta keys next to the proof (SPEC §7.6)', async () => {
+      const { middleware: kyaos } = await createTestMiddleware({ autoSession: true });
+      const handler = kyaos.wrapWithProof('greet', async () => ({
+        content: [{ type: 'text', text: 'ok' }],
+        _meta: {
+          traceparent: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
+          'io.modelcontextprotocol/related-task': { taskId: 'task-1' },
+        },
+      }));
+
+      const meta = (await handler({}))._meta!;
+
+      expect(meta[KYA_OS_PROOF_META_KEY]).toBeDefined();
+      expect(meta.traceparent).toBe('00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01');
+      expect(meta['io.modelcontextprotocol/related-task']).toEqual({ taskId: 'task-1' });
+    });
+
     it('should not attach proof when result is an error', async () => {
       const { middleware: kyaos, did } = await createTestMiddleware();
 
@@ -486,6 +503,20 @@ describe('createKyaOsMiddleware', () => {
       expect(result._meta).toBeDefined();
       expect(result._meta!.proofError).toBeDefined();
       expect(result._meta![KYA_OS_PROOF_META_KEY]).toBeUndefined();
+    });
+
+    it('keeps handler-supplied _meta keys when proof generation fails', async () => {
+      const { middleware: kyaos } = await createTestMiddleware({ autoSession: true });
+      vi.spyOn(kyaos.proofGenerator, 'generateProof').mockRejectedValueOnce(new Error('HSM unavailable'));
+      const handler = kyaos.wrapWithProof('greet', async () => ({
+        content: [{ type: 'text', text: 'ok' }],
+        _meta: { traceparent: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01' },
+      }));
+
+      const meta = (await handler({}))._meta!;
+
+      expect(meta.proofError).toBeDefined();
+      expect(meta.traceparent).toBe('00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01');
     });
   });
 
@@ -1183,6 +1214,23 @@ describe('createKyaOsMiddleware', () => {
 
       expect(proof1.meta.sessionId).toBe(proof2.meta.sessionId);
     });
+
+    it('creates one session for concurrent first calls, so later calls stay proven', async () => {
+      const { middleware: kyaos } = await createTestMiddleware({ autoSession: true });
+      const handler = kyaos.wrapWithProof('greet', async () => ({
+        content: [{ type: 'text', text: 'Hello!' }],
+      }));
+
+      const [first, second] = await Promise.all([handler({}), handler({})]);
+      const later = await handler({});
+
+      const sessionOf = (r: { _meta?: Record<string, unknown> }) =>
+        (r._meta?.[KYA_OS_PROOF_META_KEY] as { meta: { sessionId: string } } | undefined)?.meta.sessionId;
+      expect(kyaos.sessionManager.getStats().activeSessions).toBe(1);
+      expect(sessionOf(first)).toBeDefined();
+      expect(sessionOf(second)).toBe(sessionOf(first));
+      expect(sessionOf(later)).toBe(sessionOf(first));
+    });
   });
 
   describe('emitLegacyProofKey', () => {
@@ -1262,6 +1310,56 @@ describe('createKyaOsMiddleware', () => {
       const result = await handler({});
       expect(result.content[0].text).toBe('Hello!');
       expect(result._meta?.[KYA_OS_PROOF_META_KEY]).toBeUndefined();
+    });
+
+    it('resumes attribution once every other session has expired', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        vi.setSystemTime(new Date('2026-09-30T00:00:00Z'));
+        const { middleware: kyaos, did } = await createTestMiddleware();
+        const handshake = () => kyaos.handleHandshake({
+          nonce: `expired-${Math.random().toString(16).slice(2)}`,
+          audience: did,
+          timestamp: Math.floor(Date.now() / 1000),
+        });
+        await handshake(); // first connection, never used again
+        vi.setSystemTime(new Date('2026-09-30T01:05:00Z')); // past its 60-minute idle TTL
+        await handshake(); // the client reconnects
+
+        const handler = kyaos.wrapWithProof('greet', async () => ({
+          content: [{ type: 'text', text: 'Hello!' }],
+        }));
+        // Only the reconnected session is live, so the proof is attributable.
+        const result = await handler({});
+        expect(result._meta?.[KYA_OS_PROOF_META_KEY]).toBeDefined();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('sweeps at most once per interval while ambiguous, and survives a failed sweep', async () => {
+      const { middleware: kyaos, did } = await createTestMiddleware();
+      for (const label of ['a', 'b']) {
+        await kyaos.handleHandshake({
+          nonce: `sweep-${label}-${Math.random().toString(16).slice(2)}`,
+          audience: did,
+          timestamp: Math.floor(Date.now() / 1000),
+        });
+      }
+      const cleanup = vi.spyOn(kyaos.sessionManager, 'cleanup')
+        .mockRejectedValueOnce(new Error('session store unavailable'));
+      const handler = kyaos.wrapWithProof('greet', async () => ({
+        content: [{ type: 'text', text: 'Hello!' }],
+      }));
+
+      const first = await handler({});
+      const second = await handler({});
+
+      expect(cleanup).toHaveBeenCalledTimes(1);
+      for (const result of [first, second]) {
+        expect(result.content[0].text).toBe('Hello!');
+        expect(result._meta?.[KYA_OS_PROOF_META_KEY]).toBeUndefined();
+      }
     });
   });
 });

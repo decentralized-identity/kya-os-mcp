@@ -49,6 +49,12 @@ export interface AuthHandshakeConfig {
   };
   authorization: {
     authorizationUrl: string;
+    /**
+     * Fallback lifetime in milliseconds for the challenge's advertised
+     * `expiresAt`, used only when the token store cannot report the expiry of
+     * the token it just created. The store's own expiry is advertised otherwise,
+     * so the challenge never outlives its token.
+     */
     resumeTokenTtl?: number;
     /**
      * How to handle agents with no reputation history (404 from reputation
@@ -121,7 +127,6 @@ export class MemoryResumeTokenStore implements ResumeTokenStore {
       createdAt: number;
       expiresAt: number;
       metadata?: Record<string, unknown>;
-      fulfilled: boolean;
     }
   >();
   private ttl: number;
@@ -141,13 +146,15 @@ export class MemoryResumeTokenStore implements ResumeTokenStore {
     const token = `rt_${hex}`;
     const now = Date.now();
 
+    // A token is minted for every unauthorized call and most are never
+    // redeemed, so expired ones are dropped here rather than only when read.
+    this.sweepExpired(now);
     this.tokens.set(token, {
       agentDid,
       scopes,
       createdAt: now,
       expiresAt: now + this.ttl,
       metadata,
-      fulfilled: false,
     });
 
     return token;
@@ -168,8 +175,6 @@ export class MemoryResumeTokenStore implements ResumeTokenStore {
       return null;
     }
 
-    if (data.fulfilled) return null;
-
     return {
       agentDid: data.agentDid,
       scopes: data.scopes,
@@ -179,15 +184,26 @@ export class MemoryResumeTokenStore implements ResumeTokenStore {
     };
   }
 
+  // A fulfilled token is never read again, so it is dropped rather than kept
+  // until it expires.
   async fulfill(token: string): Promise<void> {
-    const data = this.tokens.get(token);
-    if (data) {
-      data.fulfilled = true;
-    }
+    this.tokens.delete(token);
   }
 
   clear(): void {
     this.tokens.clear();
+  }
+
+  /**
+   * Every token gets the same TTL, so insertion order is expiry order: drop
+   * from the front until the first live token. Each token is dropped once, so
+   * the cost is amortized constant per create().
+   */
+  private sweepExpired(now: number): void {
+    for (const [token, data] of this.tokens) {
+      if (now <= data.expiresAt) return;
+      this.tokens.delete(token);
+    }
   }
 }
 
@@ -425,6 +441,27 @@ async function fetchAgentReputation(
   };
 }
 
+/**
+ * The expiry, in milliseconds, a store reports for a token it just created, or
+ * undefined when it cannot report one: a failed read, or a value that is not a
+ * future instant in milliseconds. The caller then advertises the configured
+ * `resumeTokenTtl`, as it always did.
+ */
+async function storedExpiry(
+  store: ResumeTokenStore,
+  token: string,
+): Promise<number | undefined> {
+  try {
+    const expiresAt = (await store.get(token))?.expiresAt;
+    return typeof expiresAt === 'number' && Number.isFinite(expiresAt) && expiresAt > Date.now()
+      ? expiresAt
+      : undefined;
+  } catch (error) {
+    logger.warn('[AuthHandshake] Resume token store could not report the token expiry:', error);
+    return undefined;
+  }
+}
+
 async function buildNeedsAuthorizationError(
   agentDid: string,
   scopes: string[],
@@ -435,9 +472,12 @@ async function buildNeedsAuthorizationError(
     requestedAt: Date.now(),
   });
 
-  // resumeTokenTtl is in milliseconds; the wire field is Unix seconds.
+  // Advertise the expiry the store enforces: a challenge that outlives its
+  // token sends the user through consent only to fail the resume. Both are in
+  // milliseconds; the wire field is Unix seconds.
   const expiresAt = Math.floor(
-    (Date.now() + (config.authorization.resumeTokenTtl ?? 600_000)) / 1000
+    ((await storedExpiry(config.resumeTokenStore, resumeToken)) ??
+      Date.now() + (config.authorization.resumeTokenTtl ?? 600_000)) / 1000,
   );
 
   const authUrl = new URL(config.authorization.authorizationUrl);

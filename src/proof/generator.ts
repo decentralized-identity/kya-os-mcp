@@ -13,6 +13,7 @@ import { canonicalizeJson, canonicalizeJsonBytes } from '../utils/canonical-json
 import {
   RESPONSE_PROOF_PROFILE_BODY,
   RESPONSE_PROOF_PROFILE_ENVELOPE,
+  validateDetachedProof,
   type DetachedProof,
   type ProofMeta,
   type ResponseProofProfile,
@@ -20,6 +21,7 @@ import {
 } from '../types/protocol.js';
 import type { CryptoProvider } from '../providers/base.js';
 import { CryptoService, type Ed25519JWK } from '../utils/crypto-service.js';
+import { alternateRequestShapes } from './covered-request.js';
 import { base64ToBytes, base64urlEncodeFromBytes, bytesToBase64 } from '../utils/base64.js';
 import { ED25519_PKCS8_DER_HEADER, ED25519_KEY_SIZE } from '../utils/ed25519-constants.js';
 
@@ -75,6 +77,12 @@ export interface ProofAgentIdentity {
   publicKey: string;
 }
 
+/**
+ * A request as a proof binds it: `method` and `params`. 1.x producers pass a
+ * tool call as `{ method: <tool name>, params: <arguments> }`; verifiers also
+ * take the `tools/call` request as sent (SPEC §7.3, see
+ * {@link acceptedRequestHashes}).
+ */
 export interface ToolRequest {
   method: string;
   params?: unknown;
@@ -183,6 +191,76 @@ function canonicalResponseBody(
     if (key !== '_meta') envelope[key] = value;
   }
   return envelope;
+}
+
+/**
+ * Every `requestHash` a verifier accepts for `request`: the hash of `request`
+ * as given (the {@link computeCanonicalHashes} rule producers sign with), then
+ * the hashes of the same call's other shapes, so that a caller holding either
+ * the legacy `{ method: <tool name>, params: <arguments> }` shape or the
+ * `tools/call` request as sent can verify a proof minted over either (SPEC
+ * §7.3). Each candidate describes the same tool name and business arguments,
+ * so none admits a proof over a different call.
+ */
+export async function acceptedRequestHashes(
+  request: ToolRequest,
+  hash: (bytes: Uint8Array) => Promise<string>,
+): Promise<string[]> {
+  const hashes = new Set<string>();
+  for (const shape of [request, ...alternateRequestShapes(request)]) {
+    hashes.add((await computeCanonicalHashes(shape, undefined, hash)).requestHash);
+  }
+  return [...hashes];
+}
+
+/** How received content fails to match the hashes a proof binds. */
+export type ContentBindingMismatch =
+  | 'request'
+  | 'response'
+  | 'response-missing'
+  | 'response-unexpected';
+
+/**
+ * Compare the request (and response) a verifier actually received with the
+ * hashes a proof binds; `undefined` means they match. Shared by `ProofVerifier`
+ * and `ProofGenerator.verifyProof` so both apply one fail-closed rule.
+ *
+ * The request matches when `meta.requestHash` is any of
+ * {@link acceptedRequestHashes}; the hash of the request as given is tried
+ * first, and the other shapes only when it differs.
+ *
+ * `meta.responseHash` is the ONLY thing that binds the response body —
+ * including a needs_authorization challenge's `authorizationUrl` — so it is
+ * checked whenever the proof carries one. Gating the comparison on a response
+ * being supplied would pass a caller who supplies only the request while a
+ * swapped URL went unverified (the `requestHash` is identical for a genuine and
+ * a MITM'd challenge). So: a proof that binds a response must be given one, and
+ * a proof that binds none must not be. The response profile comes from the
+ * proof's own signature-covered `prf` claim, never from configuration.
+ */
+export async function findContentBindingMismatch(
+  meta: Pick<ProofMeta, 'requestHash' | 'responseHash' | 'prf'>,
+  expected: { request: ToolRequest; response?: ToolResponse },
+  hash: (bytes: Uint8Array) => Promise<string>,
+): Promise<ContentBindingMismatch | undefined> {
+  const { requestHash, responseHash } = await computeCanonicalHashes(
+    expected.request,
+    expected.response,
+    hash,
+    meta.prf ?? RESPONSE_PROOF_PROFILE_BODY,
+  );
+  if (
+    meta.requestHash !== requestHash &&
+    !(await acceptedRequestHashes(expected.request, hash)).includes(meta.requestHash)
+  ) {
+    return 'request';
+  }
+  const bindsResponse = meta.responseHash !== undefined;
+  if (bindsResponse !== (expected.response !== undefined)) {
+    return bindsResponse ? 'response-missing' : 'response-unexpected';
+  }
+  if (bindsResponse && meta.responseHash !== responseHash) return 'response';
+  return undefined;
 }
 
 /**
@@ -370,37 +448,42 @@ export class ProofGenerator {
     );
   }
 
+  /**
+   * Check that a proof was signed by this generator's identity over `request`
+   * and, when the proof binds one, `response`. Every `meta` member is checked
+   * through the signature: the JWS is verified against the payload rebuilt from
+   * `meta`, and a payload it embeds must be that one. A proof that binds a
+   * response fails without one, and a proof that binds none fails with one.
+   * `request` may be given in either shape (see {@link acceptedRequestHashes}).
+   *
+   * This checks the artifact only, with no freshness or replay state; verify
+   * proofs received over the wire with `ProofVerifier.verifyProof`.
+   */
   async verifyProof(
     proof: DetachedProof,
     request: ToolRequest,
     response?: ToolResponse
   ): Promise<boolean> {
     try {
-      // The profile is always derived from the proof's own signature-covered
-      // `prf` claim — never from generator configuration — so an envelope-profile proof is
-      // checked with envelope hashing and a body-profile proof with body hashing.
-      const expectedHashes = await this.generateCanonicalHashes(
-        request,
-        response,
-        proof.meta.prf ?? RESPONSE_PROOF_PROFILE_BODY,
-      );
-
-      if (proof.meta.requestHash !== expectedHashes.requestHash) {
+      if (!validateDetachedProof(proof).success) return false;
+      const { meta } = proof;
+      // iss/sub cover meta.did; the protected header's kid is pinned below.
+      if (meta.did !== this.identity.did || meta.kid !== this.identity.kid) {
         return false;
       }
-      if (proof.meta.responseHash !== undefined) {
-        if (
-          expectedHashes.responseHash === undefined ||
-          proof.meta.responseHash !== expectedHashes.responseHash
-        ) {
-          return false;
-        }
-      }
+
+      const mismatch = await findContentBindingMismatch(
+        meta,
+        { request, ...(response !== undefined ? { response } : {}) },
+        (bytes) => this.cryptoProvider.hash(bytes),
+      );
+      if (mismatch !== undefined) return false;
 
       const publicKeyJwk = this.base64PublicKeyToJWK(this.identity.publicKey);
       const cryptoService = new CryptoService(this.cryptoProvider);
 
-      return cryptoService.verifyJWS(proof.jws, publicKeyJwk, {
+      return await cryptoService.verifyJWS(proof.jws, publicKeyJwk, {
+        detachedPayload: canonicalizeJson(buildProofJwsPayload(meta)),
         expectedKid: this.identity.kid,
         alg: 'EdDSA',
       });

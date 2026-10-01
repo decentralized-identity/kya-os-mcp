@@ -384,8 +384,8 @@ The server MUST validate the handshake request:
 
 2. **Nonce Uniqueness**: The (nonce, agentDid) pair MUST NOT have been seen before
    - Reject with "Nonce already used (replay attack prevention)"
-   - Nonces MUST be cached for at least `sessionTtlMinutes + 1 minute`
-   - When `agentDid` is omitted, the dedupe key is `nonce` alone. Servers MUST use a shorter cache TTL for anonymous nonces (recommended: 60 seconds, vs. the default 120 seconds for authenticated handshakes)
+   - Nonces MUST be retained for at least the acceptance window of rule 1, as §5.5 specifies; retention is not tied to the session TTL
+   - When `agentDid` is omitted, the dedupe key is `nonce` alone. Servers MAY keep a shorter minimum retention for anonymous nonces than for authenticated ones (for example 60 and 120 seconds), never below what §5.5 requires
 
 3. **Audience Match**: `request.audience` MUST match the server's DID or expected domain
    - Prevents credential forwarding attacks
@@ -423,7 +423,9 @@ The nonce cache implementation MUST:
 - Be atomic to prevent race conditions in concurrent environments
 - For distributed deployments: use a shared store with an atomic conditional insert and expiry, such as Redis `SET NX PX`, a DynamoDB conditional write or a Durable Object transaction (not in-memory). Eventually consistent stores such as Cloudflare Workers KV cannot provide the atomic check-and-set on their own.
 
-Nonce lifetime MUST exceed the session TTL. Servers MUST NOT drop nonces before the lifetime expires, to prevent replay attacks via early eviction.
+**Retention.** A verifier MUST retain each admitted nonce at least until the timestamp it was admitted with leaves the acceptance window on the verifier's clock: until `ts + skew`, plus a margin of at least one second for second-granularity timestamps. `ts` is the handshake `timestamp` or the proof's `ts`, and `skew` is the largest timestamp skew the verifier may apply while the nonce is retained; a verifier that can widen its skew at runtime (§10.1) retains for the widest. Servers MUST NOT evict a nonce before its retention ends, to prevent replay via early eviction. Verifiers MAY retain longer, and a verifier whose clock can be stepped backwards SHOULD add the largest expected step to the margin.
+
+Retention is bounded by the acceptance window, not by the session TTL. A nonce presented after its window is rejected on its timestamp (§5.2 rule 1, §11.3) before the cache is consulted, so keeping it longer adds memory and denial-of-service exposure and no replay protection. The bound holds because every nonce-checked path checks a timestamp window in the same verification: the handshake (§5.2), the detached proof and the holder-binding request proof (`ts` within skew, signed with the nonce, §7.4), and the Entity Card proof (`created`/`expires`, SPEC-ENTITY-CARD §8). The handshake request is unsigned, so a replayed handshake gives its sender nothing that a fresh handshake would not; its nonce check deduplicates and follows the same window. A path that checked a nonce without a timestamp window would have to retain the nonce for as long as the message it protects stays valid.
 
 ---
 
@@ -877,10 +879,10 @@ interface ProofMeta {
   did: string;          // Server's DID (signer)
   kid: string;          // Key ID used for signing
   ts: number;           // Unix epoch seconds when proof was generated
-  nonce: string;        // Session nonce (prevents cross-session replay)
+  nonce: string;        // Fresh random nonce per proof (replay protection, §5.5)
   audience: string;     // Session audience
   sessionId: string;    // Session identifier
-  requestHash: string;  // SHA-256 of canonicalized request
+  requestHash: string;  // SHA-256 of the canonicalized request (§7.3)
   responseHash?: string; // SHA-256 of canonicalized response. Present on success
                          // AND on needs_authorization challenges (binds the
                          // challenge content, incl. authorizationUrl); ABSENT on
@@ -905,13 +907,35 @@ interface ProofMeta {
 2. **Hash**: Compute SHA-256 of the canonical JSON bytes (UTF-8 encoded)
 3. **Format**: `sha256:<64-char-lowercase-hex>`
 
-Request canonicalization includes:
+Request canonicalization covers the JSON-RPC request as sent: its `method` and `params`.
+The envelope members `jsonrpc` and `id` are not covered.
+Two kinds of member are removed before canonicalizing:
+
+1. `params._meta`, if present.
+   `_meta` is intermediary-mutable transport metadata that also carries proofs (§7.6), so it is never signed.
+   Only that top-level member is removed; values nested under other `params` members are not touched.
+2. For `method: "tools/call"`, every member of `params.arguments` whose name begins with `_kyaos`: the KYA-OS control arguments (`_kyaos_delegation`, `_kyaos_proof`, `_kyaos_approvals`).
+   They carry the credentials that authorize the call, each authenticated on its own, and the holder-of-key request proof and approval grants are themselves bound to this hash, so covering them would make the hash depend on its own output.
+   Tool handlers SHOULD NOT receive control arguments, so that the covered request is the call the tool executes.
+   An absent `params.arguments` is covered as `{}`, since a server cannot tell it from an empty one.
+
+Every other `params` member (`name`, `task`, and any future member) is covered.
+When `params` is absent the covered request is `{ "method": ... }`.
+For a tool call:
 ```json
 {
   "method": "tools/call",
-  "params": { /* sorted keys, no whitespace */ }
+  "params": { "name": "echo", "arguments": { /* minus _kyaos* members */ } }
 }
 ```
+
+A client, a PEP or a third-party auditor recomputes `requestHash` this way from the request it sent or received.
+Rule 1 is the rule Entity Card request proofs use (SPEC-ENTITY-CARD §8.3).
+Appendix C.1 gives vectors.
+
+**Legacy shape in 1.x.** The 1.x releases of the reference implementation (`@kya-os/mcp`) still emit `requestHash` over the legacy shape `{"method": <tool name>, "params": <arguments>}` for every proof over a tool call: response and outcome proofs (§7.4), the approval `requestHash` of a step-up challenge, and holder-of-key request proofs.
+Their verifiers accept a `requestHash` over either shape of the call they hold, so a producer that follows this section verifies against them; the reference producers switch to the covered request above in 2.0.0.
+The legacy shape is deprecated: it hashes a tool named after a JSON-RPC method like that method's request, and it has no room for `params` members other than the arguments.
 
 Response canonicalization is selected by the proof's response-proof profile, named by the signature-covered `prf` claim (§7.2):
 
@@ -1422,7 +1446,7 @@ and the residual risk an operator carries.
 
 - Nonces MUST be cryptographically random (16 bytes minimum entropy)
 - Nonce cache MUST persist across server restarts (use external storage)
-- Nonce cache TTL MUST exceed session TTL
+- Nonce cache retention MUST cover the timestamp acceptance window (§5.5); it need not reach the session TTL
 - Distributed deployments MUST use atomic check-and-set operations
 
 ### 11.3 Timestamp Skew Attacks
@@ -1782,6 +1806,35 @@ These test vectors enable interoperability testing across implementations.
 **KYA-OS Format:**
 ```
 sha256:5057521f310b536837b619f0ac040ef8064f8c597da8ec22a56801b435744033
+```
+
+**Covered request (§7.3).**
+`requestHash` covers a request's `method` and `params` minus `params._meta` and, on a `tools/call`, minus the `_kyaos*` control arguments; an absent `arguments` is covered as `{}`.
+Each of these requests covers to the input above and hashes to the same value:
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"echo","arguments":{"_kyaos_proof":{"jws":"...","meta":{}}},"_meta":{"traceparent":"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}}}
+```
+
+```json
+{"method":"tools/call","params":{"name":"echo"}}
+```
+
+Business arguments stay covered:
+
+**Input JSON:**
+```json
+{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"echo","arguments":{"msg":"hi","_kyaos_delegation":{"id":"urn:uuid:1111-aaaa"}},"_meta":{"progressToken":7}}}
+```
+
+**Covered request, JCS canonicalized:**
+```json
+{"method":"tools/call","params":{"arguments":{"msg":"hi"},"name":"echo"}}
+```
+
+**KYA-OS Format:**
+```
+sha256:c8f3d59959c9247211de8c76b94ef17f0c279f09362350ced67f69ecdb89d6c7
 ```
 
 ### C.2 did:key Derivation

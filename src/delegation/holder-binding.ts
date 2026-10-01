@@ -25,6 +25,7 @@
 import { extractPublicKeyFromDidKey, publicKeyToJwk } from './did-key-resolver.js';
 import { getDidMethod, didKeyFragment } from '../utils/did-helpers.js';
 import { ProofGenerator } from '../proof/generator.js';
+import { isKyaOsControlArg } from '../proof/covered-request.js';
 import { base64urlEncodeFromBytes } from '../utils/base64.js';
 import type { ProofVerifier } from '../proof/verifier.js';
 import type { ToolRequest, ToolResponse, ProofAgentIdentity } from '../proof/generator.js';
@@ -32,24 +33,9 @@ import type { DetachedProof } from '../types/protocol.js';
 import type { CryptoProvider } from '../providers/base.js';
 import type { Ed25519JWK } from '../utils/crypto-service.js';
 
-/**
- * The control-arg key prefix. Args beginning with this are protocol envelope
- * (`_kyaos_delegation`, `_kyaos_proof`, `_kyaos_approvals`), not the caller's
- * tool intent, so they are excluded from the holder-binding request hash.
- */
-const KYAOS_CONTROL_PREFIX = '_kyaos';
-
-/**
- * Whether an argument key is reserved KYA-OS protocol envelope (`_kyaos*`:
- * `_kyaos_delegation`, `_kyaos_proof`, `_kyaos_approvals`, …) rather than caller
- * tool intent. The SINGLE predicate behind both the holder-binding request hash
- * and the middleware's handler-arg stripping, so the set excluded from the bound
- * hash and the set withheld from the handler cannot drift — a proof binds exactly
- * the call the handler runs.
- */
-export function isKyaOsControlArg(key: string): boolean {
-  return key.startsWith(KYAOS_CONTROL_PREFIX);
-}
+// The control-arg predicate lives with the request-hash rules it feeds; it is
+// re-exported here, where the middleware and package entry point import it.
+export { isKyaOsControlArg };
 
 /**
  * The canonical request a holder-binding proof binds: the tool name plus the
@@ -57,6 +43,10 @@ export function isKyaOsControlArg(key: string): boolean {
  * the client (when minting the proof) and the PEP (when verifying it) so the two
  * cannot drift — the request hash is computed over the identical shape on both
  * sides regardless of which control args rode along.
+ *
+ * This is the legacy shape 1.x clients sign. The PEP's verifier also accepts a
+ * proof over the SPEC §7.3 `tools/call` request for the same call, so a client
+ * that follows the specification is bound too.
  */
 export function toHolderBindingRequest(
   toolName: string,
@@ -150,7 +140,11 @@ export interface AssertHolderBindingInput {
   proof: DetachedProof;
   /** The delegation subject DID the proof must be bound to. */
   subjectDid: string;
-  /** The request the proof must bind (content binding). */
+  /**
+   * The request the proof must bind (content binding). A proof over either
+   * shape of this call, the legacy one or the SPEC §7.3 `tools/call` request,
+   * is accepted.
+   */
   request: ToolRequest;
   /**
    * The response the proof binds, when the proof carries one. Inbound request

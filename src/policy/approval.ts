@@ -32,13 +32,20 @@ export interface Quorum {
  * Quorum is satisfied iff at least `quorum.n` DISTINCT approvers each signed an
  * `approve` grant over EXACTLY `requestHash`, drawn from `quorum.approvers`
  * (empty = any), with a signature accepted by `isValidSignature`.
+ *
+ * `requestHash` may list several hashes when they all identify the one
+ * suspended action, as the hashes of its legacy and SPEC §7.3 request shapes
+ * do; a grant over any of them counts.
  */
 export async function verifyApprovalQuorum(
   grants: ApprovalGrant[],
-  requestHash: string,
+  requestHash: string | readonly string[],
   quorum: Quorum,
   isValidSignature: (g: ApprovalGrant) => Promise<boolean>,
 ): Promise<QuorumResult> {
+  const actionHashes: readonly string[] = typeof requestHash === 'string'
+    ? [requestHash]
+    : requestHash;
   // A non-positive quorum is a misconfiguration (e.g. a third-party engine
   // returning {n:0}); treat it as never-satisfiable rather than auto-passing.
   if (quorum.n <= 0) {
@@ -49,7 +56,7 @@ export async function verifyApprovalQuorum(
 
   for (const g of grants) {
     if (g.decision !== 'approve') continue;
-    if (g.requestHash !== requestHash) continue; // TOCTOU guard
+    if (!actionHashes.includes(g.requestHash)) continue; // TOCTOU guard
     if (quorum.approvers.length > 0 && !quorum.approvers.includes(g.approverDid)) continue;
     if (!(await isValidSignature(g))) continue;
     approvers.add(g.approverDid);

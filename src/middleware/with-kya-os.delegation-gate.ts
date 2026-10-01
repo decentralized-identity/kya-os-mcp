@@ -14,10 +14,12 @@ import {
   toHolderBindingRequest,
 } from "../delegation/holder-binding.js";
 import { scopeSatisfies } from "../delegation/scope-matcher.js";
+import { getDelegationScopes } from "../delegation/chain-enforcement.js";
 import { type DetachedProof } from "../types/protocol.js";
 import { logger } from "../logging/index.js";
 import { KYA_OS_ERROR_CODES } from "../errors.js";
 import type {
+  KyaOsCallContext,
   KyaOsToolHandler,
   KyaOsDelegationGate,
 } from "./with-kya-os.types.js";
@@ -56,6 +58,16 @@ function rejectedDelegationRef(value: unknown): string {
   }
 }
 
+/**
+ * Approval grants for a composed policy gate. They ride the reserved
+ * `_kyaos_approvals` argument, which is withheld from the handler like every
+ * control argument, so they travel on in the call context instead.
+ */
+function forwardedApprovals(args: Record<string, unknown>): Pick<KyaOsCallContext, "approvals"> {
+  const approvals = args["_kyaos_approvals"];
+  return approvals === undefined ? {} : { approvals };
+}
+
 /** Collaborators the delegation gate borrows from its sibling sub-factories. */
 export interface DelegationGateWiring {
   delegationVerification: DelegationVerification;
@@ -91,13 +103,14 @@ export function createDelegationGate(
         // Holder-of-key first, then policy-permitted session reuse. The resolver
         // revalidates signed evidence on both paths. On a hit, run the handler
         // with exactly the call shape a verified delegation would have produced.
-        const existingGrant = await resolveExistingGrant(
+        const resolvedGrant = await resolveExistingGrant(
           toolName,
           args,
           sessionId,
           config.scopeId,
         );
-        if (existingGrant) {
+        if (resolvedGrant) {
+          const existingGrant = resolvedGrant.grant;
           const grantArgs: Record<string, unknown> = {};
           for (const [k, v] of Object.entries(args)) {
             if (!isKyaOsControlArg(k)) grantArgs[k] = v;
@@ -124,7 +137,17 @@ export function createDelegationGate(
             grantRef: existingGrant.id,
             context: grantContext,
           });
-          return handler(grantArgs, sessionId, grantContext);
+          return handler(grantArgs, sessionId, {
+            ...grantContext,
+            principal: {
+              agentDid: existingGrant.agentDid,
+              ...(existingGrant.userDid !== undefined
+                ? { responsibleParty: existingGrant.userDid }
+                : {}),
+              delegatedScopes: resolvedGrant.delegatedScopes,
+            },
+            ...forwardedApprovals(args),
+          });
         }
 
         // No delegation provided — sign & return the needs_authorization
@@ -326,7 +349,15 @@ export function createDelegationGate(
       logger.debug(
         `[kya-os] Delegation verified for "${toolName}", scope "${config.scopeId}"`,
       );
-      return handler(cleanArgs, sessionId, callContext);
+      return handler(cleanArgs, sessionId, {
+        ...callContext,
+        principal: {
+          agentDid: vc.credentialSubject.id,
+          ...(controller !== undefined ? { responsibleParty: controller } : {}),
+          delegatedScopes: getDelegationScopes(vc),
+        },
+        ...forwardedApprovals(args),
+      });
     };
   }
 

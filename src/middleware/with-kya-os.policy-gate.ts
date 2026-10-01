@@ -14,6 +14,7 @@ import type { PolicyEngine } from "../policy/engine.js";
 import { buildPolicyRequest } from "../policy/projection.js";
 import { createNeedsApprovalError } from "../types/protocol.js";
 import { isKyaOsControlArg } from "../delegation/holder-binding.js";
+import { acceptedRequestHashes, type ToolRequest } from "../proof/generator.js";
 import { KYA_OS_ERROR_CODES } from "../errors.js";
 import type {
   KyaOsCallContext,
@@ -33,7 +34,7 @@ export function createPolicyGate(
   deps: MiddlewareDeps,
   wiring: PolicyGateWiring,
 ): Pick<KyaOsPolicyGate, "withPolicyGate"> {
-  const { proofGenerator, audit } = deps;
+  const { proofGenerator, cryptoProvider, audit } = deps;
   const { attachOutcomeProof } = wiring;
 
   const defaultRiskClassifier = new RiskClassifier();
@@ -51,10 +52,18 @@ export function createPolicyGate(
       opts.isValidApprovalSignature ?? (async () => false);
 
     return async (
-      args: Record<string, unknown>,
+      callArgs: Record<string, unknown>,
       sessionId?: string,
       context?: KyaOsCallContext,
     ) => {
+      // Composed after wrapWithDelegation, the approvals argument has already
+      // been stripped and arrives in the call context; restore it so a step-up
+      // resume verifies the same grants either way.
+      const args =
+        callArgs[approvalsKey] === undefined && context?.approvals !== undefined
+          ? { ...callArgs, [approvalsKey]: context.approvals }
+          : callArgs;
+
       // Drop the reserved _kyaos* namespace plus the (possibly custom) approvals
       // key, so no control arg reaches the handler.
       const cleanArgs: Record<string, unknown> = {};
@@ -64,7 +73,10 @@ export function createPolicyGate(
 
       const namespace = opts.resolveNamespace?.(args) ?? toolName;
       const risk = classifier.classify({ toolName, namespace });
-      const principal = extractPolicyPrincipal(args["_kyaos_delegation"]);
+      // Prefer the principal wrapWithDelegation authenticated; the raw
+      // `_kyaos_delegation` projection is the unverified standalone fallback.
+      const principal =
+        context?.principal ?? extractPolicyPrincipal(args["_kyaos_delegation"]);
 
       const policyRequest = buildPolicyRequest({
         principal: {
@@ -75,7 +87,7 @@ export function createPolicyGate(
         },
         action: { toolName },
         resource: { namespace },
-        delegatedScopes: principal.delegatedScopes,
+        delegatedScopes: [...principal.delegatedScopes],
         scopeMatched: opts.scopeMatched ?? false,
         risk,
       });
@@ -133,16 +145,16 @@ export function createPolicyGate(
       }
 
       // step_up: verify any supplied approval grants, bound to this exact action.
-      const requestHash = await proofGenerator.hashRequest({
-        method: toolName,
-        params: cleanArgs,
-      });
+      // The challenge advertises the legacy-shape hash; a grant over the SPEC
+      // §7.3 `tools/call` shape of the same action is accepted as well.
+      const action: ToolRequest = { method: toolName, params: cleanArgs };
+      const requestHash = await proofGenerator.hashRequest(action);
       const grants = Array.isArray(args[approvalsKey])
         ? (args[approvalsKey] as ApprovalGrant[])
         : [];
       const quorumResult = await verifyApprovalQuorum(
         grants,
-        requestHash,
+        await acceptedRequestHashes(action, (bytes) => cryptoProvider.hash(bytes)),
         decision.quorum,
         isValidApprovalSignature,
       );

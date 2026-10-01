@@ -9,6 +9,7 @@
 
 import {
   KYA_OS_PROOF_META_KEY,
+  LEGACY_NAMESPACED_PROOF_META_KEY,
   LEGACY_PROOF_META_KEY,
   RESPONSE_PROOF_PROFILE_ENVELOPE,
   type ToolRequest,
@@ -29,6 +30,87 @@ import type {
 import type { MiddlewareDeps, AttachOutcomeProof } from "./with-kya-os.deps.js";
 import { sanitizeForMessage } from "./with-kya-os.helpers.js";
 import type { McpAuditContext } from "../audit/adapters/mcp.js";
+
+/** The `_meta` member carrying this middleware's audit-lifecycle marker. */
+const auditMetaKey = 'org.kya-os/audit';
+
+/**
+ * The private `_meta` member a middleware's wrappers stamp their results with
+ * while an outer layer (the withKyaOs transport) reads them. It holds a random
+ * per-middleware token, and the transport strips it before a message leaves,
+ * so it never reaches the wire. It lives in `_meta` because the MCP SDK
+ * re-creates the result object when it validates it, and `_meta` survives
+ * that.
+ */
+export const LIFECYCLE_STAMP_META_KEY = 'org.kya-os/lifecycle-stamp';
+
+/**
+ * `_meta` members only the middleware itself may set: proofs, a proof error,
+ * the audit marker and the lifecycle stamp. A tool result carrying them that
+ * the middleware did not produce (content relayed from an upstream server, or
+ * set by the handler) cannot be told apart from a forgery.
+ */
+const outcomeMetaKeys: readonly string[] = [
+  KYA_OS_PROOF_META_KEY,
+  LEGACY_NAMESPACED_PROOF_META_KEY,
+  LEGACY_PROOF_META_KEY,
+  'proofError',
+  auditMetaKey,
+  LIFECYCLE_STAMP_META_KEY,
+];
+
+type ToolResult = Awaited<ReturnType<KyaOsToolHandler>>;
+
+/** `result` without the `_meta` members in `keys`, dropping `_meta` if nothing else is left. */
+function withoutMetaKeys<T extends ToolResult>(result: T, keys: readonly string[]): T {
+  const metadata = result._meta as Record<string, unknown> | undefined;
+  if (metadata === undefined || !keys.some((key) => Object.hasOwn(metadata, key))) {
+    return result;
+  }
+  const kept = Object.fromEntries(
+    Object.entries(metadata).filter(([key]) => !keys.includes(key)),
+  );
+  const copy: Record<string, unknown> = { ...result };
+  if (Object.keys(kept).length > 0) copy._meta = kept;
+  else delete copy._meta;
+  return copy as T;
+}
+
+/**
+ * Remove the `_meta` members only the middleware may set (proofs, proof error,
+ * audit marker, lifecycle stamp) from a result it did not produce, keeping
+ * every other member (traceparent and the like). Returns a copy when anything
+ * is removed.
+ */
+export function withoutOutcomeMeta<T extends ToolResult>(result: T): T {
+  return withoutMetaKeys(result, outcomeMetaKeys);
+}
+
+/** Remove the lifecycle stamp, which must never leave the process. */
+export function withoutLifecycleStamp<T extends ToolResult>(result: T): T {
+  return withoutMetaKeys(result, [LIFECYCLE_STAMP_META_KEY]);
+}
+
+/**
+ * Each middleware's hook for an outer auto-proof layer, keyed by its
+ * `wrapWithProof` so the transport can reach it from whatever
+ * `KyaOsMiddleware` it is handed without widening the public interface; a
+ * custom implementation simply has no entry.
+ */
+const outerProofLayerHooks = new WeakMap<object, () => (result: ToolResult) => boolean>();
+
+/**
+ * Tell the middleware behind `wrapWithProof` that an outer layer (the withKyaOs
+ * transport) reads its results. From then on its wrappers stamp what they
+ * return with the middleware's token. Returns the check for that stamp, or
+ * undefined for a middleware this module did not create, whose results are
+ * then never treated as its own.
+ */
+export function attachOuterProofLayer(
+  wrapWithProof: object,
+): ((result: ToolResult) => boolean) | undefined {
+  return outerProofLayerHooks.get(wrapWithProof)?.();
+}
 
 export interface SessionProof {
   /** Establish a session from a handshake and cache it as the fallback. */
@@ -65,9 +147,15 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
   } = deps;
   const bindsEnvelope = responseProofProfile === RESPONSE_PROOF_PROFILE_ENVELOPE;
   const auditedTerminalResponses = new WeakSet<object>();
-  const auditMetaKey = 'org.kya-os/audit';
+  // This middleware's lifecycle token, minted once an outer layer reads its
+  // results. Only wrappers holding it can stamp a result as their own.
+  let lifecycleStamp: string | undefined;
 
-  type MutableToolResponse = Awaited<ReturnType<KyaOsToolHandler>>;
+  const hasOwnStamp = (response: ToolResult): boolean =>
+    lifecycleStamp !== undefined &&
+    (response._meta as Record<string, unknown> | undefined)?.[LIFECYCLE_STAMP_META_KEY] === lifecycleStamp;
+
+  type MutableToolResponse = ToolResult;
 
   const emitAudit = async (
     label: string,
@@ -133,6 +221,29 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     const auditMetadata = metadata?.[auditMetaKey];
     return typeof auditMetadata === 'object' && auditMetadata !== null &&
       (auditMetadata as Record<string, unknown>).terminal === true;
+  };
+
+  /**
+   * The handler's `_meta` members a proof or proof error is merged into: every
+   * member except the proofs, proof error, audit marker and stamp, which only
+   * the middleware sets. A handler relaying an upstream result could
+   * otherwise ship them next to this middleware's proof.
+   */
+  const handlerMeta = (response: MutableToolResponse): Record<string, unknown> =>
+    (withoutOutcomeMeta(response)._meta as Record<string, unknown> | undefined) ?? {};
+
+  /**
+   * Stamp a result whose lifecycle a wrapper has run, so the outer layer
+   * neither re-proves nor re-audits it. Without an outer layer there is no
+   * token, nothing would strip the stamp, and the result is returned as it was.
+   */
+  const stampLifecycle = (response: MutableToolResponse): MutableToolResponse => {
+    if (lifecycleStamp === undefined) return response;
+    response._meta = {
+      ...((response._meta as Record<string, unknown> | undefined) ?? {}),
+      [LIFECYCLE_STAMP_META_KEY]: lifecycleStamp,
+    };
+    return response;
   };
 
   const auditContext = (
@@ -252,11 +363,44 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     };
   }
 
+  // The store keeps an expired session until something deletes it, so its raw
+  // size overcounts live sessions: one stale session would leave the fallback
+  // ambiguous for good. A count above one triggers a sweep first, at most once
+  // per interval so a genuinely multi-client deployment does not scan the
+  // whole store on every unthreaded call.
+  const sessionSweepIntervalMs = 60_000;
+  let lastSessionSweepAt: number | undefined;
+
+  async function liveSessionCount(): Promise<number> {
+    const count = sessionManager.getStats().activeSessions;
+    const now = Date.now();
+    if (
+      count <= 1 ||
+      (lastSessionSweepAt !== undefined && now - lastSessionSweepAt < sessionSweepIntervalMs)
+    ) {
+      return count;
+    }
+    lastSessionSweepAt = now;
+    try {
+      await sessionManager.cleanup();
+    } catch (error) {
+      logger.error("[kya-os] Session sweep failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return count;
+    }
+    return sessionManager.getStats().activeSessions;
+  }
+
+  // Concurrent first calls share one in-flight auto session: one per caller
+  // would leave several live sessions, and every later call ambiguous.
+  let autoSessionInFlight: Promise<string | undefined> | undefined;
+
   async function ensureSession(): Promise<string | undefined> {
     if (activeSessionId) {
       const existing = await sessionManager.getSession(activeSessionId);
       if (existing) {
-        if (sessionManager.getStats().activeSessions <= 1) {
+        if ((await liveSessionCount()) <= 1) {
           return activeSessionId;
         }
         // Ambiguous: more than one session and none threaded — do NOT borrow.
@@ -271,6 +415,13 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
 
     if (!config.autoSession) return undefined;
 
+    autoSessionInFlight ??= createAutoSession().finally(() => {
+      autoSessionInFlight = undefined;
+    });
+    return autoSessionInFlight;
+  }
+
+  async function createAutoSession(): Promise<string | undefined> {
     // Generate a server-side session with cryptographically random nonce (SPEC.md §4)
     const nonceBytes = await cryptoProvider.randomBytes(16);
     const nonce = base64urlEncodeFromBytes(nonceBytes);
@@ -294,11 +445,11 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     toolName: string,
     handler: KyaOsToolHandler<T>,
   ): KyaOsToolHandler {
-    return async (
+    const run = async (
       args: Record<string, unknown>,
       sessionId?: string,
       context?: KyaOsCallContext,
-    ) => {
+    ): Promise<MutableToolResponse> => {
       const intentDelivered = await emitAudit(
         'Required tool intent audit delivery failed',
         () => audit?.tool('started', {
@@ -432,8 +583,9 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
 
         // Attach proof under the namespaced _meta key (rendered by MCP
         // Inspector, invisible to LLMs), plus the legacy bare key when enabled.
-        // Other _meta keys may coexist (SEP-414).
-        result._meta = withProofMeta({}, proof);
+        // Keys the handler set (traceparent, related-task, ...) are kept: the
+        // middleware does not own `_meta` (SPEC §7.6).
+        result._meta = withProofMeta(handlerMeta(result), proof);
 
         const proofAuditDelivered = await emitAudit(
           'Required generated-proof audit delivery failed',
@@ -486,6 +638,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
           error: error instanceof Error ? error.message : String(error),
         });
         result._meta = {
+          ...handlerMeta(result),
           proofError: "Proof generation failed — response is unproven",
         };
         const rejectionAuditDelivered = await emitAudit(
@@ -508,9 +661,20 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
 
       return result;
     };
+    return async (
+      args: Record<string, unknown>,
+      sessionId?: string,
+      context?: KyaOsCallContext,
+    ) => stampLifecycle(await run(args, sessionId, context));
   }
+  outerProofLayerHooks.set(wrapWithProof, () => {
+    lifecycleStamp ??= base64urlEncodeFromBytes(
+      globalThis.crypto.getRandomValues(new Uint8Array(16)),
+    );
+    return hasOwnStamp;
+  });
 
-  const attachOutcomeProof: AttachOutcomeProof = async (
+  const outcomeProof: AttachOutcomeProof = async (
     response,
     toolName,
     args,
@@ -632,6 +796,11 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     }
     return response;
   };
+
+  // Outcome results are stamped like wrapper results, so the outer layer
+  // passes a signed denial or challenge through instead of re-proving it.
+  const attachOutcomeProof: AttachOutcomeProof = async (...outcome) =>
+    stampLifecycle(await outcomeProof(...outcome));
 
   return { handleHandshake, ensureSession, wrapWithProof, attachOutcomeProof };
 }

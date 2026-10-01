@@ -26,11 +26,11 @@ import {
 import { logger } from "../logging/index.js";
 import {
   buildProofJwsPayload,
-  computeCanonicalHashes,
+  findContentBindingMismatch,
   KYA_OS_PROOF_META_KEY,
   LEGACY_NAMESPACED_PROOF_META_KEY,
   LEGACY_PROOF_META_KEY,
-  RESPONSE_PROOF_PROFILE_BODY,
+  type ContentBindingMismatch,
   type ToolRequest,
   type ToolResponse,
 } from "./generator.js";
@@ -41,6 +41,14 @@ export interface ProofVerificationResult {
   error?: Error;
   errorCode?: ProofVerificationErrorCode;
   details?: Record<string, unknown>;
+}
+
+/** Who a verified proof must come from and be addressed to. */
+export interface ProofVerificationOptions {
+  /** `meta.did` must equal this: the signer the caller expects (e.g. the server it called). */
+  expectedDid?: string;
+  /** `meta.audience` must equal this, or be one of the array (DID rotation, multi-DID servers). */
+  expectedAudience?: string | string[];
 }
 
 export interface ProofVerifierConfig {
@@ -153,30 +161,33 @@ export class ProofVerifier {
    *   `content` array); for an envelope-profile proof (`prf: "org.kya-os/response-proof.envelope"`)
    *   pass the ENTIRE received result object — the verifier removes the
    *   top-level `_meta` member itself, so passing the result as received (proof
-   *   attachment included) is correct.
+   *   attachment included) is correct. Pass the `request` either as the
+   *   `tools/call` request you sent (`{method: "tools/call", params: {name,
+   *   arguments}}`) or in the legacy `{method: <tool name>, params: <arguments>}`
+   *   shape: a `requestHash` over either shape of that call is accepted (SPEC
+   *   §7.3; 1.x producers sign the legacy shape).
+   * @param options - Optional signer binding: the `did` the proof must come
+   *   from and the `audience` it must be addressed to. Independently of these,
+   *   a `kid` naming a key of a DID other than `meta.did` always fails.
    * @returns Verification result
    */
   async verifyProof(
     proof: DetachedProof,
     publicKeyJwk: Ed25519JWK,
-    expected?: { request: ToolRequest; response?: ToolResponse }
+    expected?: { request: ToolRequest; response?: ToolResponse },
+    options: ProofVerificationOptions = {},
   ): Promise<ProofVerificationResult> {
     try {
       const structureValidation = await this.validateProofStructure(proof);
       if (!structureValidation.valid) return structureValidation;
       const validatedProof = structureValidation.proof!;
 
-      // Reconstruct canonical payload from proof meta
-      const canonicalPayloadString = this.buildCanonicalPayload(validatedProof.meta);
-      const canonicalPayloadBytes = new TextEncoder().encode(
-        canonicalPayloadString
-      );
-
       return await this.runVerificationPipeline(
         validatedProof,
         publicKeyJwk,
-        canonicalPayloadBytes,
+        this.encodeCanonicalPayload(validatedProof.meta),
         expected,
+        options,
       );
     } catch (error) {
       return this.handleVerificationError(error);
@@ -200,14 +211,13 @@ export class ProofVerifier {
       const structureValidation = await this.validateProofStructure(proof);
       if (!structureValidation.valid) return structureValidation;
       const validatedProof = structureValidation.proof!;
-      const canonicalPayloadBytes = new TextEncoder().encode(
-        this.buildCanonicalPayload(validatedProof.meta),
-      );
+      const signerValidation = this.validateSigner(validatedProof.meta);
+      if (!signerValidation.valid) return signerValidation;
 
       const signatureValidation = await this.verifySignature(
         validatedProof.jws,
         publicKeyJwk,
-        canonicalPayloadBytes,
+        this.encodeCanonicalPayload(validatedProof.meta),
         validatedProof.meta.kid,
       );
       if (!signatureValidation.valid) return signatureValidation;
@@ -222,7 +232,16 @@ export class ProofVerifier {
   }
 
   /**
-   * Verify proof with detached payload (for CLI/verifier compatibility)
+   * Verify proof with detached payload (for CLI/verifier compatibility).
+   *
+   * The timestamp and replay checks read `proof.meta`, so the payload the
+   * signature is checked over must be the one rebuilt from that meta: a
+   * supplied payload that differs from it byte for byte is rejected. Otherwise
+   * an accepted proof could be replayed with a fresh `meta.nonce` and the old
+   * payload.
+   *
+   * @deprecated Use {@link verifyProof}. It rebuilds the payload from
+   *   `proof.meta` itself, so supplying the payload adds nothing.
    * @param proof - The proof to verify
    * @param canonicalPayload - Canonical JSON payload (for detached JWS) as string or Uint8Array
    * @param publicKeyJwk - Ed25519 public key in JWK format
@@ -234,34 +253,46 @@ export class ProofVerifier {
     publicKeyJwk: Ed25519JWK
   ): Promise<ProofVerificationResult> {
     try {
-      // Convert canonical payload to Uint8Array if needed
-      const canonicalPayloadBytes =
+      const structureValidation = await this.validateProofStructure(proof);
+      if (!structureValidation.valid) return structureValidation;
+      const validatedProof = structureValidation.proof!;
+
+      const suppliedPayload =
         canonicalPayload instanceof Uint8Array
           ? canonicalPayload
           : new TextEncoder().encode(canonicalPayload);
+      const metaPayload = this.encodeCanonicalPayload(validatedProof.meta);
+      if (!bytesEqual(suppliedPayload, metaPayload)) {
+        return {
+          valid: false,
+          reason: "Detached payload does not match the payload rebuilt from proof.meta",
+          errorCode: PROOF_VERIFICATION_ERROR_CODES.INVALID_JWS_PAYLOAD,
+        };
+      }
 
-      return await this.runVerificationPipeline(proof, publicKeyJwk, canonicalPayloadBytes);
+      return await this.runVerificationPipeline(validatedProof, publicKeyJwk, metaPayload);
     } catch (error) {
       return this.handleVerificationError(error);
     }
   }
 
   /**
-   * Shared verification pipeline for proof verification
+   * Shared verification pipeline for a structurally valid proof.
    * @private
    */
   private async runVerificationPipeline(
-    proof: DetachedProof,
+    validatedProof: DetachedProof,
     publicKeyJwk: Ed25519JWK,
     canonicalPayloadBytes: Uint8Array,
-    expected?: { request: ToolRequest; response?: ToolResponse }
+    expected?: { request: ToolRequest; response?: ToolResponse },
+    options: ProofVerificationOptions = {},
   ): Promise<ProofVerificationResult> {
-    // 1. Validate proof structure
-    const structureValidation = await this.validateProofStructure(proof);
-    if (!structureValidation.valid) {
-      return structureValidation;
+    // 1. Signer binding: kid belongs to the claimed did, and did and audience
+    // are the ones the caller expects.
+    const signerValidation = this.validateSigner(validatedProof.meta, options);
+    if (!signerValidation.valid) {
+      return signerValidation;
     }
-    const validatedProof = structureValidation.proof!;
 
     // 2. Check timestamp skew
     const timestampValidation = await this.validateTimestamp(
@@ -310,6 +341,51 @@ export class ProofVerifier {
   }
 
   /**
+   * Bind the signing key to the principal. `kid` names the signing key; when
+   * it is an absolute DID URL its DID part must be `meta.did`, or a proof could
+   * claim a victim's DID while being signed by a key another DID publishes. A
+   * relative `kid` is resolved against `meta.did`. Then apply the caller's
+   * expected signer and audience, if given.
+   * @private
+   */
+  private validateSigner(
+    meta: DetachedProof["meta"],
+    options: ProofVerificationOptions = {},
+  ): ProofVerificationResult {
+    const kidOwner = didOfKid(meta.kid);
+    if (kidOwner !== undefined && kidOwner !== meta.did) {
+      return {
+        valid: false,
+        reason: "Proof kid names a key of a different DID than meta.did",
+        errorCode: PROOF_VERIFICATION_ERROR_CODES.KID_DID_MISMATCH,
+        details: { did: meta.did, kid: meta.kid },
+      };
+    }
+    if (options.expectedDid !== undefined && meta.did !== options.expectedDid) {
+      return {
+        valid: false,
+        reason: "Proof was not issued by the expected DID",
+        errorCode: PROOF_VERIFICATION_ERROR_CODES.DID_MISMATCH,
+        details: { did: meta.did, expectedDid: options.expectedDid },
+      };
+    }
+    if (options.expectedAudience !== undefined) {
+      const allowed = Array.isArray(options.expectedAudience)
+        ? options.expectedAudience
+        : [options.expectedAudience];
+      if (!allowed.includes(meta.audience)) {
+        return {
+          valid: false,
+          reason: "Proof is addressed to a different audience",
+          errorCode: PROOF_VERIFICATION_ERROR_CODES.AUDIENCE_MISMATCH,
+          details: { audience: meta.audience, expectedAudience: options.expectedAudience },
+        };
+      }
+    }
+    return { valid: true };
+  }
+
+  /**
    * Recompute the canonical hashes of the request/response the verifier actually
    * received (via the same hashing the signer used) and compare to the proof's
    * bound hashes. Fails CONTENT_BINDING_MISMATCH on any divergence — the check
@@ -320,54 +396,19 @@ export class ProofVerifier {
     proof: DetachedProof,
     expected: { request: ToolRequest; response?: ToolResponse }
   ): Promise<ProofVerificationResult> {
-    // The response-hash profile comes from the proof's own signature-covered
-    // `prf` claim (validated fail-closed in validateProofStructure): an envelope-profile proof
-    // is checked with envelope hashing (result minus top-level `_meta`), a body-profile
-    // proof (no `prf`) with body hashing. Deriving from the proof — never from
-    // verifier configuration — is what lets one verifier accept both profiles
-    // without a downgrade path.
-    const { requestHash, responseHash } = await computeCanonicalHashes(
-      expected.request,
-      expected.response,
+    // The rule (fail-closed response binding, response profile from the
+    // proof's own `prf`) is shared with ProofGenerator.verifyProof.
+    const mismatch = await findContentBindingMismatch(
+      proof.meta,
+      expected,
       (bytes) => this.cryptoProvider.hash(bytes),
-      proof.meta.prf ?? RESPONSE_PROOF_PROFILE_BODY,
     );
-    if (proof.meta.requestHash !== requestHash) {
-      return {
-        valid: false,
-        reason:
-          "Request hash mismatch: the proof does not bind the request you supplied",
-        errorCode: PROOF_VERIFICATION_ERROR_CODES.CONTENT_BINDING_MISMATCH,
-      };
-    }
-    // Response binding (FAIL-CLOSED): proof.meta.responseHash is the ONLY thing
-    // that binds the response body — including a needs_authorization challenge's
-    // authorizationUrl. It MUST be checked whenever the proof carries one.
-    // Gating the comparison on `expected.response !== undefined` would let a
-    // caller who supplies only `request` get { valid: true } while the swapped
-    // URL went unverified (the requestHash is identical for a genuine and a
-    // MITM'd challenge). So: if the proof binds a responseHash the caller MUST
-    // supply the response; if it binds none, the caller must not supply one.
-    const proofBindsResponse = proof.meta.responseHash !== undefined;
-    const callerSuppliedResponse = expected.response !== undefined;
-    if (proofBindsResponse !== callerSuppliedResponse) {
-      return {
-        valid: false,
-        reason: proofBindsResponse
-          ? "Proof binds a response (responseHash present) but no response was supplied to verify against — pass expected.response"
-          : "A response was supplied but the proof binds none — content/proof mismatch",
-        errorCode: PROOF_VERIFICATION_ERROR_CODES.CONTENT_BINDING_MISMATCH,
-      };
-    }
-    if (proofBindsResponse && proof.meta.responseHash !== responseHash) {
-      return {
-        valid: false,
-        reason:
-          "Response hash mismatch: received content differs from what the server signed (possible substitution / MITM)",
-        errorCode: PROOF_VERIFICATION_ERROR_CODES.CONTENT_BINDING_MISMATCH,
-      };
-    }
-    return { valid: true };
+    if (mismatch === undefined) return { valid: true };
+    return {
+      valid: false,
+      reason: CONTENT_BINDING_REASONS[mismatch],
+      errorCode: PROOF_VERIFICATION_ERROR_CODES.CONTENT_BINDING_MISMATCH,
+    };
   }
 
   /**
@@ -519,6 +560,8 @@ export class ProofVerifier {
     kid?: string
   ): Promise<Ed25519JWK | null> {
     try {
+      // Built before resolving, so a kid naming another DID fails without a fetch.
+      const matchesKid = kid ? verificationMethodMatcher(did, kid) : undefined;
       const didDoc = await this.fetch.resolveDID(did);
 
       if (!didDoc) {
@@ -548,12 +591,8 @@ export class ProofVerifier {
       let verificationMethod:
         | { id: string; publicKeyJwk?: unknown }
         | undefined;
-      if (kid) {
-        const kidWithHash = kid.startsWith("#") ? kid : `#${kid}`;
-        verificationMethod = doc.verificationMethod.find(
-          (vm: { id: string }) =>
-            vm.id === kidWithHash || vm.id === `${did}${kidWithHash}`
-        );
+      if (matchesKid) {
+        verificationMethod = doc.verificationMethod.find(matchesKid);
 
         if (!verificationMethod) {
           throw new ProofVerificationError(
@@ -638,6 +677,59 @@ export class ProofVerifier {
     // the same RFC 8785 canonicalization the signer used.
     return canonicalizeJson(buildProofJwsPayload(meta));
   }
+
+  private encodeCanonicalPayload(meta: DetachedProof["meta"]): Uint8Array {
+    return new TextEncoder().encode(this.buildCanonicalPayload(meta));
+  }
+}
+
+const CONTENT_BINDING_REASONS: Record<ContentBindingMismatch, string> = {
+  request: "Request hash mismatch: the proof does not bind the request you supplied",
+  "response-missing":
+    "Proof binds a response (responseHash present) but no response was supplied to verify against — pass expected.response",
+  "response-unexpected":
+    "A response was supplied but the proof binds none — content/proof mismatch",
+  response:
+    "Response hash mismatch: received content differs from what the server signed (possible substitution / MITM)",
+};
+
+/**
+ * The DID an absolute DID URL `kid` (`did:…#frag`, the form proofs carry)
+ * names, or undefined for a relative `kid` (`frag` or `#frag`), which is
+ * resolved against the proof's `did`.
+ */
+function didOfKid(kid: string): string | undefined {
+  return kid.startsWith("did:") ? kid.split("#")[0] : undefined;
+}
+
+/**
+ * Match a verification method of `did`'s document against `kid`. An absolute
+ * DID URL must name `did` itself and match the method id exactly; a document
+ * may list that id relative to the DID. A relative `kid` is resolved against
+ * `did`.
+ */
+function verificationMethodMatcher(
+  did: string,
+  kid: string,
+): (vm: { id: string }) => boolean {
+  const kidOwner = didOfKid(kid);
+  if (kidOwner !== undefined) {
+    if (kidOwner !== did) {
+      throw new ProofVerificationError(
+        PROOF_VERIFICATION_ERROR_CODES.KID_DID_MISMATCH,
+        `kid ${kid} names a key of a different DID than ${did}`,
+        { did, kid },
+      );
+    }
+    const fragment = kid.slice(kidOwner.length);
+    return (vm) => vm.id === kid || (fragment !== "" && vm.id === fragment);
+  }
+  const kidWithHash = kid.startsWith("#") ? kid : `#${kid}`;
+  return (vm) => vm.id === kidWithHash || vm.id === `${did}${kidWithHash}`;
+}
+
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  return a.length === b.length && a.every((byte, index) => byte === b[index]);
 }
 
 /**

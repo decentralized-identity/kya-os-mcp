@@ -12,13 +12,21 @@
  * How it works:
  *   1. Incoming `tools/call` requests are captured (by id) to record tool
  *      name and arguments for proof generation.
- *   2. Outgoing responses for those ids get a proof injected into `_meta`.
- *   3. All other message types pass through unmodified.
+ *   2. Outgoing responses for those ids get a proof injected into `_meta`,
+ *      unless the middleware's own wrappers already proved or audited the
+ *      result, which they mark with a private per-middleware stamp.
+ *   3. All other message types pass through unmodified, except that the
+ *      stamp is removed from every result before it is sent.
  *
  * @module kya-os-transport
  */
 
 import type { KyaOsMiddleware, KyaOsToolHandler } from "./with-kya-os.js";
+import {
+  attachOuterProofLayer,
+  withoutLifecycleStamp,
+  withoutOutcomeMeta,
+} from "./with-kya-os.session.js";
 import { logger } from "../logging/index.js";
 
 /** Minimal Transport interface — matches @modelcontextprotocol/sdk Transport */
@@ -59,6 +67,10 @@ export function createKyaOsTransport(
 ): Transport {
   // Request id → { toolName, args } for pending tool calls
   const pending = new Map<unknown, PendingCall>();
+  // From here on the middleware's wrappers stamp what they return, and this
+  // tells a stamped result from one that only looks proven. Undefined for a
+  // custom middleware, whose results are all proved here.
+  const isOwnResult = attachOuterProofLayer(kyaos.wrapWithProof);
 
   const wrapper: Transport = {
     start: () => inner.start(),
@@ -90,44 +102,65 @@ export function createKyaOsTransport(
     // McpServer calls send() for every outgoing message.
     // Intercept tools/call responses here to inject proofs.
     async send(message: JSONRPCMessage): Promise<void> {
+      // Only a response (result or error, no method) can answer a pending call:
+      // a server-initiated request such as elicitation/create numbers its ids
+      // in the server's own space, so its id can equal a pending client id.
+      const isResponse =
+        message.method === undefined && ("result" in message || "error" in message);
       const id = message.id;
-      const call = id !== undefined ? pending.get(id) : undefined;
+      const call = isResponse && id !== undefined ? pending.get(id) : undefined;
 
       if (call) {
         pending.delete(id);
-        try {
-          const rawResult = message.result as ToolResult | undefined;
-          if (rawResult) {
+        const rawResult = message.result as ToolResult | undefined;
+        // A result the middleware's wrappers already proved or audited (a
+        // delegated call's scope-bearing proof, a signed needs_authorization
+        // outcome, an audited error) passes through: proving it again would
+        // replace its proof and record its lifecycle twice. Only the stamp
+        // shows that; proof, proofError and audit members can come from any
+        // handler, including one relaying an upstream server's result.
+        if (rawResult && isOwnResult?.(rawResult) !== true) {
+          // Those members are untrusted here, so they are removed and the
+          // result is proved and audited as any other. Other members stay.
+          const received = withoutOutcomeMeta(rawResult);
+          try {
             // Work on a shallow copy: middleware is allowed to decorate its
             // result, and an error response must remain byte-for-byte free of
             // a success proof even if a custom middleware implementation does
             // not apply the core implementation's early error return.
-            const handler: KyaOsToolHandler = async () => ({ ...rawResult });
+            const handler: KyaOsToolHandler = async () => ({ ...received });
             const addProof = kyaos.wrapWithProof(call.toolName, handler);
             const proofed = await addProof(call.args);
             // Error results still traverse the middleware so their terminal
             // audit event is emitted, but they retain the established wire
             // contract: no success proof is attached to an error response.
-            if (!rawResult.isError && proofed._meta !== undefined) {
-              message = {
-                ...message,
-                result: proofed,
-              };
-            }
-          }
-        } catch (error) {
-          logger.error("[kya-os-transport] Proof injection failed", {
-            tool: call.toolName,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          const rawResult = message.result as ToolResult | undefined;
-          if (rawResult) {
-            rawResult._meta = {
-              proofError: "Proof generation failed — response is unproven",
+            message = {
+              ...message,
+              result: !received.isError && proofed._meta !== undefined ? proofed : received,
             };
-            message = { ...message, result: rawResult };
+          } catch (error) {
+            logger.error("[kya-os-transport] Proof injection failed", {
+              tool: call.toolName,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            message = {
+              ...message,
+              result: {
+                ...received,
+                _meta: {
+                  ...((received._meta as Record<string, unknown> | undefined) ?? {}),
+                  proofError: "Proof generation failed — response is unproven",
+                },
+              },
+            };
           }
         }
+      }
+
+      // The stamp never leaves the process, whichever path the message took.
+      if (typeof message.result === "object" && message.result !== null) {
+        const sent = withoutLifecycleStamp(message.result as ToolResult);
+        if (sent !== message.result) message = { ...message, result: sent };
       }
 
       return inner.send(message);
@@ -161,6 +194,11 @@ export function createKyaOsTransport(
             args: params?.arguments ?? {},
           });
         }
+      } else if (message.method === "notifications/cancelled") {
+        // A cancelled request gets no response, so its entry would never be
+        // consumed by send().
+        const params = message.params as { requestId?: unknown } | undefined;
+        pending.delete(params?.requestId);
       }
       downstream?.(message);
     };

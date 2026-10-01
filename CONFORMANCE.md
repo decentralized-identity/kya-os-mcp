@@ -125,7 +125,7 @@ Implementation MUST validate:
 #### L2.5 — Nonce Replay Prevention
 
 Implementation MUST:
-- Store (nonce, agentDid) tuples for at least `sessionTtlMinutes + 1 minute`
+- Store (nonce, agentDid) tuples at least until the nonce's timestamp leaves the acceptance window (`ts + skew`, SPEC §5.5)
 - Reject any request with a previously-seen nonce for the same agentDid
 - Support cleanup of expired nonces
 
@@ -139,10 +139,10 @@ Proof metadata MUST include:
 - `did`: Signer's DID
 - `kid`: Key ID used for signing
 - `ts`: Unix epoch seconds
-- `nonce`: Session nonce
+- `nonce`: Fresh random nonce per proof
 - `audience`: Session audience
 - `sessionId`: Session identifier
-- `requestHash`: SHA-256 of canonicalized request (`sha256:<hex>`)
+- `requestHash`: SHA-256 of the canonicalized request (`sha256:<hex>`), over the covered request of SPEC §7.3 or, as 1.x implementations emit it, the legacy `{method: <tool name>, params: <arguments>}` shape; a verifier accepts either for the same call
 
 `responseHash` (SHA-256 of the canonicalized response, `sha256:<hex>`) MUST be
 present on proofs that carry a response body — success proofs and

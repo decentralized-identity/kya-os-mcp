@@ -148,7 +148,10 @@ export class SessionManager {
         };
       }
 
-      // Use different TTLs for anonymous vs authenticated nonces (SPEC.md §5.2).
+      // Retain the nonce until its timestamp leaves the acceptance window
+      // (SPEC.md §5.5): a replay after that already fails the skew check above,
+      // so a longer retention adds memory and no protection. Anonymous and
+      // authenticated handshakes keep separate minimum TTLs (SPEC.md §5.2).
       const isAnonymous = !request.agentDid;
       const nonceTtlMs = isAnonymous ? ANON_NONCE_TTL_MS : AUTH_NONCE_TTL_MS;
       const nonceTtlSeconds = nonceRetentionSeconds(
@@ -308,6 +311,14 @@ export class SessionManager {
       .replace(/=/g, '');
   }
 
+  /**
+   * Sweep expired sessions from the session store, then run the store's and
+   * the nonce cache's own `cleanup()`. Nothing in the library schedules this:
+   * `getSession` already drops an expired session when it is read, and the
+   * default session store is capped by `maxSessions`. Call it from your own
+   * scheduler to reclaim records eagerly, or when a store relies on it to
+   * expire entries.
+   */
   async cleanup(): Promise<void> {
     const now = Math.floor(Date.now() / 1000);
 

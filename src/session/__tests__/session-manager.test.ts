@@ -247,6 +247,65 @@ describe("SessionManager", () => {
     });
   });
 
+  describe("Client metadata", () => {
+    it("records trimmed client metadata on the session, with a generated client id", async () => {
+      const result = await manager.validateHandshake(makeRequest({
+        clientInfo: { name: "  Inspector  ", version: "", title: 42 } as unknown as HandshakeRequest["clientInfo"],
+        clientProtocolVersion: "2026-07-28",
+      }));
+
+      expect(result.session!.clientInfo).toMatchObject({
+        name: "Inspector",
+        version: undefined,
+        title: undefined,
+        protocolVersion: "2026-07-28",
+      });
+      expect(result.session!.clientInfo!.clientId).toMatch(/^client_[0-9a-f]{12}$/);
+    });
+
+    it("names a client that sent only its protocol version 'unknown'", async () => {
+      const result = await manager.validateHandshake(makeRequest({ clientProtocolVersion: "2026-07-28" }));
+
+      expect(result.session!.clientInfo).toMatchObject({ name: "unknown", protocolVersion: "2026-07-28" });
+    });
+  });
+
+  describe("Reading an expired session", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    async function openSession(sm: SessionManager): Promise<string> {
+      return (await sm.validateHandshake(makeRequest())).session!.sessionId;
+    }
+
+    it("drops a session that has idled past its TTL when it is read", async () => {
+      vi.useFakeTimers();
+      const sm = makeSessionManager({ sessionTtlMinutes: 1 });
+      const sessionId = await openSession(sm);
+      expect(await sm.getSession(sessionId)).not.toBeNull();
+
+      vi.advanceTimersByTime(61_000);
+
+      expect(await sm.getSession(sessionId)).toBeNull();
+      expect(sm.getStats().activeSessions).toBe(0);
+    });
+
+    it("drops an active session past its absolute lifetime when it is read", async () => {
+      vi.useFakeTimers();
+      const sm = makeSessionManager({ sessionTtlMinutes: 60, absoluteSessionLifetime: 1 });
+      const sessionId = await openSession(sm);
+
+      // Kept active within the idle TTL, but older than the absolute lifetime.
+      vi.advanceTimersByTime(40_000);
+      expect(await sm.getSession(sessionId)).not.toBeNull();
+      vi.advanceTimersByTime(30_000);
+
+      expect(await sm.getSession(sessionId)).toBeNull();
+      expect(sm.getStats().activeSessions).toBe(0);
+    });
+  });
+
   describe("Custom timestamp skew", () => {
     it("should use custom timestampSkewSeconds when provided", async () => {
       const sm = makeSessionManager({ timestampSkewSeconds: 30 });

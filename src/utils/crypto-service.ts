@@ -156,9 +156,11 @@ export class CryptoService {
       }
 
       let signingInputBytes: Uint8Array;
+      // A payload segment the JWS embeds next to a different detached payload.
+      let embeddedSigningInput: string | undefined;
 
       if (options?.detachedPayload !== undefined) {
-        const headerB64 = jws.split('.')[0]!;
+        const [headerB64, embeddedPayloadB64] = jws.split('.') as [string, string];
         let payloadB64: string;
 
         if (options.detachedPayload instanceof Uint8Array) {
@@ -170,6 +172,9 @@ export class CryptoService {
         }
 
         signingInputBytes = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
+        if (embeddedPayloadB64 !== '' && embeddedPayloadB64 !== payloadB64) {
+          embeddedSigningInput = `${headerB64}.${embeddedPayloadB64}`;
+        }
       } else {
         if (!parsed.signingInput) {
           logger.error('[CryptoService] Missing signing input for compact JWS');
@@ -186,7 +191,28 @@ export class CryptoService {
         return false;
       }
 
-      return await this.verifyEd25519(signingInputBytes, parsed.signatureBytes, publicKeyBase64);
+      if (!(await this.verifyEd25519(signingInputBytes, parsed.signatureBytes, publicKeyBase64))) {
+        return false;
+      }
+      // The signature was checked over the detached payload. A different
+      // payload the JWS also embeds must verify under the same signature, or
+      // anything reading the JWS alone (JWT tooling, an audit store) sees
+      // claims the verified signature never covered. One signature verifies
+      // two different payloads only under a forged or degenerate key, so in
+      // practice this accepts an embedded payload exactly when it is the
+      // detached one.
+      if (
+        embeddedSigningInput !== undefined &&
+        !(await this.verifyEd25519(
+          new TextEncoder().encode(embeddedSigningInput),
+          parsed.signatureBytes,
+          publicKeyBase64,
+        ))
+      ) {
+        logger.error('[CryptoService] Embedded JWS payload is not the signed payload');
+        return false;
+      }
+      return true;
     } catch (error) {
       logger.error('[CryptoService] JWS verification error:', error);
       return false;

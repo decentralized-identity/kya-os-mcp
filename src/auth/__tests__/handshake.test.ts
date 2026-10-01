@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   verifyOrHints,
   MemoryResumeTokenStore,
   type AuthHandshakeConfig,
+  type ResumeTokenStore,
 } from '../handshake.js';
 
 // Mock global fetch
@@ -229,5 +230,83 @@ describe('verifyOrHints — needs_authorization challenge', () => {
 
     expect(authError.display?.authorizationCode).toBeUndefined();
     expect(JSON.stringify(authError.display)).not.toContain(prefix);
+  });
+
+  it('advertises the expiry the token store enforces, not the configured fallback', async () => {
+    const store = new MemoryResumeTokenStore(60_000);
+    const config: AuthHandshakeConfig = {
+      delegationVerifier: {
+        verify: vi.fn().mockResolvedValue({ valid: false, reason: 'No delegation' }),
+      },
+      resumeTokenStore: store,
+      authorization: { authorizationUrl: 'https://example.com/consent', resumeTokenTtl: 3_600_000 },
+    };
+
+    const { authError } = await verifyOrHints(agentDid, scopes, config);
+    const stored = await store.get(authError!.resumeToken);
+
+    expect(authError!.expiresAt).toBe(Math.floor(stored!.expiresAt / 1000));
+    expect(authError!.expiresAt).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 60);
+  });
+
+  it('falls back to resumeTokenTtl when the store cannot report a usable expiry', async () => {
+    const reports: Array<() => Promise<Awaited<ReturnType<ResumeTokenStore['get']>>>> = [
+      async () => { throw new Error('store unavailable'); },
+      async () => null,
+      // Seconds instead of milliseconds: already in the past as an instant.
+      async () => ({ agentDid, scopes, createdAt: 0, expiresAt: Math.floor(Date.now() / 1000) + 60 }),
+    ];
+    for (const report of reports) {
+      const store: ResumeTokenStore = {
+        create: async () => 'rt_custom',
+        get: report,
+        fulfill: async () => undefined,
+      };
+      const before = Math.floor(Date.now() / 1000);
+      const { authError } = await verifyOrHints(agentDid, scopes, {
+        delegationVerifier: {
+          verify: vi.fn().mockResolvedValue({ valid: false, reason: 'No delegation' }),
+        },
+        resumeTokenStore: store,
+        authorization: { authorizationUrl: 'https://example.com/consent', resumeTokenTtl: 120_000 },
+      });
+      const after = Math.floor(Date.now() / 1000);
+
+      expect(authError!.expiresAt).toBeGreaterThanOrEqual(before + 120);
+      expect(authError!.expiresAt).toBeLessThanOrEqual(after + 120);
+    }
+  });
+});
+
+describe('MemoryResumeTokenStore', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const size = (store: MemoryResumeTokenStore) =>
+    (store as unknown as { tokens: Map<string, unknown> }).tokens.size;
+
+  it('drops expired tokens as new ones are created, without a read, and keeps live ones', async () => {
+    vi.useFakeTimers();
+    const store = new MemoryResumeTokenStore(1_000);
+    for (let i = 0; i < 100; i++) {
+      await store.create('did:key:zAnyone', ['tool:x']);
+      vi.advanceTimersByTime(10_000);
+    }
+    expect(size(store)).toBe(1);
+
+    const live = new MemoryResumeTokenStore(60_000);
+    const first = await live.create('did:key:zA', ['tool:x']);
+    vi.advanceTimersByTime(30_000);
+    await live.create('did:key:zB', ['tool:x']);
+    expect(await live.get(first)).not.toBeNull();
+  });
+
+  it('drops a token once fulfilled', async () => {
+    const store = new MemoryResumeTokenStore();
+    const token = await store.create('did:key:zA', ['tool:x']);
+    await store.fulfill(token);
+    expect(await store.get(token)).toBeNull();
+    expect(size(store)).toBe(0);
   });
 });

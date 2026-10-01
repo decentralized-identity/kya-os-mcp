@@ -23,6 +23,13 @@ import {
 import { logger } from "../logging/index.js";
 import type { MiddlewareDeps } from "./with-kya-os.deps.js";
 
+/** A durable grant whose retained delegation re-verified for this call. */
+export interface ResolvedGrant {
+  grant: Grant;
+  /** The scopes the re-verified credential grants (not the store's copy). */
+  delegatedScopes: string[];
+}
+
 export interface GrantResolution {
   /**
    * Resolve an existing durable grant for a no-delegation (retry) call, so a
@@ -37,7 +44,7 @@ export interface GrantResolution {
     args: Record<string, unknown>,
     sessionId: string | undefined,
     scopeId: string,
-  ): Promise<Grant | undefined>;
+  ): Promise<ResolvedGrant | undefined>;
   /**
    * Mint a durable grant from a freshly-verified delegation so the NEXT call —
    * on any instance — resolves via {@link resolveExistingGrant} without
@@ -81,30 +88,38 @@ export function createGrantResolution(
     return `grant_${digest.replace(/^sha256:/, "")}`;
   }
 
-  /** A grant caches evidence, never a permanent authorization decision. */
-  async function isGrantAuthorized(grant: Grant, scopeId: string): Promise<boolean> {
-    if (grant.status !== "active" || !grant.scopes.includes(scopeId)) return false;
+  /**
+   * A grant caches evidence, never a permanent authorization decision. Returns
+   * the grant with the scopes of its re-verified credential, or undefined when
+   * the grant does not authorize `scopeId` now.
+   */
+  async function authorizeGrant(
+    grant: Grant,
+    scopeId: string,
+  ): Promise<ResolvedGrant | undefined> {
+    if (grant.status !== "active" || !grant.scopes.includes(scopeId)) return undefined;
     if (
       grant.expiresAt !== undefined &&
       (!Number.isFinite(grant.expiresAt) || grant.expiresAt <= Date.now())
-    ) return false;
+    ) return undefined;
 
     // Prefer the original JWT wire form when present: its envelope is the proof.
     // Legacy rows without signed evidence intentionally require authorization again.
     const evidence = grant.credentialJwt ?? grant.delegationCredential;
-    if (evidence === undefined) return false;
+    if (evidence === undefined) return undefined;
     try {
       const check = await verifyDelegation(evidence);
-      if (!check.valid) return false;
+      if (!check.valid) return undefined;
       const subject = check.vc.credentialSubject;
-      return (
-        subject.id === grant.agentDid &&
-        subject.delegation.controller === grant.userDid &&
-        scopeSatisfies(scopeId, check.vc).satisfied
-      );
+      if (
+        subject.id !== grant.agentDid ||
+        subject.delegation.controller !== grant.userDid ||
+        !scopeSatisfies(scopeId, check.vc).satisfied
+      ) return undefined;
+      return { grant, delegatedScopes: getDelegationScopes(check.vc) };
     } catch {
       // Resolver/provider failures must not turn cached authority into a bypass.
-      return false;
+      return undefined;
     }
   }
 
@@ -122,7 +137,7 @@ export function createGrantResolution(
     args: Record<string, unknown>,
     sessionId: string | undefined,
     scopeId: string,
-  ): Promise<Grant | undefined> {
+  ): Promise<ResolvedGrant | undefined> {
     if (!holderBindingVerifier) return undefined; // inert unless holder binding is on
     const proofArg = args["_kyaos_proof"];
     if (proofArg === undefined) return undefined;
@@ -152,10 +167,11 @@ export function createGrantResolution(
     // agent-anchored (session-less) grant is portable across transports.
     for (const grant of grants) {
       if (
-        grant.agentDid === agentDid &&
-        (grant.sessionId === undefined || grant.sessionId === sessionId) &&
-        await isGrantAuthorized(grant, scopeId)
-      ) return grant;
+        grant.agentDid !== agentDid ||
+        (grant.sessionId !== undefined && grant.sessionId !== sessionId)
+      ) continue;
+      const resolved = await authorizeGrant(grant, scopeId);
+      if (resolved) return resolved;
     }
     return undefined;
   }
@@ -165,7 +181,7 @@ export function createGrantResolution(
     args: Record<string, unknown>,
     sessionId: string | undefined,
     scopeId: string,
-  ): Promise<Grant | undefined> {
+  ): Promise<ResolvedGrant | undefined> {
     const agentGrant = await resolveAgentGrant(toolName, args, sessionId, scopeId);
     if (agentGrant) return agentGrant;
 
@@ -179,7 +195,8 @@ export function createGrantResolution(
           holderBindingMode === "enforce" &&
           isHolderBindingApplicable(grant.agentDid)
         ) continue;
-        if (await isGrantAuthorized(grant, scopeId)) return grant;
+        const resolved = await authorizeGrant(grant, scopeId);
+        if (resolved) return resolved;
       }
     }
     return undefined;

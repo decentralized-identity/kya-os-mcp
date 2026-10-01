@@ -9,13 +9,14 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { canonicalize } from "json-canonicalize";
 import {
   ProofGenerator,
+  computeCanonicalHashes,
   createProofResponse,
   extractCanonicalData,
   type ToolRequest,
   type ToolResponse,
 } from "../generator.js";
 import type { ProofAgentIdentity } from "../generator.js";
-import type { SessionContext } from "../../types/protocol.js";
+import type { DetachedProof, SessionContext } from "../../types/protocol.js";
 
 // NodeCryptoProvider for test environment (Node.js)
 import { NodeCryptoProvider } from "../../__tests__/utils/node-crypto-provider.js";
@@ -392,6 +393,71 @@ describe("ProofGenerator", () => {
 
       await expect(invalidVerifier.verifyProof(proof, request, response))
         .resolves.toBe(false);
+    });
+
+    it("rejects meta hashes rewritten to bind a different call", async () => {
+      const paid: ToolRequest = { method: "pay", params: { amount: 1 } };
+      const proof = await proofGenerator.generateProof(paid, { data: "paid 1" }, mockSession);
+
+      const forgedRequest: ToolRequest = { method: "pay", params: { amount: 1_000_000 } };
+      const forgedResponse: ToolResponse = { data: "paid 1000000" };
+      const forgedHashes = await computeCanonicalHashes(
+        forgedRequest,
+        forgedResponse,
+        (bytes) => cryptoProvider.hash(bytes),
+      );
+      const forged: DetachedProof = {
+        jws: proof.jws,
+        meta: {
+          ...proof.meta,
+          requestHash: forgedHashes.requestHash,
+          responseHash: forgedHashes.responseHash!,
+        },
+      };
+
+      expect(await proofGenerator.verifyProof(forged, forgedRequest, forgedResponse)).toBe(false);
+    });
+
+    it("rejects a proof whose responseHash was stripped, with or without a response", async () => {
+      const request: ToolRequest = { method: "consent", params: {} };
+      const genuine: ToolResponse = { data: "https://issuer.example/consent" };
+      const proof = await proofGenerator.generateProof(request, genuine, mockSession, {
+        outcome: "needs_authorization",
+      });
+      const { responseHash: _stripped, ...withoutResponse } = proof.meta;
+      const stripped: DetachedProof = { jws: proof.jws, meta: withoutResponse };
+
+      const swapped: ToolResponse = { data: "https://attacker.example/consent" };
+      expect(await proofGenerator.verifyProof(stripped, request, swapped)).toBe(false);
+      expect(await proofGenerator.verifyProof(stripped, request)).toBe(false);
+    });
+
+    it("rejects a structurally invalid proof", async () => {
+      const request: ToolRequest = { method: "test-tool", params: { input: "hello" } };
+      const proof = await proofGenerator.generateProof(request, undefined, mockSession);
+      const invalid = { jws: proof.jws, meta: { ...proof.meta, ts: "yesterday" } };
+
+      expect(await proofGenerator.verifyProof(invalid as unknown as DetachedProof, request)).toBe(false);
+      expect(await proofGenerator.verifyProof(proof, request)).toBe(true);
+    });
+
+    it("reports a signing key it cannot use", async () => {
+      const broken = new ProofGenerator({ ...mockIdentity, privateKey: "AAAA" }, cryptoProvider);
+
+      await expect(broken.generateProof({ method: "test-tool" }, undefined, mockSession))
+        .rejects.toThrow(/^Failed to generate JWS: /);
+    });
+
+    it("rejects a proof claiming another signer", async () => {
+      const request: ToolRequest = { method: "test-tool", params: { input: "hello" } };
+      const proof = await proofGenerator.generateProof(request, undefined, mockSession);
+
+      expect(
+        await proofGenerator.verifyProof(
+          { jws: proof.jws, meta: { ...proof.meta, did: "did:web:example.com:agents:other" } },
+          request,
+        ),
+      ).toBe(false);
     });
   });
 

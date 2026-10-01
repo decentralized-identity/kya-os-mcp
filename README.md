@@ -296,6 +296,7 @@ The bundled memory provider implements `consume`, but it protects only one cache
 `consume` is optional: a provider without it keeps working by falling back to `has` then `add`, which cannot stop concurrent duplicates of one signed request, and a warning is logged once.
 Set `requireAtomicNonce: true` on the middleware, `ProofVerifier`, `SessionManager` or `consumeFromNonceCacheProvider` to refuse that fallback; each then throws at construction for a provider without `consume`.
 Any result other than literal `true`, or a storage failure, denies admission.
+`withKyaOs` takes the same `nonceCache` and `requireAtomicNonce` options (and `responseProofProfile`) and passes them to the middleware.
 
 Providers must honor the requested retention duration.
 The verifiers retain nonces through the final accepted second, including future timestamps and clock skew, while preserving a longer configured TTL.

@@ -589,6 +589,36 @@ describe('durable delegation grant validation', () => {
     expect(challenged(await delegationHandler(middleware)({}, 'session'))).toBe(true);
   });
 
+  it('on the holder-proof path, passes over grants for another session or agent and unusable rows', async () => {
+    const agent = await makeIdentity();
+    const vc = await issueVC(agent.did);
+    let rows: Grant[] = [];
+    class OrderedStore extends MemoryGrantStore {
+      override async getByAgent(): Promise<Grant[]> {
+        return rows;
+      }
+    }
+    const { server, middleware } = await makeServer({ holderBinding: 'enforce', grantStore: new OrderedStore() });
+    const call = async () => {
+      const args = { item: 'laptop' };
+      const proof = await generateRequestProof({
+        identity: agent, crypto, toolName: TOOL, args, audience: server.did, sessionId: 'session',
+      });
+      return delegationHandler(middleware)({ ...args, _kyaos_proof: proof }, 'session');
+    };
+    const passedOver = [
+      activeGrant({ agentDid: agent.did, sessionId: 'someone-else', delegationCredential: vc }),
+      activeGrant({ agentDid: 'did:key:zSomeoneElse', delegationCredential: vc }),
+      activeGrant({ agentDid: agent.did, status: 'revoked', delegationCredential: vc }),
+    ];
+
+    rows = passedOver;
+    expect(challenged(await call())).toBe(true);
+
+    rows = [...passedOver, activeGrant({ agentDid: agent.did, delegationCredential: vc })];
+    expect(reached(await call())).toBe(true);
+  });
+
   it('denies reuse when re-verifying the stored credential fails outright', async () => {
     let resolverDown = false;
     const store = new MemoryGrantStore();

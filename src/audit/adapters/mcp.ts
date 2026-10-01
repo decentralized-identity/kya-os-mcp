@@ -5,6 +5,7 @@ import type {
   Digest,
   PartyRef,
 } from '../types.js';
+import { boundedAuditReference } from './references.js';
 
 export interface McpAuditContext {
   actor?: PartyRef;
@@ -18,8 +19,19 @@ export interface McpAuditEventAdapterOptions {
   includeToolNames?: boolean;
 }
 
-function boundedReference(value: string, maxLength = 256): string {
-  return value.slice(0, maxLength);
+/** Bounds every caller-supplied reference so a hostile one cannot keep the event out of the ledger. */
+async function boundedAuthorization(
+  authorization: AuthorizationEvidence,
+): Promise<AuthorizationEvidence> {
+  const bounded = { ...authorization };
+  for (const field of ['scopeId', 'delegationRef', 'grantRef', 'policyId', 'policyVersion'] as const) {
+    const value = authorization[field];
+    if (value !== undefined) bounded[field] = await boundedAuditReference(value);
+  }
+  if (authorization.verificationCode !== undefined) {
+    bounded.verificationCode = await boundedAuditReference(authorization.verificationCode, 128);
+  }
+  return bounded;
 }
 
 /** Privacy-minimal translation from MCP lifecycle signals to binding-neutral events. */
@@ -35,7 +47,7 @@ export class McpAuditEventAdapter {
   ): Promise<void> {
     await this.trail.record({
       eventType: `session.${phase}` as 'session.established',
-      ...this.context(input.context),
+      ...(await this.context(input.context)),
       action: { category: 'session' },
       outcome: input.succeeded ? 'succeeded' : 'failed',
       ...(input.reasonCode === undefined ? {} : { reason: { code: input.reasonCode } }),
@@ -59,11 +71,11 @@ export class McpAuditEventAdapter {
   ): Promise<void> {
     await this.trail.record({
       eventType: `tool.call.${phase}` as 'tool.call.completed',
-      ...this.context(input.context),
+      ...(await this.context(input.context)),
       action: {
         category: 'tool.call',
         ...(this.options.includeToolNames
-          ? { name: boundedReference(input.toolName) }
+          ? { name: await boundedAuditReference(input.toolName) }
           : {}),
       },
       outcome: input.outcome,
@@ -84,7 +96,7 @@ export class McpAuditEventAdapter {
   ): Promise<void> {
     await this.trail.record({
       eventType: `proof.${phase}` as 'proof.generated',
-      ...this.context(input.context),
+      ...(await this.context(input.context)),
       action: { category: 'proof' },
       outcome: input.outcome,
       evidence: [],
@@ -113,7 +125,7 @@ export class McpAuditEventAdapter {
       : `authorization.${phase}` as const;
     await this.trail.record({
       eventType,
-      ...this.context(input.context),
+      ...(await this.context(input.context)),
       action: { category: 'authorization' },
       outcome: input.outcome,
       ...(input.reasonCode === undefined ? {} : { reason: { code: input.reasonCode } }),
@@ -123,7 +135,7 @@ export class McpAuditEventAdapter {
         ...(input.policyDigest === undefined ? {} : { policyDigest: input.policyDigest }),
         ...(input.grantRef === undefined
           ? {}
-          : { grantRef: boundedReference(input.grantRef) }),
+          : { grantRef: await boundedAuditReference(input.grantRef) }),
       },
     });
   }
@@ -140,17 +152,17 @@ export class McpAuditEventAdapter {
   ): Promise<void> {
     await this.trail.record({
       eventType: `delegation.${phase}` as 'delegation.verified',
-      ...this.context(input.context),
+      ...(await this.context(input.context)),
       action: { category: 'delegation' },
       outcome: input.outcome,
       ...(input.reasonCode === undefined ? {} : { reason: { code: input.reasonCode } }),
       evidence: [],
       details: {
         family: 'delegation', phase,
-        delegationRef: boundedReference(input.delegationRef),
+        delegationRef: await boundedAuditReference(input.delegationRef),
         ...(input.parentRef === undefined
           ? {}
-          : { parentRef: boundedReference(input.parentRef) }),
+          : { parentRef: await boundedAuditReference(input.parentRef) }),
       },
     });
   }
@@ -169,7 +181,7 @@ export class McpAuditEventAdapter {
       : `consent.${phase}`;
     await this.trail.record({
       eventType: eventType as 'consent.requested',
-      ...this.context(input.context),
+      ...(await this.context(input.context)),
       action: { category: 'consent' },
       outcome: input.outcome,
       ...(input.reasonCode === undefined ? {} : { reason: { code: input.reasonCode } }),
@@ -178,7 +190,7 @@ export class McpAuditEventAdapter {
         family: 'consent', phase,
         ...(input.consentRef === undefined
           ? {}
-          : { consentRef: boundedReference(input.consentRef) }),
+          : { consentRef: await boundedAuditReference(input.consentRef) }),
       },
     });
   }
@@ -202,7 +214,7 @@ export class McpAuditEventAdapter {
     } as const;
     await this.trail.record({
       eventType: eventTypes[phase],
-      ...this.context(input.context),
+      ...(await this.context(input.context)),
       action: { category: 'configuration' },
       outcome: input.outcome,
       ...(input.reasonCode === undefined ? {} : { reason: { code: input.reasonCode } }),
@@ -241,7 +253,7 @@ export class McpAuditEventAdapter {
     } as const;
     await this.trail.record({
       eventType: eventTypes[phase],
-      ...this.context(input.context),
+      ...(await this.context(input.context)),
       action: { category: 'audit.ledger' },
       outcome: input.outcome,
       ...(input.reasonCode === undefined ? {} : { reason: { code: input.reasonCode } }),
@@ -282,7 +294,7 @@ export class McpAuditEventAdapter {
     } as const;
     await this.trail.record({
       eventType: eventTypes[phase],
-      ...this.context(input.context),
+      ...(await this.context(input.context)),
       action: { category: 'audit.administration' },
       outcome: input.outcome,
       ...(input.reasonCode === undefined ? {} : { reason: { code: input.reasonCode } }),
@@ -300,7 +312,7 @@ export class McpAuditEventAdapter {
     });
   }
 
-  private context(context: McpAuditContext | undefined): McpAuditContext {
+  private async context(context: McpAuditContext | undefined): Promise<McpAuditContext> {
     if (context === undefined) return {};
     return {
       ...(context.actor === undefined ? {} : { actor: context.actor }),
@@ -309,9 +321,13 @@ export class McpAuditEventAdapter {
         : { responsibleParty: context.responsibleParty }),
       ...(context.authorization === undefined
         ? {}
-        : { authorization: context.authorization }),
-      ...(context.correlationId === undefined ? {} : { correlationId: context.correlationId }),
-      ...(context.causationId === undefined ? {} : { causationId: context.causationId }),
+        : { authorization: await boundedAuthorization(context.authorization) }),
+      ...(context.correlationId === undefined
+        ? {}
+        : { correlationId: await boundedAuditReference(context.correlationId) }),
+      ...(context.causationId === undefined
+        ? {}
+        : { causationId: await boundedAuditReference(context.causationId) }),
     };
   }
 }

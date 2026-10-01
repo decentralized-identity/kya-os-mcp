@@ -1,8 +1,37 @@
 import { describe, expect, it } from 'vitest';
+import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
+import { CryptoProviderAuditHasher } from '../crypto.js';
+import type { AuditJournalProvider } from '../providers/journal.js';
+import { MemoryAuditJournal } from '../providers/memory-journal.js';
+import { LocalAuditReadService } from '../read-service.js';
+import { AuditRecorderService } from '../recorder-service.js';
 import {
   createInMemoryReferenceRecorder,
   sampleAuditEvent,
 } from '../reference-recorder.js';
+
+async function racingLedger() {
+  const journal = new MemoryAuditJournal();
+  const tenantRef = sampleAuditEvent(1).tenantRef;
+  const recorder = new AuditRecorderService({
+    ledgerId: 'kya:reference:audit:primary', ledgerEpochId: 'epoch_1', tenantRef,
+    binding: 'urn:kya-os:audit-binding:mcp:2025-11-25', sourceId: 'reference-recorder',
+    journal, hasher: new CryptoProviderAuditHasher(new NodeCryptoProvider()),
+    clock: { now: () => 1_750_000_001_000 },
+    signer: {
+      ref: { did: 'did:key:zRecorder', kid: 'did:key:zRecorder#0', alg: 'EdDSA' },
+      sign: async () => 'signature',
+    },
+  });
+  let next = 1;
+  const append = () => recorder.submitAuthenticated({
+    ledgerId: 'kya:reference:audit:primary',
+    producerEvent: sampleAuditEvent(next++),
+    encryptedEvidence: [],
+  }, { producerAuthority: 'did:key:zReferenceProducer', tenantAuthority: 'tenant', tenantRef });
+  for (let index = 0; index < 3; index += 1) await append();
+  return { journal, append, ledger: { ledgerId: 'kya:reference:audit:primary', ledgerEpochId: 'epoch_1' } };
+}
 
 describe('LocalAuditReadService', () => {
   it('returns an empty page and null head before anything is recorded', async () => {
@@ -83,6 +112,48 @@ describe('LocalAuditReadService', () => {
     expect(paged.map((entry) => entry.entryDigest)).toEqual(
       all.entries.map((entry) => entry.entryDigest),
     );
+  });
+
+  it('echoes the head that bounds the page while appends race the read', async () => {
+    const { journal, append, ledger } = await racingLedger();
+    const passthrough = {
+      capabilities: journal.capabilities,
+      getByIdempotencyKey: journal.getByIdempotencyKey.bind(journal),
+      compareAndAppend: journal.compareAndAppend.bind(journal),
+    };
+    // An append lands while the head is being read...
+    const appendDuringHead: AuditJournalProvider = {
+      ...passthrough,
+      getHead: async (input) => {
+        await append();
+        return journal.getHead(input);
+      },
+      readRange: (query) => journal.readRange(query),
+    };
+    // ...or after the head was read and before the range is.
+    const appendDuringRange: AuditJournalProvider = {
+      ...passthrough,
+      getHead: (input) => journal.getHead(input),
+      readRange: async function* (query) {
+        await append();
+        yield* journal.readRange(query);
+      },
+    };
+
+    for (const racing of [appendDuringHead, appendDuringRange]) {
+      const page = await new LocalAuditReadService({ journal: racing }).listEntries({
+        ...ledger, limit: 50,
+      });
+      // SPEC-AUDIT-READ 2.2: null exactly when the page reached the echoed head.
+      expect(page.nextAfterSequence).toBeNull();
+      expect(page.entries.at(-1)?.core.sequence).toBe(page.head?.sequence);
+    }
+
+    const bounded = await new LocalAuditReadService({ journal: appendDuringRange }).listEntries({
+      ...ledger, limit: 2,
+    });
+    expect(bounded.entries.map((entry) => entry.core.sequence)).toEqual(['0', '1']);
+    expect(bounded.nextAfterSequence).toBe('1');
   });
 
   it('clamps an oversized limit instead of over-reading', async () => {

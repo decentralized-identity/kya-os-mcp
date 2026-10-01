@@ -1719,7 +1719,11 @@ purpose/scope authorization out of band. Bundle contents cannot authorize their
 own signer or bootstrap their own trust root. A verifier MUST distinguish
 `valid`, `invalid`, and `indeterminate`, MUST keep authorization-as-observed
 separate from current authorization/revocation, and MUST NOT consume a live
-nonce cache when verifying historical proof artifacts.
+nonce cache when verifying historical proof artifacts. A verifier MUST NOT
+ignore a verification-policy constraint (checkpoint-bounded key validity,
+required assurance profile, key revocation mode), and a constraint it cannot
+evaluate for the artifacts at hand MUST NOT leave the affected dimension
+`valid`.
 
 Sensitive payloads SHOULD be encrypted in a separate evidence provider and
 referenced by opaque randomized identifiers and ciphertext commitments. The

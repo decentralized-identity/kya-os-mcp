@@ -28,6 +28,8 @@ import type {
   AuditProducerEventCoreV1,
   AuditVerificationPolicyV1,
   PartyRef,
+  SignedAuditCheckpointV1,
+  SignedAuditEntryV1,
   SignerRef,
 } from '../types.js';
 
@@ -129,6 +131,95 @@ async function fixture() {
     policy,
   );
   return { entries, hasher, signer, policy, policyDigest, journal };
+}
+
+const rolloverContext = {
+  producerAuthority: 'did:key:zProducer', tenantAuthority: 'tenant-1', tenantRef,
+};
+
+/**
+ * epoch_1 sealed by a terminal checkpoint over its first three entries, and an
+ * epoch_2 genesis that commits it; optionally with the builder's lifecycle hook
+ * recording `checkpoint.created` into epoch_1 after the terminal is signed.
+ */
+async function rolloverFixture(withLifecycleEvent = false) {
+  const { hasher, signer, policy, journal } = await fixture();
+  const epochOne = { ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1' };
+  const epochTwo = { ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_2' };
+  const epochOneRecorder = new AuditRecorderService({
+    ...epochOne, tenantRef, binding: 'urn:kya-os:audit-binding:mcp:2025-11-25',
+    sourceId: 'recorder-1', journal, signer, hasher, clock: { now: () => 1_750_000_005_000 },
+  });
+  const builder = new AuditCheckpointBuilder({
+    journal, store: new MemoryAuditCheckpointStore(), signer, hasher,
+    clock: { now: () => 1_750_000_003_000 },
+    ...(withLifecycleEvent
+      ? {
+          onCheckpointCreated: async (checkpoint: SignedAuditCheckpointV1) => {
+            await epochOneRecorder.submitAuthenticated({
+              ledgerId: epochOne.ledgerId,
+              producerEvent: {
+                ...event(3),
+                eventId: `evt_checkpoint_${checkpoint.core.treeSize}`,
+                eventType: 'checkpoint.created',
+                action: { category: 'audit.ledger' },
+                details: {
+                  family: 'ledger', phase: 'checkpoint_created',
+                  checkpointDigest: checkpoint.checkpointDigest,
+                },
+              },
+              encryptedEvidence: [],
+            }, rolloverContext);
+          },
+        }
+      : {}),
+  });
+  const terminal = await builder.createCheckpoint(epochOne);
+  await new AuditRecorderService({
+    ...epochTwo, tenantRef, binding: 'urn:kya-os:audit-binding:mcp:2025-11-25',
+    sourceId: 'recorder-2', journal, signer, hasher, clock: { now: () => 1_750_000_004_000 },
+    previousEpochId: epochOne.ledgerEpochId,
+    previousTerminalCheckpointDigest: terminal.checkpointDigest,
+    epochTransitionGuard: { verifyAndSeal: async () => true },
+  }).submitAuthenticated({
+    ledgerId: epochTwo.ledgerId, producerEvent: event(10), encryptedEvidence: [],
+  }, rolloverContext);
+  const twoEntries = await journal.snapshot(epochTwo);
+  const multiEpochPolicy: AuditVerificationPolicyV1 = {
+    ...policy,
+    acceptedIntegritySuites: [...policy.acceptedIntegritySuites, 'KYA-AUDIT-RFC9162-SHA256-JWS-2026'],
+    trustedLedgerEpochs: [
+      ...policy.trustedLedgerEpochs,
+      { ...epochTwo, recorderKeys: [{ signer: signer.ref }] },
+    ],
+  };
+  const verifyRollover = async (
+    oneEntries: readonly SignedAuditEntryV1[],
+    oneCheckpoints: readonly SignedAuditCheckpointV1[],
+  ) => verifyAuditBundle(await new AuditReplayBundleExporter({
+    hasher, signer, clock: { now: () => 1_750_000_010_000 },
+  }).export({
+    bundleId: 'bundle_rollover', purpose: 'regulatory-review',
+    verificationPolicyDigest: await hashAuditValue(
+      hasher, 'org.kya-os.audit.verification-policy.v1', multiEpochPolicy,
+    ),
+    selections: [
+      {
+        ...epochOne, firstSequence: '0', lastSequence: String(oneEntries.length - 1),
+        expectedHeadDigest: oneEntries.at(-1)!.entryDigest,
+        checkpointTreeSizes: oneCheckpoints.map((checkpoint) => checkpoint.core.treeSize),
+      },
+      {
+        ...epochTwo, firstSequence: '0', lastSequence: String(twoEntries.length - 1),
+        expectedHeadDigest: twoEntries.at(-1)!.entryDigest, checkpointTreeSizes: [],
+      },
+    ],
+    components: [
+      { path: 'entries.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.entries, disposition: 'included', content: [...oneEntries, ...twoEntries] },
+      { path: 'checkpoints.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.checkpoints, disposition: 'included', content: oneCheckpoints },
+    ],
+  }), multiEpochPolicy, { hasher, signatures: new TestVerifier() });
+  return { journal, epochOne, builder, terminal, epochOneRecorder, verifyRollover };
 }
 
 describe('signed replay bundles', () => {
@@ -734,5 +825,335 @@ describe('signed replay bundles', () => {
       parseAuditVerificationPolicy(structuredClone(policy)),
     ];
     expect(parsed.every(Object.isFrozen)).toBe(true);
+  });
+
+  it('fails a bundle that cannot meet the required audit profile of its policy', async () => {
+    const { entries, hasher, signer, policy, journal } = await fixture();
+    const ledger = { ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1' };
+    const checkpoint = await new AuditCheckpointBuilder({
+      journal, store: new MemoryAuditCheckpointStore(), signer, hasher,
+      clock: { now: () => 1_750_000_003_000 },
+    }).createCheckpoint(ledger);
+    const exportUnder = async (required: AuditVerificationPolicyV1, withCheckpoint: boolean) => {
+      const bundle = await new AuditReplayBundleExporter({
+        hasher, signer, clock: { now: () => 1_750_000_010_000 },
+      }).export({
+        bundleId: 'bundle_profile', purpose: 'regulatory-review',
+        verificationPolicyDigest: await hashAuditValue(
+          hasher, 'org.kya-os.audit.verification-policy.v1', required,
+        ),
+        selections: [{
+          ...ledger, firstSequence: '0', lastSequence: '2',
+          expectedHeadDigest: entries[2]!.entryDigest,
+          checkpointTreeSizes: withCheckpoint ? [checkpoint.core.treeSize] : [],
+        }],
+        components: [
+          { path: 'entries.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.entries, disposition: 'included', content: entries },
+          ...(withCheckpoint
+            ? [{ path: 'checkpoints.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.checkpoints, disposition: 'included' as const, content: [checkpoint] }]
+            : []),
+        ],
+      });
+      return verifyAuditBundle(bundle, required, { hasher, signatures: new TestVerifier() });
+    };
+    const withSuites = (profile: AuditVerificationPolicyV1['requiredAuditProfile']) => ({
+      ...policy,
+      acceptedIntegritySuites: [...policy.acceptedIntegritySuites, 'KYA-AUDIT-RFC9162-SHA256-JWS-2026'],
+      requiredAuditProfile: profile,
+    });
+
+    // The CLI exits 1 exactly when some dimension is invalid.
+    const observed = await exportUnder(withSuites('AAP-4'), false);
+    expect(observed.checkpointIntegrity.reasonCodes).toContain(AUDIT_REASON_CODES.REQUIRED_PROFILE_UNMET);
+    expect(observed.anchorIntegrity.verdict).toBe('invalid');
+    const transparent = await exportUnder(withSuites('AAP-3'), true);
+    expect(transparent.checkpointIntegrity).toEqual({ verdict: 'valid', reasonCodes: [] });
+    expect(transparent.anchorIntegrity.verdict).toBe('indeterminate');
+  });
+
+  it('verifies a subset export through inclusion proofs against its signed checkpoint', async () => {
+    const { entries, hasher, signer, policy, journal } = await fixture();
+    const ledger = { ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1' };
+    const builder = new AuditCheckpointBuilder({
+      journal, store: new MemoryAuditCheckpointStore(), signer, hasher,
+      clock: { now: () => 1_750_000_003_000 },
+    });
+    const checkpoint = await builder.createCheckpoint(ledger);
+    const proof = await builder.inclusionProof(ledger, '2', checkpoint);
+    const checkpointPolicy = {
+      ...policy,
+      acceptedIntegritySuites: [...policy.acceptedIntegritySuites, 'KYA-AUDIT-RFC9162-SHA256-JWS-2026'],
+    };
+    const exportSubset = async (proofs: unknown[]) => new AuditReplayBundleExporter({
+      hasher, signer, clock: { now: () => 1_750_000_010_000 },
+    }).export({
+      bundleId: 'bundle_subset', purpose: 'regulatory-review',
+      verificationPolicyDigest: await hashAuditValue(
+        hasher, 'org.kya-os.audit.verification-policy.v1', checkpointPolicy,
+      ),
+      selections: [{
+        ...ledger, firstSequence: '2', lastSequence: '2',
+        expectedHeadDigest: entries[2]!.entryDigest,
+        checkpointTreeSizes: [checkpoint.core.treeSize],
+      }],
+      components: [
+        { path: 'entries.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.entries, disposition: 'included', content: [entries[2]] },
+        { path: 'checkpoints.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.checkpoints, disposition: 'included', content: [checkpoint] },
+        { path: 'inclusion-proofs.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.inclusionProofs, disposition: 'included', content: proofs },
+      ],
+    });
+
+    const proven = await verifyAuditBundle(await exportSubset([{
+      ...ledger, sequence: '2', entryDigest: entries[2]!.entryDigest,
+      checkpointDigest: checkpoint.checkpointDigest, proof,
+    }]), checkpointPolicy, { hasher, signatures: new TestVerifier() });
+    expect(proven.cryptographicIntegrity.verdict).toBe('valid');
+    expect(proven.chainIntegrity.verdict).toBe('valid');
+    expect(proven.checkpointIntegrity).toEqual({ verdict: 'valid', reasonCodes: [] });
+    expect(proven.scopeEvidenceCompleteness.verdict).toBe('valid');
+
+    const unproven = await verifyAuditBundle(await exportSubset([]), checkpointPolicy, {
+      hasher, signatures: new TestVerifier(),
+    });
+    expect(unproven.checkpointIntegrity).toEqual({
+      verdict: 'invalid', reasonCodes: [AUDIT_REASON_CODES.MERKLE_PROOF_MISSING],
+    });
+  });
+
+  it('accepts unlinked checkpoints only when a verified consistency proof binds them', async () => {
+    const { hasher, signer, policy, journal } = await fixture();
+    const ledger = { ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1' };
+    const builder = new AuditCheckpointBuilder({
+      journal, store: new MemoryAuditCheckpointStore(), signer, hasher,
+      clock: { now: () => 1_750_000_003_000 },
+    });
+    const recorder = new AuditRecorderService({
+      ...ledger, tenantRef, binding: 'urn:kya-os:audit-binding:mcp:2025-11-25',
+      sourceId: 'recorder-1', journal, signer, hasher, clock: { now: () => 1_750_000_004_000 },
+    });
+    const submit = (sequence: number) => recorder.submitAuthenticated({
+      ledgerId: ledger.ledgerId, producerEvent: event(sequence), encryptedEvidence: [],
+    }, { producerAuthority: 'did:key:zProducer', tenantAuthority: 'tenant-1', tenantRef });
+    const three = await builder.createCheckpoint(ledger);
+    await submit(3);
+    await builder.createCheckpoint(ledger); // tree size 4, omitted from the export
+    await submit(4);
+    const five = await builder.createCheckpoint(ledger);
+    const allEntries = await journal.snapshot(ledger);
+    const checkpointPolicy = {
+      ...policy,
+      acceptedIntegritySuites: [...policy.acceptedIntegritySuites, 'KYA-AUDIT-RFC9162-SHA256-JWS-2026'],
+    };
+    const exportGapped = async (proofs: unknown[]) => new AuditReplayBundleExporter({
+      hasher, signer, clock: { now: () => 1_750_000_010_000 },
+    }).export({
+      bundleId: 'bundle_gapped', purpose: 'regulatory-review',
+      verificationPolicyDigest: await hashAuditValue(
+        hasher, 'org.kya-os.audit.verification-policy.v1', checkpointPolicy,
+      ),
+      selections: [{
+        ...ledger, firstSequence: '0', lastSequence: '4',
+        expectedHeadDigest: allEntries[4]!.entryDigest,
+        checkpointTreeSizes: [three.core.treeSize, five.core.treeSize],
+      }],
+      components: [
+        { path: 'entries.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.entries, disposition: 'included', content: allEntries },
+        { path: 'checkpoints.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.checkpoints, disposition: 'included', content: [three, five] },
+        { path: 'consistency-proofs.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.consistencyProofs, disposition: 'included', content: proofs },
+      ],
+    });
+    const consistency = {
+      ...ledger, oldCheckpointDigest: three.checkpointDigest,
+      newCheckpointDigest: five.checkpointDigest,
+      proof: await builder.consistencyProof(ledger, three.core.treeSize, five),
+    };
+
+    const bound = await verifyAuditBundle(await exportGapped([consistency]), checkpointPolicy, {
+      hasher, signatures: new TestVerifier(),
+    });
+    expect(bound.checkpointIntegrity).toEqual({ verdict: 'valid', reasonCodes: [] });
+    const unbound = await verifyAuditBundle(await exportGapped([]), checkpointPolicy, {
+      hasher, signatures: new TestVerifier(),
+    });
+    expect(unbound.checkpointIntegrity).toEqual({
+      verdict: 'invalid', reasonCodes: [AUDIT_REASON_CODES.CHECKPOINT_CHAIN_MISMATCH],
+    });
+  });
+
+  it('rejects a predecessor checkpoint signed past the terminal its successor committed', async () => {
+    const { journal, epochOne, builder, terminal, epochOneRecorder, verifyRollover } =
+      await rolloverFixture();
+    expect((await verifyRollover(await journal.snapshot(epochOne), [terminal]))
+      .checkpointIntegrity).toEqual({ verdict: 'valid', reasonCodes: [] });
+
+    // The old authority keeps sequencing epoch_1 after the rollover. Its
+    // uncommitted tail entries prove nothing; a checkpoint over them does.
+    for (let sequence = 3; sequence <= 4; sequence += 1) {
+      await epochOneRecorder.submitAuthenticated({
+        ledgerId: epochOne.ledgerId, producerEvent: event(sequence), encryptedEvidence: [],
+      }, rolloverContext);
+    }
+    const tail = await journal.snapshot(epochOne);
+    expect((await verifyRollover(tail, [terminal])).checkpointIntegrity)
+      .toEqual({ verdict: 'valid', reasonCodes: [] });
+    const split = await verifyRollover(tail, [terminal, await builder.createCheckpoint(epochOne)]);
+    expect(split.cryptographicIntegrity.verdict).toBe('valid');
+    expect(split.checkpointIntegrity).toEqual({
+      verdict: 'invalid', reasonCodes: [AUDIT_REASON_CODES.CHECKPOINT_FORK_DETECTED],
+    });
+  });
+
+  it('accepts the terminal checkpoint lifecycle event that follows the terminal tree', async () => {
+    // The builder's hook records `checkpoint.created` after signing, so the
+    // event sits at sequence = terminal tree size in the predecessor epoch.
+    const { journal, epochOne, terminal, verifyRollover } = await rolloverFixture(true);
+    const predecessor = await journal.snapshot(epochOne);
+    expect(predecessor.at(-1)?.core).toMatchObject({
+      sequence: terminal.core.treeSize,
+      event: { eventType: 'checkpoint.created' },
+    });
+
+    const report = await verifyRollover(predecessor, [terminal]);
+    expect(report.checkpointIntegrity).toEqual({ verdict: 'valid', reasonCodes: [] });
+    expect(report.cryptographicIntegrity.verdict).toBe('valid');
+    expect(report.chainIntegrity.verdict).toBe('valid');
+    expect(report.scopeEvidenceCompleteness.verdict).toBe('valid');
+  });
+
+  it('leaves an exporter key bounded by checkpoints indeterminate instead of rejecting it', async () => {
+    const { entries, hasher, signer, policy } = await fixture();
+    const exportUnder = async (exporterPolicy: AuditVerificationPolicyV1) => {
+      const bundle = await new AuditReplayBundleExporter({
+        hasher, signer, clock: { now: () => 1_750_000_010_000 },
+      }).export({
+        bundleId: 'bundle_bounded_exporter', purpose: 'regulatory-review',
+        verificationPolicyDigest: await hashAuditValue(
+          hasher, 'org.kya-os.audit.verification-policy.v1', exporterPolicy,
+        ),
+        selections: [{
+          ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1',
+          firstSequence: '0', lastSequence: '2', expectedHeadDigest: entries[2]!.entryDigest,
+          checkpointTreeSizes: [],
+        }],
+        components: [{
+          path: 'entries.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.entries,
+          disposition: 'included', content: entries,
+        }],
+      });
+      return verifyAuditBundle(bundle, exporterPolicy, { hasher, signatures: new TestVerifier() });
+    };
+    const boundedKey = {
+      signer: signer.ref, validUntilCheckpoint: `sha256:${'c'.repeat(64)}` as const,
+    };
+    const bounded: AuditVerificationPolicyV1 = {
+      ...policy,
+      authorizedExporters: [{ ...policy.authorizedExporters[0]!, signerKeys: [boundedKey] }],
+    };
+
+    // An export has no ledger position to place it against the bound.
+    const report = await exportUnder(bounded);
+    expect(report.cryptographicIntegrity).toEqual({
+      verdict: 'indeterminate', reasonCodes: [AUDIT_REASON_CODES.KEY_BOUNDARY_UNRESOLVED],
+    });
+    expect(report.chainIntegrity.verdict).toBe('valid');
+    expect(report.scopeEvidenceCompleteness.verdict).toBe('valid');
+
+    // An unbounded key that authorizes the same export decides it.
+    const alsoUnbounded: AuditVerificationPolicyV1 = {
+      ...policy,
+      authorizedExporters: [{
+        ...policy.authorizedExporters[0]!, signerKeys: [boundedKey, { signer: signer.ref }],
+      }],
+    };
+    expect((await exportUnder(alsoUnbounded)).cryptographicIntegrity)
+      .toEqual({ verdict: 'valid', reasonCodes: [] });
+  });
+
+  it('holds exporter and observer keys to their current status under current and both', async () => {
+    const { entries, hasher, signer, policy, journal } = await fixture();
+    const ledger = { ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1' };
+    const checkpoint = await new AuditCheckpointBuilder({
+      journal, store: new MemoryAuditCheckpointStore(), signer, hasher,
+      clock: { now: () => 1_750_000_003_000 },
+    }).createCheckpoint(ledger);
+    const observation = await new MemoryAuditCheckpointObserver({
+      observerId: 'observer-1', signer, hasher,
+      clock: { now: () => 1_750_000_004_000 },
+      verifyCheckpoint: async () => true,
+      verifyConsistency: async () => true,
+    }).publish(checkpoint);
+    // Both keys were valid when they signed and were revoked afterwards.
+    const revokedAt = 1_750_000_020_000;
+    const under = (
+      keyRevocationMode: AuditVerificationPolicyV1['keyRevocationMode'],
+      revoke: 'exporter' | 'observer',
+    ): AuditVerificationPolicyV1 => ({
+      ...policy,
+      keyRevocationMode,
+      acceptedIntegritySuites: [...policy.acceptedIntegritySuites, 'KYA-AUDIT-RFC9162-SHA256-JWS-2026'],
+      trustedObservers: [{
+        signer: signer.ref, ...(revoke === 'observer' ? { validUntil: revokedAt } : {}),
+      }],
+      authorizedExporters: [{
+        ...policy.authorizedExporters[0]!,
+        signerKeys: [{
+          signer: signer.ref, ...(revoke === 'exporter' ? { validUntil: revokedAt } : {}),
+        }],
+      }],
+    });
+    const verifyUnder = async (bundlePolicy: AuditVerificationPolicyV1, now: number) => {
+      const bundle = await new AuditReplayBundleExporter({
+        hasher, signer, clock: { now: () => 1_750_000_010_000 },
+      }).export({
+        bundleId: 'bundle_current_keys', purpose: 'regulatory-review',
+        verificationPolicyDigest: await hashAuditValue(
+          hasher, 'org.kya-os.audit.verification-policy.v1', bundlePolicy,
+        ),
+        selections: [{
+          ...ledger, firstSequence: '0', lastSequence: '2',
+          expectedHeadDigest: entries[2]!.entryDigest,
+          checkpointTreeSizes: [checkpoint.core.treeSize],
+        }],
+        components: [
+          { path: 'entries.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.entries, disposition: 'included', content: entries },
+          { path: 'checkpoints.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.checkpoints, disposition: 'included', content: [checkpoint] },
+          { path: 'observations.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.observations, disposition: 'included', content: [observation] },
+        ],
+      });
+      return verifyAuditBundle(bundle, bundlePolicy, {
+        hasher,
+        signatures: new TestVerifier(),
+        artifacts: new AuditArtifactVerifier({
+          hasher, signatures: new TestVerifier(), verifiedAt: () => now,
+        }),
+      });
+    };
+    const notCurrent = {
+      verdict: 'invalid',
+      reasonCodes: [
+        AUDIT_REASON_CODES.CURRENT_AUTHORIZATION_NOT_EVALUATED,
+        AUDIT_REASON_CODES.KEY_NOT_CURRENT,
+      ],
+    };
+
+    for (const revoke of ['exporter', 'observer'] as const) {
+      const historical = await verifyUnder(under('as_observed', revoke), revokedAt + 1);
+      expect(historical.cryptographicIntegrity.verdict).toBe('valid');
+      expect(historical.anchorIntegrity.verdict).toBe('valid');
+      expect(historical.currentAuthorization).toEqual({
+        verdict: 'indeterminate',
+        reasonCodes: [AUDIT_REASON_CODES.CURRENT_AUTHORIZATION_NOT_EVALUATED],
+      });
+      for (const mode of ['current', 'both'] as const) {
+        const report = await verifyUnder(under(mode, revoke), revokedAt + 1);
+        expect(report.cryptographicIntegrity.verdict).toBe('valid');
+        expect(report.anchorIntegrity.verdict).toBe('valid');
+        expect(report.currentAuthorization).toEqual(notCurrent);
+      }
+      // Before the revocation the key is current, which alone proves nothing
+      // about current authorization.
+      expect((await verifyUnder(under('current', revoke), revokedAt - 1)).currentAuthorization)
+        .toEqual(historical.currentAuthorization);
+    }
   });
 });

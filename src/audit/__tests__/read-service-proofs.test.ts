@@ -53,6 +53,24 @@ describe('LocalAuditReadService proofs', () => {
     expect(closes).toBe(true);
   });
 
+  it('produces an inclusion proof for the first entry after genesis', async () => {
+    const recorder = await createInMemoryReferenceRecorder();
+    for (let index = 1; index <= 3; index += 1) {
+      await recorder.submit(sampleAuditEvent(index));
+    }
+    const checkpoint = await recorder.checkpoint();
+    const page = await recorder.read.listEntries(recorder.ledger);
+
+    for (const sequence of ['0', '1']) {
+      const target = page.entries.find((entry) => entry.core.sequence === sequence)!;
+      const proof = await recorder.read.getInclusionProof({ ...recorder.ledger, sequence });
+      expect(proof.entryDigest).toBe(target.entryDigest);
+      await expect(recorder.checkpoints.builder.verifyInclusion(
+        target.entryDigest, checkpoint, proof.proof,
+      )).resolves.toBe(true);
+    }
+  });
+
   it('rejects an inclusion proof for a sequence that does not exist', async () => {
     const recorder = await createInMemoryReferenceRecorder();
     await recorder.submit(sampleAuditEvent(1));

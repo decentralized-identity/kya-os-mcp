@@ -53,6 +53,7 @@ Returns a forward, `sequence`-ordered page of signed entries.
 The request MAY carry `afterSequence` (an exclusive lower bound) and `limit`.
 An implementation MUST clamp `limit` to an implementation-defined maximum and MUST NOT return more than `limit` entries.
 The response echoes the ledger head at read time and a `nextAfterSequence` cursor.
+A returned entry MUST NOT have a `sequence` greater than the echoed head's, so appends that race the read never make the head and the cursor disagree.
 `nextAfterSequence` is `null` if and only if the page reached the head; otherwise it is the `sequence` of the last returned entry and MUST be usable as the next request's `afterSequence`.
 Stepping the cursor from the start MUST reconstruct the ledger exactly, with no gaps or duplicates.
 

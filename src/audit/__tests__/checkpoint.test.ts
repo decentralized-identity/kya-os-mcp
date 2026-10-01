@@ -4,6 +4,7 @@ import { CryptoProviderAuditHasher, type AuditSigner } from '../crypto.js';
 import {
   AuditCheckpointBuilder,
   MemoryAuditCheckpointStore,
+  type AuditCheckpointStore,
 } from '../checkpoint.js';
 import { MemoryAuditJournal } from '../providers/memory-journal.js';
 import type { AuditJournalProvider } from '../providers/journal.js';
@@ -365,5 +366,142 @@ describe('AuditCheckpointBuilder', () => {
     await expect(nonContiguousBuilder.createCheckpoint(ledger)).rejects.toMatchObject({
       code: 'AUDIT_JOURNAL_FAILURE',
     });
+  });
+
+  it('refuses to chain a larger checkpoint to a tree the grown journal no longer contains', async () => {
+    const hasher = new CryptoProviderAuditHasher(new NodeCryptoProvider());
+    const store = new MemoryAuditCheckpointStore();
+    const original = new MemoryAuditJournal();
+    for (let sequence = 0; sequence < 3; sequence += 1) await append(original, entry(sequence));
+    const first = await new AuditCheckpointBuilder({
+      journal: original, store, signer: new TestSigner(), hasher,
+    }).createCheckpoint(ledger);
+
+    // Restored or rewritten history: the same genesis, a different entry at
+    // sequence 1, and more entries than the latest checkpoint covered.
+    const rewritten = new MemoryAuditJournal();
+    await append(rewritten, entry(0));
+    await append(rewritten, { ...entry(1), entryDigest: hash('e') });
+    for (let sequence = 2; sequence < 5; sequence += 1) await append(rewritten, entry(sequence));
+    const builder = new AuditCheckpointBuilder({
+      journal: rewritten, store, signer: new TestSigner(), hasher,
+    });
+
+    await expect(builder.createCheckpoint(ledger)).rejects.toMatchObject({
+      code: 'AUDIT_CHECKPOINT_CONFLICT',
+    });
+    expect(await store.getLatest(ledger)).toEqual(first);
+  });
+
+  it('chains concurrent checkpoints in tree-size order instead of to a shared predecessor', async () => {
+    const hasher = new CryptoProviderAuditHasher(new NodeCryptoProvider());
+    const journal = new MemoryAuditJournal();
+    for (let sequence = 0; sequence < 3; sequence += 1) await append(journal, entry(sequence));
+    const inner = new MemoryAuditCheckpointStore();
+    const base = await new AuditCheckpointBuilder({
+      journal, store: inner, signer: new TestSigner(), hasher,
+    }).createCheckpoint(ledger);
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let reachedLatest!: () => void;
+    const reached = new Promise<void>((resolve) => { reachedLatest = resolve; });
+    let reads = 0;
+    // The store is unchanged: ordering comes from the builder, not from a
+    // compare-and-swap in the store.
+    const store: AuditCheckpointStore = {
+      getByTreeSize: (input, size) => inner.getByTreeSize(input, size),
+      putIfAbsent: (checkpoint) => inner.putIfAbsent(checkpoint),
+      async getLatest(input) {
+        reads += 1;
+        const latest = await inner.getLatest(input);
+        if (reads === 1) {
+          reachedLatest();
+          await gate;
+        }
+        return latest;
+      },
+    };
+    const builder = new AuditCheckpointBuilder({
+      journal, store, signer: new TestSigner(), hasher,
+    });
+
+    await append(journal, entry(3));
+    const four = builder.createCheckpoint(ledger);
+    await reached;
+    await append(journal, entry(4));
+    const five = builder.createCheckpoint(ledger);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    release();
+
+    const [sizeFour, sizeFive] = await Promise.all([four, five]);
+    expect(sizeFour.core).toMatchObject({
+      treeSize: '4', previousCheckpointDigest: base.checkpointDigest,
+    });
+    expect(sizeFive.core).toMatchObject({
+      treeSize: '5', previousCheckpointDigest: sizeFour.checkpointDigest,
+    });
+  });
+
+  it('replays a failed lifecycle hook on the next call after the ledger has grown', async () => {
+    const journal = new MemoryAuditJournal();
+    await append(journal, entry(0));
+    await append(journal, entry(1));
+    const seen: string[] = [];
+    let failures = 0;
+    const builder = new AuditCheckpointBuilder({
+      journal,
+      store: new MemoryAuditCheckpointStore(),
+      signer: new TestSigner(),
+      hasher: new CryptoProviderAuditHasher(new NodeCryptoProvider()),
+      onCheckpointCreated: async (checkpoint) => {
+        if (failures > 0) {
+          failures -= 1;
+          throw new Error('transient lifecycle append failure');
+        }
+        seen.push(checkpoint.core.treeSize);
+      },
+    });
+
+    failures = 1;
+    await expect(builder.createCheckpoint(ledger)).rejects.toThrow(/transient/); // size 2
+    await append(journal, entry(2));
+    // The size-3 call replays the size-2 hook first; when the replay fails
+    // again, both stay due, in order.
+    failures = 1;
+    await expect(builder.createCheckpoint(ledger)).rejects.toThrow(/transient/);
+    expect(seen).toEqual([]);
+    await append(journal, entry(3));
+    await builder.createCheckpoint(ledger); // size 4
+    expect(seen).toEqual(['2', '3', '4']);
+    await builder.createCheckpoint(ledger);
+    expect(seen).toEqual(['2', '3', '4']);
+  });
+
+  it('runs the lifecycle hook again after it failed for an already stored checkpoint', async () => {
+    const journal = new MemoryAuditJournal();
+    await append(journal, entry(0));
+    await append(journal, entry(1));
+    const store = new MemoryAuditCheckpointStore();
+    const hasher = new CryptoProviderAuditHasher(new NodeCryptoProvider());
+    const seen: string[] = [];
+    let failures = 1;
+    const onCheckpointCreated = async (checkpoint: { checkpointDigest: string }) => {
+      if (failures-- > 0) throw new Error('transient lifecycle append failure');
+      seen.push(checkpoint.checkpointDigest);
+    };
+    const builder = new AuditCheckpointBuilder({
+      journal, store, signer: new TestSigner(), hasher, onCheckpointCreated,
+    });
+
+    await expect(builder.createCheckpoint(ledger)).rejects.toThrow(/transient/);
+    const retried = await builder.createCheckpoint(ledger);
+    expect(seen).toEqual([retried.checkpointDigest]);
+    // A completed hook is not repeated, by this builder or by another one.
+    await builder.createCheckpoint(ledger);
+    await new AuditCheckpointBuilder({
+      journal, store, signer: new TestSigner(), hasher, onCheckpointCreated,
+    }).createCheckpoint(ledger);
+    expect(seen).toEqual([retried.checkpointDigest]);
   });
 });

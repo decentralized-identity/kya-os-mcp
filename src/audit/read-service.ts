@@ -120,8 +120,8 @@ function requireDecimal(value: DecimalString, label: string): bigint {
  * proofs are needed, an {@link AuditCheckpointReadAccess}.
  *
  * Reads ride the journal's ordered `readRange`, so paging cost is independent of
- * ledger size. Pagination fetches one extra entry to detect a further page
- * without a second round trip.
+ * ledger size. Each page is bounded by the head read before it, which decides
+ * whether a further page exists.
  */
 export class LocalAuditReadService implements AuditReadService {
   private readonly journal: AuditJournalProvider;
@@ -140,22 +140,26 @@ export class LocalAuditReadService implements AuditReadService {
     const limit = clampLimit(query.limit);
     const ledger = ledgerOf(query);
 
-    // Over-fetch by one: if the journal yields limit+1, a further page exists.
-    const collected: SignedAuditEntryV1[] = [];
+    // The head is read first and bounds the page, so the echoed head and the
+    // cursor describe the same snapshot even while appends continue.
+    const head = await this.journal.getHead(ledger);
+    if (head === null) return { entries: [], head, nextAfterSequence: null };
+    const headSequence = BigInt(head.sequence);
+
+    const entries: SignedAuditEntryV1[] = [];
     for await (const entry of this.journal.readRange({
       ...ledger,
       ...(query.afterSequence === undefined ? {} : { afterSequence: query.afterSequence }),
-      limit: limit + 1,
+      limit,
     })) {
-      collected.push(entry);
-      if (collected.length > limit) break;
+      if (BigInt(entry.core.sequence) > headSequence) break;
+      entries.push(entry);
     }
 
-    const hasMore = collected.length > limit;
-    const entries = hasMore ? collected.slice(0, limit) : collected;
-    const nextAfterSequence = hasMore ? entries[entries.length - 1]!.core.sequence : null;
-    const head = await this.journal.getHead(ledger);
-
+    const last = entries[entries.length - 1];
+    const nextAfterSequence = last === undefined || last.core.sequence === head.sequence
+      ? null
+      : last.core.sequence;
     return { entries, head, nextAfterSequence };
   }
 
@@ -238,7 +242,7 @@ export class LocalAuditReadService implements AuditReadService {
   ): Promise<SignedAuditEntryV1> {
     const value = requireDecimal(sequence, 'sequence');
     // `readRange` is exclusive on afterSequence, so start one below the target.
-    const afterSequence = value > 1n ? String(value - 1n) : undefined;
+    const afterSequence = value > 0n ? String(value - 1n) : undefined;
     for await (const entry of this.journal.readRange({
       ...ledger,
       ...(afterSequence === undefined ? {} : { afterSequence }),

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import type { AuditJournalProvider } from '../providers/journal.js';
 import { MemoryAuditJournal } from '../providers/memory-journal.js';
 import {
   AuditProjectionWorker,
   MemoryAuditProjectionProvider,
+  type AuditProjectionProvider,
 } from '../projection.js';
 import type { AuditLedgerRef, Digest, SignedAuditEntryV1 } from '../types.js';
 
@@ -48,6 +50,16 @@ function entry(sequence: number, previous: Digest | null): SignedAuditEntryV1 {
       },
       jws: 'signature',
     },
+  };
+}
+
+function passthrough(journal: MemoryAuditJournal): AuditJournalProvider {
+  return {
+    capabilities: journal.capabilities,
+    getHead: (input) => journal.getHead(input),
+    getByIdempotencyKey: (ledgerId, key) => journal.getByIdempotencyKey(ledgerId, key),
+    compareAndAppend: (input) => journal.compareAndAppend(input),
+    readRange: (query) => journal.readRange(query),
   };
 }
 
@@ -127,6 +139,99 @@ describe('audit projection worker', () => {
       sequence: '2', entryDigest: digest('f'),
     });
     expect((await worker.reconcile(ledger)).status).toBe('gap_detected');
+  });
+
+  it('never verifies or extends a projection whose prefix is not on the journal chain', async () => {
+    const genesis = entry(0, null);
+    const forked = { ...entry(1, genesis.entryDigest), entryDigest: digest('c') };
+    const forkedJournal = new MemoryAuditJournal();
+    await append(forkedJournal, genesis);
+    await append(forkedJournal, forked);
+    const projections = new MemoryAuditProjectionProvider();
+    await new AuditProjectionWorker({
+      projectionId: 'timeline', journal: forkedJournal, projections,
+    }).synchronize(ledger);
+
+    const authoritative = new MemoryAuditJournal();
+    const one = entry(1, genesis.entryDigest);
+    await append(authoritative, genesis);
+    await append(authoritative, one);
+    await append(authoritative, entry(2, one.entryDigest));
+    const worker = new AuditProjectionWorker({
+      projectionId: 'timeline', journal: authoritative, projections,
+    });
+
+    // Behind is not "pending" when the projected sequence-1 digest is foreign.
+    expect((await worker.reconcile(ledger)).status).toBe('gap_detected');
+    await expect(worker.synchronize(ledger)).rejects.toMatchObject({
+      code: 'AUDIT_PROJECTION_CONFLICT',
+    });
+    expect(await projections.read('timeline', ledger)).toHaveLength(2);
+    await worker.rebuild(ledger);
+    expect((await worker.reconcile(ledger)).status).toBe('verified');
+  });
+
+  it('never reports a lagging projection pending when the journal cannot show its offset', async () => {
+    const journal = new MemoryAuditJournal();
+    const first = entry(0, null);
+    const second = entry(1, first.entryDigest);
+    await append(journal, first);
+    await append(journal, second);
+    await append(journal, entry(2, second.entryDigest));
+    const projections = new MemoryAuditProjectionProvider();
+    projections.corruptOffsetForTesting('timeline', ledger, {
+      sequence: '1', entryDigest: second.entryDigest,
+    });
+    const reconcileAgainst = (readRange: AuditJournalProvider['readRange']) =>
+      new AuditProjectionWorker({
+        projectionId: 'timeline', projections, journal: { ...passthrough(journal), readRange },
+      }).reconcile(ledger);
+
+    // A lagging replica that returns nothing at the offset, and one that
+    // returns a different sequence there, both leave the prefix unproven.
+    expect((await reconcileAgainst(async function* () {})).status).toBe('gap_detected');
+    expect((await reconcileAgainst(async function* () { yield first; })).status)
+      .toBe('gap_detected');
+    expect((await reconcileAgainst((query) => journal.readRange(query))).status).toBe('pending');
+  });
+
+  it('counts entries another worker applied as duplicates and fails when the offset moves', async () => {
+    const journal = new MemoryAuditJournal();
+    const first = entry(0, null);
+    await append(journal, first);
+    await append(journal, entry(1, first.entryDigest));
+    const projections = new MemoryAuditProjectionProvider();
+    await new AuditProjectionWorker({ projectionId: 'timeline', journal, projections })
+      .synchronize(ledger);
+
+    // A worker that read the offset before the other one applied anything.
+    const stale: AuditProjectionProvider = {
+      capabilities: projections.capabilities,
+      getOffset: async () => null,
+      compareAndApply: (input) => projections.compareAndApply(input),
+      reset: (projectionId, input) => projections.reset(projectionId, input),
+      read: (projectionId, input) => projections.read(projectionId, input),
+    };
+    await expect(new AuditProjectionWorker({
+      projectionId: 'timeline', journal, projections: stale,
+    }).synchronize(ledger)).resolves.toEqual({ applied: 0, duplicates: 2 });
+
+    // A concurrent rebuild resets the offset between this worker's read and apply.
+    const resetting: AuditProjectionProvider = {
+      ...stale,
+      getOffset: (projectionId, input) => projections.getOffset(projectionId, input),
+      compareAndApply: async (input) => {
+        await projections.reset(input.projectionId, input.ledger);
+        return projections.compareAndApply(input);
+      },
+    };
+    await append(journal, entry(2, digest('2')));
+    await expect(new AuditProjectionWorker({
+      projectionId: 'timeline', journal, projections: resetting,
+    }).synchronize(ledger)).rejects.toMatchObject({
+      code: 'AUDIT_PROJECTION_CONFLICT',
+      details: { actualOffset: null },
+    });
   });
 
   it('enforces projection identity, offset CAS, sequence order, and duplicate semantics', async () => {

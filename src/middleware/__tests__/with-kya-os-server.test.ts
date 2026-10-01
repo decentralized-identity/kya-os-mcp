@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import { generateIdentity, withKyaOs } from "../with-kya-os-server.js";
 import { NodeCryptoProvider } from "../../__tests__/utils/node-crypto-provider.js";
 import { KYA_OS_PROOF_META_KEY, LEGACY_PROOF_META_KEY } from "../../proof/index.js";
+import { MemoryNonceCacheProvider } from "../../providers/memory.js";
+import { RESPONSE_PROOF_PROFILE_ENVELOPE } from "../../types/protocol.js";
 
 const crypto = new NodeCryptoProvider();
 
@@ -145,5 +147,58 @@ describe("withKyaOs", () => {
     // because emitLegacyProofKey: false was threaded through withKyaOs.
     expect(result._meta?.[KYA_OS_PROOF_META_KEY]).toBeDefined();
     expect(result._meta?.[LEGACY_PROOF_META_KEY]).toBeUndefined();
+  });
+
+  describe("replay protection and proof profile options", () => {
+    const fakeServer = () => ({
+      connect: vi.fn().mockResolvedValue(undefined),
+      registerTool: vi.fn(),
+    });
+
+    it("shares an injected nonce cache, so a second replica rejects a replayed handshake", async () => {
+      // One shared store stands in for Redis SET NX PX behind two replicas
+      // serving the same identity.
+      const nonceCache = new MemoryNonceCacheProvider();
+      const identity = await generateIdentity(crypto);
+      const replicaA = await withKyaOs(fakeServer(), { crypto, identity, nonceCache });
+      const replicaB = await withKyaOs(fakeServer(), { crypto, identity, nonceCache });
+
+      const handshake = {
+        nonce: "replayed-nonce-0123456789",
+        audience: identity.did,
+        timestamp: Math.floor(Date.now() / 1000),
+      };
+      const first = JSON.parse((await replicaA.handleHandshake(handshake)).content[0]!.text);
+      const replay = JSON.parse((await replicaB.handleHandshake(handshake)).content[0]!.text);
+
+      expect(first.success).toBe(true);
+      expect(replay.success).toBe(false);
+      expect(replay.error.code).toBe("nonce_replay");
+    });
+
+    it("honors requireAtomicNonce by refusing a cache without an atomic consume()", async () => {
+      class NonAtomicNonceCache extends MemoryNonceCacheProvider {}
+      (NonAtomicNonceCache.prototype as { consume?: unknown }).consume = undefined;
+
+      await expect(withKyaOs(fakeServer(), {
+        crypto,
+        nonceCache: new NonAtomicNonceCache(),
+        requireAtomicNonce: true,
+      })).rejects.toThrow(/requireAtomicNonce/);
+    });
+
+    it("mints envelope-profile proofs when responseProofProfile selects it", async () => {
+      const kyaos = await withKyaOs(fakeServer(), {
+        crypto,
+        responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE,
+      });
+
+      const result = await kyaos.wrapWithProof("greet", async () => ({
+        content: [{ type: "text", text: "Hello!" }],
+      }))({});
+
+      const meta = result._meta as Record<string, { meta: { prf?: string } }>;
+      expect(meta[KYA_OS_PROOF_META_KEY]!.meta.prf).toBe(RESPONSE_PROOF_PROFILE_ENVELOPE);
+    });
   });
 });

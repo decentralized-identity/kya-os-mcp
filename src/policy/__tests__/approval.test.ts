@@ -58,6 +58,19 @@ describe('verifyApprovalQuorum', () => {
     expect(neg.satisfied).toBe(false);
   });
 
+  it('counts grants over any of the hashes that identify the one action', async () => {
+    const hashes = ['sha256:legacy', 'sha256:covered'];
+    const grants = [
+      grant({ approverDid: 'did:a', requestHash: 'sha256:legacy' }),
+      grant({ approverDid: 'did:b', requestHash: 'sha256:covered' }),
+      grant({ approverDid: 'did:c', requestHash: 'sha256:OTHER' }),
+    ];
+    const met = await verifyApprovalQuorum(grants, hashes, { n: 2, approvers: [] }, validSig);
+    expect(met.satisfied).toBe(true);
+    const short = await verifyApprovalQuorum(grants, hashes, { n: 3, approvers: [] }, validSig);
+    expect(short).toMatchObject({ satisfied: false, reason: 'quorum_not_met:2/3' });
+  });
+
   it('enforces the allowed-approver allowlist', async () => {
     const grants = [grant({ approverDid: 'did:outsider' })];
     const r = await verifyApprovalQuorum(grants, 'sha256:abc', { n: 1, approvers: ['did:insider'] }, validSig);

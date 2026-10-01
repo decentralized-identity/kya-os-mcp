@@ -25,6 +25,8 @@ import {
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
 import { RuntimeFetchProvider } from '../../providers/runtime-fetch.js';
 import { cheqdResolver } from '../../integrations/cheqd/index.js';
+import { base64urlDecodeToString, base64urlEncodeFromString } from '../../utils/base64.js';
+import type { DetachedProof } from '../../types/protocol.js';
 
 describe('ProofVerifier (real crypto)', () => {
   let crypto: NodeCryptoProvider;
@@ -411,6 +413,93 @@ describe('ProofVerifier (real crypto)', () => {
     expect(result.valid).toBe(true);
   });
 
+  it('rejects a detached replay whose unsigned meta nonce and hashes were swapped', async () => {
+    const { verifier } = makeVerifier();
+    const proof = await generateProof(agent);
+    const signedPayload = verifier.buildCanonicalPayload(proof.meta);
+    expect((await verifier.verifyProofDetached(proof, signedPayload, getJwk(agent))).valid).toBe(true);
+
+    // The payload still matches the signature; the meta the freshness and
+    // replay checks read does not match the payload.
+    const replayed: DetachedProof = {
+      jws: proof.jws,
+      meta: { ...proof.meta, nonce: 'fresh-nonce', requestHash: 'sha256:' + 'f'.repeat(64) },
+    };
+    const result = await verifier.verifyProofDetached(replayed, signedPayload, getJwk(agent));
+    expect(result.valid).toBe(false);
+    expect(result.errorCode).toBe('INVALID_JWS_PAYLOAD');
+  });
+
+  // ── Payload / meta reconciliation (SPEC §7.4) ─────────────────
+
+  it('rejects a JWS whose embedded payload was rewritten, and accepts it detached', async () => {
+    const proof = await generateProof(agent);
+    const [header, payload, signature] = proof.jws.split('.');
+    const claims = JSON.parse(base64urlDecodeToString(payload!)) as Record<string, unknown>;
+    const rewritten = base64urlEncodeFromString(
+      JSON.stringify({ ...claims, aud: 'did:web:attacker.example', outcome: 'denied' }),
+    );
+
+    const tampered = await makeVerifier().verifier.verifyProof(
+      { jws: `${header}.${rewritten}.${signature}`, meta: proof.meta },
+      getJwk(agent),
+    );
+    expect(tampered.valid).toBe(false);
+    expect(tampered.errorCode).toBe('INVALID_JWS_SIGNATURE');
+
+    const detached = await makeVerifier().verifier.verifyProof(
+      { jws: `${header}..${signature}`, meta: proof.meta },
+      getJwk(agent),
+    );
+    expect(detached.valid).toBe(true);
+  });
+
+  // ── Signer binding ────────────────────────────────────────────
+
+  it('rejects a proof claiming one DID but signed with a key of another', async () => {
+    // Signed by otherAgent's key and kid, claiming to be agent.
+    const forger = new ProofGenerator(
+      { did: agent.did, kid: otherAgent.kid, privateKey: otherAgent.privateKey, publicKey: otherAgent.publicKey },
+      crypto,
+    );
+    const proof = await forger.generateProof(
+      { method: 'tools/call', params: { name: 'transfer', arguments: { amount: 10 } } },
+      { data: [{ type: 'text', text: 'ok' }] },
+      {
+        sessionId: 'sess_integration',
+        audience: 'did:web:server.example.com',
+        nonce: 'n',
+        timestamp: Math.floor(Date.now() / 1000),
+        createdAt: Math.floor(Date.now() / 1000),
+        lastActivity: Math.floor(Date.now() / 1000),
+        ttlMinutes: 30,
+        identityState: 'anonymous',
+      },
+    );
+
+    // The key the kid names verifies the signature; the principal must still fail.
+    const result = await makeVerifier().verifier.verifyProof(proof, getJwk(otherAgent));
+    expect(result.valid).toBe(false);
+    expect(result.errorCode).toBe('KID_DID_MISMATCH');
+  });
+
+  it('enforces the expected signer DID and audience when given', async () => {
+    const proof = await generateProof(agent);
+    const check = (options: Parameters<ProofVerifier['verifyProof']>[3]) =>
+      makeVerifier().verifier.verifyProof(proof, getJwk(agent), undefined, options);
+
+    expect((await check({ expectedDid: otherAgent.did })).errorCode).toBe('DID_MISMATCH');
+    expect((await check({ expectedAudience: 'did:web:other.example.com' })).errorCode).toBe(
+      'AUDIENCE_MISMATCH',
+    );
+    expect(
+      (await check({
+        expectedDid: agent.did,
+        expectedAudience: ['did:web:old.example.com', 'did:web:server.example.com'],
+      })).valid,
+    ).toBe(true);
+  });
+
   // ── Proof Structure Rejection ─────────────────────────────────
 
   it('should reject malformed proof structure', async () => {
@@ -427,6 +516,24 @@ describe('ProofVerifier (real crypto)', () => {
   });
 
   // ── fetchPublicKeyFromDID (real DID resolution) ───────────────
+
+  it('resolves the full DID URL kid a proof carries and verifies with the key', async () => {
+    const { verifier } = makeVerifier();
+    const proof = await generateProof(agent);
+    expect(proof.meta.kid.startsWith(`${agent.did}#`)).toBe(true);
+
+    const jwk = await verifier.fetchPublicKeyFromDID(proof.meta.did, proof.meta.kid);
+
+    expect((await verifier.verifyProof(proof, jwk!)).valid).toBe(true);
+  });
+
+  it('refuses to resolve a DID URL kid that names another DID', async () => {
+    const { verifier } = makeVerifier();
+
+    await expect(verifier.fetchPublicKeyFromDID(agent.did, otherAgent.kid)).rejects.toMatchObject({
+      code: 'KID_DID_MISMATCH',
+    });
+  });
 
   it('should resolve a real did:key to a valid Ed25519 JWK', async () => {
     const { verifier } = makeVerifier();

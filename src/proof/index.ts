@@ -24,6 +24,7 @@ export {
   MIN_CLOCK_SKEW_SECONDS,
   MAX_CLOCK_SKEW_SECONDS,
   type ProofVerifierConfig,
+  type ProofVerificationOptions,
   type ProofVerificationResult,
 } from './verifier.js';
 

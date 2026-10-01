@@ -317,3 +317,52 @@ describe('assertHolderBinding — audience binding (confused-deputy guard)', () 
     expect(result.status).toBe('bound');
   });
 });
+
+describe('assertHolderBinding — response binding and subject forms', () => {
+  let agent: AgentIdentity;
+
+  beforeAll(async () => {
+    agent = await createRealIdentity(crypto);
+  });
+
+  it('binds a proof over a request and response only when that response is supplied', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const proof = await new ProofGenerator(agent, crypto).generateProof(
+      request,
+      { data: 'result' },
+      {
+        sessionId: 'sess-1',
+        audience: AUDIENCE,
+        nonce: 'with-response',
+        timestamp: now,
+        createdAt: now,
+        lastActivity: now,
+        ttlMinutes: 30,
+        identityState: 'anonymous',
+      },
+    );
+    const bind = (response?: { data: unknown }) =>
+      assertHolderBinding({
+        proof,
+        subjectDid: agent.did,
+        request,
+        ...(response !== undefined ? { response } : {}),
+        proofVerifier: makeVerifier(),
+      });
+
+    expect((await bind({ data: 'result' })).status).toBe('bound');
+    expect(await bind()).toMatchObject({ status: 'unbound', cause: 'CONTENT_BINDING_MISMATCH' });
+  });
+
+  it('reports a subject that is not a DID as not applicable', async () => {
+    const result = await assertHolderBinding({
+      proof: await signRequestProof(agent),
+      subjectDid: 'not-a-did',
+      request,
+      proofVerifier: makeVerifier(),
+    });
+
+    expect(result.status).toBe('not_applicable');
+    expect(result.reason).toContain('"unknown"');
+  });
+});

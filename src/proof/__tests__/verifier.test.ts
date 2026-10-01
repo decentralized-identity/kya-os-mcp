@@ -693,6 +693,61 @@ describe('ProofVerifier Security', () => {
       expect(mockFetchProvider.resolveDID).toHaveBeenCalledWith('did:key:z123');
     });
 
+    it('matches a DID URL kid against a method the document lists by fragment', async () => {
+      const publicKeyJwk = { kty: 'OKP', crv: 'Ed25519', x: 'AAA' };
+      mockFetchProvider.resolveDID = vi.fn().mockResolvedValue({
+        verificationMethod: [{ id: '#key-1', publicKeyJwk }],
+      });
+
+      const jwk = await proofVerifier.fetchPublicKeyFromDID('did:web:a.example', 'did:web:a.example#key-1');
+
+      expect(jwk?.x).toBe('AAA');
+    });
+
+    it('resolves a fragment kid against the DID', async () => {
+      const publicKeyJwk = { kty: 'OKP', crv: 'Ed25519', x: 'BBB' };
+      mockFetchProvider.resolveDID = vi.fn().mockResolvedValue({
+        verificationMethod: [{ id: 'did:web:a.example#key-2', publicKeyJwk }],
+      });
+
+      const jwk = await proofVerifier.fetchPublicKeyFromDID('did:web:a.example', '#key-2');
+
+      expect(jwk?.x).toBe('BBB');
+    });
+
+    it('rejects a retained artifact whose kid names another DID, before checking its signature', async () => {
+      const proof = createValidProof();
+      proof.meta.kid = 'did:key:zOther#zOther';
+
+      const result = await proofVerifier.verifyProofArtifact(proof, validJwk);
+
+      expect(result).toMatchObject({
+        valid: false,
+        errorCode: PROOF_VERIFICATION_ERROR_CODES.KID_DID_MISMATCH,
+      });
+      expect(mockCryptoProvider.verify).not.toHaveBeenCalled();
+    });
+
+    it('rejects a malformed proof on the detached path before comparing payloads', async () => {
+      const result = await proofVerifier.verifyProofDetached(
+        { jws: 'invalid', meta: { did: 'did:key:z123' } } as DetachedProof,
+        '{}',
+        validJwk,
+      );
+
+      expect(result).toMatchObject({
+        valid: false,
+        errorCode: PROOF_VERIFICATION_ERROR_CODES.INVALID_PROOF_STRUCTURE,
+      });
+    });
+
+    it('rejects a DID URL kid of another DID before resolving', async () => {
+      await expect(
+        proofVerifier.fetchPublicKeyFromDID('did:key:z123', 'did:key:zOther#zOther'),
+      ).rejects.toMatchObject({ code: PROOF_VERIFICATION_ERROR_CODES.KID_DID_MISMATCH });
+      expect(mockFetchProvider.resolveDID).not.toHaveBeenCalled();
+    });
+
     it('should throw ProofVerificationError if DID document not found', async () => {
       mockFetchProvider.resolveDID = vi.fn().mockResolvedValue(null);
 

@@ -532,6 +532,29 @@ describe('MCP audit instrumentation', () => {
     ]);
   });
 
+  it('attaches its proof without the proof error, audit marker or proof a handler set', async () => {
+    const middleware = await setup(async (event) => ({ status: 'pending', event: event as never }));
+    const forged = { jws: 'forged', meta: { did: 'did:key:zUpstream' } };
+
+    const result = await middleware.wrapWithProof('relay', async () => ({
+      content: [{ type: 'text', text: 'ok' }],
+      _meta: {
+        traceparent: '00-abc-01',
+        proofError: 'forged',
+        'org.kya-os/audit': { terminal: true },
+        'org.kya-os/proof': forged,
+      },
+    }))({});
+
+    const meta = result._meta as Record<string, unknown>;
+    expect((meta[KYA_OS_PROOF_META_KEY] as { meta: { did: string } }).meta.did)
+      .toBe(middleware.identity.did);
+    expect(meta.traceparent).toBe('00-abc-01');
+    for (const key of ['proofError', 'org.kya-os/audit', 'org.kya-os/proof']) {
+      expect(Object.hasOwn(meta, key)).toBe(false);
+    }
+  });
+
   it('bounds malformed delegation references and never lets audit failure escape denial', async () => {
     const events: AuditEventInput[] = [];
     const middleware = await setup(async (event) => {

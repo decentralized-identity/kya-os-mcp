@@ -44,6 +44,24 @@ export interface KyaOsCallContext {
   authorization?: AuthorizationEvidence;
   correlationId?: string;
   causationId?: string;
+  /**
+   * The principal `wrapWithDelegation` authenticated: the delegation subject,
+   * its controller, and the scopes the verified credential (or durable grant)
+   * carries. A composed `withPolicyGate` evaluates these instead of re-reading
+   * `_kyaos_delegation`, which the delegation gate has already stripped.
+   */
+  principal?: {
+    agentDid: string;
+    responsibleParty?: string;
+    delegatedScopes: readonly string[];
+  };
+  /**
+   * Approval grants the caller supplied as `_kyaos_approvals`. The delegation
+   * gate withholds every `_kyaos*` argument from the handler (and from the
+   * holder-binding hash), so it forwards these here for a composed
+   * `withPolicyGate` to verify on a step-up resume.
+   */
+  approvals?: unknown;
 }
 
 export interface KyaOsToolHandler<
@@ -204,7 +222,12 @@ export interface PolicyGateOptions {
   classifier?: RiskClassifier;
   /** Derive the resource namespace from the tool args (defaults to the tool name). */
   resolveNamespace?: (args: Record<string, unknown>) => string;
-  /** Tool-arg key carrying approval grants on resume. Default "_kyaos_approvals". */
+  /**
+   * Tool-arg key carrying approval grants on resume. Default "_kyaos_approvals".
+   * Composed after `wrapWithDelegation`, the default key arrives through the
+   * call context (the outer gate strips `_kyaos*` arguments); a custom key
+   * outside that prefix passes through as an ordinary argument.
+   */
   approvalsArgKey?: string;
   /** Verifier for approval-grant signatures (identity-layer). Default: reject all. */
   isValidApprovalSignature?: (grant: ApprovalGrant) => Promise<boolean>;
@@ -215,9 +238,10 @@ export interface PolicyGateOptions {
    * scope or identity, so it must NOT be trusted to allow on its own. When you
    * compose it AFTER wrapWithDelegation (the expected usage), pass
    * `scopeMatched: true` to signal that the delegated scope was already verified.
-   * Note: principal facts are projected from the (unverified) `_kyaos_delegation`
-   * arg on a best-effort basis and must not be treated as authenticated unless
-   * wrapWithDelegation ran first.
+   * Composed that way, the engine sees the principal and scopes the delegation
+   * gate authenticated (via the call context). Used standalone, principal facts
+   * are projected from the (unverified) `_kyaos_delegation` arg on a best-effort
+   * basis and must not be treated as authenticated.
    */
   scopeMatched?: boolean;
 }

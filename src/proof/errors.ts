@@ -21,6 +21,11 @@ export const PROOF_VERIFICATION_ERROR_CODES = {
   // the request/response the verifier actually received does not match the hash
   // bound in the (authentic) proof — i.e. the content was substituted in transit.
   CONTENT_BINDING_MISMATCH: "CONTENT_BINDING_MISMATCH",
+  // Signer binding: `kid` names a key of a DID other than the claimed `did`,
+  // or the proof's `did` / `audience` is not the one the caller expected.
+  KID_DID_MISMATCH: "KID_DID_MISMATCH",
+  DID_MISMATCH: "DID_MISMATCH",
+  AUDIENCE_MISMATCH: "AUDIENCE_MISMATCH",
 
   // Signature errors
   INVALID_JWS_SIGNATURE: "INVALID_JWS_SIGNATURE",

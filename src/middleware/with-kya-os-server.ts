@@ -11,11 +11,12 @@
  *   await server.connect(transport); // transport is transparently wrapped
  */
 
-import type { CryptoProvider } from "../providers/base.js";
+import type { CryptoProvider, NonceCacheProvider } from "../providers/base.js";
 import type { GrantStore } from "../providers/grant-store.js";
 import type { AuditLogProvider } from "../providers/audit-log.js";
 import type { KyaOsAuditTrail } from "./with-kya-os.config-types.js";
 import type { SessionConfig } from "../session/manager.js";
+import type { ResponseProofProfile } from "../types/protocol.js";
 import { generateDidKeyFromBase64, didKeyFragment } from "../utils/did-helpers.js";
 import {
   KYA_OS_ACTIONS,
@@ -34,10 +35,30 @@ export interface WithKyaOsOptions {
   identity?: KyaOsIdentityConfig;
   /**
    * Session configuration. Accepts the full {@link SessionConfig} (minus the
-   * `nonceCache`, which is set at the top level), so an optional durable
-   * `sessionStore` can be injected for cross-instance session continuity.
+   * `nonceCache`, which is set by the top-level {@link nonceCache} option), so
+   * an optional durable `sessionStore` can be injected for cross-instance
+   * session continuity.
    */
   session?: Omit<SessionConfig, "nonceCache">;
+  /**
+   * Replay-protection store shared by the session handshake and holder
+   * binding. Defaults to an in-memory store, which protects one process only;
+   * a multi-replica deployment MUST inject a shared store with an atomic
+   * `consume()`. Passed through to the middleware (see `KyaOsConfig.nonceCache`).
+   */
+  nonceCache?: NonceCacheProvider;
+  /**
+   * Refuse a `nonceCache` without an atomic `consume()` instead of warning
+   * once. Passed through to the middleware (see `KyaOsConfig.requireAtomicNonce`).
+   */
+  requireAtomicNonce?: boolean;
+  /**
+   * Response-proof profile for every proof this server mints (SPEC §7.3).
+   * Defaults to the body profile; the envelope profile also binds
+   * `structuredContent` and `isError`. Passed through to the middleware (see
+   * `KyaOsConfig.responseProofProfile`).
+   */
+  responseProofProfile?: ResponseProofProfile;
   /** Auto-create sessions for non-KYA-OS clients (default: true) */
   autoSession?: boolean;
   /** Attach proofs to all tool responses (default: true) */
@@ -138,6 +159,13 @@ export async function withKyaOs(
       ...(options.grantStore ? { grantStore: options.grantStore } : {}),
       ...(options.emitLegacyProofKey !== undefined
         ? { emitLegacyProofKey: options.emitLegacyProofKey }
+        : {}),
+      ...(options.nonceCache !== undefined ? { nonceCache: options.nonceCache } : {}),
+      ...(options.requireAtomicNonce !== undefined
+        ? { requireAtomicNonce: options.requireAtomicNonce }
+        : {}),
+      ...(options.responseProofProfile !== undefined
+        ? { responseProofProfile: options.responseProofProfile }
         : {}),
     },
     options.crypto,

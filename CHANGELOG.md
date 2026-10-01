@@ -16,6 +16,26 @@ Versioning: https://semver.org/spec/v2.0.0.html
   credential's flat scopes and CRISP matchers as one list of matchers.
   `crispScopes(credential)` returns its CRISP matchers. Scope attenuation
   below is built on them.
+- **Signer binding options for `ProofVerifier.verifyProof`.** An optional
+  fourth argument, `{ expectedDid, expectedAudience }` (type
+  `ProofVerificationOptions`), rejects a proof from another signer
+  (`DID_MISMATCH`) or addressed to another audience (`AUDIENCE_MISMATCH`);
+  `expectedAudience` may list several DIDs. Omitting it verifies as before.
+- **`withKyaOs` takes `nonceCache`, `requireAtomicNonce`, and
+  `responseProofProfile`.** The adapter could not pass them to the middleware,
+  and its `session` option documented a top-level `nonceCache` that did not
+  exist. Each replica of a multi-replica deployment therefore kept a private
+  in-memory nonce cache and accepted a handshake replayed from another
+  replica (SPEC.md §5.5, §11.2; SPEC-MCP-EXTENSION.md §10.4),
+  `requireAtomicNonce` was unreachable, and envelope-profile proofs could not
+  be enabled. All three now pass through to `createKyaOsMiddleware`. Each is
+  optional, and leaving it out keeps the previous default.
+- **`KyaOsCallContext.principal` and `KyaOsCallContext.approvals`.**
+  `wrapWithDelegation` fills them for the handler it wraps; see the
+  `withPolicyGate` entry under Security. Both are optional members.
+- **`verifyApprovalQuorum` takes several request hashes.** Its `requestHash`
+  argument may be a list of hashes that identify the one suspended action; a
+  grant over any of them counts. A single string works as before.
 
 ### Security
 
@@ -33,6 +53,139 @@ Versioning: https://semver.org/spec/v2.0.0.html
   or `path-prefix` under the parent's. A malformed scope entry proves nothing,
   so it fails closed instead of throwing. A parent with no scopes of either
   kind stays scope-unrestricted, as before (SPEC.md §6.3, §6.4).
+- **`verifyProofDetached` replay and skew bypass.** The signature was checked
+  over the payload the caller supplied, while the timestamp and replay checks
+  read `proof.meta`, which that payload did not bind: an accepted proof with a
+  fresh `meta.nonce`, `ts` or hash verified again. The supplied payload must
+  now equal the payload rebuilt from `meta` byte for byte
+  (`INVALID_JWS_PAYLOAD`). A caller that passes the canonical payload, as the
+  method documents, sees no change.
+- **`ProofGenerator.verifyProof` checks `meta` through the signature.** It
+  verified the JWS against its embedded payload and compared the hashes in the
+  unsigned `meta`, so a proof with rewritten `meta.requestHash` and
+  `meta.responseHash` verified for a different call, and one without
+  `meta.responseHash` accepted any response. It now verifies the signature
+  over the payload rebuilt from `meta`, requires a response exactly when the
+  proof binds one (the rule `ProofVerifier` already applied), and checks
+  `meta.did` and `meta.kid` against its identity. It still checks the artifact
+  only, with no freshness or replay state. Proofs it minted verify as before.
+- **The embedded JWS payload must be the signed one.** Verification put the
+  payload rebuilt from `meta` in place of the JWS's own payload segment
+  without looking at that segment, so an intermediary could rewrite the
+  embedded `aud`, `responseHash` or `outcome` that JWT tooling and audit
+  stores read, and the proof still verified. `CryptoService.verifyJWS` with a
+  detached payload now also requires an embedded payload that differs from it
+  to verify under the same signature, which only the signed payload does
+  (SPEC.md §7.4: the `meta` block and the decoded payload reconcile exactly).
+  A JWS without a payload segment (`header..signature`) verifies as before,
+  and so does every proof this library mints.
+- **`kid` must belong to `did`.** A proof signed with one DID's key could name
+  another DID as its signer (`iss`/`sub`) and verify against the key its `kid`
+  named. `ProofVerifier` now rejects a DID URL `kid` whose DID is not
+  `meta.did` (`KID_DID_MISMATCH`), as the Entity Card verifier already did
+  (SPEC-ENTITY-CARD.md §8). A relative `kid` is unaffected.
+- **The `withKyaOs` transport no longer re-signs results a wrapper already
+  proved.** It ran `wrapWithProof` again over every non-error `tools/call`
+  result. A `needs_authorization` challenge from `wrapWithDelegation` (not an
+  error result) lost its signed `outcome: "needs_authorization"` proof to an
+  outcome-less one, which SPEC.md §7.2 reads as `allowed`, and the audit trail
+  gained a started and succeeded lifecycle for a call that never ran. A
+  delegated call lost its scope-bearing proof and was recorded twice. Once a
+  middleware is connected to the transport, its wrappers and outcome paths
+  stamp what they return with a random per-middleware token in a private
+  `_meta` member, and the transport passes a stamped result through untouched.
+  The stamp lives in `_meta` because the MCP SDK re-creates the result object
+  when it validates it. The transport removes it from every result before the
+  message is sent, so it never reaches the wire. A result without the stamp
+  is proved and audited as before, whatever proof, `proofError` or
+  `org.kya-os/audit` members it carries: those are removed first, so content
+  relayed from an upstream server cannot suppress this server's proof and
+  audit events or ship its own proof in their place. Other `_meta` members are
+  kept. A middleware used without the transport stamps nothing.
+- **`withPolicyGate` composed inside `wrapWithDelegation` sees the verified
+  call.** The delegation gate strips every `_kyaos*` argument before its
+  handler runs. The policy gate then projected its principal from the already
+  stripped `_kyaos_delegation`, so engines saw `agentDid: "unknown"` and no
+  delegated scopes (a deny-list engine allowed everything), and
+  `_kyaos_approvals` never arrived, so no step-up could be satisfied. The
+  delegation gate now passes the authenticated principal and scopes (for a
+  durable grant, those of its re-verified credential) and the approvals in the
+  call context, and the policy gate prefers them. Approvals stay outside the
+  holder-binding request hash. A policy gate used on its own behaves as
+  before.
+
+### Fixed
+
+- **A `requestHash` over the request as sent now verifies.** SPEC.md §7.3 and
+  Appendix C.1 describe `requestHash` over the `tools/call` request, while the
+  middleware hashes `{method: <tool name>, params: <arguments>}`, so a client
+  recomputing the hash from the request it sent always got
+  `CONTENT_BINDING_MISMATCH`, and a holder-of-key request proof minted that
+  way never bound at the PEP. Every verifier of a received request hash now
+  accepts either shape of the same call: `ProofVerifier` content binding,
+  `ProofGenerator.verifyProof`, the holder-binding check of
+  `wrapWithDelegation` and durable-grant resolution, and step-up approval
+  grants in `withPolicyGate`. The caller may hold the request in either shape
+  (`{method: "tools/call", params: {name, arguments}}` as sent, or the legacy
+  shape), and both hashes are derived from it; the §7.3 shape leaves out
+  `params._meta` and the `_kyaos*` control arguments. Producers are
+  unchanged: response and outcome proofs, the `requestHash` of a
+  `needs_approval` challenge, and `generateRequestProof` still emit the
+  legacy shape, so verifiers of earlier releases keep accepting them. Each
+  accepted hash covers the same tool name and business arguments, so no proof
+  over a different call is admitted. §7.3 now states the control-argument and
+  `_meta` exclusions, and Appendix C.1 gives covered-request vectors.
+- **`fetchPublicKeyFromDID` resolves the `kid` proofs carry.** It prefixed `#`
+  to every `kid`, so a full DID URL (`did:key:z…#z…`, the form this library
+  mints) never matched. A DID URL `kid` must now name the DID being resolved
+  (`KID_DID_MISMATCH` otherwise) and match the verification method id; a bare
+  fragment is still resolved against the DID.
+- **`MemoryResumeTokenStore` stays bounded.** A token is minted for every
+  unauthorized call, and was deleted only when that exact token was read after
+  it expired; fulfilled tokens were never deleted. `create()` now drops expired
+  tokens and `fulfill()` deletes the token. A challenge's `expiresAt` is now
+  the expiry the store enforces, read back from the store: it came from
+  `authorization.resumeTokenTtl`, so a configured hour was advertised for a
+  token the default store expires after 10 minutes. `resumeTokenTtl` is now
+  the fallback for a store that cannot report a future expiry in
+  milliseconds.
+- **Expired sessions no longer switch off the single-session fallback.** The
+  fallback counted every stored session, live or expired, and nothing swept
+  them, so once a second session had existed proofs stopped for every
+  unthreaded call. A count above one now sweeps expired sessions first (at
+  most once a minute). Concurrent first calls under `autoSession` share one
+  auto-created session instead of racing into two.
+- **Proofs keep handler `_meta` keys.** Attaching a proof, or a `proofError`
+  in the middleware or the transport, replaced `_meta` and dropped keys such
+  as `traceparent` and `io.modelcontextprotocol/related-task`. They are now
+  merged (SPEC.md §7.6). The proof, `proofError` and `org.kya-os/audit`
+  members are the exception: only the middleware sets them, so a handler's
+  copies are still dropped when a proof or proof error is attached, and a
+  relayed upstream result cannot place them next to this server's proof.
+- **The transport matches proofs to responses only.** A server-initiated
+  request (for example `elicitation/create`) whose id equalled a pending
+  `tools/call` id consumed that call's entry, and the tool response shipped
+  unproven. Entries for cancelled calls are also dropped on
+  `notifications/cancelled`.
+- **SPEC.md: nonce retention is bounded by the acceptance window.** §5.2, §5.5
+  and §11.2 required nonces to be kept for the session TTL plus a minute,
+  while §5.2 also recommended 60 seconds. A nonce presented after its
+  timestamp leaves the acceptance window is rejected on that timestamp, so the
+  longer retention bought memory and denial-of-service exposure and no
+  protection. §5.5 now requires retention until `ts + skew` plus a margin, for
+  the widest skew the verifier may apply, which is what the reference
+  implementation already does, and says why the bound holds on every
+  nonce-checked path. CONFORMANCE.md L2.5 follows, and L2.11 describes the
+  per-proof nonce and both request-hash shapes.
+
+### Deprecated
+
+- **The legacy request-hash shape.** `requestHash` over
+  `{method: <tool name>, params: <arguments>}` is deprecated in favour of the
+  SPEC.md §7.3 covered `tools/call` request. Producers switch to the §7.3
+  shape in 2.0.0; verifiers accept both until then.
+- `ProofVerifier.verifyProofDetached`. The payload it takes must now equal the
+  payload rebuilt from `proof.meta`, so it adds nothing over `verifyProof`.
 
 ## [1.16.2] - 2026-09-21
 

@@ -93,36 +93,28 @@ export function isDidWeb(did: string): boolean {
 }
 
 /**
- * Decode and validate the host label of a did:web DID. The did:web method
- * percent-encodes only the port colon (`%3A`), so any other escape is
- * rejected: decoding `%40`, `%2F`, `%3F` or `%23` would let the label pick
- * userinfo, a path, a query or a fragment, and fetch from a different host
- * than the DID names. Returns the domain with its optional `:port`, or `null`.
+ * Decode and validate the host component of a did:web DID. It is
+ * percent-decoded whole, as before, so a port (`%3A`), a bracketed IPv6
+ * literal and an internationalized name still resolve. What it decodes to
+ * must still be a host and nothing more: `@`, `/`, `\`, `?` or `#` would let
+ * it supply userinfo, a path, a query or a fragment and fetch from a host or
+ * resource other than the one the DID names, and so would whitespace, a
+ * control character, or a `:` beyond one port separator (a bracketed IPv6
+ * literal keeps its own colons). Returns the host with its optional `:port`,
+ * or `null`.
  */
 function parseDidWebHost(label: string): string | null {
-  if (/%(?!3a)/i.test(label)) {
-    return null;
-  }
-  const domain = label.replace(/%3a/gi, ':');
-  if (!/^[^:]+(?::\d{1,5})?$/.test(domain)) {
-    return null;
-  }
-
-  // The label must parse as a bare authority: anything the URL parser reads
-  // as userinfo, a path, a query or a fragment would redirect the fetch.
-  let url: URL;
+  let host: string;
   try {
-    url = new URL(`https://${domain}`);
+    host = decodeURIComponent(label);
   } catch {
     return null;
   }
-  const isBareHost =
-    url.username === '' &&
-    url.password === '' &&
-    url.pathname === '/' &&
-    url.search === '' &&
-    url.hash === '';
-  return isBareHost ? domain : null;
+  if (host.length === 0 || /[@/\\?#\s\p{Cc}]/u.test(host)) {
+    return null;
+  }
+  const afterLiteral = host.startsWith('[') ? host.slice(host.indexOf(']') + 1) : host;
+  return afterLiteral.split(':').length <= 2 ? host : null;
 }
 
 /**

@@ -137,9 +137,12 @@ Versioning: https://semver.org/spec/v2.0.0.html
   `registerDelegation` accepts an optional structured `credentialStatus` so no
   id has to be parsed. A status id that names no list entry still registers
   and revokes without error, as before; it now also reads as revoked. Both
-  fields are optional, so existing storage providers keep working; one that
-  persists a fixed set of node fields must also store `revoked` for the mark
-  to outlive the process.
+  fields are optional, so existing storage providers keep working. One that
+  persists a fixed set of node fields must also store `revoked`: revocation
+  reads the node back, and revoking a delegation that has no status list
+  entry through a provider that dropped the mark now throws, naming that
+  requirement, instead of reporting success while recording nothing. With an
+  entry, the status bit still records it.
 
 - **Registering a delegation id again cannot replace it.** `registerDelegation`
   overwrote the stored node whenever an id was registered again, dropping its
@@ -162,15 +165,16 @@ Versioning: https://semver.org/spec/v2.0.0.html
   fresh, empty one (SPEC.md §11.10). Creation now runs inside the list's lock
   and re-reads the list there.
 
-- **`did:web` host labels are validated, not decoded wholesale.** The host
-  label was percent-decoded as a whole: `did:web:trusted.example%40attacker.example`
-  fetched its document from `attacker.example`, and `%2F`, `%3F` and `%23`
-  injected a path, query or fragment. Only `%3A` (the port colon) is decoded in
-  the host now; a host that would carry userinfo, a path, a query or a
-  fragment is rejected, as is a path component that decodes to a separator, a
-  dot-segment or nothing (SPEC.md §4.4). A malformed escape returns `null`
-  instead of throwing. Hosts that were already plain domains, with or without
-  a port, resolve as before.
+- **`did:web` host labels cannot smuggle in another URL.** The host label is
+  percent-decoded, and what it decoded to was used unchecked:
+  `did:web:trusted.example%40attacker.example` fetched its document from
+  `attacker.example`, and `%2F`, `%3F` and `%23` injected a path, query or
+  fragment. A host that decodes to `@`, `/`, `\`, `?`, `#`, whitespace, a
+  control character, or a `:` beyond one port separator (a bracketed IPv6
+  literal keeps its own colons) is now rejected, as is a path component that
+  decodes to a separator, a dot-segment or nothing (SPEC.md §4.4). A malformed
+  escape returns `null` instead of throwing. Ports, IPv4 and IPv6 literals and
+  percent-encoded internationalized hosts resolve as before.
 
 - **Unreadable validity bounds fail closed.** An `expirationDate` that did not
   parse (`2020-02-30T25:00:00Z`) and a non-numeric `constraints.notAfter` or
@@ -192,14 +196,15 @@ Versioning: https://semver.org/spec/v2.0.0.html
   and `verifyCimdBind` took the DID from the DID document rather than the card,
   so a document at `https://attacker.example/clients/x` declaring
   `did:web:victim.example:clients:acme` produced a victim-id card whose bind
-  check passed. `cardFromClientMetadata` now rejects a declared DID unless
-  `bindClientId(did) === client_id`, and rejects a `client_id` with no exact
-  `did:web` form (query, fragment, userinfo, trailing slash).
-  `verifyCimdBind(cimd, didDoc, expectedDid?)` takes an optional third
-  argument (pass the card's `id`) and then requires `didDoc.id` to be that
-  DID; in either form it now requires `client_id` to be exactly the DID's
-  HTTPS form, not merely the same origin. Two-argument calls still compile and
-  run, but cannot detect a card/document mismatch.
+  check passed. `cardFromClientMetadata` now rejects a declared `did:web`
+  whose origin (host and port) differs from the `client_id`'s. Every
+  same-origin shape the CIMD draft allows still derives a card: a root with a
+  trailing slash, a query, an explicit `:443`, a root DID declared on a path
+  `client_id`, and a declared `did:key`. `verifyCimdBind(cimd, didDoc,
+  expectedDid?)` takes an optional third argument (pass the card's `id`) and
+  then also requires `didDoc.id` to be that DID and `client_id` to be its HTTPS
+  form, compared as normalized URLs. Two-argument calls behave exactly as
+  before, so they cannot detect a card/document mismatch.
 
 - **`resolveCard` no longer conflates distinct `did:web` DIDs.** The identity
   binding percent-decoded each segment and rejoined with `:`, so

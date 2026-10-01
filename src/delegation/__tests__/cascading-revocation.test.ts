@@ -7,6 +7,7 @@ import {
 } from "../cascading-revocation.js";
 import {
   DelegationGraphManager,
+  type DelegationGraphStorageProvider,
   type DelegationNode,
 } from "../delegation-graph.js";
 import { StatusList2021Manager } from "../statuslist-manager.js";
@@ -694,6 +695,60 @@ describe("CascadingRevocationManager over the memory graph and status list", () 
     expect((await graph.getNode("p"))?.revoked).toBe(true);
     expect((await revocation.isRevoked("p")).revoked).toBe(true);
     expect(await revocation.validateDelegation("c")).toEqual({ valid: false, reason: "Ancestor p is revoked" });
+  });
+
+  it("refuses to report a revocation that a fixed-column storage provider dropped", async () => {
+    // A provider written before DelegationNode.revoked existed: it stores only
+    // the columns it knows, so the graph mark never survives a write.
+    class FixedColumnGraphStorage implements DelegationGraphStorageProvider {
+      private rows = new Map<string, DelegationNode>();
+      async getNode(id: string) {
+        const row = this.rows.get(id);
+        return row ? { ...row, children: [...row.children] } : null;
+      }
+      async setNode(node: DelegationNode) {
+        const { id, parentId, children, issuerDid, subjectDid, credentialStatusId } = node;
+        this.rows.set(id, { id, parentId, children: [...children], issuerDid, subjectDid, credentialStatusId });
+      }
+      async getChildren(id: string) {
+        const children = this.rows.get(id)?.children ?? [];
+        return (await Promise.all(children.map((child) => this.getNode(child)))).filter(
+          (node): node is DelegationNode => node !== null,
+        );
+      }
+      async getChain(id: string) {
+        const chain: DelegationNode[] = [];
+        for (let node = await this.getNode(id); node; node = node.parentId ? await this.getNode(node.parentId) : null) {
+          chain.unshift(node);
+        }
+        return chain;
+      }
+      async getDescendants(id: string) {
+        const descendants: DelegationNode[] = [];
+        for (const child of await this.getChildren(id)) {
+          descendants.push(child, ...(await this.getDescendants(child.id)));
+        }
+        return descendants;
+      }
+      async deleteNode(id: string) {
+        this.rows.delete(id);
+      }
+    }
+    const { statusList } = stack();
+    const graph = new DelegationGraphManager(new FixedColumnGraphStorage());
+    const revocation = new CascadingRevocationManager(graph, statusList);
+    const entry = await statusList.allocateStatusEntry("revocation");
+    await graph.registerDelegation({ id: "listed", parentId: null, issuerDid: "did:user", subjectDid: "did:a", credentialStatusId: entry.id });
+    await graph.registerDelegation({ id: "unlisted", parentId: null, issuerDid: "did:user", subjectDid: "did:b", credentialStatusId: UUID_STATUS_ID });
+
+    // The status bit records this one, so the dropped mark costs nothing.
+    await revocation.revokeDelegation("listed");
+    expect((await revocation.isRevoked("listed")).revoked).toBe(true);
+
+    // Nothing would record this one.
+    await expect(revocation.revokeDelegation("unlisted")).rejects.toThrow(
+      "Revocation of delegation unlisted was not recorded: it has no status list entry, and the graph storage provider did not persist DelegationNode.revoked",
+    );
   });
 
   it("keeps a revoked delegation revoked when its id is registered again", async () => {

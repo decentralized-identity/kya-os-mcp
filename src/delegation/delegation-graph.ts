@@ -149,15 +149,20 @@ export class DelegationGraphManager {
   }
 
   /**
-   * Record (or clear) the graph's revocation mark on one node. Descendants are
-   * left to the caller; cascading revocation walks the subtree itself.
+   * Record (or clear) the graph's revocation mark on one node, and report
+   * whether the stored node now carries it. The node is read back because a
+   * provider that persists a fixed set of node fields may silently drop
+   * `revoked`. Descendants are left to the caller; cascading revocation walks
+   * the subtree itself.
    */
-  async setRevoked(delegationId: string, revoked: boolean): Promise<void> {
+  async setRevoked(delegationId: string, revoked: boolean): Promise<boolean> {
     const node = await this.storage.getNode(delegationId);
     if (!node) {
       throw new Error(`Delegation not found: ${delegationId}`);
     }
     await this.storage.setNode({ ...node, revoked });
+    const stored = await this.storage.getNode(delegationId);
+    return (stored?.revoked ?? false) === revoked;
   }
 
   async getChildren(delegationId: string): Promise<DelegationNode[]> {

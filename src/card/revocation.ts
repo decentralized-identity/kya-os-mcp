@@ -214,18 +214,29 @@ async function decodeStatusList(
   return decodeStatusListPayload(encoded, decompress);
 }
 
-/** True iff `nowMs` falls inside the credential's `[validFrom, validUntil]` window (if declared). */
+/**
+ * True iff `nowMs` falls inside the credential's `[validFrom, validUntil]` window (if declared). A
+ * bound that is PRESENT but not a parseable date is not "absent": the list's validity window is then
+ * unknown, so it cannot vouch for a live read (`false`, never an open window).
+ */
 function isLive(credential: Record<string, unknown>, nowMs: number): boolean {
-  const validUntil = parseDate(credential.validUntil ?? credential.expirationDate);
+  const validUntil = parseDate(firstPresent(credential.validUntil, credential.expirationDate));
+  const validFrom = parseDate(firstPresent(credential.validFrom, credential.issuanceDate));
+  if (validUntil === null || validFrom === null) return false; // unknown window → not provably live
   if (validUntil !== undefined && validUntil < nowMs) return false; // stale → cached-OK at L2 only
-  const validFrom = parseDate(credential.validFrom ?? credential.issuanceDate);
   if (validFrom !== undefined && validFrom > nowMs) return false; // not yet valid
   return true;
 }
 
-/** Parse an ISO-8601 date string to epoch ms, or `undefined` when absent / unparseable. */
-function parseDate(value: unknown): number | undefined {
-  if (typeof value !== 'string') return undefined;
+/** The VC 2.0 property when present (even as `null`), else its VC 1.1 predecessor. */
+function firstPresent(current: unknown, legacy: unknown): unknown {
+  return current !== undefined ? current : legacy;
+}
+
+/** Parse an ISO-8601 date to epoch ms: `undefined` when absent, `null` when present but unparseable. */
+function parseDate(value: unknown): number | undefined | null {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string') return null;
   const ms = Date.parse(value);
-  return Number.isNaN(ms) ? undefined : ms;
+  return Number.isNaN(ms) ? null : ms;
 }

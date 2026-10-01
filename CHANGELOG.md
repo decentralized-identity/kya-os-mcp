@@ -37,6 +37,14 @@ Versioning: https://semver.org/spec/v2.0.0.html
   argument may be a list of hashes that identify the one suspended action; a
   grant over any of them counts. A single string works as before.
 
+### Changed
+
+- **SPEC.md: the `did:key` verification method id is `<did>#<multibase>`.**
+  §4.3, the §6.2 example and Appendix C.2 and C.3 gave `<did>#keys-1`, which
+  contradicts the W3C did:key method and which no standard resolver,
+  including this one, resolves. They, and `CONFORMANCE.md` L1.1, now give the
+  W3C form. No code changes.
+
 ### Security
 
 - **Scope attenuation across scope representations.** `validateScopeAttenuation`
@@ -114,6 +122,99 @@ Versioning: https://semver.org/spec/v2.0.0.html
   holder-binding request hash. A policy gate used on its own behaves as
   before.
 
+- **Graph revocation is checked for the whole chain.** `validateDelegationChain`
+  asked its `RevocationChecker` about the leaf only, so a leaf minted after an
+  ancestor's revocation, and therefore never registered in the graph, still
+  validated. Every credential in the verified chain is now checked, root
+  first, and a checker that throws fails the chain instead of throwing.
+
+- **Revocation is recorded in the graph.** `revokeDelegation` only flipped a
+  status bit when `credentialStatusId` had the form `<list>#<digits>`, and
+  otherwise reported success while recording nothing, so a delegation whose
+  status id was a `urn:uuid:` read as live after revocation (SPEC.md §6.5 step
+  1). `DelegationNode` gains an optional `revoked` flag, which revocation sets,
+  restore clears, and `isRevoked` honours alongside the status bit, and
+  `registerDelegation` accepts an optional structured `credentialStatus` so no
+  id has to be parsed. A status id that names no list entry still registers
+  and revokes without error, as before; it now also reads as revoked. Both
+  fields are optional, so existing storage providers keep working; one that
+  persists a fixed set of node fields must also store `revoked` for the mark
+  to outlive the process.
+
+- **Registering a delegation id again cannot replace it.** `registerDelegation`
+  overwrote the stored node whenever an id was registered again, dropping its
+  `credentialStatusId`, revocation and children: re-registering a revoked
+  ancestor read its whole subtree as live again, and re-registering a node
+  under its own descendant left a parent cycle that `getChain` walked forever.
+  A repeat registration that matches the stored node in every registered field
+  (`parentId`, `issuerDid`, `subjectDid`, `credentialStatusId`,
+  `credentialStatus`) is now a no-op that returns the stored node, children
+  and revocation intact, so retries stay safe. One that differs in any of them
+  throws, as does a delegation naming itself as parent, on the non-atomic path
+  and in `MemoryDelegationGraphStorage.registerNodeAtomic`; the memory store's
+  chain walk throws on a cycle. A custom `AtomicDelegationGraphStorageProvider`
+  should apply the same rule, since only it can close the race between the
+  manager's check and its write.
+
+- **First status list creation is serialized with updates.** A status list was
+  created on first allocation outside its update lock, so a concurrent
+  allocation could replace a list that had just recorded a revocation with a
+  fresh, empty one (SPEC.md §11.10). Creation now runs inside the list's lock
+  and re-reads the list there.
+
+- **`did:web` host labels are validated, not decoded wholesale.** The host
+  label was percent-decoded as a whole: `did:web:trusted.example%40attacker.example`
+  fetched its document from `attacker.example`, and `%2F`, `%3F` and `%23`
+  injected a path, query or fragment. Only `%3A` (the port colon) is decoded in
+  the host now; a host that would carry userinfo, a path, a query or a
+  fragment is rejected, as is a path component that decodes to a separator, a
+  dot-segment or nothing (SPEC.md §4.4). A malformed escape returns `null`
+  instead of throwing. Hosts that were already plain domains, with or without
+  a port, resolve as before.
+
+- **Unreadable validity bounds fail closed.** An `expirationDate` that did not
+  parse (`2020-02-30T25:00:00Z`) and a non-numeric `constraints.notAfter` or
+  `notBefore` were read as no bound at all, so the credential never expired;
+  a `notAfter` of `0` was skipped the same way. A present bound that cannot be
+  read now places the credential outside its validity window. Basic checks
+  also accepted any delegation `status` other than `revoked` and `expired`
+  (`suspended`, or none), though the type allows only `active`, `revoked` and
+  `expired`; only `active` passes now.
+
+- **VC-JWT verification no longer throws on hostile input.** A JOSE header or
+  claims set that is not a JSON object (`null`, an array), a `kid` that is not
+  a string, and a DID resolver that throws all escaped `verifyDelegationJwt`
+  as exceptions, so a caller outside a `try` recorded no rejection. Each now
+  returns a failed result.
+
+- **CIMD documents can no longer speak for another origin's DID.**
+  `cardFromClientMetadata` accepted any declared `_meta["org.kya-os/did"]`,
+  and `verifyCimdBind` took the DID from the DID document rather than the card,
+  so a document at `https://attacker.example/clients/x` declaring
+  `did:web:victim.example:clients:acme` produced a victim-id card whose bind
+  check passed. `cardFromClientMetadata` now rejects a declared DID unless
+  `bindClientId(did) === client_id`, and rejects a `client_id` with no exact
+  `did:web` form (query, fragment, userinfo, trailing slash).
+  `verifyCimdBind(cimd, didDoc, expectedDid?)` takes an optional third
+  argument (pass the card's `id`) and then requires `didDoc.id` to be that
+  DID; in either form it now requires `client_id` to be exactly the DID's
+  HTTPS form, not merely the same origin. Two-argument calls still compile and
+  run, but cannot detect a card/document mismatch.
+
+- **`resolveCard` no longer conflates distinct `did:web` DIDs.** The identity
+  binding percent-decoded each segment and rejoined with `:`, so
+  `did:web:host:users:alice%3Aagent` accepted Alice's card
+  `did:web:host:users:alice:agent`, and `did:web:host:8443` accepted a card for
+  the port-form `did:web:host%3A8443`. DIDs are now compared in canonical
+  encoded form: host lowercased, each segment decoded and re-encoded, so two
+  spellings of one DID still match.
+
+- **`MaxAmount` attenuation compares exact decimals.** Limits were truncated to
+  six fractional digits, so `100.0000009` passed as a narrowing of `100`, and a
+  child `0.0000009` under a parent `0.0000001` (both scaled to zero) passed
+  too. Both limits are now scaled to the longer fraction and compared exactly
+  (SPEC.md §6.10).
+
 ### Fixed
 
 - **A `requestHash` over the request as sent now verifies.** SPEC.md §7.3 and
@@ -177,6 +278,27 @@ Versioning: https://semver.org/spec/v2.0.0.html
   implementation already does, and says why the bound holds on every
   nonce-checked path. CONFORMANCE.md L2.5 follows, and L2.11 describes the
   per-proof nonce and both request-hash shapes.
+
+- **Status list indexes stay inside the list.** `updateStatus` parsed
+  `statusListIndex` with `parseInt`, so revoking `"5abc"` flipped bit 5, which
+  belongs to another credential, while `checkStatus` already parsed strictly.
+  Both now share the strict parser. `allocateStatusEntry` also handed out
+  indexes past the end of the list, which no read or revocation could reach;
+  it now throws once the list is full (SPEC.md §6.7).
+
+- **A status list with an unreadable validity window is not fresh.** A
+  `validUntil` / `validFrom` (or `expirationDate` / `issuanceDate`) that was
+  present but not a parseable date was treated as absent, so the list read as
+  live. It now reads as not fresh (L3 → L2); the revocation bit is still read.
+
+- **Card schemas match the published JSON Schemas.** `CapabilityAttestation`
+  stripped unknown members (the JSON Schema allows them), dropping sidecar
+  fields such as `credentialStatus` before the capability verifier saw them;
+  extra members are now preserved. `DelegationCredentialSchema.type` accepted
+  any string array; it now requires `VerifiableCredential` and
+  `DelegationCredential`, so another VC with a ZCAP-shaped subject is not read
+  as a delegation hop. `schemas/card-delegation-credential.json` enforces the
+  same two types it already documented.
 
 ### Deprecated
 

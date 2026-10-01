@@ -12,6 +12,7 @@ import type {
   DelegationGraphStorageProvider,
   DelegationNode,
 } from '../delegation-graph.js';
+import { registrationConflict } from '../delegation-registration.js';
 
 /**
  * Memory-based Delegation Graph storage
@@ -42,8 +43,24 @@ export class MemoryDelegationGraphStorage
     this.nodes.set(node.id, node);
   }
 
-  /** Performs parent validation, child insert, and parent link in one serialization point. */
+  /**
+   * Performs parent validation, child insert, and parent link in one
+   * serialization point. An id that is already stored is left untouched: a
+   * repeat of the same registration is a no-op, and a conflicting one throws
+   * rather than replace the node's revocation state and children.
+   */
   async registerNodeAtomic(node: DelegationNode): Promise<void> {
+    if (node.parentId === node.id) {
+      throw new Error(`Delegation ${node.id} cannot be its own parent`);
+    }
+    const existing = this.nodes.get(node.id);
+    if (existing !== undefined) {
+      const conflict = registrationConflict(existing, node);
+      if (conflict === undefined) {
+        return;
+      }
+      throw new Error(`Delegation ${node.id} is already registered with a different ${conflict}`);
+    }
     const parent = node.parentId === null ? null : this.nodes.get(node.parentId);
     if (node.parentId !== null && parent === undefined) {
       throw new Error(`Parent delegation not found: ${node.parentId}`);
@@ -77,19 +94,7 @@ export class MemoryDelegationGraphStorage
    * Get the full chain from root to this delegation
    */
   async getChain(delegationId: string): Promise<DelegationNode[]> {
-    const chain: DelegationNode[] = [];
-    let currentId: string | null = delegationId;
-
-    // Walk up the tree to root
-    while (currentId) {
-      const node = this.nodes.get(currentId);
-      if (!node) break;
-
-      chain.unshift(node); // Add to front (root first)
-      currentId = node.parentId;
-    }
-
-    return chain;
+    return this.getChainSync(delegationId);
   }
 
   /**
@@ -179,17 +184,25 @@ export class MemoryDelegationGraphStorage
   }
 
   /**
-   * Synchronous chain retrieval (for stats)
+   * Walk parent links from `delegationId` up to the root, returning the chain
+   * root first. Throws on a parent cycle instead of looping forever: a cycle
+   * has no root, so no chain through it is valid.
    */
   private getChainSync(delegationId: string): DelegationNode[] {
     const chain: DelegationNode[] = [];
+    const visited = new Set<string>();
     let currentId: string | null = delegationId;
 
     while (currentId) {
+      if (visited.has(currentId)) {
+        throw new Error(`Delegation graph has a parent cycle at ${currentId}`);
+      }
+      visited.add(currentId);
+
       const node = this.nodes.get(currentId);
       if (!node) break;
 
-      chain.unshift(node);
+      chain.unshift(node); // Add to front (root first)
       currentId = node.parentId;
     }
 

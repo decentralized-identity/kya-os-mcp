@@ -149,6 +149,20 @@ describe('createRevocationChecker (W3C Bitstring Status List v1.0)', () => {
   });
 });
 
+describe('createRevocationChecker (validity window)', () => {
+  it.each([
+    ['an unparseable validUntil', { validUntil: 'not-a-date' }],
+    ['an unparseable validFrom', { validFrom: 'soon' }],
+    ['a non-string validUntil', { validUntil: 1_900_000_000 }],
+    ['a null validUntil', { validUntil: null }],
+    ['an unparseable legacy expirationDate', { expirationDate: 'never' }],
+  ])('%s is a list of unknown validity — readable, but NOT fresh', async (_label, dates) => {
+    const check = createRevocationChecker({ fetch: jsonFetch({ ...statusCredential([5]), ...dates }), now: NOW });
+    expect(await check(entryAt(5))).toEqual({ revoked: true, fresh: false });
+    expect(await check(entryAt(6))).toEqual({ revoked: false, fresh: false });
+  });
+});
+
 // ── Injectable decompression seam (isomorphic: non-node:zlib runtimes) ───────
 
 describe('createRevocationChecker (injected decompress seam)', () => {

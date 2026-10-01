@@ -284,20 +284,30 @@ export function extractDelegationFromVC(vc: DelegationCredential): DelegationRec
   };
 }
 
+/** A bound in epoch seconds must be a finite number; anything else is unreadable. */
+function isEpochSeconds(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
 /**
- * Check if a DelegationCredential is expired.
+ * Check if a DelegationCredential is expired. A present `expirationDate` or
+ * `constraints.notAfter` that cannot be read (an impossible date, a
+ * non-numeric bound) counts as expired: it is a bound, just an unreadable
+ * one, and must not read as "no expiry".
  */
 export function isDelegationCredentialExpired(vc: DelegationCredential): boolean {
-  if (vc.expirationDate) {
-    if (new Date(vc.expirationDate) < new Date()) {
+  if (vc.expirationDate !== undefined) {
+    const expiresAt =
+      typeof vc.expirationDate === 'string' ? Date.parse(vc.expirationDate) : Number.NaN;
+    if (!Number.isFinite(expiresAt) || expiresAt < Date.now()) {
       return true;
     }
   }
 
-  const delegation = vc.credentialSubject.delegation;
-  if (delegation.constraints.notAfter) {
+  const notAfter = vc.credentialSubject.delegation.constraints?.notAfter;
+  if (notAfter !== undefined) {
     const nowSec = Math.floor(Date.now() / 1000);
-    if (nowSec > delegation.constraints.notAfter) {
+    if (!isEpochSeconds(notAfter) || nowSec > notAfter) {
       return true;
     }
   }
@@ -306,19 +316,17 @@ export function isDelegationCredentialExpired(vc: DelegationCredential): boolean
 }
 
 /**
- * Check if a DelegationCredential is not yet valid.
+ * Check if a DelegationCredential is not yet valid. A present
+ * `constraints.notBefore` that is not a finite number counts as not yet valid.
  */
 export function isDelegationCredentialNotYetValid(vc: DelegationCredential): boolean {
-  const delegation = vc.credentialSubject.delegation;
-
-  if (delegation.constraints.notBefore) {
-    const nowSec = Math.floor(Date.now() / 1000);
-    if (nowSec < delegation.constraints.notBefore) {
-      return true;
-    }
+  const notBefore = vc.credentialSubject.delegation.constraints?.notBefore;
+  if (notBefore === undefined) {
+    return false;
   }
 
-  return false;
+  const nowSec = Math.floor(Date.now() / 1000);
+  return !isEpochSeconds(notBefore) || nowSec < notBefore;
 }
 
 /**

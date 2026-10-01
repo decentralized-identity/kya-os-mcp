@@ -93,6 +93,39 @@ export function isDidWeb(did: string): boolean {
 }
 
 /**
+ * Decode and validate the host label of a did:web DID. The did:web method
+ * percent-encodes only the port colon (`%3A`), so any other escape is
+ * rejected: decoding `%40`, `%2F`, `%3F` or `%23` would let the label pick
+ * userinfo, a path, a query or a fragment, and fetch from a different host
+ * than the DID names. Returns the domain with its optional `:port`, or `null`.
+ */
+function parseDidWebHost(label: string): string | null {
+  if (/%(?!3a)/i.test(label)) {
+    return null;
+  }
+  const domain = label.replace(/%3a/gi, ':');
+  if (!/^[^:]+(?::\d{1,5})?$/.test(domain)) {
+    return null;
+  }
+
+  // The label must parse as a bare authority: anything the URL parser reads
+  // as userinfo, a path, a query or a fragment would redirect the fetch.
+  let url: URL;
+  try {
+    url = new URL(`https://${domain}`);
+  } catch {
+    return null;
+  }
+  const isBareHost =
+    url.username === '' &&
+    url.password === '' &&
+    url.pathname === '/' &&
+    url.search === '' &&
+    url.hash === '';
+  return isBareHost ? domain : null;
+}
+
+/**
  * Parse a did:web DID into its components
  *
  * @param did - The did:web DID to parse
@@ -113,15 +146,24 @@ export function parseDidWeb(did: string): ParsedDidWeb | null {
   // Split by ':' to get domain and path components
   const parts = remainder.split(':');
 
-  // First part is the domain (URL-decoded)
-  const domain = decodeURIComponent(parts[0]!);
-
-  if (domain.length === 0) {
+  const domain = parseDidWebHost(parts[0]!);
+  if (domain === null) {
     return null;
   }
 
-  // Remaining parts form the path
-  const path = parts.slice(1).map((p) => decodeURIComponent(p));
+  // Remaining parts form the path. Each is one segment: a decoded separator
+  // or dot-segment would move the fetch to a different resource.
+  let path: string[];
+  try {
+    path = parts.slice(1).map((p) => decodeURIComponent(p));
+  } catch {
+    return null;
+  }
+  const isSegment = (segment: string): boolean =>
+    segment !== '' && segment !== '.' && segment !== '..' && !/[/\\?#]/.test(segment);
+  if (!path.every(isSegment)) {
+    return null;
+  }
 
   return { domain, path };
 }

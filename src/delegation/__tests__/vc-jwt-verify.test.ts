@@ -198,6 +198,30 @@ describe("verifyDelegationJwt (VC-JWT / compact JWS wire format)", () => {
     expect(result.reason).toMatch(/no DID resolver/i);
   });
 
+  it("denies, without throwing, when the DID resolver throws", async () => {
+    const isolated = new DelegationCredentialVerifier({
+      didResolver: {
+        async resolve(): Promise<DIDDocument | null> {
+          throw new Error("resolver down");
+        },
+      },
+    });
+    const jwt = await mintVcJwt(privateKey);
+    const result = await isolated.verifyDelegationJwt(jwt, { skipCache: true });
+    expect(result).toMatchObject({ valid: false, stage: "signature" });
+    expect(result.reason).toBe(`Could not resolve issuer DID ${ISSUER_DID}: resolver down`);
+  });
+
+  it("rejects, without throwing, a JOSE header that is not a JSON object", async () => {
+    const [, payload, signature] = (await mintVcJwt(privateKey)).split(".");
+    const headers = ["null", "[]", '"EdDSA"', "42", '{"alg":"EdDSA","kid":42}'];
+    for (const header of headers) {
+      const jwt = `${Buffer.from(header).toString("base64url")}.${payload}.${signature}`;
+      const result = await verifier.verifyDelegationJwt(jwt, { skipCache: true });
+      expect(result, header).toMatchObject({ valid: false, stage: "basic", reason: "Not a valid VC-JWT (parse failed)" });
+    }
+  });
+
   it("fast-rejects a non-JWT string at the basic stage", async () => {
     const result = await verifier.verifyDelegationJwt("not-a-jwt", {
       skipCache: true,

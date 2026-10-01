@@ -16,11 +16,18 @@ import {
   type StatusListIdentityProvider,
 } from "../statuslist-manager.js";
 import type { VCSigningFunction } from "../vc-issuer.js";
-import type { CompressionFunction, DecompressionFunction } from "../bitstring.js";
+import {
+  BitstringManager,
+  type CompressionFunction,
+  type DecompressionFunction,
+} from "../bitstring.js";
+import { MemoryStatusListStorage } from "../storage/memory-statuslist-storage.js";
 import type {
   StatusList2021Credential,
   CredentialStatus,
+  Proof,
 } from "../../types/protocol.js";
+import { gzipSync, gunzipSync } from "node:zlib";
 
 describe("StatusList2021Manager", () => {
   let mockStorage: StatusListStorageProvider;
@@ -650,5 +657,68 @@ describe("StatusList2021Manager", () => {
       const isRevoked = await manager.checkStatus(credentialStatus);
       expect(isRevoked).toBe(true);
     });
+  });
+});
+
+describe("StatusList2021Manager over memory storage", () => {
+  const gzip = {
+    compress: async (d: Uint8Array) => new Uint8Array(gzipSync(d)),
+    decompress: async (d: Uint8Array) => new Uint8Array(gunzipSync(d)),
+  };
+  const identity = { getDid: () => "did:web:issuer.example", getKeyId: () => "did:web:issuer.example#k" };
+  const proof: Proof = { type: "Ed25519Signature2020", proofValue: "x" };
+  const options = { statusListBaseUrl: "https://status.example", defaultListSize: 1024 };
+
+  it("does not let a racing first allocation replace a list that has since recorded a revocation", async () => {
+    // Hold back the second signature over a still-empty list: before list
+    // creation was serialized, that was the racing allocation's fresh list,
+    // and releasing it after the revocation below overwrote the revoked bit.
+    const emptyList = await new BitstringManager(options.defaultListSize, gzip, gzip).encode();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let emptySignatures = 0;
+    const sign: VCSigningFunction = async (canonical) => {
+      if (canonical.includes(emptyList) && ++emptySignatures === 2) await held;
+      return proof;
+    };
+    const manager = new StatusList2021Manager(new MemoryStatusListStorage(), identity, sign, gzip, gzip, options);
+
+    const first = manager.allocateStatusEntry("revocation");
+    const second = manager.allocateStatusEntry("revocation");
+    const entry = await first;
+    await manager.updateStatus(entry, true);
+    expect(await manager.checkStatus(entry)).toBe(true);
+
+    release();
+    await second;
+    expect(await manager.checkStatus(entry)).toBe(true);
+  });
+
+  it("rejects a non-canonical statusListIndex on update instead of flipping another credential's bit", async () => {
+    const manager = new StatusList2021Manager(new MemoryStatusListStorage(), identity, async () => proof, gzip, gzip, options);
+    const entry = await manager.allocateStatusEntry("revocation");
+    const other = { ...entry, statusListIndex: "5" };
+
+    for (const statusListIndex of ["5abc", " 5", "0x5", "5.0", ""]) {
+      await expect(manager.updateStatus({ ...entry, statusListIndex }, true)).rejects.toThrow(/statusListIndex/);
+    }
+    expect(await manager.checkStatus(other)).toBe(false);
+    expect(await manager.getRevokedIndices(entry.statusListCredential)).toEqual([]);
+  });
+
+  it("refuses to allocate an index the list cannot hold", async () => {
+    const manager = new StatusList2021Manager(new MemoryStatusListStorage(), identity, async () => proof, gzip, gzip, {
+      ...options,
+      defaultListSize: 16,
+    });
+    const entries = [];
+    for (let i = 0; i < 16; i++) entries.push(await manager.allocateStatusEntry("revocation"));
+    expect(entries.at(-1)?.statusListIndex).toBe("15");
+
+    await expect(manager.allocateStatusEntry("revocation")).rejects.toThrow(
+      "Status list https://status.example/revocation/v1 is full: index 16 is outside its 16 entries",
+    );
   });
 });

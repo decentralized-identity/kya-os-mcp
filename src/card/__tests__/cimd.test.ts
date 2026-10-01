@@ -122,6 +122,41 @@ describe('cardFromClientMetadata (CIMD document → L1 card)', () => {
   it('is fail-closed on metadata missing a string client_id', () => {
     expect(() => cardFromClientMetadata({ client_name: 'x' })).toThrow(/client_id/);
   });
+
+  it('REJECTS a document that declares a DID other than the did:web its client_id names (substitution)', () => {
+    // Served from attacker.example, claiming the victim's DID: the card would carry the victim's id.
+    const hostile = {
+      client_id: 'https://attacker.example/clients/x',
+      client_name: 'Totally Acme',
+      jwks_uri: 'https://attacker.example/clients/x/jwks.json',
+      _meta: { [KYA_OS_DID_META_KEY]: 'did:web:victim.example:clients:acme' },
+    };
+    expect(() => cardFromClientMetadata(hostile)).toThrow(/not the did:web of client_id/);
+    // Same origin, different path is still a different entity.
+    const sibling = { client_id: clientId, _meta: { [KYA_OS_DID_META_KEY]: 'did:web:example.com:clients:other' } };
+    expect(() => cardFromClientMetadata(sibling)).toThrow(/not the did:web of client_id/);
+    // The DID the client_id does name, ported or not, is still accepted.
+    const ported = cardFromClientMetadata({
+      client_id: 'https://localhost:3000/agents/bot',
+      _meta: { [KYA_OS_DID_META_KEY]: 'did:web:localhost%3A3000:agents:bot' },
+    });
+    expect(ported.id).toBe('did:web:localhost%3A3000:agents:bot');
+  });
+
+  it('REJECTS a declared did:key (it has no HTTPS form, so the client_id cannot vouch for it)', () => {
+    const meta = { client_id: clientId, _meta: { [KYA_OS_DID_META_KEY]: 'did:key:z6Mkabc' } };
+    expect(() => cardFromClientMetadata(meta)).toThrow(/not the did:web of client_id/);
+  });
+
+  it.each([
+    ['a query', `${clientId}?tenant=victim`],
+    ['a fragment', `${clientId}#frag`],
+    ['userinfo', 'https://victim@example.com/clients/acme'],
+    ['a trailing slash', `${clientId}/`],
+  ])('REJECTS a client_id with %s (no exact did:web form; it would round to a neighbour)', (_label, id) => {
+    expect(() => cardFromClientMetadata({ client_id: id })).toThrow(/no exact did:web form/);
+    expect(() => cardFromClientMetadata({ client_id: id, _meta: { [KYA_OS_DID_META_KEY]: did } })).toThrow();
+  });
 });
 
 describe('verifyCimdBind (anti-substitution, FAIL-CLOSED)', () => {
@@ -161,5 +196,31 @@ describe('verifyCimdBind (anti-substitution, FAIL-CLOSED)', () => {
     const result = verifyCimdBind({ clientId, jwksUri: 'http://example.com/jwks.json' }, didDoc);
     expect(result.ok).toBe(false);
     expect(result.reasons.some((r) => /must be https/.test(r))).toBe(true);
+  });
+
+  it("REJECTS an attacker's self-consistent CIMD + DID document attached to a victim card's id", () => {
+    // Everything the attacker controls agrees with itself; only the card's id is the victim's.
+    const victimCard: EntityCard = {
+      id: 'did:web:victim.example:clients:acme',
+      entityType: 'client',
+      name: 'Totally Acme',
+      cimd: { clientId: 'https://attacker.example/clients/x', jwksUri: 'https://attacker.example/clients/x/jwks.json' },
+    };
+    const attackerDidDoc = { id: 'did:web:attacker.example:clients:x', alsoKnownAs: ['https://attacker.example/clients/x'] };
+    const result = verifyCimdBind(victimCard.cimd!, attackerDidDoc, victimCard.id);
+    expect(result.ok).toBe(false);
+    expect(result.reasons.some((r) => /is not the card's DID/.test(r))).toBe(true);
+    expect(result.reasons.some((r) => /origin mismatch: did:web/.test(r))).toBe(true);
+    // The card the binding does belong to still verifies with its own id.
+    expect(verifyCimdBind(cimd, didDoc, card.id)).toEqual({ ok: true, reasons: [] });
+  });
+
+  it('REJECTS a client_id on the DID origin that is not EXACTLY the DID\'s HTTPS form (bijection, not just origin)', () => {
+    const sibling = { clientId: 'https://example.com/clients/other', jwksUri };
+    const doc = { ...didDoc, alsoKnownAs: ['https://example.com/clients/other'] };
+    for (const result of [verifyCimdBind(sibling, doc), verifyCimdBind(sibling, doc, did)]) {
+      expect(result.ok).toBe(false);
+      expect(result.reasons.some((r) => /is not the HTTPS form of/.test(r))).toBe(true);
+    }
   });
 });

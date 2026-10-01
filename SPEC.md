@@ -194,7 +194,16 @@ Base58btc:        6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK
 DID:              did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK
 ```
 
-The verification method ID is `<did>#keys-1`.
+The verification method ID is `<did>#<multibase>`: the fragment repeats the
+`z`-prefixed multibase value, as the W3C did:key method defines it. For the
+example above:
+
+```
+did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK#z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK
+```
+
+No other fragment (such as `#keys-1`) identifies a `did:key` verification
+method.
 
 ### 4.4 did:web Resolution
 
@@ -495,7 +504,7 @@ Delegations are issued as W3C Verifiable Credentials:
   "proof": {
     "type": "Ed25519Signature2020",
     "created": "2024-03-01T12:00:00Z",
-    "verificationMethod": "did:key:z6MkIssuer...#keys-1",
+    "verificationMethod": "did:key:z6MkIssuer...#z6MkIssuer...",
     "proofPurpose": "assertionMethod",
     "proofValue": "<base64url-encoded-signature>"
   }
@@ -821,7 +830,7 @@ chain:
 
 - **action subset** - child `allowedAction ⊆ parent`;
 - **monotone caveats** - no parent caveat may be silently dropped; for a shared caveat type, child
-  `MaxAmount ≤ parent` (same currency; compared as fixed-point decimals scaled to 6 places) and
+  `MaxAmount ≤ parent` (same currency; compared as exact decimals, never rounded or truncated) and
   child `ValidUntil ≤ parent`; an unknown caveat type MUST be replicated **verbatim**;
 - **top-level `validUntil` narrowing** - child `validUntil ≤ parent`;
 - **continuity** - the parent's delegate (`invoker`) MUST equal the child's `issuer` (you may only
@@ -1866,7 +1875,7 @@ did:key:z6Mko6jQvza2BSKRcrbJwgwbL9KYDn1isCUV5Lnq7gSTTKJq
 
 **Verification Method ID:**
 ```
-did:key:z6Mko6jQvza2BSKRcrbJwgwbL9KYDn1isCUV5Lnq7gSTTKJq#keys-1
+did:key:z6Mko6jQvza2BSKRcrbJwgwbL9KYDn1isCUV5Lnq7gSTTKJq#z6Mko6jQvza2BSKRcrbJwgwbL9KYDn1isCUV5Lnq7gSTTKJq
 ```
 
 ### C.3 JWS Structure
@@ -1877,7 +1886,7 @@ A valid detached proof JWS has the following structure:
 ```json
 {
   "alg": "EdDSA",
-  "kid": "did:key:z6Mk...#keys-1"
+  "kid": "did:key:z6Mk...#z6Mk..."
 }
 ```
 

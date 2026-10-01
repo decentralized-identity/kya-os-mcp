@@ -39,7 +39,11 @@ export interface StatusListIdentityProvider {
 export class StatusList2021Manager {
   private statusListBaseUrl: string;
   private defaultListSize: number;
-  /** Per-status-list mutex to serialize updateStatus calls and prevent race conditions. */
+  /**
+   * Per-status-list mutex. Every read-modify-write of a list (status updates
+   * and first creation) runs inside it, so no writer can overwrite another's
+   * bit with a stale copy.
+   */
   private updateLocks = new Map<string, Promise<void>>();
 
   constructor(
@@ -62,7 +66,14 @@ export class StatusList2021Manager {
 
     const index = await this.storage.allocateIndex(statusListId);
 
-    await this.ensureStatusListExists(statusListId, purpose);
+    const capacity = await this.ensureStatusListExists(statusListId, purpose);
+    // An index past the end of the list can never be read or set, so refuse
+    // it (SPEC.md §6.7) rather than mint a credential that cannot be revoked.
+    if (index >= capacity) {
+      throw new Error(
+        `Status list ${statusListId} is full: index ${index} is outside its ${capacity} entries`
+      );
+    }
 
     const credentialStatus: CredentialStatus = {
       id: `${statusListId}#${index}`,
@@ -76,18 +87,27 @@ export class StatusList2021Manager {
   }
 
   async updateStatus(credentialStatus: CredentialStatus, revoked: boolean): Promise<void> {
-    const { statusListCredential } = credentialStatus;
+    await this.withListLock(credentialStatus.statusListCredential, () =>
+      this.doUpdateStatus(credentialStatus, revoked)
+    );
+  }
 
-    // Serialize updates per status list to prevent concurrent read-modify-write races.
-    // Each call chains on the previous operation for the same list.
-    const previous = this.updateLocks.get(statusListCredential) ?? Promise.resolve();
-    const operation = previous.then(() => this.doUpdateStatus(credentialStatus, revoked));
-
-    // Store a non-rejecting version so the chain continues even if one update fails
-    this.updateLocks.set(statusListCredential, operation.catch(() => {}));
-
-    // Propagate the actual error to the caller
-    await operation;
+  /**
+   * Run `task` once every earlier task on the same status list has settled,
+   * serializing read-modify-write per list. The task's own error reaches the
+   * caller; the chain stores a non-rejecting copy so later tasks still run.
+   */
+  private withListLock<T>(statusListId: string, task: () => Promise<T>): Promise<T> {
+    const previous = this.updateLocks.get(statusListId) ?? Promise.resolve();
+    const operation = previous.then(task);
+    this.updateLocks.set(
+      statusListId,
+      operation.then(
+        () => undefined,
+        () => undefined
+      )
+    );
+    return operation;
   }
 
   private async doUpdateStatus(credentialStatus: CredentialStatus, revoked: boolean): Promise<void> {
@@ -104,7 +124,9 @@ export class StatusList2021Manager {
       this.decompressor
     );
 
-    const index = parseInt(statusListIndex, 10);
+    // Same strict parse as checkStatus: a lenient one reads "5abc" as 5 and
+    // would flip another credential's bit.
+    const index = parseStatusListIndex(statusListIndex);
     manager.setBit(index, revoked);
 
     const encodedList = await manager.encode();
@@ -177,13 +199,33 @@ export class StatusList2021Manager {
     return manager.getSetBits();
   }
 
-  private async ensureStatusListExists(
+  /**
+   * Create the status list on first use and return its capacity in entries.
+   * Runs inside the list's lock and re-reads the list there: a creation that
+   * raced past another must not replace a list that has since recorded a
+   * revocation with a fresh, empty one.
+   */
+  private ensureStatusListExists(
     statusListId: string,
     purpose: 'revocation' | 'suspension'
-  ): Promise<void> {
+  ): Promise<number> {
+    return this.withListLock(statusListId, () =>
+      this.createStatusListIfMissing(statusListId, purpose)
+    );
+  }
+
+  private async createStatusListIfMissing(
+    statusListId: string,
+    purpose: 'revocation' | 'suspension'
+  ): Promise<number> {
     const existing = await this.storage.getStatusList(statusListId);
     if (existing) {
-      return;
+      const decoded = await BitstringManager.decode(
+        existing.credentialSubject.encodedList,
+        this.compressor,
+        this.decompressor
+      );
+      return decoded.getSize();
     }
 
     const manager = new BitstringManager(
@@ -223,6 +265,8 @@ export class StatusList2021Manager {
     };
 
     await this.storage.setStatusList(statusListId, signedCredential);
+    // Capacity as a reader decodes it: whole bytes of the encoded bitstring.
+    return manager.getRawBits().length * 8;
   }
 
   getStatusListBaseUrl(): string {

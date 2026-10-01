@@ -190,8 +190,10 @@ async function fetchJson(url: string, fetch: SafeFetch): Promise<unknown> {
  * fetched card to it: its `id` MUST equal that DID (normalized), else FAIL CLOSED. This closes the
  * cross-origin confusion where a DID document's `KyaOsEntityCard` service entry points at a card for
  * a DIFFERENT DID (or a compromised third-party endpoint), which would otherwise attribute another
- * entity's claims/capabilities to the resolved DID. The `{ cardUrl }` and A2A paths carry no
- * independent DID to bind against, so they pass no `expectedDid` (the URL itself is the trust root).
+ * entity's claims/capabilities to the resolved DID. The comparison is over canonical encoded forms
+ * ({@link normalizeDid}), never over decoded paths, so it cannot conflate two DIDs that merely map to
+ * look-alike URLs. The `{ cardUrl }` and A2A paths carry no independent DID to bind against, so
+ * they pass no `expectedDid` (the URL itself is the trust root).
  */
 async function fetchCard(url: string, fetch: SafeFetch, expectedDid?: string): Promise<EntityCard> {
   const card = parseCard(await fetchJson(url, fetch));
@@ -210,15 +212,18 @@ function parseDidWeb(did: string): { host: string; path: string } {
 }
 
 /**
- * Canonicalize a DID for identity comparison. For `did:web` the DNS host is case-INsensitive and the
- * segments are percent-decoded (reusing {@link parseDidWeb}), so `did:web:Example.com` binds to
- * `did:web:example.com`; other DID methods (e.g. `did:key`, case-sensitive base58) compare verbatim.
+ * Canonicalize a DID for identity comparison. For `did:web` the DNS host is case-INsensitive, so it
+ * is lowercased, and every `:`-separated segment is percent-decoded and RE-encoded, so two spellings
+ * of one DID (`%3a` vs `%3A`, a needlessly escaped letter) compare equal. The re-encode is what keeps
+ * distinct DIDs distinct: a decoded `:` inside a segment (the port of `did:web:host%3A8443`, or a
+ * user named `alice:agent`) goes back to `%3A`, so it never collapses into a segment separator and
+ * `did:web:host:users:alice%3Aagent` stays a different DID from `did:web:host:users:alice:agent`.
+ * Other DID methods (e.g. `did:key`, case-sensitive base58) compare verbatim.
  */
 function normalizeDid(did: string): string {
   if (!did.startsWith('did:web:')) return did;
-  const { host, path } = parseDidWeb(did);
-  const base = `did:web:${host.toLowerCase()}`;
-  return path ? `${base}:${path.split('/').join(':')}` : base;
+  const [host = '', ...path] = did.slice('did:web:'.length).split(':').map(decodeURIComponent);
+  return `did:web:${[host.toLowerCase(), ...path].map(encodeURIComponent).join(':')}`;
 }
 
 /**

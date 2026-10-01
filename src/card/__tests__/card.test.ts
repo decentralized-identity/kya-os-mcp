@@ -440,6 +440,54 @@ describe('resolveCard', () => {
     expect(res.id).toBe('did:web:Example.com:agents:acme');
   });
 
+  it('fails closed, without fetching, on a reference form that carries no usable reference', async () => {
+    const { fetch, requested } = fetchMap();
+    await expect(resolveCard({ cardRef: cardUrl } as unknown as string, { fetch })).rejects.toThrow(/unrecognized reference form/);
+    await expect(resolveCard({ serverMeta: { other: card } }, { fetch })).rejects.toThrow(/serverMeta has no "org\.kya-os\/card" entry/);
+    await expect(resolveCard({ serverMeta: { 'org.kya-os/card': { name: 'Acme' } } }, { fetch })).rejects.toThrow(/summary has no string id/);
+    await expect(resolveCard({ a2a: { params: { cardUrl: 42 } } }, { fetch })).rejects.toThrow(/no string params\.cardUrl/);
+    await expect(resolveCard({ agentFacts: { name: 'Acme' } }, { fetch })).rejects.toThrow(/AgentFacts has no string id/);
+    expect(requested).toEqual([]);
+  });
+
+  describe('never conflates distinct DIDs that decode to look-alike paths', () => {
+    // Alice's card is public: anyone can re-serve its body from an endpoint they control.
+    const aliceDid = 'did:web:host.example:users:alice:agent'; // https://host.example/users/alice/agent/
+    const aliceCard = { id: aliceDid, entityType: 'agent', name: 'Alice Agent' };
+    /** Serve a DID document pointing at `endpoint`, and `body` at that endpoint. */
+    const serving = (body: unknown, endpoint: string) => async (url: string) => ({
+      ok: true,
+      status: 200,
+      json: async () =>
+        url.endsWith('/did.json')
+          ? { service: [{ type: 'KyaOsEntityCard', serviceEndpoint: endpoint }] }
+          : body,
+    });
+
+    it('rejects a card whose id only matches once an encoded ":" inside a segment is decoded', async () => {
+      // A DIFFERENT DID: one path segment, the user "alice:agent", under https://host.example/users/alice:agent/.
+      const fetch = serving(aliceCard, 'https://host.example/users/alice:agent/card.json');
+      await expect(resolveCard('did:web:host.example:users:alice%3Aagent', { fetch })).rejects.toThrow(/identity mismatch/);
+      // Equivalent spellings of ONE DID (a needlessly escaped letter) still bind.
+      const escaped = serving({ ...aliceCard, id: 'did:web:host.example:users:%61lice:agent' }, 'https://host.example/users/alice/agent/card.json');
+      expect((await resolveCard(aliceDid, { fetch: escaped })).id).toBe('did:web:host.example:users:%61lice:agent');
+    });
+
+    it('rejects a port-form card for a path-form DID (did:web:host:8443 is the /8443 path, not port 8443)', async () => {
+      const portCard = { ...aliceCard, id: 'did:web:host.example%3A8443' }; // https://host.example:8443
+      const fetch = serving(portCard, 'https://host.example/8443/card.json');
+      await expect(resolveCard('did:web:host.example:8443', { fetch })).rejects.toThrow(/identity mismatch/);
+    });
+
+    it('rejects the reverse confusion too (path-form card for an encoded-colon DID), and another method\'s id', async () => {
+      const fetch = serving({ ...aliceCard, id: 'did:web:host.example:8443' }, 'https://host.example:8443/card.json');
+      await expect(resolveCard('did:web:host.example%3A8443', { fetch })).rejects.toThrow(/identity mismatch/);
+      // A non-did:web id is compared verbatim, so it never matches a did:web request.
+      const keyCard = serving({ ...aliceCard, id: 'did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK' }, 'https://host.example/users/alice/agent/card.json');
+      await expect(resolveCard(aliceDid, { fetch: keyCard })).rejects.toThrow(/identity mismatch/);
+    });
+  });
+
   it('does NOT bind the { cardUrl } path (no independent DID): a mismatched id resolves', async () => {
     // The cardUrl/A2A rails carry no DID to bind against — the URL itself is the trust root.
     const foreign = { id: 'did:web:other.example', entityType: 'agent', name: 'Other' };
@@ -672,6 +720,17 @@ describe('parseCard', () => {
         },
       }),
     ).toThrow(/smuggled|[Uu]nrecognized/);
+  });
+  it('PRESERVES extra members on a capability attestation (JSON Schema: additionalProperties:true)', () => {
+    // Sidecar members such as a credentialStatus must reach the capability verifier, not be stripped.
+    const parsed = parseCard({
+      id: 'did:web:example.com:agents:a',
+      entityType: 'agent',
+      name: 'A',
+      capabilities: [{ name: 'pay', attestations: [{ vc: 'eyJ.x.y', credentialStatus: { statusListIndex: '9' } }] }],
+    });
+    const capability = parsed.capabilities![0] as { attestations: Array<Record<string, unknown>> };
+    expect(capability.attestations[0]).toEqual({ vc: 'eyJ.x.y', credentialStatus: { statusListIndex: '9' } });
   });
 });
 

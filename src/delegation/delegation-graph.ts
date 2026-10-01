@@ -7,13 +7,29 @@
  * Related Spec: KYA-OS §4.4, Delegation Chains
  */
 
+import type { CredentialStatus } from '../types/protocol.js';
+import { registrationConflict } from './delegation-registration.js';
+
 export interface DelegationNode {
   id: string;
   parentId: string | null;
   children: string[];
   issuerDid: string;
   subjectDid: string;
+  /**
+   * Reference to the node's status list entry. Revocation flips a status bit
+   * only when it has the form `<statusListCredential>#<index>`; prefer
+   * {@link credentialStatus}, which needs no parsing.
+   */
   credentialStatusId?: string;
+  /** The node's status list entry, as carried in the credential. */
+  credentialStatus?: CredentialStatus;
+  /**
+   * Set when the delegation is revoked in the graph (SPEC.md §6.5 step 1).
+   * Recorded independently of the status list bit, so revocation holds even
+   * for a delegation that has no status list entry.
+   */
+  revoked?: boolean;
 }
 
 export interface DelegationGraphStorageProvider {
@@ -27,6 +43,13 @@ export interface DelegationGraphStorageProvider {
 
 /** Optional transaction seam for providers that can link parent and child atomically. */
 export interface AtomicDelegationGraphStorageProvider extends DelegationGraphStorageProvider {
+  /**
+   * Insert `node` and link it under its parent in one step. When the id is
+   * already stored, a node identical in every registered field is a no-op,
+   * and any other SHOULD be rejected: overwriting would drop the stored node's
+   * revocation state and children. `DelegationGraphManager` checks first, but
+   * only the provider can close the race between that check and the write.
+   */
   registerNodeAtomic(node: DelegationNode): Promise<void>;
 }
 
@@ -46,6 +69,7 @@ export class DelegationGraphManager {
     issuerDid: string;
     subjectDid: string;
     credentialStatusId?: string;
+    credentialStatus?: CredentialStatus;
   }): Promise<DelegationNode> {
     const node: DelegationNode = {
       id: params.id,
@@ -54,13 +78,33 @@ export class DelegationGraphManager {
       issuerDid: params.issuerDid,
       subjectDid: params.subjectDid,
       credentialStatusId: params.credentialStatusId,
+      ...(params.credentialStatus ? { credentialStatus: params.credentialStatus } : {}),
     };
+
+    if (params.parentId === params.id) {
+      throw new Error(`Delegation ${params.id} cannot be its own parent`);
+    }
 
     if (params.parentId) {
       const parent = await this.storage.getNode(params.parentId);
       if (!parent) {
         throw new Error(`Parent delegation not found: ${params.parentId}`);
       }
+    }
+
+    // Registering an id again is a no-op when nothing registered changes, so
+    // a retry is safe. Anything else would replace the stored node, losing its
+    // revocation state and children or relinking it under its own descendant,
+    // so it is refused.
+    const existing = await this.storage.getNode(params.id);
+    if (existing) {
+      const conflict = registrationConflict(existing, node);
+      if (conflict === undefined) {
+        return existing;
+      }
+      throw new Error(
+        `Delegation ${params.id} is already registered with a different ${conflict}`,
+      );
     }
 
     if (supportsAtomicRegistration(this.storage)) {
@@ -102,6 +146,18 @@ export class DelegationGraphManager {
 
   async getNode(delegationId: string): Promise<DelegationNode | null> {
     return this.storage.getNode(delegationId);
+  }
+
+  /**
+   * Record (or clear) the graph's revocation mark on one node. Descendants are
+   * left to the caller; cascading revocation walks the subtree itself.
+   */
+  async setRevoked(delegationId: string, revoked: boolean): Promise<void> {
+    const node = await this.storage.getNode(delegationId);
+    if (!node) {
+      throw new Error(`Delegation not found: ${delegationId}`);
+    }
+    await this.storage.setNode({ ...node, revoked });
   }
 
   async getChildren(delegationId: string): Promise<DelegationNode[]> {

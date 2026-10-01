@@ -10,7 +10,10 @@ import {
   type DelegationNode,
 } from "../delegation-graph.js";
 import { StatusList2021Manager } from "../statuslist-manager.js";
+import { MemoryDelegationGraphStorage } from "../storage/memory-graph-storage.js";
+import { MemoryStatusListStorage } from "../storage/memory-statuslist-storage.js";
 import type { CredentialStatus } from "../../types/protocol.js";
+import { gzipSync, gunzipSync } from "node:zlib";
 
 describe("CascadingRevocationManager", () => {
   let mockGraph: DelegationGraphManager;
@@ -620,5 +623,95 @@ describe("CascadingRevocationManager", () => {
       expect(revoked).not.toContain("del-root");
       expect(revoked).not.toContain("del-child2");
     });
+  });
+});
+
+describe("CascadingRevocationManager over the memory graph and status list", () => {
+  const gzip = {
+    compress: async (d: Uint8Array) => new Uint8Array(gzipSync(d)),
+    decompress: async (d: Uint8Array) => new Uint8Array(gunzipSync(d)),
+  };
+  const UUID_STATUS_ID = "urn:uuid:4b1c0c56-7f0e-4c32-9b8e-0b1a2c3d4e5f";
+
+  function stack() {
+    const graphStorage = new MemoryDelegationGraphStorage();
+    const graph = new DelegationGraphManager(graphStorage);
+    const statusList = new StatusList2021Manager(
+      new MemoryStatusListStorage(),
+      { getDid: () => "did:web:issuer.example", getKeyId: () => "did:web:issuer.example#k" },
+      async () => ({ type: "Ed25519Signature2020", proofValue: "x" }),
+      gzip,
+      gzip,
+      { statusListBaseUrl: "https://status.example", defaultListSize: 1024 },
+    );
+    return { graph, graphStorage, statusList, revocation: new CascadingRevocationManager(graph, statusList) };
+  }
+
+  it("marks the subtree revoked in the graph even when no node has a status list entry", async () => {
+    const { graph, graphStorage, revocation } = stack();
+    await graph.registerDelegation({ id: "p", parentId: null, issuerDid: "did:user", subjectDid: "did:a" });
+    await graph.registerDelegation({ id: "c", parentId: "p", issuerDid: "did:a", subjectDid: "did:b" });
+
+    const events = await revocation.revokeDelegation("p");
+
+    expect(events.map((e) => e.delegationId)).toEqual(["p", "c"]);
+    expect((await graphStorage.getNode("p"))?.revoked).toBe(true);
+    expect((await graphStorage.getNode("c"))?.revoked).toBe(true);
+    expect(await revocation.isRevoked("p")).toEqual({ revoked: true, reason: "Directly revoked", revokedAncestor: undefined });
+    expect((await revocation.isRevoked("c")).revoked).toBe(true);
+    expect(await revocation.getRevokedInSubtree("p")).toEqual(["p", "c"]);
+  });
+
+  it("flips the status bit of a structured credentialStatus entry, and restore clears both", async () => {
+    const { graph, statusList, revocation } = stack();
+    const entry = await statusList.allocateStatusEntry("revocation");
+    await graph.registerDelegation({ id: "p", parentId: null, issuerDid: "did:user", subjectDid: "did:a", credentialStatus: entry });
+
+    await revocation.revokeDelegation("p");
+    expect(await statusList.checkStatus(entry)).toBe(true);
+
+    await revocation.restoreDelegation("p");
+    expect(await statusList.checkStatus(entry)).toBe(false);
+    expect((await revocation.isRevoked("p")).revoked).toBe(false);
+  });
+
+  it("registers, revokes and reads as revoked a delegation whose status id names no list entry", async () => {
+    const { graph, statusList, revocation } = stack();
+    const updateStatus = vi.spyOn(statusList, "updateStatus");
+    await graph.registerDelegation({
+      id: "p",
+      parentId: null,
+      issuerDid: "did:user",
+      subjectDid: "did:a",
+      credentialStatusId: UUID_STATUS_ID,
+    });
+    await graph.registerDelegation({ id: "c", parentId: "p", issuerDid: "did:a", subjectDid: "did:b" });
+
+    const events = await revocation.revokeDelegation("p");
+
+    expect(events.map((e) => e.delegationId)).toEqual(["p", "c"]);
+    expect(updateStatus).not.toHaveBeenCalled(); // there is no bit to flip
+    expect((await graph.getNode("p"))?.revoked).toBe(true);
+    expect((await revocation.isRevoked("p")).revoked).toBe(true);
+    expect(await revocation.validateDelegation("c")).toEqual({ valid: false, reason: "Ancestor p is revoked" });
+  });
+
+  it("keeps a revoked delegation revoked when its id is registered again", async () => {
+    const { graph, statusList, revocation } = stack();
+    const entry = await statusList.allocateStatusEntry("revocation");
+    const root = { id: "p", parentId: null, issuerDid: "did:user", subjectDid: "did:a", credentialStatusId: entry.id };
+    await graph.registerDelegation(root);
+    await graph.registerDelegation({ id: "c", parentId: "p", issuerDid: "did:a", subjectDid: "did:b" });
+    await revocation.revokeDelegation("p");
+
+    // A retry of the same registration changes nothing; dropping the status
+    // reference, which used to replace the node, is refused.
+    await graph.registerDelegation(root);
+    await expect(graph.registerDelegation({ ...root, credentialStatusId: undefined })).rejects.toThrow(
+      "Delegation p is already registered with a different credentialStatusId",
+    );
+
+    expect((await revocation.isRevoked("p")).revoked).toBe(true);
+    expect(await revocation.isRevoked("c")).toEqual({ revoked: true, reason: "Ancestor revoked", revokedAncestor: "p" });
   });
 });

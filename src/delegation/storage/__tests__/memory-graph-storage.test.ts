@@ -80,6 +80,47 @@ describe("MemoryDelegationGraphStorage", () => {
       expect((await storage.getNode(parent.id))?.children).toEqual(["del-child"]);
       expect(await storage.getNode("del-child")).not.toBeNull();
     });
+
+    it("should treat a repeat of a stored registration as a no-op, keeping children and revocation", async () => {
+      const root = createMockNode("del-root");
+      root.children = ["del-child"];
+      root.revoked = true;
+      await storage.setNode(root);
+
+      await storage.registerNodeAtomic(createMockNode("del-root"));
+
+      expect(await storage.getNode("del-root")).toEqual(root);
+
+      // A store that nulls out absent columns still sees the repeat as a repeat.
+      const persisted = { ...createMockNode("del-persisted"), children: ["del-x"], credentialStatusId: null };
+      await storage.setNode(persisted as unknown as DelegationNode);
+      await storage.registerNodeAtomic({ ...createMockNode("del-persisted"), credentialStatusId: undefined });
+      expect((await storage.getNode("del-persisted"))?.children).toEqual(["del-x"]);
+    });
+
+    it("should reject a conflicting registration of a stored id, leaving the stored node intact", async () => {
+      const root = createMockNode("del-root");
+      root.children = ["del-child"];
+      root.revoked = true;
+      await storage.setNode(root);
+
+      await expect(
+        storage.registerNodeAtomic({ ...createMockNode("del-root"), credentialStatusId: undefined })
+      ).rejects.toThrow("Delegation del-root is already registered with a different credentialStatusId");
+      await expect(
+        storage.registerNodeAtomic(createMockNode("del-root", "del-child"))
+      ).rejects.toThrow("Delegation del-root is already registered with a different parentId");
+      expect(await storage.getNode("del-root")).toEqual(root);
+    });
+
+    it("should reject a node that names itself as parent", async () => {
+      await storage.setNode(createMockNode("del-self"));
+
+      await expect(
+        storage.registerNodeAtomic(createMockNode("del-self", "del-self"))
+      ).rejects.toThrow("Delegation del-self cannot be its own parent");
+      expect((await storage.getNode("del-self"))?.parentId).toBeNull();
+    });
   });
 
   describe("getChildren", () => {
@@ -177,6 +218,16 @@ describe("MemoryDelegationGraphStorage", () => {
     it("should return empty array for non-existent node", async () => {
       const chain = await storage.getChain("non-existent");
       expect(chain).toEqual([]);
+    });
+
+    it("should throw on a parent cycle instead of walking it forever", async () => {
+      await storage.setNode(createMockNode("del-a", "del-b"));
+      await storage.setNode(createMockNode("del-b", "del-a"));
+
+      await expect(storage.getChain("del-a")).rejects.toThrow(
+        "Delegation graph has a parent cycle at del-a"
+      );
+      expect(() => storage.getStats()).toThrow("Delegation graph has a parent cycle");
     });
   });
 

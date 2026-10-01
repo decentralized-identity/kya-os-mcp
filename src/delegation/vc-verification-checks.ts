@@ -65,12 +65,17 @@ export function validateBasicProperties(
     return { valid: false, reason: "Delegation credential not yet valid" };
   }
 
+  // Only an active delegation authorizes anything: a status outside the
+  // schema's enum, or none at all, is not "active" and fails closed.
   const delegation = vc.credentialSubject.delegation;
-  if (delegation.status === "revoked") {
-    return { valid: false, reason: "Delegation status is revoked" };
-  }
-  if (delegation.status === "expired") {
-    return { valid: false, reason: "Delegation status is expired" };
+  if (delegation.status !== "active") {
+    return {
+      valid: false,
+      reason:
+        delegation.status === undefined
+          ? "Delegation status is missing"
+          : `Delegation status is ${String(delegation.status)}`,
+    };
   }
 
   if (!delegation.issuerDid || !delegation.subjectDid) {

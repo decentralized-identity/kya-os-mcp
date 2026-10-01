@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import {
   DelegationCredentialSchema,
@@ -251,6 +254,42 @@ describe('DelegationCredentialSchema — @context arity (JSON Schema parity)', (
   });
 });
 
+describe('DelegationCredentialSchema — type (no type confusion)', () => {
+  const subject = {
+    id: 'urn:zcap:root', invoker: AGENT_A, parentCapability: RESOURCE,
+    invocationTarget: RESOURCE, allowedAction: ['payments.transfer'],
+  };
+  const withType = (type: string[]) => ({
+    '@context': [DELEGATION_CONTEXT_V2, ZCAP_CONTEXT],
+    type,
+    issuer: OWNER,
+    credentialSubject: subject,
+  });
+
+  it('rejects a VC whose subject merely LOOKS like a ZCAP but is not typed a DelegationCredential', () => {
+    expect(DelegationCredentialSchema.safeParse(withType(['CapabilityAttestationCredential'])).success).toBe(false);
+    expect(DelegationCredentialSchema.safeParse(withType(['VerifiableCredential', 'CapabilityAttestationCredential'])).success).toBe(false);
+    // Both types, in any order and alongside others, still parse.
+    expect(DelegationCredentialSchema.safeParse(withType([DELEGATION_CREDENTIAL_TYPE, 'VerifiableCredential'])).success).toBe(true);
+    expect(
+      DelegationCredentialSchema.safeParse(withType(['VerifiableCredential', DELEGATION_CREDENTIAL_TYPE, 'Extra'])).success,
+    ).toBe(true);
+  });
+
+  it('rejects a type list missing VerifiableCredential', () => {
+    expect(DelegationCredentialSchema.safeParse(withType([DELEGATION_CREDENTIAL_TYPE, 'Other'])).success).toBe(false);
+  });
+
+  it('the published JSON Schema requires the same two types', () => {
+    const schemaPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../schemas/card-delegation-credential.json');
+    const schema = JSON.parse(readFileSync(schemaPath, 'utf8')) as {
+      properties: { type: { allOf?: Array<{ contains?: { const?: string } }> } };
+    };
+    const required = (schema.properties.type.allOf ?? []).map((clause) => clause.contains?.const);
+    expect(required).toEqual(['VerifiableCredential', DELEGATION_CREDENTIAL_TYPE]);
+  });
+});
+
 describe('attenuates + accessors', () => {
   it('attenuates() returns [] for a valid hop and reasons for a bad one', () => {
     expect(attenuates(root(), child())).toEqual([]);
@@ -267,6 +306,32 @@ describe('attenuates + accessors', () => {
     const p = root({ caveats: [maxAmount('1000.00', 'USD')] }); // USD-only
     const c = child({ caveats: [{ type: 'MaxAmount', limit: '500.00' }] }); // any currency — broader
     expect(attenuates(p, c).some((r) => /caveat "MaxAmount"/.test(r))).toBe(true);
+  });
+
+  describe('MaxAmount compares the full decimal, never a rounded one', () => {
+    const narrows = (parentLimit: string, childLimit: string): boolean =>
+      !attenuates(root({ caveats: [maxAmount(parentLimit)] }), child({ caveats: [maxAmount(childLimit)] }))
+        .some((r) => /caveat "MaxAmount"/.test(r));
+
+    it('rejects a child 9x its parent when both sit below a millionth', () => {
+      expect(narrows('0.0000001', '0.0000009')).toBe(false);
+      expect(narrows('0.0000009', '0.0000001')).toBe(true);
+    });
+
+    it('rejects 100.0000009 as a "narrowing" of 100', () => {
+      expect(narrows('100', '100.0000009')).toBe(false);
+      expect(narrows('100.0000009', '100')).toBe(true);
+    });
+
+    it('decides at any precision, and stays fail-closed on a non-decimal limit', () => {
+      expect(narrows('12345678901234567890.123456788', '12345678901234567890.123456789')).toBe(false);
+      expect(narrows('12345678901234567890.123456789', '12345678901234567890.123456788')).toBe(true);
+      expect(narrows('100', '100.000000000')).toBe(true);
+      expect(narrows('1.5', '1.50')).toBe(true);
+      expect(narrows('100', '1e2')).toBe(false);
+      expect(narrows('100', '-5')).toBe(false);
+      expect(narrows('abc', '1')).toBe(false);
+    });
   });
 
   it('responsiblePartyOf / leafInvokerOf are undefined for an empty chain', () => {

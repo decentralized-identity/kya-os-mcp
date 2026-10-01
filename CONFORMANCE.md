@@ -52,7 +52,7 @@ Implementation MUST:
 - Generate cryptographically secure random 32-byte private seed
 - Derive 32-byte public key from seed
 - Derive `did:key` DID from public key using multicodec prefix `0xed01` and base58btc encoding
-- Key ID format: `<did>#keys-1`
+- Key ID format: `<did>#<multibase>`, the W3C did:key verification method ID (SPEC.md §4.3)
 
 #### L1.2 — SHA-256 Hashing
 

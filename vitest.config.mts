@@ -30,7 +30,16 @@ export default defineConfig({
     // contributor may have checked out under these dirs (each holds a full repo
     // copy whose tests would otherwise be collected twice). No-op on a clean
     // checkout / CI, where these dirs do not exist.
-    exclude: [...configDefaults.exclude, '**/.worktrees/**', '**/.claude/**'],
+    exclude: [
+      ...configDefaults.exclude,
+      '**/.worktrees/**',
+      '**/.claude/**',
+      // A standalone app with its own dependencies (hono, WebAuthn, the
+      // published package) and its own vitest run — `cd examples/agentic-commerce
+      // && npm install && npm test`. Collecting it here would need those
+      // dependencies at the repo root.
+      'examples/agentic-commerce/**',
+    ],
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],

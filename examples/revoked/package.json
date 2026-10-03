@@ -32,7 +32,7 @@
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@simplewebauthn/server": "^14.0.3",
     "dotenv": "^18.0.1",
-    "hono": "^4.13.8"
+    "hono": "^4.13.9"
   },
   "devDependencies": {
     "@types/node": "^26.5.1",

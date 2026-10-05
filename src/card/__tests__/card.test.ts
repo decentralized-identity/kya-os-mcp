@@ -113,6 +113,48 @@ describe('verifyCard', () => {
     expect(res.ok).toBe(true);
     expect(res.conformanceLevel).toBe('L1');
   });
+
+  describe('attestations', () => {
+    const attested: EntityCard = {
+      id: 'did:web:example.com:agents:kyc',
+      entityType: 'agent',
+      name: 'KYC Agent',
+      attestations: [
+        { type: 'IdentityVerification', vc: 'kyc-jwt', issuer: 'did:web:kyc.example' },
+        { type: 'CapabilityAttestation', vc: { proof: {} }, subject: 'did:web:example.com:agents:other' },
+      ],
+    };
+
+    it('reports every attestation unverified, and the card not ok, without an attestationVerifier', async () => {
+      const res = await verifyCard(attested, {});
+      expect(res.attestations).toEqual([
+        { type: 'IdentityVerification', subject: undefined, verified: false },
+        { type: 'CapabilityAttestation', subject: 'did:web:example.com:agents:other', verified: false },
+      ]);
+      expect(res.ok).toBe(false);
+    });
+
+    it('verifies each attestation against its subject, defaulting to the card DID', async () => {
+      const seen: string[] = [];
+      const res = await verifyCard(attested, {
+        attestationVerifier: async (_attestation, ctx) => {
+          seen.push(ctx.subjectDid);
+          return true;
+        },
+      });
+      expect(seen).toEqual([attested.id, 'did:web:example.com:agents:other']);
+      expect(res.attestations.every((a) => a.verified)).toBe(true);
+      expect(res.ok).toBe(true);
+    });
+
+    it('is not ok when any one attestation fails', async () => {
+      const res = await verifyCard(attested, {
+        attestationVerifier: async (attestation) => attestation.type === 'IdentityVerification',
+      });
+      expect(res.attestations.map((a) => a.verified)).toEqual([true, false]);
+      expect(res.ok).toBe(false);
+    });
+  });
 });
 
 describe('verifyCard — live proof, revocation, and CIMD seams', () => {

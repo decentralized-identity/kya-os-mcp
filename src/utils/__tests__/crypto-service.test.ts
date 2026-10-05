@@ -478,6 +478,23 @@ describe('CryptoService', () => {
       expect(await cryptoService.verifyJWS(jws, validJwk, { detachedPayload: signed })).toBe(false);
     });
 
+    it('rejects a detached JWS whose header or signature does not decode, without verifying', async () => {
+      const [headerB64, , signatureB64] = createValidJWS().split('.') as [string, string, string];
+      const badHeader = `${Buffer.from('not json').toString('base64url')}..${signatureB64}`;
+      const badSignature = `${headerB64}..not*base64url`;
+      for (const jws of [badHeader, badSignature]) {
+        expect(await cryptoService.verifyJWS(jws, validJwk, { detachedPayload: '{}' })).toBe(false);
+      }
+      expect(mockCryptoProvider.verify).not.toHaveBeenCalled();
+    });
+
+    it('rejects a compact JWS whose payload does not parse, even with a detached payload', async () => {
+      const [headerB64, , signatureB64] = createValidJWS().split('.') as [string, string, string];
+      const jws = `${headerB64}.${Buffer.from('not json').toString('base64url')}.${signatureB64}`;
+      expect(await cryptoService.verifyJWS(jws, validJwk, { detachedPayload: '{}' })).toBe(false);
+      expect(mockCryptoProvider.verify).not.toHaveBeenCalled();
+    });
+
     it('should handle signature verification failure', async () => {
       mockCryptoProvider.verify = vi.fn().mockResolvedValue(false);
       const validJws = createValidJWS();

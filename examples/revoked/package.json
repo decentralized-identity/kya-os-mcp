@@ -27,12 +27,12 @@
   "dependencies": {
     "@cosmjs/proto-signing": "^0.39.0",
     "@cosmjs/stargate": "^0.39.0",
-    "@hono/node-server": "^2.1.1",
+    "@hono/node-server": "^2.1.3",
     "@kya-os/mcp": "^1.14.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@simplewebauthn/server": "^14.0.3",
     "dotenv": "^18.0.1",
-    "hono": "^4.13.8"
+    "hono": "^4.13.12"
   },
   "devDependencies": {
     "@types/node": "^26.5.1",

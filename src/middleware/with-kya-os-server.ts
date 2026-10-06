@@ -26,6 +26,7 @@ import {
   type KyaOsMiddleware,
 } from "./with-kya-os.js";
 import { createKyaOsTransport, type Transport } from "./kya-os-transport.js";
+import { logger } from "../logging/index.js";
 import { z } from "zod";
 
 export interface WithKyaOsOptions {
@@ -118,6 +119,22 @@ export async function generateIdentity(
 interface McpServerLike {
   connect(transport: Transport): Promise<unknown>;
   registerTool(...args: unknown[]): void;
+  /** `McpServer.isConnected()`; SDK releases before 1.10 do not have it. */
+  isConnected?(): boolean;
+  /** The low-level SDK server, whose `transport` is set while it is connected. */
+  server?: { transport?: unknown };
+}
+
+/**
+ * Whether `server` is already connected to a transport. Prefers
+ * `isConnected()` and falls back to the low-level server's `transport` on
+ * SDKs that predate it.
+ */
+function isAlreadyConnected(server: McpServerLike): boolean {
+  if (typeof server.isConnected === "function") {
+    return server.isConnected();
+  }
+  return server.server?.transport !== undefined;
 }
 
 /**
@@ -137,6 +154,10 @@ interface McpServerLike {
  * await server.connect(transport); // KyaOsTransport wraps silently
  * ```
  *
+ * Call it before `server.connect()`. On a server that is already connected it
+ * logs a warning, because the live transport is never wrapped and its
+ * responses carry no proofs.
+ *
  * @param server  - McpServer instance
  * @param options - Configuration
  * @returns The KyaOsMiddleware instance for advanced usage (wrapWithDelegation, etc.)
@@ -145,6 +166,14 @@ export async function withKyaOs(
   server: McpServerLike,
   options: WithKyaOsOptions,
 ): Promise<KyaOsMiddleware> {
+  if (isAlreadyConnected(server)) {
+    logger.warn(
+      "[kya-os] withKyaOs() was called on a server that is already connected. " +
+        "Proofs will not be injected on the existing connection, because withKyaOs() " +
+        "wraps the transport inside server.connect(). Call withKyaOs() before server.connect().",
+    );
+  }
+
   const identity =
     options.identity ?? (await generateIdentity(options.crypto));
 

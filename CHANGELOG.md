@@ -7,6 +7,18 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Fixed
+
+- **`withKyaOs` warns when the server is already connected.** It adds proofs
+  by wrapping the transport that a later `server.connect()` receives, so
+  calling it after `connect()` left the live connection unwrapped: tool
+  responses carried no proofs and nothing said so. It now logs a warning that
+  proofs will not be injected on the existing connection and that
+  `withKyaOs()` must run before `server.connect()`. It warns rather than
+  throws, so existing callers keep working. Detection uses
+  `McpServer.isConnected()` where the SDK has it, and the low-level server's
+  `transport` on SDK releases before 1.10.
+
 ## [1.17.0] - 2026-10-05
 
 ### Added

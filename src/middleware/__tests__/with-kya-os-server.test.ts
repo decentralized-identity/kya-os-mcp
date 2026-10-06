@@ -1,6 +1,9 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { generateIdentity, withKyaOs } from "../with-kya-os-server.js";
 import { NodeCryptoProvider } from "../../__tests__/utils/node-crypto-provider.js";
+import { logger } from "../../logging/index.js";
 import { KYA_OS_PROOF_META_KEY, LEGACY_PROOF_META_KEY } from "../../proof/index.js";
 import { MemoryNonceCacheProvider } from "../../providers/memory.js";
 import { RESPONSE_PROOF_PROFILE_ENVELOPE } from "../../types/protocol.js";
@@ -199,6 +202,92 @@ describe("withKyaOs", () => {
 
       const meta = result._meta as Record<string, { meta: { prf?: string } }>;
       expect(meta[KYA_OS_PROOF_META_KEY]!.meta.prf).toBe(RESPONSE_PROOF_PROFILE_ENVELOPE);
+    });
+  });
+
+  describe("on a server that is already connected", () => {
+    const ALREADY_CONNECTED = /already connected/;
+    const openServers: McpServer[] = [];
+
+    /** A real SDK server with one app tool registered, as an app has before it connects. */
+    function realServer(): McpServer {
+      const server = new McpServer({ name: "fc-013", version: "1.0.0" });
+      server.registerTool("greet", { description: "Say hello" }, async () => ({
+        content: [{ type: "text", text: "Hello!" }],
+      }));
+      openServers.push(server);
+      return server;
+    }
+
+    function alreadyConnectedWarnings(warn: ReturnType<typeof vi.spyOn>): unknown[][] {
+      return warn.mock.calls.filter((call) => ALREADY_CONNECTED.test(String(call[0])));
+    }
+
+    afterEach(async () => {
+      vi.restoreAllMocks();
+      await Promise.all(openServers.splice(0).map((server) => server.close()));
+    });
+
+    it("warns that proofs will not reach the live connection when connect() ran first", async () => {
+      const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+      const server = realServer();
+      const [, serverTransport] = InMemoryTransport.createLinkedPair();
+      await server.connect(serverTransport);
+
+      await withKyaOs(server, { crypto });
+
+      const warnings = alreadyConnectedWarnings(warn);
+      expect(warnings).toHaveLength(1);
+      expect(String(warnings[0]![0])).toMatch(/proofs will not be injected/i);
+      expect(String(warnings[0]![0])).toMatch(/before server\.connect\(\)/);
+    });
+
+    it("warns before the SDK refuses to register _kyaos on a server connected with no tools", async () => {
+      const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+      const server = new McpServer({ name: "fc-013-empty", version: "1.0.0" });
+      openServers.push(server);
+      const [, serverTransport] = InMemoryTransport.createLinkedPair();
+      await server.connect(serverTransport);
+
+      await expect(withKyaOs(server, { crypto })).rejects.toThrow(/after connecting/);
+
+      expect(alreadyConnectedWarnings(warn)).toHaveLength(1);
+    });
+
+    it("does not warn when withKyaOs() runs before connect()", async () => {
+      const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+      const server = realServer();
+
+      await withKyaOs(server, { crypto });
+      const [, serverTransport] = InMemoryTransport.createLinkedPair();
+      await server.connect(serverTransport);
+
+      expect(alreadyConnectedWarnings(warn)).toHaveLength(0);
+    });
+
+    it("falls back to server.server.transport on an SDK without isConnected()", async () => {
+      const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+      const server = {
+        connect: vi.fn().mockResolvedValue(undefined),
+        registerTool: vi.fn(),
+        server: { transport: { start: vi.fn(), send: vi.fn(), close: vi.fn() } },
+      };
+
+      await withKyaOs(server, { crypto });
+
+      expect(alreadyConnectedWarnings(warn)).toHaveLength(1);
+    });
+
+    it("neither crashes nor warns on a server with no isConnected() and no inner transport", async () => {
+      const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+      const server = {
+        connect: vi.fn().mockResolvedValue(undefined),
+        registerTool: vi.fn(),
+      };
+
+      await expect(withKyaOs(server, { crypto })).resolves.toBeDefined();
+
+      expect(alreadyConnectedWarnings(warn)).toHaveLength(0);
     });
   });
 });

@@ -7,6 +7,8 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.17.0] - 2026-10-05
+
 ### Added
 
 - **Scope helpers in `@kya-os/mcp/delegation`.** `matcherContains(outer,
@@ -62,6 +64,17 @@ Versioning: https://semver.org/spec/v2.0.0.html
   contradicts the W3C did:key method and which no standard resolver,
   including this one, resolves. They, and `CONFORMANCE.md` L1.1, now give the
   W3C form. No code changes.
+- **`json-canonicalize` 3.0.1.** Entity Card proofs (the request hash and the
+  covered claims) and cheqd DLR content still canonicalize through
+  `json-canonicalize`. 3.x throws on `NaN` and `Infinity`, as RFC 8785
+  §3.2.2.3 requires, where 2.0.0 wrote `null`; every JSON value canonicalizes
+  to the same bytes as before. A received JSON-RPC request cannot carry those
+  values, so verifying calls is unaffected. Minting a card proof, or preparing
+  DLR content, with a non-finite number now fails instead of hashing `null`:
+  the rule `canonicalizeJson` already applies to response proofs and audit
+  records. The package also ships dual ESM/CJS builds.
+- **Built with TypeScript 6.0.** The emitted JavaScript and declaration files
+  are byte-identical to the 5.9 build.
 
 ### Security
 

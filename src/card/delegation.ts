@@ -10,9 +10,9 @@
  * `MaxAmount`/`ValidUntil` ≤ parent, no parent caveat silently dropped, unknown caveats replicated
  * verbatim); top-level `validUntil` narrowing; CONTINUITY (the parent's delegate `invoker` MUST be
  * the child's `issuer` — you only re-delegate what was delegated to YOUR key — and
- * `child.parentCapability` references the parent `id`); a constant `invocationTarget`; depth ≤
- * {@link MAX_DELEGATION_DEPTH}; ROOT `parentCapability` = the resource, `issuer`/`invocationTarget`
- * = (optional) resource owner / resource. THE JOIN (recomputed, asserted nowhere):
+ * `child.parentCapability` references the parent `id`); a constant `invocationTarget`; at most
+ * `ctx.maxChainLength` credentials, when the caller sets one; ROOT `parentCapability` = the resource,
+ * `issuer`/`invocationTarget` = (optional) resource owner / resource. THE JOIN (recomputed, asserted nowhere):
  * {@link responsiblePartyOf} = `issuer(rootVC)`, {@link leafInvokerOf} = the leaf delegate a verifier
  * asserts equals `proof.did`. Revocation reuses the injected {@link BitstringRevocationChecker} seam from
  * `./revocation` (no status-list churn reaches callers; NO `mcp-i-core` runtime dep). Per-hop
@@ -31,7 +31,7 @@ export const DELEGATION_CONTEXT_V2 = 'https://www.w3.org/ns/credentials/v2'; // 
 export const ZCAP_CONTEXT = 'https://w3id.org/security/zcap/v1'; // ZCAP-LD capability context
 export const KYA_OS_DELEGATION_CONTEXT = 'https://kya-os.org/ns/delegation/v1'; // KYA-OS ns
 export const DELEGATION_CREDENTIAL_TYPE = 'DelegationCredential'; // 2nd `type` after VerifiableCredential
-export const MAX_DELEGATION_DEPTH = 10; // fail-closed beyond this
+export const MAX_DELEGATION_DEPTH = 10; // a suggested `maxChainLength`; applied only when a caller passes it
 
 /** A monotone-narrowing constraint: `{type:'ValidUntil',date}` or `{type:'MaxAmount',limit,currency}`.
  *  The flat shape keeps typing clean; unknown caveat types are compared verbatim (fail-closed). */
@@ -230,7 +230,16 @@ export function attenuates(parent: DelegationCredential, child: DelegationCreden
 export interface DelegationChainContext {
   resourceOwner?: string; // asserted issuer of the ROOT VC (accountable resource owner)
   resource?: string; // asserted `invocationTarget` of the ROOT VC (the delegated resource)
-  maxDepth?: number; // override the fail-closed depth cap (default MAX_DELEGATION_DEPTH)
+  /**
+   * Local cost limit: the most credentials to accept in one chain, root to leaf inclusive. Each hop
+   * may cost a signature check and a status-list fetch. It bounds the verifier's own work, not how far
+   * authority may be delegated. Unset accepts any length; a value that is not a positive integer
+   * rejects every chain. {@link MAX_DELEGATION_DEPTH} is a suggested value. The base profile's
+   * `validateDelegationChain` (`@kya-os/mcp/delegation`) takes the same option and counts the same way.
+   */
+  maxChainLength?: number;
+  /** @deprecated Use `maxChainLength`, which takes precedence when both are set. */
+  maxDepth?: number;
   /** Injectable clock (epoch ms) for the wall-clock expiry gate; default `Date.now` (deterministic tests inject it). */
   now?: () => number;
 }
@@ -272,7 +281,7 @@ export interface DelegationChainResult {
   leafInvoker?: string; // recomputed leaf delegate — asserted `=== proof.did` by a verifier
   invocationTarget?: string; // the resource authorized (constant along the chain)
   allowedAction: string[]; // the effective (leaf) `allowedAction` set
-  depth: number; // number of hops
+  depth: number; // number of credentials, root to leaf
 }
 
 function rootReasons(root: DelegationCredential, ctx: DelegationChainContext): string[] {
@@ -297,14 +306,20 @@ export function validateDelegationChain(
   ctx: DelegationChainContext = {},
 ): DelegationChainResult {
   const depth = chain.length;
-  const maxDepth = ctx.maxDepth ?? MAX_DELEGATION_DEPTH;
+  const maxChainLength = ctx.maxChainLength ?? ctx.maxDepth;
   if (depth === 0) {
     return { ok: false, reasons: ['empty delegation chain'], allowedAction: [], depth };
   }
   const root = chain[0]!;
   const leaf = chain[depth - 1]!;
   const reasons: string[] = [];
-  if (depth > maxDepth) reasons.push(`delegation chain depth ${depth} exceeds the maximum of ${maxDepth}`);
+  if (maxChainLength !== undefined) {
+    if (!Number.isInteger(maxChainLength) || maxChainLength < 1) {
+      reasons.push(`maxChainLength must be a positive integer (got ${String(maxChainLength)})`);
+    } else if (depth > maxChainLength) {
+      reasons.push(`delegation chain depth ${depth} exceeds the maximum of ${maxChainLength}`);
+    }
+  }
   reasons.push(...rootReasons(root, ctx));
   for (let i = 1; i < depth; i += 1) {
     reasons.push(...attenuates(chain[i - 1]!, chain[i]!));

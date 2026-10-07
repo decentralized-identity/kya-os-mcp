@@ -52,7 +52,7 @@ Summary of the entire surface:
 - **Negotiation**: a settings object (`version`, `proofProfiles`, `didMethods`, `required`) under `capabilities.extensions["org.kya-os/decentralized-authority"]`, carried per-request in `_meta["io.modelcontextprotocol/clientCapabilities"]` and in `server/discover` results; `{}` means supported with defaults.
 - **Required mode**: servers with `required: true` reject undeclared clients with core `-32021`, carrying the core schema's `requiredCapabilities` member plus `error.data.reason: "extension_not_declared"`; optional servers degrade to core behavior, and `server/discover` is never gated so discovery stays reachable.
 - **Request proof**: a self-contained holder-of-key proof under `_meta["org.kya-os/request-proof"]` (the role-named carrier of the `org.kya-os/proof.v1` profile), hash-bound to the request with `params._meta` excluded, audience-bound, nonce-fresh, 60-second lifetime, verified fail-closed.
-- **Authority**: W3C VC delegation chains with subset-only attenuation, continuity, depth caps, and status-list revocation; referenced from proofs, never asserted.
+- **Authority**: W3C VC delegation chains with subset-only attenuation, continuity, and status-list revocation; referenced from proofs, never asserted.
 - **Consent**: a signed challenge result whose proof binds the authorization URL against substitution.
 - **Gateway propagation**: the `KYA-OS-*` outbound header registry with authoritative-versus-advisory trust tiers, plus body-free routing on the core `Mcp-Method`/`Mcp-Name` headers.
 - **Errors**: no new numeric codes anywhere; snake_case reason codes ride `error.data.reason`.

@@ -850,10 +850,18 @@ chain:
   re-delegate what was delegated to YOUR key), and child `parentCapability` MUST reference the
   parent capability `id`;
 - **constant `invocationTarget`** along the chain;
-- **depth** MUST NOT exceed **10** hops (`MAX_DELEGATION_DEPTH`);
 - **root** - root `parentCapability` MUST equal its `invocationTarget` (the resource); when a
   resource owner / resource is asserted, root `issuer` MUST equal the resource owner and root
   `invocationTarget` MUST equal the resource.
+
+**Chain length (non-normative).** As in §6.4, this profile does not limit how many times a
+capability may be re-delegated. Earlier drafts listed a 10-hop cap among the invariants above,
+but a longer chain broadens nothing, so it was never an attenuation rule. A verifier may cap how
+many credentials it evaluates for one chain as a local resource limit: each hop may cost a
+signature check and a status-list fetch. The reference implementation takes the same
+`maxChainLength` option here, unset by default, and exports `MAX_DELEGATION_DEPTH` (10) as a
+suggested value. Such a cap is the verifier's policy, not a protocol rule, and a chain it refuses
+is not thereby invalid elsewhere.
 
 A verifying resource SHOULD assert its own identity as the expected resource when it evaluates a
 chain (the `resource` context of `evaluateDelegationChain`), so that a chain minted for a

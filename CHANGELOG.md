@@ -20,6 +20,27 @@ Versioning: https://semver.org/spec/v2.0.0.html
   startup rather than rejecting every call. The cap applies to the chain
   `resolveDelegationChain` returns, not to the resolver's own fetches.
 
+### Changed
+
+- **The Entity Card chain limit is opt-in, as on the base profile.**
+  `validateDelegationChain` and `evaluateDelegationChain` in
+  `@kya-os/mcp/card` rejected any chain of more than `MAX_DELEGATION_DEPTH`
+  (10) credentials unless the caller passed a larger `maxDepth`. They now
+  accept any length unless the caller sets `maxChainLength`, the option's name
+  on both profiles. **A verifier that relied on the default now accepts chains
+  of 11 credentials or more; pass `maxChainLength: MAX_DELEGATION_DEPTH` to
+  keep the previous behavior.** A longer chain broadens nothing: every hop
+  still attenuates its parent, so the cap bounded only the verifier's work.
+  SPEC.md §6.10 drops the cap from the attenuation invariants and states it,
+  non-normatively, as a local limit, as §6.4 does for the base profile. A
+  limit that is not a positive integer rejects every chain; previously `NaN`
+  accepted every length.
+
+### Deprecated
+
+- **`maxDepth` on the Entity Card `DelegationChainContext`.** Use
+  `maxChainLength`, which wins when both are set.
+
 ### Fixed
 
 - **The `example:*` scripts run from a fresh clone.** They resolved

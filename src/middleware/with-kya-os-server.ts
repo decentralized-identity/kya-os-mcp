@@ -26,6 +26,7 @@ import {
   type KyaOsMiddleware,
 } from "./with-kya-os.js";
 import { createKyaOsTransport, type Transport } from "./kya-os-transport.js";
+import { logger } from "../logging/index.js";
 import { z } from "zod";
 
 export interface WithKyaOsOptions {
@@ -118,6 +119,10 @@ export async function generateIdentity(
 interface McpServerLike {
   connect(transport: Transport): Promise<unknown>;
   registerTool(...args: unknown[]): void;
+  /** McpServer reports whether a transport is already connected (SDK 1.10+). */
+  isConnected?(): boolean;
+  /** The underlying Server, whose `transport` is set once connected (SDK 1.3+). */
+  server?: { transport?: unknown };
 }
 
 /**
@@ -145,6 +150,21 @@ export async function withKyaOs(
   server: McpServerLike,
   options: WithKyaOsOptions,
 ): Promise<KyaOsMiddleware> {
+  // withKyaOs() wraps transports by patching connect(), so it only reaches
+  // transports connected from now on. Said before anything is registered: if
+  // the server had no tools yet, the SDK refuses the _kyaos registration below
+  // with a generic error, and this explains it; if it had some, nothing else
+  // would, and the connected transport would serve tool results unproved.
+  const alreadyConnected =
+    server.isConnected?.() ?? server.server?.transport !== undefined;
+  if (options.proofAllTools !== false && alreadyConnected) {
+    logger.warn(
+      "[kya-os] withKyaOs() ran after server.connect(): the transport that is already " +
+        "connected is not wrapped, so its tool results carry no KYA-OS proof and no " +
+        "transport audit record. Call withKyaOs() before server.connect().",
+    );
+  }
+
   const identity =
     options.identity ?? (await generateIdentity(options.crypto));
 

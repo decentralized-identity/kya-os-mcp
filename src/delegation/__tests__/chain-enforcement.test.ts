@@ -262,6 +262,61 @@ describe("validateDelegationChain", () => {
     expect(r.valid).toBe(true);
   });
 
+  describe("maxChainLength", () => {
+    /** A linked, audience-bound chain of `length` credentials, root first. */
+    const linkedChain = (length: number): DelegationCredential[] =>
+      Array.from({ length }, (_, i) =>
+        cred({
+          id: `c${i}`,
+          issuerDid: i === 0 ? "did:a" : `did:h${i}`,
+          subjectDid: `did:h${i + 1}`,
+          ...(i > 0 ? { parentId: `c${i - 1}` } : {}),
+          audience: SERVER,
+          scopes: ["read"],
+        }),
+      );
+    const depsFor = (chain: DelegationCredential[], verifier = okVerifier): ChainEnforcementDeps => ({
+      ...baseDeps,
+      verifier,
+      resolveDelegationChain: async () => chain,
+    });
+
+    it("accepts a chain exactly at the bound", async () => {
+      const chain = linkedChain(3);
+      const r = await validateDelegationChain(chain[2]!, { ...depsFor(chain), maxChainLength: 3 });
+      expect(r.valid).toBe(true);
+    });
+
+    it("rejects a longer chain before verifying any credential in it", async () => {
+      const chain = linkedChain(4);
+      const verify = vi.fn(async () => ({ valid: true }));
+      const r = await validateDelegationChain(chain[3]!, {
+        ...depsFor(chain, { verifyDelegationCredential: verify }),
+        maxChainLength: 3,
+      });
+      expect(r.valid).toBe(false);
+      expect(r.reason).toBe("Delegation chain of 4 credentials exceeds the maximum of 3");
+      expect(verify).not.toHaveBeenCalled();
+    });
+
+    it("bounds a single root credential too", async () => {
+      const [root] = linkedChain(1);
+      expect((await validateDelegationChain(root!, { ...baseDeps, maxChainLength: 1 })).valid).toBe(true);
+    });
+
+    it("leaves chain length unbounded when unset", async () => {
+      const chain = linkedChain(12);
+      expect((await validateDelegationChain(chain[11]!, depsFor(chain))).valid).toBe(true);
+    });
+
+    it.each([0, -1, 1.5, Number.NaN])("rejects every chain when the bound is %s", async (bound) => {
+      const [root] = linkedChain(1);
+      const r = await validateDelegationChain(root!, { ...baseDeps, maxChainLength: bound });
+      expect(r.valid).toBe(false);
+      expect(r.reason).toMatch(/maxChainLength must be a positive integer/);
+    });
+  });
+
   it("rejects a credential carrying credentialStatus when no status resolver is configured", async () => {
     const root = cred({ id: "root", issuerDid: "did:a", subjectDid: "did:agent", scopes: ["read"], withStatus: true });
     const r = await validateDelegationChain(root, { ...baseDeps, statusListConfigured: false });

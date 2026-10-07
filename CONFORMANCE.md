@@ -161,8 +161,14 @@ intact while swapping the `authorizationUrl`, and only the recompute detects it.
 
 `_meta` is the MCP per-request metadata channel and is shared with reserved
 reverse-DNS keys. A conformant verifier MUST:
-- Read the KYA-OS proof from `org.kya-os/proof` and, for backward compatibility,
-  from the legacy bare `proof` key.
+- Read the detached response proof from `org.kya-os/response-proof`. Through
+  1.x, also accept the prior keys `org.kya-os/proof` and bare `proof` (SPEC
+  §7.6), in that order: the first key present wins. Servers write `org.kya-os/response-proof` and, unless configured with
+  `emitLegacyProofKey: false`, mirror it under bare `proof`; nothing writes
+  `org.kya-os/proof`.
+- Treat the holder-of-key request proof, under `org.kya-os/request-proof`
+  (SPEC-ENTITY-CARD §8.1), as a separate profile: never read one in place of
+  the other.
 - Process **only** the KYA-OS proof key; ignore every other `_meta` key (never
   hash it, never trust it).
 - **Never reject** a response merely because `_meta` also carries non-KYA-OS

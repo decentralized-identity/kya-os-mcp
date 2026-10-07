@@ -1,0 +1,19 @@
+{
+  // Runs the examples straight from src/. Several examples are their own
+  // packages (examples/*/package.json) that depend on @kya-os/mcp through
+  // file:../.., so outside `demo.sh` (which installs each one) the package name
+  // does not resolve. The root `example:*` scripts pass this file to tsx, which
+  // maps every public entry point to its source, the same way vitest.config.mts
+  // aliases them, so a fresh `npm install` at the root is all they need.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "paths": {
+      "@kya-os/mcp": ["./src/index.ts"],
+      "@kya-os/mcp/types": ["./src/types/protocol.ts"],
+      "@kya-os/mcp/cheqd": ["./src/integrations/cheqd/index.ts"],
+      "@kya-os/mcp/*": ["./src/*/index.ts"]
+    }
+  }
+}

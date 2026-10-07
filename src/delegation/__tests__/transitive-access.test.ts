@@ -947,6 +947,58 @@ describe('Transitive Access — Karp Use Cases', () => {
       expect(parsed.reason).toContain('widens scopes');
       expect(parsed.reason).toContain('update:y');
     });
+
+    it('applies delegation.maxChainLength to the three-hop chain', async () => {
+      const dave = await createAgentIdentity();
+      const runWithBound = async (maxChainLength: number) => {
+        const { middleware, did: serverDid } = await createServer({
+          delegation: {
+            resolveDelegationChain: async () => [aliceToBob, bobToCarol],
+            maxChainLength,
+          },
+        });
+        const aliceToBob = await issueVC({ from: alice, to: bob, scopes: ['query:x'] });
+        const bobToCarol = await issueVC({
+          from: bob,
+          to: carol,
+          scopes: ['query:x'],
+          parentId: aliceToBob.credentialSubject.delegation.id,
+          audience: serverDid,
+        });
+        const carolToDave = await issueVC({
+          from: carol,
+          to: dave,
+          scopes: ['query:x'],
+          parentId: bobToCarol.credentialSubject.delegation.id,
+          audience: serverDid,
+        });
+        const handler = middleware.wrapWithDelegation(
+          'query_x',
+          { scopeId: 'query:x', consentUrl: 'https://aperture.example/consent' },
+          async () => ({ content: [{ type: 'text', text: 'ok from Dave' }] }),
+        );
+        return handler({ _kyaos_delegation: carolToDave });
+      };
+
+      const bounded = await runWithBound(2);
+      expect(bounded.isError).toBe(true);
+      const parsed = JSON.parse(bounded.content[0].text);
+      expect(parsed.error).toBe('delegation_invalid');
+      expect(parsed.reason).toBe('Delegation chain of 3 credentials exceeds the maximum of 2');
+
+      const allowed = await runWithBound(3);
+      expect(allowed.isError).toBeUndefined();
+      expect(allowed.content[0].text).toBe('ok from Dave');
+    });
+
+    it.each([0, 1.5, '5' as unknown as number])(
+      'refuses delegation.maxChainLength %j at startup, not per call',
+      async (maxChainLength) => {
+        await expect(createServer({ delegation: { maxChainLength } })).rejects.toThrow(
+          /delegation\.maxChainLength must be a positive integer/,
+        );
+      },
+    );
   });
 
   // =========================================================================

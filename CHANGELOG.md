@@ -7,6 +7,45 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- **`maxChainLength` for delegation chains.** `validateDelegationChain` and
+  the middleware's `delegation` config take an optional cap on how many
+  credentials one chain may hold, checked before any of them is verified. A
+  resolver could return a chain of any length, and each credential costs a
+  signature check and possibly a DID resolution. It is a local cost limit, not
+  a protocol rule about how far authority may be delegated: it is unset by
+  default, and SPEC.md §6.4 records that the base profile leaves chain length
+  unbounded. The middleware refuses a value that is not a positive integer at
+  startup rather than rejecting every call. The cap applies to the chain
+  `resolveDelegationChain` returns, not to the resolver's own fetches.
+
+### Fixed
+
+- **The `example:*` scripts run from a fresh clone.** They resolved
+  `@kya-os/mcp` to `dist/`, which a clone does not have until `npm run build`,
+  and the node-server and authz-inspector examples, being packages of their
+  own, could not resolve it at all without a per-example install. The scripts
+  and `scripts/demo.sh` now run the examples from `src/` through
+  `tsconfig.examples.json`, so the root `npm install` is all they need. Two
+  scripts are added for the consent-persistence scenarios.
+- **`withKyaOs()` warns when the server is already connected.** It wraps
+  transports by patching `connect()`, so a transport connected before it ran
+  was never wrapped, and its tool results went out without a KYA-OS proof or
+  a transport audit record, silently. It now logs a warning saying so, on MCP
+  SDK 1.3 and later. When the server had no tools before connecting, the
+  warning also explains the SDK's refusal to register `_kyaos`.
+
+### Documentation
+
+- **CONFORMANCE.md L2.17 names the current proof keys.** It told verifiers to
+  read `org.kya-os/proof`, a key no server writes since the role-named keys
+  of SPEC.md §7.6. It now names `org.kya-os/response-proof`, keeps the prior
+  keys as 1.x fallbacks, in that order, and separates the request proof under
+  `org.kya-os/request-proof`.
+- **SPEC.md §6.10 says how to tell the two delegation profiles apart.** The
+  first `@context` entry selects the rule set.
+
 ## [1.17.0] - 2026-10-05
 
 ### Added

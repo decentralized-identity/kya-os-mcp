@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { generateIdentity, withKyaOs } from "../with-kya-os-server.js";
+import { logger } from "../../logging/index.js";
 import { NodeCryptoProvider } from "../../__tests__/utils/node-crypto-provider.js";
 import { KYA_OS_PROOF_META_KEY, LEGACY_PROOF_META_KEY } from "../../proof/index.js";
 import { MemoryNonceCacheProvider } from "../../providers/memory.js";
@@ -102,6 +105,90 @@ describe("withKyaOs", () => {
 
     // connect should NOT be patched
     expect(server.connect).toBe(originalConnect);
+  });
+
+  describe("connect() ordering", () => {
+    // The usual wrong order: tools registered, server connected, then wrapped.
+    const connectedServer = async () => {
+      const server = new McpServer({ name: "ordering-test", version: "1.0.0" });
+      server.registerTool("echo", { description: "echo" }, async () => ({
+        content: [{ type: "text" as const, text: "ok" }],
+      }));
+      const [, serverTransport] = InMemoryTransport.createLinkedPair();
+      await server.connect(serverTransport);
+      return server;
+    };
+
+    it("warns when the server is already connected, since that transport is never wrapped", async () => {
+      const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+      try {
+        await withKyaOs(await connectedServer(), { crypto });
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining("withKyaOs() ran after server.connect()"),
+        );
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it("explains the SDK's refusal when the server had no tools before connect()", async () => {
+      const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+      try {
+        const server = new McpServer({ name: "ordering-test", version: "1.0.0" });
+        const [, serverTransport] = InMemoryTransport.createLinkedPair();
+        await server.connect(serverTransport);
+        await expect(withKyaOs(server, { crypto })).rejects.toThrow(/after connecting/);
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining("withKyaOs() ran after server.connect()"),
+        );
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it("detects a connected server on SDKs without isConnected() (1.3 to 1.9)", async () => {
+      const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+      try {
+        const olderSdkServer = {
+          connect: vi.fn().mockResolvedValue(undefined),
+          registerTool: vi.fn(),
+          server: { transport: {} },
+        };
+        await withKyaOs(olderSdkServer, { crypto });
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining("withKyaOs() ran after server.connect()"),
+        );
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it("stays quiet when withKyaOs() runs before connect()", async () => {
+      const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+      try {
+        const server = new McpServer({ name: "ordering-test", version: "1.0.0" });
+        await withKyaOs(server, { crypto });
+        const [, serverTransport] = InMemoryTransport.createLinkedPair();
+        await server.connect(serverTransport);
+        expect(warn).not.toHaveBeenCalledWith(
+          expect.stringContaining("withKyaOs() ran after server.connect()"),
+        );
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it("stays quiet when auto-proof is off, since no transport would be wrapped", async () => {
+      const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+      try {
+        await withKyaOs(await connectedServer(), { crypto, proofAllTools: false });
+        expect(warn).not.toHaveBeenCalledWith(
+          expect.stringContaining("withKyaOs() ran after server.connect()"),
+        );
+      } finally {
+        warn.mockRestore();
+      }
+    });
   });
 
   it("should return KyaOsMiddleware instance", async () => {

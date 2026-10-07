@@ -216,23 +216,68 @@ describe('root anchoring (issuer/invocationTarget = resource owner)', () => {
   });
 });
 
-// ── Depth cap ─────────────────────────────────────────────────────────────────
+// ── Chain length ──────────────────────────────────────────────────────────────
 
-describe('max delegation depth', () => {
-  it(`REJECTS a chain deeper than ${MAX_DELEGATION_DEPTH} hops`, () => {
-    const deep: DelegationCredential[] = [root()];
-    let previous = 'urn:zcap:root';
-    let issuer = AGENT_A;
-    for (let i = 0; i < MAX_DELEGATION_DEPTH; i += 1) {
-      const id = `urn:zcap:d${i}`;
-      deep.push(child({ issuer, id, invoker: `did:web:h${i}.example`, parentCapability: previous }));
-      previous = id;
-      issuer = `did:web:h${i}.example`;
-    }
-    expect(deep.length).toBeGreaterThan(MAX_DELEGATION_DEPTH);
-    const result = validateDelegationChain(deep, ownerCtx);
+/** A well-attenuated chain of `n` credentials, each with a status entry: the root plus `n - 1` re-delegations. */
+function linkedChain(n: number): DelegationCredential[] {
+  const chain: DelegationCredential[] = [root({ statusIndex: '0' })];
+  let previous = 'urn:zcap:root';
+  let issuer = AGENT_A;
+  for (let i = 0; i < n - 1; i += 1) {
+    const id = `urn:zcap:d${i}`;
+    chain.push(child({ issuer, id, invoker: `did:web:h${i}.example`, parentCapability: previous, statusIndex: String(i + 1) }));
+    previous = id;
+    issuer = `did:web:h${i}.example`;
+  }
+  return chain;
+}
+
+describe('maxChainLength', () => {
+  it(`accepts a chain longer than MAX_DELEGATION_DEPTH (${MAX_DELEGATION_DEPTH}) when no limit is set`, () => {
+    const result = validateDelegationChain(linkedChain(MAX_DELEGATION_DEPTH + 2), ownerCtx);
+    expect(result.reasons).toEqual([]);
+    expect(result.ok).toBe(true);
+    expect(result.depth).toBe(MAX_DELEGATION_DEPTH + 2);
+  });
+
+  it('accepts a chain at the limit and rejects one over it, counting every credential', () => {
+    const atLimit = validateDelegationChain(linkedChain(3), { ...ownerCtx, maxChainLength: 3 });
+    expect(atLimit.ok).toBe(true);
+
+    const over = validateDelegationChain(linkedChain(4), { ...ownerCtx, maxChainLength: 3 });
+    expect(over.ok).toBe(false);
+    expect(over.reasons).toEqual(['delegation chain depth 4 exceeds the maximum of 3']);
+  });
+
+  it('applies MAX_DELEGATION_DEPTH when passed as the limit', () => {
+    const ctx = { ...ownerCtx, maxChainLength: MAX_DELEGATION_DEPTH };
+    expect(validateDelegationChain(linkedChain(MAX_DELEGATION_DEPTH), ctx).ok).toBe(true);
+    expect(validateDelegationChain(linkedChain(MAX_DELEGATION_DEPTH + 1), ctx).ok).toBe(false);
+  });
+
+  it('still honors the deprecated maxDepth, with maxChainLength taking precedence', () => {
+    expect(validateDelegationChain(linkedChain(3), { ...ownerCtx, maxDepth: 2 }).ok).toBe(false);
+    expect(validateDelegationChain(linkedChain(3), { ...ownerCtx, maxDepth: 2, maxChainLength: 3 }).ok).toBe(true);
+  });
+
+  it.each([0, -1, 1.5, Number.NaN])('rejects every chain when the limit is %s', (limit) => {
+    const result = validateDelegationChain([root()], { ...ownerCtx, maxChainLength: limit });
     expect(result.ok).toBe(false);
-    expect(result.reasons.some((r) => /exceeds the maximum/.test(r))).toBe(true);
+    expect(result.reasons).toEqual([`maxChainLength must be a positive integer (got ${String(limit)})`]);
+  });
+
+  it('stops evaluateDelegationChain before any revocation check when the chain is over the limit', async () => {
+    let checked = 0;
+    const check: RevocationChecker = async () => {
+      checked += 1;
+      return { revoked: false, fresh: true };
+    };
+    const result = await evaluateDelegationChain(linkedChain(4), check, { ...ownerCtx, maxChainLength: 3 });
+    expect(result.ok).toBe(false);
+    expect(checked).toBe(0);
+
+    expect((await evaluateDelegationChain(linkedChain(4), check, ownerCtx)).ok).toBe(true);
+    expect(checked).toBe(4);
   });
 });
 

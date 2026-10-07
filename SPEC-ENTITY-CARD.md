@@ -1236,8 +1236,8 @@ Codes are snake_case, aligned to the implementation.
 
 `validateDelegationChain` / `evaluateDelegationChain` emit human-readable reasons for: allowedAction
 escalation, caveat broadening/dropping, `validUntil` broadening, broken continuity (parent invoker ≠
-child issuer; child `parentCapability` ≠ parent id), `invocationTarget` drift, depth-cap exceeded,
-and root mismatches (SPEC.md §6.10). `evaluateRevocationChain` emits a fail-closed reason per revoked /
+child issuer; child `parentCapability` ≠ parent id), `invocationTarget` drift, a chain longer than
+the verifier's `maxChainLength` when it sets one, and root mismatches (SPEC.md §6.10). `evaluateRevocationChain` emits a fail-closed reason per revoked /
 unresolvable hop (§10.3). `verifyCimdBind` emits origin-mismatch and missing-`alsoKnownAs` reasons
 (§7.4).
 

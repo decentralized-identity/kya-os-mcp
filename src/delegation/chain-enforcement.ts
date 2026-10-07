@@ -148,8 +148,8 @@ export interface ChainEnforcementDeps {
    * It is checked after `resolveDelegationChain` returns, so it does not bound
    * the resolver itself: a resolver that walks `parentId` one fetch at a time
    * should apply its own limit. The Entity Card profile's
-   * `validateDelegationChain` (`@kya-os/mcp/card`) counts the same way, with
-   * its `maxDepth` option.
+   * `validateDelegationChain` (`@kya-os/mcp/card`) takes the same option and
+   * counts the same way.
    */
   maxChainLength?: number;
 }

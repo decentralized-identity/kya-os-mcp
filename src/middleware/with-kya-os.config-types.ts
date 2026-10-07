@@ -94,6 +94,16 @@ export interface KyaOsDelegationConfig {
    */
   trustedRootIssuers?: readonly string[];
   /**
+   * Local cost limit: the most credentials this server will verify in one
+   * delegation chain, root to leaf inclusive, checked before any of them is
+   * verified. Each costs a signature check and possibly a DID resolution. It
+   * bounds the server's own work, not how far authority may be delegated.
+   * Unset verifies any length; a value that is not a positive integer is
+   * refused at startup. It does not bound `resolveDelegationChain` itself, so
+   * a resolver that fetches one parent at a time should apply its own limit.
+   */
+  maxChainLength?: number;
+  /**
    * Holder-of-key enforcement for inbound calls (spec §11.8). A valid delegation
    * is a *bearer* credential; holder binding additionally requires the caller to
    * present a per-request proof (`_kyaos_proof`) signed by the delegation

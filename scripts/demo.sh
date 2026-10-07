@@ -121,31 +121,31 @@ start_example() {
   EX_NAMES+=("$name")
   case "$name" in
     node-server)
-      PORT=3001 CONSENT_PORT=3011 npx tsx examples/node-server/server.ts &
+      PORT=3001 CONSENT_PORT=3011 npx tsx --tsconfig tsconfig.examples.json examples/node-server/server.ts &
       PIDS+=($!)
       EX_URLS+=("http://localhost:3001/sse")
       EX_TRANSPORTS+=("SSE")
       ;;
     consent-basic)
-      PORT=3002 CONSENT_PORT=3012 npx tsx examples/consent-basic/src/server.ts &
+      PORT=3002 CONSENT_PORT=3012 npx tsx --tsconfig tsconfig.examples.json examples/consent-basic/src/server.ts &
       PIDS+=($!)
       EX_URLS+=("http://localhost:3002/sse")
       EX_TRANSPORTS+=("SSE")
       ;;
     consent-full)
-      PORT=3003 CONSENT_PORT=3013 npx tsx examples/consent-full/src/server.ts &
+      PORT=3003 CONSENT_PORT=3013 npx tsx --tsconfig tsconfig.examples.json examples/consent-full/src/server.ts &
       PIDS+=($!)
       EX_URLS+=("http://localhost:3003/sse")
       EX_TRANSPORTS+=("SSE")
       ;;
     consent-persistence)
-      PORT_A=3005 PORT_B=3006 CONSENT_PORT=3015 npx tsx examples/consent-persistence/src/server.ts &
+      PORT_A=3005 PORT_B=3006 CONSENT_PORT=3015 npx tsx --tsconfig tsconfig.examples.json examples/consent-persistence/src/server.ts &
       PIDS+=($!)
       EX_URLS+=("http://localhost:3005/mcp")
       EX_TRANSPORTS+=("Streamable HTTP")
       ;;
     context7-with-kya-os)
-      npx tsx examples/context7-with-kya-os/src/index.ts --transport http --port 3004 &
+      npx tsx --tsconfig tsconfig.examples.json examples/context7-with-kya-os/src/index.ts --transport http --port 3004 &
       PIDS+=($!)
       EX_URLS+=("http://localhost:3004/mcp")
       EX_TRANSPORTS+=("Streamable HTTP")
@@ -183,7 +183,7 @@ for _ex in "${EX_NAMES[@]}"; do
     echo -e "${DIM}  The Inspector can connect and browse it, but CANNOT complete the consent flow (it can't"
     echo -e "  mint the per-request proof a real agent signs). See it end-to-end — durable grants across"
     echo -e "  instances and a restart — with:${NC}"
-    echo -e "  ${CYAN}cd examples/consent-persistence && npm run scenario:cross-instance && npm run scenario:restart${NC}"
+    echo -e "  ${CYAN}npm run example:consent-persistence:cross-instance && npm run example:consent-persistence:restart${NC}"
     echo ""
     break
   fi

@@ -604,6 +604,12 @@ Delegations form a directed acyclic graph (DAG):
 - Scope constraints MUST be equal to or narrower than parent's constraints
 - Every chain MUST terminate at a Responsible Party. The Responsible Party's DID is the `issuerDid` of the root `DelegationCredential` and is the entity ultimately accountable for actions taken under any descendant delegation. In personal use the Responsible Party equals the Principal; in organizational use the Responsible Party is the parent organization while the Principal is the immediate human delegator (see §2).
 
+**Chain length (non-normative).** The §6.2 profile does not limit how many times authority may be
+re-delegated. Separately, a verifier may cap how many credentials it will verify for one request, as
+a local resource limit: each credential costs a signature check and possibly a DID resolution. The
+reference implementation exposes this as `maxChainLength`, unset by default. Such a cap is the
+verifier's policy, not a protocol rule, and a chain it refuses is not thereby invalid elsewhere.
+
 ### 6.4.1 Designation Invariant
 
 A `DelegationCredential` may authorize multiple resources, either via a list
@@ -791,6 +797,11 @@ list format differ. Both shapes remain valid for the 1.x line: §6.2 is what the
 profile issues and verifies, this profile is what the Entity Card path issues and verifies, and an
 implementation encountering one never needs to accept the other in its place. The JSON Schema is
 published at `schemas/card-delegation-credential.json`.
+
+**Telling the profiles apart (non-normative).** Neither profile carries a separate profile
+identifier; the first `@context` entry selects the rule set. `https://www.w3.org/2018/credentials/v1`
+marks a §6.2 credential, and `https://www.w3.org/ns/credentials/v2`, with the ZCAP-LD context,
+marks a credential of this profile.
 
 **Credential shape.** One `DelegationCredential` per delegation **hop**; a chain runs `root → … → leaf`. A
 `DelegationCredential` is a VC 2.0 whose `credentialSubject` IS an attenuated ZCAP-LD capability:

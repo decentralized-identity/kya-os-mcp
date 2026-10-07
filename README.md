@@ -217,6 +217,8 @@ This starts all example servers and opens [MCP Inspector](https://github.com/mod
 
 Also available: [outbound-delegation](./examples/outbound-delegation/) (gateway pattern), [verify-proof](./examples/verify-proof/) (standalone verification), [statuslist](./examples/statuslist/) (revocation lifecycle), [cheqd-dlr](./examples/cheqd-dlr/) (operator DID linkage + DLR publishing).
 
+To run one example on its own, use its `npm run example:*` script, for example `npm run example:server`. The scripts and `scripts/demo.sh` run the examples from `src/` through `tsconfig.examples.json`, so they need no build step. The scripts also need nothing beyond the root `npm install`; `demo.sh` additionally installs each example's own dependencies.
+
 ## Try it against the live server
 
 [![Live deployment probe](https://github.com/decentralized-identity/kya-os-mcp/actions/workflows/live-probe.yml/badge.svg)](https://github.com/decentralized-identity/kya-os-mcp/actions/workflows/live-probe.yml)

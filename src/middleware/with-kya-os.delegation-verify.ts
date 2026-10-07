@@ -212,6 +212,15 @@ export function createDelegationVerification(
     );
   }
 
+  // Refused at startup: a bad value would otherwise boot cleanly and then deny
+  // every delegated call, echoing the config detail back to the caller.
+  const maxChainLength = delegationConfig?.maxChainLength;
+  if (maxChainLength !== undefined && (!Number.isInteger(maxChainLength) || maxChainLength < 1)) {
+    throw new RangeError(
+      `[kya-os] delegation.maxChainLength must be a positive integer (got ${String(maxChainLength)})`,
+    );
+  }
+
   // Root credentials whose claimed issuerDid is not their signer are accepted
   // for compatibility but reported: each distinct message at most once an hour,
   // with the oldest evicted first so the set stays bounded.
@@ -237,6 +246,7 @@ export function createDelegationVerification(
         statusListConfigured: !!delegationConfig?.statusListResolver,
         revocationChecker: delegationConfig?.revocationChecker,
         ...(trustedRootIssuers !== undefined ? { trustedRootIssuers } : {}),
+        ...(maxChainLength !== undefined ? { maxChainLength } : {}),
       },
       options,
     );

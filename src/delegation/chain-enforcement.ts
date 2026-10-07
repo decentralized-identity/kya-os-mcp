@@ -136,6 +136,22 @@ export interface ChainEnforcementDeps {
    * root issuer.
    */
   trustedRootIssuers?: readonly string[];
+  /**
+   * Local cost limit: the most credentials this verifier will verify in one
+   * chain, root to leaf inclusive. Each credential costs a signature check and
+   * possibly a DID resolution, and a resolver may return a chain of any length.
+   * This bounds the verifier's own work; it is not a protocol rule about how far
+   * authority may be delegated, which the base profile leaves unbounded. Omit to
+   * verify any length. A value that is not a positive integer rejects every
+   * chain.
+   *
+   * It is checked after `resolveDelegationChain` returns, so it does not bound
+   * the resolver itself: a resolver that walks `parentId` one fetch at a time
+   * should apply its own limit. The Entity Card profile's
+   * `validateDelegationChain` (`@kya-os/mcp/card`) counts the same way, with
+   * its `maxDepth` option.
+   */
+  maxChainLength?: number;
 }
 
 export interface ChainValidationResult {
@@ -232,6 +248,24 @@ export async function validateDelegationChain(
       ...(leafIndex === -1 ? resolvedChain : resolvedChain.slice(0, -1)),
       leafCredential,
     ];
+  }
+
+  // Checked before any credential is verified, so an over-long chain costs no
+  // signature checks or DID resolutions.
+  const { maxChainLength } = deps;
+  if (maxChainLength !== undefined) {
+    if (!Number.isInteger(maxChainLength) || maxChainLength < 1) {
+      return {
+        valid: false,
+        reason: `maxChainLength must be a positive integer (got ${String(maxChainLength)})`,
+      };
+    }
+    if (chain.length > maxChainLength) {
+      return {
+        valid: false,
+        reason: `Delegation chain of ${chain.length} credentials exceeds the maximum of ${maxChainLength}`,
+      };
+    }
   }
 
   let expiresAt: number | undefined;

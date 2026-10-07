@@ -75,6 +75,12 @@ Versioning: https://semver.org/spec/v2.0.0.html
   records. The package also ships dual ESM/CJS builds.
 - **Built with TypeScript 6.0.** The emitted JavaScript and declaration files
   are byte-identical to the 5.9 build.
+- **Declaration maps are no longer published.** The `.d.ts.map` files pointed
+  at `src/`, which the package does not include, so Go to Definition already
+  fell back to the `.d.ts`. Types are unchanged. JavaScript source maps stay:
+  under `node --enable-source-maps`, or an error tracker that applies source
+  maps, stack traces still name the `src/*.ts` file and line. The package drops
+  from 691 to 525 files and from 2.69 MB to 2.47 MB unpacked.
 
 ### Security
 

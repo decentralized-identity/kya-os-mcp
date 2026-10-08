@@ -7,6 +7,20 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Documentation
+
+- **SPEC.md §6.2 states how a base-profile credential is signed.** Its
+  example labels the proof `Ed25519Signature2020`, and CONFORMANCE.md L3.1
+  asked for "Ed25519Signature2020 or equivalent", but the profile has never
+  used the W3C suite of that name. §6.2 now specifies the construction the
+  reference implementation and the vectors use: Ed25519 over the JCS
+  canonicalization of the credential without `proof`, `proofValue` as
+  unpadded base64url, the key found by `proof.verificationMethod`, and the
+  proof options outside the signature. L3.1 and L3.5 point to it. A new
+  conformance test checks the vectors' delegation credentials against that
+  text with `node:crypto` rather than the library's verifier. Moving to a
+  standard cryptosuite stays open in #184.
+
 ## [1.18.0] - 2026-10-08
 
 ### Added

@@ -513,6 +513,33 @@ Delegations are issued as W3C Verifiable Credentials:
 }
 ```
 
+**The proof.** The example's `proof.type` is `Ed25519Signature2020`, but this
+profile does not use the W3C suite of that name, and a W3C Data Integrity
+verifier will not verify it. A conformant issuer produces, and a conformant
+verifier checks, exactly this:
+
+- **Signing input.** The UTF-8 bytes of the RFC 8785 (JCS) canonicalization of
+  the credential with its `proof` member removed. There is no RDF
+  canonicalization and no hash of the proof options.
+- **Signature.** Ed25519 (RFC 8032), 64 bytes.
+- **`proofValue`.** The signature as base64url without padding (86 characters),
+  with no multibase prefix.
+- **Key.** The verification method in the issuer's DID document whose `id`
+  equals `proof.verificationMethod`.
+- **`proof.type`.** Issuers set `Ed25519Signature2020`. A verifier MAY also
+  accept `DataIntegrityProof` for the same construction, and MUST reject any
+  other `proof.type`.
+
+The other `proof` members (`type`, `created`, `verificationMethod`,
+`proofPurpose`) are not covered by the signature; a verifier uses
+`verificationMethod` only to select the key. The `StatusList2021Credential` of
+§6.6 is signed the same way. The delegation credentials in the
+`delegation-chain` and `status-list` conformance vectors carry this
+construction. Whether 2.0 moves this profile to a standard cryptosuite is
+tracked in [#184](https://github.com/decentralized-identity/kya-os-mcp/issues/184).
+The §6.10 profile uses `DataIntegrityProof` with `eddsa-jcs-2022` and is not
+affected.
+
 A `DelegationCredential` carries a _permission_, not a _claim_. To keep claim
 semantics out of an authorization decision — a confused-deputy vector (§11.6) —
 the `credentialSubject` MUST contain only two properties: `id` (the delegate's

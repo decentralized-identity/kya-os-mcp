@@ -1,0 +1,57 @@
+{
+  "name": "kya-os-example-agentic-commerce",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "From agent-visible to agent-actionable: a shopping agent discovers a merchant's accepted trust schemes, presents a delegation scoped to a GS1 Digital Link product class, and is revoked mid-session by its Responsible Party — on the published @kya-os/mcp, did:web + a self-hosted StatusList2021.",
+  "license": "MIT",
+  "engines": {
+    "node": "^20.19.0 || ^22.12.0 || >=24.0.0"
+  },
+  "scripts": {
+    "setup": "tsx scripts/setup.ts",
+    "demo": "tsx src/demo.ts",
+    "verify:ledger": "node node_modules/@kya-os/mcp/dist/audit/cli.js verify var/audit/bundle.json --policy var/audit/policy.json --keys var/audit/keys.json",
+    "verify:ledger:tampered": "node node_modules/@kya-os/mcp/dist/audit/cli.js verify var/audit/bundle.tampered.json --policy var/audit/policy.json --keys var/audit/keys.json",
+    "verify:ledger:py": "python3 scripts/verify-ledger.py var/audit/bundle.json --keys var/audit/keys.json",
+    "rp": "tsx src/rp/server.ts",
+    "merchant": "tsx src/merchant/server.ts",
+    "agent": "tsx src/agent/agent.ts",
+    "gateway": "tsx src/demo.ts",
+    "issue": "tsx src/rp/issue.ts",
+    "revoke": "tsx src/rp/revoke.ts",
+    "verify:receipt": "python3 scripts/verify-receipt.py",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "demo:e2e": "vitest run tests/e2e.test.ts",
+    "demo:scripted": "tsx scripts/demo-scripted.ts",
+    "demo:restart": "tsx scripts/restart.ts",
+    "demo:capture": "python3 scripts/screenshot-run.py docs/screenshots/consent --presenter --record-video --duration 90",
+    "test:webauthn:browser": "python3 scripts/test-consent-webauthn.py --outdir docs/screenshots/webauthn",
+    "test:google:browser": "python3 scripts/test-consent-webauthn.py --google-identity --passkey-revocation --outdir docs/screenshots/google-identity"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.1",
+    "@kya-os/consent": "0.1.48",
+    "@kya-os/mcp": "^1.15.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@simplewebauthn/server": "^13.3.2",
+    "@x402/core": "2.25.0",
+    "@x402/evm": "2.25.0",
+    "dotenv": "^17.4.2",
+    "google-auth-library": "10.9.1",
+    "hono": "^4.13.3",
+    "proper-lockfile": "4.1.2",
+    "viem": "2.56.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/proper-lockfile": "4.1.4",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "parse5": "8.0.1",
+    "tsx": "^4.23.11",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}

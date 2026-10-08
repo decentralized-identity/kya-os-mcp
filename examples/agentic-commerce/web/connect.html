@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Connect Claude | KYA-OS commerce demo</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #101410; color: #e6eadf; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 36px 24px; }
+    main { max-width: 880px; margin: auto; }
+    a { color: #c6ed9a; text-underline-offset: 4px; }
+    .eyebrow { margin-top: 44px; color: #bedc97; font-size: 13px; letter-spacing: .14em; text-transform: uppercase; }
+    h1 { font-size: clamp(32px, 6vw, 52px); letter-spacing: -.035em; margin: 12px 0; }
+    h2 { font-size: 23px; margin-top: 0; }
+    p, li { font-size: 17px; line-height: 1.65; }
+    .lead { color: #bdc7b8; max-width: 700px; }
+    section { border: 1px solid #364332; background: #192018; padding: 28px; margin: 24px 0; border-radius: 12px; }
+    .badge { display: inline-block; color: #c6ed9a; border: 1px solid #5b7247; border-radius: 30px; padding: 6px 12px; font-size: 13px; }
+    code { font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 18px; background: #0f140e; border-radius: 8px; line-height: 1.6; }
+    button { cursor: pointer; background: #d5eeae; color: #18220f; border: 0; border-radius: 7px; padding: 12px 20px; font: 600 15px system-ui; }
+    button:focus-visible, a:focus-visible { outline: 3px solid #f7d787; outline-offset: 5px; }
+    .status { margin-left: 12px; font-size: 14px; }
+    .secondary { color: #b4bfac; }
+    ol { padding-left: 22px; }
+    @media (max-width: 550px) { body { padding: 24px 16px; } section { padding: 20px; } }
+  </style>
+</head>
+<body>
+<main>
+  <a href="/">← Merchant console</a>
+  <div class="eyebrow">KYA-OS · Agentic commerce</div>
+  <h1>Connect Claude</h1>
+  <p class="lead">Claude chooses the order. The agent gateway signs the request, and the merchant checks the human's grant before accepting it.</p>
+  <span class="badge">Stateless Streamable HTTP · No stdio</span>
+
+  <section aria-labelledby="local-heading">
+    <h2 id="local-heading">Claude Code on this computer</h2>
+    <p>The demo already serves the agent gateway at:</p>
+    <pre><code id="endpoint">/agent/mcp</code></pre>
+    <p>Run this in your Claude Code project directory:</p>
+    <pre><code id="command">claude mcp add --transport http --scope local kya-shopping-agent http://localhost:4949/agent/mcp</code></pre>
+    <button type="button" id="copy">Copy command</button><span class="status" id="copy-status" role="status"></span>
+    <ol>
+      <li>Open Claude Code and run <code>/mcp</code>. Confirm <strong>kya-shopping-agent</strong> is connected.</li>
+      <li>Ask: <em>Use place_order to order 2 risotto. Do not pay. If consent is needed, show me the authorization URL and wait.</em></li>
+      <li>Open the consent link, approve the grant, then ask Claude to retry.</li>
+    </ol>
+    <p class="secondary">Available tools: <code>browse_catalog</code> and <code>place_order</code>. Keep <code>npm run demo</code> running.</p>
+  </section>
+
+  <section aria-labelledby="chat-heading">
+    <h2 id="chat-heading">Claude Desktop or web chat</h2>
+    <p>Custom connectors run from Anthropic's cloud. This computer's localhost address is not reachable there.</p>
+    <p>Once an authenticated HTTPS deployment is ready, add its <code>/agent/mcp</code> URL under <strong>Customize → Connectors → Add custom connector</strong>. The current endpoint is for local HTTP clients; a public deployment is a separate step.</p>
+    <p><a href="https://claude.com/docs/connectors/custom/remote-mcp" target="_blank" rel="noopener">Claude's remote connector instructions ↗</a></p>
+  </section>
+
+  <section aria-labelledby="protocol-heading">
+    <h2 id="protocol-heading">Two endpoints, one verified order</h2>
+    <p><code>/agent/mcp</code> is Claude's connection. The gateway holds the demo agent's key and presents a fresh proof on every merchant request.</p>
+    <p><code>/mcp</code> is the merchant's protected endpoint. It uses <strong>@kya-os/mcp</strong> to verify the delegation and holder proof, check revocation and sign its response. Both endpoints use the MCP SDK's Streamable HTTP transport.</p>
+    <p class="secondary">Stateless describes the transport: no MCP session ID is required. Keys, approved grants, replay protection and revocation records still have state. This is a single-presenter demonstration.</p>
+    <p class="secondary">Opening an MCP endpoint in a browser sends GET. These endpoints accept POST and return HTTP 405 for GET; use an MCP client to connect.</p>
+  </section>
+</main>
+<script>
+  const endpoint = new URL('/agent/mcp', location.origin).href;
+  const command = `claude mcp add --transport http --scope local kya-shopping-agent ${endpoint}`;
+  document.getElementById('endpoint').textContent = endpoint;
+  document.getElementById('command').textContent = command;
+  document.getElementById('copy').addEventListener('click', async () => {
+    const status = document.getElementById('copy-status');
+    try { await navigator.clipboard.writeText(command); status.textContent = 'Copied'; }
+    catch { status.textContent = 'Select and copy the command above.'; }
+  });
+</script>
+</body>
+</html>

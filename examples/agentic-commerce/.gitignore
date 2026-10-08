@@ -1,0 +1,18 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.local
+var/
+.data/
+*.log
+.DS_Store
+__pycache__/
+*.pyc
+
+# Keep generated browser reports and raw captures local. Commit curated evidence.
+docs/screenshots/**
+!docs/screenshots/0.1.48/
+!docs/screenshots/0.1.48/*.png
+!docs/screenshots/consent/
+!docs/screenshots/consent/consent-demo-backup.webm

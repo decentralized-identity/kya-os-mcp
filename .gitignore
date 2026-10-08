@@ -10,6 +10,10 @@ coverage/
 examples/*/package-lock.json
 examples/*/pnpm-lock.yaml
 
+# This standalone workshop app uses published packages exclusively. Its lockfile
+# makes clean npm 10 installs reproducible without circular peer re-resolution.
+!examples/agentic-commerce/package-lock.json
+
 # AI-assistant tooling artifacts. Kept out of the tree so contributors'
 # local assistant configs don't leak into the public repository.
 CLAUDE.md

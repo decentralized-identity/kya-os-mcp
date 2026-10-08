@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "kya-shopping-agent": {
+      "type": "http",
+      "url": "http://localhost:4949/agent/mcp"
+    }
+  }
+}

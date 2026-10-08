@@ -231,7 +231,7 @@ Implementation MUST:
 - Include `issuer` as DID string or object with `id`
 - Include `issuanceDate` in ISO 8601 format
 - Include `credentialSubject` with delegation details
-- Include `proof` with Ed25519Signature2020 or equivalent
+- Include `proof` as SPEC.md §6.2 specifies: an Ed25519 signature over the JCS canonicalization of the credential without `proof`, in `proofValue` as unpadded base64url. This is not the W3C `Ed25519Signature2020` suite, despite the `proof.type` value ([#184](https://github.com/decentralized-identity/kya-os-mcp/issues/184))
 
 #### L3.5 — VC Verification
 
@@ -242,7 +242,7 @@ Implementation MUST validate:
 - `issuanceDate` is present and in the past
 - `expirationDate` (if present) is in the future
 - `credentialSubject.delegation` has required fields
-- `proof` is present
+- `proof` is present and verifies as SPEC.md §6.2 specifies
 
 #### L3.11 — StatusList2021 Checking
 

@@ -8,6 +8,21 @@
 
 import type { DelegationCredential } from "../types/protocol.js";
 import { getDelegationScopes } from "../delegation/chain-enforcement.js";
+import { isKyaOsControlArg } from "../proof/covered-request.js";
+
+/**
+ * `args` without the reserved `_kyaos*` control arguments: the call as its
+ * handler sees it, and as a gate's request hash binds it.
+ */
+export function withoutControlArgs(
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  const clean: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(args)) {
+    if (!isKyaOsControlArg(key)) clean[key] = value;
+  }
+  return clean;
+}
 
 /**
  * Strip control characters and cap length on caller-derived values before they

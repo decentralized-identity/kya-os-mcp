@@ -78,6 +78,69 @@ export interface KyaOsToolHandler<
   }>;
 }
 
+/** A tool result as a {@link KyaOsToolHandler} returns it. */
+export type KyaOsToolResult = Awaited<ReturnType<KyaOsToolHandler>>;
+
+/**
+ * The authorization outcome a proof records for a call whose action did not
+ * run (SPEC §7.2): a challenge for missing authority, a step-up, or a denial.
+ */
+export type KyaOsAuthorizationOutcome =
+  | "needs_authorization"
+  | "step_up_required"
+  | "denied";
+
+/** What {@link KyaOsOutcomeProver.proveOutcome} proves. */
+export interface KyaOsOutcomeProofRequest {
+  /** The tool the call named. */
+  toolName: string;
+  /**
+   * The call's arguments, as the client sent them where the handler can tell.
+   * The reserved `_kyaos*` control arguments are left out of the signed
+   * request, as the gates leave them out.
+   */
+  args: Record<string, unknown>;
+  outcome: KyaOsAuthorizationOutcome;
+  /** Why; signed into the proof's `reason` claim after control characters are replaced. */
+  reason: string;
+  /**
+   * The result to return to the client, complete: set `isError`,
+   * `structuredContent` and `_meta` here, not on the returned copy, because
+   * the envelope profile signs every member but `_meta`. A
+   * `needs_authorization` proof binds the result (its content under the body
+   * profile, the envelope under the envelope profile); a denial or step-up
+   * proof binds none, as SPEC §7.4 has it. `_meta` is outside every proof, so
+   * repeat anything security-relevant carried there (an OAuth
+   * `resource_metadata`, `scope` or `error`) in `content` or
+   * `structuredContent`. The middleware's own `_meta` members are dropped
+   * from it.
+   */
+  result: KyaOsToolResult;
+  /**
+   * The KYA-OS session to attribute the proof to. Omitted, the proof uses the
+   * session the gates fall back to: the single established (handshake or
+   * auto) session. Never open a session in the middleware's `sessionManager`
+   * for this: a second live session makes that fallback ambiguous, and
+   * unthreaded results then go out unproven.
+   */
+  sessionId?: string;
+}
+
+/** Prove an authorization outcome that application code decided itself. */
+export interface KyaOsOutcomeProver {
+  /**
+   * Return a copy of `request.result` carrying the response proof the
+   * middleware's own gates attach to their outcomes: the same claims, the
+   * same `_meta` keys, the configured response-proof profile, and the same
+   * audit events. Return it from the tool handler: the withKyaOs transport
+   * passes it through as proven and removes its private lifecycle stamp, so
+   * do not call this on a result that has already left the transport.
+   * Without a resolvable session the copy is returned unproven but audited,
+   * as a gate's outcome is. Throws a `TypeError` for an unknown outcome.
+   */
+  proveOutcome(request: KyaOsOutcomeProofRequest): Promise<KyaOsToolResult>;
+}
+
 /**
  * Server interface — minimal subset of @modelcontextprotocol/sdk Server.
  * This avoids a hard dependency on the SDK at the type level.
@@ -213,6 +276,10 @@ export interface KyaOsMiddleware
   // Optional so external structural implementers / mocks of KyaOsMiddleware are
   // not broken by this additive method (the KyaOsPolicyGate role requires it).
   withPolicyGate?: KyaOsPolicyGate["withPolicyGate"];
+
+  // Optional for the same reason; the KyaOsOutcomeProver role requires it.
+  // createKyaOsMiddleware and withKyaOs always provide it.
+  proveOutcome?: KyaOsOutcomeProver["proveOutcome"];
 }
 
 export interface PolicyGateOptions {

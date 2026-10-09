@@ -9,7 +9,6 @@
 
 import {
   isHolderBindingApplicable,
-  isKyaOsControlArg,
   assertHolderBinding,
   toHolderBindingRequest,
 } from "../delegation/holder-binding.js";
@@ -25,7 +24,7 @@ import type {
 } from "./with-kya-os.types.js";
 import type { MiddlewareDeps, AttachOutcomeProof } from "./with-kya-os.deps.js";
 import type { GrantResolution } from "./with-kya-os.grants.js";
-import { sanitizeForMessage } from "./with-kya-os.helpers.js";
+import { sanitizeForMessage, withoutControlArgs } from "./with-kya-os.helpers.js";
 import { canonicalizeJsonBytes } from "../utils/canonical-json.js";
 import type { Digest } from "../audit/types.js";
 import {
@@ -111,10 +110,7 @@ export function createDelegationGate(
         );
         if (resolvedGrant) {
           const existingGrant = resolvedGrant.grant;
-          const grantArgs: Record<string, unknown> = {};
-          for (const [k, v] of Object.entries(args)) {
-            if (!isKyaOsControlArg(k)) grantArgs[k] = v;
-          }
+          const grantArgs = withoutControlArgs(args);
           logger.debug(
             `[kya-os] Grant resolved for "${toolName}" (scope "${config.scopeId}") — no re-paste required`,
           );
@@ -164,8 +160,6 @@ export function createDelegationGate(
           sessionId,
           message,
           "needs_authorization",
-          undefined,
-          challengeContent,
         );
       }
 
@@ -335,10 +329,7 @@ export function createDelegationGate(
       // Strip the reserved _kyaos* control namespace before passing to the
       // handler — same predicate the bound request hash uses, so the handler
       // receives exactly the call the subject signed (no smuggled control arg).
-      const cleanArgs: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(args)) {
-        if (!isKyaOsControlArg(k)) cleanArgs[k] = v;
-      }
+      const cleanArgs = withoutControlArgs(args);
 
       // Mint a durable grant from this verified delegation so the next call —
       // on any instance — resolves via resolveExistingGrant with no re-paste.

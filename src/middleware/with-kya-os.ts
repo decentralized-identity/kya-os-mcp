@@ -40,6 +40,7 @@ import { createDelegationVerification } from "./with-kya-os.delegation-verify.js
 import { createGrantResolution } from "./with-kya-os.grants.js";
 import { createPolicyGate } from "./with-kya-os.policy-gate.js";
 import { createDelegationGate } from "./with-kya-os.delegation-gate.js";
+import { createOutcomeProver } from "./with-kya-os.outcome.js";
 import { createSessionProof } from "./with-kya-os.session.js";
 import { createProtocol } from "./with-kya-os.protocol.js";
 
@@ -207,6 +208,12 @@ export function createKyaOsMiddleware(
     attachOutcomeProof: session.attachOutcomeProof,
   });
 
+  // Application code proves the outcomes it decides through the same
+  // attachOutcomeProof the gates use.
+  const { proveOutcome } = createOutcomeProver({
+    attachOutcomeProof: session.attachOutcomeProof,
+  });
+
   return {
     identity: config.identity,
     sessionManager,
@@ -218,5 +225,6 @@ export function createKyaOsMiddleware(
     wrapWithProof: session.wrapWithProof,
     wrapWithDelegation,
     withPolicyGate,
+    proveOutcome,
   };
 }

@@ -7,8 +7,65 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- **`proveOutcome` proves the authorization outcomes application code
+  decides.** A server that enforces OAuth scopes in its tool handlers
+  returns its own challenges and denials as tool results, and the
+  `withKyaOs` transport sent such an error result unproven. The middleware
+  now has `proveOutcome({ toolName, args, outcome, reason, result,
+  sessionId? })`, which returns a copy of `result` carrying the proof the
+  gates attach to their outcomes: the same claims, the same `_meta` keys,
+  the configured response-proof profile and the same audit events. It runs
+  the gates' own code, and the transport passes its result through as
+  proven. A `needs_authorization` proof binds the result and a denial or
+  step-up proof binds none, as SPEC.md §7.4 has it. The `_kyaos*` control
+  arguments are left out of the signed request, `_meta` members only the
+  middleware may set are dropped, and no session needs to be opened. It is
+  optional on `KyaOsMiddleware`, as `withPolicyGate` is, so structural
+  implementers still type-check; the new `KyaOsOutcomeProver` role requires
+  it. New types: `KyaOsOutcomeProofRequest`, `KyaOsAuthorizationOutcome`,
+  `KyaOsToolResult`.
+- **`formatChallenge` may return the whole challenge result.** Besides the
+  content array, the delegation gate's hook may return `{ content,
+  structuredContent?, isError?, _meta? }` (`KyaOsChallengeResult`; the hook
+  type is `KyaOsChallengeFormatter`). The gate sets all of it before it
+  signs the challenge, so the envelope profile covers `isError` and
+  `structuredContent`; the body profile still covers `content` only.
+  `_meta` members the middleware owns are dropped from what the hook
+  returns. The array form and the default challenge are unchanged; the
+  default challenge still carries no `isError`, unlike the policy gate's
+  step-up.
+- **`toMcpToolCallback` registers a wrapped handler with `registerTool`
+  without a cast.** Passed straight to `McpServer.registerTool`, a
+  `KyaOsToolHandler` needed `as never`, and the SDK's request context then
+  arrived as the KYA-OS session id, so `wrapWithProof` found no session and
+  sent the result unproven. The adapter passes the arguments alone. Types:
+  `McpToolCallback`, `McpToolCallbackResult`.
+
+### Changed
+
+- **A `formatChallenge` hook that returns neither form gets the default
+  challenge**, as a throwing hook does. Before, the value was emitted as
+  `content`, which `McpServer` then rejected as an invalid result.
+- **`wrapWithProof` keeps an outcome proof it is handed.** A result
+  produced by the outcome-proof path, recognized by identity, is returned
+  as it is. Before, a challenge that was not an error result was signed
+  again there as an allowed call. No gate composition in this repository
+  reached that path.
+
 ### Fixed
 
+- **An allow result the session fallback cannot attribute says so.** A
+  call that threads no session, which is every call on the `withKyaOs`
+  transport path, is proved under the single established session. With
+  more than one session live the middleware refuses to pick one and the
+  result went out unproven, with only a log line; opening a session in the
+  middleware's `SessionManager` from application code did this to every
+  later allow result. Such a result now carries `_meta.proofError`, the
+  marker a failed proof generation already sets. `isError`, the content and
+  the audit events are unchanged, and a server with no session at all
+  emits what it did before.
 - **Three DID-document readers accept a key published as
   `publicKeyMultibase`.** `ProofVerifier.fetchPublicKeyFromDID`, the Entity
   Card `didKeyedJwks` projection, and the conformance adapter's DID-resolution
@@ -25,6 +82,12 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ### Documentation
 
+- **The README says what a response proof does not cover.** `_meta` is
+  outside every response proof (SPEC.md §7.6), so a server should repeat
+  security-relevant hints it carries there, such as an OAuth
+  `resource_metadata`, `scope` or `error`, in `content` or
+  `structuredContent`. The new section on proving application outcomes says
+  so, and says which profile covers which members.
 - **SPEC.md §6.2 states how a base-profile credential is signed.** Its
   example labels the proof `Ed25519Signature2020`, and CONFORMANCE.md L3.1
   asked for "Ed25519Signature2020 or equivalent", but the profile has never

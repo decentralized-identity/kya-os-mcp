@@ -7,6 +7,24 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- **The Entity Card revocation checker can verify a status list's proof.**
+  `createRevocationChecker` fetched a Bitstring status list and read its bits
+  without checking the list's proof, which Bitstring Status List v1.0 requires
+  (§3.2, step 4). Whoever could serve or alter the list could clear a
+  revocation. It now takes an optional `verifyStatusList`: a list it rejects,
+  by returning anything but `true` or by throwing, resolves to revoked and not
+  fresh, like any other unreadable list. `createStatusListProofVerifier({
+  didResolver })` is a ready verifier for `DataIntegrityProof` /
+  `eddsa-jcs-2022` lists. It finds the key that `proof.verificationMethod`
+  names in the issuer's DID document, requires that method to belong to the
+  list's `issuer`, and accepts relative method ids and `publicKeyJwk` or
+  `publicKeyMultibase` keys. It verifies a status list published by
+  builders.kya-os.org, signed by an independent implementation. Without
+  `verifyStatusList` the checker behaves as before. The option becomes
+  required in 2.0, and SPEC.md §6.10 states the requirement.
+
 ## [1.19.0] - 2026-10-09
 
 ### Added

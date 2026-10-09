@@ -902,9 +902,12 @@ different resource fails at the root check instead of being accepted by an unrel
 (`BitstringStatusListEntry`) - the **successor to** the deprecated StatusList2021 - behind a
 pluggable `RevocationChecker` seam so status-list churn never reaches callers. The default checker
 resolves `statusListCredential` via SafeFetch (§6.6), inflates the multibase (`u` = base64url) +
-GZIP `encodedList`, and reads the bit at `statusListIndex` MSB-first within each byte. It is
-**fail-closed**: an unreachable list, malformed credential, mismatched `statusPurpose`, or
-out-of-range index all resolve to `{ revoked: true }`. Each verdict also reports `fresh` - `true`
+GZIP `encodedList`, and reads the bit at `statusListIndex` MSB-first within each byte. A verifier
+MUST verify the status list credential's proof before it reads a bit, as Bitstring Status List
+v1.0 requires. The reference checker does so when given its `verifyStatusList` seam (optional
+until 2.0) and ships a verifier for `eddsa-jcs-2022` lists. It is **fail-closed**: an unreachable
+list, malformed credential, rejected list proof, mismatched `statusPurpose`, or out-of-range index
+all resolve to `{ revoked: true }`. Each verdict also reports `fresh` - `true`
 only when read from a live, in-validity-window (`validFrom`/`validUntil`, or
 `issuanceDate`/`expirationDate`) status list. The chain walk is **cascading**: root→leaf,
 short-circuiting on the first revoked/unresolvable hop (a revoked ancestor invalidates the subtree),

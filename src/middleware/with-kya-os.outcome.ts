@@ -11,7 +11,9 @@
 
 import type {
   KyaOsAuthorizationOutcome,
+  KyaOsOutcomeProofRequest,
   KyaOsOutcomeProver,
+  KyaOsToolResult,
 } from "./with-kya-os.types.js";
 import type { AttachOutcomeProof } from "./with-kya-os.deps.js";
 import { withoutOutcomeMeta } from "./with-kya-os.session.js";
@@ -32,7 +34,7 @@ export function createOutcomeProver(wiring: OutcomeProverWiring): KyaOsOutcomePr
   const { attachOutcomeProof } = wiring;
 
   return {
-    async proveOutcome(request) {
+    async proveOutcome<R extends KyaOsToolResult>(request: KyaOsOutcomeProofRequest<R>): Promise<R> {
       if (!OUTCOMES.has(request.outcome)) {
         throw new TypeError(
           `proveOutcome: unknown outcome ${JSON.stringify(request.outcome)}; ` +
@@ -43,6 +45,7 @@ export function createOutcomeProver(wiring: OutcomeProverWiring): KyaOsOutcomePr
       // A copy, so the caller's result is never changed, without the `_meta`
       // members only the middleware may set.
       const result = { ...withoutOutcomeMeta(request.result) };
+      // The same members, plus `_meta`: still an R.
       return attachOutcomeProof(
         result,
         request.toolName,
@@ -51,7 +54,7 @@ export function createOutcomeProver(wiring: OutcomeProverWiring): KyaOsOutcomePr
         request.reason,
         request.outcome,
         params,
-      );
+      ) as Promise<R>;
     },
   };
 }

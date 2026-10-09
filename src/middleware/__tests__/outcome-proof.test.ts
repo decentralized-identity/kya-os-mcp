@@ -13,6 +13,7 @@ import { toMcpToolCallback } from '../mcp-tool-callback.js';
 import { createKyaOsTransport, type JSONRPCMessage, type Transport } from '../kya-os-transport.js';
 import type { KyaOsMiddleware, KyaOsOutcomeProofRequest, KyaOsToolResult } from '../with-kya-os.js';
 import { LIFECYCLE_STAMP_META_KEY } from '../with-kya-os.session.js';
+import { typeErrors } from '../../__tests__/utils/type-errors.js';
 import {
   KYA_OS_PROOF_META_KEY,
   LEGACY_NAMESPACED_PROOF_META_KEY,
@@ -352,6 +353,34 @@ describe('proveOutcome', () => {
       signer: kyaos.identity.did, toolName: 'checkout', params: { item: 'x' }, binds: 'content',
     })).valid).toBe(true);
   });
+});
+
+describe('proveOutcome types', () => {
+  it('returns the type of the result it was given, so a handler returns it as is', () => {
+    const errors = typeErrors(`
+      import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+      import { z } from 'zod';
+      import type { KyaOsMiddleware } from './index.js';
+      declare const kyaos: KyaOsMiddleware;
+      type Denied = {
+        content: [{ type: 'text'; text: string }];
+        structuredContent: { error: 'access_denied' };
+        isError: true;
+      };
+      const denied: Denied = {
+        content: [{ type: 'text', text: 'no' }], structuredContent: { error: 'access_denied' }, isError: true,
+      };
+      const server = new McpServer({ name: 'typed', version: '1.0.0' });
+      server.registerTool('report', { inputSchema: { id: z.string() } }, async (args) => {
+        const proven: Denied = await kyaos.proveOutcome!({
+          toolName: 'report', args, outcome: 'denied', reason: 'no', result: denied,
+        });
+        return proven;
+      });
+    `, new URL('../outcome-proof-compatibility.ts', import.meta.url));
+
+    expect(errors).toBe('');
+  }, 60_000);
 });
 
 describe('proveOutcome on an McpServer behind withKyaOs', () => {

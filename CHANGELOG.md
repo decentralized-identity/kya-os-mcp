@@ -7,6 +7,8 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.19.0] - 2026-10-09
+
 ### Added
 
 - **`proveOutcome` proves the authorization outcomes application code

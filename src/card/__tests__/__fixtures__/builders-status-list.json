@@ -1,0 +1,53 @@
+{
+  "source": "https://builders.kya-os.org/credentials/status/revocation-1.json and /.well-known/did.json, fetched 2026-10-09",
+  "didDocument": {
+    "@context": [
+      "https://www.w3.org/ns/did/v1",
+      "https://w3id.org/security/multikey/v1"
+    ],
+    "id": "did:web:builders.kya-os.org",
+    "verificationMethod": [
+      {
+        "id": "did:web:builders.kya-os.org#conformance-issuer-1",
+        "type": "Multikey",
+        "controller": "did:web:builders.kya-os.org",
+        "publicKeyMultibase": "z6Mksq7RMbuY2H3G92f7DeVE5R4gq12CH7t3RRf6qmmHN9DZ"
+      },
+      {
+        "id": "did:web:builders.kya-os.org#conformance-status-1",
+        "type": "Multikey",
+        "controller": "did:web:builders.kya-os.org",
+        "publicKeyMultibase": "z6Mkj3ayFcQMqvnaQkU4CQd4cuwPTDiMUSkmbM28cNq5kLYp"
+      }
+    ],
+    "assertionMethod": [
+      "did:web:builders.kya-os.org#conformance-issuer-1"
+    ]
+  },
+  "statusListCredential": {
+    "@context": [
+      "https://www.w3.org/ns/credentials/v2"
+    ],
+    "id": "https://builders.kya-os.org/credentials/status/revocation-1.json",
+    "type": [
+      "VerifiableCredential",
+      "BitstringStatusListCredential"
+    ],
+    "issuer": "did:web:builders.kya-os.org",
+    "validFrom": "2026-10-09T01:47:49Z",
+    "credentialSubject": {
+      "id": "https://builders.kya-os.org/credentials/status/revocation-1.json#list",
+      "type": "BitstringStatusList",
+      "statusPurpose": "revocation",
+      "encodedList": "uH4sIAAAAAAAAA-3BIQEAAAACIP-vcpozLEADAAAAAAAAAAAAAAAAAAAAvA1VnEgBAEAAAA"
+    },
+    "proof": {
+      "type": "DataIntegrityProof",
+      "cryptosuite": "eddsa-jcs-2022",
+      "created": "2026-10-09T01:47:49Z",
+      "verificationMethod": "did:web:builders.kya-os.org#conformance-status-1",
+      "proofPurpose": "assertionMethod",
+      "proofValue": "z4f1eW4VLsJEXdHsh1LtgFCWijFS5F26ji7mRYrX6ZfP8fuMTwgSmt9z2YZAM5hknoBB1nv7YXuXB7emjcERuEWbu"
+    }
+  }
+}

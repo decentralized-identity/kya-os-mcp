@@ -23,6 +23,12 @@ import type { VerificationMethod } from './vc-verifier.types.js';
 /** Multibase prefix for base58btc. */
 const MULTIBASE_BASE58BTC = 'z';
 
+/** The verification-method fields that can carry an Ed25519 public key. */
+type VerificationMethodKeyMaterial = Pick<
+  VerificationMethod,
+  'publicKeyJwk' | 'publicKeyMultibase' | 'publicKeyBase58'
+>;
+
 /**
  * The verification method's public key as an Ed25519 OKP JWK: an existing
  * `publicKeyJwk` is returned untouched (byte-for-byte — zero behavior change
@@ -32,7 +38,7 @@ const MULTIBASE_BASE58BTC = 'z';
  * is present (fail-closed).
  */
 export function verificationMethodJwk(
-  method: VerificationMethod,
+  method: VerificationMethodKeyMaterial,
 ): { kty: string; crv: string; x: string } | undefined {
   if (method.publicKeyJwk) {
     return method.publicKeyJwk as { kty: string; crv: string; x: string };
@@ -43,7 +49,7 @@ export function verificationMethodJwk(
 }
 
 /** Decode multibase/base58 key material to raw bytes; `undefined` unless it is exactly a 32-byte Ed25519 key. */
-function rawEd25519Key(method: VerificationMethod): Uint8Array | undefined {
+function rawEd25519Key(method: VerificationMethodKeyMaterial): Uint8Array | undefined {
   try {
     if (method.publicKeyMultibase?.startsWith(MULTIBASE_BASE58BTC)) {
       // DID documents are counterparty data: bound the decode before it runs.

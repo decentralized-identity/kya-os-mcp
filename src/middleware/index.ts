@@ -31,6 +31,12 @@ export {
 } from './with-kya-os-server.js';
 
 export {
+  toMcpToolCallback,
+  type McpToolCallback,
+  type McpToolCallbackResult,
+} from './mcp-tool-callback.js';
+
+export {
   createKyaOsTransport,
   type Transport,
   type JSONRPCMessage,

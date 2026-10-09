@@ -359,6 +359,9 @@ export {
   withKyaOs,
   generateIdentity,
   type WithKyaOsOptions,
+  toMcpToolCallback,
+  type McpToolCallback,
+  type McpToolCallbackResult,
 } from './middleware/index.js';
 
 // Policy-as-Code subsystem + step-up gate

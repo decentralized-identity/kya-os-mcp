@@ -9,6 +9,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { z } from 'zod';
 import { withKyaOs } from '../with-kya-os-server.js';
+import { toMcpToolCallback } from '../mcp-tool-callback.js';
 import { createKyaOsTransport, type JSONRPCMessage, type Transport } from '../kya-os-transport.js';
 import type { KyaOsMiddleware, KyaOsOutcomeProofRequest, KyaOsToolResult } from '../with-kya-os.js';
 import { LIFECYCLE_STAMP_META_KEY } from '../with-kya-os.session.js';
@@ -364,13 +365,13 @@ describe('proveOutcome on an McpServer behind withKyaOs', () => {
     server.registerTool(
       'get_report',
       { inputSchema: { report_id: z.string() } },
-      async (args) => (await prove(kyaos, {
+      toMcpToolCallback(async (args) => prove(kyaos, {
         toolName: 'get_report',
         args,
         outcome: 'needs_authorization',
         reason: 'insufficient_scope',
         result: scopeChallenge(),
-      })) as never,
+      })),
     );
     const client = new Client({ name: 'outcome-proofs-client', version: '1.0.0' });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();

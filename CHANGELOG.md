@@ -21,7 +21,10 @@ Versioning: https://semver.org/spec/v2.0.0.html
   proven. A `needs_authorization` proof binds the result and a denial or
   step-up proof binds none, as SPEC.md §7.4 has it. The `_kyaos*` control
   arguments are left out of the signed request, `_meta` members only the
-  middleware may set are dropped, and no session needs to be opened. It is
+  middleware may set are dropped, and no session needs to be opened. Under
+  the envelope profile, set `resultType: 'complete'` on the result first: on
+  the 2026-07-28 revision the MCP SDK adds it after the handler returns,
+  outside a proof made there. It is
   optional on `KyaOsMiddleware`, as `withPolicyGate` is, so structural
   implementers still type-check; the new `KyaOsOutcomeProver` role requires
   it. New types: `KyaOsOutcomeProofRequest`, `KyaOsAuthorizationOutcome`,

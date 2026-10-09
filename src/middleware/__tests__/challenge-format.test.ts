@@ -130,6 +130,22 @@ describe('the delegation gate challenge', () => {
     expect(Object.hasOwn(meta, LIFECYCLE_STAMP_META_KEY)).toBe(false);
   });
 
+  it('ignores result members of the wrong type', async () => {
+    const kyaos = await createMiddleware();
+    const sessionId = await handshake(kyaos);
+
+    const result = await gate(kyaos, () => ({
+      content: [{ type: 'text', text: 'Authorize first' }],
+      structuredContent: ['not', 'an', 'object'],
+      isError: 'yes',
+      _meta: 'not an object',
+    }) as never)({}, sessionId);
+
+    expect(Object.keys(result)).toEqual(['content', '_meta']);
+    expect(result.content).toEqual([{ type: 'text', text: 'Authorize first' }]);
+    expect(proofOf(result)!.meta.outcome).toBe('needs_authorization');
+  });
+
   it.each([
     ['a string', 'Authorize first'],
     ['an object without content', { text: 'Authorize first' }],

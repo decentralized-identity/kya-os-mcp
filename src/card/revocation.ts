@@ -10,11 +10,13 @@
  *
  * `createRevocationChecker` is the DEFAULT implementation over W3C Bitstring Status List v1.0
  * (`BitstringStatusListEntry` — the StatusList2021 SUCCESSOR). It resolves the entry's
- * `statusListCredential` through the injected, SSRF-hardened {@link SafeFetch} seam, inflates
- * the multibase / GZIP `encodedList` bitstring, and reads the bit at `statusListIndex`.
+ * `statusListCredential` through the injected, SSRF-hardened {@link SafeFetch} seam, checks the
+ * list's proof through the injected `verifyStatusList` seam when one is given, inflates the
+ * multibase / GZIP `encodedList` bitstring, and reads the bit at `statusListIndex`.
  *
- * FAIL-CLOSED is the invariant: an unreachable status list, a malformed credential, a
- * mismatched `statusPurpose`, or an out-of-range index all resolve to `{ revoked: true }` —
+ * FAIL-CLOSED is the invariant: an unreachable status list, a malformed credential, a list whose
+ * proof is rejected, a mismatched `statusPurpose`, or an out-of-range index all resolve to
+ * `{ revoked: true }` —
  * the absence of proof-of-liveness is treated as revoked, never as "probably fine".
  *
  * Each verdict also reports `fresh`: `true` only when read from a LIVE, in-validity-window
@@ -36,6 +38,7 @@ import {
 } from '../utils/statuslist-bits.js';
 import type { SafeFetch } from '../utils/safe-fetch.js';
 import type { BitstringStatusListEntry } from './schema.js';
+import type { StatusListProofVerifier } from './status-list-proof.js';
 
 /** The `statusPurpose` this checker evaluates by default (revocation, not suspension). */
 export const STATUS_PURPOSE_REVOCATION = 'revocation';
@@ -98,6 +101,14 @@ export interface RevocationCheckerDeps {
   /** `statusPurpose` to honour; default {@link STATUS_PURPOSE_REVOCATION}. */
   statusPurpose?: string;
   /**
+   * Checks the fetched status-list credential's proof before any bit is read, as W3C Bitstring
+   * Status List v1.0 requires (SPEC.md §6.10). A list it rejects (`false` or a throw) resolves
+   * {@link FAIL_CLOSED}. {@link createStatusListProofVerifier} covers `eddsa-jcs-2022` lists.
+   * Without it the bits are read unchecked, so whoever serves the list can clear a revocation;
+   * it stays optional until 2.0 only so existing callers keep working.
+   */
+  verifyStatusList?: StatusListProofVerifier;
+  /**
    * Injectable GZIP inflation seam ({@link Decompress}). DEFAULT = `node:zlib` `gunzipSync` bounded
    * to the 16 MiB {@link MAX_STATUS_LIST_BYTES} `maxOutputLength` cap (so a decompression bomb
    * THROWS mid-inflation ⇒ fail-closed, never allocating the whole payload). Non-Node runtimes
@@ -125,6 +136,9 @@ export function createRevocationChecker(
   return async function check(entry: BitstringStatusListEntry): Promise<RevocationStatus> {
     try {
       const credential = await fetchStatusList(entry.statusListCredential, deps.fetch);
+      if (deps.verifyStatusList && (await deps.verifyStatusList(credential)) !== true) {
+        throw new Error('revocation: status-list proof rejected');
+      }
       assertStatusPurpose(statusListSubject(credential).statusPurpose, wantedPurpose);
       const bits = await decodeStatusList(credential, decompress);
       const revoked = readStatusBit(bits, parseStatusListIndex(entry.statusListIndex));

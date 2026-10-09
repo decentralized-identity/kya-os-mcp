@@ -254,7 +254,7 @@ async function signedProofVectors(): Promise<VectorFile> {
     },
   ];
 
-  return { version: '1.1.0', category: 'signed-proof', vectors };
+  return { version: '1.2.0', category: 'signed-proof', vectors };
 }
 
 /**
@@ -479,7 +479,7 @@ async function delegationChainVectors(): Promise<VectorFile> {
     },
   ];
 
-  return { version: '1.1.0', category: 'delegation-chain', vectors };
+  return { version: '1.2.0', category: 'delegation-chain', vectors };
 }
 
 function flipB64url(value: string): string {
@@ -534,7 +534,21 @@ async function statusListVectors(): Promise<VectorFile> {
 
   const activeCred = await buildSignedDelegationWith(issuer, agent.did, 'del-active', statusFor(activeIndex));
   const revokedCred = await buildSignedDelegationWith(issuer, agent.did, 'del-revoked', statusFor(revokedIndex));
-  const statusLists = { [listId]: await buildStatusList([revokedIndex]) };
+  const signedList = await buildStatusList([revokedIndex]);
+  const statusLists = { [listId]: signedList };
+
+  // The signed list with the revoked bit cleared and the proof left as signed:
+  // read without its proof checked, it reports the revoked credential active.
+  const clearedList = await buildStatusList([]);
+  const tamperedLists = {
+    [listId]: {
+      ...signedList,
+      credentialSubject: {
+        ...signedList.credentialSubject,
+        encodedList: clearedList.credentialSubject.encodedList,
+      },
+    },
+  };
 
   const vectors: ConformanceVector[] = [
     {
@@ -553,9 +567,17 @@ async function statusListVectors(): Promise<VectorFile> {
       reason: 'A set revocation bit must reject the credential',
       input: { credential: revokedCred, statusLists, didDocuments, serverDid: SERVER_DID },
     },
+    {
+      id: 'status-list/tampered-list',
+      category: 'status-list',
+      description: 'Revoked delegation checked against its list with the bit cleared after signing',
+      expected: 'fail',
+      reason: "The list's proof no longer verifies, so its bits cannot be read and the check fails closed",
+      input: { credential: revokedCred, statusLists: tamperedLists, didDocuments, serverDid: SERVER_DID },
+    },
   ];
 
-  return { version: '1.1.0', category: 'status-list', vectors };
+  return { version: '1.2.0', category: 'status-list', vectors };
 }
 
 async function buildSignedDelegationWith(
@@ -604,7 +626,7 @@ async function didKeyVectors(): Promise<VectorFile> {
       input: { did: 'did:web:example.com' },
     },
   ];
-  return { version: '1.1.0', category: 'did-key-resolution', vectors };
+  return { version: '1.2.0', category: 'did-key-resolution', vectors };
 }
 
 // ── did:web resolution vectors ──────────────────────────────────────────────────
@@ -649,7 +671,7 @@ async function didWebVectors(): Promise<VectorFile> {
       input: { did: webDid },
     },
   ];
-  return { version: '1.1.0', category: 'did-web-resolution', vectors };
+  return { version: '1.2.0', category: 'did-web-resolution', vectors };
 }
 
 // ── orchestration ───────────────────────────────────────────────────────────────

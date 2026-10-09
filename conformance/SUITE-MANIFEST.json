@@ -1,20 +1,20 @@
 {
-  "suiteVersion": "1.1.0",
-  "vectorSetHash": "sha256:38f34222fd91e75a162b01a81f83aa40907674f9c1bed72c46f1861cb49ceef5",
-  "vectorCount": 48,
+  "suiteVersion": "1.2.0",
+  "vectorSetHash": "sha256:8184227c315ce5f322652d827d070ee510bcb12576aef7471521d67a04b064c6",
+  "vectorCount": 49,
   "files": [
-    ["audit-integrity.json", "a60e0ee2fd23996a2b58eb76ec953e8509f2234476bb5513995e8b3844eb3b6f"],
-    ["card-proof.json", "412997a8792c719e4ddcb2805e908bc3d96e335e9ca26bc6236779746a66caa4"],
-    ["delegation-chain.json", "d224caf4acd42d955faf57f702b1480959860c313af1a838fe8327d096491366"],
-    ["did-key-resolution.json", "a8a7122ca1da56b549f8c064bb204238fc07c0d0ae1f94284a6ff34a262dab2e"],
-    ["did-web-resolution.json", "da782b7b9ab6ca98987c638be828398a046e51010ca83b09d50ef69c7b17f471"],
-    ["entity-card.json", "6a0c8c1b1aaef63e701d4dfb4dde29d71435d1378010ce2014782b4658daaaac"],
-    ["negotiation.json", "64a19c39240527b04b26651833fe6940b2be006f3a737512fc877535a3a15ffa"],
-    ["signed-proof.json", "0b28e324b0b559327a20177175ad84e718be94db68c598a1cafa15a4c174649d"],
-    ["status-list.json", "feebe3b7b00c14fff8688bb975a7bab82575b7bbe14e920920d28ee3fe24b8f0"]
+    ["audit-integrity.json", "463aec668c72590866d63ab5ee1effcc14564b0721fd87cb41d1e133cba88c86"],
+    ["card-proof.json", "1572c7342814a77023cbaa67592b4e0d357321a69b5c0fc260b1da95923cc04a"],
+    ["delegation-chain.json", "916ee89119a93468a5004ffc691935bfaa9b98103a0407ea318aedab4d5776a0"],
+    ["did-key-resolution.json", "79b443942406b5146289f47f5331f92a32e2a8c429e5f21d5b205cbc536b2afb"],
+    ["did-web-resolution.json", "580fa5736c0a183320d2b736c43b7670e067dbf27c4966391442e77bf0262d4f"],
+    ["entity-card.json", "024d9af2797f879de67968ae14734450e5d1eb24909df403727ebcf5eb5147a8"],
+    ["negotiation.json", "d3eeae3f3ddbeeb22061def234bbc04fa662474a2b69d46e566acf23fccc8a5e"],
+    ["signed-proof.json", "c6efe827a58a232cda277f0afc927bcfab46aac2357db914719874b66192d2dc"],
+    ["status-list.json", "accfdee8e0d5d8349f9cef379d695720d1010893b37e9b0e2060301bcd86e70e"]
   ],
   "pinnedAt": {
     "package": "@kya-os/mcp",
-    "packageVersion": "1.14.2"
+    "packageVersion": "1.18.0"
   }
 }

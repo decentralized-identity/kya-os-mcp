@@ -2,7 +2,7 @@
 
 **Compliance levels for KYA-OS implementations**
 
-Version: 1.1.0
+Version: 1.2.0
 Status: Stable
 
 ---
@@ -248,6 +248,7 @@ Implementation MUST validate:
 
 Implementation MUST:
 - Fetch StatusList2021 credential from `credentialStatus.statusListCredential`
+- Verify the list's `proof` as SPEC.md §6.2 specifies, and reject the credential when it does not verify
 - Decompress and decode the bitstring
 - Check bit at `statusListIndex`
 - Return revoked status if bit is 1
@@ -430,7 +431,7 @@ so it is reproducible against any implementation without re-signing.
 |------|----------|----------|----------|
 | `vectors/signed-proof.json` | Detached proof verification | valid signature + in-window ts; envelope content binding (profile `org.kya-os/response-proof.envelope`) | tampered signature, tampered meta, wrong key, timestamp skew exceeded; tampered `structuredContent` under envelope coverage, `prf` stripped (downgrade), unknown profile |
 | `vectors/delegation-chain.json` | Delegation chain verification | single-hop, two-hop attenuated | broken issuer↔subject linkage, scope widening, tampered signature, audience mismatch |
-| `vectors/status-list.json` | StatusList2021 revocation | active (bit unset) | revoked (bit set) |
+| `vectors/status-list.json` | StatusList2021 revocation | active (bit unset) | revoked (bit set), list altered after signing |
 | `vectors/did-key-resolution.json` | did:key resolution | valid Ed25519 | malformed multibase, wrong method |
 | `vectors/did-web-resolution.json` | did:web resolution | well-formed id-matched document | document id mismatch, not found |
 | `vectors/card-proof.json` | `org.kya-os/proof.v1` holder-of-key proof | valid signed proof, in-window, audience-bound | tampered body, tampered signature, wrong audience, expired, kid⇄did forgery |
@@ -457,6 +458,11 @@ The proof's `meta` block mirrors the claims signed inside the JWS, but it is a c
 This vector leaves the JWS byte-identical to `valid-basic` and alters only the mirrored `meta.requestHash`, so the JWS signature still verifies.
 A conformant verifier MUST reconcile `meta` against the decoded JWS payload and reject on any mismatch.
 Signature validity alone does not pass this vector: it is the `requestHash` counterpart of the `responseHash` recompute rule in L2.11.
+
+**On `status-list/tampered-list` (suite ≥ 1.2.0).**
+This vector carries the revoked credential and its signed list with the revoked bit cleared and the list's proof left as signed.
+A verifier that reads the bits without verifying the list's proof reports the credential active and passes a vector it must reject (L3.11).
+Suites before 1.2.0 shipped a list whose proof did not verify, so an implementation that checked it failed `status-list/active-credential`.
 
 ### Running the reference implementation
 

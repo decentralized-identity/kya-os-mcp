@@ -148,13 +148,14 @@ export function createDelegationGate(
 
         // No delegation provided — sign & return the needs_authorization
         // challenge. The proof binds a responseHash over the EMITTED challenge
-        // content (incl. the authorizationUrl), so a verifier that recomputes it
-        // over the content it received detects a tampered/MITM-swapped consent
-        // URL. Best-effort: attachOutcomeProof no-ops if no session resolves.
-        const { challengeContent, message } =
+        // (incl. the authorizationUrl; the envelope under the envelope profile),
+        // so a verifier that recomputes it over what it received detects a
+        // tampered/MITM-swapped consent URL. Best-effort: attachOutcomeProof
+        // no-ops if no session resolves.
+        const { challenge, message } =
           await buildNeedsAuthorizationChallenge(toolName, config);
         return attachOutcomeProof(
-          { content: challengeContent },
+          challenge,
           toolName,
           args,
           sessionId,

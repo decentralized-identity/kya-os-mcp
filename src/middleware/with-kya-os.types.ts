@@ -90,6 +90,32 @@ export type KyaOsAuthorizationOutcome =
   | "step_up_required"
   | "denied";
 
+/**
+ * A `needs_authorization` challenge as a `formatChallenge` hook may return
+ * it. The middleware sets every member before it signs the challenge, so under
+ * the envelope response-proof profile the proof covers `structuredContent`
+ * and `isError` as well as `content`; under the body profile it covers
+ * `content` only. `_meta` is never covered (SPEC §7.6), and the `_meta`
+ * members the middleware owns (its proofs, `proofError`, `org.kya-os/audit`
+ * and its private lifecycle stamp) are dropped from it, never trusted.
+ */
+export interface KyaOsChallengeResult {
+  content: Array<{ type: "text"; text: string }>;
+  structuredContent?: Record<string, unknown>;
+  isError?: boolean;
+  _meta?: Record<string, unknown>;
+}
+
+/**
+ * Renders the structured `needs_authorization` challenge as the tool result
+ * to emit: either its content alone (an array, the original form) or a whole
+ * {@link KyaOsChallengeResult}. A hook that throws, or returns neither form,
+ * gets the default challenge: its JSON as text content.
+ */
+export type KyaOsChallengeFormatter = (
+  challenge: NeedsAuthorizationError,
+) => Array<{ type: "text"; text: string }> | KyaOsChallengeResult;
+
 /** What {@link KyaOsOutcomeProver.proveOutcome} proves. */
 export interface KyaOsOutcomeProofRequest {
   /** The tool the call named. */
@@ -211,13 +237,15 @@ export interface KyaOsDelegationGate {
        * Optional presentation hook for the `needs_authorization` challenge.
        * Given the structured challenge, return the tool-response content to emit
        * (e.g. a markdown "Authorize" link for LLM / chat-style MCP clients that
-       * won't parse raw JSON). The signed challenge proof binds a `responseHash`
-       * over WHATEVER this returns, so the `authorizationUrl` stays tamper-evident
-       * regardless of presentation. Defaults to the structured challenge as JSON.
+       * won't parse raw JSON), or a whole {@link KyaOsChallengeResult} to also
+       * set `structuredContent`, `isError` or `_meta`. Everything it returns is
+       * set before the challenge is signed, so the signed challenge proof binds a
+       * `responseHash` over it (see {@link KyaOsChallengeResult} for what each
+       * profile covers) and the `authorizationUrl` stays tamper-evident
+       * regardless of presentation. Defaults to the structured challenge as JSON,
+       * with no `isError`.
        */
-      formatChallenge?: (
-        challenge: NeedsAuthorizationError,
-      ) => Array<{ type: "text"; text: string }>;
+      formatChallenge?: KyaOsChallengeFormatter;
     },
     handler: KyaOsToolHandler,
   ): KyaOsToolHandler;

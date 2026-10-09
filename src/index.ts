@@ -354,6 +354,8 @@ export {
   type KyaOsAuthorizationOutcome,
   type KyaOsOutcomeProofRequest,
   type KyaOsOutcomeProver,
+  type KyaOsChallengeResult,
+  type KyaOsChallengeFormatter,
   withKyaOs,
   generateIdentity,
   type WithKyaOsOptions,

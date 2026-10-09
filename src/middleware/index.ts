@@ -20,6 +20,8 @@ export {
   type KyaOsAuthorizationOutcome,
   type KyaOsOutcomeProofRequest,
   type KyaOsOutcomeProver,
+  type KyaOsChallengeResult,
+  type KyaOsChallengeFormatter,
 } from './with-kya-os.js';
 
 export {

@@ -29,21 +29,45 @@ import {
   createNeedsAuthorizationError,
   readCredentialProofValue,
   type DelegationCredential,
-  type NeedsAuthorizationError,
 } from "../types/protocol.js";
 import { logger } from "../logging/index.js";
 import { TtlCache } from "../utils/ttl-cache.js";
-import type { KyaOsToolHandler } from "./with-kya-os.types.js";
+import type {
+  KyaOsChallengeFormatter,
+  KyaOsToolHandler,
+  KyaOsToolResult,
+} from "./with-kya-os.types.js";
 import type { MiddlewareDeps } from "./with-kya-os.deps.js";
 import { sanitizeForMessage } from "./with-kya-os.helpers.js";
+import { withoutOutcomeMeta } from "./with-kya-os.session.js";
 
 /** Per-tool delegation-gate config shared by the gate + its challenge builder. */
 export interface DelegationGateConfig {
   scopeId: string;
   consentUrl: string;
-  formatChallenge?: (
-    challenge: NeedsAuthorizationError,
-  ) => Array<{ type: "text"; text: string }>;
+  formatChallenge?: KyaOsChallengeFormatter;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/**
+ * The challenge result a `formatChallenge` hook returned, in either form: its
+ * content alone (an array), or content with `structuredContent`, `isError` and
+ * `_meta`. All of it is set before the challenge is signed. The `_meta`
+ * members only the middleware may set are dropped, never trusted. Undefined
+ * for a value of neither form.
+ */
+function toChallengeResult(formatted: unknown): KyaOsToolResult | undefined {
+  if (Array.isArray(formatted)) return { content: formatted };
+  if (!isRecord(formatted) || !Array.isArray(formatted.content)) return undefined;
+  const { content, structuredContent, isError, _meta } = formatted;
+  return withoutOutcomeMeta({
+    content,
+    ...(isRecord(structuredContent) ? { structuredContent } : {}),
+    ...(typeof isError === "boolean" ? { isError } : {}),
+    ...(isRecord(_meta) ? { _meta } : {}),
+  });
 }
 
 /**
@@ -75,14 +99,15 @@ export interface DelegationVerification {
   /**
    * Build the signed-later `needs_authorization` challenge for a call that
    * arrived without a delegation or resolvable grant: a fresh resume token, a
-   * 5-minute expiry, and the emitted content (respecting `config.formatChallenge`,
-   * which falls back to the default JSON challenge if it throws).
+   * 5-minute expiry, and the result to emit (respecting `config.formatChallenge`,
+   * which falls back to the default JSON challenge if it throws or returns
+   * neither content nor a challenge result).
    */
   buildNeedsAuthorizationChallenge(
     toolName: string,
     config: DelegationGateConfig,
   ): Promise<{
-    challengeContent: Array<{ type: "text"; text: string }>;
+    challenge: KyaOsToolResult;
     message: string;
   }>;
 }
@@ -340,7 +365,7 @@ export function createDelegationVerification(
     toolName: string,
     config: DelegationGateConfig,
   ): Promise<{
-    challengeContent: Array<{ type: "text"; text: string }>;
+    challenge: KyaOsToolResult;
     message: string;
   }> {
     const tokenBytes = await cryptoProvider.randomBytes(16);
@@ -365,24 +390,32 @@ export function createDelegationVerification(
     });
 
     // config.formatChallenge lets a server render the challenge (e.g. a markdown
-    // link for LLM clients) BEFORE it is signed, so the proof binds exactly what
-    // the client receives. A throwing hook falls back to the default challenge.
-    const defaultChallengeContent = [
-      { type: "text" as const, text: JSON.stringify(authError) },
-    ];
-    let challengeContent = defaultChallengeContent;
+    // link for LLM clients, or an error result with structuredContent) BEFORE
+    // it is signed, so the proof binds exactly what the client receives. A
+    // throwing hook, or one returning neither form, gets the default challenge.
+    const defaultChallenge = (): KyaOsToolResult => ({
+      content: [{ type: "text", text: JSON.stringify(authError) }],
+    });
+    let challenge = defaultChallenge();
     if (config.formatChallenge) {
       try {
-        challengeContent = config.formatChallenge(authError);
+        const formatted = toChallengeResult(config.formatChallenge(authError));
+        if (formatted) {
+          challenge = formatted;
+        } else {
+          logger.error(
+            "[kya-os] formatChallenge returned neither content nor a challenge result; using the default challenge",
+            { tool: toolName },
+          );
+        }
       } catch (error) {
         logger.error("[kya-os] formatChallenge threw; using the default challenge", {
           tool: toolName,
           error: error instanceof Error ? error.message : String(error),
         });
-        challengeContent = defaultChallengeContent;
       }
     }
-    return { challengeContent, message: authError.message };
+    return { challenge, message: authError.message };
   }
 
   return {

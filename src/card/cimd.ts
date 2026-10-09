@@ -28,6 +28,7 @@
  */
 
 import { isRecord } from '../utils/guards.js';
+import { verificationMethodJwk } from '../delegation/verification-method-key.js';
 import { parseCard } from './resolve.js';
 import type { CimdBinding, Ed25519PublicJwk, EntityCard } from './schema.js';
 
@@ -250,10 +251,13 @@ function urlOrigin(url: () => string): string | null {
   }
 }
 
-/** Project one verification method to a public OKP JWK (Ed25519 only; `d` stripped), or null. */
+/**
+ * Project one verification method to a public OKP JWK (Ed25519 only; `d` stripped), or null.
+ * The key may be published as `publicKeyJwk`, `publicKeyMultibase`, or `publicKeyBase58`.
+ */
 function vmToOkpJwk(vm: unknown): Ed25519PublicJwk | null {
   if (!isRecord(vm)) return null;
-  const jwk = vm.publicKeyJwk;
+  const jwk: unknown = verificationMethodJwk(vm as Parameters<typeof verificationMethodJwk>[0]);
   if (!isRecord(jwk) || jwk.kty !== 'OKP' || jwk.crv !== 'Ed25519' || typeof jwk.x !== 'string') {
     return null;
   }

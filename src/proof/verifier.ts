@@ -24,6 +24,8 @@ import {
   type ProofVerificationErrorCode,
 } from "./errors.js";
 import { logger } from "../logging/index.js";
+import { verificationMethodJwk } from "../delegation/verification-method-key.js";
+import type { VerificationMethod } from "../delegation/vc-verifier.types.js";
 import {
   buildProofJwsPayload,
   findContentBindingMismatch,
@@ -572,13 +574,9 @@ export class ProofVerifier {
         );
       }
 
-      const doc = didDoc as {
-        verificationMethod?: Array<{ id: string; publicKeyJwk?: unknown }>;
-      };
-
       if (
-        !doc.verificationMethod ||
-        doc.verificationMethod.length === 0
+        !didDoc.verificationMethod ||
+        didDoc.verificationMethod.length === 0
       ) {
         throw new ProofVerificationError(
           PROOF_VERIFICATION_ERROR_CODES.VERIFICATION_METHOD_NOT_FOUND,
@@ -588,11 +586,9 @@ export class ProofVerifier {
       }
 
       // Find verification method by kid or use first one
-      let verificationMethod:
-        | { id: string; publicKeyJwk?: unknown }
-        | undefined;
+      let verificationMethod: VerificationMethod | undefined;
       if (matchesKid) {
-        verificationMethod = doc.verificationMethod.find(matchesKid);
+        verificationMethod = didDoc.verificationMethod.find(matchesKid);
 
         if (!verificationMethod) {
           throw new ProofVerificationError(
@@ -601,25 +597,30 @@ export class ProofVerifier {
             {
               did,
               kid,
-              availableKids: doc.verificationMethod.map(
+              availableKids: didDoc.verificationMethod.map(
                 (vm: { id: string }) => vm.id
               ),
             }
           );
         }
       } else {
-        verificationMethod = doc.verificationMethod[0];
+        verificationMethod = didDoc.verificationMethod[0];
       }
 
-      if (!verificationMethod?.publicKeyJwk) {
+      // The key may be published as publicKeyJwk, publicKeyMultibase, or
+      // publicKeyBase58; verificationMethodJwk reads whichever is present.
+      const methodJwk = verificationMethod
+        ? verificationMethodJwk(verificationMethod)
+        : undefined;
+      if (!verificationMethod || !methodJwk) {
         throw new ProofVerificationError(
           PROOF_VERIFICATION_ERROR_CODES.PUBLIC_KEY_NOT_FOUND,
-          `Public key JWK not found in verification method`,
+          "Verification method has no usable public key (publicKeyJwk / publicKeyMultibase / publicKeyBase58)",
           { did, kid, verificationMethodId: verificationMethod?.id }
         );
       }
 
-      const jwk = verificationMethod.publicKeyJwk as {
+      const jwk = methodJwk as {
         kty?: string;
         crv?: string;
         x?: string;

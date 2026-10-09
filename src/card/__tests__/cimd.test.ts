@@ -10,6 +10,7 @@ import {
   KYA_OS_DID_META_KEY,
   type EntityCard,
 } from '../index.js';
+import { extractPublicKeyFromDidKey, publicKeyToJwk } from '../../delegation/did-key-resolver.js';
 
 const did = 'did:web:example.com:clients:acme';
 const clientId = 'https://example.com/clients/acme';
@@ -83,6 +84,28 @@ describe('didKeyedJwks (verificationMethod → OKP JWK, kid preserved, d strippe
       ],
     });
     expect(jwks.keys[0]?.kid).toBe('custom-kid');
+  });
+
+  it('projects an Ed25519 key published only as publicKeyMultibase, kid from the method id', () => {
+    const keyDid = 'did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK';
+    const multibase = keyDid.slice('did:key:'.length);
+    const vmId = `${keyDid}#${multibase}`;
+    const jwks = didKeyedJwks({
+      id: keyDid,
+      verificationMethod: [
+        { id: vmId, type: 'Ed25519VerificationKey2020', controller: keyDid, publicKeyMultibase: multibase },
+        {
+          // An X25519 multikey (multicodec 0xec01) is a key-agreement key, not a signing key.
+          id: `${keyDid}#z6LSbysY2xFMRpGMhb7tFTLMpeuPRaqaWM1yECx2AtzE3KCc`,
+          type: 'X25519KeyAgreementKey2020',
+          controller: keyDid,
+          publicKeyMultibase: 'z6LSbysY2xFMRpGMhb7tFTLMpeuPRaqaWM1yECx2AtzE3KCc',
+        },
+      ],
+    });
+    expect(jwks.keys).toEqual([
+      { ...publicKeyToJwk(extractPublicKeyFromDidKey(keyDid)!), kid: vmId },
+    ]);
   });
 
   it('returns an empty key set for a doc with no verification methods', () => {

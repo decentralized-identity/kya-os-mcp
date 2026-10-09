@@ -35,6 +35,7 @@ import {
   ProofVerificationError,
   PROOF_VERIFICATION_ERROR_CODES,
 } from '../errors.js';
+import { extractPublicKeyFromDidKey, publicKeyToJwk } from '../../delegation/did-key-resolver.js';
 
 describe('ProofVerifier Security', () => {
   let proofVerifier: ProofVerifier;
@@ -691,6 +692,42 @@ describe('ProofVerifier Security', () => {
 
       expect(jwk).toEqual(validJwk);
       expect(mockFetchProvider.resolveDID).toHaveBeenCalledWith('did:key:z123');
+    });
+
+    it('reads a key published only as publicKeyMultibase (did:key, Ed25519VerificationKey2020)', async () => {
+      const did = 'did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK';
+      const multibase = did.slice('did:key:'.length);
+      const vmId = `${did}#${multibase}`;
+      mockFetchProvider.resolveDID = vi.fn().mockResolvedValue({
+        id: did,
+        verificationMethod: [
+          { id: vmId, type: 'Ed25519VerificationKey2020', controller: did, publicKeyMultibase: multibase },
+        ],
+      });
+
+      const jwk = await proofVerifier.fetchPublicKeyFromDID(did, vmId);
+
+      expect(jwk).toEqual({
+        ...publicKeyToJwk(extractPublicKeyFromDidKey(did)!),
+        kid: vmId,
+      });
+    });
+
+    it('throws PUBLIC_KEY_NOT_FOUND when publicKeyMultibase is not an Ed25519 key', async () => {
+      // An X25519 multikey (multicodec 0xec01) is not a signing key.
+      mockFetchProvider.resolveDID = vi.fn().mockResolvedValue({
+        verificationMethod: [
+          {
+            id: 'did:key:z123#z123',
+            type: 'X25519KeyAgreementKey2020',
+            publicKeyMultibase: 'z6LSbysY2xFMRpGMhb7tFTLMpeuPRaqaWM1yECx2AtzE3KCc',
+          },
+        ],
+      });
+
+      await expect(proofVerifier.fetchPublicKeyFromDID('did:key:z123')).rejects.toMatchObject({
+        code: PROOF_VERIFICATION_ERROR_CODES.PUBLIC_KEY_NOT_FOUND,
+      });
     });
 
     it('matches a DID URL kid against a method the document lists by fragment', async () => {

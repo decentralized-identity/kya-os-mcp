@@ -12,6 +12,7 @@ import {
   createDidWebResolver,
   type DIDDocument,
 } from '../src/index.js';
+import { verificationMethodJwk } from '../src/delegation/index.js';
 import type { FetchProvider } from '../src/providers/base.js';
 import {
   validateDelegationChain as validateCardDelegationChain,
@@ -52,9 +53,10 @@ export function makeMultiResolver(
   };
 }
 
+/** Whether the document's first verification method publishes an Ed25519 key, in any key form. */
 export function isUsableEd25519Document(doc: DIDDocument | null): boolean {
   const vm = doc?.verificationMethod?.[0];
-  const jwk = vm?.publicKeyJwk as { kty?: string; crv?: string; x?: string } | undefined;
+  const jwk = vm ? verificationMethodJwk(vm) : undefined;
   return Boolean(jwk && jwk.kty === 'OKP' && jwk.crv === 'Ed25519' && jwk.x);
 }
 

@@ -7,6 +7,22 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Fixed
+
+- **Three DID-document readers accept a key published as
+  `publicKeyMultibase`.** `ProofVerifier.fetchPublicKeyFromDID`, the Entity
+  Card `didKeyedJwks` projection, and the conformance adapter's DID-resolution
+  check read only `publicKeyJwk`. A verification method that published its
+  Ed25519 key as `publicKeyMultibase`, the material property of
+  `Ed25519VerificationKey2020` and the form did:cheqd documents use, failed
+  with `PUBLIC_KEY_NOT_FOUND`, projected no key, or failed the check. They now
+  read the key through `verificationMethodJwk`, as the credential verifiers
+  already do: a `publicKeyJwk` is used unchanged, otherwise the key is taken
+  from `publicKeyMultibase` or `publicKeyBase58`, and anything that is not a
+  32-byte Ed25519 key is still refused. The `PUBLIC_KEY_NOT_FOUND` message from
+  `fetchPublicKeyFromDID` now names all three properties. The did:key resolver's
+  output is unchanged.
+
 ### Documentation
 
 - **SPEC.md §6.2 states how a base-profile credential is signed.** Its

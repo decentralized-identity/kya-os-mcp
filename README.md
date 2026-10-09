@@ -106,6 +106,40 @@ When an agent calls `checkout` without a delegation credential, it gets back a `
 
 > Try it yourself: [examples/consent-basic](./examples/consent-basic/) walks through the full consent flow end-to-end.
 
+### Prove the outcomes your own code decides
+
+A server that enforces authorization itself, checking OAuth scopes in the tool handler for example, returns its own challenges and denials as tool results. `withKyaOs` proves the results it can attribute, but it sends an error result its own gates did not produce as the handler returned it, without a proof. `proveOutcome` gives that result the proof the gates attach to theirs, with the same claims, `_meta` keys and audit events:
+
+```typescript
+import { toMcpToolCallback } from '@kya-os/mcp';
+
+server.registerTool('get_report', { inputSchema }, toMcpToolCallback(async (args) => {
+  if (!grantedScopes.includes('reports:read')) {
+    return kyaos.proveOutcome!({
+      toolName: 'get_report',
+      args,
+      outcome: 'needs_authorization', // or 'step_up_required', 'denied'
+      reason: 'insufficient_scope',
+      result: {
+        content: [{ type: 'text', text: 'Sign in to see this report.' }],
+        structuredContent: { error: 'insufficient_scope', scope: 'reports:read', resource_metadata },
+        isError: true,
+        _meta: { 'mcp/www_authenticate': [`Bearer resource_metadata="${resource_metadata}"`] },
+      },
+    });
+  }
+  return { content: [{ type: 'text', text: report }] };
+}));
+```
+
+- **Build the whole result before proving it.** Under the envelope response-proof profile (`responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE`) the proof covers `isError` and `structuredContent` as well as `content`, so a member set afterwards breaks it. The default body profile covers `content` only.
+- **`_meta` is outside every response proof** (SPEC §7.6). Repeat anything a client must be able to trust, such as `resource_metadata`, `scope` and `error`, in `content` or `structuredContent`.
+- A `needs_authorization` proof binds the result; a denial or step-up proof binds none (SPEC §7.4).
+- Return the proven result from the handler. The transport passes it through and removes a private marker it carries.
+- Leave `kyaos.sessionManager` alone. A second live session makes the fallback session ambiguous, and allow results then go out unproven, marked with `_meta.proofError`.
+- `wrapWithDelegation`'s `formatChallenge` can return the same `{ content, structuredContent, isError, _meta }` shape for the library's own challenge, and all of it is set before signing.
+- `toMcpToolCallback` adapts any wrapped handler to `registerTool` without a cast. The SDK's request context never reaches the handler as its session id.
+
 ---
 
 ## Turn proofs into a verifiable audit trail

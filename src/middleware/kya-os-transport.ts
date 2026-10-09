@@ -115,10 +115,11 @@ export function createKyaOsTransport(
         const rawResult = message.result as ToolResult | undefined;
         // A result the middleware's wrappers already proved or audited (a
         // delegated call's scope-bearing proof, a signed needs_authorization
-        // outcome, an audited error) passes through: proving it again would
-        // replace its proof and record its lifecycle twice. Only the stamp
-        // shows that; proof, proofError and audit members can come from any
-        // handler, including one relaying an upstream server's result.
+        // outcome, an outcome application code proved with proveOutcome, an
+        // audited error) passes through: proving it again would replace its
+        // proof and record its lifecycle twice. Only the stamp shows that;
+        // proof, proofError and audit members can come from any handler,
+        // including one relaying an upstream server's result.
         if (rawResult && isOwnResult?.(rawResult) !== true) {
           // Those members are untrusted here, so they are removed and the
           // result is proved and audited as any other. Other members stay.

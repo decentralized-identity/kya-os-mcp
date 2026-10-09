@@ -113,6 +113,19 @@ export function attachOuterProofLayer(
   return outerProofLayerHooks.get(wrapWithProof)?.();
 }
 
+/**
+ * The fallback session for a call that threaded none, or why there is none:
+ * `ambiguous` when several sessions are live and the middleware refuses to
+ * pick one, which might be another client's.
+ */
+export type FallbackSession =
+  | { sessionId: string }
+  | { sessionId: undefined; ambiguous: boolean };
+
+/** `proofError` on an allow result the fallback could not attribute. */
+const AMBIGUOUS_SESSION_PROOF_ERROR =
+  "Proof session is ambiguous (several live sessions, none threaded) — response is unproven";
+
 export interface SessionProof {
   /** Establish a session from a handshake and cache it as the fallback. */
   handleHandshake(args: Record<string, unknown>): Promise<{
@@ -121,10 +134,11 @@ export interface SessionProof {
   }>;
   /**
    * Resolve the single-process fallback session for a call that threaded none —
-   * or auto-create one when `config.autoSession` is set. Returns undefined (skip
-   * the proof) when attribution would be ambiguous (multiple live sessions).
+   * or auto-create one when `config.autoSession` is set. Returns no session
+   * (skip the proof) when there is none, or, marked `ambiguous`, when
+   * attribution would be ambiguous (multiple live sessions).
    */
-  ensureSession(): Promise<string | undefined>;
+  ensureSession(): Promise<FallbackSession>;
   /** Wrap a tool handler to attach a holder-of-key proof to success responses. */
   wrapWithProof<T extends Record<string, unknown> = Record<string, unknown>>(
     toolName: string,
@@ -397,12 +411,12 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
   // would leave several live sessions, and every later call ambiguous.
   let autoSessionInFlight: Promise<string | undefined> | undefined;
 
-  async function ensureSession(): Promise<string | undefined> {
+  async function ensureSession(): Promise<FallbackSession> {
     if (activeSessionId) {
       const existing = await sessionManager.getSession(activeSessionId);
       if (existing) {
         if ((await liveSessionCount()) <= 1) {
-          return activeSessionId;
+          return { sessionId: activeSessionId };
         }
         // Ambiguous: more than one session and none threaded — do NOT borrow.
         logger.warn(
@@ -410,16 +424,19 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
             "proof attribution to avoid signing with another client's session. " +
             "Thread the sessionId (the auto-proof path is single-session only).",
         );
-        return undefined;
+        return { sessionId: undefined, ambiguous: true };
       }
     }
 
-    if (!config.autoSession) return undefined;
+    if (!config.autoSession) return { sessionId: undefined, ambiguous: false };
 
     autoSessionInFlight ??= createAutoSession().finally(() => {
       autoSessionInFlight = undefined;
     });
-    return autoSessionInFlight;
+    const sessionId = await autoSessionInFlight;
+    return sessionId === undefined
+      ? { sessionId: undefined, ambiguous: false }
+      : { sessionId };
   }
 
   async function createAutoSession(): Promise<string | undefined> {
@@ -512,8 +529,16 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       }
 
       // Resolve session: explicit param → active session → auto-create
-      const resolvedSessionId = sessionId ?? await ensureSession();
+      // `== null`, as `??` below: a plain-JS caller may thread null.
+      const fallback = sessionId == null ? await ensureSession() : undefined;
+      const resolvedSessionId = sessionId ?? fallback?.sessionId;
       if (!resolvedSessionId) {
+        // Refusing to borrow another client's session must not look like a
+        // server that never proves: the result says it is unproven, as it
+        // does when proof generation fails.
+        if (fallback !== undefined && fallback.sessionId === undefined && fallback.ambiguous) {
+          result._meta = { ...handlerMeta(result), proofError: AMBIGUOUS_SESSION_PROOF_ERROR };
+        }
         const proofAuditDelivered = await emitAudit(
           'Failed to record unavailable proof session',
           () => audit?.proof('rejected', {
@@ -726,7 +751,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       },
     };
     try {
-      const resolvedSessionId = sessionId ?? (await ensureSession());
+      const resolvedSessionId = sessionId ?? (await ensureSession()).sessionId;
       if (!resolvedSessionId) return response;
       const session = await sessionManager.getSession(resolvedSessionId);
       if (!session) return response;

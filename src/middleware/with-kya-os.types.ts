@@ -117,7 +117,7 @@ export type KyaOsChallengeFormatter = (
 ) => Array<{ type: "text"; text: string }> | KyaOsChallengeResult;
 
 /** What {@link KyaOsOutcomeProver.proveOutcome} proves. */
-export interface KyaOsOutcomeProofRequest {
+export interface KyaOsOutcomeProofRequest<R extends KyaOsToolResult = KyaOsToolResult> {
   /** The tool the call named. */
   toolName: string;
   /**
@@ -141,7 +141,7 @@ export interface KyaOsOutcomeProofRequest {
    * `structuredContent`. The middleware's own `_meta` members are dropped
    * from it.
    */
-  result: KyaOsToolResult;
+  result: R;
   /**
    * The KYA-OS session to attribute the proof to. Omitted, the proof uses the
    * session the gates fall back to: the single established (handshake or
@@ -155,16 +155,16 @@ export interface KyaOsOutcomeProofRequest {
 /** Prove an authorization outcome that application code decided itself. */
 export interface KyaOsOutcomeProver {
   /**
-   * Return a copy of `request.result` carrying the response proof the
-   * middleware's own gates attach to their outcomes: the same claims, the
-   * same `_meta` keys, the configured response-proof profile, and the same
-   * audit events. Return it from the tool handler: the withKyaOs transport
+   * Return a copy of `request.result`, typed as it was, carrying the response
+   * proof the middleware's own gates attach to their outcomes: the same
+   * claims, the same `_meta` keys, the configured response-proof profile, and
+   * the same audit events. Return it from the tool handler: the withKyaOs transport
    * passes it through as proven and removes its private lifecycle stamp, so
    * do not call this on a result that has already left the transport.
    * Without a resolvable session the copy is returned unproven but audited,
    * as a gate's outcome is. Throws a `TypeError` for an unknown outcome.
    */
-  proveOutcome(request: KyaOsOutcomeProofRequest): Promise<KyaOsToolResult>;
+  proveOutcome<R extends KyaOsToolResult>(request: KyaOsOutcomeProofRequest<R>): Promise<R>;
 }
 
 /**

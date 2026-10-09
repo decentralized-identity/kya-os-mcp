@@ -139,7 +139,9 @@ export interface KyaOsOutcomeProofRequest<R extends KyaOsToolResult = KyaOsToolR
    * repeat anything security-relevant carried there (an OAuth
    * `resource_metadata`, `scope` or `error`) in `content` or
    * `structuredContent`. The middleware's own `_meta` members are dropped
-   * from it.
+   * from it. Under the envelope profile, set `resultType: 'complete'` here:
+   * on the 2026-07-28 revision the MCP SDK adds it after the handler returns
+   * otherwise, outside the proof.
    */
   result: R;
   /**

@@ -133,6 +133,7 @@ server.registerTool('get_report', { inputSchema }, toMcpToolCallback(async (args
 ```
 
 - **Build the whole result before proving it.** Under the envelope response-proof profile (`responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE`) the proof covers `isError` and `structuredContent` as well as `content`, so a member set afterwards breaks it. The default body profile covers `content` only.
+- **Set `resultType: 'complete'` yourself under the envelope profile.** On the 2026-07-28 MCP revision, SDK 2 adds `resultType` to a result after the handler returns it, which an envelope proof made in the handler does not cover. A result that already carries it keeps it as it is.
 - **`_meta` is outside every response proof** (SPEC §7.6). Repeat anything a client must be able to trust, such as `resource_metadata`, `scope` and `error`, in `content` or `structuredContent`.
 - A `needs_authorization` proof binds the result; a denial or step-up proof binds none (SPEC §7.4).
 - Return the proven result from the handler. The transport passes it through and removes a private marker it carries.

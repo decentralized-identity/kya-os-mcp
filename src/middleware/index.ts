@@ -15,7 +15,11 @@ export {
   type KyaOsMiddleware,
   type KyaOsToolDefinition,
   type KyaOsToolHandler,
+  type KyaOsToolResult,
   type KyaOsServer,
+  type KyaOsAuthorizationOutcome,
+  type KyaOsOutcomeProofRequest,
+  type KyaOsOutcomeProver,
 } from './with-kya-os.js';
 
 export {

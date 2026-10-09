@@ -25,6 +25,7 @@ import { KYA_OS_ERROR_CODES } from "../errors.js";
 import type { DetachedProof } from "../types/protocol.js";
 import type {
   KyaOsToolHandler,
+  KyaOsToolResult,
   KyaOsCallContext,
 } from "./with-kya-os.types.js";
 import type { MiddlewareDeps, AttachOutcomeProof } from "./with-kya-os.deps.js";
@@ -59,7 +60,7 @@ const outcomeMetaKeys: readonly string[] = [
   LIFECYCLE_STAMP_META_KEY,
 ];
 
-type ToolResult = Awaited<ReturnType<KyaOsToolHandler>>;
+type ToolResult = KyaOsToolResult;
 
 /** `result` without the `_meta` members in `keys`, dropping `_meta` if nothing else is left. */
 function withoutMetaKeys<T extends ToolResult>(result: T, keys: readonly string[]): T {
@@ -464,7 +465,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
           'Required intent audit delivery failed before tool execution',
         );
       }
-      let result: Awaited<ReturnType<KyaOsToolHandler>>;
+      let result: ToolResult;
       try {
         result = await handler(args as T, sessionId, context);
       } catch (error) {
@@ -480,6 +481,12 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
         );
         throw error;
       }
+
+      // An outcome the gates or proveOutcome already proved and audited (a
+      // challenge need not be an error result): signing it again would replace
+      // its outcome proof with one that records the call as allowed. Matched by
+      // identity, so a relayed result's own markers never qualify.
+      if (auditedTerminalResponses.has(result)) return result;
 
       if (result.isError) {
         if (!hasTerminalAuditMarker(result)) {
@@ -682,7 +689,6 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     reason,
     outcome = "denied",
     paramsOverride,
-    responseData,
   ) => {
     const phase = outcome === 'denied' ? 'denied' : 'step_up_required';
     const reasonCode = outcome === 'needs_authorization'
@@ -738,15 +744,15 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       }
 
       const request: ToolRequest = { method: toolName, params: cleanArgs };
-      // `responseData !== undefined` signals this outcome has a body to bind
-      // (the needs_authorization challenge); denial / step-up proofs stay
-      // body-free under every profile. WHAT gets bound is profile-selected:
-      // the envelope profile binds the full response envelope the client receives (hashing
-      // strips `_meta`, where the proof lands below), the body profile the bare challenge
-      // content — the original wire contract.
+      // A needs_authorization challenge has a body to bind; denial / step-up
+      // proofs stay body-free under every profile (SPEC §7.4). WHAT gets bound
+      // is profile-selected: the envelope profile binds the full response
+      // envelope the client receives (hashing strips `_meta`, where the proof
+      // lands below), the body profile the bare challenge content — the
+      // original wire contract.
       const proofResponse: ToolResponse | undefined =
-        responseData !== undefined
-          ? { data: bindsEnvelope ? response : responseData }
+        outcome === "needs_authorization"
+          ? { data: bindsEnvelope ? response : response.content }
           : undefined;
       const proof = await proofGenerator.generateProof(request, proofResponse, session, {
         outcome,

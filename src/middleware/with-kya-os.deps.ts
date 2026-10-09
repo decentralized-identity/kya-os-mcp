@@ -15,27 +15,30 @@ import type { ProofVerifier } from "../proof/verifier.js";
 import type { ResponseProofProfile } from "../types/protocol.js";
 import type { McpAuditEventAdapter } from "../audit/adapters/mcp.js";
 import type {
+  KyaOsAuthorizationOutcome,
   KyaOsConfig,
   KyaOsDelegationConfig,
-  KyaOsToolHandler,
+  KyaOsToolResult,
 } from "./with-kya-os.types.js";
 
 /**
  * Attach a signed proof recording an authorization OUTCOME (denied / step-up /
  * needs-authorization) to a response. Provided by the session/proof sub-factory
- * and consumed by the delegation- and policy-gate sub-factories, so it is typed
- * here as the shared internal contract between them.
+ * and consumed by the delegation- and policy-gate sub-factories and the public
+ * `proveOutcome`, so it is typed here as the shared internal contract between
+ * them. A `needs_authorization` proof binds the response (its content under
+ * the body profile, its envelope under the envelope profile); denial and
+ * step-up proofs bind none (SPEC §7.4).
  */
 export type AttachOutcomeProof = (
-  response: Awaited<ReturnType<KyaOsToolHandler>>,
+  response: KyaOsToolResult,
   toolName: string,
   args: Record<string, unknown>,
   sessionId: string | undefined,
   reason: string,
-  outcome?: "denied" | "step_up_required" | "needs_authorization",
+  outcome?: KyaOsAuthorizationOutcome,
   paramsOverride?: Record<string, unknown>,
-  responseData?: unknown,
-) => Promise<Awaited<ReturnType<KyaOsToolHandler>>>;
+) => Promise<KyaOsToolResult>;
 
 /** The constructed dependencies shared across the middleware sub-factories. */
 export interface MiddlewareDeps {

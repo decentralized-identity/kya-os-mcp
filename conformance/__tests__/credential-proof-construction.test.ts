@@ -26,21 +26,22 @@ function load(name: string): Vector[] {
 }
 
 /**
- * Every delegation credential a vector carries, labeled by where it sits. The
- * status-list vectors' StatusList2021Credential is left out: its committed
- * signature does not verify, and the reference adapter reads its bits without
- * checking it, so it needs a suite version bump rather than a test here.
+ * Every credential a vector carries, labeled by where it sits: the delegation
+ * credentials and, in the status-list vectors, the StatusList2021Credential,
+ * which §6.2 signs the same way.
  */
 function credentialsOf(vector: Vector): [string, Credential][] {
-  const { leaf, ancestors, credential } = vector.input as {
+  const { leaf, ancestors, credential, statusLists } = vector.input as {
     leaf?: Credential;
     ancestors?: Credential[];
     credential?: Credential;
+    statusLists?: Record<string, Credential>;
   };
   return [
     ...(leaf ? [['leaf', leaf] as [string, Credential]] : []),
     ...(ancestors ?? []).map((c, i): [string, Credential] => [`ancestors[${i}]`, c]),
     ...(credential ? [['credential', credential] as [string, Credential]] : []),
+    ...Object.values(statusLists ?? {}).map((c, i): [string, Credential] => [`statusLists[${i}]`, c]),
   ];
 }
 
@@ -60,14 +61,19 @@ const cases = vectors.flatMap((v) =>
     name: `${v.id} ${where}`,
     vc,
     didDocuments: v.input.didDocuments as Record<string, DidDocument>,
-    // The one credential the suite signs and then alters, so its signature must fail.
-    tampered: v.id === 'delegation-chain/tampered-signature' && where === 'leaf',
+    // The credentials the suite signs and then alters, so their signatures must fail.
+    tampered:
+      (v.id === 'delegation-chain/tampered-signature' && where === 'leaf') ||
+      (v.id === 'status-list/tampered-list' && where.startsWith('statusLists[')),
   })),
 );
 
 describe('base-profile credential proof as SPEC.md §6.2 states it', () => {
-  it('covers every delegation credential in the delegation-chain and status-list vectors', () => {
+  it('covers every credential in the delegation-chain and status-list vectors', () => {
     expect(cases.length).toBeGreaterThanOrEqual(vectors.length);
+    expect(cases.filter((c) => c.name.includes('statusLists[')).length).toBe(
+      load('status-list.json').length,
+    );
   });
 
   it.each(cases)('$name: proofValue is unpadded base64url with no multibase prefix', ({ vc }) => {

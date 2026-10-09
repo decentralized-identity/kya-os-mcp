@@ -30,6 +30,7 @@ import {
   type DelegationCredentialVerifierPort,
 } from '../src/delegation/chain-enforcement.js';
 import { BitstringManager } from '../src/delegation/bitstring.js';
+import { verifySignature } from '../src/delegation/vc-verification-checks.js';
 import { ClockProvider, FetchProvider } from '../src/providers/base.js';
 // The Entity Card layer (`org.kya-os/proof.v1` + the typed card) lives on the
 // `@kya-os/mcp/card` subpath, NOT the package root — wire its PUBLIC verify
@@ -213,8 +214,15 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
         return fail('credential has no credentialStatus to verify');
       }
 
+      const fetchProvider = new StaticFetchProvider(input.didDocuments);
+      const didResolver = makeMultiResolver(input.didDocuments, fetchProvider);
+      const signatureVerifier = ed25519SignatureVerifier(this.crypto);
+
       // Status resolver backed by the supplied StatusList2021Credentials, decoded
-      // with the SAME bitstring primitive the manager uses (DRY).
+      // with the SAME bitstring primitive the manager uses (DRY). A list is
+      // signed like a delegation credential (SPEC.md §6.2), so its proof is
+      // checked on the same path before any bit is read; a throw here denies
+      // the credential as status_unresolvable.
       const statusListResolver = {
         checkStatus: async (s: CredentialStatus): Promise<boolean> => {
           const list = input.statusLists[s.statusListCredential] as
@@ -222,6 +230,16 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
             | undefined;
           if (!list) {
             throw new Error(`status list not found: ${s.statusListCredential}`);
+          }
+          const listProof = await verifySignature(
+            list as unknown as DelegationCredential,
+            didResolver,
+            signatureVerifier,
+          );
+          if (!listProof.valid) {
+            throw new Error(
+              `status list ${s.statusListCredential} proof rejected: ${listProof.reason ?? 'invalid'}`,
+            );
           }
           const manager = await BitstringManager.decode(
             list.credentialSubject.encodedList,
@@ -232,12 +250,10 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
         },
       };
 
-      const fetchProvider = new StaticFetchProvider(input.didDocuments);
-      const didResolver = makeMultiResolver(input.didDocuments, fetchProvider);
       const verifier = new DelegationCredentialVerifier({
         didResolver,
         statusListResolver,
-        signatureVerifier: ed25519SignatureVerifier(this.crypto),
+        signatureVerifier,
       });
 
       const result = await verifier.verifyDelegationCredential(credential, {

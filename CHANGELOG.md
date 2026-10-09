@@ -82,6 +82,17 @@ Versioning: https://semver.org/spec/v2.0.0.html
   32-byte Ed25519 key is still refused. The `PUBLIC_KEY_NOT_FOUND` message from
   `fetchPublicKeyFromDID` now names all three properties. The did:key resolver's
   output is unchanged.
+- **Conformance suite 1.2.0: the status-list vectors' list verifies, and a
+  list altered after signing must be rejected.** The StatusList2021Credential
+  in `status-list.json` carried a proof that did not verify, and the reference
+  adapter read its bits without checking it. The suite therefore passed an
+  implementation that never checked a list's proof and failed one that did.
+  The list is re-signed, the reference adapter verifies its proof on the
+  delegation credentials' path before reading a bit, and a new negative
+  vector, `status-list/tampered-list`, clears the revoked bit after signing.
+  SPEC.md §6.6 and CONFORMANCE.md L3.11 state the check. The other eight
+  vector files change only their `version`, the suite has 49 vectors, and the
+  library is unchanged.
 
 ### Documentation
 

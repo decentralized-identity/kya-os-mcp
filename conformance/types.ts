@@ -117,7 +117,11 @@ export interface DelegationChainInput {
 export interface StatusListInput {
   /** The DelegationCredential carrying a `credentialStatus`. */
   credential: unknown;
-  /** The signed StatusList2021Credential the entry points at, keyed by its id. */
+  /**
+   * The signed StatusList2021Credential the entry points at, keyed by its id.
+   * Its proof is checked like a delegation credential's (SPEC.md §6.2) before
+   * any bit is read (suite ≥ 1.2.0).
+   */
   statusLists: Record<string, unknown>;
   /** DID documents for signature verification, keyed by DID. */
   didDocuments: Record<string, unknown>;
@@ -277,7 +281,10 @@ export interface ConformanceAdapter {
   /** Verify a delegation credential and its full chain to the root. */
   verifyDelegationChain(input: DelegationChainInput): Promise<AdapterResult>;
 
-  /** Verify a credential's StatusList2021 revocation status. */
+  /**
+   * Verify a credential's StatusList2021 revocation status, rejecting it when
+   * the list's own proof does not verify.
+   */
   verifyStatusList(input: StatusListInput): Promise<AdapterResult>;
 
   /** Resolve a did:key DID to a usable Ed25519 verification method. */

@@ -534,9 +534,9 @@ The other `proof` members (`type`, `created`, `verificationMethod`,
 `proofPurpose`) are not covered by the signature; a verifier uses
 `verificationMethod` only to select the key. The `StatusList2021Credential` of
 §6.6 is signed the same way. The delegation credentials in the
-`delegation-chain` and `status-list` conformance vectors carry this
-construction. Whether 2.0 moves this profile to a standard cryptosuite is
-tracked in [#184](https://github.com/decentralized-identity/kya-os-mcp/issues/184).
+`delegation-chain` and `status-list` conformance vectors, and the status
+lists in the `status-list` vectors, carry this construction. Whether 2.0
+moves this profile to a standard cryptosuite is tracked in [#184](https://github.com/decentralized-identity/kya-os-mcp/issues/184).
 The §6.10 profile uses `DataIntegrityProof` with `eddsa-jcs-2022` and is not
 affected.
 
@@ -744,6 +744,10 @@ KYA-OS uses the W3C StatusList2021 specification for revocation:
   }
 }
 ```
+
+A verifier that reads a `StatusList2021Credential` MUST verify its proof, as
+§6.2 states, before reading any bit. A list whose proof does not verify is
+unresolvable: the credential it covers is rejected, never read as active.
 
 L1 implementations do not require revocation support; revocation checking is available at L3 only.
 

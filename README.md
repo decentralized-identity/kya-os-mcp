@@ -52,6 +52,8 @@ The KYA-OS protocol itself is defined in [`SPEC.md`](./SPEC.md). Binding-specifi
 npm install @kya-os/mcp
 ```
 
+If you are creating an implementation of the KYA-OS protocol, refer to [`CONFORMANCE.md`](./CONFORMANCE.md) for detailed requirements for the difference compliance levels.  
+
 ---
 
 ## Migrate any MCP server in 2 lines

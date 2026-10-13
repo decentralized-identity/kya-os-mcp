@@ -12,7 +12,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { createKyaOsMiddleware, NodeCryptoProvider, generateDidKeyFromBase64, KYA_OS_PROOF_META_KEY, type KyaOsMiddleware, type DelegationCredential, type NeedsAuthorizationError } from '@kya-os/mcp';
+import { createKyaOsMiddleware, NodeCryptoProvider, generateDidKeyFromBase64, KYA_OS_PROOF_META_KEY, type KyaOsMiddleware, type DelegationCredential, type NeedsAuthorizationError, serveInProcess } from '@kya-os/mcp';
 import { createDelegationIssuerFromIdentity } from '../src/delegation-issuer.js';
 import { createConsentFullMcpServer, type ToolResult } from '../src/server.js';
 
@@ -63,14 +63,14 @@ describe('MCP Server with consent-full', () => {
       crypto,
     );
 
-    browseHandler = kyaos.wrapWithProof('browse', async (args) => ({
+    browseHandler = serveInProcess(kyaos).tool('browse', kyaos.wrapWithProof('browse', async (args) => ({
       content: [{
         type: 'text',
         text: `Browsing category: ${args['category'] ?? 'all'}. Found 3 items.`,
       }],
-    })) as typeof browseHandler;
+    }))) as typeof browseHandler;
 
-    checkoutHandler = kyaos.wrapWithDelegation(
+    checkoutHandler = serveInProcess(kyaos).tool('checkout', kyaos.wrapWithDelegation(
       'checkout',
       { scopeId: 'cart:write', consentUrl: CONSENT_URL },
       kyaos.wrapWithProof('checkout', async (args) => ({
@@ -79,7 +79,7 @@ describe('MCP Server with consent-full', () => {
           text: `Order confirmed for item: ${args['item'] ?? 'unknown'}. Thank you!`,
         }],
       })),
-    ) as typeof checkoutHandler;
+    )) as typeof checkoutHandler;
   });
 
   // Public tool — no delegation needed
@@ -176,13 +176,13 @@ describe('MCP Server with consent-full', () => {
       crypto,
     );
 
-    const expiredCheckout = expiredKyaOs.wrapWithDelegation(
+    const expiredCheckout = serveInProcess(expiredKyaOs).tool('checkout', expiredKyaOs.wrapWithDelegation(
       'checkout',
       { scopeId: 'cart:write', consentUrl: CONSENT_URL },
       async (args) => ({
         content: [{ type: 'text', text: `Order: ${args['item']}` }],
       }),
-    );
+    ));
 
     const vc = await issueTestDelegation(serverDid, ['cart:write'], -3600);
     const result = await expiredCheckout({ item: 'widget', _kyaos_delegation: vc });
@@ -247,14 +247,14 @@ describe('MCP Server with consent-full', () => {
       crypto,
     );
 
-    const handler = testKyaOs.wrapWithDelegation(
+    const handler = serveInProcess(testKyaOs).tool('checkout', testKyaOs.wrapWithDelegation(
       'checkout',
       { scopeId: 'cart:write', consentUrl: CONSENT_URL },
       async (args) => {
         capturedArgs = args;
         return { content: [{ type: 'text', text: 'ok' }] };
       },
-    );
+    ));
 
     const vc = await issueTestDelegation(serverDid, ['cart:write']);
     await handler({ item: 'widget', _kyaos_delegation: vc });

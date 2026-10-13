@@ -27,6 +27,7 @@ import {
   crypto,
   handshake,
   proofOf,
+  served,
   verifyReceived,
 } from './helpers/received-proof.js';
 
@@ -50,24 +51,28 @@ function scopeChallenge(): KyaOsToolResult {
   };
 }
 
+/** A middleware served behind its transport, so a result is what the client receives (see `served`). */
+async function servedMiddleware(config?: Parameters<typeof createMiddleware>[0]): Promise<KyaOsMiddleware> {
+  return served(await createMiddleware(config));
+}
+
 function prove(kyaos: KyaOsMiddleware, request: KyaOsOutcomeProofRequest): Promise<KyaOsToolResult> {
   return kyaos.proveOutcome!(request);
 }
 
 describe('proveOutcome', () => {
   it('proves a challenge returned as an error result, binding its whole envelope under the envelope profile', async () => {
-    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
+    const kyaos = await servedMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
     const sessionId = await handshake(kyaos);
-    const wire = await connectTransport(kyaos);
 
-    const result = await wire.send(await prove(kyaos, {
+    const result = await prove(kyaos, {
       toolName: 'get_report',
       args: { report_id: 'r_1' },
       outcome: 'needs_authorization',
       reason: 'insufficient_scope',
       result: scopeChallenge(),
       sessionId,
-    }), { toolName: 'get_report', args: { report_id: 'r_1' } });
+    });
 
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toEqual(scopeChallenge().structuredContent);
@@ -96,7 +101,7 @@ describe('proveOutcome', () => {
   });
 
   it('binds only the content of a challenge under the default body profile', async () => {
-    const kyaos = await createMiddleware();
+    const kyaos = await servedMiddleware();
     const sessionId = await handshake(kyaos);
 
     const result = await prove(kyaos, {
@@ -117,11 +122,10 @@ describe('proveOutcome', () => {
   it.each(['denied', 'step_up_required'] as const)(
     'leaves a %s proof body-free, as the gates do',
     async (outcome) => {
-      const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
+      const kyaos = await servedMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
       const sessionId = await handshake(kyaos);
-      const wire = await connectTransport(kyaos);
 
-      const result = await wire.send(await prove(kyaos, {
+      const result = await prove(kyaos, {
         toolName: 'get_report',
         args: { report_id: 'r_1' },
         outcome,
@@ -132,7 +136,7 @@ describe('proveOutcome', () => {
           isError: true,
         },
         sessionId,
-      }), { toolName: 'get_report', args: { report_id: 'r_1' } });
+      });
 
       expect(proofOf(result)!.meta).toMatchObject({ outcome, reason: 'budget_exhausted' });
       expect(proofOf(result)!.meta.responseHash).toBeUndefined();
@@ -144,7 +148,7 @@ describe('proveOutcome', () => {
 
   it('places the proof under the same _meta keys as a gate outcome', async () => {
     for (const emitLegacyProofKey of [true, false]) {
-      const kyaos = await createMiddleware({ emitLegacyProofKey });
+      const kyaos = await servedMiddleware({ emitLegacyProofKey });
       const sessionId = await handshake(kyaos);
       const gate = await kyaos.wrapWithDelegation(
         'checkout',
@@ -165,14 +169,14 @@ describe('proveOutcome', () => {
 
   it('records the audit events the delegation gate records for its own challenge', async () => {
     const gateAudit = auditEvents();
-    const gateKyaos = await createMiddleware({ audit: { record: gateAudit.record } });
+    const gateKyaos = await servedMiddleware({ audit: { record: gateAudit.record } });
     await gateKyaos.wrapWithDelegation(
       'checkout',
       { scopeId: 'cart:write', consentUrl: 'https://consent.example' },
       async () => ({ content: [{ type: 'text', text: 'ran' }] }),
     )({}, await handshake(gateKyaos));
     const ownAudit = auditEvents();
-    const ownKyaos = await createMiddleware({ audit: { record: ownAudit.record } });
+    const ownKyaos = await servedMiddleware({ audit: { record: ownAudit.record } });
     const sessionId = await handshake(ownKyaos);
     const sessionEvents = ownAudit.events.length;
 
@@ -190,7 +194,7 @@ describe('proveOutcome', () => {
 
   it('records a denial as the policy gate records its own', async () => {
     const { events, record } = auditEvents();
-    const kyaos = await createMiddleware({ audit: { record } });
+    const kyaos = await servedMiddleware({ audit: { record } });
     const sessionId = await handshake(kyaos);
     const before = events.length;
 
@@ -207,7 +211,7 @@ describe('proveOutcome', () => {
   });
 
   it('leaves the reserved _kyaos* arguments out of the signed request, as the gates do', async () => {
-    const kyaos = await createMiddleware();
+    const kyaos = await servedMiddleware();
     const sessionId = await handshake(kyaos);
 
     const result = await prove(kyaos, {
@@ -225,7 +229,7 @@ describe('proveOutcome', () => {
   });
 
   it('drops the reserved _meta members the application set, and keeps the rest', async () => {
-    const kyaos = await createMiddleware();
+    const kyaos = await servedMiddleware();
     const sessionId = await handshake(kyaos);
     const forged = { jws: 'forged', meta: {} };
 
@@ -261,7 +265,7 @@ describe('proveOutcome', () => {
   });
 
   it('does not modify the result it was given', async () => {
-    const kyaos = await createMiddleware();
+    const kyaos = await servedMiddleware();
     const sessionId = await handshake(kyaos);
     const given = scopeChallenge();
     const snapshot = structuredClone(given);
@@ -274,7 +278,7 @@ describe('proveOutcome', () => {
   });
 
   it('needs no session from the application, and opens none of its own', async () => {
-    const kyaos = await createMiddleware({ autoSession: true });
+    const kyaos = await servedMiddleware({ autoSession: true });
 
     const challenge = await prove(kyaos, {
       toolName: 'get_report', args: {}, outcome: 'needs_authorization', reason: 'r', result: scopeChallenge(),
@@ -291,7 +295,7 @@ describe('proveOutcome', () => {
 
   it('returns the outcome unproven, and records why, when its session cannot be read', async () => {
     const { events, record } = auditEvents();
-    const kyaos = await createMiddleware({ audit: { record } });
+    const kyaos = await servedMiddleware({ audit: { record } });
     const sessionId = await handshake(kyaos);
     const read = vi.spyOn(kyaos.sessionManager, 'getSession').mockRejectedValue(new Error('store offline'));
     const error = vi.spyOn(logger, 'error').mockImplementation(() => {});
@@ -319,8 +323,41 @@ describe('proveOutcome', () => {
     }
   });
 
+  it('returns the outcome unproven, saying so, and records why, when its arguments cannot be hashed', async () => {
+    const { events, record } = auditEvents();
+    const kyaos = await servedMiddleware({ audit: { record } });
+    const sessionId = await handshake(kyaos);
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => {});
+
+    try {
+      // Arguments passed in process need not be JSON; with a BigInt the
+      // request has no canonical form to sign.
+      const result = await prove(kyaos, {
+        toolName: 'transfer', args: { amount: 10n }, outcome: 'denied', reason: 'over limit',
+        result: { content: [{ type: 'text', text: 'no' }], isError: true }, sessionId,
+      });
+
+      expect(proofOf(result)).toBeUndefined();
+      expect(result._meta).toEqual({
+        'org.kya-os/audit': { terminal: true, outcome: 'denied' },
+        proofError: 'Proof generation failed — response is unproven',
+      });
+      expect(events.slice(-3)).toEqual([
+        'authorization.denied:denied',
+        'tool.call.denied:denied',
+        'proof.rejected:failed',
+      ]);
+      expect(error).toHaveBeenCalledWith(
+        '[kya-os] Outcome proof generation failed',
+        expect.objectContaining({ tool: 'transfer' }),
+      );
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it('refuses an outcome it does not know', async () => {
-    const kyaos = await createMiddleware();
+    const kyaos = await servedMiddleware();
 
     await expect(prove(kyaos, {
       toolName: 'wipe',
@@ -331,31 +368,15 @@ describe('proveOutcome', () => {
     })).rejects.toThrow(TypeError);
   });
 
-  it('passes a body-profile proof through the withKyaOs transport untouched, less the private stamp', async () => {
-    const kyaos = await createMiddleware();
-    const sessionId = await handshake(kyaos);
-    const wire = await connectTransport(kyaos);
-
-    const result = await prove(kyaos, {
-      toolName: 'get_report',
-      args: { report_id: 'r_1' },
-      outcome: 'needs_authorization',
-      reason: 'insufficient_scope',
-      result: scopeChallenge(),
-      sessionId,
-    });
-    const received = await wire.send(result, { toolName: 'get_report', args: { report_id: 'r_1' } });
-
-    const { [LIFECYCLE_STAMP_META_KEY]: stamp, ...meta } = result._meta as Record<string, unknown>;
-    expect(stamp).toEqual(expect.any(String));
-    expect(received).toEqual({ ...result, _meta: meta });
-    expect((await verifyReceived(received, {
-      signer: kyaos.identity.did, toolName: 'get_report', params: { report_id: 'r_1' }, binds: 'content',
-    })).valid).toBe(true);
-  });
-
-  it('leaves an envelope-profile proof to the withKyaOs transport, which makes it over the result it sends', async () => {
-    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
+  it.each([
+    ['body', undefined, 'content'],
+    ['envelope', RESPONSE_PROOF_PROFILE_ENVELOPE, 'envelope'],
+  ] as const)('leaves its %s-profile proof to the withKyaOs transport, which makes it over the result it sends', async (
+    _profile,
+    responseProofProfile,
+    binds,
+  ) => {
+    const kyaos = await createMiddleware(responseProofProfile === undefined ? {} : { responseProofProfile });
     const sessionId = await handshake(kyaos);
     const wire = await connectTransport(kyaos);
 
@@ -379,7 +400,7 @@ describe('proveOutcome', () => {
     expect(pending).toEqual(expect.any(String));
 
     // The SDK adds a member after the handler returns, as SDK 2 adds
-    // resultType on the 2026-07-28 revision; the proof covers it.
+    // resultType on the 2026-07-28 revision.
     const received = await wire.send(
       { ...result, resultType: 'complete' },
       { toolName: 'get_report', args: { report_id: 'r_1' } },
@@ -390,17 +411,17 @@ describe('proveOutcome', () => {
       resultType: 'complete',
       _meta: { ...meta, [KYA_OS_PROOF_META_KEY]: proofOf(received), [LEGACY_PROOF_META_KEY]: proofOf(received) },
     });
-    expect(proofOf(received)!.meta).toMatchObject({ outcome: 'needs_authorization', prf: RESPONSE_PROOF_PROFILE_ENVELOPE });
-    const expected = {
-      signer: kyaos.identity.did, toolName: 'get_report', params: { report_id: 'r_1' }, binds: 'envelope' as const,
-    };
+    expect(proofOf(received)!.meta.outcome).toBe('needs_authorization');
+    expect(proofOf(received)!.meta.prf).toBe(responseProofProfile);
+    const expected = { signer: kyaos.identity.did, toolName: 'get_report', params: { report_id: 'r_1' }, binds };
     expect((await verifyReceived(received, expected)).valid).toBe(true);
+    // The envelope profile covers the added member; the body profile covers content only.
     const { resultType: _added, ...withoutAdded } = received;
-    expect((await verifyReceived(withoutAdded, expected)).valid).toBe(false);
+    expect((await verifyReceived(withoutAdded, expected)).valid).toBe(binds === 'content');
   });
 
   it('keeps its outcome proof inside wrapWithProof, which never re-signs it as allowed', async () => {
-    const kyaos = await createMiddleware();
+    const kyaos = await servedMiddleware();
     const sessionId = await handshake(kyaos);
 
     const result = await kyaos.wrapWithProof('checkout', async (args, threaded) => prove(kyaos, {

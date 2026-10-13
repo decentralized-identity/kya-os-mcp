@@ -5,6 +5,7 @@ import { MemoryAuditLogProvider } from '../../providers/audit-log.js';
 import type { AuditTrailService } from '../../audit/service.js';
 import { createKyaOsMiddleware } from '../with-kya-os.js';
 import { KYA_OS_PROOF_META_KEY, LEGACY_PROOF_META_KEY } from '../../proof/index.js';
+import { served } from './helpers/received-proof.js';
 
 type AuditEventInput = Parameters<AuditTrailService['record']>[0];
 
@@ -15,7 +16,7 @@ async function setup(
   const crypto = new NodeCryptoProvider();
   const keyPair = await crypto.generateKeyPair();
   const did = generateDidKeyFromBase64(keyPair.publicKey);
-  const middleware = createKyaOsMiddleware({
+  const middleware = await served(createKyaOsMiddleware({
     identity: {
       did,
       kid: `${did}#${did.replace('did:key:', '')}`,
@@ -29,7 +30,7 @@ async function setup(
         ? {}
         : { includeToolNames: options.includeToolNames }),
     },
-  }, crypto);
+  }, crypto));
   return middleware;
 }
 

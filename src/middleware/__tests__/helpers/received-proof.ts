@@ -4,7 +4,14 @@
  * result it received.
  */
 import type { AuditTrailService } from '../../../audit/service.js';
-import { createKyaOsMiddleware, type KyaOsConfig, type KyaOsMiddleware, type KyaOsToolResult } from '../../with-kya-os.js';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import {
+  createKyaOsMiddleware,
+  type KyaOsConfig,
+  type KyaOsMiddleware,
+  type KyaOsToolHandler,
+  type KyaOsToolResult,
+} from '../../with-kya-os.js';
 import { createKyaOsTransport, type JSONRPCMessage, type Transport } from '../../kya-os-transport.js';
 import { NodeCryptoProvider } from '../../../__tests__/utils/node-crypto-provider.js';
 import { generateDidKeyFromBase64, didKeyFragment } from '../../../utils/did-helpers.js';
@@ -62,9 +69,10 @@ export interface TransportHarness {
   /** Every message the far end received, as JSON it would have read off the wire. */
   sent: JSONRPCMessage[];
   /**
-   * Send `result` as the answer to a `tools/call` of `toolName` with `args`, as
-   * the MCP SDK hands a result to its transport, and return the result as it
-   * left the process.
+   * Send `result` as the answer to a `tools/call` of `toolName` with `args`
+   * (or, without a `toolName`, as an answer to no tracked call), as the MCP
+   * SDK hands a result to its transport, and return the result as it left
+   * the process.
    */
   send(
     result: KyaOsToolResult,
@@ -93,12 +101,16 @@ export async function connectTransport(kyaos: KyaOsMiddleware): Promise<Transpor
     sent,
     async send(result, call = {}) {
       id += 1;
-      inner.onmessage!({
-        jsonrpc: '2.0',
-        id,
-        method: 'tools/call',
-        params: { name: call.toolName ?? 'tool', arguments: call.args ?? {} },
-      });
+      // Without a tool name the result answers no call the transport
+      // tracked, as a task result fetched later does.
+      if (call.toolName !== undefined) {
+        inner.onmessage!({
+          jsonrpc: '2.0',
+          id,
+          method: 'tools/call',
+          params: { name: call.toolName, arguments: call.args ?? {} },
+        });
+      }
       // The SDK hands the transport a result of its own making, not the
       // handler's object.
       await wrapper.send({ jsonrpc: '2.0', id, result: structuredClone(result) });
@@ -107,8 +119,59 @@ export async function connectTransport(kyaos: KyaOsMiddleware): Promise<Transpor
   };
 }
 
-export function proofOf(result: { _meta?: unknown }): DetachedProof | undefined {
-  return (result._meta as Record<string, DetachedProof> | undefined)?.[KYA_OS_PROOF_META_KEY];
+/**
+ * `kyaos` as a server runs it: connected to a withKyaOs transport, so the
+ * proofs it makes are made there. A handler the test calls is the handler the
+ * MCP SDK would call, so its result is sent through the transport and the
+ * test gets what the client receives. A handler the middleware calls in turn
+ * (a wrapped handler inside a gate) is not sent on its own, as in a server,
+ * and neither is a `proveOutcome` result made inside a handler. The proxy
+ * changes nothing else: sessions, the proof generator and the handshake are
+ * the middleware's own.
+ */
+export async function served(kyaos: KyaOsMiddleware): Promise<KyaOsMiddleware & { wire: TransportHarness }> {
+  const wire = await connectTransport(kyaos);
+  const inCall = new AsyncLocalStorage<true>();
+  const serve = (toolName: string, handler: KyaOsToolHandler): KyaOsToolHandler =>
+    async (args, sessionId, context) => {
+      if (inCall.getStore()) return handler(args, sessionId, context);
+      const result = await inCall.run(true, () => handler(args, sessionId, context));
+      return await wire.send(result, { toolName, args }) as KyaOsToolResult;
+    };
+  return new Proxy(kyaos, {
+    get(target, key, receiver) {
+      switch (key) {
+        case 'wire':
+          return wire;
+        case 'wrapWithProof':
+          return (toolName: string, handler: KyaOsToolHandler) =>
+            serve(toolName, target.wrapWithProof(toolName, handler));
+        case 'wrapWithDelegation':
+          return (toolName: string, config: Parameters<KyaOsMiddleware['wrapWithDelegation']>[1], handler: KyaOsToolHandler) =>
+            serve(toolName, target.wrapWithDelegation(toolName, config, handler));
+        case 'withPolicyGate':
+          return target.withPolicyGate === undefined
+            ? undefined
+            : (toolName: string, handler: KyaOsToolHandler, opts?: Parameters<NonNullable<KyaOsMiddleware['withPolicyGate']>>[2]) =>
+                serve(toolName, target.withPolicyGate!(toolName, handler, opts));
+        case 'proveOutcome':
+          return target.proveOutcome === undefined
+            ? undefined
+            : async (request: Parameters<NonNullable<KyaOsMiddleware['proveOutcome']>>[0]) => {
+                const result = await target.proveOutcome!(request);
+                return inCall.getStore()
+                  ? result
+                  : await wire.send(result, { toolName: request.toolName, args: request.args });
+              };
+        default:
+          return Reflect.get(target, key, receiver);
+      }
+    },
+  }) as KyaOsMiddleware & { wire: TransportHarness };
+}
+
+export function proofOf(result: object): DetachedProof | undefined {
+  return ((result as { _meta?: unknown })._meta as Record<string, DetachedProof> | undefined)?.[KYA_OS_PROOF_META_KEY];
 }
 
 /**

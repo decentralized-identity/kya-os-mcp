@@ -13,13 +13,13 @@
  *   1. Incoming `tools/call` requests are captured (by id) to record tool
  *      name and arguments for proof generation.
  *   2. Outgoing responses for those ids get a proof injected into `_meta`,
- *      unless the middleware's own wrappers already proved or audited the
- *      result, which they mark with a private per-middleware stamp.
- *   3. Under the envelope response-proof profile the wrappers leave their
- *      proofs here, and every proof is made in `send()`, over the result as
- *      the MCP SDK finished it: the SDK sets members after the handler
- *      returns (`resultType` on the 2026-07-28 revision), and the envelope
- *      profile covers them.
+ *      unless the middleware's own wrappers produced the result, which they
+ *      mark with a private per-middleware stamp.
+ *   3. The wrappers leave their proofs here, and every proof is made in
+ *      `send()`, over the result as the MCP SDK finished it: the SDK changes
+ *      a result after the handler returns (`resultType` on the 2026-07-28
+ *      revision, a filled-in or appended `content`), and the proof covers
+ *      what it covers of the result the client receives.
  *   4. All other message types pass through unmodified, except that the
  *      middleware's private members are removed from every result before it
  *      is sent.
@@ -32,17 +32,30 @@ import {
   attachOuterProofLayer,
   withoutOutcomeMeta,
   withoutPrivateMeta,
+  withoutPrivateMembers,
 } from "./with-kya-os.session.js";
 import { logger } from "../logging/index.js";
 
-/** Minimal Transport interface — matches @modelcontextprotocol/sdk Transport */
+/**
+ * Minimal Transport interface — matches @modelcontextprotocol/sdk Transport.
+ * The callbacks are declared as methods, so an SDK transport, whose callbacks
+ * take the SDK's own message type, is accepted as it is (SDK 1 and SDK 2).
+ * The SDK's send options and message context (`extra`: the session id,
+ * `authInfo`, `requestInfo`) are opaque here and passed through unchanged.
+ */
 export interface Transport {
   start(): Promise<void>;
-  send(message: JSONRPCMessage): Promise<void>;
+  send(message: JSONRPCMessage, options?: unknown): Promise<void>;
   close(): Promise<void>;
-  onmessage?: (message: JSONRPCMessage) => void;
-  onclose?: () => void;
-  onerror?: (error: Error) => void;
+  onmessage?(message: JSONRPCMessage, extra?: unknown): void;
+  onclose?(): void;
+  onerror?(error: Error): void;
+  sessionId?: string;
+  setProtocolVersion?(version: string): void;
+  setSupportedProtocolVersions?(versions: string[]): void;
+  /** SDK 2: installs per-tool OAuth `scopeChallenge` enforcement on an HTTP transport. */
+  setScopeChallengeResolver?(resolver: unknown): void;
+  readonly hasPerRequestStream?: boolean;
 }
 
 export type JSONRPCMessage = Record<string, unknown>;
@@ -60,28 +73,40 @@ type ToolResult = {
 
 /**
  * Creates a transport wrapper that injects KYA-OS proofs into `tools/call`
- * responses. Under the envelope response-proof profile it also makes the
- * proofs the middleware's wrappers and `proveOutcome` leave to it, over each
- * result as it is sent.
+ * responses, and makes the proofs the middleware's wrappers and
+ * `proveOutcome` leave to it, over each result as it is sent. A server on the
+ * low-level `Server` API connects through it:
+ * `server.connect(createKyaOsTransport(transport, kyaos))`.
+ *
+ * It proves and audits the result of every tool it is not told to exclude,
+ * including tools registered without a wrapper, as `withKyaOs` does. A
+ * low-level server that used only the wrappers on an unwrapped transport,
+ * which 1.19.0 allowed, sent its unwrapped tools' results unproven; through
+ * this transport they carry a proof too.
  *
  * @param inner   - The real transport (Stdio, HTTP, etc.)
  * @param kyaos    - Configured KyaOsMiddleware instance
- * @param exclude - Tool names to skip proof generation for
+ * @param exclude - More tool names whose results are not proved by the
+ *   transport itself, in addition to the protocol tools `_kyaos` and
+ *   `_kyaos_handshake`, which are always excluded (as `excludeTools` adds
+ *   to them in `withKyaOs`). A wrapper's own proof is made whatever this
+ *   says.
  */
 export function createKyaOsTransport(
   inner: Transport,
   kyaos: KyaOsMiddleware,
-  exclude: string[] = ["_kyaos", "_kyaos_handshake"],
+  exclude: readonly string[] = [],
 ): Transport {
   // Request id → { toolName, args } for pending tool calls
   const pending = new Map<unknown, PendingCall>();
+  const excluded = new Set(["_kyaos", "_kyaos_handshake", ...exclude]);
   // From here on the middleware's wrappers stamp what they return, and the
   // layer tells a stamped result from one that only looks proven, and makes
   // the proofs they leave to it. Undefined for a custom middleware, whose
   // results are all proved here.
   const layer = attachOuterProofLayer(kyaos.wrapWithProof);
   // While started and not closed, this transport counts as open for the
-  // middleware; under the envelope profile its wrappers run only then.
+  // middleware; its wrappers run only then.
   let release: (() => void) | undefined;
   const releaseOpen = (): void => {
     release?.();
@@ -105,7 +130,7 @@ export function createKyaOsTransport(
 
     // McpServer writes into wrapper.onmessage — forward to inner so the
     // real transport can drive it.
-    set onmessage(handler: ((msg: JSONRPCMessage) => void) | undefined) {
+    set onmessage(handler: ((msg: JSONRPCMessage, extra?: unknown) => void) | undefined) {
       inner.onmessage = handler;
     },
     get onmessage() {
@@ -132,9 +157,44 @@ export function createKyaOsTransport(
       return inner.onerror;
     },
 
+    // What the SDK reads off, or hands to, the transport it connects passes
+    // through to the inner transport: its session id (which the SDK puts on
+    // each request's context), the negotiated protocol versions, the scope
+    // challenge resolver, and whether it streams per request. These are every
+    // transport member SDK 1 and SDK 2 servers read or feature-detect.
+    get sessionId() {
+      return inner.sessionId;
+    },
+    set sessionId(sessionId: string | undefined) {
+      inner.sessionId = sessionId;
+    },
+    get setProtocolVersion() {
+      return inner.setProtocolVersion === undefined
+        ? undefined
+        : (version: string) => inner.setProtocolVersion!(version);
+    },
+    get setSupportedProtocolVersions() {
+      return inner.setSupportedProtocolVersions === undefined
+        ? undefined
+        : (versions: string[]) => inner.setSupportedProtocolVersions!(versions);
+    },
+    // SDK 2's McpServer installs per-tool OAuth scope enforcement only when
+    // the transport has this member (an `in` check), so a wrapper without it
+    // silently switched the enforcement off.
+    get setScopeChallengeResolver() {
+      return inner.setScopeChallengeResolver === undefined
+        ? undefined
+        : (resolver: unknown) => inner.setScopeChallengeResolver!(resolver);
+    },
+    get hasPerRequestStream() {
+      return inner.hasPerRequestStream;
+    },
+
     // McpServer calls send() for every outgoing message.
     // Intercept tools/call responses here to inject proofs.
-    async send(message: JSONRPCMessage): Promise<void> {
+    // The SDK's send options (relatedRequestId, resumption tokens) are
+    // passed through unchanged.
+    async send(message: JSONRPCMessage, options?: unknown): Promise<void> {
       // Only a response (result or error, no method) can answer a pending call:
       // a server-initiated request such as elicitation/create numbers its ids
       // in the server's own space, so its id can equal a pending client id.
@@ -192,15 +252,30 @@ export function createKyaOsTransport(
       }
 
       // Whichever path the message took: a proof a wrapper left for the wire
-      // is made now, over the result as it is sent, and the private members
-      // never leave the process.
+      // is made now, over the result as it is sent, and only by a proof left
+      // for the tool this answers. The private members never leave the
+      // process, from a result or from any other part of a message: a
+      // notification or request's params (a tool logging a wrapped result,
+      // say) or an error's data.
       if (typeof message.result === "object" && message.result !== null) {
         const result = message.result as ToolResult;
-        const sent = layer ? await layer.send(result) : withoutPrivateMeta(result);
+        const sent = layer
+          ? await layer.send(result, call === undefined ? undefined : { toolName: call.toolName })
+          : withoutPrivateMeta(result);
         if (sent !== message.result) message = { ...message, result: sent };
       }
+      const scrub = (value: unknown): unknown => (layer ? layer.scrub(value) : withoutPrivateMembers(value));
+      if (message.params !== undefined) {
+        const params = scrub(message.params);
+        if (params !== message.params) message = { ...message, params };
+      }
+      const error = message.error as { data?: unknown } | undefined;
+      if (error !== null && typeof error === "object" && error.data !== undefined) {
+        const data = scrub(error.data);
+        if (data !== error.data) message = { ...message, error: { ...error, data } };
+      }
 
-      return inner.send(message);
+      return options === undefined ? inner.send(message) : inner.send(message, options);
     },
   };
 
@@ -232,7 +307,7 @@ export function createKyaOsTransport(
     // once.
     if (interceptor !== undefined && inner.onmessage === interceptor) return;
     const downstream = inner.onmessage;
-    interceptor = (message: JSONRPCMessage) => {
+    interceptor = (message: JSONRPCMessage, extra?: unknown) => {
       if (
         message.method === "tools/call" &&
         message.id !== undefined
@@ -241,7 +316,7 @@ export function createKyaOsTransport(
           | { name?: string; arguments?: Record<string, unknown> }
           | undefined;
         const toolName = params?.name;
-        if (toolName && !exclude.includes(toolName)) {
+        if (toolName && !excluded.has(toolName)) {
           pending.set(message.id, {
             toolName,
             args: params?.arguments ?? {},
@@ -253,7 +328,10 @@ export function createKyaOsTransport(
         const params = message.params as { requestId?: unknown } | undefined;
         pending.delete(params?.requestId);
       }
-      downstream?.(message);
+      // The SDK's message context (session id, authInfo, requestInfo) rides
+      // through unchanged.
+      if (extra === undefined) downstream?.(message);
+      else downstream?.(message, extra);
     };
     inner.onmessage = interceptor;
   };

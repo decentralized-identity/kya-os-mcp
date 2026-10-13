@@ -44,6 +44,9 @@ import { createOutcomeProver } from "./with-kya-os.outcome.js";
 import { createSessionProof } from "./with-kya-os.session.js";
 import { createProtocol } from "./with-kya-os.protocol.js";
 
+/** The longest timer a JavaScript runtime keeps (2^31 - 1 ms, about 24.8 days). */
+const MAX_PENDING_PROOF_TTL_MS = 2_147_483_647;
+
 // The public type surface lives in `./with-kya-os.types.ts`; re-export it here so
 // `import { KyaOsConfig, ... } from './with-kya-os'` continues to resolve unchanged.
 export * from "./with-kya-os.types.js";
@@ -59,6 +62,10 @@ export * from "./with-kya-os.types.js";
  * - You use the low-level `Server` API (not `McpServer`)
  * - You need custom request handler patterns
  * - You want per-tool control over proof/delegation wrapping
+ *
+ * Connect such a server through `createKyaOsTransport`: proofs are made where
+ * that transport sends a result, and the wrappers refuse to run while no
+ * KYA-OS transport is open.
  *
  * @param config - Agent identity and session configuration
  * @param cryptoProvider - Platform-specific crypto implementation
@@ -78,6 +85,19 @@ export function createKyaOsMiddleware(
   config: KyaOsConfig,
   cryptoProvider: CryptoProvider,
 ): KyaOsMiddleware {
+  if (
+    config.pendingProofTtlMs !== undefined &&
+    !(
+      Number.isFinite(config.pendingProofTtlMs) &&
+      config.pendingProofTtlMs > 0 &&
+      config.pendingProofTtlMs <= MAX_PENDING_PROOF_TTL_MS
+    )
+  ) {
+    // A timer longer than this overflows, and Node and browsers fire it at once.
+    throw new TypeError(
+      `pendingProofTtlMs must be a positive number of milliseconds, at most ${MAX_PENDING_PROOF_TTL_MS}`,
+    );
+  }
   if (config.audit && config.auditLog) {
     throw new TypeError('Configure either audit or legacy auditLog, not both');
   }

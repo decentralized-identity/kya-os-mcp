@@ -26,6 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { createKyaOsTransport } from '@kya-os/mcp';
 import { createInstance, createStores, loadIdentity, type Instance } from './instance.js';
 import { startConsentServer } from './consent-server.js';
 
@@ -82,7 +83,7 @@ function startHttpInstance(instance: Instance, port: number, did: string): http.
         enableJsonResponse: true,
       });
       res.on('close', () => transport.close());
-      await server.connect(transport);
+      await server.connect(createKyaOsTransport(transport, instance.middleware));
       await transport.handleRequest(req, res);
       return;
     }

@@ -37,6 +37,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import {
   createKyaOsMiddleware,
+  createKyaOsTransport,
   generateIdentity,
   NodeCryptoProvider,
   type KyaOsMiddleware,
@@ -307,7 +308,7 @@ async function startHttpServer(kyaos: KyaOsMiddleware, consentUrl: string, port:
     if (url.pathname === '/sse' && req.method === 'GET') {
       const server = createConsentFullMcpServer(kyaos, { consentUrl, delegationStore });
       sseTransport = new SSEServerTransport('/messages', res);
-      await server.connect(sseTransport);
+      await server.connect(createKyaOsTransport(sseTransport, kyaos));
       process.stderr.write('[server] SSE client connected\n');
       return;
     }
@@ -330,7 +331,7 @@ async function startHttpServer(kyaos: KyaOsMiddleware, consentUrl: string, port:
         enableJsonResponse: true,
       });
       res.on('close', () => transport.close());
-      await server.connect(transport);
+      await server.connect(createKyaOsTransport(transport, kyaos));
       await transport.handleRequest(req, res);
       return;
     }
@@ -391,7 +392,7 @@ if (isMain) {
     if (transport === 'stdio') {
       process.stderr.write(`[server] Agent DID: ${kyaos.identity.did}\n`);
       const server = createConsentFullMcpServer(kyaos, { consentUrl, delegationStore });
-      await server.connect(new StdioServerTransport());
+      await server.connect(createKyaOsTransport(new StdioServerTransport(), kyaos));
       process.stderr.write('[server] MCP server running on stdio\n');
     } else {
       await startHttpServer(kyaos, consentUrl, port, delegationStore);

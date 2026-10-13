@@ -16,6 +16,7 @@ import { createKyaOsMiddleware } from "../../middleware/with-kya-os.js";
 import { NodeCryptoProvider } from "../../providers/node-crypto.js";
 import { base64urlEncodeFromBytes } from "../base64.js";
 import { generateDidKeyFromBase64, generateDidKeyFromBytes } from "../did-helpers.js";
+import { served } from '../../middleware/__tests__/helpers/received-proof.js';
 
 describe("Base58 Utilities", () => {
   describe("base58Encode", () => {
@@ -361,13 +362,13 @@ describe("Base58 Utilities", () => {
       const crypto = new NodeCryptoProvider();
       const server = await crypto.generateKeyPair();
       const serverDid = generateDidKeyFromBase64(server.publicKey);
-      const mw = createKyaOsMiddleware(
+      const mw = await served(createKyaOsMiddleware(
         {
           identity: { did: serverDid, kid: `${serverDid}#k`, privateKey: server.privateKey, publicKey: server.publicKey },
           session: { sessionTtlMinutes: 60 },
         },
         crypto,
-      );
+      ));
       const attacker = await crypto.generateKeyPair();
       const issuerDid = "did:key:z6Mk" + "2".repeat(100_000);
       const issuer = new DelegationCredentialIssuer(

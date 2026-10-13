@@ -13,6 +13,7 @@ import { logger } from '../../logging/index.js';
 import type { ProofAgentIdentity } from '../../proof/generator.js';
 import type { AuditTrailService } from '../../audit/service.js';
 import { base64urlEncodeFromBytes } from '../../utils/base64.js';
+import { served } from './helpers/received-proof.js';
 
 /**
  * Durable-grant retry resolution (spec §A). On a no-delegation (retry) call the
@@ -46,7 +47,7 @@ async function makeServer(opts: {
   auditRecord?: Pick<AuditTrailService, 'record'>['record'];
 } = {}) {
   const server = opts.server ?? (await makeIdentity());
-  const middleware = createKyaOsMiddleware(
+  const middleware = await served(createKyaOsMiddleware(
     {
       identity: server,
       session: { sessionTtlMinutes: 60 },
@@ -55,7 +56,7 @@ async function makeServer(opts: {
       ...(opts.auditRecord ? { audit: { record: opts.auditRecord } } : {}),
     },
     crypto,
-  );
+  ));
   return { server, middleware };
 }
 

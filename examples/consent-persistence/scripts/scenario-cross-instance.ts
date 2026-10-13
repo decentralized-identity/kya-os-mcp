@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { GenericOidcAdapter } from '@kya-os/mcp/authz';
-import { createInstance, loadIdentity, mintCheckoutProof, SCOPE } from '../src/instance.js';
+import { createInstance, loadIdentity, mintCheckoutProof, SCOPE, servedCheckout } from '../src/instance.js';
 import { FileGrantStore } from '../src/file-grant-store.js';
 import { FilePendingFlowStore } from '../src/file-pending-flow-store.js';
 import { approve } from '../src/approve.js';
@@ -66,7 +66,7 @@ async function main(): Promise<void> {
 
   step('1. Agent calls checkout on instance A — with a proof, but no grant yet');
   const proof1 = await mintCheckoutProof(identity, { item: 'laptop' });
-  const first = await instanceA.checkout({ item: 'laptop', _kyaos_proof: proof1 });
+  const first = await servedCheckout(instanceA)({ item: 'laptop', _kyaos_proof: proof1 });
   say(`instance A replied: "${firstLine(first)}"`);
   check('A challenges instead of silently allowing (needs_authorization)', isChallenge(first));
 
@@ -80,12 +80,12 @@ async function main(): Promise<void> {
   say('');
   describeProof(proof2, 'checkout {item:"laptop"}').forEach(say);
   say('');
-  const retry = await instanceB.checkout({ item: 'laptop', _kyaos_proof: proof2 });
+  const retry = await servedCheckout(instanceB)({ item: 'laptop', _kyaos_proof: proof2 });
   say(`instance B replied: "${firstLine(retry)}"`);
   check('B resolves the grant from the shared file via holder-of-key (no re-paste, no session)', isConfirmed(retry));
 
   step('4. Confused-deputy guard — a call WITHOUT a proof must not inherit the grant');
-  const noProof = await instanceB.checkout({ item: 'laptop' });
+  const noProof = await servedCheckout(instanceB)({ item: 'laptop' });
   say(`instance B replied: "${firstLine(noProof)}"`);
   check('an unsigned call is NOT auto-authorized (grant is bound to the agent key, not the tool)', isChallenge(noProof));
 

@@ -41,11 +41,11 @@ export type AttachOutcomeProof = (
 ) => Promise<KyaOsToolResult>;
 
 /**
- * Refuse, by throwing, a wrapped call whose proof could not be made. Under
- * the envelope profile a proof is made where the result is sent, so every
- * wrapper calls this on entry, before it records or runs anything, and it
- * throws while no KYA-OS transport is open for the middleware. Provided by
- * the session/proof sub-factory.
+ * Refuse, by throwing, a wrapped call whose proof could not be made. A proof
+ * is made where the result is sent, so every wrapper calls this on entry,
+ * before it records or runs anything, and it throws while no KYA-OS
+ * transport is open for the middleware. Provided by the session/proof
+ * sub-factory.
  */
 export type RequireProofLayer = () => void;
 

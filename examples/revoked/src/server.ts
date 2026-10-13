@@ -31,6 +31,8 @@ import {
   type KyaOsMiddleware,
 } from '@kya-os/mcp';
 import { CheqdStatusListResolver } from '@kya-os/mcp/cheqd';
+// The /middleware subpath exports it in every 1.x release this example's range allows.
+import { createKyaOsTransport } from '@kya-os/mcp/middleware';
 import {
   cryptoProvider,
   env,
@@ -427,7 +429,7 @@ const httpServer = http.createServer(async (req, res) => {
       enableJsonResponse: true,
     });
     res.on('close', () => transport.close());
-    await server.connect(transport);
+    await server.connect(createKyaOsTransport(transport, kyaos));
     await transport.handleRequest(req, res);
     return;
   }

@@ -54,6 +54,24 @@ npm install @kya-os/mcp
 
 ---
 
+## Upgrading to 1.20: proofs need a KYA-OS transport
+
+> **Breaking for servers without a KYA-OS transport.** From 1.20, every response proof (under the default body profile as under the envelope profile) is made where the KYA-OS transport sends the result, after the MCP SDK has finished it. While no KYA-OS transport is open for the middleware, `wrapWithProof`, `wrapWithDelegation`, `withPolicyGate` and `proveOutcome` throw before they run anything.
+
+| Your setup | What to do |
+|---|---|
+| `withKyaOs(server, …)` before `server.connect()` | Nothing. |
+| Low-level `Server` with `createKyaOsMiddleware` | `await server.connect(createKyaOsTransport(transport, kyaos))`. It proves every tool's result, unwrapped tools included (unproven on 1.19.0); its third argument adds tools to leave unproven. |
+| A script or test that calls a wrapped handler directly | `const local = serveInProcess(kyaos); const call = local.tool('name', handler); await call(args); await local.close();` |
+| `withKyaOs` with `proofAllTools: false` | Leave it on; list tools to leave unproven in `excludeTools`. |
+| `withKyaOs` after `connect()` | Call it before `connect()`. |
+| Reading the proof inside the handler | The transport adds it when the result is sent; read it from what the client receives. |
+| MCP task results fetched later | A result is proved the first time the same middleware sends it, within `pendingProofTtlMs` (default five minutes, at most 2147483647 ms); raise it for later fetches. |
+
+See the [changelog](./CHANGELOG.md) for the details.
+
+---
+
 ## Migrate any MCP server in 2 lines
 
 **Before**, a standard MCP server with no identity or proofs:
@@ -132,12 +150,14 @@ server.registerTool('get_report', { inputSchema }, toMcpToolCallback(async (args
 }));
 ```
 
-- **Build the whole result before proving it**, and return what `proveOutcome` gives you from the handler. The default body profile signs in the handler and covers `content` only.
-- **Under the envelope response-proof profile** (`responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE`) the proof covers every member except `_meta`. The `withKyaOs` transport makes it when it sends the result, after the MCP SDK has finished the result, so it covers what the client receives, including the `resultType` that SDK 2 adds on the 2026-07-28 revision. This applies to `proveOutcome`, `wrapWithProof` and both gates.
-- **The envelope profile needs an open KYA-OS transport.** `withKyaOs` wraps the transport you connect, unless `proofAllTools` is `false`; for a transport you connect yourself, wrap it with `createKyaOsTransport`. Once a KYA-OS transport has been created for a middleware, every wrapper result must go out through one. While none is open (none was started, or all have closed), the wrappers and `proveOutcome` throw before they run anything, instead of sending a proof the client cannot verify.
+- **Build the whole result before proving it**, and return what `proveOutcome` gives you from the handler.
+- **Every proof is made where the result is sent.** The `withKyaOs` transport makes it when it sends the result, after the MCP SDK has finished the result, so it covers what the client receives. Under the default body profile it covers `content`, including a text item SDK 2 appends when `structuredContent` is not an object, and the `content: []` either SDK fills in when a handler leaves it out. Under the envelope response-proof profile (`responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE`) it covers every member except `_meta`, including the `resultType` that SDK 2 adds on the 2026-07-28 revision. This applies to `proveOutcome`, `wrapWithProof` and both gates.
+- **Every wrapper needs an open KYA-OS transport.** `withKyaOs` wraps the transport you connect, unless `proofAllTools` is `false`; for a transport you connect yourself (the low-level `Server` API with `createKyaOsMiddleware`), wrap it with `createKyaOsTransport`, exported from `@kya-os/mcp`. Once a KYA-OS transport has been created for a middleware, every wrapper result must go out through one. While none is open (none was started, or all have closed), the wrappers and `proveOutcome` throw before they run anything, instead of sending a result they cannot prove.
 - **`_meta` is outside every response proof** (SPEC §7.6). Repeat anything a client must be able to trust, such as `resource_metadata`, `scope` and `error`, in `content` or `structuredContent`.
 - A `needs_authorization` proof binds the result; a denial or step-up proof binds none (SPEC §7.4).
-- The result carries private members until the transport sends it, and the transport removes them. Under the envelope profile one of them is a one-time id: what the proof claims (by request hash) and its session stay in the middleware, and the transport redeems the id once. A result the SDK never sends, such as a cancelled call's, is closed in the audit trail with `proof.rejected` (`PROOF_NOT_SENT`) and, for an allowed call, `tool.call.failed` (`RESULT_NOT_SENT`).
+- The result carries private members until the transport sends it, and the transport removes them. One of them is a one-time id: what the proof claims (by request hash) and its session stay in the middleware, and the transport redeems the id once. A result the SDK never sends, such as a cancelled call's, is closed in the audit trail with `proof.rejected` (`PROOF_NOT_SENT`) and, for an allowed call, `tool.call.failed` (`RESULT_NOT_SENT`).
+- **A result is proved once, by the middleware that sends it, within `pendingProofTtlMs`** (default five minutes, at most 2147483647 ms). A task result fetched again, or later than the window, goes out with `proofError`, recorded as `PROOF_EXPIRED`. What the proof claims lives in that middleware's memory, so only the process that recorded the call can make the proof; [#250](https://github.com/decentralized-identity/kya-os-mcp/issues/250) proposes sealed claims so that any process holding the identity could.
+- **Do not serialize a wrapped result into a string.** Its private members cannot be removed from inside the string, so the result that carries it goes out unproven (`PRIVATE_MEMBER_IN_RESULT`), and the serialized result's own proof is voided. Nest the result as an object instead: private members are removed at any depth from every outgoing message (results, notification and request `params`, and error `data`), and a wrapped result that goes out anywhere but as its own answer has its proof closed. On the answer to a `tools/call`, only a proof left for that tool is made.
 - **Connect every server that shares a middleware through a KYA-OS transport.** The refusal checks only that some KYA-OS transport is open for the middleware. A second server sharing it over a plain transport therefore runs its wrappers, and its results leave with the lifecycle stamp and the pending-proof id in `_meta` and no proof. Those proofs are later closed as `PROOF_NOT_SENT`, although the results were sent.
 - Leave `kyaos.sessionManager` alone. A second live session makes the fallback session ambiguous, and allow results then go out unproven, marked with `_meta.proofError`.
 - `wrapWithDelegation`'s `formatChallenge` can return the same `{ content, structuredContent, isError, _meta }` shape for the library's own challenge, and all of it is set before signing.

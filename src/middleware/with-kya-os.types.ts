@@ -158,19 +158,17 @@ export interface KyaOsOutcomeProver {
    * Return a copy of `request.result`, typed as it was, for the response
    * proof the middleware's own gates attach to their outcomes: the same
    * claims, the same `_meta` keys, the configured response-proof profile, and
-   * the same audit events. Return it from the tool handler. Under the body
-   * profile the copy carries the proof, and the withKyaOs transport passes it
-   * through. Under the envelope profile the transport makes the proof when it
-   * sends the result, after the MCP SDK has finished it, so the proof covers
-   * what the client receives; the copy carries only a one-time id for it,
-   * and what the proof claims stays in the middleware. Either way the
-   * transport removes the copy's private members, so do not call this on a
-   * result that has already left the transport, and send the copy through a
-   * KYA-OS transport: once one has been created for the middleware, every
-   * wrapper result must go out through one. Without a resolvable session the
-   * result goes out unproven but audited, as a gate's outcome does. Throws a
-   * `TypeError` for an unknown outcome, and under the envelope profile an
-   * `Error` while no KYA-OS transport is open.
+   * the same audit events. Return it from the tool handler. The withKyaOs
+   * transport makes the proof when it sends the result, after the MCP SDK has
+   * finished it, so the proof covers what the client receives; the copy
+   * carries only a one-time id for it, and what the proof claims stays in
+   * the middleware. The transport removes the copy's private members, so do
+   * not call this on a result that has already left the transport, and send
+   * the copy through a KYA-OS transport: once one has been created for the
+   * middleware, every wrapper result must go out through one. Without a
+   * resolvable session the result goes out unproven but audited, as a gate's
+   * outcome does. Throws a `TypeError` for an unknown outcome, and an `Error`
+   * while no KYA-OS transport is open.
    */
   proveOutcome<R extends KyaOsToolResult>(request: KyaOsOutcomeProofRequest<R>): Promise<R>;
 }
@@ -218,10 +216,9 @@ export interface KyaOsProtocolHandler {
 export interface KyaOsProofAttacher {
   /**
    * Wrap a tool handler to automatically generate proofs.
-   * Returns a new handler that appends proof metadata to the response. Under
-   * the envelope profile the withKyaOs transport makes that proof when it
-   * sends the result, and the handler throws, before it runs, while no
-   * KYA-OS transport is open.
+   * Returns a new handler whose result the withKyaOs transport proves when
+   * it sends it. The handler throws, before it runs, while no KYA-OS
+   * transport is open.
    */
   wrapWithProof<T extends Record<string, unknown> = Record<string, unknown>>(
     toolName: string,

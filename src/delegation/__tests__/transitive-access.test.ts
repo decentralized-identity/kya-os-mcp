@@ -52,6 +52,7 @@ import {
   MemoryAuditLogProvider,
   type AuditLogProvider,
 } from '../../providers/audit-log.js';
+import { served } from '../../middleware/__tests__/helpers/received-proof.js';
 
 // ---------------------------------------------------------------------------
 // Shared identity helpers
@@ -143,7 +144,7 @@ async function createServer(opts?: {
 
   const delegation: KyaOsDelegationConfig | undefined = opts?.delegation;
 
-  const middleware = createKyaOsMiddleware(
+  const middleware = await served(createKyaOsMiddleware(
     {
       identity: {
         did,
@@ -157,7 +158,7 @@ async function createServer(opts?: {
       auditLog: opts?.auditLog,
     },
     crypto,
-  );
+  ));
 
   return { middleware, did };
 }

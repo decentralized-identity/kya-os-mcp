@@ -18,6 +18,7 @@ import type { ProofAgentIdentity } from '../../proof/generator.js';
 import type { Proof } from '../../types/protocol.js';
 import type { PolicyEngine } from '../../policy/engine.js';
 import type { PolicyRequest } from '../../policy/types.js';
+import { served } from './helpers/received-proof.js';
 
 const crypto = new NodeCryptoProvider();
 
@@ -68,10 +69,10 @@ const approvalFor = (requestHash: string) => ({
 
 async function composed(delegation: KyaOsDelegationConfig = {}) {
   const server = await didKeyIdentity();
-  const kyaos = createKyaOsMiddleware(
+  const kyaos = await served(createKyaOsMiddleware(
     { identity: server, session: { sessionTtlMinutes: 60 }, autoSession: true, delegation },
     crypto,
-  );
+  ));
   const agent = await didKeyIdentity();
   const requests: PolicyRequest[] = [];
   const engine: PolicyEngine = {

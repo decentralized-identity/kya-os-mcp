@@ -36,7 +36,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { createKyaOsMiddleware, generateDidKeyFromBase64 } from '@kya-os/mcp';
+import { createKyaOsMiddleware, createKyaOsTransport, generateDidKeyFromBase64 } from '@kya-os/mcp';
 import { NodeCryptoProvider } from './node-crypto.js';
 import { verifyApprovalGrantSignature } from './approval-demo.js';
 import { startConsentServer } from './consent-server.js';
@@ -292,7 +292,7 @@ async function main() {
   if (useStdio) {
     const server = createMcpServer(kyaos, consentUrl, delegationStore);
     const transport = new StdioServerTransport();
-    await server.connect(transport);
+    await server.connect(createKyaOsTransport(transport, kyaos));
     console.error('[kya-os] Server running on stdio');
   } else {
     const PORT = parseInt(process.env['PORT'] ?? '3001', 10);
@@ -314,7 +314,7 @@ async function main() {
       if (url.pathname === '/sse' && req.method === 'GET') {
         const server = createMcpServer(kyaos, consentUrl, delegationStore);
         sseTransport = new SSEServerTransport('/messages', res);
-        await server.connect(sseTransport);
+        await server.connect(createKyaOsTransport(sseTransport, kyaos));
         console.error('[kya-os] SSE client connected');
         return;
       }

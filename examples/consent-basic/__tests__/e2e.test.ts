@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { createKyaOsMiddleware, NodeCryptoProvider, generateDidKeyFromBase64, KYA_OS_PROOF_META_KEY, type KyaOsMiddleware, type DelegationCredential, type NeedsAuthorizationError } from '@kya-os/mcp';
+import { createKyaOsMiddleware, NodeCryptoProvider, generateDidKeyFromBase64, KYA_OS_PROOF_META_KEY, type KyaOsMiddleware, type DelegationCredential, type NeedsAuthorizationError, serveInProcess } from '@kya-os/mcp';
 import { startConsentServer, type ConsentServer } from '../src/consent-server.js';
 import { createDelegationIssuerFromIdentity } from '../src/delegation-issuer.js';
 
@@ -49,11 +49,11 @@ describe('E2E: consent -> delegation -> execution', () => {
     });
     consentServer = await startConsentServer({ port: 0, factory });
 
-    browseHandler = kyaos.wrapWithProof('browse', async (args) => ({
+    browseHandler = serveInProcess(kyaos).tool('browse', kyaos.wrapWithProof('browse', async (args) => ({
       content: [{ type: 'text', text: `Browsing: ${args['category'] ?? 'all'}` }],
-    })) as typeof browseHandler;
+    }))) as typeof browseHandler;
 
-    checkoutHandler = kyaos.wrapWithDelegation(
+    checkoutHandler = serveInProcess(kyaos).tool('checkout', kyaos.wrapWithDelegation(
       'checkout',
       {
         scopeId: 'cart:write',
@@ -62,7 +62,7 @@ describe('E2E: consent -> delegation -> execution', () => {
       kyaos.wrapWithProof('checkout', async (args) => ({
         content: [{ type: 'text', text: `Order confirmed: ${args['item']}` }],
       })),
-    ) as typeof checkoutHandler;
+    )) as typeof checkoutHandler;
   });
 
   afterAll(async () => {

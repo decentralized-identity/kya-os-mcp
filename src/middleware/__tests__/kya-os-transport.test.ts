@@ -14,10 +14,11 @@ import {
   LEGACY_PROOF_META_KEY,
   ProofGenerator,
 } from "../../proof/generator.js";
-import { LIFECYCLE_STAMP_META_KEY } from "../with-kya-os.session.js";
+import { LIFECYCLE_STAMP_META_KEY, PENDING_PROOF_META_KEY } from "../with-kya-os.session.js";
 import { base64urlEncodeFromBytes } from "../../utils/base64.js";
 import type { AuditTrailService } from "../../audit/service.js";
 import type { DelegationCredential, Proof } from "../../types/protocol.js";
+import { typeErrors } from "../../__tests__/utils/type-errors.js";
 
 function createMockTransport(): Transport & { sentMessages: JSONRPCMessage[] } {
   const sent: JSONRPCMessage[] = [];
@@ -331,22 +332,31 @@ describe("createKyaOsTransport with the KYA-OS middleware", () => {
     expect((sent._meta as Record<string, unknown>).traceparent).toBe("00-abc-01");
   });
 
-  it("keeps a signed needs_authorization outcome instead of re-signing it as allowed", async () => {
+  it("proves a needs_authorization outcome as that outcome, never as an allowed call", async () => {
     const kyaos = await middleware();
     const { roundTrip } = await connect(kyaos);
     const gated = kyaos.wrapWithDelegation("checkout", consent, async () => ({
       content: [{ type: "text", text: "ran" }],
     }));
     const challenge = await gated({ item: "x" });
-    expect(proofOf(challenge)?.meta.outcome).toBe("needs_authorization");
+    expect(proofOf(challenge)).toBeUndefined();
 
     const sent = await roundTrip("checkout", { item: "x" }, challenge);
 
-    // Sent as the gate returned it, less the private lifecycle stamp.
-    const { [LIFECYCLE_STAMP_META_KEY]: stamp, ...challengeMeta } =
-      challenge._meta as Record<string, unknown>;
+    // Sent as the gate returned it, less the private members, plus its proof.
+    const {
+      [LIFECYCLE_STAMP_META_KEY]: stamp,
+      [PENDING_PROOF_META_KEY]: pending,
+      ...challengeMeta
+    } = challenge._meta as Record<string, unknown>;
     expect(stamp).toEqual(expect.any(String));
-    expect(sent).toEqual({ ...challenge, _meta: challengeMeta });
+    // Only a one-time id: what the proof claims stays in the middleware.
+    expect(pending).toEqual(expect.any(String));
+    expect(proofOf(sent)?.meta.outcome).toBe("needs_authorization");
+    expect(sent).toEqual({
+      ...challenge,
+      _meta: { ...challengeMeta, [KYA_OS_PROOF_META_KEY]: proofOf(sent), [LEGACY_PROOF_META_KEY]: proofOf(sent) },
+    });
   });
 
   it("records a challenged call once, with no lifecycle for the call that never ran", async () => {
@@ -361,8 +371,10 @@ describe("createKyaOsTransport with the KYA-OS middleware", () => {
 
     await roundTrip("checkout", {}, challenge);
 
+    // The outcome was recorded in the handler; the transport adds only its proof.
     expect(recorded).toContain("tool.call.challenged:challenged");
-    expect(events).toEqual(recorded);
+    expect(events).toEqual([...recorded, "proof.generated:succeeded"]);
+    expect(events).not.toContain("tool.call.started:unknown");
   });
 
   it("keeps the scope-bearing proof of a delegated call and records its lifecycle once", async () => {
@@ -375,13 +387,15 @@ describe("createKyaOsTransport with the KYA-OS middleware", () => {
       kyaos.wrapWithProof("checkout", async () => ({ content: [{ type: "text", text: "ran" }] })),
     );
     const result = await handler({ _kyaos_delegation: await issueVC(["cart:write"]) });
-    expect(proofOf(result)?.meta.scopeId).toBe("cart:write");
+    expect(proofOf(result)).toBeUndefined();
     const recorded = [...events];
 
     const sent = await roundTrip("checkout", {}, result);
 
     expect(proofOf(sent)?.meta.scopeId).toBe("cart:write");
-    expect(events).toEqual(recorded);
+    // Recorded once: the call's start in the handler, its proof and completion at send.
+    expect(recorded.at(-1)).toBe("tool.call.started:unknown");
+    expect(events).toEqual([...recorded, "proof.generated:succeeded", "tool.call.completed:succeeded"]);
   });
 
   it("does not re-audit an error result a wrapper already recorded", async () => {
@@ -512,7 +526,7 @@ describe("createKyaOsTransport with the KYA-OS middleware", () => {
     expect(Object.hasOwn(sent._meta as object, LEGACY_NAMESPACED_PROOF_META_KEY)).toBe(false);
   });
 
-  it("passes a wrapped result through once, without the outcome members its handler set", async () => {
+  it("proves a wrapped result once, without the outcome members its handler set", async () => {
     const { events, record } = auditEvents();
     const kyaos = await middleware(record);
     const { roundTrip } = await connect(kyaos);
@@ -520,15 +534,15 @@ describe("createKyaOsTransport with the KYA-OS middleware", () => {
       content: [{ type: "text", text: "from upstream" }],
       _meta: { traceparent: "00-abc-01", proofError: "forged", "org.kya-os/audit": { terminal: true } },
     }))({});
-    const recorded = [...events];
+    expect(events).toEqual(["tool.call.started:unknown"]);
 
     const sent = await roundTrip("relay", {}, result);
 
-    expect(recorded).toEqual([
+    expect(events).toEqual([
       "tool.call.started:unknown", "proof.generated:succeeded", "tool.call.completed:succeeded",
     ]);
-    expect(events).toEqual(recorded);
-    expect(proofOf(sent)).toEqual(proofOf(result));
+    expect(proofOf(result)).toBeUndefined();
+    expect(signerOf(sent)).toBe(kyaos.identity.did);
     const meta = sent._meta as Record<string, unknown>;
     expect(meta.traceparent).toBe("00-abc-01");
     expect(Object.hasOwn(meta, "proofError")).toBe(false);
@@ -574,5 +588,123 @@ describe("createKyaOsTransport with the KYA-OS middleware", () => {
       id: 3,
       result: { content: [{ type: "text", text: "Hello!" }], _meta: { traceparent: "00-abc-01" } },
     });
+  });
+
+  it("removes the private members from a notification or an error's data behind a custom middleware", async () => {
+    const inner = createMockTransport();
+    const wrapper = createKyaOsTransport(inner, createMockKyaOs());
+    await wrapper.start();
+    const relayed = {
+      content: [{ type: "text", text: "Hello!" }],
+      _meta: { traceparent: "00-abc-01", [LIFECYCLE_STAMP_META_KEY]: "token", [PENDING_PROOF_META_KEY]: "id" },
+    };
+
+    await wrapper.send({ jsonrpc: "2.0", method: "notifications/message", params: { level: "info", data: relayed } });
+    await wrapper.send({ jsonrpc: "2.0", id: 4, error: { code: -32603, message: "failed", data: { partial: relayed } } });
+
+    const kept = { content: [{ type: "text", text: "Hello!" }], _meta: { traceparent: "00-abc-01" } };
+    expect(inner.sentMessages).toEqual([
+      { jsonrpc: "2.0", method: "notifications/message", params: { level: "info", data: kept } },
+      { jsonrpc: "2.0", id: 4, error: { code: -32603, message: "failed", data: { partial: kept } } },
+    ]);
+  });
+});
+
+describe("createKyaOsTransport types", () => {
+  // Compiled as a module at the source root, so './index.js' is the package
+  // entry point consumers import, @kya-os/mcp.
+  it("wraps an SDK 1 or SDK 2 transport, and the wrapper connects, with no cast", () => {
+    const errors = typeErrors(`
+      import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+      import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+      import { McpServer as McpServer2, InMemoryTransport } from '@modelcontextprotocol/server';
+      import { createKyaOsTransport, type KyaOsMiddleware } from './index.js';
+      declare const kyaos: KyaOsMiddleware;
+      const one = new McpServer({ name: 'sdk1', version: '1.0.0' });
+      void one.connect(createKyaOsTransport(new StdioServerTransport(), kyaos));
+      const two = new McpServer2({ name: 'sdk2', version: '1.0.0' });
+      const [, serverSide] = InMemoryTransport.createLinkedPair();
+      void two.connect(createKyaOsTransport(serverSide, kyaos));
+    `, new URL("../../kya-os-transport-compatibility.ts", import.meta.url));
+
+    expect(errors).toBe("");
+  }, 60_000);
+});
+
+describe("createKyaOsTransport passes the SDK's transport members through", () => {
+  function transportWithEverything() {
+    return {
+      start: vi.fn().mockResolvedValue(undefined),
+      send: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      sessionId: "session-1",
+      hasPerRequestStream: true,
+      setProtocolVersion: vi.fn(),
+      setSupportedProtocolVersions: vi.fn(),
+      setScopeChallengeResolver: vi.fn(),
+    };
+  }
+
+  it("forwards the members either SDK reads or calls on a transport", () => {
+    const inner = transportWithEverything();
+    const wrapper = createKyaOsTransport(inner, createMockKyaOs());
+    const resolver = () => undefined;
+
+    expect(wrapper.sessionId).toBe("session-1");
+    expect(wrapper.hasPerRequestStream).toBe(true);
+    wrapper.setProtocolVersion!("2025-11-25");
+    wrapper.setSupportedProtocolVersions!(["2025-11-25", "2026-07-28"]);
+    // SDK 2's McpServer installs scope enforcement only after an `in` check.
+    expect("setScopeChallengeResolver" in wrapper && typeof wrapper.setScopeChallengeResolver).toBe("function");
+    wrapper.setScopeChallengeResolver!(resolver);
+
+    expect(inner.setProtocolVersion).toHaveBeenCalledWith("2025-11-25");
+    expect(inner.setSupportedProtocolVersions).toHaveBeenCalledWith(["2025-11-25", "2026-07-28"]);
+    expect(inner.setScopeChallengeResolver).toHaveBeenCalledWith(resolver);
+    wrapper.sessionId = "session-2";
+    expect(inner.sessionId).toBe("session-2");
+  });
+
+  it("offers none of them when the inner transport has none, so feature checks see their absence", () => {
+    const wrapper = createKyaOsTransport(createMockTransport(), createMockKyaOs());
+
+    expect(wrapper.sessionId).toBeUndefined();
+    expect(wrapper.hasPerRequestStream).toBeUndefined();
+    expect(wrapper.setProtocolVersion).toBeUndefined();
+    expect(wrapper.setSupportedProtocolVersions).toBeUndefined();
+    expect(wrapper.setScopeChallengeResolver).toBeUndefined();
+  });
+
+  it("forwards the SDK's send options and message context", async () => {
+    const inner = createMockTransport();
+    const wrapper = createKyaOsTransport(inner, createMockKyaOs());
+    const received = vi.fn();
+    wrapper.onmessage = received;
+    await wrapper.start();
+    const extra = { sessionId: "s-1", authInfo: { token: "t" } };
+
+    inner.onmessage!({ jsonrpc: "2.0", method: "notifications/initialized" }, extra);
+    await wrapper.send({ jsonrpc: "2.0", method: "notifications/progress" }, { relatedRequestId: 7 });
+
+    expect(received).toHaveBeenCalledWith({ jsonrpc: "2.0", method: "notifications/initialized" }, extra);
+    expect(inner.send).toHaveBeenCalledWith({ jsonrpc: "2.0", method: "notifications/progress" }, { relatedRequestId: 7 });
+  });
+});
+
+describe("createKyaOsTransport exclude", () => {
+  it("adds to the protocol tools, which stay excluded", async () => {
+    const inner = createMockTransport();
+    const wrapper = createKyaOsTransport(inner, createMockKyaOs({ jws: "auto" }), ["quiet"]);
+    await wrapper.start();
+    const answer = async (id: number, name: string) => {
+      inner.onmessage!({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: {} } });
+      await wrapper.send({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: name }] } });
+      return (inner.sentMessages.at(-1) as { result: Record<string, unknown> }).result;
+    };
+
+    expect((await answer(1, "_kyaos"))._meta).toBeUndefined();
+    expect((await answer(2, "_kyaos_handshake"))._meta).toBeUndefined();
+    expect((await answer(3, "quiet"))._meta).toBeUndefined();
+    expect((await answer(4, "report"))._meta).toEqual({ proof: { jws: "auto" } });
   });
 });

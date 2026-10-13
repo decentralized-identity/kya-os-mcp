@@ -37,6 +37,7 @@ import type { AgentIdentity } from '../../providers/base.js';
 import type { DetachedProof, SessionContext } from '../../types/protocol.js';
 import type { Ed25519JWK } from '../../utils/crypto-service.js';
 import type { PolicyEngine } from '../../policy/engine.js';
+import { served } from '../../middleware/__tests__/helpers/received-proof.js';
 
 const crypto = new NodeCryptoProvider();
 const hash = (bytes: Uint8Array) => crypto.hash(bytes);
@@ -114,7 +115,7 @@ async function verifyAgainst(proof: DetachedProof, request: ToolRequest, respons
 
 async function middlewareWithSession() {
   const signer = await createRealIdentity(crypto);
-  const middleware = createKyaOsMiddleware({ identity: signer }, crypto);
+  const middleware = await served(createKyaOsMiddleware({ identity: signer }, crypto));
   const hs = await middleware.handleHandshake({
     nonce: `nonce-${Math.random().toString(36).slice(2)}`,
     audience: signer.did,

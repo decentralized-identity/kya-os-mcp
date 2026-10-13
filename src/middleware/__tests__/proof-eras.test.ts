@@ -1,12 +1,16 @@
 /**
- * Envelope-profile proofs on both MCP protocol revisions, over the real SDKs.
+ * Response proofs on both MCP protocol revisions, over the real SDKs, under
+ * both response-proof profiles.
  *
- * On the 2026-07-28 revision, MCP SDK 2 adds `resultType: 'complete'` to a
- * tools/call result after the tool handler has returned it. The envelope
- * profile covers every result member except `_meta`, so only a proof made
- * once the SDK is done covers what the client receives. Every case below
- * verifies the proof against the raw JSON-RPC result as the client read it
- * off the wire: on SDK 2 at both revisions, and on SDK 1 at 2025-11-25.
+ * The MCP SDK changes a tools/call result after the tool handler has returned
+ * it. On the 2026-07-28 revision SDK 2 adds `resultType: 'complete'`, which
+ * the envelope profile covers. Both SDKs fill in a missing `content`, and SDK
+ * 2 appends a text item to `content` when `structuredContent` is not an object
+ * and no text item is there; the body profile covers `content`. Only a proof
+ * made once the SDK is done covers what the client receives, so every proof is
+ * made at the withKyaOs transport. Every case below verifies the proof against
+ * the raw JSON-RPC result as the client read it off the wire: on SDK 2 at both
+ * revisions, and on SDK 1 at 2025-11-25.
  */
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
@@ -31,7 +35,7 @@ import type {
   KyaOsToolResult,
 } from '../with-kya-os.js';
 import { LIFECYCLE_STAMP_META_KEY } from '../with-kya-os.session.js';
-import { RESPONSE_PROOF_PROFILE_ENVELOPE } from '../../proof/generator.js';
+import { RESPONSE_PROOF_PROFILE_ENVELOPE, type ResponseProofProfile } from '../../proof/generator.js';
 import type { PolicyEngine } from '../../policy/engine.js';
 import type { AuditTrailService } from '../../audit/service.js';
 import { createKyaOsTransport, type JSONRPCMessage } from '../kya-os-transport.js';
@@ -49,6 +53,14 @@ import {
 const ARGS = { item: 'x' };
 const CONSENT = { scopeId: 'cart:write', consentUrl: 'https://consent.example/authorize' };
 const RESOURCE_METADATA = 'https://shop.example/.well-known/oauth-protected-resource';
+
+/** Each profile, and what its proof of a result covers. */
+const PROFILES = {
+  body: { responseProofProfile: undefined, binds: 'content' },
+  envelope: { responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE, binds: 'envelope' },
+} as const satisfies Record<string, { responseProofProfile: ResponseProofProfile | undefined; binds: 'content' | 'envelope' }>;
+type ProfileName = keyof typeof PROFILES;
+const PROFILE_NAMES = Object.keys(PROFILES) as ProfileName[];
 
 const ran = async (): Promise<KyaOsToolResult> => ({ content: [{ type: 'text', text: 'ran' }] });
 
@@ -74,19 +86,24 @@ function scopeChallenge(): KyaOsToolResult {
 }
 
 /**
- * Every way a proof reaches a tool result, with what its proof binds and the
- * outcome it records. Registration is passed in, so one table serves both
- * SDK majors.
+ * Every way a proof reaches a tool result, with whether its proof binds the
+ * result (as the profile covers it) or nothing, and the outcome it records.
+ * The last two are results the SDK reshapes: `text_fallback` gets a text item
+ * from SDK 2, which SDK 1 refuses to send at all, and `content_default` gets
+ * an empty `content` from both. Registration is passed in, so one table
+ * serves both SDK majors.
  */
 const TOOLS = {
-  gate_challenge: { binds: 'envelope', outcome: 'needs_authorization' },
-  gate_challenge_result: { binds: 'envelope', outcome: 'needs_authorization' },
-  wrapped_allow: { binds: 'envelope', outcome: undefined },
-  app_challenge: { binds: 'envelope', outcome: 'needs_authorization' },
+  gate_challenge: { binds: 'result', outcome: 'needs_authorization' },
+  gate_challenge_result: { binds: 'result', outcome: 'needs_authorization' },
+  wrapped_allow: { binds: 'result', outcome: undefined },
+  app_challenge: { binds: 'result', outcome: 'needs_authorization' },
   app_denied: { binds: 'nothing', outcome: 'denied' },
   policy_denied: { binds: 'nothing', outcome: 'denied' },
   policy_step_up: { binds: 'nothing', outcome: 'step_up_required' },
-  transport_allow: { binds: 'envelope', outcome: undefined },
+  transport_allow: { binds: 'result', outcome: undefined },
+  text_fallback: { binds: 'result', outcome: undefined },
+  content_default: { binds: 'result', outcome: undefined },
 } as const;
 type ToolName = keyof typeof TOOLS;
 
@@ -124,17 +141,27 @@ function registerTools(
     content: [{ type: 'text', text: 'report' }],
     structuredContent: { report: 'r_1' },
   }));
+  register('text_fallback', toMcpToolCallback(kyaos.wrapWithProof('text_fallback', async () => ({
+    content: [],
+    structuredContent: [1, 2],
+  }))));
+  // A handler that leaves `content` out, as plain JavaScript can.
+  register('content_default', toMcpToolCallback(kyaos.wrapWithProof('content_default', async () => ({
+    structuredContent: { report: 'r_1' },
+  }) as unknown as KyaOsToolResult)));
 }
 
-const withEnvelope = (identity: KyaOsIdentityConfig) => ({
+const options = (identity: KyaOsIdentityConfig, profile: ProfileName) => ({
   crypto,
   identity,
-  responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE,
+  ...(PROFILES[profile].responseProofProfile === undefined
+    ? {}
+    : { responseProofProfile: PROFILES[profile].responseProofProfile }),
   handshakeExposure: 'none' as const,
 });
 
 /** JSON-RPC messages in a Streamable HTTP response body, JSON or SSE. */
-function messagesIn(body: string): Array<{ id?: unknown; result?: Record<string, unknown> }> {
+function messagesIn(body: string): Array<{ id?: unknown; result?: Record<string, unknown>; error?: unknown }> {
   const text = body.trim();
   if (text.startsWith('{') || text.startsWith('[')) return [JSON.parse(text)].flat();
   return text
@@ -143,34 +170,44 @@ function messagesIn(body: string): Array<{ id?: unknown; result?: Record<string,
     .map((line) => JSON.parse(line.slice(5).trim()));
 }
 
+/** A tools/call answer as it crossed the wire: a result, or a JSON-RPC error. */
+interface Answer {
+  result?: Record<string, unknown>;
+  error?: { code: number; message: string };
+}
+
 interface Wire {
-  /** Call `tool` and return its result as it crossed the wire. */
-  call(tool: ToolName): Promise<Record<string, unknown>>;
+  /** Call `tool` and return its answer as it crossed the wire. */
+  call(tool: ToolName): Promise<Answer>;
   close(): Promise<void>;
 }
 
 /** An SDK 2 server behind withKyaOs, served over Streamable HTTP in process, and a client pinned to `era`. */
-async function sdk2(era: '2025-11-25' | '2026-07-28', identity: KyaOsIdentityConfig): Promise<Wire> {
+async function sdk2(
+  era: '2025-11-25' | '2026-07-28',
+  identity: KyaOsIdentityConfig,
+  profile: ProfileName,
+): Promise<Wire> {
   const handler = createMcpHandler(async () => {
-    const server = new McpServer2({ name: 'envelope-eras', version: '1.0.0' });
-    const kyaos = await withKyaOs(server, withEnvelope(identity));
+    const server = new McpServer2({ name: 'proof-eras', version: '1.0.0' });
+    const kyaos = await withKyaOs(server, options(identity, profile));
     registerTools(kyaos, (name, callback) => server.registerTool(name, { inputSchema: { item: z.string() } }, callback));
     return server;
   }, { legacy: 'stateless' });
-  const received = new Map<unknown, Record<string, unknown>>();
+  const received = new Map<unknown, Answer>();
   const transport = new StreamableHTTPClientTransport(new URL('http://kya-os.test/mcp'), {
     fetch: async (url, init) => {
       const response = await handler.fetch(new Request(url, init));
       const sent = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
       if (sent?.method === 'tools/call') {
         const answer = messagesIn(await response.clone().text()).find((message) => message.id === sent.id);
-        if (answer?.result !== undefined) received.set(sent.id, answer.result);
+        if (answer !== undefined) received.set(sent.id, answer as Answer);
       }
       return response;
     },
   });
   const client = new Client2(
-    { name: 'envelope-eras-client', version: '1.0.0' },
+    { name: 'proof-eras-client', version: '1.0.0' },
     era === '2026-07-28' ? { versionNegotiation: { mode: { pin: era } } } : undefined,
   );
   await client.connect(transport);
@@ -178,7 +215,7 @@ async function sdk2(era: '2025-11-25' | '2026-07-28', identity: KyaOsIdentityCon
   return {
     async call(tool) {
       const before = new Set(received.keys());
-      await client.callTool({ name: tool, arguments: ARGS });
+      await client.callTool({ name: tool, arguments: ARGS }).catch(() => undefined);
       const id = [...received.keys()].find((key) => !before.has(key));
       return received.get(id)!;
     },
@@ -190,24 +227,24 @@ async function sdk2(era: '2025-11-25' | '2026-07-28', identity: KyaOsIdentityCon
 }
 
 /** An SDK 1 server behind withKyaOs and its client, linked in memory; the wire is JSON. */
-async function sdk1(identity: KyaOsIdentityConfig): Promise<Wire> {
-  const server = new McpServer1({ name: 'envelope-eras', version: '1.0.0' });
-  const kyaos = await withKyaOs(server, withEnvelope(identity));
+async function sdk1(identity: KyaOsIdentityConfig, profile: ProfileName): Promise<Wire> {
+  const server = new McpServer1({ name: 'proof-eras', version: '1.0.0' });
+  const kyaos = await withKyaOs(server, options(identity, profile));
   registerTools(kyaos, (name, callback) => server.registerTool(name, { inputSchema: { item: z.string() } }, callback));
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const received: Array<Record<string, unknown>> = [];
+  const received: Answer[] = [];
   const forward = serverTransport.send.bind(serverTransport);
-  serverTransport.send = async (message, options) => {
+  serverTransport.send = async (message, sendOptions) => {
     const wire = JSON.parse(JSON.stringify(message));
-    if (wire.result !== undefined) received.push(wire.result);
-    return forward(wire, options);
+    if (wire.result !== undefined || wire.error !== undefined) received.push(wire);
+    return forward(wire, sendOptions);
   };
   await server.connect(serverTransport);
-  const client = new Client1({ name: 'envelope-eras-client', version: '1.0.0' });
+  const client = new Client1({ name: 'proof-eras-client', version: '1.0.0' });
   await client.connect(clientTransport);
   return {
     async call(tool) {
-      await client.callTool({ name: tool, arguments: ARGS });
+      await client.callTool({ name: tool, arguments: ARGS }).catch(() => undefined);
       return received.at(-1)!;
     },
     async close() {
@@ -217,53 +254,81 @@ async function sdk1(identity: KyaOsIdentityConfig): Promise<Wire> {
   };
 }
 
-describe.each([
+const RUNS = [
   ['SDK 2', '2026-07-28'],
   ['SDK 2', '2025-11-25'],
   ['SDK 1', '2025-11-25'],
-] as const)('envelope-profile proofs on %s at MCP %s', (sdk, era) => {
-  let identity: KyaOsIdentityConfig;
-  let wire: Wire;
+] as const;
 
-  beforeAll(async () => {
-    identity = await generateIdentity(crypto);
-    wire = sdk === 'SDK 2' ? await sdk2(era, identity) : await sdk1(identity);
-  });
-  afterAll(async () => {
-    await wire?.close();
-  });
+describe.each(PROFILE_NAMES.flatMap((profile) => RUNS.map(([sdk, era]) => [profile, sdk, era] as const)))(
+  '%s-profile proofs on %s at MCP %s',
+  (profile, sdk, era) => {
+    let identity: KyaOsIdentityConfig;
+    let wire: Wire;
 
-  it.each(Object.keys(TOOLS) as ToolName[])('%s verifies against the result the client received', async (tool) => {
-    const { binds, outcome } = TOOLS[tool];
-    const received = await wire.call(tool);
+    beforeAll(async () => {
+      identity = await generateIdentity(crypto);
+      wire = sdk === 'SDK 2' ? await sdk2(era, identity, profile) : await sdk1(identity, profile);
+    });
+    afterAll(async () => {
+      await wire?.close();
+    });
 
-    // The SDK 2 encoder sets resultType on 2026-07-28 only; SDK 1 never does.
-    expect(received.resultType).toBe(era === '2026-07-28' ? 'complete' : undefined);
-    expect(JSON.stringify(received)).not.toContain(LIFECYCLE_STAMP_META_KEY);
-    expect(JSON.stringify(received)).not.toContain('org.kya-os/pending-proof');
-    const proof = proofOf(received);
-    expect(proof?.meta.prf).toBe(RESPONSE_PROOF_PROFILE_ENVELOPE);
-    expect(proof?.meta.outcome).toBe(outcome);
-    const expected = { signer: identity.did, toolName: tool, params: ARGS, binds };
-    expect(await verifyReceived(received, expected)).toMatchObject({ valid: true });
+    it.each(Object.keys(TOOLS) as ToolName[])('%s verifies against the result the client received', async (tool) => {
+      const { binds, outcome } = TOOLS[tool];
+      const answer = await wire.call(tool);
 
-    if (binds === 'envelope' && era === '2026-07-28') {
-      // What the proof covers includes the member the SDK added.
-      const { resultType: _added, ...asReturned } = received;
-      expect((await verifyReceived(asReturned, expected)).valid).toBe(false);
-    }
-  });
-});
+      if (tool === 'text_fallback' && sdk === 'SDK 1') {
+        // SDK 1 sends no such result: it rejects non-object structuredContent.
+        expect(answer).toMatchObject({ error: { code: -32602 } });
+        expect(answer.result).toBeUndefined();
+        return;
+      }
+      const received = answer.result!;
+      // The SDK 2 encoder sets resultType on 2026-07-28 only; SDK 1 never does.
+      expect(received.resultType).toBe(era === '2026-07-28' ? 'complete' : undefined);
+      if (tool === 'text_fallback') {
+        // SDK 2 appended a text item the handler never returned.
+        expect(received.content).toEqual([{ type: 'text', text: '[1,2]' }]);
+      }
+      if (tool === 'content_default') {
+        // The SDK filled in the content the handler left out.
+        expect(received.content).toEqual([]);
+      }
+      expect(JSON.stringify(received)).not.toContain(LIFECYCLE_STAMP_META_KEY);
+      expect(JSON.stringify(received)).not.toContain('org.kya-os/pending-proof');
+      const proof = proofOf(received);
+      expect(proof?.meta.prf).toBe(PROFILES[profile].responseProofProfile);
+      expect(proof?.meta.outcome).toBe(outcome);
+      const expected = {
+        signer: identity.did,
+        toolName: tool,
+        params: ARGS,
+        binds: binds === 'result' ? PROFILES[profile].binds : binds,
+      } as const;
+      expect(await verifyReceived(received, expected)).toMatchObject({ valid: true });
 
-describe('the envelope profile with no KYA-OS transport connected', () => {
-  const NEEDS_TRANSPORT = /envelope response-proof profile.*createKyaOsTransport\(\)/s;
+      if (binds === 'result' && profile === 'envelope' && era === '2026-07-28') {
+        // What the proof covers includes the member the SDK added.
+        const { resultType: _added, ...asReturned } = received;
+        expect((await verifyReceived(asReturned, expected)).valid).toBe(false);
+      }
+      if (tool === 'text_fallback') {
+        // ...and the content the SDK appended to.
+        expect((await verifyReceived({ ...received, content: [] }, expected)).valid).toBe(false);
+      }
+    });
+  },
+);
+
+describe.each(PROFILE_NAMES)('the %s profile with no KYA-OS transport connected', (profile) => {
+  const NEEDS_TRANSPORT = /response proof is made where the KYA-OS transport sends.*createKyaOsTransport\(\)/s;
+  const { responseProofProfile } = PROFILES[profile];
+  const config = responseProofProfile === undefined ? {} : { responseProofProfile };
 
   it('refuses every wrapper and proveOutcome before anything runs or is recorded', async () => {
     const { events, record } = auditEvents();
-    const kyaos = await createMiddleware({
-      responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE,
-      audit: { record },
-    });
+    const kyaos = await createMiddleware({ ...config, audit: { record } });
     const sessionId = await handshake(kyaos);
     const recorded = events.length;
     const handler = vi.fn(ran);
@@ -283,17 +348,12 @@ describe('the envelope profile with no KYA-OS transport connected', () => {
   });
 
   it('reaches the client as a tool error naming the supported API when withKyaOs does not wrap the transport', async () => {
-    const server = new McpServer1({ name: 'envelope-unwrapped', version: '1.0.0' });
-    const kyaos = await withKyaOs(server, {
-      crypto,
-      responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE,
-      handshakeExposure: 'none',
-      proofAllTools: false,
-    });
+    const server = new McpServer1({ name: 'unwrapped', version: '1.0.0' });
+    const kyaos = await withKyaOs(server, { crypto, ...config, handshakeExposure: 'none', proofAllTools: false });
     server.registerTool('greet', { inputSchema: { item: z.string() } }, toMcpToolCallback(kyaos.wrapWithProof('greet', ran)));
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
-    const client = new Client1({ name: 'envelope-unwrapped-client', version: '1.0.0' });
+    const client = new Client1({ name: 'unwrapped-client', version: '1.0.0' });
     await client.connect(clientTransport);
 
     try {
@@ -306,53 +366,38 @@ describe('the envelope profile with no KYA-OS transport connected', () => {
       await server.close();
     }
   });
-
-  it('leaves the body profile signing in the handler, as before', async () => {
-    const kyaos = await createMiddleware();
-    const sessionId = await handshake(kyaos);
-
-    const result = await kyaos.wrapWithProof('greet', ran)(ARGS, sessionId);
-
-    expect((await verifyReceived(result, {
-      signer: kyaos.identity.did, toolName: 'greet', params: ARGS, binds: 'content',
-    })).valid).toBe(true);
-  });
 });
 
-describe('the withKyaOs transport under the envelope profile', () => {
+describe.each(PROFILE_NAMES)('the withKyaOs transport under the %s profile', (profile) => {
+  const { responseProofProfile, binds } = PROFILES[profile];
+  const config = responseProofProfile === undefined ? {} : { responseProofProfile };
   const allowed = async (): Promise<KyaOsToolResult> => ({
     content: [{ type: 'text', text: 'report' }],
     structuredContent: { report: 'r_1' },
   });
 
-  it.each([undefined, RESPONSE_PROOF_PROFILE_ENVELOPE])(
-    'records the same audit events in the same order as the body profile (profile %s)',
-    async (responseProofProfile) => {
-      const { events, record } = auditEvents();
-      const kyaos = await createMiddleware({
-        ...(responseProofProfile === undefined ? {} : { responseProofProfile }),
-        audit: { record },
-      });
-      const sessionId = await handshake(kyaos);
-      const wire = await connectTransport(kyaos);
-      const start = events.length;
+  it('records the audit events in the order the handler-side proof recorded them', async () => {
+    const { events, record } = auditEvents();
+    const kyaos = await createMiddleware({ ...config, audit: { record } });
+    const sessionId = await handshake(kyaos);
+    const wire = await connectTransport(kyaos);
+    const start = events.length;
 
-      await wire.send(await kyaos.wrapWithProof('report', allowed)(ARGS, sessionId), { toolName: 'report', args: ARGS });
-      await wire.send(await kyaos.wrapWithDelegation('checkout', CONSENT, ran)(ARGS, sessionId), { toolName: 'checkout', args: ARGS });
+    await wire.send(await kyaos.wrapWithProof('report', allowed)(ARGS, sessionId), { toolName: 'report', args: ARGS });
+    await wire.send(await kyaos.wrapWithDelegation('checkout', CONSENT, ran)(ARGS, sessionId), { toolName: 'checkout', args: ARGS });
 
-      expect(events.slice(start)).toEqual([
-        'tool.call.started:unknown',
-        'proof.generated:succeeded',
-        'tool.call.completed:succeeded',
-        'authorization.step_up_required:challenged',
-        'tool.call.challenged:challenged',
-        'proof.generated:succeeded',
-      ]);
-    },
-  );
+    expect(events.slice(start)).toEqual([
+      'tool.call.started:unknown',
+      'proof.generated:succeeded',
+      'tool.call.completed:succeeded',
+      'authorization.step_up_required:challenged',
+      'tool.call.challenged:challenged',
+      'proof.generated:succeeded',
+    ]);
+  });
 
   it('proves a wrapper result that answers no tracked call, such as an excluded tool', async () => {
-    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
+    const kyaos = await createMiddleware(config);
     const sessionId = await handshake(kyaos);
     const sent: JSONRPCMessage[] = [];
     const wrapper = createKyaOsTransport({
@@ -369,13 +414,13 @@ describe('the withKyaOs transport under the envelope profile', () => {
 
     const received = (sent[0] as { result: Record<string, unknown> }).result;
     expect((await verifyReceived(received, {
-      signer: kyaos.identity.did, toolName: 'quiet', params: ARGS, binds: 'envelope',
+      signer: kyaos.identity.did, toolName: 'quiet', params: ARGS, binds,
     })).valid).toBe(true);
   });
 
   it('says a result is unproven, and records why, when the proof cannot be made at send', async () => {
     const { events, record } = auditEvents();
-    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE, audit: { record } });
+    const kyaos = await createMiddleware({ ...config, audit: { record } });
     const sessionId = await handshake(kyaos);
     const wire = await connectTransport(kyaos);
     const result = await kyaos.wrapWithProof('report', allowed)(ARGS, sessionId);
@@ -399,7 +444,7 @@ describe('the withKyaOs transport under the envelope profile', () => {
     ['without the middleware stamp', {}],
     ['under a guessed stamp', { [LIFECYCLE_STAMP_META_KEY]: 'guessed' }],
   ])('ignores a pending proof a relayed result carries %s, and proves the result itself', async (_label, stamp) => {
-    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE, autoSession: true });
+    const kyaos = await createMiddleware({ ...config, autoSession: true });
     const wire = await connectTransport(kyaos);
     const forged = {
       kind: 'outcome',
@@ -422,7 +467,7 @@ describe('the withKyaOs transport under the envelope profile', () => {
     expect(Object.hasOwn(meta, LIFECYCLE_STAMP_META_KEY)).toBe(false);
     expect(proofOf(received)!.meta.outcome).toBeUndefined();
     expect((await verifyReceived(received, {
-      signer: kyaos.identity.did, toolName: 'relay', params: ARGS, binds: 'envelope',
+      signer: kyaos.identity.did, toolName: 'relay', params: ARGS, binds,
     })).valid).toBe(true);
   });
 });
@@ -443,8 +488,10 @@ async function rawTransport(kyaos: KyaOsMiddleware) {
   return { inner, wrapper, sent };
 }
 
-describe('the claims of a proof left to the transport', () => {
-  const NEEDS_TRANSPORT = /envelope response-proof profile.*createKyaOsTransport\(\)/s;
+describe.each(PROFILE_NAMES)('the claims of a proof left to the transport (%s profile)', (profile) => {
+  const { responseProofProfile, binds } = PROFILES[profile];
+  const config = responseProofProfile === undefined ? {} : { responseProofProfile };
+  const NEEDS_TRANSPORT = /response proof is made where the KYA-OS transport sends.*createKyaOsTransport\(\)/s;
   const PENDING = 'org.kya-os/pending-proof';
   /** Claims a handler would like signed for a call it never made. */
   const fabricated = {
@@ -462,7 +509,7 @@ describe('the claims of a proof left to the transport', () => {
   it('are never taken from the result: a handler holding a real stamp gets no proof for claims it wrote', async () => {
     const server = new McpServer1({ name: 'forger', version: '1.0.0' });
     const kyaos = await withKyaOs(server, {
-      crypto, responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE, handshakeExposure: 'none',
+      crypto, ...config, handshakeExposure: 'none',
     });
     server.registerTool('forge', { inputSchema: { item: z.string() } }, toMcpToolCallback(async (args) => {
       // The handler wraps a call of its own to read a genuine stamp off it.
@@ -501,7 +548,7 @@ describe('the claims of a proof left to the transport', () => {
   });
 
   it('are redeemed only under the middleware stamp, even with a genuine pending id and no tracked call', async () => {
-    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
+    const kyaos = await createMiddleware({ ...config });
     const sessionId = await handshake(kyaos);
     const { wrapper, sent } = await rawTransport(kyaos);
     const genuine = await kyaos.wrapWithProof('report', ran)(ARGS, sessionId);
@@ -521,12 +568,12 @@ describe('the claims of a proof left to the transport', () => {
     expect(JSON.stringify(substituted)).not.toContain(PENDING);
     const proven = (sent[1] as { result: Record<string, unknown> }).result;
     expect((await verifyReceived(proven, {
-      signer: kyaos.identity.did, toolName: 'report', params: ARGS, binds: 'envelope',
+      signer: kyaos.identity.did, toolName: 'report', params: ARGS, binds,
     })).valid).toBe(true);
   });
 
   it('are redeemed once: a second result naming the same id goes out unproven', async () => {
-    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
+    const kyaos = await createMiddleware({ ...config });
     const sessionId = await handshake(kyaos);
     const { wrapper, sent } = await rawTransport(kyaos);
     const genuine = await kyaos.wrapWithProof('report', ran)(ARGS, sessionId);
@@ -542,7 +589,7 @@ describe('the claims of a proof left to the transport', () => {
 
   it('take the audience from the session as it is at send, and refuse a session that is gone', async () => {
     const { events, record } = auditEvents();
-    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE, audit: { record } });
+    const kyaos = await createMiddleware({ ...config, audit: { record } });
     const sessionId = await handshake(kyaos);
     const { wrapper, sent } = await rawTransport(kyaos);
     const result = await kyaos.wrapWithProof('report', ran)(ARGS, sessionId);
@@ -557,7 +604,7 @@ describe('the claims of a proof left to the transport', () => {
   });
 
   it('do not outlive the transport: once every KYA-OS transport has closed, the wrappers refuse again', async () => {
-    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE, autoSession: true });
+    const kyaos = await createMiddleware({ ...config, autoSession: true });
     const first = await rawTransport(kyaos);
     const second = await rawTransport(kyaos);
     const handler = kyaos.wrapWithProof('report', ran);
@@ -588,7 +635,7 @@ describe('the claims of a proof left to the transport', () => {
       };
     const server = new McpServer1({ name: 'cancel', version: '1.0.0' });
     const kyaos = await withKyaOs(server, {
-      crypto, responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE, handshakeExposure: 'none', audit: { record },
+      crypto, ...config, handshakeExposure: 'none', audit: { record },
     });
     let release!: () => void;
     const held = new Promise<void>((resolve) => { release = resolve; });
@@ -639,7 +686,9 @@ describe('the claims of a proof left to the transport', () => {
   });
 });
 
-describe('edge paths of a proof left to the transport', () => {
+describe.each(PROFILE_NAMES)('edge paths of a proof left to the transport (%s profile)', (profile) => {
+  const { responseProofProfile, binds } = PROFILES[profile];
+  const config = responseProofProfile === undefined ? {} : { responseProofProfile };
   const UNPROVEN = 'Proof generation failed — response is unproven';
   const PENDING = 'org.kya-os/pending-proof';
   const sentResult = (sent: JSONRPCMessage[], index = -1) =>
@@ -655,7 +704,7 @@ describe('edge paths of a proof left to the transport', () => {
   };
 
   it('signs the call as the wrapper saw it, whatever later happens to the arguments', async () => {
-    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
+    const kyaos = await createMiddleware({ ...config });
     const sessionId = await handshake(kyaos);
     const { wrapper, sent } = await rawTransport(kyaos);
     const args = { item: 'x', basket: { qty: 1 } };
@@ -664,13 +713,13 @@ describe('edge paths of a proof left to the transport', () => {
     args.basket.qty = 1_000;
     await wrapper.send({ jsonrpc: '2.0', id: 1, result });
 
-    const expected = { signer: kyaos.identity.did, toolName: 'order', binds: 'envelope' as const };
+    const expected = { signer: kyaos.identity.did, toolName: 'order', binds };
     expect((await verifyReceived(sentResult(sent), { ...expected, params: { item: 'x', basket: { qty: 1 } } })).valid).toBe(true);
     expect((await verifyReceived(sentResult(sent), { ...expected, params: args })).valid).toBe(false);
   });
 
   it('fails the proof of arguments that cannot be hashed, in the handler, as it would have at send', async () => {
-    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
+    const kyaos = await createMiddleware({ ...config });
     const sessionId = await handshake(kyaos);
     const { wrapper, sent } = await rawTransport(kyaos);
     const error = vi.spyOn(logger, 'error').mockImplementation(() => {});
@@ -689,7 +738,7 @@ describe('edge paths of a proof left to the transport', () => {
   });
 
   it('reports an outcome proof that fails at send on the result', async () => {
-    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
+    const kyaos = await createMiddleware({ ...config });
     const sessionId = await handshake(kyaos);
     const { wrapper, sent } = await rawTransport(kyaos);
     const challenge = await kyaos.wrapWithDelegation('checkout', CONSENT, ran)(ARGS, sessionId);
@@ -708,7 +757,7 @@ describe('edge paths of a proof left to the transport', () => {
   });
 
   it('sends a result unproven when its session cannot be read at send', async () => {
-    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
+    const kyaos = await createMiddleware({ ...config });
     const sessionId = await handshake(kyaos);
     const { wrapper, sent } = await rawTransport(kyaos);
     const result = await kyaos.wrapWithProof('report', ran)(ARGS, sessionId);
@@ -730,7 +779,7 @@ describe('edge paths of a proof left to the transport', () => {
   it('records nothing more for an outcome whose session is gone when its terminal audit already failed', async () => {
     const recorded: string[] = [];
     const kyaos = await createMiddleware({
-      responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE,
+      ...config,
       audit: {
         record: async (event) => {
           recorded.push(event.eventType);
@@ -762,7 +811,7 @@ describe('edge paths of a proof left to the transport', () => {
   it('closes an unsent outcome proof with PROOF_NOT_SENT, and an evicted one when too many wait', async () => {
     const { recorded, record } = recording();
     const kyaos = await createMiddleware({
-      responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE, audit: { record }, autoSession: true,
+      ...config, audit: { record }, autoSession: true,
     });
     const { wrapper, sent } = await rawTransport(kyaos);
     const deny = () => kyaos.proveOutcome!({
@@ -782,7 +831,7 @@ describe('edge paths of a proof left to the transport', () => {
   }, 60_000);
 
   it('counts a transport closed twice once', async () => {
-    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE, autoSession: true });
+    const kyaos = await createMiddleware({ ...config, autoSession: true });
     const kept = await rawTransport(kyaos);
     const closing = await rawTransport(kyaos);
 
@@ -794,10 +843,12 @@ describe('edge paths of a proof left to the transport', () => {
   });
 });
 
-describe('the transport lifecycle around the proofs it makes', () => {
+describe.each(PROFILE_NAMES)('the transport lifecycle around the proofs it makes (%s profile)', (profile) => {
+  const { responseProofProfile, binds } = PROFILES[profile];
+  const config = responseProofProfile === undefined ? {} : { responseProofProfile };
   it('runs an onclose set on the inner transport before connecting, once, as the SDK chains it', async () => {
     const server = new McpServer1({ name: 'closer', version: '1.0.0' });
-    await withKyaOs(server, { crypto, responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE, handshakeExposure: 'none' });
+    await withKyaOs(server, { crypto, ...config, handshakeExposure: 'none' });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     const cleanup = vi.fn();
     serverTransport.onclose = cleanup;
@@ -822,7 +873,7 @@ describe('the transport lifecycle around the proofs it makes', () => {
         return;
       }
       const server = new McpServer1({ name: 'stateful', version: '1.0.0' });
-      await withKyaOs(server, { crypto, responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE, handshakeExposure: 'none' });
+      await withKyaOs(server, { crypto, ...config, handshakeExposure: 'none' });
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (id) => {
@@ -858,7 +909,7 @@ describe('the transport lifecycle around the proofs it makes', () => {
   });
 
   it('counts a transport started twice once, so its close ends the count', async () => {
-    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE, autoSession: true });
+    const kyaos = await createMiddleware({ ...config, autoSession: true });
     const { wrapper } = await rawTransport(kyaos);
 
     await wrapper.start();
@@ -869,7 +920,7 @@ describe('the transport lifecycle around the proofs it makes', () => {
 
   it('closes what is waiting when the last transport closes', async () => {
     const { events, record } = auditEvents();
-    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE, audit: { record }, autoSession: true });
+    const kyaos = await createMiddleware({ ...config, audit: { record }, autoSession: true });
     const { wrapper } = await rawTransport(kyaos);
     await kyaos.wrapWithProof('report', ran)(ARGS);
 
@@ -881,7 +932,7 @@ describe('the transport lifecycle around the proofs it makes', () => {
   it('keeps no arguments for a proof it waits to make, however large they are', async () => {
     v8.setFlagsFromString('--expose-gc');
     const gc = runInNewContext('gc') as () => void;
-    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
+    const kyaos = await createMiddleware({ ...config });
     const sessionId = await handshake(kyaos);
     const { wrapper, sent } = await rawTransport(kyaos);
     const handler = kyaos.wrapWithProof('upload', ran);
@@ -903,14 +954,14 @@ describe('the transport lifecycle around the proofs it makes', () => {
     const args = { blob: 'y'.repeat(100_000) };
     await wrapper.send({ jsonrpc: '2.0', id: 1, result: await handler(args, sessionId) });
     expect((await verifyReceived((sent[0] as { result: Record<string, unknown> }).result, {
-      signer: kyaos.identity.did, toolName: 'upload', params: args, binds: 'envelope',
+      signer: kyaos.identity.did, toolName: 'upload', params: args, binds,
     })).valid).toBe(true);
   }, 60_000);
 
   it('closes the oldest waiting proofs as not sent once they hold too much', async () => {
     const recorded: string[] = [];
     const kyaos = await createMiddleware({
-      responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE,
+      ...config,
       audit: {
         record: async (event) => {
           const code = (event as { details?: { verificationCode?: string } }).details?.verificationCode;

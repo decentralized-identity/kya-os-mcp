@@ -16,6 +16,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import {
   createKyaOsMiddleware,
+  createKyaOsTransport,
   NodeCryptoProvider,
   generateDidKeyFromBase64,
   type KyaOsMiddleware,
@@ -60,7 +61,8 @@ describe('consent-full interactive retry (mcp-inspector style, no re-paste)', ()
       delegationStore: store,
     });
     const [clientT, serverT] = InMemoryTransport.createLinkedPair();
-    await server.connect(serverT);
+    // Connected as the example's main() connects it: through the KYA-OS transport.
+    await server.connect(createKyaOsTransport(serverT, kyaos));
     client = new Client({ name: 'inspector-mimic', version: '1.0.0' }, { capabilities: {} });
     await client.connect(clientT);
   });

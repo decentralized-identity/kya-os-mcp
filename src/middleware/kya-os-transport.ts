@@ -80,10 +80,21 @@ export function createKyaOsTransport(
   // the proofs they leave to it. Undefined for a custom middleware, whose
   // results are all proved here.
   const layer = attachOuterProofLayer(kyaos.wrapWithProof);
+  // While started and not closed, this transport counts as open for the
+  // middleware; under the envelope profile its wrappers run only then.
+  let release: (() => void) | undefined;
+  let closeHandler: (() => void) | undefined;
+  const closed = (): void => {
+    release?.();
+    closeHandler?.();
+  };
 
   const wrapper: Transport = {
     start: () => inner.start(),
-    close: () => inner.close(),
+    close: async () => {
+      release?.();
+      await inner.close();
+    },
 
     // McpServer writes into wrapper.onmessage — forward to inner so the
     // real transport can drive it.
@@ -94,11 +105,14 @@ export function createKyaOsTransport(
       return inner.onmessage;
     },
 
+    // The inner transport may close on its own (the client went away), so
+    // its close also ends this transport's count.
     set onclose(handler: (() => void) | undefined) {
-      inner.onclose = handler;
+      closeHandler = handler;
+      inner.onclose = closed;
     },
     get onclose() {
-      return inner.onclose;
+      return closeHandler;
     },
 
     set onerror(handler: ((err: Error) => void) | undefined) {
@@ -188,6 +202,8 @@ export function createKyaOsTransport(
   const originalStart = inner.start.bind(inner);
   wrapper.start = async () => {
     await originalStart();
+    release = layer?.open();
+    inner.onclose = closed;
     // At this point McpServer has called server.connect(wrapper) which set
     // wrapper.onmessage = <McpServer handler>. That assignment forwarded to
     // inner.onmessage via the setter above. Now we inject our interceptor.

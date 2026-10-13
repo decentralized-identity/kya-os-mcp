@@ -29,7 +29,7 @@ import { isKyaOsControlArg } from '../proof/covered-request.js';
 import { base64urlEncodeFromBytes } from '../utils/base64.js';
 import type { ProofVerifier } from '../proof/verifier.js';
 import type { ToolRequest, ToolResponse, ProofAgentIdentity } from '../proof/generator.js';
-import type { DetachedProof, SessionContext } from '../types/protocol.js';
+import type { DetachedProof } from '../types/protocol.js';
 import type { CryptoProvider } from '../providers/base.js';
 import type { Ed25519JWK } from '../utils/crypto-service.js';
 
@@ -95,7 +95,7 @@ export async function generateRequestProof(
   // INVALID_PROOF_STRUCTURE, indistinguishably from a thief. Mint a per-proof
   // id instead, so the sessionless case (the stateless MCP core) works.
   const boundSessionId = sessionId ?? `req-${base64urlEncodeFromBytes(await crypto.randomBytes(9))}`;
-  const session: SessionContext = {
+  return generator.generateProof(request, undefined, {
     sessionId: boundSessionId,
     audience,
     nonce,
@@ -104,8 +104,7 @@ export async function generateRequestProof(
     lastActivity: now,
     ttlMinutes: 30,
     identityState: 'anonymous',
-  };
-  return generator.generateProof(request, undefined, session);
+  });
 }
 
 /**

@@ -19,7 +19,6 @@ import {
   LEGACY_NAMESPACED_PROOF_META_KEY,
   LEGACY_PROOF_META_KEY,
   RESPONSE_PROOF_PROFILE_ENVELOPE,
-  type ProofSession,
   type ToolRequest,
   type ToolResponse,
 } from "../proof/generator.js";
@@ -55,16 +54,34 @@ const auditMetaKey = 'org.kya-os/audit';
 export const LIFECYCLE_STAMP_META_KEY = 'org.kya-os/lifecycle-stamp';
 
 /**
- * The private `_meta` member that carries, under the envelope profile, what a
- * wrapper's proof is to claim: the transport makes the proof from it over the
- * result it sends, and strips it as it strips the stamp. It is honored only on
- * a result that also carries the middleware's stamp. Plain data, so a copy of
- * the result carries it as well as the original.
+ * The private `_meta` member that names, under the envelope profile, the proof
+ * a wrapper left for the transport to make: a one-time id. What the proof
+ * claims stays in the middleware, keyed by that id, so code that can write a
+ * result cannot choose the claims. The transport redeems the id only on a
+ * result that also carries the middleware's stamp, and strips it as it strips
+ * the stamp. A string, so a copy of the result carries it too.
  */
 export const PENDING_PROOF_META_KEY = 'org.kya-os/pending-proof';
 
+/**
+ * How long a proof left for the transport waits to be sent. A result that the
+ * SDK never sends (a cancelled call, or one the SDK replaced) is closed in the
+ * audit trail after this, with `PROOF_NOT_SENT`.
+ */
+const PENDING_PROOF_TTL_MS = 5 * 60_000;
+
+/** How many proofs may wait at once; past this, the oldest is closed as not sent. */
+const PENDING_PROOF_LIMIT = 10_000;
+
 /** The members only the middleware sets on a result for itself, never sent. */
 const privateMetaKeys: readonly string[] = [LIFECYCLE_STAMP_META_KEY, PENDING_PROOF_META_KEY];
+
+/** The `_meta` members a response proof is placed under. */
+const proofMetaKeys: readonly string[] = [
+  KYA_OS_PROOF_META_KEY,
+  LEGACY_NAMESPACED_PROOF_META_KEY,
+  LEGACY_PROOF_META_KEY,
+];
 
 /**
  * `_meta` members only the middleware itself may set: proofs, a proof error,
@@ -73,9 +90,7 @@ const privateMetaKeys: readonly string[] = [LIFECYCLE_STAMP_META_KEY, PENDING_PR
  * set by the handler) cannot be told apart from a forgery.
  */
 const outcomeMetaKeys: readonly string[] = [
-  KYA_OS_PROOF_META_KEY,
-  LEGACY_NAMESPACED_PROOF_META_KEY,
-  LEGACY_PROOF_META_KEY,
+  ...proofMetaKeys,
   'proofError',
   auditMetaKey,
   ...privateMetaKeys,
@@ -88,7 +103,8 @@ interface PendingAllowedProof {
   kind: 'allowed';
   toolName: string;
   request: ToolRequest;
-  session: ProofSession;
+  /** Re-read when the proof is made; the proof's audience comes from it. */
+  sessionId: string;
   scopeId?: string;
   context?: McpAuditContext;
 }
@@ -98,7 +114,8 @@ interface PendingOutcomeProof {
   kind: 'outcome';
   toolName: string;
   request: ToolRequest;
-  session: ProofSession;
+  /** Re-read when the proof is made; the proof's audience comes from it. */
+  sessionId: string;
   outcome: KyaOsAuthorizationOutcome;
   reason: string;
   /** Whether the outcome's terminal audit events were delivered. */
@@ -108,16 +125,33 @@ interface PendingOutcomeProof {
 /** What a wrapper's proof claims, wherever it is made. */
 type PendingProof = PendingAllowedProof | PendingOutcomeProof;
 
+/** `proofError` on a result whose proof was left to the transport and could not be made. */
+const UNPROVEN_PROOF_ERROR = "Proof generation failed — response is unproven";
+
 /**
- * Thrown when the envelope profile has to prove a result and no withKyaOs
- * transport reads this middleware's results.
+ * A copy of `params` that later changes to the caller's object cannot reach,
+ * so the request a proof signs is the call as the wrapper saw it. Arguments
+ * are JSON in MCP; a value that cannot be copied is left as it is, and its
+ * proof fails as it would have.
+ */
+function snapshot(params: Record<string, unknown>): Record<string, unknown> {
+  try {
+    return structuredClone(params);
+  } catch {
+    return params;
+  }
+}
+
+/**
+ * Thrown by a wrapper, on entry, under the envelope profile while no KYA-OS
+ * transport is open for this middleware.
  */
 const ENVELOPE_PROFILE_NEEDS_TRANSPORT =
   '[kya-os] The envelope response-proof profile proves a result where the KYA-OS ' +
   'transport sends it, after the MCP SDK has finished the result, and no KYA-OS ' +
-  'transport is connected. Connect the server with withKyaOs() (with proofAllTools ' +
-  'left on; excludeTools leaves a tool unproven), or wrap the transport you connect ' +
-  'with createKyaOsTransport().';
+  'transport is open. Connect the server with withKyaOs() (with proofAllTools ' +
+  'left on; excludeTools leaves an unwrapped tool unproven), or wrap the transport ' +
+  'you connect with createKyaOsTransport().';
 
 /** `result` without the `_meta` members in `keys`, dropping `_meta` if nothing else is left. */
 function withoutMetaKeys<T extends ToolResult>(result: T, keys: readonly string[]): T {
@@ -151,13 +185,20 @@ export function withoutPrivateMeta<T extends ToolResult>(result: T): T {
 
 /** What the outer layer (the withKyaOs transport) does with a middleware's results. */
 export interface OuterProofLayer {
+  /**
+   * Count one more open transport, until the returned function is called.
+   * Under the envelope profile the wrappers refuse to run while none is open.
+   * Calling the returned function again does nothing.
+   */
+  open(): () => void;
   /** Whether the middleware's wrappers returned `result`: it carries their stamp. */
   owns(result: ToolResult): boolean;
   /**
    * `result` as it may leave the process: without the private members, and,
    * when a wrapper left its proof to the transport, carrying that proof, made
    * over `result` as it is now. Never throws: a proof that cannot be made is
-   * reported on the result, as one that fails in a wrapper is.
+   * reported on the result, as one that fails in a wrapper is. A pending
+   * proof is redeemed once.
    */
   send(result: ToolResult): Promise<ToolResult>;
 }
@@ -236,6 +277,12 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
   // This middleware's lifecycle token, minted once an outer layer reads its
   // results. Only wrappers holding it can stamp a result as their own.
   let lifecycleStamp: string | undefined;
+  // KYA-OS transports open for this middleware. Under the envelope profile the
+  // wrappers refuse to run while there are none.
+  let openTransports = 0;
+  // Proofs left for the transport, by one-time id, each with the timer that
+  // closes it as not sent. The claims never leave the middleware.
+  const pendingProofs = new Map<string, { pending: PendingProof; timer: ReturnType<typeof setTimeout> }>();
 
   const hasOwnStamp = (response: ToolResult): boolean =>
     lifecycleStamp !== undefined &&
@@ -366,12 +413,57 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
 
   /**
    * Under the envelope profile a proof can only be made where the result is
-   * sent, so a wrapper with no outer layer to send it refuses before it does
-   * anything, rather than ship a proof the client cannot verify.
+   * sent, so a wrapper with no open KYA-OS transport to send it refuses
+   * before it does anything, rather than ship a proof the client cannot
+   * verify.
    */
   const requireProofLayer: RequireProofLayer = (): void => {
-    if (bindsEnvelope && lifecycleStamp === undefined) {
+    if (bindsEnvelope && openTransports === 0) {
       throw new Error(ENVELOPE_PROFILE_NEEDS_TRANSPORT);
+    }
+  };
+
+  /** Remove and return the proof waiting under `id`, if one is. */
+  const takePendingProof = (id: string): PendingProof | undefined => {
+    const entry = pendingProofs.get(id);
+    if (entry === undefined) return undefined;
+    pendingProofs.delete(id);
+    clearTimeout(entry.timer);
+    return entry.pending;
+  };
+
+  /**
+   * Close, in the audit trail, a proof that was never sent: the SDK dropped
+   * its result (a cancelled call, or one the SDK replaced). An allowed call
+   * records the proof rejected and the call completed, in the order a call
+   * without a proof session records them; an outcome, whose terminal events
+   * were recorded in the handler, records the proof rejected.
+   */
+  const closeUnsentProof = async (id: string): Promise<void> => {
+    const pending = takePendingProof(id);
+    if (pending === undefined) return;
+    if (pending.kind === 'outcome') {
+      if (pending.terminalAuditDelivered) {
+        await emitAudit(
+          'Failed to record unsent outcome proof',
+          () => audit?.proof('rejected', { outcome: 'failed', verificationCode: 'PROOF_NOT_SENT' }),
+          pending.toolName,
+        );
+      }
+      return;
+    }
+    const { toolName, context } = pending;
+    const proofAuditDelivered = await emitAudit(
+      'Failed to record unsent proof',
+      () => audit?.proof('rejected', { outcome: 'failed', verificationCode: 'PROOF_NOT_SENT', context }),
+      toolName,
+    );
+    if (proofAuditDelivered) {
+      await emitAudit(
+        'Failed to record completed tool outcome',
+        () => audit?.tool('completed', { toolName, outcome: 'succeeded', context }),
+        toolName,
+      );
     }
   };
 
@@ -379,14 +471,28 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
    * Leave `pending` for the outer layer to prove over the result it sends:
    * the envelope profile covers members the MCP SDK sets after the handler
    * returns, so a proof made here would not cover what the client receives.
+   * The result carries only a one-time id; the claims stay here, with the
+   * request copied so the caller cannot change it before it is signed.
    */
   const leaveToOuterLayer = (
     response: MutableToolResponse,
     pending: PendingProof,
   ): MutableToolResponse => {
+    if (pendingProofs.size >= PENDING_PROOF_LIMIT) {
+      const oldest = pendingProofs.keys().next().value;
+      if (oldest !== undefined) void closeUnsentProof(oldest);
+    }
+    const id = base64urlEncodeFromBytes(globalThis.crypto.getRandomValues(new Uint8Array(16)));
+    const timer = setTimeout(() => void closeUnsentProof(id), PENDING_PROOF_TTL_MS);
+    // Do not hold a process open for an audit close-out.
+    (timer as { unref?: () => void }).unref?.();
+    pendingProofs.set(id, {
+      pending: { ...pending, request: { ...pending.request, params: snapshot(pending.request.params as Record<string, unknown>) } },
+      timer,
+    });
     response._meta = {
       ...((response._meta as Record<string, unknown> | undefined) ?? {}),
-      [PENDING_PROOF_META_KEY]: pending,
+      [PENDING_PROOF_META_KEY]: id,
     };
     return response;
   };
@@ -700,11 +806,13 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
         kind: 'allowed',
         toolName,
         request: { method: toolName, params: args },
-        session: { sessionId: session.sessionId, audience: session.audience },
+        sessionId: session.sessionId,
         ...(context?.scopeId === undefined ? {} : { scopeId: context.scopeId }),
         ...(callAudit === undefined ? {} : { context: callAudit }),
       };
-      return bindsEnvelope ? leaveToOuterLayer(result, pending) : proveAllowedCall(result, pending);
+      return bindsEnvelope
+        ? leaveToOuterLayer(result, pending)
+        : proveAllowedCall(result, pending, session);
     };
     return async (
       args: Record<string, unknown>,
@@ -725,8 +833,9 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
   async function proveAllowedCall(
     result: MutableToolResponse,
     pending: PendingAllowedProof,
+    session: SessionContext,
   ): Promise<MutableToolResponse> {
-    const { toolName, request, session, scopeId, context } = pending;
+    const { toolName, request, scopeId, context } = pending;
     try {
       // The envelope profile binds the FULL result envelope (hashing strips the top-level
       // `_meta`, where the proof itself is attached below); the body profile binds the
@@ -800,7 +909,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       });
       result._meta = {
         ...handlerMeta(result),
-        proofError: "Proof generation failed — response is unproven",
+        proofError: UNPROVEN_PROOF_ERROR,
       };
       const rejectionAuditDelivered = await emitAudit(
         'Failed to record proof-generation rejection',
@@ -893,24 +1002,29 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       kind: 'outcome',
       toolName,
       request: { method: toolName, params: cleanArgs },
-      session: { sessionId: session.sessionId, audience: session.audience },
+      sessionId: session.sessionId,
       outcome,
       reason,
       terminalAuditDelivered,
     };
-    return bindsEnvelope ? leaveToOuterLayer(response, pending) : proveAuthorizationOutcome(response, pending);
+    return bindsEnvelope
+      ? leaveToOuterLayer(response, pending)
+      : proveAuthorizationOutcome(response, pending, session, false);
   };
 
   /**
    * Sign an authorization outcome and record the proof. In the handler under
    * the body profile; in the outer layer, over the result it sends, under the
-   * envelope profile.
+   * envelope profile, where a proof that fails is also reported on the result,
+   * as an allowed call's is.
    */
   async function proveAuthorizationOutcome(
     response: MutableToolResponse,
     pending: PendingOutcomeProof,
+    session: SessionContext,
+    sentByOuterLayer: boolean,
   ): Promise<MutableToolResponse> {
-    const { toolName, request, session, outcome, reason, terminalAuditDelivered } = pending;
+    const { toolName, request, outcome, reason, terminalAuditDelivered } = pending;
     try {
       // A needs_authorization challenge has a body to bind; denial / step-up
       // proofs stay body-free under every profile (SPEC §7.4). WHAT gets bound
@@ -954,6 +1068,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       }
     } catch (error) {
       await outcomeProofFailed(toolName, error, terminalAuditDelivered);
+      if (sentByOuterLayer) markUnproven(response);
     }
     return response;
   }
@@ -984,26 +1099,91 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
   const attachOutcomeProof: AttachOutcomeProof = async (...outcome) =>
     stampLifecycle(await outcomeProof(...outcome));
 
+  /** Say on `response` that it goes out without the proof it was meant to carry. */
+  const markUnproven = (response: MutableToolResponse): MutableToolResponse => {
+    response._meta = {
+      ...((withoutMetaKeys(response, proofMetaKeys)._meta as Record<string, unknown> | undefined) ?? {}),
+      proofError: UNPROVEN_PROOF_ERROR,
+    };
+    return response;
+  };
+
+  /**
+   * A proof left for the transport whose session is gone by the time it is
+   * sent: the result goes out unproven and says so, and the audit trail
+   * records why, closing an allowed call as a wrapper does when its session
+   * is missing.
+   */
+  async function sessionGoneAtSend(
+    response: MutableToolResponse,
+    pending: PendingProof,
+  ): Promise<MutableToolResponse> {
+    markUnproven(response);
+    const { toolName } = pending;
+    const context = pending.kind === 'allowed' ? pending.context : undefined;
+    if (pending.kind === 'outcome' && !pending.terminalAuditDelivered) return response;
+    const proofAuditDelivered = await emitAudit(
+      'Failed to record missing proof session',
+      () => audit?.proof('rejected', { outcome: 'failed', verificationCode: 'PROOF_SESSION_NOT_FOUND', context }),
+      toolName,
+    );
+    if (pending.kind === 'allowed' && proofAuditDelivered) {
+      await emitAudit(
+        'Failed to record completed tool outcome',
+        () => audit?.tool('completed', { toolName, outcome: 'succeeded', context }),
+        toolName,
+      );
+    }
+    return response;
+  }
+
   /**
    * The outer layer's last step before a result leaves the process: a result
    * whose wrapper left its proof here gets it now, over the members the MCP
    * SDK has set since the handler returned, and every result loses the
-   * private members.
+   * private members. Only a result with this middleware's stamp redeems a
+   * pending id, each id once; the claims and the session are the
+   * middleware's own, never the result's. A stamped result naming no waiting
+   * proof goes out unproven and says so.
    */
   async function sendResult(result: ToolResult): Promise<ToolResult> {
-    const pending = hasOwnStamp(result)
-      ? (result._meta as Record<string, unknown>)[PENDING_PROOF_META_KEY] as PendingProof | undefined
+    const id = hasOwnStamp(result)
+      ? (result._meta as Record<string, unknown>)[PENDING_PROOF_META_KEY]
       : undefined;
     const sent = withoutPrivateMeta(result);
-    if (pending === undefined) return sent;
-    return pending.kind === 'allowed' ? proveAllowedCall(sent, pending) : proveAuthorizationOutcome(sent, pending);
+    if (id === undefined) return sent;
+    const pending = typeof id === 'string' ? takePendingProof(id) : undefined;
+    if (pending === undefined) return markUnproven(sent);
+    let session: SessionContext | null;
+    try {
+      session = await sessionManager.getSession(pending.sessionId);
+    } catch (error) {
+      logger.error("[kya-os] Proof session lookup failed", {
+        tool: pending.toolName,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      session = null;
+    }
+    if (!session) return sessionGoneAtSend(sent, pending);
+    return pending.kind === 'allowed'
+      ? proveAllowedCall(sent, pending, session)
+      : proveAuthorizationOutcome(sent, pending, session, true);
   }
 
   outerProofLayerHooks.set(wrapWithProof, () => {
     lifecycleStamp ??= base64urlEncodeFromBytes(
       globalThis.crypto.getRandomValues(new Uint8Array(16)),
     );
-    return { owns: hasOwnStamp, send: sendResult };
+    const open = (): (() => void) => {
+      openTransports += 1;
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        openTransports -= 1;
+      };
+    };
+    return { open, owns: hasOwnStamp, send: sendResult };
   });
 
   return { handleHandshake, ensureSession, wrapWithProof, attachOutcomeProof, requireProofLayer };

@@ -26,6 +26,7 @@ import type {
 import { LIFECYCLE_STAMP_META_KEY } from '../with-kya-os.session.js';
 import { RESPONSE_PROOF_PROFILE_ENVELOPE } from '../../proof/generator.js';
 import type { PolicyEngine } from '../../policy/engine.js';
+import type { AuditTrailService } from '../../audit/service.js';
 import { createKyaOsTransport, type JSONRPCMessage } from '../kya-os-transport.js';
 import { logger } from '../../logging/index.js';
 import {
@@ -416,5 +417,369 @@ describe('the withKyaOs transport under the envelope profile', () => {
     expect((await verifyReceived(received, {
       signer: kyaos.identity.did, toolName: 'relay', params: ARGS, binds: 'envelope',
     })).valid).toBe(true);
+  });
+});
+
+/** A raw withKyaOs transport over a recording far end, started. */
+async function rawTransport(kyaos: KyaOsMiddleware) {
+  const sent: JSONRPCMessage[] = [];
+  const inner = {
+    start: async () => {},
+    close: async () => {},
+    send: async (message: JSONRPCMessage) => {
+      sent.push(JSON.parse(JSON.stringify(message)));
+    },
+    onclose: undefined as (() => void) | undefined,
+  };
+  const wrapper = createKyaOsTransport(inner, kyaos);
+  await wrapper.start();
+  return { inner, wrapper, sent };
+}
+
+describe('the claims of a proof left to the transport', () => {
+  const NEEDS_TRANSPORT = /envelope response-proof profile.*createKyaOsTransport\(\)/s;
+  const PENDING = 'org.kya-os/pending-proof';
+  /** Claims a handler would like signed for a call it never made. */
+  const fabricated = {
+    kind: 'allowed',
+    toolName: 'transfer_funds',
+    request: { method: 'transfer_funds', params: { amount: 1_000_000 } },
+    sessionId: 'never-issued',
+    session: { sessionId: 'never-issued', audience: 'did:web:victim.example' },
+    scopeId: 'payments:admin',
+  };
+  const leaked = (received: unknown) =>
+    ['transfer_funds', 'never-issued', 'victim.example', 'payments:admin'].filter((claim) =>
+      JSON.stringify(received).includes(claim));
+
+  it('are never taken from the result: a handler holding a real stamp gets no proof for claims it wrote', async () => {
+    const server = new McpServer1({ name: 'forger', version: '1.0.0' });
+    const kyaos = await withKyaOs(server, {
+      crypto, responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE, handshakeExposure: 'none',
+    });
+    server.registerTool('forge', { inputSchema: { item: z.string() } }, toMcpToolCallback(async (args) => {
+      // The handler wraps a call of its own to read a genuine stamp off it.
+      const genuine = await kyaos.wrapWithProof('innocent', ran)(args);
+      const stamp = (genuine._meta as Record<string, unknown>)[LIFECYCLE_STAMP_META_KEY];
+      return {
+        content: [{ type: 'text', text: 'transfer approved' }],
+        _meta: { [LIFECYCLE_STAMP_META_KEY]: stamp, [PENDING]: fabricated },
+      };
+    }));
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const received: Array<Record<string, unknown>> = [];
+    const forward = serverTransport.send.bind(serverTransport);
+    serverTransport.send = async (message, sendOptions) => {
+      const wire = JSON.parse(JSON.stringify(message));
+      if (wire.result !== undefined) received.push(wire.result);
+      return forward(wire, sendOptions);
+    };
+    await server.connect(serverTransport);
+    const client = new Client1({ name: 'forger-client', version: '1.0.0' });
+    await client.connect(clientTransport);
+
+    try {
+      await client.callTool({ name: 'forge', arguments: ARGS });
+      const result = received.at(-1)!;
+
+      expect(proofOf(result)).toBeUndefined();
+      expect((result._meta as Record<string, unknown>).proofError).toBe('Proof generation failed — response is unproven');
+      expect(leaked(result)).toEqual([]);
+      expect(JSON.stringify(result)).not.toContain(LIFECYCLE_STAMP_META_KEY);
+      expect(JSON.stringify(result)).not.toContain(PENDING);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('are redeemed only under the middleware stamp, even with a genuine pending id and no tracked call', async () => {
+    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
+    const sessionId = await handshake(kyaos);
+    const { wrapper, sent } = await rawTransport(kyaos);
+    const genuine = await kyaos.wrapWithProof('report', ran)(ARGS, sessionId);
+    const id = (genuine._meta as Record<string, unknown>)[PENDING];
+    expect(id).toEqual(expect.any(String));
+
+    // Another result, under a guessed stamp, naming the genuine id, answering no tracked call.
+    await wrapper.send({
+      jsonrpc: '2.0', id: 41,
+      result: { content: [{ type: 'text', text: 'substituted' }], _meta: { [LIFECYCLE_STAMP_META_KEY]: 'guessed', [PENDING]: id } },
+    });
+    // The genuine result, answering no tracked call either.
+    await wrapper.send({ jsonrpc: '2.0', id: 42, result: genuine });
+
+    const substituted = (sent[0] as { result: Record<string, unknown> }).result;
+    expect(proofOf(substituted)).toBeUndefined();
+    expect(JSON.stringify(substituted)).not.toContain(PENDING);
+    const proven = (sent[1] as { result: Record<string, unknown> }).result;
+    expect((await verifyReceived(proven, {
+      signer: kyaos.identity.did, toolName: 'report', params: ARGS, binds: 'envelope',
+    })).valid).toBe(true);
+  });
+
+  it('are redeemed once: a second result naming the same id goes out unproven', async () => {
+    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
+    const sessionId = await handshake(kyaos);
+    const { wrapper, sent } = await rawTransport(kyaos);
+    const genuine = await kyaos.wrapWithProof('report', ran)(ARGS, sessionId);
+
+    await wrapper.send({ jsonrpc: '2.0', id: 1, result: structuredClone(genuine) });
+    await wrapper.send({ jsonrpc: '2.0', id: 2, result: { ...structuredClone(genuine), content: [{ type: 'text', text: 'replayed' }] } });
+
+    expect(proofOf((sent[0] as { result: Record<string, unknown> }).result)).toBeDefined();
+    const replayed = (sent[1] as { result: Record<string, unknown> }).result;
+    expect(proofOf(replayed)).toBeUndefined();
+    expect((replayed._meta as Record<string, unknown>).proofError).toBe('Proof generation failed — response is unproven');
+  });
+
+  it('take the audience from the session as it is at send, and refuse a session that is gone', async () => {
+    const { events, record } = auditEvents();
+    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE, audit: { record } });
+    const sessionId = await handshake(kyaos);
+    const { wrapper, sent } = await rawTransport(kyaos);
+    const result = await kyaos.wrapWithProof('report', ran)(ARGS, sessionId);
+    await kyaos.sessionManager.clearSessions();
+
+    await wrapper.send({ jsonrpc: '2.0', id: 1, result });
+
+    const received = (sent[0] as { result: Record<string, unknown> }).result;
+    expect(proofOf(received)).toBeUndefined();
+    expect((received._meta as Record<string, unknown>).proofError).toBe('Proof generation failed — response is unproven');
+    expect(events.slice(-2)).toEqual(['proof.rejected:failed', 'tool.call.completed:succeeded']);
+  });
+
+  it('do not outlive the transport: once every KYA-OS transport has closed, the wrappers refuse again', async () => {
+    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE, autoSession: true });
+    const first = await rawTransport(kyaos);
+    const second = await rawTransport(kyaos);
+    const handler = kyaos.wrapWithProof('report', ran);
+
+    await first.wrapper.close();
+    await expect(handler(ARGS)).resolves.toBeDefined();
+    // The far end goes away on its own.
+    second.inner.onclose!();
+    await expect(handler(ARGS)).rejects.toThrow(NEEDS_TRANSPORT);
+    await expect(kyaos.proveOutcome!({
+      toolName: 'report', args: ARGS, outcome: 'denied', reason: 'r', result: scopeChallenge(),
+    })).rejects.toThrow(NEEDS_TRANSPORT);
+  });
+
+  it('close a proof the SDK never sends, such as a cancelled call, in the audit trail', async () => {
+    const recorded: Array<{ eventType: string; outcome: string; code?: string }> = [];
+    const record: Pick<AuditTrailService, 'record'>['record'] =
+      async (event) => {
+        const details = (event as { details?: { verificationCode?: string } }).details;
+        recorded.push({
+          eventType: event.eventType,
+          outcome: event.outcome,
+          ...(details?.verificationCode === undefined ? {} : { code: details.verificationCode }),
+        });
+        return { status: 'pending', event: event as never };
+      };
+    const server = new McpServer1({ name: 'cancel', version: '1.0.0' });
+    const kyaos = await withKyaOs(server, {
+      crypto, responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE, handshakeExposure: 'none', audit: { record },
+    });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    server.registerTool('slow', { inputSchema: { item: z.string() } }, toMcpToolCallback(kyaos.wrapWithProof('slow', async () => {
+      entered();
+      await held;
+      return { content: [{ type: 'text', text: 'too late' }] };
+    })));
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const results: unknown[] = [];
+    const forward = serverTransport.send.bind(serverTransport);
+    serverTransport.send = async (message, sendOptions) => {
+      if ((message as { result?: { content?: unknown } }).result?.content !== undefined) results.push(message);
+      return forward(message, sendOptions);
+    };
+    await server.connect(serverTransport);
+    const client = new Client1({ name: 'cancel-client', version: '1.0.0' });
+    await client.connect(clientTransport);
+    const abort = new AbortController();
+
+    try {
+      const call = client.callTool({ name: 'slow', arguments: ARGS }, undefined, { signal: abort.signal }).catch(() => 'cancelled');
+      await started;
+      abort.abort();
+      await call;
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      release();
+      // The handler returns into a request the SDK no longer answers.
+      await vi.waitFor(() => expect(recorded.map((e) => e.eventType)).toContain('tool.call.started'));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(results).toHaveLength(0);
+      expect(recorded.map((e) => e.eventType)).not.toContain('tool.call.completed');
+
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+      expect(recorded.slice(-2)).toEqual([
+        { eventType: 'proof.rejected', outcome: 'failed', code: 'PROOF_NOT_SENT' },
+        { eventType: 'tool.call.completed', outcome: 'succeeded' },
+      ]);
+    } finally {
+      vi.useRealTimers();
+      await client.close();
+      await server.close();
+    }
+  });
+});
+
+describe('edge paths of a proof left to the transport', () => {
+  const UNPROVEN = 'Proof generation failed — response is unproven';
+  const PENDING = 'org.kya-os/pending-proof';
+  const sentResult = (sent: JSONRPCMessage[], index = -1) =>
+    (sent.at(index) as { result: Record<string, unknown> }).result;
+  const recording = () => {
+    const recorded: Array<{ eventType: string; code?: string }> = [];
+    const record: Pick<AuditTrailService, 'record'>['record'] = async (event) => {
+      const code = (event as { details?: { verificationCode?: string } }).details?.verificationCode;
+      recorded.push({ eventType: event.eventType, ...(code === undefined ? {} : { code }) });
+      return { status: 'pending', event: event as never };
+    };
+    return { recorded, record };
+  };
+
+  it('signs the call as the wrapper saw it, whatever later happens to the arguments', async () => {
+    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
+    const sessionId = await handshake(kyaos);
+    const { wrapper, sent } = await rawTransport(kyaos);
+    const args = { item: 'x', basket: { qty: 1 } };
+
+    const result = await kyaos.wrapWithProof('order', ran)(args, sessionId);
+    args.basket.qty = 1_000;
+    await wrapper.send({ jsonrpc: '2.0', id: 1, result });
+
+    const expected = { signer: kyaos.identity.did, toolName: 'order', binds: 'envelope' as const };
+    expect((await verifyReceived(sentResult(sent), { ...expected, params: { item: 'x', basket: { qty: 1 } } })).valid).toBe(true);
+    expect((await verifyReceived(sentResult(sent), { ...expected, params: args })).valid).toBe(false);
+  });
+
+  it('keeps arguments it cannot copy, and their proof fails as it would have', async () => {
+    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
+    const sessionId = await handshake(kyaos);
+    const { wrapper, sent } = await rawTransport(kyaos);
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => {});
+
+    try {
+      const result = await kyaos.wrapWithProof('order', ran)({ item: 'x', callback: () => 'no' }, sessionId);
+      await wrapper.send({ jsonrpc: '2.0', id: 1, result });
+
+      // A function cannot be signed over: the proof fails and says so.
+      expect(proofOf(sentResult(sent))).toBeUndefined();
+      expect((sentResult(sent)._meta as Record<string, unknown>).proofError).toBe(UNPROVEN);
+      expect(error).toHaveBeenCalledWith('[kya-os] Proof generation failed', expect.objectContaining({ tool: 'order' }));
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('reports an outcome proof that fails at send on the result', async () => {
+    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
+    const sessionId = await handshake(kyaos);
+    const { wrapper, sent } = await rawTransport(kyaos);
+    const challenge = await kyaos.wrapWithDelegation('checkout', CONSENT, ran)(ARGS, sessionId);
+    const generate = vi.spyOn(kyaos.proofGenerator, 'generateProof').mockRejectedValue(new Error('signer offline'));
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => {});
+
+    try {
+      await wrapper.send({ jsonrpc: '2.0', id: 1, result: challenge });
+
+      expect(proofOf(sentResult(sent))).toBeUndefined();
+      expect((sentResult(sent)._meta as Record<string, unknown>).proofError).toBe(UNPROVEN);
+    } finally {
+      generate.mockRestore();
+      error.mockRestore();
+    }
+  });
+
+  it('sends a result unproven when its session cannot be read at send', async () => {
+    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
+    const sessionId = await handshake(kyaos);
+    const { wrapper, sent } = await rawTransport(kyaos);
+    const result = await kyaos.wrapWithProof('report', ran)(ARGS, sessionId);
+    const read = vi.spyOn(kyaos.sessionManager, 'getSession').mockRejectedValue(new Error('store offline'));
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => {});
+
+    try {
+      await wrapper.send({ jsonrpc: '2.0', id: 1, result });
+
+      expect(proofOf(sentResult(sent))).toBeUndefined();
+      expect((sentResult(sent)._meta as Record<string, unknown>).proofError).toBe(UNPROVEN);
+      expect(error).toHaveBeenCalledWith('[kya-os] Proof session lookup failed', expect.objectContaining({ tool: 'report' }));
+    } finally {
+      read.mockRestore();
+      error.mockRestore();
+    }
+  });
+
+  it('records nothing more for an outcome whose session is gone when its terminal audit already failed', async () => {
+    const recorded: string[] = [];
+    const kyaos = await createMiddleware({
+      responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE,
+      audit: {
+        record: async (event) => {
+          recorded.push(event.eventType);
+          if (event.eventType === 'tool.call.denied') throw new Error('sink down');
+          return { status: 'pending', event: event as never };
+        },
+      },
+    });
+    const sessionId = await handshake(kyaos);
+    const { wrapper, sent } = await rawTransport(kyaos);
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => {});
+
+    try {
+      const denied = await kyaos.proveOutcome!({
+        toolName: 'wipe', args: ARGS, outcome: 'denied', reason: 'blocked',
+        result: { content: [{ type: 'text', text: 'no' }], isError: true }, sessionId,
+      });
+      await kyaos.sessionManager.clearSessions();
+      const before = recorded.length;
+      await wrapper.send({ jsonrpc: '2.0', id: 1, result: denied });
+
+      expect((sentResult(sent)._meta as Record<string, unknown>).proofError).toBe(UNPROVEN);
+      expect(recorded.slice(before)).toEqual([]);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('closes an unsent outcome proof with PROOF_NOT_SENT, and an evicted one when too many wait', async () => {
+    const { recorded, record } = recording();
+    const kyaos = await createMiddleware({
+      responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE, audit: { record }, autoSession: true,
+    });
+    const { wrapper, sent } = await rawTransport(kyaos);
+    const deny = () => kyaos.proveOutcome!({
+      toolName: 'wipe', args: ARGS, outcome: 'denied', reason: 'blocked',
+      result: { content: [{ type: 'text', text: 'no' }], isError: true },
+    });
+
+    // The first of 10,001 waiting proofs is closed to make room for the last.
+    const first = await deny();
+    for (let i = 0; i < 10_000; i += 1) await deny();
+    await vi.waitFor(() => expect(recorded).toContainEqual({ eventType: 'proof.rejected', code: 'PROOF_NOT_SENT' }));
+    await wrapper.send({ jsonrpc: '2.0', id: 1, result: first });
+
+    expect(proofOf(sentResult(sent))).toBeUndefined();
+    expect((sentResult(sent)._meta as Record<string, unknown>).proofError).toBe(UNPROVEN);
+    expect(recorded.filter((event) => event.code === 'PROOF_NOT_SENT')).toHaveLength(1);
+  }, 60_000);
+
+  it('counts a transport closed twice once', async () => {
+    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE, autoSession: true });
+    const kept = await rawTransport(kyaos);
+    const closing = await rawTransport(kyaos);
+
+    await closing.wrapper.close();
+    closing.inner.onclose?.();
+
+    expect(JSON.stringify(await kyaos.wrapWithProof('report', ran)(ARGS))).toContain(PENDING);
+    await kept.wrapper.close();
   });
 });

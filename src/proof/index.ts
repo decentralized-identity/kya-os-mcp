@@ -10,6 +10,7 @@ export {
   RESPONSE_PROOF_PROFILE_BODY,
   RESPONSE_PROOF_PROFILE_ENVELOPE,
   type ProofAgentIdentity,
+  type ProofSession,
   type ToolRequest,
   type ToolResponse,
   type ProofOptions,

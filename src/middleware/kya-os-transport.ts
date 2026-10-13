@@ -15,8 +15,14 @@
  *   2. Outgoing responses for those ids get a proof injected into `_meta`,
  *      unless the middleware's own wrappers already proved or audited the
  *      result, which they mark with a private per-middleware stamp.
- *   3. All other message types pass through unmodified, except that the
- *      stamp is removed from every result before it is sent.
+ *   3. Under the envelope response-proof profile the wrappers leave their
+ *      proofs here, and every proof is made in `send()`, over the result as
+ *      the MCP SDK finished it: the SDK sets members after the handler
+ *      returns (`resultType` on the 2026-07-28 revision), and the envelope
+ *      profile covers them.
+ *   4. All other message types pass through unmodified, except that the
+ *      middleware's private members are removed from every result before it
+ *      is sent.
  *
  * @module kya-os-transport
  */
@@ -24,8 +30,8 @@
 import type { KyaOsMiddleware, KyaOsToolHandler } from "./with-kya-os.js";
 import {
   attachOuterProofLayer,
-  withoutLifecycleStamp,
   withoutOutcomeMeta,
+  withoutPrivateMeta,
 } from "./with-kya-os.session.js";
 import { logger } from "../logging/index.js";
 
@@ -54,7 +60,9 @@ type ToolResult = {
 
 /**
  * Creates a transport wrapper that injects KYA-OS proofs into `tools/call`
- * responses.
+ * responses. Under the envelope response-proof profile it also makes the
+ * proofs the middleware's wrappers and `proveOutcome` leave to it, over each
+ * result as it is sent.
  *
  * @param inner   - The real transport (Stdio, HTTP, etc.)
  * @param kyaos    - Configured KyaOsMiddleware instance
@@ -67,10 +75,11 @@ export function createKyaOsTransport(
 ): Transport {
   // Request id → { toolName, args } for pending tool calls
   const pending = new Map<unknown, PendingCall>();
-  // From here on the middleware's wrappers stamp what they return, and this
-  // tells a stamped result from one that only looks proven. Undefined for a
-  // custom middleware, whose results are all proved here.
-  const isOwnResult = attachOuterProofLayer(kyaos.wrapWithProof);
+  // From here on the middleware's wrappers stamp what they return, and the
+  // layer tells a stamped result from one that only looks proven, and makes
+  // the proofs they leave to it. Undefined for a custom middleware, whose
+  // results are all proved here.
+  const layer = attachOuterProofLayer(kyaos.wrapWithProof);
 
   const wrapper: Transport = {
     start: () => inner.start(),
@@ -120,7 +129,7 @@ export function createKyaOsTransport(
         // proof and record its lifecycle twice. Only the stamp shows that;
         // proof, proofError and audit members can come from any handler,
         // including one relaying an upstream server's result.
-        if (rawResult && isOwnResult?.(rawResult) !== true) {
+        if (rawResult && layer?.owns(rawResult) !== true) {
           // Those members are untrusted here, so they are removed and the
           // result is proved and audited as any other. Other members stay.
           const received = withoutOutcomeMeta(rawResult);
@@ -158,9 +167,12 @@ export function createKyaOsTransport(
         }
       }
 
-      // The stamp never leaves the process, whichever path the message took.
+      // Whichever path the message took: a proof a wrapper left for the wire
+      // is made now, over the result as it is sent, and the private members
+      // never leave the process.
       if (typeof message.result === "object" && message.result !== null) {
-        const sent = withoutLifecycleStamp(message.result as ToolResult);
+        const result = message.result as ToolResult;
+        const sent = layer ? await layer.send(result) : withoutPrivateMeta(result);
         if (sent !== message.result) message = { ...message, result: sent };
       }
 

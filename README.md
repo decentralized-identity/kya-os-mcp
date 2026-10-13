@@ -132,11 +132,12 @@ server.registerTool('get_report', { inputSchema }, toMcpToolCallback(async (args
 }));
 ```
 
-- **Build the whole result before proving it.** Under the envelope response-proof profile (`responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE`) the proof covers `isError` and `structuredContent` as well as `content`, so a member set afterwards breaks it. The default body profile covers `content` only.
-- **Set `resultType: 'complete'` yourself under the envelope profile.** On the 2026-07-28 MCP revision, SDK 2 adds `resultType` to a result after the handler returns it, which an envelope proof made in the handler does not cover. A result that already carries it keeps it as it is.
+- **Build the whole result before proving it**, and return what `proveOutcome` gives you from the handler. The default body profile signs in the handler and covers `content` only.
+- **Under the envelope response-proof profile** (`responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE`) the proof covers every member except `_meta`. The `withKyaOs` transport makes it when it sends the result, after the MCP SDK has finished the result, so it covers what the client receives, including the `resultType` that SDK 2 adds on the 2026-07-28 revision. This applies to `proveOutcome`, `wrapWithProof` and both gates.
+- **The envelope profile needs the KYA-OS transport.** `withKyaOs` wraps the transport you connect, unless `proofAllTools` is `false`; for a transport you connect yourself, wrap it with `createKyaOsTransport`. Without one, the wrappers and `proveOutcome` throw before they run anything, instead of sending a proof the client cannot verify.
 - **`_meta` is outside every response proof** (SPEC §7.6). Repeat anything a client must be able to trust, such as `resource_metadata`, `scope` and `error`, in `content` or `structuredContent`.
 - A `needs_authorization` proof binds the result; a denial or step-up proof binds none (SPEC §7.4).
-- Return the proven result from the handler. The transport passes it through and removes a private marker it carries.
+- The result carries private members until the transport sends it, and the transport removes them.
 - Leave `kyaos.sessionManager` alone. A second live session makes the fallback session ambiguous, and allow results then go out unproven, marked with `_meta.proofError`.
 - `wrapWithDelegation`'s `formatChallenge` can return the same `{ content, structuredContent, isError, _meta }` shape for the library's own challenge, and all of it is set before signing.
 - `toMcpToolCallback` adapts any wrapped handler to `registerTool` without a cast. The SDK's request context never reaches the handler as its session id.

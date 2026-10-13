@@ -22,12 +22,13 @@ import type {
   KyaOsPolicyGate,
   PolicyGateOptions,
 } from "./with-kya-os.types.js";
-import type { MiddlewareDeps, AttachOutcomeProof } from "./with-kya-os.deps.js";
+import type { MiddlewareDeps, AttachOutcomeProof, RequireProofLayer } from "./with-kya-os.deps.js";
 import { sanitizeForMessage, extractPolicyPrincipal } from "./with-kya-os.helpers.js";
 
 /** Collaborators the policy gate borrows from the session/proof sub-factory. */
 export interface PolicyGateWiring {
   attachOutcomeProof: AttachOutcomeProof;
+  requireProofLayer: RequireProofLayer;
 }
 
 export function createPolicyGate(
@@ -35,7 +36,7 @@ export function createPolicyGate(
   wiring: PolicyGateWiring,
 ): Pick<KyaOsPolicyGate, "withPolicyGate"> {
   const { proofGenerator, cryptoProvider, audit } = deps;
-  const { attachOutcomeProof } = wiring;
+  const { attachOutcomeProof, requireProofLayer } = wiring;
 
   const defaultRiskClassifier = new RiskClassifier();
   const defaultPolicyEngine: PolicyEngine = new DefaultPolicyEngine();
@@ -56,6 +57,7 @@ export function createPolicyGate(
       sessionId?: string,
       context?: KyaOsCallContext,
     ) => {
+      requireProofLayer();
       // Composed after wrapWithDelegation, the approvals argument has already
       // been stripped and arrives in the call context; restore it so a step-up
       // resume verifies the same grants either way.

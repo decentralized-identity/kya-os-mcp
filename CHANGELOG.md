@@ -25,6 +25,32 @@ Versioning: https://semver.org/spec/v2.0.0.html
   `verifyStatusList` the checker behaves as before. The option becomes
   required in 2.0, and SPEC.md §6.10 states the requirement.
 
+### Changed
+
+- **Envelope-profile proofs are made at the transport, over the result as it
+  is sent.** On the 2026-07-28 revision, MCP SDK 2 adds `resultType:
+  'complete'` to a tool result after the handler returns it. An
+  envelope-profile proof made in the handler, by `proveOutcome`,
+  `wrapWithProof` or either gate, did not cover that member, so the client's
+  check of the result it received failed. Under the envelope profile these
+  paths now record what the proof claims and leave the proof to the
+  `withKyaOs` transport, or one built with `createKyaOsTransport`. The
+  transport makes it in `send()`, after the SDK has finished the result, with
+  the same claims, `_meta` keys and audit events, recorded in the same order.
+  The proof covers exactly the result the client receives, on 2025-11-25 and
+  on 2026-07-28, with SDK 1 or SDK 2; a result that sets `resultType` itself
+  is proved as sent too. The copy a handler gets back from `proveOutcome` or
+  a wrapper carries no proof yet, so return it from the handler as before.
+  With no KYA-OS transport connected, which includes `withKyaOs` with
+  `proofAllTools: false`, the wrappers and `proveOutcome` now throw under the
+  envelope profile before they record or run anything. The error names
+  `withKyaOs` and `createKyaOsTransport`. Before, they signed a proof in the
+  handler, and on 2026-07-28 it did not verify. The body profile, the
+  default, is unchanged: it covers `content`, it still signs in the handler,
+  and its output is byte-identical to 1.19.0.
+  `ProofGenerator.generateProof` now takes any session that has `sessionId`
+  and `audience` (new type `ProofSession`). Every `SessionContext` has both.
+
 ## [1.19.0] - 2026-10-09
 
 ### Added
@@ -41,10 +67,7 @@ Versioning: https://semver.org/spec/v2.0.0.html
   proven. A `needs_authorization` proof binds the result and a denial or
   step-up proof binds none, as SPEC.md §7.4 has it. The `_kyaos*` control
   arguments are left out of the signed request, `_meta` members only the
-  middleware may set are dropped, and no session needs to be opened. Under
-  the envelope profile, set `resultType: 'complete'` on the result first: on
-  the 2026-07-28 revision the MCP SDK adds it after the handler returns,
-  outside a proof made there. It is
+  middleware may set are dropped, and no session needs to be opened. It is
   optional on `KyaOsMiddleware`, as `withPolicyGate` is, so structural
   implementers still type-check; the new `KyaOsOutcomeProver` role requires
   it. New types: `KyaOsOutcomeProofRequest`, `KyaOsAuthorizationOutcome`,

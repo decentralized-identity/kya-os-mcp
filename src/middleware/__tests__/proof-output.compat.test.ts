@@ -19,6 +19,7 @@ import {
   type ResponseProofProfile,
 } from '../../proof/generator.js';
 import type { PolicyEngine } from '../../policy/engine.js';
+import { connectTransport } from './helpers/received-proof.js';
 
 /** Random bytes from a counter-seeded SHA-256 stream: reproducible across runs. */
 class SeededCryptoProvider extends NodeCryptoProvider {
@@ -106,10 +107,14 @@ describe('proof output stays byte-identical', () => {
     expectGolden('challengeBody', result);
   });
 
+  // Under the envelope profile the transport makes the proof, over the result
+  // it sends. With no MCP SDK between the handler and the transport, that is
+  // the result the handler returned, so the output is still the 1.18.0 one.
   it('default needs_authorization challenge, envelope profile', async () => {
     const { kyaos, sessionId } = await setup(RESPONSE_PROOF_PROFILE_ENVELOPE);
+    const wire = await connectTransport(kyaos);
     const result = await kyaos.wrapWithDelegation('checkout', CONSENT, ran)({ item: 'x' }, sessionId);
-    expectGolden('challengeEnvelope', result);
+    expectGolden('challengeEnvelope', await wire.send(result));
   });
 
   it('delegation gate denial of a malformed delegation', async () => {
@@ -145,11 +150,12 @@ describe('proof output stays byte-identical', () => {
 
   it('success proof, envelope profile', async () => {
     const { kyaos, sessionId } = await setup(RESPONSE_PROOF_PROFILE_ENVELOPE);
+    const wire = await connectTransport(kyaos);
     const result = await kyaos.wrapWithProof('greet', async () => ({
       content: [{ type: 'text', text: 'ran' }],
       structuredContent: { ok: true },
     }))({ name: 'DIF' }, sessionId);
-    expectGolden('successEnvelope', result);
+    expectGolden('successEnvelope', await wire.send(result));
   });
 
   describe('through the withKyaOs transport', () => {

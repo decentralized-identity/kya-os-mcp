@@ -4,7 +4,6 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { KyaOsChallengeFormatter, KyaOsMiddleware } from '../with-kya-os.js';
-import { createKyaOsTransport, type JSONRPCMessage, type Transport } from '../kya-os-transport.js';
 import { LIFECYCLE_STAMP_META_KEY } from '../with-kya-os.session.js';
 import {
   KYA_OS_PROOF_META_KEY,
@@ -13,7 +12,13 @@ import {
 } from '../../proof/generator.js';
 import { logger } from '../../logging/index.js';
 import type { PolicyEngine } from '../../policy/engine.js';
-import { createMiddleware, handshake, proofOf, verifyReceived } from './helpers/received-proof.js';
+import {
+  connectTransport,
+  createMiddleware,
+  handshake,
+  proofOf,
+  verifyReceived,
+} from './helpers/received-proof.js';
 
 const RESOURCE_METADATA = 'https://shop.example/.well-known/oauth-protected-resource';
 
@@ -75,8 +80,12 @@ describe('the delegation gate challenge', () => {
   it('takes a whole result from formatChallenge and signs all of it under the envelope profile', async () => {
     const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
     const sessionId = await handshake(kyaos);
+    const wire = await connectTransport(kyaos);
 
-    const result = await gate(kyaos, asErrorResult)({ item: 'x' }, sessionId);
+    const result = await wire.send(
+      await gate(kyaos, asErrorResult)({ item: 'x' }, sessionId),
+      { toolName: 'checkout', args: { item: 'x' } },
+    );
 
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toMatchObject({ resource_metadata: RESOURCE_METADATA });
@@ -168,32 +177,5 @@ describe('the delegation gate challenge', () => {
     } finally {
       error.mockRestore();
     }
-  });
-
-  it('passes an error-result challenge through the withKyaOs transport as proven', async () => {
-    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
-    const sessionId = await handshake(kyaos);
-    const sent: JSONRPCMessage[] = [];
-    const inner: Transport = {
-      start: async () => {},
-      close: async () => {},
-      send: async (message) => {
-        sent.push(message);
-      },
-    };
-    const wrapper = createKyaOsTransport(inner, kyaos);
-    await wrapper.start();
-    inner.onmessage!({
-      jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'checkout', arguments: { item: 'x' } },
-    });
-
-    const result = await gate(kyaos, asErrorResult)({ item: 'x' }, sessionId);
-    await wrapper.send({ jsonrpc: '2.0', id: 4, result: structuredClone(result) });
-
-    const received = (sent[0] as { result: Record<string, unknown> }).result;
-    expect(received.isError).toBe(true);
-    expect((await verifyReceived(received, {
-      signer: kyaos.identity.did, toolName: 'checkout', params: { item: 'x' }, binds: 'envelope',
-    })).valid).toBe(true);
   });
 });

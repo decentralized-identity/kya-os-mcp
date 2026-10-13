@@ -5,6 +5,13 @@
  * live here, so the borrowing semantics are preserved exactly) and the two proof
  * paths: `wrapWithProof` (success responses) and `attachOutcomeProof` (denied /
  * step-up / needs-authorization outcomes). Extracted from `./with-kya-os.ts`.
+ *
+ * Under the body profile both paths sign in the handler, as they always
+ * have, and the proof covers `content` only. Under the envelope profile the
+ * proof covers the whole result, and the MCP SDK adds members after the
+ * handler returns (`resultType` on the 2026-07-28 revision), so both paths
+ * leave the proof to the outer layer, the withKyaOs transport, which makes it
+ * over the result it sends.
  */
 
 import {
@@ -12,6 +19,7 @@ import {
   LEGACY_NAMESPACED_PROOF_META_KEY,
   LEGACY_PROOF_META_KEY,
   RESPONSE_PROOF_PROFILE_ENVELOPE,
+  type ProofSession,
   type ToolRequest,
   type ToolResponse,
 } from "../proof/generator.js";
@@ -22,13 +30,14 @@ import {
 import { base64urlEncodeFromBytes } from "../utils/base64.js";
 import { logger } from "../logging/index.js";
 import { KYA_OS_ERROR_CODES } from "../errors.js";
-import type { DetachedProof } from "../types/protocol.js";
+import type { DetachedProof, SessionContext } from "../types/protocol.js";
 import type {
+  KyaOsAuthorizationOutcome,
   KyaOsToolHandler,
   KyaOsToolResult,
   KyaOsCallContext,
 } from "./with-kya-os.types.js";
-import type { MiddlewareDeps, AttachOutcomeProof } from "./with-kya-os.deps.js";
+import type { MiddlewareDeps, AttachOutcomeProof, RequireProofLayer } from "./with-kya-os.deps.js";
 import { sanitizeForMessage } from "./with-kya-os.helpers.js";
 import type { McpAuditContext } from "../audit/adapters/mcp.js";
 
@@ -46,8 +55,20 @@ const auditMetaKey = 'org.kya-os/audit';
 export const LIFECYCLE_STAMP_META_KEY = 'org.kya-os/lifecycle-stamp';
 
 /**
+ * The private `_meta` member that carries, under the envelope profile, what a
+ * wrapper's proof is to claim: the transport makes the proof from it over the
+ * result it sends, and strips it as it strips the stamp. It is honored only on
+ * a result that also carries the middleware's stamp. Plain data, so a copy of
+ * the result carries it as well as the original.
+ */
+export const PENDING_PROOF_META_KEY = 'org.kya-os/pending-proof';
+
+/** The members only the middleware sets on a result for itself, never sent. */
+const privateMetaKeys: readonly string[] = [LIFECYCLE_STAMP_META_KEY, PENDING_PROOF_META_KEY];
+
+/**
  * `_meta` members only the middleware itself may set: proofs, a proof error,
- * the audit marker and the lifecycle stamp. A tool result carrying them that
+ * the audit marker and its private members. A tool result carrying them that
  * the middleware did not produce (content relayed from an upstream server, or
  * set by the handler) cannot be told apart from a forgery.
  */
@@ -57,10 +78,46 @@ const outcomeMetaKeys: readonly string[] = [
   LEGACY_PROOF_META_KEY,
   'proofError',
   auditMetaKey,
-  LIFECYCLE_STAMP_META_KEY,
+  ...privateMetaKeys,
 ];
 
 type ToolResult = KyaOsToolResult;
+
+/** A response proof for a call the middleware let run. */
+interface PendingAllowedProof {
+  kind: 'allowed';
+  toolName: string;
+  request: ToolRequest;
+  session: ProofSession;
+  scopeId?: string;
+  context?: McpAuditContext;
+}
+
+/** A response proof recording an authorization outcome (SPEC §7.2). */
+interface PendingOutcomeProof {
+  kind: 'outcome';
+  toolName: string;
+  request: ToolRequest;
+  session: ProofSession;
+  outcome: KyaOsAuthorizationOutcome;
+  reason: string;
+  /** Whether the outcome's terminal audit events were delivered. */
+  terminalAuditDelivered: boolean;
+}
+
+/** What a wrapper's proof claims, wherever it is made. */
+type PendingProof = PendingAllowedProof | PendingOutcomeProof;
+
+/**
+ * Thrown when the envelope profile has to prove a result and no withKyaOs
+ * transport reads this middleware's results.
+ */
+const ENVELOPE_PROFILE_NEEDS_TRANSPORT =
+  '[kya-os] The envelope response-proof profile proves a result where the KYA-OS ' +
+  'transport sends it, after the MCP SDK has finished the result, and no KYA-OS ' +
+  'transport is connected. Connect the server with withKyaOs() (with proofAllTools ' +
+  'left on; excludeTools leaves a tool unproven), or wrap the transport you connect ' +
+  'with createKyaOsTransport().';
 
 /** `result` without the `_meta` members in `keys`, dropping `_meta` if nothing else is left. */
 function withoutMetaKeys<T extends ToolResult>(result: T, keys: readonly string[]): T {
@@ -87,9 +144,22 @@ export function withoutOutcomeMeta<T extends ToolResult>(result: T): T {
   return withoutMetaKeys(result, outcomeMetaKeys);
 }
 
-/** Remove the lifecycle stamp, which must never leave the process. */
-export function withoutLifecycleStamp<T extends ToolResult>(result: T): T {
-  return withoutMetaKeys(result, [LIFECYCLE_STAMP_META_KEY]);
+/** Remove the middleware's private members, which must never leave the process. */
+export function withoutPrivateMeta<T extends ToolResult>(result: T): T {
+  return withoutMetaKeys(result, privateMetaKeys);
+}
+
+/** What the outer layer (the withKyaOs transport) does with a middleware's results. */
+export interface OuterProofLayer {
+  /** Whether the middleware's wrappers returned `result`: it carries their stamp. */
+  owns(result: ToolResult): boolean;
+  /**
+   * `result` as it may leave the process: without the private members, and,
+   * when a wrapper left its proof to the transport, carrying that proof, made
+   * over `result` as it is now. Never throws: a proof that cannot be made is
+   * reported on the result, as one that fails in a wrapper is.
+   */
+  send(result: ToolResult): Promise<ToolResult>;
 }
 
 /**
@@ -98,18 +168,17 @@ export function withoutLifecycleStamp<T extends ToolResult>(result: T): T {
  * `KyaOsMiddleware` it is handed without widening the public interface; a
  * custom implementation simply has no entry.
  */
-const outerProofLayerHooks = new WeakMap<object, () => (result: ToolResult) => boolean>();
+const outerProofLayerHooks = new WeakMap<object, () => OuterProofLayer>();
 
 /**
  * Tell the middleware behind `wrapWithProof` that an outer layer (the withKyaOs
  * transport) reads its results. From then on its wrappers stamp what they
- * return with the middleware's token. Returns the check for that stamp, or
+ * return with the middleware's token, and under the envelope profile leave
+ * their proofs to the layer. Returns the layer's view of those results, or
  * undefined for a middleware this module did not create, whose results are
  * then never treated as its own.
  */
-export function attachOuterProofLayer(
-  wrapWithProof: object,
-): ((result: ToolResult) => boolean) | undefined {
+export function attachOuterProofLayer(wrapWithProof: object): OuterProofLayer | undefined {
   return outerProofLayerHooks.get(wrapWithProof)?.();
 }
 
@@ -146,6 +215,8 @@ export interface SessionProof {
   ): KyaOsToolHandler;
   /** Attach a signed proof recording an authorization outcome to a response. */
   attachOutcomeProof: AttachOutcomeProof;
+  /** Refuse a wrapped call whose proof could not be made where it is sent. */
+  requireProofLayer: RequireProofLayer;
 }
 
 export function createSessionProof(deps: MiddlewareDeps): SessionProof {
@@ -292,6 +363,33 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     [KYA_OS_PROOF_META_KEY]: proof,
     ...(emitLegacyProofKey ? { [LEGACY_PROOF_META_KEY]: proof } : {}),
   });
+
+  /**
+   * Under the envelope profile a proof can only be made where the result is
+   * sent, so a wrapper with no outer layer to send it refuses before it does
+   * anything, rather than ship a proof the client cannot verify.
+   */
+  const requireProofLayer: RequireProofLayer = (): void => {
+    if (bindsEnvelope && lifecycleStamp === undefined) {
+      throw new Error(ENVELOPE_PROFILE_NEEDS_TRANSPORT);
+    }
+  };
+
+  /**
+   * Leave `pending` for the outer layer to prove over the result it sends:
+   * the envelope profile covers members the MCP SDK sets after the handler
+   * returns, so a proof made here would not cover what the client receives.
+   */
+  const leaveToOuterLayer = (
+    response: MutableToolResponse,
+    pending: PendingProof,
+  ): MutableToolResponse => {
+    response._meta = {
+      ...((response._meta as Record<string, unknown> | undefined) ?? {}),
+      [PENDING_PROOF_META_KEY]: pending,
+    };
+    return response;
+  };
 
   // Single-process fallback for the established (handshake or auto) session, used
   // ONLY when no sessionId was threaded into the wrapper — e.g. non-KYA-OS clients
@@ -597,114 +695,133 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
         return result;
       }
 
-      try {
-        const request: ToolRequest = { method: toolName, params: args };
-        // The envelope profile binds the FULL result envelope (hashing strips the top-level
-        // `_meta`, where the proof itself is attached below); the body profile binds the
-        // content array only — the original wire contract.
-        const response: ToolResponse = {
-          data: bindsEnvelope ? result : result.content,
-        };
-
-        const proof = await proofGenerator.generateProof(
-          request,
-          response,
-          session,
-          { scopeId: context?.scopeId, profile: responseProofProfile },
-        );
-
-        // Attach proof under the namespaced _meta key (rendered by MCP
-        // Inspector, invisible to LLMs), plus the legacy bare key when enabled.
-        // Keys the handler set (traceparent, related-task, ...) are kept: the
-        // middleware does not own `_meta` (SPEC §7.6).
-        result._meta = withProofMeta(handlerMeta(result), proof);
-
-        const proofAuditDelivered = await emitAudit(
-          'Required generated-proof audit delivery failed',
-          () => audit?.proof('generated', {
-            outcome: 'succeeded',
-            context: auditContext(context),
-          }),
-          toolName,
-        );
-        const terminalAuditDelivered = proofAuditDelivered && await emitAudit(
-          'Required completed-tool audit delivery failed',
-          () => audit?.tool('completed', {
-            toolName,
-            outcome: 'succeeded',
-            context: auditContext(context),
-          }),
-          toolName,
-        );
-        if (!terminalAuditDelivered) {
-          return markAuditDegraded(
-            result,
-            'Required terminal audit delivery failed after tool completion',
-            true,
-          );
-        }
-
-        // Hand the verified call to the audit sink. A sink failure MUST NOT
-        // break the tool response, so it is logged and swallowed.
-        try {
-          await auditLog.logAuditRecord({
-            identity: { did: identity.did, kid: identity.kid },
-            session: { sessionId: session.sessionId, audience: session.audience },
-            requestHash: proof.meta.requestHash,
-            responseHash: proof.meta.responseHash,
-            verified: "yes",
-            scopeId: proof.meta.scopeId,
-          });
-        } catch (auditError) {
-          logger.error("[kya-os] Audit log failed", {
-            tool: toolName,
-            error:
-              auditError instanceof Error
-                ? auditError.message
-                : String(auditError),
-          });
-        }
-      } catch (error) {
-        logger.error("[kya-os] Proof generation failed", {
-          tool: toolName,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        result._meta = {
-          ...handlerMeta(result),
-          proofError: "Proof generation failed — response is unproven",
-        };
-        const rejectionAuditDelivered = await emitAudit(
-          'Failed to record proof-generation rejection',
-          () => audit?.proof('rejected', {
-            outcome: 'failed',
-            verificationCode: 'PROOF_GENERATION_FAILED',
-            context: auditContext(context),
-          }),
-          toolName,
-        );
-        if (!rejectionAuditDelivered) {
-          markAuditDegraded(
-            result,
-            'Required proof-failure audit delivery failed after tool completion',
-            true,
-          );
-        }
-      }
-
-      return result;
+      const callAudit = auditContext(context);
+      const pending: PendingAllowedProof = {
+        kind: 'allowed',
+        toolName,
+        request: { method: toolName, params: args },
+        session: { sessionId: session.sessionId, audience: session.audience },
+        ...(context?.scopeId === undefined ? {} : { scopeId: context.scopeId }),
+        ...(callAudit === undefined ? {} : { context: callAudit }),
+      };
+      return bindsEnvelope ? leaveToOuterLayer(result, pending) : proveAllowedCall(result, pending);
     };
     return async (
       args: Record<string, unknown>,
       sessionId?: string,
       context?: KyaOsCallContext,
-    ) => stampLifecycle(await run(args, sessionId, context));
+    ) => {
+      requireProofLayer();
+      return stampLifecycle(await run(args, sessionId, context));
+    };
   }
-  outerProofLayerHooks.set(wrapWithProof, () => {
-    lifecycleStamp ??= base64urlEncodeFromBytes(
-      globalThis.crypto.getRandomValues(new Uint8Array(16)),
-    );
-    return hasOwnStamp;
-  });
+
+  /**
+   * Sign an allowed call's result, record the proof and the call's
+   * completion, and hand the call to the audit sink. In the handler under the
+   * body profile; in the outer layer, over the result it sends, under the
+   * envelope profile.
+   */
+  async function proveAllowedCall(
+    result: MutableToolResponse,
+    pending: PendingAllowedProof,
+  ): Promise<MutableToolResponse> {
+    const { toolName, request, session, scopeId, context } = pending;
+    try {
+      // The envelope profile binds the FULL result envelope (hashing strips the top-level
+      // `_meta`, where the proof itself is attached below); the body profile binds the
+      // content array only — the original wire contract.
+      const response: ToolResponse = {
+        data: bindsEnvelope ? result : result.content,
+      };
+
+      const proof = await proofGenerator.generateProof(
+        request,
+        response,
+        session,
+        { scopeId, profile: responseProofProfile },
+      );
+
+      // Attach proof under the namespaced _meta key (rendered by MCP
+      // Inspector, invisible to LLMs), plus the legacy bare key when enabled.
+      // Keys the handler set (traceparent, related-task, ...) are kept: the
+      // middleware does not own `_meta` (SPEC §7.6).
+      result._meta = withProofMeta(handlerMeta(result), proof);
+
+      const proofAuditDelivered = await emitAudit(
+        'Required generated-proof audit delivery failed',
+        () => audit?.proof('generated', {
+          outcome: 'succeeded',
+          context,
+        }),
+        toolName,
+      );
+      const terminalAuditDelivered = proofAuditDelivered && await emitAudit(
+        'Required completed-tool audit delivery failed',
+        () => audit?.tool('completed', {
+          toolName,
+          outcome: 'succeeded',
+          context,
+        }),
+        toolName,
+      );
+      if (!terminalAuditDelivered) {
+        return markAuditDegraded(
+          result,
+          'Required terminal audit delivery failed after tool completion',
+          true,
+        );
+      }
+
+      // Hand the verified call to the audit sink. A sink failure MUST NOT
+      // break the tool response, so it is logged and swallowed.
+      try {
+        await auditLog.logAuditRecord({
+          identity: { did: identity.did, kid: identity.kid },
+          session: { sessionId: session.sessionId, audience: session.audience },
+          requestHash: proof.meta.requestHash,
+          responseHash: proof.meta.responseHash,
+          verified: "yes",
+          scopeId: proof.meta.scopeId,
+        });
+      } catch (auditError) {
+        logger.error("[kya-os] Audit log failed", {
+          tool: toolName,
+          error:
+            auditError instanceof Error
+              ? auditError.message
+              : String(auditError),
+        });
+      }
+    } catch (error) {
+      logger.error("[kya-os] Proof generation failed", {
+        tool: toolName,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      result._meta = {
+        ...handlerMeta(result),
+        proofError: "Proof generation failed — response is unproven",
+      };
+      const rejectionAuditDelivered = await emitAudit(
+        'Failed to record proof-generation rejection',
+        () => audit?.proof('rejected', {
+          outcome: 'failed',
+          verificationCode: 'PROOF_GENERATION_FAILED',
+          context,
+        }),
+        toolName,
+      );
+      if (!rejectionAuditDelivered) {
+        markAuditDegraded(
+          result,
+          'Required proof-failure audit delivery failed after tool completion',
+          true,
+        );
+      }
+    }
+
+    return result;
+  }
 
   const outcomeProof: AttachOutcomeProof = async (
     response,
@@ -750,25 +867,51 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
           : {}),
       },
     };
+    let session: SessionContext | null | undefined;
     try {
       const resolvedSessionId = sessionId ?? (await ensureSession()).sessionId;
-      if (!resolvedSessionId) return response;
-      const session = await sessionManager.getSession(resolvedSessionId);
-      if (!session) return response;
+      session = resolvedSessionId ? await sessionManager.getSession(resolvedSessionId) : undefined;
+    } catch (error) {
+      await outcomeProofFailed(toolName, error, terminalAuditDelivered);
+      return response;
+    }
+    if (!session) return response;
 
-      // Prefer the caller's already-stripped args so the signed requestHash
-      // matches the needs_approval / resumeToken requestHash exactly.
-      let cleanArgs: Record<string, unknown>;
-      if (paramsOverride !== undefined) {
-        cleanArgs = paramsOverride;
-      } else {
-        cleanArgs = {};
-        for (const [k, v] of Object.entries(args)) {
-          if (k !== "_kyaos_delegation") cleanArgs[k] = v;
-        }
+    // Prefer the caller's already-stripped args so the signed requestHash
+    // matches the needs_approval / resumeToken requestHash exactly.
+    let cleanArgs: Record<string, unknown>;
+    if (paramsOverride !== undefined) {
+      cleanArgs = paramsOverride;
+    } else {
+      cleanArgs = {};
+      for (const [k, v] of Object.entries(args)) {
+        if (k !== "_kyaos_delegation") cleanArgs[k] = v;
       }
+    }
 
-      const request: ToolRequest = { method: toolName, params: cleanArgs };
+    const pending: PendingOutcomeProof = {
+      kind: 'outcome',
+      toolName,
+      request: { method: toolName, params: cleanArgs },
+      session: { sessionId: session.sessionId, audience: session.audience },
+      outcome,
+      reason,
+      terminalAuditDelivered,
+    };
+    return bindsEnvelope ? leaveToOuterLayer(response, pending) : proveAuthorizationOutcome(response, pending);
+  };
+
+  /**
+   * Sign an authorization outcome and record the proof. In the handler under
+   * the body profile; in the outer layer, over the result it sends, under the
+   * envelope profile.
+   */
+  async function proveAuthorizationOutcome(
+    response: MutableToolResponse,
+    pending: PendingOutcomeProof,
+  ): Promise<MutableToolResponse> {
+    const { toolName, request, session, outcome, reason, terminalAuditDelivered } = pending;
+    try {
       // A needs_authorization challenge has a body to bind; denial / step-up
       // proofs stay body-free under every profile (SPEC §7.4). WHAT gets bound
       // is profile-selected: the envelope profile binds the full response
@@ -810,28 +953,58 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
         }
       }
     } catch (error) {
-      logger.error("[kya-os] Outcome proof generation failed", {
-        tool: toolName,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      if (terminalAuditDelivered) {
-        await emitAudit(
-          'Failed to record outcome-proof rejection',
-          () => audit?.proof('rejected', {
-            outcome: 'failed',
-            verificationCode: 'OUTCOME_PROOF_GENERATION_FAILED',
-          }),
-          toolName,
-        );
-      }
+      await outcomeProofFailed(toolName, error, terminalAuditDelivered);
     }
     return response;
-  };
+  }
+
+  async function outcomeProofFailed(
+    toolName: string,
+    error: unknown,
+    terminalAuditDelivered: boolean,
+  ): Promise<void> {
+    logger.error("[kya-os] Outcome proof generation failed", {
+      tool: toolName,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    if (terminalAuditDelivered) {
+      await emitAudit(
+        'Failed to record outcome-proof rejection',
+        () => audit?.proof('rejected', {
+          outcome: 'failed',
+          verificationCode: 'OUTCOME_PROOF_GENERATION_FAILED',
+        }),
+        toolName,
+      );
+    }
+  }
 
   // Outcome results are stamped like wrapper results, so the outer layer
   // passes a signed denial or challenge through instead of re-proving it.
   const attachOutcomeProof: AttachOutcomeProof = async (...outcome) =>
     stampLifecycle(await outcomeProof(...outcome));
 
-  return { handleHandshake, ensureSession, wrapWithProof, attachOutcomeProof };
+  /**
+   * The outer layer's last step before a result leaves the process: a result
+   * whose wrapper left its proof here gets it now, over the members the MCP
+   * SDK has set since the handler returned, and every result loses the
+   * private members.
+   */
+  async function sendResult(result: ToolResult): Promise<ToolResult> {
+    const pending = hasOwnStamp(result)
+      ? (result._meta as Record<string, unknown>)[PENDING_PROOF_META_KEY] as PendingProof | undefined
+      : undefined;
+    const sent = withoutPrivateMeta(result);
+    if (pending === undefined) return sent;
+    return pending.kind === 'allowed' ? proveAllowedCall(sent, pending) : proveAuthorizationOutcome(sent, pending);
+  }
+
+  outerProofLayerHooks.set(wrapWithProof, () => {
+    lifecycleStamp ??= base64urlEncodeFromBytes(
+      globalThis.crypto.getRandomValues(new Uint8Array(16)),
+    );
+    return { owns: hasOwnStamp, send: sendResult };
+  });
+
+  return { handleHandshake, ensureSession, wrapWithProof, attachOutcomeProof, requireProofLayer };
 }

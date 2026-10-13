@@ -56,7 +56,9 @@ export interface WithKyaOsOptions {
   /**
    * Response-proof profile for every proof this server mints (SPEC §7.3).
    * Defaults to the body profile; the envelope profile also binds
-   * `structuredContent` and `isError`. Passed through to the middleware (see
+   * `structuredContent`, `isError` and `resultType`, and its proofs are made
+   * by the transport this function wraps, so it needs `proofAllTools` left
+   * on. Passed through to the middleware (see
    * `KyaOsConfig.responseProofProfile`).
    */
   responseProofProfile?: ResponseProofProfile;

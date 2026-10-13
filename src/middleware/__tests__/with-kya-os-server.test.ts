@@ -275,16 +275,34 @@ describe("withKyaOs", () => {
     });
 
     it("mints envelope-profile proofs when responseProofProfile selects it", async () => {
-      const kyaos = await withKyaOs(fakeServer(), {
+      const server = fakeServer();
+      const originalConnect = server.connect;
+      const kyaos = await withKyaOs(server, {
         crypto,
         responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE,
       });
+      // The envelope profile proves results where the connected transport
+      // sends them.
+      const sent: Array<Record<string, unknown>> = [];
+      const transport = {
+        start: vi.fn().mockResolvedValue(undefined),
+        send: vi.fn(async (message: Record<string, unknown>) => {
+          sent.push(message);
+        }),
+        close: vi.fn().mockResolvedValue(undefined),
+        onmessage: undefined as ((message: Record<string, unknown>) => void) | undefined,
+      };
+      await server.connect(transport);
+      const connected = originalConnect.mock.calls[0]![0] as typeof transport;
+      await connected.start();
 
       const result = await kyaos.wrapWithProof("greet", async () => ({
         content: [{ type: "text", text: "Hello!" }],
       }))({});
+      transport.onmessage!({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "greet", arguments: {} } });
+      await connected.send({ jsonrpc: "2.0", id: 1, result });
 
-      const meta = result._meta as Record<string, { meta: { prf?: string } }>;
+      const meta = (sent[0]!.result as { _meta: Record<string, { meta: { prf?: string } }> })._meta;
       expect(meta[KYA_OS_PROOF_META_KEY]!.meta.prf).toBe(RESPONSE_PROOF_PROFILE_ENVELOPE);
     });
   });

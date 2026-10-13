@@ -254,6 +254,7 @@ export {
   LEGACY_NAMESPACED_PROOF_META_KEY,
   LEGACY_PROOF_META_KEY,
   type ProofAgentIdentity,
+  type ProofSession,
   type ToolRequest,
   type ToolResponse,
   type ProofOptions,

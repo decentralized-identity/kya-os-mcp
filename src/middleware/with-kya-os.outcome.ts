@@ -15,7 +15,7 @@ import type {
   KyaOsOutcomeProver,
   KyaOsToolResult,
 } from "./with-kya-os.types.js";
-import type { AttachOutcomeProof } from "./with-kya-os.deps.js";
+import type { AttachOutcomeProof, RequireProofLayer } from "./with-kya-os.deps.js";
 import { withoutOutcomeMeta } from "./with-kya-os.session.js";
 import { withoutControlArgs } from "./with-kya-os.helpers.js";
 
@@ -28,13 +28,15 @@ const OUTCOMES: ReadonlySet<string> = new Set<KyaOsAuthorizationOutcome>([
 /** Collaborators the outcome prover borrows from the session/proof sub-factory. */
 export interface OutcomeProverWiring {
   attachOutcomeProof: AttachOutcomeProof;
+  requireProofLayer: RequireProofLayer;
 }
 
 export function createOutcomeProver(wiring: OutcomeProverWiring): KyaOsOutcomeProver {
-  const { attachOutcomeProof } = wiring;
+  const { attachOutcomeProof, requireProofLayer } = wiring;
 
   return {
     async proveOutcome<R extends KyaOsToolResult>(request: KyaOsOutcomeProofRequest<R>): Promise<R> {
+      requireProofLayer();
       if (!OUTCOMES.has(request.outcome)) {
         throw new TypeError(
           `proveOutcome: unknown outcome ${JSON.stringify(request.outcome)}; ` +

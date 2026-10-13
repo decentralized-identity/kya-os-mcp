@@ -497,7 +497,22 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     lifecycleStamp !== undefined &&
     (response._meta as Record<string, unknown> | undefined)?.[LIFECYCLE_STAMP_META_KEY] === lifecycleStamp;
 
-  type MutableToolResponse = ToolResult;
+  /**
+   * A copy of `response` with `members` set. Every member the middleware
+   * attaches goes on a copy: a handler may return one object from every call
+   * (a module-level constant, a cached result) or freeze it, and a member set
+   * on that object would reach the next call. Each `_meta` passed here is a
+   * new object, so the handler's `_meta` is never changed either. A copy of
+   * an outcome this middleware audited counts as that outcome.
+   */
+  const withMembers = (
+    response: ToolResult,
+    members: { _meta: Record<string, unknown>; isError?: true },
+  ): ToolResult => {
+    const copy: ToolResult = { ...response, ...members };
+    if (auditedTerminalResponses.has(response)) auditedTerminalResponses.add(copy);
+    return copy;
+  };
 
   const emitAudit = async (
     label: string,
@@ -516,11 +531,12 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     }
   };
 
+  /** A copy of `response` marked as an error whose audit delivery failed. */
   const markAuditDegraded = (
-    response: MutableToolResponse,
+    response: ToolResult,
     reason: string,
     stripSuccessProof: boolean,
-  ): MutableToolResponse => {
+  ): ToolResult => {
     const metadata = {
       ...((response._meta as Record<string, unknown> | undefined) ?? {}),
     };
@@ -535,12 +551,10 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       status: 'degraded',
       reason,
     };
-    response._meta = metadata;
-    response.isError = true;
-    return response;
+    return withMembers(response, { _meta: metadata, isError: true });
   };
 
-  const auditUnavailableResponse = (reason: string): MutableToolResponse => ({
+  const auditUnavailableResponse = (reason: string): ToolResult => ({
     content: [{
       type: 'text',
       text: JSON.stringify({
@@ -557,7 +571,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
   // responses to take over terminal-outcome auditing. The marker is not a
   // defense against untrusted handler code; it only prevents double-auditing
   // by cooperating code paths.
-  const hasTerminalAuditMarker = (response: MutableToolResponse): boolean => {
+  const hasTerminalAuditMarker = (response: ToolResult): boolean => {
     if (auditedTerminalResponses.has(response)) return true;
     const metadata = response._meta as Record<string, unknown> | undefined;
     const auditMetadata = metadata?.[auditMetaKey];
@@ -571,22 +585,22 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
    * the middleware sets. A handler relaying an upstream result could
    * otherwise ship them next to this middleware's proof.
    */
-  const handlerMeta = (response: MutableToolResponse): Record<string, unknown> =>
+  const handlerMeta = (response: ToolResult): Record<string, unknown> =>
     (withoutOutcomeMeta(response)._meta as Record<string, unknown> | undefined) ?? {};
 
   /**
-   * Stamp a result whose lifecycle a wrapper has run, so the outer layer
-   * neither re-proves nor re-audits it. A wrapper runs only while a KYA-OS
+   * A copy of a result whose lifecycle a wrapper has run, stamped so the
+   * outer layer neither re-proves nor re-audits it. A wrapper runs only while a KYA-OS
    * transport is open (see `requireProofLayer`), and a transport makes the
    * token when it attaches, so there always is one here.
    */
-  const stampLifecycle = (response: MutableToolResponse): MutableToolResponse => {
-    response._meta = {
-      ...((response._meta as Record<string, unknown> | undefined) ?? {}),
-      [LIFECYCLE_STAMP_META_KEY]: lifecycleStamp,
-    };
-    return response;
-  };
+  const stampLifecycle = (response: ToolResult): ToolResult =>
+    withMembers(response, {
+      _meta: {
+        ...((response._meta as Record<string, unknown> | undefined) ?? {}),
+        [LIFECYCLE_STAMP_META_KEY]: lifecycleStamp,
+      },
+    });
 
   const auditContext = (
     context: KyaOsCallContext | undefined,
@@ -705,14 +719,14 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
    * Leave `pending` for the outer layer to prove over the result it sends:
    * the MCP SDK changes members after the handler returns, so a proof made
    * here would not cover what the client receives.
-   * The result carries only a one-time id; the claims stay here, by request
-   * hash. Past the count or the size budget, the oldest waiting proofs are
+   * The copy returned carries only a one-time id; the claims stay here, by
+   * request hash. Past the count or the size budget, the oldest waiting proofs are
    * closed as not sent.
    */
   const leaveToOuterLayer = (
-    response: MutableToolResponse,
+    response: ToolResult,
     pending: PendingProof,
-  ): MutableToolResponse => {
+  ): ToolResult => {
     const size = JSON.stringify(pending).length;
     while (
       pendingProofs.size > 0 &&
@@ -729,11 +743,12 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     (timer as { unref?: () => void }).unref?.();
     pendingProofs.set(id, { pending, timer, size });
     pendingProofBytes += size;
-    response._meta = {
-      ...((response._meta as Record<string, unknown> | undefined) ?? {}),
-      [PENDING_PROOF_META_KEY]: id,
-    };
-    return response;
+    return withMembers(response, {
+      _meta: {
+        ...((response._meta as Record<string, unknown> | undefined) ?? {}),
+        [PENDING_PROOF_META_KEY]: id,
+      },
+    });
   };
 
   // Single-process fallback for the established (handshake or auto) session, used
@@ -910,7 +925,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       args: Record<string, unknown>,
       sessionId?: string,
       context?: KyaOsCallContext,
-    ): Promise<MutableToolResponse> => {
+    ): Promise<ToolResult> => {
       // What the proof and the audit trail record of the call is read before
       // the handler runs: the handler is handed the same context object and
       // could change it, choosing the scope the proof would claim.
@@ -966,7 +981,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
             toolName,
           );
           if (!delivered) {
-            markAuditDegraded(
+            return markAuditDegraded(
               result,
               'Required terminal audit delivery failed for an error response',
               false,
@@ -985,7 +1000,9 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
         // server that never proves: the result says it is unproven, as it
         // does when proof generation fails.
         if (fallback !== undefined && fallback.sessionId === undefined && fallback.ambiguous) {
-          result._meta = { ...handlerMeta(result), proofError: AMBIGUOUS_SESSION_PROOF_ERROR };
+          result = withMembers(result, {
+            _meta: { ...handlerMeta(result), proofError: AMBIGUOUS_SESSION_PROOF_ERROR },
+          });
         }
         const proofAuditDelivered = await emitAudit(
           'Failed to record unavailable proof session',
@@ -1079,11 +1096,12 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
    * over the result it sends.
    */
   async function proveAllowedCall(
-    result: MutableToolResponse,
+    result: ToolResult,
     pending: PendingAllowedProof,
     session: SessionContext,
-  ): Promise<MutableToolResponse> {
+  ): Promise<ToolResult> {
     const { toolName, requestHash, scopeId, context } = pending;
+    let proved: ToolResult;
     try {
       // The envelope profile binds the FULL result envelope (hashing strips the top-level
       // `_meta`, where the proof itself is attached below); the body profile binds the
@@ -1103,7 +1121,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       // Inspector, invisible to LLMs), plus the legacy bare key when enabled.
       // Keys the handler set (traceparent, related-task, ...) are kept: the
       // middleware does not own `_meta` (SPEC §7.6).
-      result._meta = withProofMeta(handlerMeta(result), proof);
+      proved = withMembers(result, { _meta: withProofMeta(handlerMeta(result), proof) });
 
       const proofAuditDelivered = await emitAudit(
         'Required generated-proof audit delivery failed',
@@ -1124,7 +1142,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       );
       if (!terminalAuditDelivered) {
         return markAuditDegraded(
-          result,
+          proved,
           'Required terminal audit delivery failed after tool completion',
           true,
         );
@@ -1154,7 +1172,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       return allowedProofFailed(result, toolName, context, error);
     }
 
-    return result;
+    return proved;
   }
 
   /**
@@ -1162,19 +1180,18 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
    * `proofError`, and the audit trail records the rejection.
    */
   async function allowedProofFailed(
-    result: MutableToolResponse,
+    result: ToolResult,
     toolName: string,
     context: McpAuditContext | undefined,
     error: unknown,
-  ): Promise<MutableToolResponse> {
+  ): Promise<ToolResult> {
     logger.error("[kya-os] Proof generation failed", {
       tool: toolName,
       error: error instanceof Error ? error.message : String(error),
     });
-    result._meta = {
-      ...handlerMeta(result),
-      proofError: UNPROVEN_PROOF_ERROR,
-    };
+    const unproven = withMembers(result, {
+      _meta: { ...handlerMeta(result), proofError: UNPROVEN_PROOF_ERROR },
+    });
     const rejectionAuditDelivered = await emitAudit(
       'Failed to record proof-generation rejection',
       () => audit?.proof('rejected', {
@@ -1185,13 +1202,13 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       toolName,
     );
     if (!rejectionAuditDelivered) {
-      markAuditDegraded(
-        result,
+      return markAuditDegraded(
+        unproven,
         'Required proof-failure audit delivery failed after tool completion',
         true,
       );
     }
-    return result;
+    return unproven;
   }
 
   const outcomeProof: AttachOutcomeProof = async (
@@ -1224,29 +1241,33 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       }),
       toolName,
     );
-    auditedTerminalResponses.add(response);
-    response._meta = {
-      ...((response._meta as Record<string, unknown> | undefined) ?? {}),
-      [auditMetaKey]: {
-        terminal: true,
-        outcome,
-        ...(!terminalAuditDelivered
-          ? {
-              status: 'degraded',
-              reason: 'Required terminal audit delivery failed for authorization outcome',
-            }
-          : {}),
+    // The copy is the outcome, not the response it was made from: a gate or
+    // a caller may hand in one object for many calls.
+    const audited = withMembers(response, {
+      _meta: {
+        ...((response._meta as Record<string, unknown> | undefined) ?? {}),
+        [auditMetaKey]: {
+          terminal: true,
+          outcome,
+          ...(!terminalAuditDelivered
+            ? {
+                status: 'degraded',
+                reason: 'Required terminal audit delivery failed for authorization outcome',
+              }
+            : {}),
+        },
       },
-    };
+    });
+    auditedTerminalResponses.add(audited);
     let session: SessionContext | null | undefined;
     try {
       const resolvedSessionId = sessionId ?? (await ensureSession()).sessionId;
       session = resolvedSessionId ? await sessionManager.getSession(resolvedSessionId) : undefined;
     } catch (error) {
       await outcomeProofFailed(toolName, error, terminalAuditDelivered);
-      return response;
+      return audited;
     }
-    if (!session) return response;
+    if (!session) return audited;
 
     // Prefer the caller's already-stripped args so the signed requestHash
     // matches the needs_approval / resumeToken requestHash exactly.
@@ -1266,7 +1287,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       requestHash = await proofGenerator.hashRequest({ method: toolName, params: cleanArgs });
     } catch (error) {
       await outcomeProofFailed(toolName, error, terminalAuditDelivered);
-      return markUnproven(response);
+      return markUnproven(audited);
     }
     const pending: PendingOutcomeProof = {
       kind: 'outcome',
@@ -1277,7 +1298,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       reason: sanitizeForMessage(reason),
       terminalAuditDelivered,
     };
-    return leaveToOuterLayer(response, pending);
+    return leaveToOuterLayer(audited, pending);
   };
 
   /**
@@ -1286,11 +1307,12 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
    * result, as an allowed call's is.
    */
   async function proveAuthorizationOutcome(
-    response: MutableToolResponse,
+    response: ToolResult,
     pending: PendingOutcomeProof,
     session: SessionContext,
-  ): Promise<MutableToolResponse> {
+  ): Promise<ToolResult> {
     const { toolName, requestHash, outcome, reason, terminalAuditDelivered } = pending;
+    let proved = response;
     try {
       // A needs_authorization challenge has a body to bind; denial / step-up
       // proofs stay body-free under every profile (SPEC §7.4). WHAT gets bound
@@ -1307,10 +1329,9 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
         reason: sanitizeForMessage(reason),
         profile: responseProofProfile,
       }));
-      response._meta = withProofMeta(
-        (response._meta as Record<string, unknown> | undefined) ?? {},
-        proof,
-      );
+      proved = withMembers(response, {
+        _meta: withProofMeta((response._meta as Record<string, unknown> | undefined) ?? {}, proof),
+      });
       if (terminalAuditDelivered) {
         const proofAuditDelivered = await emitAudit(
           'Failed to record generated outcome proof',
@@ -1318,15 +1339,15 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
           toolName,
         );
         if (!proofAuditDelivered) {
-          // markAuditDegraded flips isError on the response. Under the body profile that
-          // mutation is outside proof coverage, so the already-attached
+          // markAuditDegraded sets isError on the copy it returns. Under the body profile that
+          // member is outside proof coverage, so the already-attached
           // challenge proof stays verifiable and is kept. Under the envelope profile the
           // envelope binding COVERS isError — keeping the proof would ship a
           // binding the client must reject as tampering — so the degraded
           // path strips it (mirroring wrapWithProof's degraded semantics):
           // a degraded envelope-profile challenge ships unproven, never falsely "MITM'd".
-          markAuditDegraded(
-            response,
+          proved = markAuditDegraded(
+            proved,
             'Required proof audit delivery failed for authorization outcome',
             bindsEnvelope,
           );
@@ -1334,9 +1355,9 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       }
     } catch (error) {
       await outcomeProofFailed(toolName, error, terminalAuditDelivered);
-      markUnproven(response);
+      return markUnproven(proved);
     }
-    return response;
+    return proved;
   }
 
   async function outcomeProofFailed(
@@ -1365,14 +1386,14 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
   const attachOutcomeProof: AttachOutcomeProof = async (...outcome) =>
     stampLifecycle(await outcomeProof(...outcome));
 
-  /** Say on `response` that it goes out without the proof it was meant to carry. */
-  const markUnproven = (response: MutableToolResponse): MutableToolResponse => {
-    response._meta = {
-      ...((withoutMetaKeys(response, proofMetaKeys)._meta as Record<string, unknown> | undefined) ?? {}),
-      proofError: UNPROVEN_PROOF_ERROR,
-    };
-    return response;
-  };
+  /** A copy of `response` that says it goes out without the proof it was meant to carry. */
+  const markUnproven = (response: ToolResult): ToolResult =>
+    withMembers(response, {
+      _meta: {
+        ...((withoutMetaKeys(response, proofMetaKeys)._meta as Record<string, unknown> | undefined) ?? {}),
+        proofError: UNPROVEN_PROOF_ERROR,
+      },
+    });
 
   /**
    * A result sent without the proof left for it: its session is gone
@@ -1382,14 +1403,14 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
    * closing an allowed call as a wrapper does when its session is missing.
    */
   async function unprovenAtSend(
-    response: MutableToolResponse,
+    response: ToolResult,
     pending: PendingProof,
     verificationCode: 'PROOF_SESSION_NOT_FOUND' | 'PRIVATE_MEMBER_IN_RESULT',
-  ): Promise<MutableToolResponse> {
-    markUnproven(response);
+  ): Promise<ToolResult> {
+    const unproven = markUnproven(response);
     const { toolName } = pending;
     const context = pending.kind === 'allowed' ? pending.context : undefined;
-    if (pending.kind === 'outcome' && !pending.terminalAuditDelivered) return response;
+    if (pending.kind === 'outcome' && !pending.terminalAuditDelivered) return unproven;
     const proofAuditDelivered = await emitAudit(
       'Failed to record unproven result',
       () => audit?.proof('rejected', { outcome: 'failed', verificationCode, context }),
@@ -1402,7 +1423,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
         toolName,
       );
     }
-    return response;
+    return unproven;
   }
 
   /**

@@ -54,6 +54,12 @@ export interface WithKyaOsOptions {
    */
   requireAtomicNonce?: boolean;
   /**
+   * How long a wrapper's result may wait to be sent before its proof is
+   * given up (default five minutes). Passed through to the middleware (see
+   * `KyaOsConfig.pendingProofTtlMs`).
+   */
+  pendingProofTtlMs?: number;
+  /**
    * Response-proof profile for every proof this server mints (SPEC §7.3).
    * Defaults to the body profile; the envelope profile also binds
    * `structuredContent`, `isError` and `resultType`. Under either profile the
@@ -188,6 +194,9 @@ export async function withKyaOs(
       ...(options.nonceCache !== undefined ? { nonceCache: options.nonceCache } : {}),
       ...(options.requireAtomicNonce !== undefined
         ? { requireAtomicNonce: options.requireAtomicNonce }
+        : {}),
+      ...(options.pendingProofTtlMs !== undefined
+        ? { pendingProofTtlMs: options.pendingProofTtlMs }
         : {}),
       ...(options.responseProofProfile !== undefined
         ? { responseProofProfile: options.responseProofProfile }

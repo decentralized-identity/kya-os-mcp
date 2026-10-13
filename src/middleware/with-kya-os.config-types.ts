@@ -159,6 +159,17 @@ export interface KyaOsConfig {
    */
   requireAtomicNonce?: boolean;
   /**
+   * How long, in milliseconds, a wrapper's result may wait to be sent before
+   * its proof is given up (default 300000, five minutes). Proofs are made
+   * where the KYA-OS transport sends a result, once: a result delivered later
+   * than this, or a second time (an MCP task result fetched again), goes out
+   * without a proof and with `proofError`, and the audit trail records
+   * `PROOF_EXPIRED`. A result never sent is closed with `PROOF_NOT_SENT` when
+   * the window ends. Raise it for task results fetched later; memory stays
+   * bounded by the count and size caps on waiting proofs.
+   */
+  pendingProofTtlMs?: number;
+  /**
    * Durable store for approved authorization grants, enabling the no-paste
    * retry: an agent that already obtained a grant can call again — even on a
    * fresh instance with empty memory, or after a restart — without re-pasting

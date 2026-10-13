@@ -67,9 +67,11 @@ export const LIFECYCLE_STAMP_META_KEY = 'org.kya-os/lifecycle-stamp';
 export const PENDING_PROOF_META_KEY = 'org.kya-os/pending-proof';
 
 /**
- * How long a proof left for the transport waits to be sent. A result that the
- * SDK never sends (a cancelled call, or one the SDK replaced) is closed in the
- * audit trail after this, with `PROOF_NOT_SENT`.
+ * How long a proof left for the transport waits to be sent, unless
+ * `pendingProofTtlMs` says otherwise. A result that the SDK never sends (a
+ * cancelled call, or one the SDK replaced) is closed in the audit trail after
+ * this, with `PROOF_NOT_SENT`; one sent later goes out unproven, recorded as
+ * `PROOF_EXPIRED`.
  */
 const PENDING_PROOF_TTL_MS = 5 * 60_000;
 
@@ -145,6 +147,18 @@ type PendingProof = PendingAllowedProof | PendingOutcomeProof;
 /** `proofError` on a result whose proof was left to the transport and could not be made. */
 const UNPROVEN_PROOF_ERROR = "Proof generation failed — response is unproven";
 
+/**
+ * A copy of `value` that later changes to the original cannot reach; the
+ * value itself if it cannot be copied (audit context is plain data).
+ */
+function snapshotOf<T>(value: T): T {
+  try {
+    return structuredClone(value);
+  } catch {
+    return value;
+  }
+}
+
 /** Options that sign over `requestHash` instead of a request the caller still holds. */
 function signedOver(requestHash: string, options: InternalProofOptions): InternalProofOptions {
   return { ...options, [PRECOMPUTED_REQUEST_HASH]: requestHash };
@@ -164,8 +178,12 @@ const PROOF_NEEDS_TRANSPORT =
   'unwrapped tool unproven), or wrap the transport you connect with ' +
   'createKyaOsTransport().';
 
-/** `result` without the `_meta` members in `keys`, dropping `_meta` if nothing else is left. */
-function withoutMetaKeys<T extends ToolResult>(result: T, keys: readonly string[]): T {
+/**
+ * `result` without the `_meta` members in `keys`, dropping `_meta` if nothing
+ * else is left, unless `keepEmptyMeta`: then an empty `_meta` stays where it
+ * was among the result's members, for members about to be added to it.
+ */
+function withoutMetaKeys<T extends ToolResult>(result: T, keys: readonly string[], keepEmptyMeta = false): T {
   const metadata = result._meta as Record<string, unknown> | undefined;
   if (metadata === undefined || !keys.some((key) => Object.hasOwn(metadata, key))) {
     return result;
@@ -174,7 +192,7 @@ function withoutMetaKeys<T extends ToolResult>(result: T, keys: readonly string[
     Object.entries(metadata).filter(([key]) => !keys.includes(key)),
   );
   const copy: Record<string, unknown> = { ...result };
-  if (Object.keys(kept).length > 0) copy._meta = kept;
+  if (keepEmptyMeta || Object.keys(kept).length > 0) copy._meta = kept;
   else delete copy._meta;
   return copy as T;
 }
@@ -189,9 +207,54 @@ export function withoutOutcomeMeta<T extends ToolResult>(result: T): T {
   return withoutMetaKeys(result, outcomeMetaKeys);
 }
 
-/** Remove the middleware's private members, which must never leave the process. */
-export function withoutPrivateMeta<T extends ToolResult>(result: T): T {
-  return withoutMetaKeys(result, privateMetaKeys);
+/** How deep inside a result private members are looked for. */
+const PRIVATE_META_SEARCH_DEPTH = 32;
+
+/**
+ * `value` without the middleware's private `_meta` members anywhere inside
+ * it, such as a wrapped result a handler nested in its own result. Copies
+ * only what it changes; returns `value` itself when nothing is private.
+ */
+function withoutNestedPrivateMeta(value: unknown, depth: number): unknown {
+  if (depth > PRIVATE_META_SEARCH_DEPTH || value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) {
+    let copy: unknown[] | undefined;
+    value.forEach((item, index) => {
+      const stripped = withoutNestedPrivateMeta(item, depth + 1);
+      if (stripped !== item) (copy ??= [...value])[index] = stripped;
+    });
+    return copy ?? value;
+  }
+  const record = value as Record<string, unknown>;
+  let copy: Record<string, unknown> | undefined;
+  for (const [key, member] of Object.entries(record)) {
+    let stripped = withoutNestedPrivateMeta(member, depth + 1);
+    if (key === '_meta' && stripped !== null && typeof stripped === 'object' && !Array.isArray(stripped)) {
+      const metadata = stripped as Record<string, unknown>;
+      if (privateMetaKeys.some((privateKey) => Object.hasOwn(metadata, privateKey))) {
+        stripped = Object.fromEntries(Object.entries(metadata).filter(([name]) => !privateMetaKeys.includes(name)));
+      }
+    }
+    if (stripped !== member) (copy ??= { ...record })[key] = stripped;
+  }
+  return copy ?? value;
+}
+
+/**
+ * Remove the middleware's private members, which must never leave the
+ * process, from `result` and from anything nested inside it. With
+ * `keepEmptyMeta`, a `_meta` left empty keeps its place among the result's
+ * members (see {@link withoutMetaKeys}).
+ */
+export function withoutPrivateMeta<T extends ToolResult>(result: T, keepEmptyMeta = false): T {
+  const top = withoutMetaKeys(result, privateMetaKeys, keepEmptyMeta);
+  let copy: Record<string, unknown> | undefined;
+  for (const [key, member] of Object.entries(top)) {
+    if (key === '_meta') continue;
+    const stripped = withoutNestedPrivateMeta(member, 1);
+    if (stripped !== member) (copy ??= { ...top })[key] = stripped;
+  }
+  return (copy ?? top) as T;
 }
 
 /** What the outer layer (the withKyaOs transport) does with a middleware's results. */
@@ -283,6 +346,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     emitLegacyProofKey,
     responseProofProfile,
   } = deps;
+  const pendingProofTtlMs = config.pendingProofTtlMs ?? PENDING_PROOF_TTL_MS;
   const bindsEnvelope = responseProofProfile === RESPONSE_PROOF_PROFILE_ENVELOPE;
   const auditedTerminalResponses = new WeakSet<object>();
   // This middleware's lifecycle token, minted once an outer layer reads its
@@ -515,7 +579,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       if (evicted !== undefined) void closeTaken(evicted);
     }
     const id = base64urlEncodeFromBytes(globalThis.crypto.getRandomValues(new Uint8Array(16)));
-    const timer = setTimeout(() => void closeUnsentProof(id), PENDING_PROOF_TTL_MS);
+    const timer = setTimeout(() => void closeUnsentProof(id), pendingProofTtlMs);
     // Do not hold a process open for an audit close-out.
     (timer as { unref?: () => void }).unref?.();
     pendingProofs.set(id, { pending, timer, size });
@@ -702,12 +766,17 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       sessionId?: string,
       context?: KyaOsCallContext,
     ): Promise<MutableToolResponse> => {
+      // What the proof and the audit trail record of the call is read before
+      // the handler runs: the handler is handed the same context object and
+      // could change it, choosing the scope the proof would claim.
+      const callAudit = snapshotOf(auditContext(context));
+      const scopeId = context?.scopeId;
       const intentDelivered = await emitAudit(
         'Required tool intent audit delivery failed',
         () => audit?.tool('started', {
           toolName,
           outcome: 'unknown',
-          context: auditContext(context),
+          context: callAudit,
         }),
         toolName,
       );
@@ -726,7 +795,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
             toolName,
             outcome: 'failed',
             reasonCode: 'HANDLER_THROWN',
-            context: auditContext(context),
+            context: callAudit,
           }),
           toolName,
         );
@@ -747,7 +816,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
               toolName,
               outcome: 'failed',
               reasonCode: 'HANDLER_ERROR_RESULT',
-              context: auditContext(context),
+              context: callAudit,
             }),
             toolName,
           );
@@ -778,7 +847,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
           () => audit?.proof('rejected', {
             outcome: 'failed',
             verificationCode: 'PROOF_SESSION_UNAVAILABLE',
-            context: auditContext(context),
+            context: callAudit,
           }),
           toolName,
         );
@@ -787,7 +856,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
           () => audit?.tool('completed', {
             toolName,
             outcome: 'succeeded',
-            context: auditContext(context),
+            context: callAudit,
           }),
           toolName,
         );
@@ -808,7 +877,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
           () => audit?.proof('rejected', {
             outcome: 'failed',
             verificationCode: 'PROOF_SESSION_NOT_FOUND',
-            context: auditContext(context),
+            context: callAudit,
           }),
           toolName,
         );
@@ -817,7 +886,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
           () => audit?.tool('completed', {
             toolName,
             outcome: 'succeeded',
-            context: auditContext(context),
+            context: callAudit,
           }),
           toolName,
         );
@@ -831,7 +900,6 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
         return result;
       }
 
-      const callAudit = auditContext(context);
       // The request is hashed now, as the wrapper saw it; the arguments are
       // not kept. Arguments that cannot be hashed fail the proof here.
       let requestHash: string;
@@ -845,7 +913,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
         toolName,
         requestHash,
         sessionId: session.sessionId,
-        ...(context?.scopeId === undefined ? {} : { scopeId: context.scopeId }),
+        ...(scopeId === undefined ? {} : { scopeId }),
         ...(callAudit === undefined ? {} : { context: callAudit }),
       };
       return leaveToOuterLayer(result, pending);
@@ -1203,10 +1271,20 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     const id = hasOwnStamp(result)
       ? (result._meta as Record<string, unknown>)[PENDING_PROOF_META_KEY]
       : undefined;
-    const sent = withoutPrivateMeta(result);
-    if (id === undefined) return sent;
+    if (id === undefined) return withoutPrivateMeta(result);
+    // The result gets its proof members (or a proofError) in the `_meta` its
+    // private members leave, at the same place among its members.
+    const sent = withoutPrivateMeta(result, true);
     const pending = typeof id === 'string' ? takePendingProof(id) : undefined;
-    if (pending === undefined) return markUnproven(sent);
+    if (pending === undefined) {
+      // The proof this result named is no longer waiting: its window passed,
+      // it was evicted, or it was already sent (a task result fetched again).
+      await emitAudit(
+        'Failed to record expired proof',
+        () => audit?.proof('rejected', { outcome: 'failed', verificationCode: 'PROOF_EXPIRED' }),
+      );
+      return markUnproven(sent);
+    }
     let session: SessionContext | null;
     try {
       session = await sessionManager.getSession(pending.sessionId);

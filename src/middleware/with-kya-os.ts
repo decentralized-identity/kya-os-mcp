@@ -82,6 +82,12 @@ export function createKyaOsMiddleware(
   config: KyaOsConfig,
   cryptoProvider: CryptoProvider,
 ): KyaOsMiddleware {
+  if (
+    config.pendingProofTtlMs !== undefined &&
+    !(Number.isFinite(config.pendingProofTtlMs) && config.pendingProofTtlMs > 0)
+  ) {
+    throw new TypeError('pendingProofTtlMs must be a positive, finite number of milliseconds');
+  }
   if (config.audit && config.auditLog) {
     throw new TypeError('Configure either audit or legacy auditLog, not both');
   }

@@ -39,14 +39,20 @@ import { logger } from "../logging/index.js";
  * Minimal Transport interface — matches @modelcontextprotocol/sdk Transport.
  * The callbacks are declared as methods, so an SDK transport, whose callbacks
  * take the SDK's own message type, is accepted as it is (SDK 1 and SDK 2).
+ * The SDK's send options and message context (`extra`: the session id,
+ * `authInfo`, `requestInfo`) are opaque here and passed through unchanged.
  */
 export interface Transport {
   start(): Promise<void>;
-  send(message: JSONRPCMessage): Promise<void>;
+  send(message: JSONRPCMessage, options?: unknown): Promise<void>;
   close(): Promise<void>;
-  onmessage?(message: JSONRPCMessage): void;
+  onmessage?(message: JSONRPCMessage, extra?: unknown): void;
   onclose?(): void;
   onerror?(error: Error): void;
+  sessionId?: string;
+  setProtocolVersion?(version: string): void;
+  setSupportedProtocolVersions?(versions: string[]): void;
+  readonly hasPerRequestStream?: boolean;
 }
 
 export type JSONRPCMessage = Record<string, unknown>;
@@ -110,7 +116,7 @@ export function createKyaOsTransport(
 
     // McpServer writes into wrapper.onmessage — forward to inner so the
     // real transport can drive it.
-    set onmessage(handler: ((msg: JSONRPCMessage) => void) | undefined) {
+    set onmessage(handler: ((msg: JSONRPCMessage, extra?: unknown) => void) | undefined) {
       inner.onmessage = handler;
     },
     get onmessage() {
@@ -137,9 +143,35 @@ export function createKyaOsTransport(
       return inner.onerror;
     },
 
+    // What the SDK reads off, or hands to, the transport it connects passes
+    // through to the inner transport: its session id (which the SDK puts on
+    // each request's context), the negotiated protocol version, and whether
+    // it streams per request.
+    get sessionId() {
+      return inner.sessionId;
+    },
+    set sessionId(sessionId: string | undefined) {
+      inner.sessionId = sessionId;
+    },
+    get setProtocolVersion() {
+      return inner.setProtocolVersion === undefined
+        ? undefined
+        : (version: string) => inner.setProtocolVersion!(version);
+    },
+    get setSupportedProtocolVersions() {
+      return inner.setSupportedProtocolVersions === undefined
+        ? undefined
+        : (versions: string[]) => inner.setSupportedProtocolVersions!(versions);
+    },
+    get hasPerRequestStream() {
+      return inner.hasPerRequestStream;
+    },
+
     // McpServer calls send() for every outgoing message.
     // Intercept tools/call responses here to inject proofs.
-    async send(message: JSONRPCMessage): Promise<void> {
+    // The SDK's send options (relatedRequestId, resumption tokens) are
+    // passed through unchanged.
+    async send(message: JSONRPCMessage, options?: unknown): Promise<void> {
       // Only a response (result or error, no method) can answer a pending call:
       // a server-initiated request such as elicitation/create numbers its ids
       // in the server's own space, so its id can equal a pending client id.
@@ -205,7 +237,7 @@ export function createKyaOsTransport(
         if (sent !== message.result) message = { ...message, result: sent };
       }
 
-      return inner.send(message);
+      return options === undefined ? inner.send(message) : inner.send(message, options);
     },
   };
 
@@ -237,7 +269,7 @@ export function createKyaOsTransport(
     // once.
     if (interceptor !== undefined && inner.onmessage === interceptor) return;
     const downstream = inner.onmessage;
-    interceptor = (message: JSONRPCMessage) => {
+    interceptor = (message: JSONRPCMessage, extra?: unknown) => {
       if (
         message.method === "tools/call" &&
         message.id !== undefined
@@ -258,7 +290,10 @@ export function createKyaOsTransport(
         const params = message.params as { requestId?: unknown } | undefined;
         pending.delete(params?.requestId);
       }
-      downstream?.(message);
+      // The SDK's message context (session id, authInfo, requestInfo) rides
+      // through unchanged.
+      if (extra === undefined) downstream?.(message);
+      else downstream?.(message, extra);
     };
     inner.onmessage = interceptor;
   };

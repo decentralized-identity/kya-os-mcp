@@ -42,6 +42,8 @@ export {
   type JSONRPCMessage,
 } from './kya-os-transport.js';
 
+export { serveInProcess, type InProcessServer } from './serve-in-process.js';
+
 // Entity Card DevX surface — the 10-minute adoption path. The fluent `card()` builder and the
 // `withKyaOsCard` / `requireProof` wrappers hide the RFC 9421/9449/8785 machinery behind
 // ergonomics (see `src/card/builder.ts` + `src/card/middleware.ts`).

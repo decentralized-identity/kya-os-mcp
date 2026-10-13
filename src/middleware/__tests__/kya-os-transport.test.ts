@@ -592,6 +592,8 @@ describe("createKyaOsTransport with the KYA-OS middleware", () => {
 });
 
 describe("createKyaOsTransport types", () => {
+  // Compiled as a module at the source root, so './index.js' is the package
+  // entry point consumers import, @kya-os/mcp.
   it("wraps an SDK 1 or SDK 2 transport, and the wrapper connects, with no cast", () => {
     const errors = typeErrors(`
       import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -604,7 +606,7 @@ describe("createKyaOsTransport types", () => {
       const two = new McpServer2({ name: 'sdk2', version: '1.0.0' });
       const [, serverSide] = InMemoryTransport.createLinkedPair();
       void two.connect(createKyaOsTransport(serverSide, kyaos));
-    `, new URL("../kya-os-transport-compatibility.ts", import.meta.url));
+    `, new URL("../../kya-os-transport-compatibility.ts", import.meta.url));
 
     expect(errors).toBe("");
   }, 60_000);

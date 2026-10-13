@@ -18,7 +18,9 @@ import {
   KYA_OS_PROOF_META_KEY,
   LEGACY_NAMESPACED_PROOF_META_KEY,
   LEGACY_PROOF_META_KEY,
+  PRECOMPUTED_REQUEST_HASH,
   RESPONSE_PROOF_PROFILE_ENVELOPE,
+  type InternalProofOptions,
   type ToolRequest,
   type ToolResponse,
 } from "../proof/generator.js";
@@ -73,6 +75,14 @@ const PENDING_PROOF_TTL_MS = 5 * 60_000;
 /** How many proofs may wait at once; past this, the oldest is closed as not sent. */
 const PENDING_PROOF_LIMIT = 10_000;
 
+/**
+ * Roughly how much the waiting proofs may hold, in UTF-16 code units of their
+ * JSON. An entry holds a request hash, never the arguments, but its audit
+ * context can carry strings a client influenced; past this, the oldest are
+ * closed as not sent.
+ */
+const PENDING_PROOF_BYTE_BUDGET = 16 * 1024 * 1024;
+
 /** The members only the middleware sets on a result for itself, never sent. */
 const privateMetaKeys: readonly string[] = [LIFECYCLE_STAMP_META_KEY, PENDING_PROOF_META_KEY];
 
@@ -98,25 +108,31 @@ const outcomeMetaKeys: readonly string[] = [
 
 type ToolResult = KyaOsToolResult;
 
-/** A response proof for a call the middleware let run. */
+/**
+ * A response proof for a call the middleware let run. It holds the hash of
+ * the request, computed when the call was recorded, never the arguments
+ * themselves: later changes to them cannot reach what is signed, and a
+ * waiting proof costs little however large they were.
+ */
 interface PendingAllowedProof {
   kind: 'allowed';
   toolName: string;
-  request: ToolRequest;
+  requestHash: string;
   /** Re-read when the proof is made; the proof's audience comes from it. */
   sessionId: string;
   scopeId?: string;
   context?: McpAuditContext;
 }
 
-/** A response proof recording an authorization outcome (SPEC §7.2). */
+/** A response proof recording an authorization outcome (SPEC §7.2); as above, by request hash. */
 interface PendingOutcomeProof {
   kind: 'outcome';
   toolName: string;
-  request: ToolRequest;
+  requestHash: string;
   /** Re-read when the proof is made; the proof's audience comes from it. */
   sessionId: string;
   outcome: KyaOsAuthorizationOutcome;
+  /** Already sanitized, so bounded. */
   reason: string;
   /** Whether the outcome's terminal audit events were delivered. */
   terminalAuditDelivered: boolean;
@@ -128,19 +144,13 @@ type PendingProof = PendingAllowedProof | PendingOutcomeProof;
 /** `proofError` on a result whose proof was left to the transport and could not be made. */
 const UNPROVEN_PROOF_ERROR = "Proof generation failed — response is unproven";
 
-/**
- * A copy of `params` that later changes to the caller's object cannot reach,
- * so the request a proof signs is the call as the wrapper saw it. Arguments
- * are JSON in MCP; a value that cannot be copied is left as it is, and its
- * proof fails as it would have.
- */
-function snapshot(params: Record<string, unknown>): Record<string, unknown> {
-  try {
-    return structuredClone(params);
-  } catch {
-    return params;
-  }
+/** Options that sign over `requestHash` instead of a request the caller still holds. */
+function signedOver(requestHash: string, options: InternalProofOptions): InternalProofOptions {
+  return { ...options, [PRECOMPUTED_REQUEST_HASH]: requestHash };
 }
+
+/** The request a proof names when its hash was computed earlier: the hash is what is signed. */
+const hashedRequest = (toolName: string): ToolRequest => ({ method: toolName });
 
 /**
  * Thrown by a wrapper, on entry, under the envelope profile while no KYA-OS
@@ -282,7 +292,12 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
   let openTransports = 0;
   // Proofs left for the transport, by one-time id, each with the timer that
   // closes it as not sent. The claims never leave the middleware.
-  const pendingProofs = new Map<string, { pending: PendingProof; timer: ReturnType<typeof setTimeout> }>();
+  const pendingProofs = new Map<string, {
+    pending: PendingProof;
+    timer: ReturnType<typeof setTimeout>;
+    size: number;
+  }>();
+  let pendingProofBytes = 0;
 
   const hasOwnStamp = (response: ToolResult): boolean =>
     lifecycleStamp !== undefined &&
@@ -428,20 +443,25 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     const entry = pendingProofs.get(id);
     if (entry === undefined) return undefined;
     pendingProofs.delete(id);
+    pendingProofBytes -= entry.size;
     clearTimeout(entry.timer);
     return entry.pending;
   };
 
   /**
    * Close, in the audit trail, a proof that was never sent: the SDK dropped
-   * its result (a cancelled call, or one the SDK replaced). An allowed call
-   * records the proof rejected and the call completed, in the order a call
-   * without a proof session records them; an outcome, whose terminal events
-   * were recorded in the handler, records the proof rejected.
+   * its result (a cancelled call, or one the SDK replaced), or no transport
+   * is left to send it. Both record the proof rejected with `PROOF_NOT_SENT`.
+   * An allowed call, whose result the client never saw, then records the
+   * call failed with `RESULT_NOT_SENT`, never completed. An outcome's terminal
+   * events were recorded in the handler.
    */
   const closeUnsentProof = async (id: string): Promise<void> => {
     const pending = takePendingProof(id);
-    if (pending === undefined) return;
+    if (pending !== undefined) await closeTaken(pending);
+  };
+
+  async function closeTaken(pending: PendingProof): Promise<void> {
     if (pending.kind === 'outcome') {
       if (pending.terminalAuditDelivered) {
         await emitAudit(
@@ -460,36 +480,46 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     );
     if (proofAuditDelivered) {
       await emitAudit(
-        'Failed to record completed tool outcome',
-        () => audit?.tool('completed', { toolName, outcome: 'succeeded', context }),
+        'Failed to record unsent tool outcome',
+        () => audit?.tool('failed', { toolName, outcome: 'failed', reasonCode: 'RESULT_NOT_SENT', context }),
         toolName,
       );
     }
+  }
+
+  /** Close every waiting proof as not sent: no KYA-OS transport is left to send it. */
+  const closeAllUnsentProofs = (): void => {
+    for (const id of [...pendingProofs.keys()]) void closeUnsentProof(id);
   };
 
   /**
    * Leave `pending` for the outer layer to prove over the result it sends:
    * the envelope profile covers members the MCP SDK sets after the handler
    * returns, so a proof made here would not cover what the client receives.
-   * The result carries only a one-time id; the claims stay here, with the
-   * request copied so the caller cannot change it before it is signed.
+   * The result carries only a one-time id; the claims stay here, by request
+   * hash. Past the count or the size budget, the oldest waiting proofs are
+   * closed as not sent.
    */
   const leaveToOuterLayer = (
     response: MutableToolResponse,
     pending: PendingProof,
   ): MutableToolResponse => {
-    if (pendingProofs.size >= PENDING_PROOF_LIMIT) {
-      const oldest = pendingProofs.keys().next().value;
-      if (oldest !== undefined) void closeUnsentProof(oldest);
+    const size = JSON.stringify(pending).length;
+    while (
+      pendingProofs.size > 0 &&
+      (pendingProofs.size >= PENDING_PROOF_LIMIT || pendingProofBytes + size > PENDING_PROOF_BYTE_BUDGET)
+    ) {
+      const oldest = pendingProofs.keys().next().value as string;
+      // Taken now, so the loop sees it gone; recorded in the background.
+      const evicted = takePendingProof(oldest);
+      if (evicted !== undefined) void closeTaken(evicted);
     }
     const id = base64urlEncodeFromBytes(globalThis.crypto.getRandomValues(new Uint8Array(16)));
     const timer = setTimeout(() => void closeUnsentProof(id), PENDING_PROOF_TTL_MS);
     // Do not hold a process open for an audit close-out.
     (timer as { unref?: () => void }).unref?.();
-    pendingProofs.set(id, {
-      pending: { ...pending, request: { ...pending.request, params: snapshot(pending.request.params as Record<string, unknown>) } },
-      timer,
-    });
+    pendingProofs.set(id, { pending, timer, size });
+    pendingProofBytes += size;
     response._meta = {
       ...((response._meta as Record<string, unknown> | undefined) ?? {}),
       [PENDING_PROOF_META_KEY]: id,
@@ -802,10 +832,18 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       }
 
       const callAudit = auditContext(context);
+      // The request is hashed now, as the wrapper saw it; the arguments are
+      // not kept. Arguments that cannot be hashed fail the proof here.
+      let requestHash: string;
+      try {
+        requestHash = await proofGenerator.hashRequest({ method: toolName, params: args });
+      } catch (error) {
+        return allowedProofFailed(result, toolName, callAudit, error);
+      }
       const pending: PendingAllowedProof = {
         kind: 'allowed',
         toolName,
-        request: { method: toolName, params: args },
+        requestHash,
         sessionId: session.sessionId,
         ...(context?.scopeId === undefined ? {} : { scopeId: context.scopeId }),
         ...(callAudit === undefined ? {} : { context: callAudit }),
@@ -835,7 +873,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     pending: PendingAllowedProof,
     session: SessionContext,
   ): Promise<MutableToolResponse> {
-    const { toolName, request, scopeId, context } = pending;
+    const { toolName, requestHash, scopeId, context } = pending;
     try {
       // The envelope profile binds the FULL result envelope (hashing strips the top-level
       // `_meta`, where the proof itself is attached below); the body profile binds the
@@ -845,10 +883,10 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       };
 
       const proof = await proofGenerator.generateProof(
-        request,
+        hashedRequest(toolName),
         response,
         session,
-        { scopeId, profile: responseProofProfile },
+        signedOver(requestHash, { scopeId, profile: responseProofProfile }),
       );
 
       // Attach proof under the namespaced _meta key (rendered by MCP
@@ -903,32 +941,46 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
         });
       }
     } catch (error) {
-      logger.error("[kya-os] Proof generation failed", {
-        tool: toolName,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      result._meta = {
-        ...handlerMeta(result),
-        proofError: UNPROVEN_PROOF_ERROR,
-      };
-      const rejectionAuditDelivered = await emitAudit(
-        'Failed to record proof-generation rejection',
-        () => audit?.proof('rejected', {
-          outcome: 'failed',
-          verificationCode: 'PROOF_GENERATION_FAILED',
-          context,
-        }),
-        toolName,
-      );
-      if (!rejectionAuditDelivered) {
-        markAuditDegraded(
-          result,
-          'Required proof-failure audit delivery failed after tool completion',
-          true,
-        );
-      }
+      return allowedProofFailed(result, toolName, context, error);
     }
 
+    return result;
+  }
+
+  /**
+   * An allowed call whose proof could not be made: the result goes out with
+   * `proofError`, and the audit trail records the rejection.
+   */
+  async function allowedProofFailed(
+    result: MutableToolResponse,
+    toolName: string,
+    context: McpAuditContext | undefined,
+    error: unknown,
+  ): Promise<MutableToolResponse> {
+    logger.error("[kya-os] Proof generation failed", {
+      tool: toolName,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    result._meta = {
+      ...handlerMeta(result),
+      proofError: UNPROVEN_PROOF_ERROR,
+    };
+    const rejectionAuditDelivered = await emitAudit(
+      'Failed to record proof-generation rejection',
+      () => audit?.proof('rejected', {
+        outcome: 'failed',
+        verificationCode: 'PROOF_GENERATION_FAILED',
+        context,
+      }),
+      toolName,
+    );
+    if (!rejectionAuditDelivered) {
+      markAuditDegraded(
+        result,
+        'Required proof-failure audit delivery failed after tool completion',
+        true,
+      );
+    }
     return result;
   }
 
@@ -998,13 +1050,21 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       }
     }
 
+    // Hashed now, as with an allowed call; the arguments are not kept.
+    let requestHash: string;
+    try {
+      requestHash = await proofGenerator.hashRequest({ method: toolName, params: cleanArgs });
+    } catch (error) {
+      await outcomeProofFailed(toolName, error, terminalAuditDelivered);
+      return bindsEnvelope ? markUnproven(response) : response;
+    }
     const pending: PendingOutcomeProof = {
       kind: 'outcome',
       toolName,
-      request: { method: toolName, params: cleanArgs },
+      requestHash,
       sessionId: session.sessionId,
       outcome,
-      reason,
+      reason: sanitizeForMessage(reason),
       terminalAuditDelivered,
     };
     return bindsEnvelope
@@ -1024,7 +1084,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     session: SessionContext,
     sentByOuterLayer: boolean,
   ): Promise<MutableToolResponse> {
-    const { toolName, request, outcome, reason, terminalAuditDelivered } = pending;
+    const { toolName, requestHash, outcome, reason, terminalAuditDelivered } = pending;
     try {
       // A needs_authorization challenge has a body to bind; denial / step-up
       // proofs stay body-free under every profile (SPEC §7.4). WHAT gets bound
@@ -1036,11 +1096,11 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
         outcome === "needs_authorization"
           ? { data: bindsEnvelope ? response : response.content }
           : undefined;
-      const proof = await proofGenerator.generateProof(request, proofResponse, session, {
+      const proof = await proofGenerator.generateProof(hashedRequest(toolName), proofResponse, session, signedOver(requestHash, {
         outcome,
         reason: sanitizeForMessage(reason),
         profile: responseProofProfile,
-      });
+      }));
       response._meta = withProofMeta(
         (response._meta as Record<string, unknown> | undefined) ?? {},
         proof,
@@ -1181,6 +1241,8 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
         if (released) return;
         released = true;
         openTransports -= 1;
+        // No transport is left to send what is waiting.
+        if (openTransports === 0) closeAllUnsentProofs();
       };
     };
     return { open, owns: hasOwnStamp, send: sendResult };

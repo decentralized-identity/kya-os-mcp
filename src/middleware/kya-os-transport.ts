@@ -83,16 +83,23 @@ export function createKyaOsTransport(
   // While started and not closed, this transport counts as open for the
   // middleware; under the envelope profile its wrappers run only then.
   let release: (() => void) | undefined;
+  const releaseOpen = (): void => {
+    release?.();
+    release = undefined;
+  };
+  // The close handler the server installed through the wrapper. It runs the
+  // handler the caller set on the inner transport before connecting, which
+  // the server read through the getter below and chained.
   let closeHandler: (() => void) | undefined;
   const closed = (): void => {
-    release?.();
+    releaseOpen();
     closeHandler?.();
   };
 
   const wrapper: Transport = {
     start: () => inner.start(),
     close: async () => {
-      release?.();
+      releaseOpen();
       await inner.close();
     },
 
@@ -106,13 +113,16 @@ export function createKyaOsTransport(
     },
 
     // The inner transport may close on its own (the client went away), so
-    // its close also ends this transport's count.
+    // its close also ends this transport's count. Before a handler is set
+    // here, the getter reports the inner transport's own: the SDK reads it
+    // when it connects and chains it (a session map's cleanup, say), so it
+    // keeps running.
     set onclose(handler: (() => void) | undefined) {
       closeHandler = handler;
       inner.onclose = closed;
     },
     get onclose() {
-      return closeHandler;
+      return closeHandler ?? (inner.onclose === closed ? undefined : inner.onclose);
     },
 
     set onerror(handler: ((err: Error) => void) | undefined) {
@@ -200,15 +210,29 @@ export function createKyaOsTransport(
   // via server.connect() — so we proxy through the getter/setter above and
   // add our interception in a one-time initializer on start().
   const originalStart = inner.start.bind(inner);
+  let interceptor: ((message: JSONRPCMessage) => void) | undefined;
   wrapper.start = async () => {
     await originalStart();
-    release = layer?.open();
+    // Counted once however often start() is called, until the transport closes.
+    release ??= layer?.open();
+    // A close handler set on the inner transport and never read through the
+    // wrapper is adopted, so it still runs, after the one installed here.
+    const foreign = inner.onclose;
+    if (foreign !== undefined && foreign !== closed) {
+      const installed = closeHandler;
+      closeHandler = installed === undefined ? foreign : () => {
+        foreign();
+        installed();
+      };
+    }
     inner.onclose = closed;
     // At this point McpServer has called server.connect(wrapper) which set
     // wrapper.onmessage = <McpServer handler>. That assignment forwarded to
-    // inner.onmessage via the setter above. Now we inject our interceptor.
+    // inner.onmessage via the setter above. Now we inject our interceptor,
+    // once.
+    if (interceptor !== undefined && inner.onmessage === interceptor) return;
     const downstream = inner.onmessage;
-    inner.onmessage = (message: JSONRPCMessage) => {
+    interceptor = (message: JSONRPCMessage) => {
       if (
         message.method === "tools/call" &&
         message.id !== undefined
@@ -231,6 +255,7 @@ export function createKyaOsTransport(
       }
       downstream?.(message);
     };
+    inner.onmessage = interceptor;
   };
 
   return wrapper;

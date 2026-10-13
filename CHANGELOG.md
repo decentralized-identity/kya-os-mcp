@@ -38,9 +38,11 @@ Versioning: https://semver.org/spec/v2.0.0.html
   transport makes it in `send()`, after the SDK has finished the result, with
   the same claims, `_meta` keys and audit events, recorded in the same order.
   The proof covers exactly the result the client receives, on 2025-11-25 and
-  on 2026-07-28, with SDK 1 or SDK 2; a result that sets `resultType` itself
-  is proved as sent too. The copy a handler gets back from `proveOutcome` or
-  a wrapper carries no proof yet, so return it from the handler as before.
+  on 2026-07-28, with SDK 1 or SDK 2. This supersedes the 1.19.0 advice to
+  set `resultType: 'complete'` on a result before proving it under the
+  envelope profile: that is no longer needed, and a result that sets it is
+  proved as sent. The copy a handler gets back from `proveOutcome` or a
+  wrapper carries no proof yet, so return it from the handler as before.
   With no KYA-OS transport connected, which includes `withKyaOs` with
   `proofAllTools: false`, the wrappers and `proveOutcome` now throw under the
   envelope profile before they record or run anything. The error names
@@ -67,7 +69,10 @@ Versioning: https://semver.org/spec/v2.0.0.html
   proven. A `needs_authorization` proof binds the result and a denial or
   step-up proof binds none, as SPEC.md §7.4 has it. The `_kyaos*` control
   arguments are left out of the signed request, `_meta` members only the
-  middleware may set are dropped, and no session needs to be opened. It is
+  middleware may set are dropped, and no session needs to be opened. Under
+  the envelope profile, set `resultType: 'complete'` on the result first: on
+  the 2026-07-28 revision the MCP SDK adds it after the handler returns,
+  outside a proof made there. It is
   optional on `KyaOsMiddleware`, as `withPolicyGate` is, so structural
   implementers still type-check; the new `KyaOsOutcomeProver` role requires
   it. New types: `KyaOsOutcomeProofRequest`, `KyaOsAuthorizationOutcome`,

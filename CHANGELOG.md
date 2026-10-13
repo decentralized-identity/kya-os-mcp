@@ -10,16 +10,16 @@ Versioning: https://semver.org/spec/v2.0.0.html
 ### Fixed
 
 - **The proof wrappers no longer change the result a handler returns.**
-  `wrapWithProof` and the outcome path behind the gates and `proveOutcome`
-  set their `_meta` members (the pending-proof id, the lifecycle stamp,
-  `proofError`, the audit marker) on the handler's own object, and the
-  audit-degraded path set `isError: true` on it. A handler that returned one
-  object from every call, a module-level constant or a cached result, found
-  those members on it, and a later call could go out with an earlier call's
-  `isError` and audit marker; a frozen result made the wrapper throw. Every
-  member now goes on a shallow copy of the result with a new `_meta`, and the
-  handler's object and its `_meta` are never changed. What the client
-  receives is otherwise the same. Closes #249.
+  `wrapWithProof` set its `_meta` members (the pending-proof id, the
+  lifecycle stamp, `proofError`, the audit marker) on the handler's own
+  object, and its audit-degraded path set `isError: true` on it. A handler
+  that returned one object from every call, a module-level constant or a
+  cached result, found those members on it, and a later call could go out
+  with an earlier call's `isError` and audit marker; a frozen result made the
+  wrapper throw. Every member now goes on a shallow copy of the result with a
+  new `_meta`, in `wrapWithProof` and in the outcome path behind the gates
+  and `proveOutcome`, and the handler's object and its `_meta` are never
+  changed. What the client receives is otherwise the same. Closes #249.
 
 ### Upgrading — BREAKING without an open KYA-OS transport
 

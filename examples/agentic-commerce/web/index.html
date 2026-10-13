@@ -1,0 +1,1435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KYA-OS · Human consent to agent action</title>
+<link rel="icon" href="/assets/kya-mark-white.svg">
+<link rel="stylesheet" href="/console.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="/" aria-label="KYA-OS merchant verifier home"><img src="/assets/kya-mark-white.svg" alt="" width="28" height="28"> KYA-OS <span>AGENTIC COMMERCE</span></a>
+  <div class="connections" aria-label="Service connections">
+    <div class="live" id="live-m"><span class="dot"></span><span>Merchant</span></div>
+    <div class="live" id="live-rp"><span class="dot"></span><span>Authorization host</span></div>
+  </div>
+  <a class="connect-link" href="/connect">Connect Claude <span aria-hidden="true">↗</span></a>
+<details class="evidence" id="protocol-evidence">
+  <summary>Protocol details</summary>
+  <div class="evidence-sheet"><div class="evidence-grid"><div><section class="panel">
+      <div class="panel-head"><span>0 · Discovery · well-known</span><span class="pill" id="disc-pill">not read yet</span></div>
+      <div class="panel-body">
+        <dl class="kv">
+          <dt>merchant</dt><dd id="d-name">—</dd>
+          <dt>merchant DID</dt><dd id="d-did">—</dd>
+          <dt>accepts</dt><dd id="d-scheme" class="hot">—</dd>
+          <dt>holder key</dt><dd id="d-holder">—</dd>
+          <dt>revocation</dt><dd id="d-revocation">—</dd>
+          <dt>clock skew</dt><dd id="d-skew">—</dd>
+          <dt>scopes</dt><dd id="d-scopes">—</dd>
+          <dt>agent says</dt><dd id="d-decision">—</dd>
+        </dl>
+      </div>
+    </section><section class="panel">
+      <div class="panel-head"><span>Responsible Party · the shopper's hub</span><span class="pill" id="rp-pill">—</span></div>
+      <div class="panel-body" style="padding-bottom:6px">
+        <dl class="kv">
+          <dt>did</dt><dd id="rp-did">—</dd>
+          <dt>signing key</dt><dd id="rp-kid">—</dd>
+          <dt>status list</dt><dd id="rp-list">—</dd>
+          <dt>ceremony</dt><dd id="rp-ceremony">—</dd>
+        </dl>
+      </div>
+
+      <div class="kill-note" id="kill-note"></div>
+      <div class="rp-log" id="rp-log"></div>
+    </section></div><div><section class="panel">
+      <div class="panel-head"><span>Signed receipt · evidence record</span><button class="toggle" id="jws-toggle">Expand signature</button></div>
+      <div class="panel-body receipt" id="receipt">
+        <div class="dim-line">every allowed response is signed by the merchant's key — a receipt any party can verify</div>
+      </div>
+    </section><section class="panel">
+      <div class="panel-head"><span>Audit trail · shipped protocol</span><span class="pill" id="audit-pill">—</span></div>
+      <div class="panel-body">
+        <div class="audit-strip">
+          <div><div class="n" id="audit-n">0 <small>ENTRIES</small></div><div class="muted" id="audit-meta">signed by the merchant key · hash-chained · delivery required</div></div>
+          <div class="root" id="audit-root"></div>
+        </div>
+      </div>
+
+    </section></div></div></div>
+</details>
+</header>
+<main class="console">
+<section class="panel grant-panel" aria-label="Current delegation">
+      <div class="panel-head"><span>Current delegation</span><span class="pill" id="grant-pill">—</span></div>
+      <div class="panel-body">
+        <div class="human-grant" id="human-grant" hidden>
+          <div class="relationship">HUMAN AUTHORITY</div>
+          <strong id="c-human"></strong>
+          <div class="muted" id="c-human-source"></div>
+          <div class="detail" id="c-human-authentication"></div>
+        </div>
+        <fieldset class="credential-frame">
+        <legend><span>W3C Verifiable Credential</span></legend>
+        <h2 class="credential-type">Delegation</h2>
+        <div class="cred">
+          <div class="cred-row scope-actions"><span class="k">Action scopes</span><code id="c-action-scopes">—</code></div>
+          <div class="cred-row" style="display:block"><span class="k">Product scope · GS1</span><span class="scope-uri" id="c-scope">—</span></div>
+          <div class="cred-row"><span class="k" id="c-cap-label">Per-order limit</span><span class="v cap" id="c-cap">—</span></div>
+          <div class="cred-row"><span class="k">Valid until</span><span class="v" id="c-until">—</span></div>
+          <div class="cred-row"><span class="k">Grant status</span><span class="v" id="bit">—</span></div>
+
+        </div>
+        <details class="disclosure grant-details"><summary>Credential details</summary>
+        <div class="muted" id="c-human-consent"></div>
+        <div class="muted" id="c-matcher"></div>
+        <div class="credential-identifiers">
+          <div class="cred-row credential-identifier"><span class="k">Responsible party</span><span class="v" id="c-rp">—</span></div>
+          <div class="cred-row credential-identifier"><span class="k">Agent (subject)</span><span class="v" id="c-agent">—</span></div>
+          <div class="cred-row credential-identifier"><span class="k">Merchant (audience)</span><span class="v" id="c-aud">—</span></div>
+          <div class="cred-row"><span class="k">list index</span><span class="v" id="c-index">—</span></div></div>
+        <div class="credential-evidence">
+          <div class="credential-evidence-row">
+            <span class="credential-evidence-label">Revocation status · hosted by the RP</span>
+            <a id="list-url" href="#" target="_blank" rel="noopener">StatusList2021</a>
+            <span class="muted" id="list-meta"></span>
+          </div>
+          <div class="credential-evidence-row">
+            <span class="credential-evidence-label">RP evidence</span>
+            <a id="rp-ledger-link" target="_blank" rel="noopener">RP consent ledger</a>
+            <a id="rp-bundle-link" target="_blank" rel="noopener">Download RP signed bundle</a>
+          </div>
+          <div class="credential-evidence-row">
+            <span class="credential-evidence-label">Issuer verification</span>
+            <span class="muted" id="rp-resolved"></span>
+            <code class="credential-id" id="rp-resolved-kid" hidden></code>
+          </div>
+        </div>
+        </details>
+        </fieldset>
+      </div>
+      <section class="audit-controls" aria-label="Audit evidence">
+        <div class="audit-actions">
+          <button class="act" id="btn-audit" title="Show audit · [A] · checkpoint + witness">Show audit<span class="key">A</span></button>
+          <button class="act danger" id="btn-tamper" title="Insider edit · [T] · with the key">Insider edit<span class="key">T</span></button>
+          <button class="act" id="btn-export" title="Export bundle · [E] · kya-audit verify">Export bundle<span class="key">E</span></button>
+        </div>
+      </section>
+    </section>
+<section class="panel decision-panel" aria-label="Merchant decision">
+      <div class="decision-topline"><span id="decision-label">Merchant verifier</span><span class="latency" id="latency"></span></div>
+      <div class="stage" id="decision-stage" role="status" aria-live="polite" aria-busy="false">
+        <div class="decision-symbol" id="decision-symbol" aria-hidden="true"><svg id="decision-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+        <div class="decision-copy" id="decision-copy"><div class="decision-heading" id="decision-heading"><div class="seal ready" id="seal">READY</div><span class="decision-cursor" id="decision-cursor" aria-hidden="true">_</span><div class="decision-decrypt" id="decision-decrypt" aria-hidden="true" hidden></div></div><p id="decision-summary">Waiting for an agent request.</p></div>
+      </div>
+      <div class="verdict-cap"><div class="verdict-status"><span class="verdict-code" id="verdict-code"></span><span id="verdict-context"></span></div>
+        <div class="authorization" id="authorization-panel" hidden aria-live="polite">
+          <h2>Human consent required</h2>
+          <a id="authorization-link" aria-label="Open human consent in a popup window" target="_blank" rel="noopener noreferrer">Open human consent</a>
+          <details class="consent-link-detail"><summary>Request details</summary><div class="consent-popover"><p id="authorization-detail"></p><span class="url" id="authorization-url"></span></div></details>
+        </div>
+        <span id="verdict-note"></span></div>
+      <div class="gates idle" id="gates"></div>
+</section>
+<section class="panel event-panel" aria-label="Live merchant events">
+      <div class="panel-head"><span>Live activity <span class="section-context">/ merchant events</span></span><button class="toggle" id="clear-log">Clear log</button></div>
+      <div class="log" id="log"></div>
+    </section>
+<section class="operator-rail" aria-label="Operator fallback controls">
+  <div class="controls">
+    <button class="act" id="btn-discover" title="Discover · [0]">Discover<span class="key">0</span></button>
+    <button class="act primary" id="btn-order" title="Order risotto · [1] · CHF 39.80">Order risotto<span class="key">1</span></button>
+    <button class="act" id="btn-wrong" title="Wrong product · [2] · olive oil">Wrong product<span class="key">2</span></button>
+    <button class="act" id="btn-overcap" title="Over cap · [3] · 5 × = CHF 99.50">Over cap<span class="key">3</span></button>
+    <button class="act" id="btn-retry" title="Retry order · [4] · 2 × risotto">Retry order<span class="key">4</span></button>
+    <button class="act" id="btn-steal" title="Stolen credential · [5] · wrong key">Stolen credential<span class="key">5</span></button>
+    <button class="act danger" id="btn-revoke" title="Revoke grant · [K]">Revoke grant<span class="key">K</span></button>
+    <button class="act" id="btn-verify" title="Verify receipt · [V]">Verify receipt<span class="key">V</span></button>
+    <button class="act" id="btn-reset" title="Start over · [R] · archive this merchant run, clear the demo wallet and request fresh consent. RP history is retained.">Start over<span class="key">R</span></button>
+  </div>
+</section>
+</main>
+
+<div class="key-overlay" id="key-overlay">
+  <div class="key-card">
+    <div class="key-ring"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 4v3"/></svg></div>
+    <h2>Confirm revocation with your passkey</h2>
+    <div class="sub">Use your registered passkey or security key to withdraw this grant.</div>
+    <div class="sub">FIDO2 · the WebAuthn challenge is the hash of this exact revocation</div>
+    <div class="intent" id="key-intent"></div>
+    <button class="key-cancel" id="key-cancel">Cancel · leave the grant active</button>
+  </div>
+</div>
+
+<div class="audit-overlay" id="audit-overlay">
+  <div class="audit-head">
+    <div class="title" id="audit-title">AUDIT <span class="cut">TRAIL</span></div>
+    <div class="sub" id="audit-sub">every decision the gate made, as the SDK recorded it · <b>signed</b> · <b>hash-chained</b> · <b>RFC 9162 checkpoint</b> · <b>witnessed by the Responsible Party</b></div>
+    <button class="act audit-edit-trigger" id="audit-edit" type="button">Edit entry<span class="key">T</span></button>
+    <button class="close" id="audit-close" type="button">esc · close</button>
+  </div>
+  <div class="audit-status" id="audit-status" role="status" aria-live="polite" hidden></div>
+  <form class="audit-editor" id="audit-editor" aria-labelledby="audit-edit-title" hidden>
+    <div class="audit-editor-heading"><h2 id="audit-edit-title">Edit an audit entry</h2><p>Change a copy of the signed record. The original checkpoint stays fixed.</p></div>
+    <div class="audit-editor-fields">
+      <label class="audit-entry-field" for="audit-edit-entry">Entry<select id="audit-edit-entry" name="sequence"></select></label>
+      <div class="audit-original">Recorded outcome<strong id="audit-edit-before"></strong></div>
+      <label for="audit-edit-outcome">Change outcome to<select id="audit-edit-outcome" name="outcome"></select></label>
+      <div class="audit-editor-actions"><button class="audit-button primary" id="audit-edit-done" type="submit" disabled>Done · verify edit</button><button class="audit-button" id="audit-edit-cancel" type="button">Cancel</button></div>
+    </div>
+    <p id="audit-edit-feedback" class="audit-edit-feedback" role="status" aria-live="polite"></p>
+  </form>
+  <div class="audit-body" id="audit-body">
+    <div class="audit-col">
+      <div class="audit-box grow">
+        <div class="bh"><span>Ledger · <span id="audit-ledger-id"></span></span><span id="audit-chain-note"></span></div>
+        <div class="bb" id="audit-table"></div>
+      </div>
+      <div class="audit-box" id="audit-tamper-box" style="display:none">
+        <div class="bh"><span>Insider edit · what still breaks</span><span id="audit-tamper-note"></span></div>
+        <div class="bb" id="audit-tamper"></div>
+      </div>
+    </div>
+    <div class="audit-col">
+      <div class="audit-box">
+        <div class="bh"><span>Checkpoint · signed RFC 9162 root</span><span id="audit-cp-note"></span></div>
+        <div class="bb"><dl class="kv tight" id="audit-cp"></dl></div>
+      </div>
+      <div class="audit-box grow2">
+        <div class="bh"><span>Merkle tree · leaves = entry digests</span><span id="audit-tree-note"></span></div>
+        <div class="tree-root" id="audit-tree-root"></div>
+        <div class="bb tree" id="audit-tree"></div>
+      </div>
+      <div class="audit-box capped">
+        <div class="bh"><span>Offline verifier · <span id="audit-verifier-label">verifyAuditBundle · trust from policy only</span></span><span id="audit-verdict-note"></span></div>
+        <div class="bb"><div id="audit-verdicts"></div><div id="audit-export" class="export-box muted" style="margin-top:8px"></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="audit-foot" id="audit-foot"></div>
+</div>
+
+
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const seal = $('seal'), log = $('log'), rpLog = $('rp-log');
+  let busy = false, lastRevoked, stateCache = {}, rpCache = {}, rpOrigin = null, pendingAuthorization = null, pendingCheckout = null;
+  // A confirmed run cutover invalidates all outstanding work in this monitor.
+  // The HTTP response and SSE notification name the same run and may arrive in either order.
+  let merchantRunGeneration = 0;
+  const appliedResetRuns = new Set();
+
+  const GATES = [
+    ['signature', 'Signature · window · audience'], ['revocation', 'Revocation'], ['holder', 'Holder key'],
+    ['product', 'Product class'], ['cap', 'Spend cap'], ['consent', 'Human consent'], ['receipt', 'Signed receipt'],
+  ];
+  const gateEls = {};
+  for (const [key, name] of GATES) {
+    const el = document.createElement('div');
+    el.className = 'gate';
+    el.innerHTML = `<div class="g-dot"></div><div class="g-name">${name}</div>`;
+    $('gates').appendChild(el);
+    gateEls[key] = el;
+  }
+  function setGates(state) {
+    $('gates').classList.toggle('idle', !state);
+    for (const [key] of GATES) gateEls[key].className = 'gate' + (state ? ' ' + state : '');
+  }
+  function applyChecks(checks) {
+    $('gates').classList.remove('idle');
+    for (const [key] of GATES) gateEls[key].className = 'gate ' + (checks[key] ?? 'skip');
+  }
+
+  const now = () => new Date().toTimeString().slice(0, 8);
+  const short = (s, n = 30) => (typeof s === 'string' && s.length > n) ? s.slice(0, n) + '…' : (s ?? '—');
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const dl = (uri) => {
+    const m = /^(https:\/\/[^/]+\/01\/)(\d+)(.*)$/.exec(uri || '');
+    return m ? `${esc(m[1])}<span class="gtin">${esc(m[2])}</span>${esc(m[3])}` : esc(uri);
+  };
+
+  const LOG_ICONS = {
+    'ok-line': '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
+    'kill-line': '<circle cx="12" cy="12" r="9"/><path d="m9 9 6 6m0-6-6 6"/>',
+    'warn-line': '<path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v5m0 3v.1"/>',
+    'info-line': '<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.1"/>',
+    'src-line': '<path d="M4 12h15m-6-6 6 6-6 6"/>',
+  };
+  function line(msg, cls = '', hero = false, target = log) {
+    const el = document.createElement('div');
+    el.className = 'log-line';
+    const icon = LOG_ICONS[cls] || '<path d="M4 8h16M4 12h12M4 16h8"/>';
+    el.innerHTML = `<span class="t">${now()}</span><span class="m ${cls} ${hero ? 'hero-line ' + cls : ''}"><svg class="log-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg><span class="log-message"></span></span>`;
+    el.querySelector('.log-message').innerHTML = msg;
+    target.prepend(el);
+  }
+  function sep(label) {
+    const el = document.createElement('div');
+    el.className = 'log-sep';
+    el.textContent = '— ' + label + ' —';
+    log.prepend(el);
+  }
+
+  const SEAL_TEXT = { ok: 'AUTHORIZED', kill: 'REVOKED', blocked: 'REFUSED', denied: 'DENIED', wait: 'VERIFYING', ready: 'READY', unknown: 'CHECK OUTCOME', consent: 'CONSENT NEEDED', approved: 'GRANT APPROVED', payment: 'PAYMENT NEEDED', checkout: 'REVIEW CHECKOUT' };
+  const DECISIONS = {
+    ready: ['Merchant verifier', 'Waiting for an agent request.', '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'],
+    wait: ['Merchant decision', 'Checking the agent’s authority for this request.', '<circle cx="12" cy="12" r="9" opacity=".25"/><path class="processing-ring" d="M12 3a9 9 0 0 1 9 9"/><g class="processing-dots"><circle class="processing-dot" cx="8" cy="12" r="1"/><circle class="processing-dot" cx="12" cy="12" r="1"/><circle class="processing-dot" cx="16" cy="12" r="1"/></g>'],
+    ok: ['Merchant decision', 'The merchant accepted the order.', '<path d="m5 12 4 4L19 6"/>'],
+    consent: ['Merchant decision', 'Human approval required. No order placed.', '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 4v3"/>'],
+    approved: ['Human authorization', 'Grant issued. The next order still needs verification.', '<path d="m5 12 4 4L19 6"/>'],
+    kill: ['Human authorization', 'Authority withdrawn. Waiting for the next agent request.', '<circle cx="12" cy="12" r="9"/><path d="m6 6 12 12"/>'],
+    blocked: ['Merchant decision', 'The requested action is outside the approved grant.', '<path d="m6 6 12 12M18 6 6 18"/>'],
+    denied: ['Merchant decision', 'The merchant refused this request. No order placed.', '<path d="m6 6 12 12M18 6 6 18"/>'],
+    unknown: ['Unconfirmed outcome', 'Check the live activity before retrying.', '<path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v5m0 3v.1"/>'],
+    payment: ['Merchant verifier', 'Authority verified. Awaiting payment authorization.', '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18m-13 5h4"/>'],
+    checkout: ['Human checkout review', 'Confirm the exact items, total and payment terms.', '<rect x="5" y="3" width="14" height="18" rx="3"/><path d="M9 8h6m-6 4h6m-6 4h3"/>'],
+  };
+  const decisionTimers = new Set();
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+  function cancelDecisionMotion() {
+    for (const timer of decisionTimers) clearTimeout(timer);
+    decisionTimers.clear();
+    $('decision-heading').classList.remove('is-decoding');
+    $('decision-decrypt').hidden = true;
+    $('decision-decrypt').replaceChildren();
+  }
+  reducedMotion?.addEventListener?.('change', () => { if (reducedMotion.matches) cancelDecisionMotion(); });
+  window.addEventListener?.('resize', cancelDecisionMotion);
+  function decisionAfter(callback, delay) {
+    const timer = setTimeout(() => { decisionTimers.delete(timer); callback(); }, delay);
+    decisionTimers.add(timer);
+  }
+  function animateDecision() {
+    cancelDecisionMotion();
+    if (reducedMotion?.matches || !document.createRange) return;
+    // Builders' Title reveal: shuffled order, 30ms stagger, three 50ms symbols.
+    // The live monitor keeps the real, accessible result intact underneath a
+    // decorative overlay. Character boxes preserve kerning and line wrapping.
+    const glyphs = '!@#$%^&*()_+-=[]{}|;:,.<>?/~`';
+    const overlay = $('decision-decrypt');
+    const origin = $('decision-heading').getBoundingClientRect();
+    const text = seal.textContent;
+    const letters = [];
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] === ' ') continue;
+      const range = document.createRange();
+      range.setStart(seal.firstChild, i);
+      range.setEnd(seal.firstChild, i + 1);
+      const box = range.getBoundingClientRect();
+      const letter = document.createElement('span');
+      letter.className = 'decrypt-letter';
+      letter.textContent = text[i];
+      Object.assign(letter.style, {
+        left: `${box.left - origin.left}px`, top: `${box.top - origin.top}px`,
+        width: `${box.width}px`, height: `${box.height}px`,
+      });
+      letter.style.setProperty('--letter-width', `${box.width}px`);
+      overlay.appendChild(letter);
+      letters.push({ letter, char: text[i] });
+    }
+    // Fisher-Yates is the same reveal order used on the Builders homepage.
+    for (let i = letters.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [letters[i], letters[j]] = [letters[j], letters[i]];
+    }
+    overlay.hidden = false;
+    $('decision-heading').classList.add('is-decoding');
+    letters.forEach(({ letter, char }, index) => {
+      for (let iteration = 0; iteration < 3; iteration++) {
+        decisionAfter(() => {
+          letter.textContent = glyphs[Math.floor(Math.random() * glyphs.length)];
+          letter.className = 'decrypt-letter glitching';
+        }, index * 30 + iteration * 50);
+      }
+      decisionAfter(() => {
+        letter.textContent = char;
+        letter.className = 'decrypt-letter revealed';
+      }, index * 30 + 150);
+    });
+    decisionAfter(cancelDecisionMotion, Math.max(0, letters.length - 1) * 30 + 450);
+  }
+  function setSeal(state, note = '') {
+    const [label, summary, icon] = DECISIONS[state] || DECISIONS.wait;
+    $('decision-stage').setAttribute('aria-busy', state === 'wait' ? 'true' : 'false');
+    seal.className = 'seal ' + state;
+    seal.textContent = SEAL_TEXT[state] ?? 'VERIFYING';
+    $('decision-cursor').hidden = state !== 'ready';
+    $('decision-label').textContent = label;
+    $('decision-summary').textContent = summary;
+    $('decision-icon').innerHTML = icon;
+    $('verdict-note').textContent = note;
+    animateDecision();
+  }
+
+  function setCode(text, color) {
+    const el = $('verdict-code');
+    el.className = 'verdict-code' + (color ? ' ' + color : '');
+    const [code = '', ...context] = (text || '').split(' · ');
+    const normalized = code.trim().toUpperCase().replace(/[\s-]+/g, '_');
+    const words = normalized ? normalized.split('_') : [];
+    el.replaceChildren(...words.flatMap((word, index) => {
+      const token = document.createElement('span');
+      token.textContent = word + (index < words.length - 1 ? '_' : '');
+      return index < words.length - 1 ? [token, document.createElement('wbr')] : [token];
+    }));
+    $('verdict-context').textContent = context.join(' · ');
+  }
+  function setBusy(b) {
+    busy = b;
+    document.querySelectorAll('button.act').forEach((x) => { x.disabled = b; });
+    $('btn-revoke').disabled = b || !rpCache.grantIssued;
+    $('audit-edit').disabled = b || !editableAuditRows().length;
+  }
+  // A hosted console is reachable by anyone with the link, so the presenter's
+  // destructive controls need a token. Seed it once with ?admin=<token>; it is
+  // kept for this browser and stripped from the address bar so it stays off the
+  // projector. Not per tab: the consent page's "return to console" link lands in
+  // its own tab, and a per-tab token would leave every control refused there.
+  const ADMIN_TOKEN_KEY = 'kyaos.admin.token';
+  (function seedAdminToken() {
+    try {
+      const url = new URL(window.location.href);
+      const token = url.searchParams.get('admin');
+      if (!token) return;
+      localStorage.setItem(ADMIN_TOKEN_KEY, token);
+      url.searchParams.delete('admin');
+      window.history.replaceState({}, '', url.toString());
+    } catch { /* private mode: re-add ?admin= if a control is refused */ }
+  })();
+  function adminHeaders() {
+    try {
+      const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+      return token ? { 'x-admin-token': token } : {};
+    } catch { return {}; }
+  }
+  // Only the guarded POSTs carry the token. On a GET it would make the request
+  // non-simple, and the hub's narrow rule for /consent/status refuses that preflight.
+  async function api(path, opts, base = '', signal = AbortSignal.timeout(30_000)) {
+    const res = await fetch(base + path, { cache: 'no-store', method: opts ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', ...(opts ? adminHeaders() : {}) }, body: opts ? JSON.stringify(opts) : undefined, signal });
+    let data;
+    try { data = await res.json(); }
+    catch (error) {
+      if (res.ok) throw error;
+      throw Object.assign(new Error(`HTTP ${res.status}: server returned a non-JSON response`), { status: res.status });
+    }
+    if (!res.ok) {
+      const detail = typeof data?.message === 'string' ? data.message : typeof data?.error === 'string' ? data.error : 'Request failed';
+      throw Object.assign(new Error(`HTTP ${res.status}: ${detail}`), { status: res.status, body: data });
+    }
+    return data;
+  }
+
+  function hideAuthorization() {
+    pendingAuthorization = null;
+    pendingCheckout = null;
+    $('authorization-panel').hidden = true;
+    $('authorization-link').removeAttribute('href');
+    $('authorization-url').textContent = '';
+  }
+
+  function showAuthorization(challenge) {
+    hideAuthorization();
+    try {
+      const url = new URL(challenge.authorizationUrl);
+      const expected = new URL(rpOrigin);
+      const loopback = (host) => host === 'localhost' || host === '127.0.0.1';
+      const sameHub = url.origin === expected.origin || (loopback(url.hostname) && loopback(expected.hostname) && url.port === expected.port && url.protocol === expected.protocol);
+      if (!sameHub || url.pathname !== '/consent' || url.username || url.password || url.hash) throw new Error('URL is outside the configured Responsible Party hub');
+      if (!Number.isFinite(challenge.expiresAt) || challenge.expiresAt <= Date.now() / 1000) {
+        setSeal('denied'); setCode('AUTHORIZATION_EXPIRED', 'red');
+        line('The consent request expired. Request the order again to begin a new human grant.', 'warn-line');
+        return;
+      }
+      pendingAuthorization = challenge;
+      $('authorization-link').textContent = 'Open human consent';
+      $('authorization-link').setAttribute('aria-label', 'Open human consent in a popup window');
+      $('authorization-link').href = url.href;
+      $('authorization-detail').textContent = `place_order · ${(challenge.scopes || []).join(', ')} · expires ${new Date(challenge.expiresAt * 1000).toLocaleTimeString()}`;
+      $('authorization-url').textContent = url.href;
+      $('authorization-panel').hidden = false;
+      setSeal('consent'); setCode('NEEDS_AUTHORIZATION · NO ORDER PLACED', 'amber');
+      line('Human consent required. Open the authorization URL, review the scope and cap, then approve or deny the grant.', 'warn-line', true);
+    } catch (error) {
+      setSeal('denied'); setCode('AUTHORIZATION_URL_REJECTED', 'red');
+      line(`Consent URL refused: ${esc(error.message)}`, 'kill-line');
+    }
+  }
+
+  function showCheckout(event) {
+    hideAuthorization();
+    try {
+      const url = new URL(event.url);
+      if (url.origin !== window.location.origin || url.username || url.password || url.hash
+        || url.pathname !== '/checkout/' + encodeURIComponent(event.id) || !url.searchParams.get('token')) throw new Error('Invalid merchant checkout URL');
+      const expiresAt = Date.parse(event.expiresAt) / 1000;
+      if (!Number.isFinite(expiresAt) || expiresAt <= Date.now() / 1000) throw new Error('Checkout expired');
+      pendingCheckout = { authorizationUrl: url.href, expiresAt, id: event.id };
+      $('authorization-link').href = url.href;
+      $('authorization-link').textContent = 'Review checkout';
+      $('authorization-link').setAttribute('aria-label', 'Review the exact checkout in a popup window');
+      $('authorization-detail').textContent = 'UCP checkout · confirm the exact terms, then ask the agent to finish.';
+      $('authorization-url').textContent = url.href;
+      $('authorization-panel').hidden = false;
+      setSeal('checkout'); setCode('CHECKOUT_CONFIRMATION_REQUIRED', 'amber');
+      line('UCP checkout ready for human review. No payment has been submitted.', 'warn-line', true);
+    } catch (error) { setSeal('denied'); setCode('CHECKOUT_URL_REJECTED', 'red'); line(esc(error.message), 'kill-line'); }
+  }
+
+  $('authorization-link').onclick = (event) => {
+    // Preserve native tab behavior for modified clicks and popup blocking.
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const challenge = pendingAuthorization || pendingCheckout;
+    if (!challenge || challenge.expiresAt <= Date.now() / 1000) {
+      event.preventDefault();
+      if (pendingAuthorization) showAuthorization(pendingAuthorization);
+      else if (pendingCheckout) { hideAuthorization(); setSeal('denied'); setCode('CHECKOUT_EXPIRED', 'amber'); }
+      return;
+    }
+    const available = window.screen;
+    const width = Math.min(680, available.availWidth - 32);
+    const height = Math.min(900, available.availHeight - 80);
+    const left = Math.round((available.availLeft || 0) + (available.availWidth - width) / 2);
+    const top = Math.round((available.availTop || 0) + (available.availHeight - height) / 2);
+    const popup = window.open('about:blank', '_blank', `popup=yes,width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`);
+    if (!popup) return;
+    // Detach synchronously while the new window is still same-origin and blank.
+    // No RP or identity-provider page gets a reference to the merchant window.
+    popup.opener = null;
+    popup.location.replace(challenge.authorizationUrl);
+    popup.focus();
+    event.preventDefault();
+  };
+
+  function renderNoGrant() {
+    clearHumanGrant();
+    for (const id of ['c-rp', 'c-agent', 'c-aud', 'c-action-scopes', 'c-scope', 'c-cap', 'c-until', 'c-index']) $(id).textContent = '—';
+    $('c-cap-label').textContent = 'Per-order limit';
+    $('c-matcher').textContent = 'The Responsible Party issues a grant only after human approval.';
+    $('bit').textContent = 'no credential issued';
+    $('bit').className = 'v';
+    $('grant-pill').textContent = 'no grant';
+    $('grant-pill').className = 'pill warn';
+    document.body.classList.remove('revoked');
+    lastRevoked = undefined;
+  }
+
+  function clearHumanGrant() {
+    $('human-grant').hidden = true;
+    for (const id of ['c-human', 'c-human-source', 'c-human-authentication', 'c-human-consent']) $(id).textContent = '';
+  }
+
+  function renderHumanGrant(metadata) {
+    clearHumanGrant();
+    const consent = metadata && metadata.demoConsent;
+    const human = consent && consent.human;
+    const authentication = consent && consent.authentication;
+    if (!human || human.provider !== 'google' || human.identitySource !== 'identity-provider'
+      || typeof human.accountRef !== 'string' || !human.accountRef
+      || !authentication || authentication.method !== 'webauthn'
+      || typeof authentication.credentialRef !== 'string'
+      || typeof consent.consentRef !== 'string') return;
+    // All profile values are text, including provider-supplied display names.
+    // The signed credential supplies this relationship; labels are never identity.
+    $('c-human').textContent = human.displayName || 'Signed-in Google account';
+    $('c-human-source').textContent = 'Google account · attested by the RP';
+    $('c-human-authentication').textContent = authentication.userVerified
+      ? 'RP verified the passkey · user verification passed'
+      : 'RP verified the passkey';
+    $('c-human-consent').textContent = `Signed consent ${short(consent.consentRef, 38)}`;
+    $('human-grant').hidden = false;
+  }
+
+  // ── state ────────────────────────────────────────────────────────────────────
+  function renderDiscovery(doc, decision) {
+    if (!doc) return;
+    const scheme = (doc.acceptedTrustSchemes || [])[0] || {};
+    $('d-name').textContent = doc.name || '—';
+    $('d-did').textContent = short(doc.serverDid, 44);
+    $('d-scheme').textContent = scheme.id ? `${scheme.id} v${scheme.version}` : '—';
+    $('d-holder').textContent = scheme.holderBinding || '—';
+    $('d-revocation').textContent = scheme.revocation ? `${scheme.revocation.format} · checked ${scheme.revocation.checkedAt} · unresolvable → ${scheme.revocation.onUnresolvable}` : '—';
+    $('d-skew').textContent = `${doc.clockSkewSeconds}s · ${(doc.proofAlgorithms || []).join(', ')} · ${(doc.supportedDidMethods || []).join(', ')}`;
+    $('d-scopes').textContent = scheme.scopes ? `${scheme.scopes.resourceScheme} (${(scheme.scopes.matchers || []).join('/')})` : '—';
+    if (decision) {
+      $('d-decision').textContent = decision.accepted ? `present ${scheme.id} to audience ${short(decision.audience, 28)} (${decision.elapsedMs} ms)` : `do not present — ${decision.reasons.join('; ')}`;
+      $('d-decision').className = decision.accepted ? 'ok' : 'amber';
+      $('disc-pill').textContent = decision.accepted ? 'read · accepted' : 'read · refused';
+      $('disc-pill').className = 'pill ' + (decision.accepted ? 'ok' : 'warn');
+    }
+  }
+
+  function renderGrant(vc, revoked, listMeta) {
+    if (!vc) { renderNoGrant(); return; }
+    const d = vc.credentialSubject.delegation;
+    renderHumanGrant(d.metadata);
+    const scope = (d.constraints.crisp && d.constraints.crisp.scopes || [])[0];
+    const c = (scope && scope.constraints) || {};
+    $('c-rp').textContent = typeof vc.issuer === 'string' ? vc.issuer : vc.issuer.id;
+    $('c-agent').textContent = vc.credentialSubject.id;
+    $('c-aud').textContent = d.constraints.audience;
+    const actionScopes = d.constraints.scopes || [];
+    $('c-action-scopes').textContent = actionScopes.length ? actionScopes.join(' · ') : '—';
+    $('c-scope').innerHTML = scope ? dl(scope.resource) : '—';
+    $('c-matcher').textContent = scope ? `matcher: ${scope.matcher} → covers /10/<lot> and /21/<serial> beneath the class` : '';
+    $('c-cap-label').textContent = `Per-${c.per || 'order'} limit`;
+    $('c-cap').textContent = c.maxAmount ? `${c.currency} ${c.maxAmount}` : '—';
+    $('c-until').textContent = vc.expirationDate ? vc.expirationDate.slice(0, 16).replace('T', ' ') + 'Z' : '—';
+    $('c-index').textContent = vc.credentialStatus ? '#' + vc.credentialStatus.statusListIndex : '—';
+    if (vc.credentialStatus) $('list-url').href = vc.credentialStatus.statusListCredential;
+    const bit = $('bit');
+    if (revoked === null || revoked === undefined) { bit.textContent = 'unreadable → deny'; bit.className = 'v bit-set'; }
+    else if (revoked) { bit.textContent = '1 — REVOKED'; bit.className = 'v bit-set'; }
+    else { bit.textContent = '0 — clear'; bit.className = 'v bit-clear'; }
+    if (lastRevoked !== undefined && lastRevoked !== revoked) { void bit.offsetWidth; bit.classList.add('pulse-change'); setTimeout(() => bit.classList.remove('pulse-change'), 600); }
+    lastRevoked = revoked;
+    document.body.classList.toggle('revoked', revoked === true);
+    $('grant-pill').textContent = revoked ? 'revoked' : 'active';
+    $('grant-pill').className = 'pill ' + (revoked ? 'kill' : 'ok');
+    $('list-meta').textContent = listMeta ? `Version ${listMeta.version}${listMeta.updatedAt ? ' · ' + listMeta.updatedAt.slice(11, 19) + 'Z' : ''}` : '';
+  }
+
+  let merchantRefreshVersion = 0, rpRefreshVersion = 0;
+  async function refreshMerchant() {
+    const version = ++merchantRefreshVersion;
+    try {
+      const s = await api('/api/state');
+      if (version !== merchantRefreshVersion) return;
+      stateCache = s;
+      rpOrigin = s.responsibleParty && s.responsibleParty.hubOrigin || rpOrigin;
+      renderDiscovery(s.discovery, null);
+      const rp = s.responsibleParty || {};
+      $('rp-resolved').textContent = rp.resolved
+        ? `DID document resolved from ${rp.from === 'mirror' ? 'the local mirror (offline)' : 'the network'}`
+        : 'DID document not resolved yet. Checked on first verification; unreachable issuers are refused.';
+      $('rp-resolved-kid').textContent = rp.resolved && rp.kid ? rp.kid : '';
+      $('rp-resolved-kid').hidden = !rp.resolved || !rp.kid;
+      $('rp-did').textContent = rp.did || '—';
+      $('rp-kid').textContent = short(rp.kid || '', 48);
+      const st = s.statusList || {};
+      $('rp-list').textContent = `${st.url || '—'} · checked ${st.checkedAt} · unresolvable → ${st.onUnresolvable}`;
+      renderAuditStrip(s.audit);
+    } catch (err) { if (version === merchantRefreshVersion) line(`merchant state failed: ${esc(err.message)}`, 'kill-line'); }
+  }
+
+  async function refreshRp() {
+    if (!rpOrigin) return;
+    const version = ++rpRefreshVersion;
+    try {
+      // RP observation is independent of merchant discovery and audit work.
+      // Only the newest refresh may render, even if earlier reads arrive late.
+      const [r, g] = await Promise.all([
+        api('/api/rp/state', undefined, rpOrigin),
+        api('/api/rp/delegation', undefined, rpOrigin).catch(error => {
+          // The RP explicitly represents an empty wallet with this 404.
+          // Authentication, proxy, and other failures must remain visible.
+          if (error.status === 404 && error.body?.error === 'no active delegation') return { credential: null };
+          throw error;
+        }),
+      ]);
+      if (version !== rpRefreshVersion) return;
+      rpCache = r;
+      $('btn-revoke').disabled = busy || !r.grantIssued;
+      $('rp-ledger-link').href = rpOrigin + '/api/rp/audit/ledger';
+      $('rp-bundle-link').href = rpOrigin + '/api/rp/audit/bundle';
+      renderGrant(g && g.credential, r.revoked, r.statusList);
+      if (g.credential && $('verdict-code').textContent === 'NO_GRANT') {
+        if (r.revoked) { setSeal('kill'); setCode('GRANT REVOKED', 'red'); }
+        else setCode('GRANT ACTIVE · READY TO ORDER', 'amber');
+      }
+      // Recover the matching popup's outcome when its terminal SSE was missed.
+      // A slow status response must never clear a newer consent request.
+      const pending = pendingAuthorization;
+      if (pending) {
+        const status = await api('/consent/status?resume_token=' + encodeURIComponent(pending.resumeToken), undefined, rpOrigin);
+        if (version !== rpRefreshVersion || pendingAuthorization !== pending) return;
+        if (status.state === 'approved' || status.state === 'consumed') {
+          renderConsentDecision({ type: 'consent.approved', resumeToken: pending.resumeToken, index: status.index });
+        } else if (status.state === 'denied') {
+          renderConsentDecision({ type: 'consent.denied', resumeToken: pending.resumeToken });
+        } else if (status.state === 'expired' || status.state === 'failed') {
+          hideAuthorization();
+          setSeal('denied'); setCode('CONSENT_' + status.state.toUpperCase(), 'red');
+          $('decision-label').textContent = 'Human authorization';
+          $('decision-summary').textContent = status.state === 'expired'
+            ? 'The consent request expired. Ask the agent to request a new grant.'
+            : 'The consent request did not complete. Ask the agent to request a new grant.';
+        }
+      }
+      const challenge = stateCache.authorizationChallenge;
+      if (!pendingAuthorization && !g.credential && challenge && challenge.resumeToken) {
+        const status = await api('/consent/status?resume_token=' + encodeURIComponent(challenge.resumeToken), undefined, rpOrigin);
+        if (version !== rpRefreshVersion) return;
+        if (status.state === 'pending') showAuthorization(challenge);
+      }
+      $('rp-pill').textContent = `list v${r.statusList.version} · ${r.grantIssued ? "index #" + r.activeIndex : "no active grant"}`;
+      $('rp-pill').className = 'pill';
+      const kn = $('kill-note');
+      const labels = (r.authenticators || []).map((a) => a.label).join(', ');
+      if (r.keyRequired) {
+        $('rp-ceremony').textContent = `passkey confirmation required (${labels || "register a key first"})`;
+        kn.className = 'kill-note armed';
+        kn.innerHTML = `<b>Passkey required</b> · confirmation is bound to this grant’s revocation. Registered: ${esc(labels || "none; register a key first")}.`;
+      } else if ((r.authenticators || []).length) {
+        $('rp-ceremony').textContent = `software-confirmed (${labels} registered, bypassed)`;
+        kn.className = 'kill-note';
+        kn.innerHTML = `Revoke is <b>software-confirmed</b> (authenticator registered but KEY_WEBAUTHN is off or bypassed for this session).`;
+      } else {
+        $('rp-ceremony').textContent = 'software-confirmed';
+        kn.className = 'kill-note';
+        kn.innerHTML = 'Revoke is software-confirmed · to require a touch: start with KEY_SETUP=1, register at /setup-key.html, then KEY_WEBAUTHN=1.';
+      }
+    } catch (err) {
+      if (version === rpRefreshVersion) line(`hub state failed (${esc(rpOrigin)}): ${esc(err.message)}`, 'kill-line');
+    }
+  }
+
+  async function refresh() {
+    if (!rpOrigin) { await refreshMerchant(); await refreshRp(); }
+    else await Promise.all([refreshMerchant(), refreshRp()]);
+  }
+
+  function showReceipt(body, proof, statusObs) {
+    if (!body || !body.ok) return;
+    const m = (proof && proof.meta) || {};
+    const md = body.mandate || {};
+    $('receipt').innerHTML = `
+      <div class="sec">order</div>
+      <div class="row"><b>order</b><span>${esc(body.orderId)}</span></div>
+      <div class="row"><b>product</b><span>${dl(body.order.product)}</span></div>
+      <div class="row"><b>total</b><span>${esc(body.order.quantity)} × ${esc(body.order.unitPrice)} = <b>${esc(body.order.total)}</b></span></div>
+      <div class="sec">mandate (who, for whom, what, how much, until when)</div>
+      <div class="row"><b>agent</b><span>${esc(short(md.agent, 40))}</span></div>
+      <div class="row"><b>responsible party</b><span>${esc(md.responsibleParty)}</span></div>
+      <div class="row"><b>scope</b><span>${dl(md.scope && md.scope.resource)} (${esc(md.scope && md.scope.matcher)})</span></div>
+      <div class="row"><b>cap · window</b><span>${esc(md.cap ? md.cap.currency + ' ' + md.cap.maxAmount + '/' + md.cap.per : '—')} · until ${esc((md.validUntil || '').slice(0, 16).replace('T', ' '))}Z</span></div>
+      <div class="row"><b>revocation</b><span>${statusObs ? `list fetched ${esc(statusObs.fetchedAt.slice(11, 19))}Z · sig ✓ ${esc(short(statusObs.verificationMethod, 34))} · ${esc(statusObs.elapsedMs)} ms` : 'checked on this call'}</span></div>
+      <div class="sec">merchant signature (detached JWS · EdDSA)</div>
+      <div class="row"><b>kid</b><span>${esc(short(m.kid, 46))}</span></div>
+      <div class="row"><b>requestHash</b><span>${esc(short(m.requestHash, 40))}</span></div>
+      <div class="row"><b>responseHash</b><span>${esc(short(m.responseHash, 40))}</span></div>
+      <div class="jws" id="jws">${esc(proof && proof.jws || '(no proof attached)')}</div>
+      <div id="crosscheck"></div>`;
+  }
+
+  // Share feeds across monitor tabs so SSE cannot starve action requests.
+  // Older browsers retain the direct EventSource transport.
+  let sharedEvents;
+  const eventClients = new Map();
+  function eventSource(path) {
+    if (typeof SharedWorker === 'undefined') return new EventSource(path);
+    try {
+      if (!sharedEvents) {
+        sharedEvents = new SharedWorker('/event-streams.js?v=2', { name: 'merchant-monitor-events-v2' });
+        sharedEvents.port.onmessage = ({ data }) => {
+          const client = eventClients.get(data.url);
+          if (!client) return;
+          client['on' + data.type]?.({ data: data.data });
+        };
+        sharedEvents.port.start();
+        window.addEventListener('pagehide', () => {
+          sharedEvents.port.postMessage({ type: 'disconnect' });
+          sharedEvents.port.close();
+        });
+        window.addEventListener('pageshow', event => { if (event.persisted) window.location.reload(); });
+      }
+      const url = new URL(path, window.location.href).href;
+      const client = {};
+      eventClients.set(url, client);
+      sharedEvents.port.postMessage({ type: 'subscribe', url });
+      return client;
+    } catch {
+      return new EventSource(path);
+    }
+  }
+
+  // ── SSE: two feeds, merchant + hub. Drives ALL rendering. ──────────────────
+  function connectMerchant() {
+    const es = eventSource('/api/events');
+    es.onopen = () => $('live-m').classList.add('on');
+    es.onerror = () => $('live-m').classList.remove('on');
+    es.onmessage = (ev) => {
+      let e; try { e = JSON.parse(ev.data); } catch { return; }
+      if (e.type === 'discovered') {
+        sep('discovery');
+        renderDiscovery(stateCache.discovery, e);
+        line(`agent → GET /.well-known/mcp — merchant accepts <code>${esc((e.scheme || {}).id || '?')}</code>, holder key ${esc((e.scheme || {}).holderBinding)}, revocation ${esc(((e.scheme || {}).revocation || {}).onUnresolvable)}, clock skew ${esc(e.clockSkewSeconds)}s`, 'info-line');
+        line(e.accepted ? `agent decides: present the delegation to audience <code>${esc(short(e.audience, 30))}</code> · ${esc(e.elapsedMs)} ms` : `agent decides: do not present — ${esc(e.reasons.join('; '))}`, e.accepted ? 'ok-line' : 'warn-line', true);
+        setSeal('ready'); setCode('');
+      } else if (e.type === 'request') {
+        setGates('check'); setSeal('wait'); setCode(''); $('latency').textContent = '';
+        line(`Agent requested <b>${esc(e.quantity)} × ${esc(e.product)}</b> <code>place_order</code> · checking authority.`, 'src-line');
+      } else if (e.type === 'checkout.review') {
+        showCheckout(e);
+      } else if (e.type === 'checkout.confirmed') {
+        if (pendingCheckout && pendingCheckout.id === e.id) {
+          hideAuthorization(); setSeal('ready'); setCode('CHECKOUT_CONFIRMED', 'amber');
+          $('decision-summary').textContent = 'Checkout confirmed. Ask the agent to finish.';
+        }
+      } else if (e.type === 'payment') {
+        const rail = e.rail === 'x402' ? 'x402 · USDC' : 'Sandbox token';
+        if (e.phase === 'authorized') line(`<b>${esc(rail)}</b> · current grant verified before settlement.`, 'info-line');
+        else line(`<b>${esc(rail)}</b> · ${e.payment?.simulated ? 'settlement simulated; no funds moved' : 'Base Sepolia testnet settlement confirmed'}.`, 'ok-line', true);
+      } else if (e.type === 'verdict') {
+        applyChecks(e.checks || {});
+        $('latency').textContent = `${e.elapsedMs} ms end to end`;
+        const b = e.body || {};
+        if (b.error === 'needs_authorization' || e.verdict === 'needs_authorization') {
+          showAuthorization(b);
+        } else if (b.error === 'PAYMENT_REQUIRED') {
+          hideAuthorization(); setSeal('payment'); setCode('PAYMENT_REQUIRED', 'amber');
+          line('KYA authority accepted. x402 payment authorization is the next step; no order placed yet.', 'info-line', true);
+        } else if (b.error === 'SETTLEMENT_PENDING') {
+          hideAuthorization(); setSeal('unknown'); setCode('SETTLEMENT_PENDING', 'amber');
+          $('decision-summary').textContent = 'Payment outcome unresolved. Do not submit another payment.';
+          line('Settlement outcome is unresolved. The checkout is held to prevent another charge.', 'warn-line', true);
+        } else if (e.verdict === 'allowed') {
+          hideAuthorization();
+          setSeal('ok'); setCode('');
+          $('decision-summary').textContent = `${b.order.quantity} × ${b.order.name} · ${b.order.total}`;
+          line(`Authority verified · revocation checked at the merchant${e.statusList ? ' (' + esc(e.statusList.elapsedMs) + ' ms)' : ''} · signed receipt returned.`, 'dim-line');
+          line(`<b>Order accepted</b> · ${esc(b.order.quantity)} × ${esc(b.order.name)} · <b>${esc(b.order.total)}</b> <code>${esc(b.orderId)}</code>`, 'ok-line', true);
+          showReceipt(b, e.receipt, e.statusList);
+        } else if (e.code === 'holder_binding_failed') {
+          setSeal('denied'); setCode('HOLDER_BINDING_FAILED', 'red');
+          line(`Holder proof failed: ${esc(e.reason)}`, 'dim-line');
+          line('<code>HOLDER_BINDING_FAILED</code> · <b>Request denied</b> · The agent’s key could not be verified for this request.', 'kill-line', true);
+        } else if ((e.code || '').startsWith('CONSENT_')) {
+          setSeal('denied'); setCode(e.code, 'red');
+          line(`${esc(e.code)}: ${esc(e.reason)}`, 'dim-line');
+          line('<b>Order denied</b> · The signed consent binding could not be accepted.', 'kill-line', true);
+        } else if (/revoked/i.test(e.reason || '')) {
+          setSeal('denied'); setCode('CREDENTIAL_REVOKED · nothing sold', 'red');
+          $('decision-summary').textContent = 'Authority was withdrawn. The merchant refused the order.';
+          line(`${esc(e.code)}: ${esc(e.reason)}`, 'dim-line');
+          line('<code>CREDENTIAL_REVOKED</code> · <b>Order denied</b> · The responsible party revoked this grant.', 'kill-line', true);
+        } else if (/unresolvable|status list/i.test(e.reason || '')) {
+          setSeal('denied'); setCode('STATUS_UNRESOLVABLE · fail-closed', 'red');
+          line(`${esc(e.code)}: ${esc(e.reason)}`, 'kill-line', true);
+          line('the revocation list could not be read — this merchant\'s policy is fail-closed. That choice is the merchant\'s, not the protocol\'s.', 'dim-line');
+        } else if (e.code === 'PRODUCT_OUT_OF_SCOPE') {
+          setSeal('blocked'); setCode('PRODUCT_OUT_OF_SCOPE', 'amber');
+          $('decision-summary').textContent = 'This product is outside the human’s approved scope.';
+          const d = b.detail || {};
+          line(`Requested ${dl(d.requested)} · approved ${dl(d.delegated)} (${esc(d.matcher)})`, 'dim-line');
+          line('<code>PRODUCT_OUT_OF_SCOPE</code> · <b>Order refused</b> · The product is outside the approved GS1 product class.', 'warn-line', true);
+        } else if (e.code === 'SPEND_CAP_EXCEEDED') {
+          setSeal('blocked'); setCode('SPEND_CAP_EXCEEDED', 'amber');
+          $('decision-summary').textContent = 'This order exceeds the human’s approved spending limit.';
+          line(`${esc(b.message)}`, 'dim-line');
+          line('<code>SPEND_CAP_EXCEEDED</code> · <b>Order refused</b> · The approved spending limit would be exceeded.', 'warn-line', true);
+        } else {
+          setSeal('denied'); setCode(e.code || 'DELEGATION_INVALID', 'red');
+          line(`${esc(e.code)}: ${esc(e.reason || b.message)}`, 'kill-line', true);
+        }
+        refresh();
+      } else if (e.type === 'reset') {
+        applyMerchantReset(e);
+      } else if (e.type === 'crosscheck') {
+        const el = $('crosscheck');
+        const r = e.report || {};
+        if (el) { el.className = 'crosscheck ' + (e.ok ? 'ok' : 'bad'); el.textContent = e.ok ? `✓ re-verified by the stdlib Python verifier (${e.elapsedMs} ms) — ${(r.checks || []).length} checks, independent code` : `✗ Python verifier disagrees: ${(r.error || e.stderr || 'see log')}`; }
+        line(e.ok ? `python3 verify-receipt.py → OK · JCS + SHA-256 + Ed25519 in stdlib, no SDK: ${esc((r.checks || []).join(' · '))}` : `python verifier FAILED: ${esc(r.error || e.stderr || e.stdout)}`, e.ok ? 'ok-line' : 'kill-line', true);
+      } else if (e.type === 'agent_error') {
+        if (seal.classList.contains('wait')) {
+          setGates(''); setSeal('unknown'); setCode('REQUEST_OUTCOME_UNKNOWN', 'amber');
+        }
+        line(`agent error: ${esc(e.message)}`, 'kill-line');
+      } else if (e.type === 'audit') {
+        sep('audit trail');
+        line(`checkpoint over ${esc(e.entries)} entries · root <code>${esc(D(e.rootDigest, 16))}</code> · signed by the merchant · ${e.witnessed ? 'witnessed by the Responsible Party ✓' : (e.witnessError ? 'witness refused: ' + esc(e.witnessError) : 'no witness')} · chain ${e.chainIntact ? '✓' : '✗'} · inclusion ${e.allIncluded ? '✓' : '✗'} · ${esc(e.elapsedMs)} ms`, 'ok-line', true);
+        $('audit-root').textContent = `root ${D(e.rootDigest, 16)}… · ${e.treeSize} leaves`;
+        refresh();
+      } else if (e.type === 'tamper') {
+        const v = e.verdicts || {};
+        line(`insider edit #${esc(e.target.seq)} ${esc(e.target.eventType)} ${esc(e.target.before)} → ${esc(e.target.after)}: receipt re-signed ${e.forgedReceiptVerifies ? '✓' : '✗'} · ${e.chainBreaksAt !== null ? `chain break at #${esc(e.chainBreaksAt)}` : 'no following chain link'} · ${e.rootsMatch ? 'root unchanged' : 'root mismatch'} · inclusion ${e.forgedInclusion ? '✓' : '✗'} → verifier: chain ${esc((v.chainIntegrity || {}).verdict)}, checkpoint ${esc((v.checkpointIntegrity || {}).verdict)}`, 'kill-line', true);
+      } else if (e.type === 'export') {
+        line(`replay bundle ${esc(short(e.bundleId, 60))} written · honest ${esc((e.verdicts.honest.chainIntegrity || {}).verdict)} / edited ${esc((e.verdicts.tampered.chainIntegrity || {}).verdict)} · <code>${esc(e.command.honest)}</code>`, 'info-line');
+      }
+    };
+  }
+  function renderConsentDecision(e) {
+    const token = e.resumeToken || e.sessionId;
+    if (pendingAuthorization && token && token !== pendingAuthorization.resumeToken) return false;
+    hideAuthorization();
+    if (e.type === 'consent.approved') {
+      setSeal('approved'); setCode('HUMAN APPROVED · RETRY THE SAME ORDER', 'amber');
+      line(`Human approved. Responsible Party issued grant #${esc(e.index)}. Retry the same order.`, 'ok-line', true);
+      line(`consent approved · grant #${esc(e.index)}`, 'ok-line', false, rpLog);
+    } else {
+      setSeal('denied'); setCode('CONSENT_DENIED', 'red');
+      $('decision-label').textContent = 'Human authorization';
+      $('decision-summary').textContent = 'The human declined. No credential was issued.';
+      line('Human denied the grant. No credential issued. No order placed.', 'kill-line', true);
+      line('consent denied · no credential issued', 'kill-line', false, rpLog);
+    }
+    return true;
+  }
+
+  function connectRp() {
+    if (!rpOrigin) return;
+    const es = eventSource(rpOrigin + '/api/rp/events');
+    es.onopen = () => {
+      $('live-rp').classList.add('on');
+      // SSE has no replay. Reconcile approvals that happened before subscribing
+      // or while disconnected without requiring an order or a page reload.
+      refreshRp();
+    };
+    es.onerror = () => $('live-rp').classList.remove('on');
+    es.onmessage = (ev) => {
+      let e; try { e = JSON.parse(ev.data); } catch { return; }
+      if (e.type === 'consent.approved' || e.type === 'consent.denied') {
+        if (renderConsentDecision(e)) refreshRp();
+      } else if (e.type === 'revoke_start') {
+        sep('revocation'); setGates(''); setSeal('wait', 'revoking'); setCode('');
+        line(`Responsible Party → revoke grant #${esc(e.index)}`, 'warn-line', false, rpLog);
+        line(`Responsible Party → revoking grant #${esc(e.index)}…`, 'warn-line');
+      } else if (e.type === 'revoke_phase') {
+        line(`[+${esc(String(e.elapsedMs).padStart(4))} ms] ${esc(e.phase)} — ${esc(e.detail)}`, 'warn-line', false, rpLog);
+      } else if (e.type === 'revoke_done') {
+        line(`status list v${esc(e.version)} published · bit ${esc(e.index)} = 1 · ${esc(e.totalMs)} ms`, 'kill-line', true, rpLog);
+        line(`<code>GRANT_REVOKED</code> · Responsible Party published status list v${esc(e.version)} with bit ${esc(e.index)} set (${esc(e.totalMs)} ms). Every verifier that fetches the list now reads the revocation.`, 'kill-line', true);
+        renderRevocationOutcome(e);
+        refreshRp();
+      } else if (e.type === 'revoke_failed') {
+        reconcileRevocationFailure(e.index, e.message);
+      } else if (e.type === 'issued') {
+        line(`issued grant #${esc(e.index)} to ${esc(short(e.subject, 30))} · scope ${esc(e.scope)}`, 'ok-line', false, rpLog);
+      } else if (e.type === 'restored') {
+        line(`bit ${esc(e.index)} cleared (demo reset)`, 'dim-line', false, rpLog);
+      } else if (e.type === 'witnessed') {
+        line(`witnessed merchant checkpoint · ${esc(e.treeSize)} leaves · root ${esc(D(e.rootDigest, 12))} · receipt ${esc(D(e.observationDigest, 10))} (observation #${esc(e.observations)})`, 'ok-line', true, rpLog);
+      } else if (e.type === 'witness_refused') {
+        line(`witness REFUSED a checkpoint: ${esc(e.message)}`, 'kill-line', true, rpLog);
+      }
+    };
+  }
+
+  // ── audit trail: the finale. Rendered from the act responses (large), logged via SSE. ──
+  const D = (d, n = 16) => (typeof d === 'string' ? d.replace(/^sha256:/, '').slice(0, n) : '—');
+  const digestHtml = (d, n) => esc(D(d, n));
+  const ts = (ms) => (ms ? new Date(ms).toISOString().slice(11, 19) + 'Z' : '—');
+  let auditReport = null, auditTamper = null, auditEditing = false, auditEditRequested = false;
+  const AUDIT_OUTCOMES = ['succeeded', 'failed', 'denied', 'challenged', 'unknown'];
+
+  function renderAuditStrip(a) {
+    if (!a) return;
+    $('audit-n').innerHTML = `${esc(a.entries)} <small>ENTRIES</small>`;
+    $('audit-meta').textContent = `${a.profile} · delivery ${a.delivery} · ${a.witness ? 'witness: Responsible Party' : 'no witness'} · ${short(a.ledger.ledgerId, 34)}`;
+    $('audit-pill').textContent = a.entries ? `${a.entries} recorded` : 'empty';
+    $('audit-pill').className = 'pill' + (a.entries ? ' ok' : '');
+  }
+
+  const DIM_NAMES = { cryptographicIntegrity: 'signatures', chainIntegrity: 'chain', checkpointIntegrity: 'root+proofs', anchorIntegrity: 'witness', scopeEvidenceCompleteness: 'complete', authorizedAsObserved: 'authz then', currentAuthorization: 'authz now' };
+  const VERDICT_SHORT = { valid: 'valid', invalid: 'INVALID', indeterminate: 'indeterm.' };
+  const dims = (report) => Object.entries(report || {}).filter(([, v]) => v && typeof v === 'object' && 'verdict' in v);
+  function verdictStrip(report, label) {
+    const d = dims(report);
+    const cards = d.map(([k, v]) => `<div class="verdict ${esc(v.verdict)}" title="${esc(k)}: ${esc(v.verdict)} ${esc((v.reasonCodes || []).join(', '))}"><div class="vn">${esc(DIM_NAMES[k] || k)}</div><div class="vv">${esc(VERDICT_SHORT[v.verdict] || v.verdict)}</div></div>`).join('');
+    const invalid = d.filter(([, v]) => v.verdict === 'invalid');
+    const indet = d.filter(([, v]) => v.verdict === 'indeterminate');
+    const reasons = invalid.length
+      ? `<b>${esc(label)}</b>: ${invalid.map(([k, v]) => esc(DIM_NAMES[k] || k) + ' → ' + esc(v.reasonCodes.map((r) => r.replace(/^AUDIT_/, '')).join(', '))).join(' · ')}`
+      : `<span class="ok">${esc(label)}: nothing invalid</span>`;
+    const note = indet.length ? ` · indeterminate = ${esc(indet.map(([, v]) => v.reasonCodes.map((r) => r.replace(/^AUDIT_/, '').toLowerCase().replace(/_/g, ' ')).join(', ')).join('; '))} (not in this bundle — honest)` : '';
+    return `<div class="verdicts">${cards}</div><div class="vr-line">${reasons}${note}</div>`;
+  }
+
+  function renderLedgerTable(r, tamper) {
+    const forgedSeq = tamper ? tamper.target.seq : null;
+    const breakSeq = tamper ? tamper.chainBreaksAt : null;
+    const rows = r.entries.map((e) => {
+      const cls = ['o-' + e.outcome, e.seq === forgedSeq ? 'forged' : '', e.seq === breakSeq ? 'break' : '', auditEditing && e.seq === $('audit-edit-entry').value ? 'editing' : '', e.anchored ? '' : 'unanchored'].filter(Boolean).join(' ');
+      const out = e.seq === forgedSeq ? `<s>${esc(tamper.target.before)}</s>${esc(tamper.target.after)}` : esc(e.outcome);
+      const chain = e.seq === breakSeq ? `BREAK · names ${digestHtml(e.previousEntryDigest, 6)}, not the edit` : (e.previousEntryDigest ? `${digestHtml(e.previousEntryDigest, 8)}` : 'genesis');
+      return `<tr class="${esc(cls)}" id="ledger-row-${esc(e.seq)}"><td class="seq">${esc(e.seq)}</td><td class="ev">${esc(e.eventType)}${e.tool ? ' <span class="muted">' + esc(e.tool) + '</span>' : ''}</td><td class="out">${out}</td><td class="reason"><span title="${esc(e.reason || '')}">${esc(e.reason || '')}</span></td><td class="digest">${digestHtml(e.entryDigest, 10)}</td><td class="chain">${chain}</td></tr>`;
+    }).join('');
+    $('audit-table').innerHTML = `<table class="ledger"><thead><tr><th>#</th><th>event · ${esc(r.entries[0] ? r.entries[0].at.slice(0, 10) : '')}</th><th>outcome</th><th>reason</th><th>entry digest</th><th>previous (chain)</th></tr></thead><tbody>${rows}</tbody></table>`;
+    const box = $('audit-table');
+    const selected = auditEditing ? $('audit-edit-entry').value : forgedSeq;
+    const target = selected !== null ? $('ledger-row-' + selected) : null;
+    if (target) target.scrollIntoView({ block: 'center' }); else box.scrollTop = box.scrollHeight;
+    $('audit-chain-note').textContent = tamper ? (tamper.chainBreaksAt !== null ? `chain broken at #${tamper.chainBreaksAt}` : 'chain links intact · final entry edited') : (r.chainIntact ? `${r.entries.length} entries · chain intact` : 'CHAIN BROKEN');
+    $('audit-chain-note').className = tamper ? (tamper.chainBreaksAt !== null ? 'kill-line' : 'warn-line') : (!r.chainIntact ? 'kill-line' : 'ok-line');
+  }
+
+  function renderTree(r, tamper) {
+    const forgedIdx = tamper ? Number(tamper.target.seq) : -1;
+    const dirty = (row) => { if (forgedIdx < 0 || row.leafIndex !== null) return false; const m = /^\[(\d+)\.\.(\d+)\]$/.exec(row.label); return !!m && forgedIdx >= Number(m[1]) && forgedIdx <= Number(m[2]); };
+    const root = r.tree[0];
+    $('audit-tree-root').className = 'tree-root' + (tamper ? ' bad' : '');
+    $('audit-tree-root').innerHTML = root ? `ROOT       <span class="h">${digestHtml(root.hash, 24)}</span>${tamper ? `   <span class="re">≠ recomputed after the edit  ${digestHtml(tamper.tamperedRoot, 16)}</span>` : '   ← signed · witnessed'}` : '';
+    $('audit-tree').innerHTML = r.tree.slice(1).map((row) => {
+      const cls = row.leafIndex !== null ? 'leaf' + (row.leafIndex === forgedIdx ? ' forged' : '') : 'node' + (dirty(row) ? ' dirty' : '');
+      return `<span class="row ${cls}" ${row.leafIndex === forgedIdx ? 'id="tree-forged"' : ''}>${esc(row.prefix)}${esc(row.label.padEnd(10))} <span class="h">${digestHtml(row.hash, 20)}</span>${row.leafIndex === forgedIdx && row.leafIndex !== null ? '  ✗ edited — every ancestor above it changes' : ''}</span>`;
+    }).join('');
+    const forgedEl = $('tree-forged');
+    if (forgedEl) forgedEl.scrollIntoView({ block: 'center' }); else $('audit-tree').scrollTop = 0;
+    $('audit-tree-note').textContent = `${r.inclusions.length} leaves · ${tamper ? (tamper.forgedInclusion ? 'edited leaf included' : 'edited leaf fails inclusion') : `inclusion ${r.allIncluded ? '✓ all' : 'incomplete'}`}${r.unanchored ? ` · ${r.unanchored} newer unanchored` : ''}`;
+    $('audit-tree-note').className = tamper && !tamper.forgedInclusion ? 'kill-line' : (r.allIncluded ? 'ok-line' : 'warn-line');
+  }
+
+  function renderAudit(r) {
+    auditReport = r; auditTamper = null; auditEditing = false;
+    $('audit-editor').hidden = true;
+    $('audit-overlay').classList.add('on');
+    $('audit-status').hidden = true;
+    $('audit-body').hidden = false;
+    $('audit-foot').hidden = false;
+    $('audit-title').className = 'title'; $('audit-title').innerHTML = 'AUDIT <span class="cut">TRAIL</span>';
+    $('audit-ledger-id').textContent = `${r.ledger.ledgerId} · ${r.ledger.ledgerEpochId}`;
+    if (!r.entries.length) {
+      $('audit-table').innerHTML = '<div class="muted">No merchant decisions in this run yet. Ask the agent to place an order to begin.</div>';
+      $('audit-chain-note').textContent = '0 entries · fresh run';
+      $('audit-chain-note').className = 'muted';
+      $('audit-cp').innerHTML = '<dt>checkpoint</dt><dd>No checkpoint yet</dd>';
+      for (const id of ['audit-cp-note', 'audit-tree-root', 'audit-tree', 'audit-tamper', 'audit-export', 'audit-verdict-note']) $(id).innerHTML = '';
+      $('audit-tree-note').textContent = 'No leaves yet'; $('audit-tree-note').className = 'muted';
+      $('audit-verdicts').innerHTML = '<div class="muted">Record a merchant decision before creating a checkpoint, editing a copy or exporting evidence.</div>';
+      $('audit-tamper-box').style.display = 'none';
+      $('audit-edit').disabled = true;
+      $('audit-foot').hidden = true;
+      return;
+    }
+    renderLedgerTable(r, null);
+    const cp = r.checkpoint || {};
+    const w = r.witness;
+    $('audit-cp').innerHTML = `
+      <dt>root</dt><dd class="digest">${esc(cp.rootDigest || '—')}</dd>
+      <dt>covers</dt><dd class="hot">${esc(cp.treeSize || '—')} entries · seq 0…${esc(cp.treeSize ? cp.treeSize - 1 : '—')} · signed ${esc(ts(cp.createdAt))} · EdDSA · merchant key</dd>
+      <dt>witness</dt><dd class="${w ? 'ok' : 'amber'}">${w ? `${esc(w.observer.did)} · ${esc(ts(w.observedAt))} · receipt ${digestHtml(w.observationDigest, 10)} ✓` : (r.witnessError ? 'refused: ' + esc(r.witnessError) : 'none')}</dd>
+      <dt>assurance</dt><dd class="amber">${esc(r.profile.advertised)} advertised (in-memory journal; the SDK refuses more) · durable journal → AAP-3 · + witness → AAP-4</dd>`;
+    $('audit-cp-note').textContent = w ? 'RP countersigned ✓' : '';
+    $('audit-cp-note').className = 'ok-line';
+    renderTree(r, null);
+    $('audit-tamper-box').style.display = 'none';
+    $('audit-verdicts').innerHTML = '<div class="muted">Choose Edit entry or press T to change an outcome, then verify it against this checkpoint. Press E to export.</div>';
+    $('audit-verdict-note').textContent = '';
+    $('audit-export').innerHTML = '';
+    $('audit-foot').innerHTML = `<span>entry digest <b>sha256("org.kya-os.audit.entry.v1\\0" ‖ JCS(core))</b></span><span><b>RFC 9162</b> tree</span><span><b>JWS · EdDSA</b></span><span>bundle → <b>kya-audit verify</b> · <b>verify-ledger.py</b> (stdlib)</span>`;
+  }
+
+  function renderTamper(t) {
+    if (!auditReport) return;
+    auditTamper = t; auditEditing = false;
+    const checkpointReasons = (t.reports.tampered.checkpointIntegrity?.reasonCodes || []).map(reason => esc(reason.replace(/^AUDIT_/, ''))).join(' · ');
+    const chainReasons = (t.reports.tampered.chainIntegrity?.reasonCodes || []).map(reason => esc(reason.replace(/^AUDIT_/, ''))).join(' · ');
+    $('audit-editor').hidden = true;
+    $('audit-title').className = 'title tampered'; $('audit-title').innerHTML = 'INSIDER <span class="cut">EDIT</span>';
+    $('audit-tamper-box').style.display = '';
+    $('audit-tamper-note').textContent = `#${t.target.seq} ${t.target.eventType}: ${t.target.before} → ${t.target.after}`;
+    $('audit-tamper-note').className = 'kill-line';
+    $('audit-tamper').innerHTML = `
+      <div class="tamper-banner">An <b>insider with the merchant's signing key</b> rewrites entry #${esc(t.target.seq)} (${esc(t.target.eventType)}${t.target.reason ? ', ' + esc(t.target.reason) : ''}) from <b>${esc(t.target.before)}</b> to <b>${esc(t.target.after)}</b>, recomputes its digests and re-signs the receipt ; the signature <span class="${t.forgedReceiptVerifies ? 'ok' : 'kill-line'}">${t.forgedReceiptVerifies ? 'verifies' : 'does not verify'}</span>. The original checkpoint stays fixed:</div>
+      <dl class="kv tight" style="margin-top:6px">
+        <dt>chain</dt><dd class="${t.chainBreaksAt !== null ? 'kill-line' : 'warn-line'}">${t.chainBreaksAt !== null ? `#${esc(t.chainBreaksAt)} still names the honest digest as its predecessor${chainReasons ? ` → ${chainReasons}` : ''}` : 'No following entry links to this final row. The checkpoint and inclusion proof still detect the edit.'}</dd>
+        <dt>root</dt><dd class="kill-line">anchored ${digestHtml(t.anchoredRoot, 12)} ≠ recomputed ${digestHtml(t.tamperedRoot, 12)} · the edited leaf's path no longer reaches the signed root${checkpointReasons ? `<br>${checkpointReasons}` : ''}</dd>
+        <dt>witness</dt><dd class="${t.witnessStillBindsAnchoredRoot ? 'ok' : 'amber'}">${t.witnessStillBindsAnchoredRoot ? 'the Responsible Party\'s receipt binds the honest root — re-signing the checkpoint would contradict a third party' : 'no witness receipt in this run'}</dd>
+      </dl>`;
+    const hv = dims(t.reports.honest);
+    const honestInvalid = hv.filter(([, result]) => result.verdict === 'invalid').length;
+    $('audit-verdicts').innerHTML = verdictStrip(t.reports.tampered, 'edited bundle') + `<div class="vr-line"><span class="${honestInvalid ? 'kill-line' : 'ok-line'}">honest bundle, same verifier · policy · keys: ${hv.filter(([, x]) => x.verdict === 'valid').length} valid · ${hv.filter(([, x]) => x.verdict === 'indeterminate').length} indeterminate · ${honestInvalid} invalid</span></div>`;
+    $('audit-verdict-note').textContent = 'verdict on the edited bundle';
+    $('audit-verdict-note').className = 'kill-line';
+    renderLedgerTable(auditReport, t);
+    renderTree(auditReport, t);
+  }
+
+  function renderExport(e) {
+    const v = (rep) => Object.values(rep).filter((x) => x && typeof x === 'object' && 'verdict' in x);
+    const bad = v(e.reports.tampered).filter((x) => x.verdict === 'invalid').length;
+    const honestBad = v(e.reports.honest).filter((x) => x.verdict === 'invalid').length;
+    $('audit-export').innerHTML = `
+      <div><b style="color:var(--text)">var/audit/bundle.json</b> · bundle.tampered.json · ${e.components.map((c) => esc(c.path) + ' ' + esc(c.size) + ' B').join(' · ')} · policy.json · keys.json · manifest ${digestHtml(e.manifestDigest, 12)} signed</div>
+      <div style="margin-top:3px" title="${esc(e.command.honest)}"><code style="display:inline">npm run verify:ledger</code> → <span class="${honestBad ? 'kill-line' : 'ok-line'}">expected exit ${honestBad ? 1 : 0}</span> &nbsp; <code style="display:inline">npm run verify:ledger:tampered</code> → <span class="${bad ? 'kill-line' : 'ok-line'}">expected exit ${bad ? 1 : 0} · ${esc(bad)} invalid</span> &nbsp; <code style="display:inline">npm run verify:ledger:py</code> → stdlib Python, no SDK · <a href="/api/audit/bundle" download>download</a></div>`;
+    if (!auditTamper) { $('audit-verdicts').innerHTML = verdictStrip(e.reports.honest, 'bundle.json'); $('audit-verdict-note').textContent = 'written to var/audit · trust from policy.json + keys.json, never from the bundle'; $('audit-verdict-note').className = honestBad ? 'kill-line' : 'ok-line'; }
+  }
+
+  async function actAudit() {
+    if (busy) return; setBusy(true);
+    const generation = merchantRunGeneration;
+    const overlay = $('audit-overlay'), status = $('audit-status');
+    // A report may have arrived after the last view was closed. Paint that
+    // cached snapshot now, before refreshing its checkpoint and witness.
+    if (auditReport) renderAudit(auditReport);
+    overlay.classList.add('on');
+    overlay.setAttribute('aria-busy', 'true');
+    status.hidden = false;
+    status.className = 'audit-status warn-line';
+    status.textContent = auditReport
+      ? 'Refreshing the signed checkpoint and witness. Showing the previous snapshot until the new report is ready.'
+      : 'Creating the signed checkpoint and requesting the Responsible Party witness…';
+    $('audit-body').hidden = !auditReport;
+    $('audit-foot').hidden = !auditReport;
+    try {
+      const r = await api('/api/act/audit', {});
+      if (generation !== merchantRunGeneration) return;
+      if (r.error) throw new Error(r.error);
+      // An in-flight request must not pull the presenter back into a dismissed overlay.
+      if (overlay.classList.contains('on')) renderAudit(r);
+      else { auditReport = r; auditTamper = null; }
+    } catch (err) {
+      if (generation !== merchantRunGeneration) return;
+      status.className = 'audit-status kill-line';
+      status.textContent = `Audit could not be refreshed: ${err.message}. Close this view and choose Show audit to retry.${auditReport ? ' The previous snapshot remains below.' : ''}`;
+      line(`anchor failed: ${esc(err.message)}`, 'kill-line');
+    } finally {
+      if (generation === merchantRunGeneration) {
+        overlay.setAttribute('aria-busy', 'false');
+        setBusy(false);
+        const openEditor = auditEditRequested;
+        auditEditRequested = false;
+        if (openEditor && auditReport && status.hidden && overlay.classList.contains('on')) openAuditEditor();
+      }
+    }
+  }
+  const editableAuditRows = () => auditReport?.checkpoint?.checkpointDigest
+    ? auditReport.entries.filter(row => row.anchored && /^\d+$/.test(row.seq) && AUDIT_OUTCOMES.includes(row.outcome)) : [];
+  function syncAuditEditor() {
+    const row = editableAuditRows().find(row => row.seq === $('audit-edit-entry').value);
+    const outcome = $('audit-edit-outcome').value;
+    $('audit-edit-done').disabled = busy || !row || !AUDIT_OUTCOMES.includes(outcome) || outcome === row.outcome;
+    $('audit-edit-entry').disabled = busy;
+    $('audit-edit-outcome').disabled = busy;
+    $('audit-edit-cancel').disabled = busy;
+  }
+  function selectAuditEntry() {
+    const row = editableAuditRows().find(row => row.seq === $('audit-edit-entry').value);
+    $('audit-edit-before').textContent = row?.outcome || '';
+    $('audit-edit-outcome').value = row?.outcome || '';
+    $('audit-edit-feedback').textContent = '';
+    $('audit-edit-feedback').className = 'audit-edit-feedback';
+    renderLedgerTable(auditReport, auditTamper);
+    syncAuditEditor();
+  }
+  function openAuditEditor() {
+    const rows = editableAuditRows();
+    if (!rows.length) {
+      $('audit-status').hidden = false;
+      $('audit-status').className = 'audit-status warn-line';
+      $('audit-status').textContent = 'No checkpointed entries to edit. Run an order, then choose Show audit.';
+      $('audit-editor').hidden = true;
+      return;
+    }
+    const preferred = [...rows].reverse().find(row => row.eventType.startsWith('tool.call.') && ['denied', 'failed'].includes(row.outcome)) || rows[rows.length - 1];
+    $('audit-edit-entry').innerHTML = rows.map(row => `<option value="${esc(row.seq)}">#${esc(row.seq)} · ${esc(row.eventType)} · ${esc(row.outcome)}</option>`).join('');
+    $('audit-edit-outcome').innerHTML = AUDIT_OUTCOMES.map(outcome => `<option value="${outcome}">${outcome}</option>`).join('');
+    $('audit-edit-entry').value = preferred.seq;
+    auditEditing = true;
+    $('audit-status').hidden = true;
+    $('audit-editor').hidden = false;
+    selectAuditEntry();
+    $('audit-edit-outcome').focus();
+  }
+  async function actTamper() {
+    if (busy) {
+      if (!auditEditing && $('audit-overlay').classList.contains('on') && $('audit-overlay').getAttribute('aria-busy') === 'true') {
+        auditEditRequested = true;
+        $('audit-status').textContent = 'Refreshing the checkpoint before opening the editor…';
+      }
+      return;
+    }
+    if (!auditReport) {
+      auditEditRequested = true;
+      return actAudit();
+    } else if (!$('audit-overlay').classList.contains('on')) {
+      const previous = auditTamper;
+      renderAudit(auditReport);
+      if (previous) renderTamper(previous);
+    }
+    openAuditEditor();
+  }
+  function cancelAuditEdit() {
+    if (busy) return;
+    auditEditing = false;
+    $('audit-editor').hidden = true;
+    if (auditReport) renderLedgerTable(auditReport, auditTamper);
+    $('audit-edit').focus();
+  }
+  async function submitAuditEdit(event) {
+    event.preventDefault();
+    if (busy || !auditEditing) return;
+    const generation = merchantRunGeneration;
+    const row = editableAuditRows().find(row => row.seq === $('audit-edit-entry').value);
+    const outcome = $('audit-edit-outcome').value;
+    if (!row || !AUDIT_OUTCOMES.includes(outcome) || row.outcome === outcome) return;
+    const request = { sequence: row.seq, outcome, checkpointDigest: auditReport.checkpoint.checkpointDigest };
+    const feedback = $('audit-edit-feedback');
+    setBusy(true); syncAuditEditor();
+    $('audit-overlay').setAttribute('aria-busy', 'true');
+    feedback.className = 'audit-edit-feedback warn-line';
+    feedback.textContent = 'Verifying the edited copy against the original signed checkpoint…';
+    try {
+      const result = await api('/api/act/tamper', request);
+      if (generation !== merchantRunGeneration) return;
+      if (result.error) throw new Error(result.error);
+      if (result.target?.seq !== request.sequence || result.target?.after !== request.outcome) throw new Error('The result does not match the selected edit. Refresh Show audit before trying again.');
+      renderTamper(result);
+    } catch (err) {
+      if (generation !== merchantRunGeneration) return;
+      feedback.className = 'audit-edit-feedback kill-line';
+      feedback.textContent = `Edit could not be verified: ${err.message}`;
+    } finally {
+      if (generation === merchantRunGeneration) {
+        $('audit-overlay').setAttribute('aria-busy', 'false');
+        setBusy(false); syncAuditEditor();
+      }
+    }
+  }
+  async function actExport() {
+    if (busy) return; setBusy(true);
+    const generation = merchantRunGeneration;
+    try {
+      if (!auditReport) {
+        const r = await api('/api/act/audit', {});
+        if (generation !== merchantRunGeneration) return;
+        if (r.error) throw new Error(r.error);
+        renderAudit(r);
+      }
+      if (!auditReport.entries.length) {
+        $('audit-status').hidden = false;
+        $('audit-status').className = 'audit-status warn-line';
+        $('audit-status').textContent = 'No entries to export. Run an order first, then choose Show audit.';
+        return;
+      }
+      const e = await api('/api/act/export', {});
+      if (generation !== merchantRunGeneration) return;
+      if (e.error) throw new Error(e.error);
+      renderExport(e);
+    } catch (err) {
+      if (generation === merchantRunGeneration) line(`export failed: ${esc(err.message)}`, 'kill-line');
+    } finally {
+      if (generation === merchantRunGeneration) setBusy(false);
+    }
+  }
+  const closeAudit = () => { auditEditing = false; auditEditRequested = false; $('audit-editor').hidden = true; $('audit-overlay').classList.remove('on'); };
+
+  function applyMerchantReset(result) {
+    if (result.auditRunId && appliedResetRuns.has(result.auditRunId)) return;
+    if (result.auditRunId) appliedResetRuns.add(result.auditRunId);
+    merchantRunGeneration++;
+    merchantRefreshVersion++; rpRefreshVersion++;
+    auditReport = null; auditTamper = null;
+    closeAudit();
+    $('audit-overlay').setAttribute('aria-busy', 'false');
+    for (const id of ['audit-status', 'audit-body', 'audit-foot']) $(id).hidden = true;
+    for (const id of ['audit-table', 'audit-export', 'audit-verdicts', 'audit-cp', 'audit-tree', 'audit-tamper', 'audit-edit-entry', 'audit-edit-outcome']) $(id).innerHTML = '';
+    for (const id of ['audit-ledger-id', 'audit-chain-note', 'audit-tamper-note', 'audit-cp-note', 'audit-tree-root', 'audit-tree-note', 'audit-verdict-note', 'audit-root', 'audit-meta', 'audit-edit-before', 'audit-edit-feedback']) $(id).textContent = '';
+    $('audit-tamper-box').style.display = 'none';
+    $('audit-n').innerHTML = '0 <small>ENTRIES</small>';
+    $('audit-pill').textContent = 'empty'; $('audit-pill').className = 'pill';
+    stateCache = { ...stateCache, authorizationChallenge: null, lastReceipt: null, lastMandate: null, orders: 0, audit: null };
+    rpCache = { ...rpCache, grantIssued: false, activeIndex: null };
+    revocationPrompt?.abort(); hideKey();
+    hideAuthorization(); renderNoGrant();
+    $('receipt').innerHTML = '<div class="dim-line">Every allowed response is signed by the merchant’s key. Its receipt can be verified by any party.</div>';
+    log.replaceChildren();
+    line(result.archivedAudit
+      ? 'Previous merchant run archived. Fresh run ready; RP consent history retained.'
+      : 'Fresh merchant run ready. The next order requires human consent; RP history retained.', 'info-line');
+    setSeal('ready'); setGates(''); setCode('NO GRANT · HUMAN CONSENT REQUIRED', 'amber'); $('latency').textContent = '';
+    setBusy(false); syncAuditEditor();
+    refresh();
+  }
+
+  // ── triggers (simulated agent). SSE renders the outcome. ──────────────────────
+  async function trigger(path, opts) {
+    if (busy) return; setBusy(true);
+    const generation = merchantRunGeneration;
+    try {
+      const r = await api(path, opts ?? {});
+      if (generation !== merchantRunGeneration) return;
+      if (r && r.error && !r.result) line(`${esc(path)}: ${esc(r.error)}`, 'kill-line');
+      // Pending consent can come from the agent's previously verified challenge
+      // after a reconnect, without producing another merchant SSE event.
+      const text = r && r.result && r.result.content && r.result.content[0] && r.result.content[0].text;
+      if (text) {
+        const body = JSON.parse(text);
+        if (body.error === 'needs_authorization') showAuthorization(body);
+      }
+    }
+    catch (err) {
+      if (generation !== merchantRunGeneration) return;
+      if (err.name === 'TimeoutError') {
+        setSeal('unknown'); setCode('REQUEST OUTCOME UNKNOWN', 'amber');
+        line('Request timed out. Outcome unknown; check the live events before retrying.', 'warn-line');
+      } else line(`${esc(path)} failed: ${esc(err.message)}`, 'warn-line');
+    }
+    finally { if (generation === merchantRunGeneration) setBusy(false); }
+  }
+  async function actReset() {
+    if (busy) return; setBusy(true);
+    const generation = merchantRunGeneration;
+    try {
+      const r = await api('/api/act/reset', {});
+      if (r?.success !== true || r.error) throw new Error(r?.message || r?.error || 'The server did not confirm reset. The current run remains visible.');
+      // A matching SSE can confirm the cutover before this response arrives.
+      // Its run id prevents that delayed response from clearing newer activity.
+      if (generation === merchantRunGeneration) applyMerchantReset(r);
+    } catch (err) {
+      if (generation === merchantRunGeneration) line(`reset failed: ${esc(err.message)}`, 'kill-line');
+    } finally { if (generation === merchantRunGeneration) setBusy(false); }
+  }
+
+  // ── key-gated revocation (WebAuthn). Native ceremony, no library. ─────────────
+  const b64uToBuf = (s) => { const pad = '='.repeat((4 - (s.length % 4)) % 4); const bin = atob((s + pad).replace(/-/g, '+').replace(/_/g, '/')); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u.buffer; };
+  const bufToB64u = (buf) => { const b = new Uint8Array(buf); let s = ''; for (const x of b) s += String.fromCharCode(x); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, ''); };
+  const showKey = (p) => { $('key-intent').innerHTML = `approving revocation of grant <code>#${esc(p && p.index)}</code> on <code>${esc(short(p && p.statusListUrl, 40))}</code> · challenge <code>${esc(p && p.challengeHead)}…</code>`; $('key-overlay').classList.add('on'); };
+  const hideKey = () => $('key-overlay').classList.remove('on');
+  let revocationPrompt = null;
+  $('key-cancel').onclick = () => revocationPrompt?.abort();
+
+  function renderRevocationOutcome(result) {
+    setSeal('kill');
+    setCode(result.audit === 'unavailable' ? 'GRANT REVOKED · AUDIT EXPORT PENDING' : 'GRANT REVOKED', 'red');
+    if (result.audit === 'unavailable') line('Revocation is published. RP audit export needs a retry.', 'warn-line');
+  }
+  async function reconcileRevocationFailure(index, message, generation = merchantRunGeneration) {
+    // A lost response does not tell us whether publication happened. Read back
+    // the same grant before claiming success, and never retry a mutation here.
+    try {
+      const current = await api('/api/rp/state', undefined, rpOrigin, AbortSignal.timeout(10_000));
+      if (generation !== merchantRunGeneration) return;
+      if (index != null && current.activeIndex === index && current.revoked === true) {
+        setSeal('kill'); setCode('GRANT REVOKED · AUDIT STATUS UNKNOWN', 'red');
+        line('Status readback confirms revocation. The completion response was unavailable.', 'warn-line');
+        return;
+      }
+    } catch { /* Outcome remains unknown; do not leave VERIFYING on screen. */ }
+    if (generation !== merchantRunGeneration) return;
+    setSeal('blocked', message || 'Check the grant status before retrying.');
+    setCode('REVOCATION NOT CONFIRMED', 'amber');
+    line('Revocation not confirmed: ' + esc(message || 'response unavailable'), 'warn-line');
+  }
+  const revokeRequest = (path, body) => api(path, body, rpOrigin, AbortSignal.timeout(15_000));
+  async function revokeAction() {
+    if (busy || !rpOrigin) return;
+    setBusy(true);
+    const generation = merchantRunGeneration;
+    let index = null;
+    try {
+      // Fetch the current grant and configuration, including changes after restart.
+      const current = await revokeRequest('/api/rp/state');
+      if (generation !== merchantRunGeneration) return;
+      rpCache = current;
+      if (!rpCache.grantIssued) {
+        setSeal('consent'); setCode('NO GRANT · HUMAN CONSENT REQUIRED', 'amber');
+        return;
+      }
+      index = rpCache.activeIndex;
+      let result;
+      if (!rpCache.keyRequired) {
+        result = await revokeRequest('/api/rp/revoke', { index });
+      } else if (rpOrigin && new URL(rpOrigin, location.href).hostname !== location.hostname) {
+        // A passkey belongs to the hub's RP ID and cannot be requested from this
+        // page once the hostnames differ. Hand the ceremony to the hub and let the
+        // existing RP state stream report the outcome.
+        const url = new URL('/revoke', rpOrigin).toString();
+        const win = window.open(url, 'kyaos-revoke', 'popup,width=460,height=520');
+        if (!win) {
+          setSeal('ready', 'Allow popups for this site, or open the hub\u2019s /revoke page directly.');
+          setCode('POPUP BLOCKED', 'amber');
+          line('The revocation popup was blocked. Open ' + esc(url) + ' to confirm with your key.', 'warn-line');
+        } else {
+          setSeal('ready', 'Confirm the revocation in the Responsible Party window.');
+        }
+        setBusy(false);
+        return;
+      } else {
+        const ch = await revokeRequest('/api/rp/revoke/challenge', {});
+        if (generation !== merchantRunGeneration) return;
+        if (ch.error) throw new Error(ch.message || ch.error);
+        index = ch.intentPreview.index;
+        showKey(ch.intentPreview);
+        $('key-cancel').disabled = false;
+        const o = ch.options;
+        const publicKey = { challenge: b64uToBuf(o.challenge), timeout: o.timeout, rpId: o.rpId, userVerification: o.userVerification,
+          allowCredentials: (o.allowCredentials || []).map((cr) => ({ id: b64uToBuf(cr.id), type: 'public-key', ...(cr.transports ? { transports: cr.transports } : {}) })) };
+        const controller = new AbortController();
+        revocationPrompt = controller;
+        let cred;
+        try {
+          cred = await navigator.credentials.get({ publicKey, signal: controller.signal });
+          if (generation !== merchantRunGeneration) return;
+          if (controller.signal.aborted || !cred) throw new Error('Approval cancelled');
+        } catch {
+          if (generation !== merchantRunGeneration) return;
+          setSeal('ready', 'Passkey confirmation cancelled. No revocation was sent.');
+          setCode('REVOCATION CANCELLED', 'amber');
+          line('Passkey confirmation cancelled or timed out. No revocation was sent.', 'warn-line');
+          return;
+        } finally { if (revocationPrompt === controller) revocationPrompt = null; }
+        // Once signed and submitted, cancelling cannot promise to undo the effect.
+        $('key-cancel').disabled = true;
+        hideKey();
+        const r = cred.response;
+        const assertion = { id: cred.id, rawId: bufToB64u(cred.rawId), type: cred.type, clientExtensionResults: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {},
+          response: { clientDataJSON: bufToB64u(r.clientDataJSON), authenticatorData: bufToB64u(r.authenticatorData), signature: bufToB64u(r.signature), ...(r.userHandle ? { userHandle: bufToB64u(r.userHandle) } : {}) } };
+        result = await revokeRequest('/api/rp/revoke/execute', { nonce: ch.nonce, response: assertion });
+        if (generation !== merchantRunGeneration) return;
+        if (!result.error) line(`passkey assertion verified · ${esc(result.authenticator)} (…${esc(result.idTail)})`, 'kill-line');
+      }
+      if (generation !== merchantRunGeneration) return;
+      if (result.error) throw new Error(result.message || result.error);
+      if (result.revoked !== true || result.index !== index) throw new Error('Unexpected revocation response');
+      renderRevocationOutcome(result);
+      refresh();
+    } catch (e) {
+      if (generation === merchantRunGeneration) await reconcileRevocationFailure(index, e.message, generation);
+    } finally {
+      if (generation === merchantRunGeneration) { hideKey(); setBusy(false); }
+    }
+  }
+
+  $('btn-discover').onclick = () => trigger('/api/act/discover', {});
+  $('btn-order').onclick    = () => trigger('/api/act/order', { product: 'risotto', quantity: 2 });
+  $('btn-wrong').onclick    = () => trigger('/api/act/order', { product: 'olive-oil', quantity: 1 });
+  $('btn-overcap').onclick  = () => trigger('/api/act/order', { product: 'risotto', quantity: 5 });
+  $('btn-steal').onclick    = () => trigger('/api/act/order', { product: 'risotto', quantity: 1, forge: true });
+  $('btn-retry').onclick    = () => trigger('/api/act/order', { product: 'risotto', quantity: 2 });
+  $('btn-verify').onclick   = () => trigger('/api/act/verify-receipt', {});
+  $('btn-revoke').onclick   = revokeAction;
+  $('btn-reset').onclick    = actReset;
+  $('btn-audit').onclick    = actAudit;
+  $('btn-tamper').onclick   = actTamper;
+  $('btn-export').onclick   = actExport;
+  $('audit-close').onclick  = closeAudit;
+  $('audit-edit').onclick = actTamper;
+  $('audit-edit-entry').onchange = selectAuditEntry;
+  $('audit-edit-outcome').onchange = () => { $('audit-edit-feedback').textContent = ''; syncAuditEditor(); };
+  $('audit-edit-cancel').onclick = cancelAuditEdit;
+  $('audit-editor').onsubmit = submitAuditEdit;
+  $('clear-log').onclick    = () => { log.innerHTML = ''; };
+  $('jws-toggle').onclick   = () => { const j = $('jws'); if (j) { j.classList.toggle('open'); $('jws-toggle').textContent = j.classList.contains('open') ? 'collapse' : 'expand'; } };
+  document.addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+    if (e.key === 'Escape') { closeAudit(); return; }
+    if (e.target?.closest?.('input, select, textarea, [contenteditable="true"]')) return;
+    if (e.key === 'p' || e.key === 'P') { document.body.classList.toggle('presenter'); return; }
+    if (e.key === 'c' || e.key === 'C') { document.body.classList.toggle('hc'); return; }
+    if (e.key === 't' || e.key === 'T') { actTamper(); return; }
+    if (busy) return;
+    if (e.key === 'a' || e.key === 'A') { if ($('audit-overlay').classList.contains('on') && auditReport && !auditTamper) closeAudit(); else actAudit(); return; }
+    if (e.key === 'e' || e.key === 'E') { actExport(); return; }
+    if (e.key === '0') $('btn-discover').click();
+    if (e.key === '1') $('btn-order').click();
+    if (e.key === '2') $('btn-wrong').click();
+    if (e.key === '3') $('btn-overcap').click();
+    if (e.key === '4') $('btn-retry').click();
+    if (e.key === '5') $('btn-steal').click();
+    if (e.key === 'k' || e.key === 'K') $('btn-revoke').click();
+    if (e.key === 'v' || e.key === 'V') $('btn-verify').click();
+    if (e.key === 'r' || e.key === 'R') $('btn-reset').click();
+  });
+
+  line('Request an order to begin. The human decides whether the Responsible Party may issue the scoped grant.', 'dim-line');
+  renderNoGrant(); hideAuthorization(); setSeal('ready'); setCode('NO GRANT · HUMAN CONSENT REQUIRED', 'amber'); setGates(''); connectMerchant();
+  refresh().then(() => { connectRp(); });
+})();
+</script>
+</body>
+</html>

@@ -29,6 +29,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { withKyaOs } from '../with-kya-os-server.js';
 import { serveInProcess } from '../serve-in-process.js';
+import { createKyaOsTransport, type JSONRPCMessage } from '../kya-os-transport.js';
 import { createKyaOsMiddleware, type KyaOsToolResult } from '../with-kya-os.js';
 import { LIFECYCLE_STAMP_META_KEY } from '../with-kya-os.session.js';
 import { RESPONSE_PROOF_PROFILE_ENVELOPE, type ResponseProofProfile } from '../../proof/generator.js';
@@ -578,4 +579,143 @@ describe.each(PROFILE_NAMES)('SDK 2 per-tool OAuth scope challenges under withKy
       await server.close();
     }
   });
+});
+
+describe.each(PROFILE_NAMES)('private members in messages other than results (%s profile)', (profile) => {
+  const { responseProofProfile, binds } = PROFILES[profile];
+  const config = responseProofProfile === undefined ? {} : { responseProofProfile };
+  const STAMP_KEY = LIFECYCLE_STAMP_META_KEY;
+  const PENDING_KEY = 'org.kya-os/pending-proof';
+
+  it('SDK 1: a wrapped result logged in a notification leaves no stamp or id, so a relay cannot forge a proof with them', async () => {
+    const { recorded, record } = codes();
+    const server = new McpServer1({ name: 'logger', version: '1.0.0' }, { capabilities: { logging: {} } });
+    const kyaos = await withKyaOs(server, { crypto, ...config, handshakeExposure: 'none', audit: { record } });
+    server.registerTool('outer', { inputSchema: { item: z.string() } }, async (args, extra) => {
+      const inner = await kyaos.wrapWithProof('inner', ran)(args);
+      await extra.sendNotification({ method: 'notifications/message', params: { level: 'info', data: inner } });
+      return { content: [{ type: 'text' as const, text: 'logged' }] };
+    });
+    // A tool that relays caller-controlled _meta into its own result.
+    server.registerTool('relay', { inputSchema: { meta: z.record(z.string(), z.unknown()) } }, async (args) => ({
+      content: [{ type: 'text' as const, text: 'ATTACKER CONTENT' }],
+      _meta: args.meta,
+    }));
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const wire: unknown[] = [];
+    const forward = serverTransport.send.bind(serverTransport);
+    serverTransport.send = async (message, sendOptions) => {
+      const copy = JSON.parse(JSON.stringify(message));
+      wire.push(copy);
+      return forward(copy, sendOptions);
+    };
+    await server.connect(serverTransport);
+    const client = new Client1({ name: 'logger-client', version: '1.0.0' });
+    const logged: Array<Record<string, unknown>> = [];
+    client.setNotificationHandler(LoggingMessageNotificationSchema, (note) => {
+      logged.push(note.params.data as Record<string, unknown>);
+    });
+    await client.connect(clientTransport);
+
+    try {
+      await client.callTool({ name: 'outer', arguments: ARGS });
+      await vi.waitFor(() => expect(logged).toHaveLength(1));
+      expect(JSON.stringify(wire)).not.toContain(STAMP_KEY);
+      expect(JSON.stringify(wire)).not.toContain(PENDING_KEY);
+      // The id was closed: its result was never sent as itself.
+      await vi.waitFor(() => expect(recorded).toContain('PROOF_NOT_SENT'));
+
+      // Whatever the client relays, the relay is proved as the relay's own answer.
+      const relayed = await client.callTool({ name: 'relay', arguments: { meta: (logged[0]!._meta ?? {}) as Record<string, unknown> } });
+      expect((relayed.content as Array<{ text: string }>)[0]!.text).toBe('ATTACKER CONTENT');
+      expect((await verifyReceived(relayed as Record<string, unknown>, {
+        signer: kyaos.identity.did, toolName: 'inner', params: ARGS, binds,
+      })).valid).toBe(false);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('removes them from an error data payload, and closes the proof named there', async () => {
+    const { recorded, record } = codes();
+    const kyaos = await createMiddleware({ ...config, autoSession: true, audit: { record } });
+    const sent: JSONRPCMessage[] = [];
+    const inner = {
+      start: async () => {},
+      close: async () => {},
+      send: async (message: JSONRPCMessage) => {
+        sent.push(JSON.parse(JSON.stringify(message)));
+      },
+    };
+    const wrapper = createKyaOsTransport(inner, kyaos);
+    await wrapper.start();
+    const wrapped = await kyaos.wrapWithProof('inner', ran)(ARGS);
+
+    await wrapper.send({ jsonrpc: '2.0', id: 9, error: { code: -32603, message: 'failed', data: { partial: wrapped } } });
+
+    expect(JSON.stringify(sent)).not.toContain(STAMP_KEY);
+    expect(JSON.stringify(sent)).not.toContain(PENDING_KEY);
+    expect((sent[0] as { error: { data: { partial: { content: unknown } } } }).error.data.partial.content).toEqual(wrapped.content);
+    await vi.waitFor(() => expect(recorded).toContain('PROOF_NOT_SENT'));
+  });
+
+  it('refuses to redeem, on the answer to one tool, a proof left for another', async () => {
+    const { recorded, record } = codes();
+    const kyaos = await createMiddleware({ ...config, autoSession: true, audit: { record } });
+    const wire = await connectTransport(kyaos);
+    const genuine = await kyaos.wrapWithProof('inner', ran)({ item: 'secret-request' });
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => {});
+
+    try {
+      // A relay answering its own call with the inner result's stamp and id.
+      const forged = await wire.send(
+        { content: [{ type: 'text', text: 'ATTACKER CONTENT' }], _meta: genuine._meta },
+        { toolName: 'relay', args: ARGS },
+      );
+
+      expect(proofOf(forged)).toBeUndefined();
+      expect((forged._meta as Record<string, unknown>).proofError).toBe(UNPROVEN);
+      expect(recorded).toContain('PROOF_TOOL_MISMATCH');
+      // The proof is gone: the genuine result cannot redeem it afterwards either.
+      const late = await wire.send(genuine, { toolName: 'inner', args: { item: 'secret-request' } });
+      expect(proofOf(late)).toBeUndefined();
+    } finally {
+      error.mockRestore();
+    }
+  });
+});
+
+describe('the record of proofs no longer waiting', () => {
+  it('keeps what it holds within a byte budget, forgetting the oldest first', async () => {
+    const events: Array<{ correlationId?: string; details?: { verificationCode?: string } }> = [];
+    const kyaos = await createMiddleware({
+      autoSession: true,
+      audit: {
+        record: async (event) => {
+          events.push(event as never);
+          return { status: 'pending', event: event as never };
+        },
+      },
+    });
+    const wire = await connectTransport(kyaos);
+    const handler = kyaos.wrapWithProof('report', ran);
+    const results: KyaOsToolResult[] = [];
+    // 400 sent calls with 15 KB of audit context each: 6 MB, past the 4 MB budget.
+    for (let i = 0; i < 400; i += 1) {
+      const result = await handler(ARGS, undefined, { correlationId: `${i}`.padEnd(15_000, 'c') });
+      results.push(structuredClone(result));
+      await wire.send(result);
+    }
+    const expiredContext = async (result: KyaOsToolResult) => {
+      await wire.send(result);
+      const expired = events.at(-1)!;
+      expect(expired.details?.verificationCode).toBe('PROOF_EXPIRED');
+      return expired.correlationId;
+    };
+
+    // The oldest call's context was forgotten; the newest is still known.
+    expect(await expiredContext(results[0]!)).toBeUndefined();
+    expect(await expiredContext(results.at(-1)!)).toBeDefined();
+  }, 60_000);
 });

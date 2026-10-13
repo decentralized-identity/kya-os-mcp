@@ -69,9 +69,10 @@ export interface TransportHarness {
   /** Every message the far end received, as JSON it would have read off the wire. */
   sent: JSONRPCMessage[];
   /**
-   * Send `result` as the answer to a `tools/call` of `toolName` with `args`, as
-   * the MCP SDK hands a result to its transport, and return the result as it
-   * left the process.
+   * Send `result` as the answer to a `tools/call` of `toolName` with `args`
+   * (or, without a `toolName`, as an answer to no tracked call), as the MCP
+   * SDK hands a result to its transport, and return the result as it left
+   * the process.
    */
   send(
     result: KyaOsToolResult,
@@ -100,12 +101,16 @@ export async function connectTransport(kyaos: KyaOsMiddleware): Promise<Transpor
     sent,
     async send(result, call = {}) {
       id += 1;
-      inner.onmessage!({
-        jsonrpc: '2.0',
-        id,
-        method: 'tools/call',
-        params: { name: call.toolName ?? 'tool', arguments: call.args ?? {} },
-      });
+      // Without a tool name the result answers no call the transport
+      // tracked, as a task result fetched later does.
+      if (call.toolName !== undefined) {
+        inner.onmessage!({
+          jsonrpc: '2.0',
+          id,
+          method: 'tools/call',
+          params: { name: call.toolName, arguments: call.args ?? {} },
+        });
+      }
       // The SDK hands the transport a result of its own making, not the
       // handler's object.
       await wrapper.send({ jsonrpc: '2.0', id, result: structuredClone(result) });

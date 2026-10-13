@@ -32,6 +32,7 @@ import {
   attachOuterProofLayer,
   withoutOutcomeMeta,
   withoutPrivateMeta,
+  withoutPrivateMembers,
 } from "./with-kya-os.session.js";
 import { logger } from "../logging/index.js";
 
@@ -251,12 +252,27 @@ export function createKyaOsTransport(
       }
 
       // Whichever path the message took: a proof a wrapper left for the wire
-      // is made now, over the result as it is sent, and the private members
-      // never leave the process.
+      // is made now, over the result as it is sent, and only by a proof left
+      // for the tool this answers. The private members never leave the
+      // process, from a result or from any other part of a message: a
+      // notification or request's params (a tool logging a wrapped result,
+      // say) or an error's data.
       if (typeof message.result === "object" && message.result !== null) {
         const result = message.result as ToolResult;
-        const sent = layer ? await layer.send(result) : withoutPrivateMeta(result);
+        const sent = layer
+          ? await layer.send(result, call === undefined ? undefined : { toolName: call.toolName })
+          : withoutPrivateMeta(result);
         if (sent !== message.result) message = { ...message, result: sent };
+      }
+      const scrub = (value: unknown): unknown => (layer ? layer.scrub(value) : withoutPrivateMembers(value));
+      if (message.params !== undefined) {
+        const params = scrub(message.params);
+        if (params !== message.params) message = { ...message, params };
+      }
+      const error = message.error as { data?: unknown } | undefined;
+      if (error !== null && typeof error === "object" && error.data !== undefined) {
+        const data = scrub(error.data);
+        if (data !== error.data) message = { ...message, error: { ...error, data } };
       }
 
       return options === undefined ? inner.send(message) : inner.send(message, options);

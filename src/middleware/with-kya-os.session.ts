@@ -78,6 +78,9 @@ const PENDING_PROOF_TTL_MS = 5 * 60_000;
 /** The largest audit context, in UTF-16 code units of JSON, kept for a proof no longer waiting. */
 const CLOSED_PROOF_CONTEXT_LIMIT = 16 * 1024;
 
+/** Roughly how much the record of proofs no longer waiting may hold, in UTF-16 code units of JSON. */
+const CLOSED_PROOF_BYTE_BUDGET = 4 * 1024 * 1024;
+
 /** How many proofs may wait at once; past this, the oldest is closed as not sent. */
 const PENDING_PROOF_LIMIT = 10_000;
 
@@ -219,6 +222,53 @@ interface Scrubbed<T> {
   value: T;
   /** Strings inside the value, outside a `_meta`'s private members, that contain the stamp sought. */
   leaked: string[];
+  /** Pending-proof ids found in a `_meta` that carries the stamp sought, at any depth, the root's included. */
+  ids: string[];
+}
+
+/**
+ * The fast path of {@link scrubPrivateMeta}: when nothing below the root's
+ * own `_meta` names a private member or holds the stamp, which one native
+ * serialization shows, only the root's private members need removing. Returns
+ * undefined when the full walk is needed, or the value cannot be serialized.
+ */
+function scrubShallow<T>(root: T, stamp: string | undefined, keepEmptyRootMeta: boolean): Scrubbed<T> | undefined {
+  if (!isRecord(root)) return undefined;
+  let rest: string | undefined;
+  try {
+    // The root's own private members are the only ones expected; they are
+    // left out of the check, and removed below. No replacer, so the whole
+    // check runs at native speed.
+    const rootMeta = root._meta;
+    const shallow = isRecord(rootMeta)
+      ? {
+          ...root,
+          _meta: Object.fromEntries(Object.entries(rootMeta).filter(([name]) => !privateMetaKeys.includes(name))),
+        }
+      : root;
+    rest = JSON.stringify(shallow);
+  } catch {
+    return undefined;
+  }
+  if (
+    rest === undefined ||
+    rest.includes(LIFECYCLE_STAMP_META_KEY) ||
+    rest.includes(PENDING_PROOF_META_KEY) ||
+    (stamp !== undefined && rest.includes(stamp))
+  ) {
+    return undefined;
+  }
+  const rootMeta = root._meta;
+  const ids =
+    stamp !== undefined && isRecord(rootMeta) && rootMeta[LIFECYCLE_STAMP_META_KEY] === stamp &&
+    typeof rootMeta[PENDING_PROOF_META_KEY] === 'string'
+      ? [rootMeta[PENDING_PROOF_META_KEY] as string]
+      : [];
+  return {
+    value: withoutMetaKeys(root as unknown as ToolResult, privateMetaKeys, keepEmptyRootMeta) as unknown as T,
+    leaked: [],
+    ids,
+  };
 }
 
 /**
@@ -233,12 +283,15 @@ interface Scrubbed<T> {
  * item for example, is reported.
  */
 function scrubPrivateMeta<T>(root: T, stamp: string | undefined, keepEmptyRootMeta: boolean): Scrubbed<T> {
+  const fast = scrubShallow(root, stamp, keepEmptyRootMeta);
+  if (fast !== undefined) return fast;
   const leaked: string[] = [];
+  const ids: string[] = [];
   const checkString = (value: unknown): void => {
     if (stamp !== undefined && typeof value === 'string' && value.includes(stamp)) leaked.push(value);
   };
   checkString(root);
-  if (root === null || typeof root !== 'object') return { value: root, leaked };
+  if (root === null || typeof root !== 'object') return { value: root, leaked, ids };
   // The members to walk of a node: a `_meta`'s private members are skipped,
   // since they are removed, and the stamp there is the stamp itself.
   const membersOf = (node: object, key: string | undefined): Array<[string, unknown]> =>
@@ -259,6 +312,12 @@ function scrubPrivateMeta<T>(root: T, stamp: string | undefined, keepEmptyRootMe
       }
       top.expanded = true;
       inProgress.add(top.node);
+      if (
+        stamp !== undefined && top.key === '_meta' && isRecord(top.node) &&
+        top.node[LIFECYCLE_STAMP_META_KEY] === stamp && typeof top.node[PENDING_PROOF_META_KEY] === 'string'
+      ) {
+        ids.push(top.node[PENDING_PROOF_META_KEY] as string);
+      }
       for (const [name, member] of membersOf(top.node, top.key)) {
         checkString(member);
         if (member !== null && typeof member === 'object' && !done.has(member) && !inProgress.has(member)) {
@@ -296,7 +355,7 @@ function scrubPrivateMeta<T>(root: T, stamp: string | undefined, keepEmptyRootMe
     }
     done.set(node, members ?? node);
   }
-  return { value: (done.get(root as object) ?? root) as T, leaked };
+  return { value: (done.get(root as object) ?? root) as T, leaked, ids };
 }
 
 /**
@@ -305,6 +364,11 @@ function scrubPrivateMeta<T>(root: T, stamp: string | undefined, keepEmptyRootMe
  */
 export function withoutPrivateMeta<T extends ToolResult>(result: T): T {
   return scrubPrivateMeta(result, undefined, false).value;
+}
+
+/** Any value without the middleware's private `_meta` members, at any depth. */
+export function withoutPrivateMembers(value: unknown): unknown {
+  return scrubPrivateMeta(value, undefined, false).value;
 }
 
 /** What the outer layer (the withKyaOs transport) does with a middleware's results. */
@@ -322,9 +386,17 @@ export interface OuterProofLayer {
    * when a wrapper left its proof to the transport, carrying that proof, made
    * over `result` as it is now. Never throws: a proof that cannot be made is
    * reported on the result, as one that fails in a wrapper is. A pending
-   * proof is redeemed once.
+   * proof is redeemed once, and, when the result answers a `tools/call` the
+   * transport tracked, only by a proof left for that tool (`answering`).
    */
-  send(result: ToolResult): Promise<ToolResult>;
+  send(result: ToolResult, answering?: { toolName: string }): Promise<ToolResult>;
+  /**
+   * Any other part of an outgoing message (a notification's or request's
+   * `params`, an error's `data`) as it may leave the process: without the
+   * private members at any depth. A waiting proof whose id is found there
+   * is closed, so nothing can redeem it. Never throws.
+   */
+  scrub(value: unknown): unknown;
 }
 
 /**
@@ -416,7 +488,8 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
   // What a proof no longer waiting was about, by its id, so a result sent
   // after it closed can be recorded against its tool and call. Bounded:
   // the oldest are forgotten, and a large audit context is not kept.
-  const closedProofs = new Map<string, { toolName: string; context?: McpAuditContext }>();
+  const closedProofs = new Map<string, { toolName: string; context?: McpAuditContext; size: number }>();
+  let closedProofBytes = 0;
 
   const hasOwnStamp = (response: ToolResult): boolean =>
     lifecycleStamp !== undefined &&
@@ -565,10 +638,16 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     clearTimeout(entry.timer);
     const { toolName } = entry.pending;
     const context = entry.pending.kind === 'allowed' ? entry.pending.context : undefined;
-    const keepContext = context !== undefined && JSON.stringify(context).length <= CLOSED_PROOF_CONTEXT_LIMIT;
-    closedProofs.set(id, { toolName, ...(keepContext ? { context } : {}) });
-    if (closedProofs.size > PENDING_PROOF_LIMIT) {
-      closedProofs.delete(closedProofs.keys().next().value as string);
+    const contextSize = context === undefined ? 0 : JSON.stringify(context).length;
+    const keepContext = context !== undefined && contextSize <= CLOSED_PROOF_CONTEXT_LIMIT;
+    const size = toolName.length + (keepContext ? contextSize : 0);
+    closedProofs.set(id, { toolName, ...(keepContext ? { context } : {}), size });
+    closedProofBytes += size;
+    // Oldest first, as the waiting proofs are evicted.
+    while (closedProofs.size > PENDING_PROOF_LIMIT || closedProofBytes > CLOSED_PROOF_BYTE_BUDGET) {
+      const oldest = closedProofs.keys().next().value as string;
+      closedProofBytes -= closedProofs.get(oldest)!.size;
+      closedProofs.delete(oldest);
     }
     return entry.pending;
   };
@@ -586,12 +665,15 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     if (pending !== undefined) await closeTaken(pending);
   };
 
-  async function closeTaken(pending: PendingProof): Promise<void> {
+  async function closeTaken(
+    pending: PendingProof,
+    verificationCode: 'PROOF_NOT_SENT' | 'PROOF_TOOL_MISMATCH' = 'PROOF_NOT_SENT',
+  ): Promise<void> {
     if (pending.kind === 'outcome') {
       if (pending.terminalAuditDelivered) {
         await emitAudit(
           'Failed to record unsent outcome proof',
-          () => audit?.proof('rejected', { outcome: 'failed', verificationCode: 'PROOF_NOT_SENT' }),
+          () => audit?.proof('rejected', { outcome: 'failed', verificationCode }),
           pending.toolName,
         );
       }
@@ -600,7 +682,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     const { toolName, context } = pending;
     const proofAuditDelivered = await emitAudit(
       'Failed to record unsent proof',
-      () => audit?.proof('rejected', { outcome: 'failed', verificationCode: 'PROOF_NOT_SENT', context }),
+      () => audit?.proof('rejected', { outcome: 'failed', verificationCode, context }),
       toolName,
     );
     if (proofAuditDelivered) {
@@ -1330,21 +1412,43 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
    * middleware's own, never the result's. A stamped result naming no waiting
    * proof goes out unproven and says so.
    */
-  async function sendResult(result: ToolResult): Promise<ToolResult> {
+  /**
+   * Close every waiting proof other than `except` that `found` names: ids
+   * found in a nested stamped `_meta`, or inside strings that hold the stamp.
+   * Such a proof's result was not sent as itself, so nothing may redeem it.
+   */
+  const closeFoundProofs = (found: Scrubbed<unknown>, except?: unknown): void => {
+    for (const waiting of found.ids) if (waiting !== except) void closeUnsentProof(waiting);
+    if (found.leaked.length === 0) return;
+    for (const waiting of [...pendingProofs.keys()]) {
+      if (waiting !== except && found.leaked.some((text) => text.includes(waiting))) void closeUnsentProof(waiting);
+    }
+  };
+
+  function scrubOutgoing(value: unknown): unknown {
+    const found = scrubPrivateMeta(value, lifecycleStamp, false);
+    closeFoundProofs(found);
+    if (found.leaked.length > 0) {
+      logger.error("[kya-os] An outgoing message carries the middleware's private members inside a string");
+    }
+    return found.value;
+  }
+
+  async function sendResult(result: ToolResult, answering?: { toolName: string }): Promise<ToolResult> {
     const id = hasOwnStamp(result)
       ? (result._meta as Record<string, unknown>)[PENDING_PROOF_META_KEY]
       : undefined;
     // The result gets its proof members (or a proofError) in the `_meta` its
     // private members leave, at the same place among its members.
-    const { value: sent, leaked } = scrubPrivateMeta(result, lifecycleStamp, id !== undefined);
+    const found = scrubPrivateMeta(result, lifecycleStamp, id !== undefined);
+    const { value: sent, leaked } = found;
+    // A wrapped result nested in this one was not sent as itself.
+    closeFoundProofs(found, id);
     if (leaked.length > 0) {
       // The stamp is inside a string, a wrapped result serialized into a
       // text item say, where it cannot be removed. Every waiting proof whose
-      // id is there with it is closed, so nothing can redeem it, and this
-      // result is not signed.
-      for (const waiting of [...pendingProofs.keys()]) {
-        if (waiting !== id && leaked.some((text) => text.includes(waiting))) void closeUnsentProof(waiting);
-      }
+      // id is there with it is closed above, so nothing can redeem it, and
+      // this result is not signed.
       logger.error("[kya-os] A result carries the middleware's private members inside a string; it is sent unproven");
       const own = typeof id === 'string' ? takePendingProof(id) : undefined;
       if (own !== undefined) return unprovenAtSend(sent, own, 'PRIVATE_MEMBER_IN_RESULT');
@@ -1352,6 +1456,16 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     }
     if (id === undefined) return sent;
     const pending = typeof id === 'string' ? takePendingProof(id) : undefined;
+    if (pending !== undefined && answering !== undefined && pending.toolName !== answering.toolName) {
+      // A proof left for one tool, named by the answer to a call of another:
+      // a copied stamp and id. The proof is closed unmade, and the answer is
+      // sent unproven.
+      logger.error("[kya-os] A result names a proof left for another tool; it is sent unproven", {
+        tool: answering.toolName,
+      });
+      await closeTaken(pending, 'PROOF_TOOL_MISMATCH');
+      return markUnproven(sent);
+    }
     if (pending === undefined) {
       // The proof this result named is no longer waiting: its window passed,
       // it was evicted, or it was already sent (a task result fetched again).
@@ -1398,7 +1512,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
         if (openTransports === 0) closeAllUnsentProofs();
       };
     };
-    return { open, owns: hasOwnStamp, send: sendResult };
+    return { open, owns: hasOwnStamp, send: sendResult, scrub: scrubOutgoing };
   });
 
   return { handleHandshake, ensureSession, wrapWithProof, attachOutcomeProof, requireProofLayer };

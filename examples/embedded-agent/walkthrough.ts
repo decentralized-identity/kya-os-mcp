@@ -35,6 +35,7 @@ import {
   type Proof,
   type VCSigningFunction,
 } from '@kya-os/mcp';
+import { serveTool } from '../_shared/serve-tool.js';
 
 const SCOPE = 'cart:write';
 const TOOL = 'checkout';
@@ -171,7 +172,9 @@ function createServer(server: Identity, grantStore: MemoryGrantStore): {
     })),
   );
 
-  return { checkout: checkout as (args: Record<string, unknown>) => Promise<ToolResult> };
+  // Called in process, as an MCP server's transport would answer it: the
+  // proof is made where the KYA-OS transport sends the result.
+  return { checkout: serveTool<ToolResult>(middleware, TOOL, checkout) };
 }
 
 /** Approve once: mint the delegation VC and bind an agent-anchored grant. */

@@ -60,6 +60,10 @@ export * from "./with-kya-os.types.js";
  * - You need custom request handler patterns
  * - You want per-tool control over proof/delegation wrapping
  *
+ * Connect such a server through `createKyaOsTransport`: proofs are made where
+ * that transport sends a result, and the wrappers refuse to run while no
+ * KYA-OS transport is open.
+ *
  * @param config - Agent identity and session configuration
  * @param cryptoProvider - Platform-specific crypto implementation
  * @returns Middleware components for session management and proof generation

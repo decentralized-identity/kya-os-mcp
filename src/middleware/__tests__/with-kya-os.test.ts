@@ -23,6 +23,7 @@ import {
 import { AuditLogProvider, MemoryAuditLogProvider } from '../../providers/audit-log.js';
 import { cheqdResolver } from '../../integrations/cheqd/index.js';
 import { KYA_OS_PROOF_META_KEY, LEGACY_PROOF_META_KEY } from '../../proof/index.js';
+import { served } from './helpers/received-proof.js';
 
 async function createTestMiddleware(options?: {
   autoSession?: boolean;
@@ -36,7 +37,8 @@ async function createTestMiddleware(options?: {
   const did = generateDidKeyFromBase64(keyPair.publicKey);
   const kid = `${did}#${did.replace('did:key:', '')}`;
 
-  const middleware = createKyaOsMiddleware(
+  // Served as a server runs it: every proof is made at the transport.
+  const middleware = await served(createKyaOsMiddleware(
     {
       identity: { did, kid, privateKey: keyPair.privateKey, publicKey: keyPair.publicKey },
       session: { sessionTtlMinutes: 60 },
@@ -49,7 +51,7 @@ async function createTestMiddleware(options?: {
         : {}),
     },
     crypto,
-  );
+  ));
 
   return { middleware, did, crypto };
 }

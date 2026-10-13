@@ -101,15 +101,16 @@ afterEach(() => {
 });
 
 describe('proof output stays byte-identical', () => {
+  // The transport makes every proof, over the result it sends. With no MCP
+  // SDK between the handler and the transport, that is the result the handler
+  // returned, so the output is still the 1.18.0 one.
   it('default needs_authorization challenge, body profile', async () => {
     const { kyaos, sessionId } = await setup();
+    const wire = await connectTransport(kyaos);
     const result = await kyaos.wrapWithDelegation('checkout', CONSENT, ran)({ item: 'x' }, sessionId);
-    expectGolden('challengeBody', result);
+    expectGolden('challengeBody', await wire.send(result));
   });
 
-  // Under the envelope profile the transport makes the proof, over the result
-  // it sends. With no MCP SDK between the handler and the transport, that is
-  // the result the handler returned, so the output is still the 1.18.0 one.
   it('default needs_authorization challenge, envelope profile', async () => {
     const { kyaos, sessionId } = await setup(RESPONSE_PROOF_PROFILE_ENVELOPE);
     const wire = await connectTransport(kyaos);
@@ -119,33 +120,37 @@ describe('proof output stays byte-identical', () => {
 
   it('delegation gate denial of a malformed delegation', async () => {
     const { kyaos, sessionId } = await setup();
+    const wire = await connectTransport(kyaos);
     const result = await kyaos.wrapWithDelegation('checkout', CONSENT, ran)(
       { item: 'x', _kyaos_delegation: { bogus: true } },
       sessionId,
     );
-    expectGolden('delegationDenied', result);
+    expectGolden('delegationDenied', await wire.send(result));
   });
 
   it('policy gate denial', async () => {
     const { kyaos, sessionId } = await setup();
+    const wire = await connectTransport(kyaos);
     const result = await kyaos.withPolicyGate!('wipe', ran, {
       engine: engine({ decision: 'deny', reason: 'blocked' }),
     })({ id: 1 }, sessionId);
-    expectGolden('policyDenied', result);
+    expectGolden('policyDenied', await wire.send(result));
   });
 
   it('policy gate step-up', async () => {
     const { kyaos, sessionId } = await setup();
+    const wire = await connectTransport(kyaos);
     const result = await kyaos.withPolicyGate!('wipe', ran, {
       engine: engine({ decision: 'step_up', quorum: { n: 1, approvers: [] }, reason: 'destructive' }),
     })({ id: 1 }, sessionId);
-    expectGolden('policyStepUp', result);
+    expectGolden('policyStepUp', await wire.send(result));
   });
 
   it('success proof, body profile', async () => {
     const { kyaos, sessionId } = await setup();
+    const wire = await connectTransport(kyaos);
     const result = await kyaos.wrapWithProof('greet', ran)({ name: 'DIF' }, sessionId);
-    expectGolden('successBody', result);
+    expectGolden('successBody', await wire.send(result));
   });
 
   it('success proof, envelope profile', async () => {

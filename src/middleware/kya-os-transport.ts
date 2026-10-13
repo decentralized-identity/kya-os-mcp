@@ -13,13 +13,13 @@
  *   1. Incoming `tools/call` requests are captured (by id) to record tool
  *      name and arguments for proof generation.
  *   2. Outgoing responses for those ids get a proof injected into `_meta`,
- *      unless the middleware's own wrappers already proved or audited the
- *      result, which they mark with a private per-middleware stamp.
- *   3. Under the envelope response-proof profile the wrappers leave their
- *      proofs here, and every proof is made in `send()`, over the result as
- *      the MCP SDK finished it: the SDK sets members after the handler
- *      returns (`resultType` on the 2026-07-28 revision), and the envelope
- *      profile covers them.
+ *      unless the middleware's own wrappers produced the result, which they
+ *      mark with a private per-middleware stamp.
+ *   3. The wrappers leave their proofs here, and every proof is made in
+ *      `send()`, over the result as the MCP SDK finished it: the SDK changes
+ *      a result after the handler returns (`resultType` on the 2026-07-28
+ *      revision, a filled-in or appended `content`), and the proof covers
+ *      what it covers of the result the client receives.
  *   4. All other message types pass through unmodified, except that the
  *      middleware's private members are removed from every result before it
  *      is sent.
@@ -35,14 +35,18 @@ import {
 } from "./with-kya-os.session.js";
 import { logger } from "../logging/index.js";
 
-/** Minimal Transport interface — matches @modelcontextprotocol/sdk Transport */
+/**
+ * Minimal Transport interface — matches @modelcontextprotocol/sdk Transport.
+ * The callbacks are declared as methods, so an SDK transport, whose callbacks
+ * take the SDK's own message type, is accepted as it is (SDK 1 and SDK 2).
+ */
 export interface Transport {
   start(): Promise<void>;
   send(message: JSONRPCMessage): Promise<void>;
   close(): Promise<void>;
-  onmessage?: (message: JSONRPCMessage) => void;
-  onclose?: () => void;
-  onerror?: (error: Error) => void;
+  onmessage?(message: JSONRPCMessage): void;
+  onclose?(): void;
+  onerror?(error: Error): void;
 }
 
 export type JSONRPCMessage = Record<string, unknown>;
@@ -60,9 +64,10 @@ type ToolResult = {
 
 /**
  * Creates a transport wrapper that injects KYA-OS proofs into `tools/call`
- * responses. Under the envelope response-proof profile it also makes the
- * proofs the middleware's wrappers and `proveOutcome` leave to it, over each
- * result as it is sent.
+ * responses, and makes the proofs the middleware's wrappers and
+ * `proveOutcome` leave to it, over each result as it is sent. A server on the
+ * low-level `Server` API connects through it:
+ * `server.connect(createKyaOsTransport(transport, kyaos))`.
  *
  * @param inner   - The real transport (Stdio, HTTP, etc.)
  * @param kyaos    - Configured KyaOsMiddleware instance
@@ -81,7 +86,7 @@ export function createKyaOsTransport(
   // results are all proved here.
   const layer = attachOuterProofLayer(kyaos.wrapWithProof);
   // While started and not closed, this transport counts as open for the
-  // middleware; under the envelope profile its wrappers run only then.
+  // middleware; its wrappers run only then.
   let release: (() => void) | undefined;
   let closeHandler: (() => void) | undefined;
   const closed = (): void => {

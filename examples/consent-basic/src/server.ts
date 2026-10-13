@@ -32,7 +32,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { createKyaOsMiddleware, NodeCryptoProvider, generateDidKeyFromBase64, type KyaOsMiddleware } from '@kya-os/mcp';
+import { createKyaOsMiddleware, createKyaOsTransport, NodeCryptoProvider, generateDidKeyFromBase64, type KyaOsMiddleware } from '@kya-os/mcp';
 import { startConsentServer } from './consent-server.js';
 import { createDelegationIssuerFromIdentity } from './delegation-issuer.js';
 
@@ -299,7 +299,7 @@ async function startHttpServer(kyaos: KyaOsMiddleware, consentUrl: string, port:
     if (url.pathname === '/sse' && req.method === 'GET') {
       const server = createConsentMcpServer(kyaos, { consentUrl, delegationStore });
       sseTransport = new SSEServerTransport('/messages', res);
-      await server.connect(sseTransport);
+      await server.connect(createKyaOsTransport(sseTransport, kyaos));
       process.stderr.write('[server] SSE client connected\n');
       return;
     }
@@ -322,7 +322,7 @@ async function startHttpServer(kyaos: KyaOsMiddleware, consentUrl: string, port:
         enableJsonResponse: true,
       });
       res.on('close', () => transport.close());
-      await server.connect(transport);
+      await server.connect(createKyaOsTransport(transport, kyaos));
       await transport.handleRequest(req, res);
       return;
     }
@@ -385,7 +385,7 @@ if (isMain) {
     if (transport === 'stdio') {
       process.stderr.write(`[server] Agent DID: ${kyaos.identity.did}\n`);
       const server = createConsentMcpServer(kyaos, { consentUrl, delegationStore });
-      await server.connect(new StdioServerTransport());
+      await server.connect(createKyaOsTransport(new StdioServerTransport(), kyaos));
       process.stderr.write('[server] MCP server running on stdio\n');
     } else {
       await startHttpServer(kyaos, consentUrl, port, delegationStore);

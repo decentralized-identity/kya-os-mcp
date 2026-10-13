@@ -38,6 +38,37 @@ describe("generateIdentity", () => {
   });
 });
 
+/**
+ * Connect a transport through the `connect()` withKyaOs patched, as a server
+ * does, and return a function that sends a tool result through the wrapped
+ * transport the original `connect()` received, giving back what the client
+ * would receive. Proofs are made there. `originalConnect` is the server's
+ * `connect` mock from before withKyaOs ran.
+ */
+async function connectThroughPatchedConnect(
+  server: { connect: (transport: never) => Promise<unknown> },
+  originalConnect: ReturnType<typeof vi.fn>,
+): Promise<(toolName: string, result: Record<string, unknown>) => Promise<Record<string, unknown>>> {
+  const sent: Array<Record<string, unknown>> = [];
+  const transport = {
+    start: vi.fn().mockResolvedValue(undefined),
+    send: vi.fn(async (message: Record<string, unknown>) => {
+      sent.push(message);
+    }),
+    close: vi.fn().mockResolvedValue(undefined),
+    onmessage: undefined as ((message: Record<string, unknown>) => void) | undefined,
+  };
+  await server.connect(transport as never);
+  const connected = originalConnect.mock.calls.at(-1)![0] as typeof transport;
+  await connected.start();
+  return async (toolName, result) => {
+    const id = sent.length + 1;
+    transport.onmessage!({ jsonrpc: "2.0", id, method: "tools/call", params: { name: toolName, arguments: {} } });
+    await connected.send({ jsonrpc: "2.0", id, result });
+    return sent.at(-1)!.result as Record<string, unknown>;
+  };
+}
+
 describe("withKyaOs", () => {
   it("should register _kyaos tool on server by default", async () => {
     const registerTool = vi.fn();
@@ -210,6 +241,7 @@ describe("withKyaOs", () => {
       connect: vi.fn().mockResolvedValue(undefined),
       registerTool: vi.fn(),
     };
+    const originalConnect = server.connect;
     const identity = await generateIdentity(crypto);
 
     const kyaos = await withKyaOs(server, {
@@ -217,6 +249,7 @@ describe("withKyaOs", () => {
       identity,
       emitLegacyProofKey: false,
     });
+    const send = await connectThroughPatchedConnect(server, originalConnect);
 
     const hs = await kyaos.handleHandshake({
       nonce: "test-nonce",
@@ -228,7 +261,7 @@ describe("withKyaOs", () => {
     const handler = kyaos.wrapWithProof("greet", async (args) => ({
       content: [{ type: "text", text: `Hello, ${args["name"]}!` }],
     }));
-    const result = await handler({ name: "DIF" }, sessionId);
+    const result = await send("greet", await handler({ name: "DIF" }, sessionId));
 
     // Proof is emitted under the namespaced key, but NOT the legacy bare key,
     // because emitLegacyProofKey: false was threaded through withKyaOs.
@@ -281,28 +314,13 @@ describe("withKyaOs", () => {
         crypto,
         responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE,
       });
-      // The envelope profile proves results where the connected transport
-      // sends them.
-      const sent: Array<Record<string, unknown>> = [];
-      const transport = {
-        start: vi.fn().mockResolvedValue(undefined),
-        send: vi.fn(async (message: Record<string, unknown>) => {
-          sent.push(message);
-        }),
-        close: vi.fn().mockResolvedValue(undefined),
-        onmessage: undefined as ((message: Record<string, unknown>) => void) | undefined,
-      };
-      await server.connect(transport);
-      const connected = originalConnect.mock.calls[0]![0] as typeof transport;
-      await connected.start();
+      const send = await connectThroughPatchedConnect(server, originalConnect);
 
-      const result = await kyaos.wrapWithProof("greet", async () => ({
+      const result = await send("greet", await kyaos.wrapWithProof("greet", async () => ({
         content: [{ type: "text", text: "Hello!" }],
-      }))({});
-      transport.onmessage!({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "greet", arguments: {} } });
-      await connected.send({ jsonrpc: "2.0", id: 1, result });
+      }))({}));
 
-      const meta = (sent[0]!.result as { _meta: Record<string, { meta: { prf?: string } }> })._meta;
+      const meta = result._meta as Record<string, { meta: { prf?: string } }>;
       expect(meta[KYA_OS_PROOF_META_KEY]!.meta.prf).toBe(RESPONSE_PROOF_PROFILE_ENVELOPE);
     });
   });

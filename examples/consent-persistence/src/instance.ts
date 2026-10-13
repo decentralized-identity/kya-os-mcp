@@ -17,8 +17,10 @@ import {
   generateRequestProof,
   type KyaOsMiddleware,
   type KyaOsToolHandler,
+  type KyaOsToolResult,
   type DetachedProof,
 } from '@kya-os/mcp';
+import { serveTool } from '../../_shared/serve-tool.js';
 import { FileGrantStore } from './file-grant-store.js';
 import { FilePendingFlowStore } from './file-pending-flow-store.js';
 
@@ -134,6 +136,16 @@ export function createInstance(opts: {
   );
 
   return { label: opts.label, middleware, checkout };
+}
+
+/**
+ * `instance.checkout` answering as the MCP server would, for the scenario
+ * scripts that call it in process: the result goes through a KYA-OS
+ * transport, where its proof is made (see examples/_shared/serve-tool.ts).
+ * The MCP server in ./server.ts wraps its transport instead.
+ */
+export function servedCheckout(instance: Instance): (args: Record<string, unknown>) => Promise<KyaOsToolResult> {
+  return serveTool(instance.middleware, TOOL, instance.checkout);
 }
 
 /**

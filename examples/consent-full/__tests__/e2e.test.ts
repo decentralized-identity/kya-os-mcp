@@ -13,6 +13,7 @@ import { createKyaOsMiddleware, NodeCryptoProvider, generateDidKeyFromBase64, KY
 import { startConsentServer, type ConsentServer } from '../src/consent-server.js';
 import { createDelegationIssuerFromIdentity } from '../src/delegation-issuer.js';
 import type { ToolResult } from '../src/server.js';
+import { serveTool } from '../../_shared/serve-tool.js';
 
 const crypto = new NodeCryptoProvider();
 
@@ -43,11 +44,11 @@ describe('E2E: consent -> delegation -> execution', () => {
     });
     consentServer = await startConsentServer({ port: 0, factory });
 
-    browseHandler = kyaos.wrapWithProof('browse', async (args) => ({
+    browseHandler = serveTool(kyaos, 'browse', kyaos.wrapWithProof('browse', async (args) => ({
       content: [{ type: 'text', text: `Browsing: ${args['category'] ?? 'all'}` }],
-    })) as typeof browseHandler;
+    }))) as typeof browseHandler;
 
-    checkoutHandler = kyaos.wrapWithDelegation(
+    checkoutHandler = serveTool(kyaos, 'checkout', kyaos.wrapWithDelegation(
       'checkout',
       {
         scopeId: 'cart:write',
@@ -56,7 +57,7 @@ describe('E2E: consent -> delegation -> execution', () => {
       kyaos.wrapWithProof('checkout', async (args) => ({
         content: [{ type: 'text', text: `Order confirmed: ${args['item']}` }],
       })),
-    ) as typeof checkoutHandler;
+    )) as typeof checkoutHandler;
   });
 
   afterAll(async () => {

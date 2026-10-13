@@ -5,9 +5,9 @@
  * `responseHash` over the content array). Opting into the envelope profile makes every emitted
  * proof carry the signature-covered `prf` discriminator and bind the FULL
  * result envelope (minus top-level `_meta`), closing the body-profile blind spot where
- * `structuredContent` / `isError` / `resultType` were unauthenticated. Envelope-profile
- * proofs are made by the withKyaOs transport over the result it sends, so those tests
- * connect one first and read what it sent.
+ * `structuredContent` / `isError` / `resultType` were unauthenticated. Proofs are made
+ * by the withKyaOs transport over the result it sends, so the middleware is served
+ * behind one and each result is what the client receives.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -21,7 +21,7 @@ import {
   RESPONSE_PROOF_PROFILE_ENVELOPE,
 } from '../../proof/index.js';
 import type { DetachedProof, ResponseProofProfile } from '../../types/protocol.js';
-import { connectTransport } from './helpers/received-proof.js';
+import { served } from './helpers/received-proof.js';
 
 async function createTestMiddleware(options?: {
   responseProofProfile?: ResponseProofProfile;
@@ -32,7 +32,7 @@ async function createTestMiddleware(options?: {
   const did = generateDidKeyFromBase64(keyPair.publicKey);
   const kid = `${did}#${did.replace('did:key:', '')}`;
 
-  const middleware = createKyaOsMiddleware(
+  const middleware = await served(createKyaOsMiddleware(
     {
       identity: { did, kid, privateKey: keyPair.privateKey, publicKey: keyPair.publicKey },
       session: { sessionTtlMinutes: 60 },
@@ -44,7 +44,7 @@ async function createTestMiddleware(options?: {
         : {}),
     },
     crypto,
-  );
+  ));
 
   return { middleware, did, crypto };
 }
@@ -58,8 +58,8 @@ async function handshake(middleware: Awaited<ReturnType<typeof createTestMiddlew
   return JSON.parse(hs.content[0]!.text).sessionId as string;
 }
 
-function proofOf(result: { _meta?: unknown }): DetachedProof {
-  return (result._meta as Record<string, unknown>)[KYA_OS_PROOF_META_KEY] as DetachedProof;
+function proofOf(result: object): DetachedProof {
+  return ((result as { _meta?: unknown })._meta as Record<string, unknown>)[KYA_OS_PROOF_META_KEY] as DetachedProof;
 }
 
 async function sha256Of(crypto: NodeCryptoProvider, value: unknown): Promise<string> {
@@ -92,10 +92,9 @@ describe('responseProofProfile — wrapWithProof', () => {
       responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE,
     });
     const sessionId = await handshake(middleware, did);
-    const wire = await connectTransport(middleware);
 
     const handler = middleware.wrapWithProof('rich', async () => ({ ...RICH_RESULT }));
-    const result = await wire.send(await handler({ q: 1 }, sessionId), { toolName: 'rich', args: { q: 1 } });
+    const result = await handler({ q: 1 }, sessionId);
 
     const proof = proofOf(result);
     expect(proof.meta.prf).toBe(RESPONSE_PROOF_PROFILE_ENVELOPE);
@@ -113,10 +112,9 @@ describe('responseProofProfile — wrapWithProof', () => {
       responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE,
     });
     const sessionId = await handshake(middleware, did);
-    const wire = await connectTransport(middleware);
 
     const handler = middleware.wrapWithProof('rich', async () => ({ ...RICH_RESULT }));
-    const result = await wire.send(await handler({ q: 1 }, sessionId), { toolName: 'rich', args: { q: 1 } });
+    const result = await handler({ q: 1 }, sessionId);
     const proof = proofOf(result);
 
     // A client passes the result AS RECEIVED (proof still in _meta) — the
@@ -141,14 +139,13 @@ describe('responseProofProfile — needs_authorization challenge', () => {
       responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE,
     });
     const sessionId = await handshake(middleware, did);
-    const wire = await connectTransport(middleware);
 
     const handler = middleware.wrapWithDelegation(
       'my-tool',
       { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
       async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
     );
-    const result = await wire.send(await handler({ name: 'world' }, sessionId), { toolName: 'my-tool' });
+    const result = await handler({ name: 'world' }, sessionId);
 
     const parsed = JSON.parse((result.content as Array<{ text: string }>)[0]!.text);
     expect(parsed.error).toBe('needs_authorization');
@@ -181,7 +178,6 @@ describe('responseProofProfile — needs_authorization challenge', () => {
       responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE,
     });
     const sessionId = await handshake(middleware, did);
-    const wire = await connectTransport(middleware);
 
     const handler = middleware.wrapWithDelegation(
       'my-tool',
@@ -189,10 +185,7 @@ describe('responseProofProfile — needs_authorization challenge', () => {
       async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
     );
     // A malformed delegation arg produces a denied outcome (no challenge body).
-    const result = await wire.send(
-      await handler({ _kyaos_delegation: { not: 'a-credential' } }, sessionId),
-      { toolName: 'my-tool' },
-    );
+    const result = await handler({ _kyaos_delegation: { not: 'a-credential' } }, sessionId);
 
     const proof = proofOf(result);
     expect(proof.meta.outcome).toBe('denied');
@@ -219,14 +212,13 @@ describe('responseProofProfile — needs_authorization challenge', () => {
       },
     });
     const sessionId = await handshake(middleware, did);
-    const wire = await connectTransport(middleware);
 
     const handler = middleware.wrapWithDelegation(
       'my-tool',
       { scopeId: 'test:scope', consentUrl: 'https://example.com/consent' },
       async () => ({ content: [{ type: 'text', text: 'should not reach' }] }),
     );
-    const result = await wire.send(await handler({ name: 'world' }, sessionId), { toolName: 'my-tool' });
+    const result = await handler({ name: 'world' }, sessionId);
 
     // Degraded marking happened (isError flipped on)...
     expect(result.isError).toBe(true);

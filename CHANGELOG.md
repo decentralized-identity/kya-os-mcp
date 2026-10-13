@@ -24,6 +24,12 @@ Versioning: https://semver.org/spec/v2.0.0.html
   builders.kya-os.org, signed by an independent implementation. Without
   `verifyStatusList` the checker behaves as before. The option becomes
   required in 2.0, and SPEC.md §6.10 states the requirement.
+- **`createKyaOsTransport` is exported from `@kya-os/mcp`,** next to
+  `createKyaOsMiddleware`, for servers on the low-level `Server` API, which
+  now connect through it (see BREAKING below). It was only on
+  `@kya-os/mcp/middleware`. Its `Transport` type declares the callbacks as
+  methods, so an SDK 1 or SDK 2 transport is accepted, and the wrapper
+  connects to either SDK's server, without a cast.
 
 ### Changed
 
@@ -57,27 +63,44 @@ Versioning: https://semver.org/spec/v2.0.0.html
     events were recorded in the handler, records `proof.rejected` with
     `PROOF_NOT_SENT`. At most 10,000 proofs wait at once, and past that the
     oldest is closed the same way.
-  - The body profile, the default, is unchanged: it covers `content`, it
-    still signs in the handler, and its output is byte-identical to 1.19.0.
+- **Body-profile proofs are made at the transport too, so neither profile
+  signs in the handler.** The MCP SDK also changes `content` after the
+  handler returns. SDK 2, on both revisions, appends a text item when
+  `structuredContent` is not an object and `content` has none. Both SDKs fill
+  in `content: []` when a handler leaves it out. A body-profile proof made in
+  the handler did not cover the appended item, so it failed verification, and
+  over a missing `content` it could not be made at all. The body profile now
+  takes the same path as the envelope profile above: the claims stay in the
+  middleware, and the transport makes the proof in `send()` over the result as
+  sent, with the same claims, `_meta` keys and audit events, recorded in the
+  same order. A result the SDK never sends is closed with `PROOF_NOT_SENT`.
+  Where the SDK does not reshape the result, the output is byte-identical to
+  1.19.0. An outcome proof that fails now also says so in `_meta.proofError`,
+  as an allowed call's already did.
 
-### Changed — BREAKING for the envelope profile without an open KYA-OS transport
+### Changed — BREAKING without an open KYA-OS transport
 
-- **BREAKING: under the envelope profile, the wrappers and `proveOutcome`
-  refuse to run while no KYA-OS transport is open for the middleware.** Once
+- **BREAKING: under either profile, the wrappers and `proveOutcome` refuse to
+  run while no KYA-OS transport is open for the middleware.** Once
   a KYA-OS transport has been created for a middleware, every wrapper result
   must go out through one. A transport counts as open from `start()` until it
   closes, by `close()` or by its own `onclose`. With none open,
   `wrapWithProof`, `wrapWithDelegation`, `withPolicyGate` and `proveOutcome`
   throw on entry, before they record or run anything, with an error that
   names `withKyaOs` and `createKyaOsTransport`. Before, they signed a proof in
-  the handler, and on 2026-07-28 it did not verify. This affects:
+  the handler, which on 2026-07-28 (envelope) or after an SDK reshaped
+  `content` (body) did not verify. This affects:
   - `createKyaOsMiddleware` with handlers registered directly on a server
-    whose transport is not wrapped with `createKyaOsTransport`;
+    whose transport is not wrapped with `createKyaOsTransport`, including the
+    low-level `Server` pattern this repository's examples used: connect with
+    `server.connect(createKyaOsTransport(transport, kyaos))`;
+  - code that calls a wrapped handler directly, outside an MCP server (a
+    script or a test): send its result through a KYA-OS transport;
   - `withKyaOs` with `proofAllTools: false`, which wraps no transport;
   - `withKyaOs` called after `connect()`, whose transport is not wrapped;
   - code that reads the proof inside the handler: the result `proveOutcome`
-    or a wrapper returns no longer carries one under the envelope profile.
-    Return it from the handler; the transport adds the proof.
+    or a wrapper returns no longer carries one, under either profile. Return
+    it from the handler; the transport adds the proof.
 
 ## [1.19.0] - 2026-10-09
 

@@ -16,6 +16,7 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { createKyaOsMiddleware } from '../../middleware/with-kya-os.js';
+import { createKyaOsTransport } from '../../middleware/kya-os-transport.js';
 import { NodeCryptoProvider } from '../utils/node-crypto-provider.js';
 import { generateDidKeyFromBase64 } from '../../utils/did-helpers.js';
 import { DelegationCredentialIssuer } from '../../delegation/vc-issuer.js';
@@ -123,7 +124,8 @@ async function setupMcpPair(options?: { autoSession?: boolean }) {
   );
 
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  await server.connect(serverTransport);
+  // The low-level Server path wraps its transport itself; the proofs are made there.
+  await server.connect(createKyaOsTransport(serverTransport, kyaos));
   await client.connect(clientTransport);
 
   return { client, server, did, kid, keyPair, crypto };

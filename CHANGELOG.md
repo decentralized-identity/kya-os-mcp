@@ -52,17 +52,24 @@ Versioning: https://semver.org/spec/v2.0.0.html
     which takes its audience from it. A result naming no waiting proof, or
     one whose session is gone by then, goes out without a proof and with
     `_meta.proofError`, as does an outcome whose proof fails at send.
+  - A waiting proof holds the request's hash, computed when the call was
+    recorded, never the arguments, so a waiting proof is small however large
+    they were, and later changes to the arguments cannot reach what is
+    signed. Arguments that cannot be hashed fail the proof in the handler
+    (`proofError`, `proof.rejected` with `PROOF_GENERATION_FAILED`).
   - The claims, `_meta` keys and audit events are the ones the handler-side
     proof had. For a result that is sent, the audit events are recorded in
     the same order as before: an allowed call's `tool.call.started` in the
-    handler, then `proof.generated` and `tool.call.completed` at send. A
-    result the SDK never sends (a cancelled call, or an SDK 1 result replaced
-    after an `outputSchema` check) is closed five minutes after the handler
-    returned: an allowed call records `proof.rejected` with the new code
-    `PROOF_NOT_SENT`, then `tool.call.completed`; an outcome, whose terminal
-    events were recorded in the handler, records `proof.rejected` with
-    `PROOF_NOT_SENT`. At most 10,000 proofs wait at once, and past that the
-    oldest is closed the same way.
+    handler, then `proof.generated` and `tool.call.completed` at send.
+  - A result the SDK never sends (a cancelled call, or an SDK 1 result
+    replaced after an `outputSchema` check) is closed in the audit trail with
+    `proof.rejected` under the new code `PROOF_NOT_SENT`. An allowed call
+    then records `tool.call.failed` with the reason `RESULT_NOT_SENT`, never
+    `tool.call.completed`, since its client did not get the result. An
+    outcome's terminal events were recorded in the handler. This happens five
+    minutes after the handler returned; when the last KYA-OS transport for
+    the middleware closes; or, oldest first, when 10,000 proofs are waiting
+    or they hold about 16 MB of audit context.
 - **Body-profile proofs are made at the transport too, so neither profile
   signs in the handler.** The MCP SDK also changes `content` after the
   handler returns. SDK 2, on both revisions, appends a text item when
@@ -71,12 +78,12 @@ Versioning: https://semver.org/spec/v2.0.0.html
   the handler did not cover the appended item, so it failed verification, and
   over a missing `content` it could not be made at all. The body profile now
   takes the same path as the envelope profile above: the claims stay in the
-  middleware, and the transport makes the proof in `send()` over the result as
-  sent, with the same claims, `_meta` keys and audit events, recorded in the
-  same order. A result the SDK never sends is closed with `PROOF_NOT_SENT`.
-  Where the SDK does not reshape the result, the output is byte-identical to
-  1.19.0. An outcome proof that fails now also says so in `_meta.proofError`,
-  as an allowed call's already did.
+  middleware by request hash, and the transport makes the proof in `send()`
+  over the result as sent, with the same claims, `_meta` keys and audit
+  events, recorded in the same order. A result the SDK never sends is closed
+  as above. Where the SDK does not reshape the result, the output is
+  byte-identical to 1.19.0. An outcome proof that fails now also says so in
+  `_meta.proofError`, as an allowed call's already did.
 
 ### Changed — BREAKING without an open KYA-OS transport
 

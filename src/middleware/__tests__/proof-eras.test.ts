@@ -12,6 +12,11 @@
  * the raw JSON-RPC result as the client read it off the wire: on SDK 2 at both
  * revisions, and on SDK 1 at 2025-11-25.
  */
+import { randomUUID } from 'node:crypto';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import v8 from 'node:v8';
+import { runInNewContext } from 'node:vm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { McpServer as McpServer2, createMcpHandler } from '@modelcontextprotocol/server';
@@ -19,6 +24,8 @@ import { Client as Client2, StreamableHTTPClientTransport } from '@modelcontextp
 import { McpServer as McpServer1 } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Client as Client1 } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { StreamableHTTPClientTransport as StreamableHTTPClientTransport1 } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { generateIdentity, withKyaOs } from '../with-kya-os-server.js';
 import { toMcpToolCallback, type McpToolCallback } from '../mcp-tool-callback.js';
 import type {
@@ -613,14 +620,16 @@ describe.each(PROFILE_NAMES)('the claims of a proof left to the transport (%s pr
   });
 
   it('close a proof the SDK never sends, such as a cancelled call, in the audit trail', async () => {
-    const recorded: Array<{ eventType: string; outcome: string; code?: string }> = [];
+    const recorded: Array<{ eventType: string; outcome: string; code?: string; reason?: string }> = [];
     const record: Pick<AuditTrailService, 'record'>['record'] =
       async (event) => {
         const details = (event as { details?: { verificationCode?: string } }).details;
+        const reason = (event as { reason?: { code?: string } }).reason?.code;
         recorded.push({
           eventType: event.eventType,
           outcome: event.outcome,
           ...(details?.verificationCode === undefined ? {} : { code: details.verificationCode }),
+          ...(reason === undefined ? {} : { reason }),
         });
         return { status: 'pending', event: event as never };
       };
@@ -664,9 +673,10 @@ describe.each(PROFILE_NAMES)('the claims of a proof left to the transport (%s pr
 
       await vi.advanceTimersByTimeAsync(5 * 60_000);
 
+      // The client never saw the result: the call is closed as failed, not completed.
       expect(recorded.slice(-2)).toEqual([
         { eventType: 'proof.rejected', outcome: 'failed', code: 'PROOF_NOT_SENT' },
-        { eventType: 'tool.call.completed', outcome: 'succeeded' },
+        { eventType: 'tool.call.failed', outcome: 'failed', reason: 'RESULT_NOT_SENT' },
       ]);
     } finally {
       vi.useRealTimers();
@@ -708,7 +718,7 @@ describe.each(PROFILE_NAMES)('edge paths of a proof left to the transport (%s pr
     expect((await verifyReceived(sentResult(sent), { ...expected, params: args })).valid).toBe(false);
   });
 
-  it('keeps arguments it cannot copy, and their proof fails as it would have', async () => {
+  it('fails the proof of arguments that cannot be hashed, in the handler, as it would have at send', async () => {
     const kyaos = await createMiddleware({ ...config });
     const sessionId = await handshake(kyaos);
     const { wrapper, sent } = await rawTransport(kyaos);
@@ -831,4 +841,144 @@ describe.each(PROFILE_NAMES)('edge paths of a proof left to the transport (%s pr
     expect(JSON.stringify(await kyaos.wrapWithProof('report', ran)(ARGS))).toContain(PENDING);
     await kept.wrapper.close();
   });
+});
+
+describe.each(PROFILE_NAMES)('the transport lifecycle around the proofs it makes (%s profile)', (profile) => {
+  const { responseProofProfile, binds } = PROFILES[profile];
+  const config = responseProofProfile === undefined ? {} : { responseProofProfile };
+  it('runs an onclose set on the inner transport before connecting, once, as the SDK chains it', async () => {
+    const server = new McpServer1({ name: 'closer', version: '1.0.0' });
+    await withKyaOs(server, { crypto, ...config, handshakeExposure: 'none' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const cleanup = vi.fn();
+    serverTransport.onclose = cleanup;
+    await server.connect(serverTransport);
+    const client = new Client1({ name: 'closer-client', version: '1.0.0' });
+    await client.connect(clientTransport);
+
+    await client.close();
+
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    await server.close();
+    expect(cleanup).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the stateful Streamable HTTP session map clean: the cleanup set before connect runs when the session ends', async () => {
+    const transports: Record<string, StreamableHTTPServerTransport> = {};
+    const http = createServer(async (req, res) => {
+      const sid = req.headers['mcp-session-id'];
+      const existing = typeof sid === 'string' ? transports[sid] : undefined;
+      if (existing) {
+        await existing.handleRequest(req, res);
+        return;
+      }
+      const server = new McpServer1({ name: 'stateful', version: '1.0.0' });
+      await withKyaOs(server, { crypto, ...config, handshakeExposure: 'none' });
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+        onsessioninitialized: (id) => {
+          transports[id] = transport;
+        },
+      });
+      // The documented pattern: drop the session when its transport closes.
+      transport.onclose = () => {
+        if (transport.sessionId) delete transports[transport.sessionId];
+      };
+      await server.connect(transport);
+      await transport.handleRequest(req, res);
+    });
+    await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve));
+    const { port } = http.address() as AddressInfo;
+    const clientTransport = new StreamableHTTPClientTransport1(new URL(`http://127.0.0.1:${port}/mcp`));
+    const client = new Client1({ name: 'stateful-client', version: '1.0.0' });
+
+    try {
+      await client.connect(clientTransport);
+      expect(Object.keys(transports)).toHaveLength(1);
+
+      await clientTransport.terminateSession();
+
+      expect(Object.keys(transports)).toHaveLength(0);
+    } finally {
+      await client.close();
+      await new Promise<void>((resolve, reject) => {
+        http.close((error) => (error ? reject(error) : resolve()));
+        http.closeAllConnections();
+      });
+    }
+  });
+
+  it('counts a transport started twice once, so its close ends the count', async () => {
+    const kyaos = await createMiddleware({ ...config, autoSession: true });
+    const { wrapper } = await rawTransport(kyaos);
+
+    await wrapper.start();
+    await wrapper.close();
+
+    await expect(kyaos.wrapWithProof('report', ran)(ARGS)).rejects.toThrow(/no KYA-OS transport is open/);
+  });
+
+  it('closes what is waiting when the last transport closes', async () => {
+    const { events, record } = auditEvents();
+    const kyaos = await createMiddleware({ ...config, audit: { record }, autoSession: true });
+    const { wrapper } = await rawTransport(kyaos);
+    await kyaos.wrapWithProof('report', ran)(ARGS);
+
+    await wrapper.close();
+
+    await vi.waitFor(() => expect(events.slice(-2)).toEqual(['proof.rejected:failed', 'tool.call.failed:failed']));
+  });
+
+  it('keeps no arguments for a proof it waits to make, however large they are', async () => {
+    v8.setFlagsFromString('--expose-gc');
+    const gc = runInNewContext('gc') as () => void;
+    const kyaos = await createMiddleware({ ...config });
+    const sessionId = await handshake(kyaos);
+    const { wrapper, sent } = await rawTransport(kyaos);
+    const handler = kyaos.wrapWithProof('upload', ran);
+    // Warm up, so the measurement sees only what the waiting proofs keep.
+    await handler({ blob: 'w' }, sessionId);
+    gc();
+    const before = process.memoryUsage().heapUsed;
+
+    // 400 calls with 100 KB of arguments each whose results are never sent,
+    // as when a client cancels them: 40 MB if the arguments were kept.
+    for (let i = 0; i < 400; i += 1) {
+      await handler({ blob: `${i}`.padEnd(100_000, 'x') }, sessionId);
+    }
+    gc();
+    const retained = process.memoryUsage().heapUsed - before;
+
+    expect(retained).toBeLessThan(8 * 1024 * 1024);
+    // A call that is sent is still proved over its arguments.
+    const args = { blob: 'y'.repeat(100_000) };
+    await wrapper.send({ jsonrpc: '2.0', id: 1, result: await handler(args, sessionId) });
+    expect((await verifyReceived((sent[0] as { result: Record<string, unknown> }).result, {
+      signer: kyaos.identity.did, toolName: 'upload', params: args, binds,
+    })).valid).toBe(true);
+  }, 60_000);
+
+  it('closes the oldest waiting proofs as not sent once they hold too much', async () => {
+    const recorded: string[] = [];
+    const kyaos = await createMiddleware({
+      ...config,
+      audit: {
+        record: async (event) => {
+          const code = (event as { details?: { verificationCode?: string } }).details?.verificationCode;
+          if (code !== undefined) recorded.push(code);
+          return { status: 'pending', event: event as never };
+        },
+      },
+    });
+    const sessionId = await handshake(kyaos);
+    await rawTransport(kyaos);
+    const handler = kyaos.wrapWithProof('trace', ran);
+
+    // A call context the caller controls, 1 MB each: past 16 MB the oldest go.
+    for (let i = 0; i < 20; i += 1) {
+      await handler(ARGS, sessionId, { correlationId: `${i}`.padEnd(1_000_000, 'c') });
+    }
+
+    await vi.waitFor(() => expect(recorded.filter((code) => code === 'PROOF_NOT_SENT').length).toBeGreaterThanOrEqual(4));
+  }, 60_000);
 });

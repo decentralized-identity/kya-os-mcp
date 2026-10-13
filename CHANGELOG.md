@@ -7,6 +7,50 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Upgrading — BREAKING without an open KYA-OS transport
+
+- **Every response proof is now made where the KYA-OS transport sends the
+  result, under the default body profile as under the envelope profile, and
+  the wrappers refuse to run without one.** While no KYA-OS transport is open
+  for the middleware, `wrapWithProof`, `wrapWithDelegation`, `withPolicyGate`
+  and `proveOutcome` throw on entry, before they record or run anything, with
+  an error that names `withKyaOs` and `createKyaOsTransport`. A transport
+  counts as open from `start()` until it closes, by `close()` or by its own
+  `onclose`. Once a KYA-OS transport has been created for a middleware, every
+  wrapper result must go out through one. Before, the proofs were signed in
+  the handler, and they did not verify on 2026-07-28 (envelope) or after an
+  SDK reshaped `content` (body). Find your setup:
+  - **`withKyaOs(server, …)` before `server.connect()`, `proofAllTools` left
+    on:** nothing to change.
+  - **The low-level `Server` API with `createKyaOsMiddleware`:** connect
+    through the KYA-OS transport, as this repository's examples now do:
+
+    ```ts
+    await server.connect(createKyaOsTransport(transport, kyaos)); // was server.connect(transport)
+    ```
+  - **A script, walkthrough or test that calls a wrapped handler directly:**
+    serve it in process, and read the result a client would receive:
+
+    ```ts
+    const local = serveInProcess(kyaos);
+    const checkout = local.tool('checkout', kyaos.wrapWithDelegation('checkout', consent, handler));
+    const result = await checkout({ item: 'laptop' }); // proved
+    await local.close();
+    ```
+  - **`withKyaOs` with `proofAllTools: false`:** it wraps no transport, so
+    the wrappers refuse. Leave it on and list the tools to leave unproven in
+    `excludeTools`.
+  - **`withKyaOs` called after `connect()`:** the connected transport is not
+    wrapped; call `withKyaOs` first.
+  - **Code that reads the proof inside the handler:** the result
+    `proveOutcome` or a wrapper returns no longer carries one, under either
+    profile. Return it from the handler; the transport adds the proof.
+  - **Results delivered later, such as MCP task results:** a result is
+    proved the first time the same middleware sends it, within
+    `pendingProofTtlMs` (default five minutes) of the handler returning.
+    Raise it for task results fetched later; a later or repeated send goes
+    out with `proofError` (see below).
+
 ### Added
 
 - **The Entity Card revocation checker can verify a status list's proof.**
@@ -26,10 +70,17 @@ Versioning: https://semver.org/spec/v2.0.0.html
   required in 2.0, and SPEC.md §6.10 states the requirement.
 - **`createKyaOsTransport` is exported from `@kya-os/mcp`,** next to
   `createKyaOsMiddleware`, for servers on the low-level `Server` API, which
-  now connect through it (see BREAKING below). It was only on
-  `@kya-os/mcp/middleware`. Its `Transport` type declares the callbacks as
-  methods, so an SDK 1 or SDK 2 transport is accepted, and the wrapper
-  connects to either SDK's server, without a cast.
+  now connect through it. It was only on `@kya-os/mcp/middleware`. Its
+  `Transport` type declares the callbacks as methods, so an SDK 1 or SDK 2
+  transport is accepted, and the wrapper connects to either SDK's server,
+  without a cast.
+- **`serveInProcess(kyaos)` calls wrapped handlers outside an MCP server.**
+  `local.tool(name, handler)` answers as a server would, through a KYA-OS
+  transport, so the result carries its proof; `local.close()` closes the
+  transport. It replaces the examples' own helper.
+- **`pendingProofTtlMs`** on `KyaOsConfig` and `WithKyaOsOptions`: how long a
+  wrapper's result may wait to be sent before its proof is given up (default
+  300000, five minutes). Memory stays bounded by the caps on waiting proofs.
 
 ### Changed
 
@@ -80,34 +131,36 @@ Versioning: https://semver.org/spec/v2.0.0.html
   takes the same path as the envelope profile above: the claims stay in the
   middleware by request hash, and the transport makes the proof in `send()`
   over the result as sent, with the same claims, `_meta` keys and audit
-  events, recorded in the same order. A result the SDK never sends is closed
-  as above. Where the SDK does not reshape the result, the output is
+  events, recorded in the same order. `_meta` keeps its place among the
+  result's members. Where the SDK does not reshape the result, the output is
   byte-identical to 1.19.0. An outcome proof that fails now also says so in
   `_meta.proofError`, as an allowed call's already did.
+- **A result is proved once, within the window.** A stamped result whose
+  pending proof is no longer waiting, because its window passed, it was
+  evicted, or it was already sent (a task result fetched again), goes out
+  with `proofError`, and the audit trail records `proof.rejected` with the
+  new code `PROOF_EXPIRED`.
 
-### Changed — BREAKING without an open KYA-OS transport
+### Fixed
 
-- **BREAKING: under either profile, the wrappers and `proveOutcome` refuse to
-  run while no KYA-OS transport is open for the middleware.** Once
-  a KYA-OS transport has been created for a middleware, every wrapper result
-  must go out through one. A transport counts as open from `start()` until it
-  closes, by `close()` or by its own `onclose`. With none open,
-  `wrapWithProof`, `wrapWithDelegation`, `withPolicyGate` and `proveOutcome`
-  throw on entry, before they record or run anything, with an error that
-  names `withKyaOs` and `createKyaOsTransport`. Before, they signed a proof in
-  the handler, which on 2026-07-28 (envelope) or after an SDK reshaped
-  `content` (body) did not verify. This affects:
-  - `createKyaOsMiddleware` with handlers registered directly on a server
-    whose transport is not wrapped with `createKyaOsTransport`, including the
-    low-level `Server` pattern this repository's examples used: connect with
-    `server.connect(createKyaOsTransport(transport, kyaos))`;
-  - code that calls a wrapped handler directly, outside an MCP server (a
-    script or a test): send its result through a KYA-OS transport;
-  - `withKyaOs` with `proofAllTools: false`, which wraps no transport;
-  - `withKyaOs` called after `connect()`, whose transport is not wrapped;
-  - code that reads the proof inside the handler: the result `proveOutcome`
-    or a wrapper returns no longer carries one, under either profile. Return
-    it from the handler; the transport adds the proof.
+- **The KYA-OS transport passes the SDK's request context through.** It
+  dropped the second argument of `onmessage` and of `send`, and did not
+  expose the inner transport's `sessionId`, `setProtocolVersion`,
+  `setSupportedProtocolVersions` or `hasPerRequestStream`. Under `withKyaOs`,
+  tools lost the request's `sessionId`, `authInfo` and `requestInfo` (SDK 1)
+  and `ctx.http.authInfo` (SDK 2, both revisions); SDK 1 task stores stopped
+  separating tasks by session; and notifications a tool sent during a call
+  lost their `relatedRequestId`, so on Streamable HTTP they missed the
+  request's stream. All of these now pass through unchanged. Closes #248.
+- **The proof's scope is the call's, as the wrapper received it.**
+  `wrapWithProof` read `context.scopeId` and the audit context after the
+  handler ran, so a handler could change the scope a proof claims by changing
+  the context object it was handed. They are now read before the handler
+  runs.
+- **Private members never reach the wire from a nested result.** A wrapped
+  result a handler placed inside its own result, in `structuredContent` for
+  example, carried the lifecycle stamp and the pending-proof id to the
+  client. They are now removed at any depth.
 
 ## [1.19.0] - 2026-10-09
 

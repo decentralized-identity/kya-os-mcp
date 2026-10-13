@@ -7,19 +7,10 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
-### Fixed
+## [1.20.0] - 2026-10-13
 
-- **The proof wrappers no longer change the result a handler returns.**
-  `wrapWithProof` set its `_meta` members (the pending-proof id, the
-  lifecycle stamp, `proofError`, the audit marker) on the handler's own
-  object, and its audit-degraded path set `isError: true` on it. A handler
-  that returned one object from every call, a module-level constant or a
-  cached result, found those members on it, and a later call could go out
-  with an earlier call's `isError` and audit marker; a frozen result made the
-  wrapper throw. Every member now goes on a shallow copy of the result with a
-  new `_meta`, in `wrapWithProof` and in the outcome path behind the gates
-  and `proveOutcome`, and the handler's object and its `_meta` are never
-  changed. What the client receives is otherwise the same. Closes #249.
+1.19.0 was tagged but never published to npm; its changes (listed under
+1.19.0 below) ship to npm for the first time in this release.
 
 ### Upgrading — BREAKING without an open KYA-OS transport
 
@@ -206,6 +197,18 @@ Versioning: https://semver.org/spec/v2.0.0.html
     `PROOF_TOOL_MISMATCH`.
 
 ### Fixed
+
+- **The proof wrappers no longer change the result a handler returns.**
+  `wrapWithProof` set its `_meta` members (the pending-proof id, the
+  lifecycle stamp, `proofError`, the audit marker) on the handler's own
+  object, and its audit-degraded path set `isError: true` on it. A handler
+  that returned one object from every call, a module-level constant or a
+  cached result, found those members on it, and a later call could go out
+  with an earlier call's `isError` and audit marker; a frozen result made the
+  wrapper throw. Every member now goes on a shallow copy of the result with a
+  new `_meta`, in `wrapWithProof` and in the outcome path behind the gates
+  and `proveOutcome`, and the handler's object and its `_meta` are never
+  changed. What the client receives is otherwise the same. Closes #249.
 
 - **The KYA-OS transport passes the SDK's request context through.** It
   dropped the second argument of `onmessage` and of `send`, and did not

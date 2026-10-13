@@ -10,9 +10,8 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { createKyaOsMiddleware, NodeCryptoProvider, generateDidKeyFromBase64, KYA_OS_PROOF_META_KEY, type KyaOsMiddleware, type DelegationCredential, type NeedsAuthorizationError } from '@kya-os/mcp';
+import { createKyaOsMiddleware, NodeCryptoProvider, generateDidKeyFromBase64, KYA_OS_PROOF_META_KEY, type KyaOsMiddleware, type DelegationCredential, type NeedsAuthorizationError, serveInProcess } from '@kya-os/mcp';
 import { createDelegationIssuerFromIdentity } from '../src/delegation-issuer.js';
-import { serveTool } from '../../_shared/serve-tool.js';
 
 const crypto = new NodeCryptoProvider();
 const CONSENT_URL = 'http://localhost:9999/consent';
@@ -68,14 +67,14 @@ describe('MCP Server with consent-basic', () => {
       crypto,
     );
 
-    browseHandler = serveTool(kyaos, 'browse', kyaos.wrapWithProof('browse', async (args) => ({
+    browseHandler = serveInProcess(kyaos).tool('browse', kyaos.wrapWithProof('browse', async (args) => ({
       content: [{
         type: 'text',
         text: `Browsing category: ${args['category'] ?? 'all'}. Found 3 items.`,
       }],
     }))) as typeof browseHandler;
 
-    checkoutHandler = serveTool(kyaos, 'checkout', kyaos.wrapWithDelegation(
+    checkoutHandler = serveInProcess(kyaos).tool('checkout', kyaos.wrapWithDelegation(
       'checkout',
       { scopeId: 'cart:write', consentUrl: CONSENT_URL },
       kyaos.wrapWithProof('checkout', async (args) => ({
@@ -151,7 +150,7 @@ describe('MCP Server with consent-basic', () => {
       crypto,
     );
 
-    const expiredCheckout = serveTool(expiredKyaOs, 'checkout', expiredKyaOs.wrapWithDelegation(
+    const expiredCheckout = serveInProcess(expiredKyaOs).tool('checkout', expiredKyaOs.wrapWithDelegation(
       'checkout',
       { scopeId: 'cart:write', consentUrl: CONSENT_URL },
       async (args) => ({
@@ -207,7 +206,7 @@ describe('MCP Server with consent-basic', () => {
       crypto,
     );
 
-    const handler = serveTool(testKyaOs, 'checkout', testKyaOs.wrapWithDelegation(
+    const handler = serveInProcess(testKyaOs).tool('checkout', testKyaOs.wrapWithDelegation(
       'checkout',
       { scopeId: 'cart:write', consentUrl: CONSENT_URL },
       async (args) => {

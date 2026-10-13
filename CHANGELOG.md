@@ -28,6 +28,11 @@ Versioning: https://semver.org/spec/v2.0.0.html
     ```ts
     await server.connect(createKyaOsTransport(transport, kyaos)); // was server.connect(transport)
     ```
+
+    The transport proves and audits every tool's result, as `withKyaOs`
+    does, including tools you registered without a wrapper, which went out
+    unproven on 1.19.0. List any to leave unproven in its third argument,
+    which adds to the always-excluded `_kyaos` and `_kyaos_handshake`.
   - **A script, walkthrough or test that calls a wrapped handler directly:**
     serve it in process, and read the result a client would receive:
 
@@ -47,9 +52,9 @@ Versioning: https://semver.org/spec/v2.0.0.html
     profile. Return it from the handler; the transport adds the proof.
   - **Results delivered later, such as MCP task results:** a result is
     proved the first time the same middleware sends it, within
-    `pendingProofTtlMs` (default five minutes) of the handler returning.
-    Raise it for task results fetched later; a later or repeated send goes
-    out with `proofError` (see below).
+    `pendingProofTtlMs` (default five minutes, at most 2147483647) of the
+    handler returning. Raise it for task results fetched later; a later or
+    repeated send goes out with `proofError` (see below).
 
 ### Added
 
@@ -80,7 +85,9 @@ Versioning: https://semver.org/spec/v2.0.0.html
   transport. It replaces the examples' own helper.
 - **`pendingProofTtlMs`** on `KyaOsConfig` and `WithKyaOsOptions`: how long a
   wrapper's result may wait to be sent before its proof is given up (default
-  300000, five minutes). Memory stays bounded by the caps on waiting proofs.
+  300000, five minutes; at most 2147483647, about 24.8 days, the longest timer
+  a JavaScript runtime keeps). Memory stays bounded by the caps on waiting
+  proofs.
 
 ### Changed
 
@@ -139,10 +146,31 @@ Versioning: https://semver.org/spec/v2.0.0.html
   pending proof is no longer waiting, because its window passed, it was
   evicted, or it was already sent (a task result fetched again), goes out
   with `proofError`, and the audit trail records `proof.rejected` with the
-  new code `PROOF_EXPIRED`.
+  new code `PROOF_EXPIRED`, with the call's audit context when it is still
+  known.
+- **`createKyaOsTransport`'s `exclude` adds to the protocol tools.** The
+  third argument replaced the default `["_kyaos", "_kyaos_handshake"]`, so a
+  caller passing its own list had the protocol tools' results proved. It now
+  adds to them, as `excludeTools` does in `withKyaOs`; the protocol tools
+  are always excluded.
 
 ### Fixed
 
+- **Security: SDK 2's per-tool OAuth scope challenges were bypassed under
+  `withKyaOs` in earlier versions.** SDK 2's `McpServer.connect()` installs
+  the `scopeChallenge` enforcement of `registerTool` only on a transport
+  that has `setScopeChallengeResolver`, and the KYA-OS transport did not
+  pass that member through. A tool registered with, for example,
+  `scopeChallenge: requireScopes('payments:write')` therefore ran, and was
+  even proved, for a token without that scope. The caller should have
+  received a 403. This affected 1.19.0 and earlier (`main` included):
+  - `withKyaOs` with a server's own `WebStandardStreamableHTTPServerTransport`;
+  - `createMcpHandler` serving a client that negotiates 2025-11-25.
+
+  At 2026-07-28, `createMcpHandler` enforces the challenge at its entry, before
+  the transport. The transport now passes the resolver through, and every
+  other transport member either SDK feature-detects or reads is passed
+  through too.
 - **The KYA-OS transport passes the SDK's request context through.** It
   dropped the second argument of `onmessage` and of `send`, and did not
   expose the inner transport's `sessionId`, `setProtocolVersion`,
@@ -160,7 +188,12 @@ Versioning: https://semver.org/spec/v2.0.0.html
 - **Private members never reach the wire from a nested result.** A wrapped
   result a handler placed inside its own result, in `structuredContent` for
   example, carried the lifecycle stamp and the pending-proof id to the
-  client. They are now removed at any depth.
+  client. They are now removed at any depth: the walk is iterative, with no
+  depth limit. A wrapped result serialized into a string, a text item for
+  example, cannot be cleaned that way. Such a result is sent without a
+  proof and with `proofError`, recorded as `proof.rejected` with the new
+  code `PRIVATE_MEMBER_IN_RESULT`. Every waiting proof whose id appears in
+  that string is closed, so it cannot be redeemed.
 
 ## [1.19.0] - 2026-10-09
 

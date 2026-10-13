@@ -147,23 +147,24 @@ Versioning: https://semver.org/spec/v2.0.0.html
   evicted, or it was already sent (a task result fetched again), goes out
   with `proofError`, and the audit trail records `proof.rejected` with the
   new code `PROOF_EXPIRED`, with the call's audit context when it is still
-  known.
+  known. That record of closed proofs is bounded too: 10,000 entries and
+  about 4 MB, oldest first, holding no context over 16 KB.
 - **`createKyaOsTransport`'s `exclude` adds to the protocol tools.** The
   third argument replaced the default `["_kyaos", "_kyaos_handshake"]`, so a
   caller passing its own list had the protocol tools' results proved. It now
   adds to them, as `excludeTools` does in `withKyaOs`; the protocol tools
   are always excluded.
 
-### Fixed
+### Security
 
-- **Security: SDK 2's per-tool OAuth scope challenges were bypassed under
-  `withKyaOs` in earlier versions.** SDK 2's `McpServer.connect()` installs
+- **SDK 2's per-tool OAuth scope challenges were bypassed under `withKyaOs`
+  in earlier versions.** SDK 2's `McpServer.connect()` installs
   the `scopeChallenge` enforcement of `registerTool` only on a transport
   that has `setScopeChallengeResolver`, and the KYA-OS transport did not
   pass that member through. A tool registered with, for example,
   `scopeChallenge: requireScopes('payments:write')` therefore ran, and was
   even proved, for a token without that scope. The caller should have
-  received a 403. This affected 1.19.0 and earlier (`main` included):
+  received a 403. This affected 1.19.0 and earlier:
   - `withKyaOs` with a server's own `WebStandardStreamableHTTPServerTransport`;
   - `createMcpHandler` serving a client that negotiates 2025-11-25.
 
@@ -171,6 +172,27 @@ Versioning: https://semver.org/spec/v2.0.0.html
   the transport. The transport now passes the resolver through, and every
   other transport member either SDK feature-detects or reads is passed
   through too.
+- **The private members could leave in a message that is not a result, and
+  a copied stamp and id could make the transport sign chosen content.** The
+  transport removed the lifecycle stamp and pending-proof id only from
+  `result`. A tool that logged a wrapped result in a notification therefore
+  sent both to the client. A tool that relays caller-controlled `_meta` into
+  its own result could then redeem them, and the client got a server-signed
+  proof over content of its choosing, verifying as the wrapped call's
+  response. With envelope-profile proofs at the transport this was possible
+  before this release; with the body profile there too, in this release
+  before the fix. Now:
+  - every outgoing message is cleaned at any depth: its `params`,
+    `result` and `error.data`;
+  - a waiting proof whose id is found anywhere other than its own result is
+    closed, so nothing can redeem it;
+  - on the answer to a `tools/call` the transport tracked, a pending proof
+    left for a different tool is not redeemed. The answer goes out unproven,
+    and the audit trail records `proof.rejected` with the new code
+    `PROOF_TOOL_MISMATCH`.
+
+### Fixed
+
 - **The KYA-OS transport passes the SDK's request context through.** It
   dropped the second argument of `onmessage` and of `send`, and did not
   expose the inner transport's `sessionId`, `setProtocolVersion`,

@@ -134,7 +134,9 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@kya-os/consent": "^0.1.47",
+    "@modelcontextprotocol/client": "^2.3.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/server": "^2.3.1",
     "@types/express": "^5.0.6",
     "@types/node": "^26.2.0",
     "@typescript-eslint/eslint-plugin": "^8.67.0",

@@ -22,7 +22,7 @@ import type {
   KyaOsToolHandler,
   KyaOsDelegationGate,
 } from "./with-kya-os.types.js";
-import type { MiddlewareDeps, AttachOutcomeProof } from "./with-kya-os.deps.js";
+import type { MiddlewareDeps, AttachOutcomeProof, RequireProofLayer } from "./with-kya-os.deps.js";
 import type { GrantResolution } from "./with-kya-os.grants.js";
 import { sanitizeForMessage, withoutControlArgs } from "./with-kya-os.helpers.js";
 import { canonicalizeJsonBytes } from "../utils/canonical-json.js";
@@ -71,6 +71,7 @@ function forwardedApprovals(args: Record<string, unknown>): Pick<KyaOsCallContex
 export interface DelegationGateWiring {
   delegationVerification: DelegationVerification;
   attachOutcomeProof: AttachOutcomeProof;
+  requireProofLayer: RequireProofLayer;
   resolveExistingGrant: GrantResolution["resolveExistingGrant"];
   bindGrantOnSuccess: GrantResolution["bindGrantOnSuccess"];
 }
@@ -80,7 +81,7 @@ export function createDelegationGate(
   wiring: DelegationGateWiring,
 ): Pick<KyaOsDelegationGate, "wrapWithDelegation"> {
   const { identity, holderBindingMode, holderBindingVerifier, audit, cryptoProvider } = deps;
-  const { attachOutcomeProof, resolveExistingGrant, bindGrantOnSuccess } =
+  const { attachOutcomeProof, requireProofLayer, resolveExistingGrant, bindGrantOnSuccess } =
     wiring;
   const {
     verifyDelegation,
@@ -94,6 +95,7 @@ export function createDelegationGate(
     handler: KyaOsToolHandler,
   ): KyaOsToolHandler {
     return async (args: Record<string, unknown>, sessionId?: string) => {
+      requireProofLayer();
       const delegationArg = args["_kyaos_delegation"];
 
       if (delegationArg === undefined || delegationArg === null) {

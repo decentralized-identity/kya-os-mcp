@@ -146,9 +146,13 @@ describe("createKyaOsTransport", () => {
     expect(inner.onmessage).toBe(handler);
     expect(wrapper.onmessage).toBe(handler);
 
-    const closeHandler = () => {};
+    // The inner transport's own close reaches the handler, through the
+    // wrapper, which ends its open count on the way.
+    const closeHandler = vi.fn();
     wrapper.onclose = closeHandler;
-    expect(inner.onclose).toBe(closeHandler);
+    expect(wrapper.onclose).toBe(closeHandler);
+    inner.onclose!();
+    expect(closeHandler).toHaveBeenCalledTimes(1);
 
     const errorHandler = () => {};
     wrapper.onerror = errorHandler;

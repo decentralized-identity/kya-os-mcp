@@ -25,6 +25,67 @@ Versioning: https://semver.org/spec/v2.0.0.html
   `verifyStatusList` the checker behaves as before. The option becomes
   required in 2.0, and SPEC.md §6.10 states the requirement.
 
+### Changed
+
+- **Envelope-profile proofs are made at the transport, over the result as it
+  is sent.** On the 2026-07-28 revision, MCP SDK 2 adds `resultType:
+  'complete'` to a tool result after the handler returns it. An
+  envelope-profile proof made in the handler, by `proveOutcome`,
+  `wrapWithProof` or either gate, did not cover that member, so the client's
+  check of the result it received failed. Under the envelope profile these
+  paths now leave the proof to the `withKyaOs` transport, or one built with
+  `createKyaOsTransport`, which makes it in `send()`, after the SDK has
+  finished the result. The proof covers exactly the result the client
+  receives, on 2025-11-25 and on 2026-07-28, with SDK 1 or SDK 2. This
+  supersedes the 1.19.0 advice to set `resultType: 'complete'` on a result
+  before proving it under the envelope profile: that is no longer needed, and
+  a result that sets it is proved as sent.
+  - What a proof claims stays in the middleware. The result carries only a
+    private one-time id, redeemed only on a result that also carries the
+    middleware's stamp, and the session is read again when the proof is made,
+    which takes its audience from it. A result naming no waiting proof, or
+    one whose session is gone by then, goes out without a proof and with
+    `_meta.proofError`, as does an outcome whose proof fails at send.
+  - A waiting proof holds the request's hash, computed when the call was
+    recorded, never the arguments, so a waiting proof is small however large
+    they were, and later changes to the arguments cannot reach what is
+    signed. Arguments that cannot be hashed fail the proof in the handler
+    (`proofError`, `proof.rejected` with `PROOF_GENERATION_FAILED`).
+  - The claims, `_meta` keys and audit events are the ones the handler-side
+    proof had. For a result that is sent, the audit events are recorded in
+    the same order as before: an allowed call's `tool.call.started` in the
+    handler, then `proof.generated` and `tool.call.completed` at send.
+  - A result the SDK never sends (a cancelled call, or an SDK 1 result
+    replaced after an `outputSchema` check) is closed in the audit trail with
+    `proof.rejected` under the new code `PROOF_NOT_SENT`. An allowed call
+    then records `tool.call.failed` with the reason `RESULT_NOT_SENT`, never
+    `tool.call.completed`, since its client did not get the result. An
+    outcome's terminal events were recorded in the handler. This happens five
+    minutes after the handler returned; when the last KYA-OS transport for
+    the middleware closes; or, oldest first, when 10,000 proofs are waiting
+    or they hold about 16 MB of audit context.
+  - The body profile, the default, is unchanged: it covers `content`, it
+    still signs in the handler, and its output is byte-identical to 1.19.0.
+
+### Changed — BREAKING for the envelope profile without an open KYA-OS transport
+
+- **BREAKING: under the envelope profile, the wrappers and `proveOutcome`
+  refuse to run while no KYA-OS transport is open for the middleware.** Once
+  a KYA-OS transport has been created for a middleware, every wrapper result
+  must go out through one. A transport counts as open from `start()` until it
+  closes, by `close()` or by its own `onclose`. With none open,
+  `wrapWithProof`, `wrapWithDelegation`, `withPolicyGate` and `proveOutcome`
+  throw on entry, before they record or run anything, with an error that
+  names `withKyaOs` and `createKyaOsTransport`. Before, they signed a proof in
+  the handler, and on 2026-07-28 it did not verify. This affects:
+  - `createKyaOsMiddleware` with handlers registered directly on a server
+    whose transport is not wrapped with `createKyaOsTransport`;
+  - `withKyaOs` with `proofAllTools: false`, which wraps no transport;
+  - `withKyaOs` called after `connect()`, whose transport is not wrapped;
+  - code that reads the proof inside the handler: the result `proveOutcome`
+    or a wrapper returns no longer carries one under the envelope profile.
+    Return it from the handler; the transport adds the proof.
+
 ## [1.19.0] - 2026-10-09
 
 ### Added

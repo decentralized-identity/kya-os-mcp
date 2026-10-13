@@ -40,6 +40,15 @@ export type AttachOutcomeProof = (
   paramsOverride?: Record<string, unknown>,
 ) => Promise<KyaOsToolResult>;
 
+/**
+ * Refuse, by throwing, a wrapped call whose proof could not be made. Under
+ * the envelope profile a proof is made where the result is sent, so every
+ * wrapper calls this on entry, before it records or runs anything, and it
+ * throws while no KYA-OS transport is open for the middleware. Provided by
+ * the session/proof sub-factory.
+ */
+export type RequireProofLayer = () => void;
+
 /** The constructed dependencies shared across the middleware sub-factories. */
 export interface MiddlewareDeps {
   /** Proof-generation identity (DID + key material). */

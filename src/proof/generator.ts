@@ -114,6 +114,21 @@ export interface ProofOptions {
   profile?: ResponseProofProfile;
 }
 
+/**
+ * Internal option key: a `requestHash` already computed over the request, so
+ * a proof can be minted later without keeping the request itself. A symbol,
+ * so it is not part of {@link ProofOptions} and never rides a string-keyed
+ * options object; exported from this module only, not from the package
+ * entry points. The value must be what {@link ProofGenerator.hashRequest}
+ * returns for the request the proof is about.
+ */
+export const PRECOMPUTED_REQUEST_HASH: unique symbol = Symbol('kya-os.precomputed-request-hash');
+
+/** {@link ProofOptions} with the internal precomputed request hash. */
+export interface InternalProofOptions extends ProofOptions {
+  [PRECOMPUTED_REQUEST_HASH]?: string;
+}
+
 // Re-exported so proof consumers can import the profile vocabulary from the
 // module that mints and hashes proofs, without reaching into types/protocol.
 export { RESPONSE_PROOF_PROFILE_BODY, RESPONSE_PROOF_PROFILE_ENVELOPE };
@@ -334,7 +349,12 @@ export class ProofGenerator {
     // of ProofOptions, but a plain-JS caller could still pass one — strip it so
     // a foreign profile value can never ride the spread into the signed payload.
     Reflect.deleteProperty(metaOptions, 'prf');
+    // A request hash computed earlier, when the caller no longer holds the
+    // request; never copied into the meta.
+    const precomputed = (options as InternalProofOptions)[PRECOMPUTED_REQUEST_HASH];
+    Reflect.deleteProperty(metaOptions, PRECOMPUTED_REQUEST_HASH);
     const hashes = await this.generateCanonicalHashes(request, response, profile);
+    if (precomputed !== undefined) hashes.requestHash = precomputed;
     const proofNonce = base64urlEncodeFromBytes(
       await this.cryptoProvider.randomBytes(16),
     );

@@ -92,12 +92,13 @@ export type KyaOsAuthorizationOutcome =
 
 /**
  * A `needs_authorization` challenge as a `formatChallenge` hook may return
- * it. The middleware sets every member before it signs the challenge, so under
- * the envelope response-proof profile the proof covers `structuredContent`
- * and `isError` as well as `content`; under the body profile it covers
- * `content` only. `_meta` is never covered (SPEC §7.6), and the `_meta`
- * members the middleware owns (its proofs, `proofError`, `org.kya-os/audit`
- * and its private lifecycle stamp) are dropped from it, never trusted.
+ * it. The middleware sets every member before the challenge is signed, so
+ * under the envelope response-proof profile the proof covers
+ * `structuredContent` and `isError` as well as `content`; under the body
+ * profile it covers `content` only. `_meta` is never covered (SPEC §7.6), and
+ * the `_meta` members the middleware owns (its proofs, `proofError`,
+ * `org.kya-os/audit` and its private members) are dropped from it, never
+ * trusted.
  */
 export interface KyaOsChallengeResult {
   content: Array<{ type: "text"; text: string }>;
@@ -131,17 +132,14 @@ export interface KyaOsOutcomeProofRequest<R extends KyaOsToolResult = KyaOsToolR
   reason: string;
   /**
    * The result to return to the client, complete: set `isError`,
-   * `structuredContent` and `_meta` here, not on the returned copy, because
-   * the envelope profile signs every member but `_meta`. A
+   * `structuredContent` and `_meta` here, not on the returned copy. A
    * `needs_authorization` proof binds the result (its content under the body
-   * profile, the envelope under the envelope profile); a denial or step-up
-   * proof binds none, as SPEC §7.4 has it. `_meta` is outside every proof, so
-   * repeat anything security-relevant carried there (an OAuth
-   * `resource_metadata`, `scope` or `error`) in `content` or
-   * `structuredContent`. The middleware's own `_meta` members are dropped
-   * from it. Under the envelope profile, set `resultType: 'complete'` here:
-   * on the 2026-07-28 revision the MCP SDK adds it after the handler returns
-   * otherwise, outside the proof.
+   * profile, under the envelope profile every member but `_meta`, as the
+   * client receives it); a denial or step-up proof binds none, as SPEC §7.4
+   * has it. `_meta` is outside every proof, so repeat anything
+   * security-relevant carried there (an OAuth `resource_metadata`, `scope` or
+   * `error`) in `content` or `structuredContent`. The middleware's own
+   * `_meta` members are dropped from it.
    */
   result: R;
   /**
@@ -157,14 +155,22 @@ export interface KyaOsOutcomeProofRequest<R extends KyaOsToolResult = KyaOsToolR
 /** Prove an authorization outcome that application code decided itself. */
 export interface KyaOsOutcomeProver {
   /**
-   * Return a copy of `request.result`, typed as it was, carrying the response
+   * Return a copy of `request.result`, typed as it was, for the response
    * proof the middleware's own gates attach to their outcomes: the same
    * claims, the same `_meta` keys, the configured response-proof profile, and
-   * the same audit events. Return it from the tool handler: the withKyaOs transport
-   * passes it through as proven and removes its private lifecycle stamp, so
-   * do not call this on a result that has already left the transport.
-   * Without a resolvable session the copy is returned unproven but audited,
-   * as a gate's outcome is. Throws a `TypeError` for an unknown outcome.
+   * the same audit events. Return it from the tool handler. Under the body
+   * profile the copy carries the proof, and the withKyaOs transport passes it
+   * through. Under the envelope profile the transport makes the proof when it
+   * sends the result, after the MCP SDK has finished it, so the proof covers
+   * what the client receives; the copy carries only a one-time id for it,
+   * and what the proof claims stays in the middleware. Either way the
+   * transport removes the copy's private members, so do not call this on a
+   * result that has already left the transport, and send the copy through a
+   * KYA-OS transport: once one has been created for the middleware, every
+   * wrapper result must go out through one. Without a resolvable session the
+   * result goes out unproven but audited, as a gate's outcome does. Throws a
+   * `TypeError` for an unknown outcome, and under the envelope profile an
+   * `Error` while no KYA-OS transport is open.
    */
   proveOutcome<R extends KyaOsToolResult>(request: KyaOsOutcomeProofRequest<R>): Promise<R>;
 }
@@ -212,7 +218,10 @@ export interface KyaOsProtocolHandler {
 export interface KyaOsProofAttacher {
   /**
    * Wrap a tool handler to automatically generate proofs.
-   * Returns a new handler that appends proof metadata to the response.
+   * Returns a new handler that appends proof metadata to the response. Under
+   * the envelope profile the withKyaOs transport makes that proof when it
+   * sends the result, and the handler throws, before it runs, while no
+   * KYA-OS transport is open.
    */
   wrapWithProof<T extends Record<string, unknown> = Record<string, unknown>>(
     toolName: string,

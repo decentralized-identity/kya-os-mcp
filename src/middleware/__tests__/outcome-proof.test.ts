@@ -3,17 +3,17 @@
  * decides itself (a challenge or a denial returned as a tool result) with the
  * proof the middleware's own gates attach to theirs.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { z } from 'zod';
 import { withKyaOs } from '../with-kya-os-server.js';
 import { toMcpToolCallback } from '../mcp-tool-callback.js';
-import { createKyaOsTransport, type JSONRPCMessage, type Transport } from '../kya-os-transport.js';
 import type { KyaOsMiddleware, KyaOsOutcomeProofRequest, KyaOsToolResult } from '../with-kya-os.js';
-import { LIFECYCLE_STAMP_META_KEY } from '../with-kya-os.session.js';
+import { LIFECYCLE_STAMP_META_KEY, PENDING_PROOF_META_KEY } from '../with-kya-os.session.js';
 import { typeErrors } from '../../__tests__/utils/type-errors.js';
+import { logger } from '../../logging/index.js';
 import {
   KYA_OS_PROOF_META_KEY,
   LEGACY_NAMESPACED_PROOF_META_KEY,
@@ -22,6 +22,7 @@ import {
 } from '../../proof/generator.js';
 import {
   auditEvents,
+  connectTransport,
   createMiddleware,
   crypto,
   handshake,
@@ -57,15 +58,16 @@ describe('proveOutcome', () => {
   it('proves a challenge returned as an error result, binding its whole envelope under the envelope profile', async () => {
     const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
     const sessionId = await handshake(kyaos);
+    const wire = await connectTransport(kyaos);
 
-    const result = await prove(kyaos, {
+    const result = await wire.send(await prove(kyaos, {
       toolName: 'get_report',
       args: { report_id: 'r_1' },
       outcome: 'needs_authorization',
       reason: 'insufficient_scope',
       result: scopeChallenge(),
       sessionId,
-    });
+    }), { toolName: 'get_report', args: { report_id: 'r_1' } });
 
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toEqual(scopeChallenge().structuredContent);
@@ -117,8 +119,9 @@ describe('proveOutcome', () => {
     async (outcome) => {
       const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
       const sessionId = await handshake(kyaos);
+      const wire = await connectTransport(kyaos);
 
-      const result = await prove(kyaos, {
+      const result = await wire.send(await prove(kyaos, {
         toolName: 'get_report',
         args: { report_id: 'r_1' },
         outcome,
@@ -129,7 +132,7 @@ describe('proveOutcome', () => {
           isError: true,
         },
         sessionId,
-      });
+      }), { toolName: 'get_report', args: { report_id: 'r_1' } });
 
       expect(proofOf(result)!.meta).toMatchObject({ outcome, reason: 'budget_exhausted' });
       expect(proofOf(result)!.meta.responseHash).toBeUndefined();
@@ -286,6 +289,36 @@ describe('proveOutcome', () => {
     expect(kyaos.sessionManager.getStats().activeSessions).toBe(1);
   });
 
+  it('returns the outcome unproven, and records why, when its session cannot be read', async () => {
+    const { events, record } = auditEvents();
+    const kyaos = await createMiddleware({ audit: { record } });
+    const sessionId = await handshake(kyaos);
+    const read = vi.spyOn(kyaos.sessionManager, 'getSession').mockRejectedValue(new Error('store offline'));
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => {});
+
+    try {
+      const result = await prove(kyaos, {
+        toolName: 'wipe', args: {}, outcome: 'denied', reason: 'blocked',
+        result: { content: [{ type: 'text', text: 'no' }], isError: true }, sessionId,
+      });
+
+      expect(proofOf(result)).toBeUndefined();
+      expect((result._meta as Record<string, unknown>)['org.kya-os/audit']).toEqual({ terminal: true, outcome: 'denied' });
+      expect(events.slice(-3)).toEqual([
+        'authorization.denied:denied',
+        'tool.call.denied:denied',
+        'proof.rejected:failed',
+      ]);
+      expect(error).toHaveBeenCalledWith(
+        '[kya-os] Outcome proof generation failed',
+        expect.objectContaining({ tool: 'wipe', error: 'store offline' }),
+      );
+    } finally {
+      read.mockRestore();
+      error.mockRestore();
+    }
+  });
+
   it('refuses an outcome it does not know', async () => {
     const kyaos = await createMiddleware();
 
@@ -298,23 +331,10 @@ describe('proveOutcome', () => {
     })).rejects.toThrow(TypeError);
   });
 
-  it('passes through the withKyaOs transport untouched, less the private stamp', async () => {
-    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
+  it('passes a body-profile proof through the withKyaOs transport untouched, less the private stamp', async () => {
+    const kyaos = await createMiddleware();
     const sessionId = await handshake(kyaos);
-    const sent: JSONRPCMessage[] = [];
-    const inner: Transport = {
-      start: async () => {},
-      close: async () => {},
-      send: async (message) => {
-        sent.push(message);
-      },
-    };
-    const wrapper = createKyaOsTransport(inner, kyaos);
-    await wrapper.start();
-    inner.onmessage!({
-      jsonrpc: '2.0', id: 9, method: 'tools/call',
-      params: { name: 'get_report', arguments: { report_id: 'r_1' } },
-    });
+    const wire = await connectTransport(kyaos);
 
     const result = await prove(kyaos, {
       toolName: 'get_report',
@@ -324,15 +344,59 @@ describe('proveOutcome', () => {
       result: scopeChallenge(),
       sessionId,
     });
-    await wrapper.send({ jsonrpc: '2.0', id: 9, result: structuredClone(result) });
+    const received = await wire.send(result, { toolName: 'get_report', args: { report_id: 'r_1' } });
 
     const { [LIFECYCLE_STAMP_META_KEY]: stamp, ...meta } = result._meta as Record<string, unknown>;
     expect(stamp).toEqual(expect.any(String));
-    const received = (sent[0] as { result: Record<string, unknown> }).result;
     expect(received).toEqual({ ...result, _meta: meta });
     expect((await verifyReceived(received, {
-      signer: kyaos.identity.did, toolName: 'get_report', params: { report_id: 'r_1' }, binds: 'envelope',
+      signer: kyaos.identity.did, toolName: 'get_report', params: { report_id: 'r_1' }, binds: 'content',
     })).valid).toBe(true);
+  });
+
+  it('leaves an envelope-profile proof to the withKyaOs transport, which makes it over the result it sends', async () => {
+    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
+    const sessionId = await handshake(kyaos);
+    const wire = await connectTransport(kyaos);
+
+    const result = await prove(kyaos, {
+      toolName: 'get_report',
+      args: { report_id: 'r_1' },
+      outcome: 'needs_authorization',
+      reason: 'insufficient_scope',
+      result: scopeChallenge(),
+      sessionId,
+    });
+    // What the handler returns carries no proof yet, only the private members.
+    expect(proofOf(result)).toBeUndefined();
+    const {
+      [LIFECYCLE_STAMP_META_KEY]: stamp,
+      [PENDING_PROOF_META_KEY]: pending,
+      ...meta
+    } = result._meta as Record<string, unknown>;
+    expect(stamp).toEqual(expect.any(String));
+    // Only a one-time id: what the proof claims stays in the middleware.
+    expect(pending).toEqual(expect.any(String));
+
+    // The SDK adds a member after the handler returns, as SDK 2 adds
+    // resultType on the 2026-07-28 revision; the proof covers it.
+    const received = await wire.send(
+      { ...result, resultType: 'complete' },
+      { toolName: 'get_report', args: { report_id: 'r_1' } },
+    );
+
+    expect(received).toEqual({
+      ...result,
+      resultType: 'complete',
+      _meta: { ...meta, [KYA_OS_PROOF_META_KEY]: proofOf(received), [LEGACY_PROOF_META_KEY]: proofOf(received) },
+    });
+    expect(proofOf(received)!.meta).toMatchObject({ outcome: 'needs_authorization', prf: RESPONSE_PROOF_PROFILE_ENVELOPE });
+    const expected = {
+      signer: kyaos.identity.did, toolName: 'get_report', params: { report_id: 'r_1' }, binds: 'envelope' as const,
+    };
+    expect((await verifyReceived(received, expected)).valid).toBe(true);
+    const { resultType: _added, ...withoutAdded } = received;
+    expect((await verifyReceived(withoutAdded, expected)).valid).toBe(false);
   });
 
   it('keeps its outcome proof inside wrapWithProof, which never re-signs it as allowed', async () => {

@@ -200,18 +200,21 @@ export function createKyaOsMiddleware(
   const { wrapWithDelegation } = createDelegationGate(deps, {
     delegationVerification,
     attachOutcomeProof: session.attachOutcomeProof,
+    requireProofLayer: session.requireProofLayer,
     resolveExistingGrant,
     bindGrantOnSuccess,
   });
 
   const { withPolicyGate } = createPolicyGate(deps, {
     attachOutcomeProof: session.attachOutcomeProof,
+    requireProofLayer: session.requireProofLayer,
   });
 
   // Application code proves the outcomes it decides through the same
   // attachOutcomeProof the gates use.
   const { proveOutcome } = createOutcomeProver({
     attachOutcomeProof: session.attachOutcomeProof,
+    requireProofLayer: session.requireProofLayer,
   });
 
   return {

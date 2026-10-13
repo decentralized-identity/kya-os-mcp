@@ -4,7 +4,8 @@
  * result it received.
  */
 import type { AuditTrailService } from '../../../audit/service.js';
-import { createKyaOsMiddleware, type KyaOsConfig, type KyaOsMiddleware } from '../../with-kya-os.js';
+import { createKyaOsMiddleware, type KyaOsConfig, type KyaOsMiddleware, type KyaOsToolResult } from '../../with-kya-os.js';
+import { createKyaOsTransport, type JSONRPCMessage, type Transport } from '../../kya-os-transport.js';
 import { NodeCryptoProvider } from '../../../__tests__/utils/node-crypto-provider.js';
 import { generateDidKeyFromBase64, didKeyFragment } from '../../../utils/did-helpers.js';
 import { extractPublicKeyFromDidKey, publicKeyToJwk } from '../../../delegation/did-key-resolver.js';
@@ -54,6 +55,56 @@ export function auditEvents(): {
     return { status: 'pending', event: event as never };
   };
   return { events, record };
+}
+
+/** A withKyaOs transport over a far end that records what it is sent. */
+export interface TransportHarness {
+  /** Every message the far end received, as JSON it would have read off the wire. */
+  sent: JSONRPCMessage[];
+  /**
+   * Send `result` as the answer to a `tools/call` of `toolName` with `args`, as
+   * the MCP SDK hands a result to its transport, and return the result as it
+   * left the process.
+   */
+  send(
+    result: KyaOsToolResult,
+    call?: { toolName?: string; args?: Record<string, unknown> },
+  ): Promise<Record<string, unknown>>;
+}
+
+/**
+ * Connect `kyaos` to a withKyaOs transport, so its wrappers have an outer
+ * layer: under the envelope profile they leave their proofs to it. Connect
+ * before calling a wrapper, as a server connects before it serves calls.
+ */
+export async function connectTransport(kyaos: KyaOsMiddleware): Promise<TransportHarness> {
+  const sent: JSONRPCMessage[] = [];
+  const inner: Transport = {
+    start: async () => {},
+    close: async () => {},
+    send: async (message) => {
+      sent.push(JSON.parse(JSON.stringify(message)) as JSONRPCMessage);
+    },
+  };
+  const wrapper = createKyaOsTransport(inner, kyaos);
+  await wrapper.start();
+  let id = 0;
+  return {
+    sent,
+    async send(result, call = {}) {
+      id += 1;
+      inner.onmessage!({
+        jsonrpc: '2.0',
+        id,
+        method: 'tools/call',
+        params: { name: call.toolName ?? 'tool', arguments: call.args ?? {} },
+      });
+      // The SDK hands the transport a result of its own making, not the
+      // handler's object.
+      await wrapper.send({ jsonrpc: '2.0', id, result: structuredClone(result) });
+      return (sent.at(-1) as { result: Record<string, unknown> }).result;
+    },
+  };
 }
 
 export function proofOf(result: { _meta?: unknown }): DetachedProof | undefined {

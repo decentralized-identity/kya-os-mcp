@@ -611,3 +611,81 @@ describe("createKyaOsTransport types", () => {
     expect(errors).toBe("");
   }, 60_000);
 });
+
+describe("createKyaOsTransport passes the SDK's transport members through", () => {
+  function transportWithEverything() {
+    return {
+      start: vi.fn().mockResolvedValue(undefined),
+      send: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      sessionId: "session-1",
+      hasPerRequestStream: true,
+      setProtocolVersion: vi.fn(),
+      setSupportedProtocolVersions: vi.fn(),
+      setScopeChallengeResolver: vi.fn(),
+    };
+  }
+
+  it("forwards the members either SDK reads or calls on a transport", () => {
+    const inner = transportWithEverything();
+    const wrapper = createKyaOsTransport(inner, createMockKyaOs());
+    const resolver = () => undefined;
+
+    expect(wrapper.sessionId).toBe("session-1");
+    expect(wrapper.hasPerRequestStream).toBe(true);
+    wrapper.setProtocolVersion!("2025-11-25");
+    wrapper.setSupportedProtocolVersions!(["2025-11-25", "2026-07-28"]);
+    // SDK 2's McpServer installs scope enforcement only after an `in` check.
+    expect("setScopeChallengeResolver" in wrapper && typeof wrapper.setScopeChallengeResolver).toBe("function");
+    wrapper.setScopeChallengeResolver!(resolver);
+
+    expect(inner.setProtocolVersion).toHaveBeenCalledWith("2025-11-25");
+    expect(inner.setSupportedProtocolVersions).toHaveBeenCalledWith(["2025-11-25", "2026-07-28"]);
+    expect(inner.setScopeChallengeResolver).toHaveBeenCalledWith(resolver);
+    wrapper.sessionId = "session-2";
+    expect(inner.sessionId).toBe("session-2");
+  });
+
+  it("offers none of them when the inner transport has none, so feature checks see their absence", () => {
+    const wrapper = createKyaOsTransport(createMockTransport(), createMockKyaOs());
+
+    expect(wrapper.sessionId).toBeUndefined();
+    expect(wrapper.hasPerRequestStream).toBeUndefined();
+    expect(wrapper.setProtocolVersion).toBeUndefined();
+    expect(wrapper.setSupportedProtocolVersions).toBeUndefined();
+    expect(wrapper.setScopeChallengeResolver).toBeUndefined();
+  });
+
+  it("forwards the SDK's send options and message context", async () => {
+    const inner = createMockTransport();
+    const wrapper = createKyaOsTransport(inner, createMockKyaOs());
+    const received = vi.fn();
+    wrapper.onmessage = received;
+    await wrapper.start();
+    const extra = { sessionId: "s-1", authInfo: { token: "t" } };
+
+    inner.onmessage!({ jsonrpc: "2.0", method: "notifications/initialized" }, extra);
+    await wrapper.send({ jsonrpc: "2.0", method: "notifications/progress" }, { relatedRequestId: 7 });
+
+    expect(received).toHaveBeenCalledWith({ jsonrpc: "2.0", method: "notifications/initialized" }, extra);
+    expect(inner.send).toHaveBeenCalledWith({ jsonrpc: "2.0", method: "notifications/progress" }, { relatedRequestId: 7 });
+  });
+});
+
+describe("createKyaOsTransport exclude", () => {
+  it("adds to the protocol tools, which stay excluded", async () => {
+    const inner = createMockTransport();
+    const wrapper = createKyaOsTransport(inner, createMockKyaOs({ jws: "auto" }), ["quiet"]);
+    await wrapper.start();
+    const answer = async (id: number, name: string) => {
+      inner.onmessage!({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: {} } });
+      await wrapper.send({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: name }] } });
+      return (inner.sentMessages.at(-1) as { result: Record<string, unknown> }).result;
+    };
+
+    expect((await answer(1, "_kyaos"))._meta).toBeUndefined();
+    expect((await answer(2, "_kyaos_handshake"))._meta).toBeUndefined();
+    expect((await answer(3, "quiet"))._meta).toBeUndefined();
+    expect((await answer(4, "report"))._meta).toEqual({ proof: { jws: "auto" } });
+  });
+});

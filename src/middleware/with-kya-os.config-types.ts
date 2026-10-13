@@ -166,7 +166,10 @@ export interface KyaOsConfig {
    * without a proof and with `proofError`, and the audit trail records
    * `PROOF_EXPIRED`. A result never sent is closed with `PROOF_NOT_SENT` when
    * the window ends. Raise it for task results fetched later; memory stays
-   * bounded by the count and size caps on waiting proofs.
+   * bounded by the count and size caps on waiting proofs. At most
+   * 2147483647 (2^31 - 1, about 24.8 days), the longest timer a JavaScript
+   * runtime keeps; a larger value, zero, or a value that is not a finite
+   * number is refused.
    */
   pendingProofTtlMs?: number;
   /**

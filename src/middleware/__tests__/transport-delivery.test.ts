@@ -7,9 +7,14 @@
 import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { McpServer as McpServer2, createMcpHandler } from '@modelcontextprotocol/server';
+import {
+  McpServer as McpServer2,
+  WebStandardStreamableHTTPServerTransport,
+  createMcpHandler,
+  requireScopes,
+} from '@modelcontextprotocol/server';
 import { Client as Client2, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { McpServer as McpServer1 } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Client as Client1 } from '@modelcontextprotocol/sdk/client/index.js';
@@ -27,6 +32,7 @@ import { serveInProcess } from '../serve-in-process.js';
 import { createKyaOsMiddleware, type KyaOsToolResult } from '../with-kya-os.js';
 import { LIFECYCLE_STAMP_META_KEY } from '../with-kya-os.session.js';
 import { RESPONSE_PROOF_PROFILE_ENVELOPE, type ResponseProofProfile } from '../../proof/generator.js';
+import { logger } from '../../logging/index.js';
 import type { AuditTrailService } from '../../audit/service.js';
 import {
   connectTransport,
@@ -168,12 +174,20 @@ describe.each(PROFILE_NAMES)('results delivered later, as MCP tasks (%s profile)
 });
 
 describe('pendingProofTtlMs', () => {
-  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])('refuses %s', async (pendingProofTtlMs) => {
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY, 2 ** 31])('refuses %s', async (pendingProofTtlMs) => {
     const keys = await crypto.generateKeyPair();
     expect(() => createKyaOsMiddleware({
       identity: { did: 'did:example:server', kid: 'did:example:server#k', ...keys },
       pendingProofTtlMs,
-    }, crypto)).toThrow(/pendingProofTtlMs/);
+    }, crypto)).toThrow(/pendingProofTtlMs .*at most 2147483647/);
+  });
+
+  it('accepts the longest timer a runtime keeps', async () => {
+    const keys = await crypto.generateKeyPair();
+    expect(() => createKyaOsMiddleware({
+      identity: { did: 'did:example:server', kid: 'did:example:server#k', ...keys },
+      pendingProofTtlMs: 2_147_483_647,
+    }, crypto)).not.toThrow();
   });
 });
 
@@ -199,6 +213,56 @@ describe.each(PROFILE_NAMES)('a wrapped result nested in another result (%s prof
   });
 });
 
+describe.each(PROFILE_NAMES)('a wrapped result nested deeply, or serialized into a string (%s profile)', (profile) => {
+  const { responseProofProfile, binds } = PROFILES[profile];
+  const config = responseProofProfile === undefined ? {} : { responseProofProfile };
+
+  it('never carries the private members to the wire, however deep', async () => {
+    const kyaos = await createMiddleware({ ...config, autoSession: true });
+    const wire = await connectTransport(kyaos);
+    const inner = await kyaos.wrapWithProof('inner', ran)(ARGS);
+    let nested: Record<string, unknown> = { result: inner };
+    for (let depth = 0; depth < 200; depth += 1) nested = { level: nested };
+
+    const received = await wire.send({
+      content: [{ type: 'text', text: 'relayed' }],
+      structuredContent: nested,
+    }, { toolName: 'outer', args: ARGS });
+
+    expect(JSON.stringify(received)).not.toContain(LIFECYCLE_STAMP_META_KEY);
+    expect(JSON.stringify(received)).not.toContain('org.kya-os/pending-proof');
+    expect((await verifyReceived(received, {
+      signer: kyaos.identity.did, toolName: 'outer', params: ARGS, binds,
+    })).valid).toBe(true);
+  });
+
+  it('does not sign a result that carries the stamp in a string, and voids the waiting proofs named there', async () => {
+    const { recorded, record } = codes();
+    const kyaos = await createMiddleware({ ...config, autoSession: true, audit: { record } });
+    const wire = await connectTransport(kyaos);
+    const inner = await kyaos.wrapWithProof('inner', ran)(ARGS);
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => {});
+
+    try {
+      const outer = await kyaos.wrapWithProof('outer', async () => ({
+        content: [{ type: 'text', text: JSON.stringify(inner) }],
+      }))(ARGS);
+      const received = await wire.send(outer, { toolName: 'outer', args: ARGS });
+
+      expect(proofOf(received)).toBeUndefined();
+      expect((received._meta as Record<string, unknown>).proofError).toBe(UNPROVEN);
+      expect(recorded).toContain('PRIVATE_MEMBER_IN_RESULT');
+      // The serialized inner result's proof can no longer be redeemed.
+      const redeemed = await wire.send(inner, { toolName: 'inner', args: ARGS });
+      expect(proofOf(redeemed)).toBeUndefined();
+      await vi.waitFor(() => expect(recorded).toContain('PROOF_NOT_SENT'));
+      expect(recorded.at(-1)).toBe('PROOF_EXPIRED');
+    } finally {
+      error.mockRestore();
+    }
+  });
+});
+
 describe.each(PROFILE_NAMES)('the SDK request context through the transport (%s profile)', (profile) => {
   const { responseProofProfile } = PROFILES[profile];
   const config = responseProofProfile === undefined ? {} : { responseProofProfile };
@@ -207,6 +271,12 @@ describe.each(PROFILE_NAMES)('the SDK request context through the transport (%s 
     const transports: Record<string, StreamableHTTPServerTransport> = {};
     const seen: Array<Record<string, unknown>> = [];
     const http = createServer(async (req, res) => {
+      // No standalone SSE stream, so a notification sent without the call's
+      // relatedRequestId has nowhere to go: the test then fails, not races.
+      if (req.method === 'GET') {
+        res.writeHead(405, { Allow: 'POST, DELETE' }).end();
+        return;
+      }
       (req as IncomingMessage & { auth?: unknown }).auth = { token: 'tok-1', clientId: 'client-1', scopes: ['reports:read'] };
       const sid = req.headers['mcp-session-id'];
       const existing = typeof sid === 'string' ? transports[sid] : undefined;
@@ -312,6 +382,56 @@ describe.each(PROFILE_NAMES)('what a proof records of the call (%s profile)', (p
     expect(proofOf(received)!.meta.scopeId).toBe('reports:read');
   });
 
+  it('keeps the audit context as the wrapper received it, whatever the handler does to it', async () => {
+    const events: Array<{ eventType: string; actor?: { did?: string } }> = [];
+    const kyaos = await createMiddleware({
+      ...config,
+      audit: {
+        record: async (event) => {
+          events.push(event as never);
+          return { status: 'pending', event: event as never };
+        },
+      },
+    });
+    const sessionId = await handshake(kyaos);
+    const wire = await connectTransport(kyaos);
+    const actor = { kind: 'pairwise_did' as const, did: 'did:example:agent' };
+
+    const result = await kyaos.wrapWithProof('report', async (_args, _sid, context) => {
+      // A deep change, to an object the context only refers to.
+      (context!.actor as { did: string }).did = 'did:example:evil';
+      return { content: [{ type: 'text', text: 'done' }] };
+    })(ARGS, sessionId, { actor });
+    await wire.send(result, { toolName: 'report', args: ARGS });
+
+    const completed = events.find((event) => event.eventType === 'tool.call.completed');
+    expect(completed?.actor?.did).toBe('did:example:agent');
+    expect(JSON.stringify(events)).not.toContain('did:example:evil');
+  });
+
+  it('records PROOF_EXPIRED against the call the late result belongs to', async () => {
+    const events: Array<{ eventType: string; correlationId?: string; details?: { verificationCode?: string } }> = [];
+    const kyaos = await createMiddleware({
+      ...config,
+      audit: {
+        record: async (event) => {
+          events.push(event as never);
+          return { status: 'pending', event: event as never };
+        },
+      },
+    });
+    const sessionId = await handshake(kyaos);
+    const wire = await connectTransport(kyaos);
+    const result = await kyaos.wrapWithProof('report', ran)(ARGS, sessionId, { correlationId: 'corr-1' });
+    await wire.send(result, { toolName: 'report', args: ARGS });
+
+    await wire.send(result, { toolName: 'report', args: ARGS });
+
+    const expired = events.at(-1)!;
+    expect(expired.details?.verificationCode).toBe('PROOF_EXPIRED');
+    expect(expired.correlationId).toBeDefined();
+  });
+
   it('leaves _meta where it was among the result members, or adds it at the end', async () => {
     const kyaos = await createMiddleware(config);
     const sessionId = await handshake(kyaos);
@@ -347,6 +467,23 @@ describe.each(PROFILE_NAMES)('serveInProcess (%s profile)', (profile) => {
     await expect(kyaos.wrapWithProof('report', ran)(ARGS)).rejects.toThrow(/no KYA-OS transport is open/);
   });
 
+  it('answers a throwing handler with an error, rethrows it, and serves the next call', async () => {
+    const kyaos = await createMiddleware({ ...config, autoSession: true });
+    const local = serveInProcess(kyaos);
+    let fail = true;
+    const flaky = local.tool('flaky', kyaos.wrapWithProof('flaky', async () => {
+      if (fail) throw new Error('upstream down');
+      return { content: [{ type: 'text', text: 'ok' }] };
+    }));
+
+    await expect(flaky(ARGS)).rejects.toThrow('upstream down');
+    fail = false;
+    const next = await flaky(ARGS);
+
+    expect((await verifyReceived(next, { signer: kyaos.identity.did, toolName: 'flaky', params: ARGS, binds })).valid).toBe(true);
+    await local.close();
+  });
+
   it('serves a tool that calls another served tool', async () => {
     const kyaos = await createMiddleware({ ...config, autoSession: true });
     const local = serveInProcess(kyaos);
@@ -364,3 +501,81 @@ describe.each(PROFILE_NAMES)('serveInProcess (%s profile)', (profile) => {
   });
 });
 
+
+describe.each(PROFILE_NAMES)('SDK 2 per-tool OAuth scope challenges under withKyaOs (%s profile)', (profile) => {
+  const { responseProofProfile } = PROFILES[profile];
+  const config = responseProofProfile === undefined ? {} : { responseProofProfile };
+  const AUTH = { token: 'tok-read', clientId: 'client-1', scopes: ['read'] };
+
+  /** A server whose `pay` tool requires a scope the caller's token lacks. */
+  async function payServer(runs: { count: number }) {
+    const server = new McpServer2({ name: 'scoped', version: '1.0.0' });
+    await withKyaOs(server, { crypto, ...config, handshakeExposure: 'none' });
+    server.registerTool(
+      'pay',
+      { inputSchema: { item: z.string() }, scopeChallenge: requireScopes('payments:write') },
+      async () => {
+        runs.count += 1;
+        return { content: [{ type: 'text' as const, text: 'paid' }] };
+      },
+    );
+    return server;
+  }
+
+  /** A client of `serve`, recording the HTTP status of each tools/call. */
+  async function callPay(
+    serve: (request: Request) => Promise<Response>,
+    era: '2025-11-25' | '2026-07-28',
+  ): Promise<number[]> {
+    const statuses: number[] = [];
+    const transport = new StreamableHTTPClientTransport(new URL('http://kya-os.test/mcp'), {
+      fetch: async (url, init) => {
+        const response = await serve(new Request(url, init));
+        const sent = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
+        if (sent?.method === 'tools/call') statuses.push(response.status);
+        return response;
+      },
+    });
+    const client = new Client2(
+      { name: 'scoped-client', version: '1.0.0' },
+      era === '2026-07-28' ? { versionNegotiation: { mode: { pin: era } } } : undefined,
+    );
+    try {
+      await client.connect(transport);
+      await client.callTool({ name: 'pay', arguments: ARGS }).catch(() => undefined);
+    } finally {
+      await client.close();
+    }
+    return statuses;
+  }
+
+  it.each(['2025-11-25', '2026-07-28'] as const)('createMcpHandler at MCP %s: answers 403 and never runs the tool', async (era) => {
+    const runs = { count: 0 };
+    const handler = createMcpHandler(() => payServer(runs), { legacy: 'stateless' });
+
+    try {
+      const statuses = await callPay((request) => handler.fetch(request, { authInfo: AUTH }), era);
+
+      expect(statuses).toEqual([403]);
+      expect(runs.count).toBe(0);
+    } finally {
+      await handler.close();
+    }
+  });
+
+  it('a self-managed stateful WebStandardStreamableHTTPServerTransport: answers 403 and never runs the tool', async () => {
+    const runs = { count: 0 };
+    const server = await payServer(runs);
+    const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() });
+    await server.connect(transport);
+
+    try {
+      const statuses = await callPay((request) => transport.handleRequest(request, { authInfo: AUTH }), '2025-11-25');
+
+      expect(statuses).toEqual([403]);
+      expect(runs.count).toBe(0);
+    } finally {
+      await server.close();
+    }
+  });
+});

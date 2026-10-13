@@ -52,6 +52,8 @@ export interface Transport {
   sessionId?: string;
   setProtocolVersion?(version: string): void;
   setSupportedProtocolVersions?(versions: string[]): void;
+  /** SDK 2: installs per-tool OAuth `scopeChallenge` enforcement on an HTTP transport. */
+  setScopeChallengeResolver?(resolver: unknown): void;
   readonly hasPerRequestStream?: boolean;
 }
 
@@ -75,17 +77,28 @@ type ToolResult = {
  * low-level `Server` API connects through it:
  * `server.connect(createKyaOsTransport(transport, kyaos))`.
  *
+ * It proves and audits the result of every tool it is not told to exclude,
+ * including tools registered without a wrapper, as `withKyaOs` does. A
+ * low-level server that used only the wrappers on an unwrapped transport,
+ * which 1.19.0 allowed, sent its unwrapped tools' results unproven; through
+ * this transport they carry a proof too.
+ *
  * @param inner   - The real transport (Stdio, HTTP, etc.)
  * @param kyaos    - Configured KyaOsMiddleware instance
- * @param exclude - Tool names to skip proof generation for
+ * @param exclude - More tool names whose results are not proved by the
+ *   transport itself, in addition to the protocol tools `_kyaos` and
+ *   `_kyaos_handshake`, which are always excluded (as `excludeTools` adds
+ *   to them in `withKyaOs`). A wrapper's own proof is made whatever this
+ *   says.
  */
 export function createKyaOsTransport(
   inner: Transport,
   kyaos: KyaOsMiddleware,
-  exclude: string[] = ["_kyaos", "_kyaos_handshake"],
+  exclude: readonly string[] = [],
 ): Transport {
   // Request id → { toolName, args } for pending tool calls
   const pending = new Map<unknown, PendingCall>();
+  const excluded = new Set(["_kyaos", "_kyaos_handshake", ...exclude]);
   // From here on the middleware's wrappers stamp what they return, and the
   // layer tells a stamped result from one that only looks proven, and makes
   // the proofs they leave to it. Undefined for a custom middleware, whose
@@ -145,8 +158,9 @@ export function createKyaOsTransport(
 
     // What the SDK reads off, or hands to, the transport it connects passes
     // through to the inner transport: its session id (which the SDK puts on
-    // each request's context), the negotiated protocol version, and whether
-    // it streams per request.
+    // each request's context), the negotiated protocol versions, the scope
+    // challenge resolver, and whether it streams per request. These are every
+    // transport member SDK 1 and SDK 2 servers read or feature-detect.
     get sessionId() {
       return inner.sessionId;
     },
@@ -162,6 +176,14 @@ export function createKyaOsTransport(
       return inner.setSupportedProtocolVersions === undefined
         ? undefined
         : (versions: string[]) => inner.setSupportedProtocolVersions!(versions);
+    },
+    // SDK 2's McpServer installs per-tool OAuth scope enforcement only when
+    // the transport has this member (an `in` check), so a wrapper without it
+    // silently switched the enforcement off.
+    get setScopeChallengeResolver() {
+      return inner.setScopeChallengeResolver === undefined
+        ? undefined
+        : (resolver: unknown) => inner.setScopeChallengeResolver!(resolver);
     },
     get hasPerRequestStream() {
       return inner.hasPerRequestStream;
@@ -278,7 +300,7 @@ export function createKyaOsTransport(
           | { name?: string; arguments?: Record<string, unknown> }
           | undefined;
         const toolName = params?.name;
-        if (toolName && !exclude.includes(toolName)) {
+        if (toolName && !excluded.has(toolName)) {
           pending.set(message.id, {
             toolName,
             args: params?.arguments ?? {},

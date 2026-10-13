@@ -44,6 +44,9 @@ import { createOutcomeProver } from "./with-kya-os.outcome.js";
 import { createSessionProof } from "./with-kya-os.session.js";
 import { createProtocol } from "./with-kya-os.protocol.js";
 
+/** The longest timer a JavaScript runtime keeps (2^31 - 1 ms, about 24.8 days). */
+const MAX_PENDING_PROOF_TTL_MS = 2_147_483_647;
+
 // The public type surface lives in `./with-kya-os.types.ts`; re-export it here so
 // `import { KyaOsConfig, ... } from './with-kya-os'` continues to resolve unchanged.
 export * from "./with-kya-os.types.js";
@@ -84,9 +87,16 @@ export function createKyaOsMiddleware(
 ): KyaOsMiddleware {
   if (
     config.pendingProofTtlMs !== undefined &&
-    !(Number.isFinite(config.pendingProofTtlMs) && config.pendingProofTtlMs > 0)
+    !(
+      Number.isFinite(config.pendingProofTtlMs) &&
+      config.pendingProofTtlMs > 0 &&
+      config.pendingProofTtlMs <= MAX_PENDING_PROOF_TTL_MS
+    )
   ) {
-    throw new TypeError('pendingProofTtlMs must be a positive, finite number of milliseconds');
+    // A timer longer than this overflows, and Node and browsers fire it at once.
+    throw new TypeError(
+      `pendingProofTtlMs must be a positive number of milliseconds, at most ${MAX_PENDING_PROOF_TTL_MS}`,
+    );
   }
   if (config.audit && config.auditLog) {
     throw new TypeError('Configure either audit or legacy auditLog, not both');

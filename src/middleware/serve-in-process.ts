@@ -79,7 +79,20 @@ export function serveInProcess(kyaos: KyaOsMiddleware): InProcessServer {
           method: "tools/call",
           params: { name: toolName, arguments: args },
         });
-        const result = await handler(args, sessionId);
+        let result: KyaOsToolResult;
+        try {
+          result = await handler(args, sessionId);
+        } catch (error) {
+          // Answered as a server answers a failed request, so the transport
+          // forgets the call; then the caller gets the handler's error.
+          await transport.send({
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32603, message: error instanceof Error ? error.message : String(error) },
+          });
+          answers.delete(id);
+          throw error;
+        }
         await transport.send({ jsonrpc: "2.0", id, result });
         const answer = answers.get(id) as { result: R };
         answers.delete(id);

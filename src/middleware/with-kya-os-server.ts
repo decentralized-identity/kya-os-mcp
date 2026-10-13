@@ -55,8 +55,8 @@ export interface WithKyaOsOptions {
   requireAtomicNonce?: boolean;
   /**
    * How long a wrapper's result may wait to be sent before its proof is
-   * given up (default five minutes). Passed through to the middleware (see
-   * `KyaOsConfig.pendingProofTtlMs`).
+   * given up (default five minutes, at most 2147483647). Passed through to
+   * the middleware (see `KyaOsConfig.pendingProofTtlMs`).
    */
   pendingProofTtlMs?: number;
   /**
@@ -254,7 +254,7 @@ export async function withKyaOs(
   // Tool registration order does not matter — proofs are injected at the
   // transport boundary, after McpServer has already dispatched the call.
   if (options.proofAllTools !== false) {
-    const exclude = ["_kyaos", "_kyaos_handshake", ...(options.excludeTools ?? [])];
+    const exclude = options.excludeTools ?? [];
     const originalConnect = server.connect.bind(server);
 
     server.connect = (transport: Transport) =>

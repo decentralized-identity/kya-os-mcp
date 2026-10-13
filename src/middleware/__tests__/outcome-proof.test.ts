@@ -323,6 +323,39 @@ describe('proveOutcome', () => {
     }
   });
 
+  it('returns the outcome unproven, saying so, and records why, when its arguments cannot be hashed', async () => {
+    const { events, record } = auditEvents();
+    const kyaos = await servedMiddleware({ audit: { record } });
+    const sessionId = await handshake(kyaos);
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => {});
+
+    try {
+      // Arguments passed in process need not be JSON; with a BigInt the
+      // request has no canonical form to sign.
+      const result = await prove(kyaos, {
+        toolName: 'transfer', args: { amount: 10n }, outcome: 'denied', reason: 'over limit',
+        result: { content: [{ type: 'text', text: 'no' }], isError: true }, sessionId,
+      });
+
+      expect(proofOf(result)).toBeUndefined();
+      expect(result._meta).toEqual({
+        'org.kya-os/audit': { terminal: true, outcome: 'denied' },
+        proofError: 'Proof generation failed — response is unproven',
+      });
+      expect(events.slice(-3)).toEqual([
+        'authorization.denied:denied',
+        'tool.call.denied:denied',
+        'proof.rejected:failed',
+      ]);
+      expect(error).toHaveBeenCalledWith(
+        '[kya-os] Outcome proof generation failed',
+        expect.objectContaining({ tool: 'transfer' }),
+      );
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it('refuses an outcome it does not know', async () => {
     const kyaos = await servedMiddleware();
 

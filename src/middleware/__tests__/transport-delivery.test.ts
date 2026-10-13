@@ -31,8 +31,12 @@ import { withKyaOs } from '../with-kya-os-server.js';
 import { serveInProcess } from '../serve-in-process.js';
 import { createKyaOsTransport, type JSONRPCMessage } from '../kya-os-transport.js';
 import { createKyaOsMiddleware, type KyaOsToolResult } from '../with-kya-os.js';
-import { LIFECYCLE_STAMP_META_KEY } from '../with-kya-os.session.js';
-import { RESPONSE_PROOF_PROFILE_ENVELOPE, type ResponseProofProfile } from '../../proof/generator.js';
+import { LIFECYCLE_STAMP_META_KEY, PENDING_PROOF_META_KEY } from '../with-kya-os.session.js';
+import {
+  KYA_OS_PROOF_META_KEY,
+  RESPONSE_PROOF_PROFILE_ENVELOPE,
+  type ResponseProofProfile,
+} from '../../proof/generator.js';
 import { logger } from '../../logging/index.js';
 import type { AuditTrailService } from '../../audit/service.js';
 import {
@@ -262,6 +266,63 @@ describe.each(PROFILE_NAMES)('a wrapped result nested deeply, or serialized into
       error.mockRestore();
     }
   });
+
+  it('sends a result that names no proof as it is when it carries the stamp in a string, and voids the proofs named there', async () => {
+    const { recorded, record } = codes();
+    const kyaos = await createMiddleware({ ...config, autoSession: true, audit: { record } });
+    const wire = await connectTransport(kyaos);
+    const inner = await kyaos.wrapWithProof('inner', ran)(ARGS);
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => {});
+
+    try {
+      // The answer to no call the transport tracked, an excluded tool's say,
+      // with a wrapped result serialized into it.
+      const text = JSON.stringify(inner);
+      const received = await wire.send({ content: [{ type: 'text', text }] });
+
+      // It was never to carry a proof, so it goes as it is.
+      expect(received).toEqual({ content: [{ type: 'text', text }] });
+      expect(error).toHaveBeenCalledWith(
+        "[kya-os] A result carries the middleware's private members inside a string; it is sent unproven",
+      );
+      await vi.waitFor(() => expect(recorded).toContain('PROOF_NOT_SENT'));
+      const redeemed = await wire.send(inner, { toolName: 'inner', args: ARGS });
+      expect(proofOf(redeemed)).toBeUndefined();
+      expect((redeemed._meta as Record<string, unknown>).proofError).toBe(UNPROVEN);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('sends unproven a result that carries the stamp in a string and names a proof no longer waiting', async () => {
+    const kyaos = await createMiddleware({ ...config, autoSession: true });
+    const wire = await connectTransport(kyaos);
+    const inner = await kyaos.wrapWithProof('inner', ran)(ARGS);
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => {});
+
+    try {
+      const outer = await kyaos.wrapWithProof('outer', async () => ({
+        content: [{ type: 'text', text: JSON.stringify(inner) }],
+      }))(ARGS);
+      // Its first send closes its own proof unmade.
+      await wire.send(outer, { toolName: 'outer', args: ARGS });
+
+      // Sent again, as a task result fetched twice is, or naming its proof by
+      // something that is not an id.
+      const again = await wire.send(outer, { toolName: 'outer', args: ARGS });
+      const malformed = await wire.send(
+        { ...outer, _meta: { ...outer._meta, [PENDING_PROOF_META_KEY]: 7 } },
+        { toolName: 'outer', args: ARGS },
+      );
+
+      for (const received of [again, malformed]) {
+        expect(received.content).toEqual(outer.content);
+        expect(received._meta).toEqual({ proofError: UNPROVEN });
+      }
+    } finally {
+      error.mockRestore();
+    }
+  });
 });
 
 describe.each(PROFILE_NAMES)('the SDK request context through the transport (%s profile)', (profile) => {
@@ -365,7 +426,7 @@ describe.each(PROFILE_NAMES)('the SDK request context through the transport (%s 
 });
 
 describe.each(PROFILE_NAMES)('what a proof records of the call (%s profile)', (profile) => {
-  const { responseProofProfile } = PROFILES[profile];
+  const { responseProofProfile, binds } = PROFILES[profile];
   const config = responseProofProfile === undefined ? {} : { responseProofProfile };
 
   it('takes the scope from the call as the wrapper received it, whatever the handler does to its context', async () => {
@@ -408,6 +469,34 @@ describe.each(PROFILE_NAMES)('what a proof records of the call (%s profile)', (p
     const completed = events.find((event) => event.eventType === 'tool.call.completed');
     expect(completed?.actor?.did).toBe('did:example:agent');
     expect(JSON.stringify(events)).not.toContain('did:example:evil');
+  });
+
+  it('records an audit context it cannot copy as it was given, and still proves the call', async () => {
+    const events: Array<{ eventType: string; actor?: unknown }> = [];
+    const kyaos = await createMiddleware({
+      ...config,
+      audit: {
+        record: async (event) => {
+          events.push(event as never);
+          return { status: 'pending', event: event as never };
+        },
+      },
+    });
+    const sessionId = await handshake(kyaos);
+    const wire = await connectTransport(kyaos);
+    // A reactive store hands out Proxies, which structuredClone refuses.
+    const actor = new Proxy({ kind: 'pairwise_did' as const, did: 'did:example:agent' }, {});
+    expect(() => structuredClone(actor)).toThrow();
+
+    const result = await kyaos.wrapWithProof('report', ran)(ARGS, sessionId, { actor });
+    const received = await wire.send(result, { toolName: 'report', args: ARGS });
+
+    expect((await verifyReceived(received, {
+      signer: kyaos.identity.did, toolName: 'report', params: ARGS, binds,
+    })).valid).toBe(true);
+    // Not a copy: the caller's own object, at the start of the call and at its end.
+    expect(events.find((event) => event.eventType === 'tool.call.started')?.actor).toBe(actor);
+    expect(events.find((event) => event.eventType === 'tool.call.completed')?.actor).toBe(actor);
   });
 
   it('records PROOF_EXPIRED against the call the late result belongs to', async () => {
@@ -660,6 +749,79 @@ describe.each(PROFILE_NAMES)('private members in messages other than results (%s
     await vi.waitFor(() => expect(recorded).toContain('PROOF_NOT_SENT'));
   });
 
+  it('sends a string error data payload as it is, and closes a proof whose result was serialized into it', async () => {
+    const { recorded, record } = codes();
+    const kyaos = await createMiddleware({ ...config, autoSession: true, audit: { record } });
+    const sent: JSONRPCMessage[] = [];
+    const inner = {
+      start: async () => {},
+      close: async () => {},
+      send: async (message: JSONRPCMessage) => {
+        sent.push(JSON.parse(JSON.stringify(message)));
+      },
+    };
+    const wrapper = createKyaOsTransport(inner, kyaos);
+    await wrapper.start();
+    const wrapped = await kyaos.wrapWithProof('inner', ran)(ARGS);
+    const serialized = JSON.stringify(wrapped);
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => {});
+
+    try {
+      await wrapper.send({ jsonrpc: '2.0', id: 8, error: { code: -32603, message: 'failed', data: 'upstream timed out' } });
+      expect(error).not.toHaveBeenCalled();
+      await wrapper.send({ jsonrpc: '2.0', id: 9, error: { code: -32603, message: 'failed', data: serialized } });
+
+      // A string cannot be scrubbed: it goes as it is, and is reported.
+      expect(sent.map((message) => (message as { error: { data: unknown } }).error.data)).toEqual([
+        'upstream timed out',
+        serialized,
+      ]);
+      expect(error).toHaveBeenCalledWith(
+        "[kya-os] An outgoing message carries the middleware's private members inside a string",
+      );
+      // The proof named there can never be redeemed.
+      await vi.waitFor(() => expect(recorded).toContain('PROOF_NOT_SENT'));
+      await wrapper.send({ jsonrpc: '2.0', id: 10, result: structuredClone(wrapped) });
+      const late = (sent.at(-1) as { result: Record<string, unknown> }).result;
+      expect(proofOf(late)).toBeUndefined();
+      expect((late._meta as Record<string, unknown>).proofError).toBe(UNPROVEN);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('removes them from a message JSON cannot encode, which an in-process transport carries as it is', async () => {
+    const { recorded, record } = codes();
+    const kyaos = await createMiddleware({ ...config, autoSession: true, audit: { record } });
+    const sent: JSONRPCMessage[] = [];
+    // As InMemoryTransport does, the far end gets the message object itself.
+    const inner = {
+      start: async () => {},
+      close: async () => {},
+      send: async (message: JSONRPCMessage) => {
+        sent.push(message);
+      },
+    };
+    const wrapper = createKyaOsTransport(inner, kyaos);
+    await wrapper.start();
+    const wrapped = await kyaos.wrapWithProof('inner', ran)(ARGS);
+    const graph: Record<string, unknown> = { name: 'graph' };
+    graph.self = graph;
+
+    await wrapper.send({
+      jsonrpc: '2.0',
+      method: 'notifications/message',
+      params: { level: 'info', data: { count: 10n, graph, relayed: wrapped } },
+    });
+
+    const data = (sent[0] as { params: { data: Record<string, unknown> } }).params.data;
+    expect(data.relayed).toEqual({ content: wrapped.content });
+    expect(data.count).toBe(10n);
+    // A cycle is left as it is where it closes.
+    expect(data.graph).toBe(graph);
+    await vi.waitFor(() => expect(recorded).toContain('PROOF_NOT_SENT'));
+  });
+
   it('refuses to redeem, on the answer to one tool, a proof left for another', async () => {
     const { recorded, record } = codes();
     const kyaos = await createMiddleware({ ...config, autoSession: true, audit: { record } });
@@ -680,6 +842,32 @@ describe.each(PROFILE_NAMES)('private members in messages other than results (%s
       // The proof is gone: the genuine result cannot redeem it afterwards either.
       const late = await wire.send(genuine, { toolName: 'inner', args: { item: 'secret-request' } });
       expect(proofOf(late)).toBeUndefined();
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('sends an answer carrying another tool\'s stamp and id without the proof it relays', async () => {
+    const { recorded, record } = codes();
+    const kyaos = await createMiddleware({ ...config, autoSession: true, audit: { record } });
+    const wire = await connectTransport(kyaos);
+    const genuine = await kyaos.wrapWithProof('inner', ran)({ item: 'secret-request' });
+    // A proof this server made, for another answer.
+    const relayed = proofOf(await wire.send(await kyaos.wrapWithProof('inner', ran)(ARGS), { toolName: 'inner', args: ARGS }));
+    expect(relayed).toBeDefined();
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => {});
+
+    try {
+      const forged = await wire.send(
+        {
+          content: [{ type: 'text', text: 'ATTACKER CONTENT' }],
+          _meta: { ...genuine._meta, [KYA_OS_PROOF_META_KEY]: relayed },
+        },
+        { toolName: 'relay', args: ARGS },
+      );
+
+      expect(forged._meta).toEqual({ proofError: UNPROVEN });
+      expect(recorded).toContain('PROOF_TOOL_MISMATCH');
     } finally {
       error.mockRestore();
     }

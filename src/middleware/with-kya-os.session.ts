@@ -355,7 +355,9 @@ function scrubPrivateMeta<T>(root: T, stamp: string | undefined, keepEmptyRootMe
     }
     done.set(node, members ?? node);
   }
-  return { value: (done.get(root as object) ?? root) as T, leaked, ids };
+  // The root is the walk's first node and is always finished, as a copy or
+  // as itself.
+  return { value: done.get(root as object) as T, leaked, ids };
 }
 
 /**
@@ -574,11 +576,11 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
 
   /**
    * Stamp a result whose lifecycle a wrapper has run, so the outer layer
-   * neither re-proves nor re-audits it. Without an outer layer there is no
-   * token, nothing would strip the stamp, and the result is returned as it was.
+   * neither re-proves nor re-audits it. A wrapper runs only while a KYA-OS
+   * transport is open (see `requireProofLayer`), and a transport makes the
+   * token when it attaches, so there always is one here.
    */
   const stampLifecycle = (response: MutableToolResponse): MutableToolResponse => {
-    if (lifecycleStamp === undefined) return response;
     response._meta = {
       ...((response._meta as Record<string, unknown> | undefined) ?? {}),
       [LIFECYCLE_STAMP_META_KEY]: lifecycleStamp,

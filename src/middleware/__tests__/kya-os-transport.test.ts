@@ -589,6 +589,25 @@ describe("createKyaOsTransport with the KYA-OS middleware", () => {
       result: { content: [{ type: "text", text: "Hello!" }], _meta: { traceparent: "00-abc-01" } },
     });
   });
+
+  it("removes the private members from a notification or an error's data behind a custom middleware", async () => {
+    const inner = createMockTransport();
+    const wrapper = createKyaOsTransport(inner, createMockKyaOs());
+    await wrapper.start();
+    const relayed = {
+      content: [{ type: "text", text: "Hello!" }],
+      _meta: { traceparent: "00-abc-01", [LIFECYCLE_STAMP_META_KEY]: "token", [PENDING_PROOF_META_KEY]: "id" },
+    };
+
+    await wrapper.send({ jsonrpc: "2.0", method: "notifications/message", params: { level: "info", data: relayed } });
+    await wrapper.send({ jsonrpc: "2.0", id: 4, error: { code: -32603, message: "failed", data: { partial: relayed } } });
+
+    const kept = { content: [{ type: "text", text: "Hello!" }], _meta: { traceparent: "00-abc-01" } };
+    expect(inner.sentMessages).toEqual([
+      { jsonrpc: "2.0", method: "notifications/message", params: { level: "info", data: kept } },
+      { jsonrpc: "2.0", id: 4, error: { code: -32603, message: "failed", data: { partial: kept } } },
+    ]);
+  });
 });
 
 describe("createKyaOsTransport types", () => {

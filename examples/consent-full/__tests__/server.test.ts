@@ -15,6 +15,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createKyaOsMiddleware, NodeCryptoProvider, generateDidKeyFromBase64, KYA_OS_PROOF_META_KEY, type KyaOsMiddleware, type DelegationCredential, type NeedsAuthorizationError } from '@kya-os/mcp';
 import { createDelegationIssuerFromIdentity } from '../src/delegation-issuer.js';
 import { createConsentFullMcpServer, type ToolResult } from '../src/server.js';
+import { serveTool } from '../../_shared/serve-tool.js';
 
 const crypto = new NodeCryptoProvider();
 const CONSENT_URL = 'http://localhost:9999/consent';
@@ -63,14 +64,14 @@ describe('MCP Server with consent-full', () => {
       crypto,
     );
 
-    browseHandler = kyaos.wrapWithProof('browse', async (args) => ({
+    browseHandler = serveTool(kyaos, 'browse', kyaos.wrapWithProof('browse', async (args) => ({
       content: [{
         type: 'text',
         text: `Browsing category: ${args['category'] ?? 'all'}. Found 3 items.`,
       }],
-    })) as typeof browseHandler;
+    }))) as typeof browseHandler;
 
-    checkoutHandler = kyaos.wrapWithDelegation(
+    checkoutHandler = serveTool(kyaos, 'checkout', kyaos.wrapWithDelegation(
       'checkout',
       { scopeId: 'cart:write', consentUrl: CONSENT_URL },
       kyaos.wrapWithProof('checkout', async (args) => ({
@@ -79,7 +80,7 @@ describe('MCP Server with consent-full', () => {
           text: `Order confirmed for item: ${args['item'] ?? 'unknown'}. Thank you!`,
         }],
       })),
-    ) as typeof checkoutHandler;
+    )) as typeof checkoutHandler;
   });
 
   // Public tool — no delegation needed

@@ -363,6 +363,7 @@ export {
   toMcpToolCallback,
   type McpToolCallback,
   type McpToolCallbackResult,
+  createKyaOsTransport,
 } from './middleware/index.js';
 
 // Policy-as-Code subsystem + step-up gate

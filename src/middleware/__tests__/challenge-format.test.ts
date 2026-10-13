@@ -1,6 +1,7 @@
 /**
  * The delegation gate's `needs_authorization` challenge: what `formatChallenge`
- * may set on it, and what the gate sets by default.
+ * may set on it, and what the gate sets by default. Each middleware is served
+ * behind its transport, so every result is the one the client receives.
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { KyaOsChallengeFormatter, KyaOsMiddleware } from '../with-kya-os.js';
@@ -13,10 +14,10 @@ import {
 import { logger } from '../../logging/index.js';
 import type { PolicyEngine } from '../../policy/engine.js';
 import {
-  connectTransport,
   createMiddleware,
   handshake,
   proofOf,
+  served,
   verifyReceived,
 } from './helpers/received-proof.js';
 
@@ -50,7 +51,7 @@ const asErrorResult: KyaOsChallengeFormatter = (challenge) => ({
 
 describe('the delegation gate challenge', () => {
   it('is not an error result by default, while the policy gate step-up is (pinned)', async () => {
-    const kyaos = await createMiddleware();
+    const kyaos = await served(await createMiddleware());
     const sessionId = await handshake(kyaos);
     const stepUp: PolicyEngine = {
       evaluate: async () => ({ decision: 'step_up', quorum: { n: 1, approvers: [] }, reason: 'destructive' }),
@@ -68,7 +69,7 @@ describe('the delegation gate challenge', () => {
   });
 
   it('keeps the array form exactly: content alone', async () => {
-    const kyaos = await createMiddleware();
+    const kyaos = await served(await createMiddleware());
     const sessionId = await handshake(kyaos);
 
     const result = await gate(kyaos, () => [{ type: 'text', text: 'Authorize, then retry.' }])({}, sessionId);
@@ -78,14 +79,10 @@ describe('the delegation gate challenge', () => {
   });
 
   it('takes a whole result from formatChallenge and signs all of it under the envelope profile', async () => {
-    const kyaos = await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE });
+    const kyaos = await served(await createMiddleware({ responseProofProfile: RESPONSE_PROOF_PROFILE_ENVELOPE }));
     const sessionId = await handshake(kyaos);
-    const wire = await connectTransport(kyaos);
 
-    const result = await wire.send(
-      await gate(kyaos, asErrorResult)({ item: 'x' }, sessionId),
-      { toolName: 'checkout', args: { item: 'x' } },
-    );
+    const result = await gate(kyaos, asErrorResult)({ item: 'x' }, sessionId);
 
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toMatchObject({ resource_metadata: RESOURCE_METADATA });
@@ -100,7 +97,7 @@ describe('the delegation gate challenge', () => {
   });
 
   it('signs only the content of a whole result under the body profile', async () => {
-    const kyaos = await createMiddleware();
+    const kyaos = await served(await createMiddleware());
     const sessionId = await handshake(kyaos);
 
     const result = await gate(kyaos, asErrorResult)({ item: 'x' }, sessionId);
@@ -112,7 +109,7 @@ describe('the delegation gate challenge', () => {
   });
 
   it('drops the reserved _meta members formatChallenge returns, and keeps the rest', async () => {
-    const kyaos = await createMiddleware();
+    const kyaos = await served(await createMiddleware());
     const sessionId = await handshake(kyaos);
     const forged = { jws: 'forged', meta: {} };
 
@@ -140,7 +137,7 @@ describe('the delegation gate challenge', () => {
   });
 
   it('ignores result members of the wrong type', async () => {
-    const kyaos = await createMiddleware();
+    const kyaos = await served(await createMiddleware());
     const sessionId = await handshake(kyaos);
 
     const result = await gate(kyaos, () => ({
@@ -160,7 +157,7 @@ describe('the delegation gate challenge', () => {
     ['an object without content', { text: 'Authorize first' }],
     ['null', null],
   ])('falls back to the default challenge when formatChallenge returns %s', async (_label, value) => {
-    const kyaos = await createMiddleware();
+    const kyaos = await served(await createMiddleware());
     const sessionId = await handshake(kyaos);
     const error = vi.spyOn(logger, 'error').mockImplementation(() => {});
 

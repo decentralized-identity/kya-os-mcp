@@ -11,7 +11,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { withKyaOs } from '../with-kya-os-server.js';
 import type { KyaOsMiddleware } from '../with-kya-os.js';
 import { logger } from '../../logging/index.js';
-import { auditEvents, createMiddleware, crypto, handshake, proofOf } from './helpers/received-proof.js';
+import { auditEvents, createMiddleware, crypto, handshake, proofOf, served } from './helpers/received-proof.js';
 
 const greet = async () => ({
   content: [{ type: 'text', text: 'Hello!' }],
@@ -31,7 +31,7 @@ async function openAnotherSession(kyaos: KyaOsMiddleware): Promise<void> {
 describe('an allow result the session fallback cannot attribute', () => {
   it('is marked unproven when a second live session makes the fallback ambiguous', async () => {
     const { events, record } = auditEvents();
-    const kyaos = await createMiddleware({ autoSession: true, audit: { record } });
+    const kyaos = await served(await createMiddleware({ autoSession: true, audit: { record } }));
     const handler = kyaos.wrapWithProof('greet', greet);
     expect(proofOf(await handler({}))).toBeDefined();
     await openAnotherSession(kyaos);
@@ -83,7 +83,7 @@ describe('an allow result the session fallback cannot attribute', () => {
   });
 
   it('is left as it was when there is no session at all', async () => {
-    const kyaos = await createMiddleware();
+    const kyaos = await served(await createMiddleware());
 
     const result = await kyaos.wrapWithProof('greet', greet)({});
 
@@ -91,7 +91,7 @@ describe('an allow result the session fallback cannot attribute', () => {
   });
 
   it('is proved under a threaded session whatever else is live', async () => {
-    const kyaos = await createMiddleware({ autoSession: true });
+    const kyaos = await served(await createMiddleware({ autoSession: true }));
     const sessionId = await handshake(kyaos);
     await openAnotherSession(kyaos);
 

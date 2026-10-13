@@ -9,6 +9,7 @@ import type { ProofAgentIdentity } from '../../proof/generator.js';
 import type { NonceCacheProvider } from '../../providers/base.js';
 import { MemoryNonceCacheProvider } from '../../providers/memory.js';
 import { base64urlEncodeFromBytes } from '../../utils/base64.js';
+import { served } from './helpers/received-proof.js';
 
 /**
  * Holder binding at the PEP (spec §11.8). The gate already validates the
@@ -31,9 +32,9 @@ function makeServer(
   nonceCache?: NonceCacheProvider,
 ) {
   // The server identity (the PEP's own DID).
-  return makeIdentity().then((server) => ({
+  return makeIdentity().then(async (server) => ({
     server,
-    middleware: createKyaOsMiddleware(
+    middleware: await served(createKyaOsMiddleware(
       {
         identity: server,
         session: { sessionTtlMinutes: 60 },
@@ -41,7 +42,7 @@ function makeServer(
         ...(nonceCache ? { nonceCache } : {}),
       },
       crypto,
-    ),
+    )),
   }));
 }
 

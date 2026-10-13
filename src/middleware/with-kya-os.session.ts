@@ -6,12 +6,12 @@
  * paths: `wrapWithProof` (success responses) and `attachOutcomeProof` (denied /
  * step-up / needs-authorization outcomes). Extracted from `./with-kya-os.ts`.
  *
- * Under the body profile both paths sign in the handler, as they always
- * have, and the proof covers `content` only. Under the envelope profile the
- * proof covers the whole result, and the MCP SDK adds members after the
- * handler returns (`resultType` on the 2026-07-28 revision), so both paths
- * leave the proof to the outer layer, the withKyaOs transport, which makes it
- * over the result it sends.
+ * Neither path signs in the handler. The MCP SDK changes a result after the
+ * handler returns: SDK 2 adds `resultType` on the 2026-07-28 revision, both
+ * SDKs fill in a missing `content`, and SDK 2 appends a text item to `content`
+ * when `structuredContent` is not an object. Both paths therefore leave the
+ * proof to the outer layer, the withKyaOs transport, which makes it over the
+ * result it sends, under either profile.
  */
 
 import {
@@ -55,11 +55,11 @@ const auditMetaKey = 'org.kya-os/audit';
 export const LIFECYCLE_STAMP_META_KEY = 'org.kya-os/lifecycle-stamp';
 
 /**
- * The private `_meta` member that carries, under the envelope profile, what a
- * wrapper's proof is to claim: the transport makes the proof from it over the
- * result it sends, and strips it as it strips the stamp. It is honored only on
- * a result that also carries the middleware's stamp. Plain data, so a copy of
- * the result carries it as well as the original.
+ * The private `_meta` member that carries what a wrapper's proof is to claim:
+ * the transport makes the proof from it over the result it sends, and strips
+ * it as it strips the stamp. It is honored only on a result that also carries
+ * the middleware's stamp. Plain data, so a copy of the result carries it as
+ * well as the original.
  */
 export const PENDING_PROOF_META_KEY = 'org.kya-os/pending-proof';
 
@@ -109,15 +109,14 @@ interface PendingOutcomeProof {
 type PendingProof = PendingAllowedProof | PendingOutcomeProof;
 
 /**
- * Thrown when the envelope profile has to prove a result and no withKyaOs
- * transport reads this middleware's results.
+ * Thrown by a wrapper, on entry, while no withKyaOs transport reads this
+ * middleware's results.
  */
-const ENVELOPE_PROFILE_NEEDS_TRANSPORT =
-  '[kya-os] The envelope response-proof profile proves a result where the KYA-OS ' +
-  'transport sends it, after the MCP SDK has finished the result, and no KYA-OS ' +
-  'transport is connected. Connect the server with withKyaOs() (with proofAllTools ' +
-  'left on; excludeTools leaves a tool unproven), or wrap the transport you connect ' +
-  'with createKyaOsTransport().';
+const PROOF_NEEDS_TRANSPORT =
+  '[kya-os] A response proof is made where the KYA-OS transport sends the result, ' +
+  'after the MCP SDK has finished it, and no KYA-OS transport is connected. Connect ' +
+  'the server with withKyaOs() (with proofAllTools left on; excludeTools leaves a ' +
+  'tool unproven), or wrap the transport you connect with createKyaOsTransport().';
 
 /** `result` without the `_meta` members in `keys`, dropping `_meta` if nothing else is left. */
 function withoutMetaKeys<T extends ToolResult>(result: T, keys: readonly string[]): T {
@@ -173,8 +172,8 @@ const outerProofLayerHooks = new WeakMap<object, () => OuterProofLayer>();
 /**
  * Tell the middleware behind `wrapWithProof` that an outer layer (the withKyaOs
  * transport) reads its results. From then on its wrappers stamp what they
- * return with the middleware's token, and under the envelope profile leave
- * their proofs to the layer. Returns the layer's view of those results, or
+ * return with the middleware's token and leave their proofs to the layer;
+ * until then they refuse to run. Returns the layer's view of those results, or
  * undefined for a middleware this module did not create, whose results are
  * then never treated as its own.
  */
@@ -320,11 +319,10 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
 
   /**
    * Stamp a result whose lifecycle a wrapper has run, so the outer layer
-   * neither re-proves nor re-audits it. Without an outer layer there is no
-   * token, nothing would strip the stamp, and the result is returned as it was.
+   * neither re-proves nor re-audits it. Every wrapper has passed
+   * `requireProofLayer`, so the token exists.
    */
   const stampLifecycle = (response: MutableToolResponse): MutableToolResponse => {
-    if (lifecycleStamp === undefined) return response;
     response._meta = {
       ...((response._meta as Record<string, unknown> | undefined) ?? {}),
       [LIFECYCLE_STAMP_META_KEY]: lifecycleStamp,
@@ -365,20 +363,20 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
   });
 
   /**
-   * Under the envelope profile a proof can only be made where the result is
-   * sent, so a wrapper with no outer layer to send it refuses before it does
-   * anything, rather than ship a proof the client cannot verify.
+   * A proof is only made where the result is sent, so a wrapper with no outer
+   * layer to send it refuses before it does anything, rather than send a
+   * result it cannot prove.
    */
   const requireProofLayer: RequireProofLayer = (): void => {
-    if (bindsEnvelope && lifecycleStamp === undefined) {
-      throw new Error(ENVELOPE_PROFILE_NEEDS_TRANSPORT);
+    if (lifecycleStamp === undefined) {
+      throw new Error(PROOF_NEEDS_TRANSPORT);
     }
   };
 
   /**
    * Leave `pending` for the outer layer to prove over the result it sends:
-   * the envelope profile covers members the MCP SDK sets after the handler
-   * returns, so a proof made here would not cover what the client receives.
+   * the MCP SDK changes members after the handler returns, so a proof made
+   * here would not cover what the client receives.
    */
   const leaveToOuterLayer = (
     response: MutableToolResponse,
@@ -704,7 +702,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
         ...(context?.scopeId === undefined ? {} : { scopeId: context.scopeId }),
         ...(callAudit === undefined ? {} : { context: callAudit }),
       };
-      return bindsEnvelope ? leaveToOuterLayer(result, pending) : proveAllowedCall(result, pending);
+      return leaveToOuterLayer(result, pending);
     };
     return async (
       args: Record<string, unknown>,
@@ -718,9 +716,8 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
 
   /**
    * Sign an allowed call's result, record the proof and the call's
-   * completion, and hand the call to the audit sink. In the handler under the
-   * body profile; in the outer layer, over the result it sends, under the
-   * envelope profile.
+   * completion, and hand the call to the audit sink. Run by the outer layer,
+   * over the result it sends.
    */
   async function proveAllowedCall(
     result: MutableToolResponse,
@@ -898,13 +895,12 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       reason,
       terminalAuditDelivered,
     };
-    return bindsEnvelope ? leaveToOuterLayer(response, pending) : proveAuthorizationOutcome(response, pending);
+    return leaveToOuterLayer(response, pending);
   };
 
   /**
-   * Sign an authorization outcome and record the proof. In the handler under
-   * the body profile; in the outer layer, over the result it sends, under the
-   * envelope profile.
+   * Sign an authorization outcome and record the proof. Run by the outer
+   * layer, over the result it sends.
    */
   async function proveAuthorizationOutcome(
     response: MutableToolResponse,

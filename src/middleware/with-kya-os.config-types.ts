@@ -214,8 +214,10 @@ export interface KyaOsConfig {
    * result, after the MCP SDK has finished it: the SDK sets members after the
    * handler returns (`resultType` on the 2026-07-28 revision), and the proof
    * covers them. `withKyaOs` wraps the transport it is connected through;
-   * wrap one yourself with `createKyaOsTransport`. While none is connected,
-   * every wrapper and `proveOutcome` throws on entry under this profile.
+   * wrap one yourself with `createKyaOsTransport`. Once a KYA-OS transport
+   * has been created for the middleware, every wrapper result must go out
+   * through one: while none is open, every wrapper and `proveOutcome` throws
+   * on entry under this profile.
    */
   responseProofProfile?: ResponseProofProfile;
   /** Delegation verification overrides */

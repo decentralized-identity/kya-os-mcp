@@ -165,8 +165,8 @@ export async function served(kyaos: KyaOsMiddleware): Promise<KyaOsMiddleware & 
   }) as KyaOsMiddleware & { wire: TransportHarness };
 }
 
-export function proofOf(result: { _meta?: unknown }): DetachedProof | undefined {
-  return (result._meta as Record<string, DetachedProof> | undefined)?.[KYA_OS_PROOF_META_KEY];
+export function proofOf(result: object): DetachedProof | undefined {
+  return ((result as { _meta?: unknown })._meta as Record<string, DetachedProof> | undefined)?.[KYA_OS_PROOF_META_KEY];
 }
 
 /**

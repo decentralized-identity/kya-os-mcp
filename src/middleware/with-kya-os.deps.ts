@@ -43,8 +43,8 @@ export type AttachOutcomeProof = (
 /**
  * Refuse, by throwing, a wrapped call whose proof could not be made. A proof
  * is made where the result is sent, so every wrapper calls this on entry,
- * before it records or runs anything, and it throws while no withKyaOs
- * transport reads the middleware's results. Provided by the session/proof
+ * before it records or runs anything, and it throws while no KYA-OS
+ * transport is open for the middleware. Provided by the session/proof
  * sub-factory.
  */
 export type RequireProofLayer = () => void;

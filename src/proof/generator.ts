@@ -88,12 +88,6 @@ export interface ToolRequest {
   params?: unknown;
 }
 
-/**
- * The session members a proof claims (`aud` and `sessionId`). A full
- * `SessionContext` is one.
- */
-export type ProofSession = Pick<SessionContext, 'sessionId' | 'audience'>;
-
 export interface ToolResponse {
   data: unknown;
   meta?: {
@@ -321,7 +315,7 @@ export class ProofGenerator {
    *
    * @param request - The MCP tool request (method + params)
    * @param response - The tool response data
-   * @param session - The current session from handshake (its id and audience)
+   * @param session - The current session context from handshake
    * @param options - Optional proof metadata (scopeId, delegationRef, clientDid)
    * @returns Detached proof containing JWS and proof metadata
    * @throws {Error} If JWS generation fails (invalid key, crypto error)
@@ -329,7 +323,7 @@ export class ProofGenerator {
   async generateProof(
     request: ToolRequest,
     response: ToolResponse | undefined,
-    session: ProofSession,
+    session: SessionContext,
     options: ProofOptions = {}
   ): Promise<DetachedProof> {
     // `profile` is a minting option, not a proof claim — destructure it out so

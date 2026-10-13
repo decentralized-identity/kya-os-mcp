@@ -58,8 +58,8 @@ async function handshake(middleware: Awaited<ReturnType<typeof createTestMiddlew
   return JSON.parse(hs.content[0]!.text).sessionId as string;
 }
 
-function proofOf(result: { _meta?: unknown }): DetachedProof {
-  return (result._meta as Record<string, unknown>)[KYA_OS_PROOF_META_KEY] as DetachedProof;
+function proofOf(result: object): DetachedProof {
+  return ((result as { _meta?: unknown })._meta as Record<string, unknown>)[KYA_OS_PROOF_META_KEY] as DetachedProof;
 }
 
 async function sha256Of(crypto: NodeCryptoProvider, value: unknown): Promise<string> {

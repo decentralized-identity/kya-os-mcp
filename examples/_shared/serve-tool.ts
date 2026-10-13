@@ -56,7 +56,7 @@ function wireFor(kyaos: KyaOsMiddleware): Wire {
  * `handler`, answering as an MCP server would: its result goes through the
  * middleware's KYA-OS transport, and the caller gets what the client receives.
  */
-export function serveTool<R extends KyaOsToolResult = KyaOsToolResult>(
+export function serveTool<R = KyaOsToolResult>(
   kyaos: KyaOsMiddleware,
   toolName: string,
   handler: KyaOsToolHandler,

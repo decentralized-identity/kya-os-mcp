@@ -24,6 +24,12 @@ Versioning: https://semver.org/spec/v2.0.0.html
   builders.kya-os.org, signed by an independent implementation. Without
   `verifyStatusList` the checker behaves as before. The option becomes
   required in 2.0, and SPEC.md §6.10 states the requirement.
+- **`createKyaOsTransport` is exported from `@kya-os/mcp`,** next to
+  `createKyaOsMiddleware`, for servers on the low-level `Server` API, which
+  now connect through it (see BREAKING below). It was only on
+  `@kya-os/mcp/middleware`. Its `Transport` type declares the callbacks as
+  methods, so an SDK 1 or SDK 2 transport is accepted, and the wrapper
+  connects to either SDK's server, without a cast.
 
 ### Changed
 
@@ -33,25 +39,68 @@ Versioning: https://semver.org/spec/v2.0.0.html
   envelope-profile proof made in the handler, by `proveOutcome`,
   `wrapWithProof` or either gate, did not cover that member, so the client's
   check of the result it received failed. Under the envelope profile these
-  paths now record what the proof claims and leave the proof to the
-  `withKyaOs` transport, or one built with `createKyaOsTransport`. The
-  transport makes it in `send()`, after the SDK has finished the result, with
-  the same claims, `_meta` keys and audit events, recorded in the same order.
-  The proof covers exactly the result the client receives, on 2025-11-25 and
-  on 2026-07-28, with SDK 1 or SDK 2. This supersedes the 1.19.0 advice to
-  set `resultType: 'complete'` on a result before proving it under the
-  envelope profile: that is no longer needed, and a result that sets it is
-  proved as sent. The copy a handler gets back from `proveOutcome` or a
-  wrapper carries no proof yet, so return it from the handler as before.
-  With no KYA-OS transport connected, which includes `withKyaOs` with
-  `proofAllTools: false`, the wrappers and `proveOutcome` now throw under the
-  envelope profile before they record or run anything. The error names
-  `withKyaOs` and `createKyaOsTransport`. Before, they signed a proof in the
-  handler, and on 2026-07-28 it did not verify. The body profile, the
-  default, is unchanged: it covers `content`, it still signs in the handler,
-  and its output is byte-identical to 1.19.0.
-  `ProofGenerator.generateProof` now takes any session that has `sessionId`
-  and `audience` (new type `ProofSession`). Every `SessionContext` has both.
+  paths now leave the proof to the `withKyaOs` transport, or one built with
+  `createKyaOsTransport`, which makes it in `send()`, after the SDK has
+  finished the result. The proof covers exactly the result the client
+  receives, on 2025-11-25 and on 2026-07-28, with SDK 1 or SDK 2. This
+  supersedes the 1.19.0 advice to set `resultType: 'complete'` on a result
+  before proving it under the envelope profile: that is no longer needed, and
+  a result that sets it is proved as sent.
+  - What a proof claims stays in the middleware. The result carries only a
+    private one-time id, redeemed only on a result that also carries the
+    middleware's stamp, and the session is read again when the proof is made,
+    which takes its audience from it. A result naming no waiting proof, or
+    one whose session is gone by then, goes out without a proof and with
+    `_meta.proofError`, as does an outcome whose proof fails at send.
+  - The claims, `_meta` keys and audit events are the ones the handler-side
+    proof had. For a result that is sent, the audit events are recorded in
+    the same order as before: an allowed call's `tool.call.started` in the
+    handler, then `proof.generated` and `tool.call.completed` at send. A
+    result the SDK never sends (a cancelled call, or an SDK 1 result replaced
+    after an `outputSchema` check) is closed five minutes after the handler
+    returned: an allowed call records `proof.rejected` with the new code
+    `PROOF_NOT_SENT`, then `tool.call.completed`; an outcome, whose terminal
+    events were recorded in the handler, records `proof.rejected` with
+    `PROOF_NOT_SENT`. At most 10,000 proofs wait at once, and past that the
+    oldest is closed the same way.
+- **Body-profile proofs are made at the transport too, so neither profile
+  signs in the handler.** The MCP SDK also changes `content` after the
+  handler returns. SDK 2, on both revisions, appends a text item when
+  `structuredContent` is not an object and `content` has none. Both SDKs fill
+  in `content: []` when a handler leaves it out. A body-profile proof made in
+  the handler did not cover the appended item, so it failed verification, and
+  over a missing `content` it could not be made at all. The body profile now
+  takes the same path as the envelope profile above: the claims stay in the
+  middleware, and the transport makes the proof in `send()` over the result as
+  sent, with the same claims, `_meta` keys and audit events, recorded in the
+  same order. A result the SDK never sends is closed with `PROOF_NOT_SENT`.
+  Where the SDK does not reshape the result, the output is byte-identical to
+  1.19.0. An outcome proof that fails now also says so in `_meta.proofError`,
+  as an allowed call's already did.
+
+### Changed — BREAKING without an open KYA-OS transport
+
+- **BREAKING: under either profile, the wrappers and `proveOutcome` refuse to
+  run while no KYA-OS transport is open for the middleware.** Once
+  a KYA-OS transport has been created for a middleware, every wrapper result
+  must go out through one. A transport counts as open from `start()` until it
+  closes, by `close()` or by its own `onclose`. With none open,
+  `wrapWithProof`, `wrapWithDelegation`, `withPolicyGate` and `proveOutcome`
+  throw on entry, before they record or run anything, with an error that
+  names `withKyaOs` and `createKyaOsTransport`. Before, they signed a proof in
+  the handler, which on 2026-07-28 (envelope) or after an SDK reshaped
+  `content` (body) did not verify. This affects:
+  - `createKyaOsMiddleware` with handlers registered directly on a server
+    whose transport is not wrapped with `createKyaOsTransport`, including the
+    low-level `Server` pattern this repository's examples used: connect with
+    `server.connect(createKyaOsTransport(transport, kyaos))`;
+  - code that calls a wrapped handler directly, outside an MCP server (a
+    script or a test): send its result through a KYA-OS transport;
+  - `withKyaOs` with `proofAllTools: false`, which wraps no transport;
+  - `withKyaOs` called after `connect()`, whose transport is not wrapped;
+  - code that reads the proof inside the handler: the result `proveOutcome`
+    or a wrapper returns no longer carries one, under either profile. Return
+    it from the handler; the transport adds the proof.
 
 ## [1.19.0] - 2026-10-09
 

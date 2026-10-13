@@ -18,6 +18,7 @@ import { LIFECYCLE_STAMP_META_KEY, PENDING_PROOF_META_KEY } from "../with-kya-os
 import { base64urlEncodeFromBytes } from "../../utils/base64.js";
 import type { AuditTrailService } from "../../audit/service.js";
 import type { DelegationCredential, Proof } from "../../types/protocol.js";
+import { typeErrors } from "../../__tests__/utils/type-errors.js";
 
 function createMockTransport(): Transport & { sentMessages: JSONRPCMessage[] } {
   const sent: JSONRPCMessage[] = [];
@@ -146,9 +147,13 @@ describe("createKyaOsTransport", () => {
     expect(inner.onmessage).toBe(handler);
     expect(wrapper.onmessage).toBe(handler);
 
-    const closeHandler = () => {};
+    // The inner transport's own close reaches the handler, through the
+    // wrapper, which ends its open count on the way.
+    const closeHandler = vi.fn();
     wrapper.onclose = closeHandler;
-    expect(inner.onclose).toBe(closeHandler);
+    expect(wrapper.onclose).toBe(closeHandler);
+    inner.onclose!();
+    expect(closeHandler).toHaveBeenCalledTimes(1);
 
     const errorHandler = () => {};
     wrapper.onerror = errorHandler;
@@ -345,7 +350,8 @@ describe("createKyaOsTransport with the KYA-OS middleware", () => {
       ...challengeMeta
     } = challenge._meta as Record<string, unknown>;
     expect(stamp).toEqual(expect.any(String));
-    expect(pending).toMatchObject({ kind: "outcome", outcome: "needs_authorization" });
+    // Only a one-time id: what the proof claims stays in the middleware.
+    expect(pending).toEqual(expect.any(String));
     expect(proofOf(sent)?.meta.outcome).toBe("needs_authorization");
     expect(sent).toEqual({
       ...challenge,
@@ -583,4 +589,23 @@ describe("createKyaOsTransport with the KYA-OS middleware", () => {
       result: { content: [{ type: "text", text: "Hello!" }], _meta: { traceparent: "00-abc-01" } },
     });
   });
+});
+
+describe("createKyaOsTransport types", () => {
+  it("wraps an SDK 1 or SDK 2 transport, and the wrapper connects, with no cast", () => {
+    const errors = typeErrors(`
+      import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+      import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+      import { McpServer as McpServer2, InMemoryTransport } from '@modelcontextprotocol/server';
+      import { createKyaOsTransport, type KyaOsMiddleware } from './index.js';
+      declare const kyaos: KyaOsMiddleware;
+      const one = new McpServer({ name: 'sdk1', version: '1.0.0' });
+      void one.connect(createKyaOsTransport(new StdioServerTransport(), kyaos));
+      const two = new McpServer2({ name: 'sdk2', version: '1.0.0' });
+      const [, serverSide] = InMemoryTransport.createLinkedPair();
+      void two.connect(createKyaOsTransport(serverSide, kyaos));
+    `, new URL("../kya-os-transport-compatibility.ts", import.meta.url));
+
+    expect(errors).toBe("");
+  }, 60_000);
 });

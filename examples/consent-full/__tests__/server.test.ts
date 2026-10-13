@@ -177,13 +177,13 @@ describe('MCP Server with consent-full', () => {
       crypto,
     );
 
-    const expiredCheckout = expiredKyaOs.wrapWithDelegation(
+    const expiredCheckout = serveTool(expiredKyaOs, 'checkout', expiredKyaOs.wrapWithDelegation(
       'checkout',
       { scopeId: 'cart:write', consentUrl: CONSENT_URL },
       async (args) => ({
         content: [{ type: 'text', text: `Order: ${args['item']}` }],
       }),
-    );
+    ));
 
     const vc = await issueTestDelegation(serverDid, ['cart:write'], -3600);
     const result = await expiredCheckout({ item: 'widget', _kyaos_delegation: vc });
@@ -248,14 +248,14 @@ describe('MCP Server with consent-full', () => {
       crypto,
     );
 
-    const handler = testKyaOs.wrapWithDelegation(
+    const handler = serveTool(testKyaOs, 'checkout', testKyaOs.wrapWithDelegation(
       'checkout',
       { scopeId: 'cart:write', consentUrl: CONSENT_URL },
       async (args) => {
         capturedArgs = args;
         return { content: [{ type: 'text', text: 'ok' }] };
       },
-    );
+    ));
 
     const vc = await issueTestDelegation(serverDid, ['cart:write']);
     await handler({ item: 'widget', _kyaos_delegation: vc });

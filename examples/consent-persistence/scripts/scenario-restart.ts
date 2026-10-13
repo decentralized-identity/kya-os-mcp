@@ -14,7 +14,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createInstance, loadIdentity, mintCheckoutProof, SCOPE } from '../src/instance.js';
+import { createInstance, loadIdentity, mintCheckoutProof, SCOPE, servedCheckout } from '../src/instance.js';
 import { FileGrantStore } from '../src/file-grant-store.js';
 import { approve } from '../src/approve.js';
 import { describeProof } from '../src/explain-proof.js';
@@ -67,7 +67,7 @@ async function main(): Promise<void> {
   step('1. Agent calls checkout — before any grant exists');
   say(`grants persisted on disk right now: ${grantsOnDisk()}`);
   const proof1 = await mintCheckoutProof(identity, { item: 'laptop' });
-  const first = await instance1.checkout({ item: 'laptop', _kyaos_proof: proof1 });
+  const first = await servedCheckout(instance1)({ item: 'laptop', _kyaos_proof: proof1 });
   say(`server replied: "${firstLine(first)}"`);
   check('challenged instead of silently allowing (needs_authorization)', isChallenge(first));
 
@@ -86,7 +86,7 @@ async function main(): Promise<void> {
   say('');
   describeProof(proof2, 'checkout {item:"laptop"}').forEach(say);
   say('');
-  const retry = await instance2.checkout({ item: 'laptop', _kyaos_proof: proof2 });
+  const retry = await servedCheckout(instance2)({ item: 'laptop', _kyaos_proof: proof2 });
   say('server resolved the grant FROM THE FILE — not from memory, not from a re-pasted credential');
   say(`server replied: "${firstLine(retry)}"`);
   check('authorized after the restart, straight from the persisted grant', isConfirmed(retry));

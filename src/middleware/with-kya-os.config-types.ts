@@ -210,12 +210,15 @@ export interface KyaOsConfig {
    * existing verifiers keep working; opt in once your client population
    * verifies the envelope profile.
    *
-   * Envelope-profile proofs are made by the KYA-OS transport when it sends a
-   * result, after the MCP SDK has finished it: the SDK sets members after the
-   * handler returns (`resultType` on the 2026-07-28 revision), and the proof
-   * covers them. `withKyaOs` wraps the transport it is connected through;
-   * wrap one yourself with `createKyaOsTransport`. While none is connected,
-   * every wrapper and `proveOutcome` throws on entry under this profile.
+   * Proofs under either profile are made by the KYA-OS transport when it
+   * sends a result, after the MCP SDK has finished it: the SDK changes a
+   * result after the handler returns (`resultType` on the 2026-07-28
+   * revision, a filled-in or appended `content`), and the proof covers what
+   * the client receives. `withKyaOs` wraps the transport it is connected
+   * through; wrap one yourself with `createKyaOsTransport`. Once a KYA-OS
+   * transport has been created for the middleware, every wrapper result must
+   * go out through one: while none is open, every wrapper and `proveOutcome`
+   * throws on entry.
    */
   responseProofProfile?: ResponseProofProfile;
   /** Delegation verification overrides */

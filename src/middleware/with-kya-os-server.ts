@@ -56,15 +56,18 @@ export interface WithKyaOsOptions {
   /**
    * Response-proof profile for every proof this server mints (SPEC §7.3).
    * Defaults to the body profile; the envelope profile also binds
-   * `structuredContent`, `isError` and `resultType`, and its proofs are made
-   * by the transport this function wraps, so it needs `proofAllTools` left
-   * on. Passed through to the middleware (see
-   * `KyaOsConfig.responseProofProfile`).
+   * `structuredContent`, `isError` and `resultType`. Under either profile the
+   * proofs are made by the transport this function wraps. Passed through to
+   * the middleware (see `KyaOsConfig.responseProofProfile`).
    */
   responseProofProfile?: ResponseProofProfile;
   /** Auto-create sessions for non-KYA-OS clients (default: true) */
   autoSession?: boolean;
-  /** Attach proofs to all tool responses (default: true) */
+  /**
+   * Attach proofs to all tool responses (default: true). With `false` no
+   * transport is wrapped, so nothing is proven, and the wrappers refuse to
+   * run; leave a tool unproven with `excludeTools` instead.
+   */
   proofAllTools?: boolean;
   /**
    * Also emit the proof under the legacy bare `_meta.proof` key (default: true),

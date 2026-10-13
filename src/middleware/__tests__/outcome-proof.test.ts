@@ -363,7 +363,8 @@ describe('proveOutcome', () => {
       ...meta
     } = result._meta as Record<string, unknown>;
     expect(stamp).toEqual(expect.any(String));
-    expect(pending).toMatchObject({ kind: 'outcome', outcome: 'needs_authorization' });
+    // Only a one-time id: what the proof claims stays in the middleware.
+    expect(pending).toEqual(expect.any(String));
 
     // The SDK adds a member after the handler returns, as SDK 2 adds
     // resultType on the 2026-07-28 revision.

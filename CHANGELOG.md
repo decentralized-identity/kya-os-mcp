@@ -7,6 +7,8 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.21.1] - 2026-10-22
+
 ### Fixed
 
 - **Signed denials and challenges now verify when the call carried other

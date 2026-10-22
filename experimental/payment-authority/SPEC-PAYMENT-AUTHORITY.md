@@ -5,7 +5,8 @@
   are not deployed.
 - **Profile:** `org.kya-os/payments.v1`
 - **MCP extension:** `org.kya-os/payment-authority`
-- **Depends on:** `org.kya-os/decentralized-authority`
+- **Depends on:** `org.kya-os/decentralized-authority` (how the two
+  extensions relate is open decision 15)
 - **Date:** 2026-10-20
 - **Scope:** the payment intent, authorization, constraints caveat, and outcome
   artifacts; their digests; money; identifiers; evidence references; and MCP
@@ -29,6 +30,65 @@ independently defined Delegate Payment API. Namespace placement under a DIF or
 MCP registry remains a Working Group decision (see Open Working Group
 decisions).
 
+## Contents
+
+- [1. Abstract](#1-abstract)
+- [2. Design goals](#2-design-goals)
+- [3. Non-goals](#3-non-goals)
+- [4. Layered model](#4-layered-model)
+  - [4.1 Parties and roles](#41-parties-and-roles)
+  - [4.2 Conformance roles](#42-conformance-roles)
+  - [4.3 Conformance tiers](#43-conformance-tiers)
+- [5. Normative language](#5-normative-language)
+- [6. Identifiers](#6-identifiers)
+- [7. Money representation](#7-money-representation)
+  - [7.1 Time normalization](#71-time-normalization)
+- [8. Core artifacts](#8-core-artifacts)
+  - [8.1 Payment Intent](#81-payment-intent)
+  - [8.2 Payment Authorization Binding](#82-payment-authorization-binding)
+  - [8.3 Payment Outcome](#83-payment-outcome)
+  - [8.4 Payment constraint caveat and attenuation](#84-payment-constraint-caveat-and-attenuation)
+    - [8.4.1 Member classes](#841-member-classes)
+    - [8.4.2 Edge rules](#842-edge-rules)
+    - [8.4.3 Composition with the base chain verifier](#843-composition-with-the-base-chain-verifier)
+    - [8.4.4 Intent evaluation](#844-intent-evaluation)
+    - [8.4.5 Every caveat restricts the payment](#845-every-caveat-restricts-the-payment)
+    - [8.4.6 Verification order](#846-verification-order)
+  - [8.5 Artifact authenticity and envelopes](#85-artifact-authenticity-and-envelopes)
+  - [8.6 Schema and semantic-validation contract](#86-schema-and-semantic-validation-contract)
+  - [8.7 Artifact validation](#87-artifact-validation)
+- [9. Evidence references](#9-evidence-references)
+- [10. Digests and canonicalization](#10-digests-and-canonicalization)
+- [11. MCP extension negotiation](#11-mcp-extension-negotiation)
+  - [11.1 Identifiers and `_meta` members defined by this profile](#111-identifiers-and-_meta-members-defined-by-this-profile)
+- [12. Standards mappings](#12-standards-mappings)
+  - [12.1 UCP](#121-ucp)
+  - [12.2 ACP](#122-acp)
+  - [12.3 AP2](#123-ap2)
+  - [12.4 Verifiable Intent](#124-verifiable-intent)
+  - [12.5 x402](#125-x402)
+  - [12.6 W3C browser payments](#126-w3c-browser-payments)
+  - [12.7 Visa Trusted Agent Protocol](#127-visa-trusted-agent-protocol)
+  - [12.8 Mastercard Agent Pay](#128-mastercard-agent-pay)
+  - [12.9 EMVCo Agentic Payments](#129-emvco-agentic-payments)
+  - [12.10 A2A and HTTP](#1210-a2a-and-http)
+- [13. Error taxonomy](#13-error-taxonomy)
+- [14. Security and privacy requirements](#14-security-and-privacy-requirements)
+- [15. Conformance requirements](#15-conformance-requirements)
+  - [15.1 Vector corpus](#151-vector-corpus)
+    - [15.1.1 Vector format](#1511-vector-format)
+- [Open Working Group decisions](#open-working-group-decisions)
+- [References](#references)
+  - [Normative references](#normative-references)
+  - [Informative references](#informative-references)
+- [Appendix A. Member index](#appendix-a-member-index)
+  - [A.1 Payment Intent (`payment-intent.schema.json`)](#a1-payment-intent-payment-intentschemajson)
+  - [A.2 Payment Authorization (`payment-authorization.schema.json`)](#a2-payment-authorization-payment-authorizationschemajson)
+  - [A.3 Payment Outcome (`payment-outcome.schema.json`)](#a3-payment-outcome-payment-outcomeschemajson)
+  - [A.4 Payment constraints caveat (`payment-constraints.schema.json`)](#a4-payment-constraints-caveat-payment-constraintsschemajson)
+  - [A.5 Extension settings (`payment-extension-settings.schema.json`)](#a5-extension-settings-payment-extension-settingsschemajson)
+  - [A.6 Conditional requirements](#a6-conditional-requirements)
+
 ## 1. Abstract
 
 This profile binds a KYA-OS delegation and holder-of-key request proof to exact
@@ -39,8 +99,8 @@ subject of the execution profile.
 It is deliberately **not a payment rail, checkout protocol, wallet, credential
 format, or settlement network**. A commerce protocol such as UCP or ACP can
 construct a checkout. AP2 or another mandate format can supply user-intent
-evidence. x402, a card processor, a bank rail, or another adapter can authorize
-or settle value. KYA-OS answers the orthogonal questions:
+evidence. x402, a card network, a bank rail, or another rail can authorize or
+settle value. KYA-OS answers the orthogonal questions:
 
 1. Which agent is acting?
 2. Which accountable party delegated the action, and which party pays?
@@ -61,6 +121,21 @@ ten-hop limit, section 8.4), live status and revocation, accountable-party
 attribution, binding to the exact request digest, and rail-neutral outcome
 evidence.
 
+**Reading guide.** The document is long because it is written to be
+implemented exactly, step by step, with a vector corpus that checks many of
+its rules (section 15.1 says which). Most readers need four parts. Section 8.1
+defines the Payment Intent, the exact terms of one payment. Section 8.4
+defines the payment caveat that every delegation hop carries, the rules that
+keep a hop from widening any member of its parent's (section 8.4.2), and the
+order in which an Authority Verifier checks a chain against an intent (section
+8.4.6). Section 8.2 defines the Payment Authorization that records a decision
+to authorize, and section 8.3 the Payment Outcomes that record an attempt's
+states, up to what the rail did.
+
+The other sections, listed in the contents above, support those four.
+Executing a payment, from binding the request to recording what the rail did,
+is the execution profile's.
+
 ## 2. Design goals
 
 The profile is designed to be:
@@ -77,8 +152,8 @@ The profile is designed to be:
   verifies identity, delegation, approval, constraints, signatures,
   idempotency, and settlement state.
 - **Developer friendly.** Application code handles normalized intent and
-  outcome objects. Rail adapters encapsulate wallets, credentials, signatures,
-  gas, facilitator APIs, and native payloads.
+  outcome objects. Rail adapters encapsulate wallet interaction, credentials,
+  signatures, gas, facilitator APIs, and native payloads.
 - **Auditable without leaking credentials.** Public records carry digests and
   safe references, not card data, private keys, bearer tokens, or payment
   payloads.
@@ -161,6 +236,17 @@ No layer silently stands in for another. In particular:
   lifecycle or delegated-authority system.
 - MCP and A2A are transports, not payment guarantees.
 - A base `MaxAmount` caveat is a per-request ceiling.
+
+(Informative: "rail" is payments usage for whatever moves the value of a
+payment and reports the result, such as a payment protocol like x402, a card
+network, a bank transfer scheme, or a closed-loop credit ledger, and this
+document uses the word in that broad sense. What the profile constrains it
+names precisely: a **rail protocol** by its `id` and `version` (section 6),
+and an **allowed rail** by an entry of a caveat's `rails` (section 8.4.4, rule
+5). A **rail adapter** is the code, usually the Executor's, for one rail
+protocol; the model above names adapters by what they connect to, a wallet
+among them. A mandate (AP2) or a checkout (UCP, ACP) is not a rail: it carries
+authority or an order, not value.)
 
 This document defines the payment-profile layer's artifacts and their
 negotiation. The rail-adapter layer, and the binding of the artifacts to a
@@ -325,12 +411,15 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD",
 document are to be interpreted as described in BCP 14 [RFC2119] [RFC8174] when,
 and only when, they appear in all capitals, as shown here.
 
-Sections 1 to 3, the layered model that opens section 4, examples, and text
-marked informative are informative; the rest of this document is normative.
-An algorithm (the attenuation rules of section 8.4.2, the rule tables of
-sections 8.4.4 and 8.4.5, and the verification order of section 8.4.6)
-carries the force of the requirement that introduces it, and an
-implementation MAY realize it by any means that gives the same results.
+The contents list, sections 1 to 3, the layered model that opens section 4,
+examples, and text marked informative are informative; the rest of this
+document is normative. An algorithm (the attenuation rules of section 8.4.2,
+the rule tables of sections 8.4.4 and 8.4.5, and the verification order of
+section 8.4.6) carries the force of the requirement that introduces it, and an
+implementation MAY realize it by any means that gives the same results and
+keeps the limits that sections 8.4.4 and 8.4.6 set on the work itself: that no
+later check or step runs after a failure, the diagnosis bounds of section
+8.4.6, and its rule on retrieving status lists.
 
 ## 6. Identifiers
 
@@ -630,7 +719,13 @@ Its members are:
   the identifier of section 6 of that name; and the optional
   `redeemableByOthers`, `fundingAccount`, `settlementAmount` (section 7), and
   `quoteDigest` (below);
-- `purpose`, optional: text for display only, which no rule evaluates; and
+- `purpose`, optional: a natural-language description of what the payment is
+  for, 1 to 4,096 code points, for the people who read the intent and its
+  audit trail. No rule evaluates its meaning. (Informative: a display
+  therefore shows it as the words of whoever constructed the intent, never as
+  a checked term.) The intent digest commits to it, so every authorization and
+  outcome that names the intent commits to it too, and every party that sees
+  the intent can read it; and
 - `extensions`, optional (section 8): any critical extension data needed to
   evaluate the intent.
 
@@ -824,13 +919,13 @@ the client:
   followed by `JCS({tenant, caller, operation})` (section 10), at most 2,048
   code points. `tenant` is the payee's namespace at the Executor (for example
   its DID), `caller` the authenticated caller (section 4.1), and `operation`
-  the operation identifier, for an MCP `tools/call` exactly `tools/call#<name>`
-  with the tool name (1 to 256 code points, without `#`, CR, or LF). Each
-  member is non-empty and has no CR or LF, `tenant` and `caller` have at most
-  512 code points each, and all three come from the Executor's authentication
-  of the request, never from the caller. The Executor MUST refuse
-  (`payment_request_invalid`) a request whose caller identifier or scope
-  exceeds its limit; and
+  the operation identifier, for an MCP `tools/call` exactly
+  `tools/call#<name>` with the tool name (1 to 256 code points, without `#`,
+  CR, or LF). Each member is non-empty and has no CR or LF, `tenant` and
+  `caller` have at most 512 code points each, and all three come from the
+  Executor's authentication of the request, never from the caller. The
+  Executor MUST refuse (`payment_request_invalid`) a request whose caller
+  identifier or scope exceeds its limit; and
 - `requestDigest`: the request digest of section 10.
 
 The schemas check only these members' types and lengths, the value of
@@ -1199,12 +1294,11 @@ published transition, are defined by the execution profile.
   `payment_authority_recheck_failed`; or `payment_denied`, which records any
   other code that a refusal ending an attempt carries (section 13). An attempt
   ended because a fixed bound of its authorization (section 8.2) expired
-  records `payment_authority_expired`, unless the execution profile records
-  `payment_quote_expired`. (Informative: it does when the quote the intent
-  binds expired no later than that bound, and when the other rail terms it
-  verified expired; section 8.2.) `newIntentMaySucceed` records whether a new
-  intent for the purchase may succeed: `true` after an expiry, which a new
-  intent can replace; `false` after a revocation, a failed authority recheck
+  records `payment_authority_expired`, unless the execution profile, which
+  orders these expiries, records `payment_quote_expired` (section 8.2).
+  `newIntentMaySucceed` records whether a new intent for the purchase may
+  succeed: `true` after an expiry, which a new intent can replace; `false`
+  after a revocation, a failed authority recheck
   (`payment_authority_recheck_failed`), or a denial; and, for a rail failure,
   what the rail result states, except that a failure whose basis is `close`
   gives `true`. `basis` names, for a rail failure that rests on more than the
@@ -1499,7 +1593,8 @@ the effective-constraints digest of the caveat (section 8.4.2) is
 #### 8.4.1 Member classes
 
 Each member belongs to exactly one attenuation class. The class fixes what its
-absence means, which is what makes attenuation monotone:
+absence means, which is what makes attenuation monotone, member by member
+(open decision 16):
 
 | Class | Members | Absence means | A child may |
 | --- | --- | --- | --- |
@@ -1534,20 +1629,25 @@ fees can only be lower.
 
 #### 8.4.2 Edge rules
 
-For each root-to-leaf edge:
+The edge rules are **non-escalating**: a child caveat may repeat its parent's
+unchanged or narrow it as the rules below allow, and MUST NOT widen any member
+of it. Narrowing is never required. Section 8.4.3 calls these rules the
+caveat's narrowing relation, and an edge that widens fails them
+(`payment_constraint_widening`, section 8.4.6, step 6). For each root-to-leaf
+edge:
 
 1. A child ceiling MUST use the same exact asset and be less than or equal to
    its parent ceiling (exact cross-scale comparison below). It MAY remove an
    allowed asset.
 2. A child allowlist MUST be a non-empty subset: each child entry is admitted
-   by some parent entry, one with the same `id` (for a rail, the same
+   by some parent entry, one with the same `id` (for an allowed rail, the same
    protocol `id` and `version`) whose every commitment, digest, and qualifier
    the child entry carries unchanged. A child MAY introduce an allowlist when
    the parent omitted it; after introduction it MUST NOT be omitted.
 3. A child MAY add an account commitment to an allowed payee or a digest to an
    allowed resource. It MUST NOT remove or change an inherited commitment.
-4. Rail protocol id and version match exactly. A child MAY add a
-   `specDigest` to a rail whose protocol `id` is not an HTTP(S) locator (the
+4. Rail protocol id and version match exactly. A child MAY add a `specDigest`
+   to an allowed rail whose protocol `id` is not an HTTP(S) locator (the
    schema already requires one for an HTTP(S) locator, section 6), and a
    method, handler, scheme, network, transfer-method, payment-flow, or
    funding-account qualifier; it MUST NOT remove or change one it inherited.
@@ -1576,8 +1676,8 @@ For each root-to-leaf edge:
    inherited expiry: omitting it is widening.
 8. A member set with two entries of the same **semantic key** is invalid. The
    semantic key of an amount is its exact asset; of a quote authority, an
-   approver, or an approval mode, the string; of a payee, resource, or rail,
-   the complete member.
+   approver, or an approval mode, the string; of a payee, resource, or allowed
+   rail, the complete member.
 
 Amounts are compared without floating point. For matching assets:
 
@@ -1587,11 +1687,15 @@ child.coefficient * 10^(k - child.scale)
     <= parent.coefficient * 10^(k - parent.scale)
 ```
 
-Because every edge is a subset, the leaf caveat is the effective constraint
-set. The verifier normalizes it — every set member ordered by the unsigned
-octets of its RFC 8785 serialization (a memcmp over the canonical UTF-8 bytes),
-amounts at minimal scale (section 7), approval modes ordered the same way, and a
-prohibited fee policy omitted because omission is equivalent — and computes
+Because every edge is a subset, member by member, the leaf caveat is the
+effective constraint set. (Informative: a narrower fee policy can still exempt
+from approval a payment that its parent's requirement covered, since section
+8.4.1 measures the exemption by what can leave the funding source, which the
+narrower policy lowers; open decision 16.) The verifier normalizes it — every
+set member ordered by the unsigned octets of its RFC 8785 serialization (a
+memcmp over the canonical UTF-8 bytes), amounts at minimal scale (section 7),
+approval modes ordered the same way, and a prohibited fee policy omitted
+because omission is equivalent — and computes
 `SHA-256("org.kya-os.payments.constraints.v1" || 0x00 || JCS(value))`.
 `effectiveConstraintsDigest` records that result but never substitutes for
 verifying every chain edge.
@@ -1622,11 +1726,11 @@ steps 9 and 10).
 The verifier then evaluates the chain's payment caveats, root to leaf, and the
 immutable intent, given the decision time, the mode and issuer of the verified
 approval when one was presented, and, unless the quote and fee rules are
-deferred (below), the payer-borne fees and the verified quote (check 2).
-It applies the checks below in order. The first check that fails decides: no
-later check runs, the decision is a refusal with that check's reason, and the
-decision trace records that check's rule identifier (section 8.4.5 lists
-every identifier).
+deferred (below), the payer-borne fees and the verified quote (check 2). It
+applies the checks below in order. The first check that fails decides, and no
+later check runs (an Authority Verifier's diagnosis, section 8.4.6, aside):
+the decision is a refusal with that check's reason, and the decision trace
+records that check's rule identifier (section 8.4.5 lists every identifier).
 
 1. **Input bounds** (`constraints.input`). Before any rule, the verifier
    refuses with `payment_constraint_invalid` a chain of fewer than 1 or more
@@ -1900,16 +2004,17 @@ identifier.
 
 The Authority Verifier MUST decide an authenticated payment request by the
 steps below, in exactly this order, and MUST refuse it at the first step that
-fails: no later step runs, and the refusal carries the one section 13 reason
-that step names for the failure. Before step 1 the Executor has authenticated
-the request and made the checks that the request and the intent alone decide
-(section 4.2), and the request has passed them: the intent's audience, payee,
-presenter, `createdAt`, and expiry (sections 4.1, 7.1, and 8.1), its
-extensions (check V5 of section 8.7, and section 14, item 6), and the request
-proof's `expires` (sections 7.1 and 8.2). The order of those checks, and so
-the reason a request carries when several of them fail, is defined by the
-execution profile; the first-failure rule of this section, and of section 13,
-applies from step 1, to a request that has passed them all.
+fails: no later step runs, except as the diagnosis below allows, and the
+refusal carries the one section 13 reason that step names for the failure.
+Before step 1 the Executor has authenticated the request and made the checks
+that the request and the intent alone decide (section 4.2), and the request
+has passed them: the intent's audience, payee, presenter, `createdAt`, and
+expiry (sections 4.1, 7.1, and 8.1), its extensions (check V5 of section 8.7,
+and section 14, item 6), and the request proof's `expires` (sections 7.1 and
+8.2). The order of those checks, and so the reason a request carries when
+several of them fail, is defined by the execution profile; the first-failure
+rule of this section, and of section 13, applies from step 1, to a request
+that has passed them all.
 
 1. **Bounded parse.** A chain of 1 to 10 credentials is presented, and no
    object in them repeats a member name (section 10); each credential's
@@ -2016,6 +2121,32 @@ A request that fails several steps is refused with the reason of the first:
 a `MaxAmount` exceeded at hop 0 of a chain whose payment caveat widens at
 hop 1 is refused at step 6 (`payment_constraint_widening`, naming the widening
 rule and hop 1), never at step 7.
+
+The order decides the reason a refusal carries, never whether a request is
+refused: a request that fails any step is refused. The first-failure rule
+makes that reason a function of what the steps read: two Authority Verifiers
+that read the same inputs at every step, their own configuration and the
+decision time included, refuse a request with the same reason. After a
+failure, an Authority Verifier MAY run later steps, or later checks of section
+8.4.4, for diagnosis alone: only for a chain that passed steps 1 to 3 and
+holds no payment caveat over step 6's size ceiling, only on inputs that passed
+check 1 of section 8.4.4, and never so as to retrieve anything over the
+network. What they find MUST NOT be the decision, change its reason, enter the
+decision trace, travel in the refusal, or, like an error, carry a credential,
+a policy secret, or a rail payload (section 13).
+
+Step 1 bounds the chain before any signature, DID, or status work, so for any
+chain the verifier resolves at most ten issuer DIDs, at step 3; fetches at
+most ten status lists and resolves their issuers, at step 8 (section 14, item
+19); verifies one approval's evidence, at step 9, which its format bounds
+(section 8.2); and resolves nothing before step 2 has accepted the chain's
+root. Step 4 checks only that every credential can be revoked; the revocation
+check itself is step 8's status read. A credential names the status list it is
+read from, so, whatever means it uses to reach the results of this section
+(section 5), an Authority Verifier MUST NOT, for a chain, retrieve a status
+list over the network, or retrieve a DID document over the network in order to
+verify a status list, until steps 1 to 7 and the base chain rules of step 8
+have passed for the whole chain.
 
 ### 8.5 Artifact authenticity and envelopes
 
@@ -2588,11 +2719,24 @@ of a rail or commerce mapping, such as the x402 rules of section 12.5, are the
 execution profile's adapter rules, which also define how an adapter verifies,
 settles, and reconciles.
 
+**Why the profile defines its own artifacts.** The specifications below serve
+their own parties and cover their own parts of agent commerce. The profile
+adopts none of their data models as its own, for two reasons. Adopting one
+would tie every payment to that protocol, against the neutrality goals of
+section 2. And the profile's proposed additions (section 1), the payer as the
+root of a multi-hop delegation chain with live revocation, the binding to the
+exact request digest, and one outcome form for every rail, need members that
+none of those data models was designed to carry together. Each subsection says
+how its specification relates to the profile, and what of it, if anything, the
+profile keeps as evidence (section 9). A mapping is not a claim of
+compatibility: each protocol's own rules still apply.
+
 ### 12.1 UCP
 
-UCP is a commerce adapter. Its current dated release is `2026-08-25`; discovery,
-services, capabilities, payment handlers, and extension versions remain exact
-UCP concepts. See the [UCP overview](https://ucp.dev/2026-08-25/specification/overview/).
+UCP is a commerce protocol, which a commerce adapter implements. Its current
+dated release is `2026-08-25`; discovery, services, capabilities, payment
+handlers, and extension versions remain exact UCP concepts. See the [UCP
+overview](https://ucp.dev/2026-08-25/specification/overview/).
 
 - A merchant-signed checkout or stable checkout snapshot maps to `commerce` and
   a resource digest.
@@ -2661,10 +2805,11 @@ outcomes. See the
 
 ### 12.5 x402
 
-x402 is a rail adapter. The core v2 specification [X402], cited at commit
+x402 is a rail protocol, which an adapter implements. The core v2
+specification [X402], cited at commit
 `71eb9a55e081e7b81ba3046d0bd17c3eb9c7bf81`, separates transport, scheme, and
-network concerns and uses string atomic amounts. See the
-[x402 v2 specification](https://raw.githubusercontent.com/x402-foundation/x402/71eb9a55e081e7b81ba3046d0bd17c3eb9c7bf81/specs/x402-specification-v2.md).
+network concerns and uses string atomic amounts. See the [x402 v2
+specification](https://raw.githubusercontent.com/x402-foundation/x402/71eb9a55e081e7b81ba3046d0bd17c3eb9c7bf81/specs/x402-specification-v2.md).
 
 - `x402Version`, a JSON integer, maps to the payment protocol version, which
   is its decimal spelling with no sign or leading zero (`2` is `"2"`). A
@@ -2728,11 +2873,12 @@ network concerns and uses string atomic amounts. See the
 
 ### 12.6 W3C browser payments
 
-W3C Payment Request is a human-present browser adapter, not the base autonomous
-agent transport. `supportedMethods` maps to `methodId`; opaque method-specific
-data stays with the adapter. See the current
-[Payment Request specification](https://www.w3.org/TR/payment-request/) and
-[Payment Method Identifiers](https://www.w3.org/TR/payment-method-id/).
+W3C Payment Request is a human-present browser API, which a browser adapter
+implements, not the base autonomous agent transport. `supportedMethods` maps
+to `methodId`; opaque method-specific data stays with the adapter. See the
+current [Payment Request
+specification](https://www.w3.org/TR/payment-request/) and [Payment Method
+Identifiers](https://www.w3.org/TR/payment-method-id/).
 
 A FIDO authenticator's WebAuthn assertion [WEBAUTHN] and a W3C Secure Payment
 Confirmation assertion [SPC], which the browser obtains after showing the
@@ -2825,7 +2971,7 @@ defines the reasons for the failures of its own rules:
 | `payment_request_mismatch` | The request digest of the verified request proof differs from the `idempotency.requestDigest` of the Payment Authorization used with it (sections 4.2 and 8.2). |
 | `payment_authority_mismatch` | A Payment Authorization is inconsistent with the intent it binds, for example by outliving it, or differs from the authority facts derived for the request it is used with (sections 4.2 and 8.2). |
 | `payment_authority_expired` | The intent or a Payment Authorization has expired, or another bound of the authorization expiry (section 8.2) has lapsed since the decision, an approval that expired after it was verified among them, unless a check that reads that bound finds it first. Those checks refuse a reached bound with their own reasons: at the decision time, the request proof's `expires`, a check before step 1 of section 8.4.6, `proof_invalid` (section 7.1); a delegation bound, `payment_delegation_invalid` (step 5); an approval's, `payment_approval_invalid` (step 9); a status-freshness bound, `payment_authority_stale` (step 8); and the payment caveat's `expiresAt`, at step 10 or in the re-evaluation that precedes a payment effect, `payment_constraint_denied` (rule `intent.expiry`, section 8.4.4). The execution profile orders its checks of the authorization expiry and that re-evaluation, and so decides which of them finds a lapsed caveat `expiresAt` first. |
-| `payment_authority_stale` | Live status required for payment was unavailable, unauthenticated, or not live at the decision clock (section 14, item 19). A status-freshness bound (section 8.2) that lapses after the decision is an expiry (`payment_authority_expired`), since no check of this document reads it again. The execution profile assigns this reason too when its final recheck of authority cannot complete. |
+| `payment_authority_stale` | Live status required for payment was unavailable, unauthenticated, or not live at the decision clock (section 14, item 19). A status-freshness bound (section 8.2) that lapses after the decision is an expiry (`payment_authority_expired`), since no check of this document reads it again. The execution profile assigns this reason too when the status walk of its final recheck of authority cannot complete; a re-evaluation that cannot complete is `payment_constraint_invalid` (section 8.4.4). |
 | `payment_approval_invalid` | Presented `approvalEvidence` (section 8.2) yields no verified approval, or the verified approval it yields names another intent digest or an evidence digest other than the one the Authority Verifier computed (section 8.2), has expired at the decision time, or is not admitted by the authorization schema's `approval` member; or its issuer, or its `did` subject, is a delegate of the chain or, when `principal` differs from `responsibleParty`, the principal, refused by the no-self-approval rule before the approver set is consulted and whatever it lists (section 8.4.6, step 9). |
 | `payment_constraint_invalid` | A credential of the payment chain carries no payment-constraints caveat or more than one, or one over 16,384 bytes or failing its strict parse (section 8.4.6, step 6); or, for the constraint evaluator used on its own, an input is out of bounds or malformed (`constraints.input`, `constraints.structure`, section 8.4.4); or the re-evaluation that precedes a payment effect cannot read the effective constraints or the approval facts the authority decision established, or cannot complete (section 8.4.4). |
 | `payment_constraint_widening` | A delegation hop widens a payment caveat (sections 8.4.2 and 8.4.6, step 6). |
@@ -2899,7 +3045,9 @@ items 1 to 5 and 7 do, the security property that those requirements serve.
    them; a delegate can narrow or drop a grant but never create one.
 9. **Fees fail closed.** An omitted fee policy prohibits payer-borne fees.
 10. **Every caveat binds.** Every caveat in the chain is evaluated against the
-    intent; one the verifier cannot evaluate denies.
+    intent; one the verifier cannot evaluate denies. (The payment caveat is
+    evaluated as the leaf's effective constraints, section 8.4.4; open
+    decision 16.)
 11. **Payer binding.** An intent names its payer, and only that payer's
     verified authority can authorize it.
 12. **Bounded work.** Chain length, credential size, caveat count, and the
@@ -3512,6 +3660,15 @@ members, compared as JSON values. The members of each set's vectors are:
     networks — stating for each which credentials others can redeem, their end
     of validity, their commitment to the intent, their redemption slot, and how
     it spells the funding account?
+15. Should `org.kya-os/payment-authority` remain an MCP extension of its own,
+    declared beside `org.kya-os/decentralized-authority` and versioned on its
+    own (section 11), or become an optional part of that extension, declared
+    and versioned with it, so that no matrix of compatible version pairs
+    arises?
+16. Should the approval exemption of section 8.4.1 be decided against every
+    caveat in the chain that carries a requirement, each with its own fee
+    policy, so that a child's narrower fee policy cannot exempt a payment its
+    parent's requirement covered (section 8.4.2)?
 
 Until Working Group ratification and publication under new stable schema ids,
 this document remains experimental and is not a ratified DIF standard.

@@ -46,12 +46,23 @@ export class StatusList2021Manager {
    */
   private updateLocks = new Map<string, Promise<void>>();
 
+  /**
+   * @param compressor - GZIP-compresses the bitstring of every list this
+   *   manager publishes. Defaults to `statusListGzipCodec` (through
+   *   {@link BitstringManager}). Status-list readers accept only GZIP, so a
+   *   list published without it would read as revoked everywhere; publishing
+   *   throws instead.
+   * @param decompressor - Inflates the GZIP lists this manager reads. Defaults
+   *   to `statusListGzipCodec` (through {@link BitstringManager}). Reading
+   *   throws on a list that is not GZIP and on a decompressor that returns its
+   *   input unchanged.
+   */
   constructor(
     private storage: StatusListStorageProvider,
     private identity: StatusListIdentityProvider,
     private signingFunction: VCSigningFunction,
-    private compressor: CompressionFunction,
-    private decompressor: DecompressionFunction,
+    private compressor?: CompressionFunction,
+    private decompressor?: DecompressionFunction,
     options?: {
       statusListBaseUrl?: string;
       defaultListSize?: number;
@@ -278,12 +289,17 @@ export class StatusList2021Manager {
   }
 }
 
+/**
+ * Build a {@link StatusList2021Manager}. `compressor` and `decompressor`
+ * default to `statusListGzipCodec`; when supplied they MUST GZIP and
+ * inflate GZIP, as the manager's constructor documents.
+ */
 export function createStatusListManager(
   storage: StatusListStorageProvider,
   identity: StatusListIdentityProvider,
   signingFunction: VCSigningFunction,
-  compressor: CompressionFunction,
-  decompressor: DecompressionFunction,
+  compressor?: CompressionFunction,
+  decompressor?: DecompressionFunction,
   options?: {
     statusListBaseUrl?: string;
     defaultListSize?: number;

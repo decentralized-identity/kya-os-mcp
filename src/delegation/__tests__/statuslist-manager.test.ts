@@ -27,22 +27,22 @@ import type {
   CredentialStatus,
   Proof,
 } from "../../types/protocol.js";
-import { gzipSync, gunzipSync } from "node:zlib";
+import { gzipSync } from "node:zlib";
+import { statusListGzipCodec } from "../../utils/statuslist-gzip.js";
+import { createRevocationChecker } from "../../card/revocation.js";
+
+/** The `encodedList` of a raw bitstring, GZIP'd independently of the codec under test. */
+const encodedListOf = (bytes: Uint8Array): string =>
+  `u${Buffer.from(gzipSync(bytes)).toString("base64url")}`;
 
 describe("StatusList2021Manager", () => {
   let mockStorage: StatusListStorageProvider;
   let mockIdentity: StatusListIdentityProvider;
   let mockSigningFunction: VCSigningFunction;
-  let mockCompressor: CompressionFunction;
-  let mockDecompressor: DecompressionFunction;
 
-  // Create a simple bitstring representation for testing
-  const createEncodedList = (size: number = 16): string => {
-    // Create a simple base64url encoded "bitstring" for testing
-    // This represents an empty list (all zeros)
-    const bytes = new Uint8Array(Math.ceil(size / 8));
-    return Buffer.from(bytes).toString("base64url");
-  };
+  // An empty list (all zeros) for testing
+  const createEncodedList = (size: number = 16): string =>
+    encodedListOf(new Uint8Array(Math.ceil(size / 8)));
 
   const createStatusListCredential = (
     id: string,
@@ -91,15 +91,6 @@ describe("StatusList2021Manager", () => {
       proofPurpose: "assertionMethod",
       proofValue: "mock-signature",
     });
-
-    // Simple mock compressor/decompressor (just passes through for testing)
-    mockCompressor = {
-      compress: vi.fn().mockImplementation(async (data: Uint8Array) => data),
-    };
-
-    mockDecompressor = {
-      decompress: vi.fn().mockImplementation(async (data: Uint8Array) => data),
-    };
   });
 
   describe("constructor and configuration", () => {
@@ -108,8 +99,8 @@ describe("StatusList2021Manager", () => {
         mockStorage,
         mockIdentity,
         mockSigningFunction,
-        mockCompressor,
-        mockDecompressor
+        statusListGzipCodec,
+        statusListGzipCodec
       );
 
       expect(manager.getStatusListBaseUrl()).toBe("https://status.example.com");
@@ -121,8 +112,8 @@ describe("StatusList2021Manager", () => {
         mockStorage,
         mockIdentity,
         mockSigningFunction,
-        mockCompressor,
-        mockDecompressor,
+        statusListGzipCodec,
+        statusListGzipCodec,
         {
           statusListBaseUrl: "https://custom.example.com/status",
           defaultListSize: 65536,
@@ -142,8 +133,8 @@ describe("StatusList2021Manager", () => {
         mockStorage,
         mockIdentity,
         mockSigningFunction,
-        mockCompressor,
-        mockDecompressor
+        statusListGzipCodec,
+        statusListGzipCodec
       );
 
       vi.mocked(mockStorage.allocateIndex).mockResolvedValue(42);
@@ -168,8 +159,8 @@ describe("StatusList2021Manager", () => {
         mockStorage,
         mockIdentity,
         mockSigningFunction,
-        mockCompressor,
-        mockDecompressor
+        statusListGzipCodec,
+        statusListGzipCodec
       );
 
       vi.mocked(mockStorage.allocateIndex).mockResolvedValue(100);
@@ -190,8 +181,8 @@ describe("StatusList2021Manager", () => {
         mockStorage,
         mockIdentity,
         mockSigningFunction,
-        mockCompressor,
-        mockDecompressor
+        statusListGzipCodec,
+        statusListGzipCodec
       );
 
       vi.mocked(mockStorage.getStatusList).mockResolvedValue(null);
@@ -218,8 +209,8 @@ describe("StatusList2021Manager", () => {
         mockStorage,
         mockIdentity,
         mockSigningFunction,
-        mockCompressor,
-        mockDecompressor
+        statusListGzipCodec,
+        statusListGzipCodec
       );
 
       const existingCredential = createStatusListCredential(
@@ -245,8 +236,8 @@ describe("StatusList2021Manager", () => {
         mockStorage,
         mockIdentity,
         mockSigningFunction,
-        mockCompressor,
-        mockDecompressor
+        statusListGzipCodec,
+        statusListGzipCodec
       );
 
       const statusListId = "https://status.example.com/revocation/v1";
@@ -285,15 +276,15 @@ describe("StatusList2021Manager", () => {
         mockStorage,
         mockIdentity,
         mockSigningFunction,
-        mockCompressor,
-        mockDecompressor
+        statusListGzipCodec,
+        statusListGzipCodec
       );
 
       const statusListId = "https://status.example.com/revocation/v1";
       // Create a credential where bit 5 is already set
       const bytes = new Uint8Array(2);
       bytes[0] = 0b00000100; // Bit 5 is set (MSB-first: 0x80 >> 5)
-      const encodedList = Buffer.from(bytes).toString("base64url");
+      const encodedList = encodedListOf(bytes);
       const existingCredential = createStatusListCredential(
         statusListId,
         "revocation",
@@ -323,8 +314,8 @@ describe("StatusList2021Manager", () => {
         mockStorage,
         mockIdentity,
         mockSigningFunction,
-        mockCompressor,
-        mockDecompressor
+        statusListGzipCodec,
+        statusListGzipCodec
       );
 
       vi.mocked(mockStorage.getStatusList).mockResolvedValue(null);
@@ -349,8 +340,8 @@ describe("StatusList2021Manager", () => {
         mockStorage,
         mockIdentity,
         mockSigningFunction,
-        mockCompressor,
-        mockDecompressor
+        statusListGzipCodec,
+        statusListGzipCodec
       );
 
       const statusListId = "https://status.example.com/revocation/v1";
@@ -381,15 +372,15 @@ describe("StatusList2021Manager", () => {
         mockStorage,
         mockIdentity,
         mockSigningFunction,
-        mockCompressor,
-        mockDecompressor
+        statusListGzipCodec,
+        statusListGzipCodec
       );
 
       const statusListId = "https://status.example.com/revocation/v1";
       // Create bitstring with bit 5 set
       const bytes = new Uint8Array(2);
       bytes[0] = 0b00000100; // Bit 5 is set (MSB-first: 0x80 >> 5)
-      const encodedList = Buffer.from(bytes).toString("base64url");
+      const encodedList = encodedListOf(bytes);
       const existingCredential = createStatusListCredential(
         statusListId,
         "revocation",
@@ -417,8 +408,8 @@ describe("StatusList2021Manager", () => {
         mockStorage,
         mockIdentity,
         mockSigningFunction,
-        mockCompressor,
-        mockDecompressor
+        statusListGzipCodec,
+        statusListGzipCodec
       );
 
       const statusListId = "https://status.example.com/revocation/v1";
@@ -443,8 +434,8 @@ describe("StatusList2021Manager", () => {
         mockStorage,
         mockIdentity,
         mockSigningFunction,
-        mockCompressor,
-        mockDecompressor
+        statusListGzipCodec,
+        statusListGzipCodec
       );
 
       vi.mocked(mockStorage.getStatusList).mockResolvedValue(null);
@@ -469,8 +460,8 @@ describe("StatusList2021Manager", () => {
         mockStorage,
         mockIdentity,
         mockSigningFunction,
-        mockCompressor,
-        mockDecompressor
+        statusListGzipCodec,
+        statusListGzipCodec
       );
 
       vi.mocked(mockStorage.getStatusList).mockResolvedValue(null);
@@ -487,15 +478,15 @@ describe("StatusList2021Manager", () => {
         mockStorage,
         mockIdentity,
         mockSigningFunction,
-        mockCompressor,
-        mockDecompressor
+        statusListGzipCodec,
+        statusListGzipCodec
       );
 
       const statusListId = "https://status.example.com/revocation/v1";
       // Create bitstring with bits 0, 2, and 5 set
       const bytes = new Uint8Array(2);
       bytes[0] = 0b10100100; // Bits 0, 2, 5 are set (MSB-first: 0x80 >> i)
-      const encodedList = Buffer.from(bytes).toString("base64url");
+      const encodedList = encodedListOf(bytes);
       const existingCredential = createStatusListCredential(
         statusListId,
         "revocation",
@@ -519,8 +510,8 @@ describe("StatusList2021Manager", () => {
         mockStorage,
         mockIdentity,
         mockSigningFunction,
-        mockCompressor,
-        mockDecompressor,
+        statusListGzipCodec,
+        statusListGzipCodec,
         {
           statusListBaseUrl: "https://factory.example.com/status",
         }
@@ -537,8 +528,8 @@ describe("StatusList2021Manager", () => {
         mockStorage,
         mockIdentity,
         mockSigningFunction,
-        mockCompressor,
-        mockDecompressor
+        statusListGzipCodec,
+        statusListGzipCodec
       );
 
       expect(manager).toBeInstanceOf(StatusList2021Manager);
@@ -552,8 +543,8 @@ describe("StatusList2021Manager", () => {
         mockStorage,
         mockIdentity,
         mockSigningFunction,
-        mockCompressor,
-        mockDecompressor
+        statusListGzipCodec,
+        statusListGzipCodec
       );
 
       vi.mocked(mockStorage.getStatusList).mockResolvedValue(null);
@@ -577,8 +568,8 @@ describe("StatusList2021Manager", () => {
         mockStorage,
         mockIdentity,
         mockSigningFunction,
-        mockCompressor,
-        mockDecompressor
+        statusListGzipCodec,
+        statusListGzipCodec
       );
 
       vi.mocked(mockStorage.getStatusList).mockRejectedValue(
@@ -603,8 +594,8 @@ describe("StatusList2021Manager", () => {
         mockStorage,
         mockIdentity,
         mockSigningFunction,
-        mockCompressor,
-        mockDecompressor
+        statusListGzipCodec,
+        statusListGzipCodec
       );
 
       const statusListId = "https://status.example.com/revocation/v1";
@@ -631,14 +622,14 @@ describe("StatusList2021Manager", () => {
         mockStorage,
         mockIdentity,
         mockSigningFunction,
-        mockCompressor,
-        mockDecompressor
+        statusListGzipCodec,
+        statusListGzipCodec
       );
 
       const statusListId = "https://status.example.com/revocation/v1";
       const bytes = new Uint8Array(2);
       bytes[0] = 0b00010000; // Bit 3 set (MSB-first: 0x80 >> 3)
-      const encodedList = Buffer.from(bytes).toString("base64url");
+      const encodedList = encodedListOf(bytes);
       const existingCredential = createStatusListCredential(
         statusListId,
         "revocation",
@@ -661,10 +652,6 @@ describe("StatusList2021Manager", () => {
 });
 
 describe("StatusList2021Manager over memory storage", () => {
-  const gzip = {
-    compress: async (d: Uint8Array) => new Uint8Array(gzipSync(d)),
-    decompress: async (d: Uint8Array) => new Uint8Array(gunzipSync(d)),
-  };
   const identity = { getDid: () => "did:web:issuer.example", getKeyId: () => "did:web:issuer.example#k" };
   const proof: Proof = { type: "Ed25519Signature2020", proofValue: "x" };
   const options = { statusListBaseUrl: "https://status.example", defaultListSize: 1024 };
@@ -673,7 +660,7 @@ describe("StatusList2021Manager over memory storage", () => {
     // Hold back the second signature over a still-empty list: before list
     // creation was serialized, that was the racing allocation's fresh list,
     // and releasing it after the revocation below overwrote the revoked bit.
-    const emptyList = await new BitstringManager(options.defaultListSize, gzip, gzip).encode();
+    const emptyList = await new BitstringManager(options.defaultListSize, statusListGzipCodec, statusListGzipCodec).encode();
     let release!: () => void;
     const held = new Promise<void>((resolve) => {
       release = resolve;
@@ -683,7 +670,7 @@ describe("StatusList2021Manager over memory storage", () => {
       if (canonical.includes(emptyList) && ++emptySignatures === 2) await held;
       return proof;
     };
-    const manager = new StatusList2021Manager(new MemoryStatusListStorage(), identity, sign, gzip, gzip, options);
+    const manager = new StatusList2021Manager(new MemoryStatusListStorage(), identity, sign, statusListGzipCodec, statusListGzipCodec, options);
 
     const first = manager.allocateStatusEntry("revocation");
     const second = manager.allocateStatusEntry("revocation");
@@ -697,7 +684,7 @@ describe("StatusList2021Manager over memory storage", () => {
   });
 
   it("rejects a non-canonical statusListIndex on update instead of flipping another credential's bit", async () => {
-    const manager = new StatusList2021Manager(new MemoryStatusListStorage(), identity, async () => proof, gzip, gzip, options);
+    const manager = new StatusList2021Manager(new MemoryStatusListStorage(), identity, async () => proof, statusListGzipCodec, statusListGzipCodec, options);
     const entry = await manager.allocateStatusEntry("revocation");
     const other = { ...entry, statusListIndex: "5" };
 
@@ -709,7 +696,7 @@ describe("StatusList2021Manager over memory storage", () => {
   });
 
   it("refuses to allocate an index the list cannot hold", async () => {
-    const manager = new StatusList2021Manager(new MemoryStatusListStorage(), identity, async () => proof, gzip, gzip, {
+    const manager = new StatusList2021Manager(new MemoryStatusListStorage(), identity, async () => proof, statusListGzipCodec, statusListGzipCodec, {
       ...options,
       defaultListSize: 16,
     });
@@ -720,5 +707,59 @@ describe("StatusList2021Manager over memory storage", () => {
     await expect(manager.allocateStatusEntry("revocation")).rejects.toThrow(
       "Status list https://status.example/revocation/v1 is full: index 16 is outside its 16 entries",
     );
+  });
+});
+
+describe("StatusList2021Manager status lists are GZIP", () => {
+  const identity = { getDid: () => "did:web:issuer.example", getKeyId: () => "did:web:issuer.example#k" };
+  const sign: VCSigningFunction = async () => ({ type: "Ed25519Signature2020", proofValue: "x" });
+  const passThrough: CompressionFunction & DecompressionFunction = {
+    compress: async (data) => data,
+    decompress: async (data) => data,
+  };
+
+  /** Revoke entries `revoked` of `count` allocated through `manager`. */
+  async function allocate(manager: StatusList2021Manager, count: number, revoked: number[]) {
+    const entries: CredentialStatus[] = [];
+    for (let i = 0; i < count; i++) entries.push(await manager.allocateStatusEntry("revocation"));
+    for (const index of revoked) await manager.updateStatus(entries[index]!, true);
+    return entries;
+  }
+
+  it("a default-constructed manager publishes lists the card revocation checker reads the same way", async () => {
+    const storage = new MemoryStatusListStorage();
+    const manager = createStatusListManager(storage, identity, sign);
+    const entries = await allocate(manager, 4, [1]);
+
+    const list = await storage.getStatusList(entries[0]!.statusListCredential);
+    expect(list?.credentialSubject.encodedList.startsWith("uH4sI")).toBe(true); // multibase u + GZIP magic
+    const check = createRevocationChecker({
+      fetch: async () => ({ ok: true, status: 200, json: async () => list }),
+    });
+    for (const [index, entry] of entries.entries()) {
+      const revoked = index === 1;
+      expect(await manager.checkStatus(entry)).toBe(revoked);
+      expect(await check(entry)).toEqual({ revoked, fresh: true });
+    }
+  });
+
+  it("a pass-through reader of a GZIP list throws instead of reading revoked entries as live", async () => {
+    const storage = new MemoryStatusListStorage();
+    const entries = await allocate(createStatusListManager(storage, identity, sign), 4, [0, 1, 2]);
+
+    // Read as bits, the GZIP header `1f 8b` leaves indices 0-2 clear.
+    const reader = new StatusList2021Manager(storage, identity, sign, statusListGzipCodec, passThrough);
+    for (const entry of entries.slice(0, 3)) {
+      await expect(reader.checkStatus(entry)).rejects.toThrow(/input unchanged/);
+    }
+    await expect(reader.getRevokedIndices(entries[0]!.statusListCredential)).rejects.toThrow(/input unchanged/);
+  });
+
+  it("refuses to publish a list with a compressor that does not GZIP", async () => {
+    const storage = new MemoryStatusListStorage();
+    const manager = new StatusList2021Manager(storage, identity, sign, passThrough, statusListGzipCodec);
+
+    await expect(manager.allocateStatusEntry("revocation")).rejects.toThrow(/not GZIP/);
+    expect(await storage.getStatusList(`${manager.getStatusListBaseUrl()}/revocation/v1`)).toBeNull();
   });
 });

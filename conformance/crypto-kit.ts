@@ -2,42 +2,16 @@
  * Crypto kit shared by the reference adapter and the vector generator.
  *
  * Centralizes the Ed25519 VC signing/verification convention
- * (`Ed25519Signature2020` over RFC 8785 canonicalized VC, minus `proof`) and the
- * gzip compression StatusList2021 uses, so the generator and the verifier cannot
- * drift. Pure Node built-ins + the package's public canonicalize/bitstring
- * primitives — no test-only helpers.
+ * (`Ed25519Signature2020` over RFC 8785 canonicalized VC, minus `proof`), so the
+ * generator and the verifier cannot drift. Pure Node built-ins + the package's
+ * public canonicalize primitives — no test-only helpers. Status lists use the
+ * package's own `statusListGzipCodec`.
  */
 
-import * as zlib from 'node:zlib';
 import { canonicalizeJSON } from '../src/delegation/utils.js';
-import type {
-  CompressionFunction,
-  DecompressionFunction,
-} from '../src/delegation/bitstring.js';
 import type { NodeCryptoProvider } from '../src/providers/node-crypto.js';
 import type { DelegationCredential, Proof } from '../src/index.js';
 import type { SignatureVerificationFunction } from '../src/delegation/vc-verifier.js';
-
-/** gzip compressor matching StatusList2021's expected encoding. */
-export const conformanceCompressor: CompressionFunction = {
-  compress(data: Uint8Array): Promise<Uint8Array> {
-    return new Promise((resolve, reject) => {
-      zlib.gzip(Buffer.from(data), (err, result) =>
-        err ? reject(err) : resolve(new Uint8Array(result)),
-      );
-    });
-  },
-};
-
-export const conformanceDecompressor: DecompressionFunction = {
-  decompress(data: Uint8Array): Promise<Uint8Array> {
-    return new Promise((resolve, reject) => {
-      zlib.gunzip(Buffer.from(data), (err, result) =>
-        err ? reject(err) : resolve(new Uint8Array(result)),
-      );
-    });
-  },
-};
 
 /**
  * Sign a VC-shaped object (`Ed25519Signature2020`). Strips any existing `proof`,

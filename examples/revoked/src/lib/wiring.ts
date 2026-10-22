@@ -68,6 +68,7 @@ export const DEMO_ISSUER_DID = 'did:cheqd:testnet:17bc59fe-2e93-4e01-8613-c7c456
 // GZIP compressor/decompressor (W3C StatusList2021 encodedList codec)
 // ---------------------------------------------------------------------------
 
+// Switch to `statusListGzipCodec` once this example's @kya-os/mcp dependency includes it.
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 

@@ -5,7 +5,7 @@
  * original suite passed while these defects shipped — it injected mocked seams AROUND them.
  */
 import { describe, it, expect } from 'vitest';
-import { gzipSync, gunzipSync } from 'node:zlib';
+import { gzipSync } from 'node:zlib';
 import {
   isBlockedAddress,
   createSafeFetch,
@@ -22,12 +22,11 @@ import {
   type DelegationCredential,
 } from '../index.js';
 import { BitstringManager, isIndexSet } from '../../delegation/bitstring.js';
+import { statusListGzipCodec } from '../../utils/statuslist-gzip.js';
 import { KYA_OS_PROOF_META_KEY } from '../../proof/generator.js';
 import { CardProofMetaSchema } from '../proof/types.js';
 
 const gzList = (bytes: Uint8Array): string => `u${Buffer.from(gzipSync(Buffer.from(bytes))).toString('base64url')}`;
-const GZ = { compress: async (d: Uint8Array) => new Uint8Array(gzipSync(Buffer.from(d))) };
-const GUNZ = { decompress: async (d: Uint8Array) => new Uint8Array(gunzipSync(Buffer.from(d))) };
 
 describe('PR #110 review — real-path regressions', () => {
   it('#3 blocks IPv6 loopback/unspecified/ULA in ANY textual form (not just compressed ::1)', () => {
@@ -70,9 +69,7 @@ describe('PR #110 review — real-path regressions', () => {
   });
 
   it('#4 the card revocation reader and the legacy BitstringManager agree (W3C MSB) on one list', async () => {
-    const gz = { compress: async (d: Uint8Array) => new Uint8Array(gzipSync(Buffer.from(d))) };
-    const gunz = { decompress: async (d: Uint8Array) => new Uint8Array(gunzipSync(Buffer.from(d))) };
-    const mgr = BitstringManager.fromSetBits(1024, [42], gz, gunz); // index 42 revoked
+    const mgr = BitstringManager.fromSetBits(1024, [42], statusListGzipCodec, statusListGzipCodec); // index 42 revoked
     const encodedList = await mgr.encode(); // encode() now emits the W3C `u` multibase prefix itself
     const list = { credentialSubject: { statusPurpose: 'revocation', encodedList } };
     const checker = createRevocationChecker({ fetch: async () => ({ ok: true, status: 200, json: async () => list }) });
@@ -154,7 +151,7 @@ describe('PR #110 review — real-path regressions', () => {
   });
 
   it('#2c a non-decimal statusListIndex fails closed (never silently reads bit 0)', async () => {
-    const mgr = BitstringManager.fromSetBits(1024, [42], GZ, GUNZ); // revoked ONLY at 42; bit 0 clear
+    const mgr = BitstringManager.fromSetBits(1024, [42], statusListGzipCodec, statusListGzipCodec); // revoked ONLY at 42; bit 0 clear
     const list = { credentialSubject: { statusPurpose: 'revocation', encodedList: await mgr.encode() } };
     const checker = createRevocationChecker({ fetch: async () => ({ ok: true, status: 200, json: async () => list }) });
     for (const bad of [' ', '\t', '0x2A', '+42', '1e1', '']) {
@@ -165,16 +162,16 @@ describe('PR #110 review — real-path regressions', () => {
   });
 
   it('#4b legacy getBit AND standalone isIndexSet throw (fail-closed) on NaN / out-of-range', async () => {
-    const mgr = BitstringManager.fromSetBits(64, [3], GZ, GUNZ);
+    const mgr = BitstringManager.fromSetBits(64, [3], statusListGzipCodec, statusListGzipCodec);
     expect(mgr.getBit(3)).toBe(true);
     expect(() => mgr.getBit(Number.NaN)).toThrow();
     expect(() => mgr.getBit(999)).toThrow();
     // isIndexSet is a SEPARATE reader; its `byteIndex >= length` guard is false for NaN, so it must
     // reject NaN explicitly (a whitespace/non-decimal index parsed to NaN would otherwise read live).
     const enc = await mgr.encode();
-    expect(await isIndexSet(enc, 3, GUNZ)).toBe(true);
-    await expect(isIndexSet(enc, Number.NaN, GUNZ)).rejects.toThrow();
-    await expect(isIndexSet(enc, 9999, GUNZ)).rejects.toThrow();
+    expect(await isIndexSet(enc, 3, statusListGzipCodec)).toBe(true);
+    await expect(isIndexSet(enc, Number.NaN, statusListGzipCodec)).rejects.toThrow();
+    await expect(isIndexSet(enc, 9999, statusListGzipCodec)).rejects.toThrow();
   });
 
   it('#6b IPv6 transition addresses (NAT64 / 6to4-private / Teredo / site-local) are blocked', () => {

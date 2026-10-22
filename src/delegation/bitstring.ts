@@ -15,30 +15,54 @@
  */
 
 import {
-  MULTIBASE_BASE64URL,
   decodeStatusListPayload,
+  encodeStatusListPayload,
   readStatusBit,
 } from '../utils/statuslist-bits.js';
+import { statusListGzipCodec } from '../utils/statuslist-gzip.js';
 
+/**
+ * Compresses a status bitstring for publication. MUST produce GZIP: it is the
+ * only compression a status-list reader accepts, and `encode()` throws on
+ * anything else. {@link statusListGzipCodec} is the shipped implementation
+ * and the default.
+ */
 export interface CompressionFunction {
   compress(data: Uint8Array): Promise<Uint8Array>;
 }
 
+/**
+ * Inflates a GZIP status-list payload. MUST reject input that is not GZIP;
+ * a decoder throws when it returns its input unchanged. {@link statusListGzipCodec}
+ * is the shipped implementation and the default.
+ */
 export interface DecompressionFunction {
   decompress(data: Uint8Array): Promise<Uint8Array>;
+}
+
+/** Inflate an `encodedList` to its raw bitstring, with the shipped GZIP codec by default. */
+function inflate(
+  encodedList: string,
+  decompressor: DecompressionFunction = statusListGzipCodec
+): Promise<Uint8Array> {
+  return decodeStatusListPayload(encodedList, (bytes) => decompressor.decompress(bytes));
 }
 
 export class BitstringManager {
   private bits: Uint8Array;
   private size: number;
 
+  /**
+   * @param compressor - GZIP-compresses the bitstring on `encode()`. Defaults
+   *   to {@link statusListGzipCodec}; `encode()` throws on output that is not GZIP.
+   * @param _decompressor - Accepted for signature symmetry with `decode()` and
+   *   `fromSetBits()`, and for back-compat. The instance never decompresses:
+   *   `decode()` inflates before construction, so nothing is stored.
+   */
   constructor(
     size: number,
-    private compressor: CompressionFunction,
-    // Accepted for signature symmetry with decode()/fromSetBits() and public
-    // back-compat, but the INSTANCE never decompresses: decode() inflates via
-    // the shared inflateStatusList() before construction, so no field is stored.
-    _decompressor: DecompressionFunction
+    private compressor: CompressionFunction = statusListGzipCodec,
+    _decompressor?: DecompressionFunction
   ) {
     this.size = size;
     const byteCount = Math.ceil(size / 8);
@@ -86,18 +110,24 @@ export class BitstringManager {
   }
 
   async encode(): Promise<string> {
-    const compressed = await this.compressor.compress(this.bits);
-    return MULTIBASE_BASE64URL + this.base64urlEncode(compressed);
+    return encodeStatusListPayload(this.bits, (bytes) => this.compressor.compress(bytes));
   }
 
+  /**
+   * Decode an `encodedList` into a manager.
+   *
+   * @param compressor - Used by the returned manager's `encode()`. Defaults to
+   *   {@link statusListGzipCodec}.
+   * @param decompressor - Inflates the GZIP payload. Defaults to
+   *   {@link statusListGzipCodec}; decoding throws on a payload that is not
+   *   GZIP and on a decompressor that returns its input unchanged.
+   */
   static async decode(
     encodedList: string,
-    compressor: CompressionFunction,
-    decompressor: DecompressionFunction
+    compressor?: CompressionFunction,
+    decompressor?: DecompressionFunction
   ): Promise<BitstringManager> {
-    const decompressed = await decodeStatusListPayload(encodedList, (bytes) =>
-      decompressor.decompress(bytes)
-    );
+    const decompressed = await inflate(encodedList, decompressor);
 
     const size = decompressed.length * 8;
     const manager = new BitstringManager(size, compressor, decompressor);
@@ -113,23 +143,17 @@ export class BitstringManager {
     return this.size;
   }
 
-  private base64urlEncode(data: Uint8Array): string {
-    const base64 = this.bytesToBase64(data);
-    return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-  }
-
-  private bytesToBase64(bytes: Uint8Array): string {
-    const binary = Array.from(bytes)
-      .map((byte) => String.fromCharCode(byte))
-      .join('');
-    return btoa(binary);
-  }
-
+  /**
+   * A manager of `size` entries with `setBits` set.
+   *
+   * @param compressor - Used by `encode()`. Defaults to {@link statusListGzipCodec}.
+   * @param decompressor - Accepted for symmetry with `decode()`; unused.
+   */
   static fromSetBits(
     size: number,
     setBits: number[],
-    compressor: CompressionFunction,
-    decompressor: DecompressionFunction
+    compressor?: CompressionFunction,
+    decompressor?: DecompressionFunction
   ): BitstringManager {
     const manager = new BitstringManager(size, compressor, decompressor);
     for (const index of setBits) {
@@ -144,14 +168,15 @@ export class BitstringManager {
  * MSB-first read via `utils/statuslist-bits`). Fail-CLOSED: an out-of-range or
  * NaN index cannot be proven clear, so `readStatusBit` throws rather than
  * reading as "not set".
+ *
+ * @param decompressor - Inflates the GZIP payload. Defaults to
+ *   {@link statusListGzipCodec}; reading throws on a payload that is not GZIP
+ *   and on a decompressor that returns its input unchanged.
  */
 export async function isIndexSet(
   encodedList: string,
   index: number,
-  decompressor: DecompressionFunction
+  decompressor?: DecompressionFunction
 ): Promise<boolean> {
-  const decompressed = await decodeStatusListPayload(encodedList, (bytes) =>
-    decompressor.decompress(bytes)
-  );
-  return readStatusBit(decompressed, index);
+  return readStatusBit(await inflate(encodedList, decompressor), index);
 }

@@ -308,7 +308,7 @@ The server is operated by a maintainer on pinned releases; this repo does not de
 | **Entity Card** | Typed, DID-anchored identity: fluent `card()` builder, `requireProof` per-request holder-of-key guard, CIMD OAuth on-ramp (`client_id` ⇄ `did:web`, MCP's default client auth), and `withKyaOsCard` projections that embed into MCP `server.json` / Server Cards (draft SEP-2127), A2A AgentCards, and NANDA AgentFacts |
 | **Signed proofs** | Detached JWS over JCS-canonicalized request/response hashes |
 | **Delegation credentials** | W3C Verifiable Credentials with scope constraints, rooted at a Responsible Party |
-| **Revocation** | StatusList2021 bitstring with cascading revocation |
+| **Revocation** | StatusList2021 bitstring with cascading revocation; lists are GZIP-compressed by the shipped `statusListGzipCodec`, the manager's default |
 | **Replay prevention** | Nonce-based handshake with timestamp skew validation |
 | **Verifiable auditability** | Typed producer events, authoritative atomic recorder, signed chain receipts, RFC 9162 checkpoints, independent observation, encrypted evidence references, replay bundles, and offline CLI |
 | **Extensible** | Bring your own KMS, HSM, atomic nonce provider, or DID method |

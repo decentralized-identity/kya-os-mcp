@@ -578,9 +578,6 @@ describe('Transitive Access — Karp Use Cases', () => {
         };
       };
 
-      const compressor = { compress: async (data: Uint8Array) => data };
-      const decompressor = { decompress: async (data: Uint8Array) => data };
-
       const statusListManager = new StatusList2021Manager(
         statusListStorage,
         {
@@ -588,8 +585,6 @@ describe('Transitive Access — Karp Use Cases', () => {
           getKeyId: () => alice.kid,
         },
         mockSigningFn,
-        compressor,
-        decompressor,
       );
 
       const revocationManager = new CascadingRevocationManager(
@@ -670,15 +665,10 @@ describe('Transitive Access — Karp Use Cases', () => {
         };
       };
 
-      const compressor = { compress: async (data: Uint8Array) => data };
-      const decompressor = { decompress: async (data: Uint8Array) => data };
-
       const statusListManager = new StatusList2021Manager(
         statusListStorage,
         { getDid: () => alice.did, getKeyId: () => alice.kid },
         mockSigningFn,
-        compressor,
-        decompressor,
       );
 
       const revocationManager = new CascadingRevocationManager(

@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import { loadVectors } from '../loader.js';
 import { BitstringManager } from '../../src/delegation/bitstring.js';
-import { conformanceCompressor, conformanceDecompressor } from '../crypto-kit.js';
+import { statusListGzipCodec } from '../../src/utils/statuslist-gzip.js';
 import { ReferenceConformanceAdapter } from '../reference-adapter.js';
 import type { ConformanceVector, StatusListInput } from '../types.js';
 
@@ -35,8 +35,8 @@ const listOf = (input: StatusListInput): List => {
 const bitOf = async (input: StatusListInput): Promise<boolean> => {
   const manager = await BitstringManager.decode(
     listOf(input).credentialSubject.encodedList,
-    conformanceCompressor,
-    conformanceDecompressor,
+    statusListGzipCodec,
+    statusListGzipCodec,
   );
   return manager.getBit(Number((input.credential as Credential).credentialStatus.statusListIndex));
 };

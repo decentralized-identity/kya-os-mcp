@@ -31,11 +31,11 @@
 import { isRecord } from '../utils/guards.js';
 import { assertStatusPurpose } from '../utils/statuslist-purpose.js';
 import {
-  MAX_STATUS_LIST_BYTES,
   decodeStatusListPayload,
   parseStatusListIndex,
   readStatusBit,
 } from '../utils/statuslist-bits.js';
+import { statusListGzipCodec } from '../utils/statuslist-gzip.js';
 import type { SafeFetch } from '../utils/safe-fetch.js';
 import type { BitstringStatusListEntry } from './schema.js';
 import type { StatusListProofVerifier } from './status-list-proof.js';
@@ -55,8 +55,7 @@ export type Decompress = (bytes: Uint8Array) => Uint8Array | Promise<Uint8Array>
 // `utils/statuslist-bits` — ONE implementation shared with the delegation readers, so the two
 // paths can no longer drift. Exceeding the cap (or any malformed input) throws, which this
 // checker converts to FAIL_CLOSED — the module's uniform posture. Without the cap, the ~786 KB
-// of GZIP that fits inside SafeFetch's 1 MiB body cap inflates to ~800 MB on a synchronous
-// `gunzipSync`, blocking the event loop.
+// of GZIP that fits inside SafeFetch's 1 MiB body cap inflates to ~800 MB.
 
 /** Verdict for ONE status entry. */
 export interface RevocationStatus {
@@ -109,12 +108,12 @@ export interface RevocationCheckerDeps {
    */
   verifyStatusList?: StatusListProofVerifier;
   /**
-   * Injectable GZIP inflation seam ({@link Decompress}). DEFAULT = `node:zlib` `gunzipSync` bounded
-   * to the 16 MiB {@link MAX_STATUS_LIST_BYTES} `maxOutputLength` cap (so a decompression bomb
-   * THROWS mid-inflation ⇒ fail-closed, never allocating the whole payload). Non-Node runtimes
-   * inject a `DecompressionStream`-based impl; when they do, the default is never referenced so a
-   * bundler tree-shakes `node:zlib` out of the graph. An injected impl SHOULD bound its own output
-   * — {@link decodeStatusList} still applies the cap as a post-inflation backstop regardless.
+   * Injectable GZIP inflation seam ({@link Decompress}). DEFAULT = `statusListGzipCodec.decompress`,
+   * which loads `node:zlib` on first use and bounds inflation to the 16 MiB cap (so a decompression
+   * bomb THROWS mid-inflation ⇒ fail-closed, never allocating the whole payload). Non-Node
+   * runtimes inject a `DecompressionStream`-based impl; when they do, `node:zlib` is never loaded.
+   * An injected impl SHOULD bound its own output — {@link decodeStatusList} still applies the cap
+   * as a post-inflation backstop regardless.
    */
   decompress?: Decompress;
 }
@@ -132,7 +131,7 @@ export function createRevocationChecker(
 ): BitstringRevocationChecker {
   const clock = deps.now ?? (() => Date.now());
   const wantedPurpose = deps.statusPurpose ?? STATUS_PURPOSE_REVOCATION;
-  const decompress = deps.decompress ?? defaultNodeGunzip;
+  const decompress = deps.decompress ?? statusListGzipCodec.decompress;
   return async function check(entry: BitstringStatusListEntry): Promise<RevocationStatus> {
     try {
       const credential = await fetchStatusList(entry.statusListCredential, deps.fetch);
@@ -197,18 +196,6 @@ function statusListSubject(credential: Record<string, unknown>): Record<string, 
   const subject = credential.credentialSubject;
   if (!isRecord(subject)) throw new Error('revocation: status-list has no credentialSubject');
   return subject;
-}
-
-
-/**
- * DEFAULT {@link Decompress}: `node:zlib` `gunzipSync` bounded to {@link MAX_STATUS_LIST_BYTES}
- * so an oversized inflation THROWS mid-stream (fail-closed) instead of allocating the whole bomb.
- * Pulled in via a DYNAMIC `import('node:zlib')` — only when no `decompress` was injected — so a
- * Workers / Deno / browser bundle that supplies its own seam keeps `node:zlib` out of the graph.
- */
-async function defaultNodeGunzip(bytes: Uint8Array): Promise<Uint8Array> {
-  const { gunzipSync } = await import('node:zlib');
-  return new Uint8Array(gunzipSync(bytes, { maxOutputLength: MAX_STATUS_LIST_BYTES }));
 }
 
 /**

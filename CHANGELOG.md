@@ -7,6 +7,22 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- **Payment Authority Profile, Core Authority (discussion draft).** A new
+  `experimental/` directory holds Working Group drafts, outside the published
+  package and its stability guarantees. Its first draft,
+  `experimental/payment-authority/`, specifies the payment intent,
+  authorization, constraints caveat and outcome artifacts of
+  `org.kya-os/payments.v1`: five JSON Schemas, with the profile meta-schema
+  and the semantic-validation vocabulary they require, the base amendments
+  the draft proposes, a vector corpus, a standard-library Python verifier,
+  and a test that checks the corpus against the schemas. The
+  test runs with the repository's test suite and uses its RFC 8785
+  canonicalizer. Approval evidence formats, rail adapter rules and request
+  processing are left to a separate execution profile. Nothing under
+  `experimental/` ships in the package, and no published API changes.
+
 ## [1.21.1] - 2026-10-22
 
 ### Fixed

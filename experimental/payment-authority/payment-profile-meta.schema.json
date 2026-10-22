@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schema.kya-os.org/experimental/payment-authority/2026-09-22/meta",
+  "$dynamicAnchor": "meta",
+  "$vocabulary": {
+    "https://json-schema.org/draft/2020-12/vocab/core": true,
+    "https://json-schema.org/draft/2020-12/vocab/applicator": true,
+    "https://json-schema.org/draft/2020-12/vocab/unevaluated": true,
+    "https://json-schema.org/draft/2020-12/vocab/validation": true,
+    "https://json-schema.org/draft/2020-12/vocab/meta-data": true,
+    "https://json-schema.org/draft/2020-12/vocab/format-annotation": true,
+    "https://json-schema.org/draft/2020-12/vocab/content": true,
+    "https://schema.kya-os.org/experimental/payment-authority/2026-09-22/vocabulary/semantic-validation": true
+  },
+  "title": "KYA-OS Payment Authority Experimental Meta-Schema",
+  "description": "The JSON Schema 2020-12 meta-schema with the required semantic-validation vocabulary of the KYA-OS Payment Authority Profile (profile section 8.6).",
+  "allOf": [
+    { "$ref": "https://json-schema.org/draft/2020-12/schema" },
+    { "$ref": "https://schema.kya-os.org/experimental/payment-authority/2026-09-22/vocabulary/semantic-validation/schema" }
+  ],
+  "type": ["object", "boolean"]
+}

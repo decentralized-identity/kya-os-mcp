@@ -14,8 +14,9 @@
 - **Out of scope:** request binding, the processing algorithm, idempotency and
   recovery, rail adapters, approval evidence formats, and the envelopes that
   carry an artifact across a trust boundary (section 8.5). These are defined
-  by a separate execution profile, in preparation, which this document calls
-  **the execution profile**.
+  by the execution draft, [`SPEC-PAYMENT-EXECUTION.md`](./SPEC-PAYMENT-EXECUTION.md),
+  and a later adapter profile, which together this document calls **the
+  execution profile**.
 
 This folder holds the profile's machine-readable artifacts: seven JSON Schema
 files — `payment-intent.schema.json`, `payment-authorization.schema.json`,
@@ -23,7 +24,8 @@ files — `payment-intent.schema.json`, `payment-authorization.schema.json`,
 `payment-extension-settings.schema.json`, `payment-profile-meta.schema.json`,
 and `payment-profile-vocabulary.schema.json` — and the Core Authority vector
 corpus, `vectors/payment-authority-vectors.json`, with its verifier,
-`vectors/verify_vectors.py` (section 15.1).
+`vectors/verify_vectors.py` (section 15.1). The execution draft's own schemas,
+corpus, and verifier sit beside them.
 
 This profile is unrelated to, and claims no compatibility with, ACP's
 independently defined Delegate Payment API. Namespace placement under a DIF or
@@ -1241,9 +1243,11 @@ An attempt exists only once authority is decided: approval, when required, is
 obtained before any attempt (section 8.2), and a refused request records none.
 No outcome state therefore precedes `authorized`, which records an attempt
 with nothing yet sent to the rail; `submitted` records the attempt's
-**submission**, its rail credential sent to the rail, with no rail result yet
-recorded. An Executor retires an `authorized` attempt it will not submit by
-failing it. Allowed transitions are exact:
+**submission**, its rail credential sent, or committed to be sent, to the
+rail, with no rail result yet recorded (the execution profile records it just
+before the send, so that the record precedes any effect). An Executor retires
+an `authorized` attempt it will not submit by failing it. Allowed transitions
+are exact:
 
 | From | To |
 | --- | --- |

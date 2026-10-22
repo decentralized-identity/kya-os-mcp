@@ -9,4 +9,4 @@ directory only when the Working Group adopts it.
 
 | Draft | Status |
 | --- | --- |
-| [`payment-authority/`](./payment-authority/) | Payment Authority Profile, Core Authority: the payment artifacts and their schemas. Discussion draft |
+| [`payment-authority/`](./payment-authority/) | Payment Authority Profile: Core Authority (the payment artifacts and their schemas) and Execution (requests, idempotency, processing, and answers). Discussion drafts |

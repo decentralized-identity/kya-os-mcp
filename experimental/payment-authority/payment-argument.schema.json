@@ -1,0 +1,63 @@
+{
+  "$schema": "https://schema.kya-os.org/experimental/payment-authority/2026-09-22/meta",
+  "$id": "https://schema.kya-os.org/experimental/payment-authority/2026-09-22/argument",
+  "title": "KYA-OS Payment Argument (Experimental)",
+  "description": "Experimental discussion draft: the payment argument of a payment request (execution section 4.2). Not stable or ratified.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "idempotencyKey",
+    "intent",
+    "delegationDigest"
+  ],
+  "properties": {
+    "profile": {
+      "const": "org.kya-os/payments.v1"
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[^\\r\\n\\u0000]+$",
+      "description": "The client's idempotency key (execution sections 4.2 and 5.1)."
+    },
+    "intent": {
+      "$ref": "https://schema.kya-os.org/experimental/payment-authority/2026-09-22/intent"
+    },
+    "delegationDigest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "description": "The delegation-chain digest of the presented chain (execution section 4.3; profile section 10)."
+    },
+    "approvalEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "format",
+        "value"
+      ],
+      "description": "Approval evidence (execution section 4.2; profile section 8.2).",
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^[^\\r\\n]+$"
+        },
+        "format": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\r\\n]+$"
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The exact evidence, at most 65,536 UTF-8 bytes (execution section 4.2)."
+        }
+      }
+    }
+  }
+}

@@ -5,11 +5,13 @@ specification. SPEC.md, SPEC-ENTITY-CARD.md, SPEC-MCP-EXTENSION.md, their
 schemas, and the conformance suite are unchanged until the Working Group adopts
 an item. Each item names the profile section that depends on it and what holds
 until adoption. "Profile §n" is a section of this folder's
-[`SPEC-PAYMENT-AUTHORITY.md`](./SPEC-PAYMENT-AUTHORITY.md); "SPEC.md §n" is a section of the base specification.
+[`SPEC-PAYMENT-AUTHORITY.md`](./SPEC-PAYMENT-AUTHORITY.md) (Core Authority);
+"Execution §n" is a section of its
+[`SPEC-PAYMENT-EXECUTION.md`](./SPEC-PAYMENT-EXECUTION.md); "SPEC.md §n" is a
+section of the base specification.
 
-Three further items, on request binding (a request-bound response proof for
-stateless requests, nonce retention and the order of the replay check, and a
-base64url request-proof nonce), accompany the execution profile.
+Items 6 to 8, on request binding, nonce retention, and the request-proof
+nonce, accompany the execution document.
 
 ## 1. Profile-defined caveat narrowing (SPEC.md §6.10)
 
@@ -59,11 +61,11 @@ resource owner (Profile §8.4.6, step 8, and Profile §14, item 29). A
 chain-length cap stays verifier policy; the payment profile's ten-credential
 limit (Profile §8.4) is such a policy.
 
-**Profile dependency.** Profile §4.1 and §8.1, which describe the root
-issuer as the payer; the Payment Authorization's `responsibleParty`
-(Profile §8.2); and the execution profile's authority scope. Until adoption,
-the schema description and the profile describe the root issuer differently;
-the normative SPEC.md rule is consistent with both.
+**Profile dependency.** Profile §4.1 and §8.1, which describe the root issuer
+as the payer; the Payment Authorization's `responsibleParty` (Profile §8.2);
+and the scope of a payment chain (Execution §4.3). Until adoption, the schema
+description and the profile describe the root issuer differently; the
+normative SPEC.md rule is consistent with both.
 
 ## 3. Per-hop audience for VC 2.0 + ZCAP chains (SPEC.md §11.6; SPEC-ENTITY-CARD §10, §12.3)
 
@@ -84,7 +86,8 @@ own protected resource (SPEC.md §6.10), is the audience binding §11.6 requires
 
 **Profile dependency.** Profile §2; Profile §8.4.6, step 8, which applies
 the base chain rules, this one among them, to every multi-hop payment chain;
-and the execution profile's request binding. Until adoption this reading is
+and Execution §4.3, which binds a payment chain to one Executor by that
+reading. Until adoption this reading is
 the profile's own. A deployment that
 wants an explicit per-hop member can define one as a caveat type and register
 its evaluator (Profile §8.4.5).
@@ -97,8 +100,8 @@ SPEC-MCP-EXTENSION §2.2 names SPEC-ENTITY-CARD §14.1 as the registry of
 | Key | Carries | Section |
 | --- | --- | --- |
 | `org.kya-os/payment-authority` | On a `tools/list` entry, `{"required": true}`. The same identifier names the MCP extension in `capabilities.extensions` and in the client capabilities a request declares; those are extension identifiers, not `_meta` keys | Profile §11, §11.1 |
-| `org.kya-os/delegation-credentials` | The delegation credentials a payment request presents, root first, selected by the proof-covered `delegationDigest` | Profile §11.1; the execution profile |
-| `org.kya-os/payment-answer` | On a payment tool result: the Executor's answer proof, a compact JWS naming the request it answers (requester, request digest, request-proof nonce) over the result without `_meta` | Profile §11.1; the execution profile |
+| `org.kya-os/delegation-credentials` | The delegation credentials a payment request presents, root first, selected by the proof-covered `delegationDigest` | Profile §11.1; Execution §4.3 |
+| `org.kya-os/payment-answer` | On a payment tool result: the Executor's answer proof, a compact JWS naming the request it answers (requester, request digest, request-proof nonce) over the result without `_meta` | Profile §11.1; Execution §9.5 |
 
 **Profile dependency.** Profile §11.1. Until adoption the keys are
 profile-defined and listed only there.
@@ -148,3 +151,88 @@ has at most three digits, and leap seconds and instants before the Unix epoch
 are refused.
 A payment verifier therefore treats as stale a list whose timestamp bound the
 proposed text would parse but that grammar refuses.
+
+## 6. A request-bound response proof for stateless requests (SPEC.md §7; SPEC-ENTITY-CARD §8)
+
+**Current text.** SPEC-ENTITY-CARD §8.1: "Two orthogonal proof profiles may
+appear on one server, each under its OWN `_meta` key: the **legacy
+session-bound** `ProofMeta` (carrying `sessionId` + a handshake nonce; retained
+untouched for 1.x back-compat) under `_meta["org.kya-os/response-proof"]`".
+The response proof names no request instance: its request hash covers the
+call's content, which every repeat of one request shares, so a response proof
+for one answer also verifies as the answer to any repeat.
+
+**Proposed addition.** "A server that answers a request authenticated by a
+self-contained request proof MAY attach, under
+`_meta["org.kya-os/request-response-proof"]`, a response proof bound to that
+request instance: a compact JWS by a key the server's DID lists under
+`assertionMethod`, over the RFC 8785 serialization of `{iss, aud, requestHash,
+requestNonce, responseHash, iat}`, where `aud` is the request proof's `did`,
+`requestHash` and `requestNonce` are that proof's, and `responseHash` covers
+the response with its top-level `_meta` removed (SPEC.md §7.6)."
+
+**Effect.** Additive: it adds one `_meta` key, and no existing verifier,
+vector, or `_meta` key changes; `org.kya-os/response-proof` keeps its
+`ProofMeta` object.
+
+**Execution dependency.** None. Until adoption, the answer proof of Execution
+§9.5 is the only request-bound proof a payment client relies on, and the base
+response proof is unchanged. Execution §9.5 defines the answer proof on its
+own terms; if the base adopts a request-bound response proof, a later revision
+can define the answer proof as a profile of it.
+
+## 7. Nonce retention and the order of the replay check (SPEC-ENTITY-CARD §11.2, §12.2)
+
+**Current text.** SPEC-ENTITY-CARD §11.2 fixes the order of verification: step
+8, "**Replay** - `nonce` unseen for `did`, else `nonce_replayed`", comes before
+step 9, "Detached JWS verifies over the recomputed covered claims (§8.4), else
+`invalid_signature`". §12.2 requires a nonce store that is consumed atomically,
+but not how long it keeps a nonce.
+
+**Proposed text.** "A Verifier keeps a consumed nonce at least until no proof
+carrying it can be accepted any more: until the proof's `expires` plus the
+largest request-proof skew of any Verifier that shares the nonce store, plus
+one second, since verification compares whole epoch seconds. It
+consumes a nonce only after the signature verifies (steps 8 and 9 swap), so a
+party that has only seen a proof cannot spend its nonce with a forged
+request."
+
+**Effect.** The first sentence is additive. The second changes which reason a
+request with both a replayed nonce and an invalid signature reports; the
+Working Group would re-check the conformance vectors for that case before
+adopting it. The reference base verifier already behaves so: its
+`verifyCardProof` (`src/card/proof/verify.ts`) checks every binding, the
+signature included, before it consumes the nonce, and passes the nonce store a
+retention floor derived from the proof's `expires`, the skew, and one more
+second (`src/providers/nonce-retention.ts`). No conformance vector covers the
+reordered case.
+
+**Execution dependency.** Execution §4.5 requires the retention of the first
+sentence of every payment Executor. It does not need the second. Until
+adoption, a payment Executor keeps that retention under Execution §4.5, and
+other verifiers keep the base rule.
+
+## 8. The request-proof nonce is base64url (SPEC-ENTITY-CARD §8.2)
+
+**Current text.** SPEC-ENTITY-CARD §8.2 gives the proof object's nonce as
+`"nonce": "<128-bit, client-random or server-issued>"`, with no encoding. The
+reference base verifier requires it to be base64url (RFC 4648 §5, unpadded):
+its `CardProofMetaSchema` (`src/card/proof/types.ts`) refuses any other nonce
+as a malformed proof, because the nonce is embedded verbatim in the
+line-oriented RFC 9421 signature base of §8.5, where a line break or other
+byte would corrupt it.
+
+**Proposed text.** "`nonce`: a 128-bit value written with only the characters
+of the RFC 4648 §5 base64url alphabet, unpadded and not empty; a Verifier
+refuses a proof whose nonce has any other character."
+
+**Effect.** Additive for proofs the reference already builds and accepts: it
+states the character set the reference base verifier enforces, which admits a
+base64url or a hexadecimal nonce, and does not change the base's 128-bit size.
+An implementation written from the text alone could today send a nonce the
+reference refuses.
+
+**Execution dependency.** Execution §4.5 bounds the nonce an answer proof
+names to 512 code points, which this item does not change. Until adoption a
+client that follows the text alone may be refused by a verifier that applies
+the reference base's rule.

@@ -1,0 +1,504 @@
+{
+  "$schema": "https://schema.kya-os.org/experimental/payment-authority/2026-09-22/meta",
+  "$id": "https://schema.kya-os.org/experimental/payment-authority/2026-09-22/answer",
+  "title": "KYA-OS Payment Answer (Experimental)",
+  "description": "Experimental discussion draft: the MCP tool result an Executor gives an authenticated payment request (execution section 9). Not stable or ratified.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "resultType",
+    "content",
+    "structuredContent",
+    "_meta"
+  ],
+  "properties": {
+    "resultType": {
+      "const": "complete"
+    },
+    "isError": {
+      "type": "boolean"
+    },
+    "content": {
+      "description": "One text block holding the JSON of structuredContent (execution section 9).",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "text"
+        ],
+        "properties": {
+          "type": {
+            "const": "text"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "structuredContent": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "payment"
+          ],
+          "properties": {
+            "payment": {
+              "$ref": "#/$defs/attempt"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "paymentRefusal"
+          ],
+          "properties": {
+            "paymentRefusal": {
+              "$ref": "#/$defs/refusal"
+            }
+          }
+        }
+      ]
+    },
+    "_meta": {
+      "type": "object",
+      "required": [
+        "org.kya-os/payment-answer"
+      ],
+      "properties": {
+        "org.kya-os/payment-answer": {
+          "description": "The answer proof (execution section 9.5).",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "required": [
+          "structuredContent"
+        ],
+        "properties": {
+          "structuredContent": {
+            "type": "object",
+            "required": [
+              "paymentRefusal"
+            ],
+            "properties": {
+              "paymentRefusal": true
+            }
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "required": [
+          "isError"
+        ],
+        "properties": {
+          "isError": {
+            "const": true
+          }
+        }
+      },
+      "else": {
+        "type": "object",
+        "properties": {
+          "isError": {
+            "const": false
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "reference": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "attempt": {
+      "description": "An attempt (execution section 9.1).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attemptId",
+        "state",
+        "intentDigest",
+        "authorizationDigest",
+        "evidenceComplete"
+      ],
+      "properties": {
+        "attemptId": {
+          "$ref": "#/$defs/reference"
+        },
+        "state": {
+          "enum": [
+            "authorized",
+            "submitted",
+            "settlement_pending",
+            "settled",
+            "failed"
+          ]
+        },
+        "intentDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "authorizationDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "rail": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "transactionRef": {
+              "$ref": "#/$defs/reference"
+            },
+            "reconciliationRef": {
+              "$ref": "#/$defs/reference"
+            }
+          }
+        },
+        "effectAmount": {
+          "$ref": "https://schema.kya-os.org/experimental/payment-authority/2026-09-22/intent#/$defs/amount"
+        },
+        "effectAmountMismatch": {
+          "const": true
+        },
+        "correction": {
+          "const": true
+        },
+        "finality": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9:._-]{0,63}$"
+        },
+        "reason": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "code",
+            "newIntentMaySucceed"
+          ],
+          "properties": {
+            "code": {
+              "enum": [
+                "payment_failed",
+                "payment_quote_expired",
+                "payment_authority_expired",
+                "payment_delegation_revoked",
+                "payment_authority_recheck_failed",
+                "payment_denied"
+              ]
+            },
+            "newIntentMaySucceed": {
+              "type": "boolean"
+            }
+          }
+        },
+        "evidenceComplete": {
+          "type": "boolean"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "const": "settled"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "required": [
+              "rail",
+              "effectAmount"
+            ],
+            "properties": {
+              "rail": {
+                "type": "object",
+                "required": [
+                  "transactionRef"
+                ],
+                "not": {
+                  "type": "object",
+                  "required": [
+                    "reconciliationRef"
+                  ],
+                  "properties": {
+                    "reconciliationRef": true
+                  }
+                },
+                "properties": {
+                  "transactionRef": true
+                }
+              },
+              "effectAmount": true
+            }
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "effectAmount"
+                  ],
+                  "properties": {
+                    "effectAmount": true
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "effectAmountMismatch"
+                  ],
+                  "properties": {
+                    "effectAmountMismatch": true
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "finality"
+                  ],
+                  "properties": {
+                    "finality": true
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "const": "settlement_pending"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "required": [
+              "rail"
+            ],
+            "properties": {
+              "rail": {
+                "type": "object",
+                "required": [
+                  "reconciliationRef"
+                ],
+                "properties": {
+                  "reconciliationRef": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "enum": [
+                  "authorized",
+                  "submitted",
+                  "failed"
+                ]
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "rail"
+                  ],
+                  "properties": {
+                    "rail": true
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "correction"
+                  ],
+                  "properties": {
+                    "correction": true
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "const": "failed"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "required": [
+              "reason"
+            ],
+            "properties": {
+              "reason": true
+            }
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "reason"
+                  ],
+                  "properties": {
+                    "reason": true
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "refusal": {
+      "description": "A refusal of an authenticated request (execution section 9.2).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "retryable",
+        "intentDigest"
+      ],
+      "properties": {
+        "reason": {
+          "enum": [
+            "payment_delegation_invalid",
+            "payment_delegation_revoked",
+            "payment_action_not_granted",
+            "payment_caveat_unsupported",
+            "payment_approval_required",
+            "payment_request_invalid",
+            "payment_artifact_unauthenticated",
+            "payment_extension_unsupported",
+            "payment_extension_invalid",
+            "payment_intent_mismatch",
+            "payment_payer_mismatch",
+            "payment_request_mismatch",
+            "payment_authority_mismatch",
+            "payment_authority_expired",
+            "payment_authority_stale",
+            "payment_approval_invalid",
+            "payment_constraint_invalid",
+            "payment_constraint_widening",
+            "payment_constraint_denied",
+            "payment_quote_expired",
+            "payment_evidence_invalid",
+            "payment_configuration_invalid",
+            "payment_denied",
+            "payment_idempotency_conflict",
+            "payment_replay",
+            "payment_attempt_conflict",
+            "payment_journal_unavailable",
+            "payment_journal_indeterminate",
+            "payment_rail_unsupported",
+            "payment_offer_mismatch",
+            "payment_credential_invalid",
+            "payment_funding_authority_failed"
+          ]
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "intentDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "attemptRecorded": {
+          "type": "boolean"
+        },
+        "attempt": {
+          "$ref": "#/$defs/attempt"
+        },
+        "requireApproval": {
+          "$ref": "https://schema.kya-os.org/experimental/payment-authority/2026-09-22/constraints#/properties/requireApproval"
+        }
+      },
+      "dependentSchemas": {
+        "attempt": {
+          "type": "object",
+          "required": [
+            "attemptRecorded"
+          ],
+          "properties": {
+            "attemptRecorded": {
+              "const": true
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "reason": {
+                "const": "payment_approval_required"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "required": [
+              "requireApproval"
+            ],
+            "properties": {
+              "requireApproval": true
+            }
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "requireApproval"
+                  ],
+                  "properties": {
+                    "requireApproval": true
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

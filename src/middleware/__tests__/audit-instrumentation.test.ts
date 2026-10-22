@@ -144,6 +144,23 @@ describe('MCP audit instrumentation', () => {
     });
   });
 
+  it('refuses a valid handshake whose required session audit cannot be delivered', async () => {
+    const middleware = await setup(async (event) => {
+      if (event.eventType === 'session.established') throw new Error('audit unavailable');
+      return { status: 'pending', event: event as never };
+    });
+    const result = await middleware.handleHandshake({
+      nonce: `nonce-${Math.random().toString(36).slice(2)}`,
+      audience: middleware.identity.did,
+      timestamp: Math.floor(Date.now() / 1000),
+    });
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+      success: false,
+      error: { code: 'audit_delivery_failed' },
+    });
+  });
+
   it('rejects simultaneous legacy and verifiable audit configuration', async () => {
     const crypto = new NodeCryptoProvider();
     const keyPair = await crypto.generateKeyPair();

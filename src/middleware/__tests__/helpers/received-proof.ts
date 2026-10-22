@@ -178,7 +178,9 @@ export function proofOf(result: object): DetachedProof | undefined {
  * Verify the proof a result carries, as its client would: signature, signer,
  * and the hashes recomputed over the request it sent and the result it got.
  * `binds` names what the proof is expected to cover of the result: the whole
- * envelope (less `_meta`), its content array, or nothing.
+ * envelope (less `_meta`), its content array, or nothing. `shape` names the
+ * form the client holds the request in: the legacy `{ method: <tool>, params:
+ * <arguments> }` (the default), or the `tools/call` request as sent.
  */
 export async function verifyReceived(
   result: Record<string, unknown>,
@@ -187,6 +189,7 @@ export async function verifyReceived(
     toolName: string;
     params: Record<string, unknown>;
     binds: 'envelope' | 'content' | 'nothing';
+    shape?: 'legacy' | 'tools/call';
   },
 ): Promise<ProofVerificationResult> {
   const proof = proofOf(result);
@@ -203,10 +206,13 @@ export async function verifyReceived(
     expected.binds === 'envelope' ? { data: result }
       : expected.binds === 'content' ? { data: result.content }
         : undefined;
+  const request = expected.shape === 'tools/call'
+    ? { method: 'tools/call', params: { name: expected.toolName, arguments: expected.params } }
+    : { method: expected.toolName, params: expected.params };
   return verifier.verifyProof(
     proof,
     jwk,
-    { request: { method: expected.toolName, params: expected.params }, ...(response ? { response } : {}) },
+    { request, ...(response ? { response } : {}) },
     { expectedDid: expected.signer },
   );
 }

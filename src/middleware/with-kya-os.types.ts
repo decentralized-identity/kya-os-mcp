@@ -328,8 +328,12 @@ export interface PolicyGateOptions {
   /**
    * Tool-arg key carrying approval grants on resume. Default "_kyaos_approvals".
    * Composed after `wrapWithDelegation`, the default key arrives through the
-   * call context (the outer gate strips `_kyaos*` arguments); a custom key
-   * outside that prefix passes through as an ordinary argument.
+   * call context (the outer gate strips `_kyaos*` arguments and forwards only
+   * `_kyaos_approvals`). A custom key outside that prefix is an ordinary
+   * argument (SPEC §7.3): it passes through the outer gate and reaches the
+   * handler. A custom `_kyaos`-prefixed key does not survive
+   * `wrapWithDelegation`. A gate built with a custom key logs a warning saying
+   * so.
    */
   approvalsArgKey?: string;
   /** Verifier for approval-grant signatures (identity-layer). Default: reject all. */

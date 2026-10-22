@@ -1447,6 +1447,27 @@ describe('withPolicyGate', () => {
     expect(result.isError).toBe(true);
     expect(JSON.parse(text(result)).error).toBe('needs_approval');
   });
+
+  it('accepts no approval grant when no signature verifier is configured (fail-closed default)', async () => {
+    const { middleware: kyaos } = await createTestMiddleware();
+    const handler = kyaos.withPolicyGate(
+      'db.drop',
+      async () => ({ content: [{ type: 'text', text: 'ran' }] }),
+      { resolveNamespace: () => 'prod', scopeMatched: true },
+    );
+    const { requestHash } = JSON.parse(text(await handler({ table: 'users' })));
+    const grant = {
+      approvalRequestId: 'r1',
+      approverDid: 'did:example:approver',
+      requestHash,
+      decision: 'approve',
+      ts: 1,
+      signature: 'sig',
+    };
+    const result = await handler({ table: 'users', _kyaos_approvals: [grant] });
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(text(result)).error).toBe('needs_approval');
+  });
 });
 
 describe('wrapWithDelegation — VC-JWT (compact JWS) string form', () => {

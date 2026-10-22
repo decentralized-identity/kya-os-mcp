@@ -13,9 +13,9 @@ import { verifyApprovalQuorum, type ApprovalGrant } from "../policy/approval.js"
 import type { PolicyEngine } from "../policy/engine.js";
 import { buildPolicyRequest } from "../policy/projection.js";
 import { createNeedsApprovalError } from "../types/protocol.js";
-import { isKyaOsControlArg } from "../delegation/holder-binding.js";
 import { acceptedRequestHashes, type ToolRequest } from "../proof/generator.js";
 import { KYA_OS_ERROR_CODES } from "../errors.js";
+import { logger } from "../logging/index.js";
 import type {
   KyaOsCallContext,
   KyaOsToolHandler,
@@ -23,7 +23,12 @@ import type {
   PolicyGateOptions,
 } from "./with-kya-os.types.js";
 import type { MiddlewareDeps, AttachOutcomeProof, RequireProofLayer } from "./with-kya-os.deps.js";
-import { sanitizeForMessage, extractPolicyPrincipal } from "./with-kya-os.helpers.js";
+import {
+  DEFAULT_APPROVALS_KEY,
+  extractPolicyPrincipal,
+  sanitizeForMessage,
+  withoutControlArgs,
+} from "./with-kya-os.helpers.js";
 
 /** Collaborators the policy gate borrows from the session/proof sub-factory. */
 export interface PolicyGateWiring {
@@ -48,7 +53,15 @@ export function createPolicyGate(
   ): KyaOsToolHandler {
     const engine = opts.engine ?? defaultPolicyEngine;
     const classifier = opts.classifier ?? defaultRiskClassifier;
-    const approvalsKey = opts.approvalsArgKey ?? "_kyaos_approvals";
+    const approvalsKey = opts.approvalsArgKey ?? DEFAULT_APPROVALS_KEY;
+    if (approvalsKey !== DEFAULT_APPROVALS_KEY) {
+      logger.warn(
+        `[kya-os] withPolicyGate("${toolName}") reads approval grants from "${approvalsKey}". ` +
+          `A key outside the _kyaos prefix reaches the handler as an ordinary tool argument, ` +
+          `and a _kyaos-prefixed key does not survive wrapWithDelegation, which forwards only ` +
+          `${DEFAULT_APPROVALS_KEY}.`,
+      );
+    }
     const isValidApprovalSignature =
       opts.isValidApprovalSignature ?? (async () => false);
 
@@ -60,18 +73,19 @@ export function createPolicyGate(
       requireProofLayer();
       // Composed after wrapWithDelegation, the approvals argument has already
       // been stripped and arrives in the call context; restore it so a step-up
-      // resume verifies the same grants either way.
+      // resume verifies the same grants either way. The restored copy is only
+      // read, never hashed or handed on: the client did not send it there.
       const args =
         callArgs[approvalsKey] === undefined && context?.approvals !== undefined
           ? { ...callArgs, [approvalsKey]: context.approvals }
           : callArgs;
 
-      // Drop the reserved _kyaos* namespace plus the (possibly custom) approvals
-      // key, so no control arg reaches the handler.
-      const cleanArgs: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(args)) {
-        if (!isKyaOsControlArg(k) && k !== approvalsKey) cleanArgs[k] = v;
-      }
+      // The call as received, without its _kyaos* control arguments (SPEC
+      // §7.3's covered request): what the handler runs with, what an inner
+      // wrapWithProof binds, and what every outcome proof binds. A custom
+      // approvals key outside the _kyaos prefix is an ordinary argument and
+      // stays in.
+      const handlerArgs = withoutControlArgs(callArgs);
 
       const namespace = opts.resolveNamespace?.(args) ?? toolName;
       const risk = classifier.classify({ toolName, namespace });
@@ -119,7 +133,7 @@ export function createPolicyGate(
           outcome: 'succeeded',
           context: auditContext,
         });
-        return handler(cleanArgs, sessionId, context);
+        return handler(handlerArgs, sessionId, context);
       }
 
       if (decision.decision === "deny") {
@@ -138,25 +152,29 @@ export function createPolicyGate(
         return attachOutcomeProof(
           denied,
           toolName,
-          args,
+          callArgs,
           sessionId,
           decision.reason,
           "denied",
-          cleanArgs,
         );
       }
 
       // step_up: verify any supplied approval grants, bound to this exact action.
       // The challenge advertises the legacy-shape hash; a grant over the SPEC
-      // §7.3 `tools/call` shape of the same action is accepted as well.
-      const action: ToolRequest = { method: toolName, params: cleanArgs };
-      const requestHash = await proofGenerator.hashRequest(action);
+      // §7.3 `tools/call` shape of the same action is accepted as well. The
+      // action leaves the approvals key out: grants cannot bind a hash that
+      // includes themselves.
+      const approvedAction: ToolRequest = {
+        method: toolName,
+        params: Object.fromEntries(Object.entries(handlerArgs).filter(([key]) => key !== approvalsKey)),
+      };
+      const requestHash = await proofGenerator.hashRequest(approvedAction);
       const grants = Array.isArray(args[approvalsKey])
         ? (args[approvalsKey] as ApprovalGrant[])
         : [];
       const quorumResult = await verifyApprovalQuorum(
         grants,
-        await acceptedRequestHashes(action, (bytes) => cryptoProvider.hash(bytes)),
+        await acceptedRequestHashes(approvedAction, (bytes) => cryptoProvider.hash(bytes)),
         decision.quorum,
         isValidApprovalSignature,
       );
@@ -165,7 +183,7 @@ export function createPolicyGate(
           outcome: 'succeeded',
           context: auditContext,
         });
-        return handler(cleanArgs, sessionId, context);
+        return handler(handlerArgs, sessionId, context);
       }
 
       const needsApproval = createNeedsApprovalError({
@@ -182,11 +200,10 @@ export function createPolicyGate(
       return attachOutcomeProof(
         stepUp,
         toolName,
-        args,
+        callArgs,
         sessionId,
         decision.reason,
         "step_up_required",
-        cleanArgs,
       );
     };
   }

@@ -28,7 +28,8 @@ import type {
  * `proveOutcome`, so it is typed here as the shared internal contract between
  * them. A `needs_authorization` proof binds the response (its content under
  * the body profile, its envelope under the envelope profile); denial and
- * step-up proofs bind none (SPEC §7.4).
+ * step-up proofs bind none (SPEC §7.4). `args` are the call's arguments as
+ * sent; the proof binds them without the `_kyaos*` control arguments.
  */
 export type AttachOutcomeProof = (
   response: KyaOsToolResult,
@@ -37,7 +38,6 @@ export type AttachOutcomeProof = (
   sessionId: string | undefined,
   reason: string,
   outcome?: KyaOsAuthorizationOutcome,
-  paramsOverride?: Record<string, unknown>,
 ) => Promise<KyaOsToolResult>;
 
 /**

@@ -17,7 +17,6 @@ import type {
 } from "./with-kya-os.types.js";
 import type { AttachOutcomeProof, RequireProofLayer } from "./with-kya-os.deps.js";
 import { withoutOutcomeMeta } from "./with-kya-os.session.js";
-import { withoutControlArgs } from "./with-kya-os.helpers.js";
 
 const OUTCOMES: ReadonlySet<string> = new Set<KyaOsAuthorizationOutcome>([
   "needs_authorization",
@@ -43,7 +42,6 @@ export function createOutcomeProver(wiring: OutcomeProverWiring): KyaOsOutcomePr
             `expected one of ${[...OUTCOMES].join(", ")}`,
         );
       }
-      const params = withoutControlArgs(request.args);
       // A copy, so the caller's result is never changed, without the `_meta`
       // members only the middleware may set.
       const result = { ...withoutOutcomeMeta(request.result) };
@@ -51,11 +49,10 @@ export function createOutcomeProver(wiring: OutcomeProverWiring): KyaOsOutcomePr
       return attachOutcomeProof(
         result,
         request.toolName,
-        params,
+        request.args,
         request.sessionId,
         request.reason,
         request.outcome,
-        params,
       ) as Promise<R>;
     },
   };

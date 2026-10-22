@@ -40,7 +40,7 @@ import type {
   KyaOsCallContext,
 } from "./with-kya-os.types.js";
 import type { MiddlewareDeps, AttachOutcomeProof, RequireProofLayer } from "./with-kya-os.deps.js";
-import { sanitizeForMessage } from "./with-kya-os.helpers.js";
+import { sanitizeForMessage, withoutControlArgs } from "./with-kya-os.helpers.js";
 import type { McpAuditContext } from "../audit/adapters/mcp.js";
 
 /** The `_meta` member carrying this middleware's audit-lifecycle marker. */
@@ -1218,7 +1218,6 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     sessionId,
     reason,
     outcome = "denied",
-    paramsOverride,
   ) => {
     const phase = outcome === 'denied' ? 'denied' : 'step_up_required';
     const reasonCode = outcome === 'needs_authorization'
@@ -1269,22 +1268,12 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     }
     if (!session) return audited;
 
-    // Prefer the caller's already-stripped args so the signed requestHash
-    // matches the needs_approval / resumeToken requestHash exactly.
-    let cleanArgs: Record<string, unknown>;
-    if (paramsOverride !== undefined) {
-      cleanArgs = paramsOverride;
-    } else {
-      cleanArgs = {};
-      for (const [k, v] of Object.entries(args)) {
-        if (k !== "_kyaos_delegation") cleanArgs[k] = v;
-      }
-    }
-
-    // Hashed now, as with an allowed call; the arguments are not kept.
+    // Hashed now, as with an allowed call; the arguments are not kept. The
+    // request is SPEC §7.3's legacy shape, every control argument removed, so
+    // a client or auditor recomputes it from the call as sent.
     let requestHash: string;
     try {
-      requestHash = await proofGenerator.hashRequest({ method: toolName, params: cleanArgs });
+      requestHash = await proofGenerator.hashRequest({ method: toolName, params: withoutControlArgs(args) });
     } catch (error) {
       await outcomeProofFailed(toolName, error, terminalAuditDelivered);
       return markUnproven(audited);

@@ -11,6 +11,12 @@ import { getDelegationScopes } from "../delegation/chain-enforcement.js";
 import { isKyaOsControlArg } from "../proof/covered-request.js";
 
 /**
+ * The argument that carries approval grants by default, and the one
+ * `wrapWithDelegation` forwards to a composed policy gate in the call context.
+ */
+export const DEFAULT_APPROVALS_KEY = "_kyaos_approvals";
+
+/**
  * `args` without the reserved `_kyaos*` control arguments: the call as its
  * handler sees it, and as a gate's request hash binds it.
  */

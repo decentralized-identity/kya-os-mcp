@@ -34,7 +34,7 @@ import type {
   KyaOsMiddleware,
   KyaOsToolResult,
 } from '../with-kya-os.js';
-import { LIFECYCLE_STAMP_META_KEY } from '../with-kya-os.session.js';
+import { LIFECYCLE_STAMP_META_KEY, attachOuterProofLayer } from '../with-kya-os.session.js';
 import { RESPONSE_PROOF_PROFILE_ENVELOPE, type ResponseProofProfile } from '../../proof/generator.js';
 import type { PolicyEngine } from '../../policy/engine.js';
 import type { AuditTrailService } from '../../audit/service.js';
@@ -840,6 +840,19 @@ describe.each(PROFILE_NAMES)('edge paths of a proof left to the transport (%s pr
 
     expect(JSON.stringify(await kyaos.wrapWithProof('report', ran)(ARGS))).toContain(PENDING);
     await kept.wrapper.close();
+  });
+
+  it('counts an outer layer released twice once', async () => {
+    const kyaos = await createMiddleware({ ...config, autoSession: true });
+    const layer = attachOuterProofLayer(kyaos.wrapWithProof)!;
+    const kept = layer.open();
+    const released = layer.open();
+
+    released();
+    released();
+
+    expect(JSON.stringify(await kyaos.wrapWithProof('report', ran)(ARGS))).toContain(PENDING);
+    kept();
   });
 });
 

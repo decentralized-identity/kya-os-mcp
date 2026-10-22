@@ -24,7 +24,7 @@ import type {
 } from "./with-kya-os.types.js";
 import type { MiddlewareDeps, AttachOutcomeProof, RequireProofLayer } from "./with-kya-os.deps.js";
 import type { GrantResolution } from "./with-kya-os.grants.js";
-import { sanitizeForMessage, withoutControlArgs } from "./with-kya-os.helpers.js";
+import { DEFAULT_APPROVALS_KEY, sanitizeForMessage, withoutControlArgs } from "./with-kya-os.helpers.js";
 import { canonicalizeJsonBytes } from "../utils/canonical-json.js";
 import type { Digest } from "../audit/types.js";
 import {
@@ -63,7 +63,7 @@ function rejectedDelegationRef(value: unknown): string {
  * control argument, so they travel on in the call context instead.
  */
 function forwardedApprovals(args: Record<string, unknown>): Pick<KyaOsCallContext, "approvals"> {
-  const approvals = args["_kyaos_approvals"];
+  const approvals = args[DEFAULT_APPROVALS_KEY];
   return approvals === undefined ? {} : { approvals };
 }
 

@@ -7,6 +7,8 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.21.0] - 2026-10-21
+
 ### Upgrading
 
 - **A status-list manager given a compressor that does not GZIP now throws

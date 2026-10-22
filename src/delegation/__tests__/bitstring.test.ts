@@ -1,34 +1,17 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
   BitstringManager,
   isIndexSet,
   type CompressionFunction,
   type DecompressionFunction,
 } from "../bitstring.js";
+import { statusListGzipCodec } from "../../utils/statuslist-gzip.js";
+import { createRevocationChecker } from "../../card/revocation.js";
 
-// Mock compression functions for testing
-class MockCompressor implements CompressionFunction {
-  async compress(data: Uint8Array): Promise<Uint8Array> {
-    // Simple mock: just return data as-is (no actual compression)
-    return data;
-  }
-}
-
-class MockDecompressor implements DecompressionFunction {
-  async decompress(data: Uint8Array): Promise<Uint8Array> {
-    // Simple mock: just return data as-is
-    return data;
-  }
-}
+const compressor: CompressionFunction = statusListGzipCodec;
+const decompressor: DecompressionFunction = statusListGzipCodec;
 
 describe("BitstringManager", () => {
-  let compressor: CompressionFunction;
-  let decompressor: DecompressionFunction;
-
-  beforeEach(() => {
-    compressor = new MockCompressor();
-    decompressor = new MockDecompressor();
-  });
 
   describe("constructor", () => {
     it("should create manager with specified size", () => {
@@ -324,14 +307,8 @@ describe("BitstringManager", () => {
 });
 
 describe("isIndexSet", () => {
-  let decompressor: DecompressionFunction;
-
-  beforeEach(() => {
-    decompressor = new MockDecompressor();
-  });
-
   it("should return true for set bit", async () => {
-    const manager = new BitstringManager(8, new MockCompressor(), decompressor);
+    const manager = new BitstringManager(8, compressor, decompressor);
     manager.setBit(3, true);
     const encoded = await manager.encode();
 
@@ -340,7 +317,7 @@ describe("isIndexSet", () => {
   });
 
   it("should return false for unset bit", async () => {
-    const manager = new BitstringManager(8, new MockCompressor(), decompressor);
+    const manager = new BitstringManager(8, compressor, decompressor);
     manager.setBit(0, true);
     manager.setBit(2, true);
     const encoded = await manager.encode();
@@ -350,7 +327,7 @@ describe("isIndexSet", () => {
   });
 
   it("throws (fail-closed) for an out-of-range index", async () => {
-    const manager = new BitstringManager(8, new MockCompressor(), decompressor);
+    const manager = new BitstringManager(8, compressor, decompressor);
     const encoded = await manager.encode();
 
     // Fail-CLOSED: an out-of-range index cannot be proven clear, so it must throw rather than
@@ -359,7 +336,7 @@ describe("isIndexSet", () => {
   });
 
   it("should handle multiple bits", async () => {
-    const manager = new BitstringManager(16, new MockCompressor(), decompressor);
+    const manager = new BitstringManager(16, compressor, decompressor);
     manager.setBit(0, true);
     manager.setBit(7, true);
     manager.setBit(8, true);
@@ -375,16 +352,14 @@ describe("isIndexSet", () => {
 });
 
 describe("W3C multibase encodedList (u prefix)", () => {
-  const decompressor = new MockDecompressor();
-
   it("encode() emits the leading 'u' multibase prefix", async () => {
-    const manager = new BitstringManager(8, new MockCompressor(), decompressor);
+    const manager = new BitstringManager(8, compressor, decompressor);
     manager.setBit(3, true);
     expect((await manager.encode())[0]).toBe("u");
   });
 
   it("isIndexSet reads a multibase-prefixed list (the W3C wire form that previously threw)", async () => {
-    const manager = new BitstringManager(8, new MockCompressor(), decompressor);
+    const manager = new BitstringManager(8, compressor, decompressor);
     manager.setBit(3, true);
     const encoded = await manager.encode(); // now 'u'-prefixed
     expect(encoded[0]).toBe("u");
@@ -393,7 +368,7 @@ describe("W3C multibase encodedList (u prefix)", () => {
   });
 
   it("isIndexSet still reads an unprefixed list (back-compat, no double-strip)", async () => {
-    const manager = new BitstringManager(8, new MockCompressor(), decompressor);
+    const manager = new BitstringManager(8, compressor, decompressor);
     manager.setBit(3, true);
     const unprefixed = (await manager.encode()).slice(1); // drop the multibase 'u'
     expect(await isIndexSet(unprefixed, 3, decompressor)).toBe(true);
@@ -403,7 +378,58 @@ describe("W3C multibase encodedList (u prefix)", () => {
     // The standalone reader shares BitstringManager.decode's 16 MiB cap: an over-inflating
     // decompressor must throw, not allocate the bomb and read a bit from it.
     const bomb: DecompressionFunction = { decompress: async () => new Uint8Array(17 * 1024 * 1024) };
-    await expect(isIndexSet("uAAAA", 0, bomb)).rejects.toThrow(/too large/);
+    const encoded = await new BitstringManager(8, compressor, decompressor).encode();
+    await expect(isIndexSet(encoded, 0, bomb)).rejects.toThrow(/too large/);
   });
 });
 
+describe("GZIP is required", () => {
+  const passThrough = { compress: async (d: Uint8Array) => d, decompress: async (d: Uint8Array) => d };
+
+  it("encode() refuses a compressor that does not GZIP", async () => {
+    await expect(new BitstringManager(8, passThrough, passThrough).encode()).rejects.toThrow(/not GZIP/);
+  });
+
+  it("decode() and isIndexSet refuse a pass-through decompressor", async () => {
+    const encoded = await BitstringManager.fromSetBits(8, [0], compressor, decompressor).encode();
+    await expect(BitstringManager.decode(encoded, compressor, passThrough)).rejects.toThrow(/input unchanged/);
+    await expect(isIndexSet(encoded, 0, passThrough)).rejects.toThrow(/input unchanged/);
+  });
+});
+
+describe("the shipped GZIP codec is the default", () => {
+  it("a default-constructed manager encodes as the explicit codec does and round-trips through decode()", async () => {
+    const manager = new BitstringManager(16);
+    manager.setBit(3, true);
+    manager.setBit(12, true);
+    const explicit = BitstringManager.fromSetBits(16, [3, 12], compressor, decompressor);
+
+    const encoded = await manager.encode();
+    expect(encoded).toBe(await explicit.encode());
+    const decoded = await BitstringManager.decode(encoded);
+    expect(decoded.getSetBits()).toEqual([3, 12]);
+    expect(await decoded.encode()).toBe(encoded);
+  });
+
+  it("fromSetBits() needs no codec", async () => {
+    const manager = BitstringManager.fromSetBits(8, [0, 5]);
+    expect(manager.getSetBits()).toEqual([0, 5]);
+    expect((await BitstringManager.decode(await manager.encode())).getSetBits()).toEqual([0, 5]);
+  });
+
+  it("isIndexSet() with no decompressor reads a list as the card revocation checker does", async () => {
+    const encodedList = await BitstringManager.fromSetBits(16, [2, 9]).encode();
+    const check = createRevocationChecker({
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ credentialSubject: { statusPurpose: "revocation", encodedList } }),
+      }),
+    });
+    for (let index = 0; index < 16; index++) {
+      const revoked = await isIndexSet(encodedList, index);
+      expect(revoked).toBe(index === 2 || index === 9);
+      expect((await check({ statusListCredential: "https://issuer.example/s", statusListIndex: String(index) })).revoked).toBe(revoked);
+    }
+  });
+});

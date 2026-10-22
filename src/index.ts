@@ -133,6 +133,8 @@ export {
   type DecompressionFunction,
 } from './delegation/bitstring.js';
 
+export { statusListGzipCodec } from './utils/statuslist-gzip.js';
+
 export {
   verifyDelegationAudience,
 } from './delegation/audience-validator.js';

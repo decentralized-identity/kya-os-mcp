@@ -21,6 +21,7 @@ import {
   DelegationCredentialVerifier,
   createDidKeyResolver,
   base64urlEncodeFromBytes,
+  statusListGzipCodec,
   type StatusListStorageProvider,
   type DelegationCredential,
   type CredentialStatus,
@@ -28,14 +29,6 @@ import {
 } from "@kya-os/mcp";
 
 const crypto = new NodeCryptoProvider();
-
-// Simple passthrough compressor/decompressor for testing
-const compressor = {
-  compress: async (data: Uint8Array) => data,
-};
-const decompressor = {
-  decompress: async (data: Uint8Array) => data,
-};
 
 describe("E2E: StatusList2021 revocation lifecycle", () => {
   let issuerDid: string;
@@ -76,8 +69,9 @@ describe("E2E: StatusList2021 revocation lifecycle", () => {
       statusListStorage,
       { getDid: () => issuerDid, getKeyId: () => issuerKid },
       signingFn,
-      compressor,
-      decompressor,
+      // Status lists must be GZIP: other verifiers read any other encoding as all-revoked.
+      statusListGzipCodec,
+      statusListGzipCodec,
       { statusListBaseUrl: "https://status.test.example.com" },
     );
 

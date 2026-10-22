@@ -29,6 +29,7 @@ import {
   didKeyFragment,
   wrapDelegationAsVC,
   BitstringManager,
+  statusListGzipCodec,
   buildDidWebDocument,
   RESPONSE_PROOF_PROFILE_ENVELOPE,
   type DelegationCredential,
@@ -38,11 +39,7 @@ import {
 } from '../src/index.js';
 import { extractPublicKeyFromDidKey, publicKeyToJwk } from '../src/delegation/did-key-resolver.js';
 import { VECTORS_DIR } from './loader.js';
-import {
-  signVC,
-  conformanceCompressor,
-  conformanceDecompressor,
-} from './crypto-kit.js';
+import { signVC } from './crypto-kit.js';
 import type {
   ConformanceVector,
   VectorFile,
@@ -499,7 +496,7 @@ async function statusListVectors(): Promise<VectorFile> {
   const listSize = 131072;
 
   async function buildStatusList(revokedIndices: number[]): Promise<StatusList2021Credential> {
-    const bitstring = new BitstringManager(listSize, conformanceCompressor, conformanceDecompressor);
+    const bitstring = new BitstringManager(listSize, statusListGzipCodec, statusListGzipCodec);
     for (const i of revokedIndices) bitstring.setBit(i, true);
     const encodedList = await bitstring.encode();
     const unsigned = {

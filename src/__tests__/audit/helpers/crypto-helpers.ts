@@ -6,7 +6,6 @@
  * for actual Ed25519 operations.
  */
 
-import * as zlib from 'node:zlib';
 import { NodeCryptoProvider } from '../../utils/node-crypto-provider.js';
 import { MemoryIdentityProvider, MemoryNonceCacheProvider } from '../../../providers/memory.js';
 import { ClockProvider } from '../../../providers/base.js';
@@ -15,8 +14,8 @@ import type { Proof } from '../../../types/protocol.js';
 import type { VCSigningFunction } from '../../../delegation/vc-issuer.js';
 import type { SignatureVerificationFunction } from '../../../delegation/vc-verifier.js';
 import { canonicalizeJSON } from '../../../delegation/utils.js';
-import type { CompressionFunction, DecompressionFunction } from '../../../delegation/bitstring.js';
 import { StatusList2021Manager } from '../../../delegation/statuslist-manager.js';
+import { statusListGzipCodec } from '../../../utils/statuslist-gzip.js';
 import { MemoryStatusListStorage } from '../../../delegation/storage/memory-statuslist-storage.js';
 
 // ── Crypto ──────────────────────────────────────────────────────
@@ -141,30 +140,6 @@ export function createRealSignatureVerifier(
   };
 }
 
-// ── Compression (real gzip via Node.js zlib) ────────────────────
-
-export const nodeCompressor: CompressionFunction = {
-  compress(data: Uint8Array): Promise<Uint8Array> {
-    return new Promise((resolve, reject) => {
-      zlib.gzip(Buffer.from(data), (err, result) => {
-        if (err) reject(err);
-        else resolve(new Uint8Array(result));
-      });
-    });
-  },
-};
-
-export const nodeDecompressor: DecompressionFunction = {
-  decompress(data: Uint8Array): Promise<Uint8Array> {
-    return new Promise((resolve, reject) => {
-      zlib.gunzip(Buffer.from(data), (err, result) => {
-        if (err) reject(err);
-        else resolve(new Uint8Array(result));
-      });
-    });
-  },
-};
-
 // ── StatusList2021 Manager (real) ───────────────────────────────
 
 export interface RealStatusListSetup {
@@ -189,8 +164,8 @@ export function createRealStatusListManager(
     storage,
     identityProvider,
     signingFunction,
-    nodeCompressor,
-    nodeDecompressor,
+    statusListGzipCodec,
+    statusListGzipCodec,
     options
   );
 

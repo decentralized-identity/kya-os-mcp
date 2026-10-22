@@ -3,14 +3,18 @@ import {
   MAX_STATUS_LIST_BYTES,
   MULTIBASE_BASE64URL,
   parseStatusListIndex,
+  encodeStatusListPayload,
   decodeStatusListPayload,
   readStatusBit,
   assertAnchorableStatusListCredential,
 } from '../statuslist-bits.js';
 import { base64urlEncodeFromBytes } from '../base64.js';
+import { statusListGzipCodec } from '../statuslist-gzip.js';
 
-/** Identity "decompressor" — the payload IS the bitstring (mechanics tests need no gzip). */
-const identity = (bytes: Uint8Array): Uint8Array => bytes;
+const { compress: gzip, decompress: gunzip } = statusListGzipCodec;
+
+/** A pass-through "decompressor": hands back the GZIP payload as if it were the bitstring. */
+const passThrough = (bytes: Uint8Array): Uint8Array => bytes;
 
 describe('parseStatusListIndex', () => {
   it('parses a canonical non-negative decimal', () => {
@@ -35,31 +39,64 @@ describe('parseStatusListIndex', () => {
   });
 });
 
+describe('encodeStatusListPayload', () => {
+  const raw = new Uint8Array([0b10100000, 0b00000001]);
+
+  it('GZIPs the bitstring under the multibase u prefix', async () => {
+    const encoded = await encodeStatusListPayload(raw, gzip);
+    expect(encoded.startsWith(MULTIBASE_BASE64URL)).toBe(true);
+    expect(await decodeStatusListPayload(encoded, gunzip)).toEqual(raw);
+  });
+
+  it('refuses to publish when the compressor does not GZIP', async () => {
+    await expect(encodeStatusListPayload(raw, passThrough)).rejects.toThrow(/not GZIP/);
+  });
+});
+
 describe('decodeStatusListPayload', () => {
   const raw = new Uint8Array([0b10100000, 0b00000001]);
 
   it('decodes with the multibase u prefix', async () => {
-    const encoded = MULTIBASE_BASE64URL + base64urlEncodeFromBytes(raw);
-    expect(await decodeStatusListPayload(encoded, identity)).toEqual(raw);
+    const encoded = MULTIBASE_BASE64URL + base64urlEncodeFromBytes(await gzip(raw));
+    expect(await decodeStatusListPayload(encoded, gunzip)).toEqual(raw);
   });
 
   it('decodes without the prefix (issuer interop)', async () => {
-    const encoded = base64urlEncodeFromBytes(raw);
-    expect(await decodeStatusListPayload(encoded, identity)).toEqual(raw);
+    const encoded = base64urlEncodeFromBytes(await gzip(raw));
+    expect(await decodeStatusListPayload(encoded, gunzip)).toEqual(raw);
   });
 
-  it('supports an async decompressor', async () => {
-    const encoded = base64urlEncodeFromBytes(raw);
-    const asyncIdentity = async (bytes: Uint8Array) => bytes;
-    expect(await decodeStatusListPayload(encoded, asyncIdentity)).toEqual(raw);
+  it('supports a sync decompressor', async () => {
+    const encoded = base64urlEncodeFromBytes(await gzip(raw));
+    expect(await decodeStatusListPayload(encoded, () => raw)).toEqual(raw);
   });
 
   it('fail-closes on an inflated payload above the cap', async () => {
     const bomb = () => new Uint8Array(MAX_STATUS_LIST_BYTES + 1);
-    const encoded = base64urlEncodeFromBytes(new Uint8Array([1]));
+    const encoded = base64urlEncodeFromBytes(await gzip(new Uint8Array([1])));
     await expect(decodeStatusListPayload(encoded, bomb)).rejects.toThrow(
       /too large/,
     );
+  });
+
+  it('fail-closes on a payload that is not GZIP', async () => {
+    const encoded = MULTIBASE_BASE64URL + base64urlEncodeFromBytes(raw);
+    await expect(decodeStatusListPayload(encoded, () => raw)).rejects.toThrow(/not GZIP/);
+  });
+
+  it('fail-closes on a pass-through decompressor, which would read the GZIP header as bits', async () => {
+    const encoded = base64urlEncodeFromBytes(await gzip(raw));
+    await expect(decodeStatusListPayload(encoded, passThrough)).rejects.toThrow(
+      /input unchanged/,
+    );
+    const copying = (bytes: Uint8Array): Uint8Array => bytes.slice();
+    await expect(decodeStatusListPayload(encoded, copying)).rejects.toThrow(/input unchanged/);
+  });
+
+  it('reads a bitstring that itself begins with the GZIP magic', async () => {
+    const magic = new Uint8Array([0x1f, 0x8b, 0x00]);
+    const encoded = await encodeStatusListPayload(magic, gzip);
+    expect(await decodeStatusListPayload(encoded, gunzip)).toEqual(magic);
   });
 });
 

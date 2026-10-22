@@ -8,6 +8,7 @@ import {
 } from '../revocation.js';
 import type { SafeFetch } from '../../utils/safe-fetch.js';
 import type { BitstringStatusListEntry } from '../schema.js';
+import { webStreamsGunzip } from '../../__tests__/utils/web-streams-gzip.js';
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -116,6 +117,16 @@ describe('createRevocationChecker (W3C Bitstring Status List v1.0)', () => {
     expect(await check(entryAt(5))).toEqual({ revoked: true, fresh: false });
   });
 
+  it.each([
+    ['a non-object body', ['not', 'a', 'credential']],
+    ['no credentialSubject', { id: STATUS_URL }],
+    ['no encodedList', { credentialSubject: { statusPurpose: STATUS_PURPOSE_REVOCATION } }],
+    ['an empty encodedList', { credentialSubject: { statusPurpose: STATUS_PURPOSE_REVOCATION, encodedList: '' } }],
+  ])('FAIL-CLOSED on a status-list credential with %s', async (_label, body) => {
+    const check = createRevocationChecker({ fetch: jsonFetch(body), now: NOW });
+    expect(await check(entryAt(5))).toEqual({ revoked: true, fresh: false });
+  });
+
   it('FAIL-CLOSED on a statusListIndex out of range for the bitstring', async () => {
     const check = createRevocationChecker({ fetch: jsonFetch(statusCredential([5])), now: NOW });
     expect(await check(entryAt(99_999))).toEqual({ revoked: true, fresh: false });
@@ -131,8 +142,8 @@ describe('createRevocationChecker (W3C Bitstring Status List v1.0)', () => {
 
   it('FAIL-CLOSED on a decompression-bomb encodedList (inflates past the output cap)', async () => {
     // ~17 MiB of zeros gzips to a few KB yet inflates beyond MAX_STATUS_LIST_BYTES (16 MiB).
-    // Pre-fix `gunzipSync` had no `maxOutputLength`, so it allocated the whole ~17 MiB (the DoS)
-    // and read a clear bit ⇒ {revoked:false}. With the cap, `gunzipSync` throws ⇒ FAIL_CLOSED.
+    // An unbounded gunzip allocates the whole ~17 MiB (the DoS) and reads a clear bit ⇒
+    // {revoked:false}. The default codec caps `maxOutputLength`, so it throws ⇒ FAIL_CLOSED.
     const cred = statusCredential([]);
     const bomb = Buffer.from(gzipSync(Buffer.alloc(17 * 1024 * 1024))).toString('base64url');
     (cred.credentialSubject as Record<string, unknown>).encodedList = `u${bomb}`;
@@ -166,56 +177,42 @@ describe('createRevocationChecker (validity window)', () => {
 // ── Injectable decompression seam (isomorphic: non-node:zlib runtimes) ───────
 
 describe('createRevocationChecker (injected decompress seam)', () => {
-  /** A NON-gzip `encodedList`: raw bitstring, base64url'd, so only an IDENTITY decompress reads it. */
-  function rawEncodedListFor(revoked: number[], multibase = true): string {
-    const bytes = new Uint8Array(BYTE_LEN);
-    for (const i of revoked) {
-      const byteIndex = i >>> 3;
-      bytes[byteIndex] = (bytes[byteIndex] ?? 0) | (0x80 >> (i & 7));
-    }
-    const b64url = Buffer.from(bytes).toString('base64url');
-    return multibase ? `u${b64url}` : b64url;
-  }
-
-  /** Serve a credential whose `encodedList` is NOT gzip — the default node:zlib path would throw. */
-  function rawCredential(revoked: number[], multibase = true): Record<string, unknown> {
-    const cred = statusCredential(revoked);
-    (cred.credentialSubject as Record<string, unknown>).encodedList = rawEncodedListFor(revoked, multibase);
-    return cred;
-  }
-
-  const identity = (bytes: Uint8Array): Uint8Array => bytes; // stands in for a DecompressionStream impl
-
   it('reads a REVOKED bit true through an INJECTED (non-node:zlib) decompress', async () => {
     const check = createRevocationChecker({
-      fetch: jsonFetch(rawCredential([5])),
+      fetch: jsonFetch(statusCredential([5])),
       now: NOW,
-      decompress: identity,
+      decompress: webStreamsGunzip, // a Workers / Deno / browser deployment's seam
     });
     expect(await check(entryAt(5))).toEqual({ revoked: true, fresh: true });
-  });
-
-  it('reads a CLEAR bit false through an INJECTED decompress (async, Promise-returning)', async () => {
-    const check = createRevocationChecker({
-      fetch: jsonFetch(rawCredential([5])),
-      now: NOW,
-      decompress: async (bytes) => identity(bytes), // async seam (mirrors DecompressionStream)
-    });
     expect(await check(entryAt(6))).toEqual({ revoked: false, fresh: true });
   });
 
-  it('still strips the multibase `u` prefix under an injected decompress', async () => {
+  it('accepts a synchronous injected decompress', async () => {
+    const bits = new Uint8Array(BYTE_LEN);
+    bits[0] = 0x80; // index 0 revoked
     const check = createRevocationChecker({
-      fetch: jsonFetch(rawCredential([7], /* multibase */ true)),
+      fetch: jsonFetch(statusCredential([0])),
       now: NOW,
-      decompress: identity,
+      decompress: () => bits,
     });
-    expect(await check(entryAt(7))).toEqual({ revoked: true, fresh: true });
+    expect(await check(entryAt(0))).toEqual({ revoked: true, fresh: true });
+    expect(await check(entryAt(1))).toEqual({ revoked: false, fresh: true });
+  });
+
+  it('reads with and without the multibase `u` prefix under an injected decompress', async () => {
+    for (const multibase of [true, false]) {
+      const check = createRevocationChecker({
+        fetch: jsonFetch(statusCredential([7], { multibase })),
+        now: NOW,
+        decompress: webStreamsGunzip,
+      });
+      expect(await check(entryAt(7))).toEqual({ revoked: true, fresh: true });
+    }
   });
 
   it('FAIL-CLOSED on a bomb via the injected seam (output past the 16 MiB backstop cap)', async () => {
     const check = createRevocationChecker({
-      fetch: jsonFetch(rawCredential([])),
+      fetch: jsonFetch(statusCredential([])),
       now: NOW,
       decompress: () => new Uint8Array(17 * 1024 * 1024), // an unbounded edge impl inflates past the cap
     });
@@ -224,20 +221,34 @@ describe('createRevocationChecker (injected decompress seam)', () => {
 
   it('FAIL-CLOSED on an out-of-range index under an injected decompress (MSB read still guards)', async () => {
     const check = createRevocationChecker({
-      fetch: jsonFetch(rawCredential([])),
+      fetch: jsonFetch(statusCredential([])),
       now: NOW,
-      decompress: identity,
+      decompress: webStreamsGunzip,
     });
     expect(await check(entryAt(99_999))).toEqual({ revoked: true, fresh: false });
   });
 
+  it('FAIL-CLOSED on a pass-through decompress, which would read the GZIP header as status bits', async () => {
+    // Read as bits, the GZIP header `1f 8b 08` leaves indices 0-2 clear: revoked entries there
+    // would read live. The shared decoder refuses the unchanged payload instead.
+    const check = createRevocationChecker({
+      fetch: jsonFetch(statusCredential([0, 1, 2])),
+      now: NOW,
+      decompress: (bytes) => bytes,
+    });
+    for (const index of [0, 1, 2]) {
+      expect(await check(entryAt(index))).toEqual({ revoked: true, fresh: false });
+    }
+  });
+
   it('DEFAULT (node:zlib) path is unchanged — inflates real gzip AND rejects non-gzip bytes', async () => {
-    // No `decompress` injected ⇒ the default node:zlib gunzip seam. A genuine gzip list reads;
-    // the SAME raw (non-gzip) bytes the identity seam accepts must FAIL-CLOSED here (proving the
-    // default really is gunzip, not a pass-through).
     const gzipped = createRevocationChecker({ fetch: jsonFetch(statusCredential([5])), now: NOW });
     expect(await gzipped(entryAt(5))).toEqual({ revoked: true, fresh: true });
-    const rawUnderDefault = createRevocationChecker({ fetch: jsonFetch(rawCredential([5])), now: NOW });
+    expect(await gzipped(entryAt(6))).toEqual({ revoked: false, fresh: true });
+    const raw = statusCredential([5]);
+    (raw.credentialSubject as Record<string, unknown>).encodedList =
+      `u${Buffer.from(new Uint8Array(BYTE_LEN)).toString('base64url')}`;
+    const rawUnderDefault = createRevocationChecker({ fetch: jsonFetch(raw), now: NOW });
     expect(await rawUnderDefault(entryAt(5))).toEqual({ revoked: true, fresh: false });
   });
 });

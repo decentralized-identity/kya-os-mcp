@@ -64,11 +64,8 @@ import {
   type Digest,
 } from '../src/audit/index.js';
 import { canonicalizeJson } from '../src/utils/canonical-json.js';
-import {
-  conformanceCompressor,
-  conformanceDecompressor,
-  ed25519SignatureVerifier,
-} from './crypto-kit.js';
+import { ed25519SignatureVerifier } from './crypto-kit.js';
+import { statusListGzipCodec } from '../src/utils/statuslist-gzip.js';
 import {
   asMessage,
   didOfKid,
@@ -243,8 +240,8 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
           }
           const manager = await BitstringManager.decode(
             list.credentialSubject.encodedList,
-            conformanceCompressor,
-            conformanceDecompressor,
+            statusListGzipCodec,
+            statusListGzipCodec,
           );
           return manager.getBit(parseInt(s.statusListIndex, 10));
         },

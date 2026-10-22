@@ -10,7 +10,7 @@ import {
 } from "../chain-enforcement.js";
 import type { CrispScope, DelegationCredential } from "../../types/protocol.js";
 import { scopeSatisfies } from "../scope-matcher.js";
-import { gzipSync, gunzipSync } from "node:zlib";
+import { statusListGzipCodec } from "../../utils/statuslist-gzip.js";
 import { DelegationGraphManager } from "../delegation-graph.js";
 import { MemoryDelegationGraphStorage } from "../storage/memory-graph-storage.js";
 import { MemoryStatusListStorage } from "../storage/memory-statuslist-storage.js";
@@ -345,16 +345,12 @@ describe("validateDelegationChain", () => {
     const freshChild = cred({ id: "fresh-child", issuerDid: "did:a", subjectDid: "did:b", parentId: "p", scopes: ["read"], audience: SERVER });
 
     it("rejects a leaf the graph has never seen when an ancestor in its chain is revoked", async () => {
-      const gzip = {
-        compress: async (d: Uint8Array) => new Uint8Array(gzipSync(d)),
-        decompress: async (d: Uint8Array) => new Uint8Array(gunzipSync(d)),
-      };
       const statusList = new StatusList2021Manager(
         new MemoryStatusListStorage(),
         { getDid: () => "did:web:issuer.example", getKeyId: () => "did:web:issuer.example#k" },
         async () => ({ type: "Ed25519Signature2020", proofValue: "x" }),
-        gzip,
-        gzip,
+        statusListGzipCodec,
+        statusListGzipCodec,
         { statusListBaseUrl: "https://status.example", defaultListSize: 1024 },
       );
       const graph = new DelegationGraphManager(new MemoryDelegationGraphStorage());

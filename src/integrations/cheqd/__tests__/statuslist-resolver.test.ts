@@ -14,10 +14,10 @@ import {
   createRealCryptoProvider,
   createRealIdentity,
   createRealStatusListManager,
-  nodeDecompressor,
   type RealStatusListSetup,
 } from '../../../__tests__/audit/helpers/crypto-helpers.js';
 import { createDidKeyResolver } from '../../../delegation/did-key-resolver.js';
+import { statusListGzipCodec } from '../../../utils/statuslist-gzip.js';
 import { base58Encode } from '../../../utils/base58.js';
 import { base64urlDecodeToBytes } from '../../../utils/base64.js';
 import type { AgentIdentity } from '../../../providers/base.js';
@@ -65,7 +65,7 @@ describe('CheqdStatusListResolver (real crypto, stubbed transport)', () => {
       didResolver,
       cryptoProvider: crypto,
       expectedIssuerDid: issuerIdentity.did,
-      decompressor: nodeDecompressor,
+      decompressor: statusListGzipCodec,
       cacheTtlMs: 0, // test isolation; caching cases opt in explicitly
       ...overrides,
     });
@@ -133,7 +133,7 @@ describe('CheqdStatusListResolver (real crypto, stubbed transport)', () => {
         didResolver,
         cryptoProvider: crypto,
         expectedIssuerDid: issuerIdentity.did,
-        decompressor: nodeDecompressor,
+        decompressor: statusListGzipCodec,
       }),
     ).toBeInstanceOf(CheqdStatusListResolver);
   });

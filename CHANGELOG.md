@@ -7,6 +7,45 @@ Versioning: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Upgrading
+
+- **A status-list manager given a compressor that does not GZIP now throws
+  instead of publishing.** Status-list readers accept only GZIP, so such a
+  list read as revoked for every credential it covered. A decompressor that
+  hands back its input unchanged now makes every read throw, where it read
+  the GZIP header as status bits. Drop the compressor and decompressor
+  arguments to use the shipped codec, or pass `statusListGzipCodec`. A list
+  already stored without GZIP, such as one published with the pass-through
+  pair the status-list example used, can no longer be read or updated:
+  reissue it, and the credentials it covers, with the codec.
+
+### Added
+
+- **`statusListGzipCodec`, a GZIP codec for status lists.** One object is
+  both the `CompressionFunction` and the `DecompressionFunction` that
+  `StatusList2021Manager` and `BitstringManager` take. It loads `node:zlib`
+  on first use, so a bundle that injects its own codec does not pull it in,
+  and bounds inflation to the 16 MiB status-list cap. The Entity Card
+  revocation checker uses it as its default `decompress`.
+- **The compressor and decompressor of `StatusList2021Manager`,
+  `createStatusListManager`, `BitstringManager` (its constructor, `decode`
+  and `fromSetBits`) and `isIndexSet` are optional** and default to
+  `statusListGzipCodec`.
+
+### Fixed
+
+- **`StatusList2021Manager` could publish status lists that every other
+  reader took as revoked.** The manager required a compressor and
+  decompressor, the package shipped none, and its example passed a pair that
+  did not compress, so the lists it published were not GZIP and the Entity
+  Card revocation checker reported every entry revoked. Publishing now
+  refuses a list that is not GZIP, and the example uses the shipped codec.
+- **A pass-through decompressor read revoked entries as live.** Reading a
+  GZIP list without inflating it took the GZIP header as status bits, which
+  left the first three entries clear whatever the issuer had set. Reading a
+  payload that is not GZIP, or one the decompressor returns unchanged, now
+  throws, on the delegation and Entity Card paths alike. Fixes #254.
+
 ## [1.20.0] - 2026-10-13
 
 1.19.0 was tagged but never published to npm; its changes (listed under

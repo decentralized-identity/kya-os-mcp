@@ -14,7 +14,7 @@ import { StatusList2021Manager } from "../statuslist-manager.js";
 import { MemoryDelegationGraphStorage } from "../storage/memory-graph-storage.js";
 import { MemoryStatusListStorage } from "../storage/memory-statuslist-storage.js";
 import type { CredentialStatus } from "../../types/protocol.js";
-import { gzipSync, gunzipSync } from "node:zlib";
+import { statusListGzipCodec } from "../../utils/statuslist-gzip.js";
 
 describe("CascadingRevocationManager", () => {
   let mockGraph: DelegationGraphManager;
@@ -628,10 +628,6 @@ describe("CascadingRevocationManager", () => {
 });
 
 describe("CascadingRevocationManager over the memory graph and status list", () => {
-  const gzip = {
-    compress: async (d: Uint8Array) => new Uint8Array(gzipSync(d)),
-    decompress: async (d: Uint8Array) => new Uint8Array(gunzipSync(d)),
-  };
   const UUID_STATUS_ID = "urn:uuid:4b1c0c56-7f0e-4c32-9b8e-0b1a2c3d4e5f";
 
   function stack() {
@@ -641,8 +637,8 @@ describe("CascadingRevocationManager over the memory graph and status list", () 
       new MemoryStatusListStorage(),
       { getDid: () => "did:web:issuer.example", getKeyId: () => "did:web:issuer.example#k" },
       async () => ({ type: "Ed25519Signature2020", proofValue: "x" }),
-      gzip,
-      gzip,
+      statusListGzipCodec,
+      statusListGzipCodec,
       { statusListBaseUrl: "https://status.example", defaultListSize: 1024 },
     );
     return { graph, graphStorage, statusList, revocation: new CascadingRevocationManager(graph, statusList) };

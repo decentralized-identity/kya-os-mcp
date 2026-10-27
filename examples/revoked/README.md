@@ -81,7 +81,7 @@ One-time setup, then the show:
 
 ```bash
 cp .env.example .env.local        # fill in as each step below tells you
-npm run gen:accounts              # agent + fee wallets (fund via the cheqd testnet faucet)
+npm run gen:accounts              # agent + fee wallets (fund via the cheqd testnet faucet in cheqd Studio: https://docs.cheqd.io/product/network/tools/testnet-faucet)
 npm run create:did                # your issuer did:cheqd on testnet
 npm run publish:statuslist        # anchor the all-clear status list as a DLR
 npm run issue:delegation          # mint the scoped, capped, revocable credential

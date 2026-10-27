@@ -22,6 +22,16 @@ Versioning: https://semver.org/spec/v2.0.0.html
   paths of `argv[1]` and its own module. Re-run any verification whose
   result rested on an exit 0 from an npm-installed `kya-audit`.
 
+### Fixed
+
+- **`examples/revoked` no longer sends users to the retired cheqd testnet
+  faucet.** `npm run gen:accounts` printed `https://testnet-faucet.cheqd.io`,
+  which is now behind a cheqd-only login, and a Discord channel. The script,
+  the example README, `.env.example` and the zero-balance error in
+  `check:b` now point to the cheqd testnet faucet in cheqd Studio:
+  https://docs.cheqd.io/product/network/tools/testnet-faucet. Examples only;
+  no change to the package.
+
 ## [1.21.1] - 2026-10-22
 
 ### Fixed

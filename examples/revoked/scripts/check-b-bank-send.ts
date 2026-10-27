@@ -46,7 +46,7 @@ async function main() {
   const before = await client.getBalance(agent!.address, denom);
   console.log(`Balance:    ${before.amount} ${denom}`);
   if (BigInt(before.amount) === 0n) {
-    throw new Error('Agent wallet has zero balance — fund it via the faucet first (npm run gen:accounts prints addresses).');
+    throw new Error('Agent wallet has zero balance — fund it via the cheqd testnet faucet first (https://docs.cheqd.io/product/network/tools/testnet-faucet). npm run gen:accounts prints the addresses.');
   }
 
   const amount = coins((amountCheq * NCHEQ_PER_CHEQ).toString(), denom);

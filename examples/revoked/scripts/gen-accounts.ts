@@ -49,8 +49,8 @@ async function main() {
   const agentAddress = await addressOf(agentMnemonic);
   const feeAddress = await addressOf(feeMnemonic);
 
-  console.log('\nFund BOTH addresses via the cheqd testnet faucet');
-  console.log('(https://testnet-faucet.cheqd.io — or the faucet channel in the cheqd Discord):\n');
+  console.log('\nFund BOTH addresses with testnet CHEQ from the cheqd testnet faucet in cheqd Studio');
+  console.log('(https://docs.cheqd.io/product/network/tools/testnet-faucet):\n');
   console.log(`  AGENT wallet:  ${agentAddress}`);
   console.log(`  FEE payer:     ${feeAddress}`);
   console.log('\nThen: npm run check:b');

@@ -29,7 +29,7 @@
     "@cosmjs/stargate": "^0.39.0",
     "@hono/node-server": "^2.1.5",
     "@kya-os/mcp": "^1.14.0",
-    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@simplewebauthn/server": "^14.0.3",
     "dotenv": "^18.0.1",
     "hono": "^4.13.13"

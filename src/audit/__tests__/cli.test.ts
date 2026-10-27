@@ -1,5 +1,36 @@
-import { describe, expect, it } from 'vitest';
-import { runAuditCli } from '../cli.js';
+import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterAll, describe, expect, it } from 'vitest';
+import { isEntryPoint, runAuditCli } from '../cli.js';
+
+describe('audit CLI entry point', () => {
+  const cliUrl = new URL('../cli.ts', import.meta.url).href;
+  const cliPath = fileURLToPath(cliUrl);
+  const workDir = mkdtempSync(join(tmpdir(), 'kya-audit-entry-'));
+  afterAll(() => rmSync(workDir, { recursive: true, force: true }));
+
+  it('runs when Node is started on the module file', () => {
+    expect(isEntryPoint(cliPath, cliUrl)).toBe(true);
+  });
+
+  // npm installs `.cmd` shims instead of symlinks on Windows.
+  it.skipIf(process.platform === 'win32')('runs when started through an npm-style bin symlink', () => {
+    const link = join(workDir, 'kya-audit');
+    symlinkSync(cliPath, link);
+    expect(isEntryPoint(link, cliUrl)).toBe(true);
+  });
+
+  it('stays inert when imported by another entry point', () => {
+    expect(isEntryPoint(fileURLToPath(import.meta.url), cliUrl)).toBe(false);
+    expect(isEntryPoint(undefined, cliUrl)).toBe(false);
+  });
+
+  it('stays inert when argv names a path that does not exist', () => {
+    expect(isEntryPoint(join(workDir, 'missing'), cliUrl)).toBe(false);
+  });
+});
 
 describe('audit CLI', () => {
   it('prints help to stdout and exits successfully', async () => {

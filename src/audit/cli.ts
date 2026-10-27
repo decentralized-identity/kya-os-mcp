@@ -1,5 +1,7 @@
 #!/usr/bin/env node
+import { realpathSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import type { JWK } from 'jose';
 import { CryptoProviderAuditHasher } from './crypto.js';
 import { CompactJwsAuditSignatureVerifier } from './crypto.js';
@@ -107,6 +109,17 @@ export async function runAuditCli(
   }
 }
 
-if (process.argv[1]?.endsWith('/audit/cli.js') || process.argv[1]?.endsWith('\\audit\\cli.js')) {
+// npm installs the bin as a node_modules/.bin/kya-audit symlink, so argv[1]
+// names the link, not this file. Compare resolved paths instead of file names.
+export function isEntryPoint(argvPath: string | undefined, moduleUrl: string): boolean {
+  if (argvPath === undefined) return false;
+  try {
+    return realpathSync(argvPath) === realpathSync(fileURLToPath(moduleUrl));
+  } catch {
+    return false;
+  }
+}
+
+if (isEntryPoint(process.argv[1], import.meta.url)) {
   process.exitCode = await runAuditCli(process.argv.slice(2));
 }

@@ -100,6 +100,7 @@
     "conformance:typecheck": "tsc --noEmit -p conformance/tsconfig.json",
     "lint": "eslint src --ext .ts",
     "clean": "rm -rf dist",
+    "changie": "npx --yes changie@1.26.0",
     "prepublishOnly": "npm run clean && npm run build && npm run test",
     "demo": "bash scripts/demo.sh",
     "example:server": "npx tsx --tsconfig tsconfig.examples.json examples/node-server/server.ts",

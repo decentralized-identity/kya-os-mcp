@@ -11,4 +11,4 @@
 - [ ] Tests pass (`npm test`)
 - [ ] DCO signed (`git commit -s`)
 - [ ] Spec impact noted
-- [ ] CHANGELOG.md updated if applicable
+- [ ] Changelog entry added (`npm run changie -- new`), or the `no-changelog` label applied

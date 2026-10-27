@@ -1,0 +1,48 @@
+# CHANGELOG.md is generated: `changie merge` writes it from the header file
+# and the per-release files in .changes/. Add an entry for an unreleased change
+# with `changie new`; CONTRIBUTING.md has the commands.
+changesDir: .changes
+unreleasedDir: unreleased
+headerPath: header.tpl.md
+changelogPath: CHANGELOG.md
+versionExt: md
+versionFormat: '## [{{.Version}}] - {{.Time.Format "2006-01-02"}}'
+kindFormat: '### {{.Kind}}'
+# A body keeps the line breaks its author wrote; continuation lines are
+# indented under the list marker.
+changeFormat: '- {{ .Body | indent 2 | trimPrefix "  " }}'
+body:
+  block: true
+kinds:
+  - label: Upgrading
+    auto: minor
+  - label: Added
+    auto: minor
+  - label: Changed
+    auto: minor
+  - label: Deprecated
+    auto: minor
+  - label: Removed
+    auto: major
+  - label: Security
+    auto: patch
+  - label: Fixed
+    auto: patch
+  - label: Spec
+    auto: minor
+  - label: Documentation
+    auto: patch
+newlines:
+  beforeChangelogVersion: 1
+  beforeKind: 1
+  afterKind: 1
+  endOfVersion: 1
+# `changie merge` sets the package version to the newest release. In
+# package-lock.json only the root entries carry this package's name.
+replacements:
+  - path: package.json
+    find: '^(  "name": "@kya-os/mcp",\n  "version": )"[^"]*"'
+    replace: '${1}"{{.VersionNoPrefix}}"'
+  - path: package-lock.json
+    find: '^( *"name": "@kya-os/mcp",\n *"version": )"[^"]*"'
+    replace: '${1}"{{.VersionNoPrefix}}"'

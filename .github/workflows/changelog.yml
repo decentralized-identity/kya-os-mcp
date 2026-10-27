@@ -1,0 +1,56 @@
+name: Changelog
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    # labeled/unlabeled re-run the entry check when `no-changelog` is toggled.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  changelog:
+    name: Changelog
+    runs-on: ubuntu-latest
+    steps:
+      # A pull_request run checks out the merge commit, so HEAD^1 is the base
+      # it merges into and HEAD^1..HEAD is exactly what the PR changes.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.x'
+
+      # CHANGELOG.md and the package version are generated from .changes/ by
+      # `changie merge`, so regenerating them must change nothing.
+      - name: CHANGELOG.md matches .changes/
+        run: |
+          npm run --silent changie -- merge
+          if ! git diff --exit-code -- CHANGELOG.md package.json package-lock.json; then
+            echo "::error::CHANGELOG.md or the package version is not what .changes/ generates. Edit the files in .changes/, not CHANGELOG.md, then run: npm run changie -- merge"
+            exit 1
+          fi
+
+      - name: Unreleased entries parse
+        run: |
+          if compgen -G '.changes/unreleased/*.yaml' > /dev/null; then
+            npm run --silent changie -- batch auto --dry-run > /dev/null
+          fi
+
+      - name: A change to the package has an entry
+        if: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'no-changelog') }}
+        run: |
+          shipped=$(git diff --name-only HEAD^1 HEAD -- src schemas \
+            | grep -vE '/__tests__/|\.md$' || true)
+          added=$(git diff --name-only --diff-filter=A HEAD^1 HEAD -- '.changes/unreleased/*.yaml')
+          if [ -n "$shipped" ] && [ -z "$added" ]; then
+            echo "This pull request changes the package:"
+            echo "$shipped"
+            echo "::error::Add a changelog entry with 'npm run changie -- new', or apply the no-changelog label if users will see no difference."
+            exit 1
+          fi

@@ -32,7 +32,7 @@ Three jobs, six primitives:
 - **Authority.** W3C Verifiable Credentials carrying scoped, revocable delegation chains rooted at a Responsible Party. Per-tool consent gating for actions that require explicit human approval.
 - **Accountability.** Detached JWS proofs over canonicalized request/response hashes, composing into tamper-evident audit trails. Invisible to the LLM, verifiable by anyone holding the agent's DID.
 
-> **Note on the name.** This protocol was previously known as **MCP-Identity** / **MCP-I**. The rename to KYA-OS reflects the protocol's binding-agnostic scope. See the [`[Unreleased]` entry in `CHANGELOG.md`](./CHANGELOG.md#unreleased) for the full rationale.
+> **Note on the name.** This protocol was previously known as **MCP-Identity** / **MCP-I**. The rename to KYA-OS reflects the protocol's binding-agnostic scope. See the [1.3.1 entry in `CHANGELOG.md`](./CHANGELOG.md#131---2026-05-26) for the full rationale.
 
 ## What this repo is
 

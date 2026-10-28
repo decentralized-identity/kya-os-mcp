@@ -1,0 +1,445 @@
+{
+  "$schema": "https://schema.kya-os.org/experimental/payment-authority/2026-09-22/meta",
+  "$id": "https://schema.kya-os.org/experimental/payment-authority/2026-09-22/constraints",
+  "title": "KYA-OS Payment Constraints (Experimental)",
+  "description": "Experimental discussion draft: the payment constraints caveat of the KYA-OS Payment Authority Profile (profile section 8.4). Not stable or ratified.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "version",
+    "businessLimits"
+  ],
+  "kyaCanonicalJson": {
+    "maxBytes": 16384,
+    "maxDepth": 8,
+    "maxNodes": 16384
+  },
+  "properties": {
+    "type": {
+      "const": "org.kya-os/payment-constraints"
+    },
+    "version": {
+      "const": "1.0.0"
+    },
+    "businessLimits": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/amount"
+      }
+    },
+    "payees": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/party"
+      },
+      "description": "An allowlist (profile section 8.4.1)."
+    },
+    "resources": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/resource"
+      },
+      "description": "An allowlist (profile section 8.4.1)."
+    },
+    "rails": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/rail"
+      },
+      "description": "An allowlist (profile section 8.4.1)."
+    },
+    "settlementLimits": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/amount"
+      },
+      "description": "A grant (profile section 8.4.1)."
+    },
+    "quoteAuthorities": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/reference"
+      },
+      "description": "A grant (profile section 8.4.1)."
+    },
+    "fees": {
+      "$ref": "#/$defs/fees",
+      "description": "A grant when capped (profile section 8.4.1)."
+    },
+    "requireApproval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modes"
+      ],
+      "description": "A requirement (profile section 8.4.1).",
+      "properties": {
+        "modes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "human-present",
+              "human-not-present",
+              "standing-policy"
+            ]
+          }
+        },
+        "approvers": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/reference"
+          },
+          "description": "The approval issuers the delegator accepts (profile section 8.4.1)."
+        },
+        "above": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/amount"
+          },
+          "description": "The approval exemption thresholds (profile section 8.4.1)."
+        }
+      },
+      "kyaUniqueBy": [
+        {
+          "path": "above",
+          "properties": [
+            "asset.namespace",
+            "asset.id"
+          ]
+        }
+      ]
+    },
+    "expiresAt": {
+      "$ref": "#/$defs/timestamp"
+    }
+  },
+  "kyaUniqueBy": [
+    {
+      "path": "businessLimits",
+      "properties": [
+        "asset.namespace",
+        "asset.id"
+      ]
+    },
+    {
+      "path": "payees"
+    },
+    {
+      "path": "resources"
+    },
+    {
+      "path": "rails"
+    },
+    {
+      "path": "settlementLimits",
+      "properties": [
+        "asset.namespace",
+        "asset.id"
+      ]
+    }
+  ],
+  "$defs": {
+    "timestamp": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "reference": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "canonicalInteger": {
+      "type": "string",
+      "maxLength": 78,
+      "pattern": "^(?:0|[1-9][0-9]*)$"
+    },
+    "asset": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "namespace",
+            "id"
+          ],
+          "properties": {
+            "namespace": {
+              "const": "iso4217"
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "namespace",
+            "id"
+          ],
+          "properties": {
+            "namespace": {
+              "const": "caip19"
+            },
+            "id": {
+              "type": "string",
+              "maxLength": 258,
+              "pattern": "^[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}/[-a-z0-9]{3,8}:[-%.a-zA-Z0-9]{1,128}(?:/[-%.a-zA-Z0-9]{1,78})?$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "namespace",
+            "id"
+          ],
+          "properties": {
+            "namespace": {
+              "const": "uri"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 2048,
+              "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:[^\\r\\n]+$"
+            }
+          }
+        }
+      ]
+    },
+    "amount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "asset",
+        "coefficient",
+        "scale"
+      ],
+      "properties": {
+        "asset": {
+          "$ref": "#/$defs/asset"
+        },
+        "coefficient": {
+          "$ref": "#/$defs/canonicalInteger"
+        },
+        "scale": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        }
+      }
+    },
+    "party": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "dependentRequired": {
+        "accountDigest": [
+          "accountDigestMethod"
+        ],
+        "accountDigestMethod": [
+          "accountDigest"
+        ]
+      },
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/reference"
+        },
+        "accountDigest": {
+          "$ref": "#/$defs/digest",
+          "description": "An account commitment (profile section 7)."
+        },
+        "accountDigestMethod": {
+          "enum": [
+            "opaque-token-sha256",
+            "hmac-sha256",
+            "issuer-attestation-sha256"
+          ]
+        }
+      }
+    },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/reference"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[Hh][Tt][Tt][Pp][Ss]?:"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "specDigest": true
+            },
+            "required": [
+              "specDigest"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/reference"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "specDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "rail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol"
+      ],
+      "properties": {
+        "protocol": {
+          "$ref": "#/$defs/protocol"
+        },
+        "methodId": {
+          "$ref": "#/$defs/reference"
+        },
+        "handlerId": {
+          "$ref": "#/$defs/reference"
+        },
+        "scheme": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "network": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "transferMethod": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "paymentFlow": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "fundingAccount": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "fees": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode"
+          ],
+          "properties": {
+            "mode": {
+              "const": "prohibited"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "limits"
+          ],
+          "properties": {
+            "mode": {
+              "const": "capped"
+            },
+            "limits": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 256,
+              "items": {
+                "$ref": "#/$defs/amount"
+              }
+            }
+          },
+          "kyaUniqueBy": [
+            {
+              "path": "limits",
+              "properties": [
+                "asset.namespace",
+                "asset.id"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -99,6 +99,8 @@ import { handleStatelessMcp } from '../lib/stateless-mcp.js';
 import { ResponseProofContext } from '../lib/response-proof-context.js';
 import { mountCommerce, x402McpResult } from '../commerce/mount.js';
 import { RunBoundary } from '../lib/run-boundary.js';
+import { EXAMPLE_SDK, credentialIssuer, credentialJti, orderDecisionEvent, type EventSource } from '../lib/checkpoint-events.js';
+import { checkpointReporterFromEnv, type CheckpointReporter } from '../lib/checkpoint-reporter.js';
 
 export interface MerchantAppConfig {
   identity: KeyedIdentity;
@@ -120,6 +122,8 @@ export interface MerchantAppConfig {
   auditDir?: string;
   /** Public origin advertised by checkout discovery (including reverse proxies). */
   origin?: string;
+  /** Where order decisions are reported. Default: from KYA_OS_EVENTS_URL/KYA_OS_EVENTS_TOKEN, off when unset. */
+  checkpoint?: CheckpointReporter | null;
 }
 
 /** Server-owned effect invoked only after the common KYA and business gates. */
@@ -218,6 +222,10 @@ export function checksFromOutcome(verdict: 'allowed' | 'denied', code: string | 
 export async function createMerchant(config: MerchantAppConfig) {
   const { identity } = config;
   const runBoundary = new RunBoundary();
+  // Every place_order decision also goes to Checkpoint when configured. Fire
+  // and forget: reporting never waits on, slows or fails an order.
+  const checkpoint = config.checkpoint === undefined ? checkpointReporterFromEnv() : config.checkpoint;
+  const checkpointSource: EventSource = { serverDid: identity.did, sdk: EXAMPLE_SDK };
 
   // ---- outbound trust: the RP's DID document + revocation list ----------------
   const rpDidUrl = didWebToUrl(config.rpDid);
@@ -416,6 +424,33 @@ export async function createMerchant(config: MerchantAppConfig) {
     for (const sub of subscribers) { try { sub(data); } catch { /* dead subscriber must not break the others */ } }
   }
 
+  /** One Checkpoint `tool.invoked` per decision. Never throws: a report must not change an order. */
+  function reportOrderDecision(input: {
+    verdict: 'allowed' | 'denied'; code: string | undefined; reason: string; body: Record<string, unknown>;
+    args: Record<string, unknown>; vc: DelegationCredential | undefined; agentDid: string; checks: GateChecks; sessionId: string;
+  }): void {
+    if (!checkpoint) return;
+    try {
+      const detail = (input.body['detail'] ?? {}) as Record<string, unknown>;
+      checkpoint.report([orderDecisionEvent({
+        at: new Date().toISOString(),
+        allowed: input.verdict === 'allowed',
+        ...(input.code ? { code: input.code } : {}),
+        message: input.reason,
+        product: String(input.args['product'] ?? ''),
+        quantity: Number(input.args['quantity'] ?? 1),
+        ...(typeof detail['total'] === 'string' ? { total: detail['total'] } : {}),
+        ...(typeof detail['cap'] === 'string' ? { cap: detail['cap'] } : {}),
+        gates: { signature: input.checks.signature, revocation: input.checks.revocation, holder: input.checks.holder },
+        credential: input.vc ? { jti: credentialJti(input.vc), issuerDid: credentialIssuer(input.vc) } : null,
+        verifiedAgentDid: input.vc?.credentialSubject?.id ?? (input.agentDid || null),
+        sessionId: input.sessionId.length <= 100 ? input.sessionId : null,
+      }, checkpointSource)]);
+    } catch (error) {
+      console.warn(`[checkpoint-events] order decision not reported (${error instanceof Error ? error.name : typeof error})`);
+    }
+  }
+
   /** All transports share these authority checks before invoking a server-owned effect. */
   function executeOrder(a: Record<string, unknown>, execution?: OrderExecution): Promise<MerchantToolResult> {
     return runBoundary.operation(() => executeOrderInRun(a, execution));
@@ -483,13 +518,15 @@ export async function createMerchant(config: MerchantAppConfig) {
       lastReceipt = { body, proof, at: new Date().toISOString(), request: { method: 'place_order', params }, content: r.content ?? null };
     }
 
+    const checks = checksFromOutcome(verdict, code, reason, call.checks);
+    reportOrderDecision({ verdict, code, reason, body, args: a, vc, agentDid, checks, sessionId });
     broadcast({
       type: 'verdict',
       verdict,
       code: code ?? null,
       reason: reason || null,
       elapsedMs: Date.now() - started,
-      checks: checksFromOutcome(verdict, code, reason, call.checks),
+      checks,
       body,
       receipt: proof,
       statusList: statusListResolver.lastObservation,
@@ -835,7 +872,7 @@ export async function createMerchant(config: MerchantAppConfig) {
     await honoListener(req, res);
   });
 
-  return { app, httpServer, kyaos, statusListResolver, fetchProvider, discovery, broadcast, audit, executeOrder, commerce };
+  return { app, httpServer, kyaos, statusListResolver, fetchProvider, discovery, broadcast, audit, executeOrder, commerce, checkpoint };
 }
 
 /** The seven verdicts of an SDK verification report, compact for the event bus. */
@@ -860,6 +897,7 @@ export async function startMerchantServer(overrides: Partial<MerchantAppConfig> 
     console.log(`  did:        ${config.identity.did}`);
     console.log(`  trusts RP:  ${config.rpDid} (list: ${config.statusListUrl}${config.offline ? ', OFFLINE mirror' : ''})`);
     console.log(`  audit:      ${merchant.audit.ledger.ledgerId} · ${merchant.audit.capabilities.profile} · delivery ${merchant.audit.capabilities.delivery}${config.witness ? ` · witness ${config.rpOrigin}` : ''}`);
+    console.log(`  checkpoint: ${merchant.checkpoint ? `order decisions reported to ${merchant.checkpoint.endpoint}` : 'off (set KYA_OS_EVENTS_URL and KYA_OS_EVENTS_TOKEN)'}`);
     resolve();
   }));
   return { ...merchant, config };

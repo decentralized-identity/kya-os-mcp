@@ -53,6 +53,10 @@ import { revokeIndex, type RevokePhase } from './revoke.js';
 import { createKeyRoutes } from './key/webauthn-routes.js';
 import { hasAuthenticator, listAuthenticators } from './key/credential-store.js';
 import { createWitness, type Witness } from './witness.js';
+import type { DelegationCredential } from '@kya-os/mcp';
+import { delegationFile } from './issue.js';
+import { EXAMPLE_SDK, grantApprovedEvent, grantRevokedEvent, type EventSource } from '../lib/checkpoint-events.js';
+import { checkpointReporterFromEnv, type CheckpointReporter } from '../lib/checkpoint-reporter.js';
 
 export const DID_DOCUMENT_FILE = path.join(RP_DIR, 'did.json');
 
@@ -76,6 +80,8 @@ export interface RpAppConfig {
   /** Listener address; loopback locally, 0.0.0.0 behind a deployment proxy. */
   bindHost?: string;
   identityAuth?: HumanIdentityAuth & { routes?: Hono };
+  /** Where grant approvals and revocations are reported. Default: from KYA_OS_EVENTS_URL/KYA_OS_EVENTS_TOKEN, off when unset. */
+  checkpoint?: CheckpointReporter | null;
 }
 
 export function buildRpDidDocument(identity: KeyedIdentity): DIDDocument {
@@ -128,6 +134,25 @@ export function createRpApp(config: RpAppConfig): Hono {
   const consentStore = new ConsentFlowStore({ authorizationOrigin });
   const consentAudit = createRpAudit(identity, consentStore);
   const protocol = new ConsentProtocol(identity.did, new URL(config.statusListUrl).origin);
+
+  // Grant approvals and revocations also go to Checkpoint when configured, so
+  // its Delegations page follows this hub. Fire and forget, never throws.
+  const checkpoint = config.checkpoint === undefined ? checkpointReporterFromEnv() : config.checkpoint;
+  const checkpointSource: EventSource = { serverDid: identity.did, sdk: EXAMPLE_SDK };
+  const reportGrantApproved = (vc: DelegationCredential): void => {
+    if (!checkpoint) return;
+    try { checkpoint.report([grantApprovedEvent(vc, checkpointSource, new Date().toISOString())]); }
+    catch (error) { console.warn(`[checkpoint-events] grant approval not reported (${error instanceof Error ? error.name : typeof error})`); }
+  };
+  const reportGrantRevoked = (vc: DelegationCredential | null, reason: string): void => {
+    if (!checkpoint || !vc) return;
+    try { checkpoint.report([grantRevokedEvent(vc, checkpointSource, new Date().toISOString(), reason)]); }
+    catch (error) { console.warn(`[checkpoint-events] revocation not reported (${error instanceof Error ? error.name : typeof error})`); }
+  };
+  /** The credential issued at a status-list index, or null when none is on file. */
+  const credentialAt = (index: number): DelegationCredential | null => {
+    try { return readJson<DelegationCredential>(delegationFile(index)); } catch { return null; }
+  };
 
   app.use('/api/*', cors({ origin: config.corsOrigins, credentials: identityAuth.enabled }));
   // The presenter's destructive controls. On a laptop the loopback binding is the
@@ -228,7 +253,7 @@ export function createRpApp(config: RpAppConfig): Hono {
       return c.json(await signMessage('consent.pickup.result', { requestNonce: message.proof.meta.nonce, ...result }, identity, config.agentDid()));
     } catch { return c.json({ error: 'CONSENT_PICKUP_INVALID', message: 'Credential pickup requires its bound agent and a fresh proof.' }, 400); }
   });
-  app.route('/', createConsentRoutes({ identity, statusListUrl: config.statusListUrl, authorizationOrigin, rpID: config.rpID, agentDid: config.agentDid, merchantDid: config.merchantDid, broadcast, consentWebauthn: config.consentWebauthn, identityAuth, store: consentStore, recordDecision: () => consentAudit.export() }));
+  app.route('/', createConsentRoutes({ identity, statusListUrl: config.statusListUrl, authorizationOrigin, rpID: config.rpID, agentDid: config.agentDid, merchantDid: config.merchantDid, broadcast, consentWebauthn: config.consentWebauthn, identityAuth, store: consentStore, recordDecision: () => consentAudit.export(), onGrantIssued: reportGrantApproved }));
 
   // ---- 1. identity ----------------------------------------------------------
   app.get('/.well-known/did.json', (c) => {
@@ -275,7 +300,11 @@ export function createRpApp(config: RpAppConfig): Hono {
   // ---- 3a. issue -------------------------------------------------------------
   app.post('/api/rp/issue', (c) => c.json({ error: 'consent_required', message: 'Place an order and approve the signed authorization URL. Direct issuance is disabled.' }, 403));
   app.post('/api/rp/reset', async (c) => {
-    if (activeCredentialOrNull()) await revokeIndex(activeIndex(), { identity, statusListUrl: config.statusListUrl });
+    const active = activeCredentialOrNull();
+    if (active) {
+      await revokeIndex(activeIndex(), { identity, statusListUrl: config.statusListUrl });
+      reportGrantRevoked(active, 'Start over: the Responsible Party revoked this grant to reset the demo.');
+    }
     await consentAudit.flush();
     clearActiveCredential(); consentStore.invalidatePending();
     broadcast({ type: 'grant.reset' });
@@ -301,6 +330,7 @@ export function createRpApp(config: RpAppConfig): Hono {
       broadcast({ type: 'revoke_failed', index, message: 'Revocation could not be confirmed. Check the current status list.' });
       throw error;
     }
+    if (result.revoked) reportGrantRevoked(credentialAt(index), "Revoked by the shopper's Responsible Party. Orders under this grant are refused.");
     try {
       await consentAudit.export();
       result.audit = 'recorded';
@@ -412,7 +442,8 @@ export function rpConfigFromEnv(overrides: Partial<RpAppConfig> = {}): RpAppConf
 }
 
 export function startRpServer(port = RP_PORT, overrides: Partial<RpAppConfig> = {}) {
-  const config = rpConfigFromEnv(overrides);
+  const fromEnv = rpConfigFromEnv(overrides);
+  const config = { ...fromEnv, checkpoint: fromEnv.checkpoint === undefined ? checkpointReporterFromEnv() : fromEnv.checkpoint };
   const app = createRpApp(config);
   const server = serve({ fetch: app.fetch, port, hostname: config.bindHost ?? '127.0.0.1' }, () => {
     console.log(`Responsible Party hub: http://localhost:${port}`);
@@ -420,6 +451,7 @@ export function startRpServer(port = RP_PORT, overrides: Partial<RpAppConfig> = 
     console.log(`  did.json:     http://localhost:${port}/.well-known/did.json`);
     console.log(`  status list:  ${config.statusListUrl}`);
     console.log(`  revocation:   ${config.keyWebauthn && !config.bypassWebauthn ? (hasAuthenticator() ? 'authenticator touch REQUIRED' : 'BLOCKED: register an authenticator with KEY_SETUP=1') : 'software-confirmed'}`);
+    console.log(`  checkpoint:   ${config.checkpoint ? `grant approvals and revocations reported to ${config.checkpoint.endpoint}` : 'off (set KYA_OS_EVENTS_URL and KYA_OS_EVENTS_TOKEN)'}`);
   });
   return { app, server, config };
 }

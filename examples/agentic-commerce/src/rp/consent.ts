@@ -1,6 +1,7 @@
 /** The RP renders the consent package; all grant data comes from the
  * merchant's persisted, signed challenge, never from editable browser fields. */
 import { Hono, type Context } from 'hono';
+import type { DelegationCredential } from '@kya-os/mcp';
 import type { KeyedIdentity } from '../lib/wiring.js';
 import { env, makeVcSigningFunction } from '../lib/wiring.js';
 import { publicOrigin } from '../lib/public-origin.js';
@@ -32,6 +33,8 @@ export interface ConsentRoutesConfig {
   consentWebauthn?: boolean;
   identityAuth?: HumanIdentityAuth;
   recordDecision?: () => Promise<unknown>;
+  /** Called once the approval is recorded, with the credential it issued. Must not throw. */
+  onGrantIssued?: (vc: DelegationCredential) => void;
 }
 
 async function parseFields(c: Context): Promise<ConsentFields> {
@@ -187,6 +190,7 @@ export function createConsentRoutes(config: ConsentRoutesConfig): Hono {
     if (config.identityAuth?.enabled && !account) return c.json({ error: 'signin_required', message: 'Sign in before approving this grant.' }, 401);
     const fields = await parseFields(c);
     const token = String(fields['session_id'] ?? '');
+    let issuedCredential: DelegationCredential | undefined;
     const flow = await store.approve(token, fields, async (flow) => {
       trusted(flow);
       const authentication = keyRequired()
@@ -229,9 +233,11 @@ export function createConsentRoutes(config: ConsentRoutesConfig): Hono {
         ...(demoConsent ? { demoConsent } : {}),
         consent,
       });
+      issuedCredential = issued.vc;
       return { ...issued, ...(authentication ? { authentication } : {}) };
     });
     await config.recordDecision?.();
+    if (issuedCredential) config.onGrantIssued?.(issuedCredential);
     config.broadcast({
       type: 'consent.approved',
       resumeToken: token,

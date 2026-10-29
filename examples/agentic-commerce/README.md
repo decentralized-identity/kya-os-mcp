@@ -331,6 +331,29 @@ With the browser prerequisites below installed, `npm run test:google:browser` ru
 It writes `docs/screenshots/google-identity/google-identity-browser-report.json` and screenshots.
 The test issuer and certificate substitution exist only in the isolated browser fixture, never in the live demo routes.
 
+## Report decisions to Checkpoint
+
+Optional. When both settings are present, the store sends its decisions to Checkpoint's audit events endpoint, `POST /api/v1/kya-os/events`, so the project's dashboard shows them.
+
+```dotenv
+KYA_OS_EVENTS_URL=https://kya.vouched.id/api/v1/kya-os/events
+KYA_OS_EVENTS_TOKEN=<a Checkpoint project API key with write permission>
+```
+
+Set the same two values on both services: the merchant reports orders, the authorization hub reports grants.
+With either one missing, reporting is off and the demo runs exactly as before.
+
+| Moment | Sent by | Event | Shows in Checkpoint |
+|---|---|---|---|
+| Every `place_order` decision, allowed or refused | merchant | `tool.invoked` | Activity row: permit, or block with the reason, e.g. `SPEND_CAP_EXCEEDED: Over the spending limit. 3 x risotto = CHF 59.70, the limit is CHF 50.00 per order. Nothing was ordered.` |
+| The shopper approves a grant | hub | `delegation.observed` | Delegations row, active |
+| `K` revokes the grant, or `R` starts over | hub | `delegation.revoked` | The same row, revoked |
+
+Reporting never waits on Checkpoint: events queue in memory (at most 200) and go out in the background with a 3-second timeout and two retries.
+A slow, refusing or unreachable Checkpoint never delays, changes or fails an order.
+The token is sent only in the `X-API-Key` header and is never logged.
+Each refusal reason leads with the merchant's own code; tool arguments and results are not sent.
+
 ## Evidence and verification
 
 ```bash

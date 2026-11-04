@@ -1,0 +1,13 @@
+kind: Spec
+body: |-
+    **SPEC-ENTITY-CARD.md §10.5 and §11.4: a request may carry its
+    delegation chain.** The new `_meta` key `org.kya-os/delegation-chain`
+    holds the chain, root to leaf. A server that finds it verifies it and
+    never falls back to a lookup. The chain binds to the request through the
+    leaf join rather than `requestHash`, every hop carries an
+    `eddsa-jcs-2022` proof by its own issuer, and revocation is read live as
+    for a resolved chain. §11.4 fixes the verification order, Appendix D.5
+    lists the gate codes, and §12.11 covers an on-path party replacing a
+    carried chain. SPEC-MCP-EXTENSION.md §2 and §7.1 and SPEC.md §6.10 point
+    to the new section.
+time: 2026-11-03T22:29:25.892883-08:00

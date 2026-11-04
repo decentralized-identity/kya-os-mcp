@@ -4,7 +4,8 @@ import { gzipSync } from 'node:zlib';
 import { readFileSync } from 'node:fs';
 import { canonicalize } from 'json-canonicalize';
 import { createRevocationChecker, evaluateRevocationChain } from '../revocation.js';
-import { createStatusListProofVerifier } from '../status-list-proof.js';
+import { createStatusListProofVerifier, signStatusListCredential } from '../status-list-proof.js';
+import { ed25519SignerFromJwk } from '../proof/signer.js';
 import { base58Encode } from '../../utils/base58.js';
 import type { DIDDocument, DIDResolver } from '../../delegation/vc-verifier.types.js';
 import type { SafeFetch } from '../../utils/safe-fetch.js';
@@ -164,6 +165,29 @@ describe('createStatusListProofVerifier (eddsa-jcs-2022)', () => {
     const didResolver: DIDResolver = { resolve: async () => { throw new Error('offline'); } };
     const verifyList = createStatusListProofVerifier({ didResolver });
     expect(await verifyList(signEddsaJcs2022(statusList([5])))).toBe(false);
+  });
+});
+
+// ── signStatusListCredential ─────────────────────────────────────────────────
+
+describe('signStatusListCredential', () => {
+  const signer = () =>
+    ed25519SignerFromJwk({
+      did: ISSUER,
+      kid: METHOD,
+      privateJwk: privateKey.export({ format: 'jwk' }) as { kty: 'OKP'; crv: 'Ed25519'; x: string; d: string },
+    });
+
+  it('writes the proof the independent signer writes, and the verifier accepts it', async () => {
+    const signed = await signStatusListCredential(statusList([5]), await signer(), { created: '2026-01-01T00:00:00Z' });
+    expect(signed).toEqual(signEddsaJcs2022(statusList([5])));
+    expect(await verify(signed)).toBe(true);
+  });
+
+  it('refuses a signer whose key is not under the list issuer', async () => {
+    await expect(signStatusListCredential(statusList([5], 'did:web:other.example'), await signer())).rejects.toThrow(
+      /is not a verification method of the issuer did:web:other\.example/,
+    );
   });
 });
 

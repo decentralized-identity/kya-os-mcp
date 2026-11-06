@@ -230,7 +230,7 @@ top-level properties.
 | `conformanceLevel` | enum `L1`\|`L2`\|`L3` | MAY | **DERIVED** summary. A Verifier MUST ignore this on input and RECOMPUTE it (§9, §11). |
 | `responsibleParty` | DID | MAY | Root-accountable Entity (§2.2, §10.2). SHOULD be `did:web`. |
 | `principal` | DID | MAY | Immediate human delegator, when distinct. |
-| `delegationRef` | string | MAY | Locator for the signed delegation chain backing `responsibleParty`/`principal` (e.g. `vc_root>del_123`, hops joined by `>`); resolved, not inlined. |
+| `delegationRef` | string | MAY | Locator for the signed delegation chain backing `responsibleParty`/`principal` (e.g. `vc_root>del_123`, hops joined by `>`); resolved, not inlined on the Card. A request may carry the chain itself instead (§10.5). |
 | `attestations` | array of `{type: "IdentityVerification"\|"CapabilityAttestation", vc, subject?, issuer?}` | MAY | Resolvable, signed credentials about the Entity or its `responsibleParty` (e.g. KYC/KYB). |
 | `didDocument` | string | MAY | URL of the DID document (for `did:web`, otherwise derivable, §5.3). |
 | `proofProfile` | literal `"org.kya-os/proof.v1"` | MAY | Names the per-request proof profile the Entity's requests carry (§8). The proof itself is NEVER on the Card. |
@@ -726,7 +726,8 @@ unverified.
 ## 10. Delegation & Accountability (NORMATIVE)
 
 The Card asserts none of this; it carries locators (`responsibleParty`, `principal`,
-`delegationRef`, `revocation`) that a Verifier resolves and recomputes. The delegation profile
+`delegationRef`, `revocation`) that a Verifier resolves and recomputes, and a request may carry
+the chain itself (§10.5). The delegation profile
 itself - the `DelegationCredential` shape (a W3C VC 2.0 whose `credentialSubject` is an attenuated
 ZCAP-LD capability), the delegate rules, and the attenuation invariants every hop must
 satisfy - is specified in the core protocol's delegation chapter (SPEC.md §6.10, alongside the
@@ -769,6 +770,32 @@ rules: SPEC.md §6.10.
 KYC/KYB rides the same rail as an `IdentityVerificationCredential` on the `responsibleParty`,
 asserting the verification fact and level, never raw PII, surfaced through the Card's
 `attestations[]`. Shape: SPEC.md §6.10.
+
+### 10.5 Carrying the chain with the request
+
+A caller MAY carry its delegation chain in the request, as `_meta["org.kya-os/delegation-chain"]`: a JSON array of `DelegationCredential`s (SPEC.md §6.10), ordered root to leaf, each exactly as its issuer signed it.
+A Verifier that reads a carried chain needs no registry or other out-of-band lookup to reconstruct the caller's authority.
+Everything it checks is in the chain itself, the issuers' DID documents, and the issuers' status lists.
+This is the cross-organizational case: a resource server can verify an agent acting for an organization whose delegation records it cannot query.
+
+1. **Precedence.** When the member is present, the Verifier MUST verify the carried chain and MUST NOT fall back to by-reference resolution, including when the carried chain is malformed or fails verification.
+   A request carries one chain or none.
+2. **Shape and bound.** The member MUST be a non-empty array.
+   The caller controls its length, and each hop can cost a DID resolution and a status-list fetch, so a Verifier MUST bound the length before it parses any entry.
+   The bound is local policy, as in SPEC.md §6.10; the reference implementation defaults it to `MAX_DELEGATION_DEPTH` (10) for a carried chain.
+   Every DID and status-list URL in a carried chain is caller-chosen, so each fetch it triggers goes through SafeFetch (§6.6).
+3. **Hop signatures.** Every hop MUST carry a `DataIntegrityProof` with the `eddsa-jcs-2022` cryptosuite, made for the `assertionMethod` purpose by a verification method of that hop's own `issuer`.
+   A Verifier MUST verify each hop's proof over the credential as received, since the signature covers members a schema does not name.
+4. **Binding to the request.** The member sits inside `params._meta`, so `requestHash` does not cover it (§8.3).
+   It is bound to the request by the leaf join of §10.2 instead: the leaf hop's delegate MUST equal the verified `proof.did`.
+   A carried chain therefore authorizes nothing for a caller that does not hold the leaf key.
+   §12.11 covers what an on-path party can and cannot do by replacing it.
+5. **Revocation.** A carried chain is checked for revocation exactly as a resolved one: every hop's `credentialStatus` is read root to leaf, cascading and fail-closed (§10.3).
+   Carrying a chain does not freeze it.
+
+By reference remains valid: when a request carries no chain, a Verifier MAY resolve one for the proof's DID (for example from the Card's `delegationRef`).
+Once the chain is obtained, verification is identical whichever way it arrived (§11.4).
+Carrying a chain discloses each hop's issuer and delegate to the Verifier; the chain-disclosure guidance of SPEC-MCP-EXTENSION.md §11 applies.
 
 ---
 
@@ -836,6 +863,25 @@ than erroring open.
 | Unreachable / non-2xx / malformed / wrong-purpose / out-of-range status list | `{ revoked: true, fresh: false }` (fail-closed) ⇒ collapse to L1, `ok: false` |
 | Revoked Card / delegation credential | collapse to L1, `ok: false` |
 | Proof verifier throws | proof floor `{ ok: false }` (demotion) |
+
+### 11.4 Request delegation verification (`verifyRequestDelegation`), exact order
+
+A Verifier that authorizes a call by delegation runs these steps after §11.2 succeeds, with the verified `proof.did` and the invoked action, and rejects on the first failure.
+
+1. **Obtain the chain.** If `_meta["org.kya-os/delegation-chain"]` is present, read it under §10.5 rules 1-2: a member that is not a non-empty array, exceeds the length bound, or holds an entry that is not a `DelegationCredential` ⇒ `delegation_invalid`.
+   If the member is absent, resolve by reference: no resolver, or a resolver that finds nothing ⇒ `delegation_missing`; a resolver that fails ⇒ `delegation_unresolvable`.
+   A resolved chain is schema-checked like a carried one.
+2. **Chain rules.** The chain satisfies SPEC.md §6.10 against the Verifier's own identity as the expected resource (and the resource owner, when one is configured), else `delegation_invalid`.
+3. **Leaf join.** The leaf delegate equals `proof.did` (§10.2), else `delegation_invalid`.
+4. **Trusted roots.** When the Verifier configures trusted root issuers, `issuer(rootVC)` is one of them, else `delegation_invalid`.
+5. **Hop signatures.** Root to leaf, each hop's proof verifies (§10.5 rule 3); a failing or throwing check ⇒ `delegation_invalid`.
+6. **Action.** The invoked action is in the leaf's `allowedAction`, else `action_not_delegated`.
+7. **Revocation.** Root to leaf, cascading and fail-closed (§10.3), else `delegation_revoked`.
+
+Steps 2-4 are local; step 5 may resolve DIDs; step 7 fetches status lists.
+The order keeps a Verifier from spending network work on a chain a local check already rejects.
+On success the Verifier holds the recomputed `responsibleParty`, the leaf invoker, the leaf's granted actions, the chain depth, and whether every status read was live.
+A rejection with `delegation_missing` is 401-shaped, so a server MAY answer it with a consent step-up (SPEC.md §9); every other code is 403-shaped (Appendix D.5).
 
 ---
 
@@ -949,6 +995,15 @@ redirects, size/time caps. Residual: standard transport-layer DoS is out of scop
 | did:web DNS | DNSSEC/CAA + key-pin + `alsoKnownAs` (§12.8) | DNS+TLS trust floor |
 | SSRF | mandatory SafeFetch (§12.9) | transport-layer DoS |
 | did:key revocation via unauthenticated discovery | `did:web` REQUIRED for revocable Entities (§12.6) | `did:key` is self-asserted, non-revocable through unauthenticated discovery |
+| Carried-chain substitution | leaf join + a distinct key per delegation (§12.11) | attribution swap where one key leads several chains |
+
+### 12.11 Carried-chain substitution
+
+A carried chain (§10.5) is outside `requestHash` (§8.3), so an on-path party can replace it.
+The leaf join limits what a replacement can do: it must be a valid chain whose leaf is the caller's own key, so it can grant only authority the caller already holds.
+Where one key is the leaf of more than one chain, for example delegations from two organizations, a replacement can change which Responsible Party a call is attributed to.
+Callers SHOULD hold a distinct key per delegation (SPEC.md §6.9), which leaves one chain per key and nothing to substitute.
+By-reference resolution has the same ambiguity, with the Verifier rather than an intermediary choosing among the chains.
 
 ---
 
@@ -984,6 +1039,7 @@ redirects, size/time caps. Residual: standard transport-layer DoS is out of scop
 | `org.kya-os/request-proof` | the self-contained per-request holder-of-key proof (§8), carrying the `org.kya-os/proof.v1` profile (the legacy key and `prf` value `org.kya-os/proof@1` are accepted for one major version) | §8 |
 | `org.kya-os/response-proof` | the detached response proof (`ProofMeta`, SPEC.md §7), including the legacy session-bound era; previously `org.kya-os/proof`, read-accepted for one major version | §8.1 |
 | `org.kya-os/did` | the Entity's DID inside a CIMD document | §7.3 |
+| `org.kya-os/delegation-chain` | the caller's `DelegationCredential` chain, root to leaf, carried with a request | §10.5 |
 
 The `org.kya-os` reverse-DNS label is outside the reserved `modelcontextprotocol/mcp` `_meta`
 namespace; the graceful-degradation contract (§6) covers a registry that strips unknown `_meta`
@@ -1245,6 +1301,18 @@ unresolvable hop (§10.3). `verifyCimdBind` emits origin-mismatch and missing-`a
 
 Retained for the legacy session-bound path (§15.5): `handshake_failed`, `session_expired`,
 `delegation_invalid`, `insufficient_scope`, `delegation_revoked`, `invalid_proof`, `did_not_found`.
+
+### D.5 Request delegation gate codes (`requireDelegation`, §11.4)
+
+| Code | Shape | Meaning |
+|------|-------|---------|
+| `delegation_missing` | 401 | The request carries no chain and none was resolved by reference. A server MAY answer with a consent step-up. |
+| `delegation_unresolvable` | 403 | By-reference resolution failed: the registry was unreachable or refused. |
+| `delegation_invalid` | 403 | The chain is malformed or over the length bound, breaks the SPEC.md §6.10 rules, names another leaf delegate, has an untrusted root, or a hop's proof does not verify. |
+| `action_not_delegated` | 403 | The leaf does not grant the invoked action. |
+| `delegation_revoked` | 403 | A hop is revoked, or its status could not be proven (fail-closed). |
+
+`delegation_invalid` and `delegation_revoked` keep the meaning they have in the legacy profile (D.4).
 
 ---
 

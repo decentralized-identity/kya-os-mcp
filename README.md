@@ -272,7 +272,7 @@ This starts all example servers and opens [MCP Inspector](https://github.com/mod
 | 3003 | [consent-full](./examples/consent-full/) | Production consent UI ([@kya-os/consent](https://www.npmjs.com/package/@kya-os/consent)) |
 | 3004 | [context7-with-kya-os](./examples/context7-with-kya-os/) | 2-line migration of a real MCP server |
 
-Also available: [outbound-delegation](./examples/outbound-delegation/) (gateway pattern), [verify-proof](./examples/verify-proof/) (standalone verification), [statuslist](./examples/statuslist/) (revocation lifecycle), [cheqd-dlr](./examples/cheqd-dlr/) (operator DID linkage + DLR publishing).
+Also available: [chain-by-value](./examples/chain-by-value/) (a merchant verifies an agent for a company it cannot query, the delegation chain carried with the request), [outbound-delegation](./examples/outbound-delegation/) (gateway pattern), [verify-proof](./examples/verify-proof/) (standalone verification), [statuslist](./examples/statuslist/) (revocation lifecycle), [cheqd-dlr](./examples/cheqd-dlr/) (operator DID linkage + DLR publishing).
 
 To run one example on its own, use its `npm run example:*` script, for example `npm run example:server`. The scripts and `scripts/demo.sh` run the examples from `src/` through `tsconfig.examples.json`, so they need no build step. The scripts also need nothing beyond the root `npm install`; `demo.sh` additionally installs each example's own dependencies.
 

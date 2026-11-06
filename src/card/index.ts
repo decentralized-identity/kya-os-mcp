@@ -41,6 +41,9 @@ export * from './builder.js';
 export * from './middleware.js';
 export * from './revocation.js';
 export * from './status-list-proof.js';
+export type { EddsaJcs2022Proof } from './data-integrity.js';
+export * from './delegation-proof.js';
+export * from './request-delegation.js';
 
 // The SSRF-hardened fetch is the card's production wiring for resolveCard / status-list
 // resolution — export it (and the address classifier) so consumers can actually reach it,

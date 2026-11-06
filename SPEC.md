@@ -922,7 +922,8 @@ expiry path as an L2 capability attestation and surfaced through the Card's `att
 ---
 
 The equalities a Verifier recomputes from a resolved chain, and their place in the fail-closed
-verification order, are specified in SPEC-ENTITY-CARD.md §10.2 and §11.
+verification order, are specified in SPEC-ENTITY-CARD.md §10.2 and §11. A request may also carry
+the chain itself, so that the Verifier needs no lookup to obtain it (SPEC-ENTITY-CARD.md §10.5).
 
 ---
 

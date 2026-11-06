@@ -66,7 +66,7 @@ Re-keying of the `_meta` registry entries (§2.2) would be specified by a succes
 | Request proof | `_meta["org.kya-os/request-proof"]` per-request holder-of-key proof | SPEC-ENTITY-CARD §8 |
 | Response proof / audit | `_meta["org.kya-os/response-proof"]` detached response proof | SPEC.md §7 |
 | Consent step-up | signed `needs_authorization` challenge | SPEC.md §9 |
-| Delegated authority | W3C VC delegation chains, referenced via `delegationRef` | SPEC.md §6, §6.10 |
+| Delegated authority | W3C VC delegation chains, referenced via `delegationRef` or carried in `_meta["org.kya-os/delegation-chain"]` | SPEC.md §6, §6.10; SPEC-ENTITY-CARD §10.5 |
 | Gateway propagation | `KYA-OS-*` outbound HTTP headers; body-free routing | SPEC.md §8 |
 | Discovery | Entity Card + projections; `/.well-known/mcp`; `server/discover` | SPEC-ENTITY-CARD §5-§6; SPEC.md §10; §3.4 (this document) |
 
@@ -83,6 +83,7 @@ The reverse-DNS `_meta` keys used by this extension are the keys registered in S
 | `org.kya-os/response-proof` | the detached response proof (SPEC.md §7), including signed `needs_authorization` challenges; previously `org.kya-os/proof`, read-accepted for one major version | response (server to caller) |
 | `org.kya-os/card` (and nested `org.kya-os/cardRef`) | inline Entity Card summary or lazy card reference on discovery documents | discovery |
 | `org.kya-os/did` | the Entity's DID inside a CIMD document | discovery |
+| `org.kya-os/delegation-chain` | the caller's `DelegationCredential` chain, root to leaf, carried with the request so the server needs no out-of-band lookup (SPEC-ENTITY-CARD §10.5) | request (caller to server) |
 
 These keys coexist with the MCP-reserved `io.modelcontextprotocol/*` keys and the W3C Trace Context keys (`traceparent`, `tracestate`, `baggage`) under the coexistence rules of SPEC.md §7.6.
 A KYA-OS verifier MUST NOT reject a message because `_meta` carries foreign namespaced keys, and MUST NOT include any non-KYA-OS `_meta` key in a hash or signature computation (SPEC.md §7.6).
@@ -329,7 +330,8 @@ An MRTR profile (§7.3) additionally requires `inputRequests` under proof covera
 ### 7.1 Delegated authority
 
 Authority is conveyed only by a verifiable delegation chain: the W3C VC model of SPEC.md §6, including the VC 2.0 + ZCAP-LD profile of SPEC.md §6.10, with the designation invariant (SPEC.md §6.4.1), revocation (SPEC.md §6.5-§6.6, SPEC-ENTITY-CARD §10.3), and the recomputed accountability joins (SPEC-ENTITY-CARD §10.2).
-A proof references its authority via `delegationRef`; declaring the extension conveys no authority by itself.
+A proof references its authority via `delegationRef`, or the request carries the chain itself in `_meta["org.kya-os/delegation-chain"]` (SPEC-ENTITY-CARD §10.5); declaring the extension conveys no authority by itself.
+A carried chain is not unsigned `_meta` in the sense of §10 item 2: each credential carries its issuer's proof, and the chain binds to the request through the leaf join, its leaf delegate equal to the verified `proof.did` (SPEC-ENTITY-CARD §10.2, §11.4).
 
 Revocation status lists SHOULD be published per issuing authority - each delegation's status served from the issuer's own domain - rather than through a single centralized registry, preserving the no-central-authority property (§13.2).
 

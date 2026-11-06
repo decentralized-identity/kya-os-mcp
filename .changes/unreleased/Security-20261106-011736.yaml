@@ -1,0 +1,12 @@
+kind: Security
+body: |-
+    **A `path-prefix` scope no longer matches a path with a `.` or `..`
+    segment.** `matchScope` compared the raw string, so a grant for
+    `notes/` matched `notes/../secrets/plan.md`, and a consumer that
+    normalized the path afterwards read or wrote outside the grant. A value
+    or pattern with a dot segment, split on `/` or `\`, now matches
+    nothing, and `matcherContains` proves no containment through one.
+    Dots inside a name (`notes/v1.2/`, `notes/.env`) still match. This
+    affected 1.16.0 through 1.21.2. Consumers that already reject
+    dot segments before the check are unaffected; others should upgrade.
+time: 2026-11-06T01:17:36.039447-08:00

@@ -40,6 +40,36 @@ describe('matchScope', () => {
     expect(matchScope('/*', 'path-prefix', 'anything')).toBe(false);
   });
 
+  it('path-prefix: a dot segment in the value never matches, however it is spelled', () => {
+    for (const value of [
+      'notes/../secrets/x.md',
+      'notes/..',
+      'notes/a/../../secrets/x.md',
+      'notes/./plan.md',
+      'notes/a\\..\\..\\secrets\\x.md',
+      'notes\\..\\secrets',
+    ]) {
+      expect(matchScope('notes', 'path-prefix', value)).toBe(false);
+      expect(matchScope('notes/', 'path-prefix', value)).toBe(false);
+    }
+  });
+
+  it('path-prefix: dots inside a name are not dot segments', () => {
+    expect(matchScope('notes', 'path-prefix', 'notes/..hidden')).toBe(true);
+    expect(matchScope('notes', 'path-prefix', 'notes/v1.2/plan.md')).toBe(true);
+    expect(matchScope('notes', 'path-prefix', 'notes/.env')).toBe(true);
+  });
+
+  it('path-prefix: a pattern with a dot segment grants nothing', () => {
+    expect(matchScope('notes/..', 'path-prefix', 'notes/../secrets')).toBe(false);
+    expect(matchScope('notes/../secrets', 'path-prefix', 'notes/../secrets/x.md')).toBe(false);
+    expect(matchScope('./notes', 'path-prefix', './notes/x.md')).toBe(false);
+  });
+
+  it('prefix: stays character-level, for identifiers (the contrast)', () => {
+    expect(matchScope('notes/', 'prefix', 'notes/../secrets/x.md')).toBe(true);
+  });
+
   it('regex: matches anchored pattern', () => {
     expect(matchScope('repo:(read|write)', 'regex', 'repo:write')).toBe(true);
     expect(matchScope('repo:(read|write)', 'regex', 'repo:delete')).toBe(false);
@@ -116,6 +146,14 @@ describe('scopeSatisfies', () => {
 
 describe('matcherContains (attenuation across matcher kinds)', () => {
   const m = (matcher: CrispScope['matcher'], resource: string): CrispScope => ({ matcher, resource });
+
+  it('never proves containment through a path-prefix with a dot segment', () => {
+    expect(matcherContains(m('path-prefix', 'notes'), m('path-prefix', 'notes/../secrets'))).toBe(false);
+    expect(matcherContains(m('path-prefix', 'notes/..'), m('path-prefix', 'notes/../x'))).toBe(false);
+    expect(matcherContains(m('path-prefix', 'notes'), m('exact', 'notes/../secrets/x.md'))).toBe(false);
+    expect(matcherContains(m('prefix', 'notes'), m('path-prefix', 'notes/../secrets'))).toBe(false);
+  });
+
   const pool = [
     m('exact', 'repo:read'), m('exact', 'notes'), m('prefix', 'repo:'), m('prefix', 'repo:read'),
     m('prefix', 're'), m('prefix', 'notes'), m('prefix', 'notes/'), m('prefix', ''), m('prefix', '*'),

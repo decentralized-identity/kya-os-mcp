@@ -5,6 +5,30 @@ All notable changes to @kya-os/mcp will be documented here.
 Format: https://keepachangelog.com/en/1.0.0/
 Versioning: https://semver.org/spec/v2.0.0.html
 
+## [1.21.3] - 2026-11-06
+
+### Security
+
+- **A `path-prefix` scope no longer matches a path with a `.` or `..`
+  segment.** `matchScope` compared the raw string, so a grant for
+  `notes/` matched `notes/../secrets/plan.md`, and a consumer that
+  normalized the path afterwards read or wrote outside the grant. A value
+  or pattern with a dot segment, split on `/` or `\`, now matches
+  nothing, and `matcherContains` proves no containment through one.
+  Dots inside a name (`notes/v1.2/`, `notes/.env`) still match. This
+  affected 1.16.0 through 1.21.2. Consumers that already reject
+  dot segments before the check are unaffected; others should upgrade.
+
+### Fixed
+
+- **`examples/revoked` no longer sends users to the retired cheqd testnet
+  faucet.** `npm run gen:accounts` printed `https://testnet-faucet.cheqd.io`,
+  which is now behind a cheqd-only login, and a Discord channel. The script,
+  the example README, `.env.example` and the zero-balance error in
+  `check:b` now point to the cheqd testnet faucet in cheqd Studio:
+  https://docs.cheqd.io/product/network/tools/testnet-faucet. Examples only;
+  no change to the package.
+
 ## [1.21.2] - 2026-10-27
 
 ### Security

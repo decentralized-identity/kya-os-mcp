@@ -25,6 +25,15 @@ function pathBase(pattern: string): string {
 }
 
 /**
+ * Whether a path has a `.` or `..` segment, splitting on `/` and `\`. Matching
+ * is on the raw string, but a consumer that later normalizes the path would
+ * resolve `notes/../secrets/x.md` to `secrets/x.md`, outside a `notes` grant.
+ */
+function hasDotSegment(path: string): boolean {
+  return path.split(/[/\\]/).some((segment) => segment === '.' || segment === '..');
+}
+
+/**
  * Match a single requested scope/resource value against a pattern by matcher kind.
  *
  * - `exact`  : strict string equality.
@@ -35,7 +44,9 @@ function pathBase(pattern: string): string {
  * - `path-prefix` : the value IS the pattern, or lies under it as a `/`-separated
  *              path (`notes` matches `notes` and `notes/a/b.md`, never
  *              `notesx/secret.md`). Trailing `/` or `/*` on the pattern is optional
- *              sugar; an empty base matches nothing. Use it for resource paths.
+ *              sugar; an empty base matches nothing. A `.` or `..` segment in the
+ *              pattern or the value matches nothing, so `notes/../secrets/x.md`
+ *              cannot pass as "under notes". Use it for resource paths.
  * - `regex`  : anchored full-string match; never throws (invalid patterns → false).
  *
  * SECURITY: the regex pattern is supplied by the credential ISSUER. JS `RegExp`
@@ -59,6 +70,8 @@ export function matchScope(pattern: string, matcher: ScopeMatcher, value: string
       const base = pathBase(pattern);
       // Refuse to grant universal scope via an empty/`*`-only prefix.
       if (base.length === 0) return false;
+      // A dot segment could resolve outside the base once a consumer normalizes it.
+      if (hasDotSegment(base) || hasDotSegment(value)) return false;
       return value === base || value.startsWith(`${base}/`);
     }
     case 'regex': {
@@ -140,6 +153,8 @@ export function matcherContains(outer: CrispScope, inner: CrispScope): boolean {
   if (inner.matcher === 'exact') return matchScope(outer.resource, outer.matcher, inner.resource);
   const rule = CONTAINMENT.get(`${inner.matcher}:${outer.matcher}`);
   const [innerBase, outerBase] = [baseOf(inner), baseOf(outer)];
+  // A path-prefix with a dot segment matches nothing, so it proves nothing either way.
+  if ([inner, outer].some((scope) => scope.matcher === 'path-prefix' && hasDotSegment(baseOf(scope)))) return false;
   return rule !== undefined && innerBase.length > 0 && outerBase.length > 0 && rule(innerBase, outerBase);
 }
 

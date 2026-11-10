@@ -1,0 +1,621 @@
+{
+  "manifest": {
+    "core": {
+      "schema": "https://schema.kya-os.org/v1/protocol/audit/bundle-manifest/v1.0.0",
+      "bundleId": "urn:kya-os:example:agentic-commerce:bundle:epoch-42c56ca8-1f08-4fd5-81a0-0c3bf43bf5fb:5",
+      "formatVersion": "1.0.0",
+      "selections": [
+        {
+          "ledgerId": "kya:merchant:n7bkl24n:orders",
+          "ledgerEpochId": "epoch-42c56ca8-1f08-4fd5-81a0-0c3bf43bf5fb",
+          "firstSequence": "0",
+          "lastSequence": "4",
+          "expectedHeadDigest": "sha256:62e437be2d904a5959120cb362f91fd3547333104d2567d3fc2309f57e95fa4c",
+          "checkpointTreeSizes": [
+            "5"
+          ]
+        }
+      ],
+      "exporter": {
+        "did": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+        "kid": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N#z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+        "alg": "EdDSA"
+      },
+      "purpose": "stage-replay",
+      "exportedAt": 1788944135093,
+      "verificationPolicyDigest": "sha256:92ee2914729d4cbdd017c39a6514dc4b0327eb3f550ef46a228b2f519324e68f",
+      "inventory": [
+        {
+          "path": "checkpoints.json",
+          "mediaType": "application/vnd.kya-os.audit.checkpoints.v1+json",
+          "disposition": "included",
+          "digest": "sha256:6b44bbea77992d752564cebdb685b011d8398b1393e7c7764bba12a363f5f5f4",
+          "size": "2303"
+        },
+        {
+          "path": "entries.json",
+          "mediaType": "application/vnd.kya-os.audit.entries.v1+json",
+          "disposition": "included",
+          "digest": "sha256:53614efcce095020227be351cfab999d4559a147b6672bbd5ca95ef4444d5f67",
+          "size": "19109"
+        },
+        {
+          "path": "inclusion-proofs.json",
+          "mediaType": "application/vnd.kya-os.audit.inclusion-proofs.v1+json",
+          "disposition": "included",
+          "digest": "sha256:9edaea6e5afc81ac2cbdafdf3461454d208f7a8173bc1d64332a31235b5daf12",
+          "size": "2743"
+        },
+        {
+          "path": "observations.json",
+          "mediaType": "application/vnd.kya-os.audit.observations.v1+json",
+          "disposition": "included",
+          "digest": "sha256:bc0ebca5d75edcb736e120dc69dc5ecada5d7e6712335423cfeaf9b7e4411da9",
+          "size": "1432"
+        }
+      ],
+      "integritySuite": "KYA-AUDIT-BUNDLE-JCS-SHA256-JWS-2026"
+    },
+    "manifestDigest": "sha256:7a22f6c96f55c5ed64cd22045d783d3622e72e1bd176b3116810a1d6900cb8d7",
+    "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa2dyaFFWWDdqN0JOQk5CRThya2Jxa1FpMmg5Y2pKSzExNVhQOW43YmtMMjROI3o2TWtncmhRVlg3ajdCTkJOQkU4cmticWtRaTJoOWNqSksxMTVYUDluN2JrTDI0TiJ9.eyJidW5kbGVJZCI6InVybjpreWEtb3M6ZXhhbXBsZTphZ2VudGljLWNvbW1lcmNlOmJ1bmRsZTplcG9jaC00MmM1NmNhOC0xZjA4LTRmZDUtODFhMC0wYzNiZjQzYmY1ZmI6NSIsImV4cG9ydGVkQXQiOjE3ODg5NDQxMzUwOTMsImV4cG9ydGVyIjp7ImFsZyI6IkVkRFNBIiwiZGlkIjoiZGlkOmtleTp6Nk1rZ3JoUVZYN2o3Qk5CTkJFOHJrYnFrUWkyaDljakpLMTE1WFA5bjdia0wyNE4iLCJraWQiOiJkaWQ6a2V5Ono2TWtncmhRVlg3ajdCTkJOQkU4cmticWtRaTJoOWNqSksxMTVYUDluN2JrTDI0TiN6Nk1rZ3JoUVZYN2o3Qk5CTkJFOHJrYnFrUWkyaDljakpLMTE1WFA5bjdia0wyNE4ifSwiZm9ybWF0VmVyc2lvbiI6IjEuMC4wIiwiaW50ZWdyaXR5U3VpdGUiOiJLWUEtQVVESVQtQlVORExFLUpDUy1TSEEyNTYtSldTLTIwMjYiLCJpbnZlbnRvcnkiOlt7ImRpZ2VzdCI6InNoYTI1Njo2YjQ0YmJlYTc3OTkyZDc1MjU2NGNlYmRiNjg1YjAxMWQ4Mzk4YjEzOTNlN2M3NzY0YmJhMTJhMzYzZjVmNWY0IiwiZGlzcG9zaXRpb24iOiJpbmNsdWRlZCIsIm1lZGlhVHlwZSI6ImFwcGxpY2F0aW9uL3ZuZC5reWEtb3MuYXVkaXQuY2hlY2twb2ludHMudjEranNvbiIsInBhdGgiOiJjaGVja3BvaW50cy5qc29uIiwic2l6ZSI6IjIzMDMifSx7ImRpZ2VzdCI6InNoYTI1Njo1MzYxNGVmY2NlMDk1MDIwMjI3YmUzNTFjZmFiOTk5ZDQ1NTlhMTQ3YjY2NzJiYmQ1Y2E5NWVmNDQ0NGQ1ZjY3IiwiZGlzcG9zaXRpb24iOiJpbmNsdWRlZCIsIm1lZGlhVHlwZSI6ImFwcGxpY2F0aW9uL3ZuZC5reWEtb3MuYXVkaXQuZW50cmllcy52MStqc29uIiwicGF0aCI6ImVudHJpZXMuanNvbiIsInNpemUiOiIxOTEwOSJ9LHsiZGlnZXN0Ijoic2hhMjU2OjllZGFlYTZlNWFmYzgxYWMyY2JkYWZkZjM0NjE0NTRkMjA4ZjdhODE3M2JjMWQ2NDMzMmEzMTIzNWI1ZGFmMTIiLCJkaXNwb3NpdGlvbiI6ImluY2x1ZGVkIiwibWVkaWFUeXBlIjoiYXBwbGljYXRpb24vdm5kLmt5YS1vcy5hdWRpdC5pbmNsdXNpb24tcHJvb2ZzLnYxK2pzb24iLCJwYXRoIjoiaW5jbHVzaW9uLXByb29mcy5qc29uIiwic2l6ZSI6IjI3NDMifSx7ImRpZ2VzdCI6InNoYTI1NjpiYzBlYmNhNWQ3NWVkY2I3MzZlMTIwZGM2OWRjNWVjYWRhNWQ3ZTY3MTIzMzU0MjNjZmVhZjliN2U0NDExZGE5IiwiZGlzcG9zaXRpb24iOiJpbmNsdWRlZCIsIm1lZGlhVHlwZSI6ImFwcGxpY2F0aW9uL3ZuZC5reWEtb3MuYXVkaXQub2JzZXJ2YXRpb25zLnYxK2pzb24iLCJwYXRoIjoib2JzZXJ2YXRpb25zLmpzb24iLCJzaXplIjoiMTQzMiJ9XSwicHVycG9zZSI6InN0YWdlLXJlcGxheSIsInNjaGVtYSI6Imh0dHBzOi8vc2NoZW1hLmt5YS1vcy5vcmcvdjEvcHJvdG9jb2wvYXVkaXQvYnVuZGxlLW1hbmlmZXN0L3YxLjAuMCIsInNlbGVjdGlvbnMiOlt7ImNoZWNrcG9pbnRUcmVlU2l6ZXMiOlsiNSJdLCJleHBlY3RlZEhlYWREaWdlc3QiOiJzaGEyNTY6NjJlNDM3YmUyZDkwNGE1OTU5MTIwY2IzNjJmOTFmZDM1NDczMzMxMDRkMjU2N2QzZmMyMzA5ZjU3ZTk1ZmE0YyIsImZpcnN0U2VxdWVuY2UiOiIwIiwibGFzdFNlcXVlbmNlIjoiNCIsImxlZGdlckVwb2NoSWQiOiJlcG9jaC00MmM1NmNhOC0xZjA4LTRmZDUtODFhMC0wYzNiZjQzYmY1ZmIiLCJsZWRnZXJJZCI6Imt5YTptZXJjaGFudDpuN2JrbDI0bjpvcmRlcnMifV0sInZlcmlmaWNhdGlvblBvbGljeURpZ2VzdCI6InNoYTI1Njo5MmVlMjkxNDcyOWQ0Y2JkZDAxN2MzOWE2NTE0ZGM0YjAzMjdlYjNmNTUwZWY0NmEyMjhiMmY1MTkzMjRlNjhmIn0.8AA4rwBX7d30SBQHBKc8S17rLtBr1eWoaRqKALqIXqRaH1vhrzl4YhSNcHkQtL_GrX7NwqXXsf9PEnUrtTSVAA"
+  },
+  "components": [
+    {
+      "path": "checkpoints.json",
+      "mediaType": "application/vnd.kya-os.audit.checkpoints.v1+json",
+      "disposition": "included",
+      "digest": "sha256:6b44bbea77992d752564cebdb685b011d8398b1393e7c7764bba12a363f5f5f4",
+      "size": "2303",
+      "content": [
+        {
+          "checkpointDigest": "sha256:09c8d6834321eda1faebde9b4d8b15050464038fdf22337b41c7b3bd85794f99",
+          "core": {
+            "checkpointId": "checkpoint:kya:merchant:n7bkl24n:orders:epoch-42c56ca8-1f08-4fd5-81a0-0c3bf43bf5fb:5",
+            "createdAt": 1788944135083,
+            "firstSequence": "0",
+            "headEntryDigest": "sha256:62e437be2d904a5959120cb362f91fd3547333104d2567d3fc2309f57e95fa4c",
+            "integritySuite": "KYA-AUDIT-RFC9162-SHA256-JWS-2026",
+            "issuer": {
+              "alg": "EdDSA",
+              "did": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+              "kid": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N#z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N"
+            },
+            "lastSequence": "4",
+            "ledgerEpochId": "epoch-42c56ca8-1f08-4fd5-81a0-0c3bf43bf5fb",
+            "ledgerId": "kya:merchant:n7bkl24n:orders",
+            "previousCheckpointDigest": null,
+            "rootDigest": "sha256:7d340d55228fdecdd79dc43c47a930ab71a7884877f2b391b341205b5300e8e0",
+            "schema": "https://schema.kya-os.org/v1/protocol/audit/checkpoint/v1.0.0",
+            "treeSize": "5"
+          },
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa2dyaFFWWDdqN0JOQk5CRThya2Jxa1FpMmg5Y2pKSzExNVhQOW43YmtMMjROI3o2TWtncmhRVlg3ajdCTkJOQkU4cmticWtRaTJoOWNqSksxMTVYUDluN2JrTDI0TiJ9.eyJjaGVja3BvaW50SWQiOiJjaGVja3BvaW50Omt5YTptZXJjaGFudDpuN2JrbDI0bjpvcmRlcnM6ZXBvY2gtNDJjNTZjYTgtMWYwOC00ZmQ1LTgxYTAtMGMzYmY0M2JmNWZiOjUiLCJjcmVhdGVkQXQiOjE3ODg5NDQxMzUwODMsImZpcnN0U2VxdWVuY2UiOiIwIiwiaGVhZEVudHJ5RGlnZXN0Ijoic2hhMjU2OjYyZTQzN2JlMmQ5MDRhNTk1OTEyMGNiMzYyZjkxZmQzNTQ3MzMzMTA0ZDI1NjdkM2ZjMjMwOWY1N2U5NWZhNGMiLCJpbnRlZ3JpdHlTdWl0ZSI6IktZQS1BVURJVC1SRkM5MTYyLVNIQTI1Ni1KV1MtMjAyNiIsImlzc3VlciI6eyJhbGciOiJFZERTQSIsImRpZCI6ImRpZDprZXk6ejZNa2dyaFFWWDdqN0JOQk5CRThya2Jxa1FpMmg5Y2pKSzExNVhQOW43YmtMMjROIiwia2lkIjoiZGlkOmtleTp6Nk1rZ3JoUVZYN2o3Qk5CTkJFOHJrYnFrUWkyaDljakpLMTE1WFA5bjdia0wyNE4jejZNa2dyaFFWWDdqN0JOQk5CRThya2Jxa1FpMmg5Y2pKSzExNVhQOW43YmtMMjROIn0sImxhc3RTZXF1ZW5jZSI6IjQiLCJsZWRnZXJFcG9jaElkIjoiZXBvY2gtNDJjNTZjYTgtMWYwOC00ZmQ1LTgxYTAtMGMzYmY0M2JmNWZiIiwibGVkZ2VySWQiOiJreWE6bWVyY2hhbnQ6bjdia2wyNG46b3JkZXJzIiwicHJldmlvdXNDaGVja3BvaW50RGlnZXN0IjpudWxsLCJyb290RGlnZXN0Ijoic2hhMjU2OjdkMzQwZDU1MjI4ZmRlY2RkNzlkYzQzYzQ3YTkzMGFiNzFhNzg4NDg3N2YyYjM5MWIzNDEyMDViNTMwMGU4ZTAiLCJzY2hlbWEiOiJodHRwczovL3NjaGVtYS5reWEtb3Mub3JnL3YxL3Byb3RvY29sL2F1ZGl0L2NoZWNrcG9pbnQvdjEuMC4wIiwidHJlZVNpemUiOiI1In0.hjmIWskBnUqrWnqafT_DcWfxmRg-I7D5zDthsOT9YCAYceU6CrBMX3c0SWw0iqJHc-yQ0f-ZNJsM8YzqhygTBw"
+        }
+      ]
+    },
+    {
+      "path": "entries.json",
+      "mediaType": "application/vnd.kya-os.audit.entries.v1+json",
+      "disposition": "included",
+      "digest": "sha256:53614efcce095020227be351cfab999d4559a147b6672bbd5ca95ef4444d5f67",
+      "size": "19109",
+      "content": [
+        {
+          "core": {
+            "event": {
+              "action": {
+                "category": "ledger.epoch"
+              },
+              "binding": "urn:kya-os:audit-binding:mcp:2025-11-25",
+              "details": {
+                "family": "ledger",
+                "phase": "epoch_started"
+              },
+              "eventId": "genesis:kya:merchant:n7bkl24n:orders:epoch-42c56ca8-1f08-4fd5-81a0-0c3bf43bf5fb",
+              "eventType": "ledger.epoch.started",
+              "eventVersion": "1.0.0",
+              "evidence": [],
+              "occurredAt": 1788944135073,
+              "outcome": "succeeded",
+              "privacy": {
+                "classification": "internal",
+                "retentionClass": "integrity-ledger"
+              },
+              "resource": {
+                "did": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+                "kind": "public_did"
+              },
+              "schema": "https://schema.kya-os.org/v1/protocol/audit/event/v1.0.0",
+              "source": {
+                "producer": {
+                  "did": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+                  "kind": "public_did"
+                },
+                "sourceId": "merchant-edge",
+                "sourceSequence": "0"
+              },
+              "tenantRef": {
+                "keyId": "merchant-tenant-v1",
+                "kind": "keyed_commitment",
+                "value": "sha256:c28a5c0535ad4d7f2c003c6fe863a22f26d2bb60d129f4f43d986363977506a1"
+              }
+            },
+            "eventDigest": "sha256:0ee815474d1eeb942a9ea924ceb83df7006d08fd00635a6fbc54b9e5e1aa31b4",
+            "evidenceManifestDigest": "sha256:7429d9259674c56908e67c477618bf0a406601f095dff00846858016120b73e1",
+            "integritySuite": "KYA-AUDIT-JCS-SHA256-JWS-2026",
+            "ledgerEpochId": "epoch-42c56ca8-1f08-4fd5-81a0-0c3bf43bf5fb",
+            "ledgerId": "kya:merchant:n7bkl24n:orders",
+            "previousEntryDigest": null,
+            "recordedAt": 1788944135073,
+            "recorder": {
+              "alg": "EdDSA",
+              "did": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+              "kid": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N#z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N"
+            },
+            "schema": "https://schema.kya-os.org/v1/protocol/audit/entry/v1.0.0",
+            "sequence": "0"
+          },
+          "entryDigest": "sha256:80844bf41eae132c7414f01bb2d7ddf82707d1c9418d49d93edd2b76d95c5d3a",
+          "eventDigest": "sha256:0ee815474d1eeb942a9ea924ceb83df7006d08fd00635a6fbc54b9e5e1aa31b4",
+          "recorderReceipt": {
+            "core": {
+              "entryDigest": "sha256:80844bf41eae132c7414f01bb2d7ddf82707d1c9418d49d93edd2b76d95c5d3a",
+              "eventId": "genesis:kya:merchant:n7bkl24n:orders:epoch-42c56ca8-1f08-4fd5-81a0-0c3bf43bf5fb",
+              "integritySuite": "KYA-AUDIT-JCS-SHA256-JWS-2026",
+              "ledgerEpochId": "epoch-42c56ca8-1f08-4fd5-81a0-0c3bf43bf5fb",
+              "ledgerId": "kya:merchant:n7bkl24n:orders",
+              "previousEntryDigest": null,
+              "recordedAt": 1788944135073,
+              "recorder": {
+                "alg": "EdDSA",
+                "did": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+                "kid": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N#z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N"
+              },
+              "schema": "https://schema.kya-os.org/v1/protocol/audit/receipt/v1.0.0",
+              "sequence": "0"
+            },
+            "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa2dyaFFWWDdqN0JOQk5CRThya2Jxa1FpMmg5Y2pKSzExNVhQOW43YmtMMjROI3o2TWtncmhRVlg3ajdCTkJOQkU4cmticWtRaTJoOWNqSksxMTVYUDluN2JrTDI0TiJ9.eyJlbnRyeURpZ2VzdCI6InNoYTI1Njo4MDg0NGJmNDFlYWUxMzJjNzQxNGYwMWJiMmQ3ZGRmODI3MDdkMWM5NDE4ZDQ5ZDkzZWRkMmI3NmQ5NWM1ZDNhIiwiZXZlbnRJZCI6ImdlbmVzaXM6a3lhOm1lcmNoYW50Om43YmtsMjRuOm9yZGVyczplcG9jaC00MmM1NmNhOC0xZjA4LTRmZDUtODFhMC0wYzNiZjQzYmY1ZmIiLCJpbnRlZ3JpdHlTdWl0ZSI6IktZQS1BVURJVC1KQ1MtU0hBMjU2LUpXUy0yMDI2IiwibGVkZ2VyRXBvY2hJZCI6ImVwb2NoLTQyYzU2Y2E4LTFmMDgtNGZkNS04MWEwLTBjM2JmNDNiZjVmYiIsImxlZGdlcklkIjoia3lhOm1lcmNoYW50Om43YmtsMjRuOm9yZGVycyIsInByZXZpb3VzRW50cnlEaWdlc3QiOm51bGwsInJlY29yZGVkQXQiOjE3ODg5NDQxMzUwNzMsInJlY29yZGVyIjp7ImFsZyI6IkVkRFNBIiwiZGlkIjoiZGlkOmtleTp6Nk1rZ3JoUVZYN2o3Qk5CTkJFOHJrYnFrUWkyaDljakpLMTE1WFA5bjdia0wyNE4iLCJraWQiOiJkaWQ6a2V5Ono2TWtncmhRVlg3ajdCTkJOQkU4cmticWtRaTJoOWNqSksxMTVYUDluN2JrTDI0TiN6Nk1rZ3JoUVZYN2o3Qk5CTkJFOHJrYnFrUWkyaDljakpLMTE1WFA5bjdia0wyNE4ifSwic2NoZW1hIjoiaHR0cHM6Ly9zY2hlbWEua3lhLW9zLm9yZy92MS9wcm90b2NvbC9hdWRpdC9yZWNlaXB0L3YxLjAuMCIsInNlcXVlbmNlIjoiMCJ9.WT1oWgZ8vKUAGdguFxFqxZVbjrACoqD8K4sLKy8xYhARppDyqUPLavFVPFugtejo861ThFudwTdqkQc_yNgtCA"
+          }
+        },
+        {
+          "core": {
+            "event": {
+              "action": {
+                "category": "authorization"
+              },
+              "binding": "urn:kya-os:audit-binding:mcp:2025-11-25",
+              "details": {
+                "family": "authorization",
+                "phase": "step_up_required"
+              },
+              "eventId": "audit_1788944135073_1",
+              "eventType": "authorization.step_up_required",
+              "eventVersion": "1.0.0",
+              "evidence": [],
+              "occurredAt": 1788944135073,
+              "outcome": "challenged",
+              "privacy": {
+                "classification": "internal",
+                "retentionClass": "audit-365d"
+              },
+              "reason": {
+                "code": "NEEDS_AUTHORIZATION"
+              },
+              "schema": "https://schema.kya-os.org/v1/protocol/audit/event/v1.0.0",
+              "source": {
+                "producer": {
+                  "did": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+                  "kind": "pairwise_did"
+                },
+                "sourceId": "merchant-edge",
+                "sourceSequence": "1"
+              },
+              "tenantRef": {
+                "keyId": "merchant-tenant-v1",
+                "kind": "keyed_commitment",
+                "value": "sha256:c28a5c0535ad4d7f2c003c6fe863a22f26d2bb60d129f4f43d986363977506a1"
+              }
+            },
+            "eventDigest": "sha256:4e52ac09c9c77c6116a4dc3c0f09fa37f7a0f458b39b11b594625ba0e36c8c4c",
+            "evidenceManifestDigest": "sha256:7429d9259674c56908e67c477618bf0a406601f095dff00846858016120b73e1",
+            "integritySuite": "KYA-AUDIT-JCS-SHA256-JWS-2026",
+            "ledgerEpochId": "epoch-42c56ca8-1f08-4fd5-81a0-0c3bf43bf5fb",
+            "ledgerId": "kya:merchant:n7bkl24n:orders",
+            "previousEntryDigest": "sha256:80844bf41eae132c7414f01bb2d7ddf82707d1c9418d49d93edd2b76d95c5d3a",
+            "recordedAt": 1788944135073,
+            "recorder": {
+              "alg": "EdDSA",
+              "did": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+              "kid": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N#z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N"
+            },
+            "schema": "https://schema.kya-os.org/v1/protocol/audit/entry/v1.0.0",
+            "sequence": "1"
+          },
+          "entryDigest": "sha256:6dfcdc976608ef07ece51aadabadfc14f7b3f29b59a7c7f1522b2fd142c0767b",
+          "eventDigest": "sha256:4e52ac09c9c77c6116a4dc3c0f09fa37f7a0f458b39b11b594625ba0e36c8c4c",
+          "recorderReceipt": {
+            "core": {
+              "entryDigest": "sha256:6dfcdc976608ef07ece51aadabadfc14f7b3f29b59a7c7f1522b2fd142c0767b",
+              "eventId": "audit_1788944135073_1",
+              "integritySuite": "KYA-AUDIT-JCS-SHA256-JWS-2026",
+              "ledgerEpochId": "epoch-42c56ca8-1f08-4fd5-81a0-0c3bf43bf5fb",
+              "ledgerId": "kya:merchant:n7bkl24n:orders",
+              "previousEntryDigest": "sha256:80844bf41eae132c7414f01bb2d7ddf82707d1c9418d49d93edd2b76d95c5d3a",
+              "recordedAt": 1788944135073,
+              "recorder": {
+                "alg": "EdDSA",
+                "did": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+                "kid": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N#z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N"
+              },
+              "schema": "https://schema.kya-os.org/v1/protocol/audit/receipt/v1.0.0",
+              "sequence": "1"
+            },
+            "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa2dyaFFWWDdqN0JOQk5CRThya2Jxa1FpMmg5Y2pKSzExNVhQOW43YmtMMjROI3o2TWtncmhRVlg3ajdCTkJOQkU4cmticWtRaTJoOWNqSksxMTVYUDluN2JrTDI0TiJ9.eyJlbnRyeURpZ2VzdCI6InNoYTI1Njo2ZGZjZGM5NzY2MDhlZjA3ZWNlNTFhYWRhYmFkZmMxNGY3YjNmMjliNTlhN2M3ZjE1MjJiMmZkMTQyYzA3NjdiIiwiZXZlbnRJZCI6ImF1ZGl0XzE3ODg5NDQxMzUwNzNfMSIsImludGVncml0eVN1aXRlIjoiS1lBLUFVRElULUpDUy1TSEEyNTYtSldTLTIwMjYiLCJsZWRnZXJFcG9jaElkIjoiZXBvY2gtNDJjNTZjYTgtMWYwOC00ZmQ1LTgxYTAtMGMzYmY0M2JmNWZiIiwibGVkZ2VySWQiOiJreWE6bWVyY2hhbnQ6bjdia2wyNG46b3JkZXJzIiwicHJldmlvdXNFbnRyeURpZ2VzdCI6InNoYTI1Njo4MDg0NGJmNDFlYWUxMzJjNzQxNGYwMWJiMmQ3ZGRmODI3MDdkMWM5NDE4ZDQ5ZDkzZWRkMmI3NmQ5NWM1ZDNhIiwicmVjb3JkZWRBdCI6MTc4ODk0NDEzNTA3MywicmVjb3JkZXIiOnsiYWxnIjoiRWREU0EiLCJkaWQiOiJkaWQ6a2V5Ono2TWtncmhRVlg3ajdCTkJOQkU4cmticWtRaTJoOWNqSksxMTVYUDluN2JrTDI0TiIsImtpZCI6ImRpZDprZXk6ejZNa2dyaFFWWDdqN0JOQk5CRThya2Jxa1FpMmg5Y2pKSzExNVhQOW43YmtMMjROI3o2TWtncmhRVlg3ajdCTkJOQkU4cmticWtRaTJoOWNqSksxMTVYUDluN2JrTDI0TiJ9LCJzY2hlbWEiOiJodHRwczovL3NjaGVtYS5reWEtb3Mub3JnL3YxL3Byb3RvY29sL2F1ZGl0L3JlY2VpcHQvdjEuMC4wIiwic2VxdWVuY2UiOiIxIn0.vDc0y6tsJU85rqQgzPSngviQST3ZvldwMllfj31lbhBdloSNjbsvimubz3XIQNnYxQlcSk39dJlh9oz756QUBg"
+          }
+        },
+        {
+          "core": {
+            "event": {
+              "action": {
+                "category": "tool.call",
+                "name": "place_order"
+              },
+              "binding": "urn:kya-os:audit-binding:mcp:2025-11-25",
+              "details": {
+                "attempt": "1",
+                "family": "tool",
+                "phase": "challenged"
+              },
+              "eventId": "audit_1788944135074_2",
+              "eventType": "tool.call.challenged",
+              "eventVersion": "1.0.0",
+              "evidence": [],
+              "occurredAt": 1788944135074,
+              "outcome": "challenged",
+              "privacy": {
+                "classification": "internal",
+                "retentionClass": "audit-365d"
+              },
+              "reason": {
+                "code": "NEEDS_AUTHORIZATION"
+              },
+              "schema": "https://schema.kya-os.org/v1/protocol/audit/event/v1.0.0",
+              "source": {
+                "previousSourceEventDigest": "sha256:4e52ac09c9c77c6116a4dc3c0f09fa37f7a0f458b39b11b594625ba0e36c8c4c",
+                "producer": {
+                  "did": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+                  "kind": "pairwise_did"
+                },
+                "sourceId": "merchant-edge",
+                "sourceSequence": "2"
+              },
+              "tenantRef": {
+                "keyId": "merchant-tenant-v1",
+                "kind": "keyed_commitment",
+                "value": "sha256:c28a5c0535ad4d7f2c003c6fe863a22f26d2bb60d129f4f43d986363977506a1"
+              }
+            },
+            "eventDigest": "sha256:9e0496b4fa72f9910e013cbf32bc61dbe82a06489e77fbd51268efee3fe9f775",
+            "evidenceManifestDigest": "sha256:7429d9259674c56908e67c477618bf0a406601f095dff00846858016120b73e1",
+            "integritySuite": "KYA-AUDIT-JCS-SHA256-JWS-2026",
+            "ledgerEpochId": "epoch-42c56ca8-1f08-4fd5-81a0-0c3bf43bf5fb",
+            "ledgerId": "kya:merchant:n7bkl24n:orders",
+            "previousEntryDigest": "sha256:6dfcdc976608ef07ece51aadabadfc14f7b3f29b59a7c7f1522b2fd142c0767b",
+            "recordedAt": 1788944135074,
+            "recorder": {
+              "alg": "EdDSA",
+              "did": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+              "kid": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N#z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N"
+            },
+            "schema": "https://schema.kya-os.org/v1/protocol/audit/entry/v1.0.0",
+            "sequence": "2"
+          },
+          "entryDigest": "sha256:e7307cabfc8494e23342fce6898d65879b3d11c85186237b9ab8be89b6fdd8ac",
+          "eventDigest": "sha256:9e0496b4fa72f9910e013cbf32bc61dbe82a06489e77fbd51268efee3fe9f775",
+          "recorderReceipt": {
+            "core": {
+              "entryDigest": "sha256:e7307cabfc8494e23342fce6898d65879b3d11c85186237b9ab8be89b6fdd8ac",
+              "eventId": "audit_1788944135074_2",
+              "integritySuite": "KYA-AUDIT-JCS-SHA256-JWS-2026",
+              "ledgerEpochId": "epoch-42c56ca8-1f08-4fd5-81a0-0c3bf43bf5fb",
+              "ledgerId": "kya:merchant:n7bkl24n:orders",
+              "previousEntryDigest": "sha256:6dfcdc976608ef07ece51aadabadfc14f7b3f29b59a7c7f1522b2fd142c0767b",
+              "recordedAt": 1788944135074,
+              "recorder": {
+                "alg": "EdDSA",
+                "did": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+                "kid": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N#z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N"
+              },
+              "schema": "https://schema.kya-os.org/v1/protocol/audit/receipt/v1.0.0",
+              "sequence": "2"
+            },
+            "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa2dyaFFWWDdqN0JOQk5CRThya2Jxa1FpMmg5Y2pKSzExNVhQOW43YmtMMjROI3o2TWtncmhRVlg3ajdCTkJOQkU4cmticWtRaTJoOWNqSksxMTVYUDluN2JrTDI0TiJ9.eyJlbnRyeURpZ2VzdCI6InNoYTI1NjplNzMwN2NhYmZjODQ5NGUyMzM0MmZjZTY4OThkNjU4NzliM2QxMWM4NTE4NjIzN2I5YWI4YmU4OWI2ZmRkOGFjIiwiZXZlbnRJZCI6ImF1ZGl0XzE3ODg5NDQxMzUwNzRfMiIsImludGVncml0eVN1aXRlIjoiS1lBLUFVRElULUpDUy1TSEEyNTYtSldTLTIwMjYiLCJsZWRnZXJFcG9jaElkIjoiZXBvY2gtNDJjNTZjYTgtMWYwOC00ZmQ1LTgxYTAtMGMzYmY0M2JmNWZiIiwibGVkZ2VySWQiOiJreWE6bWVyY2hhbnQ6bjdia2wyNG46b3JkZXJzIiwicHJldmlvdXNFbnRyeURpZ2VzdCI6InNoYTI1Njo2ZGZjZGM5NzY2MDhlZjA3ZWNlNTFhYWRhYmFkZmMxNGY3YjNmMjliNTlhN2M3ZjE1MjJiMmZkMTQyYzA3NjdiIiwicmVjb3JkZWRBdCI6MTc4ODk0NDEzNTA3NCwicmVjb3JkZXIiOnsiYWxnIjoiRWREU0EiLCJkaWQiOiJkaWQ6a2V5Ono2TWtncmhRVlg3ajdCTkJOQkU4cmticWtRaTJoOWNqSksxMTVYUDluN2JrTDI0TiIsImtpZCI6ImRpZDprZXk6ejZNa2dyaFFWWDdqN0JOQk5CRThya2Jxa1FpMmg5Y2pKSzExNVhQOW43YmtMMjROI3o2TWtncmhRVlg3ajdCTkJOQkU4cmticWtRaTJoOWNqSksxMTVYUDluN2JrTDI0TiJ9LCJzY2hlbWEiOiJodHRwczovL3NjaGVtYS5reWEtb3Mub3JnL3YxL3Byb3RvY29sL2F1ZGl0L3JlY2VpcHQvdjEuMC4wIiwic2VxdWVuY2UiOiIyIn0.ctsaKKDXYWbOrKcnQJuY78BTODrpyjaBleOeMUmhCZlDqxzMrTjr_0ENOAKPeSgbZJ_eJdv9QLRmoBScAClgAg"
+          }
+        },
+        {
+          "core": {
+            "event": {
+              "action": {
+                "category": "proof"
+              },
+              "binding": "urn:kya-os:audit-binding:mcp:2025-11-25",
+              "details": {
+                "family": "proof",
+                "phase": "generated"
+              },
+              "eventId": "audit_1788944135075_3",
+              "eventType": "proof.generated",
+              "eventVersion": "1.0.0",
+              "evidence": [],
+              "occurredAt": 1788944135075,
+              "outcome": "succeeded",
+              "privacy": {
+                "classification": "internal",
+                "retentionClass": "audit-365d"
+              },
+              "schema": "https://schema.kya-os.org/v1/protocol/audit/event/v1.0.0",
+              "source": {
+                "previousSourceEventDigest": "sha256:9e0496b4fa72f9910e013cbf32bc61dbe82a06489e77fbd51268efee3fe9f775",
+                "producer": {
+                  "did": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+                  "kind": "pairwise_did"
+                },
+                "sourceId": "merchant-edge",
+                "sourceSequence": "3"
+              },
+              "tenantRef": {
+                "keyId": "merchant-tenant-v1",
+                "kind": "keyed_commitment",
+                "value": "sha256:c28a5c0535ad4d7f2c003c6fe863a22f26d2bb60d129f4f43d986363977506a1"
+              }
+            },
+            "eventDigest": "sha256:4be0f9b9daede03e8b285f8528deaa9b5cfaac88d5270f0b55074d8276f527cb",
+            "evidenceManifestDigest": "sha256:7429d9259674c56908e67c477618bf0a406601f095dff00846858016120b73e1",
+            "integritySuite": "KYA-AUDIT-JCS-SHA256-JWS-2026",
+            "ledgerEpochId": "epoch-42c56ca8-1f08-4fd5-81a0-0c3bf43bf5fb",
+            "ledgerId": "kya:merchant:n7bkl24n:orders",
+            "previousEntryDigest": "sha256:e7307cabfc8494e23342fce6898d65879b3d11c85186237b9ab8be89b6fdd8ac",
+            "recordedAt": 1788944135075,
+            "recorder": {
+              "alg": "EdDSA",
+              "did": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+              "kid": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N#z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N"
+            },
+            "schema": "https://schema.kya-os.org/v1/protocol/audit/entry/v1.0.0",
+            "sequence": "3"
+          },
+          "entryDigest": "sha256:bb410ff24b0e4716f977b968f0ac15b34da816f350c33208b2da6e02d2f282ca",
+          "eventDigest": "sha256:4be0f9b9daede03e8b285f8528deaa9b5cfaac88d5270f0b55074d8276f527cb",
+          "recorderReceipt": {
+            "core": {
+              "entryDigest": "sha256:bb410ff24b0e4716f977b968f0ac15b34da816f350c33208b2da6e02d2f282ca",
+              "eventId": "audit_1788944135075_3",
+              "integritySuite": "KYA-AUDIT-JCS-SHA256-JWS-2026",
+              "ledgerEpochId": "epoch-42c56ca8-1f08-4fd5-81a0-0c3bf43bf5fb",
+              "ledgerId": "kya:merchant:n7bkl24n:orders",
+              "previousEntryDigest": "sha256:e7307cabfc8494e23342fce6898d65879b3d11c85186237b9ab8be89b6fdd8ac",
+              "recordedAt": 1788944135075,
+              "recorder": {
+                "alg": "EdDSA",
+                "did": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+                "kid": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N#z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N"
+              },
+              "schema": "https://schema.kya-os.org/v1/protocol/audit/receipt/v1.0.0",
+              "sequence": "3"
+            },
+            "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa2dyaFFWWDdqN0JOQk5CRThya2Jxa1FpMmg5Y2pKSzExNVhQOW43YmtMMjROI3o2TWtncmhRVlg3ajdCTkJOQkU4cmticWtRaTJoOWNqSksxMTVYUDluN2JrTDI0TiJ9.eyJlbnRyeURpZ2VzdCI6InNoYTI1NjpiYjQxMGZmMjRiMGU0NzE2Zjk3N2I5NjhmMGFjMTViMzRkYTgxNmYzNTBjMzMyMDhiMmRhNmUwMmQyZjI4MmNhIiwiZXZlbnRJZCI6ImF1ZGl0XzE3ODg5NDQxMzUwNzVfMyIsImludGVncml0eVN1aXRlIjoiS1lBLUFVRElULUpDUy1TSEEyNTYtSldTLTIwMjYiLCJsZWRnZXJFcG9jaElkIjoiZXBvY2gtNDJjNTZjYTgtMWYwOC00ZmQ1LTgxYTAtMGMzYmY0M2JmNWZiIiwibGVkZ2VySWQiOiJreWE6bWVyY2hhbnQ6bjdia2wyNG46b3JkZXJzIiwicHJldmlvdXNFbnRyeURpZ2VzdCI6InNoYTI1NjplNzMwN2NhYmZjODQ5NGUyMzM0MmZjZTY4OThkNjU4NzliM2QxMWM4NTE4NjIzN2I5YWI4YmU4OWI2ZmRkOGFjIiwicmVjb3JkZWRBdCI6MTc4ODk0NDEzNTA3NSwicmVjb3JkZXIiOnsiYWxnIjoiRWREU0EiLCJkaWQiOiJkaWQ6a2V5Ono2TWtncmhRVlg3ajdCTkJOQkU4cmticWtRaTJoOWNqSksxMTVYUDluN2JrTDI0TiIsImtpZCI6ImRpZDprZXk6ejZNa2dyaFFWWDdqN0JOQk5CRThya2Jxa1FpMmg5Y2pKSzExNVhQOW43YmtMMjROI3o2TWtncmhRVlg3ajdCTkJOQkU4cmticWtRaTJoOWNqSksxMTVYUDluN2JrTDI0TiJ9LCJzY2hlbWEiOiJodHRwczovL3NjaGVtYS5reWEtb3Mub3JnL3YxL3Byb3RvY29sL2F1ZGl0L3JlY2VpcHQvdjEuMC4wIiwic2VxdWVuY2UiOiIzIn0.V9JlfK88GgBi5tSJp8Q0kWLdL9BTcfB3rwg03XHlT9SibWU3eEHWpsMZ2ph2d-OzXxvhx9csJbJj_eTCLCIkBw"
+          }
+        },
+        {
+          "core": {
+            "event": {
+              "action": {
+                "category": "consent",
+                "name": "place_order"
+              },
+              "actor": {
+                "did": "did:key:z6MkpiZsrvpx2mJFA7kd6MDMPQMfxmRkqRGEex3Rj2kaKVyB",
+                "kind": "pairwise_did"
+              },
+              "authorization": {
+                "decision": "needs_authorization",
+                "scopeId": "https://id.gs1.org/01/09506000134352",
+                "source": "anonymous"
+              },
+              "binding": "urn:kya-os:audit-binding:mcp:2025-11-25",
+              "correlationId": "sha256:dfe1d55aeb2b3781a1d3a20dbe9fa9891eb3373fd60ea2e97ce636fb85a8ad48",
+              "details": {
+                "consentRef": "sha256:dfe1d55aeb2b3781a1d3a20dbe9fa9891eb3373fd60ea2e97ce636fb85a8ad48",
+                "family": "consent",
+                "phase": "requested"
+              },
+              "eventId": "audit_1788944135075_4",
+              "eventType": "consent.requested",
+              "eventVersion": "1.0.0",
+              "evidence": [],
+              "occurredAt": 1788944135075,
+              "outcome": "challenged",
+              "privacy": {
+                "classification": "internal",
+                "retentionClass": "audit-365d"
+              },
+              "resource": {
+                "keyId": "authorization-url",
+                "kind": "keyed_commitment",
+                "value": "sha256:cda3fd467475c7c3976dcd74edd25c4ae265f3e39f18b360a97ec19e2c99bf43"
+              },
+              "responsibleParty": {
+                "did": "did:web:localhost%3A4950",
+                "kind": "public_did"
+              },
+              "schema": "https://schema.kya-os.org/v1/protocol/audit/event/v1.0.0",
+              "source": {
+                "previousSourceEventDigest": "sha256:4be0f9b9daede03e8b285f8528deaa9b5cfaac88d5270f0b55074d8276f527cb",
+                "producer": {
+                  "did": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+                  "kind": "pairwise_did"
+                },
+                "sourceId": "merchant-edge",
+                "sourceSequence": "4"
+              },
+              "tenantRef": {
+                "keyId": "merchant-tenant-v1",
+                "kind": "keyed_commitment",
+                "value": "sha256:c28a5c0535ad4d7f2c003c6fe863a22f26d2bb60d129f4f43d986363977506a1"
+              }
+            },
+            "eventDigest": "sha256:7acfe60c669e9673d5cbf83020fc27a1ed06a9f0c67eb038fff85444813982df",
+            "evidenceManifestDigest": "sha256:7429d9259674c56908e67c477618bf0a406601f095dff00846858016120b73e1",
+            "integritySuite": "KYA-AUDIT-JCS-SHA256-JWS-2026",
+            "ledgerEpochId": "epoch-42c56ca8-1f08-4fd5-81a0-0c3bf43bf5fb",
+            "ledgerId": "kya:merchant:n7bkl24n:orders",
+            "previousEntryDigest": "sha256:bb410ff24b0e4716f977b968f0ac15b34da816f350c33208b2da6e02d2f282ca",
+            "recordedAt": 1788944135076,
+            "recorder": {
+              "alg": "EdDSA",
+              "did": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+              "kid": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N#z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N"
+            },
+            "schema": "https://schema.kya-os.org/v1/protocol/audit/entry/v1.0.0",
+            "sequence": "4"
+          },
+          "entryDigest": "sha256:62e437be2d904a5959120cb362f91fd3547333104d2567d3fc2309f57e95fa4c",
+          "eventDigest": "sha256:7acfe60c669e9673d5cbf83020fc27a1ed06a9f0c67eb038fff85444813982df",
+          "recorderReceipt": {
+            "core": {
+              "entryDigest": "sha256:62e437be2d904a5959120cb362f91fd3547333104d2567d3fc2309f57e95fa4c",
+              "eventId": "audit_1788944135075_4",
+              "integritySuite": "KYA-AUDIT-JCS-SHA256-JWS-2026",
+              "ledgerEpochId": "epoch-42c56ca8-1f08-4fd5-81a0-0c3bf43bf5fb",
+              "ledgerId": "kya:merchant:n7bkl24n:orders",
+              "previousEntryDigest": "sha256:bb410ff24b0e4716f977b968f0ac15b34da816f350c33208b2da6e02d2f282ca",
+              "recordedAt": 1788944135076,
+              "recorder": {
+                "alg": "EdDSA",
+                "did": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+                "kid": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N#z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N"
+              },
+              "schema": "https://schema.kya-os.org/v1/protocol/audit/receipt/v1.0.0",
+              "sequence": "4"
+            },
+            "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa2dyaFFWWDdqN0JOQk5CRThya2Jxa1FpMmg5Y2pKSzExNVhQOW43YmtMMjROI3o2TWtncmhRVlg3ajdCTkJOQkU4cmticWtRaTJoOWNqSksxMTVYUDluN2JrTDI0TiJ9.eyJlbnRyeURpZ2VzdCI6InNoYTI1Njo2MmU0MzdiZTJkOTA0YTU5NTkxMjBjYjM2MmY5MWZkMzU0NzMzMzEwNGQyNTY3ZDNmYzIzMDlmNTdlOTVmYTRjIiwiZXZlbnRJZCI6ImF1ZGl0XzE3ODg5NDQxMzUwNzVfNCIsImludGVncml0eVN1aXRlIjoiS1lBLUFVRElULUpDUy1TSEEyNTYtSldTLTIwMjYiLCJsZWRnZXJFcG9jaElkIjoiZXBvY2gtNDJjNTZjYTgtMWYwOC00ZmQ1LTgxYTAtMGMzYmY0M2JmNWZiIiwibGVkZ2VySWQiOiJreWE6bWVyY2hhbnQ6bjdia2wyNG46b3JkZXJzIiwicHJldmlvdXNFbnRyeURpZ2VzdCI6InNoYTI1NjpiYjQxMGZmMjRiMGU0NzE2Zjk3N2I5NjhmMGFjMTViMzRkYTgxNmYzNTBjMzMyMDhiMmRhNmUwMmQyZjI4MmNhIiwicmVjb3JkZWRBdCI6MTc4ODk0NDEzNTA3NiwicmVjb3JkZXIiOnsiYWxnIjoiRWREU0EiLCJkaWQiOiJkaWQ6a2V5Ono2TWtncmhRVlg3ajdCTkJOQkU4cmticWtRaTJoOWNqSksxMTVYUDluN2JrTDI0TiIsImtpZCI6ImRpZDprZXk6ejZNa2dyaFFWWDdqN0JOQk5CRThya2Jxa1FpMmg5Y2pKSzExNVhQOW43YmtMMjROI3o2TWtncmhRVlg3ajdCTkJOQkU4cmticWtRaTJoOWNqSksxMTVYUDluN2JrTDI0TiJ9LCJzY2hlbWEiOiJodHRwczovL3NjaGVtYS5reWEtb3Mub3JnL3YxL3Byb3RvY29sL2F1ZGl0L3JlY2VpcHQvdjEuMC4wIiwic2VxdWVuY2UiOiI0In0.ehwuY8VauvaXGmVtBVVCi4uVcYgGJ1XTOxraJdPPqB35mJIbl_03w-uq30VagJlqp7hHGg9hYLnJehhIYyh_Bg"
+          }
+        }
+      ]
+    },
+    {
+      "path": "inclusion-proofs.json",
+      "mediaType": "application/vnd.kya-os.audit.inclusion-proofs.v1+json",
+      "disposition": "included",
+      "digest": "sha256:9edaea6e5afc81ac2cbdafdf3461454d208f7a8173bc1d64332a31235b5daf12",
+      "size": "2743",
+      "content": [
+        {
+          "checkpointDigest": "sha256:09c8d6834321eda1faebde9b4d8b15050464038fdf22337b41c7b3bd85794f99",
+          "entryDigest": "sha256:80844bf41eae132c7414f01bb2d7ddf82707d1c9418d49d93edd2b76d95c5d3a",
+          "ledgerEpochId": "epoch-42c56ca8-1f08-4fd5-81a0-0c3bf43bf5fb",
+          "ledgerId": "kya:merchant:n7bkl24n:orders",
+          "proof": {
+            "auditPath": [
+              "sha256:012962e38f2dbfe8df2d6a8427455b35d03cba28391467d9e371dd859d47f9a3",
+              "sha256:1e25b7f4a6edd88b59a39eafb2fb8bb4c3a16a569b0a92b7ccd0a0d5db2a97d2",
+              "sha256:33df429173fd662e742b45feddf1ab039e57da0aa366583b1207bcd6b659f1d0"
+            ],
+            "leafIndex": "0",
+            "treeSize": "5"
+          },
+          "sequence": "0"
+        },
+        {
+          "checkpointDigest": "sha256:09c8d6834321eda1faebde9b4d8b15050464038fdf22337b41c7b3bd85794f99",
+          "entryDigest": "sha256:6dfcdc976608ef07ece51aadabadfc14f7b3f29b59a7c7f1522b2fd142c0767b",
+          "ledgerEpochId": "epoch-42c56ca8-1f08-4fd5-81a0-0c3bf43bf5fb",
+          "ledgerId": "kya:merchant:n7bkl24n:orders",
+          "proof": {
+            "auditPath": [
+              "sha256:fda2b40e690b7c89330a3513a7433e1554470d333b17ec6bb25ddb975cd5b477",
+              "sha256:1e25b7f4a6edd88b59a39eafb2fb8bb4c3a16a569b0a92b7ccd0a0d5db2a97d2",
+              "sha256:33df429173fd662e742b45feddf1ab039e57da0aa366583b1207bcd6b659f1d0"
+            ],
+            "leafIndex": "1",
+            "treeSize": "5"
+          },
+          "sequence": "1"
+        },
+        {
+          "checkpointDigest": "sha256:09c8d6834321eda1faebde9b4d8b15050464038fdf22337b41c7b3bd85794f99",
+          "entryDigest": "sha256:e7307cabfc8494e23342fce6898d65879b3d11c85186237b9ab8be89b6fdd8ac",
+          "ledgerEpochId": "epoch-42c56ca8-1f08-4fd5-81a0-0c3bf43bf5fb",
+          "ledgerId": "kya:merchant:n7bkl24n:orders",
+          "proof": {
+            "auditPath": [
+              "sha256:01bdc1449de143f27a7531ba2ccb5d32c4c9bf95604f79a18bb30e463f1555f8",
+              "sha256:f934d140cb2a23387f2fabef05d38ca07153d9825399a281579e4815eebab311",
+              "sha256:33df429173fd662e742b45feddf1ab039e57da0aa366583b1207bcd6b659f1d0"
+            ],
+            "leafIndex": "2",
+            "treeSize": "5"
+          },
+          "sequence": "2"
+        },
+        {
+          "checkpointDigest": "sha256:09c8d6834321eda1faebde9b4d8b15050464038fdf22337b41c7b3bd85794f99",
+          "entryDigest": "sha256:bb410ff24b0e4716f977b968f0ac15b34da816f350c33208b2da6e02d2f282ca",
+          "ledgerEpochId": "epoch-42c56ca8-1f08-4fd5-81a0-0c3bf43bf5fb",
+          "ledgerId": "kya:merchant:n7bkl24n:orders",
+          "proof": {
+            "auditPath": [
+              "sha256:2c68fae60ce633639de55c3d93ca032247d31213310970d0606cc9ee24764fb7",
+              "sha256:f934d140cb2a23387f2fabef05d38ca07153d9825399a281579e4815eebab311",
+              "sha256:33df429173fd662e742b45feddf1ab039e57da0aa366583b1207bcd6b659f1d0"
+            ],
+            "leafIndex": "3",
+            "treeSize": "5"
+          },
+          "sequence": "3"
+        },
+        {
+          "checkpointDigest": "sha256:09c8d6834321eda1faebde9b4d8b15050464038fdf22337b41c7b3bd85794f99",
+          "entryDigest": "sha256:62e437be2d904a5959120cb362f91fd3547333104d2567d3fc2309f57e95fa4c",
+          "ledgerEpochId": "epoch-42c56ca8-1f08-4fd5-81a0-0c3bf43bf5fb",
+          "ledgerId": "kya:merchant:n7bkl24n:orders",
+          "proof": {
+            "auditPath": [
+              "sha256:599dcbe7b87d59345bcefdb670c5e845ee3700ae5d9047dc908875b3e5e2898f"
+            ],
+            "leafIndex": "4",
+            "treeSize": "5"
+          },
+          "sequence": "4"
+        }
+      ]
+    },
+    {
+      "path": "observations.json",
+      "mediaType": "application/vnd.kya-os.audit.observations.v1+json",
+      "disposition": "included",
+      "digest": "sha256:bc0ebca5d75edcb736e120dc69dc5ecada5d7e6712335423cfeaf9b7e4411da9",
+      "size": "1432",
+      "content": [
+        {
+          "core": {
+            "checkpointDigest": "sha256:09c8d6834321eda1faebde9b4d8b15050464038fdf22337b41c7b3bd85794f99",
+            "ledgerEpochId": "epoch-42c56ca8-1f08-4fd5-81a0-0c3bf43bf5fb",
+            "ledgerId": "kya:merchant:n7bkl24n:orders",
+            "observedAt": 1788944135085,
+            "observer": {
+              "alg": "EdDSA",
+              "did": "did:web:localhost%3A4950",
+              "kid": "did:web:localhost%3A4950#key-1"
+            },
+            "observerId": "rp-witness:did:web:localhost%3A4950",
+            "previousObservationDigest": null,
+            "schema": "https://schema.kya-os.org/v1/protocol/audit/observation/v1.0.0",
+            "treeSize": "5"
+          },
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6bG9jYWxob3N0JTNBNDk1MCNrZXktMSJ9.eyJjaGVja3BvaW50RGlnZXN0Ijoic2hhMjU2OjA5YzhkNjgzNDMyMWVkYTFmYWViZGU5YjRkOGIxNTA1MDQ2NDAzOGZkZjIyMzM3YjQxYzdiM2JkODU3OTRmOTkiLCJsZWRnZXJFcG9jaElkIjoiZXBvY2gtNDJjNTZjYTgtMWYwOC00ZmQ1LTgxYTAtMGMzYmY0M2JmNWZiIiwibGVkZ2VySWQiOiJreWE6bWVyY2hhbnQ6bjdia2wyNG46b3JkZXJzIiwib2JzZXJ2ZWRBdCI6MTc4ODk0NDEzNTA4NSwib2JzZXJ2ZXIiOnsiYWxnIjoiRWREU0EiLCJkaWQiOiJkaWQ6d2ViOmxvY2FsaG9zdCUzQTQ5NTAiLCJraWQiOiJkaWQ6d2ViOmxvY2FsaG9zdCUzQTQ5NTAja2V5LTEifSwib2JzZXJ2ZXJJZCI6InJwLXdpdG5lc3M6ZGlkOndlYjpsb2NhbGhvc3QlM0E0OTUwIiwicHJldmlvdXNPYnNlcnZhdGlvbkRpZ2VzdCI6bnVsbCwic2NoZW1hIjoiaHR0cHM6Ly9zY2hlbWEua3lhLW9zLm9yZy92MS9wcm90b2NvbC9hdWRpdC9vYnNlcnZhdGlvbi92MS4wLjAiLCJ0cmVlU2l6ZSI6IjUifQ.C63TsWI2jtPqtFc9NsFL0OMAXb_c61v3lKzZe3nU75RF9NSqQtOupWYDIg2tJTeMJyRpJV-efHxofcxsApRzBA",
+          "observationDigest": "sha256:a0a00ee2357e3055a4e59efe98847deaf6a951619bf79dacd149d32c4676f78d"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "policyId": "urn:kya-os:example:agentic-commerce:policy:epoch-a3e4bdb4-a7f2-47a5-92f4-1c0e0e8ca872",
+  "trustedLedgerEpochs": [
+    {
+      "ledgerId": "kya:merchant:n7bkl24n:orders",
+      "ledgerEpochId": "epoch-a3e4bdb4-a7f2-47a5-92f4-1c0e0e8ca872",
+      "recorderKeys": [
+        {
+          "signer": {
+            "did": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+            "kid": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N#z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+            "alg": "EdDSA"
+          }
+        }
+      ]
+    }
+  ],
+  "trustedObservers": [
+    {
+      "signer": {
+        "did": "did:web:localhost%3A4950",
+        "kid": "did:web:localhost%3A4950#key-1",
+        "alg": "EdDSA"
+      }
+    }
+  ],
+  "authorizedExporters": [
+    {
+      "signerKeys": [
+        {
+          "signer": {
+            "did": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+            "kid": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N#z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+            "alg": "EdDSA"
+          }
+        }
+      ],
+      "allowedLedgerIds": [
+        "kya:merchant:n7bkl24n:orders"
+      ],
+      "allowedPurposes": [
+        "stage-replay"
+      ]
+    }
+  ],
+  "acceptedIntegritySuites": [
+    "KYA-AUDIT-JCS-SHA256-JWS-2026",
+    "KYA-AUDIT-RFC9162-SHA256-JWS-2026",
+    "KYA-AUDIT-BUNDLE-JCS-SHA256-JWS-2026"
+  ],
+  "acceptedAlgorithms": [
+    "EdDSA"
+  ],
+  "keyRevocationMode": "as_observed"
+}

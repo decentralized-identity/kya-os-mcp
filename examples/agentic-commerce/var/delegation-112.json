@@ -1,0 +1,85 @@
+{
+  "@context": [
+    "https://www.w3.org/2018/credentials/v1",
+    "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+  ],
+  "id": "urn:uuid:agentic-commerce-112-1788870978657",
+  "type": [
+    "VerifiableCredential",
+    "DelegationCredential"
+  ],
+  "issuer": "did:web:localhost%3A4950",
+  "issuanceDate": "2026-09-08T12:36:18.657Z",
+  "expirationDate": "2026-09-10T12:36:18.000Z",
+  "credentialSubject": {
+    "id": "did:key:z6MkpiZsrvpx2mJFA7kd6MDMPQMfxmRkqRGEex3Rj2kaKVyB",
+    "delegation": {
+      "id": "agentic-commerce-112-1788870978657",
+      "issuerDid": "did:web:localhost%3A4950",
+      "subjectDid": "did:key:z6MkpiZsrvpx2mJFA7kd6MDMPQMfxmRkqRGEex3Rj2kaKVyB",
+      "scopes": [
+        "commerce.order"
+      ],
+      "constraints": {
+        "scopes": [
+          "commerce.order"
+        ],
+        "audience": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+        "notBefore": 1788870918,
+        "notAfter": 1789043778,
+        "crisp": {
+          "scopes": [
+            {
+              "resource": "https://id.gs1.org/01/09506000134352",
+              "matcher": "prefix",
+              "constraints": {
+                "maxAmount": "50.00",
+                "currency": "CHF",
+                "per": "order",
+                "identifierScheme": "gs1:digital-link",
+                "gtin": "09506000134352"
+              }
+            }
+          ]
+        }
+      },
+      "status": "active",
+      "createdAt": 1788870978657,
+      "metadata": {
+        "tool": "place_order",
+        "event": "w3c-gs1-ecommerce-workshop-2026",
+        "demoConsent": {
+          "consentRef": "sha256:33a6ac14136f2b2acbd14033b7a4e278eacbdc97815697f0e98ece62960057f4",
+          "human": {
+            "accountRef": "cfbc2166-07e9-4ac7-a663-e42b238885d0",
+            "provider": "google",
+            "issuer": "https://accounts.google.com",
+            "displayName": "Dylan Hobbs",
+            "identitySource": "identity-provider"
+          },
+          "authentication": {
+            "method": "webauthn",
+            "credentialRef": "sha256:095ee848126ea9ea8744cec4919e66bab230ea3f8b917ca8fd20075d25cee1fd",
+            "intentHash": "fBruY5HHct8k-dhKEvkYCR5CRkEK68Z5QK32rYUJmtg",
+            "userVerified": false
+          },
+          "approvedAt": "2026-09-08T12:36:18.656Z"
+        }
+      }
+    }
+  },
+  "credentialStatus": {
+    "id": "http://localhost:4950/status-list#112",
+    "type": "StatusList2021Entry",
+    "statusPurpose": "revocation",
+    "statusListIndex": "112",
+    "statusListCredential": "http://localhost:4950/status-list"
+  },
+  "proof": {
+    "type": "Ed25519Signature2020",
+    "created": "2026-09-08T12:36:18.658Z",
+    "verificationMethod": "did:web:localhost%3A4950#key-1",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "8kzlUZkZu1iDPPIiedJ_euI8ikF5kZLb2q6eyLhvh69Buba2xmeQzLsBJ1-h1bLyPwS19lNzYeRlqwiPFgaYCw"
+  }
+}

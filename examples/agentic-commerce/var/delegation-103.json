@@ -1,0 +1,68 @@
+{
+  "@context": [
+    "https://www.w3.org/2018/credentials/v1",
+    "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+  ],
+  "id": "urn:uuid:agentic-commerce-103-1788864304795",
+  "type": [
+    "VerifiableCredential",
+    "DelegationCredential"
+  ],
+  "issuer": "did:web:localhost%3A4950",
+  "issuanceDate": "2026-09-08T10:45:04.795Z",
+  "expirationDate": "2026-09-10T10:45:04.000Z",
+  "credentialSubject": {
+    "id": "did:key:z6MkpiZsrvpx2mJFA7kd6MDMPQMfxmRkqRGEex3Rj2kaKVyB",
+    "delegation": {
+      "id": "agentic-commerce-103-1788864304795",
+      "issuerDid": "did:web:localhost%3A4950",
+      "subjectDid": "did:key:z6MkpiZsrvpx2mJFA7kd6MDMPQMfxmRkqRGEex3Rj2kaKVyB",
+      "scopes": [
+        "commerce.order"
+      ],
+      "constraints": {
+        "scopes": [
+          "commerce.order"
+        ],
+        "audience": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+        "notBefore": 1788864244,
+        "notAfter": 1789037104,
+        "crisp": {
+          "scopes": [
+            {
+              "resource": "https://id.gs1.org/01/09506000134352",
+              "matcher": "prefix",
+              "constraints": {
+                "maxAmount": "50.00",
+                "currency": "CHF",
+                "per": "order",
+                "identifierScheme": "gs1:digital-link",
+                "gtin": "09506000134352"
+              }
+            }
+          ]
+        }
+      },
+      "status": "active",
+      "createdAt": 1788864304795,
+      "metadata": {
+        "tool": "place_order",
+        "event": "w3c-gs1-ecommerce-workshop-2026"
+      }
+    }
+  },
+  "credentialStatus": {
+    "id": "http://localhost:4950/status-list#103",
+    "type": "StatusList2021Entry",
+    "statusPurpose": "revocation",
+    "statusListIndex": "103",
+    "statusListCredential": "http://localhost:4950/status-list"
+  },
+  "proof": {
+    "type": "Ed25519Signature2020",
+    "created": "2026-09-08T10:45:04.796Z",
+    "verificationMethod": "did:web:localhost%3A4950#key-1",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "fvMrVutZfpDy01_-TKFOxZ_Sm4YfVAQxiBCdMj9vsal3ZTFDNM7F34dMboBruGE79XU3qx7_W8Y1ht6VwZx-AA"
+  }
+}

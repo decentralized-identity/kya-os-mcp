@@ -1,0 +1,53 @@
+{
+  "ok": true,
+  "screenshots": [
+    "/Users/dylanhobbs/Documents/@kya-os/kya-os-mcp/examples/agentic-commerce/docs/screenshots/consent/consent-00-no-grant.png",
+    "/Users/dylanhobbs/Documents/@kya-os/kya-os-mcp/examples/agentic-commerce/docs/screenshots/consent/consent-01-challenge.png",
+    "/Users/dylanhobbs/Documents/@kya-os/kya-os-mcp/examples/agentic-commerce/docs/screenshots/consent/consent-02-denied-by-human.png",
+    "/Users/dylanhobbs/Documents/@kya-os/kya-os-mcp/examples/agentic-commerce/docs/screenshots/consent/consent-03-approve-grant.png",
+    "/Users/dylanhobbs/Documents/@kya-os/kya-os-mcp/examples/agentic-commerce/docs/screenshots/consent/consent-04-approved.png",
+    "/Users/dylanhobbs/Documents/@kya-os/kya-os-mcp/examples/agentic-commerce/docs/screenshots/consent/consent-05-authorized.png",
+    "/Users/dylanhobbs/Documents/@kya-os/kya-os-mcp/examples/agentic-commerce/docs/screenshots/consent/consent-06-receipt-verified.png",
+    "/Users/dylanhobbs/Documents/@kya-os/kya-os-mcp/examples/agentic-commerce/docs/screenshots/consent/consent-07-wrong-product.png",
+    "/Users/dylanhobbs/Documents/@kya-os/kya-os-mcp/examples/agentic-commerce/docs/screenshots/consent/consent-08-over-cap.png",
+    "/Users/dylanhobbs/Documents/@kya-os/kya-os-mcp/examples/agentic-commerce/docs/screenshots/consent/consent-09-revoked-denial.png",
+    "/Users/dylanhobbs/Documents/@kya-os/kya-os-mcp/examples/agentic-commerce/docs/screenshots/consent/consent-10-ledger.png",
+    "/Users/dylanhobbs/Documents/@kya-os/kya-os-mcp/examples/agentic-commerce/docs/screenshots/consent/consent-11-tamper-rejected.png",
+    "/Users/dylanhobbs/Documents/@kya-os/kya-os-mcp/examples/agentic-commerce/docs/screenshots/consent/consent-12-exported.png",
+    "/Users/dylanhobbs/Documents/@kya-os/kya-os-mcp/examples/agentic-commerce/docs/screenshots/consent/consent-nojs-deny.png",
+    "/Users/dylanhobbs/Documents/@kya-os/kya-os-mcp/examples/agentic-commerce/docs/screenshots/consent/consent-nojs-approve.png",
+    "/Users/dylanhobbs/Documents/@kya-os/kya-os-mcp/examples/agentic-commerce/docs/screenshots/consent/consent-mobile.png"
+  ],
+  "errors": [],
+  "checks": [
+    "Actual capability screen displays exact GS1 scope and grant bounds, and deselection disables approval"
+  ],
+  "variants": [
+    "no-JS Deny",
+    "no-JS Approve grant",
+    "390px mobile layout"
+  ],
+  "audit": "SIGNATURES\nVALID\nCHAIN\nINVALID\nROOT+PROOFS\nINVALID\nWITNESS\nVALID\nCOMPLETE\nVALID\nAUTHZ THEN\nINDETERM.\nAUTHZ NOW\nINDETERM.\nedited bundle: chain \u2192 PREDECESSOR_MISMATCH \u00b7 root+proofs \u2192 CHECKPOINT_ROOT_MISMATCH, MERKLE_PROOF_INVALID \u00b7 indeterminate = authorization collateral not verified; current authorization not evaluated (not in this bundle \u2014 honest)\nhonest bundle, same verifier \u00b7 policy \u00b7 keys: 5 valid \u00b7 2 indeterminate \u00b7 0 invalid",
+  "elapsedSeconds": 92.9,
+  "video": "/Users/dylanhobbs/Documents/@kya-os/kya-os-mcp/examples/agentic-commerce/docs/screenshots/consent/consent-demo-backup.webm",
+  "videoDurationSeconds": 90.0,
+  "untrimmedVideoDurationSeconds": 93.8,
+  "mainFlowCompletedWithinSeconds": 70.21,
+  "bundleSha256": "d03e9c2d2156a36d78b21dadb735416cf43afdc6d6b51dc3636f5815df407e6e",
+  "fixture": {
+    "merchantOrigin": "http://localhost:50173",
+    "rpOrigin": "http://localhost:50174",
+    "isolatedState": true,
+    "stopped": true,
+    "googleIdentity": false,
+    "registeredAuthenticators": 0,
+    "consentMethod": "click-wrap"
+  },
+  "verificationNotes": [
+    "Visually verified latest seven-gate projector and scope-selection component.",
+    "Native required scope checkbox blocks an unchecked approval before POST and leaves no credential.",
+    "Native checked approval issues a credential; native unchecked denial issues none.",
+    "390px mobile scope and buttons remain readable without horizontal overflow.",
+    "The honest bundle verifies with zero invalid results; deliberate tampering fails chain and root/proof verification."
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "id": "run-bd01350c-2212-478c-9173-49718fecdeed",
+  "ledger": {
+    "ledgerId": "kya:merchant:n7bkl24n:orders",
+    "ledgerEpochId": "epoch-a3e4bdb4-a7f2-47a5-92f4-1c0e0e8ca872"
+  },
+  "ledgerEpochId": "epoch-a3e4bdb4-a7f2-47a5-92f4-1c0e0e8ca872",
+  "entries": 5,
+  "checkpointDigest": "sha256:e23f41bb577cff999b5e53cbfeae1abb9d50d2f783f244be70e25636d78aa0f5",
+  "manifestDigest": "sha256:6709b210b9b5d2c70d05825c9caa8bc1a60b74837e0699785b71510dd2de2cc6",
+  "witnessed": true,
+  "witnessError": null,
+  "archivedAt": "2026-09-09T10:08:52.809Z"
+}

@@ -1,0 +1,156 @@
+
+> kya-os-example-agentic-commerce@0.1.0 demo:scripted
+> tsx scripts/demo-scripted.ts
+
+Human consent → scoped grant → order → revoke → denied → verified evidence
+Project: http://localhost:4949/  (press P for presenter mode)
+
+1. Request 2 × risotto, CHF 39.80, before human approval
+{
+  "error": "needs_authorization",
+  "message": "Human approval is required before this agent may place an order.",
+  "authorizationUrl": "http://127.0.0.1:4950/consent?resume_token=3472881e-217d-3953-4975-1e63e630729f&agent_did=did%3Akey%3Az6MkpiZsrvpx2mJFA7kd6MDMPQMfxmRkqRGEex3Rj2kaKVyB&scopes=https%3A%2F%2Fid.gs1.org%2F01%2F09506000134352&tool=place_order",
+  "resumeToken": "3472881e-217d-3953-4975-1e63e630729f",
+  "expiresAt": 1788865036,
+  "scopes": [
+    "https://id.gs1.org/01/09506000134352"
+  ],
+  "display": {
+    "title": "Approve the shopping agent grant",
+    "hint": [
+      "link"
+    ]
+  }
+}
+
+Open this URL on the projector and click Approve grant:
+http://127.0.0.1:4950/consent?resume_token=3472881e-217d-3953-4975-1e63e630729f&agent_did=did%3Akey%3Az6MkpiZsrvpx2mJFA7kd6MDMPQMfxmRkqRGEex3Rj2kaKVyB&scopes=https%3A%2F%2Fid.gs1.org%2F01%2F09506000134352&tool=place_order
+Waiting for the human. The scripted agent does not approve its own grant.
+
+2. Human approved. Retry the exact same order
+{
+  "ok": true,
+  "orderId": "ORD-20260908-0002",
+  "merchant": {
+    "did": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+    "name": "Dal Giardino Direct (demo merchant)"
+  },
+  "order": {
+    "product": "https://id.gs1.org/01/09506000134352",
+    "gtin": "09506000134352",
+    "name": "Dal Giardino Risotto Rice with Mushrooms",
+    "quantity": 2,
+    "unitPrice": "CHF 19.90",
+    "total": "CHF 39.80"
+  },
+  "mandate": {
+    "responsibleParty": "did:web:localhost%3A4950",
+    "agent": "did:key:z6MkpiZsrvpx2mJFA7kd6MDMPQMfxmRkqRGEex3Rj2kaKVyB",
+    "audience": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+    "scope": {
+      "resource": "https://id.gs1.org/01/09506000134352",
+      "matcher": "prefix"
+    },
+    "cap": {
+      "maxAmount": "50.00",
+      "currency": "CHF",
+      "per": "order"
+    },
+    "validFrom": "2026-09-08T10:51:17.000Z",
+    "validUntil": "2026-09-10T10:52:17.000Z",
+    "statusList": {
+      "url": "http://localhost:4950/status-list",
+      "index": "107"
+    },
+    "credentialId": "urn:uuid:agentic-commerce-107-1788864737892"
+  },
+  "checks": {
+    "signature": "verified against the Responsible Party DID document",
+    "window": "inside notBefore/notAfter",
+    "audience": "this merchant",
+    "revocation": "status list fetched on this call, bit clear",
+    "holderKey": "per-request proof signed by the agent key",
+    "productClass": "https://id.gs1.org/01/09506000134352 ⊆ https://id.gs1.org/01/09506000134352 (prefix)",
+    "spendCap": "CHF 39.80 ≤ CHF 50.00"
+  },
+  "payment": {
+    "status": "not-initiated",
+    "note": "Order only. No money moved; payment rails are outside this demonstration."
+  },
+  "verifiedAt": "2026-09-08T10:52:18.220Z"
+}
+
+3. Receipt independently verified. Revoke the grant on the RP status list.
+
+4. Retry with the same credential and holder key after revocation
+{
+  "error": "delegation_invalid",
+  "reason": "Delegation agentic-commerce-107-1788864737892 invalid: Credential revoked via StatusList2021 (revocation)"
+}
+
+5. Honest Merkle bundle must verify. The tampered bundle must fail.
+{
+ "bundle": "/Users/dylanhobbs/Documents/@kya-os/kya-os-mcp/examples/agentic-commerce/var/audit/bundle.json",
+ "verdict": "valid",
+ "dimensions": {
+  "manifest": "valid",
+  "entries": "valid",
+  "chain": "valid",
+  "checkpoint": "valid",
+  "inclusion": "valid",
+  "witness": "valid"
+ },
+ "checks": 500,
+ "failed": 0,
+ "failures": []
+}
+{
+ "bundle": "/Users/dylanhobbs/Documents/@kya-os/kya-os-mcp/examples/agentic-commerce/var/audit/bundle.tampered.json",
+ "verdict": "invalid",
+ "dimensions": {
+  "manifest": "valid",
+  "entries": "valid",
+  "chain": "invalid",
+  "checkpoint": "invalid",
+  "inclusion": "invalid",
+  "witness": "valid"
+ },
+ "checks": 500,
+ "failed": 55,
+ "failures": [
+  {
+   "section": "chain",
+   "check": "#52 previousEntryDigest",
+   "ok": false,
+   "detail": "names sha256:3515f8935ac5b76f\u2026, predecessor is sha256:cd759c5d6c25d431\u2026"
+  },
+  {
+   "section": "checkpoint",
+   "check": "RFC 9162 root recomputed from entry digests",
+   "ok": false,
+   "detail": "recomputed sha256:1935d389dcbfb451\u2026 \u2260 signed sha256:c4390815a1060d7e\u2026"
+  },
+  {
+   "section": "inclusion",
+   "check": "#0 audit path \u2192 root",
+   "ok": false
+  },
+  {
+   "section": "inclusion",
+   "check": "#1 audit path \u2192 root",
+   "ok": false
+  },
+  {
+   "section": "inclusion",
+   "check": "#2 audit path \u2192 root",
+   "ok": false
+  },
+  {
+   "note": "\u2026 and 50 more"
+  }
+ ]
+}
+
+DONE: human grant, allowed order, revoked denial, honest ledger verified, tampering rejected.
+Evidence: /Users/dylanhobbs/Documents/@kya-os/kya-os-mcp/examples/agentic-commerce/var/audit/bundle.json
+Press E on the projector to show the exported evidence.

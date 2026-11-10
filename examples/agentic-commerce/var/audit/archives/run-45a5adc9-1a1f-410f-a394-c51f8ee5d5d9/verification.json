@@ -1,0 +1,36 @@
+{
+  "schema": "https://schema.kya-os.org/v1/protocol/audit/verification-report/v1.0.0",
+  "policyId": "urn:kya-os:example:agentic-commerce:policy:epoch-42c56ca8-1f08-4fd5-81a0-0c3bf43bf5fb",
+  "cryptographicIntegrity": {
+    "verdict": "valid",
+    "reasonCodes": []
+  },
+  "chainIntegrity": {
+    "verdict": "valid",
+    "reasonCodes": []
+  },
+  "checkpointIntegrity": {
+    "verdict": "valid",
+    "reasonCodes": []
+  },
+  "anchorIntegrity": {
+    "verdict": "valid",
+    "reasonCodes": []
+  },
+  "scopeEvidenceCompleteness": {
+    "verdict": "valid",
+    "reasonCodes": []
+  },
+  "authorizedAsObserved": {
+    "verdict": "indeterminate",
+    "reasonCodes": [
+      "AUDIT_AUTHORIZATION_COLLATERAL_NOT_VERIFIED"
+    ]
+  },
+  "currentAuthorization": {
+    "verdict": "indeterminate",
+    "reasonCodes": [
+      "AUDIT_CURRENT_AUTHORIZATION_NOT_EVALUATED"
+    ]
+  }
+}

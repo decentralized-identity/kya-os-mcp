@@ -857,6 +857,31 @@ describe('delegation issuer anchoring and nonce admission settings', () => {
     expect(reports).toHaveLength(1);
   });
 
+  it('accepts a re-delegation that is wider than its parent, logging each finding once', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const now = Math.floor(Date.now() / 1000);
+    const server = await makeIdentity();
+    const user = await makeIdentity();
+    const middle = await makeIdentity();
+    const agent = await makeIdentity();
+    const parent = await issueVC(middle.did, [SCOPE], undefined, undefined, {
+      issuer: user, constraints: { audience: server.did, notAfter: now + 60 },
+    });
+    const leaf = await issueVC(agent.did, [SCOPE], undefined, undefined, {
+      issuer: middle, parentId: parent.credentialSubject.delegation.id,
+      constraints: { audience: [server.did, 'did:web:elsewhere.example'], notAfter: now + 600 },
+    });
+    const { middleware } = await makeServer({ server, delegation: { resolveDelegationChain: async () => [parent] } });
+    const handler = delegationHandler(middleware);
+    expect(reached(await handler({ _kyaos_delegation: leaf }, 'first'))).toBe(true);
+    expect(reached(await handler({ _kyaos_delegation: leaf }, 'second'))).toBe(true);
+    const leafId = leaf.credentialSubject.delegation.id;
+    const reports = warn.mock.calls.map(([message]) => String(message)).filter((message) => message.includes(leafId));
+    expect(reports).toHaveLength(2);
+    expect(reports.some((message) => message.includes('expires after parent'))).toBe(true);
+    expect(reports.some((message) => message.includes('names an audience parent') && message.includes('did:web:elsewhere.example'))).toBe(true);
+  });
+
   it('warns at startup when trustedRootIssuers is unset, and not when it is set', async () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     await makeServer();

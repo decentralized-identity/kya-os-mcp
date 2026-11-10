@@ -246,7 +246,8 @@ export function createDelegationVerification(
     );
   }
 
-  // Root credentials whose claimed issuerDid is not their signer are accepted
+  // A root whose claimed issuerDid is not its signer, and a re-delegation that
+  // is wider than its parent (attenuationWarnings), are accepted
   // for compatibility but reported: each distinct message at most once an hour,
   // with the oldest evicted first so the set stays bounded.
   const reportedChainWarnings = new TtlCache<true>({ ttlMs: 60 * 60 * 1000, maxEntries: 256 });

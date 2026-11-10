@@ -109,6 +109,7 @@
     "example:anti-mitm": "npx tsx --tsconfig tsconfig.examples.json examples/verify-proof/anti-mitm-demo.ts",
     "example:entity-card": "npx tsx --tsconfig tsconfig.examples.json examples/entity-card/walkthrough.ts",
     "example:entity-card:server": "npx tsx --tsconfig tsconfig.examples.json examples/entity-card/server.ts",
+    "example:chain-by-value": "npx tsx --tsconfig tsconfig.examples.json examples/chain-by-value/walkthrough.ts",
     "example:embedded-agent": "npx tsx --tsconfig tsconfig.examples.json examples/embedded-agent/walkthrough.ts",
     "example:authz-inspector": "npx @modelcontextprotocol/inspector npx tsx --tsconfig tsconfig.examples.json examples/authz-inspector/src/stdio.ts",
     "example:authz-inspector:http": "npx tsx --tsconfig tsconfig.examples.json examples/authz-inspector/src/inspector-http.ts",

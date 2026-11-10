@@ -1,0 +1,16 @@
+kind: Added
+body: |-
+    **A request can carry its delegation chain, so a server can verify an
+    agent acting for another organization without a lookup.** Put the chain
+    in `_meta['org.kya-os/delegation-chain']` with `toDelegationChainMeta`.
+    `verifyRequestDelegation`, and the `requireDelegation` guard that runs
+    after `requireProof`, verify it in a fixed order: chain rules, the leaf
+    delegate equal to the caller's proof DID, trusted roots, every hop's
+    signature, the invoked action, then live revocation. With no chain in
+    the request they verify one resolved by reference instead. A carried
+    chain is bounded to 10 credentials by default. Hops are signed and
+    checked with `signDelegationCredential` and
+    `createDelegationProofVerifier` (`eddsa-jcs-2022`), and status lists can
+    be signed with `signStatusListCredential`. Run
+    `npm run example:chain-by-value` to see it end to end.
+time: 2026-11-03T22:29:24.904499-08:00

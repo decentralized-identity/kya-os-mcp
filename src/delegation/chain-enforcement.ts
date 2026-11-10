@@ -13,11 +13,13 @@
  */
 import {
   extractDelegationFromVC,
+  type CrispScope,
   type DelegationCredential,
   type DelegationRecord,
 } from "../types/protocol.js";
+import { canonicalizeJson } from "../utils/canonical-json.js";
 import { verifyDelegationAudience } from "./audience-validator.js";
-import { authorityContains, crispScopes, scopeAuthority } from "./scope-matcher.js";
+import { authorityContains, crispScopes, matcherContains, scopeAuthority } from "./scope-matcher.js";
 import { credentialIssuerDid } from "./vc-jwt-verify.js";
 
 /** Union of a credential's delegation scopes and its constraint scopes. */
@@ -82,6 +84,120 @@ export function validateScopeAttenuation(
   }
 
   return { valid: true };
+}
+
+/** The earliest finite expiry a credential states (ms epoch), from `expirationDate` and `constraints.notAfter`. */
+function statedExpiry(credential: DelegationCredential): number | undefined {
+  const notAfter = credential?.credentialSubject?.delegation?.constraints?.notAfter;
+  const deadlines = [
+    credential?.expirationDate ? Date.parse(credential.expirationDate) : undefined,
+    notAfter !== undefined ? notAfter * 1000 : undefined,
+  ].filter((deadline): deadline is number => deadline !== undefined && Number.isFinite(deadline));
+  return deadlines.length > 0 ? Math.min(...deadlines) : undefined;
+}
+
+/** The DIDs a credential's `constraints.audience` names, or undefined when it names none. */
+function statedAudience(credential: DelegationCredential): string[] | undefined {
+  const audience = credential?.credentialSubject?.delegation?.constraints?.audience;
+  if (typeof audience === "string") return [audience];
+  return Array.isArray(audience) ? audience.filter((did) => typeof did === "string") : undefined;
+}
+
+/** A scope's `constraints` record as entries; anything but a plain object constrains nothing. */
+function constraintEntries(constraints: unknown): [string, unknown][] {
+  return constraints !== null && typeof constraints === "object" && !Array.isArray(constraints)
+    ? Object.entries(constraints)
+    : [];
+}
+
+/** A credential's scope authority, or none when its scope fields are not lists and cannot be read. */
+function readableAuthority(credential: DelegationCredential): CrispScope[] {
+  try {
+    return scopeAuthority(credential);
+  } catch {
+    return [];
+  }
+}
+
+/** RFC 8785 equality. A value that cannot be canonicalized equals nothing. */
+function sameJson(a: unknown, b: unknown): boolean {
+  try {
+    return canonicalizeJson(a) === canonicalizeJson(b);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * SPEC.md §6.4: "Scope constraints MUST be equal to or narrower than parent's
+ * constraints." Ways a re-delegation is wider than its parent, or cannot be
+ * shown not to be, that chain validation accepts today:
+ *
+ * - it expires after its parent, or states no expiry when its parent does.
+ *   Each credential's own expiry is still checked on every use, so the child
+ *   is honored only as long as its parent;
+ * - it names an audience its parent does not, or none when its parent names
+ *   one. Each credential's own audience is still checked, so the extra
+ *   audience grants nothing;
+ * - one of its scopes lies inside parent scopes that all carry per-scope
+ *   `constraints`, and repeats none of those records. Constraint keys are
+ *   opaque to the verifier, so only a key repeated with an equal value (RFC
+ *   8785) is provably no wider. A parent's flat scope, or a CRISP scope with
+ *   no `constraints`, covers a child scope without conditions.
+ *
+ * These are reported, not refused: `validateDelegationChain` returns them as
+ * `warnings` on a chain that validates. Issuers can call this before minting
+ * to see what a strict verifier would refuse. Pure. Never throws: a field it
+ * cannot read yields no warning, so it cannot turn a chain that validates
+ * into an error.
+ */
+export function attenuationWarnings(
+  parentCredential: DelegationCredential,
+  childCredential: DelegationCredential,
+): string[] {
+  const parentId = parentCredential?.credentialSubject?.delegation?.id;
+  const childId = childCredential?.credentialSubject?.delegation?.id;
+  const warnings = new Set<string>();
+
+  const parentExpiry = statedExpiry(parentCredential);
+  const childExpiry = statedExpiry(childCredential);
+  if (parentExpiry !== undefined && childExpiry === undefined) {
+    warnings.add(`Delegation ${childId} states no expiry but parent ${parentId} does`);
+  } else if (parentExpiry !== undefined && childExpiry !== undefined && childExpiry > parentExpiry) {
+    warnings.add(`Delegation ${childId} expires after parent ${parentId}`);
+  }
+
+  const parentAudience = statedAudience(parentCredential);
+  const childAudience = statedAudience(childCredential);
+  if (parentAudience !== undefined && childAudience === undefined) {
+    warnings.add(`Delegation ${childId} names no audience but parent ${parentId} does`);
+  } else if (parentAudience !== undefined && childAudience !== undefined) {
+    const added = childAudience.filter((did) => !parentAudience.includes(did));
+    if (added.length > 0) {
+      warnings.add(`Delegation ${childId} names an audience parent ${parentId} does not: ${added.join(", ")}`);
+    }
+  }
+
+  const parentAuthority = readableAuthority(parentCredential);
+  for (const scope of readableAuthority(childCredential)) {
+    const required = parentAuthority
+      .filter((entry) => matcherContains(entry, scope))
+      .map((entry) => constraintEntries(entry.constraints));
+    // No covering parent scope is scope attenuation's to refuse, not this function's.
+    if (required.length === 0) continue;
+    const carried = new Map(constraintEntries(scope.constraints));
+    // An unconstrained covering scope has no entries, so it is repeated vacuously.
+    const repeatsOne = required.some((entries) =>
+      entries.every(([key, value]) => carried.has(key) && sameJson(carried.get(key), value)),
+    );
+    if (!repeatsOne) {
+      warnings.add(
+        `Delegation ${childId} scope ${scope.matcher}:${scope.resource} does not repeat the constraints parent ${parentId} places on it`,
+      );
+    }
+  }
+
+  return Array.from(warnings);
 }
 
 /** Per-credential verifier port (signature / schema / expiry / own status). */
@@ -159,7 +275,11 @@ export interface ChainValidationResult {
   reason?: string;
   /** Earliest verified credential/constraint expiry across the chain (ms epoch). */
   expiresAt?: number;
-  /** Non-fatal inconsistencies worth logging, such as a root whose issuerDid is not its signer. */
+  /**
+   * Non-fatal findings worth logging on a chain that validated: a root whose
+   * issuerDid is not its signer, and each way a re-delegation is wider than
+   * its parent ({@link attenuationWarnings}).
+   */
   warnings?: string[];
 }
 
@@ -309,16 +429,9 @@ export async function validateDelegationChain(
 
     // Use the already-verified walk so grant lifetime cannot outlive a shorter
     // ancestor or constraint. Expiry/status are still rechecked on every call.
-    const deadlines = [
-      credential.expirationDate ? Date.parse(credential.expirationDate) : undefined,
-      delegation.constraints.notAfter !== undefined
-        ? delegation.constraints.notAfter * 1000
-        : undefined,
-    ];
-    for (const deadline of deadlines) {
-      if (deadline !== undefined && Number.isFinite(deadline)) {
-        expiresAt = Math.min(expiresAt ?? deadline, deadline);
-      }
+    const deadline = statedExpiry(credential);
+    if (deadline !== undefined) {
+      expiresAt = Math.min(expiresAt ?? deadline, deadline);
     }
 
     if (!verifyDelegationAudience(delegation, deps.serverDid)) {
@@ -400,6 +513,7 @@ export async function validateDelegationChain(
     if (!scopeValidation.valid) {
       return scopeValidation;
     }
+    warnings.push(...attenuationWarnings(previousCredential, credential));
 
     previousDelegation = delegation;
     previousCredential = credential;

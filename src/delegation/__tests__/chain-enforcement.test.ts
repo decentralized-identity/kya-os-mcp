@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 
 import {
+  attenuationWarnings,
   validateDelegationChain,
   validateScopeAttenuation,
   getDelegationScopes,
@@ -509,6 +510,216 @@ describe("validateDelegationChain: who actually issued each link", () => {
 
     it("trusts no issuer when the list is empty", async () => {
       expect((await validateDelegationChain(root, { ...baseDeps, trustedRootIssuers: [] })).valid).toBe(false);
+    });
+  });
+});
+
+describe("attenuationWarnings (SPEC.md §6.4)", () => {
+  type Extra = {
+    scopes?: string[];
+    crisp?: CrispScope[];
+    audience?: string | string[];
+    notAfter?: number;
+    expirationDate?: string;
+  };
+  const link = (id: string, parentId: string | undefined, extra: Extra): DelegationCredential => {
+    const base = cred({
+      id,
+      issuerDid: parentId ? "did:agent" : "did:user",
+      subjectDid: parentId ? "did:sub" : "did:agent",
+      ...(parentId ? { parentId } : {}),
+      ...(extra.scopes ? { scopes: extra.scopes } : {}),
+      ...(extra.crisp ? { crisp: extra.crisp } : {}),
+      ...(extra.audience !== undefined ? { audience: extra.audience } : {}),
+    });
+    if (extra.notAfter !== undefined) base.credentialSubject.delegation.constraints.notAfter = extra.notAfter;
+    return { ...base, ...(extra.expirationDate ? { expirationDate: extra.expirationDate } : {}) };
+  };
+  const warn = (parent: Extra, child: Extra) =>
+    attenuationWarnings(link("p", undefined, { scopes: ["read"], ...parent }), link("c", "p", { scopes: ["read"], ...child }));
+
+  it("says nothing about a child that narrows every dimension", () => {
+    const limit = { maxRows: 100, columns: ["a", "b"] };
+    expect(
+      warn(
+        { scopes: [], crisp: [{ resource: "notes", matcher: "path-prefix", constraints: limit }], audience: [SERVER, "did:web:other.example"], notAfter: 2000 },
+        { scopes: [], crisp: [{ resource: "notes/2026", matcher: "path-prefix", constraints: limit }], audience: SERVER, notAfter: 1000 },
+      ),
+    ).toEqual([]);
+  });
+
+  describe("expiry", () => {
+    it("reports a child that expires after its parent", () => {
+      expect(warn({ notAfter: 1000 }, { notAfter: 1001 })).toEqual(["Delegation c expires after parent p"]);
+    });
+    it("reports a child with no expiry under a parent that has one", () => {
+      expect(warn({ notAfter: 1000 }, {})).toEqual(["Delegation c states no expiry but parent p does"]);
+    });
+    it("reads the earlier of expirationDate and notAfter on both sides", () => {
+      const parent = { notAfter: 5000, expirationDate: new Date(1000 * 1000).toISOString() };
+      expect(warn(parent, { notAfter: 1000 })).toEqual([]);
+      expect(warn(parent, { notAfter: 1001 })).toEqual(["Delegation c expires after parent p"]);
+      expect(warn(parent, { notAfter: 9000, expirationDate: new Date(999 * 1000).toISOString() })).toEqual([]);
+    });
+    it("accepts an equal expiry, and any expiry under a parent without one", () => {
+      expect(warn({ notAfter: 1000 }, { notAfter: 1000 })).toEqual([]);
+      expect(warn({}, { notAfter: 1000 })).toEqual([]);
+      expect(warn({}, {})).toEqual([]);
+    });
+    it("ignores an unreadable expirationDate, which the per-credential check refuses on its own", () => {
+      expect(warn({ expirationDate: "not a date", notAfter: 1000 }, { notAfter: 1000 })).toEqual([]);
+      expect(warn({ expirationDate: "not a date" }, {})).toEqual([]);
+    });
+  });
+
+  describe("audience", () => {
+    it("reports each audience the parent does not name", () => {
+      expect(warn({ audience: SERVER }, { audience: [SERVER, "did:web:b.example", "did:web:c.example"] })).toEqual([
+        "Delegation c names an audience parent p does not: did:web:b.example, did:web:c.example",
+      ]);
+    });
+    it("reports a child with no audience under a parent that names one", () => {
+      expect(warn({ audience: [SERVER] }, {})).toEqual(["Delegation c names no audience but parent p does"]);
+    });
+    it("accepts a subset in either form, and any audience under a parent without one", () => {
+      expect(warn({ audience: [SERVER, "did:web:b.example"] }, { audience: SERVER })).toEqual([]);
+      expect(warn({ audience: SERVER }, { audience: [SERVER] })).toEqual([]);
+      expect(warn({}, { audience: "did:web:anywhere.example" })).toEqual([]);
+    });
+  });
+
+  describe("per-scope constraints", () => {
+    const constrained = (constraints: Record<string, unknown>, resource = "notes"): CrispScope => ({
+      resource,
+      matcher: "path-prefix",
+      constraints,
+    });
+    const dropped = "Delegation c scope path-prefix:notes/2026 does not repeat the constraints parent p places on it";
+
+    it("reports a child scope that drops its parent's constraints", () => {
+      expect(
+        warn({ scopes: [], crisp: [constrained({ maxRows: 100 })] }, { scopes: [], crisp: [{ resource: "notes/2026", matcher: "path-prefix" }] }),
+      ).toEqual([dropped]);
+    });
+    it("reports a changed value, since the verifier cannot tell tighter from looser", () => {
+      expect(
+        warn({ scopes: [], crisp: [constrained({ maxRows: 100 })] }, { scopes: [], crisp: [constrained({ maxRows: 50 }, "notes/2026")] }),
+      ).toEqual([dropped]);
+    });
+    it("reports a missing key even when the others are repeated", () => {
+      expect(
+        warn(
+          { scopes: [], crisp: [constrained({ maxRows: 100, region: "eu" })] },
+          { scopes: [], crisp: [constrained({ maxRows: 100 }, "notes/2026")] },
+        ),
+      ).toEqual([dropped]);
+    });
+    it("accepts every key repeated with an equal value, in any key order, with keys of its own", () => {
+      expect(
+        warn(
+          { scopes: [], crisp: [constrained({ window: { from: 1, to: 2 }, maxRows: 100 })] },
+          { scopes: [], crisp: [constrained({ maxRows: 100, window: { to: 2, from: 1 }, purpose: "audit" }, "notes/2026")] },
+        ),
+      ).toEqual([]);
+    });
+    it("reports a flat child scope that only a constrained parent scope covers", () => {
+      expect(warn({ scopes: [], crisp: [{ resource: "read", matcher: "exact", constraints: { maxRows: 1 } }] }, {})).toEqual([
+        "Delegation c scope exact:read does not repeat the constraints parent p places on it",
+      ]);
+    });
+    it("says nothing when a flat parent scope or an unconstrained matcher also covers the child scope", () => {
+      const child = { scopes: ["notes/2026"], crisp: [{ resource: "notes/2026", matcher: "path-prefix" as const }] };
+      expect(warn({ scopes: ["notes/2026"], crisp: [constrained({ maxRows: 100 })] }, { ...child, crisp: [] })).toEqual([]);
+      expect(
+        warn({ scopes: [], crisp: [constrained({ maxRows: 100 }), { resource: "notes", matcher: "path-prefix", constraints: {} }] }, { ...child, scopes: [] }),
+      ).toEqual([]);
+    });
+    it("is satisfied by repeating any one covering parent scope's constraints", () => {
+      expect(
+        warn(
+          { scopes: [], crisp: [constrained({ maxRows: 100 }), constrained({ region: "eu" }, "notes/2026")] },
+          { scopes: [], crisp: [constrained({ region: "eu" }, "notes/2026/q3")] },
+        ),
+      ).toEqual([]);
+    });
+    it("says nothing about a scope the parent does not cover, which scope attenuation already refuses", () => {
+      expect(warn({ scopes: [], crisp: [constrained({ maxRows: 100 })] }, { scopes: ["admin"] })).toEqual([]);
+    });
+    it("reports a constraint value that cannot be canonicalized, rather than throwing", () => {
+      expect(
+        warn({ scopes: [], crisp: [constrained({ cap: 10n })] }, { scopes: [], crisp: [constrained({ cap: 10n }, "notes/2026")] }),
+      ).toEqual([dropped]);
+    });
+  });
+
+  it("reports one scope once however many times the child lists it", () => {
+    // cred() writes each flat scope to both delegation.scopes and constraints.scopes.
+    expect(warn({ scopes: [], crisp: [{ resource: "read", matcher: "exact", constraints: { maxRows: 1 } }] }, { scopes: ["read"] })).toHaveLength(1);
+  });
+
+  it("never throws on a malformed credential", () => {
+    const withConstraints = (constraints: unknown, scopes?: unknown) => ({ credentialSubject: { delegation: { ...(scopes !== undefined ? { scopes } : {}), constraints } } });
+    const malformed = [
+      undefined,
+      null,
+      {},
+      { credentialSubject: {} },
+      withConstraints({ audience: 7, crisp: { scopes: [null, 3, {}] } }),
+      // Scope fields that are not lists: the shipped readers spread them.
+      withConstraints({}, 5),
+      withConstraints({ scopes: 5 }),
+      withConstraints({ crisp: { scopes: {} } }),
+      withConstraints({ crisp: { scopes: 5 } }),
+      withConstraints({ notAfter: {}, audience: [null, {}] }),
+    ];
+    for (const parent of malformed) {
+      for (const child of malformed) {
+        expect(() => attenuationWarnings(parent as unknown as DelegationCredential, child as unknown as DelegationCredential)).not.toThrow();
+      }
+    }
+  });
+
+  describe("in validateDelegationChain", () => {
+    const root = link("root", undefined, { scopes: ["read", "write"], audience: SERVER, notAfter: 1000 });
+    const deps = (ancestors: DelegationCredential[]): ChainEnforcementDeps => ({ ...baseDeps, resolveDelegationChain: async () => ancestors });
+
+    it("validates the chain and returns the warnings, hop by hop, root first", async () => {
+      const middle = { ...link("middle", "root", { scopes: ["read"], audience: SERVER, notAfter: 2000 }), issuer: "did:agent" };
+      const leaf = {
+        ...cred({ id: "leaf", issuerDid: "did:sub", subjectDid: "did:leaf", parentId: "middle", scopes: ["read"], audience: [SERVER, "did:web:b.example"] }),
+      };
+      const result = await validateDelegationChain(leaf, deps([root, middle]));
+      expect(result.valid).toBe(true);
+      expect(result.expiresAt).toBe(1000 * 1000);
+      expect(result.warnings).toEqual([
+        "Delegation middle expires after parent root",
+        "Delegation leaf states no expiry but parent middle does",
+        "Delegation leaf names an audience parent middle does not: did:web:b.example",
+      ]);
+    });
+
+    it("returns no warnings for a chain that narrows", async () => {
+      const leaf = link("leaf", "root", { scopes: ["read"], audience: SERVER, notAfter: 500 });
+      expect(await validateDelegationChain(leaf, deps([root]))).toEqual({ valid: true, expiresAt: 500 * 1000 });
+    });
+
+    it("still validates a chain whose scope fields it cannot read", async () => {
+      // An unrestricted parent accepts any child without reading the child's scopes,
+      // so this chain validated before the warnings existed and must not throw now.
+      const openRoot = link("root", undefined, { audience: SERVER });
+      openRoot.credentialSubject.delegation.constraints = { audience: SERVER };
+      delete openRoot.credentialSubject.delegation.scopes;
+      const leaf = link("leaf", "root", { audience: SERVER });
+      leaf.credentialSubject.delegation.constraints = { audience: SERVER, crisp: { scopes: {} } } as never;
+      delete leaf.credentialSubject.delegation.scopes;
+      expect(await validateDelegationChain(leaf, deps([openRoot]))).toEqual({ valid: true });
+    });
+
+    it("returns no warnings with a refusal", async () => {
+      const leaf = link("leaf", "root", { scopes: ["admin"], audience: SERVER, notAfter: 2000 });
+      const result = await validateDelegationChain(leaf, deps([root]));
+      expect(result.valid).toBe(false);
+      expect(result.warnings).toBeUndefined();
     });
   });
 });

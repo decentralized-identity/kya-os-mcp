@@ -1,0 +1,15 @@
+[SessionManager] Using MemoryNonceCacheProvider — not suitable for multi-instance deployments. Use Redis, DynamoDB, or Cloudflare KV for production.
+Responsible Party hub: http://localhost:53647
+  did:          did:web:localhost%3A53647
+  did.json:     http://localhost:53647/.well-known/did.json
+  status list:  http://localhost:53647/status-list
+  revocation:   software-confirmed
+Merchant edge: http://localhost:53648
+  console:    http://localhost:53648/
+  discovery:  http://localhost:53648/.well-known/mcp
+  MCP:        http://localhost:53648/mcp
+  did:        did:key:z6Mkg3NdaR4Fwf4hZXoNxxKb4XUbgFS1rG4VvZBeKLX3mbkD
+  trusts RP:  did:web:localhost%3A53647 (list: http://localhost:53647/status-list)
+  audit:      kya:merchant:klx3mbkd:orders · AAP-1 · delivery required · witness http://localhost:53647
+BROWSER_FIXTURE_READY
+[kya-os] Delegation verification failed for "place_order": Delegation agentic-commerce-94-1788875315192 invalid: Credential revoked via StatusList2021 (revocation)

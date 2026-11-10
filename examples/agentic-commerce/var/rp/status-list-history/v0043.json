@@ -1,0 +1,26 @@
+{
+  "@context": [
+    "https://www.w3.org/2018/credentials/v1",
+    "https://w3id.org/vc/status-list/2021/v1"
+  ],
+  "id": "http://localhost:4950/status-list",
+  "type": [
+    "VerifiableCredential",
+    "StatusList2021Credential"
+  ],
+  "issuer": "did:web:localhost%3A4950",
+  "issuanceDate": "2026-09-09T00:45:28.442Z",
+  "credentialSubject": {
+    "id": "http://localhost:4950/status-list#list",
+    "type": "StatusList2021",
+    "statusPurpose": "revocation",
+    "encodedList": "uH4sIAAAAAAAAE-3BMREAMAgEsD8c1L-OaqoMuiGBKUky6t3TAQAAAAAAAAAAAAAAAAAAANZ9ZuV14ABAAAA"
+  },
+  "proof": {
+    "type": "Ed25519Signature2020",
+    "created": "2026-09-09T00:45:28.442Z",
+    "verificationMethod": "did:web:localhost%3A4950#key-1",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "vti_FA-ACqnxrnL7XfN4cXl0qm4rXxYnvr2JyHUIBTeQV2gk_LnF888RHTOVq_D_u756tInR6GOjbAeFVs_XBg"
+  }
+}

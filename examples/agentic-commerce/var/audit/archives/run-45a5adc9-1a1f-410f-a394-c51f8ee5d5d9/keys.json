@@ -1,0 +1,22 @@
+{
+  "keys": [
+    {
+      "kid": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N#z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N",
+      "jwk": {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "I7hoUzI45l4WQ4Rvc_E3p8Jobyzk9MrVFL_eXQHKCc8",
+        "kid": "did:key:z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N#z6MkgrhQVX7j7BNBNBE8rkbqkQi2h9cjJK115XP9n7bkL24N"
+      }
+    },
+    {
+      "kid": "did:web:localhost%3A4950#key-1",
+      "jwk": {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "fws5Sm-NcANhYstemKkmWNBYe9XqcbzOW1c5cpkJqzY",
+        "kid": "did:web:localhost%3A4950#key-1"
+      }
+    }
+  ]
+}

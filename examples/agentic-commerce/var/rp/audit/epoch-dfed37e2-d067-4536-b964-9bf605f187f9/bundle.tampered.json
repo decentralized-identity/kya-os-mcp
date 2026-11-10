@@ -1,0 +1,301 @@
+{
+  "manifest": {
+    "core": {
+      "schema": "https://schema.kya-os.org/v1/protocol/audit/bundle-manifest/v1.0.0",
+      "bundleId": "urn:kya-os:example:agentic-commerce:bundle:epoch-dfed37e2-d067-4536-b964-9bf605f187f9:2:edited",
+      "formatVersion": "1.0.0",
+      "selections": [
+        {
+          "ledgerId": "kya:responsible-party:t%3a4950:consent",
+          "ledgerEpochId": "epoch-dfed37e2-d067-4536-b964-9bf605f187f9",
+          "firstSequence": "0",
+          "lastSequence": "1",
+          "expectedHeadDigest": "sha256:10cad4e16cd6729fc580498d7f5e0f98a1fb4a13c2d58f2f6010278f33b73b83",
+          "checkpointTreeSizes": [
+            "2"
+          ]
+        }
+      ],
+      "exporter": {
+        "did": "did:web:localhost%3A4950",
+        "kid": "did:web:localhost%3A4950#key-1",
+        "alg": "EdDSA"
+      },
+      "purpose": "stage-replay",
+      "exportedAt": 1788903827880,
+      "verificationPolicyDigest": "sha256:4f05d8299204bb8a512b8c8c56b8e477f3fc3efa9c2c14a17c8d6a871ff1354a",
+      "inventory": [
+        {
+          "path": "checkpoints.json",
+          "mediaType": "application/vnd.kya-os.audit.checkpoints.v1+json",
+          "disposition": "included",
+          "digest": "sha256:443cc2f6c0b068d6e1cc9d2564aeec7342bd7bf2d370b1e929d187ee6a1e5420",
+          "size": "2000"
+        },
+        {
+          "path": "entries.json",
+          "mediaType": "application/vnd.kya-os.audit.entries.v1+json",
+          "disposition": "included",
+          "digest": "sha256:b89d49f5ea112eb3ffdf2e7ba170f024a96d3c9c0be9d426dfa58b1b873eb385",
+          "size": "6919"
+        },
+        {
+          "path": "inclusion-proofs.json",
+          "mediaType": "application/vnd.kya-os.audit.inclusion-proofs.v1+json",
+          "disposition": "included",
+          "digest": "sha256:a0b10f5b306ed0cbbed2be68ce9f734769c6ff9939da933cffb8adfda8d4dc02",
+          "size": "881"
+        }
+      ],
+      "integritySuite": "KYA-AUDIT-BUNDLE-JCS-SHA256-JWS-2026"
+    },
+    "manifestDigest": "sha256:0601f455e3fbbd3a743f8dd2cfae1b4471de1132522d09f667e9440bcc6363a8",
+    "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6bG9jYWxob3N0JTNBNDk1MCNrZXktMSJ9.eyJidW5kbGVJZCI6InVybjpreWEtb3M6ZXhhbXBsZTphZ2VudGljLWNvbW1lcmNlOmJ1bmRsZTplcG9jaC1kZmVkMzdlMi1kMDY3LTQ1MzYtYjk2NC05YmY2MDVmMTg3Zjk6MjplZGl0ZWQiLCJleHBvcnRlZEF0IjoxNzg4OTAzODI3ODgwLCJleHBvcnRlciI6eyJhbGciOiJFZERTQSIsImRpZCI6ImRpZDp3ZWI6bG9jYWxob3N0JTNBNDk1MCIsImtpZCI6ImRpZDp3ZWI6bG9jYWxob3N0JTNBNDk1MCNrZXktMSJ9LCJmb3JtYXRWZXJzaW9uIjoiMS4wLjAiLCJpbnRlZ3JpdHlTdWl0ZSI6IktZQS1BVURJVC1CVU5ETEUtSkNTLVNIQTI1Ni1KV1MtMjAyNiIsImludmVudG9yeSI6W3siZGlnZXN0Ijoic2hhMjU2OjQ0M2NjMmY2YzBiMDY4ZDZlMWNjOWQyNTY0YWVlYzczNDJiZDdiZjJkMzcwYjFlOTI5ZDE4N2VlNmExZTU0MjAiLCJkaXNwb3NpdGlvbiI6ImluY2x1ZGVkIiwibWVkaWFUeXBlIjoiYXBwbGljYXRpb24vdm5kLmt5YS1vcy5hdWRpdC5jaGVja3BvaW50cy52MStqc29uIiwicGF0aCI6ImNoZWNrcG9pbnRzLmpzb24iLCJzaXplIjoiMjAwMCJ9LHsiZGlnZXN0Ijoic2hhMjU2OmI4OWQ0OWY1ZWExMTJlYjNmZmRmMmU3YmExNzBmMDI0YTk2ZDNjOWMwYmU5ZDQyNmRmYTU4YjFiODczZWIzODUiLCJkaXNwb3NpdGlvbiI6ImluY2x1ZGVkIiwibWVkaWFUeXBlIjoiYXBwbGljYXRpb24vdm5kLmt5YS1vcy5hdWRpdC5lbnRyaWVzLnYxK2pzb24iLCJwYXRoIjoiZW50cmllcy5qc29uIiwic2l6ZSI6IjY5MTkifSx7ImRpZ2VzdCI6InNoYTI1NjphMGIxMGY1YjMwNmVkMGNiYmVkMmJlNjhjZTlmNzM0NzY5YzZmZjk5MzlkYTkzM2NmZmI4YWRmZGE4ZDRkYzAyIiwiZGlzcG9zaXRpb24iOiJpbmNsdWRlZCIsIm1lZGlhVHlwZSI6ImFwcGxpY2F0aW9uL3ZuZC5reWEtb3MuYXVkaXQuaW5jbHVzaW9uLXByb29mcy52MStqc29uIiwicGF0aCI6ImluY2x1c2lvbi1wcm9vZnMuanNvbiIsInNpemUiOiI4ODEifV0sInB1cnBvc2UiOiJzdGFnZS1yZXBsYXkiLCJzY2hlbWEiOiJodHRwczovL3NjaGVtYS5reWEtb3Mub3JnL3YxL3Byb3RvY29sL2F1ZGl0L2J1bmRsZS1tYW5pZmVzdC92MS4wLjAiLCJzZWxlY3Rpb25zIjpbeyJjaGVja3BvaW50VHJlZVNpemVzIjpbIjIiXSwiZXhwZWN0ZWRIZWFkRGlnZXN0Ijoic2hhMjU2OjEwY2FkNGUxNmNkNjcyOWZjNTgwNDk4ZDdmNWUwZjk4YTFmYjRhMTNjMmQ1OGYyZjYwMTAyNzhmMzNiNzNiODMiLCJmaXJzdFNlcXVlbmNlIjoiMCIsImxhc3RTZXF1ZW5jZSI6IjEiLCJsZWRnZXJFcG9jaElkIjoiZXBvY2gtZGZlZDM3ZTItZDA2Ny00NTM2LWI5NjQtOWJmNjA1ZjE4N2Y5IiwibGVkZ2VySWQiOiJreWE6cmVzcG9uc2libGUtcGFydHk6dCUzYTQ5NTA6Y29uc2VudCJ9XSwidmVyaWZpY2F0aW9uUG9saWN5RGlnZXN0Ijoic2hhMjU2OjRmMDVkODI5OTIwNGJiOGE1MTJiOGM4YzU2YjhlNDc3ZjNmYzNlZmE5YzJjMTRhMTdjOGQ2YTg3MWZmMTM1NGEifQ.ZHfR5EGtf-qLR0auKAUmruON1G1SIlVxJB0MmmkSkeuDf-_tNQoUfUJ7TD86fn-Q6-nd5BgSc_iACoDaUVrjAg"
+  },
+  "components": [
+    {
+      "path": "checkpoints.json",
+      "mediaType": "application/vnd.kya-os.audit.checkpoints.v1+json",
+      "disposition": "included",
+      "digest": "sha256:443cc2f6c0b068d6e1cc9d2564aeec7342bd7bf2d370b1e929d187ee6a1e5420",
+      "size": "2000",
+      "content": [
+        {
+          "checkpointDigest": "sha256:88ec78dfef598783a80810fb4c0a7fce52e0a5973cc72d3d9263de2e2bd34e98",
+          "core": {
+            "checkpointId": "checkpoint:kya:responsible-party:t%3a4950:consent:epoch-dfed37e2-d067-4536-b964-9bf605f187f9:2",
+            "createdAt": 1788903827861,
+            "firstSequence": "0",
+            "headEntryDigest": "sha256:e8f67132c5c1d31f0ffd5005b67f051888654b288a902d01efcac9016ba8edae",
+            "integritySuite": "KYA-AUDIT-RFC9162-SHA256-JWS-2026",
+            "issuer": {
+              "alg": "EdDSA",
+              "did": "did:web:localhost%3A4950",
+              "kid": "did:web:localhost%3A4950#key-1"
+            },
+            "lastSequence": "1",
+            "ledgerEpochId": "epoch-dfed37e2-d067-4536-b964-9bf605f187f9",
+            "ledgerId": "kya:responsible-party:t%3a4950:consent",
+            "previousCheckpointDigest": null,
+            "rootDigest": "sha256:aaeed06d21d56a3836bc028bc65bcf9711789b3d78a74baf1ec83fa6017e6778",
+            "schema": "https://schema.kya-os.org/v1/protocol/audit/checkpoint/v1.0.0",
+            "treeSize": "2"
+          },
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6bG9jYWxob3N0JTNBNDk1MCNrZXktMSJ9.eyJjaGVja3BvaW50SWQiOiJjaGVja3BvaW50Omt5YTpyZXNwb25zaWJsZS1wYXJ0eTp0JTNhNDk1MDpjb25zZW50OmVwb2NoLWRmZWQzN2UyLWQwNjctNDUzNi1iOTY0LTliZjYwNWYxODdmOToyIiwiY3JlYXRlZEF0IjoxNzg4OTAzODI3ODYxLCJmaXJzdFNlcXVlbmNlIjoiMCIsImhlYWRFbnRyeURpZ2VzdCI6InNoYTI1NjplOGY2NzEzMmM1YzFkMzFmMGZmZDUwMDViNjdmMDUxODg4NjU0YjI4OGE5MDJkMDFlZmNhYzkwMTZiYThlZGFlIiwiaW50ZWdyaXR5U3VpdGUiOiJLWUEtQVVESVQtUkZDOTE2Mi1TSEEyNTYtSldTLTIwMjYiLCJpc3N1ZXIiOnsiYWxnIjoiRWREU0EiLCJkaWQiOiJkaWQ6d2ViOmxvY2FsaG9zdCUzQTQ5NTAiLCJraWQiOiJkaWQ6d2ViOmxvY2FsaG9zdCUzQTQ5NTAja2V5LTEifSwibGFzdFNlcXVlbmNlIjoiMSIsImxlZGdlckVwb2NoSWQiOiJlcG9jaC1kZmVkMzdlMi1kMDY3LTQ1MzYtYjk2NC05YmY2MDVmMTg3ZjkiLCJsZWRnZXJJZCI6Imt5YTpyZXNwb25zaWJsZS1wYXJ0eTp0JTNhNDk1MDpjb25zZW50IiwicHJldmlvdXNDaGVja3BvaW50RGlnZXN0IjpudWxsLCJyb290RGlnZXN0Ijoic2hhMjU2OmFhZWVkMDZkMjFkNTZhMzgzNmJjMDI4YmM2NWJjZjk3MTE3ODliM2Q3OGE3NGJhZjFlYzgzZmE2MDE3ZTY3NzgiLCJzY2hlbWEiOiJodHRwczovL3NjaGVtYS5reWEtb3Mub3JnL3YxL3Byb3RvY29sL2F1ZGl0L2NoZWNrcG9pbnQvdjEuMC4wIiwidHJlZVNpemUiOiIyIn0.Vcy3EvFeSD2gW1xhX1DroeV5voxGS3RV4odCXUY39EDz7jK38mZkUFA8A0jsuToSIn47obklYBKeoegIHv1XAg"
+        }
+      ]
+    },
+    {
+      "path": "entries.json",
+      "mediaType": "application/vnd.kya-os.audit.entries.v1+json",
+      "disposition": "included",
+      "digest": "sha256:b89d49f5ea112eb3ffdf2e7ba170f024a96d3c9c0be9d426dfa58b1b873eb385",
+      "size": "6919",
+      "content": [
+        {
+          "core": {
+            "event": {
+              "action": {
+                "category": "ledger.epoch"
+              },
+              "binding": "urn:kya-os:audit-binding:example-consent:v1",
+              "details": {
+                "family": "ledger",
+                "phase": "epoch_started"
+              },
+              "eventId": "genesis:kya:responsible-party:t%3a4950:consent:epoch-dfed37e2-d067-4536-b964-9bf605f187f9",
+              "eventType": "ledger.epoch.started",
+              "eventVersion": "1.0.0",
+              "evidence": [],
+              "occurredAt": 1788903827858,
+              "outcome": "succeeded",
+              "privacy": {
+                "classification": "internal",
+                "retentionClass": "integrity-ledger"
+              },
+              "resource": {
+                "did": "did:web:localhost%3A4950",
+                "kind": "public_did"
+              },
+              "schema": "https://schema.kya-os.org/v1/protocol/audit/event/v1.0.0",
+              "source": {
+                "producer": {
+                  "did": "did:web:localhost%3A4950",
+                  "kind": "public_did"
+                },
+                "sourceId": "responsible-party-edge",
+                "sourceSequence": "0"
+              },
+              "tenantRef": {
+                "keyId": "responsible-party-tenant-v1",
+                "kind": "keyed_commitment",
+                "value": "sha256:1df70a9ba69246411db2eec10dd3230e9e72cae98d957142afadf26ccc539212"
+              }
+            },
+            "eventDigest": "sha256:fb48f1ad67a41317c067b181b76a2e42be05a0650406c98ab5b4423e76bdf2a2",
+            "evidenceManifestDigest": "sha256:7429d9259674c56908e67c477618bf0a406601f095dff00846858016120b73e1",
+            "integritySuite": "KYA-AUDIT-JCS-SHA256-JWS-2026",
+            "ledgerEpochId": "epoch-dfed37e2-d067-4536-b964-9bf605f187f9",
+            "ledgerId": "kya:responsible-party:t%3a4950:consent",
+            "previousEntryDigest": null,
+            "recordedAt": 1788903827858,
+            "recorder": {
+              "alg": "EdDSA",
+              "did": "did:web:localhost%3A4950",
+              "kid": "did:web:localhost%3A4950#key-1"
+            },
+            "schema": "https://schema.kya-os.org/v1/protocol/audit/entry/v1.0.0",
+            "sequence": "0"
+          },
+          "entryDigest": "sha256:bfd84708812fb8725214f374daffe9d2e07346efbf4a2d642596b3b79727b2b3",
+          "eventDigest": "sha256:fb48f1ad67a41317c067b181b76a2e42be05a0650406c98ab5b4423e76bdf2a2",
+          "recorderReceipt": {
+            "core": {
+              "entryDigest": "sha256:bfd84708812fb8725214f374daffe9d2e07346efbf4a2d642596b3b79727b2b3",
+              "eventId": "genesis:kya:responsible-party:t%3a4950:consent:epoch-dfed37e2-d067-4536-b964-9bf605f187f9",
+              "integritySuite": "KYA-AUDIT-JCS-SHA256-JWS-2026",
+              "ledgerEpochId": "epoch-dfed37e2-d067-4536-b964-9bf605f187f9",
+              "ledgerId": "kya:responsible-party:t%3a4950:consent",
+              "previousEntryDigest": null,
+              "recordedAt": 1788903827858,
+              "recorder": {
+                "alg": "EdDSA",
+                "did": "did:web:localhost%3A4950",
+                "kid": "did:web:localhost%3A4950#key-1"
+              },
+              "schema": "https://schema.kya-os.org/v1/protocol/audit/receipt/v1.0.0",
+              "sequence": "0"
+            },
+            "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6bG9jYWxob3N0JTNBNDk1MCNrZXktMSJ9.eyJlbnRyeURpZ2VzdCI6InNoYTI1NjpiZmQ4NDcwODgxMmZiODcyNTIxNGYzNzRkYWZmZTlkMmUwNzM0NmVmYmY0YTJkNjQyNTk2YjNiNzk3MjdiMmIzIiwiZXZlbnRJZCI6ImdlbmVzaXM6a3lhOnJlc3BvbnNpYmxlLXBhcnR5OnQlM2E0OTUwOmNvbnNlbnQ6ZXBvY2gtZGZlZDM3ZTItZDA2Ny00NTM2LWI5NjQtOWJmNjA1ZjE4N2Y5IiwiaW50ZWdyaXR5U3VpdGUiOiJLWUEtQVVESVQtSkNTLVNIQTI1Ni1KV1MtMjAyNiIsImxlZGdlckVwb2NoSWQiOiJlcG9jaC1kZmVkMzdlMi1kMDY3LTQ1MzYtYjk2NC05YmY2MDVmMTg3ZjkiLCJsZWRnZXJJZCI6Imt5YTpyZXNwb25zaWJsZS1wYXJ0eTp0JTNhNDk1MDpjb25zZW50IiwicHJldmlvdXNFbnRyeURpZ2VzdCI6bnVsbCwicmVjb3JkZWRBdCI6MTc4ODkwMzgyNzg1OCwicmVjb3JkZXIiOnsiYWxnIjoiRWREU0EiLCJkaWQiOiJkaWQ6d2ViOmxvY2FsaG9zdCUzQTQ5NTAiLCJraWQiOiJkaWQ6d2ViOmxvY2FsaG9zdCUzQTQ5NTAja2V5LTEifSwic2NoZW1hIjoiaHR0cHM6Ly9zY2hlbWEua3lhLW9zLm9yZy92MS9wcm90b2NvbC9hdWRpdC9yZWNlaXB0L3YxLjAuMCIsInNlcXVlbmNlIjoiMCJ9.JYCgloQ-ZL0X9Tk6_JlUKF6Y3Q7aZ660SPgBsD7C94s3LplLPqYtf0olhlQMIEi8Zh_JG_Ob3fdlDFP19NRPBA"
+          }
+        },
+        {
+          "core": {
+            "event": {
+              "action": {
+                "category": "consent",
+                "name": "place_order"
+              },
+              "actor": {
+                "did": "did:web:localhost%3A4950",
+                "kind": "public_did"
+              },
+              "binding": "urn:kya-os:audit-binding:example-consent:v1",
+              "correlationId": "sha256:8961f1ffaa2f7a411a87d6a445b761131edcd1398ecca494df27ced0a21988a9",
+              "details": {
+                "consentRef": "sha256:8961f1ffaa2f7a411a87d6a445b761131edcd1398ecca494df27ced0a21988a9",
+                "family": "consent",
+                "phase": "denied"
+              },
+              "eventId": "b3c46c7f-760e-49c9-8228-907692e63242",
+              "eventType": "consent.denied",
+              "eventVersion": "1.0.0",
+              "evidence": [],
+              "occurredAt": 1788903827854,
+              "outcome": "succeeded",
+              "privacy": {
+                "classification": "internal",
+                "retentionClass": "audit-365d"
+              },
+              "resource": {
+                "keyId": "consent-grant-bindings",
+                "kind": "keyed_commitment",
+                "value": "sha256:f7614f713395aef8af2b0d93b8e22ccbb9cf84218c839f28bc97adddd81b0f4c"
+              },
+              "responsibleParty": {
+                "did": "did:web:localhost%3A4950",
+                "kind": "public_did"
+              },
+              "schema": "https://schema.kya-os.org/v1/protocol/audit/event/v1.0.0",
+              "source": {
+                "producer": {
+                  "did": "did:web:localhost%3A4950",
+                  "kind": "public_did"
+                },
+                "sourceId": "responsible-party-edge",
+                "sourceSequence": "1"
+              },
+              "tenantRef": {
+                "keyId": "responsible-party-tenant-v1",
+                "kind": "keyed_commitment",
+                "value": "sha256:1df70a9ba69246411db2eec10dd3230e9e72cae98d957142afadf26ccc539212"
+              }
+            },
+            "eventDigest": "sha256:d57ace1df6b3d6e2c91b9480e24d87c61eb68f8f09461f0f6b681e58e2f02069",
+            "evidenceManifestDigest": "sha256:7429d9259674c56908e67c477618bf0a406601f095dff00846858016120b73e1",
+            "integritySuite": "KYA-AUDIT-JCS-SHA256-JWS-2026",
+            "ledgerEpochId": "epoch-dfed37e2-d067-4536-b964-9bf605f187f9",
+            "ledgerId": "kya:responsible-party:t%3a4950:consent",
+            "previousEntryDigest": "sha256:bfd84708812fb8725214f374daffe9d2e07346efbf4a2d642596b3b79727b2b3",
+            "recordedAt": 1788903827860,
+            "recorder": {
+              "alg": "EdDSA",
+              "did": "did:web:localhost%3A4950",
+              "kid": "did:web:localhost%3A4950#key-1"
+            },
+            "schema": "https://schema.kya-os.org/v1/protocol/audit/entry/v1.0.0",
+            "sequence": "1"
+          },
+          "entryDigest": "sha256:10cad4e16cd6729fc580498d7f5e0f98a1fb4a13c2d58f2f6010278f33b73b83",
+          "eventDigest": "sha256:d57ace1df6b3d6e2c91b9480e24d87c61eb68f8f09461f0f6b681e58e2f02069",
+          "recorderReceipt": {
+            "core": {
+              "entryDigest": "sha256:10cad4e16cd6729fc580498d7f5e0f98a1fb4a13c2d58f2f6010278f33b73b83",
+              "eventId": "b3c46c7f-760e-49c9-8228-907692e63242",
+              "integritySuite": "KYA-AUDIT-JCS-SHA256-JWS-2026",
+              "ledgerEpochId": "epoch-dfed37e2-d067-4536-b964-9bf605f187f9",
+              "ledgerId": "kya:responsible-party:t%3a4950:consent",
+              "previousEntryDigest": "sha256:bfd84708812fb8725214f374daffe9d2e07346efbf4a2d642596b3b79727b2b3",
+              "recordedAt": 1788903827860,
+              "recorder": {
+                "alg": "EdDSA",
+                "did": "did:web:localhost%3A4950",
+                "kid": "did:web:localhost%3A4950#key-1"
+              },
+              "schema": "https://schema.kya-os.org/v1/protocol/audit/receipt/v1.0.0",
+              "sequence": "1"
+            },
+            "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6bG9jYWxob3N0JTNBNDk1MCNrZXktMSJ9.eyJlbnRyeURpZ2VzdCI6InNoYTI1NjoxMGNhZDRlMTZjZDY3MjlmYzU4MDQ5OGQ3ZjVlMGY5OGExZmI0YTEzYzJkNThmMmY2MDEwMjc4ZjMzYjczYjgzIiwiZXZlbnRJZCI6ImIzYzQ2YzdmLTc2MGUtNDljOS04MjI4LTkwNzY5MmU2MzI0MiIsImludGVncml0eVN1aXRlIjoiS1lBLUFVRElULUpDUy1TSEEyNTYtSldTLTIwMjYiLCJsZWRnZXJFcG9jaElkIjoiZXBvY2gtZGZlZDM3ZTItZDA2Ny00NTM2LWI5NjQtOWJmNjA1ZjE4N2Y5IiwibGVkZ2VySWQiOiJreWE6cmVzcG9uc2libGUtcGFydHk6dCUzYTQ5NTA6Y29uc2VudCIsInByZXZpb3VzRW50cnlEaWdlc3QiOiJzaGEyNTY6YmZkODQ3MDg4MTJmYjg3MjUyMTRmMzc0ZGFmZmU5ZDJlMDczNDZlZmJmNGEyZDY0MjU5NmIzYjc5NzI3YjJiMyIsInJlY29yZGVkQXQiOjE3ODg5MDM4Mjc4NjAsInJlY29yZGVyIjp7ImFsZyI6IkVkRFNBIiwiZGlkIjoiZGlkOndlYjpsb2NhbGhvc3QlM0E0OTUwIiwia2lkIjoiZGlkOndlYjpsb2NhbGhvc3QlM0E0OTUwI2tleS0xIn0sInNjaGVtYSI6Imh0dHBzOi8vc2NoZW1hLmt5YS1vcy5vcmcvdjEvcHJvdG9jb2wvYXVkaXQvcmVjZWlwdC92MS4wLjAiLCJzZXF1ZW5jZSI6IjEifQ.ykPjyXcODNi3faRNAB7YQGoQLIJ0IulcuKN7la9iYZDhvVDlPAlRCEiWxXr5qxRLRt-DsbF3WXBZjcOzgPpDAA"
+          }
+        }
+      ]
+    },
+    {
+      "path": "inclusion-proofs.json",
+      "mediaType": "application/vnd.kya-os.audit.inclusion-proofs.v1+json",
+      "disposition": "included",
+      "digest": "sha256:a0b10f5b306ed0cbbed2be68ce9f734769c6ff9939da933cffb8adfda8d4dc02",
+      "size": "881",
+      "content": [
+        {
+          "checkpointDigest": "sha256:88ec78dfef598783a80810fb4c0a7fce52e0a5973cc72d3d9263de2e2bd34e98",
+          "entryDigest": "sha256:bfd84708812fb8725214f374daffe9d2e07346efbf4a2d642596b3b79727b2b3",
+          "ledgerEpochId": "epoch-dfed37e2-d067-4536-b964-9bf605f187f9",
+          "ledgerId": "kya:responsible-party:t%3a4950:consent",
+          "proof": {
+            "auditPath": [
+              "sha256:ce5b120e6673050fb64ec5166f8d7117709bcf93657cfcb4bcc872f17367b555"
+            ],
+            "leafIndex": "0",
+            "treeSize": "2"
+          },
+          "sequence": "0"
+        },
+        {
+          "checkpointDigest": "sha256:88ec78dfef598783a80810fb4c0a7fce52e0a5973cc72d3d9263de2e2bd34e98",
+          "entryDigest": "sha256:10cad4e16cd6729fc580498d7f5e0f98a1fb4a13c2d58f2f6010278f33b73b83",
+          "ledgerEpochId": "epoch-dfed37e2-d067-4536-b964-9bf605f187f9",
+          "ledgerId": "kya:responsible-party:t%3a4950:consent",
+          "proof": {
+            "auditPath": [
+              "sha256:412d4a8b4791f1fe27d02d9efa8028bbca1c3b133e8bdab28b938d1d7f6d98d7"
+            ],
+            "leafIndex": "1",
+            "treeSize": "2"
+          },
+          "sequence": "1"
+        }
+      ]
+    }
+  ]
+}

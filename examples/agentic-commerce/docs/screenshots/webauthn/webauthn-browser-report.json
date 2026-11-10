@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "authenticator": "Chromium virtual FIDO2",
+  "identity": "Local RP authority; no Google account",
+  "checks": [
+    "Existing registration page verified a real browser FIDO2 attestation",
+    "Registered authenticator flag rejects approval without an assertion",
+    "Actual capability component displays bound GS1 scope, agent, merchant, cap and expiry; deselection disables approval without issuing a VC",
+    "Canceled real passkey request keeps the grant pending and issues no VC; controls unlock for a retry",
+    "Actual consent button completed navigator.credentials.get, bound assertion verification and VC issuance",
+    "Consent audit event commits authenticator credential ID, AAGUID and issuance-intent hash",
+    "Same MCP order allowed with the new VC, holder proof and resume token",
+    "KEY_WEBAUTHN=0 keeps revocation software-only despite the registered issuance key",
+    "Next MCP order denied after the RP status-list bit flipped",
+    "Honest witnessed bundle verified and tampered bundle rejected"
+  ],
+  "browserErrors": []
+}

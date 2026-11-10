@@ -5,6 +5,52 @@ All notable changes to @kya-os/mcp will be documented here.
 Format: https://keepachangelog.com/en/1.0.0/
 Versioning: https://semver.org/spec/v2.0.0.html
 
+## [1.22.0] - 2026-11-10
+
+### Added
+
+- **A request can carry its delegation chain, so a server can verify an
+  agent acting for another organization without a lookup.** Put the chain
+  in `_meta['org.kya-os/delegation-chain']` with `toDelegationChainMeta`.
+  `verifyRequestDelegation`, and the `requireDelegation` guard that runs
+  after `requireProof`, verify it in a fixed order: chain rules, the leaf
+  delegate equal to the caller's proof DID, trusted roots, every hop's
+  signature, the invoked action, then live revocation. With no chain in
+  the request they verify one resolved by reference instead. A carried
+  chain is bounded to 10 credentials by default. Hops are signed and
+  checked with `signDelegationCredential` and
+  `createDelegationProofVerifier` (`eddsa-jcs-2022`), and status lists can
+  be signed with `signStatusListCredential`. Run
+  `npm run example:chain-by-value` to see it end to end.
+
+### Changed
+
+- **Chain validation now reports a re-delegation that is wider than its
+  parent.** SPEC.md §6.4 says "Scope constraints MUST be equal to or
+  narrower than parent's constraints", and the chain walk has only
+  compared scopes. A child that expires after its parent, names an
+  audience its parent does not, or does not repeat the per-scope
+  `constraints` of the parent scopes that cover it still validates, and
+  each of these now comes back in `ChainValidationResult.warnings` and is
+  logged by the middleware, once an hour per message. No verdict changes.
+  The new `attenuationWarnings(parent, child)` export returns the same
+  list, so an issuer can check a credential before minting it. These are
+  candidates for rejection at a future major (see DEPRECATIONS.md), so
+  issuers that see the warning should narrow what they mint.
+
+### Spec
+
+- **SPEC-ENTITY-CARD.md §10.5 and §11.4: a request may carry its
+  delegation chain.** The new `_meta` key `org.kya-os/delegation-chain`
+  holds the chain, root to leaf. A server that finds it verifies it and
+  never falls back to a lookup. The chain binds to the request through the
+  leaf join rather than `requestHash`, every hop carries an
+  `eddsa-jcs-2022` proof by its own issuer, and revocation is read live as
+  for a resolved chain. §11.4 fixes the verification order, Appendix D.5
+  lists the gate codes, and §12.11 covers an on-path party replacing a
+  carried chain. SPEC-MCP-EXTENSION.md §2 and §7.1 and SPEC.md §6.10 point
+  to the new section.
+
 ## [1.21.3] - 2026-11-06
 
 ### Security

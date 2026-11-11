@@ -1,0 +1,484 @@
+{
+  "$schema": "https://schema.kya-os.org/experimental/payment-authority/2026-09-22/meta",
+  "$id": "https://schema.kya-os.org/experimental/payment-authority/2026-09-22/authorization",
+  "title": "KYA-OS Payment Authorization Binding (Experimental)",
+  "description": "Experimental discussion draft: the Payment Authorization of the KYA-OS Payment Authority Profile (profile section 8.2). Not stable or ratified.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "profile",
+    "authorizationId",
+    "intentDigest",
+    "decision",
+    "verifier",
+    "actor",
+    "principal",
+    "responsibleParty",
+    "audience",
+    "action",
+    "delegation",
+    "holderProof",
+    "effectiveConstraintsDigest",
+    "decisionTrace",
+    "idempotency",
+    "evidence",
+    "createdAt",
+    "expiresAt"
+  ],
+  "properties": {
+    "schema": {
+      "const": "https://schema.kya-os.org/experimental/payment-authority/2026-09-22/authorization"
+    },
+    "profile": {
+      "const": "org.kya-os/payments.v1"
+    },
+    "authorizationId": {
+      "$ref": "#/$defs/reference"
+    },
+    "intentDigest": {
+      "$ref": "#/$defs/digest"
+    },
+    "decision": {
+      "const": "authorized"
+    },
+    "verifier": {
+      "$ref": "#/$defs/reference"
+    },
+    "actor": {
+      "$ref": "#/$defs/did"
+    },
+    "principal": {
+      "$ref": "#/$defs/did"
+    },
+    "responsibleParty": {
+      "$ref": "#/$defs/did"
+    },
+    "audience": {
+      "$ref": "#/$defs/did"
+    },
+    "action": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "delegation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "credentialRef",
+        "credentialDigest",
+        "chainDigests"
+      ],
+      "properties": {
+        "credentialRef": {
+          "$ref": "#/$defs/reference"
+        },
+        "credentialDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "chainDigests": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/digest"
+          },
+          "description": "The root-to-leaf credential digests (profile sections 8.2 and 10)."
+        },
+        "delegates": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/did"
+          },
+          "description": "The delegates of the chain (profile section 8.2)."
+        }
+      }
+    },
+    "holderProof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "digest"
+      ],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "effectiveConstraintsDigest": {
+      "$ref": "#/$defs/digest",
+      "description": "The effective-constraints digest (profile sections 8.2 and 8.4.2)."
+    },
+    "decisionTrace": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 512,
+      "items": {
+        "$ref": "#/$defs/decisionTraceEntry"
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "issuer",
+        "profile",
+        "intentDigest",
+        "evidenceDigest",
+        "expiresAt"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "human-present",
+            "human-not-present",
+            "standing-policy"
+          ]
+        },
+        "issuer": {
+          "$ref": "#/$defs/absoluteUri"
+        },
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "intentDigest": {
+          "$ref": "#/$defs/digest",
+          "description": "The intent digest the verified approval carries (profile section 8.2)."
+        },
+        "evidenceDigest": {
+          "$ref": "#/$defs/digest",
+          "description": "The digest of the presented approval evidence (profile sections 8.2 and 10)."
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "subject": {
+          "$ref": "#/$defs/approvalSubject"
+        }
+      }
+    },
+    "idempotency": {
+      "$ref": "#/$defs/idempotency"
+    },
+    "evidence": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/evidence"
+      }
+    },
+    "createdAt": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "expiresAt": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "extensions": {
+      "$ref": "#/$defs/extensions"
+    }
+  },
+  "if": {
+    "type": "object",
+    "properties": {
+      "approval": true
+    },
+    "required": [
+      "approval"
+    ]
+  },
+  "then": {
+    "type": "object",
+    "properties": {
+      "delegation": {
+        "type": "object",
+        "properties": {
+          "delegates": true
+        },
+        "required": [
+          "delegates"
+        ]
+      }
+    }
+  },
+  "kyaOrderedNumberRange": {
+    "first": "createdAt",
+    "last": "expiresAt",
+    "exclusive": true
+  },
+  "kyaNotAfter": {
+    "value": "expiresAt",
+    "limitObject": "approval",
+    "limit": "expiresAt"
+  },
+  "kyaUniqueProperty": {
+    "array": "evidence",
+    "property": "digest"
+  },
+  "$defs": {
+    "timestamp": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "reference": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "did": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 2048,
+      "pattern": "^did:[^\\r\\n]+$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "idempotency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "phase",
+        "scope",
+        "requestDigest"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "phase": {
+          "enum": [
+            "execute"
+          ],
+          "description": "The execution phase (profile section 8.2)."
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "requestDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "format",
+        "digest",
+        "canonicalization"
+      ],
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/reference"
+        },
+        "format": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "ref": {
+          "$ref": "#/$defs/reference",
+          "type": "string",
+          "pattern": "^(?:(?:https?|wss?|ftp|file)://[^/?#@\\\\\\s]+(?:/[^?#@\\\\\\s]*)?|(?!(?:https?|wss?|ftp|file|javascript|vbscript|data):)[a-z][a-z0-9+.-]*:[^?#@\\\\\\s]+)$",
+          "description": "Where the evidence can be retrieved (profile section 9)."
+        },
+        "canonicalization": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "class": {
+          "enum": [
+            "authority",
+            "approval",
+            "commerce_terms",
+            "funding_authority",
+            "rail_authorization",
+            "rail_receipt",
+            "fulfillment",
+            "refund_or_reversal",
+            "communication"
+          ]
+        },
+        "custodian": {
+          "$ref": "#/$defs/reference"
+        },
+        "retentionPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "digest"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/reference"
+            },
+            "digest": {
+              "$ref": "#/$defs/digest"
+            }
+          }
+        },
+        "finality": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9:._-]{0,63}$",
+          "description": "The finality level of a settlement (profile sections 8.3 and 9)."
+        }
+      }
+    },
+    "decisionTraceEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rule",
+        "result"
+      ],
+      "properties": {
+        "rule": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "result": {
+          "enum": [
+            "pass",
+            "deferred"
+          ],
+          "description": "The result of the entry's rule (profile section 8.4.4)."
+        },
+        "hop": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9,
+          "description": "The hop of an attenuation entry (profile section 8.4.4)."
+        }
+      }
+    },
+    "extension": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "critical",
+        "data"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "schema": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 2048,
+          "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:[^\\r\\n]+$"
+        },
+        "critical": {
+          "type": "boolean"
+        },
+        "data": {
+          "kyaCanonicalJson": {
+            "maxBytes": 16384,
+            "maxDepth": 16,
+            "maxNodes": 1024
+          }
+        }
+      }
+    },
+    "extensions": {
+      "type": "object",
+      "maxProperties": 64,
+      "kyaCanonicalJsonCollection": {
+        "property": "data",
+        "maxBytes": 65536
+      },
+      "propertyNames": {
+        "minLength": 1,
+        "maxLength": 256,
+        "pattern": "^(?:[A-Za-z][A-Za-z0-9+.-]*:[^\\r\\n]+|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+(?:[/.][A-Za-z0-9._~-]+)*)$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/extension"
+      }
+    },
+    "absoluteUri": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 2048,
+      "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:[^\\r\\n]+$"
+    },
+    "approvalSubject": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "id"
+          ],
+          "properties": {
+            "kind": {
+              "const": "did"
+            },
+            "id": {
+              "$ref": "#/$defs/did"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "issuer",
+            "subject",
+            "bindingEvidenceDigest"
+          ],
+          "properties": {
+            "kind": {
+              "const": "oidc-subject"
+            },
+            "issuer": {
+              "$ref": "#/$defs/absoluteUri"
+            },
+            "subject": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "bindingEvidenceDigest": {
+              "$ref": "#/$defs/digest"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

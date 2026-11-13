@@ -190,6 +190,13 @@ describe('signStatusListCredential', () => {
     expect(await verify(signed)).toBe(true);
   });
 
+  it('signs a list that names its issuer as an { id } object, as the independent signer does', async () => {
+    const list = statusList([5], { id: ISSUER, name: 'Status issuer' });
+    const signed = await signStatusListCredential(list, await signer(), { created: '2026-01-01T00:00:00Z' });
+    expect(signed).toEqual(signEddsaJcs2022(list));
+    expect(await verify(signed)).toBe(true);
+  });
+
   it('refuses a signer whose key is not under the list issuer', async () => {
     await expect(signStatusListCredential(statusList([5], 'did:web:other.example'), await signer())).rejects.toThrow(
       /is not a verification method of the issuer did:web:other\.example/,
@@ -209,13 +216,14 @@ describe('signStatusListCredential', () => {
 
 describe('createRevocationChecker with verifyStatusList', () => {
   const entry = (index: number) => ({ statusListCredential: STATUS_URL, statusListIndex: String(index) });
+  const ofIssuer = { credentialIssuer: ISSUER };
   const checker = (list: Record<string, unknown>, verifyStatusList: Parameters<typeof createRevocationChecker>[0]['verifyStatusList']) =>
     createRevocationChecker({ fetch: jsonFetch(list), now: NOW, verifyStatusList });
 
   it('reads the bits of a list whose proof verifies', async () => {
     const check = checker(signEddsaJcs2022(statusList([5])), createStatusListProofVerifier({ didResolver: resolverFor(didDocument()) }));
-    expect(await check(entry(5))).toEqual({ revoked: true, fresh: true });
-    expect(await check(entry(6))).toEqual({ revoked: false, fresh: true });
+    expect(await check(entry(5), ofIssuer)).toEqual({ revoked: true, fresh: true });
+    expect(await check(entry(6), ofIssuer)).toEqual({ revoked: false, fresh: true });
   });
 
   it('fails closed on a list altered after signing, though its bit reads clear', async () => {
@@ -223,22 +231,22 @@ describe('createRevocationChecker with verifyStatusList', () => {
     const cleared = { ...signed, credentialSubject: statusList([]).credentialSubject };
     const verifyStatusList = createStatusListProofVerifier({ didResolver: resolverFor(didDocument()) });
     expect(await checker(cleared, undefined)(entry(5))).toEqual({ revoked: false, fresh: true });
-    expect(await checker(cleared, verifyStatusList)(entry(5))).toEqual({ revoked: true, fresh: false });
+    expect(await checker(cleared, verifyStatusList)(entry(5), ofIssuer)).toEqual({ revoked: true, fresh: false });
   });
 
   it('hands the verifier the fetched credential and fails closed on false, a throw, or a non-true value', async () => {
     const list = statusList([]);
     const seen = vi.fn(() => true);
-    expect(await checker(list, seen)(entry(5))).toEqual({ revoked: false, fresh: true });
+    expect(await checker(list, seen)(entry(5), ofIssuer)).toEqual({ revoked: false, fresh: true });
     expect(seen).toHaveBeenCalledWith(list);
 
-    expect(await checker(list, () => false)(entry(5))).toEqual({ revoked: true, fresh: false });
-    expect(await checker(list, () => { throw new Error('bad'); })(entry(5))).toEqual({ revoked: true, fresh: false });
-    expect(await checker(list, async () => 'yes' as unknown as boolean)(entry(5))).toEqual({ revoked: true, fresh: false });
+    expect(await checker(list, () => false)(entry(5), ofIssuer)).toEqual({ revoked: true, fresh: false });
+    expect(await checker(list, () => { throw new Error('bad'); })(entry(5), ofIssuer)).toEqual({ revoked: true, fresh: false });
+    expect(await checker(list, async () => 'yes' as unknown as boolean)(entry(5), ofIssuer)).toEqual({ revoked: true, fresh: false });
   });
 
   it('fails a chain whose list the verifier rejects', async () => {
-    const result = await evaluateRevocationChain([entry(5)], checker(statusList([]), () => false));
+    const result = await evaluateRevocationChain([{ entry: entry(5), credentialIssuer: ISSUER }], checker(statusList([]), () => false));
     expect(result.ok).toBe(false);
   });
 });

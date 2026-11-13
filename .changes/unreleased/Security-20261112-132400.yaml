@@ -1,0 +1,15 @@
+kind: Security
+body: |-
+    **`createRevocationChecker` no longer accepts a status list from whoever
+    signed it.** Given `verifyStatusList`, it checked a list's proof against
+    the DID the list named as its issuer, and never compared that DID with
+    the credential the entry belongs to, so whoever could serve the list
+    could sign one of their own with the bit cleared, and a revoked
+    credential read as active. The list's `issuer` must now be one the
+    verifier trusts for the credential, as Bitstring Status List v1.0 §3.2
+    expects. This affected `evaluateDelegationChain` and `verifyCard` from
+    1.20.0, and `verifyRequestDelegation` and `requireDelegation` from
+    1.22.0. `CheqdStatusListResolver` was not affected. A deployment whose
+    lists are served only by their issuer, from a host and over a transport
+    no one else controls, was not exposed; others should upgrade.
+time: 2026-11-12T13:24:00.000000-06:00

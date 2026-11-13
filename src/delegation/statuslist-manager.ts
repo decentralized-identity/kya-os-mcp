@@ -14,7 +14,7 @@ import { BitstringManager, type CompressionFunction, type DecompressionFunction 
 import { parseStatusListIndex } from '../utils/statuslist-bits.js';
 import type { VCSigningFunction } from './vc-issuer.js';
 import { canonicalizeJSON } from './utils.js';
-import { assertStatusPurpose } from '../utils/statuslist-purpose.js';
+import { acceptStatusPurpose } from '../utils/statuslist-acceptance.js';
 
 export interface StatusListStorageProvider {
   getStatusList(statusListId: string): Promise<StatusList2021Credential | null>;
@@ -135,9 +135,11 @@ export class StatusList2021Manager {
       this.decompressor
     );
 
-    // Same strict parse as checkStatus: a lenient one reads "5abc" as 5 and
-    // would flip another credential's bit.
-    const index = parseStatusListIndex(statusListIndex);
+    // The parse checkStatus uses, which reads "5abc" as no index rather than as 5, so it never flips
+    // another credential's bit. It also takes a non-negative safe integer: the entry is this
+    // manager's own record, which a storage layer may hand back with the index as a number, and
+    // refusing it would leave a revoked credential's bit clear.
+    const index = parseStatusListIndex(statusListIndex, { acceptNumber: true });
     manager.setBit(index, revoked);
 
     const encodedList = await manager.encode();
@@ -178,10 +180,14 @@ export class StatusList2021Manager {
       );
     }
 
-    // Fail-CLOSED on statusPurpose parity via the shared validator: the resolved list MUST be the
-    // SAME KIND the credential points at, else its clear bit would report "not revoked" from the
-    // wrong list — a fail-OPEN revocation bypass.
-    assertStatusPurpose(statusList.credentialSubject.statusPurpose, credentialStatus.statusPurpose);
+    // Fail-CLOSED on statusPurpose parity via the shared acceptance rule: the resolved list MUST be
+    // the SAME KIND the credential points at, else its clear bit would report "not revoked" from the
+    // wrong list, a fail-OPEN revocation bypass. The list is this manager's own, read from its
+    // storage with no proof checked, so only the purpose part of the rule applies.
+    const purpose = acceptStatusPurpose(statusList, credentialStatus.statusPurpose);
+    if (!purpose.valid) {
+      throw new Error(purpose.reason);
+    }
 
     const manager = await BitstringManager.decode(
       statusList.credentialSubject.encodedList,

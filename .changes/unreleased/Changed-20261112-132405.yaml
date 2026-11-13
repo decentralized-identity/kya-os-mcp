@@ -1,0 +1,24 @@
+kind: Changed
+body: |-
+    **A status-list refusal quotes at most 64 characters of a value the
+    list, the entry or the credential states.** The messages
+    `acceptStatusList` gives, which `CheqdStatusListResolver` and
+    `StatusList2021Manager.checkStatus` throw, the refusal of an entry
+    whose `statusPurpose` is not the checker's, the refusal of a
+    `statusListIndex`, which the status-list readers share, and the
+    message `evaluateRevocationChain` gives for a refused hop quote such a
+    value as the delegation verifier's reasons quote one, so the message
+    is one line of well-formed text. On 1.22.0 the purpose, issuer, index
+    and hop messages quoted the value whole, and the purpose and hop
+    messages threw a `TypeError` on a parsed object whose `toString`
+    member is a string, so `evaluateRevocationChain` and
+    `evaluateDelegationChain` threw on such a hop where they now return
+    their verdict. A refusal of a list's issuer names at most three
+    accepted issuers, then how many more. When a list's `id` and the URL
+    it was fetched from read the same once cut, the refusal adds where
+    they first differ, counted in code points from 1. A refused hop is
+    named by its position in its chain, the root being 0, where it
+    counted only the hops that carry a status entry:
+    `revocationEntriesOf` gives each `RevocationChainEntry` its
+    `position`.
+time: 2026-11-12T13:24:05.000000-06:00

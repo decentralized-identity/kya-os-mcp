@@ -10,7 +10,7 @@ import { VECTORS_DIR } from './loader.js';
 import type { VectorFile } from './types.js';
 
 /** The suite version of every vector file the generators write. */
-export const SUITE_VERSION = '1.3.0';
+export const SUITE_VERSION = '1.4.0';
 
 /** Write `file` to the vectors directory as `name`, and say so. */
 export function writeVectorFile(file: VectorFile, name: string): void {

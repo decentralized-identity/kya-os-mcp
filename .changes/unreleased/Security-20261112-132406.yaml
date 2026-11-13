@@ -1,0 +1,14 @@
+kind: Security
+body: |-
+    **A status list a trusted issuer signed is no longer read at another of
+    that issuer's list URLs.** `CheqdStatusListResolver` from 1.14.0, and
+    `createRevocationChecker` given `verifyStatusList` from 1.20.0, never
+    compared a list's `id` with the URL it was fetched from, so whoever
+    could serve a list could serve, in its place, another list the same
+    issuer signed with the credential's bit clear. Both now require a list's
+    `id` to be, byte for byte, that URL, except that the checker still reads
+    a list with no `id` whose signer is the only issuer the verifier accepts
+    for the credential. A deployment whose lists are served only by their
+    issuer, from a host and over a transport no one else controls, was not
+    exposed; others should upgrade.
+time: 2026-11-12T13:24:06.000000-06:00

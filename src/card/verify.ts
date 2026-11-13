@@ -63,11 +63,16 @@ export type AttestationVerifier = (
  * The accountability seam's verdict. `fresh` is the freshness channel a bare boolean cannot express
  * (SPEC §9.3/§12.6): a stale-but-non-revoked chain stays `verified:true` (keeps §10.6's cached L2)
  * yet `fresh:false` demotes L3→L2; omitted `fresh` ⇒ freshness UNKNOWN so no demotion (back-compat).
+ * `verifyCard` reads only a literal `true` as verified, and a `fresh` that is present and not a
+ * boolean as `false`, so a malformed verdict neither grants authority nor keeps L3.
  */
 export interface AccountabilityResult {
   /** True iff the delegation edge verified (`responsibleParty === issuer(rootVC)`, leaf-invoker join). */
   verified: boolean;
-  /** True iff every leaf/chain delegation credential status was read from a LIVE list (drives L2→L3). */
+  /**
+   * True iff every leaf/chain delegation credential status was read from a LIVE list (drives L2→L3).
+   * Omitted or `undefined`, freshness is unknown; any other value but `true` reads as `false`.
+   */
   fresh?: boolean;
 }
 
@@ -78,6 +83,12 @@ export interface AccountabilityResult {
  * delegation/accountability JOIN of ./delegation, recomputed, asserted nowhere). `proofDid` is
  * OPTIONAL and additive: implementations that ignore it keep the L2 offline check unchanged.
  * Returns a bare boolean (DEPRECATED alias) or an {@link AccountabilityResult} carrying `fresh`.
+ * A verified responsible party's status lists also count for the Card's `revocation` entry (see
+ * `statusListChecker`). Reporting `verified: true` is an authority grant: the host must verify
+ * every hop's proof, continuity, attenuation, expiry and revocation under its policy, bind the
+ * resolved chain to this Card and its leaf, and confirm the root equality. A structural check or
+ * a Card-supplied root alone is insufficient. The host must authorize that root for this Card;
+ * `trustedIssuers` is attestation policy, not an automatic root pin. See SPEC-ENTITY-CARD §10.3.
  */
 export type AccountabilityVerifier = (
   card: EntityCard,
@@ -108,7 +119,13 @@ export interface VerifyCardDeps {
   request?: ToolRequest;
   /** Recomputes `proof` against `request` (pre-bound ./proof `verifyCardProof`). Lifts L2 → L3. */
   proofVerifier?: CardProofVerifier;
-  /** Live W3C Bitstring Status List v1.0 check for `card.revocation` (fail-closed). */
+  /**
+   * Live W3C Bitstring Status List v1.0 check for `card.revocation` (fail-closed). It is called with
+   * `{ credentialIssuer: card.id }`, the Card being its Entity's own statement, and, once the
+   * accountability check has verified the Card's `responsibleParty` as the root issuer of the Card's
+   * delegation chain, with that party as `trustedRootIssuer`; a checker that verifies the list holds
+   * it to them as `acceptStatusList` does. A responsible party that did not verify is not named.
+   */
   statusListChecker?: BitstringRevocationChecker;
   /** True iff the caller independently proved CIMD L1 key possession (private_key_jwt ↔ jwks_uri). */
   cimdKeyProven?: boolean;
@@ -148,7 +165,7 @@ export async function verifyCard(card: EntityCard, deps: VerifyCardDeps): Promis
 
   const accountability = await checkAccountability(card, deps, trustedIssuers, proofDid);
   const attestations = await checkAttestations(card, deps, trustedIssuers);
-  const revocation = await checkCardRevocation(card, deps.statusListChecker);
+  const revocation = await checkCardRevocation(card, deps.statusListChecker, verifiedResponsibleParty(accountability));
 
   const accountabilityOk = !card.responsibleParty || Boolean(accountability?.verified);
   const attestationsOk = attestations.every((a) => a.verified);
@@ -217,7 +234,12 @@ async function checkAccountability(
   const raw = deps.accountabilityVerifier
     ? await deps.accountabilityVerifier(card, { trustedIssuers, proofDid })
     : false;
-  const { verified, fresh } = typeof raw === 'boolean' ? { verified: raw, fresh: undefined } : raw;
+  // This trusted plugin boundary can still receive untyped JavaScript results. A truthy string such
+  // as "false" must neither grant status-list signing authority nor keep the Card's L3: only a
+  // literal `true` verifies or is fresh, and an omitted `fresh` stays unknown.
+  const verdict = typeof raw === 'object' && raw !== null ? raw : undefined;
+  const verified = raw === true || verdict?.verified === true;
+  const fresh = verdict?.fresh === undefined ? undefined : verdict.fresh === true;
   return { responsibleParty: card.responsibleParty, principal: card.principal, verified, fresh };
 }
 
@@ -260,14 +282,27 @@ interface CardRevocationVerdict {
   fresh: boolean;
 }
 
-/** Live-check `card.revocation` via the injected seam; fail-closed (unreachable ⇒ revoked). */
+/** The Card's responsible party, once the accountability check has verified it, and never before. */
+function verifiedResponsibleParty(accountability: VerifyCardResult['accountability']): string | undefined {
+  return accountability?.verified ? accountability.responsibleParty : undefined;
+}
+
+/**
+ * Live-check `card.revocation` via the injected seam; fail-closed (unreachable ⇒ revoked). The Card's
+ * `id` is named as the issuer its status list is held to, and a verified `responsibleParty` as the
+ * root of the Card's delegation chain.
+ */
 async function checkCardRevocation(
   card: EntityCard,
   checker: BitstringRevocationChecker | undefined,
+  responsibleParty: string | undefined,
 ): Promise<CardRevocationVerdict> {
   if (!checker || !card.revocation) return { checked: false, revoked: false, fresh: true };
   try {
-    const status = await checker(card.revocation);
+    const status = await checker(card.revocation, {
+      credentialIssuer: card.id,
+      ...(responsibleParty === undefined ? {} : { trustedRootIssuer: responsibleParty }),
+    });
     return { checked: true, revoked: status.revoked, fresh: status.fresh };
   } catch {
     return { checked: true, revoked: true, fresh: false };

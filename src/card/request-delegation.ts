@@ -22,14 +22,13 @@ import { isRecord } from '../utils/guards.js';
 import {
   DelegationCredentialSchema,
   MAX_DELEGATION_DEPTH,
-  statusEntryOf,
+  revocationEntriesOf,
   validateDelegationChain,
   type DelegationChain,
   type DelegationCredential,
 } from './delegation.js';
 import type { DelegationProofVerifier } from './delegation-proof.js';
 import { evaluateRevocationChain, type BitstringRevocationChecker } from './revocation.js';
-import type { BitstringStatusListEntry } from './schema.js';
 
 /** The `_meta` key that carries a request's delegation chain (registered in §14.1). */
 export const KYA_OS_DELEGATION_CHAIN_META_KEY = 'org.kya-os/delegation-chain';
@@ -145,7 +144,8 @@ export interface VerifyRequestDelegationDeps {
   verifyHopProof: DelegationProofVerifier;
   /**
    * Reads each hop's revocation status, e.g. `createRevocationChecker` (fail-closed: an unreadable
-   * list counts as revoked).
+   * list counts as revoked). Each call names the hop's issuer and, when `resourceOwner` or
+   * `trustedRootIssuers` pins it, the chain's root issuer, whose lists may speak for the hop.
    */
   checkRevocation: BitstringRevocationChecker;
   /**
@@ -207,7 +207,9 @@ export type RequestDelegationResult =
  * 4. The root issuer is trusted, when `trustedRootIssuers` is set.
  * 5. Every hop's proof, root to leaf.
  * 6. The action is in the leaf's `allowedAction`.
- * 7. Revocation, root to leaf; a revoked ancestor invalidates the subtree.
+ * 7. Revocation, root to leaf, each hop's status list held to the hop's issuer or, when step 2 or 4
+ *    pinned it, the root issuer, as the proofs step 5 verified name them; a revoked ancestor
+ *    invalidates the subtree.
  *
  * Cheap, local checks run before the ones that may touch the network. Never throws on a
  * malformed input or a throwing seam; returns `{ ok: false, code, reasons }`.
@@ -257,12 +259,11 @@ export async function verifyRequestDelegation(
     return reject('action_not_delegated', [`action "${input.action}" is not in the delegated allowedAction`]);
   }
 
-  const entries = chain
-    .map(statusEntryOf)
-    .filter((entry): entry is BitstringStatusListEntry => entry !== undefined);
+  const pinnedRoot =
+    deps.resourceOwner !== undefined || deps.trustedRootIssuers !== undefined ? responsibleParty : undefined;
   let revocation: Awaited<ReturnType<typeof evaluateRevocationChain>>;
   try {
-    revocation = await evaluateRevocationChain(entries, deps.checkRevocation);
+    revocation = await evaluateRevocationChain(revocationEntriesOf(chain, pinnedRoot), deps.checkRevocation);
   } catch {
     return reject('delegation_revoked', ['revocation checker threw: status unprovable, fail-closed']);
   }

@@ -21,7 +21,10 @@ import {
   requireExtension,
   type DIDDocument,
   type CredentialStatus,
+  acceptStatusList,
+  statusListExpectationFor,
   type DelegationCredential,
+  type StatusCheckContext,
   type StatusList2021Credential,
 } from '../src/index.js';
 import type { Ed25519JWK } from '../src/utils/crypto-service.js';
@@ -57,6 +60,7 @@ import type {
   StatusListInput,
 } from './types.js';
 import { isRecord } from '../src/utils/guards.js';
+import { parseStatusListIndex } from '../src/utils/statuslist-bits.js';
 import {
   CryptoProviderAuditHasher,
   digestAuditEvent,
@@ -66,6 +70,7 @@ import {
 } from '../src/audit/index.js';
 import { canonicalizeJson } from '../src/utils/canonical-json.js';
 import { ed25519SignatureVerifier } from './crypto-kit.js';
+import { assertStatusListConfiguration } from './status-list-configuration.js';
 import { statusListGzipCodec } from '../src/utils/statuslist-gzip.js';
 import {
   asMessage,
@@ -211,6 +216,7 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
 
   async verifyStatusList(input: StatusListInput): Promise<AdapterResult> {
     try {
+      assertStatusListConfiguration(input);
       const credential = input.credential as DelegationCredential;
       const status = credential.credentialStatus;
       if (!status) {
@@ -221,18 +227,32 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
       const didResolver = makeMultiResolver(input.didDocuments, fetchProvider);
       const signatureVerifier = ed25519SignatureVerifier(this.crypto);
 
-      // Status resolver backed by the supplied StatusList2021Credentials, decoded
-      // with the SAME bitstring primitive the manager uses (DRY). A list is
-      // signed like a delegation credential (SPEC.md §6.2), so its proof is
-      // checked on the same path before any bit is read; a throw here denies
-      // the credential as status_unresolvable.
+      // Status resolver backed by the supplied status lists, decoded with the
+      // SAME bitstring primitive the manager uses (DRY). A list is signed like
+      // a delegation credential (SPEC.md §6.2), so its proof is checked on the
+      // same path before any bit is read. The proof shows only who signed the
+      // list, so the list is first held, by the acceptance rule the library's
+      // proof-verifying readers share, to the issuer of the credential it
+      // covers, which the verifier names in `context`, and to the chain root
+      // and the status-list issuers the vector configures the verifier with
+      // (suite ≥ 1.4.0). A throw here denies the credential as
+      // status_unresolvable.
+      const pinnedRoot =
+        input.trustedRootIssuer === undefined ? {} : { trustedRootIssuer: input.trustedRootIssuer };
       const statusListResolver = {
-        checkStatus: async (s: CredentialStatus): Promise<boolean> => {
+        checkStatus: async (s: CredentialStatus, context: StatusCheckContext): Promise<boolean> => {
           const list = input.statusLists[s.statusListCredential] as
             | StatusList2021Credential
             | undefined;
           if (!list) {
             throw new Error(`status list not found: ${s.statusListCredential}`);
+          }
+          const verdict = acceptStatusList(
+            list,
+            statusListExpectationFor(s, { ...context, ...pinnedRoot }, input.statusListIssuers),
+          );
+          if (!verdict.valid) {
+            throw new Error(verdict.reason);
           }
           const listProof = await verifySignature(
             list as unknown as DelegationCredential,
@@ -249,7 +269,7 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
             statusListGzipCodec,
             statusListGzipCodec,
           );
-          return manager.getBit(parseInt(s.statusListIndex, 10));
+          return manager.getBit(parseStatusListIndex(s.statusListIndex));
         },
       };
 

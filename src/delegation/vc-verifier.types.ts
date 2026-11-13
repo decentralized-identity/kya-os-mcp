@@ -7,6 +7,7 @@
  */
 
 import type { CredentialStatus } from "../types/protocol.js";
+import type { StatusCheckContext } from "../utils/statuslist-acceptance.js";
 
 /**
  * Machine-readable outcome of the credential-status check. Both values still
@@ -103,8 +104,27 @@ export interface VerificationMethod {
   publicKeyMultibase?: string;
 }
 
+/**
+ * Resolves a credential's status: `checkStatus` returns `true` when its status bit is set, and
+ * throws when the status cannot be proven, which the verifier denies as `status_unresolvable`.
+ * `context` names the credential's issuer and may name its delegation chain's pinned root. A list's
+ * proof shows only who signed it, so a resolver that verifies the proof also passes
+ * `acceptStatusList(list, statusListExpectationFor(status, context, statusListIssuers))`, with the
+ * `statusListIssuers` its own configuration accepts (W3C Bitstring Status List v1.0 §3.2).
+ * `CheqdStatusListResolver` holds every list to the one DID it is configured to trust.
+ *
+ * `DelegationCredentialVerifier`, which the delegation middleware runs for each credential of a
+ * chain, names the credential's own issuer alone, never the chain's root, even when
+ * `trustedRootIssuers` pins it, and denies a credential that names no issuer DID without asking. So
+ * on that path a list the root signed for a re-delegated credential is refused (the verifier fails
+ * closed) unless the resolver's own configuration, such as a `statusListIssuers` map it passes to
+ * `acceptedStatusListIssuers`, accepts the root for the credential's issuer.
+ *
+ * Whether a list may be read depends on the context, so a caching wrapper must key on it as well as
+ * on the entry's URL, index and purpose, as `withStatusCache` does.
+ */
 export interface StatusListResolver {
-  checkStatus(status: CredentialStatus): Promise<boolean>;
+  checkStatus(status: CredentialStatus, context?: StatusCheckContext): Promise<boolean>;
 }
 
 /**

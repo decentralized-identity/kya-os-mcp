@@ -10,14 +10,15 @@
  *
  * `createRevocationChecker` is the DEFAULT implementation over W3C Bitstring Status List v1.0
  * (`BitstringStatusListEntry` — the StatusList2021 SUCCESSOR). It resolves the entry's
- * `statusListCredential` through the injected, SSRF-hardened {@link SafeFetch} seam, checks the
- * list's proof through the injected `verifyStatusList` seam when one is given, inflates the
- * multibase / GZIP `encodedList` bitstring, and reads the bit at `statusListIndex`.
+ * `statusListCredential` through the injected, SSRF-hardened {@link SafeFetch} seam. When given the
+ * injected `verifyStatusList` seam, it holds the list to the credential the entry belongs to
+ * ({@link acceptStatusList}) and checks the list's proof, then inflates the multibase / GZIP
+ * `encodedList` bitstring and reads the bit at `statusListIndex`.
  *
  * FAIL-CLOSED is the invariant: an unreachable status list, a malformed credential, a list whose
- * proof is rejected, a mismatched `statusPurpose`, or an out-of-range index all resolve to
- * `{ revoked: true }` —
- * the absence of proof-of-liveness is treated as revoked, never as "probably fine".
+ * proof is rejected, a list {@link acceptStatusList} refuses for the credential, an entry or a list
+ * of another `statusPurpose`, or an out-of-range index all resolve to `{ revoked: true }`: the
+ * absence of proof-of-liveness is treated as revoked, never as "probably fine".
  *
  * Each verdict also reports `fresh`: `true` only when read from a LIVE, in-validity-window
  * status list. A stale (past `validUntil`) or not-yet-valid list still yields a readable bit
@@ -28,8 +29,17 @@
  * `fresh` (a live status check). NOT wired into `verifyCard` here — a later step injects it.
  */
 
-import { isRecord } from '../utils/guards.js';
-import { assertStatusPurpose } from '../utils/statuslist-purpose.js';
+import { describeValue } from '../utils/describe-value.js';
+import { isRecord, issuerOf } from '../utils/guards.js';
+import {
+  acceptEntryPurpose,
+  acceptStatusList,
+  acceptStatusPurpose,
+  assertStatusListIssuers,
+  statusListExpectationFor,
+  type StatusCheckContext,
+  type StatusListIssuers,
+} from '../utils/statuslist-acceptance.js';
 import {
   decodeStatusListPayload,
   parseStatusListIndex,
@@ -39,6 +49,16 @@ import { statusListGzipCodec } from '../utils/statuslist-gzip.js';
 import type { SafeFetch } from '../utils/safe-fetch.js';
 import type { BitstringStatusListEntry } from './schema.js';
 import type { StatusListProofVerifier } from './status-list-proof.js';
+
+export {
+  acceptedStatusListIssuers,
+  acceptStatusList,
+  statusListExpectationFor,
+  type StatusCheckContext,
+  type StatusListExpectation,
+  type StatusListIssuers,
+  type StatusListVerdict,
+} from '../utils/statuslist-acceptance.js';
 
 /** The `statusPurpose` this checker evaluates by default (revocation, not suspension). */
 export const STATUS_PURPOSE_REVOCATION = 'revocation';
@@ -66,12 +86,27 @@ export interface RevocationStatus {
 }
 
 /**
+ * A status entry as the checker reads it: a {@link BitstringStatusListEntry}, with the
+ * `statusPurpose` its credential states for it when it states one. A delegation hop's
+ * `credentialStatus` may state one; a Card's `revocation` entry has none.
+ */
+export type RevocationStatusEntry = BitstringStatusListEntry & { statusPurpose?: string };
+
+/**
  * The injected revocation seam: resolve a `BitstringStatusListEntry` to a {@link RevocationStatus}.
  * A runtime supplies an implementation (the default is {@link createRevocationChecker}); a
  * caller may inject a cache-backed or offline variant. Implementations MUST fail closed.
+ *
+ * `context` names the issuer of the credential the entry belongs to and, when the verifier pins it,
+ * the root issuer of its delegation chain, so an implementation can hold the status list to them.
+ * Every caller in this package passes it, and a wrapping variant should pass it through unchanged.
+ * Whether a list may be read depends on the context, so a caching variant must key on it as well as
+ * on the entry's URL, index and purpose, as `withStatusCache` does: a verdict for one context is no
+ * answer for another.
  */
 export type BitstringRevocationChecker = (
-  entry: BitstringStatusListEntry,
+  entry: RevocationStatusEntry,
+  context?: StatusCheckContext,
 ) => Promise<RevocationStatus>;
 
 /**
@@ -97,16 +132,30 @@ export interface RevocationCheckerDeps {
   fetch: SafeFetch;
   /** Injectable clock returning epoch MILLISECONDS (deterministic freshness tests). */
   now?: () => number;
-  /** `statusPurpose` to honour; default {@link STATUS_PURPOSE_REVOCATION}. */
+  /**
+   * `statusPurpose` to honour; default {@link STATUS_PURPOSE_REVOCATION}. An entry that states
+   * another purpose resolves {@link FAIL_CLOSED}.
+   */
   statusPurpose?: string;
   /**
    * Checks the fetched status-list credential's proof before any bit is read, as W3C Bitstring
    * Status List v1.0 requires (SPEC.md §6.10). A list it rejects (`false` or a throw) resolves
    * {@link FAIL_CLOSED}. {@link createStatusListProofVerifier} covers `eddsa-jcs-2022` lists.
+   * A proof shows only who signed the list, so with this seam the checker also holds the list to
+   * the credential it covers (see {@link createRevocationChecker}), by the list's `issuer`: the seam
+   * resolves `true` only when the proof verifies under a key that `issuer` lists under
+   * `assertionMethod`.
    * Without it the bits are read unchecked, so whoever serves the list can clear a revocation;
    * it stays optional until 2.0 only so existing callers keep working.
    */
   verifyStatusList?: StatusListProofVerifier;
+  /**
+   * Status-list issuers accepted for another issuer's credentials ({@link StatusListIssuers}), which
+   * {@link acceptStatusList} then accepts as well. Off by default. It is checked when the checker is
+   * created: a value that is not a plain object of string arrays, or one given without
+   * `verifyStatusList`, throws a `TypeError`.
+   */
+  statusListIssuers?: StatusListIssuers;
   /**
    * Injectable GZIP inflation seam ({@link Decompress}). DEFAULT = `statusListGzipCodec.decompress`,
    * which loads `node:zlib` on first use and bounds inflation to the 16 MiB cap (so a decompression
@@ -125,20 +174,54 @@ const FAIL_CLOSED: RevocationStatus = { revoked: true, fresh: false };
  * Build the default `RevocationChecker` over W3C Bitstring Status List v1.0. Every outbound
  * request rides the injected {@link SafeFetch}; any failure on the path (unreachable, non-2xx,
  * malformed, wrong purpose, out-of-range index) resolves {@link FAIL_CLOSED}.
+ *
+ * The checker answers for one purpose, its `statusPurpose`. An entry that states another (a
+ * `suspension` entry under a revocation checker), or a value that is not a string, `null` included,
+ * says nothing about that purpose, so it resolves {@link FAIL_CLOSED} before any fetch rather than
+ * being read as the checker's. Only an entry that states no purpose is read as the checker's.
+ *
+ * With `verifyStatusList`, a list is read only when {@link acceptStatusList} accepts it for the
+ * entry and `context`, asked before the proof is checked, so a list from another issuer never
+ * triggers a DID resolution. A call that names no `credentialIssuer` cannot be held to anyone and
+ * resolves {@link FAIL_CLOSED} before any fetch.
+ * Without `verifyStatusList` nothing about the list is authenticated, so only its `statusPurpose`
+ * is checked and the bits are read as before.
+ *
+ * @throws TypeError when `statusListIssuers` is malformed, or given without `verifyStatusList`.
  */
 export function createRevocationChecker(
   deps: RevocationCheckerDeps,
 ): BitstringRevocationChecker {
+  assertStatusListIssuers(deps.statusListIssuers);
+  if (deps.statusListIssuers !== undefined && deps.verifyStatusList === undefined) {
+    throw new TypeError('statusListIssuers is set but verifyStatusList is not, so no status list is held to an issuer');
+  }
   const clock = deps.now ?? (() => Date.now());
   const wantedPurpose = deps.statusPurpose ?? STATUS_PURPOSE_REVOCATION;
   const decompress = deps.decompress ?? statusListGzipCodec.decompress;
-  return async function check(entry: BitstringStatusListEntry): Promise<RevocationStatus> {
+  return async function check(
+    entry: RevocationStatusEntry,
+    context?: StatusCheckContext,
+  ): Promise<RevocationStatus> {
     try {
+      const entryPurpose = acceptEntryPurpose(entry.statusPurpose, wantedPurpose);
+      if (!entryPurpose.valid) throw new Error(`revocation: ${entryPurpose.reason}`);
+      const expectation = deps.verifyStatusList
+        ? statusListExpectationFor(
+            { statusListCredential: entry.statusListCredential, statusPurpose: wantedPurpose },
+            boundContext(context),
+            deps.statusListIssuers,
+          )
+        : undefined;
       const credential = await fetchStatusList(entry.statusListCredential, deps.fetch);
+      const verdict =
+        expectation === undefined
+          ? acceptStatusPurpose(credential, wantedPurpose)
+          : acceptStatusList(credential, expectation);
+      if (!verdict.valid) throw new Error(`revocation: ${verdict.reason}`);
       if (deps.verifyStatusList && (await deps.verifyStatusList(credential)) !== true) {
         throw new Error('revocation: status-list proof rejected');
       }
-      assertStatusPurpose(statusListSubject(credential).statusPurpose, wantedPurpose);
       const bits = await decodeStatusList(credential, decompress);
       const revoked = readStatusBit(bits, parseStatusListIndex(entry.statusListIndex));
       return { revoked, fresh: isLive(credential, clock()) };
@@ -146,6 +229,25 @@ export function createRevocationChecker(
       return FAIL_CLOSED;
     }
   };
+}
+
+/**
+ * One hop for {@link evaluateRevocationChain}: a status entry, with the `statusPurpose` its hop
+ * states, and the context the checker holds the hop's status list to: the issuer of the credential
+ * it belongs to and, when the verifier pins it, the chain's root issuer.
+ */
+export interface RevocationChainEntry extends Omit<StatusCheckContext, 'credentialIssuer'> {
+  entry: RevocationStatusEntry;
+  /**
+   * The credential's issuer DID, or `undefined` when its `issuer` names none: the entry is then
+   * checked with no context.
+   */
+  credentialIssuer: string | undefined;
+  /**
+   * The hop's position in its chain, the root being 0, which a refusal names it by. Omitted, the
+   * hop is named by its place among the entries the walk is given.
+   */
+  position?: number;
 }
 
 /**
@@ -157,21 +259,44 @@ export function createRevocationChecker(
  * verdict) but is NOT `fresh`: freshness is a LIVE-check signal, and zero checks obtained no live
  * signal. An L3 liveness gate that requires `fresh` therefore cannot be satisfied by a chain that
  * simply omits all `credentialStatus` entries — it must consult at least one live status list.
+ *
+ * Pass each hop as a {@link RevocationChainEntry} (`revocationEntriesOf` builds them from a
+ * delegation chain) so the checker can hold the hop's list to the hop's issuer and the chain's pinned
+ * root. A bare entry, like a hop that names no issuer, is checked with no context, which a checker
+ * given `verifyStatusList` refuses (fail-closed). Any other item is checked as a bare entry, so it is
+ * refused too, and the walk never throws on it.
+ *
+ * The reason for a refused hop names the hop by its `position` in the chain, or by its place among
+ * `entries` when it has none, and names the list and the index its entry states. Whoever issued the
+ * hop wrote both, so the reason quotes each as `describeValue` does, at most its first 64
+ * characters, and names one that is not a string by its type alone, never converting it.
  */
 export async function evaluateRevocationChain(
-  entries: readonly BitstringStatusListEntry[],
+  entries: readonly (RevocationStatusEntry | RevocationChainEntry)[],
   check: BitstringRevocationChecker,
 ): Promise<RevocationChainResult> {
   let fresh = entries.length > 0; // no entries ⇒ no live signal ⇒ not fresh (fail-closed for L3)
-  for (const [hop, entry] of entries.entries()) {
-    const status = await check(entry);
+  for (const [index, item] of entries.entries()) {
+    let entry: RevocationStatusEntry | undefined;
+    let status: RevocationStatus;
+    let hop = index;
+    if (isChainEntry(item)) {
+      const { entry: hopEntry, credentialIssuer, position, ...pinned } = item;
+      entry = hopEntry;
+      if (isPosition(position)) hop = position;
+      status = await check(entry, credentialIssuer === undefined ? undefined : { ...pinned, credentialIssuer });
+    } else {
+      entry = item;
+      status = await check(entry);
+    }
     fresh = fresh && status.fresh;
     if (status.revoked) {
       return {
         ok: false,
         fresh: false,
         reasons: [
-          `revocation: hop ${hop} (${entry.statusListCredential}#${entry.statusListIndex}) ` +
+          `revocation: hop ${hop} (list ${describeValue(entry?.statusListCredential)}, ` +
+            `index ${describeValue(entry?.statusListIndex)}) ` +
             'is revoked or unresolvable — fail-closed, subtree invalidated',
         ],
       };
@@ -181,6 +306,29 @@ export async function evaluateRevocationChain(
 }
 
 // ── Internals ──────────────────────────────────────────────────────────────────
+
+/** A hop paired with its context, as opposed to a bare status entry (or a malformed item). */
+function isChainEntry(item: unknown): item is RevocationChainEntry {
+  return isRecord(item) && isRecord(item.entry);
+}
+
+/** Whether a hop's stated `position` is one a refusal can name it by: a non-negative safe integer. */
+function isPosition(position: unknown): position is number {
+  return Number.isSafeInteger(position) && (position as number) >= 0;
+}
+
+/**
+ * The credential a verified list is held to, its issuer read as a credential's `issuer` member names
+ * one ({@link issuerOf}). A list's proof shows only who signed it, so a call that names no credential
+ * issuer DID cannot be bound to anyone and throws (fail-closed).
+ */
+function boundContext(context: StatusCheckContext | undefined): StatusCheckContext {
+  const credentialIssuer = issuerOf(context?.credentialIssuer);
+  if (!credentialIssuer) {
+    throw new Error('revocation: no credential issuer named to hold the status list to');
+  }
+  return { ...context, credentialIssuer };
+}
 
 /** GET the status-list credential through SafeFetch (throws on non-2xx / non-object body). */
 async function fetchStatusList(url: string, fetch: SafeFetch): Promise<Record<string, unknown>> {

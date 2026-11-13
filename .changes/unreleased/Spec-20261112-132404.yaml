@@ -1,0 +1,67 @@
+kind: Spec
+body: |-
+    **SPEC.md §6.6: a verifier holds a status list to an issuer it trusts
+    for the credential, and conformance suite 1.4.0 tests it.** A list's
+    proof shows only who signed it, so the credential is rejected unless the
+    list's `issuer` is the credential's issuer, the root issuer of its
+    delegation chain when the verifier pins that root, or one the verifier
+    is configured to accept for the credential's issuer. For an Entity
+    Card, the Card's `responsibleParty` takes the root's place once the
+    Card's accountability check has verified it. A pinned root can revoke
+    every credential below it, so its list speaks for each of them. The
+    issuers between the root and a credential are not accepted, since
+    whoever presents a chain decides who stands there. The credential is
+    also rejected when the list's `statusPurpose` does not include the
+    entry's, or the list's `id` is not, byte for byte, its URL. Only a
+    `BitstringStatusListCredential` whose subject's `type` is
+    `BitstringStatusList` may state its `statusPurpose` as an array; any
+    other list, a StatusList2021 list included, states one string. Only a
+    list the credential's own issuer signed, where that issuer is the only
+    one the verifier accepts for the credential, may state no `id`, and an
+    issuer SHOULD state one. §6.6 names what these checks leave open: a list
+    without an `id` can be served in place of another list its own issuer
+    signed, only where that issuer is the only one the verifier accepts for
+    the credential, an earlier version of a list can be served in place of
+    the current one, and with a Card's Entity key a list the Entity signed
+    can clear the Card's bit, against which SPEC-ENTITY-CARD.md §12.5 has
+    the responsible party revoke the root delegation credential. The checks
+    hold only for a list proof that verifies under a key the list's `issuer`
+    lists under `assertionMethod`. SPEC.md §6.10, SPEC-ENTITY-CARD.md §4.1,
+    §10.3 and Appendix B, and CONFORMANCE.md L3.11 say the same. Six new
+    negative vectors check a revoked credential against a list with its
+    bit unset and a proof that verifies: one another DID issued
+    (`status-list/foreign-issuer-list`), a `suspension` list
+    (`status-list/purpose-mismatch-list`), a StatusList2021 list that
+    states its purposes in an array that includes `revocation`
+    (`status-list/purpose-array-2021-list`), one that states another URL
+    as its `id` (`status-list/id-mismatch-list`), and one that states no `id`
+    from the pinned root of the credential's chain
+    (`status-list/root-no-id-list`) or from an issuer the verifier is
+    configured to accept (`status-list/configured-issuer-no-id-list`). Those
+    two carry the new optional inputs `trustedRootIssuer` and
+    `statusListIssuers`, and a verifier without that configuration refuses
+    their lists for the issuer. Two new positive vectors check an active
+    credential against its issuer's list re-issued without an `id`
+    (`status-list/no-id-list`) and against its issuer's
+    `BitstringStatusListCredential` for the purposes `suspension` and
+    `revocation` (`status-list/purpose-array-list`), so an implementation
+    that refuses either form fails. `status-list.json` is regenerated in
+    one run, so its three existing vectors change bytes with the same cases
+    and verdicts, and the other files change only their `version`. A new
+    file, `status-list-authority.json`, adds six more vectors: a clear
+    list from the pinned root (`status-list/pinned-root-list`) or from an
+    issuer `statusListIssuers` accepts for the credential's issuer
+    (`status-list/configured-service-list`) must be read, so an
+    implementation that reads only the credential's own issuer's lists
+    fails; the second list must be refused when `statusListIssuers` has no
+    entry for the credential's issuer
+    (`status-list/unconfigured-service-list`) or names the credential's
+    issuer under the list's (`status-list/wrong-direction-service-map`);
+    a list without an `id` must be read when the credential's own issuer
+    signed it, even if the verifier also pins that issuer as the root
+    (`status-list/owner-root-alias-no-id`); and such a list must be refused
+    when the verifier pins another root, at whose URL it is served
+    (`status-list/owner-no-id-at-pinned-root-url`). The reference adapter
+    applies `acceptStatusList`, `conformance/verify.py` checks every
+    status-list vector too, and the suite has 87 vectors.
+time: 2026-11-12T13:24:04.000000-06:00

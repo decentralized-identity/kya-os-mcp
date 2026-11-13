@@ -10,6 +10,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { assertStatusListConfiguration } from './status-list-configuration.js';
 import type { ConformanceVector, VectorCategory, VectorFile } from './types.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -78,6 +79,16 @@ function assertVector(
   }
   if (!('input' in v)) {
     throw new Error(`Vector ${String(v['id'])} in ${source} is missing "input"`);
+  }
+  if (category === 'status-list') {
+    try {
+      assertStatusListConfiguration(v['input']);
+    } catch (error) {
+      throw new Error(
+        `Vector ${String(v['id'])} in ${source}: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
   }
 }
 

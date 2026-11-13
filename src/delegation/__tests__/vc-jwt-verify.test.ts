@@ -19,6 +19,7 @@ import {
 } from "../vc-verifier.js";
 import { credentialIssuerDid, JWT_NBF_LEEWAY_SECONDS } from "../vc-jwt-verify.js";
 import type { DelegationCredential } from "../../types/protocol.js";
+import { issuerDidDocument } from "../../__tests__/utils/did-documents.js";
 
 const ISSUER_DID = "did:web:example.com:u:alice";
 const KID = `${ISSUER_DID}#0`;
@@ -56,17 +57,7 @@ describe("verifyDelegationJwt (VC-JWT / compact JWS wire format)", () => {
   const resolverFor = (jwk: JWK): DIDResolver => ({
     async resolve(did: string): Promise<DIDDocument | null> {
       if (did !== ISSUER_DID) return null;
-      return {
-        id: ISSUER_DID,
-        verificationMethod: [
-          {
-            id: KID,
-            type: "JsonWebKey2020",
-            controller: ISSUER_DID,
-            publicKeyJwk: jwk,
-          },
-        ],
-      };
+      return issuerDidDocument({ id: KID, type: "JsonWebKey2020", controller: ISSUER_DID, publicKeyJwk: jwk });
     },
   });
 
@@ -209,7 +200,7 @@ describe("verifyDelegationJwt (VC-JWT / compact JWS wire format)", () => {
     const jwt = await mintVcJwt(privateKey);
     const result = await isolated.verifyDelegationJwt(jwt, { skipCache: true });
     expect(result).toMatchObject({ valid: false, stage: "signature" });
-    expect(result.reason).toBe(`Could not resolve issuer DID ${ISSUER_DID}: resolver down`);
+    expect(result.reason).toBe(`Could not resolve issuer DID "${ISSUER_DID}": resolver down`);
   });
 
   it("rejects, without throwing, a JOSE header that is not a JSON object", async () => {
@@ -298,17 +289,12 @@ describe("verifyDelegationJwt (VC-JWT / compact JWS wire format)", () => {
     const multibaseResolver: DIDResolver = {
       async resolve(did: string): Promise<DIDDocument | null> {
         if (did !== ISSUER_DID) return null;
-        return {
-          id: ISSUER_DID,
-          verificationMethod: [
-            {
-              id: KID,
-              type: "Ed25519VerificationKey2020",
-              controller: ISSUER_DID,
-              publicKeyMultibase: multibase,
-            },
-          ],
-        };
+        return issuerDidDocument({
+          id: KID,
+          type: "Ed25519VerificationKey2020",
+          controller: ISSUER_DID,
+          publicKeyMultibase: multibase,
+        });
       },
     };
     const verifier = new DelegationCredentialVerifier({ didResolver: multibaseResolver });

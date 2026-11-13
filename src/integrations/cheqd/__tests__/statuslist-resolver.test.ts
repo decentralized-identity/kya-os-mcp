@@ -19,11 +19,13 @@ import {
 import { createDidKeyResolver } from '../../../delegation/did-key-resolver.js';
 import { statusListGzipCodec } from '../../../utils/statuslist-gzip.js';
 import { base58Encode } from '../../../utils/base58.js';
-import { base64urlDecodeToBytes } from '../../../utils/base64.js';
+import { base64urlDecodeToBytes, base64urlEncodeFromBytes } from '../../../utils/base64.js';
+import { canonicalizeJSON } from '../../../delegation/utils.js';
 import type { AgentIdentity } from '../../../providers/base.js';
 import type { FetchProvider } from '../../../providers/base.js';
 import type { DIDResolver } from '../../../delegation/vc-verifier.types.js';
 import type { NodeCryptoProvider } from '../../../__tests__/utils/node-crypto-provider.js';
+import { issuerDidDocument } from '../../../__tests__/utils/did-documents.js';
 import type {
   CredentialStatus,
   StatusList2021Credential,
@@ -95,20 +97,23 @@ describe('CheqdStatusListResolver (real crypto, stubbed transport)', () => {
     didResolver = {
       async resolve(did: string) {
         if (did !== issuerIdentity.did) return null;
-        return {
-          id: did,
-          verificationMethod: [
-            {
-              id: issuerIdentity.kid,
-              type: 'Ed25519VerificationKey2020',
-              controller: did,
-              publicKeyMultibase: multibase,
-            },
-          ],
-        };
+        return issuerDidDocument({
+          id: issuerIdentity.kid,
+          type: 'Ed25519VerificationKey2020',
+          controller: did,
+          publicKeyMultibase: multibase,
+        });
       },
     };
   });
+
+  /** The issuer's list with its subject changed by `change`, signed again by the issuer's key. */
+  async function resignedList(change: (subject: Record<string, unknown>) => Record<string, unknown>) {
+    const { proof, ...unsigned } = signedList as unknown as Record<string, unknown> & { proof: Record<string, unknown> };
+    const changed = { ...unsigned, credentialSubject: change(unsigned.credentialSubject as Record<string, unknown>) };
+    const signature = await crypto.sign(new TextEncoder().encode(canonicalizeJSON(changed)), issuerIdentity.privateKey);
+    return { ...changed, proof: { ...proof, proofValue: base64urlEncodeFromBytes(signature) } };
+  }
 
   beforeEach(() => {
     fetchLog = [];
@@ -172,6 +177,15 @@ describe('CheqdStatusListResolver (real crypto, stubbed transport)', () => {
     await expect(makeResolver().checkStatus(clearEntry)).rejects.toThrow(/HTTP 500/);
   });
 
+  it('quotes a list URL it cannot fetch as a refusal quotes any value', async () => {
+    const long = `https://status.example/${'l'.repeat(100_000)}`;
+    const urls: [string, string][] = [[long, `"${long.slice(0, 64)}"...`], ['https://status.example/\uD800', '"https://status.example/\\ud800"']];
+    for (const [statusListCredential, quoted] of urls) {
+      await expect(makeResolver().checkStatus({ ...clearEntry, statusListCredential }))
+        .rejects.toMatchObject({ message: `Status list fetch failed: HTTP 404 for ${quoted}` });
+    }
+  });
+
   it('fail-closes when the resource is not a StatusList2021Credential', async () => {
     serveOverride = () => ({ ...signedList, type: ['VerifiableCredential'] });
     await expect(makeResolver().checkStatus(clearEntry)).rejects.toThrow(
@@ -202,10 +216,49 @@ describe('CheqdStatusListResolver (real crypto, stubbed transport)', () => {
     ).rejects.toThrow(/not the expected issuer/);
   });
 
+  it('names an issuer other than the pinned one as a refusal names any value, never converting it, and quotes the pinned one', async () => {
+    const long = `did:cheqd:testnet:${'x'.repeat(100)}`;
+    const refusals: [unknown, string][] = [
+      ['did:cheqd:testnet:attacker', '"did:cheqd:testnet:attacker"'],
+      [long, `"${long.slice(0, 64)}"...`],
+      [{ id: 5 }, 'of type object'],
+      [{ id: JSON.parse('{"toString":"x"}') }, 'of type object'],
+      [[issuerIdentity.did], 'of type array'],
+    ];
+    for (const [issuer, named] of refusals) {
+      serveOverride = () => ({ ...signedList, issuer });
+      await expect(makeResolver().checkStatus(clearEntry)).rejects.toThrow(
+        new Error(`Status list issuer ${named} is not the expected issuer "${issuerIdentity.did}"`),
+      );
+    }
+  });
+
   it('fail-closes on a statusPurpose mismatch', async () => {
     await expect(
       makeResolver().checkStatus({ ...clearEntry, statusPurpose: 'suspension' }),
     ).rejects.toThrow(/statusPurpose mismatch/);
+  });
+
+  it("quotes the list's purpose and the credential's as a refusal quotes any value, bounded and escaped", async () => {
+    // 'x' and a lone surrogate, 1,000 times: the cut keeps 64 characters and escapes each surrogate.
+    const statusPurpose = 'x\uD800'.repeat(1000) as CredentialStatus['statusPurpose'];
+    const quoted = `"${'x\\ud800'.repeat(32)}"...`;
+    await expect(makeResolver().checkStatus({ ...clearEntry, statusPurpose })).rejects.toThrow(
+      new Error(`status list statusPurpose mismatch: "revocation" \u2260 ${quoted}`),
+    );
+    const unstated = await resignedList(({ statusPurpose: _purpose, ...subject }) => subject);
+    serveOverride = () => unstated;
+    await expect(makeResolver().checkStatus({ ...clearEntry, statusPurpose })).rejects.toThrow(
+      new Error(`status list has no statusPurpose (expected ${quoted}) - fail-closed`),
+    );
+    const long = await resignedList((subject) => ({ ...subject, statusPurpose: `revocation\n${'y'.repeat(100)}` }));
+    serveOverride = () => long;
+    await expect(makeResolver().checkStatus(clearEntry)).rejects.toThrow(
+      new Error(`status list statusPurpose mismatch: "revocation\\n${'y'.repeat(53)}"... \u2260 "revocation"`),
+    );
+    const restated = await resignedList((subject) => subject);
+    serveOverride = () => restated;
+    expect(await makeResolver().checkStatus(clearEntry)).toBe(false);
   });
 
   it('fail-closes when the proof is missing proofValue', async () => {
@@ -238,7 +291,7 @@ describe('CheqdStatusListResolver (real crypto, stubbed transport)', () => {
     };
     await expect(
       makeResolver({ didResolver: wrongKid }).checkStatus(clearEntry),
-    ).rejects.toThrow(/no verification method matching/);
+    ).rejects.toThrow(/not found under assertionMethod of/);
   });
 
   it('fail-closes on a TAMPERED list (signature no longer covers the bytes)', async () => {

@@ -1,20 +1,22 @@
 {
-  "suiteVersion": "1.2.0",
-  "vectorSetHash": "sha256:8184227c315ce5f322652d827d070ee510bcb12576aef7471521d67a04b064c6",
-  "vectorCount": 49,
+  "suiteVersion": "1.3.0",
+  "vectorSetHash": "sha256:51cb4938d45899d15b4bafe86594cf4d93e0c74a9b30e8bbe89d15de1080ce1d",
+  "vectorCount": 68,
   "files": [
-    ["audit-integrity.json", "463aec668c72590866d63ab5ee1effcc14564b0721fd87cb41d1e133cba88c86"],
-    ["card-proof.json", "1572c7342814a77023cbaa67592b4e0d357321a69b5c0fc260b1da95923cc04a"],
-    ["delegation-chain.json", "916ee89119a93468a5004ffc691935bfaa9b98103a0407ea318aedab4d5776a0"],
-    ["did-key-resolution.json", "79b443942406b5146289f47f5331f92a32e2a8c429e5f21d5b205cbc536b2afb"],
-    ["did-web-resolution.json", "580fa5736c0a183320d2b736c43b7670e067dbf27c4966391442e77bf0262d4f"],
-    ["entity-card.json", "024d9af2797f879de67968ae14734450e5d1eb24909df403727ebcf5eb5147a8"],
-    ["negotiation.json", "d3eeae3f3ddbeeb22061def234bbc04fa662474a2b69d46e566acf23fccc8a5e"],
-    ["signed-proof.json", "c6efe827a58a232cda277f0afc927bcfab46aac2357db914719874b66192d2dc"],
-    ["status-list.json", "accfdee8e0d5d8349f9cef379d695720d1010893b37e9b0e2060301bcd86e70e"]
+    ["audit-integrity.json", "e246dfba95e0846ea18d1d406778ebd2cc263c6a072521841b238f57f603a465"],
+    ["card-proof.json", "c69f93d1dc8859abd4cdd939abfa2669f3887391630673c8947dc57086ba8b4e"],
+    ["delegation-chain-key-relationship.json", "2729f84946711e2caeab749cffc45b1cfc12dd9c55a50907ef438c1c1fb6e019"],
+    ["delegation-chain.json", "92ab2a95e107a290a0dc64b71ce6b2d6b649e2ef3ce35a5a17712bc32c115cba"],
+    ["did-key-resolution.json", "a01a32cff0f399d40d854e1a5d87c815a91b82702560445125c7f8f5ed3e616d"],
+    ["did-web-resolution.json", "f844115fef7b8bee1255d4bea970c9be59efa120ff47a8f460799a8459659d24"],
+    ["entity-card.json", "a84e8e6227d1c61183cefd9a9ad7e31bf1769ce68e09a9dd4f94e92f484a2d6b"],
+    ["negotiation.json", "7262c6c29a561b95b92ce02bcfdd2fbfe887dfee27464f6d5185f0b5fd5517a6"],
+    ["signed-proof.json", "58e30f1ed74dc272eb8e2829441af03007c61981c6b83b3bc31b447b4d95666c"],
+    ["status-list-key-relationship.json", "7b66824453bd62ce319463c6d54ac0f9aa7f51ea58b1b0369724a1d99f63f508"],
+    ["status-list.json", "92fb0e629c21fbdc32be3434bb9f7d6c2ce26aab2162a79f81f6bfe3cc530324"]
   ],
   "pinnedAt": {
     "package": "@kya-os/mcp",
-    "packageVersion": "1.18.0"
+    "packageVersion": "1.22.0"
   }
 }

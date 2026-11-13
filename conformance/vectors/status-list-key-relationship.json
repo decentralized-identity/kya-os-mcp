@@ -1,0 +1,719 @@
+{
+  "version": "1.3.0",
+  "category": "status-list",
+  "vectors": [
+    {
+      "id": "status-list/assertion-method-key-list",
+      "category": "status-list",
+      "description": "Active delegation whose status list is signed with the key its issuer's DID document lists under assertionMethod",
+      "expected": "pass",
+      "reason": "The list's proof verifies with a key listed under assertionMethod, and the credential's bit is unset",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-issuer-agent",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:web:issuer.example.com",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:web:agent.example.com",
+            "delegation": {
+              "id": "del-issuer-agent",
+              "issuerDid": "did:web:issuer.example.com",
+              "subjectDid": "did:web:agent.example.com",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://issuer.example.com/status/revocation/1#7",
+            "type": "StatusList2021Entry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "7",
+            "statusListCredential": "https://issuer.example.com/status/revocation/1"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:web:issuer.example.com#assert-1",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "Mh9p_R8c33SuWEXWDjIf2ZJKOrbK3J98srLJfN1FUTaEzjlLB7LETXT059SI7xkzx3wVwBrujlkVCNRG_1B2CQ"
+          }
+        },
+        "statusLists": {
+          "https://issuer.example.com/status/revocation/1": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://w3id.org/vc/status-list/2021/v1"
+            ],
+            "id": "https://issuer.example.com/status/revocation/1",
+            "type": [
+              "VerifiableCredential",
+              "StatusList2021Credential"
+            ],
+            "issuer": "did:web:issuer.example.com",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://issuer.example.com/status/revocation/1#list",
+              "type": "StatusList2021",
+              "statusPurpose": "revocation",
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA"
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:web:issuer.example.com#assert-1",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "oG2hEbEAu2iK59RiFKpBjpgUoj-js5ffGDnuU0xl_dRuLjdlw-R_XQNhfzc58yibiN8CTHj8kYIOt1sSwEVNDA"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:web:issuer.example.com": {
+            "id": "did:web:issuer.example.com",
+            "verificationMethod": [
+              {
+                "id": "did:web:issuer.example.com#login-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                }
+              },
+              {
+                "id": "did:web:issuer.example.com#assert-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                }
+              }
+            ],
+            "authentication": [
+              "did:web:issuer.example.com#login-1"
+            ],
+            "assertionMethod": [
+              "did:web:issuer.example.com#assert-1"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com"
+      }
+    },
+    {
+      "id": "status-list/authentication-key-list",
+      "category": "status-list",
+      "description": "The same active delegation, its list signed with the key the issuer's DID document lists only under authentication",
+      "expected": "fail",
+      "reason": "A key listed only under authentication does not verify the list (SPEC.md §6.2), so its bits cannot be read and the check fails closed",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-issuer-agent",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:web:issuer.example.com",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:web:agent.example.com",
+            "delegation": {
+              "id": "del-issuer-agent",
+              "issuerDid": "did:web:issuer.example.com",
+              "subjectDid": "did:web:agent.example.com",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://issuer.example.com/status/revocation/1#7",
+            "type": "StatusList2021Entry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "7",
+            "statusListCredential": "https://issuer.example.com/status/revocation/1"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:web:issuer.example.com#assert-1",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "Mh9p_R8c33SuWEXWDjIf2ZJKOrbK3J98srLJfN1FUTaEzjlLB7LETXT059SI7xkzx3wVwBrujlkVCNRG_1B2CQ"
+          }
+        },
+        "statusLists": {
+          "https://issuer.example.com/status/revocation/1": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://w3id.org/vc/status-list/2021/v1"
+            ],
+            "id": "https://issuer.example.com/status/revocation/1",
+            "type": [
+              "VerifiableCredential",
+              "StatusList2021Credential"
+            ],
+            "issuer": "did:web:issuer.example.com",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://issuer.example.com/status/revocation/1#list",
+              "type": "StatusList2021",
+              "statusPurpose": "revocation",
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA"
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:web:issuer.example.com#login-1",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "cCT6k50sCmW5bIfJ3k3B2cRWhqfkq7l8gduf9pHr1tK1a7cP1W2QoaZ-vSFcaQvmSgzy0sR037KgAjaNd6t7Cw"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:web:issuer.example.com": {
+            "id": "did:web:issuer.example.com",
+            "verificationMethod": [
+              {
+                "id": "did:web:issuer.example.com#login-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                }
+              },
+              {
+                "id": "did:web:issuer.example.com#assert-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                }
+              }
+            ],
+            "authentication": [
+              "did:web:issuer.example.com#login-1"
+            ],
+            "assertionMethod": [
+              "did:web:issuer.example.com#assert-1"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com"
+      }
+    },
+    {
+      "id": "status-list/proof-purpose-authentication-list",
+      "category": "status-list",
+      "description": "The same active delegation, its list's proof stating proofPurpose \"authentication\"",
+      "expected": "fail",
+      "reason": "A list's proof that states a purpose other than assertionMethod is rejected (SPEC.md §6.2), so the check fails closed",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-issuer-agent",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:web:issuer.example.com",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:web:agent.example.com",
+            "delegation": {
+              "id": "del-issuer-agent",
+              "issuerDid": "did:web:issuer.example.com",
+              "subjectDid": "did:web:agent.example.com",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://issuer.example.com/status/revocation/1#7",
+            "type": "StatusList2021Entry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "7",
+            "statusListCredential": "https://issuer.example.com/status/revocation/1"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:web:issuer.example.com#assert-1",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "Mh9p_R8c33SuWEXWDjIf2ZJKOrbK3J98srLJfN1FUTaEzjlLB7LETXT059SI7xkzx3wVwBrujlkVCNRG_1B2CQ"
+          }
+        },
+        "statusLists": {
+          "https://issuer.example.com/status/revocation/1": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://w3id.org/vc/status-list/2021/v1"
+            ],
+            "id": "https://issuer.example.com/status/revocation/1",
+            "type": [
+              "VerifiableCredential",
+              "StatusList2021Credential"
+            ],
+            "issuer": "did:web:issuer.example.com",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://issuer.example.com/status/revocation/1#list",
+              "type": "StatusList2021",
+              "statusPurpose": "revocation",
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA"
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:web:issuer.example.com#assert-1",
+              "proofPurpose": "authentication",
+              "proofValue": "oG2hEbEAu2iK59RiFKpBjpgUoj-js5ffGDnuU0xl_dRuLjdlw-R_XQNhfzc58yibiN8CTHj8kYIOt1sSwEVNDA"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:web:issuer.example.com": {
+            "id": "did:web:issuer.example.com",
+            "verificationMethod": [
+              {
+                "id": "did:web:issuer.example.com#login-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                }
+              },
+              {
+                "id": "did:web:issuer.example.com#assert-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                }
+              }
+            ],
+            "authentication": [
+              "did:web:issuer.example.com#login-1"
+            ],
+            "assertionMethod": [
+              "did:web:issuer.example.com#assert-1"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com"
+      }
+    },
+    {
+      "id": "status-list/issuer-document-id-mismatch",
+      "category": "status-list",
+      "description": "The same active delegation and list, with the DID document supplied for their issuer naming another DID as its id",
+      "expected": "fail",
+      "reason": "Only the issuer's own DID document lists the issuer's keys (SPEC.md §6.2); one document serves the credential's proof and its list's, so the credential's proof is rejected before any bit is read",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-issuer-agent",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:web:issuer.example.com",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:web:agent.example.com",
+            "delegation": {
+              "id": "del-issuer-agent",
+              "issuerDid": "did:web:issuer.example.com",
+              "subjectDid": "did:web:agent.example.com",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://issuer.example.com/status/revocation/1#7",
+            "type": "StatusList2021Entry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "7",
+            "statusListCredential": "https://issuer.example.com/status/revocation/1"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:web:issuer.example.com#assert-1",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "Mh9p_R8c33SuWEXWDjIf2ZJKOrbK3J98srLJfN1FUTaEzjlLB7LETXT059SI7xkzx3wVwBrujlkVCNRG_1B2CQ"
+          }
+        },
+        "statusLists": {
+          "https://issuer.example.com/status/revocation/1": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://w3id.org/vc/status-list/2021/v1"
+            ],
+            "id": "https://issuer.example.com/status/revocation/1",
+            "type": [
+              "VerifiableCredential",
+              "StatusList2021Credential"
+            ],
+            "issuer": "did:web:issuer.example.com",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://issuer.example.com/status/revocation/1#list",
+              "type": "StatusList2021",
+              "statusPurpose": "revocation",
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA"
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:web:issuer.example.com#assert-1",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "oG2hEbEAu2iK59RiFKpBjpgUoj-js5ffGDnuU0xl_dRuLjdlw-R_XQNhfzc58yibiN8CTHj8kYIOt1sSwEVNDA"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:web:issuer.example.com": {
+            "id": "did:web:other.example.com",
+            "verificationMethod": [
+              {
+                "id": "did:web:issuer.example.com#login-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                }
+              },
+              {
+                "id": "did:web:issuer.example.com#assert-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                }
+              }
+            ],
+            "authentication": [
+              "did:web:issuer.example.com#login-1"
+            ],
+            "assertionMethod": [
+              "did:web:issuer.example.com#assert-1"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com"
+      }
+    },
+    {
+      "id": "status-list/assertion-key-other-controller-list",
+      "category": "status-list",
+      "description": "The same active delegation, its list signed with #login-1, which the issuer's DID document also lists under assertionMethod but names another DID as the controller of",
+      "expected": "fail",
+      "reason": "A verification method whose controller is another DID is not the issuer's (CID §3.3 step 10, SPEC.md §6.2), so the list's key is not one the issuer lists under assertionMethod, its bits cannot be read, and the check fails closed",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-issuer-agent",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:web:issuer.example.com",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:web:agent.example.com",
+            "delegation": {
+              "id": "del-issuer-agent",
+              "issuerDid": "did:web:issuer.example.com",
+              "subjectDid": "did:web:agent.example.com",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://issuer.example.com/status/revocation/1#7",
+            "type": "StatusList2021Entry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "7",
+            "statusListCredential": "https://issuer.example.com/status/revocation/1"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:web:issuer.example.com#assert-1",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "Mh9p_R8c33SuWEXWDjIf2ZJKOrbK3J98srLJfN1FUTaEzjlLB7LETXT059SI7xkzx3wVwBrujlkVCNRG_1B2CQ"
+          }
+        },
+        "statusLists": {
+          "https://issuer.example.com/status/revocation/1": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://w3id.org/vc/status-list/2021/v1"
+            ],
+            "id": "https://issuer.example.com/status/revocation/1",
+            "type": [
+              "VerifiableCredential",
+              "StatusList2021Credential"
+            ],
+            "issuer": "did:web:issuer.example.com",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://issuer.example.com/status/revocation/1#list",
+              "type": "StatusList2021",
+              "statusPurpose": "revocation",
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA"
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:web:issuer.example.com#login-1",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "cCT6k50sCmW5bIfJ3k3B2cRWhqfkq7l8gduf9pHr1tK1a7cP1W2QoaZ-vSFcaQvmSgzy0sR037KgAjaNd6t7Cw"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:web:issuer.example.com": {
+            "id": "did:web:issuer.example.com",
+            "verificationMethod": [
+              {
+                "id": "did:web:issuer.example.com#login-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:other.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                }
+              },
+              {
+                "id": "did:web:issuer.example.com#assert-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                }
+              }
+            ],
+            "authentication": [
+              "did:web:issuer.example.com#login-1"
+            ],
+            "assertionMethod": [
+              "did:web:issuer.example.com#assert-1",
+              "did:web:issuer.example.com#login-1"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com"
+      }
+    },
+    {
+      "id": "status-list/assertion-key-defined-twice-list",
+      "category": "status-list",
+      "description": "The same active delegation, its list signed with #login-1, which the issuer's DID document defines in verificationMethod and again embedded in assertionMethod",
+      "expected": "fail",
+      "reason": "A method id the document defines more than once, among verificationMethod and the methods assertionMethod embeds, names no method (SPEC.md §6.2), so the list's key is not found, its bits cannot be read, and the check fails closed",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-issuer-agent",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:web:issuer.example.com",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:web:agent.example.com",
+            "delegation": {
+              "id": "del-issuer-agent",
+              "issuerDid": "did:web:issuer.example.com",
+              "subjectDid": "did:web:agent.example.com",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://issuer.example.com/status/revocation/1#7",
+            "type": "StatusList2021Entry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "7",
+            "statusListCredential": "https://issuer.example.com/status/revocation/1"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:web:issuer.example.com#assert-1",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "Mh9p_R8c33SuWEXWDjIf2ZJKOrbK3J98srLJfN1FUTaEzjlLB7LETXT059SI7xkzx3wVwBrujlkVCNRG_1B2CQ"
+          }
+        },
+        "statusLists": {
+          "https://issuer.example.com/status/revocation/1": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://w3id.org/vc/status-list/2021/v1"
+            ],
+            "id": "https://issuer.example.com/status/revocation/1",
+            "type": [
+              "VerifiableCredential",
+              "StatusList2021Credential"
+            ],
+            "issuer": "did:web:issuer.example.com",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://issuer.example.com/status/revocation/1#list",
+              "type": "StatusList2021",
+              "statusPurpose": "revocation",
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA"
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:web:issuer.example.com#login-1",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "cCT6k50sCmW5bIfJ3k3B2cRWhqfkq7l8gduf9pHr1tK1a7cP1W2QoaZ-vSFcaQvmSgzy0sR037KgAjaNd6t7Cw"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:web:issuer.example.com": {
+            "id": "did:web:issuer.example.com",
+            "verificationMethod": [
+              {
+                "id": "did:web:issuer.example.com#login-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                }
+              },
+              {
+                "id": "did:web:issuer.example.com#assert-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                }
+              }
+            ],
+            "authentication": [
+              "did:web:issuer.example.com#login-1"
+            ],
+            "assertionMethod": [
+              "did:web:issuer.example.com#assert-1",
+              {
+                "id": "did:web:issuer.example.com#login-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                }
+              }
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com"
+      }
+    }
+  ]
+}

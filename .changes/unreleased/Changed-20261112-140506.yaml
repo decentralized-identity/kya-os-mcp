@@ -1,0 +1,7 @@
+kind: Changed
+body: |-
+    **`CheqdStatusListResolver` refuses a status list whose proof names its
+    key by anything but a non-empty string.** Such a proof was read as
+    naming no key, and the list was checked with each of the issuer's keys;
+    it now fails as the delegation verifier fails such a proof.
+time: 2026-11-12T14:05:06.000000-06:00

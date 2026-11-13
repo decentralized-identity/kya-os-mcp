@@ -17,6 +17,7 @@ import {
   createDidWebResolver,
   MemoryNonceCacheProvider,
   parseExtensionSettings,
+  parseVCJWT,
   requireExtension,
   type DIDDocument,
   type CredentialStatus,
@@ -176,24 +177,29 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
         didResolver,
         signatureVerifier: ed25519SignatureVerifier(this.crypto),
       });
+      // A leaf that travels as a VC-JWT is the credential its claims carry, verified as that VC-JWT.
+      const jwt = typeof input.leaf === 'string' ? input.leaf : undefined;
+      const leaf = (jwt === undefined ? input.leaf : parseVCJWT(jwt)?.payload.vc) as DelegationCredential;
       const verifierPort: DelegationCredentialVerifierPort = {
         verifyDelegationCredential: (credential, options) =>
-          credentialVerifier.verifyDelegationCredential(credential, {
-            skipStatus: true, // status handled by the dedicated status-list vectors
-            ...(options?.skipSignature ? { skipSignature: true } : {}),
-          }),
+          jwt !== undefined && credential === leaf
+            ? credentialVerifier.verifyDelegationJwt(jwt, { skipStatus: true })
+            : credentialVerifier.verifyDelegationCredential(credential, {
+                skipStatus: true, // status handled by the dedicated status-list vectors
+                ...(options?.skipSignature ? { skipSignature: true } : {}),
+              }),
       };
 
       const ancestors = (input.ancestors ?? []) as DelegationCredential[];
       const result = await validateDelegationChain(
-        input.leaf as DelegationCredential,
+        leaf,
         {
           serverDid: input.serverDid,
           verifier: verifierPort,
           statusListConfigured: false,
           resolveDelegationChain:
             ancestors.length > 0
-              ? async () => [...ancestors, input.leaf as DelegationCredential]
+              ? async () => [...ancestors, leaf]
               : undefined,
         },
       );

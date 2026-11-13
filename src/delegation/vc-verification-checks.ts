@@ -16,16 +16,24 @@ import {
   isSupportedCredentialProofType,
   validateDelegationCredential,
 } from "../types/protocol.js";
+import { describeValue } from "../utils/describe-value.js";
+import { issuerOf } from "../utils/guards.js";
+import { sanitizeForMessage } from "../utils/message-text.js";
+import { credentialIssuerRefusal } from "./credential-issuer.js";
 import type {
   DIDResolver,
-  DIDDocument,
-  VerificationMethod,
   StatusListResolver,
   StatusCheckResult,
   SignatureVerificationFunction,
   DelegationVCVerificationResult,
 } from "./vc-verifier.types.js";
 import { verificationMethodJwk } from "./verification-method-key.js";
+import {
+  ASSERTION_METHOD,
+  assertionMethodRefusal,
+  proofPurposeMismatch,
+  selectAssertionMethod,
+} from "./verification-relationship.js";
 
 /**
  * Properties a DelegationCredential `credentialSubject` may carry. Anything
@@ -35,7 +43,9 @@ import { verificationMethodJwk } from "./verification-method-key.js";
 const DELEGATION_SUBJECT_KEYS: readonly string[] = ["id", "delegation"];
 
 /**
- * Stage 1: schema, expiry, status field, and subject-shape checks (no network).
+ * Stage 1: schema, issuer, expiry, status field, and subject-shape checks (no network).
+ * The credential must name its issuer by a DID (./credential-issuer), so every
+ * later stage, the key lookup included, holds the issuer's DID as a string.
  *
  * `requireEmbeddedProof` (default `true`) demands a Data Integrity `proof`
  * block. The VC-JWT path passes `false`: a compact JWS carries no embedded
@@ -57,6 +67,11 @@ export function validateBasicProperties(
     };
   }
 
+  const issuerRefusal = credentialIssuerRefusal(vc);
+  if (issuerRefusal) {
+    return { valid: false, reason: issuerRefusal };
+  }
+
   if (isDelegationCredentialExpired(vc)) {
     return { valid: false, reason: "Delegation credential expired" };
   }
@@ -74,7 +89,7 @@ export function validateBasicProperties(
       reason:
         delegation.status === undefined
           ? "Delegation status is missing"
-          : `Delegation status is ${String(delegation.status)}`,
+          : `Delegation status is ${describeValue(delegation.status)}`,
     };
   }
 
@@ -115,18 +130,9 @@ function validateSubjectShape(vc: DelegationCredential): {
   return {
     valid: false,
     reason:
-      `credentialSubject contains non-delegation field(s): ${extraneous.join(", ")}. ` +
+      `credentialSubject contains non-delegation field(s): ${describeValue(extraneous.join(", "))}. ` +
       `A DelegationCredential subject MUST carry only 'id' and 'delegation' (KYA-OS §11.6).`,
   };
-}
-
-function findVerificationMethod(
-  didDoc: DIDDocument,
-  verificationMethodId: string,
-): VerificationMethod | undefined {
-  return didDoc.verificationMethod?.find(
-    (vm) => vm.id === verificationMethodId,
-  );
 }
 
 /**
@@ -172,7 +178,17 @@ export function combineVerificationResult(
   };
 }
 
-/** Stage 2a: resolve the issuer key and verify the embedded proof signature. */
+/**
+ * Stage 2a: resolve the issuer key and verify the embedded proof signature.
+ * A delegation is an assertion by its issuer, so the key is the verification
+ * method `proof.verificationMethod` names, and only when the issuer's DID
+ * document lists it under `assertionMethod` (W3C Controlled Identifiers v1.0
+ * §3.3): a key the issuer keeps for signing in does not issue its
+ * delegations. The proof options are outside the signature (SPEC.md §6.2), so
+ * a `proofPurpose` binds nothing; one that names another purpose is still
+ * rejected, since the proof was not made as an assertion, and one that is
+ * absent is read as an assertion.
+ */
 export async function verifySignature(
   vc: DelegationCredential,
   didResolver: DIDResolver | undefined,
@@ -181,8 +197,14 @@ export async function verifySignature(
   const startTime = Date.now();
 
   try {
-    const issuerDid =
-      typeof vc.issuer === "string" ? vc.issuer : vc.issuer.id;
+    const issuerDid = issuerOf(vc.issuer);
+    if (issuerDid === undefined) {
+      return {
+        valid: false,
+        reason: credentialIssuerRefusal(vc),
+        durationMs: Date.now() - startTime,
+      };
+    }
 
     if (!didResolver || !signatureVerifier) {
       return {
@@ -204,7 +226,16 @@ export async function verifySignature(
     if (vc.proof && !isSupportedCredentialProofType(vc.proof.type)) {
       return {
         valid: false,
-        reason: `Unsupported credential proof.type: ${String(vc.proof.type)}`,
+        reason: `Unsupported credential proof.type: ${describeValue(vc.proof.type)}`,
+        durationMs: Date.now() - startTime,
+      };
+    }
+
+    const purposeMismatch = proofPurposeMismatch(vc.proof, ASSERTION_METHOD);
+    if (purposeMismatch) {
+      return {
+        valid: false,
+        reason: purposeMismatch,
         durationMs: Date.now() - startTime,
       };
     }
@@ -213,7 +244,7 @@ export async function verifySignature(
     if (!didDoc) {
       return {
         valid: false,
-        reason: `Could not resolve issuer DID: ${issuerDid}`,
+        reason: `Could not resolve issuer DID: ${describeValue(issuerDid)}`,
         durationMs: Date.now() - startTime,
       };
     }
@@ -226,28 +257,22 @@ export async function verifySignature(
       };
     }
 
-    const verificationMethodId = vc.proof["verificationMethod"];
-    if (!verificationMethodId) {
+    // A Data Integrity proof names its key: a DID URL of the issuer, or a `#fragment` read against it.
+    const verificationMethodId: unknown = vc.proof["verificationMethod"];
+    const selection = verificationMethodId === undefined
+      ? undefined
+      : selectAssertionMethod(didDoc, issuerDid, verificationMethodId);
+    if (selection === undefined || !("method" in selection)) {
       return {
         valid: false,
-        reason: "Proof missing verificationMethod",
+        reason: selection === undefined
+          ? "Proof missing verificationMethod"
+          : assertionMethodRefusal(selection, "Proof verificationMethod", verificationMethodId, issuerDid),
         durationMs: Date.now() - startTime,
       };
     }
 
-    const verificationMethod = findVerificationMethod(
-      didDoc,
-      verificationMethodId as string,
-    );
-    if (!verificationMethod) {
-      return {
-        valid: false,
-        reason: `Verification method ${verificationMethodId} not found`,
-        durationMs: Date.now() - startTime,
-      };
-    }
-
-    const publicKeyJwk = verificationMethodJwk(verificationMethod);
+    const publicKeyJwk = verificationMethodJwk(selection.method);
     if (!publicKeyJwk) {
       return {
         valid: false,
@@ -267,7 +292,7 @@ export async function verifySignature(
   } catch (error) {
     return {
       valid: false,
-      reason: `Signature verification error: ${error instanceof Error ? error.message : "Unknown error"}`,
+      reason: `Signature verification error: ${error instanceof Error ? sanitizeForMessage(error.message) : "Unknown error"}`,
       durationMs: Date.now() - startTime,
     };
   }
@@ -302,7 +327,7 @@ export async function checkCredentialStatus(
     if (isRevoked) {
       return {
         valid: false,
-        reason: `Credential revoked via ${status.type} (${status.statusPurpose})`,
+        reason: `Credential revoked via ${describeValue(status.type)} (${describeValue(status.statusPurpose)})`,
         outcome: "revoked",
         durationMs: Date.now() - startTime,
       };
@@ -315,7 +340,7 @@ export async function checkCredentialStatus(
   } catch (error) {
     return {
       valid: false,
-      reason: `Status check error: ${error instanceof Error ? error.message : "Unknown error"}`,
+      reason: `Status check error: ${error instanceof Error ? sanitizeForMessage(error.message) : "Unknown error"}`,
       outcome: "status_unresolvable",
       durationMs: Date.now() - startTime,
     };

@@ -1,0 +1,17 @@
+kind: Security
+body: |-
+    **A delegation credential, status list or delegation hop no longer
+    verifies with a key its issuer's DID document does not list under
+    `assertionMethod`.** `DelegationCredentialVerifier`,
+    `CheqdStatusListResolver`, `createStatusListProofVerifier` and
+    `createDelegationProofVerifier` took any key the document published, so
+    the holder of a key listed for another purpose or none, such as an
+    `authentication` key on a less protected device, or of a third party's
+    key the document defines, could sign a delegation the gate ran a tool
+    for, a status list that cleared a revocation, or a hop
+    `verifyRequestDelegation` accepted. The first was affected in every
+    release, from 1.9.0 for VC-JWTs, and the others from 1.14.0, 1.20.0 and
+    1.22.0. A verifier is unaffected when every issuer it trusts lists each
+    key it publishes under `assertionMethod`, as did:key documents do;
+    others should upgrade.
+time: 2026-11-12T14:05:00.000000-06:00

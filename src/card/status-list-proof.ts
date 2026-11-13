@@ -9,10 +9,12 @@
  * `DataIntegrityProof` / `eddsa-jcs-2022` by an Ed25519 key in the list issuer's DID document.
  *
  * The cryptosuite itself is in ./data-integrity; a status list is an assertion by its issuer, so
- * the proof purpose is `assertionMethod`. Every failure returns `false`.
+ * the proof purpose is `assertionMethod`, and the issuer's DID document must list the key under
+ * `assertionMethod`. Every failure returns `false`.
  */
 
 import type { DIDResolver } from '../delegation/vc-verifier.types.js';
+import { ASSERTION_METHOD } from '../delegation/verification-relationship.js';
 import { signEddsaJcs2022, verifyEddsaJcs2022, type EddsaJcs2022Proof } from './data-integrity.js';
 import type { ProofSigner } from './proof/types.js';
 
@@ -35,7 +37,7 @@ export interface StatusListProofVerifierDeps {
 export function createStatusListProofVerifier(deps: StatusListProofVerifierDeps): StatusListProofVerifier {
   return async function verifyStatusList(credential: Record<string, unknown>): Promise<boolean> {
     try {
-      return await verifyEddsaJcs2022(credential, deps.didResolver, 'assertionMethod');
+      return await verifyEddsaJcs2022(credential, deps.didResolver, ASSERTION_METHOD);
     } catch {
       return false;
     }
@@ -45,12 +47,13 @@ export function createStatusListProofVerifier(deps: StatusListProofVerifierDeps)
 /**
  * Sign a status-list credential as its issuer, the publishing side of
  * {@link createStatusListProofVerifier}. `signer.kid` must be a verification method of the list's
- * `issuer`; any {@link ProofSigner} with `signRaw` works.
+ * `issuer` that its DID document lists under `assertionMethod`; any {@link ProofSigner} with
+ * `signRaw` works.
  */
 export function signStatusListCredential<T extends Record<string, unknown>>(
   credential: T,
   signer: ProofSigner,
   options: { created?: string } = {},
 ): Promise<T & { proof: EddsaJcs2022Proof }> {
-  return signEddsaJcs2022(credential, signer, { proofPurpose: 'assertionMethod', created: options.created });
+  return signEddsaJcs2022(credential, signer, { proofPurpose: ASSERTION_METHOD, created: options.created });
 }

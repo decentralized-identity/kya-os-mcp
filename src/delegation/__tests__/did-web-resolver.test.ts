@@ -190,11 +190,7 @@ describe('DidWebResolver', () => {
       resolveDID: vi.fn(),
       fetchStatusList: vi.fn(),
       fetchDelegationChain: vi.fn(),
-      fetch: vi.fn().mockResolvedValue({
-        ok: status >= 200 && status < 300,
-        status,
-        json: vi.fn().mockResolvedValue(responseBody),
-      }),
+      fetch: vi.fn().mockImplementation(async () => new Response(JSON.stringify(responseBody), { status })),
     };
   };
 
@@ -203,11 +199,7 @@ describe('DidWebResolver', () => {
       resolveDID: vi.fn(),
       fetchStatusList: vi.fn(),
       fetchDelegationChain: vi.fn(),
-      fetch: vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: vi.fn().mockRejectedValue(new Error('Invalid JSON')),
-      }),
+      fetch: vi.fn().mockImplementation(async () => new Response('not json')),
     };
   };
 
@@ -234,7 +226,7 @@ describe('DidWebResolver', () => {
       expect(result?.verificationMethod).toHaveLength(1);
       expect(result?.verificationMethod?.[0]?.type).toBe('Ed25519VerificationKey2020');
       expect(mockFetchProvider.fetch).toHaveBeenCalledWith(
-        'https://example.com/.well-known/did.json'
+        'https://example.com/.well-known/did.json', expect.objectContaining({ signal: expect.any(AbortSignal) })
       );
     });
 
@@ -259,7 +251,7 @@ describe('DidWebResolver', () => {
       expect(result).not.toBeNull();
       expect(result?.id).toBe('did:web:example.com:agents:bot1');
       expect(mockFetchProvider.fetch).toHaveBeenCalledWith(
-        'https://example.com/agents/bot1/did.json'
+        'https://example.com/agents/bot1/did.json', expect.objectContaining({ signal: expect.any(AbortSignal) })
       );
     });
 
@@ -621,11 +613,7 @@ describe('buildDidWebDocument', () => {
         resolveDID: vi.fn(),
         fetchStatusList: vi.fn(),
         fetchDelegationChain: vi.fn(),
-        fetch: vi.fn().mockResolvedValue({
-          ok: true,
-          status: 200,
-          json: vi.fn().mockResolvedValue(document),
-        }),
+        fetch: vi.fn().mockImplementation(async () => new Response(JSON.stringify(document))),
       };
 
       const resolved = await new DidWebResolver(fetchProvider).resolve(did);
@@ -762,11 +750,7 @@ describe('createDidWebResolver', () => {
       resolveDID: vi.fn(),
       fetchStatusList: vi.fn(),
       fetchDelegationChain: vi.fn(),
-      fetch: vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: vi.fn().mockResolvedValue(validDIDDocument),
-      }),
+      fetch: vi.fn().mockImplementation(async () => new Response(JSON.stringify(validDIDDocument))),
     };
 
     const resolver = createDidWebResolver(mockFetchProvider, { cacheTtl: 5000 });

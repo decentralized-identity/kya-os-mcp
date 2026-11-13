@@ -6,12 +6,10 @@
  */
 
 import { CryptoService, type Ed25519JWK } from "../utils/crypto-service.js";
-import { CryptoProvider } from "../providers/base.js";
-import { ClockProvider } from "../providers/base.js";
-import { NonceCacheProvider } from "../providers/base.js";
+import { ClockProvider, CryptoProvider, FetchProvider, NonceCacheProvider } from "../providers/base.js";
 import { nonceRetentionSeconds } from "../providers/nonce-retention.js";
 import { admitNonce, checkNonceStore } from "../providers/nonce-admission.js";
-import { FetchProvider } from "../providers/base.js";
+import { checkProofIdentifiers, resolveProofDid } from "./proof-did.js";
 import {
   validateDetachedProof,
   type DetachedProof,
@@ -562,9 +560,10 @@ export class ProofVerifier {
     kid?: string
   ): Promise<Ed25519JWK | null> {
     try {
+      checkProofIdentifiers(did, kid);
       // Built before resolving, so a kid naming another DID fails without a fetch.
       const matchesKid = kid ? verificationMethodMatcher(did, kid) : undefined;
-      const didDoc = await this.fetch.resolveDID(did);
+      const didDoc = await resolveProofDid(this.fetch, did, kid);
 
       if (!didDoc) {
         throw new ProofVerificationError(
@@ -636,13 +635,12 @@ export class ProofVerifier {
         );
       }
 
-      // Set kid from verification method ID so downstream kid-matching works
-      const result = jwk as Ed25519JWK;
-      if (!result.kid && verificationMethod.id) {
-        result.kid = verificationMethod.id;
+      // Set kid from verification method ID so downstream kid-matching works,
+      // on a copy: a document a built-in resolver returns is frozen.
+      if (!jwk.kid && verificationMethod.id) {
+        return { ...jwk, kid: verificationMethod.id } as Ed25519JWK;
       }
-
-      return result;
+      return jwk as Ed25519JWK;
     } catch (error) {
       if (error instanceof ProofVerificationError) {
         throw error;

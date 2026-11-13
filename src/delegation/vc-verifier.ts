@@ -5,7 +5,7 @@
  * Progressive enhancement verification for W3C Delegation Credentials.
  *
  * Stage 1: Fast basic checks (no network, early rejection)
- * Stage 2: Parallel advanced checks (signature, status)
+ * Stage 2: Signature, then status once the signature has verified
  * Stage 3: Combined results
  *
  * The stateless checks live in `./vc-verification-checks.ts`; the shapes in
@@ -79,7 +79,7 @@ export class DelegationCredentialVerifier {
    * Verify a delegation credential through progressive enhancement.
    *
    * Stage 1: Fast basic checks (schema, expiry, status field)
-   * Stage 2: Parallel signature and status list checks (if resolvers configured)
+   * Stage 2: Signature, then status once the signature has verified (if resolvers configured)
    * Stage 3: Combined result with timing metrics
    *
    * @param vc - The W3C Delegation Credential to verify
@@ -115,9 +115,9 @@ export class DelegationCredentialVerifier {
       return result;
     }
 
-    // Both promises are constructed before either is awaited: a signature
-    // cache hit resolves instantly ALONGSIDE the live status read; a miss
-    // runs signature and status concurrently (unchanged parallelism).
+    // The status list is read only after the signature has verified, so a
+    // credential that merely names an issuer costs no status read. A signature
+    // cache hit still leaves the status read live.
     const signaturePromise = this.cachedSignature(cacheKey, () =>
       options.skipSignature
         ? Promise.resolve<SignatureVerificationResult>({
@@ -131,7 +131,7 @@ export class DelegationCredentialVerifier {
           ),
     );
 
-    const statusPromise =
+    const readStatus = (): Promise<StatusCheckResult> =>
       !options.skipStatus && vc.credentialStatus
         ? checkCredentialStatus(
             vc.credentialStatus,
@@ -145,7 +145,7 @@ export class DelegationCredentialVerifier {
 
     return this.finalizeVerification(
       signaturePromise,
-      statusPromise,
+      readStatus,
       basicCheckMs,
       startTime,
     );
@@ -158,8 +158,8 @@ export class DelegationCredentialVerifier {
    *
    * Parses the token, runs the same fast basic checks on the extracted
    * credential (minus the embedded-`proof` requirement — the envelope is the
-   * proof), then verifies that envelope signature and the credential status in
-   * parallel. Same result shape, cache, and metrics as
+   * proof), then verifies that envelope signature and, once it has verified, the
+   * credential status. Same result shape, cache, and metrics as
    * {@link verifyDelegationCredential}.
    */
   async verifyDelegationJwt(
@@ -175,9 +175,8 @@ export class DelegationCredentialVerifier {
     const { vc, issuerDid, kid, basicCheckMs } = prepared;
     const cacheKey = this.cacheKeyForJwt(jwt, vc, options);
 
-    // Same construction as the Data Integrity path: both promises exist
-    // before either is awaited, so a cached signature races a LIVE status
-    // read and a miss keeps full signature/status parallelism.
+    // As on the Data Integrity path, status is read only after the envelope
+    // signature has verified, and live even on a signature cache hit.
     const signaturePromise = this.cachedSignature(cacheKey, () =>
       options.skipSignature
         ? Promise.resolve<VcJwtSignatureResult>({ valid: true, durationMs: 0 })
@@ -189,7 +188,7 @@ export class DelegationCredentialVerifier {
           ),
     );
 
-    const statusPromise =
+    const readStatus = (): Promise<StatusCheckResult> =>
       !options.skipStatus && vc.credentialStatus
         ? checkCredentialStatus(
             vc.credentialStatus,
@@ -203,7 +202,7 @@ export class DelegationCredentialVerifier {
 
     return this.finalizeVerification(
       signaturePromise,
-      statusPromise,
+      readStatus,
       basicCheckMs,
       startTime,
     );
@@ -212,9 +211,8 @@ export class DelegationCredentialVerifier {
   /**
    * Resolve the signature dimension: an unexpired cached result when
    * available, else `run()` — cached only when valid (failures are never
-   * cached). Returned as a promise so callers can race it with the status
-   * check; a hit reports `durationMs: 0` (the retrieval, not the original
-   * compute).
+   * cached). Returned as a promise, awaited before the status is read; a hit
+   * reports `durationMs: 0` (the retrieval, not the original compute).
    */
   private async cachedSignature(
     cacheKey: string | null,
@@ -234,8 +232,10 @@ export class DelegationCredentialVerifier {
   }
 
   /**
-   * Await the parallel signature + status checks and fold them into the final
-   * result via {@link combineVerificationResult}. The combined verdict is
+   * Await the signature check, read the status only once the signature has
+   * verified, and fold both into the final result via
+   * {@link combineVerificationResult}; a status not read, after a signature
+   * that failed, is reported as not checked. The combined verdict is
    * NEVER cached — only the signature dimension is (inside
    * {@link cachedSignature}) — so revocation status is consulted on every
    * call. Shared by the Data Integrity and VC-JWT paths; both reach here only
@@ -246,14 +246,12 @@ export class DelegationCredentialVerifier {
       result: SignatureVerificationResult;
       cached: boolean;
     }>,
-    statusPromise: Promise<StatusCheckResult>,
+    readStatus: () => Promise<StatusCheckResult>,
     basicCheckMs: number,
     startTime: number,
   ): Promise<DelegationVCVerificationResult> {
-    const [signature, statusResult] = await Promise.all([
-      signaturePromise,
-      statusPromise,
-    ]);
+    const signature = await signaturePromise;
+    const statusResult = signature.result.valid ? await readStatus() : undefined;
 
     const result = combineVerificationResult(
       signature.result,

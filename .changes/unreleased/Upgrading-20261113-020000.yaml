@@ -1,0 +1,182 @@
+kind: Upgrading
+body: |-
+    **DID resolution and status-list reads refuse inputs over fixed limits,
+    and give up after 5 seconds.** A DID may have at most 2,048 UTF-16 code
+    units and a key id at most 4,096, whether a verifier is asked to resolve
+    it or a DID document names it, as its `id` or, in `verificationMethod`
+    and the verification relationships, as a method's `id` or `controller`
+    or a reference to a method; any other identifier in a document, such as
+    its top-level `controller` or an `alsoKnownAs` entry, is held only to
+    the document's limits below. A DID document may nest at most 64 levels
+    deep and have at most 8,192 members, member names of at most 256 UTF-16
+    code units, 8,192 entries across `verificationMethod` and the five
+    verification relationships, and 1 MiB of compact JSON. A did:web
+    response, and a status list read by `CheqdStatusListResolver` or
+    `RuntimeFetchProvider.fetchStatusList`, may have at most 1 MiB
+    decompressed, within the same nesting and member limits; a cheqd
+    resolver response may have at most 4 MiB, 65 levels deep and 131,072
+    members, room for a DID Resolution Result that lists thousands of
+    resources. Each read has one 5-second deadline for the fetch and the
+    body, a did:web or status-list read follows at most 3 redirects, and
+    each built-in DID resolver caches at most 128 documents and 8 MiB,
+    evicting the least recently used. `DelegationCredentialVerifier`,
+    `CheqdStatusListResolver`, `createStatusListProofVerifier`,
+    `createDelegationProofVerifier` and `ProofVerifier` wait at most 5
+    seconds for any resolver and hold the document it returns to the same
+    limits, and to plain JSON data: a document with a getter on an object
+    member, enumerable or not, a cycle, a class instance or a value JSON
+    cannot hold, such as a function or `NaN`, is refused. A getter on an
+    array element is not refused: it runs, and the value it returns is held
+    to the same limits, or the document is refused when it throws. Anything
+    over a limit is refused, never cut to fit, so check that your DID
+    documents and status lists are within these limits before you upgrade.
+    SPEC.md §4.4.2 explains each limit. Every did:web and status-list read
+    also holds its host, and each redirect, to one private-network rule,
+    whatever `FetchProvider` it reads through. Find your setup:
+    - **A custom `FetchProvider` given to the did:web or cheqd resolver, or
+      to `CheqdStatusListResolver`:** its `fetch` must return a `Response`
+      whose `body` is a WHATWG `ReadableStream`. The readers read the body
+      as a stream and no longer call `json()`, so an adapter or mock that
+      implements only `json()` resolves nothing, and neither does node-fetch
+      v2, whose body is a Node stream. A body that is not valid UTF-8 is
+      refused, where `json()` replaced the invalid bytes.
+    - **A `DidCheqdResolver` given `headers`:** each request now sends
+      `Accept: application/did+ld+json`, which asks the cheqd DID resolver
+      for the DID document alone, in place of any `Accept` header the option
+      sets, and the provider's `fetch` receives the headers as a `Headers`
+      object, not the object the option gives. A `headers` function now runs
+      under the read's 5-second deadline: one that has not answered by then
+      fails that resolution, and the next resolution calls it again.
+    - **A custom DID resolver: `delegation.didResolver`, a resolver in
+      `didResolvers`, the `didResolver` of `DelegationCredentialVerifier`,
+      `CheqdStatusListResolver`, `createStatusListProofVerifier` or
+      `createDelegationProofVerifier`, or a `FetchProvider.resolveDID` that
+      `ProofVerifier` uses:** the document it returns must have an `id` that
+      is a DID, a string that starts with `did:`, of at most 2,048 UTF-16
+      code units. Without one it verifies nothing, even when it lists the
+      key. Its document is checked on every resolution, and is neither
+      copied nor frozen.
+    - **A custom `FetchProvider` that reads did:web documents or status
+      lists, such as `delegation.fetchProvider`:** each read now calls its
+      `fetch` with `redirect: "manual"` and follows a redirect itself,
+      refusing a target the private-network rule refuses and a step from
+      https down to http, and sending another origin only the
+      CORS-safelisted request headers and the request's `Cache-Control` and
+      `Pragma`; in a browser, which hides where a redirect leads, it refuses
+      every redirect. The provider's `fetch` must pass `redirect` on to the
+      request. One that drops it lets the runtime follow a redirect before
+      the read sees the response: the read then refuses a response that says
+      it was redirected, or names a URL other than the one asked for, but
+      the request has been made.
+    - **A custom `FetchProvider` whose response names a URL other than the
+      one asked for, such as a gateway, a proxy or a test double that
+      rewrites URLs:** every did:web and status-list read through it is now
+      refused as a redirect the provider followed itself
+      (`Redirect followed by the fetch provider refused`). Its `fetch` must
+      pass `redirect` on, so that the read follows and checks each redirect,
+      and return a response whose `url` is the URL asked for, or empty, and
+      whose `redirected` is not `true`, such as
+      `new Response(response.body, response)` built from the response it
+      got. Rebuilding a response after following a redirect itself would
+      hide that redirect from the read.
+    - **A did:web DID or status list served from a private IP address or a
+      local name, such as `localhost`, as in development:** every did:web
+      read, by the delegation gate, `DidWebResolver`, `createDidWebResolver`
+      or `RuntimeFetchProvider.resolveDID`, and every status-list read, by
+      `CheqdStatusListResolver` or `RuntimeFetchProvider.fetchStatusList`,
+      now refuses a URL whose host is a non-public IP literal or a local
+      name, in any case and with any trailing dots, through any provider. A
+      local name is a single label, such as `ip6-localhost`, `metadata` or
+      an intranet host's short name, or `localhost`, `localdomain`,
+      `localdomain6`, `local`, `internal` or `home.arpa`, or a name under
+      one of them, such as `localhost.localdomain`,
+      `localhost6.localdomain6`, `printer.local`, `router.home.arpa` or
+      `metadata.google.internal`. It classifies an address as `SafeFetch`
+      does, so it refuses more than `RuntimeFetchProvider` did, such as an
+      IPv4-mapped, IPv4-translated or NAT64 IPv6 form of a private address,
+      shared address space (100.64.0.0/10), the documentation ranges and
+      multicast. To read from such a host, give the reader
+      `new RuntimeFetchProvider({ allowPrivateNetworkHosts: true })`, as
+      `delegation.fetchProvider` for the gate, or a custom provider whose
+      `allowPrivateNetworkHosts` member, now declared on `FetchProvider`, is
+      `true`; `RuntimeFetchProvider` now exposes its option as that
+      read-only member. Only `true` opts in: `RuntimeFetchProvider` no
+      longer reads another truthy value, such as `1` or `'true'`, as `true`.
+      The rule resolves no name, so it does not refuse any other name whose
+      address is private, such as a public name that points at a loopback
+      address: a verifier needs an egress control that refuses private
+      addresses for that.
+    - **Code that calls `isBlockedAddress` or `createSafeFetch`:** an
+      IPv4-translated IPv6 address (`::ffff:0:0:0/96`) is now classified by
+      the IPv4 address it embeds, as an IPv4-mapped one is, so one that
+      embeds a private address is refused.
+    - **A did:web or status-list URL whose scheme is not http or https:**
+      every did:web and status-list read now refuses a URL that is not an
+      absolute http or https URL, such as a `data:` or `file:` URL, before
+      any request, whatever `allowPrivateNetworkHosts` says.
+      `RuntimeFetchProvider.fetchStatusList` read such a URL through the
+      runtime's `fetch`.
+    - **A DID longer than 2,048 UTF-16 code units, such as a did:key for an
+      ML-DSA-65 or ML-DSA-87 post-quantum key, or a did:peer:2 that lists
+      many keys or services:** a verifier now refuses it before asking any
+      resolver, so no credential or proof such a DID issued verifies. The
+      limit is the reference implementation's, not DID syntax's, and cannot
+      be changed.
+    - **Code that calls `RuntimeFetchProvider.resolveDID` or
+      `fetchStatusList` directly:** each now applies these limits and its
+      deadline itself, and returns `null` for a document or list over a
+      limit, a read that misses its deadline, or a URL or redirect the
+      private-network rule refuses. `resolveDID` falls back from a resolver
+      set in `didResolvers` to the built-in did:web or did:key resolver only
+      when the configured one finds no document, not after it returns a
+      document these limits refuse or misses the deadline, and spends one
+      5-second deadline across both.
+    - **Code that changes a resolved DID document:** `DidWebResolver` and
+      `DidCheqdResolver`, and `RuntimeFetchProvider.resolveDID` through
+      them, return a deeply frozen document, which their cache and
+      concurrent resolutions of the same DID share. Copy it before you
+      change it: assigning to it throws in strict mode.
+    - **`delegation.trustedRootIssuers`, and the `trustedRootIssuers` of
+      `requireDelegation` and `verifyRequestDelegation`:** it must be an
+      array of DIDs, each a string that starts with `did:` and has no white
+      space around it, compared whole with the root's `issuer`. Creating the
+      middleware or a `requireDelegation` guard with any other value throws
+      a `TypeError` naming the option, `verifyRequestDelegation` rejects
+      with one, and `validateDelegationChain` returns `{ valid: false }`
+      with its reason. `null` no longer admits every root in the middleware,
+      and a string is no longer searched for the issuer in either.
+    - **A `delegation.resolveDelegationChain`:** for a VC-JWT whose leaf
+      names a parent, it now runs on the leaf's payload before the
+      envelope's signature is checked, so it must treat that payload as
+      unauthenticated, as it already had to for a credential with an
+      embedded proof, whose proof is checked after it runs. The chain it
+      returns is verified as before.
+    - **Code that calls `DelegationCredentialVerifier` directly:** it now
+      reads a credential's status only once the signature has verified, not
+      alongside it, so a credential whose signature fails causes no status
+      read. Its result then reports the status as not checked: `checks` has
+      no `statusValid`, where it held the outcome of a status read, and
+      there is no `statusOutcome`.
+    - **Code that reads `DelegationCheck.vc` on a failure:** for a VC-JWT
+      whose envelope does not verify, it now has the
+      `proof: { type: "JwtProof2020", jwt }` marker that the gate adds to a
+      VC-JWT's credential, where it was the embedded credential without one.
+    - **Code that matches on a failure `reason`:** a chain's links, and then
+      its root's `issuer` against `trustedRootIssuers`, are checked before
+      any credential is verified, so a broken link or an untrusted root now
+      gives that reason even when a signature would also fail, and for a
+      VC-JWT the reasons for a malformed chain, a missing
+      `resolveDelegationChain`, `maxChainLength` and root admission come
+      before the envelope's. An untrusted root reads
+      `Root delegation <id> is issued by "<issuer>", which is not a trusted root issuer`,
+      the issuer quoted as other reasons quote a value.
+      `Could not resolve issuer DID` is the reason for an issuer DID over
+      its limit, for a VC-JWT as for a credential with an embedded proof,
+      without asking the resolver. A resolution that misses its deadline
+      fails with a reason that ends `DID resolution deadline exceeded`, and
+      a status-list read with one that ends
+      `Status list fetch deadline exceeded`, or names the limit it exceeded.
+      `ProofVerifier` refuses a DID or key id over its limit with
+      `DID or key identifier exceeds resource limit`, and an empty DID with
+      `DID is empty`.
+time: 2026-11-13T02:00:00.000000-06:00

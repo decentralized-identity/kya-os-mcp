@@ -3,6 +3,10 @@ import { RuntimeFetchProvider } from '../../providers/runtime-fetch.js';
 import { NodeCryptoProvider } from '../../providers/node-crypto.js';
 import { generateDidKeyFromBase64 } from '../../utils/did-helpers.js';
 import { cheqdResolver } from '../../integrations/cheqd/index.js';
+import type { FetchProvider } from '../../providers/base.js';
+import { LOCAL_HOST_NAMES, PUBLIC_NAME_FOR_LOOPBACK } from '../utils/local-host-names.js';
+
+const statusList = { type: ['StatusList2021Credential'], credentialSubject: { type: 'StatusList2021', encodedList: 'H4sIAAAAAAAA' } };
 
 describe('RuntimeFetchProvider', () => {
   let provider: RuntimeFetchProvider;
@@ -32,6 +36,71 @@ describe('RuntimeFetchProvider', () => {
         crv: 'Ed25519',
       });
       expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('refuses a DID over 2,048 units before decoding a did:key or fetching a did:web', async () => {
+      const didKey = (provider as unknown as { didKeyResolver: { resolve(did: string): unknown } }).didKeyResolver;
+      const decode = vi.spyOn(didKey, 'resolve');
+      const fetchSpy = vi.fn();
+      vi.stubGlobal('fetch', fetchSpy);
+      expect(await provider.resolveDID(`did:key:z${'6'.repeat(2_040)}`)).toBeNull();
+      expect(await provider.resolveDID(`did:web:${'a'.repeat(2_041)}.example`)).toBeNull();
+      expect(decode).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('spends one 5,000 ms deadline across a configured resolver and the did:web fallback, and none after a miss', async () => {
+      vi.useFakeTimers();
+      try {
+        // The configured resolver answers nothing after 4,900 ms, and the fallback's body never arrives.
+        const answer = (after: number) => () => new Promise<null>(resolve => setTimeout(() => resolve(null), after));
+        const slow = new RuntimeFetchProvider({ didResolvers: { web: { resolve: answer(4_900) } } });
+        vi.spyOn(slow, 'fetch').mockImplementation(async () => new Response(new ReadableStream()));
+        let outcome: unknown = 'pending';
+        void slow.resolveDID('did:web:slow.example').then(value => { outcome = value; });
+        await vi.advanceTimersByTimeAsync(4_999);
+        expect(outcome).toBe('pending');
+        await vi.advanceTimersByTimeAsync(1);
+        expect(outcome).toBeNull();
+        // A configured resolver that misses the deadline ends the resolution: the fallback is not asked.
+        const missing = new RuntimeFetchProvider({ didResolvers: { web: { resolve: answer(60_000) } } });
+        const fetch = vi.spyOn(missing, 'fetch');
+        let missed: unknown = 'pending';
+        void missing.resolveDID('did:web:missing.example').then(value => { missed = value; });
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(missed).toBeNull();
+        expect(fetch).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('leaves no timer behind once a resolution answers in time', async () => {
+      vi.useFakeTimers();
+      try {
+        const did = 'did:web:quick.example';
+        const quick = new RuntimeFetchProvider({ didResolvers: { web: { resolve: async () => ({ id: did }) } } });
+        expect(await quick.resolveDID(did)).toEqual({ id: did });
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('falls back to a built-in resolver after a configured one finds nothing, and not after the limits refuse its document', async () => {
+      const crypto = new NodeCryptoProvider();
+      const didKey = generateDidKeyFromBase64((await crypto.generateKeyPair()).publicKey);
+      const didWeb = 'did:web:fallback.example';
+      const overLimit = { id: 'd'.repeat(2_049) };
+      for (const [did, method] of [[didWeb, 'web'], [didKey, 'key']] as const) {
+        for (const answer of [null, overLimit]) {
+          const configured = new RuntimeFetchProvider({ didResolvers: { [method]: { resolve: async () => answer } } });
+          const fetch = vi.spyOn(configured, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ id: did })));
+          const resolved = await configured.resolveDID(did);
+          expect(resolved === null ? null : resolved.id).toBe(answer === null ? did : null);
+          expect(fetch).toHaveBeenCalledTimes(answer === null && method === 'web' ? 1 : 0);
+        }
+      }
     });
 
     it('returns null for an unsupported DID method', async () => {
@@ -198,6 +267,36 @@ describe('RuntimeFetchProvider', () => {
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
+    it('refuses a did:web or status list on localhost, a name under it, or another local name, without fetching', async () => {
+      const fetchSpy = vi.fn();
+      vi.stubGlobal('fetch', fetchSpy);
+      for (const host of ['localhost', 'LOCALHOST', 'localhost.', 'api.localhost', 'api.localhost.', ...LOCAL_HOST_NAMES]) {
+        expect(await provider.resolveDID(`did:web:${host}`)).toBeNull();
+        expect(await provider.fetchStatusList(`https://${host}/status`)).toBeNull();
+      }
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('reads a status list from a public name whatever address it has, since the rule resolves no name', async () => {
+      const fetchSpy = vi.fn(async () => new Response(JSON.stringify(statusList)));
+      vi.stubGlobal('fetch', fetchSpy);
+      const url = `https://${PUBLIC_NAME_FOR_LOOPBACK}/status`;
+      expect(await provider.fetchStatusList(url)).toMatchObject(statusList);
+      expect(fetchSpy).toHaveBeenCalledWith(url, expect.objectContaining({ redirect: 'manual' }));
+    });
+
+    it('refuses a status list whose URL scheme is not http or https, without fetching, even when opted in', async () => {
+      const fetchSpy = vi.fn(async () => new Response(JSON.stringify(statusList)));
+      vi.stubGlobal('fetch', fetchSpy);
+      const open = new RuntimeFetchProvider({ allowPrivateNetworkHosts: true });
+      const data = `data:application/json,${encodeURIComponent(JSON.stringify(statusList))}`;
+      for (const url of [data, 'file:///etc/status.json', 'ftp://status.example/list']) {
+        expect(await provider.fetchStatusList(url)).toBeNull();
+        expect(await open.fetchStatusList(url)).toBeNull();
+      }
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
     it('still resolves public did:web hosts (domain names are not IP-blocked)', async () => {
       const did = 'did:web:example.com';
       vi.stubGlobal(
@@ -234,6 +333,26 @@ describe('RuntimeFetchProvider', () => {
       vi.stubGlobal('fetch', fetchSpy);
       expect((await open.resolveDID(did))?.id).toBe(did);
       expect(fetchSpy).toHaveBeenCalled();
+      // The opt-out is a documented member of every FetchProvider, which RuntimeFetchProvider sets from its option.
+      const declared: FetchProvider[] = [open, provider];
+      expect(declared.map(each => each.allowPrivateNetworkHosts)).toEqual([true, false]);
+    });
+
+    it('opts in only for allowPrivateNetworkHosts: true, as the rule reads it, and refuses for any other value', async () => {
+      const fetchSpy = vi.fn(async () => new Response(JSON.stringify(statusList), { status: 200 }));
+      vi.stubGlobal('fetch', fetchSpy);
+      for (const value of [1, 'true', 'yes', {}]) {
+        const truthy = new RuntimeFetchProvider({ allowPrivateNetworkHosts: value as unknown as boolean });
+        expect(truthy.allowPrivateNetworkHosts).toBe(false);
+        expect(await truthy.fetchStatusList('http://169.254.169.254/status')).toBeNull();
+      }
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('reads a status list on a private host when explicitly opted in', async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(statusList), { status: 200 })));
+      const open = new RuntimeFetchProvider({ allowPrivateNetworkHosts: true });
+      expect((await open.fetchStatusList('http://169.254.169.254/status'))?.credentialSubject.encodedList).toBe('H4sIAAAAAAAA');
     });
   });
 });

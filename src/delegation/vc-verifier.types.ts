@@ -63,6 +63,7 @@ export interface DelegationVCVerificationResult {
   checks?: {
     basicValid?: boolean;
     signatureValid?: boolean;
+    /** Absent when the status was not checked: it is read only once the signature has verified. */
     statusValid?: boolean;
   };
 }

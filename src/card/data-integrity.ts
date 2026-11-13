@@ -12,6 +12,7 @@
  */
 
 import { canonicalize } from 'json-canonicalize';
+import { resolveBoundedDid } from '../delegation/did-resource-limits.js';
 import { isRecord, issuerOf } from '../utils/guards.js';
 import { base58Decode, base58Encode } from '../utils/base58.js';
 import { base64urlDecodeToBytes } from '../utils/base64.js';
@@ -56,7 +57,7 @@ export async function verifyEddsaJcs2022(
   const signature = base58Decode(proofValue.slice(1), MAX_PROOF_VALUE_BASE58);
   if (signature.length !== ED25519_SIGNATURE_LENGTH) return false;
 
-  const didDocument = await didResolver.resolve(did);
+  const didDocument = await resolveBoundedDid(didResolver, did, verificationMethod);
   const method = didDocument
     ? retrieveVerificationMethod(didDocument, did, verificationMethod, proofPurpose)
     : undefined;

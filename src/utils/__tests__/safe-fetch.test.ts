@@ -415,6 +415,19 @@ describe("isBlockedAddress", () => {
     expect(isBlockedAddress("::ffff:8.8.8.8")).toBe(false);
   });
 
+  it("classifies IPv4-translated IPv6 (::ffff:0:0:0/96, RFC 2765) by the embedded v4", () => {
+    expect(["::ffff:0:7f00:1", "::ffff:0:127.0.0.1", "::ffff:0:10.0.0.1", "0:0:0:0:ffff:0:a9fe:a9fe"].map(isBlockedAddress))
+      .toEqual([true, true, true, true]);
+    expect(isBlockedAddress("::ffff:0:8.8.8.8")).toBe(false);
+  });
+
+  it("refuses a host that resolves to an IPv4-translated loopback address, before any request", async () => {
+    const transport = transportReturning(okJson({}));
+    const fetch = createSafeFetch({ lookup: lookupReturning({ address: "::ffff:0:7f00:1", family: 6 }), transport });
+    await expect(fetch("https://example.com/card.json")).rejects.toThrow(/non-public/);
+    expect(transport).not.toHaveBeenCalled();
+  });
+
   it("fails closed on unparseable input", () => {
     expect(isBlockedAddress("999.1.1.1")).toBe(true);
     expect(isBlockedAddress("garbage")).toBe(true);

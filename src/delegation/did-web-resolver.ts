@@ -19,6 +19,9 @@ import { base64ToBytes } from '../utils/base64.js';
 import { publicKeyToJwk } from './did-key-resolver.js';
 import { hasIdTypeAndController } from './verification-method-shape.js';
 
+import { admitParsedDidDocument, boundedDid, DidDocumentCache, type LoadedDidDocument } from './did-resource-limits.js';
+import { fetchDidJson } from './read-did-json.js';
+
 /**
  * Parsed components of a did:web DID
  */
@@ -174,13 +177,13 @@ export function didWebToUrl(did: string): string | null {
  * DID:web resolver implementation
  */
 export class DidWebResolver implements DIDResolver {
-  private fetchProvider: FetchProvider;
-  private cache: Map<string, { document: DIDDocument; expiresAt: number }>;
+  private fetchProvider: Pick<FetchProvider, 'fetch' | 'allowPrivateNetworkHosts'>;
+  private cache: DidDocumentCache;
   private cacheTtl: number;
 
-  constructor(fetchProvider: FetchProvider, options?: { cacheTtl?: number }) {
+  constructor(fetchProvider: Pick<FetchProvider, 'fetch' | 'allowPrivateNetworkHosts'>, options?: { cacheTtl?: number }) {
     this.fetchProvider = fetchProvider;
-    this.cache = new Map();
+    this.cache = new DidDocumentCache();
     this.cacheTtl = options?.cacheTtl ?? 300_000; // 5 minutes default
   }
 
@@ -192,14 +195,8 @@ export class DidWebResolver implements DIDResolver {
    */
   async resolve(did: string): Promise<DIDDocument | null> {
     // Check if it's a did:web
-    if (!isDidWeb(did)) {
+    if (!boundedDid(did) || !isDidWeb(did)) {
       return null;
-    }
-
-    // Check cache
-    const cached = this.cache.get(did);
-    if (cached && Date.now() < cached.expiresAt) {
-      return cached.document;
     }
 
     // Convert to URL
@@ -209,21 +206,18 @@ export class DidWebResolver implements DIDResolver {
       return null;
     }
 
+    // A cached document is frozen and was walked when it was fetched; concurrent
+    // resolutions of one DID share one fetch.
+    return this.cache.resolve(did, this.cacheTtl, () => this.fetchDocument(did, url));
+  }
+
+  /** Fetch, measure, freeze and check the document `did` names at `url`, or `null`. */
+  private async fetchDocument(did: string, url: string): Promise<LoadedDidDocument | null> {
     try {
-      // Fetch the DID document
-      const response = await this.fetchProvider.fetch(url);
-
-      if (!response.ok) {
-        logger.warn(`[DidWebResolver] HTTP ${response.status} fetching ${url}`);
-        return null;
-      }
-
-      // Parse JSON
-      let json: unknown;
-      try {
-        json = await response.json();
-      } catch {
-        logger.warn(`[DidWebResolver] Invalid JSON from ${url}`);
+      const json: unknown = await fetchDidJson(this.fetchProvider, url);
+      const measure = admitParsedDidDocument(json);
+      if (!measure.ok) {
+        logger.warn(`[DidWebResolver] DID Document from ${url} refused: ${measure.reason}`);
         return null;
       }
 
@@ -239,13 +233,7 @@ export class DidWebResolver implements DIDResolver {
         return null;
       }
 
-      // Cache the result
-      this.cache.set(did, {
-        document: json,
-        expiresAt: Date.now() + this.cacheTtl,
-      });
-
-      return json;
+      return { document: json, bytes: measure.bytes };
     } catch (error) {
       logger.warn(
         `[DidWebResolver] Error resolving ${did}: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -272,12 +260,13 @@ export class DidWebResolver implements DIDResolver {
 /**
  * Create a did:web resolver with the given fetch provider
  *
- * @param fetchProvider - Provider for making HTTP requests
+ * @param fetchProvider - Provider for making HTTP requests, read through the private-network rule
+ *   unless it has `allowPrivateNetworkHosts: true`
  * @param options - Optional configuration
  * @returns DIDResolver implementation for did:web
  */
 export function createDidWebResolver(
-  fetchProvider: FetchProvider,
+  fetchProvider: Pick<FetchProvider, 'fetch' | 'allowPrivateNetworkHosts'>,
   options?: { cacheTtl?: number }
 ): DIDResolver {
   return new DidWebResolver(fetchProvider, options);

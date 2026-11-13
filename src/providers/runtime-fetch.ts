@@ -8,12 +8,19 @@
  *
  * Security (SSRF): `resolveDID` (did:web) and `fetchStatusList` issue outbound
  * HTTPS GETs to hosts named by counterparty-controlled data — the DID or
- * status-list URL embedded in a proof or credential. To blunt SSRF, requests to
- * private / loopback / link-local IP-literal hosts (e.g. did:web:169.254.169.254,
- * the cloud-metadata endpoint) are refused by default. This is best-effort
- * defense-in-depth for IP literals only: it does NOT stop a public domain that
- * resolves to an internal address (DNS rebinding). Run verifiers behind an egress
- * allowlist. Pass `{ allowPrivateNetworkHosts: true }` for trusted internal use.
+ * status-list URL embedded in a proof or credential. Both read through the
+ * package's private-network rule (`utils/private-network-rule.ts`), as every
+ * did:web and status-list read does whatever provider it goes through: a
+ * private, loopback, link-local or otherwise non-public IP-literal host (e.g.
+ * did:web:169.254.169.254, the cloud-metadata endpoint), a local name (a single
+ * label, or `localhost`, `localdomain`, `local`, `internal` or `home.arpa` or a
+ * name under one), and a scheme other than http and https are refused, and at
+ * most three redirects are followed by hand, each target held to the same rule.
+ * This is best-effort defense-in-depth: the rule resolves no name, so it does NOT
+ * stop any other name whose address is internal, such as a public name that
+ * points at a loopback address (or DNS rebinding). Run verifiers behind an
+ * egress control. Pass `{ allowPrivateNetworkHosts: true }` for trusted
+ * internal use. Both read the response within the limits of SPEC §4.4.2.
  * The raw `fetch()` escape hatch is intentionally unguarded — it is the caller's
  * responsibility.
  *
@@ -31,11 +38,17 @@
  */
 
 import { FetchProvider } from "./base.js";
+import {
+  boundedDid,
+  resolutionDeadline,
+  resolveWithinLimits,
+  type ResolutionDeadline,
+} from "../delegation/did-resource-limits.js";
+import { fetchStatusListJson } from "../delegation/status-list-fetch.js";
 import { createDidKeyResolver } from "../delegation/did-key-resolver.js";
 import {
   createDidWebResolver,
   isDidWeb,
-  didWebToUrl,
 } from "../delegation/did-web-resolver.js";
 import {
   buildDidResolverRegistry,
@@ -50,9 +63,10 @@ import type {
 
 export interface RuntimeFetchProviderOptions {
   /**
-   * Allow outbound requests to private / loopback / link-local IP-literal hosts.
-   * Default `false` (such hosts are refused to blunt SSRF). Enable only for
-   * trusted internal deployments.
+   * Allow outbound requests to private / loopback / link-local IP-literal hosts
+   * and local names, such as `localhost`. Default `false` (such hosts are refused to blunt
+   * SSRF). Enable only for trusted internal deployments. Only `true` opts in, as the rule reads
+   * it: any other value, `1` or `'true'` included, leaves such hosts refused.
    */
   allowPrivateNetworkHosts?: boolean;
   /**
@@ -67,48 +81,60 @@ export class RuntimeFetchProvider extends FetchProvider {
   private readonly didKeyResolver = createDidKeyResolver();
   private didWebResolver: ReturnType<typeof createDidWebResolver> | undefined;
   private readonly didResolvers: Record<string, { resolve(did: string): Promise<DIDDocument | null> }>;
-  private readonly allowPrivateNetworkHosts: boolean;
+  /**
+   * The private-network rule's opt-out, read by every did:web and status-list
+   * read through this provider, including the delegation gate's.
+   */
+  readonly allowPrivateNetworkHosts: boolean;
 
   constructor(options?: RuntimeFetchProviderOptions) {
     super();
-    this.allowPrivateNetworkHosts =
-      options?.allowPrivateNetworkHosts ?? false;
+    this.allowPrivateNetworkHosts = options?.allowPrivateNetworkHosts === true;
     this.didResolvers = buildDidResolverRegistry(options?.didResolvers, this);
   }
 
   /**
    * Resolve a DID to its DID Document. did:key is decoded locally (no network);
-   * did:web is fetched from its HTTPS `/.well-known/did.json`. Returns null for
-   * unsupported methods, a blocked (private-network) did:web host, or any
-   * resolution failure (never throws).
+   * did:web is fetched from its HTTPS `/.well-known/did.json`. A configured
+   * resolver for the DID's method is asked first, and the built-in one only
+   * when it finds no document: a document of its that the limits refuse ends
+   * the resolution. Both share one 5-second deadline, and a miss ends the
+   * resolution too. Returns null for unsupported methods, a blocked
+   * (private-network) did:web host, a refused document, a missed deadline or
+   * any resolution failure (never throws).
    */
   async resolveDID(did: string): Promise<DIDDocument | null> {
+    if (!boundedDid(did)) return null;
+    const deadline = resolutionDeadline();
+    try {
+      return await this.resolveWithin(did, deadline);
+    } catch {
+      return null;
+    } finally {
+      deadline.clear();
+    }
+  }
+
+  private async resolveWithin(did: string, deadline: ResolutionDeadline): Promise<DIDDocument | null> {
     const method = getDidMethod(did);
     const configuredResolver = method ? this.didResolvers[method] : undefined;
     if (configuredResolver) {
-      try {
-        const resolved = await configuredResolver.resolve(did);
-        if (resolved) {
-          return resolved;
-        }
-      } catch {
-        return null;
-      }
+      const resolution = await resolveWithinLimits(configuredResolver, did, undefined, deadline);
+      if (resolution.status === "found") return resolution.document;
+      if (resolution.status === "refused") return null;
     }
 
     if (did.startsWith("did:key:")) {
       return this.didKeyResolver.resolve(did);
     }
     if (isDidWeb(did)) {
-      if (this.isBlockedTarget(didWebToUrl(did))) {
-        return null;
-      }
-      // createDidWebResolver(this) only calls this.fetch() — never resolveDID —
-      // so passing `this` does not recurse. Cache it to reuse its doc cache.
+      // The did:web resolver only calls this.fetch(), under the private-network
+      // rule, never resolveDID, so it does not recurse. Cache it to reuse its doc
+      // cache. A read the deadline abandons ends at its own deadline.
       if (!this.didWebResolver) {
         this.didWebResolver = createDidWebResolver(this);
       }
-      return this.didWebResolver.resolve(did);
+      return deadline.within(this.didWebResolver.resolve(did));
     }
     return null;
   }
@@ -120,15 +146,8 @@ export class RuntimeFetchProvider extends FetchProvider {
    * only retrieves the credential.
    */
   async fetchStatusList(url: string): Promise<StatusList2021Credential | null> {
-    if (this.isBlockedTarget(url)) {
-      return null;
-    }
     try {
-      const res = await this.fetch(url);
-      if (!res.ok) {
-        return null;
-      }
-      const json: unknown = await res.json();
+      const json = await fetchStatusListJson(this, url);
       return isStatusList2021Credential(json) ? json : null;
     } catch {
       return null;
@@ -150,20 +169,6 @@ export class RuntimeFetchProvider extends FetchProvider {
       throw new Error("Global fetch is not available in this runtime");
     }
     return globalThis.fetch(url, options as RequestInit);
-  }
-
-  /** True when SSRF protection should refuse `url` (a private IP-literal host). */
-  private isBlockedTarget(url: string | null): boolean {
-    if (this.allowPrivateNetworkHosts || url === null) {
-      return false;
-    }
-    let hostname: string;
-    try {
-      hostname = new URL(url).hostname;
-    } catch {
-      return false;
-    }
-    return isPrivateOrLoopbackHost(hostname);
   }
 }
 
@@ -210,41 +215,4 @@ function isStatusList2021Credential(
   }
   const s = subject as Record<string, unknown>;
   return s["type"] === "StatusList2021" && typeof s["encodedList"] === "string";
-}
-
-/**
- * True if `hostname` is a private / loopback / link-local IP LITERAL. Domain
- * names return false (DNS-resolution-based SSRF is out of scope here — use an
- * egress allowlist). Covers the common IPv4 ranges plus IPv6 loopback /
- * link-local / unique-local literals.
- */
-function isPrivateOrLoopbackHost(hostname: string): boolean {
-  let h = hostname.toLowerCase();
-  if (h.startsWith("[") && h.endsWith("]")) {
-    h = h.slice(1, -1); // URL.hostname brackets IPv6 literals
-  }
-  if (h.includes(":")) {
-    // IPv6 literal
-    return (
-      h === "::1" || // loopback
-      h === "::" || // unspecified
-      h.startsWith("fe80:") || // link-local
-      h.startsWith("fc") || // unique-local fc00::/7
-      h.startsWith("fd")
-    );
-  }
-  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
-  if (!m) {
-    return false; // domain name, not an IP literal
-  }
-  const a = Number(m[1]);
-  const b = Number(m[2]);
-  return (
-    a === 127 || // loopback 127.0.0.0/8
-    a === 10 || // private 10.0.0.0/8
-    a === 0 || // 0.0.0.0/8 (unspecified / this-host)
-    (a === 169 && b === 254) || // link-local 169.254.0.0/16 (cloud metadata)
-    (a === 192 && b === 168) || // private 192.168.0.0/16
-    (a === 172 && b >= 16 && b <= 31) // private 172.16.0.0/12
-  );
 }

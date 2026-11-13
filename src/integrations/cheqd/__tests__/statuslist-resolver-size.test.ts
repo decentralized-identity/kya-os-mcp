@@ -35,7 +35,7 @@ async function resolverOver(revoked: number[]) {
     async fetch(url: string) {
       fetches += 1;
       const body = await storage.getStatusList(url);
-      return { ok: body != null, status: body == null ? 404 : 200, json: async () => body } as unknown as Response;
+      return new Response(JSON.stringify(body ?? null), { status: body == null ? 404 : 200 });
     },
   } as unknown as FetchProvider;
   const resolver = new CheqdStatusListResolver({

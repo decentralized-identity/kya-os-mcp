@@ -28,7 +28,8 @@ import {
 import type { AgentIdentity } from '../../providers/base.js';
 
 const crypto = createRealCryptoProvider();
-const LONG_ISSUER = `${ACME}:${'a'.repeat(100_000)}`;
+/** Longer than a refusal reason quotes, and within the 2,048-character limit on a DID a verifier resolves. */
+const LONG_ISSUER = `${ACME}:${'a'.repeat(1_000)}`;
 /** Acme's DID as a refusal reason quotes it. */
 const QUOTED_ACME = `"${ACME}"`;
 /**
@@ -185,12 +186,16 @@ describe('the Data Integrity path', () => {
     }
   });
 
-  it('quotes at most 64 characters of the verification method a proof names', async () => {
+  it('quotes at most 64 characters of the verification method a proof names, and resolves nothing for one over 4,096', async () => {
     const credential = await signedCredential(assert);
-    const verificationMethod = `${ACME}#${'k'.repeat(100_000)}`;
-    const result = await verify(acmeDocument(login, assert), { ...credential, proof: { ...credential.proof!, verificationMethod } });
+    const named = (verificationMethod: string) =>
+      verify(acmeDocument(login, assert), { ...credential, proof: { ...credential.proof!, verificationMethod } });
+    const verificationMethod = `${ACME}#${'k'.repeat(1_000)}`;
+    const result = await named(verificationMethod);
     expect(result).toMatchObject({ valid: false, stage: 'signature' });
     expect(result.reason).toBe(`Verification method "${verificationMethod.slice(0, 64)}"... not found under assertionMethod of "${ACME}"`);
+    const over = await named(`${ACME}#${'k'.repeat(100_000)}`);
+    expect(over).toMatchObject({ valid: false, stage: 'signature', reason: `Could not resolve issuer DID: ${QUOTED_ACME}` });
   });
 
   it('quotes an issuer DID it cannot resolve, and a proof.type it does not support, as it quotes any value', async () => {
@@ -298,11 +303,13 @@ describe('the VC-JWT path', () => {
     expect(result.reason).toBe(noUsableFirstEntry(QUOTED_ACME));
   });
 
-  it('quotes at most 64 characters of a kid, and refuses one that is not a string as a malformed VC-JWT', async () => {
-    const kid = `${ACME}#${'k'.repeat(100_000)}`;
+  it('quotes at most 64 characters of a kid, resolves nothing for one over 4,096, and refuses one that is not a string', async () => {
+    const kid = `${ACME}#${'k'.repeat(1_000)}`;
     const result = await verify(acmeDocument(login, assert), await signedJwt(assert, { kid }));
     expect(result).toMatchObject({ valid: false, stage: 'signature' });
     expect(result.reason).toBe(`Verification method "${kid.slice(0, 64)}"... not found under assertionMethod of "${ACME}"`);
+    const over = await verify(acmeDocument(login, assert), await signedJwt(assert, { kid: `${ACME}#${'k'.repeat(100_000)}` }));
+    expect(over).toMatchObject({ valid: false, stage: 'signature', reason: `Could not resolve issuer DID: ${QUOTED_ACME}` });
 
     const objectKid = await signedJwt(assert, { kid: JSON.parse(`{"toString":"${assert.kid}"}`) });
     expect(await verify(acmeDocument(login, assert), objectKid)).toMatchObject({
@@ -332,6 +339,20 @@ describe('the VC-JWT path', () => {
       (await verifierFor(document, issuer).verifyDelegationJwt(await signedJwt(assert, { kid, record: delegationRecord(issuer) }), { skipCache: true })).reason;
     expect(await reasonFor('#assert-1')).toBe(`Verification method "#assert-1" not found under assertionMethod of "${issuer.slice(0, 64)}"...`);
     expect(await reasonFor()).toBe(noUsableFirstEntry(`"${issuer.slice(0, 64)}"...`));
+  });
+
+  it('refuses an issuer DID over 2,048 on both paths as one it cannot resolve, never asking even a resolver that throws', async () => {
+    const asked: string[] = [];
+    const throwing = new DelegationCredentialVerifier({
+      didResolver: { resolve: async (did) => { asked.push(did); throw new Error('offline'); } },
+      signatureVerifier: createRealSignatureVerifier(crypto),
+    });
+    const over = `${ACME}:${'a'.repeat(100_000)}`;
+    const record = delegationRecord(over);
+    const refused = { valid: false, stage: 'signature', reason: `Could not resolve issuer DID: "${over.slice(0, 64)}"...` };
+    expect(await throwing.verifyDelegationCredential(await signedCredential(assert, { record }), { skipCache: true })).toMatchObject(refused);
+    expect(await throwing.verifyDelegationJwt(await signedJwt(assert, { kid: assert.kid, record }), { skipCache: true })).toMatchObject(refused);
+    expect(asked).toEqual([]);
   });
 });
 

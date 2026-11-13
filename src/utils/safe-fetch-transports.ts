@@ -13,6 +13,7 @@
 import type { IncomingMessage } from 'node:http';
 import type { LookupFunction } from 'node:net';
 import type { DnsLookup, RawResponse, SafeFetchTransport } from './safe-fetch-types.js';
+import { readCappedBody } from './bounded-read.js';
 
 /*
  * Node built-ins are loaded LAZILY (never at the module top level), so this
@@ -80,27 +81,22 @@ export const defaultLookup: DnsLookup = async (hostname) => {
  */
 export const fetchTransport: SafeFetchTransport = async (url, init) => {
   const response = await fetch(url, { method: 'GET', redirect: 'manual', signal: init.signal });
-  return readCapped(response, init.maxBytes);
+  return readCapped(response, init.maxBytes, init.signal);
 };
 
-/** Stream a fetch Response body into a RawResponse, enforcing the byte cap mid-stream. */
-async function readCapped(response: Response, maxBytes: number): Promise<RawResponse> {
-  const reader = response.body?.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  if (reader) {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.length;
-      if (size > maxBytes) {
-        await reader.cancel();
-        throw new Error(`safe-fetch: response body exceeds size cap ${maxBytes}`);
-      }
-      chunks.push(value);
-    }
-  }
-  const body = Buffer.concat(chunks).toString('utf8');
+/**
+ * Read a fetch Response body into a RawResponse through the one bounded body reader, enforcing the
+ * byte cap mid-stream and ending the read when `signal` aborts.
+ */
+async function readCapped(response: Response, maxBytes: number, signal: AbortSignal): Promise<RawResponse> {
+  const bytes = response.body
+    ? await readCappedBody(response.body, {
+        maxBytes,
+        signal,
+        tooLarge: () => new Error(`safe-fetch: response body exceeds size cap ${maxBytes}`),
+      })
+    : new Uint8Array(0);
+  const body = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('utf8');
   return {
     status: response.status,
     headers: { get: (name) => response.headers.get(name) },

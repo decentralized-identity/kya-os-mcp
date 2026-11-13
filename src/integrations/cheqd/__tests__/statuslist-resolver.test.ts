@@ -5,7 +5,7 @@
  * `FetchProvider`, with the issuer's key published MULTIBASE-ONLY in the DID
  * document — the cheqd-realistic shape `verificationMethodJwk` exists for.
  */
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import {
   CheqdStatusListResolver,
   createCheqdStatusListResolver,
@@ -156,7 +156,7 @@ describe('CheqdStatusListResolver (real crypto, stubbed transport)', () => {
     async (bad) => {
       await expect(
         makeResolver().checkStatus({ ...clearEntry, statusListIndex: bad }),
-      ).rejects.toThrow(/canonical non-negative decimal/);
+      ).rejects.toThrow(/must be a non-negative decimal string/);
     },
   );
 
@@ -218,18 +218,20 @@ describe('CheqdStatusListResolver (real crypto, stubbed transport)', () => {
 
   it('names an issuer other than the pinned one as a refusal names any value, never converting it, and quotes the pinned one', async () => {
     const long = `did:cheqd:testnet:${'x'.repeat(100)}`;
+    const notPinned = (named: string) =>
+      `status list issuer ${named} is not the expected issuer ("${issuerIdentity.did}")`;
+    // An issuer read as a credential's is (a string, or an object's string id) is quoted; anything
+    // else names no issuer, and is never converted to find one.
     const refusals: [unknown, string][] = [
-      ['did:cheqd:testnet:attacker', '"did:cheqd:testnet:attacker"'],
-      [long, `"${long.slice(0, 64)}"...`],
-      [{ id: 5 }, 'of type object'],
-      [{ id: JSON.parse('{"toString":"x"}') }, 'of type object'],
-      [[issuerIdentity.did], 'of type array'],
+      ['did:cheqd:testnet:attacker', notPinned('"did:cheqd:testnet:attacker"')],
+      [long, notPinned(`"${long.slice(0, 64)}"...`)],
+      [{ id: 5 }, 'status list names no issuer'],
+      [{ id: JSON.parse('{"toString":"x"}') }, 'status list names no issuer'],
+      [[issuerIdentity.did], 'status list names no issuer'],
     ];
-    for (const [issuer, named] of refusals) {
+    for (const [issuer, reason] of refusals) {
       serveOverride = () => ({ ...signedList, issuer });
-      await expect(makeResolver().checkStatus(clearEntry)).rejects.toThrow(
-        new Error(`Status list issuer ${named} is not the expected issuer "${issuerIdentity.did}"`),
-      );
+      await expect(makeResolver().checkStatus(clearEntry)).rejects.toThrow(new Error(reason));
     }
   });
 
@@ -244,17 +246,17 @@ describe('CheqdStatusListResolver (real crypto, stubbed transport)', () => {
     const statusPurpose = 'x\uD800'.repeat(1000) as CredentialStatus['statusPurpose'];
     const quoted = `"${'x\\ud800'.repeat(32)}"...`;
     await expect(makeResolver().checkStatus({ ...clearEntry, statusPurpose })).rejects.toThrow(
-      new Error(`status list statusPurpose mismatch: "revocation" \u2260 ${quoted}`),
+      new Error(`status list statusPurpose mismatch: the list's is "revocation" and the entry's is ${quoted}`),
     );
     const unstated = await resignedList(({ statusPurpose: _purpose, ...subject }) => subject);
     serveOverride = () => unstated;
     await expect(makeResolver().checkStatus({ ...clearEntry, statusPurpose })).rejects.toThrow(
-      new Error(`status list has no statusPurpose (expected ${quoted}) - fail-closed`),
+      new Error(`status list has no statusPurpose (the entry's is ${quoted})`),
     );
     const long = await resignedList((subject) => ({ ...subject, statusPurpose: `revocation\n${'y'.repeat(100)}` }));
     serveOverride = () => long;
     await expect(makeResolver().checkStatus(clearEntry)).rejects.toThrow(
-      new Error(`status list statusPurpose mismatch: "revocation\\n${'y'.repeat(53)}"... \u2260 "revocation"`),
+      new Error(`status list statusPurpose mismatch: the list's is "revocation\\n${'y'.repeat(53)}"... and the entry's is "revocation"`),
     );
     const restated = await resignedList((subject) => subject);
     serveOverride = () => restated;
@@ -299,7 +301,7 @@ describe('CheqdStatusListResolver (real crypto, stubbed transport)', () => {
       ...signedList,
       credentialSubject: {
         ...signedList.credentialSubject,
-        statusPurpose: 'suspension', // any post-signing mutation
+        id: 'https://status.example/elsewhere#list', // any post-signing mutation
       },
     });
     await expect(makeResolver().checkStatus(clearEntry)).rejects.toThrow(
@@ -328,6 +330,30 @@ describe('CheqdStatusListResolver (real crypto, stubbed transport)', () => {
     expect(fetchLog.length).toBe(2);
     expect(fetchLog[1]!.headers['Cache-Control']).toBe('no-cache');
     expect(fetchLog[1]!.headers['Pragma']).toBe('no-cache');
+  });
+
+  it('busts upstream caches on the one fetch after invalidateCache(), and not after', async () => {
+    const uncached = makeResolver();
+    uncached.invalidateCache();
+    await uncached.checkStatus(clearEntry);
+    await uncached.checkStatus(clearEntry);
+    expect(fetchLog.map((entry) => entry.headers['Cache-Control'])).toEqual(['no-cache', undefined]);
+  });
+
+  it('a cached list expires cacheTtlMs after its fetch, however often it is read', async () => {
+    const fetchedAt = Date.now();
+    vi.useFakeTimers({ toFake: ['Date'], now: fetchedAt });
+    try {
+      const cachingResolver = makeResolver({ cacheTtlMs: 1_000 });
+      await cachingResolver.checkStatus(clearEntry);
+      vi.setSystemTime(fetchedAt + 600);
+      await cachingResolver.checkStatus(clearEntry);
+      vi.setSystemTime(fetchedAt + 1_200);
+      await cachingResolver.checkStatus(clearEntry);
+      expect(fetchLog.length).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('cacheTtlMs: 0 disables document caching (every call fetches)', async () => {

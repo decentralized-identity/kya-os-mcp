@@ -53,8 +53,29 @@ The middleware resolves and verifies the entire delegation chain and checks `cre
 
 - A parent-linked credential presented without a configured `resolveDelegationChain` handler is rejected.
 - A credential carrying `credentialStatus` without a configured `statusListResolver` is rejected.
+- The `statusListResolver` is told each credential's issuer DID, so it can hold a status list to an issuer it trusts for that credential: `acceptStatusList` applies the rule, and `CheqdStatusListResolver` applies it with its `expectedIssuerDid` pin as the one issuer it trusts.
+  It is not told the chain's root, even when `trustedRootIssuers` pins it, so a list the root signed for a re-delegated credential is refused unless the resolver's own configuration accepts the root for that credential's issuer and the list states its URL as its `id`.
 
 There is no mode that accepts parent-linked credentials without chain resolution or skips StatusList checks.
+
+A status-list reader that verifies a list's proof reads the list only when its `issuer` is accepted for the credential, its `statusPurpose` includes the entry's, and its `id` is, byte for byte, the URL it was fetched from (`SPEC.md` §6.6).
+A list may state no `id` only when the credential's own issuer signed it and is the only issuer accepted for the credential, and `CheqdStatusListResolver` reads no list without one.
+The cheqd resolver's pin grants authority for every credential, even when it differs from the chain's root.
+This is deliberate deployment policy, not evidence of chain membership.
+Card accountability plugins are trusted authority providers: a positive verdict grants the responsible party status-list authority.
+They must meet SPEC-ENTITY-CARD.md §10.3's proof, Card-binding and host-authorization contract.
+A structural-only checker or unconditional `true` stub is unsafe for that purpose.
+Only a literal `true`, returned bare or as `verified`, grants authority, and a `fresh` that is present and not a boolean reads as not fresh.
+`withStatusCache` distinguishes omitted and explicit-null purposes and isolates issuer/root contexts.
+Its `maxStalenessMs` permits stale results, and it keeps them across a change of trust configuration, so replace the cache along with that configuration.
+Three substitutions remain open to whoever controls what a status-list URL returns:
+
+- A list that states no `id` is bound to no URL, so it can be served in place of another list its own issuer signed, only where that issuer is the only one the verifier accepts for the credential.
+  An issuer should state the `id` of each list.
+- An earlier version of a list, signed before a credential was revoked, can be served in place of the current one.
+  Its verdict is reported fresh until the version's `validUntil`, or indefinitely when it states none, and after that only a verifier that requires a fresh verdict refuses it.
+- An Entity Card's Entity may sign its own Card's list, so with the Entity's key a list with the Card's bit clear can be served in place of the one its responsible party revoked the Card on.
+  Against a compromised Entity key, the responsible party revokes the root delegation credential, which the Card's accountability check reads (SPEC-ENTITY-CARD.md §12.5).
 
 ### Permission-only credential subject
 

@@ -16,6 +16,7 @@
  */
 
 import { mkdirSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { canonicalize } from 'json-canonicalize';
 import { CompactSign, importPKCS8 } from 'jose';
 import { NodeCryptoProvider } from '../src/providers/node-crypto.js';
@@ -27,18 +28,16 @@ import {
   generateDidKeyFromBase64,
   didKeyFragment,
   wrapDelegationAsVC,
-  BitstringManager,
-  statusListGzipCodec,
   buildDidWebDocument,
   RESPONSE_PROOF_PROFILE_ENVELOPE,
   type DelegationCredential,
-  type StatusList2021Credential,
   type CredentialStatus,
   type DetachedProof,
 } from '../src/index.js';
 import { extractPublicKeyFromDidKey, publicKeyToJwk } from '../src/delegation/did-key-resolver.js';
 import { VECTORS_DIR } from './loader.js';
 import { ed25519VerificationMethod, signVC } from './crypto-kit.js';
+import { statusListVectors, type StatusListVectorDeps } from './status-list-vectors.js';
 import { SUITE_VERSION, writeVectorFile } from './vector-files.js';
 import type {
   ConformanceVector,
@@ -474,96 +473,7 @@ function flipB64url(value: string): string {
 
 // ── status-list vectors ─────────────────────────────────────────────────────────
 
-async function statusListVectors(): Promise<VectorFile> {
-  const issuer = await mintParty();
-  const agent = await mintParty();
-  const didDocuments = { [issuer.did]: didDocFor(issuer) };
-
-  const listId = 'https://status.example.com/revocation/v1';
-  const listSize = 131072;
-
-  async function buildStatusList(revokedIndices: number[]): Promise<StatusList2021Credential> {
-    const bitstring = new BitstringManager(listSize, statusListGzipCodec, statusListGzipCodec);
-    for (const i of revokedIndices) bitstring.setBit(i, true);
-    const encodedList = await bitstring.encode();
-    const unsigned = {
-      '@context': [
-        'https://www.w3.org/2018/credentials/v1',
-        'https://w3id.org/vc/status-list/2021/v1',
-      ],
-      id: listId,
-      type: ['VerifiableCredential', 'StatusList2021Credential'],
-      issuer: issuer.did,
-      issuanceDate: '2026-01-01T00:00:00.000Z',
-      credentialSubject: {
-        id: `${listId}#list`,
-        type: 'StatusList2021' as const,
-        statusPurpose: 'revocation' as const,
-        encodedList,
-      },
-    };
-    const proof = await signVC(crypto, unsigned, issuer.privateKey, issuer.kid);
-    return { ...unsigned, proof } as StatusList2021Credential;
-  }
-
-  const activeIndex = 7;
-  const revokedIndex = 42;
-  const statusFor = (index: number): CredentialStatus => ({
-    id: `${listId}#${index}`,
-    type: 'StatusList2021Entry',
-    statusPurpose: 'revocation',
-    statusListIndex: index.toString(),
-    statusListCredential: listId,
-  });
-
-  const activeCred = await buildSignedDelegationWith(issuer, agent.did, 'del-active', statusFor(activeIndex));
-  const revokedCred = await buildSignedDelegationWith(issuer, agent.did, 'del-revoked', statusFor(revokedIndex));
-  const signedList = await buildStatusList([revokedIndex]);
-  const statusLists = { [listId]: signedList };
-
-  // The signed list with the revoked bit cleared and the proof left as signed:
-  // read without its proof checked, it reports the revoked credential active.
-  const clearedList = await buildStatusList([]);
-  const tamperedLists = {
-    [listId]: {
-      ...signedList,
-      credentialSubject: {
-        ...signedList.credentialSubject,
-        encodedList: clearedList.credentialSubject.encodedList,
-      },
-    },
-  };
-
-  const vectors: ConformanceVector[] = [
-    {
-      id: 'status-list/active-credential',
-      category: 'status-list',
-      description: 'Delegation whose StatusList2021 bit is 0 (not revoked)',
-      expected: 'pass',
-      reason: 'An unset revocation bit means the credential is active',
-      input: { credential: activeCred, statusLists, didDocuments, serverDid: SERVER_DID },
-    },
-    {
-      id: 'status-list/revoked-credential',
-      category: 'status-list',
-      description: 'Delegation whose StatusList2021 bit is 1 (revoked)',
-      expected: 'fail',
-      reason: 'A set revocation bit must reject the credential',
-      input: { credential: revokedCred, statusLists, didDocuments, serverDid: SERVER_DID },
-    },
-    {
-      id: 'status-list/tampered-list',
-      category: 'status-list',
-      description: 'Revoked delegation checked against its list with the bit cleared after signing',
-      expected: 'fail',
-      reason: "The list's proof no longer verifies, so its bits cannot be read and the check fails closed",
-      input: { credential: revokedCred, statusLists: tamperedLists, didDocuments, serverDid: SERVER_DID },
-    },
-  ];
-
-  return { version: SUITE_VERSION, category: 'status-list', vectors };
-}
-
+/** A delegation for the status-list category (./status-list-vectors.ts), signed as every category's is. */
 async function buildSignedDelegationWith(
   issuer: Party,
   subjectDid: string,
@@ -579,6 +489,12 @@ async function buildSignedDelegationWith(
     credentialStatus,
   });
 }
+
+/** Party minting and delegation signing for `status-list.json` and `status-list-authority.json`. */
+export const statusListVectorDeps: StatusListVectorDeps<Party> = {
+  crypto, mintParty, didDocumentFor: didDocFor,
+  signDelegation: buildSignedDelegationWith, serverDid: SERVER_DID,
+};
 
 // ── did:key resolution vectors ──────────────────────────────────────────────────
 
@@ -665,13 +581,15 @@ async function main(): Promise<void> {
 
   writeVectorFile(await signedProofVectors(), 'signed-proof.json');
   writeVectorFile(await delegationChainVectors(), 'delegation-chain.json');
-  writeVectorFile(await statusListVectors(), 'status-list.json');
+  writeVectorFile(await statusListVectors(statusListVectorDeps), 'status-list.json');
   writeVectorFile(await didKeyVectors(), 'did-key-resolution.json');
   writeVectorFile(await didWebVectors(), 'did-web-resolution.json');
   console.log('All conformance vectors generated.');
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

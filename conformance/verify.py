@@ -13,6 +13,8 @@ guarantee the polyglot toolchain rests on.
 The same run also verifies the positive audit-integrity vector using an
 independent RFC 9162 Merkle implementation (leaf/node domain separation,
 inclusion proof, and consistency proof).
+Every status-list vector is independently checked by status_list.py: authority,
+both Ed25519 proofs, bounded gzip decoding and the strict indexed bit read.
 
 Zero external dependencies: SHA-256 via `hashlib`, JCS via an exact RFC 8785 serializer below
 (ECMAScript number formatting and UTF-16 code-unit object-key ordering, covering the full admitted
@@ -28,6 +30,15 @@ import hashlib
 import json
 import sys
 from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+
+# The modules beside this script are imported from its directory, which is put on the path even
+# where Python leaves it off (-I, -P), and a run leaves no bytecode cache there.
+sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True
+
+from status_list import verify_input as verify_status_input
 
 # ── Ed25519 verification (RFC 8032 reference implementation, pure stdlib) ─────────
 _p = 2 ** 255 - 19
@@ -340,8 +351,7 @@ def audit_verify_consistency(old_size: int, new_size: int, old_root: str,
 
 
 def main() -> int:
-    here = Path(__file__).resolve().parent
-    vector_file = json.loads((here / "vectors" / "card-proof.json").read_text())
+    vector_file = json.loads((HERE / "vectors" / "card-proof.json").read_text())
     vector = positive_vector(vector_file)
     proof = vector["proof"]
     jwks = vector["jwks"]  # the DID-keyed JWKS is embedded in the self-contained vector
@@ -371,7 +381,7 @@ def main() -> int:
     results.append(("RFC 7638 cnf.jkt thumbprint fusion",
                     rfc7638_thumbprint(key) == proof.get("cnf", {}).get("jkt")))
 
-    audit_file = json.loads((here / "vectors" / "audit-integrity.json").read_text())
+    audit_file = json.loads((HERE / "vectors" / "audit-integrity.json").read_text())
     audit = positive_vector(audit_file)
     audit_leaves = audit["leaves"]
     inclusion = audit["inclusion"]
@@ -401,6 +411,15 @@ def main() -> int:
                         consistency["oldSize"], len(audit_leaves),
                         consistency["oldRoot"], audit["root"],
                         consistency["auditPath"])))
+
+    # Every status-list vector, positive AND negative, has an independently
+    # derived verdict: authority, credential/list signatures, gzip and bit read.
+    for path in sorted((HERE / "vectors").glob("*.json")):
+        vector_set = json.loads(path.read_text())
+        if vector_set.get("category") == "status-list":
+            for item in vector_set["vectors"]:
+                accepted = verify_status_input(item["input"], jcs, ed25519_verify)
+                results.append((item["id"], accepted == (item["expected"] == "pass")))
 
     print(f"KYA-OS cross-language verifier (Python {sys.version.split()[0]}, stdlib-only)")
     print(f"  proof: {proof['prf']}  did: {proof['did']}")

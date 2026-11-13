@@ -43,7 +43,13 @@ const checkAttestations: CapabilityVerifier = async (capabilities) => {
   return { verified, unverified };
 };
 
-/** A stub accountability verifier. A real one walks the signed delegation chain. */
+/**
+ * DEMONSTRATION ONLY: fabricates a successful verdict to illustrate level computation.
+ * Never combine this stub with a statusListChecker or use it for authorization:
+ * true grants the claimed responsible party authority to sign the Card's status list.
+ * Production seams must meet SPEC-ENTITY-CARD §10.3 (proofs, Card binding, host trust,
+ * revocation and freshness), not merely walk the chain's structure.
+ */
 const alwaysAccountable = async (): Promise<boolean> => true;
 
 async function main(): Promise<void> {

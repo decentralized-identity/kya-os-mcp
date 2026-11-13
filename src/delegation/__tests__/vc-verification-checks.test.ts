@@ -139,7 +139,7 @@ describe("refusal reasons quote what the credential chose as describeValue does"
 
   it("quotes the type and purpose of a status entry its resolver reads as revoked", async () => {
     const status = { type: long, statusPurpose: "revocation\uD800" } as unknown as CredentialStatus;
-    expect(await checkCredentialStatus(status, { checkStatus: async () => true })).toMatchObject({
+    expect(await checkCredentialStatus(status, { checkStatus: async () => true }, ISSUER)).toMatchObject({
       valid: false,
       outcome: "revoked",
       reason: `Credential revoked via ${cutLong} ("revocation\\ud800")`,
@@ -148,7 +148,7 @@ describe("refusal reasons quote what the credential chose as describeValue does"
 
   it("passes the message of a status resolver that throws through the message sanitizer", async () => {
     const thrower = (message: string) => ({ checkStatus: async () => { throw new Error(message); } });
-    expect(await checkCredentialStatus(credentialStatus("revocation"), thrower("list\nunavailable\uD800"))).toEqual({
+    expect(await checkCredentialStatus(credentialStatus("revocation"), thrower("list\nunavailable\uD800"), ISSUER)).toEqual({
       valid: false,
       outcome: "status_unresolvable",
       reason: "Status check error: list\uFFFDunavailable\uFFFD",
@@ -157,7 +157,7 @@ describe("refusal reasons quote what the credential chose as describeValue does"
     // A resolver that quotes a purpose the credential chose, raw: 2,074 UTF-16 units, not well-formed.
     const purpose = "x\uD800".repeat(1000);
     const raw = `status list statusPurpose mismatch: "revocation" != "${purpose}"`;
-    const { reason } = await checkCredentialStatus(credentialStatus(purpose), thrower(raw));
+    const { reason } = await checkCredentialStatus(credentialStatus(purpose), thrower(raw), ISSUER);
     const expectedMessage = `status list statusPurpose mismatch: "revocation" != "${"x\uFFFD".repeat(1000)}`;
     expect(reason).toBe(`Status check error: ${expectedMessage.slice(0, 256)}\u2026`);
     expect(reason).not.toMatch(/\p{Cs}/u);

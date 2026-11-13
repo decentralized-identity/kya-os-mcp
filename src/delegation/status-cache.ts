@@ -10,9 +10,12 @@
  * silently, now scoped to status data only and signed off by name.
  *
  * Fail-closed is preserved: a resolver THROW is never cached (the next call
- * retries), and `maxStalenessMs <= 0` makes the wrapper a pass-through.
+ * retries), and `maxStalenessMs <= 0` makes the wrapper a pass-through. The
+ * `context` naming the credential's issuer, and its chain's pinned root,
+ * reaches the wrapped resolver unchanged and is part of the cache key.
  */
 import type { CredentialStatus } from '../types/protocol.js';
+import type { StatusCheckContext } from '../utils/statuslist-acceptance.js';
 import type { StatusListResolver } from './vc-verifier.types.js';
 import { TtlCache } from '../utils/ttl-cache.js';
 
@@ -33,12 +36,23 @@ export function withStatusCache(
   });
 
   return {
-    async checkStatus(status: CredentialStatus): Promise<boolean> {
-      const key = `${status.statusListCredential}\0${status.statusListIndex}\0${status.statusPurpose}`;
+    async checkStatus(status: CredentialStatus, context?: StatusCheckContext): Promise<boolean> {
+      // The context is part of the key: whether a list may speak for a credential depends on the
+      // issuers the context names, so a verdict never crosses credentials that name other issuers.
+      // JSON arrays turn undefined into null. Those are not equivalent: a
+      // checker may default an omitted purpose but must refuse explicit null.
+      // Object members preserve that distinction (omission versus JSON null).
+      const key = JSON.stringify({
+        url: status.statusListCredential,
+        index: status.statusListIndex,
+        purpose: status.statusPurpose,
+        issuer: context?.credentialIssuer,
+        root: context?.trustedRootIssuer,
+      });
       const hit = cache.get(key);
       if (hit !== undefined) return hit;
       // A throw propagates uncached — fail-closed deny now, retry next call.
-      const revoked = await resolver.checkStatus(status);
+      const revoked = await resolver.checkStatus(status, context);
       cache.set(key, revoked);
       return revoked;
     },

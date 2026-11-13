@@ -1,0 +1,18 @@
+kind: Changed
+body: |-
+    **A Bitstring Status List may state its `statusPurpose` as an array.**
+    Bitstring Status List v1.0 §2.2 lets a `BitstringStatusListCredential`
+    whose subject's `type` is `BitstringStatusList` declare one or more
+    purposes. `createRevocationChecker` and
+    `StatusList2021Manager.checkStatus` now read such a list when its
+    purpose array includes the purpose being checked, where they rejected
+    any array before. Every other list, a StatusList2021 list included,
+    states one string, as Verifiable Credentials Status List v2021 §2.2
+    requires, and is still rejected when it states an array, now with a
+    reason that says so. `CheqdStatusListResolver` reads StatusList2021
+    lists alone, so it still rejects every array. A list with no purpose,
+    an empty array, or a purpose that is not a string is still rejected.
+    `CheqdStatusListResolver` applies the shared rule before it checks a
+    list's signature, and refuses a list's issuer and purpose with the
+    rule's reasons.
+time: 2026-11-12T13:24:02.000000-06:00

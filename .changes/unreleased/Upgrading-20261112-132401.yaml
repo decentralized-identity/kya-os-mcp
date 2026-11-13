@@ -1,0 +1,89 @@
+kind: Upgrading
+body: |-
+    **A status list is now held to the credential it covers, so a status
+    check that passed on 1.22.0 can deny.** Find your setup:
+    - **A hop whose status entry is on a list its own issuer did not
+      issue:** with `verifyStatusList` it reads as revoked, unless the
+      list's issuer is the chain's root and the verifier pins that root, or
+      the checker's `statusListIssuers` accepts the list's issuer for the
+      hop's issuer. A list signed by an issuer between the root and the hop
+      needs that issuer listed under `statusListIssuers` for the hop's
+      issuer.
+    - **A chain whose root signs the lists of the hops below it, checked
+      without a pinned root:** the root's list now counts only for the
+      root's own credential. Pin the root, with `trustedRootIssuers` or
+      `resourceOwner` for `verifyRequestDelegation` and
+      `requireDelegation`, or `resourceOwner` for
+      `evaluateDelegationChain`, and its list counts for every hop of its
+      chains.
+    - **A Card whose `revocation` list another DID issues:** with
+      `verifyStatusList` it reads as revoked, unless that DID is the Card's
+      `responsibleParty` and the Card's `accountabilityVerifier` verifies it
+      as the root issuer of the Card's delegation chain, or
+      `statusListIssuers` accepts it for the Card's `id`. A responsible
+      party's list counts for its Cards only once verified, never as the
+      Card states it.
+    - **A list that states no `id`, signed by anyone but the credential's
+      own issuer:** the checker with `verifyStatusList` rejects it, so a
+      list from the pinned root, from an issuer `statusListIssuers`
+      accepts, or from a Card's responsible party must state, as its `id`,
+      the URL it is served at. `CheqdStatusListResolver` rejects every list
+      that states no `id`. `StatusList2021Manager` and the publisher in
+      `examples/revoked` state the `id` of every list they write; re-issue
+      any other list with its URL as its `id`.
+    - **A list that states no `id`, signed by the credential's own issuer,
+      where the verifier pins a root other than that issuer or
+      `statusListIssuers` accepts another issuer for it:** the checker with
+      `verifyStatusList` rejects it too, since it could otherwise stand in
+      for a list another accepted issuer keeps. So does `verifyCard` for a
+      Card's own list once the Card's `responsibleParty`, another DID, is
+      verified. State the list's URL as its `id`.
+    - **A list that states an `id` other than its URL, byte for byte:** the
+      checker with `verifyStatusList` and `CheqdStatusListResolver` reject
+      it. A DID URL naming the same resource is another `id`, so
+      `CheqdStatusListResolver`, which fetches only https URLs, refuses a
+      list whose `id` is a DID URL.
+    - **A direct call to a checker built with `verifyStatusList`:** name the
+      credential's issuer, `check(entry, { credentialIssuer })`, and the
+      chain's root as `trustedRootIssuer` for a hop of a chain whose root
+      you pin. A call that names no issuer resolves to revoked and not
+      fresh, before any fetch. Pass `evaluateRevocationChain` the hops
+      `revocationEntriesOf(chain, trustedRootIssuer)` builds.
+    - **A hop whose `credentialStatus` states a `statusPurpose` other than
+      the checker's, or one that is not a string, `null` included:** it
+      resolves to revoked and not fresh, before any fetch. On 1.22.0 its
+      bit was read whenever its list declared the checker's purpose.
+    - **A `credentialStatus` whose `statusListIndex` is not a string, such
+      as `7` or `["7"]`:** every status-list reader refuses it, so a checker
+      `createRevocationChecker` builds resolves it to revoked and not fresh,
+      and `CheqdStatusListResolver` and `StatusList2021Manager.checkStatus`
+      throw. On 1.22.0 it was converted to a string and that bit read. Write
+      each index as a string of decimal digits, as the library's issuers
+      do. `StatusList2021Manager.updateStatus`, which writes the manager's
+      own record, still sets the bit of an index stored as a whole number,
+      as on 1.22.0, but now throws on one that is neither a number nor a
+      string, such as `["7"]`, which 1.22.0 converted to a string.
+      `CascadingRevocationManager` reads the delegation graph's stored
+      entries, the same records, the same way.
+    - **An `accountabilityVerifier` that returns a value other than a
+      boolean:** `verifyCard` takes only a literal `true`, returned bare or
+      as `verified`, as verified, so a truthy value such as `"false"` or `1`
+      now fails the Card's accountability check, and it reads a `fresh`
+      that is present and not a boolean as `false`, which demotes L3 to L2.
+      Since a verified responsible party's lists now count for the Card,
+      SPEC-ENTITY-CARD.md §10.3 states what the verifier must check before
+      it returns `true`: a check of the chain's structure alone, or a stub
+      that always returns `true`, is not enough.
+    - **A checker built without `verifyStatusList`:** it authenticates no
+      list, so it still reads whatever list it is served, as on 1.22.0 (see
+      DEPRECATIONS.md). Give it `createStatusListProofVerifier`, or a check
+      that resolves `true` only for a proof that verifies under a key the
+      list's `issuer` lists under `assertionMethod`.
+    - **A custom `StatusListResolver` given to `withKyaOs` or
+      `DelegationCredentialVerifier`:** the library reads a list only
+      through it, so a list is held to the credential only as the resolver
+      holds it. `checkStatus` is now told the credential's issuer; once a
+      list's proof verifies, pass `acceptStatusList(list,
+      statusListExpectationFor(status, context, statusListIssuers))`, as
+      `CheqdStatusListResolver` applies the rule to its pin.
+time: 2026-11-12T13:24:01.000000-06:00

@@ -303,11 +303,15 @@ export async function verifySignature(
  * labelled with a {@link StatusOutcome} so consumers can tell a settled
  * `revoked` (re-consent) from a transient `status_unresolvable` (retry):
  * a missing resolver or a resolver that throws both DENY as
- * `status_unresolvable`; a set status bit DENIES as `revoked`.
+ * `status_unresolvable`; a set status bit DENIES as `revoked`. The resolver is
+ * told `credentialIssuer`, the issuer DID of the credential, and holds the
+ * status list to it; a credential that names none cannot be held to anyone, so
+ * it DENIES as `status_unresolvable` without a read.
  */
 export async function checkCredentialStatus(
   status: CredentialStatus,
   statusListResolver: StatusListResolver | undefined,
+  credentialIssuer: string | undefined,
 ): Promise<StatusCheckResult> {
   const startTime = Date.now();
 
@@ -322,7 +326,17 @@ export async function checkCredentialStatus(
       };
     }
 
-    const isRevoked = await statusListResolver.checkStatus(status);
+    if (!credentialIssuer) {
+      return {
+        valid: false,
+        reason:
+          "Credential names no issuer DID to hold its status list to, so its revocation status cannot be verified",
+        outcome: "status_unresolvable",
+        durationMs: Date.now() - startTime,
+      };
+    }
+
+    const isRevoked = await statusListResolver.checkStatus(status, { credentialIssuer });
 
     if (isRevoked) {
       return {

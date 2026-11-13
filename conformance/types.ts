@@ -121,15 +121,35 @@ export interface StatusListInput {
   /** The DelegationCredential carrying a `credentialStatus`. */
   credential: unknown;
   /**
-   * The signed StatusList2021Credential the entry points at, keyed by its id.
-   * Its proof is checked like a delegation credential's (SPEC.md §6.2) before
-   * any bit is read (suite ≥ 1.2.0).
+   * The signed status list the entry points at, keyed by the
+   * `statusListCredential` URL that serves it: a StatusList2021Credential, or
+   * a BitstringStatusListCredential for a `BitstringStatusListEntry`. Its
+   * proof is checked like a delegation credential's (SPEC.md §6.2) before any
+   * bit is read (suite ≥ 1.2.0), and it must be a list SPEC.md §6.6 accepts
+   * for the credential: its `issuer`, its `statusPurpose` and its `id`, which
+   * must be its key (suite ≥ 1.4.0).
    */
   statusLists: Record<string, unknown>;
   /** DID documents for signature verification, keyed by DID. */
   didDocuments: Record<string, unknown>;
   /** The verifying server's DID. */
   serverDid: string;
+  /**
+   * The root issuer of the credential's delegation chain, which the verifier
+   * pins (SPEC.md §6.6), so a list it signed may speak for the credential.
+   * Already-authorized per-credential context at this category's boundary;
+   * this input supplies no chain and does not test root admission.
+   * Omitted, the verifier pins no root (suite ≥ 1.4.0); any value but a
+   * non-empty string makes the loader refuse the vector.
+   */
+  trustedRootIssuer?: string;
+  /**
+   * The issuers the verifier is configured to accept for a credential
+   * issuer's credentials, keyed by that issuer's DID (SPEC.md §6.6). Omitted,
+   * it accepts no other issuer (suite ≥ 1.4.0); a value that is not an object
+   * of string arrays makes the loader refuse the vector.
+   */
+  statusListIssuers?: Record<string, string[]>;
 }
 
 export interface DidResolutionInput {
@@ -286,7 +306,8 @@ export interface ConformanceAdapter {
 
   /**
    * Verify a credential's StatusList2021 revocation status, rejecting it when
-   * the list's own proof does not verify.
+   * the list's own proof does not verify, or the list is not one that may
+   * speak for the credential (SPEC.md §6.6).
    */
   verifyStatusList(input: StatusListInput): Promise<AdapterResult>;
 

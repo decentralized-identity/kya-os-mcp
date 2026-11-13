@@ -1,0 +1,15 @@
+kind: Fixed
+body: |-
+    **A `statusListIndex` must be a non-negative decimal string.** The
+    conformance reference adapter read the index with
+    `parseInt`, so an entry stating `7junk`, `7.5` or `7` after a space read
+    bit 7, where the library's status-list readers refuse each. Those
+    readers converted an index that is not a string, so the number `7` or
+    the array `["7"]` read bit 7, where `conformance/verify.py` refuses
+    both; they now refuse it too. Conformance suite 1.4.0 adds a negative
+    vector for each, `status-list/index-suffix`,
+    `status-list/index-fraction`, `status-list/index-space` and
+    `status-list/index-number`, and a positive one,
+    `status-list/index-leading-zeros`, whose index opens with 4,300 zeros
+    and names the bit its value names.
+time: 2026-11-13T04:15:00.000000-06:00

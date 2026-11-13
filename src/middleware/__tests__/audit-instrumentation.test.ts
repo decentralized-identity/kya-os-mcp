@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { sha256Of } from '../../__tests__/utils/digests.js';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
 import { generateDidKeyFromBase64 } from '../../utils/did-helpers.js';
 import { MemoryAuditLogProvider } from '../../providers/audit-log.js';
@@ -632,12 +633,8 @@ describe('MCP audit instrumentation', () => {
     await handler({ _kyaos_delegation: hostile });
 
     expect(protectedHandler).not.toHaveBeenCalled();
-    expect(references).toEqual([
-      'd'.repeat(256),
-      'nested-delegation',
-      'unknown',
-      'unknown',
-    ]);
+    // An id past the bound is recorded by its digest, never cut: long ids alike at first stay apart.
+    expect(references).toEqual([sha256Of('d'.repeat(300)), 'nested-delegation', 'unknown', 'unknown']);
   });
 
   it('returns a denial marked degraded when required authorization audit delivery fails', async () => {

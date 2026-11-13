@@ -13,6 +13,14 @@ import io
 import json
 import re
 import sys
+from pathlib import Path
+
+if __name__ == "__main__":
+    # Run as a script, as the JSONL port below is, Python may leave this directory off the import
+    # path (-I, -P); put it on, as verify.py does, so the module beside this one is found.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from base64url import signature_bytes, strict_base64url_bytes
 
 
 def issuer(value):
@@ -142,7 +150,10 @@ def verify_document(document, documents, canonicalize, verify_signature):
     if key.get("kty") != "OKP" or key.get("crv") != "Ed25519":
         return False
     unsigned = {k: v for k, v in document.items() if k != "proof"}
-    return verify_signature(decode64(key["x"]), canonicalize(unsigned), decode64(proof["proofValue"]))
+    # The key's x as SPEC.md 7.4 reads it, and the proofValue as 7.8 reads it, as the reference's
+    # embedded-signature verifier reads both.
+    return verify_signature(strict_base64url_bytes(key["x"]), canonicalize(unsigned),
+                            signature_bytes(proof["proofValue"]))
 
 
 def verify_input(value, canonicalize, verify_signature):

@@ -22,6 +22,7 @@ import {
 import type { CryptoProvider } from '../providers/base.js';
 import { CryptoService, type Ed25519JWK } from '../utils/crypto-service.js';
 import { alternateRequestShapes } from './covered-request.js';
+import type { ContentBindingMismatch } from './binding.js';
 import { base64ToBytes, base64urlEncodeFromBytes, bytesToBase64 } from '../utils/base64.js';
 import { ED25519_PKCS8_DER_HEADER, ED25519_KEY_SIZE } from '../utils/ed25519-constants.js';
 
@@ -99,6 +100,8 @@ export interface ToolResponse {
 export interface ProofOptions {
   scopeId?: string;
   delegationRef?: string;
+  /** Digest of the delegation chain the call was decided under (SPEC §7.8). */
+  delegationChainDigest?: string;
   clientDid?: string;
   outcome?: 'allowed' | 'denied' | 'step_up_required' | 'needs_authorization';
   reason?: string;
@@ -228,13 +231,6 @@ export async function acceptedRequestHashes(
   return [...hashes];
 }
 
-/** How received content fails to match the hashes a proof binds. */
-export type ContentBindingMismatch =
-  | 'request'
-  | 'response'
-  | 'response-missing'
-  | 'response-unexpected';
-
 /**
  * Compare the request (and response) a verifier actually received with the
  * hashes a proof binds; `undefined` means they match. Shared by `ProofVerifier`
@@ -304,6 +300,7 @@ export function buildProofJwsPayload(meta: ProofMeta): Record<string, unknown> {
     // Optional claims (only include if present)
     ...(meta.scopeId && { scopeId: meta.scopeId }),
     ...(meta.delegationRef && { delegationRef: meta.delegationRef }),
+    ...(meta.delegationChainDigest && { delegationChainDigest: meta.delegationChainDigest }),
     ...(meta.clientDid && { clientDid: meta.clientDid }),
     ...(meta.outcome && { outcome: meta.outcome }),
     ...(meta.reason && { reason: meta.reason }),
@@ -331,7 +328,7 @@ export class ProofGenerator {
    * @param request - The MCP tool request (method + params)
    * @param response - The tool response data
    * @param session - The current session context from handshake
-   * @param options - Optional proof metadata (scopeId, delegationRef, clientDid)
+   * @param options - Optional proof metadata (scopeId, delegationRef, delegationChainDigest, clientDid)
    * @returns Detached proof containing JWS and proof metadata
    * @throws {Error} If JWS generation fails (invalid key, crypto error)
    */

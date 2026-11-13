@@ -4,8 +4,9 @@
  * Shared utility functions for delegation credential operations.
  */
 
-import { base64urlEncodeFromString, base64urlDecodeToString } from '../utils/base64.js';
+import { base64urlEncodeFromString } from '../utils/base64.js';
 import { canonicalizeJson } from '../utils/canonical-json.js';
+import { jwsSegmentsJson } from './jws-segment.js';
 
 /**
  * Canonicalize a JSON value using RFC 8785 (JSON Canonicalization Scheme).
@@ -109,6 +110,17 @@ export function completeVCJWT(signingInput: string, signature: string): string {
   return `${signingInput}.${signature}`;
 }
 
+/**
+ * The header and the payload of a compact VC-JWT, read as JSON as
+ * `jwsSegmentsJson` reads them `lenient`: as this package has always read them.
+ *
+ * Null for a string that is not three segments of which the first two are
+ * JSON, and for one whose header or payload nests its arrays and objects
+ * more than `MAX_CREDENTIAL_NESTING_DEPTH` levels deep (SPEC §7.8). Such a
+ * text is not handed to a parser: it is counted first, in one pass, so
+ * whether a JWT is read never turns on how deep a text the parser underneath
+ * can read.
+ */
 export function parseVCJWT(jwt: string): {
   header: VCJWTHeader;
   payload: VCJWTPayload;
@@ -121,11 +133,7 @@ export function parseVCJWT(jwt: string): {
   }
 
   try {
-    const headerJson = base64urlDecodeToString(parts[0]!);
-    const payloadJson = base64urlDecodeToString(parts[1]!);
-
-    const header = JSON.parse(headerJson) as VCJWTHeader;
-    const payload = JSON.parse(payloadJson) as VCJWTPayload;
+    const [header, payload] = jwsSegmentsJson([parts[0]!, parts[1]!], 'lenient') as [VCJWTHeader, VCJWTPayload];
 
     return {
       header,

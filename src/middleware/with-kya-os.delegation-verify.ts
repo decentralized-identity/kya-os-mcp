@@ -17,7 +17,6 @@ import { getDidMethod } from "../utils/did-helpers.js";
 import {
   DelegationCredentialVerifier,
   type DIDResolver,
-  type SignatureVerificationFunction,
 } from "../delegation/vc-verifier.js";
 import {
   validateDelegationChain as validateDelegationChainCore,
@@ -26,11 +25,18 @@ import {
 import { RuntimeFetchProvider } from "../providers/runtime-fetch.js";
 import { credentialIssuerRefusal } from "../delegation/credential-issuer.js";
 import { assertTrustedRootIssuers } from "../delegation/root-admission.js";
-import { canonicalizeJSON, parseVCJWT } from "../delegation/utils.js";
-import { base64urlDecodeToBytes, bytesToBase64 } from "../utils/base64.js";
+import { parseVCJWT } from "../delegation/utils.js";
+import { embeddedSignatureVerifier } from "../delegation/embedded-signature.js";
+import { createDelegationDescriber, type DelegationRecords } from "./with-kya-os.delegation-records.js";
+import {
+  checkPresentation,
+  readOnce,
+  verifyEnvelope,
+  type Authenticated,
+  type DelegationCheck,
+} from "./with-kya-os.delegation-check.js";
 import {
   createNeedsAuthorizationError,
-  readCredentialProofValue,
   type DelegationCredential,
 } from "../types/protocol.js";
 import { logger } from "../logging/index.js";
@@ -44,11 +50,7 @@ import type {
 import type { MiddlewareDeps } from "./with-kya-os.deps.js";
 import { sanitizeForMessage } from "./with-kya-os.helpers.js";
 import { withoutOutcomeMeta } from "./with-kya-os.session.js";
-import {
-  encodableDelegationBytes,
-  isEncodableDelegation,
-  UNENCODABLE_DELEGATION_REASON,
-} from "./with-kya-os.delegation-encoding.js";
+import { isEncodableDelegation, UNENCODABLE_DELEGATION_REASON } from "./with-kya-os.delegation-encoding.js";
 
 /** Per-tool delegation-gate config shared by the gate + its challenge builder. */
 export interface DelegationGateConfig {
@@ -76,19 +78,7 @@ function toChallengeResult(formatted: unknown): KyaOsToolResult | undefined {
   });
 }
 
-/**
- * Outcome of authenticating a presented delegation. On success the caller gets
- * the normalized credential and its wire form; on failure a sanitizable reason
- * plus the best-effort parsed credential (for audit references), if any.
- */
-export type DelegationCheck =
-  | { valid: true; vc: DelegationCredential; isJwt: boolean; expiresAt?: number }
-  | { valid: false; reason: string; vc?: DelegationCredential };
-
-/** A {@link DelegationCheck} whose success also carries the bytes the audit digest is taken over. */
-export type AuditedDelegationCheck =
-  | (Extract<DelegationCheck, { valid: true }> & { serializedCredential: Uint8Array })
-  | Extract<DelegationCheck, { valid: false }>;
+export type { DelegationCheck, DelegationRecords };
 
 /** The JWT a delegation `check` verified arrived as, or `undefined` for one with a Data Integrity proof. */
 function arrivedAsJwt(check: { isJwt: boolean }, delegationArg: unknown): string | undefined {
@@ -109,15 +99,9 @@ export interface DelegationVerification {
    */
   verifyDelegation(delegationArg: unknown): Promise<DelegationCheck>;
   /**
-   * {@link verifyDelegation}, for a caller that hands the credential's values on:
-   * it also refuses a credential holding one that has no RFC 8785 encoding, and
-   * returns the bytes its digest is taken over (./with-kya-os.delegation-encoding.ts).
-   */
-  verifyDelegationForAudit(delegationArg: unknown): Promise<AuditedDelegationCheck>;
-  /**
-   * {@link verifyDelegation}, for a caller that hands the credential's values on but takes no
-   * digest of it, as a session grant does: it refuses the credentials
-   * {@link verifyDelegationForAudit} refuses, and produces no bytes.
+   * {@link verifyDelegation}, for a caller that hands the credential's values on, as the gate and
+   * a session grant do: it also refuses a credential holding one that has no RFC 8785 encoding
+   * (./with-kya-os.delegation-encoding.ts), with the records of what was presented.
    */
   verifyEncodableDelegation(delegationArg: unknown): Promise<DelegationCheck>;
   /** A structured `{ error, reason }` tool response with a sanitized reason. */
@@ -199,52 +183,9 @@ export function createDelegationVerification(
     },
   };
 
-  const signatureVerifier: SignatureVerificationFunction = async (
-    vc: DelegationCredential,
-    publicKeyJwk: unknown,
-  ): Promise<{ valid: boolean; reason?: string }> => {
-    const proof = vc.proof;
-    if (!proof) {
-      return { valid: false, reason: "Missing proof" };
-    }
-
-    const proofValue = readCredentialProofValue(proof as Record<string, unknown>);
-    if (!proofValue) {
-      return { valid: false, reason: "Missing proofValue in proof" };
-    }
-
-    // Reconstruct the unsigned VC (without proof) for signature verification
-    const vcRecord = vc as Record<string, unknown>;
-    const vcWithoutProof: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(vcRecord)) {
-      if (k !== "proof") vcWithoutProof[k] = v;
-    }
-    const canonical = canonicalizeJSON(vcWithoutProof);
-    const data = new TextEncoder().encode(canonical);
-
-    // Decode signature from base64url proof value
-    const sigBytes = base64urlDecodeToBytes(proofValue);
-
-    // Get public key from JWK (x is base64url-encoded raw key bytes)
-    const jwk = publicKeyJwk as { x?: string };
-    if (!jwk.x) {
-      return { valid: false, reason: "No x field in publicKeyJwk" };
-    }
-
-    // Convert base64url key to standard base64 for the crypto provider
-    const pubKeyBytes = base64urlDecodeToBytes(jwk.x);
-    const pubKeyBase64 = bytesToBase64(pubKeyBytes);
-
-    const valid = (await cryptoProvider.verify(data, sigBytes, pubKeyBase64)) === true;
-    return {
-      valid,
-      reason: valid ? undefined : "Signature verification failed",
-    };
-  };
-
   const verifier = new DelegationCredentialVerifier({
     didResolver,
-    signatureVerifier,
+    signatureVerifier: embeddedSignatureVerifier(cryptoProvider),
     statusListResolver: delegationConfig?.statusListResolver,
     cacheTtl: delegationConfig?.verificationCache?.ttlMs,
     maxCacheSize: delegationConfig?.verificationCache?.maxEntries,
@@ -295,12 +236,31 @@ export function createDelegationVerification(
     }
   };
 
+  const resolveDelegationChain = delegationConfig?.resolveDelegationChain;
+
+  /**
+   * The chain walk over one presentation, with what it examined: the
+   * ancestors it reached, root first, then the presented credential when it
+   * got that far.
+   *
+   * Each value the resolver returns is read as the presentation is (see
+   * {@link readOnce}), in every configuration, as soon as it is returned and
+   * before anything else reads it. One that is not read refuses the chain
+   * before any of it is verified, and `unreadAncestor` says so.
+   */
   const validateDelegationChain = async (
     leafCredential: DelegationCredential,
     jwt?: string,
-  ): Promise<ChainValidationResult> => {
+  ): Promise<{ chain: ChainValidationResult; examined: readonly unknown[]; unreadAncestor?: true }> => {
+    let unreadAncestor = false;
+    const snapshotAncestor = (ancestor: DelegationCredential): DelegationCredential => {
+      const read = readOnce(ancestor);
+      if ("copy" in read) return read.copy as DelegationCredential;
+      unreadAncestor = true;
+      throw new TypeError(`A resolved ancestor ${read.unread}`);
+    };
     let envelopeFailure: string | undefined;
-    const result = await validateDelegationChainCore(
+    const walked = await validateDelegationChainCore(
       leafCredential,
       {
         serverDid: identity.did,
@@ -313,15 +273,17 @@ export function createDelegationVerification(
             // envelope here, including live time and status checks. Never grant
             // a JWT leaf the embedded-proof skipSignature privilege. A refused
             // envelope gives its own reason; a failed status check reads as any
-            // credential's does, `Delegation <id> invalid: <reason>`.
-            const envelope = await verifier.verifyDelegationJwt(jwt);
+            // credential's does, `Delegation <id> invalid: <reason>`. The
+            // envelope is read as the chain digest reads it (see verifyEnvelope).
+            const envelope = await verifyEnvelope(verifier, jwt, {});
             if (!envelope.valid && (envelope.stage === "basic" || envelope.stage === "signature")) {
               envelopeFailure = envelope.reason ?? "VC-JWT envelope signature is not valid";
             }
             return envelope;
           },
         },
-        resolveDelegationChain: delegationConfig?.resolveDelegationChain,
+        ...(resolveDelegationChain !== undefined ? { resolveDelegationChain } : {}),
+        snapshotAncestor,
         statusListConfigured: !!delegationConfig?.statusListResolver,
         revocationChecker: delegationConfig?.revocationChecker,
         ...(trustedRootIssuers !== undefined ? { trustedRootIssuers } : {}),
@@ -329,14 +291,17 @@ export function createDelegationVerification(
         dependencyTimeoutMs,
       },
     );
-    if (!result.valid && envelopeFailure !== undefined) return { ...result, reason: envelopeFailure };
-    if (result.valid) reportChainWarnings(result.warnings);
-    return result;
+    const chain = !walked.valid && envelopeFailure !== undefined ? { ...walked, reason: envelopeFailure } : walked;
+    if (chain.valid) reportChainWarnings(chain.warnings);
+    return { chain, examined: chain.evaluated ?? [], ...(unreadAncestor ? { unreadAncestor: true as const } : {}) };
   };
 
-  async function verifyDelegation(
-    delegationArg: unknown,
-  ): Promise<DelegationCheck> {
+  const describer = createDelegationDescriber(deps);
+  const verifyDelegation = (delegationArg: unknown): Promise<DelegationCheck> =>
+    checkPresentation(delegationArg, authenticate, describer);
+
+  /** Authenticate a presentation, and report what the verdict was reached on. */
+  async function authenticate(delegationArg: unknown): Promise<Authenticated> {
     // Normalize to a DelegationCredential, authenticating by wire form. A VC-JWT
     // string carries its signature in the compact-JWS ENVELOPE; an object carries
     // an embedded Data-Integrity proof (verified inside validateDelegationChain).
@@ -347,7 +312,7 @@ export function createDelegationVerification(
     if (typeof delegationArg === "string") {
       const parsed = parseVCJWT(delegationArg);
       if (!parsed?.payload?.vc) {
-        return { valid: false, reason: "Invalid VC-JWT format" };
+        return { verdict: { valid: false, reason: "Invalid VC-JWT format" }, ancestors: [] };
       }
       // Parse only here. The chain must admit the claimed root before any
       // issuer document is resolved, including the JWT leaf's. The verifier
@@ -357,7 +322,7 @@ export function createDelegationVerification(
       // Admission reads this claim before the envelope verifier. Preserve the
       // JWT basic-stage diagnostic when it cannot name an issuer at all.
       const issuerFailure = credentialIssuerRefusal(vc);
-      if (issuerFailure) return { valid: false, reason: issuerFailure, vc };
+      if (issuerFailure) return { verdict: { valid: false, reason: issuerFailure, vc }, ancestors: [] };
       // Preserve the normalized credential's proof marker. It is never used as
       // evidence: the leaf verifier receives the original compact JWT below.
       if (!vc.proof) {
@@ -371,11 +336,14 @@ export function createDelegationVerification(
     // Chain / scope-superset / expiry / status / revocation. The leaf's wire
     // form selects its verifier; ancestors always use their embedded proofs.
     // That call never throws on normal/malformed input; this backstop catches
-    // only a truly unexpected throw (hostile getter/Proxy, provider fault) and
-    // returns a GENERIC reason so no internal detail leaks to the client/proof.
+    // only a truly unexpected throw (a provider fault: what is verified is
+    // plain data, so nothing in it can throw) and returns a GENERIC reason so
+    // no internal detail leaks to the client/proof.
     let chain: ChainValidationResult;
+    let examined: readonly unknown[] = [];
+    let unreadAncestor: true | undefined;
     try {
-      chain = await validateDelegationChain(vc, isJwt ? delegationArg as string : undefined);
+      ({ chain, examined, unreadAncestor } = await validateDelegationChain(vc, isJwt ? delegationArg as string : undefined));
     } catch (error) {
       logger.error("[kya-os] Unexpected error verifying delegation", {
         error: error instanceof Error ? error.message : String(error),
@@ -387,11 +355,18 @@ export function createDelegationVerification(
       };
     }
 
+    // The walk lists what it reached, the presented credential last when it
+    // got that far. The records take that credential as it was presented.
+    const ancestors = examined.filter((credential) => credential !== vc);
     if (!chain.valid) {
       return {
-        valid: false,
-        reason: chain.reason ?? "Unknown delegation validation error",
-        vc,
+        verdict: {
+          valid: false,
+          reason: chain.reason ?? "Unknown delegation validation error",
+          vc,
+        },
+        ancestors,
+        ...(unreadAncestor ? { unreadAncestor } : {}),
       };
     }
     // Only use the time claim after the envelope verifier has accepted it as
@@ -401,33 +376,18 @@ export function createDelegationVerification(
       ? chain.expiresAt
       : Math.min(jwtExpiresAt, chain.expiresAt ?? jwtExpiresAt);
     return {
-      valid: true,
-      vc,
-      isJwt,
-      ...(expiresAt !== undefined ? { expiresAt } : {}),
+      verdict: { valid: true, vc, isJwt, ...(expiresAt !== undefined ? { expiresAt } : {}) },
+      ancestors,
     };
-  }
-
-  async function verifyDelegationForAudit(
-    delegationArg: unknown,
-  ): Promise<AuditedDelegationCheck> {
-    const check = await verifyDelegation(delegationArg);
-    if (!check.valid) return check;
-    // Decided INSIDE this trust boundary, so a successful check cannot hand the gate a credential
-    // holding a value that later throws while being encoded. Never repair signed credential data. Only the
-    // encoding is decided here; the gate hashes these bytes, and a failure of its crypto provider
-    // there is not a property of the credential.
-    const serializedCredential = encodableDelegationBytes(check.vc, arrivedAsJwt(check, delegationArg));
-    if (serializedCredential === undefined) {
-      return { valid: false, reason: UNENCODABLE_DELEGATION_REASON, vc: check.vc };
-    }
-    return { ...check, serializedCredential };
   }
 
   async function verifyEncodableDelegation(delegationArg: unknown): Promise<DelegationCheck> {
     const check = await verifyDelegation(delegationArg);
+    // Decided INSIDE this trust boundary, so a successful check cannot hand the gate a credential
+    // holding a value that later throws while being encoded. Never repair signed credential data.
     if (!check.valid || isEncodableDelegation(check.vc, arrivedAsJwt(check, delegationArg))) return check;
-    return { valid: false, reason: UNENCODABLE_DELEGATION_REASON, vc: check.vc };
+    const { evidence, chainEvidence } = check;
+    return { valid: false, reason: UNENCODABLE_DELEGATION_REASON, vc: check.vc, evidence, chainEvidence };
   }
 
   async function buildNeedsAuthorizationChallenge(
@@ -489,7 +449,6 @@ export function createDelegationVerification(
 
   return {
     verifyDelegation,
-    verifyDelegationForAudit,
     verifyEncodableDelegation,
     buildDelegationErrorResponse,
     buildNeedsAuthorizationChallenge,

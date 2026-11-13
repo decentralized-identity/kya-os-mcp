@@ -17,14 +17,9 @@
 
 import { mkdirSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { canonicalize } from 'json-canonicalize';
-import { CompactSign, importPKCS8 } from 'jose';
 import { NodeCryptoProvider } from '../src/providers/node-crypto.js';
-import { ED25519_PKCS8_DER_HEADER, ED25519_KEY_SIZE } from '../src/utils/ed25519-constants.js';
-import { base64ToBytes, bytesToBase64 } from '../src/utils/base64.js';
 import {
   ProofGenerator,
-  buildProofJwsPayload,
   generateDidKeyFromBase64,
   didKeyFragment,
   wrapDelegationAsVC,
@@ -36,7 +31,10 @@ import {
 } from '../src/index.js';
 import { extractPublicKeyFromDidKey, publicKeyToJwk } from '../src/delegation/did-key-resolver.js';
 import { VECTORS_DIR } from './loader.js';
-import { ed25519VerificationMethod, signVC } from './crypto-kit.js';
+import { ed25519VerificationMethod, signProofMeta, signVC, signVcJwt } from './crypto-kit.js';
+import type { CredentialOptions } from './delegation-binding-kit.js';
+import { delegationBindingVectors } from './delegation-binding-vectors.js';
+import { READ_AS_LARGE_INTEGER } from './numbers-as-written.js';
 import { statusListVectors, type StatusListVectorDeps } from './status-list-vectors.js';
 import { SUITE_VERSION, writeVectorFile } from './vector-files.js';
 import type {
@@ -146,6 +144,19 @@ async function signedProofVectors(): Promise<VectorFile> {
     meta: { ...envelopeProof.meta, prf: 'org.example/unknown-profile.v9' as never },
   };
 
+  // ── Delegation chain binding (`delegationChainDigest`, SPEC §7.8; suite ≥ 1.5.0) ─
+  const delegationBinding = await delegationBindingVectors<Party>({
+    publicKeyJwk: jwk,
+    now: NOW,
+    hash: (bytes) => crypto.hash(bytes),
+    party: mintParty,
+    credential: (args) => buildSignedDelegation({ ...args, audience: SERVER_DID }),
+    vcJwt: signVcJwt,
+    proof: async (request, response, options) =>
+      signProofMeta(agent, { ...(await gen.generateProof(request, response, session, options)).meta, ts: NOW }),
+    signedUnder: (meta, header) => signProofMeta(agent, meta, header),
+  });
+
   const vectors: ConformanceVector[] = [
     {
       id: 'signed-proof/valid-basic',
@@ -243,41 +254,10 @@ async function signedProofVectors(): Promise<VectorFile> {
         'Unknown response-proof profiles are rejected fail-closed — never verified under weaker (body-only) semantics',
       input: { proof: unknownProfileProof, publicKeyJwk: jwk, now: NOW, skewSeconds: 300 },
     },
+    ...delegationBinding,
   ];
 
   return { version: SUITE_VERSION, category: 'signed-proof', vectors };
-}
-
-/**
- * Sign a proof meta into a DetachedProof using the SAME canonical payload shape
- * the package's ProofGenerator/ProofVerifier use (RFC 8785). The generator needs
- * to mint proofs at arbitrary pinned timestamps; ProofGenerator only signs at
- * Date.now(), so the generator reproduces the documented payload shape directly.
- */
-async function signProofMeta(party: Party, meta: DetachedProof['meta']): Promise<DetachedProof> {
-  // The payload SHAPE comes from the library's own buildProofJwsPayload — the
-  // single source of truth shared with ProofGenerator/ProofVerifier — so a
-  // covered claim (e.g. the envelope profile's `prf` discriminator) can never drift between
-  // the library and the committed vectors.
-  const payload = buildProofJwsPayload(meta);
-  const canonical = canonicalize(payload as Parameters<typeof canonicalize>[0]);
-  const pem = formatPrivateKeyAsPEM(party.privateKey);
-  const key = await importPKCS8(pem, 'EdDSA');
-  const jws = await new CompactSign(new TextEncoder().encode(canonical))
-    .setProtectedHeader({ alg: 'EdDSA', kid: party.kid })
-    .sign(key);
-  return { jws, meta };
-}
-
-function formatPrivateKeyAsPEM(base64PrivateKey: string): string {
-  const keyData = base64ToBytes(base64PrivateKey);
-  const rawKey = keyData.subarray(0, ED25519_KEY_SIZE);
-  const fullKey = new Uint8Array(ED25519_PKCS8_DER_HEADER.length + rawKey.length);
-  fullKey.set(ED25519_PKCS8_DER_HEADER);
-  fullKey.set(rawKey, ED25519_PKCS8_DER_HEADER.length);
-  const b64 = bytesToBase64(fullKey);
-  const formatted = b64.match(/.{1,64}/g)?.join('\n') ?? b64;
-  return `-----BEGIN PRIVATE KEY-----\n${formatted}\n-----END PRIVATE KEY-----`;
 }
 
 /**
@@ -316,25 +296,30 @@ async function buildSignedDelegation(args: {
   audience: string | string[];
   status?: 'active' | 'revoked';
   credentialStatus?: CredentialStatus;
-}): Promise<DelegationCredential> {
+} & CredentialOptions): Promise<DelegationCredential> {
   const unsigned = wrapDelegationAsVC(
     {
       id: args.id,
       issuerDid: args.issuer.did,
       subjectDid: args.subjectDid,
-      vcId: `urn:uuid:${args.id}`,
+      vcId: args.vcId ?? `urn:uuid:${args.id}`,
       parentId: args.parentId,
       constraints: { scopes: args.scopes, audience: args.audience },
       signature: '',
       status: args.status ?? 'active',
       createdAt: NOW * 1000,
+      ...(args.metadata === undefined ? {} : { metadata: args.metadata }),
     },
     {
       issuanceDate: '2026-01-01T00:00:00.000Z',
       ...(args.credentialStatus ? { credentialStatus: args.credentialStatus } : {}),
     },
   );
-  const proof = await signVC(crypto, unsigned as Record<string, unknown>, args.issuer.privateKey, args.issuer.kid);
+  for (const [key, value] of args.members ?? []) {
+    Object.defineProperty(unsigned, key, { value, enumerable: true, writable: true, configurable: true });
+  }
+  const { privateKey, kid } = args.issuer;
+  const proof = await signVC(crypto, unsigned as Record<string, unknown>, privateKey, kid, args.canonicalize);
   return { ...unsigned, proof } as DelegationCredential;
 }
 
@@ -579,7 +564,7 @@ async function didWebVectors(): Promise<VectorFile> {
 async function main(): Promise<void> {
   mkdirSync(VECTORS_DIR, { recursive: true });
 
-  writeVectorFile(await signedProofVectors(), 'signed-proof.json');
+  writeVectorFile(await signedProofVectors(), 'signed-proof.json', [READ_AS_LARGE_INTEGER]);
   writeVectorFile(await delegationChainVectors(), 'delegation-chain.json');
   writeVectorFile(await statusListVectors(statusListVectorDeps), 'status-list.json');
   writeVectorFile(await didKeyVectors(), 'did-key-resolution.json');

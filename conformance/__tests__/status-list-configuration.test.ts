@@ -3,7 +3,8 @@
  * `trustedRootStatusList` and `statusListIssuers` (SPEC.md §6.6). The two readers of the suite refuse the same malformed
  * configuration: the TypeScript loader refuses the vector, and the reference adapter fails it when
  * handed it directly, while `conformance/status_list.py` reads it as refused. A well-formed
- * configuration leaves the vector's verdict as the vector states it.
+ * configuration leaves the vector's verdict as the vector states it. Both read a proof's key and
+ * signature alike too: the key's `x` as SPEC.md §7.4 reads it, and the `proofValue` as §7.8 does.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -124,5 +125,51 @@ describe('a status-list vector that states its verifier configuration', () => {
   it('keeps the verdict the vector states when the configuration is well formed', async (context) => {
     const read = await verdicts(requirePython(context), WELL_FORMED);
     expect(read).toEqual(read.map(({ name, expected }) => ({ name, expected, loader: 'read', adapter: expected, python: expected === 'pass' })));
+  });
+});
+
+/** An edit of a status-list vector's input: of every proof's `proofValue`, or of every key's `x`. */
+type Rewrite = [name: string, edit: (input: Record<string, unknown>) => void, verdict: 'pass' | 'fail'];
+
+/** Each proof the input carries, the credential's and its status list's. */
+const proofsOf = (input: Record<string, unknown>): { proofValue: string }[] => [
+  (input.credential as { proof: { proofValue: string } }).proof,
+  ...Object.values(input.statusLists as Record<string, { proof: { proofValue: string } }>).map(({ proof }) => proof),
+];
+/** Each Ed25519 key the input's DID documents carry. */
+const keysOf = (input: Record<string, unknown>): { x: string }[] =>
+  Object.values(input.didDocuments as Record<string, { verificationMethod: { publicKeyJwk: { x: string } }[] }>)
+    .flatMap(({ verificationMethod }) => verificationMethod.map(({ publicKeyJwk }) => publicKeyJwk));
+const everyProof = (rewrite: (value: string) => string) => (input: Record<string, unknown>) => {
+  for (const proof of proofsOf(input)) proof.proofValue = rewrite(proof.proofValue);
+};
+const everyKey = (rewrite: (value: string) => string) => (input: Record<string, unknown>) => {
+  for (const key of keysOf(input)) key.x = rewrite(key.x);
+};
+
+const REWRITES: Rewrite[] = [
+  ['proofValue in the base64 alphabet', everyProof((value) => value.replaceAll('-', '+').replaceAll('_', '/')), 'pass'],
+  ['proofValue padded with =', everyProof((value) => `${value}==`), 'pass'],
+  ['proofValue broken across lines', everyProof((value) => `${value.slice(0, 40)}\n${value.slice(40)}`), 'pass'],
+  ['proofValue with a character outside base64', everyProof((value) => `${value.slice(0, 10)}!${value.slice(10)}`), 'fail'],
+  ['x padded with =', everyKey((value) => `${value}=`), 'fail'],
+  ['x with a space at its end', everyKey((value) => `${value} `), 'fail'],
+];
+
+describe('a status-list vector whose proofs or keys are written another way', () => {
+  it('has the same verdict from the reference adapter and the Python reader', async (context) => {
+    const interpreter = requirePython(context);
+    const cases = REWRITES.map(([name, edit, verdict]) => {
+      const vector = structuredClone(vectors.find((item) => item.id === 'status-list/active-credential')!);
+      edit(vector.input as Record<string, unknown>);
+      return { name, vector, verdict };
+    });
+    const read = python(interpreter, cases.map(({ vector }) => vector));
+    const verdicts = await Promise.all(cases.map(async ({ name, vector }, i) => ({
+      name,
+      adapter: (await adapter.verifyStatusList(vector.input as never)).outcome,
+      python: read[i] ? 'pass' : 'fail',
+    })));
+    expect(verdicts).toEqual(cases.map(({ name, verdict }) => ({ name, adapter: verdict, python: verdict })));
   });
 });

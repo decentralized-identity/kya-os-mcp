@@ -1,0 +1,57 @@
+kind: Added
+body: |-
+    **A response proof can bind the delegation chain a call was decided
+    under, and a verifier that holds the chain checks it.** SPEC.md §7.8
+    defines the two claims a proof may carry about a delegation, both
+    covered by its signature: `delegationRef`, the reference of the
+    credential the call presented, and `delegationChainDigest`, one digest
+    over each credential of the chain, root to leaf, each taken over what
+    its issuer signed and that signature, so a copy of a credential with
+    other proof metadata, or its signature padded or broken across lines,
+    gives the same value. Signing either claim from the server is not
+    part of this release: `withKyaOs` sets neither.
+
+    Whoever holds the chain checks it by passing `delegationChain` with
+    the request and response that `ProofVerifier.verifyProof` and
+    `verifyProofArtifact` compare. The proof must then bind that chain,
+    name its last credential, and record a call that was allowed. A
+    chain given as `null` is none, as an outcome given as `null` is, and
+    one that is not an array, as an untyped caller may pass, is a chain
+    no proof binds. A refusal is signed too, and binds what the caller
+    presented and its signer examined, which says nothing of whether it
+    is valid: to check one, pass the new `outcome` member (`'denied'`,
+    say) with the chain.
+    A failure names the comparison in `details`, in the shape of the new
+    `ProofBindingMismatch` type, under two new error codes:
+    `OUTCOME_MISMATCH` for a proof that records another outcome, and
+    `DELEGATION_BINDING_MISMATCH` for one that binds no chain
+    (`delegation-chain-unbound`), binds another (`delegation-chain`), or
+    names another credential than the chain's last (`delegation-ref`).
+    `CONTENT_BINDING_MISMATCH` stays the code for a request or response
+    that does not match, and now carries `details` as well.
+    `ProofVerificationErrorCode` gains the two new codes, so a `switch`
+    over it that the compiler checks for exhaustiveness needs a case for
+    each.
+
+    `delegationCredentialDigest`, `delegationChainDigest`,
+    `digestDelegationChain` and `signedForm` compute the digests anywhere.
+    `delegationCredentialId`, `delegationReference` and `delegationRefOf`
+    derive the reference a proof names a credential by. `signingInput`
+    gives the bytes a credential's signature is checked over, and a value
+    that has no signed form throws `NoSignedFormError`. They read a
+    credential object as the JSON it stands for: an array's elements
+    whether or not they are enumerable, any other member only when it is,
+    and a member keyed by a symbol leaves it with no signed form. Each
+    takes the hash it digests with as a `Sha256`: a function from bytes
+    to `sha256:<64 lowercase hex>`, such as a bound `CryptoProvider.hash`.
+    All of these are exported from the package root and from
+    `@kya-os/mcp/delegation`, and the types `ExpectedContent` and
+    `ProofBindingMismatch` from the root and from `@kya-os/mcp/proof`.
+    Exported beside them, from the root and from `@kya-os/mcp/delegation`,
+    are the constants `DELEGATION_CREDENTIAL_DIGEST_DOMAIN`,
+    `DELEGATION_CHAIN_DIGEST_DOMAIN` and `MAX_CREDENTIAL_NESTING_DEPTH`
+    (64: how deep the arrays and objects of a credential may nest,
+    SPEC.md §7.8), and the types `ReceivedCredential`,
+    `DelegationChainDigests`, `SignedForm`, `SignedCredential`,
+    `SignedJwt` and `Sha256`.
+time: 2026-11-11T21:30:00.000000-08:00

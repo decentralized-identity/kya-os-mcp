@@ -64,8 +64,10 @@ import {
   readStatusBit,
 } from '../../utils/statuslist-bits.js';
 import { acceptEntrySize, acceptStatusList } from '../../utils/statuslist-acceptance.js';
-import { base64urlDecodeToBytes, bytesToBase64 } from '../../utils/base64.js';
+import { bytesToBase64 } from '../../utils/base64.js';
+import { base64EitherBytes } from '../../utils/base64-reading.js';
 import { dependencyTimeout } from '../../utils/deadline.js';
+import { ed25519KeyBytes } from '../../utils/ed25519-public-key.js';
 import { TtlCache } from '../../utils/ttl-cache.js';
 
 export interface CheqdStatusListResolverOptions {
@@ -242,7 +244,9 @@ export class CheqdStatusListResolver implements StatusListResolver {
     const unsigned: Record<string, unknown> = { ...vc };
     delete unsigned['proof'];
     const data = new TextEncoder().encode(canonicalizeJSON(unsigned));
-    const signature = base64urlDecodeToBytes(proofValue);
+    // Read as a credential's proofValue is (SPEC.md §7.8), so one string is one signature on
+    // every runtime; a string that carries none fails the check below.
+    const signature = base64EitherBytes(proofValue);
 
     const named: unknown = proof['verificationMethod'];
     const keyId = typeof named === 'string' ? named : undefined;
@@ -259,13 +263,25 @@ export class CheqdStatusListResolver implements StatusListResolver {
     }
 
     const jwk = verificationMethodJwk(selection.method);
-    const publicKeyBase64 = jwk ? bytesToBase64(base64urlDecodeToBytes(jwk.x)) : undefined;
+    const publicKeyBase64 = jwk ? ed25519KeyBase64(jwk) : undefined;
     // The crypto provider is the host's: the signature holds only on the literal `true`.
-    if (!publicKeyBase64 || (await this.opts.cryptoProvider.verify(data, signature, publicKeyBase64)) !== true) {
+    if (!signature || !publicKeyBase64 || (await this.opts.cryptoProvider.verify(data, signature, publicKeyBase64)) !== true) {
       throw new Error(
         'Status list signature verification FAILED against the issuer DID document',
       );
     }
+  }
+}
+
+/**
+ * The base64 of the Ed25519 key a JWK carries in `x`, read as every proof's key is (SPEC.md §7.4):
+ * base64url as RFC 7515 §2 writes it, of 32 bytes. Undefined for an `x` not so written.
+ */
+function ed25519KeyBase64(jwk: { x?: unknown }): string | undefined {
+  try {
+    return bytesToBase64(ed25519KeyBytes(jwk));
+  } catch {
+    return undefined;
   }
 }
 

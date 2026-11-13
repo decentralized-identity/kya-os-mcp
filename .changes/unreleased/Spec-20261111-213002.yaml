@@ -1,0 +1,93 @@
+kind: Spec
+body: |-
+    **SPEC.md §7.8: a response proof binds the delegation chain by
+    digest.** The new optional `ProofMeta` member `delegationChainDigest`
+    is a domain-separated SHA-256 over the digests of every credential the
+    server evaluated, root to leaf, each taken over the credential's
+    signed form: what its issuer's signature covers, and that signature.
+    It is covered by the proof's own signature. §7.8 defines both digests,
+    and gives `delegationRef` its one definition: the id a credential
+    shows, or the SHA-256 of an id that is over 256 code units, holds a
+    character that does not print (the control and format characters and
+    the line and paragraph separators, listed by code point) or a
+    surrogate without its pair, reads as a digest, or is the word
+    `unknown`. An id that is not well-formed Unicode is hashed over its
+    WTF-8 bytes. A number in a VC-JWT's payload
+    is read whatever its length, and plays no part in the id. Every JSON
+    text §7.8 reads, a VC-JWT's header and payload and any text a
+    credential object arrives in, is read keeping the last of the members
+    of an object that share a name, as `JSON.parse` keeps it, whatever the
+    parser an implementation uses. It says how a signature string is read
+    (a VC-JWT's as a JWS segment, a `proofValue` more loosely) and which
+    values have no signed form, and so neither verify nor have a digest:
+    among them a credential object holding a number that is an integer of
+    magnitude above 2^53 - 1 once read as an IEEE 754 binary64 value,
+    whatever the text it was written as. It bounds how deep the arrays
+    and objects of a credential nest, at 64 levels, counted before
+    anything parses or canonicalizes them: a credential object nested
+    deeper has no signed form, the
+    header or payload of a VC-JWT nested deeper is not read as JSON, and
+    an implementation's own failure to read a value is never reported as
+    the value having no signed form. Whether a credential verifies and
+    has a digest then does not turn on the call stack of the runtime
+    reading it. It says what the two members mean on an allowed call and
+    on a refusal, where they describe what was presented and examined and
+    never that it is valid, and what the digest of each kind of refusal
+    covers: the credentials the server examined, and none where a value
+    handed to it for the chain could not be read.
+    A verifier that holds the chain MUST reject an outcome it does not
+    expect (an allowed call, unless it is checking a refusal), a digest
+    that differs or is absent, and a `delegationRef` that is not the
+    reference of the chain's last credential. Signing either claim from
+    the server is not part of this release of the reference
+    implementation: its server sets neither `delegationRef` nor
+    `delegationChainDigest`, and its verifier checks both against a chain
+    it is given. §7.2 and §7.4 list the
+    member, §7.7 uses it, §11.1 adds delegation substitution and a
+    refusal shown as acceptance to the threat model, and Appendix C.4
+    gives a vector.
+    Additive: a proof without the member is unchanged.
+    `schemas/detached-proof.json` admits the member and its `$id` moves to
+    `proof/detached/v1.2.0`. CONFORMANCE.md adds L3.28, and conformance
+    suite 1.5.0 adds the `signed-proof/delegation-chain-*` and
+    `signed-proof/delegation-ref-*` vectors, which `conformance/verify.py`
+    re-derives in Python. Among them are credentials at the nesting bound
+    and one level past it, ids at either edge of the control range, one
+    a character longer than the digest form, ids holding a right-to-left
+    override or a zero-width space, and the id `unknown`, a VC-JWT
+    whose payload holds an integer of 4301 digits, one whose payload
+    holds the
+    credential id twice, a credential object holding 9007199254740993.5,
+    and a credential object whose issuer signed a `__proto__` member. A
+    verifier built against suite 1.4.0 or earlier fails them until it
+    implements L3.28.
+
+    §7.4 now says how a verifier reads a proof's JWS, and it MUST refuse
+    a proof that does not read so: exactly three segments, each base64url
+    as RFC 7515 §2 writes it, with no white space and no `=`; a header
+    whose `alg` is `EdDSA` and whose `kid` is the proof's; an Ed25519 key
+    whose `x` is 32 bytes read the same way; and a signature that
+    verifies over the payload rebuilt from
+    `meta`, and over any other payload segment the JWS carries. Every
+    claim in `meta` is then held to what was signed, and two verifiers
+    give one verdict on one proof. §7.8 reads a VC-JWT's segments more
+    loosely, as the JWS libraries that verify a credential read them,
+    and that reading applies there alone. The 15
+    `signed-proof/delegation-proof-*` vectors of suite 1.5.0 hold a
+    verifier to it: a signature segment with one or four characters
+    outside base64url, written in the base64 alphabet, holding a line
+    break, or padded with `=`; a fourth segment; a header with a
+    character outside ASCII; `requestHash`, `nonce` or `sessionId`
+    altered after signing; a proof checked against another call than the
+    one it proves; a header
+    that names another algorithm, or another key of the signer's DID; a
+    `meta` whose `did` is not the signer's; and a proof of a request with
+    no `params`, which verifies. `conformance/verify.py` checks them by a
+    reading of its own, and refuses an Ed25519 key of small order, as the
+    TypeScript reference does. The reference adapter refuses a
+    signed-proof vector that gives `now` or `skewSeconds` as anything
+    but a number, as `verify.py` does. `signed-proof.json` is generated
+    whole by one run, its earlier vectors signed again under that run's
+    keys; the other 11 vector files change only their `version`, and
+    the suite has 136 vectors.
+time: 2026-11-11T21:30:02.000000-08:00

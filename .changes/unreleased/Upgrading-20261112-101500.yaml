@@ -1,0 +1,25 @@
+kind: Upgrading
+body: |-
+    **Two things to check: one if your server uses `wrapWithDelegation`,
+    and one if you hand the verifier keys of your own.**
+    - A consumer that recomputes `authorization.delegationCredentialDigest`
+      from a credential it holds must compute the credential digest of
+      SPEC.md §7.8, a domain-separated SHA-256 over what the issuer signed
+      and the signature, in place of the SHA-256 of the VC-JWT string or of
+      the canonical JSON of the whole credential, `proof` included. A
+      digest recorded before the upgrade does not equal one recorded after
+      it for the same credential, and the `delegation.rejected` event and
+      the events of a retry allowed under a stored grant now carry it too.
+      It should also expect `delegationRef` to be the `sha256:` digest of
+      an id over 256 code units, of one that holds a character that does
+      not print (SPEC.md §7.8 lists them) or a surrogate without its pair,
+      of one written as a `sha256:` digest and of the id `unknown`, and the
+      `jti` of a VC-JWT whose credential has no `id`.
+    - A custom DID resolver or key provider that hands the verifier an
+      Ed25519 JWK must write its `x` as RFC 8037 has it: base64url of the
+      URL-safe alphabet alone, with no `=` and no white space, of 32 bytes.
+      An `x` in the standard base64 alphabet, padded or holding white space
+      is refused even when it is the same key, for a response proof, a
+      delegation credential's embedded signature and a status list that
+      `CheqdStatusListResolver` reads.
+time: 2026-11-12T10:15:00.000000-08:00

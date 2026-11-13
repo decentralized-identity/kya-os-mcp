@@ -17,64 +17,7 @@ import { MemoryDelegationGraphStorage } from "../storage/memory-graph-storage.js
 import { MemoryStatusListStorage } from "../storage/memory-statuslist-storage.js";
 import { StatusList2021Manager } from "../statuslist-manager.js";
 import { CascadingRevocationManager } from "../cascading-revocation.js";
-
-const SERVER = "did:web:server.example";
-
-/** Minimal well-formed delegation credential for the chain-walk under test. */
-function cred(opts: {
-  id: string;
-  issuerDid: string;
-  subjectDid: string;
-  parentId?: string;
-  scopes?: string[];
-  audience?: string | string[];
-  crisp?: CrispScope[];
-  withStatus?: boolean;
-}): DelegationCredential {
-  return {
-    "@context": ["https://www.w3.org/2018/credentials/v1"],
-    type: ["VerifiableCredential", "DelegationCredential"],
-    issuer: opts.issuerDid,
-    issuanceDate: "2026-01-01T00:00:00.000Z",
-    credentialSubject: {
-      id: opts.subjectDid,
-      delegation: {
-        id: opts.id,
-        issuerDid: opts.issuerDid,
-        subjectDid: opts.subjectDid,
-        ...(opts.parentId ? { parentId: opts.parentId } : {}),
-        ...(opts.scopes ? { scopes: opts.scopes } : {}),
-        constraints: {
-          ...(opts.audience !== undefined ? { audience: opts.audience } : {}),
-          ...(opts.scopes ? { scopes: opts.scopes } : {}),
-          ...(opts.crisp ? { crisp: { scopes: opts.crisp } } : {}),
-        },
-        status: "active",
-      },
-    },
-    ...(opts.withStatus
-      ? {
-          credentialStatus: {
-            id: "https://status.example/1#0",
-            type: "StatusList2021Entry" as const,
-            statusPurpose: "revocation" as const,
-            statusListIndex: "0",
-            statusListCredential: "https://status.example/1",
-          },
-        }
-      : {}),
-  };
-}
-
-const okVerifier: DelegationCredentialVerifierPort = {
-  verifyDelegationCredential: async () => ({ valid: true }),
-};
-
-const baseDeps: ChainEnforcementDeps = {
-  serverDid: SERVER,
-  verifier: okVerifier,
-  statusListConfigured: true,
-};
+import { SERVER, baseDeps, cred, okVerifier } from "./helpers/chain-fixtures.js";
 
 describe("validateScopeAttenuation (pure)", () => {
   const parent = cred({ id: "p", issuerDid: "did:a", subjectDid: "did:b", scopes: ["read", "write"] });
@@ -296,6 +239,19 @@ describe("validateDelegationChain", () => {
         maxChainLength: 3,
       });
       expect(r.valid).toBe(false);
+      // Four values are more than three credentials, whatever the last of them is.
+      expect(r.reason).toBe("Delegation chain of at least 4 credentials exceeds the maximum of 3");
+      expect(verify).not.toHaveBeenCalled();
+    });
+
+    it("counts the presented leaf when the resolver returns only its ancestors", async () => {
+      const chain = linkedChain(4);
+      const verify = vi.fn(async () => ({ valid: true }));
+      const r = await validateDelegationChain(chain[3]!, {
+        ...depsFor(chain.slice(0, 3), { verifyDelegationCredential: verify }),
+        maxChainLength: 3,
+      });
+      expect(r.valid).toBe(false);
       expect(r.reason).toBe("Delegation chain of 4 credentials exceeds the maximum of 3");
       expect(verify).not.toHaveBeenCalled();
     });
@@ -315,6 +271,13 @@ describe("validateDelegationChain", () => {
       const r = await validateDelegationChain(root!, { ...baseDeps, maxChainLength: bound });
       expect(r.valid).toBe(false);
       expect(r.reason).toMatch(/maxChainLength must be a positive integer/);
+    });
+
+    it.each([0, -1, 1.5, Number.NaN])("rejects a re-delegated chain as well when the bound is %s, however many values its resolver returns", async (bound) => {
+      const chain = linkedChain(3);
+      const r = await validateDelegationChain(chain[2]!, { ...depsFor(chain), maxChainLength: bound });
+      expect(r.valid).toBe(false);
+      expect(r.reason).toBe(`maxChainLength must be a positive integer (got ${String(bound)})`);
     });
   });
 
@@ -395,10 +358,12 @@ describe("validateDelegationChain", () => {
       expect(await validateDelegationChain(freshChild, { ...deps, revocationChecker: leafOnly("Directly revoked") })).toEqual({
         valid: false,
         reason: 'Delegation "fresh-child" is revoked: Directly revoked',
+        evaluated: [parent, freshChild],
       });
       expect(await validateDelegationChain(freshChild, { ...deps, revocationChecker: leafOnly() })).toEqual({
         valid: false,
         reason: 'Delegation "fresh-child" is revoked',
+        evaluated: [parent, freshChild],
       });
     });
 
@@ -412,6 +377,7 @@ describe("validateDelegationChain", () => {
       expect(r).toEqual({
         valid: false,
         reason: 'Revocation check failed for delegation "root": status list unavailable',
+        evaluated: [root],
       });
 
       const throwsNonError: RevocationChecker = {
@@ -422,6 +388,7 @@ describe("validateDelegationChain", () => {
       expect(await validateDelegationChain(root, { ...baseDeps, revocationChecker: throwsNonError })).toEqual({
         valid: false,
         reason: 'Revocation check failed for delegation "root": Unknown error',
+        evaluated: [root],
       });
     });
   });
@@ -700,7 +667,11 @@ describe("attenuationWarnings (SPEC.md §6.4)", () => {
 
     it("returns no warnings for a chain that narrows", async () => {
       const leaf = link("leaf", "root", { scopes: ["read"], audience: SERVER, notAfter: 500 });
-      expect(await validateDelegationChain(leaf, deps([root]))).toEqual({ valid: true, expiresAt: 500 * 1000 });
+      expect(await validateDelegationChain(leaf, deps([root]))).toEqual({
+        valid: true,
+        expiresAt: 500 * 1000,
+        evaluated: [root, leaf],
+      });
     });
 
     it("still validates a chain whose scope fields it cannot read", async () => {
@@ -712,7 +683,7 @@ describe("attenuationWarnings (SPEC.md §6.4)", () => {
       const leaf = link("leaf", "root", { audience: SERVER });
       leaf.credentialSubject.delegation.constraints = { audience: SERVER, crisp: { scopes: {} } } as never;
       delete leaf.credentialSubject.delegation.scopes;
-      expect(await validateDelegationChain(leaf, deps([openRoot]))).toEqual({ valid: true });
+      expect(await validateDelegationChain(leaf, deps([openRoot]))).toEqual({ valid: true, evaluated: [openRoot, leaf] });
     });
 
     it("returns no warnings with a refusal", async () => {

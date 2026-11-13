@@ -1,9 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import { canonicalize } from 'json-canonicalize';
 import {
+  CanonicalJsonError,
   assertCanonicalJsonValue,
   canonicalizeJson,
   canonicalizeJsonBytes,
+  enumerableMembers,
+  jsonMemberValue,
+  jsonMembers,
 } from '../canonical-json.js';
 
 /** Deterministic PRNG (mulberry32) so a failing case reproduces. */
@@ -161,12 +165,45 @@ describe('canonicalizeJson', () => {
       ['a getter element', () => Object.defineProperty([0], 0, { get: () => 1, enumerable: true }), /accessor property at \$\[0\]/],
       ['a getter member', () => Object.defineProperty({}, 'x', { get: () => 1, enumerable: true }), /accessor property at \$\.x/],
       ['a sparse array', () => [1, , 3], /sparse array element at \$\[1\]/],
+      [
+        'a sparse array whose elements before the hole are not enumerable',
+        () => Object.defineProperty([0, , 3], 0, { value: 1, enumerable: false }),
+        /sparse array element at \$\[1\]/,
+      ],
+      ['a sparse array whose element before the hole has no JSON form', () => [undefined, , 3], /sparse array element at \$\[1\]/],
+      ['a getter element that is not enumerable', () => Object.defineProperty([0], 0, { get: () => 1 }), /accessor property at \$\[0\]/],
       ['a symbol-keyed member', () => ({ [Symbol('s')]: 1 }), /symbol-keyed property at \$/],
+      ['a symbol-keyed member that is not enumerable', () => Object.defineProperty({}, Symbol('s'), { value: 1 }), /symbol-keyed property at \$/],
+      ['a key with a lone surrogate', () => ({ a: { '\ud800': 1 } }), /object key with lone surrogate at \$\.a/],
+      [
+        'a key with a lone surrogate on a member that is not enumerable',
+        () => Object.defineProperty({ a: 1 }, '\udc00', { value: 1 }),
+        /object key with lone surrogate at \$/,
+      ],
       ['a non-plain object', () => ({ at: new Date(0) }), /non-plain object at \$\.at/],
       ['an undefined deep inside', () => ({ a: [{ b: undefined }] }), /undefined at \$\.a\[0\]\.b/],
     ])('rejects %s, naming where', (_label, build, message) => {
       expect(() => canonicalizeJson(build())).toThrow(message);
       expect(() => assertCanonicalJsonValue(build())).toThrow(TypeError);
+    });
+
+    it('rejects with an error of its own class, the TypeError it has always been', () => {
+      for (const refuse of [canonicalizeJson, canonicalizeJsonBytes, assertCanonicalJsonValue]) {
+        let thrown: unknown;
+        try {
+          refuse({ a: undefined });
+        } catch (error) {
+          thrown = error;
+        }
+        // The class is what tells a value with no canonical form from any
+        // other failure on the way, a call stack that ran out say.
+        expect(thrown).toBeInstanceOf(CanonicalJsonError);
+        expect(thrown).toBeInstanceOf(TypeError);
+        expect((thrown as Error).name).toBe('TypeError');
+        expect((thrown as Error).message).toBe('Cannot canonicalize undefined at $.a');
+      }
+      expect(new TypeError('another failure')).not.toBeInstanceOf(CanonicalJsonError);
+      expect(new RangeError('Maximum call stack size exceeded')).not.toBeInstanceOf(CanonicalJsonError);
     });
 
     it('names the path under a caller-supplied root', () => {
@@ -178,6 +215,17 @@ describe('canonicalizeJson', () => {
     it('still accepts an array that shares structure without a cycle', () => {
       const shared = { a: 1 };
       expect(canonicalizeJson([shared, shared])).toBe('[{"a":1},{"a":1}]');
+    });
+  });
+
+  describe('reads the members jsonMembers lists, and no others', () => {
+    it('writes each element, enumerable or not, and each enumerable member of an object', () => {
+      const elements = Object.defineProperty(['a', 'b', 'c'], 1, { value: 'B', enumerable: false });
+      const members = Object.defineProperty({ z: 1, a: 2 }, 'hidden', { value: 3, enumerable: false });
+      expect(jsonMembers(elements).map(([key]) => key)).toEqual(['0', '1', '2']);
+      expect(canonicalizeJson(elements)).toBe('["a","B","c"]');
+      expect(jsonMembers(members).map(([key]) => key)).toEqual(['z', 'a']);
+      expect(canonicalizeJson(members)).toBe('{"a":2,"z":1}');
     });
   });
 
@@ -227,5 +275,97 @@ describe('canonicalizeJson', () => {
       // Generous: re-joining per level took hundreds of ms here.
       expect(deepMs).toBeLessThan(10 * flatMs + 150);
     });
+  });
+});
+
+describe('jsonMembers', () => {
+  it("lists an array's elements in order, enumerable or not, and nothing else of it", () => {
+    const array = Object.assign(['a', 'b'], { named: 'n' });
+    Object.defineProperty(array, 1, { value: 'B', enumerable: false });
+    Object.defineProperty(array, 'hidden', { value: 'h', enumerable: false });
+    const members = jsonMembers(array);
+    expect(members.map(([key]) => key)).toEqual(['0', '1']);
+    expect(members.map(([, property]) => property.value)).toEqual(['a', 'B']);
+    expect(members[1]![1].enumerable).toBe(false);
+  });
+
+  it("ends an array's elements at its first hole: nothing after one is read", () => {
+    const holed: unknown[] = ['a'];
+    holed[2] = 'c';
+    expect(jsonMembers(holed).map(([key]) => key)).toEqual(['0']);
+    expect(jsonMembers(new Array(5)).map(([key]) => key)).toEqual([]);
+    // A length nothing fills is not walked: the first hole ends it.
+    const vast: unknown[] = ['a'];
+    vast.length = 2 ** 32 - 1;
+    expect(jsonMembers(vast).map(([key]) => key)).toEqual(['0']);
+  });
+
+  it("lists an object's enumerable string-keyed members, in the order it holds them", () => {
+    const object = { z: 1, a: 2, [Symbol('s')]: 3 };
+    Object.defineProperty(object, 'hidden', { value: 4, enumerable: false });
+    expect(jsonMembers(object).map(([key]) => key)).toEqual(['z', 'a']);
+  });
+
+  it('lists an accessor as its property, without calling it', () => {
+    let reads = 0;
+    const object = Object.defineProperty({}, 'x', { enumerable: true, get: () => ++reads });
+    const array = Object.defineProperty([0], 0, { get: () => ++reads });
+    expect('get' in jsonMembers(object)[0]![1]).toBe(true);
+    expect('get' in jsonMembers(array)[0]![1]).toBe(true);
+    expect(reads).toBe(0);
+  });
+
+  it('lists no member for a key that has no property, which only a Proxy can show', () => {
+    const phantom = new Proxy({}, { ownKeys: () => ['ghost'] });
+    expect(Reflect.ownKeys(phantom)).toEqual(['ghost']);
+    expect(jsonMembers(phantom)).toEqual([]);
+    expect(canonicalizeJson(phantom)).toBe('{}');
+  });
+});
+
+describe('enumerableMembers', () => {
+  it('lists what a copy of an array keeps: its enumerable elements, past a hole too, and named members', () => {
+    const array: unknown[] = ['a'];
+    array[2] = 'c';
+    Object.assign(array, { named: 'n' });
+    Object.defineProperty(array, 0, { value: 'A', enumerable: false });
+    expect(enumerableMembers(array).map(([key]) => key)).toEqual(['2', 'named']);
+    expect(Object.keys(structuredClone(array))).toEqual(['2', 'named']);
+  });
+
+  it('lists what jsonMembers lists of an object', () => {
+    const object = Object.defineProperty({ b: 1, a: [2] }, 'c', { value: 3, enumerable: false });
+    expect(enumerableMembers(object)).toEqual(jsonMembers(object));
+  });
+
+  it('keeps a member only when the property it reads is enumerable, whatever a Proxy answered when its keys were listed', () => {
+    let asked = 0;
+    const changing = new Proxy({ a: 1, b: 2 }, {
+      getOwnPropertyDescriptor(target, key) {
+        const property = Reflect.getOwnPropertyDescriptor(target, key);
+        // `b` is enumerable when first asked about, and not after.
+        return key === 'b' && (asked += 1) > 1 ? { ...property, enumerable: false } : property;
+      },
+    });
+    expect(enumerableMembers(changing).map(([key]) => key)).toEqual(['a']);
+    expect(asked).toBe(2);
+  });
+});
+
+describe('jsonMemberValue', () => {
+  it('reads an own enumerable data member', () => {
+    expect(jsonMemberValue({ id: 'urn:uuid:1' }, 'id')).toBe('urn:uuid:1');
+    expect(jsonMemberValue(JSON.parse('{"__proto__":{"a":1}}') as object, '__proto__')).toEqual({ a: 1 });
+  });
+
+  it('reads nothing that the JSON form of the object does not have', () => {
+    let reads = 0;
+    const object = Object.create({ inherited: 'x' }) as Record<string, unknown>;
+    Object.defineProperty(object, 'hidden', { value: 'x', enumerable: false });
+    Object.defineProperty(object, 'getter', { enumerable: true, get: () => ++reads });
+    for (const key of ['inherited', 'hidden', 'getter', 'absent']) {
+      expect(jsonMemberValue(object, key)).toBeUndefined();
+    }
+    expect(reads).toBe(0);
   });
 });

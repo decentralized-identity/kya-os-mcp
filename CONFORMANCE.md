@@ -2,7 +2,7 @@
 
 **Compliance levels for KYA-OS implementations**
 
-Version: 1.4.0
+Version: 1.5.0
 Status: Stable
 
 ---
@@ -74,7 +74,9 @@ Implementation MUST:
 
 Implementation MUST:
 - Accept JWS compact string and public key (JWK format)
+- Read the JWS as SPEC.md §7.4 has a verifier read a proof's: exactly three segments, each base64url and nothing looser, and the key's `x` the same way
 - Verify signature against payload
+- Verify `alg` in header is `EdDSA`
 - Verify `kid` in header matches expected key
 - Return boolean result
 
@@ -220,6 +222,7 @@ All Level 2 requirements, plus:
 | L3.25 | Return `needs_authorization` hints | Implementation-specific | — |
 | L3.26 | Audit logging MUST be implemented | — | Implementation-specific |
 | L3.27 | Derive authorization from the VC; treat L2 chain/scope headers as advisory | — | Spec-defined behavior (SPEC §8.1) |
+| L3.28 | Compute the delegation chain digest and the delegation reference, holding each credential to the nesting bound; reject a chain that is not the one a proof binds, a credential that is not the one it names, and an outcome that is not the one expected | `src/delegation/__tests__/chain-digest.test.ts`, `src/delegation/__tests__/delegation-ref.test.ts`, `src/delegation/__tests__/signed-form.test.ts`, `src/proof/__tests__/delegation-chain-binding.test.ts`, `src/proof/__tests__/outcome-binding.test.ts` | `reproduces the SPEC Appendix C.4 vector`; `delegationReference` (all tests); `of an object nested as deep as a credential may be` (all tests); `a verifier that holds the chain` and `the credential a proof names, for a verifier that holds the chain` (all tests); `a verifier that requires an outcome` (all tests) |
 
 ### Detailed Requirements
 
@@ -299,6 +302,30 @@ verifier MUST:
 Because authority is derived only from signed artifacts (the VC and the proof
 JWT), the Layer-2 headers are NOT required to be RFC 9421 covered components; a
 tampered advisory header is ignored, not a vulnerability. See SPEC §8.1.
+
+#### L3.28 - Delegation Chain Binding
+
+A response proof may bind the delegation chain its server evaluated, as `delegationChainDigest` (SPEC §7.8).
+Emitting the claim is OPTIONAL: a verifier that predates it rejects a proof that carries it, so a producer opts in.
+
+An implementation that emits it MUST:
+- Compute it as SPEC §7.8 defines, over every credential it evaluated, root to leaf, and reproduce the Appendix C.4 vector
+- Verify each credential's signature over the same signed form the digest is taken over
+- Derive `delegationRef` as SPEC §7.8 defines: the id the credential shows, or the SHA-256 of an id that is too long, holds a character that does not print or a lone surrogate, reads as a digest, or is the word `unknown`
+- Set both on the proof of a refused call as well as an allowed one, over what it had examined when it refused, and set no digest where the presented value, or a credential it examined, has no signed form, or where a value it was handed for the chain could not be read
+
+Signing either claim from the server is not part of this release of the reference implementation: its server sets neither `delegationRef` nor `delegationChainDigest`, and its verifier checks both against a chain it is given.
+
+A verifier that is given the chain MUST:
+- Reject a proof whose outcome is not the one it expects, which is an allowed call unless it is checking a refusal: a refusal binds what was presented, not what is valid
+- Recompute the digest and reject the proof when it differs from the signed value
+- Reject a proof that carries no `delegationChainDigest`: an equal `delegationRef` does not bind a chain
+- Reject a proof whose `delegationRef` is not the reference of the chain's last credential
+
+Both MUST hold every credential to the nesting bound of SPEC §7.8, counting before they parse, copy or canonicalize it.
+A credential whose arrays and objects nest 64 levels deep is read.
+A credential object nested deeper has no signed form, and the header or payload of a VC-JWT nested deeper is not read as JSON.
+Neither reports its own failure to read a value, a call stack that ran out say, as a value with no signed form.
 
 ---
 
@@ -434,7 +461,7 @@ so it is reproducible against any implementation without re-signing.
 
 | File | Category | Positive | Negative |
 |------|----------|----------|----------|
-| `vectors/signed-proof.json` | Detached proof verification | valid signature + in-window ts; envelope content binding (profile `org.kya-os/response-proof.envelope`) | tampered signature, tampered meta, wrong key, timestamp skew exceeded; tampered `structuredContent` under envelope coverage, `prf` stripped (downgrade), unknown profile |
+| `vectors/signed-proof.json` | Detached proof verification | valid signature + in-window ts; envelope content binding (profile `org.kya-os/response-proof.envelope`); delegation chain binding on an allowed call, on a refusal held as a refusal, and against a re-serialized copy of the chain (`delegationChainDigest`); a credential whose id is too long to record, or holds a bidi override or a zero-width space, or is the word `unknown`, named by its digest (`delegationRef`); a request with no `params`, bound by its method alone | tampered signature, tampered meta, wrong key, timestamp skew exceeded; tampered `structuredContent` under envelope coverage, `prf` stripped (downgrade), unknown profile; chain with a re-issued hop, chain digest stripped, proof that binds no chain, a refusal held against its chain with no outcome stated, a chain whose VC-JWT signature is not base64url, a proof that names another credential of its chain; a JWS segment with a character outside base64url, white space or padding, or written in the base64 alphabet, a JWS of four segments, a claim of `meta` altered after signing, a proof held against another request, a header that names another algorithm or another key, a `kid` of another DID than `meta.did` |
 | `vectors/delegation-chain.json` | Delegation chain verification | single-hop, two-hop attenuated | broken issuer↔subject linkage, scope widening, tampered signature, audience mismatch |
 | `vectors/delegation-chain-key-relationship.json` | Delegation chain verification: the issuer's key (SPEC.md §6.2) | signed with the key the issuer lists under `assertionMethod`; as a VC-JWT with no `kid`, signed with the key its first `assertionMethod` entry names | signed with a key it lists only under `authentication`, proof stating `proofPurpose: "authentication"`, issuer document whose `id` is another DID, signing key whose method names another DID as its `controller`, signing key whose method the document defines twice, signing key under another DID's id, signing key under no relationship, signing key whose method has no `type` or no `controller`; as a VC-JWT, a `kid` naming the `authentication` key, an empty `kid` |
 | `vectors/status-list.json` | StatusList2021 and Bitstring Status List revocation | active (bit unset), issuer's list stating no `id`, Bitstring list declaring two purposes | revoked (bit set), list altered after signing, list signed by another issuer, list of another purpose, StatusList2021 list declaring its purposes in an array, list stating another URL as its `id`, list of a pinned root or a configured issuer stating no `id` |
@@ -466,6 +493,57 @@ The proof's `meta` block mirrors the claims signed inside the JWS, but it is a c
 This vector leaves the JWS byte-identical to `valid-basic` and alters only the mirrored `meta.requestHash`, so the JWS signature still verifies.
 A conformant verifier MUST reconcile `meta` against the decoded JWS payload and reject on any mismatch.
 Signature validity alone does not pass this vector: it is the `requestHash` counterpart of the `responseHash` recompute rule in L2.11.
+
+**On the chain-binding vectors (`signed-proof/delegation-chain-*` and `signed-proof/delegation-ref-*`; suite ≥ 1.5.0).**
+These exercise `delegationChainDigest` and `delegationRef` (SPEC.md §7.8, L3.28): a proof binds the delegation chain its server evaluated, and `input.expected.delegationChain` is the chain the verifier holds, root first.
+`input.expected.outcome`, where present, is the outcome the verifier expects; where absent, a verifier that is given a chain expects an allowed call.
+Either of the two given as `null` is absent.
+The chain is three §6.2 credentials, each signed by its issuer: two credential objects and a VC-JWT leaf, so both signed forms are covered.
+`delegation-chain-reserialized` supplies another copy of the same credentials: proof metadata outside the signature is edited, and the three signatures are written with padding, with a line break, and with spare bits set.
+It must pass: an implementation that hashes a credential's bytes as received, rather than its signed form, fails it, and so does one that reads a signature string otherwise than §7.8 says.
+`delegation-chain-substituted` replaces the middle credential with one its issuer signed again under the same id, so every id and parent link still matches and only the digest tells the chains apart.
+`delegation-chain-unbound` is an authentic proof that names its credential by `delegationRef` alone: a verifier that is given a chain must reject it, where one that only checks the signature accepts.
+`delegation-chain-refused` and `delegation-chain-refused-outcome-unstated` are one denial proof, which binds the chain its server refused.
+Held as a refusal (`expected.outcome: "denied"`) it must pass; held against the same chain with no outcome stated it must fail, since a refusal is no evidence that the chain was accepted, however well its digest matches.
+`delegation-chain-no-signed-form` supplies the bound chain with the VC-JWT leaf's signature rewritten in the base64 alphabet (`+` and `/`): that string is not a JWS segment, the leaf has no signed form, and no proof binds such a chain.
+An implementation that reads a VC-JWT's signature as loosely as a `proofValue` passes a chain it must reject.
+`delegation-ref-substituted` is an authentic proof whose digest binds the chain and whose `delegationRef` names the chain's root: a verifier must hold the reference against the chain's last credential and reject it.
+`delegation-ref-digest-form` binds a single credential whose id is longer than 256 UTF-16 code units, named on the proof by the SHA-256 of the id; a verifier that compares `delegationRef` with the id itself fails it.
+`delegation-chain-nested-at-bound` and `delegation-chain-nested-past-bound` are single credential objects whose arrays and objects nest 64 and 65 levels deep, each signed by its issuer.
+The first must pass: an implementation whose own limit is lower than the protocol's refuses a credential it must read.
+The second carries the chain digest an implementation that counts no nesting takes of its credential, and must fail: a credential object nested past the bound has no signed form, so an implementation that does not apply the bound passes a chain it must reject.
+`delegation-ref-jwt-nested-at-bound` and `delegation-ref-jwt-nested-past-bound` are single VC-JWTs whose payloads nest 64 and 65 levels deep.
+The first is named by the id its payload shows.
+The second is a denial proof that binds the VC-JWT, by its segments as received, and names no credential, held as a refusal.
+It must pass: a payload nested past the bound is not read as JSON, so an implementation that parses it derives an id the proof does not carry, and rejects a proof it must accept.
+`delegation-ref-jwt-long-number` is a denial proof that binds a single VC-JWT whose payload holds an integer of 4301 digits, held as a refusal.
+It must pass, naming the credential by the id its payload shows: JSON sets no limit on a number's length, so an implementation whose parser refuses a long integer derives no id, and rejects a proof it must accept.
+`delegation-ref-jwt-duplicate-id` is a denial proof that binds a single VC-JWT whose payload holds the credential's `id` twice, another id written ahead of the issuer's, held as a refusal.
+It must pass, naming the credential by the id written last: of the members of one object that share a name the last is read, so an implementation whose parser keeps the first names another credential, one whose parser refuses the payload names none, and each rejects a proof it must accept.
+`delegation-chain-number-read-as-binary64` binds a credential object that holds `9007199254740993.5`, which is no integer as written and reads as the IEEE 754 binary64 value 9007199254740994.
+Its issuer signed it as a canonicalizer that holds numbers to no rule writes it, and the proof carries the chain digest that canonicalizer gives.
+It must fail: read as binary64 the number is an integer of magnitude above 2^53 - 1, so the credential has no RFC 8785 form and no signed form, and an implementation that asks whether the number is an integer as written passes a chain it must reject.
+`delegation-ref-control-at-bound` and `delegation-ref-control-past-bound` bind single credentials whose ids are U+001F alone, the last C0 control character, and U+0020 alone, the first character past the C0 controls.
+The first is named by the SHA-256 of its id and the second by the id itself, so the edge of the control range is pinned from both sides.
+`delegation-ref-digest-form-suffixed` binds a credential whose id is `sha256:` followed by 64 lowercase hexadecimal digits and one more character, named by the id itself: only an id that is exactly of the digest form is replaced by its own digest.
+`delegation-ref-bidi-override` and `delegation-ref-zero-width` bind single credentials whose ids hold U+202E, a right-to-left override, and U+200B, a zero-width space, each named by the SHA-256 of its id.
+Neither is a control character, and each prints as something other than the id holds, so an implementation that hashes only the ids with a control character names the credential by the id itself.
+`delegation-ref-unknown` binds a credential whose id is the word `unknown`, named by the SHA-256 of its id: an audit record names a credential that shows no id by that word, so no credential is named by it.
+`delegation-chain-proto-member` binds a credential object whose issuer signed a member named `__proto__`.
+It must pass: the member is part of the signed form, so an implementation that copies a credential by assignment, which makes `__proto__` the copy's prototype rather than a member of it, digests less than the issuer signed and rejects a proof it must accept.
+An implementation that predates suite 1.5.0 fails these vectors, which is the conformant outcome for it: it rebuilds the signed payload without `delegationChainDigest`, so it rejects the proofs that must pass, and it accepts `delegation-chain-unbound`, whose expected chain it does not read.
+
+**On the proof-as-received vectors (`signed-proof/delegation-proof-*`; suite ≥ 1.5.0).**
+These hold a verifier to the proof as it receives it (SPEC.md §7.3, §7.4, L1.4): each but the last alters one thing of the `delegation-chain-binding` proof, or of what its verifier holds, and must fail for that thing, however well the chain matches.
+`delegation-proof-signature-stray-character` and `delegation-proof-signature-stray-characters` put characters outside base64url in the signature segment, `delegation-proof-signature-base64` writes that segment in the base64 alphabet, padded, and `delegation-proof-header-non-ascii` puts `é` in the header segment.
+`delegation-proof-signature-white-space` puts a line break in the signature segment, and `delegation-proof-signature-padded` pads it with `=` to complete its last group.
+A decoder that passes over characters outside its alphabet, white space or padding, or reads both alphabets, reads the bound proof's bytes from each, but none of them is a JWS segment as SPEC.md §7.4 reads one, base64url as RFC 7515 §2 writes it, so none is a JWS.
+`delegation-proof-fourth-segment` appends a fourth segment: a compact JWS is three, and a verifier that reads the first three of four verifies a JWS that is none.
+`delegation-proof-request-hash-altered`, `delegation-proof-nonce-altered` and `delegation-proof-session-altered` keep the bound JWS and alter one claim of `meta` after signing: every claim is held to the payload the signature covers, rebuilt from `meta`, so a verifier that compares only the delegation claims with the payload passes the last two.
+`delegation-proof-request-substituted` holds the bound proof against the chain it binds and another call than the one it proves.
+`delegation-proof-header-algorithm` and `delegation-proof-header-key` are the bound claims signed again with the server's key under a header that names HS256, or another key of the server's DID, and `delegation-proof-signer-of-another-did` is signed again over a `meta` whose `did` is another DID than the one `meta.kid` names a key of.
+Each of the three verifies as a signature under the key the vector gives, and none is the server's proof.
+`delegation-proof-request-without-params` must pass: a request with no `params` is hashed as `JCS({method})`, so its proof binds the method alone.
 
 **On `status-list/tampered-list` (suite ≥ 1.2.0).**
 This vector carries the revoked credential and its signed list with the revoked bit cleared and the list's proof left as signed.
@@ -535,6 +613,9 @@ Because fresh keys change the committed bytes, regenerated output MUST NOT be co
 
 ### Suite versioning and immutability
 
+Suite 1.5.0 adds 39 `signed-proof` vectors, for 136 vectors total: the `signed-proof/delegation-*` vectors described above.
+`signed-proof.json` is regenerated in one run, so its nine earlier vectors are signed again with the same ids, cases and expected outcomes; the other 88 vector objects of suite 1.4.0 are unchanged.
+
 Suite 1.4.0 adds 29 status-list vectors, for 97 vectors total: eight in `status-list.json` and 21 in a new file, `status-list-authority.json`.
 `status-list.json` is regenerated in one run, so its three earlier vectors are signed again with the same ids, cases and expected outcomes; the other 65 vector objects of suite 1.3.0 are unchanged.
 Nine of the 21 hold the keeper rule, over one credential, one list URL and a clear list that states its `id`, so only the list's signer and the configuration differ.
@@ -563,6 +644,7 @@ The committed vector set is immutable at a given `suiteVersion`: the vector byte
 The hash recipe: SHA-256 each vector file's raw committed bytes, sort the `[filename, hex]` pairs by filename, canonicalize the array with RFC 8785 (JCS), SHA-256 that, prefix with `sha256:`.
 CI enforces the invariant twice: a vitest guard (`conformance/__tests__/suite-immutability.test.ts`) and a dedicated step running `node conformance/suite-hash.mjs --check`.
 To change vectors intentionally, bump `suiteVersion` (including the in-file `version` fields), regenerate the manifest with `node conformance/suite-hash.mjs --json`, and keep `pinnedAt` current.
+A new suite version may add vectors that an implementation of an earlier one fails: suite 1.5.0 adds the `signed-proof/delegation-chain-*` and `signed-proof/delegation-ref-*` vectors, which a verifier built against suite 1.4.0 or earlier fails until it implements L3.28, and the `signed-proof/delegation-proof-*` vectors, which a verifier that reads a JWS more loosely than SPEC.md §7.4 fails, so a result is always reported with the suite version it was run against.
 The SIGNED public suite manifest published by the Conformance Attestation Program is a separate artifact built on this committed one.
 
 ### Running the harness against YOUR implementation
@@ -693,6 +775,15 @@ This finite partition complements the 56,700-case decision table; neither is an 
 That test, `status-list-configuration.test.ts`, and `crosslang-verifier.test.ts`, which runs this script in isolated mode (`-I`), use the first of `python3`, `python` and `py -3` that runs Python 3.9 or later.
 Without one, they fail when the `CI` environment variable is set, and are skipped with the reason otherwise.
 The published runtime gains no dependency.
+It also runs the `signed-proof/delegation-*` vectors, and holds every `signed-proof` vector to the verdict it expects.
+It holds each response proof as the TypeScript verifier holds it: to its form, its signer, its time and its signature, each segment of its JWS and the key's `x` read as SPEC.md §7.4 reads them, the signature checked over the payload rebuilt from `meta`, and a key of small order refused; then to the request and the response it binds.
+It recomputes the delegation chain digest and the delegation reference of SPEC.md §7.8 from the credentials, and holds them and the proof's outcome against what the proof signs, for the positive vectors and for each negative one's intended reason.
+It reads a `null` as the TypeScript verifier does: a chain or an outcome the verifier gives as `null` is none, and a claim the proof's `meta` gives as `null`, or out of the form `schemas/detached-proof.json` gives it, makes no proof.
+It holds its reading of a signed form, and of a credential's id and reference, to the cases the TypeScript tests hold theirs to (`src/delegation/__tests__/chain-digest.test.ts`, `src/delegation/__tests__/delegation-ref.test.ts`): the values §7.8 gives no signed form are refused, and the others come to the same digests and references.
+It holds its reading of a response proof to the cases the TypeScript reference is held to under the same names (`conformance/__tests__/proof-path-cases.test.ts`): the verifier's clock, skew and key, the JWS as received, the request, the response and the chain it holds, and each claim signed again with the test key of RFC 8032 §7.1.
+The cases sign the payload §7.4 lists, written out apart from the code that rebuilds it, with a signer first held to the public key and the signature RFC 8032 gives for that key.
+`verify.py` is the driver: it reads the vector files, makes each check, and reports it under its name.
+What it checks with is in the modules beside it in `conformance/`, one job to each, which its docstring lists: `ed25519.py`, `strict_json.py`, `base64url.py`, `digests.py`, `card_proof.py`, `audit_merkle.py`, `status_list.py` for the status-list vectors, `response_proof.py` for §7.3 and §7.4, and for §7.8 `signed_form.py`, `delegation_ref.py`, `chain_binding.py` and `delegation_cases.py`, which holds the cases above, with `proof_cases.py` holding those of a response proof.
 
 ```bash
 python3 conformance/verify.py       # npm run conformance:verify:crosslang
@@ -715,8 +806,54 @@ KYA-OS cross-language verifier (Python 3.x, stdlib-only)
   [PASS] RFC 9162 audit inclusion proof
   [PASS] RFC 9162 audit consistency proof
   [PASS] status-list/pinned-root-list
-  [PASS] status-list/configured-service-list
+  [PASS] status-list/root-list-at-issuer-url
   ... one result for every status-list vector ...
+  [PASS] delegation chain digest signed by an allowed call's proof
+  [PASS] same digest for a copy of the chain that differs in nothing signed
+  [PASS] delegation chain digest signed by a refusal's proof, held as a refusal
+  [PASS] refusal's proof held against its chain with no outcome stated is no acceptance
+  [PASS] re-issued hop under the same id changes the chain digest
+  [PASS] chain digest stripped from meta no longer matches the signed payload
+  [PASS] proof that only names a credential binds no chain
+  [PASS] chain whose VC-JWT signature is not base64url has no digest to bind
+  [PASS] proof that binds a chain and names another of its credentials
+  [PASS] credential id too long to record is named by its SHA-256
+  [PASS] credential nested 64 levels deep, as deep as one may be, is bound
+  [PASS] credential nested 65 levels deep has no signed form, so no digest to bind
+  [PASS] VC-JWT whose payload nests 64 levels deep is named by the id it shows
+  [PASS] VC-JWT whose payload nests 65 levels deep shows no id, and is still digested
+  [PASS] VC-JWT whose payload holds an integer of 4301 digits is read, and named by its id
+  [PASS] VC-JWT whose payload holds the credential id twice is named by the last
+  [PASS] credential holding 9007199254740993.5, an integer above 2^53 - 1 once read, has no signed form
+  [PASS] credential id U+001F, the last C0 control character, is named by its SHA-256
+  [PASS] credential id U+0020, the first character past the C0 controls, is named as it is
+  [PASS] credential id that reads as a digest and has one more character is named as it is
+  [PASS] credential id holding a bidi override or a zero-width space is named by its SHA-256
+  [PASS] credential id that is the word unknown is named by its SHA-256
+  [PASS] credential object whose issuer signed a __proto__ member is digested with it
+  [PASS] JWS segment with characters outside base64url, or in the base64 alphabet, is none
+  [PASS] JWS segment holding white space, or padded, is none
+  [PASS] JWS of four segments is no JWS
+  [PASS] claim of meta altered after signing breaks the signature, whichever claim it is
+  [PASS] proof held against another request than the one it binds
+  [PASS] JWS header that names another algorithm than EdDSA makes no proof
+  [PASS] JWS header that names another key than meta.kid makes no proof
+  [PASS] kid that names a key of another DID than meta.did makes no proof
+  [PASS] request with no params is bound by its method alone
+  [PASS] every signed-proof vector has the verdict it expects
+  [PASS] verifier that ran out of stack reports a fault, which is no verdict
+  [PASS] empty delegationRef in meta names no credential, as leaving it out does
+  [PASS] outcome asked for as an empty string is asked for, and no proof states it
+  [PASS] chain given as null is no chain, and asks no outcome of the proof
+  [PASS] claim in meta given as null, or out of its form, makes no proof
+  [PASS] claims in meta are held to the forms the proof schema gives them
+  [PASS] signer of the proof cases gives the keys and signatures RFC 8032 gives
+  [PASS] forgeries of the proof cases satisfy the verification equation under their keys
+  [PASS] response proofs are held to what the TypeScript reference holds them to
+  [PASS] NaN and Infinity are not JSON, in a vector file or in what a proof signs
+  [PASS] of members that share a name the last is read, as JSON.parse reads it
+  [PASS] values that have no signed form are refused a digest
+  [PASS] credential ids are read, and referred to, as 7.8 has them
 RESULT: PASS — cross-language JCS + Ed25519 parity confirmed
 ```
 

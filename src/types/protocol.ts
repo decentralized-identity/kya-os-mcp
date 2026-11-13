@@ -524,7 +524,10 @@ export interface ProofMeta {
   requestHash: string;
   responseHash?: string;
   scopeId?: string;
+  /** Reference of the delegation credential the call presented (SPEC §7.8), whatever the `outcome`. */
   delegationRef?: string;
+  /** Signature-covered digest of the delegation chain the server evaluated, root to leaf (SPEC §7.8). */
+  delegationChainDigest?: string;
   clientDid?: string;
   outcome?: 'allowed' | 'denied' | 'step_up_required' | 'needs_authorization';
   reason?: string;
@@ -732,19 +735,15 @@ export function validateDetachedProof(proof: unknown): {
     return { success: false, error: { message: 'meta.ts must be a positive integer' } };
   }
 
-  // Validate hash fields: requestHash is always required. responseHash is
-  // absent on denial / step-up proofs (no response) and validated only when present.
+  // Validate hash fields: requestHash is always required. responseHash (absent on
+  // denial / step-up proofs) and delegationChainDigest are validated only when present.
   if (typeof m['requestHash'] !== 'string' || !HASH_REGEX.test(m['requestHash'] as string)) {
     return { success: false, error: { message: 'meta.requestHash must match sha256:<64 hex chars>' } };
   }
-  if (
-    m['responseHash'] !== undefined &&
-    (typeof m['responseHash'] !== 'string' || !HASH_REGEX.test(m['responseHash'] as string))
-  ) {
-    return {
-      success: false,
-      error: { message: 'meta.responseHash must match sha256:<64 hex chars> when present' },
-    };
+  for (const field of ['responseHash', 'delegationChainDigest'] as const) {
+    if (m[field] !== undefined && (typeof m[field] !== 'string' || !HASH_REGEX.test(m[field] as string))) {
+      return { success: false, error: { message: `meta.${field} must match sha256:<64 hex chars> when present` } };
+    }
   }
 
   // Optional string fields

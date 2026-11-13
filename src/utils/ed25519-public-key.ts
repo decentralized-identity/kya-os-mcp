@@ -10,6 +10,7 @@
  */
 
 import { base64ToBytes } from './base64.js';
+import { strictBase64urlBytes } from './base64-reading.js';
 import { ED25519_KEY_SIZE } from './ed25519-constants.js';
 
 /** 32 bytes as base64 or base64url: 43 characters, optionally one `=` of padding. */
@@ -56,6 +57,27 @@ export function isSmallOrderEd25519Key(key: Uint8Array): boolean {
   return SMALL_ORDER_ENCODINGS.some((blocked) =>
     blocked.every((byte, i) => (i === 31 ? (key[i]! & 0x7f) === byte : key[i] === byte)),
   );
+}
+
+/**
+ * The bytes of the Ed25519 public key a JWK carries in `x` (RFC 8037 §2):
+ * base64url exactly as RFC 7515 §2 writes it ({@link strictBase64urlBytes}),
+ * of 32 bytes. A response proof (SPEC.md §7.4) and an embedded-proof
+ * delegation credential (SPEC.md §6.2) are both checked with a key read
+ * here, so one JWK is one key, or none, on either path.
+ *
+ * @throws {TypeError} when `x` is not a string so written, or its bytes are
+ *   not 32.
+ */
+export function ed25519KeyBytes(jwk: { x?: unknown }): Uint8Array {
+  const key = typeof jwk.x === 'string' ? strictBase64urlBytes(jwk.x) : undefined;
+  if (key === undefined) {
+    throw new TypeError('An Ed25519 JWK carries its key in x, base64url as RFC 7515 §2 writes it');
+  }
+  if (key.length !== ED25519_KEY_SIZE) {
+    throw new TypeError(`An Ed25519 key is ${ED25519_KEY_SIZE} bytes, not ${key.length}`);
+  }
+  return key;
 }
 
 /**

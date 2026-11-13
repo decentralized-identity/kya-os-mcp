@@ -7,12 +7,12 @@
  * lone surrogate, an integer of magnitude 2^53 or more and a number beyond the double range, and a
  * tool or a policy engine may encode what it receives the same way. So the gate checks every value
  * it hands on before it runs anything, whether or not an audit store is configured, and refuses a
- * delegation that holds one it cannot encode. A grant's credential passes the same check, without
- * being encoded, each time the grant authorizes a call.
+ * delegation that holds one it cannot encode. The check encodes nothing, and a grant's credential
+ * passes it each time the grant authorizes a call.
  */
 
 import type { DelegationCredential } from "../types/protocol.js";
-import { assertCanonicalJsonValue, canonicalizeJsonBytes } from "../utils/canonical-json.js";
+import { assertCanonicalJsonValue } from "../utils/canonical-json.js";
 
 /** Why the gate refuses a delegation holding a value it cannot encode. */
 export const UNENCODABLE_DELEGATION_REASON =
@@ -48,10 +48,11 @@ function handedOnMembers(credential: DelegationCredential): unknown[] {
 
 /**
  * Whether the gate can encode as RFC 8785 text every value it hands on from a verified delegation.
- * A credential with a Data Integrity proof (`jwt` undefined) is digested in its RFC 8785 form, so
- * all of it must encode, its unsigned `proof` included. A VC-JWT is digested as the JWT it arrived
- * as, which `jose` verified as base64url text, so only the members the gate hands on must encode,
- * and any other member of its credential may hold any value the JWT's JSON can. No bytes are made.
+ * A credential with a Data Integrity proof (`jwt` undefined) must encode whole, its unsigned `proof`
+ * included: what its issuer signed is digested in its RFC 8785 form (SPEC §7.8), and the grant the
+ * gate binds holds all of it. A VC-JWT is digested as the JWT it arrived as, which `jose` verified
+ * as base64url text, so only the members the gate hands on must encode, and any other member of its
+ * credential may hold any value the JWT's JSON can. No bytes are made.
  */
 export function isEncodableDelegation(credential: DelegationCredential, jwt: string | undefined): boolean {
   try {
@@ -61,23 +62,5 @@ export function isEncodableDelegation(credential: DelegationCredential, jwt: str
     return true;
   } catch {
     return false;
-  }
-}
-
-/**
- * The bytes the gate takes the digest of a verified delegation over, or `undefined` when
- * {@link isEncodableDelegation} says it cannot encode a value it hands on: the RFC 8785 form of a
- * credential with a Data Integrity proof, whose writing checks every value as it goes, so it is
- * written once, or the text of a VC-JWT.
- */
-export function encodableDelegationBytes(
-  credential: DelegationCredential,
-  jwt: string | undefined,
-): Uint8Array | undefined {
-  if (jwt !== undefined) return isEncodableDelegation(credential, jwt) ? new TextEncoder().encode(jwt) : undefined;
-  try {
-    return canonicalizeJsonBytes(credential);
-  } catch {
-    return undefined;
   }
 }

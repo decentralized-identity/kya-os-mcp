@@ -35,13 +35,18 @@ import { logger } from "../logging/index.js";
 import { KYA_OS_ERROR_CODES } from "../errors.js";
 import type { DetachedProof, SessionContext } from "../types/protocol.js";
 import type {
-  KyaOsAuthorizationOutcome,
   KyaOsToolHandler,
   KyaOsToolResult,
   KyaOsCallContext,
 } from "./with-kya-os.types.js";
 import type { MiddlewareDeps, AttachOutcomeProof, RequireProofLayer } from "./with-kya-os.deps.js";
-import { sanitizeForMessage, withoutControlArgs, type MessageText } from "./with-kya-os.helpers.js";
+import { sanitizeForMessage, withoutControlArgs } from "./with-kya-os.helpers.js";
+import {
+  createPendingProofs,
+  type PendingAllowedProof,
+  type PendingOutcomeProof,
+  type PendingProof,
+} from "./with-kya-os.pending-proofs.js";
 import type { McpAuditContext } from "../audit/adapters/mcp.js";
 
 /** The `_meta` member carrying this middleware's audit-lifecycle marker. */
@@ -67,32 +72,6 @@ export const LIFECYCLE_STAMP_META_KEY = 'org.kya-os/lifecycle-stamp';
  */
 export const PENDING_PROOF_META_KEY = 'org.kya-os/pending-proof';
 
-/**
- * How long a proof left for the transport waits to be sent, unless
- * `pendingProofTtlMs` says otherwise. A result that the SDK never sends (a
- * cancelled call, or one the SDK replaced) is closed in the audit trail after
- * this, with `PROOF_NOT_SENT`; one sent later goes out unproven, recorded as
- * `PROOF_EXPIRED`.
- */
-const PENDING_PROOF_TTL_MS = 5 * 60_000;
-
-/** The largest audit context, in UTF-16 code units of JSON, kept for a proof no longer waiting. */
-const CLOSED_PROOF_CONTEXT_LIMIT = 16 * 1024;
-
-/** Roughly how much the record of proofs no longer waiting may hold, in UTF-16 code units of JSON. */
-const CLOSED_PROOF_BYTE_BUDGET = 4 * 1024 * 1024;
-
-/** How many proofs may wait at once; past this, the oldest is closed as not sent. */
-const PENDING_PROOF_LIMIT = 10_000;
-
-/**
- * Roughly how much the waiting proofs may hold, in UTF-16 code units of their
- * JSON. An entry holds a request hash, never the arguments, but its audit
- * context can carry strings a client influenced; past this, the oldest are
- * closed as not sent.
- */
-const PENDING_PROOF_BYTE_BUDGET = 16 * 1024 * 1024;
-
 /** The members only the middleware sets on a result for itself, never sent. */
 const privateMetaKeys: readonly string[] = [LIFECYCLE_STAMP_META_KEY, PENDING_PROOF_META_KEY];
 
@@ -117,39 +96,6 @@ const outcomeMetaKeys: readonly string[] = [
 ];
 
 type ToolResult = KyaOsToolResult;
-
-/**
- * A response proof for a call the middleware let run. It holds the hash of
- * the request, computed when the call was recorded, never the arguments
- * themselves: later changes to them cannot reach what is signed, and a
- * waiting proof costs little however large they were.
- */
-interface PendingAllowedProof {
-  kind: 'allowed';
-  toolName: string;
-  requestHash: string;
-  /** Re-read when the proof is made; the proof's audience comes from it. */
-  sessionId: string;
-  scopeId?: string;
-  context?: McpAuditContext;
-}
-
-/** A response proof recording an authorization outcome (SPEC §7.2); as above, by request hash. */
-interface PendingOutcomeProof {
-  kind: 'outcome';
-  toolName: string;
-  requestHash: string;
-  /** Re-read when the proof is made; the proof's audience comes from it. */
-  sessionId: string;
-  outcome: KyaOsAuthorizationOutcome;
-  /** Constructed only through the message sanitizer at the shared outcome boundary. */
-  reason: MessageText;
-  /** Whether the outcome's terminal audit events were delivered. */
-  terminalAuditDelivered: boolean;
-}
-
-/** What a wrapper's proof claims, wherever it is made. */
-type PendingProof = PendingAllowedProof | PendingOutcomeProof;
 
 /** `proofError` on a result whose proof was left to the transport and could not be made. */
 const UNPROVEN_PROOF_ERROR = "Proof generation failed — response is unproven";
@@ -468,7 +414,6 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     emitLegacyProofKey,
     responseProofProfile,
   } = deps;
-  const pendingProofTtlMs = config.pendingProofTtlMs ?? PENDING_PROOF_TTL_MS;
   const bindsEnvelope = responseProofProfile === RESPONSE_PROOF_PROFILE_ENVELOPE;
   const auditedTerminalResponses = new WeakSet<object>();
   // This middleware's lifecycle token, minted once an outer layer reads its
@@ -477,19 +422,10 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
   // KYA-OS transports open for this middleware. The wrappers refuse to run
   // while there are none.
   let openTransports = 0;
-  // Proofs left for the transport, by one-time id, each with the timer that
-  // closes it as not sent. The claims never leave the middleware.
-  const pendingProofs = new Map<string, {
-    pending: PendingProof;
-    timer: ReturnType<typeof setTimeout>;
-    size: number;
-  }>();
-  let pendingProofBytes = 0;
-  // What a proof no longer waiting was about, by its id, so a result sent
-  // after it closed can be recorded against its tool and call. Bounded:
-  // the oldest are forgotten, and a large audit context is not kept.
-  const closedProofs = new Map<string, { toolName: string; context?: McpAuditContext; size: number }>();
-  let closedProofBytes = 0;
+  // Proofs left for the transport, by one-time id, each closed as not sent
+  // once its window passes. The claims never leave the middleware.
+  const pendingProofs = createPendingProofs(config.pendingProofTtlMs, (pending) => closeTaken(pending));
+  const { take: takePendingProof, closeUnsent: closeUnsentProof } = pendingProofs;
 
   const hasOwnStamp = (response: ToolResult): boolean =>
     lifecycleStamp !== undefined &&
@@ -643,29 +579,6 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     }
   };
 
-  /** Remove and return the proof waiting under `id`, if one is, remembering what it was about. */
-  const takePendingProof = (id: string): PendingProof | undefined => {
-    const entry = pendingProofs.get(id);
-    if (entry === undefined) return undefined;
-    pendingProofs.delete(id);
-    pendingProofBytes -= entry.size;
-    clearTimeout(entry.timer);
-    const { toolName } = entry.pending;
-    const context = entry.pending.kind === 'allowed' ? entry.pending.context : undefined;
-    const contextSize = context === undefined ? 0 : JSON.stringify(context).length;
-    const keepContext = context !== undefined && contextSize <= CLOSED_PROOF_CONTEXT_LIMIT;
-    const size = toolName.length + (keepContext ? contextSize : 0);
-    closedProofs.set(id, { toolName, ...(keepContext ? { context } : {}), size });
-    closedProofBytes += size;
-    // Oldest first, as the waiting proofs are evicted.
-    while (closedProofs.size > PENDING_PROOF_LIMIT || closedProofBytes > CLOSED_PROOF_BYTE_BUDGET) {
-      const oldest = closedProofs.keys().next().value as string;
-      closedProofBytes -= closedProofs.get(oldest)!.size;
-      closedProofs.delete(oldest);
-    }
-    return entry.pending;
-  };
-
   /**
    * Close, in the audit trail, a proof that was never sent: the SDK dropped
    * its result (a cancelled call, or one the SDK replaced), or no transport
@@ -674,11 +587,6 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
    * call failed with `RESULT_NOT_SENT`, never completed. An outcome's terminal
    * events were recorded in the handler.
    */
-  const closeUnsentProof = async (id: string): Promise<void> => {
-    const pending = takePendingProof(id);
-    if (pending !== undefined) await closeTaken(pending);
-  };
-
   async function closeTaken(
     pending: PendingProof,
     verificationCode: 'PROOF_NOT_SENT' | 'PROOF_TOOL_MISMATCH' = 'PROOF_NOT_SENT',
@@ -718,36 +626,15 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
    * the MCP SDK changes members after the handler returns, so a proof made
    * here would not cover what the client receives.
    * The copy returned carries only a one-time id; the claims stay here, by
-   * request hash. Past the count or the size budget, the oldest waiting proofs are
-   * closed as not sent.
+   * request hash.
    */
-  const leaveToOuterLayer = (
-    response: ToolResult,
-    pending: PendingProof,
-  ): ToolResult => {
-    const size = JSON.stringify(pending).length;
-    while (
-      pendingProofs.size > 0 &&
-      (pendingProofs.size >= PENDING_PROOF_LIMIT || pendingProofBytes + size > PENDING_PROOF_BYTE_BUDGET)
-    ) {
-      const oldest = pendingProofs.keys().next().value as string;
-      // Taken now, so the loop sees it gone; recorded in the background.
-      const evicted = takePendingProof(oldest);
-      if (evicted !== undefined) void closeTaken(evicted);
-    }
-    const id = base64urlEncodeFromBytes(globalThis.crypto.getRandomValues(new Uint8Array(16)));
-    const timer = setTimeout(() => void closeUnsentProof(id), pendingProofTtlMs);
-    // Do not hold a process open for an audit close-out.
-    (timer as { unref?: () => void }).unref?.();
-    pendingProofs.set(id, { pending, timer, size });
-    pendingProofBytes += size;
-    return withMembers(response, {
+  const leaveToOuterLayer = (response: ToolResult, pending: PendingProof): ToolResult =>
+    withMembers(response, {
       _meta: {
         ...((response._meta as Record<string, unknown> | undefined) ?? {}),
-        [PENDING_PROOF_META_KEY]: id,
+        [PENDING_PROOF_META_KEY]: pendingProofs.leave(pending),
       },
     });
-  };
 
   // Single-process fallback for the established (handshake or auto) session, used
   // ONLY when no sessionId was threaded into the wrapper — e.g. non-KYA-OS clients
@@ -1479,7 +1366,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     if (pending === undefined) {
       // The proof this result named is no longer waiting: its window passed,
       // it was evicted, or it was already sent (a task result fetched again).
-      const closed = typeof id === 'string' ? closedProofs.get(id) : undefined;
+      const closed = typeof id === 'string' ? pendingProofs.closed(id) : undefined;
       await emitAudit(
         'Failed to record expired proof',
         () => audit?.proof('rejected', {

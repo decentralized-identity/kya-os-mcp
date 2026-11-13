@@ -47,7 +47,7 @@ import { verifySignature } from '../../src/delegation/vc-verification-checks.js'
 import { NodeCryptoProvider } from '../../src/providers/node-crypto.js';
 import type { DelegationCredential, DIDDocument } from '../../src/index.js';
 import { ReferenceConformanceAdapter } from '../reference-adapter.js';
-import { ed25519SignatureVerifier } from '../crypto-kit.js';
+import { embeddedSignatureVerifier } from '../../src/delegation/embedded-signature.js';
 import type { ConformanceVector, StatusListInput } from '../types.js';
 
 interface List {
@@ -82,7 +82,7 @@ const proofOf = (input: StatusListInput) =>
   verifySignature(
     listOf(input) as unknown as DelegationCredential,
     { resolve: async (did: string) => (input.didDocuments[did] as DIDDocument | undefined) ?? null },
-    ed25519SignatureVerifier(new NodeCryptoProvider()),
+    embeddedSignatureVerifier(new NodeCryptoProvider()),
   );
 /**
  * The list each entry type points to, and the members it must not carry: a StatusList2021Credential,

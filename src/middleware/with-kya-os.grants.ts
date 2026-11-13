@@ -13,7 +13,10 @@ import type {
   DetachedProof,
 } from "../types/protocol.js";
 import { scopeSatisfies } from "../delegation/scope-matcher.js";
-import type { DelegationVerification } from "./with-kya-os.delegation-verify.js";
+import type {
+  DelegationRecords,
+  DelegationVerification,
+} from "./with-kya-os.delegation-verify.js";
 import { getDelegationScopes } from "../delegation/chain-enforcement.js";
 import {
   assertHolderBinding,
@@ -23,8 +26,11 @@ import {
 import { logger } from "../logging/index.js";
 import type { MiddlewareDeps } from "./with-kya-os.deps.js";
 
-/** A durable grant whose retained delegation re-verified for this call. */
-export interface ResolvedGrant {
+/**
+ * A durable grant whose retained delegation re-verified for this call, with
+ * how the audit trail refers to that delegation.
+ */
+export interface ResolvedGrant extends DelegationRecords {
   grant: Grant;
   /** The scopes the re-verified credential grants (not the store's copy). */
   delegatedScopes: string[];
@@ -117,7 +123,12 @@ export function createGrantResolution(
         subject.delegation.controller !== grant.userDid ||
         !scopeSatisfies(scopeId, check.vc).satisfied
       ) return undefined;
-      return { grant, delegatedScopes: getDelegationScopes(check.vc) };
+      return {
+        grant,
+        delegatedScopes: getDelegationScopes(check.vc),
+        evidence: check.evidence,
+        chainEvidence: check.chainEvidence,
+      };
     } catch {
       // Resolver/provider failures must not turn cached authority into a bypass.
       return undefined;

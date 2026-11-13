@@ -22,6 +22,7 @@ import { MemoryNonceCacheProvider } from '../../../providers/memory.js';
 import { SystemClockProvider } from '../../../providers/system-clock.js';
 import { NoopFetchProvider } from '../../../providers/runtime-fetch.js';
 import type { DetachedProof } from '../../../types/protocol.js';
+import type { ReceivedCredential } from '../../../delegation/chain-digest.js';
 import type { Ed25519JWK } from '../../../utils/crypto-service.js';
 
 export const crypto = new NodeCryptoProvider();
@@ -78,6 +79,16 @@ export interface TransportHarness {
     result: KyaOsToolResult,
     call?: { toolName?: string; args?: Record<string, unknown> },
   ): Promise<Record<string, unknown>>;
+  /**
+   * Answer a `tools/call` of `toolName` with `args` as a server does: the
+   * request reaches the transport first, then `run` makes the result, which
+   * is sent as the answer. A `run` that throws is answered with an error, as
+   * the MCP SDK answers a handler that throws, and its error is rethrown.
+   */
+  call(
+    call: { toolName: string; args?: Record<string, unknown> },
+    run: () => Promise<KyaOsToolResult>,
+  ): Promise<Record<string, unknown>>;
 }
 
 /**
@@ -97,24 +108,42 @@ export async function connectTransport(kyaos: KyaOsMiddleware): Promise<Transpor
   const wrapper = createKyaOsTransport(inner, kyaos);
   await wrapper.start();
   let id = 0;
+  // Deliver the request of a `tools/call`, as a client sends it, and return its id.
+  const request = (call: { toolName: string; args?: Record<string, unknown> }): number => {
+    id += 1;
+    inner.onmessage!({
+      jsonrpc: '2.0',
+      id,
+      method: 'tools/call',
+      params: { name: call.toolName, arguments: call.args ?? {} },
+    });
+    return id;
+  };
+  // The SDK hands the transport a result of its own making, not the
+  // handler's object.
+  const answer = async (answered: number, result: KyaOsToolResult): Promise<Record<string, unknown>> => {
+    await wrapper.send({ jsonrpc: '2.0', id: answered, result: structuredClone(result) });
+    return (sent.at(-1) as { result: Record<string, unknown> }).result;
+  };
   return {
     sent,
     async send(result, call = {}) {
-      id += 1;
       // Without a tool name the result answers no call the transport
       // tracked, as a task result fetched later does.
-      if (call.toolName !== undefined) {
-        inner.onmessage!({
-          jsonrpc: '2.0',
-          id,
-          method: 'tools/call',
-          params: { name: call.toolName, arguments: call.args ?? {} },
-        });
+      if (call.toolName !== undefined) return answer(request({ toolName: call.toolName, args: call.args }), result);
+      id += 1;
+      return answer(id, result);
+    },
+    async call(call, run) {
+      const answered = request(call);
+      let result: KyaOsToolResult;
+      try {
+        result = await run();
+      } catch (error) {
+        await wrapper.send({ jsonrpc: '2.0', id: answered, error: { code: -32603, message: String(error) } });
+        throw error;
       }
-      // The SDK hands the transport a result of its own making, not the
-      // handler's object.
-      await wrapper.send({ jsonrpc: '2.0', id, result: structuredClone(result) });
-      return (sent.at(-1) as { result: Record<string, unknown> }).result;
+      return answer(answered, result);
     },
   };
 }
@@ -122,12 +151,13 @@ export async function connectTransport(kyaos: KyaOsMiddleware): Promise<Transpor
 /**
  * `kyaos` as a server runs it: connected to a withKyaOs transport, so the
  * proofs it makes are made there. A handler the test calls is the handler the
- * MCP SDK would call, so its result is sent through the transport and the
- * test gets what the client receives. A handler the middleware calls in turn
- * (a wrapped handler inside a gate) is not sent on its own, as in a server,
- * and neither is a `proveOutcome` result made inside a handler. The proxy
- * changes nothing else: sessions, the proof generator and the handshake are
- * the middleware's own.
+ * MCP SDK would call: the transport sees the call's request first, and the
+ * handler's result is sent through it as the answer, so the test gets what
+ * the client receives. A handler the middleware calls in turn (a wrapped
+ * handler inside a gate) is not sent on its own, as in a server, and neither
+ * is a `proveOutcome` result made inside a handler. The proxy changes nothing
+ * else: sessions, the proof generator and the handshake are the middleware's
+ * own.
  */
 export async function served(kyaos: KyaOsMiddleware): Promise<KyaOsMiddleware & { wire: TransportHarness }> {
   const wire = await connectTransport(kyaos);
@@ -135,8 +165,8 @@ export async function served(kyaos: KyaOsMiddleware): Promise<KyaOsMiddleware & 
   const serve = (toolName: string, handler: KyaOsToolHandler): KyaOsToolHandler =>
     async (args, sessionId, context) => {
       if (inCall.getStore()) return handler(args, sessionId, context);
-      const result = await inCall.run(true, () => handler(args, sessionId, context));
-      return await wire.send(result, { toolName, args }) as KyaOsToolResult;
+      return await wire.call({ toolName, args }, () =>
+        inCall.run(true, () => handler(args, sessionId, context))) as KyaOsToolResult;
     };
   return new Proxy(kyaos, {
     get(target, key, receiver) {
@@ -157,12 +187,11 @@ export async function served(kyaos: KyaOsMiddleware): Promise<KyaOsMiddleware & 
         case 'proveOutcome':
           return target.proveOutcome === undefined
             ? undefined
-            : async (request: Parameters<NonNullable<KyaOsMiddleware['proveOutcome']>>[0]) => {
-                const result = await target.proveOutcome!(request);
-                return inCall.getStore()
-                  ? result
-                  : await wire.send(result, { toolName: request.toolName, args: request.args });
-              };
+            : async (request: Parameters<NonNullable<KyaOsMiddleware['proveOutcome']>>[0]) =>
+                inCall.getStore()
+                  ? target.proveOutcome!(request)
+                  : await wire.call({ toolName: request.toolName, args: request.args }, () =>
+                      inCall.run(true, () => target.proveOutcome!(request))) as KyaOsToolResult;
         default:
           return Reflect.get(target, key, receiver);
       }
@@ -180,7 +209,10 @@ export function proofOf(result: object): DetachedProof | undefined {
  * `binds` names what the proof is expected to cover of the result: the whole
  * envelope (less `_meta`), its content array, or nothing. `shape` names the
  * form the client holds the request in: the legacy `{ method: <tool>, params:
- * <arguments> }` (the default), or the `tools/call` request as sent.
+ * <arguments> }` (the default), or the `tools/call` request as sent. With a
+ * `delegationChain`, root first, the proof must also bind that chain and
+ * name its last credential, and must record a call that was allowed unless
+ * `outcome` asks for another outcome.
  */
 export async function verifyReceived(
   result: Record<string, unknown>,
@@ -190,6 +222,8 @@ export async function verifyReceived(
     params: Record<string, unknown>;
     binds: 'envelope' | 'content' | 'nothing';
     shape?: 'legacy' | 'tools/call';
+    delegationChain?: readonly ReceivedCredential[];
+    outcome?: NonNullable<DetachedProof['meta']['outcome']>;
   },
 ): Promise<ProofVerificationResult> {
   const proof = proofOf(result);
@@ -212,7 +246,12 @@ export async function verifyReceived(
   return verifier.verifyProof(
     proof,
     jwk,
-    { request, ...(response ? { response } : {}) },
+    {
+      request,
+      ...(response ? { response } : {}),
+      ...(expected.delegationChain ? { delegationChain: expected.delegationChain } : {}),
+      ...(expected.outcome ? { outcome: expected.outcome } : {}),
+    },
     { expectedDid: expected.signer },
   );
 }

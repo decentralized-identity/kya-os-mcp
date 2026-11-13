@@ -7,12 +7,28 @@
 
 import { CryptoProvider } from '../providers/base.js';
 import { logger } from '../logging/index.js';
-import {
-  base64urlDecodeToString,
-  base64urlDecodeToBytes,
-  base64urlEncodeFromBytes,
-  bytesToBase64,
-} from './base64.js';
+import { base64urlEncodeFromBytes, bytesToBase64 } from './base64.js';
+import { strictBase64urlBytes, strictBase64urlText } from './base64-reading.js';
+import { ed25519KeyBytes } from './ed25519-public-key.js';
+
+/**
+ * A JWS segment's bytes, read as RFC 7515 §2 writes base64url (SPEC.md §7.4):
+ * the URL-safe alphabet alone, with no white space and no `=`. So every
+ * verifier of a proof reads one string for it, and the same bytes, or
+ * refuses it.
+ */
+function segmentBytes(segment: string): Uint8Array {
+  const bytes = strictBase64urlBytes(segment);
+  if (bytes === undefined) throw new Error('not base64url as RFC 7515 §2 writes it');
+  return bytes;
+}
+
+/** A JWS segment's JSON, its bytes read as UTF-8 that is well formed (see {@link segmentBytes}). */
+function segmentJson(segment: string): Record<string, unknown> {
+  const text = strictBase64urlText(segment);
+  if (text === undefined) throw new Error('not base64url of UTF-8 text as RFC 7515 §2 writes it');
+  return JSON.parse(text) as Record<string, unknown>;
+}
 
 /**
  * Minimal Ed25519 JWK interface
@@ -59,7 +75,7 @@ export class CryptoService {
 
     let header: Record<string, unknown>;
     try {
-      header = JSON.parse(base64urlDecodeToString(headerB64!)) as Record<string, unknown>;
+      header = segmentJson(headerB64!);
     } catch (error) {
       throw new Error(
         `Invalid header base64: ${error instanceof Error ? error.message : String(error)}`
@@ -69,7 +85,7 @@ export class CryptoService {
     let payload: Record<string, unknown> | undefined;
     if (payloadB64) {
       try {
-        payload = JSON.parse(base64urlDecodeToString(payloadB64)) as Record<string, unknown>;
+        payload = segmentJson(payloadB64);
       } catch (error) {
         throw new Error(
           `Invalid payload base64: ${error instanceof Error ? error.message : String(error)}`
@@ -79,7 +95,7 @@ export class CryptoService {
 
     let signatureBytes: Uint8Array;
     try {
-      signatureBytes = base64urlDecodeToBytes(signatureB64!);
+      signatureBytes = segmentBytes(signatureB64!);
     } catch (error) {
       throw new Error(
         `Invalid signature base64: ${error instanceof Error ? error.message : String(error)}`
@@ -119,12 +135,8 @@ export class CryptoService {
           const parts = jws.split('.');
           if (parts.length === 3 && parts[1] === '') {
             try {
-              const headerB64 = parts[0]!;
-              const signatureB64 = parts[2]!;
-              const header = JSON.parse(
-                base64urlDecodeToString(headerB64)
-              ) as Record<string, unknown>;
-              const signatureBytes = base64urlDecodeToBytes(signatureB64);
+              const header = segmentJson(parts[0]!);
+              const signatureBytes = segmentBytes(parts[2]!);
               parsed = { header, payload: undefined, signatureBytes, signingInput: '' };
             } catch {
               logger.error('[CryptoService] Invalid detached JWS format');
@@ -233,11 +245,9 @@ export class CryptoService {
     );
   }
 
+  // `x` is read as the proof's segments are (SPEC.md §7.4), and as every
+  // Ed25519 JWK is: the key a proof is checked with reads one way.
   private jwkToBase64PublicKey(jwk: Ed25519JWK): string {
-    const publicKeyBytes = base64urlDecodeToBytes(jwk.x);
-    if (publicKeyBytes.length !== 32) {
-      throw new Error(`Invalid Ed25519 public key length: ${publicKeyBytes.length}`);
-    }
-    return bytesToBase64(publicKeyBytes);
+    return bytesToBase64(ed25519KeyBytes(jwk));
   }
 }

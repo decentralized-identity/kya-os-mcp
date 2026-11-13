@@ -12,6 +12,7 @@ export interface ProofVerificationResult {
   reason?: string;
   error?: Error;
   errorCode?: ProofVerificationErrorCode;
+  /** For `CONTENT_BINDING_MISMATCH`, `OUTCOME_MISMATCH` and `DELEGATION_BINDING_MISMATCH`, a `ProofBindingMismatch`. */
   details?: Record<string, unknown>;
 }
 

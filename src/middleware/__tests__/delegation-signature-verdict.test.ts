@@ -7,6 +7,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { delegationRecord, keyOf, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
+import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
 import { NOT_TRUE } from '../../__tests__/utils/verdict-answers.js';
 import type { AgentIdentity, CryptoProvider } from '../../providers/base.js';
 import type { DelegationCredential } from '../../types/protocol.js';
@@ -26,11 +27,16 @@ beforeAll(async () => {
   });
 });
 
-/** The gate's verdict on the root's credential when the crypto provider's `verify` answers `answer`. */
+const hashing = new NodeCryptoProvider();
+
+/**
+ * The gate's verdict on the root's credential when the crypto provider's `verify` answers `answer`.
+ * The provider hashes as a real one does, since the gate digests the chain it verified.
+ */
 const verdictWhen = (answer: unknown) =>
   createDelegationVerification({
     identity: { ...root, did: SERVER },
-    cryptoProvider: { verify: async () => answer } as unknown as CryptoProvider,
+    cryptoProvider: { hash: (data: Uint8Array) => hashing.hash(data), verify: async () => answer } as unknown as CryptoProvider,
     delegationConfig: {
       trustedRootIssuers: [root.did],
       didResolver: { resolve: async (did: string) => (did === root.did ? issuerDidDocument(methodOf(root)) : null) },

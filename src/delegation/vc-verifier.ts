@@ -103,7 +103,6 @@ export class DelegationCredentialVerifier {
     options: VerifyDelegationVCOptions = {},
   ): Promise<DelegationVCVerificationResult> {
     const startTime = Date.now();
-    const cacheKey = this.cacheKeyForCredential('di', vc, options);
 
     // Basic checks run on EVERY call — expiry is time-sensitive, so a warm
     // signature cache must never carry a credential past its window.
@@ -126,6 +125,10 @@ export class DelegationCredentialVerifier {
       };
       return result;
     }
+
+    // Keyed only now: a credential refused on its basic checks is never
+    // looked up, so the whole of it is not canonicalized for a key.
+    const cacheKey = this.cacheKeyForCredential('di', vc, options);
 
     // The status list is read only after the signature has verified, so a
     // credential that merely names an issuer costs no status read. A signature

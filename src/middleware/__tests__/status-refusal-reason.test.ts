@@ -39,7 +39,7 @@ async function refusing(change: (list: Record<string, unknown>) => Record<string
   const stored = await storage.getStatusList(entry.statusListCredential);
   if (!stored) throw new Error('fixture: status list not stored');
   const fetchProvider = {
-    fetch: async () => ({ ok: true, status: 200, json: async () => change({ ...stored }) }) as unknown as Response,
+    fetch: async () => new Response(JSON.stringify(change({ ...stored }))),
   } as unknown as FetchProvider;
   const statusListResolver = new CheqdStatusListResolver({
     fetchProvider,

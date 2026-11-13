@@ -2,8 +2,11 @@
  * DID:cheqd Resolver
  *
  * Resolves did:cheqd DIDs through an explicitly configured resolver endpoint.
- * The resolver accepts both Universal Resolver-style DID Resolution Results
- * (`{ didDocument: ... }`) and raw DID Documents.
+ * It asks for the DID document alone (`Accept: application/did+ld+json`, W3C
+ * DID Resolution), which the cheqd resolver answers without the resolution
+ * metadata, and still accepts a Universal Resolver-style DID Resolution Result
+ * (`{ didDocument: ... }`) from a resolver that sends one anyway. That envelope
+ * is read within its own limits; the document inside it meets the document's.
  */
 
 import type { FetchProvider } from '../../providers/base.js';
@@ -12,6 +15,14 @@ import type { DIDDocument, DIDResolver } from '../../delegation/vc-verifier.js';
 import { hasIdTypeAndController } from '../../delegation/verification-method-shape.js';
 import { logger } from '../../logging/index.js';
 import { isRecord, stripTrailingSlashes } from '../../utils/index.js';
+
+import {
+  admitParsedDidDocument, boundedDid, DID_RESOLUTION_ENVELOPE_READ, DidDocumentCache, type LoadedDidDocument,
+} from '../../delegation/did-resource-limits.js';
+import { fetchBoundedJson } from '../../utils/bounded-read.js';
+
+/** The DID document alone, without resolution metadata (W3C DID Resolution). */
+const DID_DOCUMENT_MEDIA_TYPE = 'application/did+ld+json';
 
 export type DidCheqdNetwork = 'mainnet' | 'testnet';
 
@@ -54,7 +65,7 @@ export function parseDidCheqd(did: string): ParsedDidCheqd | null {
 export class DidCheqdResolver implements DIDResolver {
   private readonly fetchProvider: FetchProvider;
   private readonly resolverUrl: string;
-  private readonly cache: Map<string, { document: DIDDocument; expiresAt: number }>;
+  private readonly cache: DidDocumentCache;
   private readonly cacheTtl: number;
   private readonly headers?: Record<string, string> | (() => Promise<Record<string, string>>);
 
@@ -63,44 +74,32 @@ export class DidCheqdResolver implements DIDResolver {
     this.resolverUrl = options.resolverUrl;
     this.cacheTtl = options.cacheTtl ?? 300_000;
     this.headers = options.headers;
-    this.cache = new Map();
+    this.cache = new DidDocumentCache();
   }
 
   async resolve(did: string): Promise<DIDDocument | null> {
-    if (!parseDidCheqd(did)) {
+    if (!boundedDid(did) || !parseDidCheqd(did)) {
       return null;
     }
+    return this.cache.resolve(did, this.cacheTtl, () => this.fetchDocument(did));
+  }
 
-    const cached = this.cache.get(did);
-    if (cached && Date.now() < cached.expiresAt) {
-      return cached.document;
-    }
-
+  /**
+   * Fetch, measure, freeze and check the document for `did`, or `null`. The read's one deadline
+   * holds the configured headers too, so a headers function that never answers ends the resolution
+   * at the deadline and leaves nothing pending for the next one to join.
+   */
+  private async fetchDocument(did: string): Promise<LoadedDidDocument | null> {
     try {
-      const response = await this.fetchProvider.fetch(
-        didCheqdToResolverUrl(did, this.resolverUrl),
-        {
-          method: 'GET',
-          headers: await this.resolveHeaders(),
-        },
+      const init = this.requestHeaders().then((headers): RequestInit => ({ method: 'GET', headers }));
+      const json = await fetchBoundedJson(
+        this.fetchProvider, didCheqdToResolverUrl(did, this.resolverUrl), init, DID_RESOLUTION_ENVELOPE_READ,
       );
-
-      if (!response.ok) {
-        logger.warn(`[DidCheqdResolver] HTTP ${response.status} resolving ${did}`);
-        return null;
-      }
-
-      let json: unknown;
-      try {
-        json = await response.json();
-      } catch {
-        logger.warn(`[DidCheqdResolver] Invalid JSON resolving ${did}`);
-        return null;
-      }
-
       const document = extractDidDocument(json);
-      if (!document || !isValidDIDDocument(document)) {
-        logger.warn(`[DidCheqdResolver] Invalid DID Document resolving ${did}`);
+      const measure = admitParsedDidDocument(document);
+      if (!measure.ok || !isValidDIDDocument(document)) {
+        const reason = measure.ok ? '' : `: ${measure.reason}`;
+        logger.warn(`[DidCheqdResolver] Invalid DID Document resolving ${did}${reason}`);
         return null;
       }
 
@@ -109,12 +108,7 @@ export class DidCheqdResolver implements DIDResolver {
         return null;
       }
 
-      this.cache.set(did, {
-        document,
-        expiresAt: Date.now() + this.cacheTtl,
-      });
-
-      return document;
+      return { document, bytes: measure.bytes };
     } catch (error) {
       logger.warn(
         `[DidCheqdResolver] Error resolving ${did}: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -129,6 +123,13 @@ export class DidCheqdResolver implements DIDResolver {
 
   clearCacheEntry(did: string): void {
     this.cache.delete(did);
+  }
+
+  /** The configured headers, with `Accept` set to the document's media type in place of any the caller set. */
+  private async requestHeaders(): Promise<Headers> {
+    const headers = new Headers(await this.resolveHeaders());
+    headers.set('Accept', DID_DOCUMENT_MEDIA_TYPE);
+    return headers;
   }
 
   private async resolveHeaders(): Promise<Record<string, string> | undefined> {

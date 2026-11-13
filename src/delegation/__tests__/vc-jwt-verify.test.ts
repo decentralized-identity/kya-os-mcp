@@ -203,6 +203,23 @@ describe("verifyDelegationJwt (VC-JWT / compact JWS wire format)", () => {
     expect(result.reason).toBe(`Could not resolve issuer DID "${ISSUER_DID}": resolver down`);
   });
 
+  it("quotes at most 64 characters of an issuer DID its resolver throws for", async () => {
+    const long = `${ISSUER_DID}:${"a".repeat(100)}`;
+    const isolated = new DelegationCredentialVerifier({
+      didResolver: {
+        async resolve(): Promise<DIDDocument | null> {
+          throw new Error("resolver down");
+        },
+      },
+    });
+    const jwt = await new SignJWT({ vc: delegationVcClaim({ issuer: long }) })
+      .setProtectedHeader({ alg: "EdDSA", typ: "JWT", kid: `${long}#0` })
+      .setIssuer(long)
+      .sign(privateKey);
+    const result = await isolated.verifyDelegationJwt(jwt, { skipCache: true });
+    expect(result.reason).toBe(`Could not resolve issuer DID "${long.slice(0, 64)}"...: resolver down`);
+  });
+
   it("rejects, without throwing, a JOSE header that is not a JSON object", async () => {
     const [, payload, signature] = (await mintVcJwt(privateKey)).split(".");
     const headers = ["null", "[]", '"EdDSA"', "42", '{"alg":"EdDSA","kid":42}'];

@@ -19,6 +19,7 @@
  */
 
 import { isRecord } from '../utils/guards.js';
+import { admitsRootIssuer, assertTrustedRootIssuers } from '../delegation/root-admission.js';
 import {
   DelegationCredentialSchema,
   MAX_DELEGATION_DEPTH,
@@ -156,7 +157,11 @@ export interface VerifyRequestDelegationDeps {
   resolveDelegationChain?: (ctx: { proofDid: string }) => Promise<DelegationChain | undefined>;
   /** When set, the root issuer must equal it (the SPEC.md §6.10 root rule). */
   resourceOwner?: string;
-  /** When set, the root issuer (the Responsible Party) must be one of these DIDs. */
+  /**
+   * When set, the root issuer (the Responsible Party) must be one of these DIDs, each compared
+   * whole. Anything but an array of DIDs, each a string that starts with `did:` and has no white
+   * space around it, throws a `TypeError` naming the option.
+   */
   trustedRootIssuers?: readonly string[];
   /**
    * Local cost limit: the most credentials to evaluate in one chain, root to leaf inclusive. A
@@ -212,12 +217,15 @@ export type RequestDelegationResult =
  *    invalidates the subtree.
  *
  * Cheap, local checks run before the ones that may touch the network. Never throws on a
- * malformed input or a throwing seam; returns `{ ok: false, code, reasons }`.
+ * malformed input or a throwing seam; returns `{ ok: false, code, reasons }`. Rejects with a
+ * `TypeError` for a `trustedRootIssuers` that is not an array of DIDs, each a string that starts
+ * with `did:` and has no white space around it.
  */
 export async function verifyRequestDelegation(
   input: RequestDelegationInput,
   deps: VerifyRequestDelegationDeps,
 ): Promise<RequestDelegationResult> {
+  assertTrustedRootIssuers(deps.trustedRootIssuers);
   const obtained = await obtainChain(input, deps);
   if (!obtained.ok) return obtained;
   const { chain, credentials, source } = obtained;
@@ -245,7 +253,7 @@ export async function verifyRequestDelegation(
       `leaf delegate ${leafInvoker} is not the request proof's DID ${input.proofDid}`,
     ]);
   }
-  if (deps.trustedRootIssuers !== undefined && !deps.trustedRootIssuers.includes(responsibleParty)) {
+  if (!admitsRootIssuer(deps.trustedRootIssuers, responsibleParty)) {
     return reject('delegation_invalid', [`root issuer ${responsibleParty} is not a trusted root issuer`]);
   }
 
@@ -383,8 +391,13 @@ const GATE_MESSAGES: Record<DelegationGateCode, string> = {
  * if (!proof.ok) return proof;
  * const authority = await delegationGuard({ meta, proofDid: proof.did, action: req.params.name });
  * ```
+ *
+ * Throws a `TypeError`, naming the option, for a `trustedRootIssuers` that is not an array of
+ * DIDs, each a string that starts with `did:` and has no white space around it, so a mistyped list
+ * fails when the guard is built.
  */
 export function requireDelegation(deps: VerifyRequestDelegationDeps): DelegationGuard {
+  assertTrustedRootIssuers(deps.trustedRootIssuers);
   return async (input) => {
     const result = await verifyRequestDelegation(input, deps);
     if (result.ok) return result;

@@ -344,6 +344,10 @@ An expired envelope denies authorization even when the embedded VC is otherwise 
 The `issuerDid` inside a credential is only a claim, so the chain walk also checks who signed it.
 Set `delegation.trustedRootIssuers` to the DIDs allowed to issue root delegations, the Responsible Party for the whole chain.
 With it set, a chain whose root is signed by any other DID is rejected, including when a stored grant is reused.
+The list must be an array of DIDs, each a string that starts with `did:` and has no white space around it, compared whole with the root's `issuer`; creating the middleware with any other value throws a `TypeError`.
+Before it resolves any DID, reads any status list or checks any signature, the gate checks every link of the chain and then that the root's `issuer` is on the list, for object credentials and VC-JWTs alike.
+It then verifies each credential root first, with a key from its issuer's DID document, and reads a credential's status list only after that signature verifies, so a listed issuer still needs a valid signature.
+For a re-delegation, the chain comes from `resolveDelegationChain`, which runs before these checks and must bound its own I/O.
 Without it, any issuer is accepted, including an agent signing a delegation for itself, and the middleware logs a warning at startup.
 A root whose claimed `issuerDid` differs from its signer is still accepted, and logged.
 
@@ -386,6 +390,16 @@ under `src/integrations/`") — contributions welcome.
 | Audit delivery — `AuditRecorder`, `AuditAnchorProvider` | local recorder | Checkpoint, on-chain anchoring ([AUDITABILITY.md](./AUDITABILITY.md)) |
 | Crypto — `CryptoProvider` | Node, WebCrypto | your KMS / HSM |
 | Policy — `PolicyEngine` | built-in default | custom engine |
+
+### DID resolution and status-list limits
+
+The built-in DID resolvers and status-list readers bound what a delegation or a request proof can make a verifier fetch, parse and keep.
+They refuse an identifier, document, list or response over a limit, never cut it to fit, and give up on one that is too slow.
+[SPEC.md §4.4.2](./SPEC.md#442-reference-implementation-resource-policy) lists every limit, and the Upgrading notes in the changelog say what changes for callers.
+Check that your DID documents and status lists are within those limits before you upgrade.
+A custom `FetchProvider` must return a `Response` whose `body` is a WHATWG `ReadableStream`, since the readers read it as a stream and never call `json()`.
+Verifiers bound how long they wait for any `DIDResolver` and check the document it returns, but a custom resolver must bound its own fetching and parsing.
+The application still has to limit the size of incoming requests and how many resolutions run at once.
 
 ### cheqd: a fully-worked on-chain integration
 

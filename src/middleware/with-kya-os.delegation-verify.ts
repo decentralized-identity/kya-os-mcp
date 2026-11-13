@@ -23,6 +23,8 @@ import {
   type ChainValidationResult,
 } from "../delegation/chain-enforcement.js";
 import { RuntimeFetchProvider } from "../providers/runtime-fetch.js";
+import { credentialIssuerRefusal } from "../delegation/credential-issuer.js";
+import { assertTrustedRootIssuers } from "../delegation/root-admission.js";
 import { canonicalizeJSON, parseVCJWT } from "../delegation/utils.js";
 import { base64urlDecodeToBytes, bytesToBase64 } from "../utils/base64.js";
 import {
@@ -100,10 +102,11 @@ export interface DelegationVerification {
    * form, into a single verified credential. A VC-JWT **string** is verified by
    * its compact-JWS ENVELOPE signature against the issuer's published key; an
    * **object** is verified by its embedded Data-Integrity proof. Both then run
-   * the full chain / scope-superset / expiry / status / revocation walk. Owning
-   * the `skipSignature` decision here (never at the call site) is what stops a
-   * JWT envelope from being silently skipped. Returns a {@link DelegationCheck},
-   * never throws on normal or structurally-malformed input.
+   * the full chain / scope-superset / expiry / status / revocation walk. The
+   * chain admits the root by the issuer it names before verifying any
+   * signature, and the leaf is always authenticated in its own wire form.
+   * Returns a {@link DelegationCheck}, never throws on normal or
+   * structurally-malformed input.
    */
   verifyDelegation(delegationArg: unknown): Promise<DelegationCheck>;
   /**
@@ -257,6 +260,7 @@ export function createDelegationVerification(
   });
 
   const trustedRootIssuers = delegationConfig?.trustedRootIssuers;
+  assertTrustedRootIssuers(trustedRootIssuers, "delegation.");
   if (trustedRootIssuers === undefined) {
     logger.warn(
       "[kya-os] delegation.trustedRootIssuers is not set, so a delegation from any issuer is " +
@@ -288,21 +292,38 @@ export function createDelegationVerification(
 
   const validateDelegationChain = async (
     leafCredential: DelegationCredential,
-    options?: { skipSignature?: boolean },
+    jwt?: string,
   ): Promise<ChainValidationResult> => {
+    let envelopeFailure: string | undefined;
     const result = await validateDelegationChainCore(
       leafCredential,
       {
         serverDid: identity.did,
-        verifier,
+        verifier: jwt === undefined ? verifier : {
+          verifyDelegationCredential: async (credential, options) => {
+            if (credential !== leafCredential) {
+              return verifier.verifyDelegationCredential(credential, options);
+            }
+            // The chain has admitted the claimed root. Verify the actual JWT
+            // envelope here, including live time and status checks. Never grant
+            // a JWT leaf the embedded-proof skipSignature privilege. A refused
+            // envelope gives its own reason; a failed status check reads as any
+            // credential's does, `Delegation <id> invalid: <reason>`.
+            const envelope = await verifier.verifyDelegationJwt(jwt);
+            if (!envelope.valid && (envelope.stage === "basic" || envelope.stage === "signature")) {
+              envelopeFailure = envelope.reason ?? "VC-JWT envelope signature is not valid";
+            }
+            return envelope;
+          },
+        },
         resolveDelegationChain: delegationConfig?.resolveDelegationChain,
         statusListConfigured: !!delegationConfig?.statusListResolver,
         revocationChecker: delegationConfig?.revocationChecker,
         ...(trustedRootIssuers !== undefined ? { trustedRootIssuers } : {}),
         ...(maxChainLength !== undefined ? { maxChainLength } : {}),
       },
-      options,
     );
+    if (!result.valid && envelopeFailure !== undefined) return { ...result, reason: envelopeFailure };
     if (result.valid) reportChainWarnings(result.warnings);
     return result;
   };
@@ -315,34 +336,24 @@ export function createDelegationVerification(
     // an embedded Data-Integrity proof (verified inside validateDelegationChain).
     let vc: DelegationCredential;
     let isJwt = false;
-    let jwtExpiresAt: number | undefined;
+    let jwtExpirySeconds: unknown;
 
     if (typeof delegationArg === "string") {
       const parsed = parseVCJWT(delegationArg);
-      if (!parsed || !parsed.payload.vc) {
+      if (!parsed?.payload?.vc) {
         return { valid: false, reason: "Invalid VC-JWT format" };
       }
-      // Envelope-first: verify the JWT signature against the issuer's published
-      // key BEFORE the chain runs with skipSignature. Reuses the vetted verifier
-      // (EdDSA-pinned compact-JWS + iss/issuer consistency; fail-closed). Status
-      // is checked once by the chain walk below, so skip it here.
-      const envelope = await verifier.verifyDelegationJwt(delegationArg, {
-        skipStatus: true,
-      });
-      if (!envelope.valid) {
-        return {
-          valid: false,
-          reason: envelope.reason ?? "VC-JWT envelope signature is not valid",
-          vc: parsed.payload.vc as DelegationCredential,
-        };
-      }
-      // This exact JWT's optional exp has passed the envelope verifier's live
-      // time checks. Preserve its narrower deadline when caching the grant.
-      jwtExpiresAt = parsed.payload.exp !== undefined ? parsed.payload.exp * 1000 : undefined;
+      // Parse only here. The chain must admit the claimed root before any
+      // issuer document is resolved, including the JWT leaf's. The verifier
+      // authenticates the envelope and checks these time claims in the walk.
+      jwtExpirySeconds = parsed.payload.exp;
       vc = parsed.payload.vc as DelegationCredential;
-      // A JWT has no embedded `proof`; add a marker so basic validation (which
-      // requires proof presence) passes. The already-verified envelope is the
-      // real proof, so the chain walk runs with skipSignature (below).
+      // Admission reads this claim before the envelope verifier. Preserve the
+      // JWT basic-stage diagnostic when it cannot name an issuer at all.
+      const issuerFailure = credentialIssuerRefusal(vc);
+      if (issuerFailure) return { valid: false, reason: issuerFailure, vc };
+      // Preserve the normalized credential's proof marker. It is never used as
+      // evidence: the leaf verifier receives the original compact JWT below.
       if (!vc.proof) {
         vc = { ...vc, proof: { type: "JwtProof2020", jwt: delegationArg } };
       }
@@ -351,15 +362,14 @@ export function createDelegationVerification(
       vc = delegationArg as DelegationCredential;
     }
 
-    // Chain / scope-superset / expiry / status / revocation. skipSignature is
-    // true ONLY for a JWT (its envelope, verified above, is the proof); an object
-    // keeps it false so validateDelegationChain verifies the embedded proof.
+    // Chain / scope-superset / expiry / status / revocation. The leaf's wire
+    // form selects its verifier; ancestors always use their embedded proofs.
     // That call never throws on normal/malformed input; this backstop catches
     // only a truly unexpected throw (hostile getter/Proxy, provider fault) and
     // returns a GENERIC reason so no internal detail leaks to the client/proof.
     let chain: ChainValidationResult;
     try {
-      chain = await validateDelegationChain(vc, { skipSignature: isJwt });
+      chain = await validateDelegationChain(vc, isJwt ? delegationArg as string : undefined);
     } catch (error) {
       logger.error("[kya-os] Unexpected error verifying delegation", {
         error: error instanceof Error ? error.message : String(error),
@@ -378,6 +388,9 @@ export function createDelegationVerification(
         vc,
       };
     }
+    // Only use the time claim after the envelope verifier has accepted it as
+    // a finite NumericDate. Never coerce attacker-supplied objects to numbers.
+    const jwtExpiresAt = typeof jwtExpirySeconds === "number" ? jwtExpirySeconds * 1000 : undefined;
     const expiresAt = jwtExpiresAt === undefined
       ? chain.expiresAt
       : Math.min(jwtExpiresAt, chain.expiresAt ?? jwtExpiresAt);

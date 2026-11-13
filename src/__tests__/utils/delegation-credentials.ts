@@ -8,7 +8,7 @@ import { NodeCryptoProvider } from './node-crypto-provider.js';
 import { createRealSigningFunction } from '../audit/helpers/crypto-helpers.js';
 import { DelegationCredentialIssuer } from '../../delegation/vc-issuer.js';
 import { canonicalizeJSON, completeVCJWT, createUnsignedVCJWT } from '../../delegation/utils.js';
-import { wrapDelegationAsVC, type DelegationCredential, type DelegationRecord } from '../../types/protocol.js';
+import { wrapDelegationAsVC, type CredentialStatus, type DelegationCredential, type DelegationRecord } from '../../types/protocol.js';
 import type { AgentIdentity } from '../../providers/base.js';
 
 const crypto = new NodeCryptoProvider();
@@ -39,21 +39,25 @@ export function delegationRecord(issuerDid: string, overrides: Partial<Delegatio
   };
 }
 
-/** How a test signs a delegation: the delegation (default: one by the key's DID), and the key id it names. */
+/**
+ * How a test signs a delegation: the delegation (default: one by the key's DID), the key id it
+ * names, and the credential's `credentialStatus`, if any.
+ */
 export interface Signing {
   readonly record?: DelegationRecord;
   readonly kid?: string;
+  readonly credentialStatus?: CredentialStatus;
 }
 
 /** `record` as a credential with a Data Integrity proof `key` makes, naming `kid` (default: `key`'s own id). */
 export function signedCredential(
   key: AgentIdentity,
-  { record = delegationRecord(key.did), kid = key.kid }: Signing = {},
+  { record = delegationRecord(key.did), kid = key.kid, credentialStatus }: Signing = {},
 ): Promise<DelegationCredential> {
   return new DelegationCredentialIssuer(
     { getDid: () => record.issuerDid, getKeyId: () => kid, getPrivateKey: () => key.privateKey },
     createRealSigningFunction(crypto, key),
-  ).issueDelegationCredential(record);
+  ).issueDelegationCredential(record, { credentialStatus });
 }
 
 /** A VC-JWT whose envelope `key` signs over `encodedPayload`, with `kid` in its header if given, even empty or not a string. */
@@ -70,10 +74,11 @@ export async function envelope(key: AgentIdentity, encodedPayload: string, kid?:
  */
 export function signedJwt(
   key: AgentIdentity,
-  { record = delegationRecord(key.did), kid, edit = (json) => json }:
-    { record?: DelegationRecord; kid?: unknown; edit?: (json: string) => string } = {},
+  { record = delegationRecord(key.did), kid, credentialStatus, edit = (json) => json }:
+    { kid?: unknown; edit?: (json: string) => string } & Omit<Signing, 'kid'> = {},
 ): Promise<string> {
-  const { payload } = createUnsignedVCJWT(wrapDelegationAsVC(record) as unknown as Record<string, unknown>);
+  const vc = wrapDelegationAsVC(record, { credentialStatus });
+  const { payload } = createUnsignedVCJWT(vc as unknown as Record<string, unknown>);
   return envelope(key, Buffer.from(edit(JSON.stringify(payload))).toString('base64url'), kid);
 }
 

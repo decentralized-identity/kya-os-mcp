@@ -15,13 +15,14 @@ import {
   extractDelegationFromVC,
   type CrispScope,
   type DelegationCredential,
-  type DelegationRecord,
 } from "../types/protocol.js";
 import { canonicalizeJson } from "../utils/canonical-json.js";
 import { verifyDelegationAudience } from "./audience-validator.js";
 import { chainResolutionFailure, revocationCheckFailure, revokedReason } from "./chain-reasons.js";
 import { authorityContains, crispScopes, matcherContains, scopeAuthority } from "./scope-matcher.js";
-import { credentialIssuerDid } from "./vc-jwt-verify.js";
+import { credentialIssuerDid } from "./credential-issuer.js";
+import { chainLinkageRefusal } from "./chain-linkage.js";
+import { rootAdmissionRefusal } from "./root-admission.js";
 
 /** Union of a credential's delegation scopes and its constraint scopes. */
 export function getDelegationScopes(credential: DelegationCredential): string[] {
@@ -249,8 +250,11 @@ export interface ChainEnforcementDeps {
   revocationChecker?: RevocationChecker;
   /**
    * DIDs allowed to sign the chain's root credential (its Responsible Party).
-   * When set, a root signed by any other DID is rejected. Omit to accept any
-   * root issuer.
+   * When set, a root naming any other issuer is rejected before any credential
+   * is verified. A list that is not an array of DIDs, each a string that starts
+   * with `did:` and has no white space around it, rejects every chain with a
+   * reason that says so; this function does not throw for it. Omit to accept
+   * any root issuer.
    */
   trustedRootIssuers?: readonly string[];
   /**
@@ -389,22 +393,23 @@ export async function validateDelegationChain(
     }
   }
 
+  // Structure, then trust, then proofs. The linkage of every credential, and then the root by the
+  // issuer it names, are checked before any credential is verified, so a broken chain or an
+  // untrusted root costs no DID, signature or status resolution; verifying each credential below,
+  // root first, authenticates the issuer it names. Only the root is admitted: a delegated leaf need
+  // not be a trusted root issuer. The application's `resolveDelegationChain` above runs first and
+  // bounds its own I/O.
+  const linkageRefusal = chainLinkageRefusal(chain);
+  if (linkageRefusal !== undefined) return { valid: false, reason: linkageRefusal };
+  const rootRefusal = rootAdmissionRefusal(chain[0]!, deps.trustedRootIssuers);
+  if (rootRefusal !== undefined) return { valid: false, reason: rootRefusal };
+
   let expiresAt: number | undefined;
   const warnings: string[] = [];
-  const seenIds = new Set<string>();
-  let previousDelegation: DelegationRecord | undefined;
   let previousCredential: DelegationCredential | undefined;
 
   for (const credential of chain) {
     const delegation = extractDelegationFromVC(credential);
-
-    if (seenIds.has(delegation.id)) {
-      return {
-        valid: false,
-        reason: `Delegation chain contains a circular reference at ${delegation.id}`,
-      };
-    }
-    seenIds.add(delegation.id);
 
     if (credential.credentialStatus && !deps.statusListConfigured) {
       return {
@@ -453,61 +458,19 @@ export async function validateDelegationChain(
       };
     }
 
-    // The DID whose key the verifier checked this credential against. Unlike
-    // `delegation.issuerDid`, which is only a claim inside the signed body,
-    // this is who actually issued it.
-    const signerDid = credentialIssuerDid(credential);
-
-    if (!previousDelegation || !previousCredential) {
-      if (delegation.parentId) {
-        return {
-          valid: false,
-          reason: `Resolved delegation chain is incomplete: root delegation ${delegation.id} still references parent ${delegation.parentId}`,
-        };
-      }
-
-      if (
-        deps.trustedRootIssuers &&
-        (signerDid === undefined || !deps.trustedRootIssuers.includes(signerDid))
-      ) {
-        return {
-          valid: false,
-          reason: `Root delegation ${delegation.id} is issued by ${signerDid ?? "an unidentified issuer"}, which is not a trusted root issuer`,
-        };
-      }
-
+    // The chain's linkage was checked before any verification
+    // (chainLinkageRefusal); only the root's issuerDid may differ from the
+    // issuer whose key the verifier checked, and that is reported.
+    if (!previousCredential) {
+      const signerDid = credentialIssuerDid(credential);
       if (signerDid !== delegation.issuerDid) {
         warnings.push(
           `Root delegation ${delegation.id} names issuerDid ${delegation.issuerDid} but is signed by ${signerDid ?? "an unidentified issuer"}`,
         );
       }
 
-      previousDelegation = delegation;
       previousCredential = credential;
       continue;
-    }
-
-    if (delegation.parentId !== previousDelegation.id) {
-      return {
-        valid: false,
-        reason: `Delegation ${delegation.id} references parent ${delegation.parentId} but expected ${previousDelegation.id}`,
-      };
-    }
-
-    if (delegation.issuerDid !== previousDelegation.subjectDid) {
-      return {
-        valid: false,
-        reason: `Delegation ${delegation.id} issued by ${delegation.issuerDid} but parent subject is ${previousDelegation.subjectDid}`,
-      };
-    }
-
-    // Only the parent's delegate may re-delegate. Without this, anyone could
-    // sign a child that merely claims the parent's subject as its issuer.
-    if (signerDid !== previousDelegation.subjectDid) {
-      return {
-        valid: false,
-        reason: `Delegation ${delegation.id} is signed by ${signerDid ?? "an unidentified issuer"} but parent subject is ${previousDelegation.subjectDid}`,
-      };
     }
 
     const scopeValidation = validateScopeAttenuation(previousCredential, credential);
@@ -516,7 +479,6 @@ export async function validateDelegationChain(
     }
     warnings.push(...attenuationWarnings(previousCredential, credential));
 
-    previousDelegation = delegation;
     previousCredential = credential;
   }
 

@@ -43,7 +43,7 @@ describe("CheqdStatusListResolver holds a list to its trusted issuer and to that
   const check = (key: AgentIdentity, pinned = ACME) => {
     const { entry, list } = signedWith.get(key)!;
     const fetchProvider = {
-      fetch: async () => ({ ok: true, status: 200, json: async () => list }) as unknown as Response,
+      fetch: async () => new Response(JSON.stringify(list)),
     } as unknown as FetchProvider;
     return new CheqdStatusListResolver({
       fetchProvider,

@@ -78,10 +78,13 @@ const serving = (document: DIDDocument) => {
   };
 };
 
-/** The delegation gate of a server that trusts Acme as a root issuer and resolves its DID by `resolution`. */
+/**
+ * The delegation gate of a server that trusts `trustedRootIssuers` (Acme alone, unless a test says
+ * otherwise) as root issuers and resolves their DIDs by `resolution`.
+ */
 const acmeGate = (
   resolution: Resolution = resolving(acmeDocument(login, assert)),
-  options: Omit<GateOptions, 'trustedRootIssuers' | 'resolution'> = {},
+  options: Partial<Omit<GateOptions, 'resolution'>> = {},
 ) => delegationGate({ trustedRootIssuers: [ACME], resolution, ...options });
 
 describe('the delegation gate and the key that signed the delegation', () => {
@@ -91,6 +94,23 @@ describe('the delegation gate and the key that signed the delegation', () => {
     expect(await gate.call(await signedJwt(assert, { kid: assert.kid }))).toBe('ran');
     expect(await gate.call(await signedJwt(assert))).toBe('ran');
     expect(gate.runs()).toBe(3);
+  });
+
+  it('proves its refusal of an untrusted root without resolving any DID, for either wire form', async () => {
+    const outsider = await keyOf('did:web:outsider.example', 'key');
+    const asked: string[] = [];
+    const gate = await acmeGate({ didResolver: { resolve: async (did: string) => {
+      asked.push(did);
+      return acmeDocument(login, assert);
+    } } });
+    for (const input of [await signedCredential(outsider), await signedJwt(outsider, { kid: outsider.kid })]) {
+      expect(await gate.inSession(input)).toEqual({
+        outcome: 'delegation_invalid', reason: expect.stringContaining('not a trusted root issuer'),
+        proved: true, verified: true,
+      });
+    }
+    expect(asked).toEqual([]);
+    expect(gate.runs()).toBe(0);
   });
 
   it('refuses a delegation signed with the key Acme lists only under authentication', async () => {
@@ -115,44 +135,78 @@ describe('the delegation gate and the key that signed the delegation', () => {
     }
   });
 
-  it('finds an explicitly named key after 100,000 references, and refuses a dangling default', async () => {
-    // End to end through the gate's own did:web resolver: 100,000 references to methods the document
-    // does not define, listed under assertionMethod before the issuing key, which the document also
-    // publishes first under an id no relationship lists. How the lookup's time grows is tested beside
-    // it (src/delegation/__tests__/verification-relationship-scaling.test.ts).
+  it('finds an explicitly named key after 8,000 references, and refuses a dangling default', async () => {
+    // End to end through the gate's own did:web resolver: 8,000 references to methods the document
+    // does not define, near the 8,192 entries the resolver reads, listed under assertionMethod before
+    // the issuing key, which the document also publishes first under an id no relationship lists. How
+    // the lookup's time grows is tested beside it
+    // (src/delegation/__tests__/verification-relationship-scaling.test.ts).
     const large: DIDDocument = {
       ...acmeDocument(login, assert),
       verificationMethod: [{ ...methodOf(assert), id: `${ACME}#unlisted` }, methodOf(login), methodOf(assert)],
-      assertionMethod: [...Array.from({ length: 100_000 }, (_, i) => `#absent-${i}`), assert.kid],
+      assertionMethod: [...Array.from({ length: 8_000 }, (_, i) => `#absent-${i}`), assert.kid],
     };
     const gate = await acmeGate(serving(large));
     const delegations = [await signedCredential(assert), await signedJwt(assert, { kid: assert.kid }), await signedJwt(assert)];
     for (const delegation of delegations.slice(0, 2)) expect(await gate.call(delegation)).toBe('ran');
     expect(await gate.inSession(delegations[2])).toMatchObject({ outcome: 'delegation_invalid', proved: true, verified: true });
     expect(gate.runs()).toBe(2);
+  });
+
+  it("refuses a delegation when its issuer's resolved document is over 1 MiB, though it lists the key, on either path", async () => {
+    const gate = await acmeGate(resolving({ ...acmeDocument(login, assert), padding: 'x'.repeat(1_048_576) } as DIDDocument));
+    const credential = await signedCredential(assert);
+    const reason = `Could not resolve issuer DID: "${ACME}"`;
+    const refusals: [unknown, string][] = [
+      [credential, `Delegation ${credential.credentialSubject.delegation.id} invalid: ${reason}`],
+      [await signedJwt(assert, { kid: assert.kid }), reason],
+    ];
+    for (const [delegation, refusal] of refusals) {
+      expect(await gate.inSession(delegation)).toEqual({ outcome: 'delegation_invalid', reason: refusal, proved: true, verified: true });
+    }
+    expect(gate.runs()).toBe(0);
+  });
+
+  it('refuses oversized fetched documents on every key-selection path', async () => {
+    // 2,473,321 bytes of JSON: 5,000 more methods, and 100,000 references to methods the document does
+    // not define listed under assertionMethod before the issuing key. A lookup that scans the methods
+    // for each reference holds the event loop for seconds on every delegation. The document is more than
+    // the 1 MiB the gate's did:web resolver reads, so it is refused before it is parsed.
+    const large: DIDDocument = {
+      ...acmeDocument(login, assert),
+      verificationMethod: [
+        ...Array.from({ length: 5_000 }, (_, i) => ({ ...methodOf(assert), id: `#filler-${i}` })),
+        methodOf(login),
+        methodOf(assert),
+      ],
+      assertionMethod: [...Array.from({ length: 100_000 }, (_, i) => `#absent-${i}`), assert.kid],
+    };
+    const gate = await acmeGate(serving(large));
+    const delegations = [await signedCredential(assert), await signedJwt(assert, { kid: assert.kid }), await signedJwt(assert)];
+    for (const delegation of delegations) expect(await gate.inSession(delegation)).toMatchObject({ outcome: 'delegation_invalid', proved: true, verified: true });
+    expect(gate.runs()).toBe(0);
   }, 180_000);
 
   it('refuses a 400,000-character DID whose document lists 60,000 references, on either path', async () => {
     // 940,029 bytes of JSON, which whoever holds the DID's host serves: 60,000 references to methods
     // the document does not define, listed under assertionMethod. A lookup that builds the absolute
     // id of each reference compares, hashes or copies 400,000 characters for each, and holds the
-    // event loop for seconds on every delegation that names the DID, signed or not.
+    // event loop for seconds on every delegation that names the DID, signed or not. The DID is longer
+    // than the 2,048 units the gate resolves, so it is refused before its document is fetched.
     const did = `did:web:long.example:${'a'.repeat(400_000 - 'did:web:long.example:'.length)}`;
     const key = await keyOf(did, 'key-1');
     const references = Array.from({ length: 60_000 }, (_, i) => `#${String(i).padStart(5, '0')}`);
-    const gate = await acmeGate(serving({ id: did, assertionMethod: references } as DIDDocument));
+    const gate = await acmeGate(serving({ id: did, assertionMethod: references } as DIDDocument), { trustedRootIssuers: [did] });
     const credential = await signedCredential(key);
     const quoted = `"${did.slice(0, 64)}"...`;
     const refusals: [unknown, string][] = [
-      [
-        credential,
-        `Delegation ${credential.credentialSubject.delegation.id} invalid: Verification method ${quoted} not found under assertionMethod of ${quoted}`,
-      ],
-      [await signedJwt(key), `JWT kid is absent, and assertionMethod of ${quoted} has no usable first entry`],
+      [credential, `Delegation ${credential.credentialSubject.delegation.id} invalid: Could not resolve issuer DID: ${quoted}`],
+      [await signedJwt(key), `Could not resolve issuer DID: ${quoted}`],
     ];
     for (const [delegation, reason] of refusals) {
-      expect(await gate.reasoned(delegation)).toEqual({ outcome: 'delegation_invalid', reason });
+      expect(await gate.inSession(delegation)).toEqual({ outcome: 'delegation_invalid', reason, proved: true, verified: true });
     }
+    expect(gate.runs()).toBe(0);
   }, 180_000);
 
   it('signs its refusal when the reason cuts a long purpose or kid, wherever the cut falls', async () => {

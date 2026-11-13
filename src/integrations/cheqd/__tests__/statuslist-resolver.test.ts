@@ -51,11 +51,9 @@ describe('CheqdStatusListResolver (real crypto, stubbed transport)', () => {
       const body = serveOverride
         ? serveOverride()
         : await setup.storage.getStatusList(url);
-      return {
-        ok: serveStatus === 200 && body != null,
+      return new Response(JSON.stringify(body ?? null), {
         status: body == null && serveStatus === 200 ? 404 : serveStatus,
-        json: async () => body,
-      } as unknown as Response;
+      });
     },
   } as unknown as FetchProvider;
 

@@ -35,7 +35,7 @@ describe('CheqdStatusListResolver and the verification relationship of the list 
 
   const fetchProvider = {
     async fetch() {
-      return { ok: true, status: 200, json: async () => served } as unknown as Response;
+      return new Response(JSON.stringify(served));
     },
   } as unknown as FetchProvider;
 
@@ -92,6 +92,11 @@ describe('CheqdStatusListResolver and the verification relationship of the list 
 
   it('reads a list signed with the key the issuer lists under assertionMethod', async () => {
     expect(await check(issuerDocument(), assert)).toBe(true);
+  });
+
+  it("rejects a list when the issuer's document lists the key but is over 1 MiB", async () => {
+    const padded = { ...issuerDocument(), padding: 'x'.repeat(1_048_576) } as DIDDocument;
+    await expect(check(padded, assert)).rejects.toThrow(`Could not resolve issuer DID ${ISSUER}`);
   });
 
   it('rejects a list signed with the key the issuer lists only under authentication', async () => {
@@ -185,12 +190,16 @@ describe('CheqdStatusListResolver and the verification relationship of the list 
     for (const proof of [undefined, unnamed]) await expect(check(document, assert, proof)).rejects.toThrow(refusalFor(proof));
   });
 
-  it('quotes at most 64 characters of the verification method a proof names', async () => {
-    const verificationMethod = `${ISSUER}#${'k'.repeat(100_000)}`;
+  it('quotes at most 64 characters of the verification method a proof names, and resolves nothing for one over 4,096', async () => {
+    const verificationMethod = `${ISSUER}#${'k'.repeat(1_000)}`;
     await expect(check(issuerDocument(), assert, (proof) => ({ ...proof, verificationMethod }))).rejects.toThrow(
       new Error(
         `Verification method "${verificationMethod.slice(0, 64)}"... not found under assertionMethod of "${ISSUER}"`,
       ),
+    );
+    const over = `${ISSUER}#${'k'.repeat(100_000)}`;
+    await expect(check(issuerDocument(), assert, (proof) => ({ ...proof, verificationMethod: over }))).rejects.toThrow(
+      new Error(`Could not resolve issuer DID ${ISSUER}`),
     );
   });
 

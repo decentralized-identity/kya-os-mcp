@@ -18,11 +18,11 @@ import {
   type RealStatusListSetup,
 } from '../../../__tests__/audit/helpers/crypto-helpers.js';
 import { createDidKeyResolver } from '../../../delegation/did-key-resolver.js';
-import { DelegationCredentialIssuer } from '../../../delegation/vc-issuer.js';
 import { DelegationCredentialVerifier, type StatusListResolver } from '../../../delegation/vc-verifier.js';
 import { canonicalizeJSON } from '../../../delegation/utils.js';
 import { statusListGzipCodec } from '../../../utils/statuslist-gzip.js';
 import type { AgentIdentity, FetchProvider } from '../../../providers/base.js';
+import { delegationRecord, signedCredential } from '../../../__tests__/utils/delegation-credentials.js';
 import type { NodeCryptoProvider } from '../../../__tests__/utils/node-crypto-provider.js';
 import type { CredentialStatus } from '../../../types/protocol.js';
 
@@ -353,22 +353,14 @@ describe('CheqdStatusListResolver and the status-list acceptance rule', () => {
   describe('through DelegationCredentialVerifier', () => {
     /** A delegation credential issued and signed by `by`, whose status is `status`. */
     const credentialOf = (by: AgentIdentity, status: CredentialStatus) =>
-      new DelegationCredentialIssuer(
-        { getDid: () => by.did, getKeyId: () => by.kid, getPrivateKey: () => by.privateKey },
-        createRealSigningFunction(crypto, by),
-      ).issueDelegationCredential(
-        {
+      signedCredential(by, {
+        record: delegationRecord(by.did, {
           id: 'del-status-pin',
-          issuerDid: by.did,
-          subjectDid: 'did:web:agent.example',
           vcId: 'urn:uuid:status-pin',
           constraints: { scopes: ['tools:read'] },
-          signature: '',
-          status: 'active',
-          createdAt: Date.now(),
-        },
-        { credentialStatus: status },
-      );
+        }),
+        credentialStatus: status,
+      });
 
     const verify = async (by: AgentIdentity, status: CredentialStatus) =>
       new DelegationCredentialVerifier({

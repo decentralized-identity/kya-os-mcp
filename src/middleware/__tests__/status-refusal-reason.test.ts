@@ -11,13 +11,9 @@ import { describe, it, expect } from 'vitest';
 import type { KyaOsToolHandler } from '../with-kya-os.js';
 import { CheqdStatusListResolver } from '../../integrations/cheqd/statuslist-resolver.js';
 import { createDidKeyResolver } from '../../delegation/did-key-resolver.js';
-import { DelegationCredentialIssuer } from '../../delegation/vc-issuer.js';
 import { statusListGzipCodec } from '../../utils/statuslist-gzip.js';
-import {
-  createRealIdentity,
-  createRealSigningFunction,
-  createRealStatusListManager,
-} from '../../__tests__/audit/helpers/crypto-helpers.js';
+import { createRealIdentity, createRealStatusListManager } from '../../__tests__/audit/helpers/crypto-helpers.js';
+import { delegationRecord, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 import type { FetchProvider } from '../../providers/base.js';
 import { createMiddleware, crypto, handshake, proofOf, served, verifyReceived } from './helpers/received-proof.js';
 
@@ -53,18 +49,15 @@ async function refusing(change: (list: Record<string, unknown>) => Record<string
   const sessionId = await handshake(kyaos);
   const grantor = await createRealIdentity(crypto);
   const agent = await createRealIdentity(crypto);
-  const delegation = await new DelegationCredentialIssuer(
-    { getDid: () => grantor.did, getKeyId: () => grantor.kid, getPrivateKey: () => grantor.privateKey },
-    createRealSigningFunction(crypto, grantor),
-  ).createAndIssueDelegation(
-    {
+  const delegation = await signedCredential(grantor, {
+    record: delegationRecord(grantor.did, {
       id: 'del-1',
-      issuerDid: grantor.did,
       subjectDid: agent.did,
+      vcId: 'urn:uuid:del-1',
       constraints: { scopes: [SCOPE], notAfter: Math.floor(Date.now() / 1000) + 3600 },
-    },
-    { credentialStatus: entry },
-  );
+    }),
+    credentialStatus: entry,
+  });
   const sent = { path: '/secret', _kyaos_delegation: delegation };
   const result = (await kyaos.wrapWithDelegation('vault', CONSENT, ran)(sent, sessionId)) as Record<string, unknown>;
   return { result, signer: kyaos.identity.did, sent, statusIssuer: statusIssuer.did, url: entry.statusListCredential };

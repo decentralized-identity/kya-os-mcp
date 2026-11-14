@@ -8,6 +8,7 @@ import {
   type DelegationVCVerificationResult,
 } from "../vc-verifier.js";
 import type { DelegationCredential } from "../../types/protocol.js";
+import { issuerDidDocument } from "../../__tests__/utils/did-documents.js";
 
 // Mock the protocol functions (preserving all other exports)
 vi.mock("../../types/protocol.js", async (importOriginal) => {
@@ -60,6 +61,14 @@ describe("DelegationCredentialVerifier", () => {
       isDelegationCredentialExpired,
       isDelegationCredentialNotYetValid,
     };
+  };
+
+  /** The issuer's key, which its DID document lists under assertionMethod. */
+  const ISSUER_KEY = {
+    id: "did:web:example.com:issuer#key-1",
+    type: "Ed25519VerificationKey2020",
+    controller: "did:web:example.com:issuer",
+    publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
   };
 
   const mockValidVC: DelegationCredential = {
@@ -185,7 +194,7 @@ describe("DelegationCredentialVerifier", () => {
       const result = await verifier.verifyDelegationCredential(revokedVC);
 
       expect(result.valid).toBe(false);
-      expect(result.reason).toBe("Delegation status is revoked");
+      expect(result.reason).toBe('Delegation status is "revoked"');
       expect(result.stage).toBe("basic");
     });
 
@@ -205,7 +214,7 @@ describe("DelegationCredentialVerifier", () => {
       const result = await verifier.verifyDelegationCredential(expiredVC);
 
       expect(result.valid).toBe(false);
-      expect(result.reason).toBe("Delegation status is expired");
+      expect(result.reason).toBe('Delegation status is "expired"');
       expect(result.stage).toBe("basic");
     });
 
@@ -336,8 +345,8 @@ describe("DelegationCredentialVerifier", () => {
 
       expect(result.valid).toBe(false);
       expect(result.stage).toBe("basic");
-      expect(result.reason).toMatch(/non-delegation field/i);
-      expect(result.reason).toContain("alumniOf");
+      expect(result.reason).toBe('credentialSubject contains non-delegation field(s): "alumniOf". ' +
+        "A DelegationCredential subject MUST carry only 'id' and 'delegation' (KYA-OS §11.6).");
     });
 
     it("accepts a well-formed subject carrying only id and delegation", async () => {
@@ -393,7 +402,7 @@ describe("DelegationCredentialVerifier", () => {
 
       expect(result.valid).toBe(false);
       expect(result.reason).toBe(
-        "Could not resolve issuer DID: did:web:example.com:issuer"
+        'Could not resolve issuer DID: "did:web:example.com:issuer"'
       );
       expect(result.stage).toBe("signature");
       expect(result.checks?.signatureValid).toBe(false);
@@ -410,24 +419,14 @@ describe("DelegationCredentialVerifier", () => {
 
       expect(result.valid).toBe(false);
       expect(result.reason).toBe(
-        "Verification method did:web:example.com:issuer#key-1 not found"
+        'Verification method "did:web:example.com:issuer#key-1" not found under assertionMethod of "did:web:example.com:issuer"'
       );
       expect(result.checks?.signatureValid).toBe(false);
     });
 
     it("should fail when verification method missing public key", async () => {
       await setupDefaultContractsMocks();
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            // Missing publicKeyJwk
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument({ ...ISSUER_KEY, publicKeyJwk: undefined }));
 
       const result = await verifier.verifyDelegationCredential(mockValidVC);
 
@@ -440,17 +439,7 @@ describe("DelegationCredentialVerifier", () => {
 
     it("should succeed when signature verification passes", async () => {
       await setupDefaultContractsMocks();
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
 
       mockSignatureVerifier.mockResolvedValue({ valid: true });
       mockStatusListResolver.checkStatus.mockResolvedValue(false);
@@ -466,17 +455,7 @@ describe("DelegationCredentialVerifier", () => {
 
     it("should fail when signature verification fails", async () => {
       await setupDefaultContractsMocks();
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
 
       mockSignatureVerifier.mockResolvedValue({
         valid: false,
@@ -498,17 +477,7 @@ describe("DelegationCredentialVerifier", () => {
       const vcWithoutStatus = { ...mockValidVC };
       delete vcWithoutStatus.credentialStatus;
 
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: true });
       mockStatusListResolver.checkStatus.mockResolvedValue(true); // Revoked - should not be called
 
@@ -529,17 +498,7 @@ describe("DelegationCredentialVerifier", () => {
       const vcWithoutStatus = { ...mockValidVC };
       delete vcWithoutStatus.credentialStatus;
 
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: true });
 
       const result = await verifier.verifyDelegationCredential(vcWithoutStatus);
@@ -568,17 +527,7 @@ describe("DelegationCredentialVerifier", () => {
         },
       };
 
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: true });
 
       const result =
@@ -602,17 +551,7 @@ describe("DelegationCredentialVerifier", () => {
         },
       };
 
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: true });
       mockStatusListResolver.checkStatus.mockResolvedValue(true); // Revoked
 
@@ -620,7 +559,7 @@ describe("DelegationCredentialVerifier", () => {
 
       expect(result.valid).toBe(false);
       expect(result.reason).toBe(
-        "Credential revoked via StatusList2021Entry (revocation)"
+        'Credential revoked via "StatusList2021Entry" ("revocation")'
       );
       expect(result.stage).toBe("status");
       expect(result.checks?.statusValid).toBe(false);
@@ -639,17 +578,7 @@ describe("DelegationCredentialVerifier", () => {
         },
       };
 
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: true });
       mockStatusListResolver.checkStatus.mockResolvedValue(false); // Not revoked
 
@@ -663,17 +592,7 @@ describe("DelegationCredentialVerifier", () => {
   describe("verifyDelegationCredential - Caching", () => {
     it("serves the signature from cache while status stays live", async () => {
       await setupDefaultContractsMocks();
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: true });
       mockStatusListResolver.checkStatus.mockResolvedValue(false);
 
@@ -702,17 +621,7 @@ describe("DelegationCredentialVerifier", () => {
           statusListCredential: "https://example.com/status/1",
         },
       };
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: true });
       mockStatusListResolver.checkStatus.mockResolvedValue(false); // live
 
@@ -733,17 +642,7 @@ describe("DelegationCredentialVerifier", () => {
 
     it("honors expiry on a warm signature cache (DI path no longer skips basic checks on a hit)", async () => {
       const contractsMock = await setupDefaultContractsMocks();
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: true });
 
       const first = await verifier.verifyDelegationCredential(mockValidVC);
@@ -767,17 +666,7 @@ describe("DelegationCredentialVerifier", () => {
         signatureVerifier: mockSignatureVerifier,
         cacheTtl: 0,
       });
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: true });
 
       const first = await uncached.verifyDelegationCredential(mockValidVC);
@@ -805,34 +694,14 @@ describe("DelegationCredentialVerifier", () => {
     it("should skip cache when skipCache is true", async () => {
       await setupDefaultContractsMocks();
       // First call
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: true });
       mockStatusListResolver.checkStatus.mockResolvedValue(false);
 
       await verifier.verifyDelegationCredential(mockValidVC);
 
       // Second call with skipCache
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: false }); // Different result
       mockStatusListResolver.checkStatus.mockResolvedValue(false);
 
@@ -854,17 +723,7 @@ describe("DelegationCredentialVerifier", () => {
 
       // Reset for second call
       contractsMock.isDelegationCredentialExpired.mockReturnValue(false);
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: true });
       mockStatusListResolver.checkStatus.mockResolvedValue(false);
 
@@ -876,15 +735,7 @@ describe("DelegationCredentialVerifier", () => {
 
     it('does not reuse a cached result for different credential bytes sharing an id', async () => {
       await setupDefaultContractsMocks();
-      mockDidResolver.resolve.mockResolvedValue({
-        id: 'did:web:example.com:issuer',
-        verificationMethod: [{
-          id: 'did:web:example.com:issuer#key-1',
-          type: 'Ed25519VerificationKey2020',
-          controller: 'did:web:example.com:issuer',
-          publicKeyJwk: { kty: 'OKP', crv: 'Ed25519', x: 'mock-key' },
-        }],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValueOnce({ valid: true });
       expect((await verifier.verifyDelegationCredential(mockValidVC)).valid).toBe(true);
 
@@ -905,15 +756,7 @@ describe("DelegationCredentialVerifier", () => {
         skipSignature: true,
       })).valid).toBe(true);
 
-      mockDidResolver.resolve.mockResolvedValue({
-        id: 'did:web:example.com:issuer',
-        verificationMethod: [{
-          id: 'did:web:example.com:issuer#key-1',
-          type: 'Ed25519VerificationKey2020',
-          controller: 'did:web:example.com:issuer',
-          publicKeyJwk: { kty: 'OKP', crv: 'Ed25519', x: 'mock-key' },
-        }],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: false, reason: 'invalid signature' });
       const strict = await verifier.verifyDelegationCredential(mockValidVC);
       expect(strict.valid).toBe(false);
@@ -932,17 +775,7 @@ describe("DelegationCredentialVerifier", () => {
         },
       };
 
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: true });
       mockStatusListResolver.checkStatus.mockResolvedValue(false);
 
@@ -988,17 +821,7 @@ describe("DelegationCredentialVerifier", () => {
         cacheTtl: 10,
       });
 
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: true });
       mockStatusListResolver.checkStatus.mockResolvedValue(false);
 
@@ -1027,17 +850,7 @@ describe("DelegationCredentialVerifier", () => {
     it("should clear all cache entries", async () => {
       await setupDefaultContractsMocks();
       // Add to cache
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: true });
       mockStatusListResolver.checkStatus.mockResolvedValue(false);
 
@@ -1047,17 +860,7 @@ describe("DelegationCredentialVerifier", () => {
       verifier.clearCache();
 
       // Next call should verify again
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: false }); // Different result
 
       const result = await verifier.verifyDelegationCredential(mockValidVC);
@@ -1068,17 +871,7 @@ describe("DelegationCredentialVerifier", () => {
     it("should clear specific cache entry", async () => {
       await setupDefaultContractsMocks();
       // Add to cache
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: true });
       mockStatusListResolver.checkStatus.mockResolvedValue(false);
 
@@ -1088,17 +881,7 @@ describe("DelegationCredentialVerifier", () => {
       verifier.clearCacheEntry("urn:delegation:123");
 
       // Next call should verify again
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: false });
 
       const result = await verifier.verifyDelegationCredential(mockValidVC);
@@ -1110,17 +893,7 @@ describe("DelegationCredentialVerifier", () => {
   describe("performance metrics", () => {
     it("should include timing metrics in results", async () => {
       await setupDefaultContractsMocks();
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: true });
       mockStatusListResolver.checkStatus.mockResolvedValue(false);
 
@@ -1171,17 +944,7 @@ describe("DelegationCredentialVerifier", () => {
         },
       };
 
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: true });
       mockStatusListResolver.checkStatus.mockRejectedValue(
         new Error("Status list unavailable")
@@ -1197,17 +960,7 @@ describe("DelegationCredentialVerifier", () => {
 
     it("should handle signature verifier errors gracefully", async () => {
       await setupDefaultContractsMocks();
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
 
       mockSignatureVerifier.mockRejectedValue(
         new Error("Signature algorithm unsupported")
@@ -1227,23 +980,11 @@ describe("DelegationCredentialVerifier", () => {
     // This is a private method, but we can test it indirectly through the main verification flow
     it("should find verification method by ID", async () => {
       await setupDefaultContractsMocks();
-      const didDoc = {
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-          {
-            id: "did:web:example.com:issuer#key-2",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "other-key" },
-          },
-        ],
-      };
+      const didDoc = issuerDidDocument(ISSUER_KEY, {
+        ...ISSUER_KEY,
+        id: "did:web:example.com:issuer#key-2",
+        publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "other-key" },
+      });
 
       mockDidResolver.resolve.mockResolvedValue(didDoc);
       mockSignatureVerifier.mockResolvedValue({ valid: true });
@@ -1274,17 +1015,7 @@ describe("DelegationCredentialVerifier", () => {
       },
     };
 
-    const validDidDoc = {
-      id: "did:web:example.com:issuer",
-      verificationMethod: [
-        {
-          id: "did:web:example.com:issuer#key-1",
-          type: "Ed25519VerificationKey2020",
-          controller: "did:web:example.com:issuer",
-          publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-        },
-      ],
-    };
+    const validDidDoc = issuerDidDocument(ISSUER_KEY);
 
     it("labels a resolver that THROWS as status_unresolvable (still denies)", async () => {
       await setupDefaultContractsMocks();
@@ -1358,17 +1089,7 @@ describe("DelegationCredentialVerifier", () => {
         },
       };
 
-      mockDidResolver.resolve.mockResolvedValue({
-        id: "did:web:example.com:issuer",
-        verificationMethod: [
-          {
-            id: "did:web:example.com:issuer#key-1",
-            type: "Ed25519VerificationKey2020",
-            controller: "did:web:example.com:issuer",
-            publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
-          },
-        ],
-      });
+      mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: true });
 
       // Simulate StatusList2021Manager.checkStatus throwing on missing storage

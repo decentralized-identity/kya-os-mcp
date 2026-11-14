@@ -1,0 +1,47 @@
+kind: Upgrading
+body: |-
+    **A delegation credential, status list or delegation hop must be signed
+    with a key its issuer's DID document lists under `assertionMethod`.**
+    did:key documents, did:web documents built with `buildDidWebDocument`
+    and every signer in this package already comply. Before verifiers
+    upgrade, an issuer whose documents or credentials do not (SPEC.md §6.2,
+    §11.5) must:
+    - list each signing key under `assertionMethod` of its own DID
+      document, by reference or embedded, in a method defined once, with
+      an id under its DID, a `type`, and its DID as `controller`; a
+      did:cheqd document made with `@cheqd/sdk` before 5.3.3 lists keys
+      only under `authentication`, and the cheqd integration's README
+      shows the DID update that fixes it;
+    - set each proof's `proofPurpose` to `assertionMethod`. Only the
+      legacy proof profile in SPEC.md §6.2 permits an omitted purpose;
+      the Card `eddsa-jcs-2022` profile requires it explicitly;
+    - name itself, in `issuer`, an issuer object's `id` and a VC-JWT's
+      `iss`, by a URL with no white space at either end and no control or
+      format character, U+2028, U+2029 or lone surrogate anywhere;
+    - name the signing key with a non-empty `kid` or
+      `proof.verificationMethod`. A VC-JWT with no `kid`, or a status list
+      read by `CheqdStatusListResolver` with no `verificationMethod`, is
+      checked only with the first `assertionMethod` entry. Card
+      `eddsa-jcs-2022` proofs must name their key;
+    - issue no delegation holding a value RFC 8785 cannot encode, which
+      the delegation gate refuses as `delegation_invalid`.
+
+    These reasons changed. `"<v>"` quotes a value as a JSON string of at
+    most its first 64 characters, with `...` after it when cut and control
+    and hidden characters, quote marks, backslashes and lone surrogates
+    escaped; a value that is not a string reads `of type <type>`.
+
+    | 1.22.0 | Now |
+    | --- | --- |
+    | `Verification method <id> not found`, `Verification method <kid> not found in DID Document`, `Issuer DID document has no verification method matching "<id>"` | `Verification method "<id>" not found under assertionMethod of "<issuer>"` |
+    | `DID Document has no verification method`, `Issuer DID document has no verification method matching "(any)"` | `JWT kid is absent, and assertionMethod of "<issuer>" has no usable first entry`, or the same starting `Status list proof verificationMethod is absent` |
+    | `Proof missing verificationMethod` for `""`, `null` or `0`, `Verification method 42 not found`; an empty `kid`, or a list `verificationMethod` that is empty or not a string, read as none | `Proof verificationMethod "<v>" is not a DID URL`, `JWT kid "" is not a DID URL`, `Status list proof verificationMethod "<v>" is not a DID URL` |
+    | none: the key verified | `Verification method "<id>" under assertionMethod of "<issuer>" has another DID as its controller: "<did>"`, or `as its document's id: "<did>"` |
+    | none: the proof verified | `Proof purpose "<v>" is not assertionMethod` |
+    | `Could not resolve issuer DID: <issuer>`; for a VC-JWT `iss` that is not a string, ``Credential `issuer` does not match the JWT `iss` (the verified signer)`` | `Credential issuer "<v>" is not a URL`, `Credential issuer id "<v>" is not a URL`, `JWT iss "<v>" is not a URL` |
+    | a `TypeError`, or the tool ran | `Delegation credential holds a value that cannot be encoded as RFC 8785 text` |
+    | `Delegation status is revoked`, `Unsupported credential proof.type: <type>`, `Could not resolve issuer DID: <issuer>`, `Could not resolve issuer DID <issuer>: <error>`, `Credential revoked via <type> (<purpose>)`, `credentialSubject contains non-delegation field(s): <a>, <b>`, `Status list fetch failed: HTTP <status> for <url>`, `Revocation check failed for delegation <id>: <error>`, `Delegation <id> is revoked via ancestor <id>`, `Delegation <id> is revoked: <reason>` | the same with each value quoted, as in `Delegation status is "revoked"` and `credentialSubject contains non-delegation field(s): "<a>, <b>"` |
+    | `Status list issuer "<issuer>" is not the expected issuer "<issuer>"` and `status list statusPurpose mismatch`, values as written | the same with each value quoted |
+    | `status list has no statusPurpose (expected "<purpose>")`, an em dash and `fail-closed` | `status list has no statusPurpose (expected "<purpose>") - fail-closed` |
+    | the `<error>` or `<reason>` in `Status check error`, `Signature verification error`, `Could not resolve issuer DID`, `JWT envelope signature is not valid`, `Failed to resolve delegation chain`, `Revocation check failed` and `Delegation <id> is revoked`, as written | cut after 256 UTF-16 code units and marked with U+2026, with control and hidden characters and lone surrogates read as U+FFFD |
+time: 2026-11-12T14:05:01.000000-06:00

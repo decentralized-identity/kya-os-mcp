@@ -524,21 +524,37 @@ verifier checks, exactly this:
 - **Signature.** Ed25519 (RFC 8032), 64 bytes.
 - **`proofValue`.** The signature as base64url without padding (86 characters),
   with no multibase prefix.
-- **Key.** The verification method in the issuer's DID document whose `id`
-  equals `proof.verificationMethod`.
+- **Key.** The verification method `proof.verificationMethod` names, as an absolute DID URL of the issuer or a `#fragment` read against the issuer's DID.
+  The issuer's DID document, whose `id` MUST be the issuer's DID, MUST list that method under `assertionMethod`, by reference or embedded (W3C Controlled Identifiers v1.0 [CID] §3.3).
+  The method MUST be a conforming verification method, whose `id`, `type` and `controller` are non-empty strings (CID §3.3 step 8), and its `controller` MUST be the issuer's DID (step 10), so a document cannot list as the issuer's a key that another DID controls.
+  A key the document lists only under another verification relationship, such as `authentication`, or under none, does not verify a credential: a key kept for signing in, perhaps on a less protected device, is not thereby one that issues the issuer's credentials.
+  The method is looked for only among those in `verificationMethod` and those `assertionMethod` embeds, never among those another relationship embeds.
+  If more than one of them has the method's id, written as an absolute DID URL of the issuer or a `#fragment`, the id names no method, whether or not each of them conforms or names the issuer as its `controller`, and a verifier MUST NOT verify the credential with any of them.
 - **`proof.type`.** Issuers set `Ed25519Signature2020`. A verifier MAY also
   accept `DataIntegrityProof` for the same construction, and MUST reject any
   other `proof.type`.
 
-The other `proof` members (`type`, `created`, `verificationMethod`,
-`proofPurpose`) are not covered by the signature; a verifier uses
-`verificationMethod` only to select the key. The `StatusList2021Credential` of
-§6.6 is signed the same way. The delegation credentials in the
-`delegation-chain` and `status-list` conformance vectors, and the status
-lists in the `status-list` vectors, carry this construction. Whether 2.0
-moves this profile to a standard cryptosuite is tracked in [#184](https://github.com/decentralized-identity/kya-os-mcp/issues/184).
-The §6.10 profile uses `DataIntegrityProof` with `eddsa-jcs-2022` and is not
-affected.
+The other `proof` members (`type`, `created`, `verificationMethod`, `proofPurpose`) are not covered by the signature; a verifier uses `verificationMethod` only to select the key.
+A credential is an assertion by its issuer, so a verifier MUST reject a proof that states a `proofPurpose` other than `assertionMethod`.
+A proof that states none is checked as one made for `assertionMethod`: the member is not signed, so it is the key's listing under `assertionMethod` that holds the proof to that purpose.
+The `StatusList2021Credential` of §6.6 is signed the same way.
+The delegation credentials in the `delegation-chain` and `status-list` conformance vectors, and the status lists in the `status-list` vectors, carry this construction.
+Whether 2.0 moves this profile to a standard cryptosuite is tracked in [#184](https://github.com/decentralized-identity/kya-os-mcp/issues/184).
+The §6.10 profile uses `DataIntegrityProof` with `eddsa-jcs-2022` and is not affected.
+
+**The VC-JWT form.** A delegation credential can also travel as a VC-JWT, as in the `KYA-OS-Delegation-Credential` header of §8.1, with the issuer's DID as `iss`.
+Its signature is checked with the key the JOSE header's `kid` names, read as `proof.verificationMethod` is above: an absolute DID URL of the issuer, or a `#fragment` read against the issuer's DID.
+The issuer's DID document MUST list that method under `assertionMethod`, as for the proof above.
+An issuer SHOULD set `kid`; [VC-JOSE-COSE] §4.1.1 requires it of the credentials it secures whenever the issuer's key is expressed as a DID URL.
+A `kid`, or a proof's `verificationMethod`, names a key only when it is a non-empty string.
+A verifier MUST reject a VC-JWT whose `kid` is present and is empty or not a string, and a credential or §6.6 status list whose proof's `verificationMethod` is present and is empty or not a string, and MUST NOT read such a name as naming no key.
+A verifier MUST check a VC-JWT that carries no `kid` only with a method the issuer's DID document lists under `assertionMethod`, and never with one it lists only elsewhere.
+It MAY try only the method that the first entry of `assertionMethod` names, under the rules for the proof's key above, and reject the VC-JWT when that entry names no method that meets them, without trying later entries.
+The reference implementation does so, and checks a §6.6 status list whose proof names no key the same way, so an issuer that omits the name is verified there only when its signing key is that first entry.
+
+**The issuer.** A credential's `issuer`, or the `id` of an issuer object, MUST be a URL, as [VC-DATA-MODEL-2.0] §4.7 requires and as every DID is, and so MUST a VC-JWT's `iss`.
+A verifier MUST reject one that the [URL] parser does not parse as it is written: one with white space at either end, or one holding a control character (Unicode general category Cc), a format character (Cf), U+2028, U+2029 or a lone surrogate anywhere.
+The parser removes some of these before it parses and accepts the others, most of which render as nothing or reorder the text around them, so an issuer holding one could be taken for another DID.
 
 A `DelegationCredential` carries a _permission_, not a _claim_. To keep claim
 semantics out of an authorization decision — a confused-deputy vector (§11.6) —
@@ -863,6 +879,10 @@ marks a credential of this profile.
 
 Per-hop signature verification (the `DataIntegrityProof`, `eddsa-jcs-2022`) is a SEPARATE injected
 concern; this profile specifies the attenuation + continuity recompute.
+Whichever verifier is injected, it MUST accept an `eddsa-jcs-2022` proof, on a hop or on a status list credential, only from a key that the signer's DID document lists under the verification relationship the proof's `proofPurpose` names: `assertionMethod` in this profile, by reference or embedded (W3C Controlled Identifiers v1.0 [CID] §3.3).
+The cryptosuite retrieves that key as CID §3.3 does, so its verification method MUST also be a conforming one (step 8) whose `controller` is the signer's DID (step 10).
+The method is looked for only among those in `verificationMethod` and those `assertionMethod` embeds, never among those another relationship embeds.
+If more than one of them has the method's id, written as an absolute DID URL of the signer or a `#fragment`, the id names no method, whether or not each of them conforms or names the signer as its `controller`, and a verifier MUST NOT verify the proof with any of them.
 
 **The delegate.** The delegate is `credentialSubject.invoker`, falling back to `credentialSubject.controller`; a
 capability MUST name one of them.
@@ -1533,6 +1553,9 @@ and the residual risk an operator carries.
 - did:key: Generate new DID (no rotation mechanism)
 - did:web: Update `did.json` with new verification method
 - Old keys SHOULD remain in `did.json` for proof verification
+- An old key SHOULD stay listed under `assertionMethod` while any delegation credential or status list it signed is still outstanding, since verifiers take a proof's key only from that relationship (§6.2, §6.6)
+- A new key verifies the issuer's delegation credentials and status lists only once the issuer's DID document lists it under `assertionMethod`, defined once, with an id under the issuer's DID and the issuer's DID as its `controller` (§6.2); list it there before signing with it
+- An issuer SHOULD name its key in every VC-JWT `kid` and proof `verificationMethod` it writes; a verifier may check a VC-JWT with no `kid`, or a status list whose proof names no key, with the first `assertionMethod` entry alone (§6.2), so while one is outstanding the key that signed it SHOULD stay that first entry
 - Delegation credentials reference specific key IDs; reissue after rotation
 - Key custody options include software-only (default), proxy-managed, and hardware-attested (TEE). See §11.0.
 
@@ -1810,7 +1833,10 @@ rules, and operational requirements are specified in [`AUDITABILITY.md`](./AUDIT
 
 - **[RFC 2119]** IETF. *Key words for use in RFCs to Indicate Requirement Levels*. https://datatracker.ietf.org/doc/html/rfc2119
 - **[DID-CORE]** W3C. *Decentralized Identifiers (DIDs) v1.0*. https://www.w3.org/TR/did-core/
+- **[CID]** W3C. *Controlled Identifiers v1.0*. https://www.w3.org/TR/cid-1.0/
 - **[VC-DATA-MODEL]** W3C. *Verifiable Credentials Data Model v1.1*. https://www.w3.org/TR/vc-data-model/
+- **[VC-DATA-MODEL-2.0]** W3C. *Verifiable Credentials Data Model v2.0*. https://www.w3.org/TR/vc-data-model-2.0/
+- **[URL]** WHATWG. *URL Standard*. https://url.spec.whatwg.org/
 - **[DID-KEY]** W3C CCG. *did:key Method Specification*. https://w3c-ccg.github.io/did-method-key/
 - **[DID-WEB]** W3C CCG. *did:web Method Specification*. https://w3c-ccg.github.io/did-method-web/
 - **[STATUS-LIST-2021]** W3C CCG. *Status List 2021*. https://w3c-ccg.github.io/vc-status-list-2021/
@@ -1822,6 +1848,7 @@ rules, and operational requirements are specified in [`AUDITABILITY.md`](./AUDIT
 ### Informative References
 
 - **[MCP]** Anthropic. *Model Context Protocol Specification*. https://spec.modelcontextprotocol.io/
+- **[VC-JOSE-COSE]** W3C. *Securing Verifiable Credentials using JOSE and COSE*. https://www.w3.org/TR/vc-jose-cose/
 - **[MULTICODEC]** Multiformats. *Multicodec Table*. https://github.com/multiformats/multicodec
 - **[MULTIBASE]** Multiformats. *Multibase Specification*. https://github.com/multiformats/multibase
 

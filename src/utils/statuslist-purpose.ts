@@ -4,6 +4,8 @@
  * manager (`src/delegation/statuslist-manager.ts`) enforce, so the two readers cannot drift.
  */
 
+import { describeValue } from './describe-value.js';
+
 /**
  * Fail CLOSED unless the resolved status list's `statusPurpose` is present AND equals `wanted`. A
  * list of a DIFFERENT kind (e.g. a `suspension` list read as `revocation`) must not be accepted —
@@ -11,9 +13,9 @@
  */
 export function assertStatusPurpose(listPurpose: unknown, wanted: string): void {
   if (typeof listPurpose !== 'string') {
-    throw new Error(`status list has no statusPurpose (expected "${wanted}") — fail-closed`);
+    throw new Error(`status list has no statusPurpose (expected ${describeValue(wanted)}) - fail-closed`);
   }
   if (listPurpose !== wanted) {
-    throw new Error(`status list statusPurpose mismatch: "${listPurpose}" ≠ "${wanted}"`);
+    throw new Error(`status list statusPurpose mismatch: ${describeValue(listPurpose)} ≠ ${describeValue(wanted)}`);
   }
 }

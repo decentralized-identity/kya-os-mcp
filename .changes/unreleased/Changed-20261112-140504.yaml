@@ -1,0 +1,8 @@
+kind: Changed
+body: |-
+    **The `DIDDocument` type lists all five verification relationships.**
+    It had `authentication` and `assertionMethod` only, and now also has
+    `keyAgreement`, `capabilityInvocation` and `capabilityDelegation`, each
+    optional and of the same shape: methods listed by id or embedded
+    (Controlled Identifiers v1.0 §2.3). Nothing changes at run time.
+time: 2026-11-12T14:05:04.000000-06:00

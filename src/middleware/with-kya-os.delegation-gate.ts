@@ -25,7 +25,6 @@ import type {
 import type { MiddlewareDeps, AttachOutcomeProof, RequireProofLayer } from "./with-kya-os.deps.js";
 import type { GrantResolution } from "./with-kya-os.grants.js";
 import { DEFAULT_APPROVALS_KEY, sanitizeForMessage, withoutControlArgs } from "./with-kya-os.helpers.js";
-import { canonicalizeJsonBytes } from "../utils/canonical-json.js";
 import type { Digest } from "../audit/types.js";
 import {
   type DelegationVerification,
@@ -84,7 +83,7 @@ export function createDelegationGate(
   const { attachOutcomeProof, requireProofLayer, resolveExistingGrant, bindGrantOnSuccess } =
     wiring;
   const {
-    verifyDelegation,
+    verifyDelegationForAudit,
     buildDelegationErrorResponse,
     buildNeedsAuthorizationChallenge,
   } = wiring.delegationVerification;
@@ -169,8 +168,9 @@ export function createDelegationGate(
       // Authenticate the presented delegation (object embedded-proof OR VC-JWT
       // string) and normalize it to a verified credential. verifyDelegation owns
       // the wire-form-specific signature checks — the gate never sets
-      // skipSignature itself, so a JWT envelope can't be silently skipped.
-      const check = await verifyDelegation(delegationArg);
+      // skipSignature itself, so a JWT envelope can't be silently skipped. The
+      // gate records the credential, so it also takes the bytes of its audit digest.
+      const check = await verifyDelegationForAudit(delegationArg);
       if (!check.valid) {
         try {
           await audit?.delegation('rejected', {
@@ -195,7 +195,7 @@ export function createDelegationGate(
           check.reason,
         );
       }
-      const { vc, isJwt } = check;
+      const { vc, isJwt, serializedCredential } = check;
 
       // Holder binding (spec §11.8): the delegation is valid, but a valid
       // *credential* is a bearer token until we also prove the caller holds the
@@ -294,9 +294,6 @@ export function createDelegationGate(
         );
       }
 
-      const serializedCredential = isJwt
-        ? new TextEncoder().encode(delegationArg as string)
-        : canonicalizeJsonBytes(vc);
       const credentialDigest = await cryptoProvider.hash(serializedCredential) as Digest;
       const delegationRef = vc.id ?? vc.credentialSubject.delegation.id;
       const actor = { kind: 'pairwise_did' as const, did: vc.credentialSubject.id };

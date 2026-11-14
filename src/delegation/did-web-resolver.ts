@@ -17,6 +17,7 @@ import { logger } from '../logging/index.js';
 import { base58Encode } from '../utils/base58.js';
 import { base64ToBytes } from '../utils/base64.js';
 import { publicKeyToJwk } from './did-key-resolver.js';
+import { hasIdTypeAndController } from './verification-method-shape.js';
 
 /**
  * Parsed components of a did:web DID
@@ -49,34 +50,10 @@ function isValidDIDDocument(value: unknown): value is DIDDocument {
 
     // Each verification method must have required fields
     for (const vm of doc['verificationMethod']) {
-      if (!isValidVerificationMethod(vm)) {
+      if (!hasIdTypeAndController(vm)) {
         return false;
       }
     }
-  }
-
-  return true;
-}
-
-/**
- * Type guard for checking if value is a valid VerificationMethod
- */
-function isValidVerificationMethod(value: unknown): value is VerificationMethod {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const vm = value as Record<string, unknown>;
-
-  // id, type, and controller are required strings
-  if (typeof vm['id'] !== 'string' || vm['id'].length === 0) {
-    return false;
-  }
-  if (typeof vm['type'] !== 'string' || vm['type'].length === 0) {
-    return false;
-  }
-  if (typeof vm['controller'] !== 'string' || vm['controller'].length === 0) {
-    return false;
   }
 
   return true;

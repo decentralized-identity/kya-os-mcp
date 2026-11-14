@@ -12,13 +12,11 @@
  *   run:  tsx conformance/card-vectors.ts   (npm run conformance:generate:card)
  */
 
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { buildCardProof, ed25519SignerFromJwk, type CardProofMeta } from '../src/card/index.js';
 import { KYA_OS_CARD_PROOF_META_KEY } from '../src/card/index.js';
-import { VECTORS_DIR } from './loader.js';
 import type { ConformanceVector, VectorFile } from './types.js';
+import { SUITE_VERSION, writeVectorFile } from './vector-files.js';
 import {
   AUDIENCE,
   DELEGATION_CHAIN,
@@ -146,7 +144,7 @@ export async function cardProofVectorFile(): Promise<VectorFile> {
     },
   ];
 
-  return { version: '1.2.0', category: 'card-proof', vectors };
+  return { version: SUITE_VERSION, category: 'card-proof', vectors };
 }
 
 export function entityCardVectorFile(): VectorFile {
@@ -181,7 +179,7 @@ export function entityCardVectorFile(): VectorFile {
       input: { card: GOLDEN_CARDS.agent, accountability: { ...accountability, proofDid: 'did:web:attacker.example' } },
     },
   ];
-  return { version: '1.2.0', category: 'entity-card', vectors };
+  return { version: SUITE_VERSION, category: 'entity-card', vectors };
 }
 
 /** A positive `entity-card` vector for a card that verifies with no injected seams. */
@@ -196,14 +194,9 @@ function passCard(entityType: string, card: unknown, reason: string): Conformanc
   };
 }
 
-function write(file: VectorFile, name: string): void {
-  writeFileSync(join(VECTORS_DIR, name), JSON.stringify(file, null, 2) + '\n', 'utf8');
-  console.log(`wrote ${name} (${file.vectors.length} vectors)`);
-}
-
 export async function generateCardVectors(): Promise<void> {
-  write(await cardProofVectorFile(), 'card-proof.json');
-  write(entityCardVectorFile(), 'entity-card.json');
+  writeVectorFile(await cardProofVectorFile(), 'card-proof.json');
+  writeVectorFile(entityCardVectorFile(), 'entity-card.json');
   console.log('Entity Card conformance vectors generated (deterministic).');
 }
 

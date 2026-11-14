@@ -1,0 +1,18 @@
+kind: Fixed
+body: |-
+    **The delegation gate sends a signed refusal for a delegation holding a
+    value RFC 8785 cannot encode**: a lone surrogate, an integer of
+    magnitude 2^53 or more, or a number beyond the double range. A
+    credential's Data Integrity `proof` is outside its signature, so anyone
+    holding a validly signed credential could put one there, and the gate
+    threw a `TypeError` and ran nothing. A VC-JWT holding one in a value the
+    gate hands on, its credential's, subject's or delegation's `id`, its
+    delegation's `controller`, `parentId` or `scopes`, or the `scopes` of
+    its `constraints`, could run the tool, or in some cases with an audit
+    store make the gate throw. The gate now checks all of a credential with
+    a Data Integrity proof, and those values of a VC-JWT, before holder
+    binding and scope, and refuses as `delegation_invalid`, with a response
+    proof in a session; a session grant whose credential holds one
+    authorizes no call.
+    The credential is never altered to make it encode.
+time: 2026-11-13T01:30:01.000000-06:00

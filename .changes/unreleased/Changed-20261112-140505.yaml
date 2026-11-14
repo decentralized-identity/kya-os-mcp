@@ -1,0 +1,14 @@
+kind: Changed
+body: |-
+    **A delegation credential's issuer must be a URL as it is written.** The
+    `basic` stage of `DelegationCredentialVerifier`, which
+    `prepareVcJwtCredential` runs for a VC-JWT, refuses an `issuer`, an
+    issuer object's `id` or a VC-JWT's `iss` that the WHATWG URL parser does
+    not parse, such as `acme` or `#key-1`, or that has white space at
+    either end or holds a control or format character, U+2028, U+2029 or a
+    lone surrogate anywhere (SPEC.md §6.2). Such a credential was refused
+    later, when its issuer did not resolve, unless a custom `DIDResolver`
+    resolved it. `credentialIssuerDid`, and every reader of a credential's
+    issuer in `DelegationCredentialVerifier` and `CheqdStatusListResolver`,
+    takes the `id` of an object only, never of an array.
+time: 2026-11-12T14:05:05.000000-06:00

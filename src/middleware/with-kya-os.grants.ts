@@ -63,7 +63,8 @@ export interface GrantResolution {
 
 export function createGrantResolution(
   deps: MiddlewareDeps,
-  verifyDelegation: DelegationVerification["verifyDelegation"],
+  // A grant hands on its credential's values as the gate does, so it refuses those the gate cannot encode.
+  verifyEncodableDelegation: DelegationVerification["verifyEncodableDelegation"],
 ): GrantResolution {
   const {
     identity,
@@ -108,7 +109,7 @@ export function createGrantResolution(
     const evidence = grant.credentialJwt ?? grant.delegationCredential;
     if (evidence === undefined) return undefined;
     try {
-      const check = await verifyDelegation(evidence);
+      const check = await verifyEncodableDelegation(evidence);
       if (!check.valid) return undefined;
       const subject = check.vc.credentialSubject;
       if (

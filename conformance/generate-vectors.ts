@@ -15,8 +15,7 @@
  * construction.
  */
 
-import { writeFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync } from 'node:fs';
 import { canonicalize } from 'json-canonicalize';
 import { CompactSign, importPKCS8 } from 'jose';
 import { NodeCryptoProvider } from '../src/providers/node-crypto.js';
@@ -39,7 +38,8 @@ import {
 } from '../src/index.js';
 import { extractPublicKeyFromDidKey, publicKeyToJwk } from '../src/delegation/did-key-resolver.js';
 import { VECTORS_DIR } from './loader.js';
-import { signVC } from './crypto-kit.js';
+import { ed25519VerificationMethod, signVC } from './crypto-kit.js';
+import { SUITE_VERSION, writeVectorFile } from './vector-files.js';
 import type {
   ConformanceVector,
   VectorFile,
@@ -66,11 +66,6 @@ function jwkFor(party: Party) {
   const raw = extractPublicKeyFromDidKey(party.did)!;
   const jwk = publicKeyToJwk(raw);
   return { ...jwk, kid: party.kid };
-}
-
-function writeFile(file: VectorFile, name: string): void {
-  writeFileSync(join(VECTORS_DIR, name), JSON.stringify(file, null, 2) + '\n', 'utf8');
-  console.log(`wrote ${name} (${file.vectors.length} vectors)`);
 }
 
 // ── signed-proof vectors ──────────────────────────────────────────────────────
@@ -251,7 +246,7 @@ async function signedProofVectors(): Promise<VectorFile> {
     },
   ];
 
-  return { version: '1.2.0', category: 'signed-proof', vectors };
+  return { version: SUITE_VERSION, category: 'signed-proof', vectors };
 }
 
 /**
@@ -305,17 +300,9 @@ function flipSignatureChar(jws: string): string {
 // ── delegation-chain vectors ───────────────────────────────────────────────────
 
 function didDocFor(party: Party): Record<string, unknown> {
-  const raw = extractPublicKeyFromDidKey(party.did)!;
   return {
     id: party.did,
-    verificationMethod: [
-      {
-        id: party.kid,
-        type: 'Ed25519VerificationKey2020',
-        controller: party.did,
-        publicKeyJwk: publicKeyToJwk(raw),
-      },
-    ],
+    verificationMethod: [ed25519VerificationMethod(party.kid, party.did, extractPublicKeyFromDidKey(party.did)!)],
     assertionMethod: [party.kid],
     authentication: [party.kid],
   };
@@ -476,7 +463,7 @@ async function delegationChainVectors(): Promise<VectorFile> {
     },
   ];
 
-  return { version: '1.2.0', category: 'delegation-chain', vectors };
+  return { version: SUITE_VERSION, category: 'delegation-chain', vectors };
 }
 
 function flipB64url(value: string): string {
@@ -574,7 +561,7 @@ async function statusListVectors(): Promise<VectorFile> {
     },
   ];
 
-  return { version: '1.2.0', category: 'status-list', vectors };
+  return { version: SUITE_VERSION, category: 'status-list', vectors };
 }
 
 async function buildSignedDelegationWith(
@@ -623,7 +610,7 @@ async function didKeyVectors(): Promise<VectorFile> {
       input: { did: 'did:web:example.com' },
     },
   ];
-  return { version: '1.2.0', category: 'did-key-resolution', vectors };
+  return { version: SUITE_VERSION, category: 'did-key-resolution', vectors };
 }
 
 // ── did:web resolution vectors ──────────────────────────────────────────────────
@@ -668,7 +655,7 @@ async function didWebVectors(): Promise<VectorFile> {
       input: { did: webDid },
     },
   ];
-  return { version: '1.2.0', category: 'did-web-resolution', vectors };
+  return { version: SUITE_VERSION, category: 'did-web-resolution', vectors };
 }
 
 // ── orchestration ───────────────────────────────────────────────────────────────
@@ -676,11 +663,11 @@ async function didWebVectors(): Promise<VectorFile> {
 async function main(): Promise<void> {
   mkdirSync(VECTORS_DIR, { recursive: true });
 
-  writeFile(await signedProofVectors(), 'signed-proof.json');
-  writeFile(await delegationChainVectors(), 'delegation-chain.json');
-  writeFile(await statusListVectors(), 'status-list.json');
-  writeFile(await didKeyVectors(), 'did-key-resolution.json');
-  writeFile(await didWebVectors(), 'did-web-resolution.json');
+  writeVectorFile(await signedProofVectors(), 'signed-proof.json');
+  writeVectorFile(await delegationChainVectors(), 'delegation-chain.json');
+  writeVectorFile(await statusListVectors(), 'status-list.json');
+  writeVectorFile(await didKeyVectors(), 'did-key-resolution.json');
+  writeVectorFile(await didWebVectors(), 'did-web-resolution.json');
   console.log('All conformance vectors generated.');
 }
 

@@ -1,0 +1,15 @@
+kind: Added
+body: |-
+    **Conformance suite 1.3.0: key-relationship vectors.** Two new vector
+    files, `delegation-chain-key-relationship.json` and
+    `status-list-key-relationship.json`, put the SPEC.md §6.2 key rule in
+    executable form: 3 vectors that verify and 16 that must be rejected,
+    among them a key listed only under `authentication` or under no
+    relationship, a stated `authentication` purpose, a document or key id
+    under another DID, a method naming another `controller`, with no `type`
+    or `controller`, or defined twice, and a VC-JWT whose `kid` names the
+    `authentication` key or is empty. A `delegation-chain` vector's `leaf`
+    may now be a VC-JWT string. CONFORMANCE.md maps L3.9a to them, and
+    `npm run conformance:generate:key-relationship` regenerates them. The
+    other vector files change only their `version`; the suite has 68 vectors.
+time: 2026-11-12T14:05:03.000000-06:00

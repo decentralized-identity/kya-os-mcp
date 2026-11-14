@@ -1147,7 +1147,7 @@ describe('createKyaOsMiddleware', () => {
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toBe('delegation_invalid');
-      expect(parsed.reason).toContain(`Could not resolve issuer DID: ${did}`);
+      expect(parsed.reason).toContain(`Could not resolve issuer DID: "${did}"`);
     });
 
     it('should reject credentialStatus when no status resolver is configured', async () => {

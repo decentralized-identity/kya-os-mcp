@@ -1,0 +1,15 @@
+kind: Fixed
+body: |-
+    **The delegation gate signs a refusal whose reason quotes text that is
+    not well-formed.** `wrapWithDelegation` writes a refusal's reason with
+    `sanitizeForMessage`, which cut it after 256 UTF-16 code units, possibly
+    inside a surrogate pair, and kept a lone surrogate that a caller wrote
+    in a VC-JWT's `kid` or a delegation id. A response proof signs the
+    reason in RFC 8785 form, which refuses both, so such a refusal was sent
+    without its proof. `sanitizeForMessage` now writes well-formed text, for
+    that reason and every other: the cut falls before a pair it would split,
+    and a lone surrogate reads as U+FFFD, as do DEL, the C1 controls,
+    U+2028, U+2029, format characters such as bidirectional controls, and
+    characters that render as nothing, which could make a reason or log
+    line read otherwise than it is written.
+time: 2026-11-12T14:05:07.000000-06:00

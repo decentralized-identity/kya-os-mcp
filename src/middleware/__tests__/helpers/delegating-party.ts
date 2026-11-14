@@ -2,11 +2,11 @@
  * Test helper: a party with a fresh did:key identity that can be delegated
  * to, and can issue a delegation credential of its own.
  */
-import { ed25519Signer } from '../../../__tests__/utils/ed25519-signer.js';
+import { createRealSigningFunction } from '../../../__tests__/audit/helpers/crypto-helpers.js';
+import { nodeCrypto } from '../../../__tests__/utils/node-crypto-provider.js';
 import { DelegationCredentialIssuer } from '../../../delegation/vc-issuer.js';
 import type { ProofAgentIdentity } from '../../../proof/generator.js';
-import type { DelegationCredential, Proof } from '../../../types/protocol.js';
-import { base64urlEncodeFromBytes } from '../../../utils/base64.js';
+import type { DelegationCredential } from '../../../types/protocol.js';
 import { generateDidKeyFromBase64, didKeyFragment } from '../../../utils/did-helpers.js';
 import { SCOPE } from './delegated-call.js';
 
@@ -16,16 +16,22 @@ export interface Party extends ProofAgentIdentity {
   issuer: DelegationCredentialIssuer;
 }
 
+/**
+ * A party whose DID is the did:key of a fresh key. It signs the credentials
+ * it issues with the signing function the other credential tests share,
+ * which makes the Data Integrity proof a credential carries.
+ */
 export async function party(): Promise<Party> {
-  const { publicKey, privateKey, sign: signature } = await ed25519Signer();
+  const { publicKey, privateKey } = await nodeCrypto.generateKeyPair();
   const did = generateDidKeyFromBase64(publicKey);
   const kid = `${did}#${didKeyFragment(did)}`;
-  const sign = async (canonicalVC: string, _issuerDid: string, keyId: string): Promise<Proof> => ({
-    type: 'Ed25519Signature2020',
-    created: new Date().toISOString(),
-    verificationMethod: keyId,
-    proofPurpose: 'assertionMethod',
-    proofValue: base64urlEncodeFromBytes(await signature(canonicalVC)),
+  const sign = createRealSigningFunction(nodeCrypto, {
+    did,
+    kid,
+    publicKey,
+    privateKey,
+    type: 'development',
+    createdAt: new Date().toISOString(),
   });
   return {
     did,

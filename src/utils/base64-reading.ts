@@ -7,6 +7,14 @@
  * read one differ. No runtime decoder is used, so a string reads the same on
  * every runtime.
  *
+ * `./base64.ts` decodes through the runtime, for the values SPEC.md states no
+ * reading for. What it accepts is no reading of this module: it reads `+`,
+ * `/` and padding one `=` short of a group, which only the `proofValue`
+ * reading passes, it refuses a last group of one character, and white space
+ * that changes the length a string is padded to, which that reading passes,
+ * and it differs between runtimes. A value whose reading SPEC.md states is
+ * read here.
+ *
  * Each reading gives the bytes, or undefined for a string outside it, and
  * leaves it to the caller to say what such a string is.
  */

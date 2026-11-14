@@ -40,7 +40,7 @@
  */
 
 import { describeValue } from './describe-value.js';
-import { isRecord, issuerOf } from './guards.js';
+import { isPlainObjectOfThisRealm, isRecord, issuerOf } from './guards.js';
 
 /**
  * Status-list issuers a verifier accepts for another issuer's credentials, keyed by the credential
@@ -169,7 +169,7 @@ export function acceptEntryPurpose(statusPurpose: unknown, checkerPurpose: strin
  */
 export function assertStatusListIssuers(value: unknown): asserts value is StatusListIssuers | undefined {
   if (value === undefined) return;
-  if (!isPlainObject(value)) {
+  if (!isPlainObjectOfThisRealm(value)) {
     throw new TypeError(
       'statusListIssuers must be a plain object mapping credential issuer DIDs to arrays of status-list issuer DIDs',
     );
@@ -190,13 +190,6 @@ export function assertStatusListIssuers(value: unknown): asserts value is Status
  */
 export function acceptStatusPurpose(list: unknown, statusPurpose: string): StatusListVerdict {
   return verdict(purposeRejection(isRecord(list) ? list : {}, statusPurpose));
-}
-
-/** An object literal, `Object.create(null)`, or a frozen one: not an array, a class instance or a `Map`. */
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (!isRecord(value)) return false;
-  const prototype: unknown = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
 }
 
 function verdict(reason: string | undefined): StatusListVerdict {

@@ -2,122 +2,16 @@ kind: Changed
 body: |-
     **The audit events of the delegation gate's decision say which
     delegation it decided on, by the reference and the digests of SPEC.md
-    §7.8.** `delegation.rejected` now carries `delegationRef` and
-    `delegationCredentialDigest` in its authorization evidence, where it
-    carried none, and a retry allowed under a stored grant carries those
-    of the delegation the grant was minted from, on `grant.used` and in
-    the context handed to the handler. `delegation.verified`,
-    `delegation.rejected` and `grant.used` also list
-    `delegationChainDigests`, one digest per credential evaluated. On a
-    refusal that is what the server had examined when it refused: the
-    ancestors up to the one it stopped at, then the presented credential.
-    A refusal in which a value a resolver returned could not be read
-    lists none. `delegationCredentialDigest` is now the digest of SPEC.md
-    §7.8 rather than a hash of the bytes presented, so it no longer
-    changes with proof metadata the issuer did not sign. The events
-    recorded with the context the gate hands the handler take their
-    evidence from `context.authorization`, and a call the gate refuses
-    after its chain verified, on holder binding or scope, is recorded
-    without the delegation, both as before. Response proofs are unchanged
-    and carry no delegation claim. Along with it:
-
-    - `delegationRef` has one definition, in SPEC.md §7.8, for the audit
-      trail and for a proof that carries it. A refused credential's id is
-      no longer cut to 256 characters. An id that is too long is recorded
-      as its `sha256:` digest, so two long ids with the same beginning
-      stay apart. So is an id that holds a character that does not print
-      as itself (a control or format character, a bidirectional override
-      or a zero-width space among them, or a line or paragraph
-      separator, as SPEC.md §7.8 lists them), and so is one that holds a
-      surrogate without its pair, hashed over its WTF-8 bytes. So is one
-      that is itself written as such a digest, so a reference of that
-      form never stands for an id a caller chose, and one that is the
-      word `unknown`, which the events name a credential that shows no
-      id by. A VC-JWT with no credential id is recorded by its `jti`.
-      An empty `id` is no id: a credential whose `id` is `""` is
-      recorded by the id of its delegation
-      (`credentialSubject.delegation.id`), where the empty
-      string used to be taken for its id. Every other audit reference
-      that holds a character that does not print is now recorded as its
-      digest too.
-    - A `proofValue` is read one way wherever it is checked, a delegation
-      credential's and a status list's that `CheqdStatusListResolver`
-      reads: its base64 characters in either alphabet, with ASCII
-      whitespace passed over, and `=` passed over at the end. One written
-      with those verifies on every runtime, where it used to depend on the
-      decoder underneath. One with any other character, with `=` ahead of
-      a base64 character, or of no bytes at all does not. A VC-JWT is read
-      as it was: every JWT that verified still verifies, and none that did
-      not now does.
-    - The gate reads the presented credential, and each value a
-      resolver returns, once, as plain data: the credential when it is
-      presented, and each value the resolver returns, root first, as
-      soon as it is returned and before anything else reads it. It checks
-      the value, copies it, and verifies and records the copy, so what
-      it verifies and what it records are one reading, and
-      `resolveDelegationChain` is handed the copy of the presented
-      credential. Every server does this, whether or not it keeps an
-      audit trail: the verdict on a credential does not turn on what the
-      server records.
-      A value that is not plain data is refused wherever in a credential
-      it is, `proof` included: a Proxy, an accessor, a symbol-keyed
-      member, an array element that is not enumerable (a copy leaves it
-      out, and JSON has it), a class instance, a `Map` or any other
-      object that is neither a plain object nor an array, and a function
-      or a symbol.
-      In 1.22.0 a presented credential holding one of these made the
-      gate throw, an ancestor holding one at its top level or in its
-      `proof` verified, and so did a Proxy that passes every read through,
-      presented or resolved, wherever it stood. All of these are now
-      refused. A resolved value that is not shaped as a delegation
-      credential refuses the chain by name. The resolver's own copy of the
-      leaf is read like the rest and then set aside, as in 1.22.0,
-      whatever it holds; one that cannot be read now refuses the chain,
-      where 1.22.0 passed over it. A resolver that returns more values
-      than `maxChainLength` has the chain refused before any of them is
-      read.
-    - The arrays and objects of a credential nest at most 64 levels deep
-      (SPEC.md §7.8, `MAX_CREDENTIAL_NESTING_DEPTH`), counted before
-      anything parses, copies or canonicalizes them. A credential object
-      nested deeper, in what its issuer signed or in its `proof`, has no
-      signed form, and neither has one that contains itself: presented,
-      it is refused, and returned by a resolver it refuses the chain. A
-      VC-JWT whose header or payload nests deeper is not parsed:
-      `parseVCJWT` returns `null` for it, and the gate refuses it. The
-      limit used to be the call stack of the runtime, a few thousand
-      levels and different from one runtime to the next, so a
-      credential nested deeper than 64 levels and within that limit
-      verified, and is now refused.
-    - `ChainValidationResult` gains `evaluated`: the credentials the walk
-      reached, root first, set on a refusal too, and absent when the
-      walk never started. `validateDelegationChain` takes
-      `snapshotAncestor`, which a host sets to copy each value the
-      resolver returns, root first and before anything reads it, and to
-      refuse one it will not read.
-    - A hash provider that fails while a verified delegation is being
-      recorded used to make the gate throw. The call is now refused and
-      the fault is logged.
-    - A presented credential that held a value with no JSON form made
-      the gate throw. It now gets a verdict. Among what the issuer signed,
-      `undefined`, a bigint, a hole in an array and a `Date` leave the
-      credential with no canonical form, and it is refused. In `proof`,
-      which no signature covers, they are passed over in an ancestor,
-      and refuse a presented credential as one the gate cannot encode.
-    - `ProofVerifier` and `ProofGenerator.verifyProof` read a proof's JWS
-      as SPEC.md §7.4 now says a verifier must: each segment as RFC 7515
-      §2 writes base64url, of the URL-safe alphabet alone with no white
-      space and no `=`, the header and the payload as UTF-8 that is well
-      formed, and the `x` of the key it is checked with as strictly. A
-      proof whose segments or key were written in the base64 alphabet,
-      padded with `=`, with white space inside, or with bytes that are
-      not UTF-8 in its header or payload now fails. 1.22.0 verified some
-      of these: a segment or an `x` padded to complete its last group, a
-      segment holding two spaces or a line break, and an `x` holding a
-      space. A proof this library or a JWS library signed is unaffected.
-    - The embedded `Ed25519Signature2020` verifier of the delegation gate,
-      and `CheqdStatusListResolver` for a status list's proof, read the
-      key's `x` the same way, and require 32 bytes of it. In 1.22.0 they
-      read `x` in either alphabet, padded or not, with white space passed
-      over, and handed the runtime whatever bytes that gave. Such an `x`
-      now refuses the credential or the list.
+    §7.8.** `delegation.rejected` and a retry under a stored grant now
+    carry `delegationRef` and `delegationCredentialDigest`, and
+    `delegation.verified`, `delegation.rejected` and `grant.used` list
+    `delegationChainDigests`, one per credential evaluated.
+    `delegationCredentialDigest` is the §7.8 digest, no longer a hash of
+    the bytes presented. The gate reads a presented credential, and each
+    value a resolver returns, once, as plain data, and a credential may
+    nest at most 64 levels. `ProofVerifier`, the gate and
+    `CheqdStatusListResolver` read a JWS segment and a key's `x` as
+    RFC 7515 section 2 writes base64url, with no padding and no white
+    space. Some refusal reasons changed. UPGRADING.md, "Delegation audit
+    events, and how the gate reads a credential", lists every change.
 time: 2026-11-11T21:30:01.000000-08:00

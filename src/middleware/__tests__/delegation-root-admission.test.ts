@@ -2,15 +2,14 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createDelegationVerification } from '../with-kya-os.delegation-verify.js';
 import type { MiddlewareDeps } from '../with-kya-os.deps.js';
 import type { KyaOsDelegationConfig } from '../with-kya-os.config-types.js';
-import { DelegationCredentialIssuer } from '../../delegation/vc-issuer.js';
-import { canonicalizeJSON, createUnsignedVCJWT } from '../../delegation/utils.js';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
-import { createRealSigningFunction } from '../../__tests__/audit/helpers/crypto-helpers.js';
-import { envelope, keyOf } from '../../__tests__/utils/delegation-credentials.js';
+import {
+  credentialJwt, delegationRecord, keyOf, resignedCredential, signedCredential,
+} from '../../__tests__/utils/delegation-credentials.js';
 import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
 import type { AgentIdentity } from '../../providers/base.js';
 import type { DIDDocument } from '../../delegation/vc-verifier.js';
-import type { DelegationCredential } from '../../types/protocol.js';
+import type { CredentialStatus, DelegationCredential } from '../../types/protocol.js';
 
 const crypto = new NodeCryptoProvider();
 const SERVER = 'did:web:server.example';
@@ -20,23 +19,23 @@ beforeAll(async () => {
   [root, delegate, outsider] = await Promise.all([key('root'), key('delegate'), key('outsider')]);
 });
 
-async function credential(key: AgentIdentity, id: string, parentId?: string): Promise<DelegationCredential> {
-  return new DelegationCredentialIssuer(
-    { getDid: () => key.did, getKeyId: () => key.kid, getPrivateKey: () => key.privateKey },
-    createRealSigningFunction(crypto, key),
-  ).issueDelegationCredential({
-    id, issuerDid: key.did, subjectDid: delegate.did, vcId: `urn:uuid:${id}`,
-    ...(parentId === undefined ? {} : { parentId }),
-    constraints: { scopes: ['tools:read'], audience: SERVER, notAfter: Math.floor(Date.now() / 1000) + 3600 },
-    signature: '', status: 'active', createdAt: Date.now(),
+/** A credential `key` issues to the delegate as `id`, with `credentialStatus` if given; `parentId` makes it a re-delegation. */
+function credential(
+  key: AgentIdentity, id: string, parentId?: string, credentialStatus?: CredentialStatus,
+): Promise<DelegationCredential> {
+  return signedCredential(key, {
+    record: delegationRecord(key.did, {
+      id, subjectDid: delegate.did, vcId: `urn:uuid:${id}`,
+      ...(parentId === undefined ? {} : { parentId }),
+      constraints: { scopes: ['tools:read'], audience: SERVER, notAfter: Math.floor(Date.now() / 1000) + 3600 },
+    }),
+    credentialStatus,
   });
 }
 
-async function jwt(vc: DelegationCredential, key: AgentIdentity, claims: Record<string, unknown> = {}): Promise<string> {
-  const { proof: _proof, ...unsigned } = vc;
-  const { payload } = createUnsignedVCJWT(unsigned);
-  return envelope(key, Buffer.from(JSON.stringify({ ...payload, ...claims })).toString('base64url'), key.kid);
-}
+/** `vc` as a VC-JWT `key` signs, with `claims` set over its payload's. */
+const jwt = (vc: DelegationCredential, key: AgentIdentity, claims: Record<string, unknown> = {}): Promise<string> =>
+  credentialJwt(vc, key, { claims });
 
 function setup(config: KyaOsDelegationConfig = {}) {
   const resolve = vi.fn(async (did: string): Promise<DIDDocument | null> => {
@@ -54,17 +53,13 @@ function setup(config: KyaOsDelegationConfig = {}) {
 }
 
 /** A revocation status entry, the list it names served by whichever status resolver a test sets up. */
-const STATUS_ENTRY = {
-  id: 'https://status.example/1#0', type: 'StatusList2021Entry' as const,
-  statusPurpose: 'revocation' as const, statusListIndex: '0', statusListCredential: 'https://status.example/1',
+const STATUS_ENTRY: CredentialStatus = {
+  id: 'https://status.example/1#0', type: 'StatusList2021Entry',
+  statusPurpose: 'revocation', statusListIndex: '0', statusListCredential: 'https://status.example/1',
 };
 
 /** A credential `key` issues as `id`, naming {@link STATUS_ENTRY}, signed over it. */
-async function listed(key: AgentIdentity, id: string): Promise<DelegationCredential> {
-  const { proof: _proof, ...unsigned } = await credential(key, id);
-  const withStatus = { ...unsigned, credentialStatus: STATUS_ENTRY };
-  return { ...withStatus, proof: await createRealSigningFunction(crypto, key)(canonicalizeJSON(withStatus), key.did, key.kid) } as DelegationCredential;
-}
+const listed = (key: AgentIdentity, id: string): Promise<DelegationCredential> => credential(key, id, undefined, STATUS_ENTRY);
 
 /** A string a substring test would have matched against any root DID that is part of it. */
 const ACME_LIST = 'did:web:root.example did:web:acme.example';
@@ -125,10 +120,8 @@ describe('root admission before DID and status resolution', () => {
       const { verify, resolve } = setup();
       const valid = await credential(root, 'trusted');
       expect((await verify(await wire(valid, root))).valid).toBe(true);
-      const { proof: _proof, ...unsigned } = valid;
-      const named = { ...unsigned, issuer: { id: root.did } };
-      const proof = await createRealSigningFunction(crypto, root)(canonicalizeJSON(named), root.did, root.kid);
-      expect((await verify(await wire({ ...named, proof }, root))).valid).toBe(true);
+      const named = await resignedCredential(valid, { issuer: { id: root.did } }, root);
+      expect((await verify(await wire(named, root))).valid).toBe(true);
       const forged = await credential(outsider, 'forged');
       forged.issuer = { id: root.did };
       expect((await verify(await wire(forged, outsider))).valid).toBe(false);

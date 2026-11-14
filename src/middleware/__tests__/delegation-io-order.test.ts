@@ -9,11 +9,10 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createDelegationVerification } from '../with-kya-os.delegation-verify.js';
 import type { MiddlewareDeps } from '../with-kya-os.deps.js';
 import type { KyaOsDelegationConfig } from '../with-kya-os.config-types.js';
-import { DelegationCredentialIssuer } from '../../delegation/vc-issuer.js';
-import { canonicalizeJSON, createUnsignedVCJWT } from '../../delegation/utils.js';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
-import { createRealSigningFunction } from '../../__tests__/audit/helpers/crypto-helpers.js';
-import { envelope, keyOf } from '../../__tests__/utils/delegation-credentials.js';
+import {
+  credentialJwt, delegationRecord, keyOf, resignedCredential, signedCredential,
+} from '../../__tests__/utils/delegation-credentials.js';
 import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
 import type { AgentIdentity } from '../../providers/base.js';
 import type { DIDDocument } from '../../delegation/vc-verifier.js';
@@ -33,33 +32,17 @@ const statusEntry: CredentialStatus = {
   statusListIndex: '0', statusListCredential: ATTACKER_LIST,
 };
 
-/** A credential `key` issues to `subject`, as `issuerDid` claims; `parentId` makes it a re-delegation. */
-async function credential(
+/** A credential `key` signs to `subject`, as `issuerDid` claims; `parentId` makes it a re-delegation. */
+function credential(
   key: AgentIdentity, id: string, subject: string, parentId?: string, issuerDid = key.did,
 ): Promise<DelegationCredential> {
-  return new DelegationCredentialIssuer(
-    { getDid: () => key.did, getKeyId: () => key.kid, getPrivateKey: () => key.privateKey },
-    createRealSigningFunction(crypto, key),
-  ).issueDelegationCredential({
-    id, issuerDid, subjectDid: subject, vcId: `urn:uuid:${id}`,
-    ...(parentId === undefined ? {} : { parentId }),
-    constraints: { scopes: ['tools:read'], audience: SERVER, notAfter: Math.floor(Date.now() / 1000) + 3600 },
-    signature: '', status: 'active', createdAt: Date.now(),
+  return signedCredential(key, {
+    record: delegationRecord(issuerDid, {
+      id, subjectDid: subject, vcId: `urn:uuid:${id}`,
+      ...(parentId === undefined ? {} : { parentId }),
+      constraints: { scopes: ['tools:read'], audience: SERVER, notAfter: Math.floor(Date.now() / 1000) + 3600 },
+    }),
   });
-}
-
-/** `vc` with `changes` applied, re-signed by `signer` under `kid`: a valid proof only when `signer` is the issuer. */
-async function resigned(vc: DelegationCredential, changes: Partial<DelegationCredential>, signer: AgentIdentity, kid: string) {
-  const { proof: _proof, ...unsigned } = vc;
-  const changed = { ...unsigned, ...changes } as DelegationCredential;
-  return { ...changed, proof: await createRealSigningFunction(crypto, signer)(canonicalizeJSON(changed), signer.did, kid) } as DelegationCredential;
-}
-
-/** `vc` as a compact VC-JWT signed by `signer` under `kid`. */
-async function jwt(vc: DelegationCredential, signer: AgentIdentity, kid: string): Promise<string> {
-  const { proof: _proof, ...unsigned } = vc;
-  const { payload } = createUnsignedVCJWT(unsigned);
-  return envelope(signer, Buffer.from(JSON.stringify(payload)).toString('base64url'), kid);
 }
 
 function gate(config: KyaOsDelegationConfig = {}) {
@@ -78,11 +61,11 @@ function gate(config: KyaOsDelegationConfig = {}) {
 for (const form of ['object', 'JWT'] as const) {
   /** `vc` on the wire as this form presents it, signed by `signer` under `kid`. */
   const wire = async (vc: DelegationCredential, signer: AgentIdentity, kid: string) =>
-    form === 'JWT' ? jwt(vc, signer, kid) : resigned(vc, {}, signer, kid);
+    form === 'JWT' ? credentialJwt(vc, signer, { kid }) : resignedCredential(vc, {}, signer, kid);
 
   describe(`${form}: a status list is read only for a credential whose signature verified`, () => {
     it('reads none for a root that names the trusted issuer but is signed by another key', async () => {
-      const named = await resigned(await credential(attacker, 'forged-root', delegate.did), { issuer: root.did, credentialStatus: statusEntry }, attacker, root.kid);
+      const named = await resignedCredential(await credential(attacker, 'forged-root', delegate.did), { issuer: root.did, credentialStatus: statusEntry }, attacker, root.kid);
       const { verify, resolve, checkStatus } = gate();
       expect(await verify(await wire(named, attacker, root.kid))).toMatchObject({ valid: false });
       expect(resolve.mock.calls.map(([did]) => did)).toEqual([root.did]);
@@ -91,7 +74,7 @@ for (const form of ['object', 'JWT'] as const) {
 
     it("reads none for a leaf that names its parent's subject but is signed by another key", async () => {
       const parent = await credential(root, 'good-root', delegate.did);
-      const leaf = await resigned(
+      const leaf = await resignedCredential(
         await credential(delegate, 'forged-leaf', attacker.did, 'good-root'), { credentialStatus: statusEntry }, attacker, delegate.kid,
       );
       const { verify, resolve, checkStatus } = gate({ resolveDelegationChain: async () => [parent] });
@@ -101,7 +84,7 @@ for (const form of ['object', 'JWT'] as const) {
     });
 
     it('reads it once the signature verified', async () => {
-      const valid = await resigned(await credential(root, 'live-root', delegate.did), { credentialStatus: statusEntry }, root, root.kid);
+      const valid = await resignedCredential(await credential(root, 'live-root', delegate.did), { credentialStatus: statusEntry }, root, root.kid);
       const { verify, checkStatus } = gate();
       expect(await verify(await wire(valid, root, root.kid))).toMatchObject({ valid: true });
       expect(checkStatus).toHaveBeenCalledOnce();
@@ -111,7 +94,7 @@ for (const form of ['object', 'JWT'] as const) {
   describe(`${form}: the chain's linkage is checked before any DID resolution`, () => {
     it('refuses a leaf whose issuerDid is not its parent\'s subject, resolving nothing and reading no status', async () => {
       const parent = await credential(root, 'good-root', delegate.did);
-      const leaf = await resigned(await credential(attacker, 'evil-leaf', delegate.did, 'good-root'), { credentialStatus: statusEntry }, attacker, attacker.kid);
+      const leaf = await resignedCredential(await credential(attacker, 'evil-leaf', delegate.did, 'good-root'), { credentialStatus: statusEntry }, attacker, attacker.kid);
       const { verify, resolve, checkStatus } = gate({ resolveDelegationChain: async () => [parent] });
       expect(await verify(await wire(leaf, attacker, attacker.kid))).toMatchObject({
         valid: false, reason: `Delegation evil-leaf issued by ${attacker.did} but parent subject is ${delegate.did}`,
@@ -122,7 +105,7 @@ for (const form of ['object', 'JWT'] as const) {
 
     it("refuses a leaf that claims the parent's subject as issuerDid but names another issuer", async () => {
       const parent = await credential(root, 'good-root', delegate.did);
-      const leaf = await resigned(
+      const leaf = await resignedCredential(
         await credential(attacker, 'claiming-leaf', delegate.did, 'good-root', delegate.did),
         { issuer: attacker.did, credentialStatus: statusEntry }, attacker, attacker.kid,
       );

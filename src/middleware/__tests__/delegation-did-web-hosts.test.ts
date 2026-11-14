@@ -18,14 +18,15 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { createDelegationVerification } from '../with-kya-os.delegation-verify.js';
 import type { MiddlewareDeps } from '../with-kya-os.deps.js';
 import type { KyaOsDelegationConfig } from '../with-kya-os.config-types.js';
-import { DelegationCredentialIssuer } from '../../delegation/vc-issuer.js';
 import { RuntimeFetchProvider } from '../../providers/runtime-fetch.js';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
-import type { FetchProvider } from '../../providers/base.js';
+import type { AgentIdentity, FetchProvider } from '../../providers/base.js';
 import type { DelegationCredential } from '../../types/protocol.js';
 import { ProofVerifier } from '../../proof/verifier.js';
 import { SystemClockProvider } from '../../providers/system-clock.js';
 import { MemoryNonceCacheProvider } from '../../providers/memory.js';
+import { delegationRecord, keyOf, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
+import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
 import { LOCAL_HOST_NAMES } from '../../__tests__/utils/local-host-names.js';
 import { closeLoopback, listenOnLoopback } from '../../__tests__/utils/loopback-server.js';
 
@@ -37,7 +38,8 @@ const realFetch = globalThis.fetch;
 
 let server: Server;
 let port: number;
-let key: { publicKey: string; privateKey: string };
+/** The one key every DID in this file publishes and signs with; each names it `<did>#key`. */
+let key: AgentIdentity;
 /** The path of every request the server received. */
 const served: string[] = [];
 /**
@@ -52,14 +54,10 @@ const redirectDid = () => didOf(`${PUBLIC}:${port}`, 'hop');
 const directDid = () => didOf(`${PUBLIC}:${port}`, 'direct');
 
 /** The DID document of `did`, publishing `key` under assertionMethod. */
-function documentOf(did: string) {
-  const x = Buffer.from(key.publicKey, 'base64').toString('base64url');
-  const method = { id: `${did}#key`, type: 'JsonWebKey2020', controller: did, publicKeyJwk: { kty: 'OKP', crv: 'Ed25519', x } };
-  return { id: did, verificationMethod: [method], assertionMethod: [method.id] };
-}
+const documentOf = (did: string) => issuerDidDocument(methodOf({ ...key, did, kid: `${did}#key` }));
 
 beforeAll(async () => {
-  key = await crypto.generateKeyPair();
+  key = await keyOf(SERVER, 'key');
   server = createServer((request, response) => {
     served.push(request.url!);
     const location = hops.get(request.url!);
@@ -95,18 +93,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** A root delegation `did` issues and signs with `key`. */
+/** A root delegation `did` issues and signs with the one key, under the id `documentOf(did)` publishes it by. */
 function credential(did: string): Promise<DelegationCredential> {
-  return new DelegationCredentialIssuer(
-    { getDid: () => did, getKeyId: () => `${did}#key`, getPrivateKey: () => key.privateKey },
-    async (canonical, _issuer, kid) => ({
-      type: 'Ed25519Signature2020', created: new Date().toISOString(), verificationMethod: kid, proofPurpose: 'assertionMethod',
-      proofValue: Buffer.from(await crypto.sign(new TextEncoder().encode(canonical), key.privateKey)).toString('base64url'),
+  return signedCredential({ ...key, did, kid: `${did}#key` }, {
+    record: delegationRecord(did, {
+      id: 'del-1', vcId: 'urn:uuid:del-1',
+      constraints: { scopes: ['tools:read'], audience: SERVER, notAfter: Math.floor(Date.now() / 1000) + 3600 },
     }),
-  ).issueDelegationCredential({
-    id: 'del-1', issuerDid: did, subjectDid: 'did:web:agent.example', vcId: 'urn:uuid:del-1',
-    constraints: { scopes: ['tools:read'], audience: SERVER, notAfter: Math.floor(Date.now() / 1000) + 3600 },
-    signature: '', status: 'active', createdAt: Date.now(),
   });
 }
 

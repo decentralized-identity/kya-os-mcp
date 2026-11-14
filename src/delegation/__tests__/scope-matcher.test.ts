@@ -54,6 +54,43 @@ describe('matchScope', () => {
     }
   });
 
+  it('path-prefix: a percent-encoded dot segment in the value is the dot segment it encodes', () => {
+    for (const value of [
+      'notes/%2e%2e/a',
+      'notes/%2E%2E/a',
+      'notes/%2e%2E/a',
+      'notes/%2e/a',
+      'notes/%2E/a',
+      'notes/.%2e/a',
+      'notes/%2e./a',
+      'notes/%2e%2e',
+      'notes/a\\%2e%2e\\b',
+    ]) {
+      expect(matchScope('notes', 'path-prefix', value)).toBe(false);
+      expect(matchScope('notes/', 'path-prefix', value)).toBe(false);
+    }
+  });
+
+  it('path-prefix: an encoded dot inside a name is not a dot segment, and nothing else is decoded', () => {
+    for (const value of [
+      'notes/%2ea/b', 'notes/a%2e/b', 'notes/%2e%2e%2e/b', 'notes/...%2e/b', 'notes/%252e%252e/b', 'notes/..%2fb',
+      'notes/%2f/b', 'notes/%2e%2f/b', 'notes/%2e%5c/b',
+    ]) {
+      expect(matchScope('notes', 'path-prefix', value)).toBe(true);
+    }
+  });
+
+  it('path-prefix: a pattern with a percent-encoded dot segment grants nothing', () => {
+    expect(matchScope('notes/%2e%2e', 'path-prefix', 'notes/%2e%2e')).toBe(false);
+    expect(matchScope('notes/%2e%2e', 'path-prefix', 'notes/%2e%2e/x.md')).toBe(false);
+    expect(matchScope('notes/%2E/secrets', 'path-prefix', 'notes/%2E/secrets/x.md')).toBe(false);
+    expect(matchScope('%2e/notes', 'path-prefix', '%2e/notes/x.md')).toBe(false);
+    // The other matchers compare the text as written.
+    expect(matchScope('notes/%2e%2e', 'exact', 'notes/%2e%2e')).toBe(true);
+    expect(matchScope('notes/', 'prefix', 'notes/%2e%2e/a')).toBe(true);
+    expect(matchScope('notes/%2e%2e/.*', 'regex', 'notes/%2e%2e/a')).toBe(true);
+  });
+
   it('path-prefix: dots inside a name are not dot segments', () => {
     expect(matchScope('notes', 'path-prefix', 'notes/..hidden')).toBe(true);
     expect(matchScope('notes', 'path-prefix', 'notes/v1.2/plan.md')).toBe(true);
@@ -164,6 +201,15 @@ describe('matcherContains (attenuation across matcher kinds)', () => {
     expect(matcherContains(m('path-prefix', 'notes/..'), m('path-prefix', 'notes/../x'))).toBe(false);
     expect(matcherContains(m('path-prefix', 'notes'), m('exact', 'notes/../secrets/x.md'))).toBe(false);
     expect(matcherContains(m('prefix', 'notes'), m('path-prefix', 'notes/../secrets'))).toBe(false);
+  });
+
+  it('never proves containment through a path-prefix with a percent-encoded dot segment', () => {
+    expect(matcherContains(m('path-prefix', 'notes'), m('path-prefix', 'notes/%2e%2e/secrets'))).toBe(false);
+    expect(matcherContains(m('path-prefix', 'notes/%2E%2E'), m('path-prefix', 'notes/%2E%2E/x'))).toBe(false);
+    expect(matcherContains(m('path-prefix', 'notes'), m('exact', 'notes/%2e%2e/secrets/x.md'))).toBe(false);
+    expect(matcherContains(m('prefix', 'notes'), m('path-prefix', 'notes/.%2e/secrets'))).toBe(false);
+    // An encoded dot inside a name leaves the pattern an ordinary one.
+    expect(matcherContains(m('path-prefix', 'notes'), m('path-prefix', 'notes/%2ea'))).toBe(true);
   });
 
   const pool = [

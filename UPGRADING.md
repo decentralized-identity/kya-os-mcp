@@ -616,6 +616,13 @@ On 1.22.0 a child `prefix` scope `notes/` validated under a parent `path-prefix`
 The chain is now refused with the reason for a scope outside its parent.
 Write the child's scope with the `path-prefix` matcher.
 
+A `path-prefix` scope also treats a percent-encoded dot segment as the dot segment it encodes.
+A segment made of one or two dots, each written as `.` or as `%2e` in either case, such as `%2e%2e`, `.%2E` or `%2e`, is refused as `..` and `.` already were.
+So `notes/%2e%2e/secrets/x.md` no longer matches a `path-prefix` scope `notes`, a `path-prefix` pattern such as `notes/%2e%2e` grants nothing, and a re-delegation is not proven inside or through such a pattern.
+On 1.22.0 each of these matched as ordinary text, which reached outside the grant only for a consumer that decodes a path before it resolves dot segments.
+Nothing else is decoded: `notes/%2ea/b` and `notes/a%2e/b` still match, and the `exact`, `prefix` and `regex` matchers compare the text as written.
+A resource whose name is such a segment needs an `exact` scope.
+
 ### Conformance suite 1.4.0
 
 The suite adds status-list vectors for the acceptance rule, each with a list whose proof verifies, and has 97 vectors in all.

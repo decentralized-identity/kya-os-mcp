@@ -25,12 +25,24 @@ function pathBase(pattern: string): string {
 }
 
 /**
- * Whether a path has a `.` or `..` segment, splitting on `/` and `\`. Matching
- * is on the raw string, but a consumer that later normalizes the path would
- * resolve `notes/../secrets/x.md` to `secrets/x.md`, outside a `notes` grant.
+ * A `.` or `..` path segment, with either dot written as itself or
+ * percent-encoded (`%2e`, in either case): `..`, `%2e%2E`, `.%2e` and `%2e`
+ * are four of them. A reader that normalizes a URI decodes `%2e`, an
+ * unreserved character, and removes dot segments (RFC 3986 section 6.2.2), so
+ * the encoded forms name the same segments.
+ */
+const DOT_SEGMENT = /^(?:\.|%2e){1,2}$/i;
+
+/**
+ * Whether a path has a `.` or `..` segment ({@link DOT_SEGMENT}), splitting on
+ * `/` and `\`. Matching is on the raw string, but a consumer that later
+ * normalizes the path would resolve `notes/../secrets/x.md`, or
+ * `notes/%2e%2e/secrets/x.md` once it decodes it, to `secrets/x.md`, outside a
+ * `notes` grant. Nothing else is decoded: an encoded dot inside a longer name
+ * and an encoded separator (`%2f`) are the text they are.
  */
 function hasDotSegment(path: string): boolean {
-  return path.split(/[/\\]/).some((segment) => segment === '.' || segment === '..');
+  return path.split(/[/\\]/).some((segment) => DOT_SEGMENT.test(segment));
 }
 
 /**
@@ -45,8 +57,9 @@ function hasDotSegment(path: string): boolean {
  *              path (`notes` matches `notes` and `notes/a/b.md`, never
  *              `notesx/secret.md`). Trailing `/` or `/*` on the pattern is optional
  *              sugar; an empty base matches nothing. A `.` or `..` segment in the
- *              pattern or the value matches nothing, so `notes/../secrets/x.md`
- *              cannot pass as "under notes". Use it for resource paths.
+ *              pattern or the value, percent-encoded (`%2e`) or not, matches
+ *              nothing, so `notes/../secrets/x.md` cannot pass as "under
+ *              notes". Use it for resource paths.
  * - `regex`  : anchored full-string match; never throws (invalid patterns → false).
  *
  * SECURITY: the regex pattern is supplied by the credential ISSUER. JS `RegExp`

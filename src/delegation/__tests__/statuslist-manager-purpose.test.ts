@@ -7,24 +7,12 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import {
-  createRealCryptoProvider,
-  createRealIdentity,
-  createRealStatusListManager,
-  type RealStatusListSetup,
-} from '../../__tests__/audit/helpers/crypto-helpers.js';
+import { realStatusListManager } from '../../__tests__/utils/status-list-manager.js';
 import type { CredentialStatus, StatusList2021Credential } from '../../types/protocol.js';
-
-async function realManager(): Promise<RealStatusListSetup> {
-  const crypto = createRealCryptoProvider();
-  return createRealStatusListManager(crypto, await createRealIdentity(crypto), {
-    statusListBaseUrl: 'https://status.example',
-  });
-}
 
 describe('StatusList2021Manager.checkStatus and the statusPurpose', () => {
   it('reads a suspension entry from its suspension list', async () => {
-    const { manager } = await realManager();
+    const { manager } = await realStatusListManager();
     const suspended = await manager.allocateStatusEntry('suspension');
     const active = await manager.allocateStatusEntry('suspension');
     await manager.updateStatus(suspended, true);
@@ -34,7 +22,7 @@ describe('StatusList2021Manager.checkStatus and the statusPurpose', () => {
 
   /** A revoked entry, and a way to store its list again typed and stating a purpose as given. */
   async function revokedWithList() {
-    const { manager, storage } = await realManager();
+    const { manager, storage } = await realStatusListManager();
     const revoked = await manager.allocateStatusEntry('revocation');
     await manager.updateStatus(revoked, true);
     const stored = await storage.getStatusList(revoked.statusListCredential);
@@ -78,7 +66,7 @@ describe('StatusList2021Manager.checkStatus and the statusPurpose', () => {
   });
 
   it('refuses a list of another purpose', async () => {
-    const { manager } = await realManager();
+    const { manager } = await realStatusListManager();
     const entry = await manager.allocateStatusEntry('revocation');
     await expect(manager.checkStatus({ ...entry, statusPurpose: 'suspension' })).rejects.toThrow(
       `status list statusPurpose mismatch: the list's is "revocation" and the entry's is "suspension"`,
@@ -86,7 +74,7 @@ describe('StatusList2021Manager.checkStatus and the statusPurpose', () => {
   });
 
   it("quotes at most 64 characters of the entry's purpose and of the list's, naming one that is not a string by its type", async () => {
-    const { manager, storage } = await realManager();
+    const { manager, storage } = await realStatusListManager();
     const entry = await manager.allocateStatusEntry('revocation');
     const stored = await storage.getStatusList(entry.statusListCredential);
     if (!stored) throw new Error('fixture: status list not stored');

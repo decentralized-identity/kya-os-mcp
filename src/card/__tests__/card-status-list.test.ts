@@ -23,15 +23,14 @@ import type { DIDDocument, DIDResolver } from '../../delegation/vc-verifier.type
 import {
   hop,
   identity,
-  NOW_MS,
   RESOURCE,
   serveAt,
   signEddsaJcs2022,
   statusList,
   type TestIdentity,
+  now,
 } from './signed-chain-helpers.js';
 
-const now = () => NOW_MS;
 const CARDS_URL = 'https://example.com/status/cards';
 
 /** An Ed25519 key published as the verification method `<did>#key-1` of a did:web DID. */

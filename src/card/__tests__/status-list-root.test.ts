@@ -19,7 +19,6 @@ import { createStatusListProofVerifier } from '../status-list-proof.js';
 import {
   hop,
   identity,
-  NOW_MS,
   parties,
   RESOURCE,
   serveAt,
@@ -27,11 +26,11 @@ import {
   statusList,
   twoHopChain,
   type TestIdentity,
+  now,
 } from './signed-chain-helpers.js';
 import { cast, expectAccepted, expectRevokedAt, listOf, listUrlOf, servedBy, threeHopChain } from './status-list-paths.js';
 
 const didResolver = createDidKeyResolver();
-const now = () => NOW_MS;
 const ctx = { resource: RESOURCE, now };
 
 describe("the pinned root's list speaks for every hop of its chains", () => {

@@ -8,23 +8,11 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import {
-  createRealCryptoProvider,
-  createRealIdentity,
-  createRealStatusListManager,
-  type RealStatusListSetup,
-} from '../../__tests__/audit/helpers/crypto-helpers.js';
+import { realStatusListManager } from '../../__tests__/utils/status-list-manager.js';
 import { CascadingRevocationManager } from '../cascading-revocation.js';
 import { DelegationGraphManager } from '../delegation-graph.js';
 import { MemoryDelegationGraphStorage } from '../storage/memory-graph-storage.js';
 import type { CredentialStatus } from '../../types/protocol.js';
-
-async function realManager(): Promise<RealStatusListSetup> {
-  const crypto = createRealCryptoProvider();
-  return createRealStatusListManager(crypto, await createRealIdentity(crypto), {
-    statusListBaseUrl: 'https://status.example',
-  });
-}
 
 /** `entry` as a storage layer that keeps its index as a number hands it back. */
 const numbered = (entry: CredentialStatus, statusListIndex: unknown = Number(entry.statusListIndex)): CredentialStatus =>
@@ -32,7 +20,7 @@ const numbered = (entry: CredentialStatus, statusListIndex: unknown = Number(ent
 
 describe('StatusList2021Manager and an index stored as a number', () => {
   it('updateStatus sets and clears the bit a reader of the string index then sees', async () => {
-    const { manager } = await realManager();
+    const { manager } = await realStatusListManager();
     await manager.allocateStatusEntry('revocation');
     const entry = await manager.allocateStatusEntry('revocation');
     await manager.updateStatus(numbered(entry), true);
@@ -42,7 +30,7 @@ describe('StatusList2021Manager and an index stored as a number', () => {
   });
 
   it('checkStatus, a reader, still refuses it', async () => {
-    const { manager } = await realManager();
+    const { manager } = await realStatusListManager();
     const entry = await manager.allocateStatusEntry('revocation');
     await expect(manager.checkStatus(numbered(entry))).rejects.toThrow(
       new Error('Invalid statusListIndex of type number: must be a non-negative decimal string'),
@@ -50,7 +38,7 @@ describe('StatusList2021Manager and an index stored as a number', () => {
   });
 
   it('updateStatus refuses a negative, fractional, unsafe or non-finite number, and anything else not a string, and sets no bit', async () => {
-    const { manager, storage } = await realManager();
+    const { manager, storage } = await realStatusListManager();
     const entry = await manager.allocateStatusEntry('revocation');
     const before = await storage.getStatusList(entry.statusListCredential);
     const refused: [unknown, string][] = [
@@ -72,7 +60,7 @@ describe('StatusList2021Manager and an index stored as a number', () => {
 
 describe('CascadingRevocationManager over a graph that stores its indexes as numbers', () => {
   it('reads each delegation as 1.22.0 did, before and after a revocation', async () => {
-    const { manager } = await realManager();
+    const { manager } = await realStatusListManager();
     const graph = new DelegationGraphManager(new MemoryDelegationGraphStorage());
     const entries = new Map<string, CredentialStatus>();
     for (const [id, parentId] of [['root', null], ['child', 'root'], ['other', null]] as [string, string | null][]) {
@@ -97,7 +85,7 @@ describe('CascadingRevocationManager over a graph that stores its indexes as num
   });
 
   it('revokes the whole subtree, setting the bit of every delegation in it', async () => {
-    const { manager } = await realManager();
+    const { manager } = await realStatusListManager();
     const graph = new DelegationGraphManager(new MemoryDelegationGraphStorage());
     const tree: [string, string | null][] = [['root', null], ['child', 'root'], ['sibling', 'root'], ['grandchild', 'child']];
     const entries = new Map<string, CredentialStatus>();

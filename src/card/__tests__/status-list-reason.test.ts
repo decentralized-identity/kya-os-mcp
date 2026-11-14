@@ -13,10 +13,9 @@ import { createDelegationProofVerifier } from '../delegation-proof.js';
 import { toDelegationChainMeta, verifyRequestDelegation } from '../request-delegation.js';
 import { createRevocationChecker, evaluateRevocationChain } from '../revocation.js';
 import { createStatusListProofVerifier } from '../status-list-proof.js';
-import { NOW_MS, parties, RESOURCE, serve, signEddsaJcs2022, statusList, twoHopChain, type ChainParties } from './signed-chain-helpers.js';
+import { parties, RESOURCE, serve, signEddsaJcs2022, statusList, twoHopChain, type ChainParties, now } from './signed-chain-helpers.js';
 
 const didResolver = createDidKeyResolver();
-const now = () => NOW_MS;
 
 const LONG = { statusListCredential: `https://acme.example/status/${'u'.repeat(100_000)}`, statusListIndex: '7'.repeat(100_000) };
 const LONG_NAMED = `list "${LONG.statusListCredential.slice(0, 64)}"..., index "${'7'.repeat(64)}"...`;

@@ -23,17 +23,16 @@ import { createStatusListProofVerifier } from '../status-list-proof.js';
 import {
   hop,
   identity,
-  NOW_MS,
   parties,
   RESOURCE,
   serveAt,
   signEddsaJcs2022,
   statusList,
   type TestIdentity,
+  now,
 } from './signed-chain-helpers.js';
 
 const didKeys = createDidKeyResolver();
-const now = () => NOW_MS;
 const ctx = { resource: RESOURCE, now };
 
 /** Acme (root), the agent, the sub-agent and the worker, plus Mallory, who is in no chain. */

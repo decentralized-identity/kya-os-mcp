@@ -20,6 +20,8 @@ import {
 import type { SafeFetch } from '../../utils/safe-fetch.js';
 
 export const NOW_MS = Date.parse('2026-11-04T00:00:00Z');
+/** The clock every verifier and checker in these tests is given: it always reads {@link NOW_MS}. */
+export const now = (): number => NOW_MS;
 export const RESOURCE = 'did:web:merchant.example';
 export const STATUS_URL = 'https://acme.example/status/delegations';
 

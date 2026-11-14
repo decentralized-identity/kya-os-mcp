@@ -26,7 +26,6 @@ import { BitstringStatusListEntrySchema, type EntityCard } from '../schema.js';
 import {
   hop,
   identity,
-  NOW_MS,
   parties,
   RESOURCE,
   serve,
@@ -36,10 +35,10 @@ import {
   statusList,
   twoHopChain,
   type TestIdentity,
+  now,
 } from './signed-chain-helpers.js';
 
 const didResolver = createDidKeyResolver();
-const now = () => NOW_MS;
 const ctx = { resource: RESOURCE, now };
 
 /** The shipped checker with the shipped proof verifier, reading whatever the status URL serves. */

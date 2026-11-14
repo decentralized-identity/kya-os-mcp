@@ -14,6 +14,7 @@
  * is read through its descriptor.
  */
 
+import { isPlainObjectOfThisRealm } from './guards.js';
 import { checkJsonTokens } from './json-preflight.js';
 
 /** Whether `value` is an array or any other object: something a value nests inside. */
@@ -121,8 +122,7 @@ class Walk {
     if (isDate(container)) return true;
     if (Array.isArray(container)) return this.elements(container, held);
     if (this.plain) {
-      const prototype: unknown = Object.getPrototypeOf(container);
-      if (prototype !== Object.prototype && prototype !== null) return false;
+      if (!isPlainObjectOfThisRealm(container)) return false;
       if (Object.getOwnPropertySymbols(container).length > 0) return false;
     }
     for (const key of Object.keys(container)) {

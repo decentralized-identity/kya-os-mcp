@@ -12,13 +12,17 @@ body: |-
       did:cheqd document made with `@cheqd/sdk` before 5.3.3 lists keys
       only under `authentication`, and the cheqd integration's README
       shows the DID update that fixes it;
-    - set each proof's `proofPurpose` to `assertionMethod`, or leave it out;
+    - set each proof's `proofPurpose` to `assertionMethod`. Only the
+      legacy proof profile in SPEC.md §6.2 permits an omitted purpose;
+      the Card `eddsa-jcs-2022` profile requires it explicitly;
     - name itself, in `issuer`, an issuer object's `id` and a VC-JWT's
       `iss`, by a URL with no white space at either end and no control or
       format character, U+2028, U+2029 or lone surrogate anywhere;
     - name the signing key with a non-empty `kid` or
-      `proof.verificationMethod`: a VC-JWT or status list that names none
-      is checked only with the first `assertionMethod` entry;
+      `proof.verificationMethod`. A VC-JWT with no `kid`, or a status list
+      read by `CheqdStatusListResolver` with no `verificationMethod`, is
+      checked only with the first `assertionMethod` entry. Card
+      `eddsa-jcs-2022` proofs must name their key;
     - issue no delegation holding a value RFC 8785 cannot encode, which
       the delegation gate refuses as `delegation_invalid`.
 

@@ -158,7 +158,8 @@ describe("refusal reasons quote what the credential chose as describeValue does"
     const purpose = "x\uD800".repeat(1000);
     const raw = `status list statusPurpose mismatch: "revocation" != "${purpose}"`;
     const { reason } = await checkCredentialStatus(credentialStatus(purpose), thrower(raw));
-    expect(reason).toBe(`Status check error: ${raw.slice(0, 256).replace(/\uD800/g, "\uFFFD")}\u2026`);
+    const expectedMessage = `status list statusPurpose mismatch: "revocation" != "${"x\uFFFD".repeat(1000)}`;
+    expect(reason).toBe(`Status check error: ${expectedMessage.slice(0, 256)}\u2026`);
     expect(reason).not.toMatch(/\p{Cs}/u);
   });
 });

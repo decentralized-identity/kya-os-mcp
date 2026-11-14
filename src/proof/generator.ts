@@ -21,7 +21,7 @@ import {
 } from '../types/protocol.js';
 import type { CryptoProvider } from '../providers/base.js';
 import { CryptoService, type Ed25519JWK } from '../utils/crypto-service.js';
-import { alternateRequestShapes } from './covered-request.js';
+import { alternateRequestShapes, withoutTopLevelMeta } from './covered-request.js';
 import type { ContentBindingMismatch } from './binding.js';
 import { base64ToBytes, base64urlEncodeFromBytes, bytesToBase64 } from '../utils/base64.js';
 import { ED25519_PKCS8_DER_HEADER, ED25519_KEY_SIZE } from '../utils/ed25519-constants.js';
@@ -190,7 +190,8 @@ export async function computeCanonicalHashes(
  * The profile-selected response material that `responseHash` covers. The body profile hashes
  * `data` verbatim; the envelope profile removes the top-level `_meta` member from an object
  * envelope (and only from an object — arrays and primitives pass through, so
- * the mapping is total and identical for signer and verifier).
+ * the mapping is total and identical for signer and verifier). Every other member stays, one
+ * named `__proto__` included ({@link withoutTopLevelMeta}).
  */
 function canonicalResponseBody(
   data: unknown,
@@ -204,11 +205,7 @@ function canonicalResponseBody(
   ) {
     return data;
   }
-  const envelope: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(data)) {
-    if (key !== '_meta') envelope[key] = value;
-  }
-  return envelope;
+  return withoutTopLevelMeta(data as Record<string, unknown>);
 }
 
 /**

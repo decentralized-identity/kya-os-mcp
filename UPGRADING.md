@@ -604,6 +604,11 @@ A request hash, an approval and a holder-binding proof now cover the member, as 
 A handler that copies its arguments by assignment, as `target[key] = value`, should copy with `Object.fromEntries` or onto `Object.create(null)`.
 `withoutControlArgs` is exported from `@kya-os/mcp` for a host that needs the same copy.
 
+A tool result with a member named `__proto__` is now proven under the envelope profile (`responseProofProfile: 'envelope'`), and `responseHash` covers the member.
+On 1.22.0 no proof could be made for it: the result was returned with `_meta.proofError` set, and a `PROOF_GENERATION_FAILED` audit event was recorded.
+A verifier on 1.22.0 cannot check such a proof, because it fails to hash the result it received, so a client that verifies envelope proofs of such results needs this release too.
+The body profile, the default, covers `content` alone and is unchanged.
+
 ### Conformance suite 1.4.0
 
 The suite adds status-list vectors for the acceptance rule, each with a list whose proof verifies, and has 97 vectors in all.

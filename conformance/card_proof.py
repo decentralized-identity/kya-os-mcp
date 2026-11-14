@@ -15,7 +15,12 @@ def covered_claims(proof: dict) -> dict:
     return claims
 
 
-def request_hash(request: dict) -> str:
+def card_proof_request_hash(request: dict) -> str:
+    """The `requestHash` of a card proof: `sha-256=:<base64>:` over JCS({method, params}).
+
+    `params` is left out only where it is absent or null. A response proof's `requestHash` is
+    another rule, with another form: `response_proof_request_hash` in response_proof.py.
+    """
     canonical = {"method": request["method"]}
     if request.get("params") is not None:
         canonical["params"] = request["params"]

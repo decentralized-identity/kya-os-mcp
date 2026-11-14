@@ -157,11 +157,13 @@ def _js_truthy(value) -> bool:
     return not (value is None or value is False or value == "" or (_is_number(value) and value == 0))
 
 
-def request_hash(request) -> str:
-    """The `requestHash` of a request as given: SHA-256 of JCS({method, params}) (7.3).
+def response_proof_request_hash(request) -> str:
+    """The `requestHash` of a response proof, for a request as given: `sha256:<hex>` over
+    JCS({method, params}) (7.3).
 
     `params` is left out where ECMAScript holds it false, as the producer leaves it out. Raises
-    ValueError for a request that is no object, or has no method.
+    ValueError for a request that is no object, or has no method. A card proof's `requestHash` is
+    another rule, with another form: `card_proof_request_hash` in card_proof.py.
     """
     if not isinstance(request, dict) or "method" not in request:
         raise ValueError("a request is an object with a method")
@@ -201,9 +203,10 @@ def _other_shapes(request: dict) -> list:
 
 def binds_request(meta: dict, request: dict) -> bool:
     """`meta.requestHash` is the hash of `request`, or of another shape of the same call."""
-    if meta["requestHash"] == request_hash(request):
+    if meta["requestHash"] == response_proof_request_hash(request):
         return True
-    return meta["requestHash"] in {request_hash(shape) for shape in _other_shapes(request)}
+    shapes = _other_shapes(request)
+    return meta["requestHash"] in {response_proof_request_hash(shape) for shape in shapes}
 
 
 def response_hash(response, profile) -> str:

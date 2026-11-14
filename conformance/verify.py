@@ -78,7 +78,8 @@ sys.dont_write_bytecode = True
 
 from audit_merkle import audit_root, audit_verify_consistency, audit_verify_inclusion
 from base64url import b64url_nopad, padded_base64url_bytes
-from card_proof import covered_claims, http_signature_base, request_hash, resolve_key, rfc7638_thumbprint
+from card_proof import (card_proof_request_hash, covered_claims, http_signature_base, resolve_key,
+                        rfc7638_thumbprint)
 from chain_binding import chain_binding
 from delegation_cases import id_and_reference_cases_hold, signed_form_cases_hold
 from digests import domain_digest
@@ -121,7 +122,7 @@ def main() -> int:
     results = []
 
     # 1. Re-derive requestHash from JCS({method, params}) + SHA-256.
-    recomputed = request_hash(vector["request"])
+    recomputed = card_proof_request_hash(vector["request"])
     results.append(("requestHash JCS+SHA-256 recompute", recomputed == proof["requestHash"]))
 
     # 2. Verify the detached EdDSA JWS over JCS(coveredClaims).

@@ -269,6 +269,8 @@ A did:web response, and a status list read by `CheqdStatusListResolver` or `Runt
 Each read has one 5-second deadline for the fetch and the body, a did:web or status-list read follows at most 3 redirects, and each built-in DID resolver caches at most 128 documents and 8 MiB, evicting the least recently used.
 `DelegationCredentialVerifier`, `CheqdStatusListResolver`, `createStatusListProofVerifier`, `createDelegationProofVerifier` and `ProofVerifier` wait at most 5 seconds for any resolver and hold the document it returns to the same limits, and to plain JSON data: a document with a getter on an object member, enumerable or not, a cycle, a class instance or a value JSON cannot hold, such as a function or `NaN`, is refused.
 A getter on an array element is not refused: it runs, and the value it returns is held to the same limits, or the document is refused when it throws.
+`DelegationCredentialVerifier` also waits at most 5 seconds for each answer of a `StatusListResolver`, and `validateDelegationChain`, which the delegation middleware runs, at most 5 seconds for `resolveDelegationChain`.
+A `RevocationChecker` given to `validateDelegationChain`, and the `resolveDelegationChain` and `checkRevocation` of `verifyRequestDelegation`, have no deadline from the library and must set their own.
 Anything over a limit is refused, never cut to fit, so check that your DID documents and status lists are within these limits before you upgrade.
 SPEC.md §4.4.2 explains each limit.
 Every did:web and status-list read also holds its host, and each redirect, to one private-network rule, whatever `FetchProvider` it reads through.
@@ -346,6 +348,14 @@ Creating the middleware or a `requireDelegation` guard with any other value thro
 
 For a VC-JWT whose leaf names a parent, it now runs on the leaf's payload before the envelope's signature is checked, so it must treat that payload as unauthenticated, as it already had to for a credential with an embedded proof, whose proof is checked after it runs.
 The chain it returns is verified as before.
+It now has 5 seconds to return: a call that has not answered by then is refused with `Failed to resolve delegation chain: the chain resolver did not answer within 5 seconds`, where on 1.22.0 the call waited without end.
+A resolver that walks `parentId` one read at a time should finish, or give up, within that time.
+
+#### A custom `StatusListResolver` whose `checkStatus` can take longer than 5 seconds
+
+`DelegationCredentialVerifier` now waits at most 5 seconds for each `checkStatus`, the shipped `CheqdStatusListResolver` and a resolver wrapped in `withStatusCache` included.
+A call that has not answered by then denies the credential with the outcome `status_unresolvable` and the reason `Status check error: the status list resolver did not answer within 5 seconds`, where on 1.22.0 the verification waited without end.
+The resolver's own work is not cancelled, so one that reads over a network should bound each read itself, as `CheqdStatusListResolver` does, and a later verification asks it again.
 
 #### Code that calls `DelegationCredentialVerifier` directly
 
@@ -362,6 +372,7 @@ A chain's links, and then its root's `issuer` against `trustedRootIssuers`, are 
 An untrusted root reads `Root delegation <id> is issued by "<issuer>", which is not a trusted root issuer`, the issuer quoted as other reasons quote a value.
 `Could not resolve issuer DID` is the reason for an issuer DID over its limit, for a VC-JWT as for a credential with an embedded proof, without asking the resolver.
 A resolution that misses its deadline fails with a reason that ends `DID resolution deadline exceeded`, and a status-list read with one that ends `Status list fetch deadline exceeded`, or names the limit it exceeded.
+A `StatusListResolver` that misses it gives `Status check error: the status list resolver did not answer within 5 seconds`, and a `resolveDelegationChain` that does gives `Failed to resolve delegation chain: the chain resolver did not answer within 5 seconds`.
 `ProofVerifier` refuses a DID or key id over its limit with `DID or key identifier exceeds resource limit`, and an empty DID with `DID is empty`.
 
 #### A did:cheqd DID whose unique id is not a UUID or letters and digits

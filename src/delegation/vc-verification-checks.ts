@@ -20,7 +20,7 @@ import { describeValue } from "../utils/describe-value.js";
 import { issuerOf } from "../utils/guards.js";
 import { sanitizeForMessage } from "../utils/message-text.js";
 import { credentialIssuerRefusal } from "./credential-issuer.js";
-import { resolveBoundedDid } from "./did-resource-limits.js";
+import { answerWithinDeadline, resolveBoundedDid } from "./did-resource-limits.js";
 import { readRevoked, unreadableStatusReason } from "../utils/revocation-answer.js";
 import type {
   DIDResolver,
@@ -306,8 +306,9 @@ export async function verifySignature(
  * Stage 2b: resolve a credential's revocation status, fail-closed. Every deny is
  * labelled with a {@link StatusOutcome} so consumers can tell a settled
  * `revoked` (re-consent) from a transient `status_unresolvable` (retry):
- * a missing resolver or a resolver that throws both DENY as
- * `status_unresolvable`, and so does a resolver whose answer is not a boolean;
+ * a missing resolver, a resolver that throws and one that has not answered
+ * within the DID resolver's deadline all DENY as `status_unresolvable`, and so
+ * does a resolver whose answer is not a boolean;
  * only a literal `true` DENIES as `revoked`. The resolver is
  * told `credentialIssuer`, the issuer DID of the credential, and holds the
  * status list to it; a credential that names none cannot be held to anyone, so
@@ -341,7 +342,9 @@ export async function checkCredentialStatus(
       };
     }
 
-    const answer: unknown = await statusListResolver.checkStatus(status, { credentialIssuer });
+    const answer: unknown = await answerWithinDeadline("the status list resolver", () =>
+      statusListResolver.checkStatus(status, { credentialIssuer }),
+    );
     const revoked = readRevoked(answer);
 
     if (revoked === undefined) {

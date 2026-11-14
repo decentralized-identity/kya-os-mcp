@@ -22,6 +22,7 @@ import { chainResolutionFailure, revocationCheckFailure, revocationRefusal } fro
 import { authorityContains, crispScopes, matcherContains, scopeAuthority } from "./scope-matcher.js";
 import { credentialIssuerDid } from "./credential-issuer.js";
 import { chainLinkageRefusal } from "./chain-linkage.js";
+import { answerWithinDeadline } from "./did-resource-limits.js";
 import { rootAdmissionRefusal } from "./root-admission.js";
 
 /** Union of a credential's delegation scopes and its constraint scopes. */
@@ -239,7 +240,8 @@ export interface ChainEnforcementDeps {
   /**
    * Resolve ancestor credentials for a re-delegated leaf. May return ancestors
    * only (root→parent) or the full chain (root→leaf). Required when the leaf has
-   * a `parentId`.
+   * a `parentId`. It gets the deadline a DID resolver has: a chain it has not
+   * returned by then is refused as one that could not be resolved.
    */
   resolveDelegationChain?: (
     leafCredential: DelegationCredential,
@@ -344,7 +346,8 @@ export async function validateDelegationChain(
 
     let resolvedChain: DelegationCredential[];
     try {
-      resolvedChain = await deps.resolveDelegationChain(leafCredential);
+      const resolve = deps.resolveDelegationChain;
+      resolvedChain = await answerWithinDeadline("the chain resolver", () => resolve(leafCredential));
     } catch (error) {
       return {
         valid: false,

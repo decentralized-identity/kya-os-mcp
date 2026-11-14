@@ -131,7 +131,8 @@ export interface VerificationMethod {
  * on the entry's URL, index and purpose, as `withStatusCache` does.
  *
  * The answer is read strictly: `true` is revoked, `false` is not, and any other value, which only
- * untyped code can give, denies the credential as `status_unresolvable`.
+ * untyped code can give, denies the credential as `status_unresolvable`. So does a `checkStatus`
+ * that has not answered within the deadline a DID resolver has.
  */
 export interface StatusListResolver {
   checkStatus(status: CredentialStatus, context?: StatusCheckContext): Promise<boolean>;

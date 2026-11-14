@@ -2,8 +2,9 @@
  * The segments of a compact JWS read as JSON: the header and the payload of
  * a VC-JWT. This is the one reading of either, with one choice in it.
  *
- * `parseVCJWT` reads a VC-JWT for verification as this package always has
- * (`lenient`), so every JWT it read before is read still. The id a VC-JWT
+ * `parseVCJWT` reads a VC-JWT for verification by the runtime's decoder
+ * (`lenient`, `../utils/base64.ts`): SPEC.md states no reading of a header
+ * or a payload for that, and the verdict is the JWS library's. The id a VC-JWT
  * shows is read as SPEC.md §7.8 has it (`strict`, in `./delegation-ref.ts`),
  * so that every implementation derives one reference from one JWT. Both
  * count how deep a text nests before a parser reads it.
@@ -22,10 +23,10 @@ import { MAX_CREDENTIAL_NESTING_DEPTH } from './signed-form.js';
  * - `strict`, as SPEC §7.8 reads a payload: base64url as RFC 7515 §2 has it,
  *   and UTF-8 that is well formed, with a byte order mark kept in the text,
  *   where JSON refuses it ({@link jwsSegmentText}).
- * - `lenient`, as this package has always read a VC-JWT: the base64 and the
- *   base64url alphabets alike, padding that completes the last group or
- *   falls short of it, and UTF-8 as the runtime decodes it, a byte that is
- *   not UTF-8 read as U+FFFD.
+ * - `lenient`, as the runtime's decoder reads a segment
+ *   (`base64urlDecodeToString`): the base64 and the base64url alphabets
+ *   alike, padding that completes the last group or falls short of it, and
+ *   UTF-8 as the runtime decodes it, a byte that is not UTF-8 read as U+FFFD.
  */
 export type JwsSegmentReading = 'strict' | 'lenient';
 

@@ -106,9 +106,9 @@ export function decodeSignature(encoded: string): Uint8Array {
 
 /**
  * The bytes a segment of a compact JWS carries, as {@link jwsSegmentBytes}
- * reads them (SPEC §7.8): base64url as RFC 7515 §2 has it. A VC-JWT that
- * verified before this reading existed still verifies, and one that did not
- * still does not.
+ * reads them (SPEC §7.8): base64url as RFC 7515 §2 has it, and exactly the
+ * strings the JWS library that verifies a VC-JWT reads. So a VC-JWT whose
+ * signature that library can check has a signed form, and no other has.
  *
  * @throws {NoSignedFormError} for a string outside that reading.
  */

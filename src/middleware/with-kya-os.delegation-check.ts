@@ -96,8 +96,8 @@ export function readOnce(value: unknown): { copy: unknown } | NotRead {
  * The JWS is handed over with its signature segment written canonically,
  * so the bytes the envelope check reads are the ones the chain digest
  * hashes (SPEC §7.8). A third segment that has no such reading is
- * handed over as it came, for the refusal the JWS library has always
- * given it: the two read a segment alike. Were the library ever to read
+ * handed over as it came, for the JWS library to refuse in its own
+ * words: the two read a segment alike. Were the library ever to read
  * a signature where this reading has none, nothing it verified could be
  * digested, so that verdict is not taken: it is refused at the signature.
  */

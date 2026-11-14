@@ -24,8 +24,8 @@ const encoder = new TextEncoder();
  * Thrown for a value that has no canonical JSON form: the canonicalizer's own
  * refusal of the value. Its class tells that apart from anything else that
  * can go wrong on the way, a call stack that ran out say, which is nothing
- * the value is. It is the `TypeError` these refusals have always been, under
- * the same name and with the same message.
+ * the value is. It is a `TypeError` and is named one, so a caller that tells
+ * these refusals by that class, or by `error.name`, reads it as one.
  */
 export class CanonicalJsonError extends TypeError {}
 

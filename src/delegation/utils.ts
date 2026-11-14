@@ -112,7 +112,7 @@ export function completeVCJWT(signingInput: string, signature: string): string {
 
 /**
  * The header and the payload of a compact VC-JWT, read as JSON as
- * `jwsSegmentsJson` reads them `lenient`: as this package has always read them.
+ * `jwsSegmentsJson` reads them `lenient`: by the runtime's base64 decoder.
  *
  * Null for a string that is not three segments of which the first two are
  * JSON, and for one whose header or payload nests its arrays and objects

@@ -45,7 +45,8 @@ def signed_form(credential) -> dict:
         raise ValueError("a credential object carries its signature in proof.proofValue")
     # Counted on the whole object, `proof` included, before anything below recurses into it.
     if nests_deeper_than(credential, MAX_CREDENTIAL_NESTING_DEPTH):
-        raise ValueError("a credential object nests at most 64 levels deep")
+        raise ValueError(
+            f"a credential object nests at most {MAX_CREDENTIAL_NESTING_DEPTH} levels deep")
     unsigned = {key: value for key, value in credential.items() if key != "proof"}
     return {"credential": unsigned, "signature": canonical_signature(proof.get("proofValue"))}
 

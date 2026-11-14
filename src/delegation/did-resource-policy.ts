@@ -8,7 +8,7 @@
  * (`./status-list-fetch.ts`) derives its byte limit and deadline from these.
  */
 
-import type { JsonLimits } from '../utils/json-preflight.js';
+import { MAX_JSON_NESTING_DEPTH, type JsonLimits } from '../utils/json-preflight.js';
 import type { BoundedJsonPolicy } from '../utils/bounded-read.js';
 import { OUTBOUND_READ_MAX_BYTES, OUTBOUND_READ_TIMEOUT_MS } from '../utils/outbound-read-limits.js';
 
@@ -18,7 +18,8 @@ export const MAX_DID_LENGTH = 2_048;
 export const MAX_KEY_ID_LENGTH = 4_096;
 /** A DID document's compact JSON in UTF-8, and a did:web response body. */
 export const MAX_DID_DOCUMENT_BYTES = OUTBOUND_READ_MAX_BYTES;
-export const MAX_JSON_DEPTH = 64;
+/** The deepest the arrays and objects of a DID document's JSON may nest (SPEC §4.4.2). */
+export const MAX_JSON_DEPTH = MAX_JSON_NESTING_DEPTH;
 export const MAX_JSON_MEMBER_LENGTH = 256;
 export const MAX_JSON_MEMBERS = 8_192;
 /** Entries of `verificationMethod` and the five verification relationships, in all. */

@@ -17,6 +17,7 @@ import { CanonicalJsonError, canonicalizeJsonBytes, jsonMemberValue } from '../u
 import { base64urlEncodeFromBytes } from '../utils/base64.js';
 import { base64EitherBytes, jwsSegmentBytes } from '../utils/base64-reading.js';
 import { isRecord } from '../utils/guards.js';
+import { MAX_JSON_NESTING_DEPTH } from '../utils/json-preflight.js';
 import { nestsDeeperThan } from '../utils/plain-data.js';
 
 /**
@@ -51,9 +52,10 @@ export type SignedForm = SignedJwt | SignedCredential;
  *
  * The number is the protocol's, the same for every implementation, so that
  * whether a credential verifies and has a digest does not turn on how deep a
- * call stack the runtime reading it has.
+ * call stack the runtime reading it has. It is the package's one bound on
+ * nesting, declared in `../utils/json-preflight.ts`.
  */
-export const MAX_CREDENTIAL_NESTING_DEPTH = 64;
+export const MAX_CREDENTIAL_NESTING_DEPTH = MAX_JSON_NESTING_DEPTH;
 
 /**
  * Thrown for a value that has no signed form (SPEC §7.8): it is neither a

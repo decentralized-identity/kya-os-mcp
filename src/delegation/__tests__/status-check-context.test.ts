@@ -6,19 +6,22 @@
  * even when the root is pinned.
  */
 
-import { describe, it, expect, vi } from 'vitest';
-import { exportJWK, generateKeyPair, SignJWT } from 'jose';
+import { beforeAll, describe, it, expect, vi } from 'vitest';
 import { DelegationCredentialVerifier, type DIDDocument, type StatusListResolver } from '../vc-verifier.js';
 import { validateDelegationChain } from '../chain-enforcement.js';
 import { checkCredentialStatus } from '../vc-verification-checks.js';
 import { withStatusCache } from '../status-cache.js';
 import { acceptStatusList, statusListExpectationFor, type StatusListIssuers } from '../../utils/statuslist-acceptance.js';
+import {
+  credentialJwt, delegationRecord, keyOf, resignedCredential, signedCredential,
+} from '../../__tests__/utils/delegation-credentials.js';
+import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
+import type { AgentIdentity } from '../../providers/base.js';
 import type { CredentialStatus, DelegationCredential } from '../../types/protocol.js';
 
 const ISSUER = 'did:web:acme.example';
 const ROOT = 'did:web:root.example';
 const SUBJECT = 'did:web:agent.example';
-const KID = `${ISSUER}#key-1`;
 
 const STATUS: CredentialStatus = {
   id: 'https://status.example/1#7',
@@ -28,35 +31,21 @@ const STATUS: CredentialStatus = {
   statusListCredential: 'https://status.example/1',
 };
 
-/** A delegation credential issued by `issuer` whose status is {@link STATUS}; its proof is not checked here. */
-function credential(issuer: unknown): DelegationCredential {
-  return {
-    '@context': ['https://www.w3.org/2018/credentials/v1'],
-    id: 'urn:uuid:status-context',
-    type: ['VerifiableCredential', 'DelegationCredential'],
-    issuer,
-    issuanceDate: '2026-01-01T00:00:00.000Z',
-    expirationDate: '2099-01-01T00:00:00.000Z',
-    credentialSubject: {
-      id: SUBJECT,
-      delegation: {
-        id: 'del-status-context',
-        issuerDid: ISSUER,
-        subjectDid: SUBJECT,
-        signature: '',
-        status: 'active',
-        constraints: { scopes: ['tools:read'] },
-      },
-    },
+let acme: AgentIdentity;
+let rootKey: AgentIdentity;
+beforeAll(async () => {
+  [acme, rootKey] = await Promise.all([keyOf(ISSUER, 'key-1'), keyOf(ROOT, 'key-1')]);
+});
+
+/** A delegation credential Acme signs, naming `issuer` as its issuer, as written, whose status is {@link STATUS}. */
+async function credential(issuer: unknown): Promise<DelegationCredential> {
+  const signed = await signedCredential(acme, {
+    record: delegationRecord(ISSUER, {
+      id: 'del-status-context', subjectDid: SUBJECT, vcId: 'urn:uuid:status-context', constraints: { scopes: ['tools:read'] },
+    }),
     credentialStatus: STATUS,
-    proof: {
-      type: 'Ed25519Signature2020',
-      created: '2026-01-01T00:00:00.000Z',
-      verificationMethod: KID,
-      proofPurpose: 'assertionMethod',
-      proofValue: 'unchecked',
-    },
-  } as unknown as DelegationCredential;
+  });
+  return resignedCredential(signed, { issuer }, acme);
 }
 
 const clearStatus = () => ({ checkStatus: vi.fn<StatusListResolver['checkStatus']>(async () => false) });
@@ -82,7 +71,7 @@ describe('DelegationCredentialVerifier names the credential issuer to the status
   it("on the Data Integrity path, whether the issuer is a string or an object's id", async () => {
     for (const issuer of [ISSUER, { id: ISSUER, name: 'Acme' }]) {
       const resolver = clearStatus();
-      const result = await new DelegationCredentialVerifier().verifyDelegationCredential(credential(issuer), {
+      const result = await new DelegationCredentialVerifier().verifyDelegationCredential(await credential(issuer), {
         skipSignature: true,
         statusListResolver: resolver,
       });
@@ -92,25 +81,10 @@ describe('DelegationCredentialVerifier names the credential issuer to the status
   });
 
   it('on the VC-JWT path', async () => {
-    const { privateKey, publicKey } = await generateKeyPair('EdDSA', { extractable: true });
-    const publicKeyJwk = await exportJWK(publicKey);
     const didResolver = {
-      resolve: async (did: string): Promise<DIDDocument | null> =>
-        did === ISSUER
-          ? {
-              id: ISSUER,
-              verificationMethod: [{ id: KID, type: 'JsonWebKey2020', controller: ISSUER, publicKeyJwk }],
-              assertionMethod: [KID],
-            }
-          : null,
+      resolve: async (did: string): Promise<DIDDocument | null> => (did === ISSUER ? issuerDidDocument(methodOf(acme)) : null),
     };
-    const { proof: _proof, ...vc } = credential(ISSUER) as unknown as Record<string, unknown>;
-    const jwt = await new SignJWT({ vc })
-      .setProtectedHeader({ alg: 'EdDSA', typ: 'JWT', kid: KID })
-      .setIssuer(ISSUER)
-      .setSubject(SUBJECT)
-      .setIssuedAt()
-      .sign(privateKey);
+    const jwt = await credentialJwt(await credential(ISSUER), acme);
     const resolver = clearStatus();
     const result = await new DelegationCredentialVerifier({ didResolver }).verifyDelegationJwt(jwt, {
       statusListResolver: resolver,
@@ -122,7 +96,7 @@ describe('DelegationCredentialVerifier names the credential issuer to the status
   it('denies a credential that names no issuer DID, without asking the resolver', async () => {
     for (const issuer of [{ name: 'Acme' }, { id: '' }, { id: 7 }]) {
       const resolver = clearStatus();
-      const result = await new DelegationCredentialVerifier().verifyDelegationCredential(credential(issuer), {
+      const result = await new DelegationCredentialVerifier().verifyDelegationCredential(await credential(issuer), {
         skipSignature: true,
         statusListResolver: resolver,
       });
@@ -135,8 +109,8 @@ describe('DelegationCredentialVerifier names the credential issuer to the status
 
   it("reads the credential issuer's list that states no id only while the resolver accepts that issuer alone", async () => {
     const idless = { issuer: ISSUER, credentialSubject: { statusPurpose: 'revocation' } };
-    const verify = (resolver: StatusListResolver) =>
-      new DelegationCredentialVerifier().verifyDelegationCredential(credential(ISSUER), { skipSignature: true, statusListResolver: resolver });
+    const verify = async (resolver: StatusListResolver) =>
+      new DelegationCredentialVerifier().verifyDelegationCredential(await credential(ISSUER), { skipSignature: true, statusListResolver: resolver });
     expect(await verify(ruleResolver(idless))).toMatchObject({ valid: true });
     expect(await verify(ruleResolver(idless, { [ISSUER]: [ROOT] }))).toMatchObject({
       valid: false,
@@ -207,27 +181,16 @@ describe("the delegation middleware's path names no root to the resolver", () =>
   const SERVER = 'did:web:server.example';
   const LEAF = 'did:web:worker.example';
 
-  /** A chain-enforcement credential from `issuer` to `subject`; its proof is not checked here. */
+  /** A chain-enforcement credential from `issuer`, the root or Acme, to `subject`. */
   function link(opts: { id: string; issuer: string; subject: string; parentId?: string; status?: CredentialStatus }) {
-    const vc = credential(opts.issuer) as unknown as {
-      credentialSubject: { id: string; delegation: Record<string, unknown> };
-      credentialStatus?: CredentialStatus;
-    };
-    vc.credentialSubject = {
-      id: opts.subject,
-      delegation: {
-        id: opts.id,
-        issuerDid: opts.issuer,
-        subjectDid: opts.subject,
+    return signedCredential(opts.issuer === ROOT ? rootKey : acme, {
+      record: delegationRecord(opts.issuer, {
+        id: opts.id, subjectDid: opts.subject,
         ...(opts.parentId ? { parentId: opts.parentId } : {}),
-        signature: '',
-        status: 'active',
         constraints: { scopes: ['tools:read'], audience: SERVER },
-      },
-    };
-    if (opts.status) vc.credentialStatus = opts.status;
-    else delete vc.credentialStatus;
-    return vc as unknown as DelegationCredential;
+      }),
+      credentialStatus: opts.status,
+    });
   }
 
   /** A resolver that holds the root's list, with no bit set, to the issuers `context` names. */
@@ -237,8 +200,8 @@ describe("the delegation middleware's path names no root to the resolver", () =>
   }
 
   async function verifyChain(resolver: StatusListResolver) {
-    const root = link({ id: 'del-root', issuer: ROOT, subject: ISSUER });
-    const leaf = link({ id: 'del-leaf', issuer: ISSUER, subject: LEAF, parentId: 'del-root', status: STATUS });
+    const root = await link({ id: 'del-root', issuer: ROOT, subject: ISSUER });
+    const leaf = await link({ id: 'del-leaf', issuer: ISSUER, subject: LEAF, parentId: 'del-root', status: STATUS });
     const verifier = new DelegationCredentialVerifier({ statusListResolver: resolver });
     return validateDelegationChain(leaf, {
       serverDid: SERVER,

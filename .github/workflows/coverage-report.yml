@@ -96,7 +96,7 @@ jobs:
             }
 
             if (!pr || !pr.total) {
-              fs.writeFileSync('/tmp/coverage-comment-body.md', '## Coverage Report\n\nCoverage report unavailable — tests may have failed.');
+              fs.writeFileSync('/tmp/coverage-comment-body.md', '## Coverage Report\n\nCoverage report unavailable: tests may have failed.');
               return;
             }
 

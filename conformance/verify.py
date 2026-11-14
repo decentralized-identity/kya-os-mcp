@@ -341,7 +341,7 @@ def audit_verify_consistency(old_size: int, new_size: int, old_root: str,
 
 def main() -> int:
     here = Path(__file__).resolve().parent
-    vector_file = json.loads((here / "vectors" / "card-proof.json").read_text())
+    vector_file = json.loads((here / "vectors" / "card-proof.json").read_text(encoding="utf-8"))
     vector = positive_vector(vector_file)
     proof = vector["proof"]
     jwks = vector["jwks"]  # the DID-keyed JWKS is embedded in the self-contained vector
@@ -371,7 +371,7 @@ def main() -> int:
     results.append(("RFC 7638 cnf.jkt thumbprint fusion",
                     rfc7638_thumbprint(key) == proof.get("cnf", {}).get("jkt")))
 
-    audit_file = json.loads((here / "vectors" / "audit-integrity.json").read_text())
+    audit_file = json.loads((here / "vectors" / "audit-integrity.json").read_text(encoding="utf-8"))
     audit = positive_vector(audit_file)
     audit_leaves = audit["leaves"]
     inclusion = audit["inclusion"]

@@ -19,6 +19,12 @@ export async function keyOf(did: string, fragment: string): Promise<AgentIdentit
   return { did, kid: `${did}#${fragment}`, privateKey, publicKey, type: 'development', createdAt: new Date().toISOString() };
 }
 
+/** The key a test holds as a private JWK, as an identity `did` signs with under the id `kid`. */
+export function keyFromJwk(did: string, kid: string, jwk: { readonly x: string; readonly d: string }): AgentIdentity {
+  const base64 = (text: string): string => Buffer.from(text, 'base64url').toString('base64');
+  return { did, kid, privateKey: base64(jwk.d), publicKey: base64(jwk.x), type: 'development', createdAt: new Date().toISOString() };
+}
+
 const unique = (): string => Math.random().toString(16).slice(2);
 
 /**

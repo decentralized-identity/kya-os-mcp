@@ -57,6 +57,8 @@ describe("validateDelegationChain: the credentials it reports", () => {
   });
 
   it("are absent when the walk never started", async () => {
+    // A walk that started reports them: where they are absent below, it did not start.
+    expect(await validateDelegationChain(leaf, resolving([root, middle]))).toHaveProperty("evaluated");
     const malformed = await validateDelegationChain({} as DelegationCredential, baseDeps);
     expect(malformed).not.toHaveProperty("evaluated");
     const unresolvable = await validateDelegationChain(leaf, baseDeps);

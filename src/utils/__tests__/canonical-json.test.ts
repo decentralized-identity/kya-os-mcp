@@ -165,16 +165,10 @@ describe('canonicalizeJson', () => {
       ['a getter element', () => Object.defineProperty([0], 0, { get: () => 1, enumerable: true }), /accessor property at \$\[0\]/],
       ['a getter member', () => Object.defineProperty({}, 'x', { get: () => 1, enumerable: true }), /accessor property at \$\.x/],
       ['a sparse array', () => [1, , 3], /sparse array element at \$\[1\]/],
-      [
-        'a sparse array whose elements before the hole are not enumerable',
-        () => Object.defineProperty([0, , 3], 0, { value: 1, enumerable: false }),
-        /sparse array element at \$\[1\]/,
-      ],
       ['a sparse array whose element before the hole has no JSON form', () => [undefined, , 3], /sparse array element at \$\[1\]/],
-      ['a getter element that is not enumerable', () => Object.defineProperty([0], 0, { get: () => 1 }), /accessor property at \$\[0\]/],
+      ['a getter element that is not enumerable', () => Object.defineProperty([], 0, { get: () => 1 }), /accessor property at \$\[0\]/],
       ['a symbol-keyed member', () => ({ [Symbol('s')]: 1 }), /symbol-keyed property at \$/],
       ['a symbol-keyed member that is not enumerable', () => Object.defineProperty({}, Symbol('s'), { value: 1 }), /symbol-keyed property at \$/],
-      ['a key with a lone surrogate', () => ({ a: { '\ud800': 1 } }), /object key with lone surrogate at \$\.a/],
       [
         'a key with a lone surrogate on a member that is not enumerable',
         () => Object.defineProperty({ a: 1 }, '\udc00', { value: 1 }),

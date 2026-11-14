@@ -144,10 +144,10 @@ describe("validateDelegationChain: snapshotAncestor", () => {
         return (reads === 1 ? first : firstAnswer === "leaf" ? middle : leaf).credentialSubject;
       },
     });
-    const result = await validateDelegationChain(leaf, {
-      ...resolving([root, answering]),
-      snapshotAncestor: (value) => structuredClone(value),
-    });
+    const snapshotAncestor = vi.fn((value: DelegationCredential) => structuredClone(value));
+    const result = await validateDelegationChain(leaf, { ...resolving([root, answering]), snapshotAncestor });
+    // The one read is the copy's: each value the resolver returned was copied, and nothing read it again.
+    expect(snapshotAncestor).toHaveBeenCalledTimes(2);
     expect(reads).toBe(1);
     expect(result.valid).toBe(valid);
     if (valid) {

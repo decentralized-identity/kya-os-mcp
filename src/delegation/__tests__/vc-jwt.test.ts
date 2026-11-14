@@ -263,8 +263,11 @@ describe('VC-JWT', () => {
       });
 
       it('counts what is nested, and not a bracket a string holds', () => {
-        const inString = `{"vc":{},"s":"${'['.repeat(100)}\\"${'{'.repeat(100)}"}`;
-        expect(parseVCJWT(`${header}.${segment(inString)}.sig`)!.payload).toEqual(JSON.parse(inString));
+        const brackets = `${'['.repeat(100)}\\"${'{'.repeat(100)}`;
+        const holding = (levels: number): string =>
+          `{"vc":{},"s":"${brackets}","n":${'['.repeat(levels - 1)}${']'.repeat(levels - 1)}}`;
+        expect(parseVCJWT(`${header}.${segment(holding(64))}.sig`)!.payload).toEqual(JSON.parse(holding(64)));
+        expect(parseVCJWT(`${header}.${segment(holding(65))}.sig`)).toBeNull();
       });
     });
   });

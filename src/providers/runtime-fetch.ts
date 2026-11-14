@@ -13,9 +13,10 @@
  * did:web and status-list read does whatever provider it goes through: a
  * private, loopback, link-local or otherwise non-public IP-literal host (e.g.
  * did:web:169.254.169.254, the cloud-metadata endpoint), a local name (a single
- * label, or `localhost`, `localdomain`, `local`, `internal` or `home.arpa` or a
- * name under one), and a scheme other than http and https are refused, and at
- * most three redirects are followed by hand, each target held to the same rule.
+ * label, or a special-use domain the rule lists as `LOCAL_DOMAINS`, such as
+ * `localhost`, or a name under one), and a scheme other than http and https are
+ * refused, and redirects are followed by hand up to the limit of
+ * `utils/redirect-follower.ts`, each target held to the same rule.
  * This is best-effort defense-in-depth: the rule resolves no name, so it does NOT
  * stop any other name whose address is internal, such as a public name that
  * points at a loopback address (or DNS rebinding). Run verifiers behind an

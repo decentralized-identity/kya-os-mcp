@@ -10,12 +10,13 @@
  * silently, now scoped to status data only and signed off by name.
  *
  * Fail-closed is preserved: a resolver THROW is never cached (the next call
- * retries), and `maxStalenessMs <= 0` makes the wrapper a pass-through. The
+ * retries), nor is an answer that is not a boolean, and `maxStalenessMs <= 0` makes the wrapper a pass-through. The
  * `context` naming the credential's issuer, and its chain's pinned root,
  * reaches the wrapped resolver unchanged and is part of the cache key.
  */
 import type { CredentialStatus } from '../types/protocol.js';
 import type { StatusCheckContext } from '../utils/statuslist-acceptance.js';
+import { readRevoked } from './revocation-answer.js';
 import type { StatusListResolver } from './vc-verifier.types.js';
 import { TtlCache } from '../utils/ttl-cache.js';
 
@@ -53,7 +54,8 @@ export function withStatusCache(
       if (hit !== undefined) return hit;
       // A throw propagates uncached — fail-closed deny now, retry next call.
       const revoked = await resolver.checkStatus(status, context);
-      cache.set(key, revoked);
+      // An answer that is not a boolean is refused by its reader and, like a throw, is not kept.
+      if (readRevoked(revoked) !== undefined) cache.set(key, revoked);
       return revoked;
     },
   };

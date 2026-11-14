@@ -122,6 +122,9 @@ export interface VerificationMethod {
  *
  * Whether a list may be read depends on the context, so a caching wrapper must key on it as well as
  * on the entry's URL, index and purpose, as `withStatusCache` does.
+ *
+ * The answer is read strictly: `true` is revoked, `false` is not, and any other value, which only
+ * untyped code can give, denies the credential as `status_unresolvable`.
  */
 export interface StatusListResolver {
   checkStatus(status: CredentialStatus, context?: StatusCheckContext): Promise<boolean>;

@@ -5,16 +5,19 @@
  * of at most its first 64 characters, counted as code points, so a cut just after a character outside
  * the Basic Multilingual Plane keeps that character whole, and it escapes a lone surrogate, as
  * `\ud83d`. The shipped CheqdStatusListResolver reads its pinned issuer's list, served
- * with another `id` or `issuer`; only the network is faked.
+ * with another `id` or `issuer`; only the network is faked. A custom resolver whose answer is not a
+ * boolean is refused the same way: the gate signs that the status could not be read.
  */
 import { describe, it, expect } from 'vitest';
 import type { KyaOsToolHandler } from '../with-kya-os.js';
 import { CheqdStatusListResolver } from '../../integrations/cheqd/statuslist-resolver.js';
 import { createDidKeyResolver } from '../../delegation/did-key-resolver.js';
+import type { StatusListResolver } from '../../delegation/vc-verifier.js';
 import { statusListGzipCodec } from '../../utils/statuslist-gzip.js';
 import { createRealIdentity, createRealStatusListManager } from '../../__tests__/audit/helpers/crypto-helpers.js';
 import { delegationRecord, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 import type { FetchProvider } from '../../providers/base.js';
+import type { CredentialStatus } from '../../types/protocol.js';
 import { createMiddleware, crypto, handshake, proofOf, served, verifyReceived } from './helpers/received-proof.js';
 
 const EMOJI = '\u{1F600}';
@@ -45,6 +48,12 @@ async function refusing(change: (list: Record<string, unknown>) => Record<string
     decompressor: statusListGzipCodec,
     cacheTtlMs: 0,
   });
+  const answered = await gateAnswer(statusListResolver, entry);
+  return { ...answered, statusIssuer: statusIssuer.did, url: entry.statusListCredential };
+}
+
+/** The gate's response to a delegation whose status is `entry`, read by `statusListResolver`. */
+async function gateAnswer(statusListResolver: StatusListResolver, entry: CredentialStatus) {
   const kyaos = await served(await createMiddleware({ delegation: { statusListResolver } }));
   const sessionId = await handshake(kyaos);
   const grantor = await createRealIdentity(crypto);
@@ -60,11 +69,11 @@ async function refusing(change: (list: Record<string, unknown>) => Record<string
   });
   const sent = { path: '/secret', _kyaos_delegation: delegation };
   const result = (await kyaos.wrapWithDelegation('vault', CONSENT, ran)(sent, sessionId)) as Record<string, unknown>;
-  return { result, signer: kyaos.identity.did, sent, statusIssuer: statusIssuer.did, url: entry.statusListCredential };
+  return { result, signer: kyaos.identity.did, sent };
 }
 
 /** That the gate refused the delegation with `reason` and signed it in a response proof that verifies. */
-async function expectSignedRefusal(refusal: Awaited<ReturnType<typeof refusing>>, reason: string): Promise<void> {
+async function expectSignedRefusal(refusal: Awaited<ReturnType<typeof gateAnswer>>, reason: string): Promise<void> {
   const { result, signer, sent } = refusal;
   expect(JSON.parse((result.content as Array<{ text: string }>)[0]!.text)).toEqual({ error: 'delegation_invalid', reason });
   expect(proofOf(result)?.meta.reason).toBe(reason);
@@ -97,6 +106,28 @@ describe('the delegation gate refusing a status list', () => {
       refusal,
       `Delegation del-1 invalid: Status check error: status list issuer "did:key:z6Mk\\ude00y" ` +
         `is not the expected issuer ("${refusal.statusIssuer}")`,
+    );
+  });
+
+  it.each([
+    ['undefined', undefined, 'of type undefined'],
+    ['null', null, 'of type null'],
+    ['0', 0, 'of type number'],
+    ['an empty string', '', '""'],
+    ['the string "false"', 'false', '"false"'],
+    ['an empty object', {}, 'of type object'],
+  ])('signs its refusal of a status the resolver answers %s for, which it cannot read', async (_label, answer, named) => {
+    const entry: CredentialStatus = {
+      id: 'https://status.example/1#7',
+      type: 'BitstringStatusListEntry',
+      statusPurpose: 'revocation',
+      statusListIndex: '7',
+      statusListCredential: 'https://status.example/1',
+    };
+    const refusal = await gateAnswer({ checkStatus: async () => answer as boolean }, entry);
+    await expectSignedRefusal(
+      refusal,
+      `Delegation del-1 invalid: Credential status could not be read: the status list resolver's answer (${named}) is neither true nor false`,
     );
   });
 });

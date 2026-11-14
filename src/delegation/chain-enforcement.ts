@@ -19,7 +19,7 @@ import {
 } from "../types/protocol.js";
 import { canonicalizeJson } from "../utils/canonical-json.js";
 import { verifyDelegationAudience } from "./audience-validator.js";
-import { chainResolutionFailure, revocationCheckFailure, revokedReason } from "./chain-reasons.js";
+import { chainResolutionFailure, revocationCheckFailure, revocationRefusal } from "./chain-reasons.js";
 import { authorityContains, crispScopes, matcherContains, scopeAuthority } from "./scope-matcher.js";
 import { credentialIssuerDid } from "./vc-jwt-verify.js";
 
@@ -218,6 +218,9 @@ export interface DelegationCredentialVerifierPort {
  * Wiring this is the E3.1 correctness fix: the prior closure checked only each
  * credential's OWN `credentialStatus` bit via the resolver, so an ancestor
  * cascade-revocation that hadn't flipped the leaf's own bit could be missed.
+ *
+ * The answer is read strictly: a chain passes only on `revoked: false`, is revoked only on
+ * `revoked: true`, and is refused as unreadable on anything else.
  */
 export interface RevocationChecker {
   isRevoked(delegationId: string): Promise<{
@@ -538,25 +541,18 @@ export async function validateDelegationChain(
   if (deps.revocationChecker) {
     for (const credential of chain) {
       const delegationId = credential.credentialSubject.delegation.id;
-      let revocation: Awaited<ReturnType<RevocationChecker["isRevoked"]>>;
+      let answer: unknown;
       try {
-        revocation = await deps.revocationChecker.isRevoked(delegationId);
+        answer = await deps.revocationChecker.isRevoked(delegationId);
       } catch (error) {
         return {
           valid: false,
           reason: revocationCheckFailure(delegationId, error),
         };
       }
-      if (!revocation.revoked) {
-        continue;
-      }
-      const revokedAncestor =
-        revocation.revokedAncestor ??
-        (delegationId === leafDelegation.id ? undefined : delegationId);
-      return {
-        valid: false,
-        reason: revokedReason(leafDelegation.id, revokedAncestor, revocation.reason),
-      };
+      // Only an answer whose `revoked` is the literal `false` lets the chain go on.
+      const reason = revocationRefusal(leafDelegation.id, delegationId, answer);
+      if (reason !== undefined) return { valid: false, reason };
     }
   }
 

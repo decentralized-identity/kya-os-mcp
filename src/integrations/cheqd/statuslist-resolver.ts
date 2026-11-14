@@ -57,7 +57,7 @@ import {
   proofPurposeMismatch,
   selectAssertionMethod,
 } from '../../delegation/verification-relationship.js';
-import { canonicalizeJSON } from '../../delegation/utils.js';
+import { credentialWithoutProof } from '../../delegation/signed-form.js';
 import {
   decodeStatusListPayload,
   parseStatusListIndex,
@@ -66,6 +66,7 @@ import {
 import { acceptEntrySize, acceptStatusList } from '../../utils/statuslist-acceptance.js';
 import { bytesToBase64 } from '../../utils/base64.js';
 import { base64EitherBytes } from '../../utils/base64-reading.js';
+import { canonicalizeJsonBytes } from '../../utils/canonical-json.js';
 import { dependencyTimeout } from '../../utils/deadline.js';
 import { ed25519KeyBytes } from '../../utils/ed25519-public-key.js';
 import { TtlCache } from '../../utils/ttl-cache.js';
@@ -241,11 +242,15 @@ export class CheqdStatusListResolver implements StatusListResolver {
       throw new Error(purposeMismatch);
     }
 
-    const unsigned: Record<string, unknown> = { ...vc };
-    delete unsigned['proof'];
-    const data = new TextEncoder().encode(canonicalizeJSON(unsigned));
+    // What the signature covers is what an embedded proof covers on any credential (SPEC.md
+    // §6.2): the object without `proof`, in its RFC 8785 form.
+    const data = canonicalizeJsonBytes(credentialWithoutProof(vc));
     // Read as a credential's proofValue is (SPEC.md §7.8), so one string is one signature on
-    // every runtime; a string that carries none fails the check below.
+    // every runtime; a string that carries none fails the check below. The list is not read
+    // through `signedCredential`, whose refusals are a delegation credential's: it refuses such
+    // a string, and a signature of no bytes, in its own words and before the issuer's DID is
+    // resolved, and it bounds nesting as SPEC.md §7.8 does. A list is refused below, once its
+    // issuer's key is selected, as a signature that failed.
     const signature = base64EitherBytes(proofValue);
 
     const named: unknown = proof['verificationMethod'];

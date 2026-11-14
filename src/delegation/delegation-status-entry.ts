@@ -38,10 +38,15 @@ export function parseCredentialStatusId(credentialStatusId: string): CredentialS
 /**
  * The node's status list entry: the structured `credentialStatus` when stored,
  * else the parsed legacy `credentialStatusId`, else `undefined` (no entry).
+ * A stored entry is the operator's own record, so its index is read as
+ * `StatusList2021Manager.updateStatus` reads one: a storage layer may hand it
+ * back as a whole number, and the entry then names it as a decimal string. An
+ * index that is neither throws.
  */
 export function nodeStatusEntry(node: DelegationNode): CredentialStatus | undefined {
   if (node.credentialStatus) {
-    return node.credentialStatus;
+    const index = parseStatusListIndex(node.credentialStatus.statusListIndex, { acceptNumber: true });
+    return { ...node.credentialStatus, statusListIndex: String(index) };
   }
   return node.credentialStatusId ? parseCredentialStatusId(node.credentialStatusId) : undefined;
 }

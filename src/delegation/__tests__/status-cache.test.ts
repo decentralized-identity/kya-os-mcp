@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { withStatusCache } from '../status-cache.js';
+import { describeValue } from '../../utils/describe-value.js';
 import type { CredentialStatus } from '../../types/protocol.js';
 
 const entry = (index: string): CredentialStatus => ({
@@ -72,5 +73,45 @@ describe('withStatusCache', () => {
     );
     expect(await cached.checkStatus(entry('5'))).toBe(false);
     expect(await cached.checkStatus(entry('6'))).toBe(true);
+  });
+
+  /** A cached resolver of two revocation lists, which refuses any other list or purpose. */
+  const twoLists = () => {
+    const lists = new Map<unknown, Map<unknown, boolean>>([
+      ['https://status.example/1', new Map([['revocation', false]])],
+      ['https://status.example/2', new Map([['revocation', true]])],
+    ]);
+    return withStatusCache(
+      {
+        checkStatus: async (s) => {
+          const bit = lists.get(s.statusListCredential)?.get(s.statusPurpose);
+          if (bit === undefined) throw new Error(`no list for statusPurpose ${describeValue(s.statusPurpose)}`);
+          return bit;
+        },
+      },
+      { maxStalenessMs: 60_000 },
+    );
+  };
+
+  it("keys on the list and the purpose too (one entry's verdict never answers another's)", async () => {
+    const cached = twoLists();
+    expect(await cached.checkStatus(entry('7'))).toBe(false);
+    expect(await cached.checkStatus({ ...entry('7'), statusListCredential: 'https://status.example/2' })).toBe(true);
+    await expect(cached.checkStatus({ ...entry('7'), statusPurpose: 'suspension' })).rejects.toThrow(
+      'no list for statusPurpose "suspension"',
+    );
+  });
+
+  it('hands the resolver a purpose of any form as the credential states it, never converting it for the key', async () => {
+    const cached = twoLists();
+    const named: [unknown, string][] = [
+      ['s'.repeat(100_000), `"${'s'.repeat(64)}"...`],
+      [JSON.parse('{"toString":"revocation"}'), 'of type object'],
+    ];
+    for (const [statusPurpose, as] of named) {
+      await expect(cached.checkStatus({ ...entry('7'), statusPurpose } as CredentialStatus)).rejects.toThrow(
+        `no list for statusPurpose ${as}`,
+      );
+    }
   });
 });

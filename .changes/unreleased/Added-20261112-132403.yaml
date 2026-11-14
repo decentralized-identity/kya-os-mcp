@@ -1,0 +1,49 @@
+kind: Added
+body: |-
+    **`acceptStatusList` is the status-list acceptance rule the readers that
+    verify a list's proof apply, and `acceptedStatusListIssuers` names the
+    issuers a reader accepts for a credential.** Given a fetched list and
+    the entry's `statusListCredential`, `statusPurpose` and
+    `acceptedIssuers`, `acceptStatusList` returns a `StatusListVerdict`,
+    `{ valid: true }` or `{ valid: false, reason }`. The list's `issuer`
+    must be one of `acceptedIssuers`, its `statusPurpose` must include the
+    entry's, as one string unless the list is a
+    `BitstringStatusListCredential` with a `BitstringStatusList` subject,
+    and its `id` must be, byte for byte, the URL it was fetched from. A
+    list may leave the `id` out only when its issuer is the one issuer
+    `acceptedIssuers` names, and not even then when the optional
+    `requireId` is `true`, as `CheqdStatusListResolver` sets it. The rule
+    decides by the list's `issuer` and checks no proof, so a custom
+    `StatusListResolver` applies it once the list's proof verifies under a
+    key that `issuer` lists under `assertionMethod`.
+    `acceptedStatusListIssuers(context, statusListIssuers)` lists, each
+    once, the credential's issuer, the chain's root issuer when the context
+    names it as `trustedRootIssuer`, and those `statusListIssuers` accepts
+    for the credential's issuer, and throws the `TypeError`
+    `createRevocationChecker` throws for a `statusListIssuers` that is not
+    a plain object of string arrays.
+    `statusListExpectationFor(entry, context, statusListIssuers)` builds,
+    from those issuers, the expectation `acceptStatusList` takes for an
+    entry, as each reader in the library that holds a list to its
+    credential does, so a custom `StatusListResolver` passes
+    `acceptStatusList(list, statusListExpectationFor(status, context,
+    statusListIssuers))`. All three, with their types, are exported from
+    `@kya-os/mcp`, `@kya-os/mcp/delegation` and `@kya-os/mcp/card`.
+    `StatusListResolver.checkStatus` and `BitstringRevocationChecker` take
+    that `StatusCheckContext` as an optional second argument,
+    `withStatusCache` passes it on and caches per context, and
+    `revocationEntriesOf(chain, trustedRootIssuer)` builds it for every hop
+    of a delegation chain, as a `RevocationChainEntry` that carries the
+    hop's `statusPurpose` and its `position` in the chain.
+    `createRevocationChecker` takes
+    `statusListIssuers`, keyed by credential issuer: a deployment whose
+    lists one status service signs lists that service under each
+    credential issuer, or has the chain's pinned root sign its lists. It
+    throws a `TypeError` when the value is not a plain object of string
+    arrays, or is given without `verifyStatusList`. The delegation
+    middleware names only the credential's own issuer to its resolver, even
+    when `trustedRootIssuers` pins the chain's root, so on that path a list
+    the root signed for a re-delegated credential is refused unless the
+    resolver's own configuration accepts the root for the credential's
+    issuer and the list states its `id`.
+time: 2026-11-12T13:24:03.000000-06:00

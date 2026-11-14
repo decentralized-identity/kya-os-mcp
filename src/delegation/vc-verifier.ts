@@ -33,6 +33,7 @@ import {
   combineVerificationResult,
 } from "./vc-verification-checks.js";
 import {
+  credentialIssuerDid,
   verifyVcJwtSignature,
   prepareVcJwtCredential,
 } from "./vc-jwt-verify.js";
@@ -135,6 +136,7 @@ export class DelegationCredentialVerifier {
         ? checkCredentialStatus(
             vc.credentialStatus,
             options.statusListResolver || this.statusListResolver,
+            credentialIssuerDid(vc),
           )
         : Promise.resolve<StatusCheckResult>({
             valid: true,
@@ -192,6 +194,7 @@ export class DelegationCredentialVerifier {
         ? checkCredentialStatus(
             vc.credentialStatus,
             options.statusListResolver || this.statusListResolver,
+            credentialIssuerDid(vc),
           )
         : Promise.resolve<StatusCheckResult>({
             valid: true,

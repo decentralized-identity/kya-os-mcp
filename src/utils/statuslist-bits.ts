@@ -17,6 +17,7 @@
  * as "not revoked".
  */
 import { base64urlDecodeToBytes, base64urlEncodeFromBytes } from './base64.js';
+import { describeValue } from './describe-value.js';
 import { isRecord } from './guards.js';
 
 /**
@@ -34,22 +35,41 @@ export const MAX_STATUS_LIST_BYTES = 16 * 1024 * 1024;
  */
 export const MULTIBASE_BASE64URL = 'u';
 
+/** How {@link parseStatusListIndex} takes an index. */
+export interface StatusListIndexOptions {
+  /**
+   * Also take a non-negative safe integer number. Only code that reads its
+   * own stored records sets it (`StatusList2021Manager.updateStatus`, and the
+   * cascade's `nodeStatusEntry`): a storage layer may hand back the index it
+   * stored as a number, and refusing it would leave a revoked credential's
+   * bit clear. A reader of an entry a credential states never sets it.
+   */
+  acceptNumber?: boolean;
+}
+
 /**
  * Parse a decimal `statusListIndex` (a non-negative integer expressed as a
  * string), fail-closed. Canonical decimal ONLY: `Number()` alone would coerce
  * whitespace (`" "` → 0), hex (`"0x2A"` → 42), `"+42"`, and `"1e1"` → 10 —
  * silently reading a DIFFERENT (often clear) bit than the credential names,
  * so a revoked credential could read as live.
+ *
+ * A signed entry is JSON, so its index may be a number or an array such as `["7"]` rather than a
+ * string: either is refused, never converted, unless `options.acceptNumber` admits a number.
+ * Whoever signed the entry chose the index, so a refusal quotes it as `describeValue` quotes any
+ * such value: bounded, and well-formed text.
  */
-export function parseStatusListIndex(raw: string): number {
-  if (!/^[0-9]+$/.test(raw)) {
-    throw new Error(
-      `Invalid statusListIndex "${raw}" — must be a canonical non-negative decimal`,
-    );
+export function parseStatusListIndex(raw: unknown, options: StatusListIndexOptions = {}): number {
+  if (options.acceptNumber === true && typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0) {
+    return raw;
+  }
+  if (typeof raw !== 'string' || !/^[0-9]+$/.test(raw)) {
+    const form = options.acceptNumber === true ? 'a non-negative safe integer or a' : 'a';
+    throw new Error(`Invalid statusListIndex ${describeValue(raw)}: must be ${form} non-negative decimal string`);
   }
   const index = Number(raw);
   if (!Number.isSafeInteger(index)) {
-    throw new Error(`statusListIndex "${raw}" exceeds the safe integer range`);
+    throw new Error(`statusListIndex ${describeValue(raw)} exceeds the safe integer range`);
   }
   return index;
 }

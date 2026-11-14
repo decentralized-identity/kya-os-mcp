@@ -765,6 +765,49 @@ A verifier that reads a `StatusList2021Credential` MUST verify its proof, as
 §6.2 states, before reading any bit. A list whose proof does not verify is
 unresolvable: the credential it covers is rejected, never read as active.
 
+A list's proof shows only who signed it, so a verifier MUST also hold the list to an issuer it trusts for the credential the list covers.
+These checks decide by the list's `issuer`, so they mean something only when the list's proof verifies under a key that `issuer` lists under `assertionMethod` (§6.2), and a proof check plugged into a verifier, such as the reference implementation's `verifyStatusList` seam, resolves `true` only then.
+W3C Bitstring Status List v1.0 §3.2 expects that "a verifier will ensure that it trusts the issuer of a verifiable credential, as well as the issuer of the associated BitstringStatusListCredential".
+The credential is rejected unless the list's `issuer` is one of:
+
+- the credential's own `issuer`;
+- the `issuer` of the first credential of its delegation chain (§6.10), the chain's root, when the verifier pins the root to its own configuration: the resource owner it asserts, or one of its trusted root issuers (SPEC-ENTITY-CARD.md §11.4);
+- an issuer the verifier is configured to accept for the credential's `issuer`.
+
+For an Entity Card's `revocation` entry the Card's `id` is the credential's own `issuer`, and the Card's `responsibleParty` takes the root's place once the Card's accountability check has verified it as the root issuer of the Card's delegation chain (SPEC-ENTITY-CARD.md §10.3).
+A pinned root can revoke its own credential, which revokes every credential below it in its chains, so its list speaks for each of them.
+A verifier that pins no root accepts the root's list only for the root's own credential, whose `issuer` the root is.
+The issuers between the root and the credential are not accepted.
+A credential commits to its parent only by an `id` the parent's issuer chose, so whoever presents a chain decides who stands between the root and the credential, while the root is held to the verifier's own configuration.
+An issuer between them still revokes what it delegated, as §6.5.1 allows, by revoking its own credential on its own list, which the cascading chain walk (§6.10) carries to every credential below it.
+The credential's own `issuer` is the one the credential names, so that issuer is trusted only once the credential's proof verifies.
+A verifier may read the credential's status while it checks that proof, as the reference implementation's `DelegationCredentialVerifier` does, and accepts the credential only when both checks pass.
+A deployment whose lists one status service signs accepts that service for each credential issuer, or has the pinned root sign its lists.
+
+The credential is also rejected when the list's `statusPurpose` does not include the purpose of the credential's status entry.
+Only a list typed as a Bitstring Status List v1.0 list in both places its §2.2 names, a `type` array that includes `BitstringStatusListCredential` and a subject whose `type` is `BitstringStatusList`, may state its `statusPurpose` as an array of strings.
+Any other list, a `StatusList2021Credential` among them, states one string, as Verifiable Credentials Status List v2021 §2.2 requires, and the credential is rejected when it states an array, whatever the array holds.
+The credential is likewise rejected when the list states an `id` that is not, byte for byte, the `statusListCredential` URL it was fetched from.
+Only the `id` binds a list to the URL it is served at, and Bitstring Status List v1.0 §2.2 makes it optional.
+A list the credential's own `issuer` signed MAY be read when it states no `id`, but only when that issuer is the only one the verifier accepts for the credential: it pins no other root, and accepts no other issuer for the credential's `issuer`.
+A reader may refuse it, as the reference implementation's `CheqdStatusListResolver` does: it reads only a list that states its URL as its `id`.
+Any other list MUST state that URL as its `id`, or the credential is rejected.
+Each issuer the verifier accepts signs lists for other credentials as well, and one of them, with the credential's bit clear, could otherwise be served at the URL of a list another accepted issuer keeps.
+Where the credential's own `issuer` is the only one the verifier accepts for the credential, a list that states no `id` can still be served in place of another list its own issuer signed, so an issuer SHOULD state the `id` of each list.
+Nor do these checks tell versions of one list apart.
+An earlier version of a list, signed before a credential was revoked, can be served in place of the current one.
+A verdict read from it is reported fresh (§6.10) until its `validUntil` (or `expirationDate`), or indefinitely when it states neither, and after that only a verifier that requires `fresh` refuses it.
+An Entity Card's Entity is an issuer accepted for its own Card, so whoever holds the Entity's key and controls what the Card's `statusListCredential` URL returns can serve a list the Entity signed, with the Card's bit clear, in place of the one its responsible party revoked the Card on.
+Against a compromised Entity key, the responsible party revokes the root delegation credential, which the Card's accountability check reads (SPEC-ENTITY-CARD.md §12.5).
+
+In the reference implementation, the delegation middleware tells a `StatusListResolver` only the credential's own issuer, even when the verifier pins the chain's root.
+On that path a list the root signed for a re-delegated credential is refused, which fails closed, unless the resolver's own configuration, such as a `statusListIssuers` map it passes to `acceptedStatusListIssuers`, accepts the root for the credential's issuer.
+Even then the root's list is read only when it states its URL as its `id`.
+`CheqdStatusListResolver` is an explicit global-pin exception to per-credential authority: its configured DID may sign a list for any hop, regardless of the chain root.
+That acceptance comes from resolver configuration, not from the middleware discovering or authenticating a root.
+`withStatusCache` separates entries by URL, index, purpose, credential issuer and root context; an omitted purpose and an explicit `null` have distinct keys.
+Cached verdicts still obey the configured staleness window, and a cache keeps them when the trust configuration changes, so that change requires a new cache.
+
 L1 implementations do not require revocation support; revocation checking is available at L3 only.
 
 Revocation does not require a globally accessible list. A verifier only needs to
@@ -918,21 +961,17 @@ A verifying resource SHOULD assert its own identity as the expected resource whe
 chain (the `resource` context of `evaluateDelegationChain`), so that a chain minted for a
 different resource fails at the root check instead of being accepted by an unrelated Verifier.
 
-**Revocation.** Revocation uses **W3C Bitstring Status List v1.0** [BITSTRING-STATUS-LIST]
-(`BitstringStatusListEntry`) - the **successor to** the deprecated StatusList2021 - behind a
-pluggable `RevocationChecker` seam so status-list churn never reaches callers. The default checker
-resolves `statusListCredential` via SafeFetch (§6.6), inflates the multibase (`u` = base64url) +
-GZIP `encodedList`, and reads the bit at `statusListIndex` MSB-first within each byte. A verifier
-MUST verify the status list credential's proof before it reads a bit, as Bitstring Status List
-v1.0 requires. The reference checker does so when given its `verifyStatusList` seam (optional
-until 2.0) and ships a verifier for `eddsa-jcs-2022` lists. It is **fail-closed**: an unreachable
-list, malformed credential, rejected list proof, mismatched `statusPurpose`, or out-of-range index
-all resolve to `{ revoked: true }`. Each verdict also reports `fresh` - `true`
-only when read from a live, in-validity-window (`validFrom`/`validUntil`, or
-`issuanceDate`/`expirationDate`) status list. The chain walk is **cascading**: root→leaf,
-short-circuiting on the first revoked/unresolvable hop (a revoked ancestor invalidates the subtree),
-with `fresh` the AND of every checked hop. L2 accepts a non-revoked chain (cached / offline
-acceptable); L3 additionally requires `fresh` (a live check).
+**Revocation.** Revocation uses **W3C Bitstring Status List v1.0** [BITSTRING-STATUS-LIST] (`BitstringStatusListEntry`) - the **successor to** the deprecated StatusList2021 - behind a pluggable `RevocationChecker` seam so status-list churn never reaches callers.
+The default checker resolves `statusListCredential` via SafeFetch (SPEC-ENTITY-CARD.md §6.6), inflates the multibase (`u` = base64url) + GZIP `encodedList`, and reads the bit at `statusListIndex` MSB-first within each byte.
+A verifier MUST verify the status list credential's proof before it reads a bit, as Bitstring Status List v1.0 requires.
+The reference checker does so when given its `verifyStatusList` seam (optional until 2.0) and ships a verifier for `eddsa-jcs-2022` lists.
+With that seam it also holds each hop's list to an issuer §6.6 accepts for the hop: the hop's own issuer, the chain's root issuer when the verifier pins it with its trusted root issuers or the resource owner it asserts, or an issuer its `statusListIssuers` option accepts for the hop's issuer.
+A list is read without an `id` only when the hop's own issuer signed it and is the only issuer accepted for the hop; any other list is read only when it states its URL as its `id`.
+The hop's own issuer is the one the hop names, so a verifier checks every hop's proof before it reads their status (SPEC-ENTITY-CARD.md §11.4).
+It is **fail-closed**: an unreachable list, malformed credential, rejected list proof, list `issuer` not accepted for the hop, list `id` other than the `statusListCredential` URL, no list `id` where the hop's own issuer is not the only issuer accepted for it, a list `statusPurpose` that does not include the checker's, a `statusPurpose` array on a list §6.6 holds to one string, an entry whose `statusPurpose`, when present, is not the checker's (`null` included), or out-of-range index all resolve to `{ revoked: true }`.
+Each verdict also reports `fresh` - `true` only when read from a live, in-validity-window (`validFrom`/`validUntil`, or `issuanceDate`/`expirationDate`) status list.
+The chain walk is **cascading**: root→leaf, short-circuiting on the first revoked/unresolvable hop (a revoked ancestor invalidates the subtree), with `fresh` the AND of every checked hop.
+L2 accepts a non-revoked chain (cached / offline acceptable); L3 additionally requires `fresh` (a live check).
 
 **KYC/KYB.** KYC/KYB rides the same rail as an `IdentityVerificationCredential` whose `credentialSubject` is the
 `responsibleParty` and which asserts the verification **fact + level** (`verificationLevel ∈

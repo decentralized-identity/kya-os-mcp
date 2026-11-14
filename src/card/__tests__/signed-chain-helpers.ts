@@ -76,6 +76,8 @@ export interface HopOptions {
   caveats?: Caveat[];
   /** Status-list index; omitted means the hop carries no `credentialStatus`. */
   statusIndex?: number;
+  /** The status list the index is in; default `STATUS_URL`. */
+  statusListCredential?: string;
   validUntil?: string;
   /** Sign with this identity instead of the issuer (to forge a hop). */
   signer?: TestIdentity;
@@ -102,7 +104,7 @@ export function hop(opts: HopOptions): DelegationCredential {
             type: 'BitstringStatusListEntry',
             statusPurpose: 'revocation',
             statusListIndex: String(opts.statusIndex),
-            statusListCredential: STATUS_URL,
+            statusListCredential: opts.statusListCredential ?? STATUS_URL,
           },
         }
       : {}),
@@ -144,10 +146,19 @@ export function twoHopChain(p: ChainParties): [DelegationCredential, DelegationC
   return [root, leaf];
 }
 
-/** A signed Bitstring Status List with `revoked` indices set (16 KiB, MSB-first). */
-export function statusList(signer: TestIdentity, revoked: number[] = []): Record<string, unknown> {
+/**
+ * A Bitstring Status List with `revoked` indices set (16 KiB, MSB-first), issued at `STATUS_URL` by
+ * `signer` and signed by it. `fields` replace top-level members, or `credentialSubject` members
+ * when given there, before signing.
+ */
+export function statusList(
+  signer: TestIdentity,
+  revoked: number[] = [],
+  fields: Record<string, unknown> & { credentialSubject?: Record<string, unknown> } = {},
+): Record<string, unknown> {
   const bytes = new Uint8Array(16 * 1024);
   for (const i of revoked) bytes[i >>> 3] = (bytes[i >>> 3] ?? 0) | (0x80 >> (i & 7));
+  const { credentialSubject, ...members } = fields;
   return signEddsaJcs2022(
     {
       '@context': ['https://www.w3.org/ns/credentials/v2'],
@@ -160,7 +171,9 @@ export function statusList(signer: TestIdentity, revoked: number[] = []): Record
         type: 'BitstringStatusList',
         statusPurpose: 'revocation',
         encodedList: `u${gzipSync(bytes).toString('base64url')}`,
+        ...credentialSubject,
       },
+      ...members,
     },
     signer,
   );
@@ -168,8 +181,13 @@ export function statusList(signer: TestIdentity, revoked: number[] = []): Record
 
 /** A SafeFetch that serves `body` at `STATUS_URL` and fails for anything else. */
 export function serve(body: Record<string, unknown> | undefined): SafeFetch {
+  return serveAt(body === undefined ? {} : { [STATUS_URL]: body });
+}
+
+/** A SafeFetch that serves each body at its URL and fails for anything else. */
+export function serveAt(bodies: Record<string, Record<string, unknown>>): SafeFetch {
   return async (url) =>
-    body !== undefined && url === STATUS_URL
-      ? { ok: true, status: 200, json: () => Promise.resolve(body) }
+    Object.prototype.hasOwnProperty.call(bodies, url)
+      ? { ok: true, status: 200, json: () => Promise.resolve(bodies[url]) }
       : { ok: false, status: 503, json: () => Promise.resolve({}) };
 }

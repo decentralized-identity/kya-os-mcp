@@ -37,7 +37,10 @@ import {
 
 const didResolver = createDidKeyResolver();
 
-/** The verifier's wiring, all shipped implementations. `list` is what the status URL serves. */
+/**
+ * The verifier's wiring, all shipped implementations, trusting Acme as the root, so Acme's list, at
+ * the status URL, is read for every hop of its chains. `list` is what the status URL serves.
+ */
 function deps(
   p: ChainParties,
   overrides: Partial<VerifyRequestDelegationDeps> & { list?: Record<string, unknown> | null } = {},
@@ -45,6 +48,7 @@ function deps(
   const { list, ...rest } = overrides;
   return {
     resource: RESOURCE,
+    trustedRootIssuers: [p.acme.did],
     verifyHopProof: createDelegationProofVerifier({ didResolver }),
     checkRevocation: createRevocationChecker({
       fetch: serve(list === null ? undefined : (list ?? statusList(p.acme))),

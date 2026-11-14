@@ -105,6 +105,16 @@ export {
 } from './delegation/vc-verifier.js';
 
 export {
+  acceptedStatusListIssuers,
+  acceptStatusList,
+  statusListExpectationFor,
+  type StatusCheckContext,
+  type StatusListExpectation,
+  type StatusListIssuers,
+  type StatusListVerdict,
+} from './utils/statuslist-acceptance.js';
+
+export {
   DelegationGraphManager,
   createDelegationGraph,
   type DelegationNode,

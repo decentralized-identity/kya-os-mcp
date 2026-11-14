@@ -145,6 +145,18 @@ describe('scopeSatisfies', () => {
 });
 
 describe('matcherContains (attenuation across matcher kinds)', () => {
+  it('never proves a prefix inside a path-prefix, which refuses values the prefix matches', () => {
+    // A path-prefix matches no value with a dot segment; a prefix matches any value that starts
+    // with its base. So the prefix grants `notes/../admin`, which its would-be parent does not.
+    const [parent, child] = [m('path-prefix', 'notes'), m('prefix', 'notes/')];
+    const value = 'notes/../admin';
+    expect([matchScope(child.resource, child.matcher, value), matchScope(parent.resource, parent.matcher, value)]).toEqual([true, false]);
+    expect(matcherContains(parent, child)).toBe(false);
+    expect(matcherContains(m('path-prefix', 'notes/'), m('prefix', 'notes/2026/'))).toBe(false);
+    // The same authority written as a path-prefix is still proven inside its parent.
+    expect(matcherContains(parent, m('path-prefix', 'notes/2026'))).toBe(true);
+  });
+
   const m = (matcher: CrispScope['matcher'], resource: string): CrispScope => ({ matcher, resource });
 
   it('never proves containment through a path-prefix with a dot segment', () => {
@@ -184,8 +196,8 @@ describe('matcherContains (attenuation across matcher kinds)', () => {
   it('proves a narrower prefix or path, never a wider one or one across the path boundary', () => {
     expect(matcherContains(m('prefix', 'repo:*'), m('prefix', 'repo:read'))).toBe(true);
     expect(matcherContains(m('path-prefix', 'notes/'), m('path-prefix', 'notes/2026'))).toBe(true);
+    expect(matcherContains(m('path-prefix', 'notes/'), m('path-prefix', 'notes'))).toBe(true);
     expect(matcherContains(m('prefix', 'notes'), m('path-prefix', 'notes/2026'))).toBe(true);
-    expect(matcherContains(m('path-prefix', 'notes'), m('prefix', 'notes/'))).toBe(true);
     expect(matcherContains(m('prefix', 'repo:read'), m('prefix', 'repo:'))).toBe(false);
     expect(matcherContains(m('path-prefix', 'notes'), m('path-prefix', 'notesx'))).toBe(false);
     expect(matcherContains(m('path-prefix', 'notes'), m('prefix', 'notes'))).toBe(false);

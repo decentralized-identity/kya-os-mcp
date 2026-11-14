@@ -609,6 +609,13 @@ On 1.22.0 no proof could be made for it: the result was returned with `_meta.pro
 A verifier on 1.22.0 cannot check such a proof, because it fails to hash the result it received, so a client that verifies envelope proofs of such results needs this release too.
 The body profile, the default, covers `content` alone and is unchanged.
 
+### A `prefix` scope under a `path-prefix` parent
+
+A re-delegation whose scope uses the `prefix` matcher is no longer accepted under a parent scope that uses `path-prefix`.
+On 1.22.0 a child `prefix` scope `notes/` validated under a parent `path-prefix` scope `notes`.
+The chain is now refused with the reason for a scope outside its parent.
+Write the child's scope with the `path-prefix` matcher.
+
 ### Conformance suite 1.4.0
 
 The suite adds status-list vectors for the acceptance rule, each with a list whose proof verifies, and has 97 vectors in all.

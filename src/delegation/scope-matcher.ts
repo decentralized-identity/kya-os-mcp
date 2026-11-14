@@ -120,13 +120,15 @@ export function scopeAuthority(credential: DelegationCredential): CrispScope[] {
 /**
  * Sound containment rules for pattern matchers, keyed `<inner>:<outer>` and
  * applied to non-empty bases: each holds only when every value the inner
- * pattern matches, the outer one matches too.
+ * pattern matches, the outer one matches too. There is none for a `prefix`
+ * inside a `path-prefix`: a `path-prefix` matches no value with a dot segment,
+ * and a `prefix` matches any value that starts with its base, `notes/../admin`
+ * under `notes/` included, so no `prefix` is provably inside one.
  */
 const CONTAINMENT: ReadonlyMap<string, (inner: string, outer: string) => boolean> = new Map([
   ['prefix:prefix', (inner: string, outer: string) => inner.startsWith(outer)],
   ['path-prefix:path-prefix', (inner: string, outer: string) => inner === outer || inner.startsWith(`${outer}/`)],
   ['path-prefix:prefix', (inner: string, outer: string) => inner.startsWith(outer)],
-  ['prefix:path-prefix', (inner: string, outer: string) => inner.startsWith(`${outer}/`)],
 ]);
 
 const baseOf = (scope: CrispScope): string =>

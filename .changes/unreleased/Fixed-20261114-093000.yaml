@@ -1,0 +1,13 @@
+kind: Fixed
+body: |-
+    **A re-delegation's `prefix` scope is no longer accepted as narrower
+    than its parent's `path-prefix` scope.** Chain validation proved a
+    child `prefix` scope such as `notes/` to be inside a parent
+    `path-prefix` scope `notes`. A `path-prefix` matches no value with a
+    dot segment, and a `prefix` matches any value that starts with its
+    base, so the child granted `notes/../admin`, which its parent did
+    not. Only a tool registered with such a `scopeId` was reachable this
+    way. `matcherContains` now proves no `prefix` inside a `path-prefix`,
+    so such a re-delegation is refused. Write the child's scope as a
+    `path-prefix`, which is still proven inside its parent.
+time: 2026-11-14T09:30:00.000000-06:00

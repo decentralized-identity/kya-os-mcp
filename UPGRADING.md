@@ -16,12 +16,12 @@ What each setup has to do:
 
 | Setup | Action |
 | --- | --- |
-| did:key issuers | None. A did:key document lists its key under `assertionMethod`. |
-| did:web documents built with `buildDidWebDocument` | None. Every key is listed under `assertionMethod`. |
-| `signDelegationCredential` and `signStatusListCredential` | None. Each states `proofPurpose: "assertionMethod"` and names its key. |
+| did:key issuers | None: a did:key document lists its key under `assertionMethod`. |
+| did:web documents built with `buildDidWebDocument` | None: every key is listed under `assertionMethod`. |
+| `signDelegationCredential` and `signStatusListCredential` | None: each states `proofPurpose: "assertionMethod"` and names its key. |
 | A `VCSigningFunction` you give `DelegationCredentialIssuer` or `StatusList2021Manager` | The proof it returns names the signing key in `verificationMethod`, and a `proofPurpose` it states is `assertionMethod`. |
 | Hand-written did:web documents | List each signing key under `assertionMethod`, as below. |
-| did:cheqd documents made with `@cheqd/sdk` before 5.3.3 | They list keys only under `authentication`. Update the DID as `src/integrations/cheqd/README.md` shows. |
+| did:cheqd documents made with `@cheqd/sdk` before 5.3.3 | Update the DID as `src/integrations/cheqd/README.md` shows, since they list keys only under `authentication`. |
 
 An issuer whose documents or credentials do not yet comply must:
 

@@ -200,6 +200,7 @@ export {
 
 export {
   delegationCredentialId,
+  readsVcJwtClaims,
   delegationReference,
   delegationRefOf,
 } from './delegation/delegation-ref.js';

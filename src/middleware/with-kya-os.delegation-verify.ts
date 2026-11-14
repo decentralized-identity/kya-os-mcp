@@ -24,6 +24,7 @@ import {
 } from "../delegation/chain-enforcement.js";
 import { RuntimeFetchProvider } from "../providers/runtime-fetch.js";
 import { credentialIssuerRefusal } from "../delegation/credential-issuer.js";
+import { readsVcJwtClaims } from "../delegation/delegation-ref.js";
 import { assertTrustedRootIssuers } from "../delegation/root-admission.js";
 import { parseVCJWT } from "../delegation/utils.js";
 import { embeddedSignatureVerifier } from "../delegation/embedded-signature.js";
@@ -311,7 +312,9 @@ export function createDelegationVerification(
 
     if (typeof delegationArg === "string") {
       const parsed = parseVCJWT(delegationArg);
-      if (!parsed?.payload?.vc) {
+      // parseVCJWT repairs a payload that is not well-formed UTF-8, and SPEC §7.8 does not read
+      // one: a VC-JWT acted on here must also show the id it is recorded by.
+      if (!parsed?.payload?.vc || !readsVcJwtClaims(delegationArg)) {
         return { verdict: { valid: false, reason: "Invalid VC-JWT format" }, ancestors: [] };
       }
       // Parse only here. The chain must admit the claimed root before any

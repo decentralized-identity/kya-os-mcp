@@ -51,6 +51,20 @@ function jwtClaims(jwt: string): unknown {
 }
 
 /**
+ * Whether a compact VC-JWT's payload is read as SPEC §7.8 reads it ({@link jwtClaims}). A verifier
+ * that acts on a VC-JWT's claims refuses one whose payload is not, since such a payload shows no id
+ * and a call it authorized could not be recorded by one. Never throws.
+ */
+export function readsVcJwtClaims(jwt: string): boolean {
+  try {
+    jwtClaims(jwt);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The id a delegation credential shows (SPEC §7.8), in the form it was
  * presented in: the first of these that is a non-empty string.
  *

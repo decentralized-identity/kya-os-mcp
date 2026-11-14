@@ -545,6 +545,12 @@ Along with it:
   In 1.22.0 they read `x` in either alphabet, padded or not, with white space passed over, and handed the runtime whatever bytes that gave.
   Such an `x` now refuses the credential or the list.
 
+### A VC-JWT whose payload is not well-formed UTF-8
+
+The delegation gate refuses, with `Invalid VC-JWT format`, a VC-JWT whose payload segment is not base64url of well-formed UTF-8 as SPEC.md §7.8 reads it.
+On 1.22.0 a byte that is not UTF-8 was read as U+FFFD and the credential was verified.
+An issuer that writes its payloads as RFC 7519 has them is not affected.
+
 ### Digests and keys to recheck
 
 Two things to check: one if your server uses `wrapWithDelegation`, and one if you hand the verifier keys of your own.

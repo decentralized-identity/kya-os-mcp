@@ -722,6 +722,7 @@ Delegations form a directed acyclic graph (DAG):
 - `parentId` links to the parent delegation
 - Child delegation's `issuerDid` MUST equal parent's `subjectDid`
 - Scope constraints MUST be equal to or narrower than parent's constraints
+- The root delegation's `issuerDid` MUST equal the `issuer` of its `DelegationCredential`, the DID whose key signs it (§6.2), and a verifier MUST reject a chain whose root names any other DID, so the Responsible Party is always a DID that signed
 - Every chain MUST terminate at a Responsible Party. The Responsible Party's DID is the `issuerDid` of the root `DelegationCredential` and is the entity ultimately accountable for actions taken under any descendant delegation. In personal use the Responsible Party equals the Principal; in organizational use the Responsible Party is the parent organization while the Principal is the immediate human delegator (see §2).
 
 **Chain length (non-normative).** The §6.2 profile does not limit how many times authority may be

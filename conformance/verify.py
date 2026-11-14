@@ -351,7 +351,7 @@ def audit_verify_consistency(old_size: int, new_size: int, old_root: str,
 
 
 def main() -> int:
-    vector_file = json.loads((HERE / "vectors" / "card-proof.json").read_text())
+    vector_file = json.loads((HERE / "vectors" / "card-proof.json").read_text(encoding="utf-8"))
     vector = positive_vector(vector_file)
     proof = vector["proof"]
     jwks = vector["jwks"]  # the DID-keyed JWKS is embedded in the self-contained vector
@@ -381,7 +381,7 @@ def main() -> int:
     results.append(("RFC 7638 cnf.jkt thumbprint fusion",
                     rfc7638_thumbprint(key) == proof.get("cnf", {}).get("jkt")))
 
-    audit_file = json.loads((HERE / "vectors" / "audit-integrity.json").read_text())
+    audit_file = json.loads((HERE / "vectors" / "audit-integrity.json").read_text(encoding="utf-8"))
     audit = positive_vector(audit_file)
     audit_leaves = audit["leaves"]
     inclusion = audit["inclusion"]
@@ -415,7 +415,7 @@ def main() -> int:
     # Every status-list vector, positive AND negative, has an independently
     # derived verdict: authority, credential/list signatures, gzip and bit read.
     for path in sorted((HERE / "vectors").glob("*.json")):
-        vector_set = json.loads(path.read_text())
+        vector_set = json.loads(path.read_text(encoding="utf-8"))
         if vector_set.get("category") == "status-list":
             for item in vector_set["vectors"]:
                 accepted = verify_status_input(item["input"], jcs, ed25519_verify)
@@ -426,7 +426,7 @@ def main() -> int:
     for label, ok in results:
         print(f"  [{'PASS' if ok else 'FAIL'}] {label}")
     ok = all(ok for _, ok in results)
-    print(f"RESULT: {'PASS — cross-language JCS + Ed25519 parity confirmed' if ok else 'FAIL'}")
+    print(f"RESULT: {'PASS - cross-language JCS + Ed25519 parity confirmed' if ok else 'FAIL'}")
     return 0 if ok else 1
 
 

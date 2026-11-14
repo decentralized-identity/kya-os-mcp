@@ -44,6 +44,22 @@ function cases(issuers: readonly string[]) {
 }
 
 describe('independent status authority derivation', () => {
+  it('reads UTF-8 JSONL even when Python stdin uses a Windows code page', (test) => {
+    const [python, ...args] = requirePython(test);
+    const script = fileURLToPath(new URL('../status_list.py', import.meta.url));
+    // U+0141 contains a UTF-8 byte undefined in cp1252, so a locale-decoded read fails.
+    const listUrl = 'https://status.example/Łódź';
+    const row = {
+      chain: [{ issuer: 'did:i' }], hop: 0, url: listUrl,
+      list: { issuer: 'did:i', id: listUrl, credentialSubject: { statusPurpose: 'revocation' } },
+    };
+    const reader = 'import runpy, sys; sys.stdin.reconfigure(encoding="cp1252"); runpy.run_path(sys.argv[1], run_name="__main__")';
+    const output = execFileSync(python, [...args, '-I', '-B', '-c', reader, script], {
+      input: JSON.stringify(row) + '\n', encoding: 'utf8',
+    });
+    expect(JSON.parse(output)).toBe(true);
+  });
+
   // One chain per test, 4,536 cases each, keeps each run of the Python port well inside a test's time.
   it.for(CHAINS)('agrees with Python on the raw chain $issuers: root admission, role aliases, mapping direction and hostile lists', ({ issuers }, test) => {
     const [python, ...args] = requirePython(test);
@@ -90,7 +106,7 @@ describe('independent statusListIndex reading', () => {
     });
     const reader = [
       'import json, sys', 'sys.path.insert(0, sys.argv[1])', 'from status_list import verify_input',
-      'for line in sys.stdin:', '    print(json.dumps(verify_input(json.loads(line), lambda document: b"", lambda *proof: True)))',
+      'for line in sys.stdin.buffer:', '    print(json.dumps(verify_input(json.loads(line), lambda document: b"", lambda *proof: True)))',
     ].join('\n');
     const output = execFileSync(python, [...args, '-I', '-B', '-c', reader, fileURLToPath(new URL('..', import.meta.url))], {
       input: inputs.join('\n') + '\n', encoding: 'utf8',

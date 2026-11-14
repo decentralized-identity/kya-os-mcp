@@ -1,37 +1,48 @@
 /**
  * A hop may name its issuer as a DID string or as an object whose `id` is that DID. The chain walk
- * reads either the same way, for the link from a hop to its parent's delegate and for the root a
- * verifier pins, so a chain is accepted or refused whichever form its hops use.
+ * names each hop's issuer, and the root a verifier pins, to the revocation checker, which holds the
+ * hop's status list to them. It names the same DIDs whichever form the hops use, so a chain is not
+ * refused, nor a list accepted, for the way an issuer is written.
  */
 
 import { describe, it, expect } from 'vitest';
-import { evaluateDelegationChain, issuerDid, type DelegationChain } from '../delegation.js';
-import { issuerOf } from '../../utils/guards.js';
-import { NOW_MS, parties, RESOURCE, twoHopChain } from './signed-chain-helpers.js';
+import { evaluateDelegationChain, revocationEntriesOf, type DelegationChain } from '../delegation.js';
+import type { StatusCheckContext } from '../revocation.js';
+import { now, parties, RESOURCE, twoHopChain } from './signed-chain-helpers.js';
 
-const now = () => NOW_MS;
-const clear = async () => ({ revoked: false, fresh: true });
+/** `chain` with every hop's issuer written as an object, with a member beside its `id`. */
+const withObjectIssuers = (chain: DelegationChain): DelegationChain =>
+  chain.map((hop) => ({ ...hop, issuer: { id: hop.issuer as string, name: 'Acme' } })) as unknown as DelegationChain;
 
 describe('a hop that names its issuer as an { id } object', () => {
-  it('is read as the DID it names, as a bare string is, by issuerDid and issuerOf alike', () => {
+  it('is paired with the DID it names, and with the pinned root, as the same hop with a string issuer is', () => {
     const p = parties();
-    for (const hop of twoHopChain(p)) {
-      const did = hop.issuer as string;
-      for (const issuer of [did, { id: did }, { id: did, name: 'Acme' }]) {
-        expect(issuerDid({ ...hop, issuer } as typeof hop)).toBe(did);
-        expect(issuerOf(issuer)).toBe(did);
-      }
+    const asString = twoHopChain(p);
+    for (const chain of [asString, withObjectIssuers(asString)]) {
+      expect(revocationEntriesOf(chain, p.acme.did)).toMatchObject([
+        { credentialIssuer: p.acme.did, trustedRootIssuer: p.acme.did, position: 0 },
+        { credentialIssuer: p.agent.did, trustedRootIssuer: p.acme.did, position: 1 },
+      ]);
+      // A root the chain does not start at is not named, in either form.
+      expect(revocationEntriesOf(chain, p.agent.did).every((entry) => !('trustedRootIssuer' in entry))).toBe(true);
     }
   });
 
-  it('links to its parent and to the pinned root as the same hop with a string issuer does', async () => {
+  it('has its issuer and the pinned root named to the revocation checker by the chain walk', async () => {
     const p = parties();
     const asString = twoHopChain(p);
-    const asObject = asString.map((hop) => ({ ...hop, issuer: { id: hop.issuer as string } })) as unknown as DelegationChain;
-    for (const chain of [asString, asObject]) {
-      expect(await evaluateDelegationChain(chain, clear, { resource: RESOURCE, now, resourceOwner: p.acme.did })).toMatchObject({ ok: true });
-      const otherOwner = await evaluateDelegationChain(chain, clear, { resource: RESOURCE, now, resourceOwner: p.agent.did });
-      expect(otherOwner.ok).toBe(false);
+    for (const chain of [asString, withObjectIssuers(asString)]) {
+      const named: (StatusCheckContext | undefined)[] = [];
+      const check = async (_entry: unknown, context?: StatusCheckContext) => {
+        named.push(context);
+        return { revoked: false, fresh: true };
+      };
+      const result = await evaluateDelegationChain(chain, check, { resource: RESOURCE, now, resourceOwner: p.acme.did });
+      expect(result).toMatchObject({ ok: true });
+      expect(named).toEqual([
+        { credentialIssuer: p.acme.did, trustedRootIssuer: p.acme.did },
+        { credentialIssuer: p.agent.did, trustedRootIssuer: p.acme.did },
+      ]);
     }
   });
 });

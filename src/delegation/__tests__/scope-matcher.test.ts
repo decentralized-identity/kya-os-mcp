@@ -145,6 +145,8 @@ describe('scopeSatisfies', () => {
 });
 
 describe('matcherContains (attenuation across matcher kinds)', () => {
+  const m = (matcher: CrispScope['matcher'], resource: string): CrispScope => ({ matcher, resource });
+
   it('never proves a prefix inside a path-prefix, which refuses values the prefix matches', () => {
     // A path-prefix matches no value with a dot segment; a prefix matches any value that starts
     // with its base. So the prefix grants `notes/../admin`, which its would-be parent does not.
@@ -156,8 +158,6 @@ describe('matcherContains (attenuation across matcher kinds)', () => {
     // The same authority written as a path-prefix is still proven inside its parent.
     expect(matcherContains(parent, m('path-prefix', 'notes/2026'))).toBe(true);
   });
-
-  const m = (matcher: CrispScope['matcher'], resource: string): CrispScope => ({ matcher, resource });
 
   it('never proves containment through a path-prefix with a dot segment', () => {
     expect(matcherContains(m('path-prefix', 'notes'), m('path-prefix', 'notes/../secrets'))).toBe(false);

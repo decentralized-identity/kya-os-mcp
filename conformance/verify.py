@@ -77,7 +77,7 @@ sys.path.insert(0, str(HERE))
 sys.dont_write_bytecode = True
 
 from audit_merkle import audit_root, audit_verify_consistency, audit_verify_inclusion
-from base64url import b64url_decode, b64url_nopad
+from base64url import b64url_nopad, padded_base64url_bytes
 from card_proof import covered_claims, http_signature_base, request_hash, resolve_key, rfc7638_thumbprint
 from chain_binding import chain_binding
 from delegation_cases import id_and_reference_cases_hold, signed_form_cases_hold
@@ -116,7 +116,7 @@ def main() -> int:
     jwks = vector["jwks"]  # the DID-keyed JWKS is embedded in the self-contained vector
 
     key = resolve_key(jwks, proof["kid"])
-    pub = b64url_decode(key["x"])
+    pub = padded_base64url_bytes(key["x"])
 
     results = []
 
@@ -129,11 +129,12 @@ def main() -> int:
     jws_ok = len(parts) == 3 and parts[1] == ""
     if jws_ok:
         signing_input = (parts[0] + "." + b64url_nopad(jcs(covered_claims(proof)))).encode("ascii")
-        jws_ok = ed25519_verify(pub, signing_input, b64url_decode(parts[2]))
+        jws_ok = ed25519_verify(pub, signing_input, padded_base64url_bytes(parts[2]))
     results.append(("detached EdDSA JWS over JCS(coveredClaims)", jws_ok))
 
     # 3. Verify the RFC 9421 HTTP Message Signature sibling (raw Ed25519 over the signature base).
-    http_ok = ed25519_verify(pub, http_signature_base(proof).encode("utf-8"), b64url_decode(proof["httpSig"]))
+    http_ok = ed25519_verify(pub, http_signature_base(proof).encode("utf-8"),
+                             padded_base64url_bytes(proof["httpSig"]))
     results.append(("RFC 9421 httpSig over the signature base", http_ok))
 
     # 4. Re-derive the RFC 7638 cnf.jkt thumbprint of the resolved key.

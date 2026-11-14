@@ -7,7 +7,6 @@ already-authorized per-credential root context. Chain admission is tested
 separately; an input's trustedRootIssuer is NOT a proof of a chain.
 """
 
-import base64
 import gzip
 import io
 import json
@@ -20,7 +19,7 @@ if __name__ == "__main__":
     # path (-I, -P); put it on, as verify.py does, so the module beside this one is found.
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from base64url import signature_bytes, strict_base64url_bytes
+from base64url import padded_base64url_bytes, signature_bytes, strict_base64url_bytes
 
 
 def issuer(value):
@@ -127,12 +126,6 @@ def graph_case(case):
                    root_list=case.get("rootList") if pinned is not None else None)
 
 
-def decode64(value):
-    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]*={0,2}", value):
-        raise ValueError("invalid base64url")
-    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
-
-
 def verify_document(document, documents, canonicalize, verify_signature):
     did = issuer(document.get("issuer"))
     did_document = documents[did]
@@ -190,7 +183,7 @@ def verify_input(value, canonicalize, verify_signature):
         if index > 2 ** 53 - 1:
             return False
         encoded = document["credentialSubject"]["encodedList"]
-        compressed = decode64(encoded[1:] if encoded.startswith("u") else encoded)
+        compressed = padded_base64url_bytes(encoded[1:] if encoded.startswith("u") else encoded)
         # Bound output while inflating, not after a gzip bomb has allocated it.
         with gzip.GzipFile(fileobj=io.BytesIO(compressed)) as stream:
             bits = stream.read(16 * 1024 * 1024 + 1)

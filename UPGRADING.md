@@ -269,8 +269,10 @@ A did:web response, and a status list read by `CheqdStatusListResolver` or `Runt
 Each read has one 5-second deadline for the fetch and the body, a did:web or status-list read follows at most 3 redirects, and each built-in DID resolver caches at most 128 documents and 8 MiB, evicting the least recently used.
 `DelegationCredentialVerifier`, `CheqdStatusListResolver`, `createStatusListProofVerifier`, `createDelegationProofVerifier` and `ProofVerifier` wait at most 5 seconds for any resolver and hold the document it returns to the same limits, and to plain JSON data: a document with a getter on an object member, enumerable or not, a cycle, a class instance or a value JSON cannot hold, such as a function or `NaN`, is refused.
 A getter on an array element is not refused: it runs, and the value it returns is held to the same limits, or the document is refused when it throws.
-`DelegationCredentialVerifier` also waits at most 5 seconds for each answer of a `StatusListResolver`, and `validateDelegationChain`, which the delegation middleware runs, at most 5 seconds for `resolveDelegationChain`.
-A `RevocationChecker` given to `validateDelegationChain`, and the `resolveDelegationChain` and `checkRevocation` of `verifyRequestDelegation`, have no deadline from the library and must set their own.
+`DelegationCredentialVerifier`, `validateDelegationChain`, `verifyRequestDelegation`, `requireDelegation`, `evaluateDelegationChain`, `verifyCard` and `verifyCardProof` give the same 5 seconds to each other dependency the host supplies that they wait on, such as a `StatusListResolver`, a `resolveDelegationChain` or a `RevocationChecker`.
+"A dependency that can take longer than 5 seconds to answer", below, lists each and how it is refused.
+One dependency of theirs has no deadline from the library: the `verifier` that `validateDelegationChain` is given to verify each credential, since the library's own, `DelegationCredentialVerifier`, bounds each of its steps, and one limit on the whole would refuse a verification whose steps each kept theirs.
+A custom one must set its own, and so must a provider no function above calls, such as the nonce cache and the session store of `ProofVerifier` and the middleware.
 Anything over a limit is refused, never cut to fit, so check that your DID documents and status lists are within these limits before you upgrade.
 SPEC.md §4.4.2 explains each limit.
 Every did:web and status-list read also holds its host, and each redirect, to one private-network rule, whatever `FetchProvider` it reads through.
@@ -348,14 +350,29 @@ Creating the middleware or a `requireDelegation` guard with any other value thro
 
 For a VC-JWT whose leaf names a parent, it now runs on the leaf's payload before the envelope's signature is checked, so it must treat that payload as unauthenticated, as it already had to for a credential with an embedded proof, whose proof is checked after it runs.
 The chain it returns is verified as before.
-It now has 5 seconds to return: a call that has not answered by then is refused with `Failed to resolve delegation chain: the chain resolver did not answer within 5 seconds`, where on 1.22.0 the call waited without end.
-A resolver that walks `parentId` one read at a time should finish, or give up, within that time.
+It now has 5 seconds to return, so a resolver that walks `parentId` one read at a time should finish, or give up, within that time.
 
-#### A custom `StatusListResolver` whose `checkStatus` can take longer than 5 seconds
+#### A dependency that can take longer than 5 seconds to answer
 
-`DelegationCredentialVerifier` now waits at most 5 seconds for each `checkStatus`, the shipped `CheqdStatusListResolver` and a resolver wrapped in `withStatusCache` included.
-A call that has not answered by then denies the credential with the outcome `status_unresolvable` and the reason `Status check error: the status list resolver did not answer within 5 seconds`, where on 1.22.0 the verification waited without end.
-The resolver's own work is not cancelled, so one that reads over a network should bound each read itself, as `CheqdStatusListResolver` does, and a later verification asks it again.
+Each call a verifier makes to a dependency the host supplies now has 5 seconds, and one that has not answered by then is refused as below, never thrown, where on 1.22.0 the verification waited without end.
+The dependency's own work is not cancelled, so one that reads over a network should bound each read itself, and a later verification asks it again.
+
+| Dependency | Refused as |
+| --- | --- |
+| `StatusListResolver.checkStatus`, for `DelegationCredentialVerifier`, the shipped `CheqdStatusListResolver` and a resolver wrapped in `withStatusCache` included | the credential denied with the outcome `status_unresolvable` and `Status check error: the status list resolver did not answer within 5 seconds` |
+| a custom `signatureVerifier` of `DelegationCredentialVerifier` | `Signature verification error: the signature verifier did not answer within 5 seconds` |
+| `resolveDelegationChain`, for `validateDelegationChain` and the delegation middleware | `Failed to resolve delegation chain: the chain resolver did not answer within 5 seconds` |
+| `RevocationChecker.isRevoked`, for the same two | `Revocation check failed for delegation "<id>": the revocation checker did not answer within 5 seconds` |
+| `resolveDelegationChain` of `verifyRequestDelegation` and `requireDelegation` | the code `delegation_unresolvable` and `delegation chain could not be resolved: the chain resolver did not answer within 5 seconds` |
+| `verifyHopProof` of the same two | the code `delegation_invalid` and `hop <n>: the hop proof verifier did not answer within 5 seconds` |
+| `checkRevocation` of the same two, and the checker given to `evaluateDelegationChain` or `evaluateRevocationChain` | the code `delegation_revoked`, or a chain that is not ok and not fresh, and `revocation: hop <n> (list "<url>", index "<index>") is unresolvable: the revocation checker did not answer within 5 seconds` |
+| `capabilityVerifier`, `accountabilityVerifier` and `attestationVerifier` of `verifyCard` | the claim unverified: no capability verified, the Card not accountable, or that attestation unverified |
+| `proofVerifier` of `verifyCard` | the proof unverified, with the reason `the proof verifier did not answer within 5 seconds` |
+| `statusListChecker` of `verifyCard` | the Card revoked and not fresh |
+| `resolveKey`, `resolveDidKeys` and `consumeNonceIfFresh` of `verifyCardProof` and `requireProof` | the reasons `key_unresolvable`, `did_keys_unresolvable` and `nonce_cache_unavailable`, as when each throws |
+
+The 5 seconds cover the whole call, so a checker built with `createRevocationChecker` has them for its list read and its `verifyStatusList` together, and `CheqdStatusListResolver` for its list read and its DID resolution together.
+A dependency that throws is handled as on 1.22.0.
 
 #### Code that calls `DelegationCredentialVerifier` directly
 
@@ -372,7 +389,7 @@ A chain's links, and then its root's `issuer` against `trustedRootIssuers`, are 
 An untrusted root reads `Root delegation <id> is issued by "<issuer>", which is not a trusted root issuer`, the issuer quoted as other reasons quote a value.
 `Could not resolve issuer DID` is the reason for an issuer DID over its limit, for a VC-JWT as for a credential with an embedded proof, without asking the resolver.
 A resolution that misses its deadline fails with a reason that ends `DID resolution deadline exceeded`, and a status-list read with one that ends `Status list fetch deadline exceeded`, or names the limit it exceeded.
-A `StatusListResolver` that misses it gives `Status check error: the status list resolver did not answer within 5 seconds`, and a `resolveDelegationChain` that does gives `Failed to resolve delegation chain: the chain resolver did not answer within 5 seconds`.
+Any other dependency that misses it gives a reason that ends `did not answer within 5 seconds`, listed under "A dependency that can take longer than 5 seconds to answer".
 `ProofVerifier` refuses a DID or key id over its limit with `DID or key identifier exceeds resource limit`, and an empty DID with `DID is empty`.
 
 #### A did:cheqd DID whose unique id is not a UUID or letters and digits

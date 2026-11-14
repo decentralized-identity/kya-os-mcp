@@ -18,6 +18,7 @@
  *   - {@link requireDelegation}: the same check pre-bound to its seams, with 401/403-shaped results.
  */
 
+import { answerWithinDeadline, DeadlineExceededError } from '../utils/deadline.js';
 import { isRecord } from '../utils/guards.js';
 import { admitsRootIssuer, assertTrustedRootIssuers } from '../delegation/root-admission.js';
 import {
@@ -259,9 +260,8 @@ export async function verifyRequestDelegation(
   }
 
   for (const [hop, credential] of credentials.entries()) {
-    if (!(await hopProofVerifies(credential, deps.verifyHopProof))) {
-      return reject('delegation_invalid', [`hop ${hop}: proof did not verify`]);
-    }
+    const refusal = await hopProofRefusal(credential, deps.verifyHopProof);
+    if (refusal !== undefined) return reject('delegation_invalid', [`hop ${hop}: ${refusal}`]);
   }
 
   if (!allowedAction.includes(input.action)) {
@@ -316,7 +316,8 @@ async function obtainChain(
   }
   let resolved: DelegationChain | undefined;
   try {
-    resolved = await deps.resolveDelegationChain({ proofDid: input.proofDid });
+    const resolve = deps.resolveDelegationChain;
+    resolved = await answerWithinDeadline('the chain resolver', () => resolve({ proofDid: input.proofDid }));
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'unknown error';
     return {
@@ -341,15 +342,20 @@ async function obtainChain(
   return { ok: true, chain: parsed.chain, credentials: parsed.credentials, source: 'resolved' };
 }
 
-/** Run the hop-proof seam, fail-closed: a throw rejects the hop. */
-async function hopProofVerifies(
+/**
+ * Run the hop-proof seam, fail-closed, under the deadline every dependency gets: why the hop is
+ * refused, or `undefined` when its proof verified. A throw refuses the hop, and so does a verifier
+ * that has not answered by the deadline, with a reason that says so.
+ */
+async function hopProofRefusal(
   credential: Record<string, unknown>,
   verifyHopProof: DelegationProofVerifier,
-): Promise<boolean> {
+): Promise<string | undefined> {
   try {
-    return (await verifyHopProof(credential)) === true;
-  } catch {
-    return false;
+    const verified = await answerWithinDeadline('the hop proof verifier', () => verifyHopProof(credential));
+    return verified === true ? undefined : 'proof did not verify';
+  } catch (error) {
+    return error instanceof DeadlineExceededError ? error.message : 'proof did not verify';
   }
 }
 

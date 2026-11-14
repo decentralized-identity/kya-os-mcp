@@ -19,6 +19,7 @@
 
 import { calculateJwkThumbprint, flattenedVerify, importJWK } from 'jose';
 import type { JWK } from 'jose';
+import { answerWithinDeadline } from '../../utils/deadline.js';
 import { base64urlDecodeToString, base64urlEncodeFromBytes } from '../../utils/base64.js';
 import type { ToolRequest } from '../../proof/generator.js';
 import { nonceRetentionSeconds } from '../../providers/nonce-retention.js';
@@ -91,7 +92,7 @@ async function resolveKey(
   reasons: string[],
 ): Promise<ProofPublicJwk | undefined> {
   try {
-    return await deps.resolveKey(kid);
+    return await answerWithinDeadline('the key resolver', () => deps.resolveKey(kid));
   } catch {
     reasons.push('key_unresolvable');
     return undefined;
@@ -121,7 +122,8 @@ async function assertDidMembership(
   }
   let didKeys: ProofPublicJwk[];
   try {
-    didKeys = await deps.resolveDidKeys(did);
+    const resolveDidKeys = deps.resolveDidKeys;
+    didKeys = await answerWithinDeadline('the DID key resolver', () => resolveDidKeys(did));
   } catch {
     reasons.push('did_keys_unresolvable');
     return;
@@ -161,7 +163,8 @@ async function consumeNonce(
       meta.expires + (deps.skewSec ?? DEFAULT_SKEW_SEC),
       deps.now?.() ?? Date.now(),
     );
-    if ((await consume(meta.nonce, meta.did, minTtlSec)) !== true) reasons.push('nonce_replayed');
+    const fresh = await answerWithinDeadline('the nonce cache', () => consume(meta.nonce, meta.did, minTtlSec));
+    if (fresh !== true) reasons.push('nonce_replayed');
   } catch {
     reasons.push('nonce_cache_unavailable');
   }

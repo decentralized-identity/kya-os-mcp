@@ -287,7 +287,9 @@ export async function verifySignature(
       };
     }
 
-    const verificationResult = await signatureVerifier(vc, publicKeyJwk);
+    const verificationResult = await answerWithinDeadline("the signature verifier", () =>
+      signatureVerifier(vc, publicKeyJwk),
+    );
 
     return {
       valid: verificationResult.valid,

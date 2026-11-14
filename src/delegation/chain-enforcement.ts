@@ -222,7 +222,8 @@ export interface DelegationCredentialVerifierPort {
  * cascade-revocation that hadn't flipped the leaf's own bit could be missed.
  *
  * The answer is read strictly: a chain passes only on `revoked: false`, is revoked only on
- * `revoked: true`, and is refused as unreadable on anything else.
+ * `revoked: true`, and is refused as unreadable on anything else. Each call gets the deadline a
+ * DID resolver has, and one that has not answered by then fails the check.
  */
 export interface RevocationChecker {
   isRevoked(delegationId: string): Promise<{
@@ -508,7 +509,8 @@ export async function validateDelegationChain(
       const delegationId = credential.credentialSubject.delegation.id;
       let answer: unknown;
       try {
-        answer = await deps.revocationChecker.isRevoked(delegationId);
+        const checker = deps.revocationChecker;
+        answer = await answerWithinDeadline("the revocation checker", () => checker.isRevoked(delegationId));
       } catch (error) {
         return {
           valid: false,

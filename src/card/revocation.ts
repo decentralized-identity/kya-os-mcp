@@ -51,6 +51,7 @@ import {
 } from '../utils/statuslist-bits.js';
 import { statusListGzipCodec } from '../utils/statuslist-gzip.js';
 import type { SafeFetch } from '../utils/safe-fetch.js';
+import { checkWithinDeadline } from './revocation-deadline.js';
 import type { BitstringStatusListEntry } from './schema.js';
 import type { StatusListProofVerifier } from './status-list-proof.js';
 
@@ -333,18 +334,21 @@ export async function evaluateRevocationChain(
   let fresh = entries.length > 0; // no entries ⇒ no live signal ⇒ not fresh (fail-closed for L3)
   for (const [index, item] of entries.entries()) {
     let entry: RevocationStatusEntry | undefined;
-    let answer: unknown;
+    let context: StatusCheckContext | undefined;
     let hop = index;
     if (isChainEntry(item)) {
       const { entry: hopEntry, credentialIssuer, position, ...pinned } = item;
       entry = hopEntry;
       if (isPosition(position)) hop = position;
-      answer = await check(entry, credentialIssuer === undefined ? undefined : { ...pinned, credentialIssuer });
+      context = credentialIssuer === undefined ? undefined : { ...pinned, credentialIssuer };
     } else {
       entry = item;
-      answer = await check(entry);
     }
-    const status = readRevocationAnswer(answer);
+    const asked = await checkWithinDeadline(check, entry, context);
+    if ('expired' in asked) {
+      return { ok: false, fresh: false, reasons: [`${hopName(hop, entry)} is unresolvable: ${asked.expired}`] };
+    }
+    const status = readRevocationAnswer(asked.answer);
     if (status.revoked === undefined) {
       const reason = `${hopName(hop, entry)} has a status that could not be read: ${status.unreadable}`;
       return { ok: false, fresh: false, reasons: [reason] };

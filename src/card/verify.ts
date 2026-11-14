@@ -27,6 +27,8 @@ import {
 import { CHECKER_REASON_LENGTH, type BitstringRevocationChecker } from './revocation.js';
 import { sanitizeForMessage } from '../utils/message-text.js';
 import { readRevocationAnswer } from '../utils/revocation-answer.js';
+import { answerWithinDeadline, DeadlineExceededError } from '../utils/deadline.js';
+import { checkWithinDeadline } from './revocation-deadline.js';
 import type { ProofAssurance, ProofVerifyResult } from './proof/index.js';
 import type { ToolRequest } from '../proof/generator.js';
 
@@ -225,9 +227,26 @@ async function checkCapabilities(
   trustedIssuers: readonly string[],
 ): Promise<CapabilityCheckResult> {
   const capabilities = card.capabilities ?? [];
-  return deps.capabilityVerifier
-    ? deps.capabilityVerifier(capabilities, { subjectDid: card.id, trustedIssuers })
-    : { verified: [], unverified: capabilityNames(capabilities) };
+  const verifier = deps.capabilityVerifier;
+  const unverified: CapabilityCheckResult = { verified: [], unverified: capabilityNames(capabilities) };
+  if (!verifier) return unverified;
+  return unlessUnanswered('the capability verifier', unverified, () =>
+    verifier(capabilities, { subjectDid: card.id, trustedIssuers }),
+  );
+}
+
+/**
+ * What a seam the host supplies answers, asked under the deadline every dependency a verifier waits
+ * on gets, or `unanswered`, the verdict of a claim that did not verify, when it has not answered by
+ * then: `verifyCard` does not wait on, and does not throw for it. A seam that throws still throws.
+ */
+async function unlessUnanswered<T>(who: string, unanswered: T, ask: () => T | Promise<T>): Promise<T> {
+  try {
+    return await answerWithinDeadline(who, ask);
+  } catch (error) {
+    if (error instanceof DeadlineExceededError) return unanswered;
+    throw error;
+  }
 }
 
 /**
@@ -241,8 +260,11 @@ async function checkAccountability(
   proofDid: string | undefined,
 ): Promise<VerifyCardResult['accountability']> {
   if (!card.responsibleParty) return undefined;
-  const raw = deps.accountabilityVerifier
-    ? await deps.accountabilityVerifier(card, { trustedIssuers, proofDid })
+  const verifier = deps.accountabilityVerifier;
+  const raw = verifier
+    ? await unlessUnanswered<boolean | AccountabilityResult>('the accountability verifier', false, () =>
+        verifier(card, { trustedIssuers, proofDid }),
+      )
     : false;
   // This trusted plugin boundary can still receive untyped JavaScript results. A truthy string such
   // as "false" must neither grant status-list signing authority nor keep the Card's L3: only a
@@ -259,12 +281,15 @@ async function checkAttestations(
   deps: VerifyCardDeps,
   trustedIssuers: readonly string[],
 ): Promise<VerifyCardResult['attestations']> {
+  const verifier = deps.attestationVerifier;
   return Promise.all(
     (card.attestations ?? []).map(async (a) => ({
       type: a.type,
       subject: a.subject,
-      verified: deps.attestationVerifier
-        ? await deps.attestationVerifier(a, { subjectDid: a.subject ?? card.id, trustedIssuers })
+      verified: verifier
+        ? await unlessUnanswered('the attestation verifier', false, () =>
+            verifier(a, { subjectDid: a.subject ?? card.id, trustedIssuers }),
+          )
         : false,
     })),
   );
@@ -276,11 +301,12 @@ async function checkAttestations(
  * verifier yields `{ ok:false }` (a demotion) rather than escaping `verifyCard`.
  */
 async function recomputeProof(deps: VerifyCardDeps): Promise<ProofVerifyResult | undefined> {
-  if (!deps.proofVerifier || deps.proof === undefined || deps.request === undefined) return undefined;
+  const { proofVerifier, proof, request } = deps;
+  if (!proofVerifier || proof === undefined || request === undefined) return undefined;
   try {
-    return await deps.proofVerifier(deps.proof, deps.request);
-  } catch {
-    return { ok: false, reasons: ['proof_verifier_threw'] };
+    return await answerWithinDeadline('the proof verifier', () => proofVerifier(proof, request));
+  } catch (error) {
+    return { ok: false, reasons: [error instanceof DeadlineExceededError ? error.message : 'proof_verifier_threw'] };
   }
 }
 
@@ -311,11 +337,12 @@ async function checkCardRevocation(
 ): Promise<CardRevocationVerdict> {
   if (!checker || !card.revocation) return { checked: false, revoked: false, fresh: true };
   try {
-    const answer: unknown = await checker(card.revocation, {
+    const asked = await checkWithinDeadline(checker, card.revocation, {
       credentialIssuer: card.id,
       ...(responsibleParty === undefined ? {} : { trustedRootIssuer: responsibleParty }),
     });
-    const status = readRevocationAnswer(answer);
+    if ('expired' in asked) return { checked: true, revoked: true, fresh: false, reason: asked.expired };
+    const status = readRevocationAnswer(asked.answer);
     if (status.revoked === undefined) {
       const reason = `the Card's revocation status could not be read: ${status.unreadable}`;
       return { checked: true, revoked: true, fresh: false, reason };

@@ -1,10 +1,11 @@
 /**
- * The verifier waits on two more dependencies the host supplies besides its DID resolver: a custom
- * `StatusListResolver` and an injected `resolveDelegationChain`. Each gets the deadline the DID
- * resolver has, 5 seconds, and a call that has not answered by then is refused: the status check as
- * `status_unresolvable`, the chain as one that could not be resolved. Neither waits on, and neither
- * throws. Each dependency here hangs on a promise that never settles; the clock is faked, the keys
- * and signatures are real.
+ * The verifier waits on more dependencies the host supplies than its DID resolver: a custom
+ * `StatusListResolver`, a custom signature verifier, an injected `resolveDelegationChain` and a
+ * `RevocationChecker`. Each gets the deadline the DID resolver has, 5 seconds, and a call that has
+ * not answered by then is refused: the status check as `status_unresolvable`, the signature as one
+ * that could not be verified, the chain as one that could not be resolved, the revocation check as
+ * failed. None waits on, and none throws. Each dependency here hangs on a promise that never
+ * settles; the clock is faked, the keys and signatures are real.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createRealSignatureVerifier } from '../../__tests__/audit/helpers/crypto-helpers.js';
@@ -145,6 +146,55 @@ describe('a resolveDelegationChain that never answers', () => {
     expect(await validate(leaf, () => { throw new Error('store offline'); })).toEqual({
       valid: false,
       reason: 'Failed to resolve delegation chain: store offline',
+    });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('a signature verifier that never answers', () => {
+  it('is refused as a signature that could not be verified at 5,000 ms, and no sooner', async () => {
+    const credential = await signedCredential(issuer);
+    vi.useFakeTimers();
+    const verifier = new DelegationCredentialVerifier({
+      didResolver: { resolve: async () => issuerDidDocument(methodOf(issuer)) },
+      signatureVerifier: never,
+    });
+    const verdict = watch(verifier.verifyDelegationCredential(credential, { skipCache: true }));
+    await vi.advanceTimersByTimeAsync(DID_RESOLUTION_TIMEOUT_MS - 1);
+    expect(verdict.settled).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    await verdict.done;
+    expect(verdict.settled).toMatchObject({
+      valid: false,
+      stage: 'signature',
+      reason: 'Signature verification error: the signature verifier did not answer within 5 seconds',
+    });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('a revocation checker that never answers', () => {
+  it('is refused as a revocation check that failed at 5,000 ms, and no sooner', async () => {
+    const leaf = await signedCredential(issuer, {
+      record: delegationRecord(issuer.did, {
+        id: 'del-leaf',
+        constraints: { scopes: ['orders:place'], audience: SERVER, notAfter: Math.floor(Date.now() / 1000) + 3600 },
+      }),
+    });
+    vi.useFakeTimers();
+    const verdict = watch(validateDelegationChain(leaf, {
+      serverDid: SERVER,
+      verifier: { verifyDelegationCredential: async () => ({ valid: true }) },
+      statusListConfigured: false,
+      revocationChecker: { isRevoked: never },
+    }));
+    await vi.advanceTimersByTimeAsync(DID_RESOLUTION_TIMEOUT_MS - 1);
+    expect(verdict.settled).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    await verdict.done;
+    expect(verdict.settled).toEqual({
+      valid: false,
+      reason: 'Revocation check failed for delegation "del-leaf": the revocation checker did not answer within 5 seconds',
     });
     expect(vi.getTimerCount()).toBe(0);
   });

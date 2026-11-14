@@ -3,7 +3,7 @@
  * v1.0 §3.3) that the verifiers of a delegation credential, a status list and a delegation hop go
  * through, and the check of a proof's stated purpose. Those verifiers are tested end to end beside
  * them; these are the document shapes the retrieval reads and the purposes the check reads. How a
- * lookup's time grows is tested in ./verification-relationship-scaling.test.ts, and the lookup is
+ * lookup's work grows is tested in ./verification-relationship-scaling.test.ts, and the lookup is
  * compared with an independent reference in ./verification-relationship-reference.test.ts.
  */
 

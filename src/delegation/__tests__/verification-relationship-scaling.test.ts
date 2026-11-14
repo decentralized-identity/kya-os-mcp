@@ -1,38 +1,58 @@
 /**
- * How the lookup's time grows with what it reads: a DID document, a DID and a key id, all of which
- * the other party chose. The lookup reads each entry once, so its time grows in proportion to the
- * document; one that rescans a list for each entry, sorts for each entry, or does work as long as the
- * DID for each entry takes time that grows with the square of the document instead.
- * The test times lookups in a generated document and in one 16 times its size, with 16 times as many
- * references, published and embedded methods, and a DID and key id 16 times as long, and holds the
- * ratio of the two times close to linear: a linear lookup gives about 16, a quadratic one about
- * 256. It counts CPU time (`process.cpuUsage`), not elapsed time, so the machine's other work does
- * not count, repeats each lookup until a sample is long enough to measure on every platform's clock,
- * and keeps the least of several samples per size, taken in turn after a warm-up.
+ * Deterministic work checks for the real lookup source, independent of JIT, coverage and clock
+ * resolution. The test-only meter charges loops, input reads and string operations, including
+ * primitive equality and concatenation that proxies cannot observe. It rejects native operations
+ * without a cost rule. This guards the source's O(S + D + K) argument; it does not measure V8
+ * instructions, allocator behaviour or JSON parsing.
  */
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
-import { retrieveVerificationMethod, selectAssertionMethod } from '../verification-relationship.js';
+import * as actual from '../verification-relationship.js';
+import * as guards from '../../utils/guards.js';
+import * as descriptions from '../../utils/describe-value.js';
+import * as shapes from '../verification-method-shape.js';
 import type { DIDDocument } from '../vc-verifier.types.js';
 import { keylessMethod as method } from '../../__tests__/utils/did-documents.js';
+import { compileMeteredLookup } from '../../__tests__/utils/lookup-work.js';
 
-const GROWTH = 16;
-/**
- * The largest ratio allowed: 1.5 times the highest the lookup measured, 15.95, rounded up. In 20 runs
- * on each of Node 20 and 22 it measured 14.17 to 15.95 and 14.16 to 15.10; six quadratic variants of
- * it measured 160 to 236, and one whose time grows with n^1.4, 33 to 40. The bound does not catch a
- * lookup whose time grows with n log n, as one that sorts the document once: 16 times the entries
- * make it about 16 * log(16n) / log(n) times slower, too close to the 16 of a linear lookup to tell
- * apart.
- */
-const BOUND = 24;
-const SAMPLES = 5;
-/** CPU microseconds a sample takes at least: Windows counts process time in 15.6 ms ticks. */
-const SAMPLE_MICROS = 100_000;
+const source = readFileSync(new URL('../verification-relationship.ts', import.meta.url), 'utf8');
+const imports = {
+  '../utils/guards.js': guards,
+  '../utils/describe-value.js': descriptions,
+  './verification-method-shape.js': shapes,
+};
 
-/** A document at `scale`, the DID it is read for, the key it lists first, and its JSON length. */
-function documentAt(scale: number) {
-  const did = `did:web:example.com:${'a'.repeat(250 * scale)}`;
-  const key = `#key-${'k'.repeat(25 * scale)}`;
+describe('lookup work meter', () => {
+  it('charges primitive string operations while preserving their results', () => {
+    const cases: [string, string, string, unknown, number][] = [
+      ['a === b', 'key', 'key', true, 4],
+      ['a !== b', 'key', 'longer', true, 1],
+      ['a + b', 'did:', 'key', 'did:key', 8],
+      ['`${a}:${b}`', 'did', 'key', 'did:key', 8],
+      ['a.startsWith(b)', 'did:key', 'did:', true, 5],
+      ['a.startsWith(b)', 'key', 'did:key', false, 1],
+      ['a.includes(b)', 'did:key', '#', false, 8],
+      ['a.slice(4)', 'did:key', '', 'key', 4],
+    ];
+    for (const [expression, a, b, expected, work] of cases) {
+      const meter = compileMeteredLookup(`export function run(a: string, b: string) { return ${expression}; }`, {});
+      meter.reset(100);
+      const run = meter.exports.run as (a: string, b: string) => unknown;
+      expect(run(a, b)).toBe(expected);
+      expect(meter.work()).toBe(work);
+    }
+  });
+
+  it('requires a cost rule for native collection operations', () => {
+    for (const text of ['export const index = new Map();', 'export function sort(ids: string[]) { return ids.sort(); }']) {
+      expect(() => compileMeteredLookup(text, {})).toThrow(/unmetered lookup operation/i);
+    }
+  });
+});
+
+function documentAt(scale: number, didUnits = 250 * scale, keyUnits = 25 * scale) {
+  const did = `did:web:example.com:${'a'.repeat(didUnits)}`;
+  const key = `#key-${'k'.repeat(keyUnits)}`;
   const other = 'did:web:other.example';
   const text = JSON.stringify({
     id: did,
@@ -43,56 +63,77 @@ function documentAt(scale: number) {
       ...Array.from({ length: 50 * scale }, (_, i) => method(`#embedded-${i}`, other)),
     ],
   });
-  // Parsed, as a resolver hands it over: its strings are not the DID the lookup is given.
   return { document: JSON.parse(text) as DIDDocument, did, key, size: text.length };
 }
 
-/** Every kind of lookup once: by absolute id, by relative id, for an absent id, and with no id. */
-function lookups({ document, did, key }: ReturnType<typeof documentAt>): unknown[] {
-  return [
-    retrieveVerificationMethod(document, did, `${did}${key}`, 'assertionMethod')?.id,
-    retrieveVerificationMethod(document, did, key, 'assertionMethod')?.id,
-    retrieveVerificationMethod(document, did, '#absent', 'assertionMethod')?.id,
-    ((selection) => ('method' in selection ? selection.method.id : undefined))(selectAssertionMethod(document, did, undefined)),
-  ];
+/** Charge every property read, including array iteration, without changing the input's shape. */
+function counted<T extends object>(value: T, step: () => void, seen = new WeakMap<object, object>()): T {
+  const prior = seen.get(value);
+  if (prior) return prior as T;
+  const proxy = new Proxy(value, {
+    get(target, key, receiver) {
+      step();
+      const result: unknown = Reflect.get(target, key, receiver);
+      return typeof result === 'object' && result !== null ? counted(result, step, seen) : result;
+    },
+  });
+  seen.set(value, proxy);
+  return proxy;
 }
 
-/** CPU microseconds per run of `run`, over `repetitions` runs. */
-function cpuMicros(run: () => unknown, repetitions: number): number {
-  const sink: unknown[] = [];
-  const start = process.cpuUsage();
-  for (let index = 0; index < repetitions; index += 1) sink.push(run());
-  const { user, system } = process.cpuUsage(start);
-  expect(sink).toHaveLength(repetitions);
-  return (user + system) / repetitions;
+// Fixed allowance per input unit, not a ratio calibrated to the current machine. JSON length
+// also pays for entries and property names. The separate DID and requested id are counted once.
+function budget(input: ReturnType<typeof documentAt>, named: string | undefined): number {
+  return 12 * (input.size + input.did.length + (named?.length ?? 0));
 }
 
-/** How many runs of `run` take at least SAMPLE_MICROS; finding out also warms it up. */
-function repetitionsFor(run: () => unknown): number {
-  let repetitions = 1;
-  while (cpuMicros(run, repetitions) * repetitions < SAMPLE_MICROS) repetitions *= 2;
-  return repetitions;
-}
+describe('lookup work', () => {
+  const meter = compileMeteredLookup(source, imports);
+  const lookup = meter.exports as unknown as typeof actual;
 
-describe('lookup time', () => {
-  it(`grows about ${GROWTH} times, not quadratically, in a document ${GROWTH} times the size`, () => {
-    const small = documentAt(1);
-    const large = documentAt(GROWTH);
-    expect(large.size / small.size).toBeGreaterThan(GROWTH - 1);
-    expect(large.size / small.size).toBeLessThan(GROWTH + 2);
-    for (const input of [small, large]) {
-      expect(lookups(input)).toEqual([input.key, input.key, undefined, input.key]);
+  it.each([
+    [1, 250, 25],
+    [4, 1000, 100],
+    [16, 4000, 400],
+    [16, 100_000, 25],
+    [16, 250, 100_000],
+  ])('stays within its input budget at scale %i, DID length %i, key length %i', (scale, didUnits, keyUnits) => {
+    const input = documentAt(scale, didUnits, keyUnits);
+    for (const named of [`${input.did}${input.key}`, input.key, '#absent', undefined]) {
+      const expected = actual.selectAssertionMethod(input.document, input.did, named);
+      const limit = budget(input, named);
+      meter.reset(limit);
+      const result = lookup.selectAssertionMethod(counted(input.document, meter.step), input.did, named);
+      const work = meter.work();
+      // Stop charging before Vitest walks a returned proxy to compare results.
+      meter.reset(Number.MAX_SAFE_INTEGER);
+      expect(result).toEqual(expected);
+      expect(work).toBeLessThanOrEqual(limit);
+      if (named !== undefined) {
+        meter.reset(limit);
+        const found = lookup.retrieveVerificationMethod(counted(input.document, meter.step), input.did, named, 'assertionMethod');
+        const retrievalWork = meter.work();
+        meter.reset(Number.MAX_SAFE_INTEGER);
+        expect(found).toEqual(actual.retrieveVerificationMethod(input.document, input.did, named, 'assertionMethod'));
+        expect(retrievalWork).toBeLessThanOrEqual(limit);
+      }
     }
+  });
 
-    const runs = [small, large].map((input) => () => lookups(input));
-    const repetitions = runs.map(repetitionsFor);
-    const least = [Infinity, Infinity];
-    for (let sample = 0; sample < SAMPLES; sample += 1) {
-      runs.forEach((run, size) => {
-        least[size] = Math.min(least[size]!, cpuMicros(run, repetitions[size]!));
-      });
-    }
-    const ratio = least[1]! / least[0]!;
-    expect(ratio, `${least[0]!.toFixed(1)} us, then ${least[1]!.toFixed(1)} us: ratio ${ratio.toFixed(1)}`).toBeLessThan(BOUND);
-  }, 120_000);
+  it.each([
+    ['rescanning the published methods',
+      'for (const entry of published) define(entry);',
+      'for (const entry of published) for (const again of published) { define(entry); define(again); }'],
+    ['prepending the DID to each relative id',
+      "if (id.startsWith('#')) return id;",
+      "if (id.startsWith('#')) return `${did}${id}`.slice(did.length);"],
+  ])('rejects a regression that spends work %s', (_name, before, after) => {
+    expect(source).toContain(before);
+    const changed = compileMeteredLookup(source.replace(before, after), imports);
+    const changedLookup = changed.exports as unknown as typeof actual;
+    const input = documentAt(16, 100_000);
+    changed.reset(budget(input, input.key));
+    expect(() => changedLookup.selectAssertionMethod(counted(input.document, changed.step), input.did, input.key))
+      .toThrow(/work budget/i);
+  });
 });

@@ -2,7 +2,6 @@ name: Coverage Report
 
 on:
   pull_request:
-    branches: [main]
 
 permissions:
   contents: read
@@ -38,7 +37,11 @@ jobs:
 
       - name: Save PR coverage and test count
         run: |
-          cp coverage/coverage-summary.json /tmp/pr-coverage.json
+          if [ -f coverage/coverage-summary.json ]; then
+            cp coverage/coverage-summary.json /tmp/pr-coverage.json
+          else
+            echo '{}' > /tmp/pr-coverage.json
+          fi
           jq '{numTotalTests: .numTotalTests, numPassedTests: .numPassedTests, numFailedTests: .numFailedTests, numTotalTestFiles: ((.testResults // []) | length)}' /tmp/pr-vitest-output.json > /tmp/pr-test-results.json 2>/dev/null || echo '{}' > /tmp/pr-test-results.json
 
       # Run coverage on the base branch for comparison
@@ -47,6 +50,12 @@ jobs:
 
       - name: Install dependencies (base)
         run: pnpm install
+
+      - name: Build (base)
+        run: |
+          pnpm clean
+          pnpm build
+          rm -rf coverage
 
       - name: Run coverage (base)
         run: npx vitest run --coverage --coverage.reporter=json-summary --coverage.reportOnFailure
@@ -87,7 +96,7 @@ jobs:
             }
 
             if (!pr || !pr.total) {
-              fs.writeFileSync('/tmp/coverage-comment-body.md', '⚠️ Coverage report unavailable — tests may have failed.');
+              fs.writeFileSync('/tmp/coverage-comment-body.md', '## Coverage Report\n\nCoverage report unavailable — tests may have failed.');
               return;
             }
 

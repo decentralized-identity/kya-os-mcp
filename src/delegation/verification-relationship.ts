@@ -36,8 +36,8 @@
  * candidate and a duplicate flag; a duplicate still counts when malformed or controlled elsewhere.
  * With no name, {@link selectAssertionMethod} reads the first `assertionMethod` entry, then performs
  * this same lookup once.
- * ./__tests__/verification-relationship-scaling.test.ts times it in a document and in one 16 times
- * its size, and holds the ratio of the two times far below quadratic.
+ * ./__tests__/verification-relationship-scaling.test.ts charges input reads, loop iterations and
+ * string operations against a budget proportional to S + D + K, without a timing threshold.
  */
 
 import { isRecord } from '../utils/guards.js';

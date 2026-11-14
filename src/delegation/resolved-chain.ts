@@ -112,7 +112,10 @@ export function resolvedAncestors(
 /**
  * Whether a value has what the walk reads of every credential:
  * `credentialSubject.delegation` and its `constraints` (the verifier's own
- * invariant).
+ * invariant). Each is held to be an object of any kind, an array included,
+ * which is looser than `isRecord`: the walk reads members of them and never
+ * needs them to be records, and a credential whose `constraints` is an array
+ * constrains nothing and goes on to the checks after this one.
  */
 export function hasDelegationShape(credential: unknown): boolean {
   const delegation = (

@@ -108,9 +108,7 @@ export function createDelegationGate(
           const grantContext = {
             scopeId: config.scopeId,
             actor: { kind: 'pairwise_did' as const, did: existingGrant.agentDid },
-            ...(existingGrant.userDid?.startsWith('did:')
-              ? { responsibleParty: { kind: 'pairwise_did' as const, did: existingGrant.userDid } }
-              : {}),
+            responsibleParty: { kind: 'pairwise_did' as const, did: resolvedGrant.rootIssuer },
             // A grant stands for the delegation it was minted from, verified
             // again just now, so its events refer to that delegation too.
             authorization: {
@@ -131,9 +129,7 @@ export function createDelegationGate(
             ...grantContext,
             principal: {
               agentDid: existingGrant.agentDid,
-              ...(existingGrant.userDid !== undefined
-                ? { responsibleParty: existingGrant.userDid }
-                : {}),
+              responsibleParty: resolvedGrant.rootIssuer,
               delegatedScopes: resolvedGrant.delegatedScopes,
             },
             ...forwardedApprovals(args),
@@ -293,7 +289,9 @@ export function createDelegationGate(
       }
 
       const actor = { kind: 'pairwise_did' as const, did: vc.credentialSubject.id };
-      const controller = vc.credentialSubject.delegation.controller;
+      // The Responsible Party is the chain's root issuer, which the check verified (SPEC.md §2),
+      // never the `controller` a credential's own issuer writes.
+      const responsibleParty = check.rootIssuer;
       const authorization = {
         source: 'delegation' as const,
         decision: 'allowed' as const,
@@ -304,9 +302,7 @@ export function createDelegationGate(
       const callContext = {
         scopeId: config.scopeId,
         actor,
-        ...(controller?.startsWith('did:')
-          ? { responsibleParty: { kind: 'pairwise_did' as const, did: controller } }
-          : {}),
+        responsibleParty: { kind: 'pairwise_did' as const, did: responsibleParty },
         authorization,
       };
 
@@ -329,7 +325,7 @@ export function createDelegationGate(
       // Mint a durable grant from this verified delegation so the next call —
       // on any instance — resolves via resolveExistingGrant with no re-paste.
       await bindGrantOnSuccess(
-        vc, delegationArg, isJwt, sessionId, config.scopeId, check.expiresAt,
+        vc, delegationArg, isJwt, sessionId, config.scopeId, responsibleParty, check.expiresAt,
       );
 
       logger.debug(
@@ -339,7 +335,7 @@ export function createDelegationGate(
         ...callContext,
         principal: {
           agentDid: vc.credentialSubject.id,
-          ...(controller !== undefined ? { responsibleParty: controller } : {}),
+          responsibleParty,
           delegatedScopes: getDelegationScopes(vc),
         },
         ...forwardedApprovals(args),

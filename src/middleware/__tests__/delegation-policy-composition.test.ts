@@ -122,7 +122,7 @@ describe('withPolicyGate composed after wrapWithDelegation', () => {
 
     expect(requests[0]!.principal).toEqual({
       agentDid: agent.did,
-      responsibleParty: 'did:web:owner.example',
+      responsibleParty: vc.issuer,
     });
     expect(requests[0]!.context.delegatedScopes).toEqual(['db:admin', 'db:read']);
   });

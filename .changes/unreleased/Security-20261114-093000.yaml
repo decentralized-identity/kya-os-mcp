@@ -1,0 +1,17 @@
+kind: Security
+body: |-
+    **The delegation gate names the verified root issuer as the
+    Responsible Party, never a `controller` a credential states.** SPEC.md
+    §2 defines the Responsible Party as the root issuer of the chain. The
+    gate took it from the presented credential's `controller`, which that
+    credential's own issuer writes, so a delegate that re-delegated could
+    have a call attributed to any DID in the handler's context, the
+    `delegation.verified`, `authorization.approved` and `grant.used` audit
+    events, and the stored grant. This affected every release with
+    `wrapWithDelegation`. The context's `responsibleParty` and
+    `principal.responsibleParty` are now the root issuer the chain walk
+    verified, and are always present. A grant stores it as
+    `responsibleParty` and no longer sets `userDid`. UPGRADING.md, "The
+    Responsible Party of a delegated call", says what a handler or audit
+    consumer that read the old value must change.
+time: 2026-11-14T09:30:00.000000-06:00

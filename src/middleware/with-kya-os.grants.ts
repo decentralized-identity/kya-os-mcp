@@ -34,6 +34,8 @@ export interface ResolvedGrant extends DelegationRecords {
   grant: Grant;
   /** The scopes the re-verified credential grants (not the store's copy). */
   delegatedScopes: string[];
+  /** The root issuer the grant's delegation verified to just now: the call's Responsible Party. */
+  rootIssuer: string;
 }
 
 export interface GrantResolution {
@@ -63,8 +65,19 @@ export interface GrantResolution {
     isVCJWT: boolean,
     sessionId: string | undefined,
     scopeId: string,
+    responsibleParty: string,
     expiresAt?: number,
   ): Promise<void>;
+}
+
+/**
+ * Whether a stored grant still stands for the delegation it holds, re-verified just now to
+ * `rootIssuer`. A grant names the Responsible Party it was minted for, and stands only while its
+ * chain verifies to that root. A grant stored before grants named one recorded its leaf's
+ * `controller` as `userDid`, and is held to that record as it was then.
+ */
+function namesItsResponsibleParty(grant: Grant, rootIssuer: string, controller: string | undefined): boolean {
+  return grant.responsibleParty !== undefined ? grant.responsibleParty === rootIssuer : controller === grant.userDid;
 }
 
 export function createGrantResolution(
@@ -120,12 +133,13 @@ export function createGrantResolution(
       const subject = check.vc.credentialSubject;
       if (
         subject.id !== grant.agentDid ||
-        subject.delegation.controller !== grant.userDid ||
+        !namesItsResponsibleParty(grant, check.rootIssuer, subject.delegation.controller) ||
         !scopeSatisfies(scopeId, check.vc).satisfied
       ) return undefined;
       return {
         grant,
         delegatedScopes: getDelegationScopes(check.vc),
+        rootIssuer: check.rootIssuer,
         evidence: check.evidence,
         chainEvidence: check.chainEvidence,
       };
@@ -220,6 +234,7 @@ export function createGrantResolution(
     isVCJWT: boolean,
     sessionId: string | undefined,
     scopeId: string,
+    responsibleParty: string,
     expiresAt?: number,
   ): Promise<void> {
     try {
@@ -251,12 +266,10 @@ export function createGrantResolution(
       // would never match the wildcard, so the no-paste retry would silently
       // re-challenge. Including scopeId makes the grant resolvable.
       const scopes = Array.from(new Set([scopeId, ...delegatedScopes]));
-      const userDid = vc.credentialSubject?.delegation?.controller;
-
       const grant: Grant = {
         id: await grantId(agentDid, sessionId, scopes),
         agentDid,
-        ...(userDid !== undefined ? { userDid } : {}),
+        responsibleParty,
         scopes,
         ...(sessionId !== undefined ? { sessionId } : {}),
         authorization: { type: "delegation" },

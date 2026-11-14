@@ -563,6 +563,22 @@ Two things to check: one if your server uses `wrapWithDelegation`, and one if yo
 - A custom DID resolver or key provider that hands the verifier an Ed25519 JWK must write its `x` as RFC 8037 has it: base64url of the URL-safe alphabet alone, with no `=` and no white space, of 32 bytes.
   An `x` in the standard base64 alphabet, padded or holding white space is refused even when it is the same key, for a response proof, a delegation credential's embedded signature and a status list that `CheqdStatusListResolver` reads.
 
+### The Responsible Party of a delegated call
+
+The delegation gate names the root issuer of the chain as the Responsible Party, as SPEC.md §2 defines it.
+On 1.22.0 it named the `controller` of the presented credential, a value that credential's own issuer writes and no one else signs.
+What changes:
+
+- `context.responsibleParty` and `context.principal.responsibleParty`, which a tool handler and a composed `withPolicyGate` receive, are the issuer of the chain's root credential, whose signature the gate verified and whom `trustedRootIssuers` admitted.
+  For a credential with no parent that is the credential's own issuer.
+  Both are now always present; on 1.22.0 they were absent when the credential named no `controller`.
+- The `delegation.verified`, `authorization.approved` and `grant.used` audit events name the same DID as `responsibleParty`.
+  An audit consumer that grouped events by the old value will see the root issuer from the upgrade on.
+- A grant the gate stores has `responsibleParty`, the root issuer, and no `userDid`.
+  The gate verifies the stored delegation again on every reuse and honours the grant only while it verifies to that issuer.
+  A grant stored by 1.22.0 keeps working: it is held to the `userDid` it recorded, and the call it authorizes is still attributed to the root issuer.
+- A handler that needs the `controller` a credential states reads it from the credential it is given; the gate no longer hands it on under another name.
+
 ### Conformance suite 1.4.0
 
 The suite adds status-list vectors for the acceptance rule, each with a list whose proof verifies, and has 97 vectors in all.

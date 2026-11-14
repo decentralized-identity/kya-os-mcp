@@ -28,7 +28,16 @@ export interface Grant {
   id: string;
   /** The agent the grant authorizes — the durable binding key. */
   agentDid: string;
-  /** The user on whose behalf the agent acts, when known. */
+  /**
+   * The Responsible Party of the delegation the grant was minted from: the root issuer of its
+   * chain, as the delegation gate verified it (SPEC.md §2). The gate verifies the stored
+   * delegation again on every reuse and honours the grant only while it verifies to this issuer.
+   */
+  responsibleParty?: string;
+  /**
+   * The user on whose behalf the agent acts, when known. The delegation gate no longer sets it:
+   * it recorded the `controller` a credential's own issuer writes, which is not verified.
+   */
   userDid?: string;
   /** The scopes granted. */
   scopes: string[];

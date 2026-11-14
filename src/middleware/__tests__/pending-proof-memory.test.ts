@@ -28,22 +28,49 @@ const LISTED = 256;
 /** What every digest the describer lists starts with, after `sha256:`. */
 const MARK = 'feedfacecafe';
 
+/** What every listed digest starts with, as the bytes a snapshot shows it by. */
+const LISTED_PREFIX = Buffer.from(`sha256:${MARK}`);
+
+/** How many bytes a digest is written in: `sha256:` and 64 hex digits. */
+const DIGEST_BYTES = 'sha256:'.length + 64;
+
+const isHexDigit = (byte: number | undefined): boolean =>
+  byte !== undefined && ((byte >= 0x30 && byte <= 0x39) || (byte >= 0x61 && byte <= 0x66));
+
+/**
+ * How many of the digests the describer listed `snapshot` shows. It is read
+ * as bytes and never made a string: a snapshot shows the start of every
+ * string still reachable, and a piece of an earlier snapshot kept as a
+ * string would show the digests in it to the next one.
+ */
+function listedIn(snapshot: Buffer): number {
+  const found = new Set<string>();
+  for (let at = snapshot.indexOf(LISTED_PREFIX); at !== -1; at = snapshot.indexOf(LISTED_PREFIX, at + 1)) {
+    const digest = snapshot.subarray(at, at + DIGEST_BYTES);
+    const digits = digest.subarray(LISTED_PREFIX.length);
+    if (digest.length === DIGEST_BYTES && digits.every(isHexDigit)) found.add(digest.toString('latin1'));
+  }
+  return found.size;
+}
+
 /**
  * How many of the digests the describer listed are reachable now. A heap
  * snapshot is taken after a full collection, and lists every string that is
  * still reachable, with its text.
+ *
+ * The snapshot is read by its `data` events and is over at its `end`. An
+ * async iterator over the stream is over only at its `close`, and the
+ * snapshot stream of some Node 20 releases (20.19.0 is one) ends without
+ * closing, so a `for await` over it never returns there.
  */
-async function digestsStillHeld(): Promise<number> {
-  const listed = new RegExp(`sha256:${MARK}[0-9a-f]{${64 - MARK.length}}`, 'g');
-  const found = new Set<string>();
-  let carried = '';
-  for await (const chunk of v8.getHeapSnapshot()) {
-    const text = carried + String(chunk);
-    for (const [digest] of text.matchAll(listed)) found.add(digest);
-    // A digest split across two chunks is found whole in the next one.
-    carried = text.slice(-80);
-  }
-  return found.size;
+function digestsStillHeld(): Promise<number> {
+  const chunks: Buffer[] = [];
+  return new Promise((resolve, reject) => {
+    v8.getHeapSnapshot()
+      .on('data', (chunk: Buffer) => chunks.push(chunk))
+      .on('error', reject)
+      .on('end', () => resolve(listedIn(Buffer.concat(chunks))));
+  });
 }
 
 const described = vi.hoisted(() => ({ presentations: 0 }));

@@ -127,6 +127,15 @@ describe('a plain object from another realm', () => {
     expect(measureDidDocument(vm.runInNewContext(`new (class Document { id = '${did}' })()`)).ok).toBe(false);
     expect(measureDidDocument(vm.runInNewContext(`({ id: '${did}', value: new Date(0) })`)).ok).toBe(false);
   });
+
+  it('is told from an instance of a class named Object, whose prototype has a prototype of its own', () => {
+    const Named = class Object { kind = 'not plain'; };
+    expect(Named.name).toBe('Object');
+    const refused = { ok: false, reason: 'value is neither an array nor a plain object' };
+    expect(measureDidDocument({ id: did, service: [new Named()] })).toEqual(refused);
+    expect(measureDidDocument(Object.assign(new Named(), { id: did }))).toEqual(refused);
+    expect(measureDidDocument(vm.runInNewContext(`({ id: '${did}', service: [new (class Object {})()] })`))).toEqual(refused);
+  });
 });
 
 describe('a document a built-in resolver parsed', () => {

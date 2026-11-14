@@ -139,6 +139,22 @@ describe('the Responsible Party the delegation gate names', () => {
     expect(JSON.stringify([s.events, s.contexts, ownFields])).not.toContain(VICTIM);
   });
 
+  it('is the root issuer for a grant 1.22.0 stored, which recorded the controller of its credential as userDid', async () => {
+    const s = await server();
+    const record = delegationRecord(root.did, { subjectDid: AGENT, controller: ALICE, constraints: s.constraints });
+    const sessionId = await handshake(s.kyaos);
+    // The row as 1.22.0 wrote it: no responsibleParty, and the credential's controller as userDid.
+    await s.grantStore.bind({
+      id: 'grant-stored-by-1.22.0', agentDid: AGENT, userDid: ALICE, scopes: ['orders:place'], sessionId,
+      authorization: { type: 'delegation' }, delegationCredential: await signedCredential(root, { record }),
+      issuedAt: Date.now(), status: 'active',
+    });
+    expect(await s.call(sessionId)).toBe('placed');
+    expect(s.contexts[0]?.responsibleParty).toEqual({ kind: 'pairwise_did', did: root.did });
+    expect(s.contexts[0]?.principal?.responsibleParty).toBe(root.did);
+    expect(namedBy(s.events, 'grant.used')).toEqual([root.did]);
+  });
+
   it('does not run a call under a stored grant that names another Responsible Party than its chain verifies to', async () => {
     const s = await server();
     const record = delegationRecord(root.did, { subjectDid: AGENT, constraints: s.constraints });

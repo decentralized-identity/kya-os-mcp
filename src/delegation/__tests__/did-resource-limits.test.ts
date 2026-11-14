@@ -200,6 +200,10 @@ describe('DID resource boundaries', () => {
     expect(measureDidDocument({ ...document, optional: undefined })).toEqual({ ok: true, bytes: encoded(JSON.stringify(document)).length });
     const unicode = { id: did, unicode: '\uD800😀\n' };
     expect(measureDidDocument(unicode)).toEqual({ ok: true, bytes: encoded(JSON.stringify(unicode)).length });
+    for (const literal of [true, false, null]) {
+      const stated = { ...document, deactivated: literal };
+      expect(measureDidDocument(stated)).toEqual({ ok: true, bytes: encoded(JSON.stringify(stated)).length });
+    }
     vi.useFakeTimers();
     try {
       const refused = expect(resolveBoundedDid({ resolve: () => new Promise(() => {}) }, did)).rejects.toThrow('deadline');

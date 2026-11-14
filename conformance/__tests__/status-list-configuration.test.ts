@@ -100,10 +100,10 @@ describe('a status-list vector that states its verifier configuration', () => {
 
   it('names the malformed member when the loader refuses it', () => {
     expect(load(configured(IDS[0]!, () => ({ trustedRootIssuer: 7 })))).toMatch(
-      /^Vector status-list\/no-id-list in .*status-list\.json: trustedRootIssuer of type number is not a non-empty string$/,
+      /^Vector status-list\/no-id-list in .*status-list\.json: trustedRootIssuer is not a non-empty string$/,
     );
     expect(load(configured(IDS[0]!, () => ({ statusListIssuers: null })))).toMatch(
-      /: statusListIssuers must be a plain object mapping credential issuer DIDs to arrays of status-list issuer DIDs$/,
+      /: statusListIssuers does not map issuers to lists of strings$/,
     );
   });
 

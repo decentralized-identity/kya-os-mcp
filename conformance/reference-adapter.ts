@@ -70,7 +70,7 @@ import {
 } from '../src/audit/index.js';
 import { canonicalizeJson } from '../src/utils/canonical-json.js';
 import { ed25519SignatureVerifier } from './crypto-kit.js';
-import { assertStatusListConfiguration } from './status-list-configuration.js';
+import { assertStatusListConfiguration } from './loader.js';
 import { statusListGzipCodec } from '../src/utils/statuslist-gzip.js';
 import {
   asMessage,

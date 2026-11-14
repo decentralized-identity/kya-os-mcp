@@ -5,12 +5,16 @@
  * (version + category + vectors), and returns a flat, deduplicated list of
  * {@link ConformanceVector}. Fails loudly on a malformed vector file so a typo in
  * a vector never silently weakens the suite.
+ *
+ * This file, `types.ts` and `runner.ts` are what an implementer of another library copies beside
+ * the vectors, so the three import only Node.js built-ins and each other, never the package's
+ * source: whatever the loader checks, it checks with code of its own
+ * (`__tests__/standalone-harness.test.ts`).
  */
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { assertStatusListConfiguration } from './status-list-configuration.js';
 import type { ConformanceVector, VectorCategory, VectorFile } from './types.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -29,6 +33,34 @@ const VALID_CATEGORIES: readonly VectorCategory[] = [
   'audit-integrity',
   'negotiation',
 ];
+
+/** A JSON object, or one built in code as an object literal: not an array, a `Map` or a class instance. */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null) return false;
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+/**
+ * Throw a `TypeError` unless the verifier configuration a status-list input states (SPEC.md §6.6)
+ * is well formed: a `trustedRootIssuer`, when present, is a non-empty string, and a
+ * `statusListIssuers`, when present, is a plain object that maps each credential issuer to an array
+ * of strings. `conformance/status_list.py` refuses the same inputs in the same words, so the
+ * suite's two readers refuse the same malformed vector, and the reference adapter calls this too.
+ */
+export function assertStatusListConfiguration(input: unknown): void {
+  const fields: Record<string, unknown> = isPlainObject(input) ? input : {};
+  const root = fields['trustedRootIssuer'];
+  if (root !== undefined && (typeof root !== 'string' || root.length === 0)) {
+    throw new TypeError('trustedRootIssuer is not a non-empty string');
+  }
+  const issuers = fields['statusListIssuers'];
+  if (issuers === undefined) return;
+  const lists = isPlainObject(issuers) ? Object.values(issuers) : undefined;
+  if (lists === undefined || !lists.every((list) => Array.isArray(list) && list.every((did) => typeof did === 'string'))) {
+    throw new TypeError('statusListIssuers does not map issuers to lists of strings');
+  }
+}
 
 function assertVectorFile(file: unknown, source: string): asserts file is VectorFile {
   if (typeof file !== 'object' || file === null) {

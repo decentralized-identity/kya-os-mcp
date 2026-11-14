@@ -203,21 +203,30 @@ describe("verifyDelegationJwt (VC-JWT / compact JWS wire format)", () => {
     expect(result.reason).toBe(`Could not resolve issuer DID "${ISSUER_DID}": resolver down`);
   });
 
-  it("quotes at most 64 characters of an issuer DID its resolver throws for", async () => {
-    const long = `${ISSUER_DID}:${"a".repeat(100)}`;
+  it("refuses an issuer DID over the length limit without asking its resolver", async () => {
+    const long = `${ISSUER_DID}:${"a".repeat(2_049 - ISSUER_DID.length - 1)}`;
+    const asked: string[] = [];
     const isolated = new DelegationCredentialVerifier({
       didResolver: {
-        async resolve(): Promise<DIDDocument | null> {
+        async resolve(did: string): Promise<DIDDocument | null> {
+          asked.push(did);
           throw new Error("resolver down");
         },
       },
     });
-    const jwt = await new SignJWT({ vc: delegationVcClaim({ issuer: long }) })
-      .setProtectedHeader({ alg: "EdDSA", typ: "JWT", kid: `${long}#0` })
-      .setIssuer(long)
-      .sign(privateKey);
-    const result = await isolated.verifyDelegationJwt(jwt, { skipCache: true });
-    expect(result.reason).toBe(`Could not resolve issuer DID "${long.slice(0, 64)}"...: resolver down`);
+    const mint = (issuer: string) =>
+      new SignJWT({ vc: delegationVcClaim({ issuer }) })
+        .setProtectedHeader({ alg: "EdDSA", typ: "JWT", kid: `${issuer}#0` })
+        .setIssuer(issuer)
+        .sign(privateKey);
+    const refused = await isolated.verifyDelegationJwt(await mint(long), { skipCache: true });
+    expect(refused.reason).toBe(`Could not resolve issuer DID: "${long.slice(0, 64)}"...`);
+    expect(asked).toEqual([]);
+    // One code unit shorter, the DID is at the limit, and the resolver is asked.
+    const atLimit = long.slice(0, -1);
+    const resolved = await isolated.verifyDelegationJwt(await mint(atLimit), { skipCache: true });
+    expect(resolved.reason).toBe(`Could not resolve issuer DID "${atLimit.slice(0, 64)}"...: resolver down`);
+    expect(asked).toEqual([atLimit]);
   });
 
   it("rejects, without throwing, a JOSE header that is not a JSON object", async () => {

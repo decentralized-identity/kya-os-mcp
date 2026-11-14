@@ -34,6 +34,7 @@ import {
 } from "../types/protocol.js";
 import { logger } from "../logging/index.js";
 import { TtlCache } from "../utils/ttl-cache.js";
+import { isRecord } from "../utils/guards.js";
 import type {
   KyaOsChallengeFormatter,
   KyaOsToolHandler,
@@ -54,9 +55,6 @@ export interface DelegationGateConfig {
   consentUrl: string;
   formatChallenge?: KyaOsChallengeFormatter;
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 /**
  * The challenge result a `formatChallenge` hook returned, in either form: its

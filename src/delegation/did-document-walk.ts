@@ -16,6 +16,7 @@ import {
   MAX_JSON_MEMBERS, MAX_JSON_MEMBER_LENGTH, MAX_VERIFICATION_ENTRIES,
 } from './did-resource-policy.js';
 import { isValidDid } from '../utils/did-helpers.js';
+import { isRecord } from '../utils/guards.js';
 
 /** A document's compact JSON size in UTF-8 bytes, or why it is refused. */
 export type DidDocumentMeasure =
@@ -75,7 +76,7 @@ class Walk {
   constructor(private readonly parsed: boolean) {}
 
   document(value: unknown): number {
-    if (!isObjectRecord(value)) throw new Refusal('document is not a JSON object');
+    if (!isRecord(value)) throw new Refusal('document is not a JSON object');
     this.value(value, 1);
     checkIdentifiers(value);
     return this.bytes;
@@ -189,7 +190,7 @@ function checkEntry(entry: unknown): void {
     if (!boundedKeyId(entry)) throw new Refusal('key identifier limit exceeded');
     return;
   }
-  if (!isObjectRecord(entry)) return;
+  if (!isRecord(entry)) return;
   const id = ownValue(entry, 'id');
   const controller = ownValue(entry, 'controller');
   if (typeof id === 'string' && !boundedKeyId(id)) throw new Refusal('key identifier limit exceeded');
@@ -201,10 +202,6 @@ function checkEntry(entry: unknown): void {
 /** An own data member's value, read without running a getter; the walk has refused accessors. */
 function ownValue(object: object, key: string): unknown {
   return Object.getOwnPropertyDescriptor(object, key)?.value;
-}
-
-function isObjectRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isLowSurrogate(code: number): boolean {

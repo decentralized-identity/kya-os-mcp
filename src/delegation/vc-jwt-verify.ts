@@ -28,6 +28,7 @@ import type {
   DelegationVCVerificationResult,
 } from "./vc-verifier.types.js";
 import { credentialIssuerDid, isIssuerUrl } from "./credential-issuer.js";
+import { isRecord } from "../utils/guards.js";
 import { parseVCJWT, type VCJWTPayload } from "./utils.js";
 import { validateBasicProperties } from "./vc-verification-checks.js";
 import { verificationMethodJwk } from "./verification-method-key.js";
@@ -99,15 +100,6 @@ function jwtIssuerRefusal(iss: unknown): string | undefined {
   return `JWT iss ${describeValue(iss)} is not a URL`;
 }
 
-/**
- * A JOSE header and a JWT claims set are JSON objects (RFC 7515 §4,
- * RFC 7519 §7.2). Both segments are attacker-supplied, and `null` or an array
- * parses as valid JSON, so check before reading a member.
- */
-function isJsonObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 /** A parsed, structurally-valid VC-JWT plus the coordinates to look up its key. */
 export type PreparedVcJwt =
   | {
@@ -133,10 +125,13 @@ export function prepareVcJwtCredential(
   startTime: number,
 ): PreparedVcJwt {
   const parsed = parseVCJWT(jwt);
+  // A JOSE header and a JWT claims set are JSON objects (RFC 7515 §4, RFC 7519 §7.2). Both
+  // segments are attacker-supplied, and `null` or an array parses as valid JSON, so each is
+  // checked before a member is read.
   if (
     !parsed ||
-    !isJsonObject(parsed.header) ||
-    !isJsonObject(parsed.payload) ||
+    !isRecord(parsed.header) ||
+    !isRecord(parsed.payload) ||
     (parsed.header.kid !== undefined && typeof parsed.header.kid !== "string")
   ) {
     return { failure: jwtBasicFailure("Not a valid VC-JWT (parse failed)", startTime) };

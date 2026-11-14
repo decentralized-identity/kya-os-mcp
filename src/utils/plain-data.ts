@@ -192,6 +192,19 @@ class Walk {
    * levels of each array and object counted once, from the deepest of what
    * it holds, with no call stack. A value that holds itself nests without
    * end.
+   *
+   * The walk that measures a DID document
+   * (`delegation/did-document-walk.ts`) counts depth as well, and cannot
+   * count it here. It recurses, which is safe there because it refuses at
+   * the first container past the limit, and it does so while it charges
+   * bytes, counts members and refuses what JSON cannot hold: a `Date`, a
+   * hole in an array, a bigint and a value that holds itself are each
+   * refused by name, where a credential holding one is counted here and
+   * left for its copy or its canonicalizer to judge. It reads array
+   * elements as values, so an accessor on one runs, and nothing here runs
+   * an accessor. It follows a container once for each path to it, where one
+   * shared by many is counted once here. And it belongs to the delegation
+   * layer, which nothing in `utils` imports.
    */
   nestsDeeperThan(value: object, limit: number): boolean {
     if (limit < 1) return true;

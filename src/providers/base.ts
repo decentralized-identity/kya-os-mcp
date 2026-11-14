@@ -7,6 +7,7 @@
 
 import type { DIDDocument } from '../delegation/vc-verifier.js';
 import type { StatusList2021Credential, DelegationRecord } from '../types/protocol.js';
+import type { PrivateNetworkTransport } from '../utils/fetch-port.js';
 
 export abstract class CryptoProvider {
   abstract sign(data: Uint8Array, privateKey: string): Promise<Uint8Array>;
@@ -28,7 +29,7 @@ export abstract class ClockProvider {
   abstract format(timestamp: number): string;
 }
 
-export abstract class FetchProvider {
+export abstract class FetchProvider implements PrivateNetworkTransport {
   /**
    * The private-network rule's opt-out (SPEC §4.4.2). A did:web or status-list read through this
    * provider refuses a URL whose host is a non-public IP literal or a local name, such as

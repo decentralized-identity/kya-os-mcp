@@ -10,8 +10,8 @@
  * check its size. A custom `FetchProvider` must therefore return a WHATWG `ReadableStream` body.
  */
 
-import type { FetchProvider } from '../providers/base.js';
 import { describeValue } from './describe-value.js';
+import type { FetchPort } from './fetch-port.js';
 import { checkJsonTokens, type JsonLimits } from './json-preflight.js';
 
 /** What a bounded read allows, and the name its refusals carry. */
@@ -107,7 +107,7 @@ export async function readCappedBody(body: ReadableStream<Uint8Array>, options: 
  * deadline, from a provider that ignores the abort signal, has its body cancelled too.
  */
 export async function fetchBoundedText(
-  fetcher: Pick<FetchProvider, 'fetch'>,
+  fetcher: FetchPort,
   url: string,
   init: RequestInit | Promise<RequestInit>,
   policy: BoundedReadPolicy,
@@ -153,7 +153,7 @@ export async function fetchBoundedText(
 
 /** GET `url` under `policy`, check the JSON text's shape, and only then parse it. */
 export async function fetchBoundedJson(
-  fetcher: Pick<FetchProvider, 'fetch'>,
+  fetcher: FetchPort,
   url: string,
   init: RequestInit | Promise<RequestInit>,
   policy: BoundedJsonPolicy,

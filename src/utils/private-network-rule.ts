@@ -15,13 +15,12 @@
  * literals and local names; the scheme rule holds, and redirects are still followed by hand.
  */
 
-import type { FetchProvider } from '../providers/base.js';
 import { fetchWithCheckedRedirects, type TargetRefusal } from './checked-redirects.js';
 import { describeValue } from './describe-value.js';
+import type { FetchPort, PrivateNetworkTransport } from './fetch-port.js';
 import { isBlockedAddress } from './ip-classifier.js';
 
-/** The transport of a counterparty-named read: its `fetch`, and whether it admits private hosts. */
-export type PrivateNetworkTransport = Pick<FetchProvider, 'fetch' | 'allowPrivateNetworkHosts'>;
+export type { PrivateNetworkTransport } from './fetch-port.js';
 
 /** An IPv4 host as the URL parser writes one, whatever form the URL gave it in. */
 const IPV4_HOST = /^\d{1,3}(?:\.\d{1,3}){3}$/;
@@ -89,7 +88,7 @@ export function privateNetworkRefusal(url: string, allowPrivateNetworkHosts = fa
 }
 
 /** `transport`'s `fetch` under the rule; a transport whose `allowPrivateNetworkHosts` is true admits private hosts. */
-export function underPrivateNetworkRule(transport: PrivateNetworkTransport): Pick<FetchProvider, 'fetch'> {
+export function underPrivateNetworkRule(transport: PrivateNetworkTransport): FetchPort {
   const allowPrivateNetworkHosts = transport.allowPrivateNetworkHosts === true;
   const refusal: TargetRefusal = url => privateNetworkRefusal(url, allowPrivateNetworkHosts);
   return {

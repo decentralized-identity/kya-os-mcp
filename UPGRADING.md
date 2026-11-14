@@ -577,6 +577,9 @@ What changes:
 - A grant the gate stores has `responsibleParty`, the root issuer, and no `userDid`.
   The gate verifies the stored delegation again on every reuse and honours the grant only while it verifies to that issuer.
   A grant stored by 1.22.0 keeps working: it is held to the `userDid` it recorded, and the call it authorizes is still attributed to the root issuer.
+- After a rollback to 1.22.0 over the same grant store, 1.22.0 refuses a grant stored since the upgrade whose credential names a `controller`, and answers `needs_authorization`, so the user approves again.
+  1.22.0 honours a grant only when its credential's `controller` equals the grant's `userDid`, which such a grant does not have; a grant whose credential names no `controller` keeps working there.
+  The gate does not write `userDid` to spare that approval: the field would again hold a DID nobody verified, in a row that a `GrantStore` and whatever reads it take as the user on whose behalf the grant stands.
 - A handler that needs the `controller` a credential states reads it from the credential it is given; the gate no longer hands it on under another name.
 - A `withPolicyGate` that no `wrapWithDelegation` precedes verifies no delegation, and no longer gives its `PolicyEngine` a `principal.responsibleParty`.
   On 1.22.0 it gave the `controller` of the `_kyaos_delegation` argument, which nothing had verified, so whoever wrote the argument chose it.

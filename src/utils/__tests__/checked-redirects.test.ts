@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { MAX_REDIRECTS } from '../checked-redirects.js';
+import { MAX_REDIRECTS } from '../redirect-follower.js';
 import { underPrivateNetworkRule } from '../private-network-rule.js';
 
 /** A body that records its cancellation. */
@@ -69,6 +69,23 @@ describe('a redirect followed by hand', () => {
     await expect(underPrivateNetworkRule({ fetch }).fetch(REQUESTED)).rejects.toThrow('Redirect without a Location header');
     expect(fetch).toHaveBeenCalledOnce();
     expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it('reads an empty Location as the URL that sent it, asking it again until the limit', async () => {
+    const fetch = vi.fn(async (_url: string) => new Response(null, { status: 302, headers: { location: '' } }));
+    await expect(underPrivateNetworkRule({ fetch }).fetch(REQUESTED)).rejects.toThrow(`Redirect limit of ${MAX_REDIRECTS} exceeded`);
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual(Array(MAX_REDIRECTS + 1).fill(REQUESTED));
+  });
+
+  it.each([
+    ['http://public.example/list', 'Redirect from https to http refused'],
+    ['https://[bad', 'Redirect to an invalid URL'],
+    ['https://10.0.0.5/admin', 'Redirect to "10.0.0.5" refused'],
+    ['ftp://public.example/list', 'Redirect to a "ftp:" URL refused'],
+  ])('refuses a redirect to %s after one request: %s', async (location, refusal) => {
+    const fetch = vi.fn(async () => new Response(null, { status: 302, headers: { location } }));
+    await expect(underPrivateNetworkRule({ fetch }).fetch(REQUESTED)).rejects.toThrow(refusal);
+    expect(fetch).toHaveBeenCalledOnce();
   });
 
   it("sends another origin only the CORS-safelisted request headers and the request's cache directives, and the origin first asked all of them", async () => {

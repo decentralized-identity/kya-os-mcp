@@ -13,12 +13,7 @@
 
 import { cancelQuietly } from './bounded-read.js';
 import { crossOriginRequestHeaders } from './cors-safelisted-headers.js';
-
-/** Redirects followed before the request is refused. */
-export const MAX_REDIRECTS = 3;
-
-/** The HTTP statuses that redirect a GET. */
-export const REDIRECT_STATUSES: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]);
+import { followRedirects, type RedirectRefusals } from './redirect-follower.js';
 
 /** Fetch one URL as given, without following a redirect. */
 export type SingleFetch = (url: string, init: RequestInit) => Promise<Response>;
@@ -26,30 +21,44 @@ export type SingleFetch = (url: string, init: RequestInit) => Promise<Response>;
 /** How the caller's rule names a URL it refuses, or `undefined` when it admits the URL. */
 export type TargetRefusal = (url: string) => string | undefined;
 
+const REFUSALS: RedirectRefusals = {
+  limitExceeded: maxRedirects => new Error(`Redirect limit of ${maxRedirects} exceeded`),
+  missingLocation: () => new Error('Redirect without a Location header'),
+  invalidLocation: () => new Error('Redirect to an invalid URL'),
+  httpsToHttp: () => new Error('Redirect from https to http refused'),
+};
+
 /**
- * GET `url`, following at most {@link MAX_REDIRECTS} redirects, and refuse any target `refusal`
- * names, any step down from https to http, and any response the provider reached by a redirect.
+ * GET `url`, following redirects by the one rule and up to its limit (`./redirect-follower`), and
+ * refuse any target `refusal` names, any step down from https to http, and any response the
+ * provider reached by a redirect.
  */
-export async function fetchWithCheckedRedirects(
+export function fetchWithCheckedRedirects(
   fetch: SingleFetch,
   url: string,
   init: RequestInit,
   refusal: TargetRefusal,
 ): Promise<Response> {
-  const origin = new URL(url).origin;
-  let current = url;
-  for (let redirects = 0; ; redirects++) {
-    const hop = new URL(current).origin === origin ? init : { ...init, headers: crossOriginRequestHeaders(init.headers) };
-    const response = await fetch(current, { ...hop, redirect: 'manual' });
-    if (followedByProvider(response, current)) {
-      cancelQuietly(() => response.body?.cancel());
-      throw new Error('Redirect followed by the fetch provider refused');
-    }
-    if (!REDIRECT_STATUSES.has(response.status)) return response;
-    cancelQuietly(() => response.body?.cancel());
-    if (redirects === MAX_REDIRECTS) throw new Error(`Redirect limit of ${MAX_REDIRECTS} exceeded`);
-    current = redirectTarget(current, response.headers.get('location'), refusal);
-  }
+  return followRedirects<Response>(url, {
+    async request(hop) {
+      const sent = hop.crossOrigin ? { ...init, headers: crossOriginRequestHeaders(init.headers) } : init;
+      const response = await fetch(hop.url, { ...sent, redirect: 'manual' });
+      if (followedByProvider(response, hop.url)) {
+        cancelQuietly(() => response.body?.cancel());
+        throw new Error('Redirect followed by the fetch provider refused');
+      }
+      return response;
+    },
+    vetTarget({ target }) {
+      const refused = refusal(target.href);
+      if (refused !== undefined) throw new Error(`Redirect to ${refused} refused`);
+    },
+    discard: redirect => cancelQuietly(() => redirect.body?.cancel()),
+    // An empty Location is the relative reference to the URL that sent it, which is asked again
+    // until the limit ends the read.
+    emptyLocationIsMissing: false,
+    refusals: REFUSALS,
+  });
 }
 
 /**
@@ -71,20 +80,4 @@ function withoutFragment(url: string): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-function redirectTarget(from: string, location: string | null, refusal: TargetRefusal): string {
-  if (location === null) throw new Error('Redirect without a Location header');
-  let target: URL;
-  try {
-    target = new URL(location, from);
-  } catch {
-    throw new Error('Redirect to an invalid URL');
-  }
-  if (target.protocol === 'http:' && new URL(from).protocol === 'https:') {
-    throw new Error('Redirect from https to http refused');
-  }
-  const refused = refusal(target.href);
-  if (refused !== undefined) throw new Error(`Redirect to ${refused} refused`);
-  return target.href;
 }

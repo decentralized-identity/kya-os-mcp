@@ -30,7 +30,7 @@
  */
 
 import { isBlockedAddress } from './ip-classifier.js';
-import { REDIRECT_STATUSES } from './checked-redirects.js';
+import { followRedirects, MAX_REDIRECTS, type RedirectRefusals, type RedirectTarget } from './redirect-follower.js';
 import {
   defaultLookup,
   fetchTransport,
@@ -58,7 +58,6 @@ export {
 
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_MAX_BYTES = 1_048_576;
-const DEFAULT_MAX_REDIRECTS = 3;
 
 /** Parse + require https; returns the normalized href. */
 function assertHttpsUrl(raw: string): string {
@@ -89,28 +88,24 @@ async function resolveAndPin(hostname: string, lookup: DnsLookup): Promise<DnsAd
   return first;
 }
 
-/** Resolve a 3xx into the next URL, rejecting cross-origin / non-https / missing-Location. */
-function nextRedirectUrl(currentUrl: string, raw: RawResponse): string {
-  const location = raw.headers.get('location');
-  if (!location) {
-    throw new Error(`safe-fetch: ${raw.status} redirect without a Location header`);
+const nonHttpsTarget = (target: URL): Error =>
+  new Error(`safe-fetch: redirect to non-https target "${target.protocol}" blocked`);
+
+const REDIRECT_REFUSALS: RedirectRefusals = {
+  limitExceeded: (maxRedirects) => new Error(`safe-fetch: too many redirects (> ${maxRedirects})`),
+  missingLocation: (status) => new Error(`safe-fetch: ${status} redirect without a Location header`),
+  // Keep the module's fail-closed convention: a malformed Location surfaces a `safe-fetch:`-
+  // prefixed error rather than a raw TypeError leaking out of the URL constructor.
+  invalidLocation: (location) => new Error(`safe-fetch: redirect location is not a valid URL "${location}"`),
+  httpsToHttp: nonHttpsTarget,
+};
+
+/** Refuse a redirect target the shared rule admits: any scheme but https, and any other origin. */
+function vetRedirectTarget({ target, from, crossOrigin }: RedirectTarget): void {
+  if (target.protocol !== 'https:') throw nonHttpsTarget(target);
+  if (crossOrigin) {
+    throw new Error(`safe-fetch: cross-origin redirect blocked (${from.origin} → ${target.origin})`);
   }
-  let target: URL;
-  try {
-    target = new URL(location, currentUrl);
-  } catch {
-    // Keep the module's fail-closed convention: a malformed Location surfaces a `safe-fetch:`-
-    // prefixed error rather than a raw TypeError leaking out of the URL constructor.
-    throw new Error(`safe-fetch: redirect location is not a valid URL "${location}"`);
-  }
-  if (target.protocol !== 'https:') {
-    throw new Error(`safe-fetch: redirect to non-https target "${target.protocol}" blocked`);
-  }
-  const origin = new URL(currentUrl).origin;
-  if (target.origin !== origin) {
-    throw new Error(`safe-fetch: cross-origin redirect blocked (${origin} → ${target.origin})`);
-  }
-  return target.href;
 }
 
 /** Enforce the size cap and project a RawResponse into the FetchLike-compatible shape. */
@@ -142,20 +137,18 @@ export function createSafeFetch(options: SafeFetchOptions = {}): SafeFetch {
     maxBytes: options.maxBytes ?? DEFAULT_MAX_BYTES,
     trustedOrigins: normalizeTrustedOrigins(options),
   };
-  const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
+  const maxRedirects = options.maxRedirects ?? MAX_REDIRECTS;
 
   return async function safeFetch(initialUrl: string): Promise<SafeFetchResponse> {
-    let url = assertHttpsUrl(initialUrl);
-    for (let hop = 0; ; hop++) {
-      const raw = await requestOnce(url, cfg);
-      if (!REDIRECT_STATUSES.has(raw.status)) {
-        return finalize(raw, cfg.maxBytes);
-      }
-      if (hop >= maxRedirects) {
-        throw new Error(`safe-fetch: too many redirects (> ${maxRedirects})`);
-      }
-      url = nextRedirectUrl(url, raw);
-    }
+    const raw = await followRedirects<RawResponse>(assertHttpsUrl(initialUrl), {
+      request: (hop) => requestOnce(hop.url, cfg),
+      vetTarget: vetRedirectTarget,
+      maxRedirects,
+      // A Location with no value names no target, so it is refused as a missing header is.
+      emptyLocationIsMissing: true,
+      refusals: REDIRECT_REFUSALS,
+    });
+    return finalize(raw, cfg.maxBytes);
   };
 }
 

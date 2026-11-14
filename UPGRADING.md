@@ -578,6 +578,12 @@ What changes:
   The gate verifies the stored delegation again on every reuse and honours the grant only while it verifies to that issuer.
   A grant stored by 1.22.0 keeps working: it is held to the `userDid` it recorded, and the call it authorizes is still attributed to the root issuer.
 - A handler that needs the `controller` a credential states reads it from the credential it is given; the gate no longer hands it on under another name.
+- A root credential, one with no `parentId`, is refused unless the `issuerDid` of its delegation is the `issuer` of the credential itself, whose key signs it.
+  `validateDelegationChain` and the gate refuse it before they resolve any DID, with `Root delegation <id> names issuerDid "<issuerDid>" but its credential names issuer "<issuer>"` (`"<v>"` as in "Changed refusal reasons"), and the gate answers `delegation_invalid`.
+  1.22.0 accepted such a root and logged `Root delegation <id> names issuerDid <issuerDid> but is signed by <issuer>`; that warning is gone, from `ChainValidationResult.warnings` too.
+  So the root's `issuerDid`, which SPEC.md §2 names, and the issuer the gate verified are one DID.
+  `DelegationCredentialIssuer` and `wrapDelegationAsVC` write the two from one value, so a credential they issued is unaffected; an issuer that set `issuer` apart from `issuerDid` must issue the credential again with both naming the DID whose key signs it, and a stored grant that holds such a root is refused on reuse, so its user approves again.
+  The Entity Card profile (SPEC.md §6.10) has no `issuerDid` beside `issuer`, so nothing changes there.
 
 ### Conformance suite 1.4.0
 

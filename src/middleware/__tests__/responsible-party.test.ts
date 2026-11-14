@@ -9,7 +9,7 @@
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { AuditTrailEventInput } from '../../audit/service.js';
-import { keyOf, delegationRecord, signedCredential, signedJwt } from '../../__tests__/utils/delegation-credentials.js';
+import { credentialNaming, keyOf, delegationRecord, signedCredential, signedJwt } from '../../__tests__/utils/delegation-credentials.js';
 import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
 import type { AgentIdentity } from '../../providers/base.js';
 import { MemoryGrantStore } from '../../providers/grant-store.js';
@@ -97,6 +97,26 @@ describe('the Responsible Party the delegation gate names', () => {
     const bare = delegationRecord(root.did, { subjectDid: AGENT, constraints: s.constraints });
     expect(await s.call(undefined, await signedCredential(root, { record: bare }))).toBe('placed');
     expect(s.contexts[1]?.responsibleParty).toEqual({ kind: 'pairwise_did', did: root.did });
+  });
+
+  it('is one DID: a root whose issuerDid is not the issuer that signed its credential is refused', async () => {
+    const s = await server();
+    // The trusted root signs both, and each names ALICE as the issuerDid of its delegation.
+    const solo = delegationRecord(ALICE, { subjectDid: AGENT, constraints: s.constraints });
+    const rootRecord = delegationRecord(ALICE, { subjectDid: delegate.did, constraints: s.constraints });
+    const leafRecord = delegationRecord(delegate.did, { subjectDid: AGENT, parentId: rootRecord.id, constraints: s.constraints });
+    const refusals = [
+      [solo.id, await s.call(undefined, await credentialNaming(root, root.did, root.kid, solo))],
+      [rootRecord.id, await s.call(undefined, await signedCredential(delegate, { record: leafRecord }), [await credentialNaming(root, root.did, root.kid, rootRecord)])],
+    ];
+    for (const [id, refusal] of refusals) {
+      expect(JSON.parse(refusal!)).toEqual({
+        error: 'delegation_invalid',
+        reason: `Root delegation ${id} names issuerDid "${ALICE}" but its credential names issuer "${root.did}"`,
+      });
+    }
+    expect(s.contexts).toHaveLength(0);
+    expect(namedBy(s.events, 'delegation.verified')).toEqual([]);
   });
 
   it('is stored in the grant, and named again when a later call runs under it', async () => {

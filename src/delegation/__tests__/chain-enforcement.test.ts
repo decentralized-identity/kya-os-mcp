@@ -432,11 +432,28 @@ describe("validateDelegationChain: who actually issued each link", () => {
     expect((await validateDelegationChain(forged, chainDeps, { skipSignature: true })).valid).toBe(false);
   });
 
-  it("accepts a root whose claimed issuerDid is not its signer, and reports it", async () => {
+  it("refuses a root whose issuerDid is not the issuer of its credential, before verifying anything", async () => {
+    const verifier = { verifyDelegationCredential: vi.fn(async () => ({ valid: true })) };
     const mismatched = { ...cred({ id: "solo", issuerDid: "did:user", subjectDid: "did:agent", scopes: ["read"] }), issuer: "did:signing-key" };
-    const result = await validateDelegationChain(mismatched, baseDeps);
-    expect(result.valid).toBe(true);
-    expect(result.warnings).toEqual(["Root delegation solo names issuerDid did:user but is signed by did:signing-key"]);
+    const result = await validateDelegationChain(mismatched, { ...baseDeps, verifier });
+    expect(result).toMatchObject({
+      valid: false,
+      reason: 'Root delegation solo names issuerDid "did:user" but its credential names issuer "did:signing-key"',
+    });
+    expect(verifier.verifyDelegationCredential).not.toHaveBeenCalled();
+  });
+
+  it("refuses the same of a root below a re-delegation, quoting an issuerDid that is no string by its type", async () => {
+    const mismatched = { ...root, issuer: "did:signing-key" };
+    const leaf = cred({ id: "leaf", issuerDid: "did:agent", subjectDid: "did:sub", parentId: "root", audience: SERVER, scopes: ["read"] });
+    expect((await validateDelegationChain(leaf, { ...baseDeps, resolveDelegationChain: async () => [mismatched] })).reason).toBe(
+      'Root delegation root names issuerDid "did:user" but its credential names issuer "did:signing-key"',
+    );
+    const untyped = cred({ id: "untyped", issuerDid: "did:user", subjectDid: "did:agent", scopes: ["read"] });
+    (untyped.credentialSubject.delegation as { issuerDid: unknown }).issuerDid = { toString: "did:user" };
+    expect((await validateDelegationChain(untyped, baseDeps)).reason).toBe(
+      'Root delegation untyped names issuerDid of type object but its credential names issuer "did:user"',
+    );
   });
 
   it("reports no warnings for a consistent chain", async () => {

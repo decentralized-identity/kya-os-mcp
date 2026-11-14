@@ -107,9 +107,17 @@ export async function resignedCredential(
   return { ...changed, proof } as unknown as DelegationCredential;
 }
 
-/** A delegation by `key`'s DID with `issuer` as its issuer, as written, and a Data Integrity proof `key` makes over it naming `kid`. */
-export function credentialNaming(key: AgentIdentity, issuer: unknown, kid: string = key.kid): Promise<DelegationCredential> {
-  return resignedCredential(wrapDelegationAsVC(delegationRecord(key.did)), { issuer }, key, kid);
+/**
+ * `record` (default: a delegation by `key`'s DID) with `issuer` as its issuer, as written, and a
+ * Data Integrity proof `key` makes over it naming `kid`.
+ */
+export function credentialNaming(
+  key: AgentIdentity,
+  issuer: unknown,
+  kid: string = key.kid,
+  record: DelegationRecord = delegationRecord(key.did),
+): Promise<DelegationCredential> {
+  return resignedCredential(wrapDelegationAsVC(record), { issuer }, key, kid);
 }
 
 /**

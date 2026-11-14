@@ -827,8 +827,7 @@ describe('delegation issuer anchoring and nonce admission settings', () => {
     expect(reached(await handler({}, 'session'))).toBe(true);
   });
 
-  it('accepts a root whose issuerDid is not its signer, logging it once', async () => {
-    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+  it('refuses a root whose issuerDid is not the issuer of its credential', async () => {
     const server = await makeIdentity();
     const signer = await makeIdentity();
     const agent = await makeIdentity();
@@ -842,11 +841,11 @@ describe('delegation issuer anchoring and nonce admission settings', () => {
       issuer: signer.did,
     } as Record<string, unknown>);
     const { middleware } = await makeServer({ server });
-    const handler = delegationHandler(middleware);
-    expect(reached(await handler({ _kyaos_delegation: mismatched }, 'first'))).toBe(true);
-    expect(reached(await handler({ _kyaos_delegation: mismatched }, 'second'))).toBe(true);
-    const reports = warn.mock.calls.filter(([message]) => String(message).includes('names issuerDid did:web:user.example'));
-    expect(reports).toHaveLength(1);
+    const refused = JSON.parse((await delegationHandler(middleware)({ _kyaos_delegation: mismatched }, 'first')).content[0]!.text);
+    expect(refused).toEqual({
+      error: 'delegation_invalid',
+      reason: `Root delegation del-mismatch names issuerDid "did:web:user.example" but its credential names issuer "${signer.did}"`,
+    });
   });
 
   it('accepts a re-delegation that is wider than its parent, logging each finding once', async () => {

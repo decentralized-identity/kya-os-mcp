@@ -381,7 +381,7 @@ Before it resolves any DID, reads any status list or checks any signature, the g
 It then verifies each credential root first, with a key from its issuer's DID document, and reads a credential's status list only after that signature verifies, so a listed issuer still needs a valid signature.
 For a re-delegation, the chain comes from `resolveDelegationChain`, which runs before these checks and must bound its own I/O.
 Without it, any issuer is accepted, including an agent signing a delegation for itself, and the middleware logs a warning at startup.
-A root whose claimed `issuerDid` differs from its signer is still accepted, and logged.
+A root whose `issuerDid` is not the `issuer` of its credential is refused, with or without the list and before any DID is resolved, so the `issuerDid` of an accepted root is the DID that signed it.
 
 **Nonce providers:** give your `NonceCacheProvider` an atomic `consume(nonce, ttlSeconds, agentDid?)`.
 It must record an unseen `(agentDid, nonce)`, return literal `true` only to the call that recorded it, and reject on storage failure.

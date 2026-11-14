@@ -24,7 +24,6 @@ import { readVerdict } from "../utils/verdict.js";
 import { verifyDelegationAudience } from "./audience-validator.js";
 import { chainResolutionFailure, revocationCheckFailure, revocationRefusal } from "./chain-reasons.js";
 import { authorityContains, crispScopes, matcherContains, scopeAuthority } from "./scope-matcher.js";
-import { credentialIssuerDid } from "./credential-issuer.js";
 import { chainLinkageRefusal } from "./chain-linkage.js";
 import { rootAdmissionRefusal } from "./root-admission.js";
 import { hasDelegationShape, resolvedAncestors } from "./resolved-chain.js";
@@ -302,9 +301,8 @@ export interface ChainValidationResult extends EvaluatedCredentials {
   /** Earliest verified credential/constraint expiry across the chain (ms epoch). */
   expiresAt?: number;
   /**
-   * Non-fatal findings worth logging on a chain that validated: a root whose
-   * issuerDid is not its signer, and each way a re-delegation is wider than
-   * its parent ({@link attenuationWarnings}).
+   * Non-fatal findings worth logging on a chain that validated: each way a
+   * re-delegation is wider than its parent ({@link attenuationWarnings}).
    */
   warnings?: string[];
 }
@@ -318,8 +316,9 @@ export interface ChainValidationResult extends EvaluatedCredentials {
  * revocation. `skipSignature` applies only to the presented leaf whose JWT
  * envelope the caller has verified; ancestors always require verification.
  * Each child must also be signed by its parent's subject: the claimed
- * `issuerDid` alone is not signed evidence of who issued it. When
- * `trustedRootIssuers` is set, the root must be signed by one of them.
+ * `issuerDid` alone is not signed evidence of who issued it. The root must be
+ * signed by the `issuerDid` it names, so that DID is the chain's Responsible
+ * Party, and by one of `trustedRootIssuers` when that is set.
  * Success includes the earliest applicable expiry for downstream grant storage.
  * Never throws on a malformed input; returns `{ valid, reason }`.
  */
@@ -484,16 +483,9 @@ async function walkChain(
     }
 
     // The chain's linkage was checked before any verification
-    // (chainLinkageRefusal); only the root's issuerDid may differ from the
-    // issuer whose key the verifier checked, and that is reported.
+    // (chainLinkageRefusal), so each credential's issuerDid is the issuer
+    // whose key the verifier checked, the root's included.
     if (!previousCredential) {
-      const signerDid = credentialIssuerDid(credential);
-      if (signerDid !== delegation.issuerDid) {
-        warnings.push(
-          `Root delegation ${delegation.id} names issuerDid ${delegation.issuerDid} but is signed by ${signerDid ?? "an unidentified issuer"}`,
-        );
-      }
-
       previousCredential = credential;
       continue;
     }

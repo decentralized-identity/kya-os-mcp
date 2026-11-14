@@ -152,5 +152,5 @@ def verify_input(value, canonicalize, verify_signature):
 
 if __name__ == "__main__":
     # JSONL port used by the raw-chain differential tests; no subprocess per case.
-    for line in sys.stdin:
+    for line in sys.stdin.buffer:
         print(json.dumps(graph_case(json.loads(line))))

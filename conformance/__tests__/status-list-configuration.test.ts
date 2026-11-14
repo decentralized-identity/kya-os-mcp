@@ -68,7 +68,7 @@ function python(interpreter: readonly string[], cases: readonly ConformanceVecto
   const [command, ...args] = interpreter;
   const reader = [
     'import json, sys', 'sys.path.insert(0, sys.argv[1])', 'import verify', 'from status_list import verify_input',
-    'for line in sys.stdin:', '    print(json.dumps(verify_input(json.loads(line), verify.jcs, verify.ed25519_verify)))',
+    'for line in sys.stdin.buffer:', '    print(json.dumps(verify_input(json.loads(line), verify.jcs, verify.ed25519_verify)))',
   ].join('\n');
   const output = execFileSync(command!, [...args, '-I', '-B', '-c', reader, HERE], {
     input: cases.map((vector) => JSON.stringify(vector.input)).join('\n') + '\n', encoding: 'utf8',

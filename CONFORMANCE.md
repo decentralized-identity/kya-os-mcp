@@ -494,7 +494,7 @@ This vector leaves the JWS byte-identical to `valid-basic` and alters only the m
 A conformant verifier MUST reconcile `meta` against the decoded JWS payload and reject on any mismatch.
 Signature validity alone does not pass this vector: it is the `requestHash` counterpart of the `responseHash` recompute rule in L2.11.
 
-**On the chain-binding vectors (`signed-proof/delegation-chain-*` and `signed-proof/delegation-ref-*`; suite ≥ 1.5.0).**
+**On the chain-binding vectors (`signed-proof/delegation-chain-*` and `signed-proof/delegation-ref-*`; suite 1.5.0 or later).**
 These exercise `delegationChainDigest` and `delegationRef` (SPEC.md §7.8, L3.28): a proof binds the delegation chain its server evaluated, and `input.expected.delegationChain` is the chain the verifier holds, root first.
 `input.expected.outcome`, where present, is the outcome the verifier expects; where absent, a verifier that is given a chain expects an allowed call.
 Either of the two given as `null` is absent.
@@ -533,9 +533,9 @@ Neither is a control character, and each prints as something other than the id h
 It must pass: the member is part of the signed form, so an implementation that copies a credential by assignment, which makes `__proto__` the copy's prototype rather than a member of it, digests less than the issuer signed and rejects a proof it must accept.
 An implementation that predates suite 1.5.0 fails these vectors, which is the conformant outcome for it: it rebuilds the signed payload without `delegationChainDigest`, so it rejects the proofs that must pass, and it accepts `delegation-chain-unbound`, whose expected chain it does not read.
 
-**On the proof-as-received vectors (`signed-proof/delegation-proof-*`; suite ≥ 1.5.0).**
+**On the proof-as-received vectors (`signed-proof/delegation-proof-*`; suite 1.5.0 or later).**
 These hold a verifier to the proof as it receives it (SPEC.md §7.3, §7.4, L1.4): each but the last alters one thing of the `delegation-chain-binding` proof, or of what its verifier holds, and must fail for that thing, however well the chain matches.
-`delegation-proof-signature-stray-character` and `delegation-proof-signature-stray-characters` put characters outside base64url in the signature segment, `delegation-proof-signature-base64` writes that segment in the base64 alphabet, padded, and `delegation-proof-header-non-ascii` puts `é` in the header segment.
+`delegation-proof-signature-stray-character` and `delegation-proof-signature-stray-characters` put characters outside base64url in the signature segment, `delegation-proof-signature-base64` writes that segment in the base64 alphabet, padded, and `delegation-proof-header-non-ascii` puts U+00E9, a letter outside ASCII, in the header segment.
 `delegation-proof-signature-white-space` puts a line break in the signature segment, and `delegation-proof-signature-padded` pads it with `=` to complete its last group.
 A decoder that passes over characters outside its alphabet, white space or padding, or reads both alphabets, reads the bound proof's bytes from each, but none of them is a JWS segment as SPEC.md §7.4 reads one, base64url as RFC 7515 §2 writes it, so none is a JWS.
 `delegation-proof-fourth-segment` appends a fourth segment: a compact JWS is three, and a verifier that reads the first three of four verifies a JWS that is none.

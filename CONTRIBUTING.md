@@ -89,6 +89,8 @@ npm run changie -- new
 Pick the kind, then write the entry as it should read in CHANGELOG.md: a bold lead sentence saying what changed for a user, then what was wrong or what is new, and what to do about it.
 Wrap lines at about 76 columns; continuation lines are indented for you.
 The entry lands in `.changes/unreleased/` as a small YAML file, which you can also write or edit by hand.
+Keep it to the length of the entries already in CHANGELOG.md.
+Steps per setup, limits and tables of changed behaviour go in a section of UPGRADING.md, which the entry names.
 
 | Kind | For | Version bump |
 | --- | --- | --- |

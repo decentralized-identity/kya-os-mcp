@@ -84,7 +84,8 @@
     "CHANGELOG.md",
     "AUDITABILITY.md",
     "CONFORMANCE.md",
-    "SPEC.md"
+    "SPEC.md",
+    "UPGRADING.md"
   ],
   "scripts": {
     "build": "tsc",

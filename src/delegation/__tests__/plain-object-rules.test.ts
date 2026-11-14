@@ -1,6 +1,6 @@
 /**
  * The package's two plain-object rules, side by side. The `statusListIssuers` map is held to this
- * realm (`isPlainObjectOfThisRealm`, `utils/statuslist-acceptance.ts`); a DID document may come
+ * realm (`isPlainObjectOfThisRealm`, `utils/guards.ts`); a DID document may come
  * from any realm (`isPlainObjectOfAnyRealm`, `../did-document-walk.ts`).
  */
 

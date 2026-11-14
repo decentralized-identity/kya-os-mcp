@@ -213,7 +213,7 @@ function isLowSurrogate(code: number): boolean {
  * `Object.prototype`, which is the prototype of no other object and has a `constructor` named
  * `Object` that points back to it. A class instance, a `Date` or a `Map` is refused. A resolver may
  * parse a document in another realm (a `vm` context, a frame), so this rule admits what
- * `isPlainObjectOfThisRealm` (`utils/statuslist-acceptance.ts`) refuses: that one holds
+ * `isPlainObjectOfThisRealm` (`utils/guards.ts`) refuses: that one holds
  * configuration to this realm's `Object.prototype` alone.
  */
 function isPlainObjectOfAnyRealm(item: object): boolean {

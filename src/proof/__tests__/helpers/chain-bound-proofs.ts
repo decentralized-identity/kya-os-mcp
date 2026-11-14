@@ -15,7 +15,7 @@ import { ProofVerifier } from "../../verifier.js";
 import type { DetachedProof, SessionContext } from "../../../types/protocol.js";
 import { digestDelegationChain, type ReceivedCredential } from "../../../delegation/chain-digest.js";
 import { publicKeyToJwk } from "../../../delegation/did-key-resolver.js";
-import { NodeCryptoProvider } from "../../../__tests__/utils/node-crypto-provider.js";
+import { nodeCrypto, nodeHash } from "../../../__tests__/utils/node-crypto-provider.js";
 import { base64ToBytes } from "../../../utils/base64.js";
 import type { Ed25519JWK } from "../../../utils/crypto-service.js";
 import {
@@ -23,9 +23,6 @@ import {
   RealFetchProvider,
   MemoryNonceCacheProvider,
 } from "../../../__tests__/audit/helpers/crypto-helpers.js";
-
-export const cryptoProvider = new NodeCryptoProvider();
-export const hash = (bytes: Uint8Array) => cryptoProvider.hash(bytes);
 
 export const REQUEST: ToolRequest = { method: "records.read", params: { recordId: "r-1" } };
 export const RESPONSE: ToolResponse = { data: [{ type: "text", text: "released" }] };
@@ -41,7 +38,7 @@ export const LEAF = jwt({ vc: { id: "urn:uuid:leaf" } });
 export const CHAIN = [ROOT, MIDDLE, LEAF] as const;
 
 export async function makeIdentity(): Promise<ProofAgentIdentity> {
-  const keyPair = await cryptoProvider.generateKeyPair();
+  const keyPair = await nodeCrypto.generateKeyPair();
   return {
     did: "did:web:vault.example",
     kid: "did:web:vault.example#key-1",
@@ -69,7 +66,7 @@ export const jwkFor = (identity: ProofAgentIdentity): Ed25519JWK =>
   ({ ...publicKeyToJwk(base64ToBytes(identity.publicKey)), kid: identity.kid }) as Ed25519JWK;
 
 /** A verifier with replay state and a clock, that hashes with `provider`. */
-export function makeVerifier(provider: typeof cryptoProvider = cryptoProvider): ProofVerifier {
+export function makeVerifier(provider: typeof nodeCrypto = nodeCrypto): ProofVerifier {
   return new ProofVerifier({
     cryptoProvider: provider,
     clockProvider: new RealClockProvider(),
@@ -81,7 +78,7 @@ export function makeVerifier(provider: typeof cryptoProvider = cryptoProvider): 
 /** A proof over REQUEST and, unless it `binds` nothing (a denial), RESPONSE. */
 export async function signed(options: ProofOptions = {}, binds: "response" | "nothing" = "response") {
   const identity = await makeIdentity();
-  const proof = await new ProofGenerator(identity, cryptoProvider).generateProof(
+  const proof = await new ProofGenerator(identity, nodeCrypto).generateProof(
     REQUEST,
     binds === "response" ? RESPONSE : undefined,
     makeSession(),
@@ -96,7 +93,7 @@ export async function boundTo(
   options: ProofOptions = {},
   binds: "response" | "nothing" = "response",
 ) {
-  const digests = await digestDelegationChain(chain, hash);
+  const digests = await digestDelegationChain(chain, nodeHash);
   return signed({ delegationChainDigest: digests.chain, ...options }, binds);
 }
 

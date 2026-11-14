@@ -6,13 +6,13 @@
  * proof has one string and every verifier one verdict on it.
  */
 import { describe, expect, it } from 'vitest';
+import { nodeCrypto } from '../../__tests__/utils/node-crypto-provider.js';
 import type { DetachedProof } from '../../types/protocol.js';
 import { canonicalizeJson } from '../../utils/canonical-json.js';
 import { buildProofJwsPayload, ProofGenerator } from '../generator.js';
 import {
   REQUEST,
   RESPONSE,
-  cryptoProvider,
   jwkFor,
   makeIdentity,
   makeSession,
@@ -22,7 +22,7 @@ import {
 /** A proof and the four verdicts on it: `verifyProof`, `verifyProofArtifact`, `ProofGenerator.verifyProof`, `verifyProofDetached`. */
 async function verdicts(edit: (jws: string) => string): Promise<boolean[]> {
   const identity = await makeIdentity();
-  const generator = new ProofGenerator(identity, cryptoProvider);
+  const generator = new ProofGenerator(identity, nodeCrypto);
   const signed = await generator.generateProof(REQUEST, RESPONSE, makeSession());
   const proof: DetachedProof = { ...signed, jws: edit(signed.jws) };
   const jwk = jwkFor(identity);

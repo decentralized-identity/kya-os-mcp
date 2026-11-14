@@ -20,6 +20,7 @@ import { BASE_POINT_ORDER, ORDER_TWO } from '../small-order.js';
 import { buildProofJwsPayload } from '../../src/index.js';
 import { bindingFailure } from '../../src/proof/binding.js';
 import type { AdapterResult, SignedProofInput } from '../types.js';
+import { base64url } from '../../src/__tests__/utils/encodings.js';
 import { inputOf, verify } from './helpers/delegation-vectors.js';
 
 type Members = Record<string, unknown>;
@@ -32,7 +33,6 @@ const TEST_SECRET_KEY = Buffer.from('9d61b19deffd5a60ba844af492ec2cc44449c5697b3
 const TEST_PUBLIC_KEY = Buffer.from('d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a', 'hex');
 const LEFT_OUT = Symbol('left out');
 
-const b64url = (data: string | Uint8Array): string => Buffer.from(data).toString('base64url');
 const fromLittleEndian = (bytes: Uint8Array): bigint => BigInt(`0x${Buffer.from(bytes).reverse().toString('hex')}`);
 const toLittleEndian = (value: bigint, length: number): Buffer =>
   Buffer.from(value.toString(16).padStart(length * 2, '0'), 'hex').reverse();
@@ -65,7 +65,7 @@ async function signed(vector: Input, changes: Members = {}): Promise<Input> {
   const kid = meta['kid'] as string;
   const party = { kid, privateKey: TEST_SECRET_KEY.toString('base64') };
   const { jws } = await signProofMeta(party, meta as never);
-  return { ...vector, proof: { jws, meta }, publicKeyJwk: { kty: 'OKP', crv: 'Ed25519', x: b64url(TEST_PUBLIC_KEY), kid } };
+  return { ...vector, proof: { jws, meta }, publicKeyJwk: { kty: 'OKP', crv: 'Ed25519', x: base64url(TEST_PUBLIC_KEY), kid } };
 }
 
 /** Each case: its name, the vector it is, and the verdict proof_cases.py gives it. */
@@ -76,18 +76,18 @@ async function proofCases(bound: Input, bare: Input): Promise<Array<[string, Inp
   const x = bound.publicKeyJwk['x'] as string;
   const request = bound.expected['request'] as Members;
   const params = request['params'] as { name: string; arguments: Members };
-  const anotherPayload = b64url(canonicalize(buildProofJwsPayload({ ...meta, nonce: 'nonce-other' } as never)));
-  const [identityKey, forged] = [b64url(Buffer.from([1, ...Array(31).fill(0)])), b64url(Buffer.from([1, ...Array(63).fill(0)]))];
+  const anotherPayload = base64url(canonicalize(buildProofJwsPayload({ ...meta, nonce: 'nonce-other' } as never)));
+  const [identityKey, forged] = [base64url(Buffer.from([1, ...Array(31).fill(0)])), base64url(Buffer.from([1, ...Array(63).fill(0)]))];
   // R = the key and S = 0, which satisfy the verification equation under the
   // key of order two over what `chain-binding` signs (`../small-order.ts`).
-  const [orderTwoKey, forgedUnderIt] = [b64url(ORDER_TWO), b64url(Buffer.concat([ORDER_TWO, Buffer.alloc(32)]))];
-  const noPoint = b64url(Buffer.from([2, ...Array<number>(31).fill(0)]));
+  const [orderTwoKey, forgedUnderIt] = [base64url(ORDER_TWO), base64url(Buffer.concat([ORDER_TWO, Buffer.alloc(32)]))];
+  const noPoint = base64url(Buffer.from([2, ...Array<number>(31).fill(0)]));
   const signatureBytes = Buffer.from(signature, 'base64url');
   const [r, s] = [signatureBytes.subarray(0, 32), fromLittleEndian(signatureBytes.subarray(32))];
-  const with65thByte = b64url(Buffer.concat([r, toLittleEndian(s, 33)]));
+  const with65thByte = base64url(Buffer.concat([r, toLittleEndian(s, 33)]));
   // S + L satisfies the verification equation as S does, so only the refusal
   // of an S that is not below L (RFC 8032 §5.1.7) refuses it.
-  const malleated = b64url(Buffer.concat([r, toLittleEndian(s + BASE_POINT_ORDER, 32)]));
+  const malleated = base64url(Buffer.concat([r, toLittleEndian(s + BASE_POINT_ORDER, 32)]));
   const digestInCapitals = `sha256:${(meta['requestHash'] as string).slice('sha256:'.length).toUpperCase()}`;
   const dataWithMeta = { content: (bound.expected['response'] as Members)['data'], _meta: { note: 'kept' } };
   return [
@@ -105,7 +105,7 @@ async function proofCases(bound: Input, bare: Input): Promise<Array<[string, Inp
     ['key x padded to complete its last group', key(bound, { x: `${x}=` }), 'invalid'],
     ['key x with a space inside it', key(bound, { x: `${x.slice(0, 5)} ${x.slice(5)}` }), 'invalid'],
     ['key x with a character outside base64url', key(bound, { x: `${x}*` }), 'invalid'],
-    ['key x of 31 bytes', key(bound, { x: b64url(Buffer.from(x, 'base64url').subarray(0, 31)) }), 'invalid'],
+    ['key x of 31 bytes', key(bound, { x: base64url(Buffer.from(x, 'base64url').subarray(0, 31)) }), 'invalid'],
     ['key x of 32 bytes that encode no point, no x having y = 2', key(bound, { x: noPoint }), 'invalid'],
     ['key x given as a number', key(bound, { x: 7 }), 'invalid'],
     ['key with no x', key(bound, { x: LEFT_OUT }), 'invalid'],
@@ -126,8 +126,8 @@ async function proofCases(bound: Input, bare: Input): Promise<Array<[string, Inp
     // The JWS as received.
     ['JWS with no payload segment, detached', withJws(bound, `${header}..${signature}`), 'bound'],
     ["JWS whose payload segment is another proof's", withJws(bound, `${header}.${anotherPayload}.${signature}`), 'invalid'],
-    ['JWS whose payload segment is not JSON', withJws(bound, `${header}.${b64url('not json')}.${signature}`), 'invalid'],
-    ['JWS whose header is a JSON array', withJws(bound, `${b64url('[]')}.${payload}.${signature}`), 'invalid'],
+    ['JWS whose payload segment is not JSON', withJws(bound, `${header}.${base64url('not json')}.${signature}`), 'invalid'],
+    ['JWS whose header is a JSON array', withJws(bound, `${base64url('[]')}.${payload}.${signature}`), 'invalid'],
     ['JWS with an empty signature segment', withJws(bound, `${header}.${payload}.`), 'invalid'],
     ['JWS whose signature segment is padded to complete its last group',
       withJws(bound, `${header}.${payload}.${signature}==`), 'invalid'],

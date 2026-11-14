@@ -14,6 +14,7 @@ import { validateDetachedProof, type DetachedProof } from "../../types/protocol.
 import { digestDelegationChain, type ReceivedCredential } from "../../delegation/chain-digest.js";
 import { delegationRefOf } from "../../delegation/delegation-ref.js";
 import { isCredentialDigestInput } from "../../__tests__/utils/digests.js";
+import { nodeCrypto as cryptoProvider, nodeHash as hash } from "../../__tests__/utils/node-crypto-provider.js";
 import type { Ed25519JWK } from "../../utils/crypto-service.js";
 import {
   CHAIN,
@@ -24,8 +25,6 @@ import {
   ROOT,
   bound,
   boundTo,
-  cryptoProvider,
-  hash,
   jwt,
   makeIdentity,
   makeSession,

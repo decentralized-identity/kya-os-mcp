@@ -21,10 +21,7 @@ import {
 } from '../chain-digest.js';
 import { NoSignedFormError } from '../signed-form.js';
 import { arrays, objects } from '../../__tests__/utils/nesting.js';
-import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
-
-const crypto = new NodeCryptoProvider();
-const hash = (bytes: Uint8Array) => crypto.hash(bytes);
+import { nodeHash as hash } from '../../__tests__/utils/node-crypto-provider.js';
 
 /** SPEC.md Appendix C.4: a root credential object and a leaf presented as a VC-JWT. */
 const ROOT = {

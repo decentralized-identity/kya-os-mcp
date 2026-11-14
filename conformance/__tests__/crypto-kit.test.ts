@@ -13,12 +13,11 @@ import { CompactSign } from 'jose';
 import { canonicalize } from 'json-canonicalize';
 import { describe, it, expect } from 'vitest';
 import { signProofMeta, signVC } from '../crypto-kit.js';
+import { ed25519Signer } from '../../src/__tests__/utils/ed25519-signer.js';
 import { embeddedSignatureVerifier } from '../../src/delegation/embedded-signature.js';
-import { NodeCryptoProvider } from '../../src/providers/node-crypto.js';
 import { ED25519_KEY_SIZE, ED25519_PKCS8_DER_HEADER } from '../../src/utils/ed25519-constants.js';
 import { buildProofJwsPayload, type DelegationCredential } from '../../src/index.js';
-
-const crypto = new NodeCryptoProvider();
+import { crypto } from './helpers/delegation-vectors.js';
 
 const UNSIGNED = {
   '@context': ['https://www.w3.org/2018/credentials/v1'],
@@ -30,9 +29,8 @@ const UNSIGNED = {
 
 describe('signVC', () => {
   it('signs what the package verifies, and not a credential changed since', async () => {
-    const { publicKey, privateKey } = await crypto.generateKeyPair();
+    const { privateKey, jwk } = await ed25519Signer();
     const proof = await signVC(crypto, UNSIGNED, privateKey, 'did:web:user.example.com#key-1');
-    const jwk = { kty: 'OKP', crv: 'Ed25519', x: Buffer.from(publicKey, 'base64').toString('base64url') };
     const credential = { ...UNSIGNED, proof } as unknown as DelegationCredential;
     const verify = embeddedSignatureVerifier(crypto);
 
@@ -44,7 +42,7 @@ describe('signVC', () => {
   // A vector may need a credential signed as another canonicalizer writes it:
   // one that holds a number to no rule the package's does, say.
   it('signs what the canonicalizer it is given writes, the credential without its proof', async () => {
-    const { publicKey, privateKey } = await crypto.generateKeyPair();
+    const { publicKey, privateKey } = await ed25519Signer();
     const written: Array<Record<string, unknown>> = [];
     const canonicalize = (unsigned: Record<string, unknown>) => {
       written.push(unsigned);
@@ -74,7 +72,7 @@ describe('signProofMeta', () => {
   const signedPayload = () => canonicalize(buildProofJwsPayload(META));
 
   it('signs the JWS a JWS library signs over the proof payload, under the producer header', async () => {
-    const { privateKey } = await crypto.generateKeyPair();
+    const { privateKey } = await ed25519Signer();
     const seed = Buffer.from(privateKey, 'base64').subarray(0, ED25519_KEY_SIZE);
     const key = createPrivateKey({ key: Buffer.concat([ED25519_PKCS8_DER_HEADER, seed]), format: 'der', type: 'pkcs8' });
     const jws = await new CompactSign(new TextEncoder().encode(signedPayload()))
@@ -85,7 +83,7 @@ describe('signProofMeta', () => {
   });
 
   it('signs under the header it is given, as it is written, which no JWS library signs under', async () => {
-    const { publicKey, privateKey } = await crypto.generateKeyPair();
+    const { publicKey, privateKey } = await ed25519Signer();
     const header = { kid: META.kid, alg: 'HS256', typ: 'x' };
 
     const { jws, meta } = await signProofMeta({ kid: META.kid, privateKey }, META, header);

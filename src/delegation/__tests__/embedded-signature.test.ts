@@ -5,14 +5,15 @@
  * one reading the spec gives a signature string and a credential's members.
  */
 import { describe, expect, it } from 'vitest';
-import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
+import { ed25519Signer } from '../../__tests__/utils/ed25519-signer.js';
+import { base64url } from '../../__tests__/utils/encodings.js';
+import { nodeCrypto } from '../../__tests__/utils/node-crypto-provider.js';
 import { arrays } from '../../__tests__/utils/nesting.js';
 import type { DelegationCredential } from '../../types/protocol.js';
 import { embeddedSignatureVerifier } from '../embedded-signature.js';
 import { canonicalizeJSON } from '../utils.js';
 
-const crypto = new NodeCryptoProvider();
-const verify = embeddedSignatureVerifier(crypto);
+const verify = embeddedSignatureVerifier(nodeCrypto);
 
 const UNSIGNED = {
   '@context': ['https://www.w3.org/2018/credentials/v1'],
@@ -24,10 +25,8 @@ const UNSIGNED = {
 
 /** A credential its issuer signed over the RFC 8785 form of all but its proof. */
 async function signed(unsigned: Record<string, unknown> = UNSIGNED) {
-  const { publicKey, privateKey } = await crypto.generateKeyPair();
-  const signature = await crypto.sign(new TextEncoder().encode(canonicalizeJSON(unsigned)), privateKey);
-  const proofValue = Buffer.from(signature).toString('base64url');
-  const jwk = { kty: 'OKP', crv: 'Ed25519', x: Buffer.from(publicKey, 'base64').toString('base64url') };
+  const { jwk, sign } = await ed25519Signer();
+  const proofValue = base64url(await sign(canonicalizeJSON(unsigned)));
   const withProofValue = (written: string): DelegationCredential =>
     ({ ...unsigned, proof: { type: 'Ed25519Signature2020', proofValue: written } }) as unknown as DelegationCredential;
   return { credential: withProofValue(proofValue), proofValue, jwk, withProofValue };

@@ -7,25 +7,22 @@
  * another string is still refused.
  */
 import { describe, expect, it } from 'vitest';
-import { NodeCryptoProvider } from '../../providers/node-crypto.js';
+import { ed25519Signer } from '../../__tests__/utils/ed25519-signer.js';
+import { base64url } from '../../__tests__/utils/encodings.js';
+import { nodeCrypto } from '../../__tests__/utils/node-crypto-provider.js';
 import { CryptoService, type Ed25519JWK } from '../crypto-service.js';
 
-const provider = new NodeCryptoProvider();
-const service = new CryptoService(provider);
+const service = new CryptoService(nodeCrypto);
 const KID = 'did:key:z6MkSigner#key-1';
 
-const base64url = (bytes: Uint8Array | string): string => Buffer.from(bytes).toString('base64url');
 const base64 = (encoded: string): string => Buffer.from(encoded, 'base64url').toString('base64');
 
 /** A signer, and a JWS it signs over `header` and `payload` as written. */
 async function signer(): Promise<{ jwk: Ed25519JWK; sign: (header: string, payload: string) => Promise<string> }> {
-  const { publicKey, privateKey } = await provider.generateKeyPair();
-  const jwk: Ed25519JWK = { kty: 'OKP', crv: 'Ed25519', x: base64url(Buffer.from(publicKey, 'base64')), kid: KID };
-  const sign = async (header: string, payload: string): Promise<string> => {
-    const signature = await provider.sign(new TextEncoder().encode(`${header}.${payload}`), privateKey);
-    return `${header}.${payload}.${base64url(signature)}`;
-  };
-  return { jwk, sign };
+  const key = await ed25519Signer();
+  const sign = async (header: string, payload: string): Promise<string> =>
+    `${header}.${payload}.${base64url(await key.sign(`${header}.${payload}`))}`;
+  return { jwk: { ...key.jwk, kid: KID }, sign };
 }
 
 const HEADER = base64url(JSON.stringify({ alg: 'EdDSA', kid: KID }));

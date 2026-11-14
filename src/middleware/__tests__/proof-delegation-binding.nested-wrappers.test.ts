@@ -1,12 +1,13 @@
 /**
- * A wrapper around another, with no gate between them, proves the call as
- * before (SPEC.md §7.8): the wrapper outside proves it, and the proof the
- * wrapper inside left is replaced.
+ * A wrapper around another, with no gate between them, proves the call
+ * (SPEC.md §7.8): the wrapper outside proves it, and the proof the wrapper
+ * inside left is replaced.
  */
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { makeServer, type Recorded } from './helpers/delegation-gate-server.js';
 import { ARGS, released } from './helpers/delegated-call.js';
 import { verifyReceived } from './helpers/received-proof.js';
+import { eventWithCode } from './helpers/server-answers.js';
 
 const INNER = 'records.internal';
 const OUTER = 'records.read';
@@ -18,10 +19,7 @@ const TTL = { pendingProofTtlMs: 60_000 };
  * call event is about, and the credential it names.
  */
 const trailOf = (recorded: readonly Recorded[]) =>
-  recorded.map((event) => {
-    const code = event.reason ?? (event.details.verificationCode as string | undefined);
-    return [code === undefined ? event.eventType : `${event.eventType} ${code}`, event.tool, event.authorization?.delegationRef];
-  });
+  recorded.map((event) => [eventWithCode(event), event.tool, event.authorization?.delegationRef]);
 
 describe('a wrapper around another with no gate between them', () => {
   beforeEach(() => {

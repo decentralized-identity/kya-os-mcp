@@ -2,15 +2,13 @@
  * Test helper: a party with a fresh did:key identity that can be delegated
  * to, and can issue a delegation credential of its own.
  */
-import { NodeCryptoProvider } from '../../../__tests__/utils/node-crypto-provider.js';
+import { ed25519Signer } from '../../../__tests__/utils/ed25519-signer.js';
 import { DelegationCredentialIssuer } from '../../../delegation/vc-issuer.js';
 import type { ProofAgentIdentity } from '../../../proof/generator.js';
 import type { DelegationCredential, Proof } from '../../../types/protocol.js';
 import { base64urlEncodeFromBytes } from '../../../utils/base64.js';
 import { generateDidKeyFromBase64, didKeyFragment } from '../../../utils/did-helpers.js';
 import { SCOPE } from './delegated-call.js';
-
-const crypto = new NodeCryptoProvider();
 
 /** A party that can be delegated to and can delegate on. */
 export interface Party extends ProofAgentIdentity {
@@ -19,24 +17,23 @@ export interface Party extends ProofAgentIdentity {
 }
 
 export async function party(): Promise<Party> {
-  const keyPair = await crypto.generateKeyPair();
-  const did = generateDidKeyFromBase64(keyPair.publicKey);
+  const { publicKey, privateKey, sign: signature } = await ed25519Signer();
+  const did = generateDidKeyFromBase64(publicKey);
   const kid = `${did}#${didKeyFragment(did)}`;
   const sign = async (canonicalVC: string, _issuerDid: string, keyId: string): Promise<Proof> => ({
     type: 'Ed25519Signature2020',
     created: new Date().toISOString(),
     verificationMethod: keyId,
     proofPurpose: 'assertionMethod',
-    proofValue: base64urlEncodeFromBytes(
-      await crypto.sign(new TextEncoder().encode(canonicalVC), keyPair.privateKey),
-    ),
+    proofValue: base64urlEncodeFromBytes(await signature(canonicalVC)),
   });
   return {
     did,
     kid,
-    ...keyPair,
+    publicKey,
+    privateKey,
     issuer: new DelegationCredentialIssuer(
-      { getDid: () => did, getKeyId: () => kid, getPrivateKey: () => keyPair.privateKey },
+      { getDid: () => did, getKeyId: () => kid, getPrivateKey: () => privateKey },
       sign,
     ),
   };

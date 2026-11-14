@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { unit } from '../../__tests__/utils/encodings.js';
 import { hasUnprintableCharacter, isWellFormedUnicode } from '../plain-text.js';
-
-const unit = (code: number) => String.fromCharCode(code);
 
 describe('hasUnprintableCharacter', () => {
   it.each([

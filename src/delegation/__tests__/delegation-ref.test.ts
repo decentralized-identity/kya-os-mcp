@@ -8,15 +8,12 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { sha256Of } from '../../__tests__/utils/digests.js';
+import { base64url, unit } from '../../__tests__/utils/encodings.js';
 import { arrays } from '../../__tests__/utils/nesting.js';
-import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
+import { nodeHash as hash } from '../../__tests__/utils/node-crypto-provider.js';
 import { delegationCredentialId, delegationReference, delegationRefOf } from '../delegation-ref.js';
 
-const crypto = new NodeCryptoProvider();
-const hash = (bytes: Uint8Array) => crypto.hash(bytes);
-const unit = (code: number) => String.fromCharCode(code);
 const utf8 = (text: string) => new TextEncoder().encode(text);
-const base64url = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64url');
 const base64 = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64');
 
 /** A compact VC-JWT with `payload` as its claims. Its header and signature are never read for an id. */

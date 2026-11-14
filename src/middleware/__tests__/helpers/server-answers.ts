@@ -20,6 +20,15 @@ export const delegationEvidence = ({ authorization }: Pick<Recorded, 'authorizat
     : { delegationChainDigests: authorization.delegationChainDigests }),
 });
 
+/** What an event records, with the code it gives: its reason, or its verification code. */
+export const eventWithCode = (event: Recorded): string => {
+  const code = event.reason ?? (event.details.verificationCode as string | undefined);
+  return code === undefined ? event.eventType : `${event.eventType} ${code}`;
+};
+
+/** A trail's events in order, each with the code it gives. */
+export const trailOf = (recorded: readonly Recorded[]): string[] => recorded.map(eventWithCode);
+
 /**
  * The `tool.call.*` events of a trail in order, each with the reason it gives
  * and the credential it names, so a call's opening and closing events can be

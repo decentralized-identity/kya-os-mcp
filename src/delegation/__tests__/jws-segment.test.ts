@@ -6,10 +6,10 @@
  * reads it.
  */
 import { describe, expect, it, vi } from 'vitest';
+import { base64url as segment } from '../../__tests__/utils/encodings.js';
 import { jwsSegmentsJson } from '../jws-segment.js';
 
 const READINGS = ['strict', 'lenient'] as const;
-const segment = (text: string | Uint8Array): string => Buffer.from(text).toString('base64url');
 const nested = (levels: number): string => '['.repeat(levels) + ']'.repeat(levels);
 
 describe('jwsSegmentsJson', () => {

@@ -4,19 +4,12 @@
  */
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { logger } from '../../logging/index.js';
-import { makeServer, makeUnserved, type Recorded } from './helpers/delegation-gate-server.js';
+import { makeServer, makeUnserved } from './helpers/delegation-gate-server.js';
 import { ARGS, CONSENT, TOOL, released } from './helpers/delegated-call.js';
 import { delegate, party } from './helpers/delegating-party.js';
 import { threeHops } from './helpers/delegation-chains.js';
 import { handshake, proofOf } from './helpers/received-proof.js';
-import { UNPROVEN, delegationClaims, lifecycleOf, proofErrorOf } from './helpers/server-answers.js';
-
-/** A trail's events in order, each with the code of its reason. */
-const trailOf = (recorded: readonly Recorded[]): string[] =>
-  recorded.map((event) => {
-    const code = event.reason ?? (event.details.verificationCode as string | undefined);
-    return code === undefined ? event.eventType : `${event.eventType} ${code}`;
-  });
+import { UNPROVEN, delegationClaims, lifecycleOf, proofErrorOf, trailOf } from './helpers/server-answers.js';
 
 describe('an answer whose proof is not made', () => {
   afterEach(() => vi.restoreAllMocks());

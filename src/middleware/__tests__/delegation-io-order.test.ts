@@ -10,9 +10,11 @@ import { createDelegationVerification } from '../with-kya-os.delegation-verify.j
 import type { MiddlewareDeps } from '../with-kya-os.deps.js';
 import type { KyaOsDelegationConfig } from '../with-kya-os.config-types.js';
 import { DelegationCredentialIssuer } from '../../delegation/vc-issuer.js';
-import { canonicalizeJSON, completeVCJWT, createUnsignedVCJWT } from '../../delegation/utils.js';
+import { canonicalizeJSON, createUnsignedVCJWT } from '../../delegation/utils.js';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
-import type { VCSigningFunction } from '../../delegation/vc-issuer.js';
+import { createRealSigningFunction } from '../../__tests__/audit/helpers/crypto-helpers.js';
+import { envelope, keyOf } from '../../__tests__/utils/delegation-credentials.js';
+import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
 import type { AgentIdentity } from '../../providers/base.js';
 import type { DIDDocument } from '../../delegation/vc-verifier.js';
 import type { CredentialStatus, DelegationCredential } from '../../types/protocol.js';
@@ -22,11 +24,8 @@ const SERVER = 'did:web:server.example';
 const ATTACKER_LIST = 'https://attacker.example/list';
 let root: AgentIdentity, delegate: AgentIdentity, attacker: AgentIdentity;
 beforeAll(async () => {
-  const identity = async (name: string) => ({
-    ...await crypto.generateKeyPair(), type: 'development' as const, createdAt: new Date().toISOString(),
-    did: `did:web:${name}.example`, kid: `did:web:${name}.example#key`,
-  });
-  [root, delegate, attacker] = await Promise.all([identity('root'), identity('delegate'), identity('attacker')]);
+  const key = (name: string) => keyOf(`did:web:${name}.example`, 'key');
+  [root, delegate, attacker] = await Promise.all([key('root'), key('delegate'), key('attacker')]);
 });
 
 const statusEntry: CredentialStatus = {
@@ -34,21 +33,13 @@ const statusEntry: CredentialStatus = {
   statusListIndex: '0', statusListCredential: ATTACKER_LIST,
 };
 
-function signing(key: AgentIdentity): VCSigningFunction {
-  return async (canonical, _issuer, kid) => ({
-    type: 'Ed25519Signature2020', created: new Date().toISOString(),
-    verificationMethod: kid, proofPurpose: 'assertionMethod',
-    proofValue: Buffer.from(await crypto.sign(new TextEncoder().encode(canonical), key.privateKey)).toString('base64url'),
-  });
-}
-
 /** A credential `key` issues to `subject`, as `issuerDid` claims; `parentId` makes it a re-delegation. */
 async function credential(
   key: AgentIdentity, id: string, subject: string, parentId?: string, issuerDid = key.did,
 ): Promise<DelegationCredential> {
   return new DelegationCredentialIssuer(
     { getDid: () => key.did, getKeyId: () => key.kid, getPrivateKey: () => key.privateKey },
-    signing(key),
+    createRealSigningFunction(crypto, key),
   ).issueDelegationCredential({
     id, issuerDid, subjectDid: subject, vcId: `urn:uuid:${id}`,
     ...(parentId === undefined ? {} : { parentId }),
@@ -61,31 +52,20 @@ async function credential(
 async function resigned(vc: DelegationCredential, changes: Partial<DelegationCredential>, signer: AgentIdentity, kid: string) {
   const { proof: _proof, ...unsigned } = vc;
   const changed = { ...unsigned, ...changes } as DelegationCredential;
-  return { ...changed, proof: await signing(signer)(canonicalizeJSON(changed), signer.did, kid) } as DelegationCredential;
+  return { ...changed, proof: await createRealSigningFunction(crypto, signer)(canonicalizeJSON(changed), signer.did, kid) } as DelegationCredential;
 }
 
 /** `vc` as a compact VC-JWT signed by `signer` under `kid`. */
 async function jwt(vc: DelegationCredential, signer: AgentIdentity, kid: string): Promise<string> {
   const { proof: _proof, ...unsigned } = vc;
   const { payload } = createUnsignedVCJWT(unsigned);
-  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const header = Buffer.from(JSON.stringify({ alg: 'EdDSA', kid })).toString('base64url');
-  const input = `${header}.${encodedPayload}`;
-  const signature = await crypto.sign(new TextEncoder().encode(input), signer.privateKey);
-  return completeVCJWT(input, Buffer.from(signature).toString('base64url'));
+  return envelope(signer, Buffer.from(JSON.stringify(payload)).toString('base64url'), kid);
 }
 
 function gate(config: KyaOsDelegationConfig = {}) {
   const resolve = vi.fn(async (did: string): Promise<DIDDocument | null> => {
     const key = [root, delegate, attacker].find(candidate => candidate.did === did);
-    return key ? {
-      id: did,
-      verificationMethod: [{
-        id: key.kid, type: 'JsonWebKey2020', controller: did,
-        publicKeyJwk: { kty: 'OKP', crv: 'Ed25519', x: Buffer.from(key.publicKey, 'base64').toString('base64url') },
-      }],
-      assertionMethod: [key.kid],
-    } : null;
+    return key ? issuerDidDocument(methodOf(key)) : null;
   });
   const checkStatus = vi.fn(async () => false);
   const verification = createDelegationVerification({

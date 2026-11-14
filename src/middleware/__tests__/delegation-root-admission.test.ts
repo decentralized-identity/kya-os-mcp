@@ -3,9 +3,11 @@ import { createDelegationVerification } from '../with-kya-os.delegation-verify.j
 import type { MiddlewareDeps } from '../with-kya-os.deps.js';
 import type { KyaOsDelegationConfig } from '../with-kya-os.config-types.js';
 import { DelegationCredentialIssuer } from '../../delegation/vc-issuer.js';
-import { canonicalizeJSON, completeVCJWT, createUnsignedVCJWT } from '../../delegation/utils.js';
+import { canonicalizeJSON, createUnsignedVCJWT } from '../../delegation/utils.js';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
-import type { VCSigningFunction } from '../../delegation/vc-issuer.js';
+import { createRealSigningFunction } from '../../__tests__/audit/helpers/crypto-helpers.js';
+import { envelope, keyOf } from '../../__tests__/utils/delegation-credentials.js';
+import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
 import type { AgentIdentity } from '../../providers/base.js';
 import type { DIDDocument } from '../../delegation/vc-verifier.js';
 import type { DelegationCredential } from '../../types/protocol.js';
@@ -14,25 +16,14 @@ const crypto = new NodeCryptoProvider();
 const SERVER = 'did:web:server.example';
 let root: AgentIdentity, delegate: AgentIdentity, outsider: AgentIdentity;
 beforeAll(async () => {
-  const identity = async (name: string) => ({
-    ...await crypto.generateKeyPair(), type: 'development' as const, createdAt: new Date().toISOString(), did: `did:web:${name}.example`, kid: `did:web:${name}.example#key`,
-  });
-  const keys = await Promise.all(['root', 'delegate', 'outsider'].map(identity));
-  root = keys[0]!; delegate = keys[1]!; outsider = keys[2]!;
+  const key = (name: string) => keyOf(`did:web:${name}.example`, 'key');
+  [root, delegate, outsider] = await Promise.all([key('root'), key('delegate'), key('outsider')]);
 });
-
-function signing(key: AgentIdentity): VCSigningFunction {
-  return async (canonical, _issuer, kid) => ({
-    type: 'Ed25519Signature2020', created: new Date().toISOString(),
-    verificationMethod: kid, proofPurpose: 'assertionMethod',
-    proofValue: Buffer.from(await crypto.sign(new TextEncoder().encode(canonical), key.privateKey)).toString('base64url'),
-  });
-}
 
 async function credential(key: AgentIdentity, id: string, parentId?: string): Promise<DelegationCredential> {
   return new DelegationCredentialIssuer(
     { getDid: () => key.did, getKeyId: () => key.kid, getPrivateKey: () => key.privateKey },
-    signing(key),
+    createRealSigningFunction(crypto, key),
   ).issueDelegationCredential({
     id, issuerDid: key.did, subjectDid: delegate.did, vcId: `urn:uuid:${id}`,
     ...(parentId === undefined ? {} : { parentId }),
@@ -44,24 +35,13 @@ async function credential(key: AgentIdentity, id: string, parentId?: string): Pr
 async function jwt(vc: DelegationCredential, key: AgentIdentity, claims: Record<string, unknown> = {}): Promise<string> {
   const { proof: _proof, ...unsigned } = vc;
   const { payload } = createUnsignedVCJWT(unsigned);
-  const encodedPayload = Buffer.from(JSON.stringify({ ...payload, ...claims })).toString('base64url');
-  const header = Buffer.from(JSON.stringify({ alg: 'EdDSA', kid: key.kid })).toString('base64url');
-  const input = `${header}.${encodedPayload}`;
-  const signature = await crypto.sign(new TextEncoder().encode(input), key.privateKey);
-  return completeVCJWT(input, Buffer.from(signature).toString('base64url'));
+  return envelope(key, Buffer.from(JSON.stringify({ ...payload, ...claims })).toString('base64url'), key.kid);
 }
 
 function setup(config: KyaOsDelegationConfig = {}) {
   const resolve = vi.fn(async (did: string): Promise<DIDDocument | null> => {
     const key = [root, delegate, outsider].find(key => key.did === did);
-    return key ? {
-      id: did,
-      verificationMethod: [{
-        id: key.kid, type: 'JsonWebKey2020', controller: did,
-        publicKeyJwk: { kty: 'OKP', crv: 'Ed25519', x: Buffer.from(key.publicKey, 'base64').toString('base64url') },
-      }],
-      assertionMethod: [key.kid],
-    } : null;
+    return key ? issuerDidDocument(methodOf(key)) : null;
   });
   const isRevoked = vi.fn(async () => ({ revoked: false }));
   const verification = createDelegationVerification({
@@ -83,7 +63,7 @@ const STATUS_ENTRY = {
 async function listed(key: AgentIdentity, id: string): Promise<DelegationCredential> {
   const { proof: _proof, ...unsigned } = await credential(key, id);
   const withStatus = { ...unsigned, credentialStatus: STATUS_ENTRY };
-  return { ...withStatus, proof: await signing(key)(canonicalizeJSON(withStatus), key.did, key.kid) } as DelegationCredential;
+  return { ...withStatus, proof: await createRealSigningFunction(crypto, key)(canonicalizeJSON(withStatus), key.did, key.kid) } as DelegationCredential;
 }
 
 /** A string a substring test would have matched against any root DID that is part of it. */
@@ -147,7 +127,7 @@ describe('root admission before DID and status resolution', () => {
       expect((await verify(await wire(valid, root))).valid).toBe(true);
       const { proof: _proof, ...unsigned } = valid;
       const named = { ...unsigned, issuer: { id: root.did } };
-      const proof = await signing(root)(canonicalizeJSON(named), root.did, root.kid);
+      const proof = await createRealSigningFunction(crypto, root)(canonicalizeJSON(named), root.did, root.kid);
       expect((await verify(await wire({ ...named, proof }, root))).valid).toBe(true);
       const forged = await credential(outsider, 'forged');
       forged.issuer = { id: root.did };

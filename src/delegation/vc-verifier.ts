@@ -131,21 +131,9 @@ export class DelegationCredentialVerifier {
           ),
     );
 
-    const readStatus = (): Promise<StatusCheckResult> =>
-      !options.skipStatus && vc.credentialStatus
-        ? checkCredentialStatus(
-            vc.credentialStatus,
-            options.statusListResolver || this.statusListResolver,
-            credentialIssuerDid(vc),
-          )
-        : Promise.resolve<StatusCheckResult>({
-            valid: true,
-            durationMs: 0,
-          });
-
     return this.finalizeVerification(
       signaturePromise,
-      readStatus,
+      this.statusReader(vc, options),
       basicCheckMs,
       startTime,
     );
@@ -188,7 +176,26 @@ export class DelegationCredentialVerifier {
           ),
     );
 
-    const readStatus = (): Promise<StatusCheckResult> =>
+    return this.finalizeVerification(
+      signaturePromise,
+      this.statusReader(vc, options),
+      basicCheckMs,
+      startTime,
+    );
+  }
+
+  /**
+   * How a credential's status is read once its signature has verified, on both
+   * the Data Integrity and the VC-JWT path: through the call's status-list
+   * resolver, else the verifier's own, and as valid, with no read, when the
+   * call skips status or the credential names none. The credential and the
+   * options are read when the reader runs.
+   */
+  private statusReader(
+    vc: DelegationCredential,
+    options: VerifyDelegationVCOptions,
+  ): () => Promise<StatusCheckResult> {
+    return () =>
       !options.skipStatus && vc.credentialStatus
         ? checkCredentialStatus(
             vc.credentialStatus,
@@ -199,13 +206,6 @@ export class DelegationCredentialVerifier {
             valid: true,
             durationMs: 0,
           });
-
-    return this.finalizeVerification(
-      signaturePromise,
-      readStatus,
-      basicCheckMs,
-      startTime,
-    );
   }
 
   /**

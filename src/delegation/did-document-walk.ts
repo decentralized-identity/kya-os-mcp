@@ -123,7 +123,7 @@ class Walk {
     this.ancestors.push(item);
     this.charge(2);
     if (Array.isArray(item)) this.array(item, depth);
-    else if (isPlainObject(item)) this.object(item, depth);
+    else if (isPlainObjectOfAnyRealm(item)) this.object(item, depth);
     else throw new Refusal('value is neither an array nor a plain object');
     this.ancestors.pop();
     if (this.parsed) Object.freeze(item);
@@ -209,11 +209,14 @@ function isLowSurrogate(code: number): boolean {
 }
 
 /**
- * Whether `item` is a plain object: its prototype is `null` or some realm's `Object.prototype`,
- * which is the prototype of no other object and has a `constructor` named `Object` that points
- * back to it. A class instance, a `Date` or a `Map` is refused.
+ * Whether `item` is a plain object of any realm: its prototype is `null` or some realm's
+ * `Object.prototype`, which is the prototype of no other object and has a `constructor` named
+ * `Object` that points back to it. A class instance, a `Date` or a `Map` is refused. A resolver may
+ * parse a document in another realm (a `vm` context, a frame), so this rule admits what
+ * `isPlainObjectOfThisRealm` (`utils/statuslist-acceptance.ts`) refuses: that one holds
+ * configuration to this realm's `Object.prototype` alone.
  */
-function isPlainObject(item: object): boolean {
+function isPlainObjectOfAnyRealm(item: object): boolean {
   const proto = Object.getPrototypeOf(item) as object | null;
   if (proto === null || proto === Object.prototype) return true;
   if (Object.getPrototypeOf(proto) !== null) return false;

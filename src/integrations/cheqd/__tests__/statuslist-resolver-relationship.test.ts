@@ -17,6 +17,7 @@ import { anotherDidReason, methodOf } from '../../../__tests__/utils/did-documen
 import type { AgentIdentity, FetchProvider } from '../../../providers/base.js';
 import type { DIDDocument } from '../../../delegation/vc-verifier.types.js';
 import type { NodeCryptoProvider } from '../../../__tests__/utils/node-crypto-provider.js';
+import { UNQUOTABLE_PURPOSES } from '../../../__tests__/utils/stated-purposes.js';
 import type { CredentialStatus, StatusList2021Credential } from '../../../types/protocol.js';
 
 const ISSUER = 'did:cheqd:testnet:acme-status';
@@ -139,14 +140,7 @@ describe('CheqdStatusListResolver and the verification relationship of the list 
   });
 
   it('names a stated purpose that is not a string by its JSON type, and quotes at most 64 characters of one', async () => {
-    const stated: [unknown, string][] = [
-      [['assertionMethod'], 'of type array'],
-      [[], 'of type array'],
-      [{ purpose: 'assertionMethod' }, 'of type object'],
-      [JSON.parse('{"toString":"assertionMethod"}'), 'of type object'],
-      ['x'.repeat(100_000), `"${'x'.repeat(64)}"...`],
-    ];
-    for (const [proofPurpose, named] of stated) {
+    for (const [proofPurpose, named] of UNQUOTABLE_PURPOSES) {
       await expect(check(issuerDocument(), assert, (proof) => ({ ...proof, proofPurpose }))).rejects.toThrow(
         new Error(`Proof purpose ${named} is not assertionMethod`),
       );

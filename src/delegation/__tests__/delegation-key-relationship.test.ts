@@ -15,6 +15,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { DelegationCredentialVerifier, type DIDDocument } from '../vc-verifier.js';
 import { createRealCryptoProvider, createRealSignatureVerifier } from '../../__tests__/audit/helpers/crypto-helpers.js';
 import { ACME, OTHER, acmeDocument, anotherDidReason, documentOf, methodOf } from '../../__tests__/utils/did-documents.js';
+import { UNQUOTABLE_PURPOSES } from '../../__tests__/utils/stated-purposes.js';
 import {
   credentialNaming,
   delegationRecord,
@@ -166,14 +167,7 @@ describe('the Data Integrity path', () => {
 
   it('names a stated purpose that is not a string by its JSON type, and quotes at most 64 characters of one', async () => {
     const credential = await signedCredential(assert);
-    const stated: [unknown, string][] = [
-      [['assertionMethod'], 'of type array'],
-      [[], 'of type array'],
-      [{ purpose: 'assertionMethod' }, 'of type object'],
-      [JSON.parse('{"toString":"assertionMethod"}'), 'of type object'],
-      ['x'.repeat(100_000), `"${'x'.repeat(64)}"...`],
-      ['assertionMethod ', '"assertionMethod "'],
-    ];
+    const stated = [...UNQUOTABLE_PURPOSES, ['assertionMethod ', '"assertionMethod "'] as const];
     for (const [proofPurpose, named] of stated) {
       const result = await verify(acmeDocument(login, assert), { ...credential, proof: { ...credential.proof!, proofPurpose } as never });
       expect(result).toMatchObject({ valid: false, stage: 'signature', reason: `Proof purpose ${named} is not assertionMethod` });

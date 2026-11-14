@@ -16,11 +16,12 @@ import {
   isSupportedCredentialProofType,
   validateDelegationCredential,
 } from "../types/protocol.js";
+import { answerWithinDeadline } from "../utils/deadline.js";
 import { describeValue } from "../utils/describe-value.js";
 import { issuerOf } from "../utils/guards.js";
 import { sanitizeForMessage } from "../utils/message-text.js";
 import { credentialIssuerRefusal } from "./credential-issuer.js";
-import { answerWithinDeadline, resolveBoundedDid } from "./did-resource-limits.js";
+import { resolveBoundedDid } from "./did-resource-limits.js";
 import { readRevoked, unreadableStatusReason } from "../utils/revocation-answer.js";
 import type {
   DIDResolver,

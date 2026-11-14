@@ -1,12 +1,13 @@
 /**
  * The boundary a verifier puts around a DID resolver (SPEC §4.4.2): identifier limits before the
- * call, one deadline on its promise, and the walk over what it returns. The same deadline bounds
- * the other dependencies a verifier waits on. The policy, the walk and the cache live in their own
- * modules and are re-exported here.
+ * call, one deadline on its promise, and the walk over what it returns. The deadline is the one
+ * `utils/deadline.ts` puts on every dependency a verifier waits on. The policy, the walk and the
+ * cache live in their own modules and are re-exported here.
  */
 
 import type { DIDDocument, DIDResolver } from './vc-verifier.types.js';
-import { boundedIdentifiers, DID_RESOLUTION_TIMEOUT_MS } from './did-resource-policy.js';
+import { startDeadline, type Deadline } from '../utils/deadline.js';
+import { boundedIdentifiers } from './did-resource-policy.js';
 import { isAdmittedDidDocument, measureDidDocument } from './did-document-walk.js';
 
 export * from './did-resource-policy.js';
@@ -14,43 +15,11 @@ export { admitParsedDidDocument, isAdmittedDidDocument, measureDidDocument, type
 export { DidDocumentCache, type LoadedDidDocument } from './did-document-cache.js';
 
 /** One deadline that the steps of a resolution share, so together they take at most its length. */
-export interface ResolutionDeadline {
-  /** `work`, or a rejection with the deadline's message once the deadline has passed. */
-  within<T>(work: Promise<T>): Promise<T>;
-  /** Stop the timer, once the resolution has settled. */
-  clear(): void;
-}
+export type ResolutionDeadline = Deadline;
 
-/**
- * A {@link ResolutionDeadline} of {@link DID_RESOLUTION_TIMEOUT_MS}, starting now, that rejects
- * with `expired` as its message: by default the one a DID resolution reports.
- */
-export function resolutionDeadline(expired = 'DID resolution deadline exceeded'): ResolutionDeadline {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const passed = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(expired)), DID_RESOLUTION_TIMEOUT_MS);
-  });
-  // A step that is not waiting when the deadline passes leaves no rejection unhandled.
-  passed.catch(() => undefined);
-  return {
-    within: work => Promise.race([work, passed]),
-    clear: () => clearTimeout(timer),
-  };
-}
-
-/**
- * What `ask` answers, under the deadline a DID resolver has: every dependency the host supplies
- * that a verifier waits on, such as a status list resolver or a chain resolver, is called through
- * here, so none can hold a verification open. Rejects with an error that says `who` did not answer
- * once {@link DID_RESOLUTION_TIMEOUT_MS} has passed, and as `ask` does when it throws or rejects.
- */
-export async function answerWithinDeadline<T>(who: string, ask: () => T | Promise<T>): Promise<T> {
-  const deadline = resolutionDeadline(`${who} did not answer within ${DID_RESOLUTION_TIMEOUT_MS / 1000} seconds`);
-  try {
-    return await deadline.within(Promise.resolve(ask()));
-  } finally {
-    deadline.clear();
-  }
+/** A {@link ResolutionDeadline} of {@link DID_RESOLUTION_TIMEOUT_MS}, starting now. */
+export function resolutionDeadline(): ResolutionDeadline {
+  return startDeadline('DID resolution deadline exceeded');
 }
 
 /**

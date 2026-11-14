@@ -17,12 +17,12 @@ import {
   type DelegationCredential,
 } from "../types/protocol.js";
 import { canonicalizeJson } from "../utils/canonical-json.js";
+import { answerWithinDeadline } from "../utils/deadline.js";
 import { verifyDelegationAudience } from "./audience-validator.js";
 import { chainResolutionFailure, revocationCheckFailure, revocationRefusal } from "./chain-reasons.js";
 import { authorityContains, crispScopes, matcherContains, scopeAuthority } from "./scope-matcher.js";
 import { credentialIssuerDid } from "./credential-issuer.js";
 import { chainLinkageRefusal } from "./chain-linkage.js";
-import { answerWithinDeadline } from "./did-resource-limits.js";
 import { rootAdmissionRefusal } from "./root-admission.js";
 
 /** Union of a credential's delegation scopes and its constraint scopes. */

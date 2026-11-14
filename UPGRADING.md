@@ -578,6 +578,10 @@ What changes:
   The gate verifies the stored delegation again on every reuse and honours the grant only while it verifies to that issuer.
   A grant stored by 1.22.0 keeps working: it is held to the `userDid` it recorded, and the call it authorizes is still attributed to the root issuer.
 - A handler that needs the `controller` a credential states reads it from the credential it is given; the gate no longer hands it on under another name.
+- A `withPolicyGate` that no `wrapWithDelegation` precedes verifies no delegation, and no longer gives its `PolicyEngine` a `principal.responsibleParty`.
+  On 1.22.0 it gave the `controller` of the `_kyaos_delegation` argument, which nothing had verified, so whoever wrote the argument chose it.
+  The `agentDid` and `delegatedScopes` it still gives are that argument's claims as well.
+  An engine rule that reads `principal.responsibleParty` needs the gate composed inside `wrapWithDelegation`, where it is the verified root issuer.
 - A root credential, one with no `parentId`, is refused unless the `issuerDid` of its delegation is the `issuer` of the credential itself, whose key signs it.
   `validateDelegationChain` and the gate refuse it before they resolve any DID, with `Root delegation <id> names issuerDid "<issuerDid>" but its credential names issuer "<issuer>"` (`"<v>"` as in "Changed refusal reasons"), and the gate answers `delegation_invalid`.
   1.22.0 accepted such a root and logged `Root delegation <id> names issuerDid <issuerDid> but is signed by <issuer>`; that warning is gone, from `ChainValidationResult.warnings` too.

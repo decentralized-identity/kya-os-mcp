@@ -12,6 +12,7 @@ import type { AuditTrailEventInput } from '../../audit/service.js';
 import { credentialNaming, keyOf, delegationRecord, signedCredential, signedJwt } from '../../__tests__/utils/delegation-credentials.js';
 import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
 import type { AgentIdentity } from '../../providers/base.js';
+import type { PolicyRequest } from '../../policy/types.js';
 import { MemoryGrantStore } from '../../providers/grant-store.js';
 import type { DelegationCredential } from '../../types/protocol.js';
 import { didKeyFragment, generateDidKeyFromBase64 } from '../../utils/did-helpers.js';
@@ -164,5 +165,20 @@ describe('the Responsible Party the delegation gate names', () => {
     await s.grantStore.bind({ ...grant!, responsibleParty: VICTIM });
     expect(await s.call(sessionId)).not.toBe('placed');
     expect(s.contexts).toHaveLength(1);
+  });
+});
+
+describe('the Responsible Party a policy gate names', () => {
+  it('is none when no delegation gate verified the delegation the call presents', async () => {
+    const s = await server();
+    const requests: PolicyRequest[] = [];
+    const gated = s.kyaos.withPolicyGate!('orders.place', async () => ({ content: [{ type: 'text', text: 'placed' }] }), {
+      engine: { evaluate: async (request) => { requests.push(request); return { decision: 'allow' }; } },
+    });
+    // Nothing verifies this credential here, so the controller it states is only its author's claim.
+    const record = delegationRecord(root.did, { subjectDid: AGENT, controller: VICTIM, constraints: s.constraints });
+    const result = await gated({ _kyaos_delegation: await signedCredential(delegate, { record }) });
+    expect(result.content[0]!.text).toBe('placed');
+    expect(requests.map(request => request.principal)).toEqual([{ agentDid: AGENT }]);
   });
 });

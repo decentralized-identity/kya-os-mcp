@@ -89,9 +89,10 @@ export function createPolicyGate(
 
       const namespace = opts.resolveNamespace?.(args) ?? toolName;
       const risk = classifier.classify({ toolName, namespace });
-      // Prefer the principal wrapWithDelegation authenticated; the raw
-      // `_kyaos_delegation` projection is the unverified standalone fallback.
-      const principal =
+      // The principal wrapWithDelegation authenticated, when it precedes this
+      // gate. Standalone, the raw `_kyaos_delegation` is unverified: it yields
+      // the subject and scopes it claims and never a Responsible Party.
+      const principal: NonNullable<KyaOsCallContext["principal"]> =
         context?.principal ?? extractPolicyPrincipal(args["_kyaos_delegation"]);
 
       const policyRequest = buildPolicyRequest({

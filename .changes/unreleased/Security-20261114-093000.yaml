@@ -11,7 +11,9 @@ body: |-
     `wrapWithDelegation`. The context's `responsibleParty` and
     `principal.responsibleParty` are now the root issuer the chain walk
     verified, and are always present. A grant stores it as
-    `responsibleParty` and no longer sets `userDid`. UPGRADING.md, "The
-    Responsible Party of a delegated call", says what a handler or audit
-    consumer that read the old value must change.
+    `responsibleParty` and no longer sets `userDid`. A `withPolicyGate`
+    that no `wrapWithDelegation` precedes verifies no delegation, and no
+    longer gives its engine a Responsible Party at all. UPGRADING.md, "The
+    Responsible Party of a delegated call", says what a handler, engine or
+    audit consumer that read the old value must change.
 time: 2026-11-14T09:30:00.000000-06:00

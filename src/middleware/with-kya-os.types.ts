@@ -269,6 +269,11 @@ export interface KyaOsPolicyGate {
    * pluggable PolicyEngine: allow → run handler; deny → signed denial proof;
    * step_up → `needs_approval` until N-of-M signed approval grants (bound to the
    * request hash) are supplied.
+   *
+   * The engine is told the Responsible Party only when `wrapWithDelegation`
+   * precedes this gate and verified one. Standalone, the gate verifies no
+   * `_kyaos_delegation`: the engine gets the subject and scopes that argument
+   * claims, and no `principal.responsibleParty`.
    */
   withPolicyGate(
     toolName: string,

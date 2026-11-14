@@ -27,6 +27,7 @@ import { ProofVerifier } from '../../proof/verifier.js';
 import { SystemClockProvider } from '../../providers/system-clock.js';
 import { MemoryNonceCacheProvider } from '../../providers/memory.js';
 import { LOCAL_HOST_NAMES } from '../../__tests__/utils/local-host-names.js';
+import { closeLoopback, listenOnLoopback } from '../../__tests__/utils/loopback-server.js';
 
 const crypto = new NodeCryptoProvider();
 const SERVER = 'did:web:server.example';
@@ -69,16 +70,14 @@ beforeAll(async () => {
     const did = request.url === '/internal/did.json' ? redirectDid() : request.url === '/direct/did.json' ? directDid() : didOf(request.headers.host!);
     response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(documentOf(did)));
   });
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  port = (server.address() as { port: number }).port;
+  port = await listenOnLoopback(server);
   hops.set('/hop/did.json', `http://127.0.0.1:${port}/internal/did.json`);
   hops.set('/hop-localhost/did.json', `https://localhost:${port}/internal/did.json`);
   for (const name of LOCAL_HOST_NAMES) hops.set(`/hop-to/${name}/did.json`, `https://${name}:${port}/internal/did.json`);
 });
 
 afterAll(async () => {
-  server.closeAllConnections();
-  await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  await closeLoopback(server);
 });
 
 beforeEach(() => {

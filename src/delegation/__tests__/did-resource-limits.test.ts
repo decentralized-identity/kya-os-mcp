@@ -10,6 +10,7 @@ import { DidWebResolver } from '../did-web-resolver.js';
 import { DidCheqdResolver } from '../../integrations/cheqd/resolver.js';
 import type { FetchProvider } from '../../providers/base.js';
 import type { DIDDocument } from '../vc-verifier.types.js';
+import { closeLoopback, listenOnLoopback } from '../../__tests__/utils/loopback-server.js';
 
 const did = 'did:web:limits.example';
 const provider = (fetch: FetchProvider['fetch']) => ({ fetch }) as FetchProvider;
@@ -89,16 +90,13 @@ describe('DID resource boundaries', () => {
       response.writeHead(200, { 'Content-Encoding': 'gzip', 'Content-Length': compressed.length });
       response.end(compressed);
     });
-    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const port = await listenOnLoopback(server);
     try {
-      const address = server.address();
-      if (!address || typeof address === 'string') throw new Error('missing test listener');
       // The server is on 127.0.0.1, a host the private-network rule refuses unless the provider opts out.
       const provider = new RuntimeFetchProvider({ allowPrivateNetworkHosts: true });
-      await expect(fetchDidJson(provider, `http://127.0.0.1:${address.port}/did.json`)).rejects.toThrow('byte limit');
+      await expect(fetchDidJson(provider, `http://127.0.0.1:${port}/did.json`)).rejects.toThrow('byte limit');
     } finally {
-      server.closeAllConnections();
-      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+      await closeLoopback(server);
     }
   });
 

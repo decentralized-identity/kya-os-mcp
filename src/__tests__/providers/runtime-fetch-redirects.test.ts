@@ -11,6 +11,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { RuntimeFetchProvider } from '../../providers/runtime-fetch.js';
 import { fetchDidJson } from '../../delegation/read-did-json.js';
 import { fetchStatusListJson } from '../../delegation/status-list-fetch.js';
+import { closeLoopback, listenOnLoopback } from '../utils/loopback-server.js';
 
 const did = 'did:web:public.example';
 const didUrl = 'https://public.example/.well-known/did.json';
@@ -117,13 +118,11 @@ describe('status-list redirects, against a real server', () => {
       if (hops[request.url!] !== undefined) response.writeHead(302, { location: hops[request.url!] }).end();
       else response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(list));
     });
-    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-    port = (server.address() as { port: number }).port;
+    port = await listenOnLoopback(server);
   });
 
   afterAll(async () => {
-    server.closeAllConnections();
-    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    await closeLoopback(server);
   });
 
   beforeEach(() => {

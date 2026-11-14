@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { RuntimeFetchProvider } from '../../providers/runtime-fetch.js';
 import { fetchDidJson } from '../read-did-json.js';
 import { fetchStatusListJson } from '../status-list-fetch.js';
+import { closeLoopback, listenOnLoopback } from '../../__tests__/utils/loopback-server.js';
 
 let server: Server;
 let base: string;
@@ -26,16 +27,12 @@ beforeAll(async () => {
       response.on('close', () => { clearInterval(timer); timers.delete(timer); });
     }
   });
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('missing test listener');
-  base = `http://127.0.0.1:${address.port}`;
+  base = `http://127.0.0.1:${await listenOnLoopback(server)}`;
 });
 
 afterAll(async () => {
   for (const timer of timers) clearInterval(timer);
-  server.closeAllConnections();
-  await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  await closeLoopback(server);
 });
 
 /** How `reading` settles, and after how many milliseconds. */

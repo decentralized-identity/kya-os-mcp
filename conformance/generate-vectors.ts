@@ -144,7 +144,7 @@ async function signedProofVectors(): Promise<VectorFile> {
     meta: { ...envelopeProof.meta, prf: 'org.example/unknown-profile.v9' as never },
   };
 
-  // ── Delegation chain binding (`delegationChainDigest`, SPEC §7.8; suite ≥ 1.5.0) ─
+  // ── Delegation chain binding (`delegationChainDigest`, SPEC §7.8; suite 1.5.0 or later) ─
   const delegationBinding = await delegationBindingVectors<Party>({
     publicKeyJwk: jwk,
     now: NOW,

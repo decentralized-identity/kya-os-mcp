@@ -72,7 +72,7 @@ describe('a refused call', () => {
     ]);
   });
 
-  it('lists no chain when an ancestor it read has no signed form, and still records the presented credential’s own digest', async () => {
+  it("lists no chain when an ancestor it read has no signed form, and still records the presented credential's own digest", async () => {
     const error = vi.spyOn(logger, 'error');
     const { kyaos, server, ancestors, recorded } = await makeServer();
     const { root, middle, leaf } = await threeHops(server.did);
@@ -154,7 +154,7 @@ describe('a refused call', () => {
     expect(allowed.isError).toBeUndefined();
   });
 
-  it('refuses a chain whose ancestor nests deeper than a credential may, and still records the presented credential’s own digest', async () => {
+  it("refuses a chain whose ancestor nests deeper than a credential may, and still records the presented credential's own digest", async () => {
     const error = vi.spyOn(logger, 'error');
     const { kyaos, server, ancestors, recorded } = await makeServer();
     const { root, middle, leaf } = await threeHops(server.did);

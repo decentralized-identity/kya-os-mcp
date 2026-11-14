@@ -1,6 +1,6 @@
 /**
  * The delegation-binding vectors (`signed-proof/delegation-*`, SPEC.md §7.8,
- * suite ≥ 1.5.0): a proof names the credential a call presented by
+ * suite 1.5.0 or later): a proof names the credential a call presented by
  * `delegationRef`, and binds the chain the call was decided over by
  * `delegationChainDigest`. Each vector turns on one rule of §7.8, or on how
  * the proof that binds a chain is read (§7.4).

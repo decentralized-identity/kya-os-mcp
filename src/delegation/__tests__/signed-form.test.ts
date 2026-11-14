@@ -421,7 +421,7 @@ describe('signingInput', () => {
   });
 });
 
-describe('a failure that is not the value’s', () => {
+describe("a failure that is not the value's", () => {
   // `signedForm` lets no object deeper than the bound through, so these forms
   // are made by hand: the serializer recurses, and runs out of stack on them.
   it('is thrown as it is: a call stack that ran out is not a credential with no signed form', () => {

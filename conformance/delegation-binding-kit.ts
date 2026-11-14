@@ -1,6 +1,6 @@
 /**
  * What the delegation-binding vectors (`signed-proof/delegation-*`, SPEC.md
- * §7.8, suite ≥ 1.5.0) are minted with.
+ * §7.8, suite 1.5.0 or later) are minted with.
  *
  * The generator holds what every vector file shares: its parties and their
  * keys, credentials as their issuers sign them, and the server's proofs at

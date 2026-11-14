@@ -1,7 +1,7 @@
 /**
  * The chain a proof binds, and the credential it names (SPEC.md §7.8).
  *
- * user → orchestrator → worker → sub-agent, each hop signed by its issuer:
+ * user to orchestrator to worker to sub-agent, each hop signed by its issuer:
  * two credential objects and a VC-JWT leaf, so both signed forms are covered.
  * The proofs here bind that chain, allowed or refused, or bind nothing, or
  * name a credential other than the leaf. They are held against the chain,

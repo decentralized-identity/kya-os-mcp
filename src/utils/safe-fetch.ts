@@ -36,6 +36,7 @@ import {
   fetchTransport,
   selectDefaultTransport,
 } from './safe-fetch-transports.js';
+import { OUTBOUND_READ_MAX_BYTES, OUTBOUND_READ_TIMEOUT_MS } from './outbound-read-limits.js';
 import type {
   DnsAddress,
   DnsLookup,
@@ -57,16 +58,14 @@ export {
 } from './safe-fetch-transports.js';
 
 /*
- * SafeFetch's defaults for the `timeoutMs` and `maxBytes` options. They are rules of their own, not
- * the DID and status-list limits of SPEC §4.4.2 (`delegation/did-resource-policy.ts`), whose values
- * they share today: these are defaults a caller may override, and the timeout bounds each hop on its
- * own, while those limits are fixed by the specification and their one deadline covers every
- * redirect of a read. Either pair may change without the other.
+ * SafeFetch's defaults for the `timeoutMs` and `maxBytes` options, the package's limits for one
+ * outbound read (`./outbound-read-limits.ts`). Here a caller may override them, and the timeout
+ * bounds each hop on its own.
  */
 /** Milliseconds one hop may take: its request, its response headers and its body. */
-const DEFAULT_HOP_TIMEOUT_MS = 5_000;
+const DEFAULT_HOP_TIMEOUT_MS = OUTBOUND_READ_TIMEOUT_MS;
 /** Bytes of response body read before the response is refused. */
-const DEFAULT_MAX_RESPONSE_BYTES = 1_048_576;
+const DEFAULT_MAX_RESPONSE_BYTES = OUTBOUND_READ_MAX_BYTES;
 
 /** Parse + require https; returns the normalized href. */
 function assertHttpsUrl(raw: string): string {

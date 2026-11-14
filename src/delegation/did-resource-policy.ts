@@ -2,28 +2,29 @@
  * The resource policy for DID resolution, stated in SPEC §4.4.2. Internal constants of the
  * implementation, not a configuration surface and not limits of DID syntax.
  *
- * Each limit is declared once, here; the status-list read (`./status-list-fetch.ts`) derives its
- * byte limit and deadline from these. SafeFetch's default timeout and size cap
- * (`utils/safe-fetch.ts`) have the same values and are separate rules: defaults a caller may
- * override, for each hop of a SafeFetch read, which this policy neither reads nor bounds.
+ * Each limit is declared once. The byte limit of a document and the deadline of a resolution are
+ * the package's limits for one outbound read (`utils/outbound-read-limits.ts`), which SafeFetch
+ * takes as the defaults of its own options; the rest are declared here. The status-list read
+ * (`./status-list-fetch.ts`) derives its byte limit and deadline from these.
  */
 
 import type { JsonLimits } from '../utils/json-preflight.js';
 import type { BoundedJsonPolicy } from '../utils/bounded-read.js';
+import { OUTBOUND_READ_MAX_BYTES, OUTBOUND_READ_TIMEOUT_MS } from '../utils/outbound-read-limits.js';
 
 /** A DID, a document's `id` and a method's `controller`, in UTF-16 code units. */
 export const MAX_DID_LENGTH = 2_048;
 /** A key identifier, a method's `id` and a relationship reference, in UTF-16 code units. */
 export const MAX_KEY_ID_LENGTH = 4_096;
 /** A DID document's compact JSON in UTF-8, and a did:web response body. */
-export const MAX_DID_DOCUMENT_BYTES = 1_048_576;
+export const MAX_DID_DOCUMENT_BYTES = OUTBOUND_READ_MAX_BYTES;
 export const MAX_JSON_DEPTH = 64;
 export const MAX_JSON_MEMBER_LENGTH = 256;
 export const MAX_JSON_MEMBERS = 8_192;
 /** Entries of `verificationMethod` and the five verification relationships, in all. */
 export const MAX_VERIFICATION_ENTRIES = 8_192;
 /** One deadline for a resolution: the fetch and its body, or a resolver's promise. */
-export const DID_RESOLUTION_TIMEOUT_MS = 5_000;
+export const DID_RESOLUTION_TIMEOUT_MS = OUTBOUND_READ_TIMEOUT_MS;
 /** Each built-in network resolver's cache: documents, and their compact JSON bytes in all. */
 export const MAX_CACHED_DOCUMENTS = 128;
 export const MAX_CACHED_BYTES = 8 * MAX_DID_DOCUMENT_BYTES;

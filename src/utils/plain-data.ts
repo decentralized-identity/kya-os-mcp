@@ -268,12 +268,6 @@ export function readPlainData(value: unknown, limit: number, topLevels = 0): Pla
   return { plainData: true, nestsDeeper: walk.nestsDeeperThan(value, limit), ...(top === undefined ? {} : { top }) };
 }
 
-/**
- * Copies {@link copyPlainData} made, each with the limit it was counted
- * within, so that {@link nestsDeeperThan} does not count one again.
- */
-const countedCopies = new WeakMap<object, number>();
-
 /** Why {@link copyPlainData} made no copy of a value. */
 export type NotCopied = { refused: 'not plain data' } | { refused: 'nests too deep'; top?: Record<string, unknown> };
 
@@ -284,9 +278,10 @@ export type NotCopied = { refused: 'not plain data' } | { refused: 'nests too de
  * data. Of plain data nested deeper there is no copy, since a copy recurses,
  * and `top` is what the walk read of its top `topLevels` levels.
  *
- * The copy is this module's own, made of plain data within the limit, and
- * {@link nestsDeeperThan} takes it to be within that limit without counting
- * it again.
+ * The copy is within the limit as it is made, and no longer than it is left
+ * alone: it is not frozen, and whoever it is handed to can nest more in it.
+ * So nothing is remembered of it here, and {@link nestsDeeperThan} counts it
+ * like any other value, each time it is asked.
  */
 export function copyPlainData(value: unknown, limit: number, topLevels = 0): { copy: unknown } | NotCopied {
   try {
@@ -295,9 +290,7 @@ export function copyPlainData(value: unknown, limit: number, topLevels = 0): { c
     if (reading.nestsDeeper) {
       return { refused: 'nests too deep', ...(reading.top === undefined ? {} : { top: reading.top }) };
     }
-    const copy: unknown = structuredClone(value);
-    if (isContainer(copy)) countedCopies.set(copy, limit);
-    return { copy };
+    return { copy: structuredClone(value) };
   } catch {
     return { refused: 'not plain data' };
   }
@@ -316,11 +309,15 @@ export function copyPlainData(value: unknown, limit: number, topLevels = 0): { c
  * past it, and the enumerable members of either. An accessor is not called,
  * a member of an object that is not enumerable is neither JSON nor copied,
  * and nothing in a `Date` is read. Each array and object is read once.
+ *
+ * The answer is of `value` as it is at this call, counted anew at each one.
+ * No earlier count of an object is taken for it, a copy
+ * {@link copyPlainData} made included: an object can be changed between
+ * two calls, and a count taken before the change would pass what a
+ * recursive reader then runs out of stack on.
  */
 export function nestsDeeperThan(value: unknown, limit: number): boolean {
   if (!isContainer(value)) return false;
-  const counted = countedCopies.get(value);
-  if (counted !== undefined && counted <= limit) return false;
   const walk = new Walk(false, 0);
   return !walk.read(value, limit) || walk.nestsDeeperThan(value, limit);
 }

@@ -165,15 +165,17 @@ describe('copyPlainData', () => {
     expect(copyPlainData({ id: 'urn:a', deep: arrays(64) }, 64)).toEqual({ refused: 'nests too deep' });
   });
 
-  it('makes a copy that nestsDeeperThan takes to be within the limit it was counted within', () => {
+  it('makes a copy that nestsDeeperThan counts as it is when it is asked, not as it was when it was made', () => {
     const read = copyPlainData({ a: arrays(10) }, 64);
     const copy = (read as { copy: { a: unknown } }).copy;
     expect(nestsDeeperThan(copy, 64)).toBe(false);
     expect(nestsDeeperThan(copy, 10)).toBe(true);
-    // It is not counted again: what was counted is the copy as it was made,
-    // and nothing in the package changes a copy it made.
+    // The copy is handed on, and whoever holds it can change it: an array
+    // nested deeper in it since is counted, here and in a copy of it alike.
     copy.a = arrays(100);
-    expect(nestsDeeperThan(copy, 64)).toBe(false);
+    expect(nestsDeeperThan(copy, 64)).toBe(true);
     expect(nestsDeeperThan(structuredClone(copy), 64)).toBe(true);
+    copy.a = arrays(63);
+    expect(nestsDeeperThan(copy, 64)).toBe(false);
   });
 });

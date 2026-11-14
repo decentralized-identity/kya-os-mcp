@@ -39,11 +39,13 @@ describe('the reads the gate makes of a presented credential', () => {
   }
 
   it.each([
-    // Refused on its basic checks: the walk and the digest of what was refused.
-    ['one with no type', (leaf: DelegationCredential) => ({ ...leaf, type: [] }), 2],
-    // Refused on its signature: the walk, the verification cache's key, what
-    // the signature covers, and the digest of what was refused.
-    ['one its issuer did not sign so', (leaf: DelegationCredential) => leaf, 4],
+    // Refused on its basic checks: the walk, and the digest of what was
+    // refused, which counts how deep the copy nests now and then reads it.
+    ['one with no type', (leaf: DelegationCredential) => ({ ...leaf, type: [] }), 3],
+    // Refused on its signature: the walk, the verification cache's key, and
+    // what the signature covers and the digest of what was refused, each
+    // of which counts how deep the copy nests now and then reads it.
+    ['one its issuer did not sign so', (leaf: DelegationCredential) => leaf, 6],
   ])('reads each element of a large array a bounded number of times: %s', async (_name, edit, times) => {
     const { present, leaf } = await gate();
     const long = Array.from({ length: LENGTH }, (_, index) => index);
@@ -95,6 +97,36 @@ describe('the reads the gate makes of a presented credential', () => {
     expect(refusal(await present(deep)).reason).toBe('Malformed delegation credential: it nests more than 64 levels deep');
     const rejected = recorded.find((event) => event.eventType === 'delegation.rejected')!;
     expect(delegationEvidence(rejected)).toEqual({ delegationRef: 'del-read-by-the-walk' });
+  });
+});
+
+describe('a copy of a presented credential that is changed after the gate made it', () => {
+  // The chain resolver is the application's, and is handed the copy the gate
+  // reads from then on. What it nests in that copy is counted when the copy
+  // is next read, so a credential nested deeper than SPEC.md 7.8 allows is
+  // refused by the bound at any depth, never canonicalized and never digested.
+  it.each([65, 100, 5_000, 200_000])('refuses by the nesting bound one nested %d levels deep since', async (levels) => {
+    const { kyaos, server, ancestors, recorded } = await makeServer({
+      resolveDelegationChain: async (presented) => {
+        Object.assign(presented, { note: arrays(levels - 1) });
+        return [...ancestors];
+      },
+    });
+    const { root, middle, leaf } = await threeHops(server.did);
+    ancestors.push(root, middle);
+    const handler = kyaos.wrapWithDelegation(TOOL, CONSENT, kyaos.wrapWithProof(TOOL, released));
+
+    const result = await handler({ ...ARGS, _kyaos_delegation: leaf });
+
+    expect(refusal(result).reason).toBe(
+      `Delegation ${leaf.credentialSubject.delegation.id} invalid: ` +
+        'Unreadable credential content: A credential object nests at most 64 levels deep',
+    );
+    // It has no signed form, so it is named by its id and has no digest.
+    const rejected = recorded.find((event) => event.eventType === 'delegation.rejected')!;
+    expect(delegationEvidence(rejected)).toEqual({ delegationRef: leaf.id });
+    // The credential the caller presented is as it was.
+    expect(leaf).not.toHaveProperty('note');
   });
 });
 

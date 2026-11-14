@@ -56,8 +56,17 @@ export {
   selectDefaultTransport,
 } from './safe-fetch-transports.js';
 
-const DEFAULT_TIMEOUT_MS = 5_000;
-const DEFAULT_MAX_BYTES = 1_048_576;
+/*
+ * SafeFetch's defaults for the `timeoutMs` and `maxBytes` options. They are rules of their own, not
+ * the DID and status-list limits of SPEC §4.4.2 (`delegation/did-resource-policy.ts`), whose values
+ * they share today: these are defaults a caller may override, and the timeout bounds each hop on its
+ * own, while those limits are fixed by the specification and their one deadline covers every
+ * redirect of a read. Either pair may change without the other.
+ */
+/** Milliseconds one hop may take: its request, its response headers and its body. */
+const DEFAULT_HOP_TIMEOUT_MS = 5_000;
+/** Bytes of response body read before the response is refused. */
+const DEFAULT_MAX_RESPONSE_BYTES = 1_048_576;
 
 /** Parse + require https; returns the normalized href. */
 function assertHttpsUrl(raw: string): string {
@@ -133,8 +142,8 @@ export function createSafeFetch(options: SafeFetchOptions = {}): SafeFetch {
   const cfg: HopConfig = {
     lookup: options.lookup ?? defaultLookup,
     transport: options.transport ?? selectDefaultTransport(),
-    timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    maxBytes: options.maxBytes ?? DEFAULT_MAX_BYTES,
+    timeoutMs: options.timeoutMs ?? DEFAULT_HOP_TIMEOUT_MS,
+    maxBytes: options.maxBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
     trustedOrigins: normalizeTrustedOrigins(options),
   };
   const maxRedirects = options.maxRedirects ?? MAX_REDIRECTS;

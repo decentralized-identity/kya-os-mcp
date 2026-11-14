@@ -1,6 +1,11 @@
 /**
  * The resource policy for DID resolution, stated in SPEC §4.4.2. Internal constants of the
  * implementation, not a configuration surface and not limits of DID syntax.
+ *
+ * Each limit is declared once, here; the status-list read (`./status-list-fetch.ts`) derives its
+ * byte limit and deadline from these. SafeFetch's default timeout and size cap
+ * (`utils/safe-fetch.ts`) have the same values and are separate rules: defaults a caller may
+ * override, for each hop of a SafeFetch read, which this policy neither reads nor bounds.
  */
 
 import type { JsonLimits } from '../utils/json-preflight.js';

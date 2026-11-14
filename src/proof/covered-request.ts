@@ -98,7 +98,7 @@ export function alternateRequestShapes(request: ToolRequest): ToolRequest[] {
   return [
     coveredToolCall(call),
     legacy(call.args),
-    legacy(withoutKeys(call.args, isKyaOsControlArg)),
+    legacy(withoutControlArgs(call.args)),
   ];
 }
 

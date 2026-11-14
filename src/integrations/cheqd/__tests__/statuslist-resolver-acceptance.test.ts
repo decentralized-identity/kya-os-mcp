@@ -39,7 +39,7 @@ describe('CheqdStatusListResolver and the status-list acceptance rule', () => {
   const fetchProvider = {
     async fetch(url: string) {
       const body = served ?? (await setup.storage.getStatusList(url));
-      return { ok: body != null, status: body == null ? 404 : 200, json: async () => body } as unknown as Response;
+      return new Response(JSON.stringify(body ?? null), { status: body == null ? 404 : 200 });
     },
   } as unknown as FetchProvider;
 

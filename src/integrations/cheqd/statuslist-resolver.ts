@@ -38,6 +38,8 @@
  * declared per-bit staleness SLA. `invalidateCache()` drops the document and
  * defeats upstream HTTP caches on the next fetch.
  */
+import { resolveBoundedDid } from '../../delegation/did-resource-limits.js';
+import { fetchStatusListJson } from '../../delegation/status-list-fetch.js';
 import type { FetchProvider, CryptoProvider } from '../../providers/base.js';
 import type {
   DIDResolver,
@@ -62,16 +64,19 @@ import {
   readStatusBit,
 } from '../../utils/statuslist-bits.js';
 import { acceptStatusList } from '../../utils/statuslist-acceptance.js';
-import { describeValue } from '../../utils/describe-value.js';
 import { base64urlDecodeToBytes, bytesToBase64 } from '../../utils/base64.js';
 import { TtlCache } from '../../utils/ttl-cache.js';
 
 export interface CheqdStatusListResolverOptions {
   /**
    * Transport for fetching the status-list resource. The resolver enforces
-   * `https://` on the URL; SSRF guarding beyond the scheme (private-range
-   * blocking, redirects) is the injected provider's duty —
-   * `RuntimeFetchProvider` provides it.
+   * `https://` on the URL and reads through the private-network rule
+   * (`utils/private-network-rule.ts`), whatever the provider: a non-public
+   * IP-literal host and a local name are refused, and each redirect is followed
+   * by hand and held to the same rule. A provider with
+   * `allowPrivateNetworkHosts: true`, such as
+   * `new RuntimeFetchProvider({ allowPrivateNetworkHosts: true })`, turns the
+   * host check off.
    */
   fetchProvider: FetchProvider;
   /** Resolves the status list ISSUER's DID document (did:cheqd, on-chain). */
@@ -163,7 +168,7 @@ export class CheqdStatusListResolver implements StatusListResolver {
     // DID URL dereferencing input and 400s (invalidDidUrl) on unknown params
     // (verified live). The endpoint is served cf-cache-status DYNAMIC, so
     // post-revocation freshness only needs a no-cache header.
-    const response = await this.opts.fetchProvider.fetch(url, {
+    const body = (await fetchStatusListJson(this.opts.fetchProvider, url, {
       method: 'GET',
       headers: {
         Accept: 'application/json',
@@ -171,12 +176,7 @@ export class CheqdStatusListResolver implements StatusListResolver {
           ? { 'Cache-Control': 'no-cache', Pragma: 'no-cache' }
           : {}),
       },
-    });
-    if (!response.ok) {
-      throw new Error(`Status list fetch failed: HTTP ${response.status} for ${describeValue(url)}`);
-    }
-
-    const body = (await response.json()) as StatusList2021Credential;
+    })) as StatusList2021Credential;
     this.assertShape(body);
     return body;
   }
@@ -231,12 +231,13 @@ export class CheqdStatusListResolver implements StatusListResolver {
     const data = new TextEncoder().encode(canonicalizeJSON(unsigned));
     const signature = base64urlDecodeToBytes(proofValue);
 
-    const didDoc = await this.opts.didResolver.resolve(this.opts.expectedIssuerDid);
+    const named: unknown = proof['verificationMethod'];
+    const keyId = typeof named === 'string' ? named : undefined;
+    const didDoc = await resolveBoundedDid(this.opts.didResolver, this.opts.expectedIssuerDid, keyId);
     if (!didDoc) {
       throw new Error(`Could not resolve issuer DID ${this.opts.expectedIssuerDid}`);
     }
 
-    const named: unknown = proof['verificationMethod'];
     const selection = selectAssertionMethod(didDoc, this.opts.expectedIssuerDid, named);
     if (!('method' in selection)) {
       throw new Error(

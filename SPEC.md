@@ -315,6 +315,81 @@ Out of scope for this specification section: external registry changes,
 reputation VC snapshot publication, status-list backend hosting, KYC/KYB
 issuance, and replacing `did:web` as the canonical identity.
 
+### 4.4.2 Reference Implementation Resource Policy
+
+**Reference implementation (non-normative).** This section describes limits of the reference implementation, not requirements of this specification, and not limits of DID syntax.
+The reference implementation refuses DID resolution and status-list inputs over the limits below, and never cuts an identifier, a document or a list to fit:
+
+| Resource | Limit |
+| --- | --- |
+| DID: the one resolved, a document's `id` and a listed method's `controller` | 2,048 UTF-16 code units |
+| Key identifier: the one a proof names, a listed method's `id` and a relationship reference | 4,096 UTF-16 code units |
+| did:web response | 1,048,576 decompressed UTF-8 bytes |
+| cheqd resolver response, a bare document or a DID Resolution Result | 4,194,304 decompressed UTF-8 bytes, 65 containers deep, 131,072 object members in all |
+| DID document | 1,048,576 bytes of compact JSON in UTF-8 |
+| JSON nesting / object member name | 64 containers / 256 UTF-16 code units, decoded |
+| JSON object members | 8,192 in all, counting duplicate names before parsing |
+| Entries of `verificationMethod` and the five verification relationships | 8,192 in all |
+| Status-list response | 1,048,576 decompressed UTF-8 bytes, under the same JSON nesting, member name and member limits as a DID document |
+| Fetch and body consumption | One 5-second deadline for each DID resolution and each status-list read |
+| Redirects a did:web or status-list read follows | 3 |
+| Each built-in network resolver's cache | 128 documents and 8 MiB of compact JSON, plus its TTL, evicting the least recently used |
+
+In a document, the identifier limits apply to its `id` and to each entry of `verificationMethod` and the five verification relationships: an embedded method's `id` and `controller`, and a reference to a method.
+Every other identifier a document may carry, such as its top-level `controller`, its `alsoKnownAs` entries and the members of a service, is bounded only by the document's byte, nesting and member limits.
+
+DID syntax sets no length limit, and some valid DIDs are longer than 2,048 UTF-16 code units: a did:key for a post-quantum key, such as an ML-DSA-65 or ML-DSA-87 public key (about 2,680 and 3,550 characters), and a did:peer:2 that lists many keys or services.
+The reference implementation refuses such a DID before it asks any resolver, so it verifies no credential or proof that such a DID issued.
+`RuntimeFetchProvider.resolveDID` asks a resolver configured for the DID's method first, and falls back to its built-in did:web or did:key resolver only when the configured one finds no document: not after it returns a document these limits refuse, nor after it misses the deadline.
+One deadline covers the configured resolver and the fallback; a fallback read the deadline abandons ends by its own deadline.
+
+The built-in readers count the bytes they receive after content decoding, never trusting `Content-Length`, and check JSON nesting and members before `JSON.parse`.
+They refuse a non-2xx response whatever its body, and a body that is not valid UTF-8.
+A refusal names the URL by its origin and path alone, never the credentials before its host, its query or its fragment, where an operator may keep a key.
+They cancel a refused response, and refuse one that sends more than 64 empty body chunks.
+A response buffer grows with the bytes received, up to the cap, so a stalled read does not reserve the whole cap.
+A read that misses its deadline fails with that deadline's own reason, such as `DID resolution deadline exceeded`.
+A custom `FetchProvider` must return a `Response` whose `body` is a WHATWG `ReadableStream`; the Node stream that node-fetch v2 returns is not one.
+
+A status list holds at least 131,072 entries, 16 KiB, under both StatusList2021 and Bitstring Status List 1.0, gzip-compressed and base64url-encoded in its credential.
+An incompressible list of that minimum encodes to about 22 KB, and 1 MiB holds an incompressible list of about 6.3 million entries, 48 times the minimum; a list with few entries set compresses to a few hundred bytes.
+A credential's status list is read only after the credential's own signature has verified, and in a delegation chain only after the chain's links have been checked, so a credential that merely names an issuer causes no status read.
+`DelegationCredentialVerifier` reports a status it did not read as not checked: when the signature fails, its result's `checks` has no `statusValid`.
+
+The cheqd resolver asks for the DID document alone, with `Accept: application/did+ld+json` in place of any `Accept` header the application configures, which the cheqd DID resolver answers without resolution metadata.
+It still accepts a DID Resolution Result, whose `didDocumentMetadata` lists every resource the DID has published, within the larger response limits above, and the document inside it meets every document limit.
+It resolves the application's `headers` within the read's one deadline, so a headers function that never answers ends that resolution at the deadline.
+
+Every did:web read, by the delegation gate, `DidWebResolver`, `createDidWebResolver` or `RuntimeFetchProvider.resolveDID`, and every status-list read, by `CheqdStatusListResolver` or `RuntimeFetchProvider.fetchStatusList`, goes through one private-network rule, whatever `FetchProvider` it is given.
+Before any request, the rule refuses a URL that is not an absolute http or https URL.
+Unless the provider's `allowPrivateNetworkHosts` is `true`, it also refuses a URL whose host is a non-public IP literal or a local name, in any case and with any trailing dots.
+A local name is a single label, such as `ip6-localhost` or `metadata`, which a resolver completes through its search domains to a host on the local network.
+It is also `localhost` (RFC 6761 §6.3), `localdomain`, `localdomain6`, `local` (RFC 6762), `internal`, which is reserved for private use, or `home.arpa` (RFC 8375), or a name under one of them, such as `localhost.localdomain`, `localhost6.localdomain6` or the cloud metadata names `metadata.google.internal` and `instance-data.ec2.internal`.
+It classifies an IP literal as `SafeFetch` classifies a resolved address, so an IPv4-mapped, IPv4-translated or NAT64 form of a private address is refused as that address is.
+It resolves no name, so it does not refuse any other name whose address is private, such as a public name that points at a loopback address: a verifier needs an egress control that refuses private addresses for that.
+Each read asks its provider not to follow redirects (`redirect: "manual"`) and follows at most 3 itself, within the one deadline, holding each target to the same rule and refusing a step from https down to http.
+A redirect to an origin other than the first carries only the CORS-safelisted request headers `Accept`, `Accept-Language` and `Content-Language`, when the Fetch standard safelists their values, and the request's cache directives `Cache-Control` and `Pragma`, which carry no credential, and drops every other header.
+A provider that passes `redirect` on to its request keeps every request to hosts the rule admits.
+A provider that drops it lets its runtime follow a redirect, making the request before the reader sees the response.
+The reader then refuses, unread, a response that says it was redirected or names a URL other than the one requested; it cannot undo the request, nor detect a provider that reports neither.
+In a browser, which hides where a redirect leads, every redirect is refused.
+
+Before a verifier calls a resolver it checks the DID and key identifier limits, it waits at most 5 seconds for the resolver's promise, and it checks the document returned before it selects a key.
+That check walks the document as plain JSON data: it refuses cycles, an accessor on an object member, enumerable or not, sparse arrays, enumerable symbol keys, objects other than arrays and plain objects of any realm, and values JSON cannot hold, and it never calls an object member's getter or `toJSON`.
+It reads array elements as values, since a descriptor read for each index costs several times as much.
+So a getter on an array index is not refused: it runs, as the application code it is, like a Proxy trap, and the walk measures the value it returns, or refuses the document when it throws.
+It skips an object member that is a data member but not enumerable, or whose value is `undefined`, as `JSON.stringify` does, and measures the document's compact JSON size in UTF-8 without serializing it.
+A returned document, including one from a custom `FetchProvider.resolveDID`, must have an `id` that is a DID, a string that starts with `did:`, within the DID limit.
+A document a built-in resolver parses is walked once, frozen and branded, so neither its cache nor a verifier walks it again and no caller can change it; a verifier knows it by that brand, whichever provider, subclass or wrapper returns it.
+Any other document is walked on each resolution, by the verifier as well as by a `RuntimeFetchProvider` that returns it from a configured resolver, and is neither copied nor frozen.
+Concurrent resolutions of one DID by one built-in resolver share one fetch until the resolution deadline; a fetch still pending then is dropped, so the next resolution starts a fresh one.
+
+A custom resolver remains responsible for bounding its own network, parsing and CPU work.
+A promise deadline cannot interrupt synchronous JavaScript, or cancel a callback that ignores cancellation.
+A hosting application must also bound incoming MCP request bodies and how many resolutions run at once.
+These limits bound exposure; they do not make `JSON.parse` linear-time or bound the heap to 8 MiB in total.
+Selecting a key from a document takes work linear in the document's size, within these limits or not.
+
 ### 4.5 Agent-Controlled Key Generation
 
 An agent MUST generate its own keypair locally. No other party generates,
@@ -781,7 +856,7 @@ The issuers between the root and the credential are not accepted.
 A credential commits to its parent only by an `id` the parent's issuer chose, so whoever presents a chain decides who stands between the root and the credential, while the root is held to the verifier's own configuration.
 An issuer between them still revokes what it delegated, as §6.5.1 allows, by revoking its own credential on its own list, which the cascading chain walk (§6.10) carries to every credential below it.
 The credential's own `issuer` is the one the credential names, so that issuer is trusted only once the credential's proof verifies.
-A verifier may read the credential's status while it checks that proof, as the reference implementation's `DelegationCredentialVerifier` does, and accepts the credential only when both checks pass.
+The reference implementation's `DelegationCredentialVerifier` reads the credential's status only once that proof verifies (§4.4.2), and accepts the credential only when both checks pass.
 A deployment whose lists one status service signs accepts that service for each credential issuer, or has the pinned root sign its lists.
 
 The credential is also rejected when the list's `statusPurpose` does not include the purpose of the credential's status entry.

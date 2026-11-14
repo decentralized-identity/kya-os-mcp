@@ -99,11 +99,23 @@ If you set any of the removed flags before 1.4.0:
 
 After migrating, remove the flags from your config; they are no longer recognized.
 
-## Outbound resolution & SSRF (`RuntimeFetchProvider`)
+## Outbound resolution & SSRF
 
-`RuntimeFetchProvider` resolves `did:web` and fetches StatusList2021 credentials over the network, and the target host is named by counterparty-controlled data — the DID or status-list URL embedded in a proof or credential. To blunt server-side request forgery it refuses requests to private / loopback / link-local **IP-literal** hosts by default (e.g. `did:web:169.254.169.254`, the cloud-metadata endpoint; `127.0.0.0/8`; RFC 1918 ranges; IPv6 loopback/link-local/unique-local). This is best-effort defense-in-depth for IP literals only — it does **not** stop a public domain that resolves to an internal address (DNS rebinding).
+A verifier reads documents from hosts that counterparty-controlled data names: the issuer DID of a delegation or a request proof, and the status-list URL of a credential.
+Every did:web read, by the delegation gate, `DidWebResolver`, `createDidWebResolver` or `RuntimeFetchProvider.resolveDID`, and every status-list read, by `CheqdStatusListResolver` or `RuntimeFetchProvider.fetchStatusList`, goes through one private-network rule, whatever `FetchProvider` it is given (SPEC.md §4.4.2):
 
-- **Real mitigation:** run verifier deployments behind an egress allowlist and treat did:web resolution as an outbound request to an untrusted host.
-- **Opt out:** `new RuntimeFetchProvider({ allowPrivateNetworkHosts: true })`, for trusted internal deployments only.
-- The raw `fetch()` escape hatch is intentionally unguarded — it is the caller's responsibility.
+- A URL that is not an absolute http or https URL, such as a `data:`, `file:` or `ftp:` URL, is refused before any request.
+- A URL whose host is a non-public IP literal, with or without trailing dots, is refused before any request: loopback, private, link-local (including the cloud metadata address 169.254.169.254), unique-local, shared address space and the other ranges `SafeFetch` refuses, including an IPv4-mapped, IPv4-translated or NAT64 IPv6 form of one.
+- So is a URL whose host is a local name, in any case and with any trailing dots: a single label, such as `ip6-localhost` or `metadata`, which a resolver completes through its search domains to a local host, or `localhost`, `localdomain`, `localdomain6`, `local`, `internal` or `home.arpa`, or a name under one of them, such as `localhost.localdomain` or `metadata.google.internal`.
+- Each read asks its provider not to follow redirects and follows at most 3 itself, holding each target to the same rule and refusing a step from https down to http; a redirect to another origin carries only the CORS-safelisted request headers and the request's `Cache-Control` and `Pragma`.
+- A provider that follows a redirect itself, because it does not pass `redirect: "manual"` on, has made that request before the reader sees the response; the reader refuses the response, unread, when it says it was redirected or names another URL.
+  A custom provider's `fetch` must pass `redirect` on.
+
+The rule resolves no host name, so it does not refuse any other name whose address is private, such as a public name that points at a loopback address, or that changes its address (DNS rebinding).
+
+- **Real mitigation:** run verifier deployments behind an egress control that refuses private addresses, and treat every DID resolution and status-list read as an outbound request to an untrusted host.
+- **Opt out:** give the reader `new RuntimeFetchProvider({ allowPrivateNetworkHosts: true })`, or a custom `FetchProvider` whose `allowPrivateNetworkHosts` member is `true`, for trusted internal deployments only.
+  It admits non-public IP literals and local names; the scheme rule and the redirect checks still hold.
+- The Entity Card's resolution and status-list reads go through `SafeFetch` (`createSafeFetch`) instead, which resolves each host name, refuses a private address, pins the connection to the address it checked, and follows only same-origin redirects.
+- The raw `fetch()` escape hatch of a `FetchProvider` is intentionally unguarded: it is the caller's responsibility.
 

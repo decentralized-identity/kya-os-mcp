@@ -20,6 +20,7 @@ import { describeValue } from "../utils/describe-value.js";
 import { issuerOf } from "../utils/guards.js";
 import { sanitizeForMessage } from "../utils/message-text.js";
 import { credentialIssuerRefusal } from "./credential-issuer.js";
+import { resolveBoundedDid } from "./did-resource-limits.js";
 import type {
   DIDResolver,
   StatusListResolver,
@@ -136,19 +137,20 @@ function validateSubjectShape(vc: DelegationCredential): {
 }
 
 /**
- * Fold the parallel signature + status results — with the already-passed basic
- * stage — into the final verification result. Pure (no caching; the verifier
+ * Fold the signature result, the status result read after it, and the
+ * already-passed basic stage into the final verification result. Pure (no caching; the verifier
  * caches a valid result itself). Shared by the Data Integrity and VC-JWT paths,
  * which both reach here only after `validateBasicProperties` passed, so
- * `basicValid` is true.
+ * `basicValid` is true. A status left unread (`undefined`, after a signature
+ * that failed) is not checked: `checks` then has no `statusValid`.
  */
 export function combineVerificationResult(
   signatureResult: { valid: boolean; reason?: string; durationMs?: number },
-  statusResult: StatusCheckResult,
+  statusResult: StatusCheckResult | undefined,
   basicCheckMs: number,
   startTime: number,
 ): DelegationVCVerificationResult {
-  const allValid = signatureResult.valid && statusResult.valid;
+  const allValid = signatureResult.valid && statusResult?.valid === true;
   // A failed verdict names the check that failed (signature first, since a
   // bad signature makes the status answer moot); "complete" is reserved for
   // a verdict where both checks ran and passed.
@@ -160,20 +162,20 @@ export function combineVerificationResult(
   return {
     valid: allValid,
     reason: !allValid
-      ? signatureResult.reason || statusResult.reason || "Unknown failure"
+      ? signatureResult.reason || statusResult?.reason || "Unknown failure"
       : undefined,
-    statusOutcome: statusResult.outcome,
+    statusOutcome: statusResult?.outcome,
     stage,
     metrics: {
       basicCheckMs,
       signatureCheckMs: signatureResult.durationMs || 0,
-      statusCheckMs: statusResult.durationMs || 0,
+      statusCheckMs: statusResult?.durationMs || 0,
       totalMs: Date.now() - startTime,
     },
     checks: {
       basicValid: true,
       signatureValid: signatureResult.valid,
-      statusValid: statusResult.valid,
+      ...(statusResult && { statusValid: statusResult.valid }),
     },
   };
 }
@@ -240,7 +242,8 @@ export async function verifySignature(
       };
     }
 
-    const didDoc = await didResolver.resolve(issuerDid);
+    const keyId = typeof vc.proof?.verificationMethod === "string" ? vc.proof.verificationMethod : undefined;
+    const didDoc = await resolveBoundedDid(didResolver, issuerDid, keyId);
     if (!didDoc) {
       return {
         valid: false,

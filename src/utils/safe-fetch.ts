@@ -30,6 +30,7 @@
  */
 
 import { isBlockedAddress } from './ip-classifier.js';
+import { REDIRECT_STATUSES } from './checked-redirects.js';
 import {
   defaultLookup,
   fetchTransport,
@@ -58,7 +59,6 @@ export {
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_MAX_BYTES = 1_048_576;
 const DEFAULT_MAX_REDIRECTS = 3;
-const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 /** Parse + require https; returns the normalized href. */
 function assertHttpsUrl(raw: string): string {

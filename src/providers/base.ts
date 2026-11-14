@@ -29,6 +29,12 @@ export abstract class ClockProvider {
 }
 
 export abstract class FetchProvider {
+  /**
+   * The private-network rule's opt-out (SPEC §4.4.2). A did:web or status-list read through this
+   * provider refuses a URL whose host is a non-public IP literal or a local name, such as
+   * `localhost`, unless this is `true`. Leave it unset outside trusted internal deployments.
+   */
+  declare readonly allowPrivateNetworkHosts?: boolean;
   abstract resolveDID(did: string): Promise<DIDDocument | null>;
   abstract fetchStatusList(url: string): Promise<StatusList2021Credential | null>;
   abstract fetchDelegationChain(id: string): Promise<DelegationRecord[]>;

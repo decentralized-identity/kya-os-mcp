@@ -211,6 +211,23 @@ describe('verifyRequestDelegation: a carried chain', () => {
     expect(untrusted).toMatchObject({ ok: false, code: 'delegation_invalid' });
     const trusted = await verifyRequestDelegation(carried(twoHopChain(p), p), deps(p, { trustedRootIssuers: [p.acme.did] }));
     expect(trusted.ok).toBe(true);
+    // Each listed DID is compared whole: one the root issuer starts with, or that starts with it, is another DID.
+    for (const nearMiss of [p.acme.did.slice(0, -1), `${p.acme.did}x`]) {
+      expect(await verifyRequestDelegation(carried(twoHopChain(p), p), deps(p, { trustedRootIssuers: [nearMiss] }))).toMatchObject({
+        ok: false, code: 'delegation_invalid', reasons: [`root issuer ${p.acme.did} is not a trusted root issuer`],
+      });
+    }
+  });
+
+  it('refuses a trustedRootIssuers that is not an array of DIDs, a string and null included, naming the option', async () => {
+    const p = parties();
+    const refusal = /^\[kya-os\] trustedRootIssuers must be an array of DIDs, each a string that starts with "did:" and has no white space around it \(got /;
+    for (const list of [p.acme.did, `${identity().did} ${p.acme.did}`, null, [''], [5], [`${p.acme.did} `]]) {
+      const configured = deps(p, { trustedRootIssuers: list as unknown as string[] });
+      await expect(verifyRequestDelegation(carried(twoHopChain(p), p), configured)).rejects.toThrow(refusal);
+      expect(() => requireDelegation(configured)).toThrow(TypeError);
+      expect(() => requireDelegation(configured)).toThrow(refusal);
+    }
   });
 
   it('refuses an action the leaf does not grant, even one an ancestor granted', async () => {

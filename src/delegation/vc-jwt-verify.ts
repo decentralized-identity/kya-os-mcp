@@ -20,6 +20,7 @@
 
 import { compactVerify, importJWK } from "jose";
 import type { JWK } from "jose";
+import { resolveBoundedDid } from "./did-resource-limits.js";
 import type { DelegationCredential } from "../types/protocol.js";
 import type {
   DIDDocument,
@@ -216,7 +217,7 @@ export async function verifyVcJwtSignature(
   const issuer = describeValue(issuerDid);
   let didDoc: DIDDocument | null;
   try {
-    didDoc = await didResolver.resolve(issuerDid);
+    didDoc = await resolveBoundedDid(didResolver, issuerDid, kid);
   } catch (err) {
     return done(false, `Could not resolve issuer DID ${issuer}: ${errMsg(err)}`);
   }

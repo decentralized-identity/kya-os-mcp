@@ -45,21 +45,27 @@ export function isDidCheqd(did: string): boolean {
   return did.startsWith('did:cheqd:');
 }
 
+/**
+ * The method-specific identifier of a did:cheqd DID, as cheqd's DID method (ADR 001) writes it:
+ * `unique-id = *id-char / UUID`, `id-char = ALPHA / DIGIT`, a UUID in the RFC 4122 text form with
+ * hex digits of either case. Nothing else is one: no `\`, `.`, `%`, `$`, white space or further
+ * `:`, each of which would otherwise reach the request URL built from the DID.
+ */
+const UNIQUE_ID = /^(?:[0-9A-Za-z]+|[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})$/;
+
+/**
+ * `did` as a did:cheqd DID of mainnet or testnet, or `null` when it is not one: another method or
+ * namespace, a DID URL with a path, query or fragment, or a unique id outside {@link UNIQUE_ID}.
+ * The resolver asks its endpoint only for a DID this reads, so a counterparty that names a DID
+ * chooses the identifier it asks for and nothing else about the request.
+ */
 export function parseDidCheqd(did: string): ParsedDidCheqd | null {
-  const match = /^did:cheqd:(mainnet|testnet):([^/?#]+)$/.exec(did);
-  if (!match) {
+  const match = /^did:cheqd:(mainnet|testnet):(.*)$/s.exec(did);
+  const uniqueId = match?.[2];
+  if (!match || uniqueId === undefined || !UNIQUE_ID.test(uniqueId)) {
     return null;
   }
-
-  const uniqueId = match[2] ?? '';
-  if (uniqueId.length === 0) {
-    return null;
-  }
-
-  return {
-    network: match[1] as DidCheqdNetwork,
-    uniqueId,
-  };
+  return { network: match[1] as DidCheqdNetwork, uniqueId };
 }
 
 export class DidCheqdResolver implements DIDResolver {
@@ -151,15 +157,24 @@ export function cheqdResolver(options: DidCheqdResolverOptions): DIDResolverFact
   return (fetchProvider) => createDidCheqdResolver(fetchProvider, options);
 }
 
+/**
+ * The URL to ask `resolverUrl` for `did` at: the `{did}` of a template, or under
+ * `/1.0/identifiers/`. The DID is written as one path segment, percent-encoded except for its
+ * colons, which a path segment may hold (RFC 3986 section 3.3) and which resolvers expect as they
+ * stand, so a DID of the method is written unchanged and any other string cannot add a segment, a
+ * query or a fragment. A template takes it through a function, so `$&` and the other replacement
+ * patterns in it are text.
+ */
 export function didCheqdToResolverUrl(did: string, resolverUrl: string): string {
   const base = stripTrailingSlashes(resolverUrl);
+  const segment = encodeURIComponent(did).replace(/%3A/g, ':');
   if (base.includes('{did}')) {
-    return base.replace('{did}', did);
+    return base.replace('{did}', () => segment);
   }
   if (base.endsWith('/1.0/identifiers')) {
-    return `${base}/${did}`;
+    return `${base}/${segment}`;
   }
-  return `${base}/1.0/identifiers/${did}`;
+  return `${base}/1.0/identifiers/${segment}`;
 }
 
 function extractDidDocument(value: unknown): unknown {

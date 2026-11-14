@@ -39,6 +39,11 @@ let port: number;
 let key: { publicKey: string; privateKey: string };
 /** The path of every request the server received. */
 const served: string[] = [];
+/**
+ * Where the server redirects each path it redirects, written once the port is known. Every target
+ * is one the test names: nothing a request states reaches a `Location` header.
+ */
+const hops = new Map<string, string>();
 
 const didOf = (host: string, ...path: string[]) => ['did:web', encodeURIComponent(host), ...path].join(':');
 const redirectDid = () => didOf(`${PUBLIC}:${port}`, 'hop');
@@ -56,14 +61,9 @@ beforeAll(async () => {
   key = await crypto.generateKeyPair();
   server = createServer((request, response) => {
     served.push(request.url!);
-    const hops: Record<string, string> = {
-      '/hop/did.json': `http://127.0.0.1:${port}/internal/did.json`,
-      '/hop-localhost/did.json': `https://localhost:${port}/internal/did.json`,
-    };
-    const toLocalName = /^\/hop-to\/([^/]+)\/did\.json$/.exec(request.url!)?.[1];
-    if (toLocalName !== undefined) hops[request.url!] = `https://${toLocalName}:${port}/internal/did.json`;
-    if (hops[request.url!] !== undefined) {
-      response.writeHead(302, { location: hops[request.url!] }).end();
+    const location = hops.get(request.url!);
+    if (location !== undefined) {
+      response.writeHead(302, { location }).end();
       return;
     }
     const did = request.url === '/internal/did.json' ? redirectDid() : request.url === '/direct/did.json' ? directDid() : didOf(request.headers.host!);
@@ -71,6 +71,9 @@ beforeAll(async () => {
   });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   port = (server.address() as { port: number }).port;
+  hops.set('/hop/did.json', `http://127.0.0.1:${port}/internal/did.json`);
+  hops.set('/hop-localhost/did.json', `https://localhost:${port}/internal/did.json`);
+  for (const name of LOCAL_HOST_NAMES) hops.set(`/hop-to/${name}/did.json`, `https://${name}:${port}/internal/did.json`);
 });
 
 afterAll(async () => {

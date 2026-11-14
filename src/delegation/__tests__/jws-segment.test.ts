@@ -1,8 +1,9 @@
 /**
  * The segments of a compact JWS read as JSON: one reading, with one choice
  * in it. `strict` is how SPEC.md §7.8 reads a VC-JWT's payload for the id it
- * shows; `lenient` is how `parseVCJWT` has always read a VC-JWT for
- * verification. Both count how deep a text nests before a parser reads it.
+ * shows; `lenient` is how `parseVCJWT` reads a VC-JWT for verification, by
+ * the runtime's decoder. Both count how deep a text nests before a parser
+ * reads it.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { jwsSegmentsJson } from '../jws-segment.js';

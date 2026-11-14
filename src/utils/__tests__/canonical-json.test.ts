@@ -187,7 +187,7 @@ describe('canonicalizeJson', () => {
       expect(() => assertCanonicalJsonValue(build())).toThrow(TypeError);
     });
 
-    it('rejects with an error of its own class, the TypeError it has always been', () => {
+    it('rejects with an error of its own class, which is a TypeError and is named one', () => {
       for (const refuse of [canonicalizeJson, canonicalizeJsonBytes, assertCanonicalJsonValue]) {
         let thrown: unknown;
         try {

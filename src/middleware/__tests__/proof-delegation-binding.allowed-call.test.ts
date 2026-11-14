@@ -119,7 +119,7 @@ describe('an allowed call', () => {
   }, 30_000);
 
   describe('with no maxChainLength set', () => {
-    it('a server evaluates a chain of any length, as before', async () => {
+    it('a server evaluates a chain of any length', async () => {
       const { kyaos, server, ancestors } = await makeServer();
       const chain = await linearChain(33, server.did);
       ancestors.push(...chain.slice(0, -1));

@@ -141,7 +141,7 @@ describe("a verifier that requires an outcome", () => {
     expect(await verifier.verifyProofArtifact(proof, jwk, { request: REQUEST, outcome: "denied" })).toEqual({ valid: true });
   });
 
-  it("is not required of a caller that states none and supplies no chain, as before", async () => {
+  it("is not required of a caller that states none and supplies no chain", async () => {
     const { proof, jwk } = await bound({ outcome: "denied", reason: "Insufficient scope" }, "nothing");
     expect(await makeVerifier().verifyProofArtifact(proof, jwk, { request: REQUEST })).toEqual({ valid: true });
   });

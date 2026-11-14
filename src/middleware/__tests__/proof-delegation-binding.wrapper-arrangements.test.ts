@@ -1,5 +1,5 @@
 /**
- * A delegated call is proved and recorded as before however a server
+ * A delegated call is proved and recorded the same way however a server
  * arranges its wrappers: a bare handler, a gate inside wrapWithProof, a
  * wrapper given another name, or a wrapper outside the gate that cannot
  * record its call. No proof names a delegation (SPEC.md §7.8).
@@ -15,7 +15,7 @@ import { proofOf, verifyReceived } from './helpers/received-proof.js';
 import { delegationClaims, delegationEvidence, lifecycleOf, proofErrorOf } from './helpers/server-answers.js';
 
 describe('an allowed call', () => {
-  it('leaves a bare handler to the transport exactly as before', async () => {
+  it('leaves a bare handler to the transport', async () => {
     const { kyaos, server, ancestors, recorded } = await makeServer();
     const { root, middle, leaf } = await threeHops(server.did);
     ancestors.push(root, middle);
@@ -46,7 +46,7 @@ describe('an allowed call', () => {
     expect(recorded.filter((event) => event.eventType === 'tool.call.completed')).toHaveLength(2);
   });
 
-  it('proves a gate inside wrapWithProof once, as before', async () => {
+  it('proves a gate inside wrapWithProof once', async () => {
     const { kyaos, server, ancestors, recorded } = await makeServer();
     const { root, middle, leaf } = await threeHops(server.did);
     ancestors.push(root, middle);
@@ -68,7 +68,7 @@ describe('an allowed call', () => {
     expect(recorded.filter((event) => event.eventType === 'proof.rejected')).toHaveLength(0);
   });
 
-  it('proves a gate inside wrapWithProof by the outer wrapper when the handler inside the gate is wrapped too, as before', async () => {
+  it('proves a gate inside wrapWithProof by the outer wrapper when the handler inside the gate is wrapped too', async () => {
     const { kyaos, server, ancestors, recorded } = await makeServer({}, {}, { pendingProofTtlMs: 20 });
     const { root, middle, leaf } = await threeHops(server.did);
     ancestors.push(root, middle);
@@ -94,7 +94,7 @@ describe('an allowed call', () => {
     });
   });
 
-  it('proves a gate inside a wrapper given another name by that wrapper, as before', async () => {
+  it('proves a gate inside a wrapper given another name by that wrapper', async () => {
     const { kyaos, server, ancestors, recorded } = await makeServer({}, {}, { pendingProofTtlMs: 20 });
     const { root, middle, leaf } = await threeHops(server.did);
     ancestors.push(root, middle);
@@ -129,7 +129,7 @@ describe('an allowed call', () => {
   it.each([
     ['a handler wrapped inside the gate', true],
     ['a handler passed to the gate bare', false],
-  ])('sends the answer to a call of another tool than the gate was given unproven, as before, for %s', async (_name, wrapped) => {
+  ])('sends the answer to a call of another tool than the gate was given unproven, for %s', async (_name, wrapped) => {
     vi.spyOn(logger, 'warn').mockImplementation(() => {});
     vi.spyOn(logger, 'error').mockImplementation(() => {});
     const { kyaos, wire, server, ancestors, recorded } = await makeUnserved();
@@ -222,7 +222,7 @@ describe('an allowed call', () => {
     expect(result).toEqual({ content: [{ type: 'text', text: 'upstream failed' }], isError: true });
     const lifecycle = recorded.filter((event) => event.eventType.startsWith('tool.call.'));
     expect(lifecycle.map((event) => event.eventType)).toEqual(['tool.call.started', 'tool.call.failed']);
-    // The transport records it, as before, knowing only the tool and its
+    // The transport records it, knowing only the tool and its
     // arguments.
     for (const event of lifecycle) {
       expect(delegationEvidence(event).delegationRef).toBeUndefined();

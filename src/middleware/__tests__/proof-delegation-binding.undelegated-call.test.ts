@@ -1,5 +1,5 @@
 /**
- * A call that presents no delegation is proved as before, and its proof names
+ * A call that presents no delegation is proved, and its proof names
  * none (SPEC.md §7.8).
  */
 import { afterEach, describe, it, expect, vi } from 'vitest';

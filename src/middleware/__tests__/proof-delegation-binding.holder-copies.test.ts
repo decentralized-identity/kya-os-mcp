@@ -220,7 +220,7 @@ describe('an allowed call', () => {
       expect(refusal(result).error).toBe('delegation_invalid');
     });
 
-    it('is allowed, as before, when only the writing of its signature differs', async () => {
+    it('is allowed when only the writing of its signature differs', async () => {
       const { kyaos, server, ancestors } = await makeServer();
       const { root, middle, leaf } = await threeHops(server.did);
       ancestors.push(root, middle);
@@ -292,7 +292,7 @@ describe('an allowed call', () => {
       ['the base64 alphabet, + and / for - and _', (signature: string) =>
         signature.replaceAll('-', '+').replaceAll('_', '/')],
       ['a last group of one character', (signature: string) => `${signature}AAA`],
-    ])('refuses one written with %s, as before: no JWS library reads it', async (_name, rewrite) => {
+    ])('refuses one written with %s: no JWS library reads it', async (_name, rewrite) => {
       const { signed, signature, present, envelope, recorded } = await minting();
       const written = signed + rewrite(signature);
 

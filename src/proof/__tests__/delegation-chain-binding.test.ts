@@ -191,7 +191,7 @@ describe("a verifier that holds the chain", () => {
     expect(result.details).toEqual({ errorMessage: "hash service unavailable" });
   });
 
-  it("keeps CONTENT_BINDING_MISMATCH for the request and the response, and now says which", async () => {
+  it("gives CONTENT_BINDING_MISMATCH for the request and the response, and says which", async () => {
     const { proof, jwk } = await bound();
     const verifier = makeVerifier();
     const otherRequest = await verifier.verifyProofArtifact(proof, jwk, {
@@ -334,7 +334,7 @@ describe("the credential a proof names, for a verifier that holds the chain", ()
     expect(result.details).toEqual({ binding: "delegation-chain" });
   });
 
-  it("is compared with nothing when no chain is supplied, as before", async () => {
+  it("is compared with nothing when no chain is supplied", async () => {
     const { proof, jwk } = await boundTo(CHAIN, { delegationRef: "urn:uuid:other" });
     expect(await makeVerifier().verifyProofArtifact(proof, jwk, expected)).toEqual({ valid: true });
   });

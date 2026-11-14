@@ -1,7 +1,7 @@
 /**
  * A delegated call that a wrapper standing outside the gate proves, from the
- * gate's answer rebuilt and without the call's context, is proved as before,
- * and its proof names no delegation (SPEC.md §7.8).
+ * gate's answer rebuilt and without the call's context, is proved by that
+ * wrapper, and its proof names no delegation (SPEC.md §7.8).
  */
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import type { KyaOsToolHandler } from '../with-kya-os.js';
@@ -34,7 +34,7 @@ const rebuilding = (gate: KyaOsToolHandler): KyaOsToolHandler => async (args, se
 describe('a delegated call proved outside the gate without its context', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('is proved as before by a wrapper that rebuilds the gate’s answer, naming no delegation', async () => {
+  it("is proved by a wrapper that rebuilds the gate's answer, naming no delegation", async () => {
     vi.spyOn(logger, 'error').mockImplementation(() => {});
     vi.spyOn(logger, 'warn').mockImplementation(() => {});
     const { kyaos, wire, server, gate, args } = await delegatedCall();

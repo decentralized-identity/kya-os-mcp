@@ -76,7 +76,7 @@ describe('signed-proof/delegation-chain-* vectors', () => {
     const result = await verify(inputOf('chain-refused-outcome-unstated'));
     expect(result.outcome).toBe('fail');
     expect(result.detail).toMatch(/Outcome mismatch/);
-    // Without the chain nothing is asked of the outcome, as before 1.5.0.
+    // Without the chain nothing is asked of the outcome.
     const { delegationChain: _chain, ...content } = unstated;
     expect((await verify({ ...inputOf('chain-refused-outcome-unstated'), expected: content })).outcome).toBe('pass');
   });

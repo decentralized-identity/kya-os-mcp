@@ -47,6 +47,13 @@ describe('the walk measures compact JSON in UTF-8', () => {
     }
   });
 
+  it('counts a surrogate pair as four bytes and a lone surrogate as the six of its escape', () => {
+    const strings = ['\ud83d\ude00', '\ud800', '\ud800a', '\ud800\ud800', '\udc00\ud800', 'a\udfff', '\ud800\u00e9'];
+    for (const value of strings) {
+      expect(measureDidDocument({ id: did, value }), JSON.stringify(value)).toEqual({ ok: true, bytes: utf8({ id: did, value }) });
+    }
+  });
+
   it('counts a null as four bytes and each array comma as one', () => {
     for (const value of [null, [null], [null, null, null], [[], [], []], [{}, {}]]) {
       expect(measureDidDocument({ id: did, value })).toEqual({ ok: true, bytes: utf8({ id: did, value }) });

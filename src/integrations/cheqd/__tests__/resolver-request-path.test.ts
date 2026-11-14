@@ -57,7 +57,8 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('parseDidCheqd and the method-specific identifier', () => {
   it('reads a UUID, in either case, or letters and digits, and refuses every other identifier', () => {
-    for (const id of [UUID, UUID.toUpperCase().replace('4111', '4AbC'), 'zF7rhDBfUt9d1gJPjx7s1J', 'abc']) {
+    // The second UUID holds every hex digit, zero included, in each of its five groups.
+    for (const id of [UUID, '0a1B2c3D-40e5-6078-9A0b-cD0e1F203a4B', 'zF7rhDBfUt9d1gJPjx7s1J', 'abc']) {
       expect(parseDidCheqd(`did:cheqd:testnet:${id}`), id).toEqual({ network: 'testnet', uniqueId: id });
     }
     for (const did of hostile) expect(parseDidCheqd(did), did).toBeNull();

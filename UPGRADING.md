@@ -508,7 +508,7 @@ Along with it:
 - `delegationRef` has one definition, in SPEC.md §7.8, for the audit trail and for a proof that carries it.
   A refused credential's id is no longer cut to 256 characters.
   An id that is too long is recorded as its `sha256:` digest, so two long ids with the same beginning stay apart.
-  So is an id that holds a character that does not print as itself (a control or format character, a bidirectional override or a zero-width space among them, or a line or paragraph separator, as SPEC.md §7.8 lists them), and so is one that holds a surrogate without its pair, hashed over its WTF-8 bytes.
+  So is an id that holds a character that does not print as itself (a control or format character, a bidirectional override or a zero-width space among them, a line or paragraph separator, or a code point that renders as nothing by default, such as a variation selector, as SPEC.md §7.8 lists them), and so is one that holds a surrogate without its pair, hashed over its WTF-8 bytes.
   So is one that is itself written as such a digest, so a reference of that form never stands for an id a caller chose, and one that is the word `unknown`, which the events name a credential that shows no id by.
   A VC-JWT with no credential id is recorded by its `jti`.
   An empty `id` is no id: a credential whose `id` is `""` is recorded by the id of its delegation (`credentialSubject.delegation.id`), where the empty string used to be taken for its id.
@@ -586,7 +586,7 @@ The reference adapter applies `acceptStatusList`, and `conformance/verify.py` ch
 SPEC.md §7.8: a response proof binds the delegation chain by digest.
 The new optional `ProofMeta` member `delegationChainDigest` is a domain-separated SHA-256 over the digests of every credential the server evaluated, root to leaf, each taken over the credential's signed form: what its issuer's signature covers, and that signature.
 It is covered by the proof's own signature.
-§7.8 defines both digests, and gives `delegationRef` its one definition: the id a credential shows, or the SHA-256 of an id that is over 256 code units, holds a character that does not print (the control and format characters and the line and paragraph separators, listed by code point) or a surrogate without its pair, reads as a digest, or is the word `unknown`.
+§7.8 defines both digests, and gives `delegationRef` its one definition: the id a credential shows, or the SHA-256 of an id that is over 256 code units, holds a character that does not print (the control and format characters, the line and paragraph separators and the code points that render as nothing by default, listed by code point) or a surrogate without its pair, reads as a digest, or is the word `unknown`.
 An id that is not well-formed Unicode is hashed over its WTF-8 bytes.
 A number in a VC-JWT's payload is read whatever its length, and plays no part in the id.
 Every JSON text §7.8 reads, a VC-JWT's header and payload and any text a credential object arrives in, is read keeping the last of the members of an object that share a name, as `JSON.parse` keeps it, whatever the parser an implementation uses.

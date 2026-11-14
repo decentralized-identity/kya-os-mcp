@@ -4,6 +4,8 @@ A proof that binds a chain names the chain's last credential by that reference, 
 `delegationRef`.
 """
 
+import json
+import os
 import re
 
 from base64url import jws_segment_bytes
@@ -15,16 +17,15 @@ from strict_json import json_text_nests_deeper_than, read_json
 NO_DELEGATION_ID = "unknown"
 
 # The code points that do not print as themselves, first and last of each run: the control (Cc)
-# and format (Cf) characters and the line and paragraph separators (Zl, Zp) of Unicode 16.0 and
-# 17.0. Written out, not read from `unicodedata`, whose Unicode version is the interpreter's.
-DO_NOT_PRINT = (
-    (0x0000, 0x001F), (0x007F, 0x009F), (0x00AD, 0x00AD), (0x0600, 0x0605), (0x061C, 0x061C),
-    (0x06DD, 0x06DD), (0x070F, 0x070F), (0x0890, 0x0891), (0x08E2, 0x08E2), (0x180E, 0x180E),
-    (0x200B, 0x200F), (0x2028, 0x202E), (0x2060, 0x2064), (0x2066, 0x206F), (0xFEFF, 0xFEFF),
-    (0xFFF9, 0xFFFB), (0x110BD, 0x110BD), (0x110CD, 0x110CD), (0x13430, 0x1343F),
-    (0x1BCA0, 0x1BCA3), (0x1D173, 0x1D17A), (0xE0001, 0xE0001), (0xE0020, 0xE007F),
-    (0xD800, 0xDFFF),   # a surrogate without its pair, once the pairs are read as one code point
-)
+# and format (Cf) characters, the line and paragraph separators (Zl, Zp) and the code points that
+# render as nothing by default, as Unicode 16.0 and 17.0 assign them. Read from the table the
+# suite ships, not from `unicodedata`, whose Unicode version is the interpreter's.
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "unseen-code-points.json"),
+          encoding="utf-8") as _table:
+    UNSEEN_CODE_POINTS = tuple((int(first, 16), int(last, 16))
+                               for first, last in json.load(_table)["ranges"])
+# A surrogate without its pair does not print either, once the pairs are read as one code point.
+DO_NOT_PRINT = UNSEEN_CODE_POINTS + ((0xD800, 0xDFFF),)
 _DOES_NOT_PRINT = re.compile(
     "[" + "".join(f"\\U{first:08x}-\\U{last:08x}" for first, last in DO_NOT_PRINT) + "]")
 

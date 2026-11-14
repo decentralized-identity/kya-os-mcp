@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { unit } from '../../__tests__/utils/encodings.js';
 import { hasUnprintableCharacter, isWellFormedUnicode } from '../plain-text.js';
+import { UNSEEN_CODE_POINTS } from '../unseen-code-points.js';
 
 describe('hasUnprintableCharacter', () => {
   it.each([
@@ -25,6 +26,11 @@ describe('hasUnprintableCharacter', () => {
     ['an interlinear annotation anchor', 0xfff9],
     ['a format character outside the basic plane', 0x1d173],
     ['a tag character', 0xe0041],
+    ['a combining grapheme joiner, which renders as nothing', 0x34f],
+    ['a Hangul filler', 0x3164],
+    ['a variation selector', 0xfe0f],
+    ['a code point reserved as ignorable', 0x2065],
+    ['a variation selector outside the basic plane', 0xe0100],
   ])('finds %s', (_name, code) => {
     const character = String.fromCodePoint(code);
     expect(hasUnprintableCharacter(`del${character}1`)).toBe(true);
@@ -39,7 +45,7 @@ describe('hasUnprintableCharacter', () => {
     ['the character before the zero-width space', 0x200a],
     ['the character before the line separator', 0x2027],
     ['a narrow no-break space, the first past the overrides', 0x202f],
-    ['the character between the invisible operators and the isolates', 0x2065],
+    ['the character before the variation selectors', 0xfdff],
     ['a replacement character', 0xfffd],
     ['a character outside the basic plane', 0x1f600],
   ])('does not take %s for one', (_name, code) => {
@@ -57,22 +63,18 @@ describe('hasUnprintableCharacter', () => {
     expect(hasUnprintableCharacter('urn:uuid:8f14e45f-ceea-4e7a-9c1b-2f6d1b7a3c55')).toBe(false);
   });
 
-  // The characters are written out, so they do not follow the runtime's
-  // Unicode version: on one of the versions they are taken from, they are
-  // exactly the control and format characters and the two separators.
-  it.runIf(['16.0', '17.0'].includes(process.versions.unicode ?? ''))(
-    'finds exactly the Cc, Cf, Zl and Zp code points of Unicode 16.0 and 17.0',
-    () => {
-      const category = /^[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]$/u;
-      const differ: string[] = [];
-      for (let code = 0; code <= 0x10ffff; code += 1) {
-        if (code >= 0xd800 && code <= 0xdfff) continue;
-        const character = String.fromCodePoint(code);
-        if (hasUnprintableCharacter(character) !== category.test(character)) differ.push(code.toString(16));
-      }
-      expect(differ).toEqual([]);
-    },
-  );
+  // One table says which code points a reader does not see, and the issuer
+  // rule of SPEC.md section 6.2 reads the same one.
+  it('finds exactly the code points of the frozen table, and the surrogates', () => {
+    const listed = (code: number): boolean => UNSEEN_CODE_POINTS.some(([first, last]) => code >= first && code <= last);
+    const differ: string[] = [];
+    for (let code = 0; code <= 0x10ffff; code += 1) {
+      const surrogate = code >= 0xd800 && code <= 0xdfff;
+      const character = surrogate ? unit(code) : String.fromCodePoint(code);
+      if (hasUnprintableCharacter(character) !== (surrogate || listed(code))) differ.push(code.toString(16));
+    }
+    expect(differ).toEqual([]);
+  });
 });
 
 describe('isWellFormedUnicode', () => {

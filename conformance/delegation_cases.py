@@ -10,7 +10,7 @@ import sys
 import unicodedata
 
 from base64url import b64url_nopad, std_b64
-from delegation_ref import DO_NOT_PRINT, delegation_credential_id, delegation_reference
+from delegation_ref import UNSEEN_CODE_POINTS, delegation_credential_id, delegation_reference
 from digests import sha256_digest
 from signed_form import credential_digest
 from strict_json import read_json
@@ -288,11 +288,13 @@ def id_and_reference_cases_hold() -> bool:
 
 
 def _do_not_print_is_unicode() -> bool:
-    """The code points written out as not printing are the Cc, Cf, Zl and Zp of Unicode 16.0 and
-    17.0: checked against `unicodedata` where the interpreter has one of those versions."""
+    """The table read as not printing counts what it says it holds, and holds every Cc, Cf, Zl and
+    Zp of Unicode 16.0 and 17.0: checked against `unicodedata` where the interpreter has one of
+    those versions, which has no Default_Ignorable_Code_Point to check the rest against."""
+    listed = {code for first, last in UNSEEN_CODE_POINTS for code in range(first, last + 1)}
+    if len(listed) != 4273 or any(0xD800 <= code <= 0xDFFF for code in listed):
+        return False
     if unicodedata.unidata_version not in ("16.0.0", "17.0.0"):
         return True
-    listed = {code for first, last in DO_NOT_PRINT for code in range(first, last + 1)}
-    surrogates = set(range(0xD800, 0xE000))
-    return listed - surrogates == {code for code in range(0x110000) if code not in surrogates
-                                   and unicodedata.category(chr(code)) in ("Cc", "Cf", "Zl", "Zp")}
+    return listed >= {code for code in range(0x110000) if not 0xD800 <= code <= 0xDFFF
+                      and unicodedata.category(chr(code)) in ("Cc", "Cf", "Zl", "Zp")}

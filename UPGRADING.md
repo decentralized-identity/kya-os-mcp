@@ -596,6 +596,14 @@ What changes:
   `DelegationCredentialIssuer` and `wrapDelegationAsVC` write the two from one value, so a credential they issued is unaffected; an issuer that set `issuer` apart from `issuerDid` must issue the credential again with both naming the DID whose key signs it, and a stored grant that holds such a root is refused on reuse, so its user approves again.
   The Entity Card profile (SPEC.md §6.10) has no `issuerDid` beside `issuer`, so nothing changes there.
 
+### Arguments named `__proto__`
+
+A call whose arguments hold a member named `__proto__` reaches its handler with that member as an ordinary own member, and with `Object.prototype` as the prototype of the arguments object.
+On 1.22.0 the member became the prototype of the object the handler received, so `args.amount` could answer from it when the call stated no `amount`.
+A request hash, an approval and a holder-binding proof now cover the member, as they cover any other.
+A handler that copies its arguments by assignment, as `target[key] = value`, should copy with `Object.fromEntries` or onto `Object.create(null)`.
+`withoutControlArgs` is exported from `@kya-os/mcp` for a host that needs the same copy.
+
 ### Conformance suite 1.4.0
 
 The suite adds status-list vectors for the acceptance rule, each with a list whose proof verifies, and has 97 vectors in all.

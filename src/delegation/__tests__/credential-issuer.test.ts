@@ -120,6 +120,28 @@ describe('credentialIssuerRefusal', () => {
     }
   });
 
+  it('refuses an issuer holding a character that renders as nothing by default, which is no format character', () => {
+    // Each is Default_Ignorable_Code_Point and none is Cc, Cf, Zl or Zp: a combining grapheme
+    // joiner, two Hangul fillers, a variation selector, one outside the BMP, and a code point
+    // Unicode reserves as ignorable. An issuer holding one prints as the issuer without it.
+    const ignorable: [string, string][] = [
+      ['did:web:exa\u034fmple.com', '"did:web:exa\\u034fmple.com"'],
+      ['did:web:exa\u115fmple.com', '"did:web:exa\\u115fmple.com"'],
+      ['did:web:exa\u3164mple.com', '"did:web:exa\\u3164mple.com"'],
+      ['did:web:exa\ufe00mple.com', '"did:web:exa\\ufe00mple.com"'],
+      ['did:web:exa\u{e0100}mple.com', '"did:web:exa\\udb40\\udd00mple.com"'],
+      [`${ACME}\u2065`, `"${ACME}\\u2065"`],
+    ];
+    for (const [notUrl, quoted] of ignorable) {
+      expect(credentialIssuerRefusal(naming(notUrl))).toBe(`Credential issuer ${quoted} is not a URL`);
+      expect(credentialIssuerRefusal(naming({ id: notUrl }))).toBe(`Credential issuer id ${quoted} is not a URL`);
+    }
+    // A letter outside ASCII, a combining mark that shows and an emoji are none of them.
+    for (const url of ['did:web:ex\u00e4mple.com', 'did:web:exa\u0301mple.com', 'https://issuer.example/\u{1f600}']) {
+      expect(credentialIssuerRefusal(naming(url))).toBeUndefined();
+    }
+  });
+
   it("names the type of an issuer object's id that is not a string", () => {
     const named: [unknown, string][] = [
       [{ id: 5 }, 'of type number'],

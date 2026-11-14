@@ -33,12 +33,14 @@ const LONG_ISSUER = `${ACME}:${'a'.repeat(100_000)}`;
 const QUOTED_ACME = `"${ACME}"`;
 /**
  * Issuers that are URLs, each with how a refusal reason quotes it: cut, or with a quote mark and a
- * Hangul filler, which renders as nothing, escaped.
+ * backslash escaped.
  */
 const QUOTED_ISSUERS: [string, string][] = [
   [LONG_ISSUER, `"${LONG_ISSUER.slice(0, 64)}"...`],
-  [`${ACME}"\u3164`, `"${ACME}\\"\\u3164"`],
+  [`${ACME}"\\`, `"${ACME}\\"\\\\"`],
 ];
+/** A value that is no issuer, with a Hangul filler, which renders as nothing and a reason escapes. */
+const QUOTED_UNSEEN: [string, string] = ['Ed25519\u3164', '"Ed25519\\u3164"'];
 
 let login: AgentIdentity;
 let assert: AgentIdentity;
@@ -195,11 +197,11 @@ describe('the Data Integrity path', () => {
     const credential = await signedCredential(assert);
     const verifier = verifierFor(acmeDocument(login, assert));
     const objectType = JSON.parse('{"toString":"DataIntegrityProof"}');
-    for (const [value, quoted] of [...QUOTED_ISSUERS, [objectType, 'of type object']] as [unknown, string][]) {
-      if (typeof value === 'string') {
-        expect(await verifier.verifyDelegationCredential({ ...credential, issuer: value }, { skipCache: true }))
-          .toMatchObject({ valid: false, stage: 'signature', reason: `Could not resolve issuer DID: ${quoted}` });
-      }
+    for (const [issuer, quoted] of QUOTED_ISSUERS) {
+      expect(await verifier.verifyDelegationCredential({ ...credential, issuer }, { skipCache: true }))
+        .toMatchObject({ valid: false, stage: 'signature', reason: `Could not resolve issuer DID: ${quoted}` });
+    }
+    for (const [value, quoted] of [...QUOTED_ISSUERS, QUOTED_UNSEEN, [objectType, 'of type object']] as [unknown, string][]) {
       expect(await verifier.verifyDelegationCredential({ ...credential, proof: { ...credential.proof!, type: value } as never }, { skipCache: true }))
         .toMatchObject({ valid: false, stage: 'signature', reason: `Unsupported credential proof.type: ${quoted}` });
     }

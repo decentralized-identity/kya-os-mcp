@@ -36,7 +36,8 @@ An issuer whose documents or credentials do not yet comply must:
 ### Issuer identifiers
 
 A credential names its issuer, in `issuer`, in an issuer object's `id` and in a VC-JWT's `iss`, by a URL as written (SPEC.md §6.2).
-A value with white space at either end, or with a control or format character, U+2028, U+2029 or a lone surrogate anywhere, is refused before any DID is resolved.
+A value with white space at either end, or with a control or format character, U+2028, U+2029, a character that renders as nothing by default or a lone surrogate anywhere, is refused before any DID is resolved.
+The characters are a fixed list, `conformance/unseen-code-points.json`, the same on every runtime: Unicode's Cc, Cf, Zl, Zp and Default_Ignorable_Code_Point as of Unicode 17.0, such as a variation selector, a Hangul filler or a combining grapheme joiner.
 
 ### Delegations the gate cannot encode
 

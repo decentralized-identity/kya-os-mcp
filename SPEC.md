@@ -553,7 +553,8 @@ It MAY try only the method that the first entry of `assertionMethod` names, unde
 The reference implementation does so, and checks a §6.6 status list whose proof names no key the same way, so an issuer that omits the name is verified there only when its signing key is that first entry.
 
 **The issuer.** A credential's `issuer`, or the `id` of an issuer object, MUST be a URL, as [VC-DATA-MODEL-2.0] §4.7 requires and as every DID is, and so MUST a VC-JWT's `iss`.
-A verifier MUST reject one that the [URL] parser does not parse as it is written: one with white space at either end, or one holding a control character (Unicode general category Cc), a format character (Cf), U+2028, U+2029 or a lone surrogate anywhere.
+A verifier MUST reject one that the [URL] parser does not parse as it is written: one with white space at either end, or one holding a control character (Unicode general category Cc), a format character (Cf), U+2028, U+2029, a code point that renders as nothing by default (Default_Ignorable_Code_Point) or a lone surrogate anywhere.
+The set is fixed as Unicode 16.0 and 17.0 assign it, and `conformance/unseen-code-points.json` lists it, so that verifiers built on different Unicode versions give one verdict.
 The parser removes some of these before it parses and accepts the others, most of which render as nothing or reorder the text around them, so an issuer holding one could be taken for another DID.
 
 A `DelegationCredential` carries a _permission_, not a _claim_. To keep claim

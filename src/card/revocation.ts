@@ -31,6 +31,7 @@
 
 import { describeValue } from '../utils/describe-value.js';
 import { isRecord, issuerOf } from '../utils/guards.js';
+import { readRevocationAnswer } from '../utils/revocation-answer.js';
 import {
   acceptEntryPurpose,
   acceptStatusList,
@@ -96,6 +97,12 @@ export type RevocationStatusEntry = BitstringStatusListEntry & { statusPurpose?:
  * The injected revocation seam: resolve a `BitstringStatusListEntry` to a {@link RevocationStatus}.
  * A runtime supplies an implementation (the default is {@link createRevocationChecker}); a
  * caller may inject a cache-backed or offline variant. Implementations MUST fail closed.
+ *
+ * Every caller in this package reads the answer through `readRevocationAnswer`, the reader the
+ * delegation side shares: a credential passes only on an answer whose `revoked` is the literal
+ * `false`, is revoked only on the literal `true`, and is fresh only when `fresh` is the literal
+ * `true`. Any other answer, such as `undefined`, `{}`, `{ revoked: 0 }` or one with a getter that
+ * throws, is refused as a status that could not be read.
  *
  * `context` names the issuer of the credential the entry belongs to and, when the verifier pins it,
  * the root issuer of its delegation chain, so an implementation can hold the status list to them.
@@ -266,6 +273,11 @@ export interface RevocationChainEntry extends Omit<StatusCheckContext, 'credenti
  * given `verifyStatusList` refuses (fail-closed). Any other item is checked as a bare entry, so it is
  * refused too, and the walk never throws on it.
  *
+ * A checker's answer is read as {@link BitstringRevocationChecker} says: a hop passes only on a
+ * literal `revoked: false`, and an answer that is neither that nor a literal `revoked: true` refuses
+ * the hop with a reason that says what could not be read. No answer makes the walk throw; a checker
+ * that throws or rejects still does, and the callers in this package catch that and fail closed.
+ *
  * The reason for a refused hop names the hop by its `position` in the chain, or by its place among
  * `entries` when it has none, and names the list and the index its entry states. Whoever issued the
  * hop wrote both, so the reason quotes each as `describeValue` does, at most its first 64
@@ -278,16 +290,21 @@ export async function evaluateRevocationChain(
   let fresh = entries.length > 0; // no entries ⇒ no live signal ⇒ not fresh (fail-closed for L3)
   for (const [index, item] of entries.entries()) {
     let entry: RevocationStatusEntry | undefined;
-    let status: RevocationStatus;
+    let answer: unknown;
     let hop = index;
     if (isChainEntry(item)) {
       const { entry: hopEntry, credentialIssuer, position, ...pinned } = item;
       entry = hopEntry;
       if (isPosition(position)) hop = position;
-      status = await check(entry, credentialIssuer === undefined ? undefined : { ...pinned, credentialIssuer });
+      answer = await check(entry, credentialIssuer === undefined ? undefined : { ...pinned, credentialIssuer });
     } else {
       entry = item;
-      status = await check(entry);
+      answer = await check(entry);
+    }
+    const status = readRevocationAnswer(answer);
+    if (status.revoked === undefined) {
+      const reason = `${hopName(hop, entry)} has a status that could not be read: ${status.unreadable}`;
+      return { ok: false, fresh: false, reasons: [reason] };
     }
     fresh = fresh && status.fresh;
     if (status.revoked) {
@@ -295,8 +312,7 @@ export async function evaluateRevocationChain(
         ok: false,
         fresh: false,
         reasons: [
-          `revocation: hop ${hop} (list ${describeValue(entry?.statusListCredential)}, ` +
-            `index ${describeValue(entry?.statusListIndex)}) ` +
+          `${hopName(hop, entry)} ` +
             'is revoked or unresolvable — fail-closed, subtree invalidated',
         ],
       };
@@ -306,6 +322,14 @@ export async function evaluateRevocationChain(
 }
 
 // ── Internals ──────────────────────────────────────────────────────────────────
+
+/** How a refusal names hop `hop`: by its position, and by the list and the index its entry states. */
+function hopName(hop: number, entry: RevocationStatusEntry | undefined): string {
+  return (
+    `revocation: hop ${hop} (list ${describeValue(entry?.statusListCredential)}, ` +
+    `index ${describeValue(entry?.statusListIndex)})`
+  );
+}
 
 /** A hop paired with its context, as opposed to a bare status entry (or a malformed item). */
 function isChainEntry(item: unknown): item is RevocationChainEntry {

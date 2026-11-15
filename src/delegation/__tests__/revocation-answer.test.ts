@@ -10,6 +10,7 @@ import { createRealSignatureVerifier } from '../../__tests__/audit/helpers/crypt
 import { delegationRecord, keyOf, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
+import { countingAnswer, THROWING_ANSWERS, throwingMember } from '../../__tests__/utils/revocation-answers.js';
 import type { AgentIdentity } from '../../providers/base.js';
 import type { CredentialStatus } from '../../types/protocol.js';
 import { validateDelegationChain, type RevocationChecker } from '../chain-enforcement.js';
@@ -85,6 +86,18 @@ describe('the delegation status check', () => {
       reason: `Credential status could not be read: the status list resolver's answer (${named}) is neither true nor false`,
     });
   });
+
+  it.each([throwingMember('revoked'), throwingMember('reason', { revoked: true })])(
+    'refuses a credential on an object with %s, which it does not read',
+    async (_label, answer) => {
+      expect(await verify(answer)).toMatchObject({
+        valid: false,
+        stage: 'status',
+        statusOutcome: 'status_unresolvable',
+        reason: "Credential status could not be read: the status list resolver's answer (of type object) is neither true nor false",
+      });
+    },
+  );
 
   it('does not keep an unreadable answer in the status cache, so the next check asks again', async () => {
     const answers: unknown[] = [null, false];
@@ -171,5 +184,23 @@ describe("validateDelegationChain's revocation check", () => {
     ['an array', [{ revoked: false }], 'of type array'],
   ] as const)('refuses a chain when the checker answers %s, not an object', async (_label, answer, named) => {
     expect(await validate(answer)).toEqual({ valid: false, reason: notAnObject(named) });
+  });
+
+  it.each(THROWING_ANSWERS)('refuses a chain, and does not reject, on an answer with %s', async (_label, answer, why) => {
+    expect(await validate(answer)).toEqual({
+      valid: false,
+      reason: `Revocation status of delegation "${ID}" could not be read: ${why}`,
+    });
+  });
+
+  it('reads each member of an answer once', async () => {
+    for (const members of [{ revoked: false }, { revoked: true, reason: 'key compromise' }]) {
+      const { answer, reads } = countingAnswer(members);
+      const result = await validate(answer);
+      expect(result.valid).toBe(members.revoked === false);
+      expect(reads.revoked).toBe(1);
+      expect(reads.reason).toBe(1);
+      expect(reads.revokedAncestor).toBe(1);
+    }
   });
 });

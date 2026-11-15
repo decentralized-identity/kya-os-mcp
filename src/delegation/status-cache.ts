@@ -16,7 +16,7 @@
  */
 import type { CredentialStatus } from '../types/protocol.js';
 import type { StatusCheckContext } from '../utils/statuslist-acceptance.js';
-import { readRevoked } from './revocation-answer.js';
+import { readRevoked } from '../utils/revocation-answer.js';
 import type { StatusListResolver } from './vc-verifier.types.js';
 import { TtlCache } from '../utils/ttl-cache.js';
 

@@ -25,6 +25,7 @@ import {
   type Attestation,
 } from './schema.js';
 import type { BitstringRevocationChecker } from './revocation.js';
+import { readRevocationAnswer } from '../utils/revocation-answer.js';
 import type { ProofAssurance, ProofVerifyResult } from './proof/index.js';
 import type { ToolRequest } from '../proof/generator.js';
 
@@ -144,8 +145,13 @@ export interface VerifyCardResult {
   attestations: Array<{ type: string; subject?: string; verified: boolean }>;
   /** Present when a proof was recomputed: the live holder-of-key verdict. */
   proof?: { verified: boolean; did?: string; level?: ProofAssurance; reasons: string[] };
-  /** Present when the card declares `revocation` and a `statusListChecker` was supplied. */
-  revocation?: { revoked: boolean; fresh: boolean };
+  /**
+   * Present when the card declares `revocation` and a `statusListChecker` was supplied. The checker's
+   * answer is read as `evaluateRevocationChain` reads one: only a literal `revoked: false` passes and
+   * only a literal `fresh: true` is fresh. An answer that could not be read is reported as revoked and
+   * not fresh, with the `reason`.
+   */
+  revocation?: { revoked: boolean; fresh: boolean; reason?: string };
   /** Echoes `deps.cimdKeyProven` — the caller's L1 CIMD key-possession evidence. */
   cimdKeyProven?: boolean;
 }
@@ -184,7 +190,7 @@ export async function verifyCard(card: EntityCard, deps: VerifyCardDeps): Promis
     proof: proof
       ? { verified: proof.ok, did: proof.did, level: proof.level, reasons: proof.reasons }
       : undefined,
-    revocation: revocation.checked ? { revoked: revocation.revoked, fresh: revocation.fresh } : undefined,
+    revocation: revocation.checked ? reportedRevocation(revocation) : undefined,
     cimdKeyProven: deps.cimdKeyProven,
   };
 }
@@ -280,6 +286,8 @@ interface CardRevocationVerdict {
   checked: boolean;
   revoked: boolean;
   fresh: boolean;
+  /** Why the Card reads as revoked, when its checker's answer could not be read. */
+  reason?: string;
 }
 
 /** The Card's responsible party, once the accountability check has verified it, and never before. */
@@ -299,14 +307,24 @@ async function checkCardRevocation(
 ): Promise<CardRevocationVerdict> {
   if (!checker || !card.revocation) return { checked: false, revoked: false, fresh: true };
   try {
-    const status = await checker(card.revocation, {
+    const answer: unknown = await checker(card.revocation, {
       credentialIssuer: card.id,
       ...(responsibleParty === undefined ? {} : { trustedRootIssuer: responsibleParty }),
     });
+    const status = readRevocationAnswer(answer);
+    if (status.revoked === undefined) {
+      const reason = `the Card's revocation status could not be read: ${status.unreadable}`;
+      return { checked: true, revoked: true, fresh: false, reason };
+    }
     return { checked: true, revoked: status.revoked, fresh: status.fresh };
   } catch {
     return { checked: true, revoked: true, fresh: false };
   }
+}
+
+/** The revocation verdict as the result reports it, with its `reason` only when it has one. */
+function reportedRevocation({ revoked, fresh, reason }: CardRevocationVerdict): NonNullable<VerifyCardResult['revocation']> {
+  return reason === undefined ? { revoked, fresh } : { revoked, fresh, reason };
 }
 
 /**

@@ -20,7 +20,7 @@ import { describeValue } from "../utils/describe-value.js";
 import { issuerOf } from "../utils/guards.js";
 import { sanitizeForMessage } from "../utils/message-text.js";
 import { credentialIssuerRefusal } from "./credential-issuer.js";
-import { readRevoked, unreadableStatusReason } from "./revocation-answer.js";
+import { readRevoked, unreadableStatusReason } from "../utils/revocation-answer.js";
 import type {
   DIDResolver,
   StatusListResolver,

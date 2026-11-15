@@ -7,9 +7,8 @@
  */
 
 import { describeValue } from "../utils/describe-value.js";
-import { isRecord } from "../utils/guards.js";
 import { sanitizeForMessage } from "../utils/message-text.js";
-import { readRevoked } from "./revocation-answer.js";
+import { readRevocationAnswer } from "../utils/revocation-answer.js";
 
 /** The message of `error` as a reason holds it; a thrown value that is not an `Error` is not converted. */
 function errorText(error: unknown): string {
@@ -28,25 +27,21 @@ export function revocationCheckFailure(delegationId: string, error: unknown): st
 
 /**
  * Why the chain of the delegation `leafId` is refused on the revocation checker's `answer` about
- * `delegationId`, one of its credentials, or `undefined` when the answer lets it pass. It passes
+ * `delegationId`, one of its credentials, or `undefined` when the answer lets it pass. The answer
+ * is read by the reader every revocation check shares ({@link readRevocationAnswer}): it passes
  * only on an object whose `revoked` is the literal `false`, and is revoked only on the literal
  * `true`, through the ancestor the answer names, or `delegationId` when that is not the leaf. Any
- * other answer is a status that could not be read. An answer's `reason` and `revokedAncestor` are
- * used only when they are strings, so no answer makes this throw.
+ * other answer, one with a member whose getter throws included, is a status that could not be
+ * read, so no answer makes this throw.
  */
 export function revocationRefusal(leafId: string, delegationId: string, answer: unknown): string | undefined {
-  const unreadable = `Revocation status of delegation ${describeValue(delegationId)} could not be read: `;
-  if (!isRecord(answer)) {
-    return `${unreadable}the revocation checker's answer (${describeValue(answer)}) is not an object`;
+  const read = readRevocationAnswer(answer);
+  if (read.revoked === false) return undefined;
+  if (read.revoked === undefined) {
+    return `Revocation status of delegation ${describeValue(delegationId)} could not be read: ${read.unreadable}`;
   }
-  const revoked = readRevoked(answer.revoked);
-  if (revoked === false) return undefined;
-  if (revoked === undefined) {
-    return `${unreadable}the revoked member of the revocation checker's answer (${describeValue(answer.revoked)}) is neither true nor false`;
-  }
-  const named = typeof answer.revokedAncestor === "string" ? answer.revokedAncestor : undefined;
-  const revokedAncestor = named ?? (delegationId === leafId ? undefined : delegationId);
-  return revokedReason(leafId, revokedAncestor, typeof answer.reason === "string" ? answer.reason : undefined);
+  const revokedAncestor = read.revokedAncestor ?? (delegationId === leafId ? undefined : delegationId);
+  return revokedReason(leafId, revokedAncestor, read.reason);
 }
 
 /**

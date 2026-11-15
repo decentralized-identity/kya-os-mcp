@@ -163,7 +163,18 @@ describe.each(DEADLINES)('%s', (_label, option, ms, stated) => {
 
     it('finds the Card revoked when the status list checker has not answered by the deadline', async () => {
       const result = await settledAt(ms, (never) => verifyCard(card, { ...answering, statusListChecker: never }));
-      expect(result).toMatchObject({ ok: false, conformanceLevel: 'L1', revocation: { revoked: true, fresh: false } });
+      expect(result).toMatchObject({ ok: false, conformanceLevel: 'L1' });
+      expect(result.revocation).toEqual({ revoked: true, fresh: false, reason: `the revocation checker did not answer within ${stated}` });
+    });
+
+    it('reads an answer that is the text of a missed deadline as an answer it cannot read, not as a missed deadline', async () => {
+      const text = `the revocation checker did not answer within ${stated}`;
+      const result = await verifyCard(card, { ...answering, statusListChecker: (async () => text) as never });
+      expect(result.revocation).toEqual({
+        revoked: true,
+        fresh: false,
+        reason: `the Card's revocation status could not be read: the revocation checker's answer ("${text}") is not an object`,
+      });
     });
   });
 
@@ -210,6 +221,14 @@ describe.each(DEADLINES)('%s', (_label, option, ms, stated) => {
         fresh: false,
         reasons: [`revocation: hop 0 (list "${STATUS_URL}", index "7") is unresolvable: the revocation checker did not answer within ${stated}`],
       });
+    });
+
+    it('reads an answer that is the text of a missed deadline as an answer it cannot read, not as a missed deadline', async () => {
+      const text = `the revocation checker did not answer within ${stated}`;
+      const result = await evaluateRevocationChain([ENTRY], (async () => text) as never, option);
+      expect(result.reasons).toEqual([
+        `revocation: hop 0 (list "${STATUS_URL}", index "7") has a status that could not be read: the revocation checker's answer ("${text}") is not an object`,
+      ]);
     });
   });
 

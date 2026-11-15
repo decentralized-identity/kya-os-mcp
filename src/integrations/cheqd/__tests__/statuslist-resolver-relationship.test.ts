@@ -227,7 +227,7 @@ describe('CheqdStatusListResolver and the verification relationship of the list 
     const withX = (rewrite: (x: string) => string): DIDDocument => {
       const { publicKeyJwk, ...method } = methodOf(assert, { controller: ISSUER });
       const jwk = publicKeyJwk as { x: string };
-      return { id: ISSUER, verificationMethod: [{ ...method, publicKeyJwk: { ...jwk, x: rewrite(jwk.x) } }], assertionMethod: [assert.kid] } as DIDDocument;
+      return issuerDidDocument({ ...method, publicKeyJwk: { ...jwk, x: rewrite(jwk.x) } });
     };
     expect(await check(withX((x) => x), assert)).toBe(true);
     // The same key, written as RFC 7515 §2 does not write base64url (SPEC.md §7.4).

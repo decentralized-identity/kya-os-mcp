@@ -317,7 +317,7 @@ describe("the credential a proof names, for a verifier that holds the chain", ()
   it("requires the digest of an id that is not well-formed Unicode, taken over its WTF-8 bytes", async () => {
     // JSON can spell half of a surrogate pair; it is hashed as the three
     // bytes of its code point, U+D800 as ED A0 80.
-    const leaf = `eyJhbGciOiJFZERTQSJ9.${Buffer.from('{"vc":{"id":"urn:\\ud800"}}', "utf8").toString("base64url")}.bGVhZg`;
+    const leaf = jwt({ vc: { id: "urn:\ud800" } });
     const chain = [ROOT, leaf];
     const reference = `sha256:${createHash("sha256").update(Buffer.from([...Buffer.from("urn:"), 0xed, 0xa0, 0x80])).digest("hex")}`;
     expect(await delegationRefOf(leaf, hash)).toBe(reference);

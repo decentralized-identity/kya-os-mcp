@@ -15,6 +15,7 @@ import { ProofVerifier } from "../../verifier.js";
 import type { DetachedProof, SessionContext } from "../../../types/protocol.js";
 import { digestDelegationChain, type ReceivedCredential } from "../../../delegation/chain-digest.js";
 import { publicKeyToJwk } from "../../../delegation/did-key-resolver.js";
+import { base64url, compactJwt } from "../../../__tests__/utils/encodings.js";
 import { nodeCrypto, nodeHash } from "../../../__tests__/utils/node-crypto-provider.js";
 import { base64ToBytes } from "../../../utils/base64.js";
 import type { Ed25519JWK } from "../../../utils/crypto-service.js";
@@ -29,7 +30,7 @@ export const RESPONSE: ToolResponse = { data: [{ type: "text", text: "released" 
 
 /** A compact VC-JWT with `claims` for its payload. Nothing here checks its signature. */
 export const jwt = (claims: unknown, signature = "bGVhZg"): string =>
-  `eyJhbGciOiJFZERTQSJ9.${Buffer.from(JSON.stringify(claims), "utf8").toString("base64url")}.${signature}`;
+  compactJwt(base64url(JSON.stringify(claims)), signature);
 
 /** A three-hop chain, as an auditor would hold it: two credential objects and a VC-JWT leaf. */
 export const ROOT = { id: "urn:uuid:root", issuer: "did:web:user.example", proof: { proofValue: "cm9vdA" } };

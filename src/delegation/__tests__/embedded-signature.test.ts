@@ -5,13 +5,12 @@
  * one reading the spec gives a signature string and a credential's members.
  */
 import { describe, expect, it } from 'vitest';
-import { ed25519Signer } from '../../__tests__/utils/ed25519-signer.js';
-import { base64url } from '../../__tests__/utils/encodings.js';
+import { keyOf, resignedCredential } from '../../__tests__/utils/delegation-credentials.js';
+import { methodOf } from '../../__tests__/utils/did-documents.js';
 import { nodeCrypto } from '../../__tests__/utils/node-crypto-provider.js';
 import { arrays } from '../../__tests__/utils/nesting.js';
 import type { DelegationCredential } from '../../types/protocol.js';
 import { embeddedSignatureVerifier } from '../embedded-signature.js';
-import { canonicalizeJSON } from '../utils.js';
 
 const verify = embeddedSignatureVerifier(nodeCrypto);
 
@@ -24,12 +23,14 @@ const UNSIGNED = {
 };
 
 /** A credential its issuer signed over the RFC 8785 form of all but its proof. */
-async function signed(unsigned: Record<string, unknown> = UNSIGNED) {
-  const { jwk, sign } = await ed25519Signer();
-  const proofValue = base64url(await sign(canonicalizeJSON(unsigned)));
+async function signed() {
+  const key = await keyOf(UNSIGNED.issuer, 'key-1');
+  const credential = await resignedCredential(UNSIGNED as never, {}, key);
+  const proofValue = credential.proof!.proofValue!;
+  const jwk = methodOf(key).publicKeyJwk as { kty: string; crv: string; x: string };
   const withProofValue = (written: string): DelegationCredential =>
-    ({ ...unsigned, proof: { type: 'Ed25519Signature2020', proofValue: written } }) as unknown as DelegationCredential;
-  return { credential: withProofValue(proofValue), proofValue, jwk, withProofValue };
+    ({ ...credential, proof: { ...credential.proof!, proofValue: written } });
+  return { credential, proofValue, jwk, withProofValue };
 }
 
 describe('embeddedSignatureVerifier', () => {

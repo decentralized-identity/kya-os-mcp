@@ -8,7 +8,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { sha256Of } from '../../__tests__/utils/digests.js';
-import { base64url, unit } from '../../__tests__/utils/encodings.js';
+import { base64url, compactJwt, unit } from '../../__tests__/utils/encodings.js';
 import { arrays } from '../../__tests__/utils/nesting.js';
 import { nodeHash as hash } from '../../__tests__/utils/node-crypto-provider.js';
 import { delegationCredentialId, delegationReference, delegationRefOf } from '../delegation-ref.js';
@@ -18,7 +18,7 @@ const base64 = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64');
 
 /** A compact VC-JWT with `payload` as its claims. Its header and signature are never read for an id. */
 const vcJwt = (payload: string | Uint8Array, encode: (bytes: Uint8Array) => string = base64url) =>
-  `eyJhbGciOiJFZERTQSJ9.${encode(typeof payload === 'string' ? utf8(payload) : payload)}.c2lnbmF0dXJl`;
+  compactJwt(encode(typeof payload === 'string' ? utf8(payload) : payload), 'c2lnbmF0dXJl');
 
 const nested = { credentialSubject: { delegation: { id: 'del-1' } } };
 

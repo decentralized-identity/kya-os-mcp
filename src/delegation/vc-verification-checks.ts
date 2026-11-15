@@ -20,6 +20,7 @@ import { answerWithinDeadline } from "../utils/deadline.js";
 import { describeValue } from "../utils/describe-value.js";
 import { issuerOf } from "../utils/guards.js";
 import { sanitizeForMessage } from "../utils/message-text.js";
+import { readVerdict } from "../utils/verdict.js";
 import { credentialIssuerRefusal } from "./credential-issuer.js";
 import { resolveBoundedDid } from "./did-resource-limits.js";
 import { readRevoked, unreadableStatusReason } from "../utils/revocation-answer.js";
@@ -287,15 +288,12 @@ export async function verifySignature(
       };
     }
 
-    const verificationResult = await answerWithinDeadline("the signature verifier", () =>
+    // The verifier is the host's code: its answer verifies only as the literal `true`.
+    const answer: unknown = await answerWithinDeadline("the signature verifier", () =>
       signatureVerifier(vc, publicKeyJwk),
     );
 
-    return {
-      valid: verificationResult.valid,
-      reason: verificationResult.reason,
-      durationMs: Date.now() - startTime,
-    };
+    return { ...readVerdict("the signature verifier", answer), durationMs: Date.now() - startTime };
   } catch (error) {
     return {
       valid: false,

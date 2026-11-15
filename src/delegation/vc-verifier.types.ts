@@ -150,6 +150,12 @@ export interface StatusCheckResult {
   durationMs?: number;
 }
 
+/**
+ * Verifies a credential's embedded proof under `publicKeyJwk`. The answer is read strictly: the
+ * signature verifies only on an object whose `valid` is the literal `true`, and any other answer,
+ * which only untyped code can give, leaves it unverified. So does a verifier that has not answered
+ * within the deadline a DID resolver has.
+ */
 export interface SignatureVerificationFunction {
   (
     vc: import("../types/protocol.js").DelegationCredential,

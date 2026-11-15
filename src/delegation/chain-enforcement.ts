@@ -18,6 +18,7 @@ import {
 } from "../types/protocol.js";
 import { canonicalizeJson } from "../utils/canonical-json.js";
 import { answerWithinDeadline } from "../utils/deadline.js";
+import { readVerdict } from "../utils/verdict.js";
 import { verifyDelegationAudience } from "./audience-validator.js";
 import { chainResolutionFailure, revocationCheckFailure, revocationRefusal } from "./chain-reasons.js";
 import { authorityContains, crispScopes, matcherContains, scopeAuthority } from "./scope-matcher.js";
@@ -203,7 +204,10 @@ export function attenuationWarnings(
   return Array.from(warnings);
 }
 
-/** Per-credential verifier port (signature / schema / expiry / own status). */
+/**
+ * Per-credential verifier port (signature / schema / expiry / own status). A credential passes
+ * only on an answer whose `valid` is the literal `true`; any other answer refuses the chain.
+ */
 export interface DelegationCredentialVerifierPort {
   verifyDelegationCredential(
     credential: DelegationCredential,
@@ -425,14 +429,15 @@ export async function validateDelegationChain(
       };
     }
 
-    const credentialVerification = await deps.verifier.verifyDelegationCredential(
+    // The verifier is a port the host may supply: a credential passes only on the literal `true`.
+    const credentialVerification = readVerdict("the credential verifier", await deps.verifier.verifyDelegationCredential(
       credential,
       {
         ...(options?.skipSignature && credential === leafCredential
           ? { skipSignature: true }
           : {}),
       },
-    );
+    ));
     if (!credentialVerification.valid) {
       return {
         valid: false,

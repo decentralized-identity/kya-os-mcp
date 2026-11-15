@@ -1,0 +1,17 @@
+kind: Security
+body: |-
+    **A custom signature verifier's verdict counts only as a literal
+    `true`.** `DelegationCredentialVerifier` read the `valid` of a custom
+    `signatureVerifier`'s answer by its truthiness, so a credential whose
+    signature did not hold verified when the verifier answered
+    `{ valid: "false" }`, `{ valid: 1 }` or `{ valid: {} }`. Only an object
+    whose `valid` is the literal `true` now verifies. Any other answer, one
+    that is not an object or whose `valid` or `reason` throws when read
+    included, leaves the signature unverified with a reason that says the
+    verdict could not be read, and nothing throws. `validateDelegationChain`
+    reads the `verifier` it is given by the same rule, where it threw a
+    `TypeError` on `undefined` or `null`. A verifier typed against the
+    library already answers a boolean. See UPGRADING.md, "A custom
+    `signatureVerifier`, or another dependency, whose verdict is not the
+    boolean its type promises".
+time: 2026-11-15T10:00:00.000000-06:00

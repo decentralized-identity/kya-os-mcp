@@ -112,6 +112,9 @@ export interface VerificationMethod {
  * `acceptStatusList(list, statusListExpectationFor(status, context, statusListIssuers))`, with the
  * `statusListIssuers` its own configuration accepts (W3C Bitstring Status List v1.0 §3.2).
  * `CheqdStatusListResolver` holds every list to the one DID it is configured to trust.
+ * A resolver that reads the one bit at an entry's `statusListIndex` first passes
+ * `acceptEntrySize(status.statusSize)`, as the library's readers do, and throws its reason for an
+ * entry that is not one bit wide: such an entry keeps its status in other bits of the list.
  *
  * `DelegationCredentialVerifier`, which the delegation middleware runs for each credential of a
  * chain, names the credential's own issuer alone, never the chain's root, even when

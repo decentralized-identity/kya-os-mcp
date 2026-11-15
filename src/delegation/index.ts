@@ -14,6 +14,7 @@ export * from './bitstring.js';
 export { statusListGzipCodec } from '../utils/statuslist-gzip.js';
 export {
   acceptedStatusListIssuers,
+  acceptEntrySize,
   acceptStatusList,
   statusListExpectationFor,
   type StatusCheckContext,

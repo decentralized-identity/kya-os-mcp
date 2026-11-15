@@ -106,6 +106,7 @@ export {
 
 export {
   acceptedStatusListIssuers,
+  acceptEntrySize,
   acceptStatusList,
   statusListExpectationFor,
   type StatusCheckContext,

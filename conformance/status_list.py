@@ -127,6 +127,11 @@ def verify_input(value, canonicalize, verify_signature):
             return False
         if not verify_document(document, documents, canonicalize, verify_signature):
             return False
+        # One bit is read per entry. An entry that states a statusSize other than 1, the size of
+        # an entry that states none, keeps its status in other bits than the one at its index.
+        size = entry.get("statusSize", 1)
+        if isinstance(size, bool) or size != 1:
+            return False
         raw_index = entry["statusListIndex"]
         if not isinstance(raw_index, str) or not re.fullmatch(r"[0-9]+", raw_index):
             return False

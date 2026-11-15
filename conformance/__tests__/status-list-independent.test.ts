@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { BitstringManager, statusListGzipCodec } from '../../src/index.js';
 import { revocationEntriesOf, type DelegationChain } from '../../src/card/delegation.js';
-import { acceptStatusList, statusListExpectationFor, type StatusListIssuers } from '../../src/utils/statuslist-acceptance.js';
+import { acceptEntrySize, acceptStatusList, statusListExpectationFor, type StatusListIssuers } from '../../src/utils/statuslist-acceptance.js';
 import { parseStatusListIndex } from '../../src/utils/statuslist-bits.js';
 import { loadVectors } from '../loader.js';
 import { requirePython } from './python.js';
@@ -87,31 +87,40 @@ describe('independent status authority derivation', () => {
   });
 });
 
+/**
+ * Whether the Python port reads the active-credential vector as not revoked with each of `changes`
+ * made to its status entry, over a list with every bit clear, so an entry is read (true) exactly
+ * when it is one the port takes. Signatures are stubbed in Python: only the entry differs between
+ * the inputs.
+ */
+async function readByPython(python: readonly string[], changes: readonly Record<string, unknown>[]): Promise<boolean[]> {
+  const clear = await new BitstringManager(131072, statusListGzipCodec, statusListGzipCodec).encode();
+  const vector = loadVectors().find((item) => item.id === 'status-list/active-credential')!;
+  const inputs = changes.map((change) => {
+    const input = structuredClone(vector.input) as StatusListInput & { credential: { credentialStatus: Record<string, unknown> } };
+    Object.assign(input.credential.credentialStatus, change);
+    (input.statusLists[input.credential.credentialStatus.statusListCredential as string] as { credentialSubject: { encodedList: string } })
+      .credentialSubject.encodedList = clear;
+    return JSON.stringify(input);
+  });
+  const reader = [
+    'import json, sys', 'sys.path.insert(0, sys.argv[1])', 'from status_list import verify_input',
+    'for line in sys.stdin.buffer:', '    print(json.dumps(verify_input(json.loads(line), lambda document: b"", lambda *proof: True)))',
+  ].join('\n');
+  const [command, ...args] = python;
+  const output = execFileSync(command!, [...args, '-I', '-B', '-c', reader, fileURLToPath(new URL('..', import.meta.url))], {
+    input: inputs.join('\n') + '\n', encoding: 'utf8',
+  });
+  return output.trim().split('\n').map((line) => JSON.parse(line) as boolean);
+}
+
 describe('independent statusListIndex reading', () => {
   it('reads every index form, string or not, as the TypeScript parser does', async (context) => {
-    const [python, ...args] = requirePython(context);
+    const python = requirePython(context);
     const forms = ['7', '0', '007', '131071', '131072', '', ' 7', '7 ', '7\n', '+7', '-7', '-0', '7junk', '7.5', '1e1',
       '0x7', '7_0', '\u0667', '\uff17', '\u{1D7D5}', '\u096D', '9007199254740991', '9007199254740992', 7, 0, ['7'], null,
       `${'0'.repeat(4300)}7`, `${'0'.repeat(4300)}9007199254740992`, '9'.repeat(4301)];
-    // Every bit clear, so an index is read (true) exactly when it parses and is in range. Signatures are
-    // stubbed in Python: only the index differs between these inputs and the active-credential vector.
-    const clear = await new BitstringManager(131072, statusListGzipCodec, statusListGzipCodec).encode();
-    const vector = loadVectors().find((item) => item.id === 'status-list/active-credential')!;
-    const inputs = forms.map((index) => {
-      const input = structuredClone(vector.input) as StatusListInput & { credential: { credentialStatus: Record<string, unknown> } };
-      input.credential.credentialStatus.statusListIndex = index;
-      (input.statusLists[input.credential.credentialStatus.statusListCredential as string] as { credentialSubject: { encodedList: string } })
-        .credentialSubject.encodedList = clear;
-      return JSON.stringify(input);
-    });
-    const reader = [
-      'import json, sys', 'sys.path.insert(0, sys.argv[1])', 'from status_list import verify_input',
-      'for line in sys.stdin.buffer:', '    print(json.dumps(verify_input(json.loads(line), lambda document: b"", lambda *proof: True)))',
-    ].join('\n');
-    const output = execFileSync(python, [...args, '-I', '-B', '-c', reader, fileURLToPath(new URL('..', import.meta.url))], {
-      input: inputs.join('\n') + '\n', encoding: 'utf8',
-    });
-    const read = output.trim().split('\n').map((line) => JSON.parse(line) as boolean);
+    const read = await readByPython(python, forms.map((statusListIndex) => ({ statusListIndex })));
     const parsed = forms.map((form) => {
       try {
         return parseStatusListIndex(form) < 131072;
@@ -121,5 +130,16 @@ describe('independent statusListIndex reading', () => {
     });
     expect(forms.map((form, i) => [form, read[i]])).toEqual(forms.map((form, i) => [form, parsed[i]]));
     expect(read).toContain(true);
+  });
+});
+
+describe('independent statusSize reading', () => {
+  it('reads an entry of every stated size, or of none, as the shared TypeScript rule does', async (context) => {
+    const python = requirePython(context);
+    const sizes = [1, 2, 3, 0, -1, 1.5, '1', '2', '', null, true, false, [1], [], { size: 1 }, 2 ** 53];
+    const read = await readByPython(python, [{}, ...sizes.map((statusSize) => ({ statusSize }))]);
+    const accepted = [acceptEntrySize(undefined), ...sizes.map(acceptEntrySize)].map((verdict) => verdict.valid);
+    expect(['none', ...sizes].map((size, i) => [size, read[i]])).toEqual(['none', ...sizes].map((size, i) => [size, accepted[i]]));
+    expect(read.slice(0, 3)).toEqual([true, true, false]);
   });
 });

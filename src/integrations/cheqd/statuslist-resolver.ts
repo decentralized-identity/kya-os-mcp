@@ -61,7 +61,7 @@ import {
   parseStatusListIndex,
   readStatusBit,
 } from '../../utils/statuslist-bits.js';
-import { acceptStatusList } from '../../utils/statuslist-acceptance.js';
+import { acceptEntrySize, acceptStatusList } from '../../utils/statuslist-acceptance.js';
 import { describeValue } from '../../utils/describe-value.js';
 import { base64urlDecodeToBytes, bytesToBase64 } from '../../utils/base64.js';
 import { TtlCache } from '../../utils/ttl-cache.js';
@@ -114,6 +114,11 @@ export class CheqdStatusListResolver implements StatusListResolver {
     const url = status.statusListCredential;
     if (typeof url !== 'string' || !/^https:\/\//.test(url)) {
       throw new Error('credentialStatus.statusListCredential must be an https URL');
+    }
+    // One bit is read per entry, so an entry of another size is refused before any fetch.
+    const size = acceptEntrySize(status.statusSize);
+    if (!size.valid) {
+      throw new Error(size.reason);
     }
 
     const index = parseStatusListIndex(status.statusListIndex);

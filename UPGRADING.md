@@ -130,6 +130,24 @@ Write each index as a string of decimal digits, as the library's issuers do.
 `StatusList2021Manager.updateStatus`, which writes the manager's own record, still sets the bit of an index stored as a whole number, as on 1.22.0, but now throws on one that is neither a number nor a string, such as `["7"]`, which 1.22.0 converted to a string.
 `CascadingRevocationManager` reads the delegation graph's stored entries, the same records, the same way.
 
+#### A `credentialStatus`, or a Card's `revocation` entry, that states a `statusSize`
+
+W3C Bitstring Status List v1.0 lets an entry state `statusSize`, the size of its status in bits, and keeps the status of an entry in that many bits of the list, starting at its `statusListIndex` times its `statusSize`.
+Every status-list reader in the library reads the one bit at the index.
+So on 1.22.0 an entry of two bits at index 7 was read from bit 7, which is entry 3's, and not from its own bits, 14 and 15: a credential whose own bits were set passed, and one whose own bits were clear was refused on another entry's status.
+Each reader now refuses, before it fetches or reads any list, every entry whose `statusSize` is not `1`.
+An entry that states no `statusSize` is one bit wide and is read as before.
+A checker `createRevocationChecker` builds resolves a refused entry to revoked and not fresh, so `evaluateDelegationChain`, `verifyRequestDelegation` and `requireDelegation` refuse its chain, the last two as `delegation_revoked`, and `verifyCard` reports its Card as revoked.
+`CheqdStatusListResolver` and `StatusList2021Manager.checkStatus` throw `the entry's statusSize is 2, and only an entry of one bit is read`, which `DelegationCredentialVerifier` denies as `status_unresolvable`.
+`StatusList2021Manager.updateStatus` throws the same and sets no bit, since the bit at that index is another entry's.
+A `statusSize` that is not an integer greater than zero, such as `0`, `-1`, `1.5`, `"2"`, `null` or `[2]`, is refused the same way, with a reason such as `the entry's statusSize ("2") is not an integer greater than zero`.
+The hop schema, `DelegationCredentialSchema`, and the Card's entry schema, `BitstringStatusListEntrySchema`, keep `statusSize` and `statusMessage`, so a checker is given the size a hop or a Card states, and reject a `statusSize` that is not an integer greater than zero and a `statusMessage` that is not an array of objects with a string `status` and a string `message`.
+On 1.22.0 the hop schema dropped both members, and the Card's entry schema rejected a Card that stated either.
+`schemas/kya-os-card.schema.json`, `schemas/card-delegation-credential.json` and `schemas/delegation-credential.json` describe both members.
+`withStatusCache` keeps a verdict per `statusSize` as well, so an entry is never answered from the verdict of an entry of another size at the same index.
+Issue every credential with an entry of one bit, as `StatusList2021Manager.allocateStatusEntry` does, and re-issue any that states another `statusSize`.
+A custom `StatusListResolver` or `BitstringRevocationChecker` is given the entry whole: one that reads the bit at the index should refuse what `acceptEntrySize(status.statusSize)` refuses, before it fetches, and one that reads an entry of several bits where the specification keeps them is not affected.
+
 #### An `accountabilityVerifier` that returns a value other than a boolean
 
 `verifyCard` takes only a literal `true`, returned bare or as `verified`, as verified, so a truthy value such as `"false"` or `1` now fails the Card's accountability check, and it reads a `fresh` that is present and not a boolean as `false`, which demotes L3 to L2.
@@ -177,7 +195,8 @@ A list may leave the `id` out only when its issuer is the one issuer `acceptedIs
 The rule decides by the list's `issuer` and checks no proof, so a custom `StatusListResolver` applies it once the list's proof verifies under a key that `issuer` lists under `assertionMethod`.
 `acceptedStatusListIssuers(context, statusListIssuers)` lists, each once, the credential's issuer, the chain's root issuer when the context names it as `trustedRootIssuer`, and those `statusListIssuers` accepts for the credential's issuer, and throws the `TypeError` `createRevocationChecker` throws for a `statusListIssuers` that is not a plain object of string arrays.
 `statusListExpectationFor(entry, context, statusListIssuers)` builds, from those issuers, the expectation `acceptStatusList` takes for an entry, as each reader in the library that holds a list to its credential does, so a custom `StatusListResolver` passes `acceptStatusList(list, statusListExpectationFor(status, context, statusListIssuers))`.
-All three, with their types, are exported from `@kya-os/mcp`, `@kya-os/mcp/delegation` and `@kya-os/mcp/card`.
+`acceptEntrySize(statusSize)` returns the same kind of verdict for an entry's `statusSize`: valid when the entry states none or states `1`, and otherwise not, with the reason, for a reader that reads one bit per entry.
+All four, with their types, are exported from `@kya-os/mcp`, `@kya-os/mcp/delegation` and `@kya-os/mcp/card`.
 `StatusListResolver.checkStatus` and `BitstringRevocationChecker` take that `StatusCheckContext` as an optional second argument, `withStatusCache` passes it on and caches per context, and `revocationEntriesOf(chain, trustedRootIssuer)` builds it for every hop of a delegation chain, as a `RevocationChainEntry` that carries the hop's `statusPurpose` and its `position` in the chain.
 `createRevocationChecker` takes `statusListIssuers`, keyed by credential issuer: a deployment whose lists one status service signs lists that service under each credential issuer, or has the chain's pinned root sign its lists.
 It throws a `TypeError` when the value is not a plain object of string arrays, or is given without `verifyStatusList`.
@@ -185,7 +204,7 @@ The delegation middleware names only the credential's own issuer to its resolver
 
 ### Conformance suite 1.4.0
 
-The suite adds status-list vectors for the acceptance rule, each with a list whose proof verifies, and has 87 vectors in all.
+The suite adds status-list vectors for the acceptance rule, each with a list whose proof verifies, and has 90 vectors in all.
 
 Six new negative vectors check a revoked credential against a list with its bit unset and a proof that verifies: one another DID issued (`status-list/foreign-issuer-list`), a `suspension` list (`status-list/purpose-mismatch-list`), a StatusList2021 list that states its purposes in an array that includes `revocation` (`status-list/purpose-array-2021-list`), one that states another URL as its `id` (`status-list/id-mismatch-list`), and one that states no `id` from the pinned root of the credential's chain (`status-list/root-no-id-list`) or from an issuer the verifier is configured to accept (`status-list/configured-issuer-no-id-list`).
 Those two carry the new optional inputs `trustedRootIssuer` and `statusListIssuers`, and a verifier without that configuration refuses their lists for the issuer.
@@ -193,4 +212,6 @@ Two new positive vectors check an active credential against its issuer's list re
 `status-list.json` is regenerated in one run, so its three existing vectors change bytes with the same cases and verdicts, and the other files change only their `version`.
 A new file, `status-list-authority.json`, adds six more vectors: a clear list from the pinned root (`status-list/pinned-root-list`) or from an issuer `statusListIssuers` accepts for the credential's issuer (`status-list/configured-service-list`) must be read, so an implementation that reads only the credential's own issuer's lists fails; the second list must be refused when `statusListIssuers` has no entry for the credential's issuer (`status-list/unconfigured-service-list`) or names the credential's issuer under the list's (`status-list/wrong-direction-service-map`); a list without an `id` must be read when the credential's own issuer signed it, even if the verifier also pins that issuer as the root (`status-list/owner-root-alias-no-id`); and such a list must be refused when the verifier pins another root, at whose URL it is served (`status-list/owner-no-id-at-pinned-root-url`).
 Five more vectors in that file hold a signed `statusListIndex` that is not a whole decimal string (`status-list/index-suffix`, `status-list/index-fraction`, `status-list/index-space`, `status-list/index-number`), which must be refused, or one that opens with zeros (`status-list/index-leading-zeros`), which must be read.
+Three more hold a signed entry that states a `statusSize`: an entry of two bits whose value is set at its own bits while the bit at its index is clear (`status-list/status-size-two-bits`) and one that states `0` (`status-list/status-size-zero`) must be refused, and one that states `1` (`status-list/status-size-one`) must be read from the bit at its index.
+The entry of `status-list/status-size-two-bits` states its value, 3, as `revoked` in its `statusMessage`, so an implementation that reads the two bits where Bitstring Status List v1.0 keeps them refuses it as well.
 The reference adapter applies `acceptStatusList`, and `conformance/verify.py` checks every status-list vector too.

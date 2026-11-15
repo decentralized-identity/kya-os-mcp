@@ -1,7 +1,7 @@
 {
   "suiteVersion": "1.4.0",
-  "vectorSetHash": "sha256:66969364182e094a3fba409e3f37209a80a9f788140750d160babfe3be2037bb",
-  "vectorCount": 87,
+  "vectorSetHash": "sha256:53930314c898583f5528ad1b28c8d834ef313e0be70696c983a0ea1ec96361b4",
+  "vectorCount": 90,
   "files": [
     ["audit-integrity.json", "af36a4bdbffcaf18482dad2ab57efbe5845a509a02688231b12c1ea30645cc62"],
     ["card-proof.json", "b0fd5b3eb43f1e2a9d1045bc4ef09435f2e51b55eca4f7237865981f47c3c697"],
@@ -12,7 +12,7 @@
     ["entity-card.json", "d9db03665406a506d64c1e8e2f4a4ca4bbd0ad5a925e457ab68ec56046305946"],
     ["negotiation.json", "070e8e26b080c090a1ce0b3983f553e8490cec1955341c564f870bf5e40e1ba4"],
     ["signed-proof.json", "d2f235d5e501a5ed5d4894431f293a9d4f351053159d50af0e68f281c774fb89"],
-    ["status-list-authority.json", "54689367db14e2520ca2b838de750a1a847c23640bc29bbad48a8d95126545e2"],
+    ["status-list-authority.json", "cfa849aef4a56e7d89f9cea1d91b8950cc2f766505ff1172557ee5c3a06a620b"],
     ["status-list-key-relationship.json", "285415665f181c5c9070478e4e57074fd6907fbfd8d22d2ad26ac64764916d41"],
     ["status-list.json", "0d62992d985985cf88611aae7a7f7323adf81639252698fc899dc9c080630368"]
   ],

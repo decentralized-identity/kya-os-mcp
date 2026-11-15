@@ -17,7 +17,8 @@
  *
  * FAIL-CLOSED is the invariant: an unreachable status list, a malformed credential, a list whose
  * proof is rejected, a list {@link acceptStatusList} refuses for the credential, an entry or a list
- * of another `statusPurpose`, or an out-of-range index all resolve to `{ revoked: true }`: the
+ * of another `statusPurpose`, an entry whose `statusSize` is not 1, or an out-of-range index all
+ * resolve to `{ revoked: true }`: the
  * absence of proof-of-liveness is treated as revoked, never as "probably fine".
  *
  * Each verdict also reports `fresh`: `true` only when read from a LIVE, in-validity-window
@@ -34,6 +35,7 @@ import { isRecord, issuerOf } from '../utils/guards.js';
 import { readRevocationAnswer } from '../utils/revocation-answer.js';
 import {
   acceptEntryPurpose,
+  acceptEntrySize,
   acceptStatusList,
   acceptStatusPurpose,
   assertStatusListIssuers,
@@ -53,6 +55,7 @@ import type { StatusListProofVerifier } from './status-list-proof.js';
 
 export {
   acceptedStatusListIssuers,
+  acceptEntrySize,
   acceptStatusList,
   statusListExpectationFor,
   type StatusCheckContext,
@@ -187,6 +190,10 @@ const FAIL_CLOSED: RevocationStatus = { revoked: true, fresh: false };
  * says nothing about that purpose, so it resolves {@link FAIL_CLOSED} before any fetch rather than
  * being read as the checker's. Only an entry that states no purpose is read as the checker's.
  *
+ * The checker reads one bit per entry, the bit at `statusListIndex`. An entry whose `statusSize` is
+ * not 1 keeps its status elsewhere in the list, so it resolves {@link FAIL_CLOSED} before any fetch
+ * as well ({@link acceptEntrySize}); an entry that states no `statusSize` is one bit wide.
+ *
  * With `verifyStatusList`, a list is read only when {@link acceptStatusList} accepts it for the
  * entry and `context`, asked before the proof is checked, so a list from another issuer never
  * triggers a DID resolution. A call that names no `credentialIssuer` cannot be held to anyone and
@@ -213,6 +220,8 @@ export function createRevocationChecker(
     try {
       const entryPurpose = acceptEntryPurpose(entry.statusPurpose, wantedPurpose);
       if (!entryPurpose.valid) throw new Error(`revocation: ${entryPurpose.reason}`);
+      const entrySize = acceptEntrySize(entry.statusSize);
+      if (!entrySize.valid) throw new Error(`revocation: ${entrySize.reason}`);
       const expectation = deps.verifyStatusList
         ? statusListExpectationFor(
             { statusListCredential: entry.statusListCredential, statusPurpose: wantedPurpose },

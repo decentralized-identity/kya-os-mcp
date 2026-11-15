@@ -1,6 +1,6 @@
 /**
- * The status-list acceptance API, `acceptStatusList`, `acceptedStatusListIssuers` and
- * `statusListExpectationFor` with their types, is exported from the entries a user needs:
+ * The status-list acceptance API, `acceptStatusList`, `acceptedStatusListIssuers`, `acceptEntrySize`
+ * and `statusListExpectationFor` with their types, is exported from the entries a user needs:
  * `@kya-os/mcp`, `@kya-os/mcp/delegation` for a custom `StatusListResolver`, and `@kya-os/mcp/card`
  * for a custom revocation checker. Each exports the module's own values and types, and no other
  * module re-exports them.
@@ -17,7 +17,7 @@ import * as rootEntry from '../../index.js';
 import { typeErrors } from '../../__tests__/utils/type-errors.js';
 
 const ENTRIES = { root: rootEntry, delegation: delegationEntry, card: cardEntry };
-const VALUES = ['acceptStatusList', 'acceptedStatusListIssuers', 'statusListExpectationFor'] as const;
+const VALUES = ['acceptStatusList', 'acceptedStatusListIssuers', 'acceptEntrySize', 'statusListExpectationFor'] as const;
 const TYPES = ['StatusCheckContext', 'StatusListIssuers', 'StatusListExpectation', 'StatusListVerdict'];
 
 const REPO = fileURLToPath(new URL('../../../', import.meta.url));

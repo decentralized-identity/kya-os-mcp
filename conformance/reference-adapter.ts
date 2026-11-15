@@ -21,6 +21,7 @@ import {
   requireExtension,
   type DIDDocument,
   type CredentialStatus,
+  acceptEntrySize,
   acceptStatusList,
   statusListExpectationFor,
   type DelegationCredential,
@@ -246,6 +247,11 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
             | undefined;
           if (!list) {
             throw new Error(`status list not found: ${s.statusListCredential}`);
+          }
+          // One bit is read per entry, so the shared rule refuses an entry of any other size.
+          const size = acceptEntrySize(s.statusSize);
+          if (!size.valid) {
+            throw new Error(size.reason);
           }
           const verdict = acceptStatusList(
             list,

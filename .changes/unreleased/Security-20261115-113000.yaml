@@ -1,0 +1,19 @@
+kind: Security
+body: |-
+    **A status entry of more than one bit is no longer read from another
+    entry's bit.** W3C Bitstring Status List v1.0 lets an entry state
+    `statusSize` and keeps its status in that many bits, starting at
+    `statusListIndex` times `statusSize`. Every reader read the one bit at
+    the index, and the hop schema dropped the member, so an entry of two
+    bits at index 7 was read from bit 7, which is entry 3's: a revoked
+    credential could pass, and a live one be refused. The checker
+    `createRevocationChecker` builds, `CheqdStatusListResolver` and
+    `StatusList2021Manager` now refuse, before any fetch, every entry
+    whose `statusSize` is not 1, through one exported rule,
+    `acceptEntrySize`; an entry that states none is read as before. The
+    hop and Card entry schemas keep `statusSize` and `statusMessage` and
+    reject a malformed one. Conformance suite 1.4.0 gains three vectors,
+    90 in all. 1.22.0 has the defect. UPGRADING.md, "A `credentialStatus`,
+    or a Card's `revocation` entry, that states a `statusSize`", has the
+    detail.
+time: 2026-11-15T11:30:00.000000-06:00

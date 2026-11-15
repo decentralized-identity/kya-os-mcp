@@ -89,6 +89,8 @@ export interface Verifier {
   statusListIssuers?: StatusListIssuers;
   /** The DID documents every proof is verified against, hops and lists alike; by default each did:key's own. */
   didResolver?: DIDResolver;
+  /** Receives the URL of every status list the checker fetches, in order, over all three paths. */
+  fetched?: string[];
 }
 
 /**
@@ -100,10 +102,14 @@ export interface Verifier {
 export async function verdicts(
   chain: DelegationChain,
   lists: Record<string, Record<string, unknown>>,
-  { pinned = true, statusListIssuers, didResolver = didKeys }: Verifier = {},
+  { pinned = true, statusListIssuers, didResolver = didKeys, fetched = [] }: Verifier = {},
 ) {
+  const serve = serveAt(lists);
   const checkRevocation = createRevocationChecker({
-    fetch: serveAt(lists),
+    fetch: (url) => {
+      fetched.push(url);
+      return serve(url);
+    },
     now,
     verifyStatusList: createStatusListProofVerifier({ didResolver }),
     ...(statusListIssuers ? { statusListIssuers } : {}),

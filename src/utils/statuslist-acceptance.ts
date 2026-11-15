@@ -32,7 +32,8 @@
  * credential's issuer, its chain's root issuer when the verifier pins that root, and any it is
  * configured to accept for the credential's issuer), so a list may leave its `id` out only when the
  * credential's issuer is the one it names. A reader that answers for one purpose alone first holds
- * the entry to it ({@link acceptEntryPurpose}).
+ * the entry to it ({@link acceptEntryPurpose}), and a reader that reads one bit per entry first holds
+ * the entry to that size ({@link acceptEntrySize}).
  *
  * The rule is pure and checks no proof. It means something only together with a proof verified under
  * a key the list's `issuer` lists under `assertionMethod`: until then, every field it reads, the
@@ -159,6 +160,26 @@ export function acceptEntryPurpose(statusPurpose: unknown, checkerPurpose: strin
       ? undefined
       : `the entry's statusPurpose is ${describeValue(statusPurpose)}, not the checker's ${describeValue(checkerPurpose)}`,
   );
+}
+
+/**
+ * Whether a reader that reads one bit per entry may read an entry that states `statusSize`. Bitstring
+ * Status List v1.0 §2.1 has the member optional, an integer greater than zero when stated and 1
+ * when not, and has an entry's status kept in that many bits of the list, starting at its
+ * `statusListIndex` times its `statusSize`. The bit at the index of a wider entry is therefore
+ * another entry's, and a reader that answers revoked or not for one purpose has no use for a wider
+ * value, so only an entry that states no size, or states 1, is read. Every other is refused before
+ * any list is fetched: one stating a value that is not an integer greater than zero as malformed,
+ * with nothing converted, and one stating a greater integer as wider than the reader reads. Every
+ * status-list reader in the library asks here, so the decision is made once.
+ */
+export function acceptEntrySize(statusSize: unknown): StatusListVerdict {
+  if (statusSize === undefined || statusSize === 1) return verdict(undefined);
+  if (Number.isInteger(statusSize) && (statusSize as number) > 0) {
+    return verdict(`the entry's statusSize is ${String(statusSize)}, and only an entry of one bit is read`);
+  }
+  const stated = typeof statusSize === 'number' ? String(statusSize) : describeValue(statusSize);
+  return verdict(`the entry's statusSize (${stated}) is not an integer greater than zero`);
 }
 
 /**

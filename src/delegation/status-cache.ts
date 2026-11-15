@@ -38,6 +38,8 @@ export function withStatusCache(
 
   return {
     async checkStatus(status: CredentialStatus, context?: StatusCheckContext): Promise<boolean> {
+      // The entry's statusSize is part of the key: entries of different sizes at one index keep
+      // their status in different bits, so a verdict for one is no answer for the other.
       // The context is part of the key: whether a list may speak for a credential depends on the
       // issuers the context names, so a verdict never crosses credentials that name other issuers.
       // JSON arrays turn undefined into null. Those are not equivalent: a
@@ -47,6 +49,7 @@ export function withStatusCache(
         url: status.statusListCredential,
         index: status.statusListIndex,
         purpose: status.statusPurpose,
+        size: status.statusSize,
         issuer: context?.credentialIssuer,
         root: context?.trustedRootIssuer,
       });

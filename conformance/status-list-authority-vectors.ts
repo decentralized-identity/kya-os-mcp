@@ -3,8 +3,9 @@
  * Generator for the status-list authority vectors (suite ≥ 1.4.0),
  * `conformance/vectors/status-list-authority.json`: lists signed by an issuer other than the
  * credential's, read only when the verifier accepts that issuer for the credential; the credential's
- * own issuer's list without an `id`, read only when no other issuer is accepted; and entries whose
- * `statusListIndex` is a string of decimal digits or not. It runs on its own, so adding a case
+ * own issuer's list without an `id`, read only when no other issuer is accepted; entries whose
+ * `statusListIndex` is a string of decimal digits or not; and entries that state a `statusSize`,
+ * read only when it is 1. It runs on its own, so adding a case
  * re-signs this file and no other.
  *
  * It mints parties and signs delegations as `generate-vectors.ts` does, with fresh keys on every
@@ -33,13 +34,13 @@ export async function statusListAuthorityVectors<P extends Signer>(deps: StatusL
     statusListIndex: '7', statusListCredential: url,
   };
   const credential = await deps.signDelegation(issuer, holder.did, 'authority-active', entry);
-  async function list(signer: P, statesId = true) {
+  async function list(signer: P, statesId = true, encoded = encodedList) {
     const unsigned = {
       '@context': ['https://www.w3.org/ns/credentials/v2'],
       ...(statesId ? { id: url } : {}),
       type: ['VerifiableCredential', 'BitstringStatusListCredential'],
       issuer: signer.did, validFrom: '2026-01-01T00:00:00.000Z',
-      credentialSubject: { id: `${url}#list`, type: 'BitstringStatusList', statusPurpose: 'revocation', encodedList },
+      credentialSubject: { id: `${url}#list`, type: 'BitstringStatusList', statusPurpose: 'revocation', encodedList: encoded },
     };
     return { ...unsigned, proof: await signVC(deps.crypto, unsigned, signer.privateKey, signer.kid) };
   }
@@ -79,6 +80,24 @@ export async function statusListAuthorityVectors<P extends Signer>(deps: StatusL
     credential: await deps.signDelegation(issuer, holder.did, 'authority-index-leading-zeros', { ...entry, statusListIndex: `${'0'.repeat(4300)}7` }),
     statusLists: { [url]: ownList },
   }));
+  // Entry 7 of two bits keeps its value at bits 14 and 15, which this list sets; bit 7, which it
+  // leaves clear, is entry 3's. A reader of one bit per entry would pass the entry on bit 7.
+  bits.setBit(14, true);
+  bits.setBit(15, true);
+  const valueSetList = await list(issuer, true, await bits.encode());
+  const statusMessage = ['valid', 'revoked', 'revoked', 'revoked'].map((message, value) => ({ status: `0x${value}`, message }));
+  const sizes: ReadonlyArray<readonly [string, 'pass' | 'fail', string, Record<string, unknown>, typeof ownList]> = [
+    ['two-bits', 'fail', "An entry of two bits is not read from the bit at its index, which is another entry's", { statusSize: 2, statusMessage }, valueSetList],
+    ['zero', 'fail', 'A signed entry must state a statusSize that is an integer greater than zero, or none', { statusSize: 0 }, ownList],
+    ['one', 'pass', 'An entry that states a statusSize of 1, the size of an entry that states none, is read from the bit at its index', { statusSize: 1 }, valueSetList],
+  ];
+  for (const [name, expected, reason, members, served] of sizes) {
+    vectors.push(vector(`status-size-${name}`, expected, reason, {
+      ...common,
+      credential: await deps.signDelegation(issuer, holder.did, `authority-status-size-${name}`, { ...entry, ...members }),
+      statusLists: { [url]: served },
+    }));
+  }
   return { version: SUITE_VERSION, category: 'status-list', vectors };
 }
 

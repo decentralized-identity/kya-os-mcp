@@ -21,7 +21,7 @@
 
 import { z } from 'zod';
 import { issuerOf } from '../utils/guards.js';
-import { Did, type BitstringStatusListEntry } from './schema.js';
+import { Did, statusEntrySizeShape, type BitstringStatusListEntry } from './schema.js';
 import {
   evaluateRevocationChain,
   type BitstringRevocationChecker,
@@ -69,6 +69,7 @@ export const DelegationCredentialStatusSchema = z.object({
   statusPurpose: z.string().optional(),
   statusListIndex: z.string().min(1),
   statusListCredential: z.string().min(1),
+  ...statusEntrySizeShape,
 });
 
 /** Data Integrity proof, `eddsa-jcs-2022` cryptosuite (verified by a separate injected seam). */
@@ -132,11 +133,18 @@ export function leafInvokerOf(chain: DelegationChain): string | undefined {
   const leaf = chain[chain.length - 1];
   return leaf ? invokerDid(leaf) : undefined;
 }
-/** Project a hop's `credentialStatus` onto the revocation-seam entry shape (if present). */
+/**
+ * Project a hop's `credentialStatus` onto the revocation-seam entry shape (if present), with the
+ * `statusSize` it states, so that a checker refuses an entry it cannot read from one bit.
+ */
 export function statusEntryOf(vc: DelegationCredential): BitstringStatusListEntry | undefined {
   const status = vc.credentialStatus;
   if (!status) return undefined;
-  return { statusListCredential: status.statusListCredential, statusListIndex: status.statusListIndex };
+  return {
+    statusListCredential: status.statusListCredential,
+    statusListIndex: status.statusListIndex,
+    ...(status.statusSize === undefined ? {} : { statusSize: status.statusSize }),
+  };
 }
 /**
  * Every hop's status entry, root to leaf, for {@link evaluateRevocationChain}, with the

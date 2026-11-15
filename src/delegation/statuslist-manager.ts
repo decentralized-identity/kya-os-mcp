@@ -14,7 +14,7 @@ import { BitstringManager, type CompressionFunction, type DecompressionFunction 
 import { parseStatusListIndex } from '../utils/statuslist-bits.js';
 import type { VCSigningFunction } from './vc-issuer.js';
 import { canonicalizeJSON } from './utils.js';
-import { acceptStatusPurpose } from '../utils/statuslist-acceptance.js';
+import { acceptEntrySize, acceptStatusPurpose } from '../utils/statuslist-acceptance.js';
 
 export interface StatusListStorageProvider {
   getStatusList(statusListId: string): Promise<StatusList2021Credential | null>;
@@ -98,6 +98,7 @@ export class StatusList2021Manager {
   }
 
   async updateStatus(credentialStatus: CredentialStatus, revoked: boolean): Promise<void> {
+    assertOneBitEntry(credentialStatus);
     await this.withListLock(credentialStatus.statusListCredential, () =>
       this.doUpdateStatus(credentialStatus, revoked)
     );
@@ -171,6 +172,7 @@ export class StatusList2021Manager {
   }
 
   async checkStatus(credentialStatus: CredentialStatus): Promise<boolean> {
+    assertOneBitEntry(credentialStatus);
     const { statusListCredential, statusListIndex } = credentialStatus;
 
     const statusList = await this.storage.getStatusList(statusListCredential);
@@ -292,6 +294,19 @@ export class StatusList2021Manager {
 
   getDefaultListSize(): number {
     return this.defaultListSize;
+  }
+}
+
+/**
+ * Throw unless `credentialStatus` is one bit wide, as the shared rule decides it
+ * ({@link acceptEntrySize}). The manager reads and writes the bit at an entry's index, and an entry
+ * of another `statusSize` keeps its status in other bits, so the bit at its index is another
+ * entry's. It throws before any list is read from storage.
+ */
+function assertOneBitEntry(credentialStatus: CredentialStatus): void {
+  const size = acceptEntrySize(credentialStatus.statusSize);
+  if (!size.valid) {
+    throw new Error(size.reason);
   }
 }
 

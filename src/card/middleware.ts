@@ -20,6 +20,7 @@
  */
 
 import type { ToolRequest } from '../proof/generator.js';
+import { dependencyTimeout } from '../utils/deadline.js';
 import { isRecord } from '../utils/guards.js';
 import {
   toDidServiceEntry,
@@ -171,6 +172,8 @@ const ASSURANCE_RANK: Record<ProofAssurance, number> = { 'L3-minus': 1, L3: 2 };
  * request FAILS CLOSED (`nonce_seam_missing`).
  */
 export function requireProof(deps: VerifyProofDeps, opts: RequireProofOptions = {}): ProofGuard {
+  // A mistyped deadline fails when the guard is built, not as a proof that did not verify.
+  dependencyTimeout(deps.dependencyTimeoutMs);
   return async (req, meta) => {
     const proof = readCardProof(meta);
     if (proof === undefined) {

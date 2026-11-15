@@ -22,7 +22,7 @@ import { issuerOf } from "../utils/guards.js";
 import { sanitizeForMessage } from "../utils/message-text.js";
 import { readVerdict } from "../utils/verdict.js";
 import { credentialIssuerRefusal } from "./credential-issuer.js";
-import { resolveBoundedDid } from "./did-resource-limits.js";
+import { DID_RESOLUTION_TIMEOUT_MS, resolveBoundedDid } from "./did-resource-limits.js";
 import { readRevoked, unreadableStatusReason } from "../utils/revocation-answer.js";
 import type {
   DIDResolver,
@@ -192,12 +192,14 @@ export function combineVerificationResult(
  * delegations. The proof options are outside the signature (SPEC.md §6.2), so
  * a `proofPurpose` binds nothing; one that names another purpose is still
  * rejected, since the proof was not made as an assertion, and one that is
- * absent is read as an assertion.
+ * absent is read as an assertion. The DID resolver and the signature verifier
+ * each get `timeoutMs` to answer, by default 5,000 ms.
  */
 export async function verifySignature(
   vc: DelegationCredential,
   didResolver: DIDResolver | undefined,
   signatureVerifier: SignatureVerificationFunction | undefined,
+  timeoutMs: number = DID_RESOLUTION_TIMEOUT_MS,
 ): Promise<{ valid: boolean; reason?: string; durationMs?: number }> {
   const startTime = Date.now();
 
@@ -246,7 +248,7 @@ export async function verifySignature(
     }
 
     const keyId = typeof vc.proof?.verificationMethod === "string" ? vc.proof.verificationMethod : undefined;
-    const didDoc = await resolveBoundedDid(didResolver, issuerDid, keyId);
+    const didDoc = await resolveBoundedDid(didResolver, issuerDid, keyId, timeoutMs);
     if (!didDoc) {
       return {
         valid: false,
@@ -291,7 +293,7 @@ export async function verifySignature(
     // The verifier is the host's code: its answer verifies only as the literal `true`.
     const answer: unknown = await answerWithinDeadline("the signature verifier", () =>
       signatureVerifier(vc, publicKeyJwk),
-    );
+    timeoutMs);
 
     return { ...readVerdict("the signature verifier", answer), durationMs: Date.now() - startTime };
   } catch (error) {
@@ -308,7 +310,7 @@ export async function verifySignature(
  * labelled with a {@link StatusOutcome} so consumers can tell a settled
  * `revoked` (re-consent) from a transient `status_unresolvable` (retry):
  * a missing resolver, a resolver that throws and one that has not answered
- * within the DID resolver's deadline all DENY as `status_unresolvable`, and so
+ * within `timeoutMs` all DENY as `status_unresolvable`, and so
  * does a resolver whose answer is not a boolean;
  * only a literal `true` DENIES as `revoked`. The resolver is
  * told `credentialIssuer`, the issuer DID of the credential, and holds the
@@ -319,6 +321,7 @@ export async function checkCredentialStatus(
   status: CredentialStatus,
   statusListResolver: StatusListResolver | undefined,
   credentialIssuer: string | undefined,
+  timeoutMs: number = DID_RESOLUTION_TIMEOUT_MS,
 ): Promise<StatusCheckResult> {
   const startTime = Date.now();
 
@@ -345,7 +348,7 @@ export async function checkCredentialStatus(
 
     const answer: unknown = await answerWithinDeadline("the status list resolver", () =>
       statusListResolver.checkStatus(status, { credentialIssuer }),
-    );
+    timeoutMs);
     const revoked = readRevoked(answer);
 
     if (revoked === undefined) {

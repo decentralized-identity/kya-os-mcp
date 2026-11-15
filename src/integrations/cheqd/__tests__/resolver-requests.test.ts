@@ -8,7 +8,8 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DidCheqdResolver } from '../resolver.js';
+import { DEADLINES, REFUSED_TIMEOUTS, settledAt, timeoutTypeError } from '../../../__tests__/utils/deadlines.js';
+import { cheqdResolver, createDidCheqdResolver, DidCheqdResolver } from '../resolver.js';
 import { RuntimeFetchProvider } from '../../../providers/runtime-fetch.js';
 import { DID_RESOLUTION_TIMEOUT_MS } from '../../../delegation/did-resource-policy.js';
 import { logger } from '../../../logging/index.js';
@@ -75,5 +76,42 @@ describe('the cheqd resolver logs a failed read', () => {
     expect(warn.mock.calls).toEqual([
       [`[DidCheqdResolver] Error resolving ${short}: DID resolution failed: HTTP 500 for "https://r.example/${short}"`],
     ]);
+  });
+});
+
+describe.each(DEADLINES)('the cheqd resolver and a dependency that never answers, %s', (_label, option, ms) => {
+  const options = { resolverUrl: 'https://resolver.example', ...option };
+
+  it('resolves no document when its fetch has not answered by the deadline', async () => {
+    expect(await settledAt(ms, (never) => new DidCheqdResolver({ fetch: never } as unknown as FetchProvider, options).resolve(DID))).toBeNull();
+  });
+
+  it('resolves no document when its headers function has not answered by the deadline', async () => {
+    const { provider } = answering(() => new Response(JSON.stringify(document)));
+    expect(await settledAt(ms, (never) => createDidCheqdResolver(provider, { ...options, headers: never }).resolve(DID))).toBeNull();
+  });
+
+  it('shares one pending read among resolutions of a DID until the deadline, and starts another after it', async () => {
+    vi.useFakeTimers();
+    const fetch = vi.fn(() => new Promise<Response>(() => undefined));
+    const resolver = cheqdResolver(options)({ fetch } as unknown as FetchProvider);
+    void resolver.resolve(DID);
+    await vi.advanceTimersByTimeAsync(ms - 1);
+    void resolver.resolve(DID);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    void resolver.resolve(DID);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('the cheqd resolver and a dependencyTimeoutMs it cannot wait', () => {
+  it.each(REFUSED_TIMEOUTS)('throws a TypeError when built with %s', (_label, value, got) => {
+    const { provider } = answering(() => new Response('{}'));
+    const options = { resolverUrl: 'https://resolver.example', dependencyTimeoutMs: value as number };
+    expect(() => new DidCheqdResolver(provider, options)).toThrow(timeoutTypeError(got));
+    expect(() => createDidCheqdResolver(provider, options)).toThrow(timeoutTypeError(got));
   });
 });

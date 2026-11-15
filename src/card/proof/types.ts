@@ -243,6 +243,11 @@ export interface VerifyProofDeps {
   now?: () => number;
   /** Accepted clock skew in seconds (default {@link DEFAULT_SKEW_SEC}). */
   skewSec?: number;
+  /**
+   * How long, in milliseconds, `resolveKey`, `resolveDidKeys` and `consumeNonceIfFresh` may each take to answer: a number greater than 0 and at most
+   * 2,147,483,647. Default 5,000. Any other value throws a `TypeError` naming the option.
+   */
+  dependencyTimeoutMs?: number;
 }
 
 /** Assurance a valid proof carries: L3 on full cnf fusion, L3-minus without an AS `cnf`. */

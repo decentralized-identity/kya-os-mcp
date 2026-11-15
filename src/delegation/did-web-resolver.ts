@@ -20,6 +20,7 @@ import { publicKeyToJwk } from './did-key-resolver.js';
 import { hasIdTypeAndController } from './verification-method-shape.js';
 
 import { admitParsedDidDocument, boundedDid, DidDocumentCache, type LoadedDidDocument } from './did-resource-limits.js';
+import { dependencyTimeout } from '../utils/deadline.js';
 import { fetchDidJson } from './read-did-json.js';
 
 /**
@@ -173,6 +174,17 @@ export function didWebToUrl(did: string): string | null {
   return url;
 }
 
+/** Options of {@link DidWebResolver} and {@link createDidWebResolver}. */
+export interface DidWebResolverOptions {
+  /** How long a resolved document is cached, in milliseconds. Default 300,000. */
+  cacheTtl?: number;
+  /**
+   * How long, in milliseconds, one read of a did:web document, headers and body, may take: a number greater than 0 and at most
+   * 2,147,483,647. Default 5,000. Any other value throws a `TypeError` naming the option.
+   */
+  dependencyTimeoutMs?: number;
+}
+
 /**
  * DID:web resolver implementation
  */
@@ -180,10 +192,12 @@ export class DidWebResolver implements DIDResolver {
   private fetchProvider: Pick<FetchProvider, 'fetch' | 'allowPrivateNetworkHosts'>;
   private cache: DidDocumentCache;
   private cacheTtl: number;
+  private readonly timeoutMs: number;
 
-  constructor(fetchProvider: Pick<FetchProvider, 'fetch' | 'allowPrivateNetworkHosts'>, options?: { cacheTtl?: number }) {
+  constructor(fetchProvider: Pick<FetchProvider, 'fetch' | 'allowPrivateNetworkHosts'>, options?: DidWebResolverOptions) {
     this.fetchProvider = fetchProvider;
-    this.cache = new DidDocumentCache();
+    this.timeoutMs = dependencyTimeout(options?.dependencyTimeoutMs);
+    this.cache = new DidDocumentCache(this.timeoutMs);
     this.cacheTtl = options?.cacheTtl ?? 300_000; // 5 minutes default
   }
 
@@ -214,7 +228,7 @@ export class DidWebResolver implements DIDResolver {
   /** Fetch, measure, freeze and check the document `did` names at `url`, or `null`. */
   private async fetchDocument(did: string, url: string): Promise<LoadedDidDocument | null> {
     try {
-      const json: unknown = await fetchDidJson(this.fetchProvider, url);
+      const json: unknown = await fetchDidJson(this.fetchProvider, url, {}, this.timeoutMs);
       const measure = admitParsedDidDocument(json);
       if (!measure.ok) {
         logger.warn(`[DidWebResolver] DID Document from ${url} refused: ${measure.reason}`);
@@ -267,7 +281,7 @@ export class DidWebResolver implements DIDResolver {
  */
 export function createDidWebResolver(
   fetchProvider: Pick<FetchProvider, 'fetch' | 'allowPrivateNetworkHosts'>,
-  options?: { cacheTtl?: number }
+  options?: DidWebResolverOptions
 ): DIDResolver {
   return new DidWebResolver(fetchProvider, options);
 }

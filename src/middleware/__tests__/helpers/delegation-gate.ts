@@ -11,6 +11,7 @@ import type { CryptoProvider, FetchProvider } from '../../../providers/base.js';
 import type { GrantStore } from '../../../providers/grant-store.js';
 import { didKeyFragment, generateDidKeyFromBase64 } from '../../../utils/did-helpers.js';
 import { createKyaOsMiddleware } from '../../with-kya-os.js';
+import type { KyaOsDelegationConfig } from '../../with-kya-os.config-types.js';
 import type { KyaOsCallContext } from '../../with-kya-os.types.js';
 import { crypto, handshake, proofOf, served, verifyReceived } from './received-proof.js';
 
@@ -28,6 +29,8 @@ export interface GateOptions {
   /** The audit store that receives the gate's events. */
   readonly record?: AuditTrailService['record'];
   readonly grantStore?: GrantStore;
+  /** Further `delegation` options of the middleware. */
+  readonly config?: KyaOsDelegationConfig;
 }
 
 export async function delegationGate({
@@ -37,6 +40,7 @@ export async function delegationGate({
   scopeId = 'orders:place',
   record,
   grantStore,
+  config,
 }: GateOptions) {
   const server = await crypto.generateKeyPair();
   const did = generateDidKeyFromBase64(server.publicKey);
@@ -44,7 +48,7 @@ export async function delegationGate({
     {
       identity: { did, kid: `${did}#${didKeyFragment(did)}`, ...server },
       session: { sessionTtlMinutes: 60 },
-      delegation: { ...resolution, trustedRootIssuers },
+      delegation: { ...config, ...resolution, trustedRootIssuers },
       ...(record === undefined ? {} : { audit: { record } }),
       ...(grantStore === undefined ? {} : { grantStore }),
     },

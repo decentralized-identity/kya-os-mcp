@@ -20,7 +20,7 @@
 
 import { compactVerify, importJWK } from "jose";
 import type { JWK } from "jose";
-import { resolveBoundedDid } from "./did-resource-limits.js";
+import { DID_RESOLUTION_TIMEOUT_MS, resolveBoundedDid } from "./did-resource-limits.js";
 import type { DelegationCredential } from "../types/protocol.js";
 import type {
   DIDDocument,
@@ -188,12 +188,15 @@ export interface VcJwtSignatureResult {
  * the compact JWS with `jose` — `algorithms` pinned to `EdDSA`, so a token
  * cannot downgrade the suite or claim `alg: none`. Fail-closed: any
  * resolution, key-import, or verification problem denies, and none throws.
+ * The DID resolver gets `timeoutMs` to answer, 5,000 ms unless the caller
+ * passes another.
  */
 export async function verifyVcJwtSignature(
   jwt: string,
   issuerDid: string,
   kid: string | undefined,
   didResolver: DIDResolver | undefined,
+  timeoutMs: number = DID_RESOLUTION_TIMEOUT_MS,
 ): Promise<VcJwtSignatureResult> {
   const startTime = Date.now();
   const done = (valid: boolean, reason?: string): VcJwtSignatureResult => ({
@@ -212,7 +215,7 @@ export async function verifyVcJwtSignature(
   const issuer = describeValue(issuerDid);
   let didDoc: DIDDocument | null;
   try {
-    didDoc = await resolveBoundedDid(didResolver, issuerDid, kid);
+    didDoc = await resolveBoundedDid(didResolver, issuerDid, kid, timeoutMs);
   } catch (err) {
     return done(false, `Could not resolve issuer DID ${issuer}: ${errMsg(err)}`);
   }

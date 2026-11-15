@@ -55,6 +55,7 @@ import {
   buildDidResolverRegistry,
   type DIDResolverRegistry,
 } from "../delegation/did-resolver-registry.js";
+import { dependencyTimeout } from "../utils/deadline.js";
 import { getDidMethod } from "../utils/did-helpers.js";
 import type { DIDDocument } from "../delegation/vc-verifier.js";
 import type {
@@ -76,6 +77,11 @@ export interface RuntimeFetchProviderOptions {
    * so network-backed resolvers can share the same fetch implementation.
    */
   didResolvers?: DIDResolverRegistry;
+  /**
+   * How long, in milliseconds, one `resolveDID`, across a configured resolver and the built-in one, or one `fetchStatusList` may take: a number greater than 0 and at most
+   * 2,147,483,647. Default 5,000. Any other value throws a `TypeError` naming the option.
+   */
+  dependencyTimeoutMs?: number;
 }
 
 export class RuntimeFetchProvider extends FetchProvider {
@@ -87,9 +93,11 @@ export class RuntimeFetchProvider extends FetchProvider {
    * read through this provider, including the delegation gate's.
    */
   readonly allowPrivateNetworkHosts: boolean;
+  private readonly timeoutMs: number;
 
   constructor(options?: RuntimeFetchProviderOptions) {
     super();
+    this.timeoutMs = dependencyTimeout(options?.dependencyTimeoutMs);
     this.allowPrivateNetworkHosts = options?.allowPrivateNetworkHosts === true;
     this.didResolvers = buildDidResolverRegistry(options?.didResolvers, this);
   }
@@ -99,14 +107,14 @@ export class RuntimeFetchProvider extends FetchProvider {
    * did:web is fetched from its HTTPS `/.well-known/did.json`. A configured
    * resolver for the DID's method is asked first, and the built-in one only
    * when it finds no document: a document of its that the limits refuse ends
-   * the resolution. Both share one 5-second deadline, and a miss ends the
+   * the resolution. Both share one deadline, `dependencyTimeoutMs`, and a miss ends the
    * resolution too. Returns null for unsupported methods, a blocked
    * (private-network) did:web host, a refused document, a missed deadline or
    * any resolution failure (never throws).
    */
   async resolveDID(did: string): Promise<DIDDocument | null> {
     if (!boundedDid(did)) return null;
-    const deadline = resolutionDeadline();
+    const deadline = resolutionDeadline(this.timeoutMs);
     try {
       return await this.resolveWithin(did, deadline);
     } catch {
@@ -133,7 +141,7 @@ export class RuntimeFetchProvider extends FetchProvider {
       // rule, never resolveDID, so it does not recurse. Cache it to reuse its doc
       // cache. A read the deadline abandons ends at its own deadline.
       if (!this.didWebResolver) {
-        this.didWebResolver = createDidWebResolver(this);
+        this.didWebResolver = createDidWebResolver(this, { dependencyTimeoutMs: this.timeoutMs });
       }
       return deadline.within(this.didWebResolver.resolve(did));
     }
@@ -148,7 +156,7 @@ export class RuntimeFetchProvider extends FetchProvider {
    */
   async fetchStatusList(url: string): Promise<StatusList2021Credential | null> {
     try {
-      const json = await fetchStatusListJson(this, url);
+      const json = await fetchStatusListJson(this, url, {}, this.timeoutMs);
       return isStatusList2021Credential(json) ? json : null;
     } catch {
       return null;

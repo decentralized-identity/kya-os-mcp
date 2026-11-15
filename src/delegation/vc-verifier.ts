@@ -39,16 +39,34 @@ import {
 } from "./vc-jwt-verify.js";
 import type { VcJwtSignatureResult } from "./vc-jwt-verify.js";
 import { canonicalizeJson } from "../utils/canonical-json.js";
+import { dependencyTimeout } from "../utils/deadline.js";
 import { TtlCache } from "../utils/ttl-cache.js";
 
 // Re-export the shared type surface so existing imports of DIDResolver /
 // SignatureVerificationFunction / StatusListResolver / … are unchanged.
 export * from "./vc-verifier.types.js";
 
+/** Options of {@link DelegationCredentialVerifier} and {@link createDelegationVerifier}. */
+export interface DelegationCredentialVerifierOptions {
+  didResolver?: DIDResolver;
+  statusListResolver?: StatusListResolver;
+  signatureVerifier?: SignatureVerificationFunction;
+  /** Signature-result TTL in ms. `0` disables signature caching. Default 60_000. */
+  cacheTtl?: number;
+  /** Maximum cache entries. Default: 1000 */
+  maxCacheSize?: number;
+  /**
+   * How long, in milliseconds, the DID resolver, the signature verifier and the status list resolver may each take to answer: a number greater than 0 and at most
+   * 2,147,483,647. Default 5,000. Any other value throws a `TypeError` naming the option.
+   */
+  dependencyTimeoutMs?: number;
+}
+
 export class DelegationCredentialVerifier {
   private didResolver?: DIDResolver;
   private statusListResolver?: StatusListResolver;
   private signatureVerifier?: SignatureVerificationFunction;
+  private readonly timeoutMs: number;
   /**
    * Signature-result cache (FIFO eviction, TTL-bounded). Holds only REAL
    * signature verifications; size `maxCacheSize` to the expected number of
@@ -56,15 +74,9 @@ export class DelegationCredentialVerifier {
    */
   private cache: TtlCache<SignatureVerificationResult>;
 
-  constructor(options?: {
-    didResolver?: DIDResolver;
-    statusListResolver?: StatusListResolver;
-    signatureVerifier?: SignatureVerificationFunction;
-    /** Signature-result TTL in ms. `0` disables signature caching. Default 60_000. */
-    cacheTtl?: number;
-    /** Maximum cache entries. Default: 1000 */
-    maxCacheSize?: number;
-  }) {
+  /** @throws TypeError when `dependencyTimeoutMs` is not a number of milliseconds it can wait. */
+  constructor(options?: DelegationCredentialVerifierOptions) {
+    this.timeoutMs = dependencyTimeout(options?.dependencyTimeoutMs);
     this.didResolver = options?.didResolver;
     this.statusListResolver = options?.statusListResolver;
     this.signatureVerifier = options?.signatureVerifier;
@@ -128,6 +140,7 @@ export class DelegationCredentialVerifier {
             vc,
             options.didResolver || this.didResolver,
             this.signatureVerifier,
+            this.timeoutMs,
           ),
     );
 
@@ -173,6 +186,7 @@ export class DelegationCredentialVerifier {
             issuerDid,
             kid,
             options.didResolver || this.didResolver,
+            this.timeoutMs,
           ),
     );
 
@@ -201,6 +215,7 @@ export class DelegationCredentialVerifier {
             vc.credentialStatus,
             options.statusListResolver || this.statusListResolver,
             credentialIssuerDid(vc),
+            this.timeoutMs,
           )
         : Promise.resolve<StatusCheckResult>({
             valid: true,
@@ -316,14 +331,6 @@ export class DelegationCredentialVerifier {
   }
 }
 
-export function createDelegationVerifier(options?: {
-  didResolver?: DIDResolver;
-  statusListResolver?: StatusListResolver;
-  signatureVerifier?: SignatureVerificationFunction;
-  /** Signature-result TTL in ms. `0` disables signature caching. Default 60_000. */
-  cacheTtl?: number;
-  /** Maximum cache entries. Default: 1000 */
-  maxCacheSize?: number;
-}): DelegationCredentialVerifier {
+export function createDelegationVerifier(options?: DelegationCredentialVerifierOptions): DelegationCredentialVerifier {
   return new DelegationCredentialVerifier(options);
 }

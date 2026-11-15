@@ -9,6 +9,7 @@
 
 import { createDidKeyResolver } from "../delegation/did-key-resolver.js";
 import { createDidWebResolver } from "../delegation/did-web-resolver.js";
+import { dependencyTimeout } from "../utils/deadline.js";
 import {
   buildDidResolverRegistry,
 } from "../delegation/did-resolver-registry.js";
@@ -145,14 +146,16 @@ export function createDelegationVerification(
 ): DelegationVerification {
   const { identity, cryptoProvider, delegationConfig } = deps;
 
+  // Refused at startup, before anything that waits is built.
+  const dependencyTimeoutMs = dependencyTimeout(delegationConfig?.dependencyTimeoutMs, "delegation.");
   const didKeyResolver = createDidKeyResolver();
   const fetchProvider =
     delegationConfig?.fetchProvider ??
     (typeof globalThis.fetch === "function"
-      ? new RuntimeFetchProvider()
+      ? new RuntimeFetchProvider({ dependencyTimeoutMs })
       : undefined);
   const didWebResolver = fetchProvider
-    ? createDidWebResolver(fetchProvider)
+    ? createDidWebResolver(fetchProvider, { dependencyTimeoutMs })
     : undefined;
   const configuredDidResolvers = buildDidResolverRegistry(
     delegationConfig?.didResolvers,
@@ -242,6 +245,7 @@ export function createDelegationVerification(
     statusListResolver: delegationConfig?.statusListResolver,
     cacheTtl: delegationConfig?.verificationCache?.ttlMs,
     maxCacheSize: delegationConfig?.verificationCache?.maxEntries,
+    dependencyTimeoutMs,
   });
 
   const buildDelegationErrorResponse = (
@@ -319,6 +323,7 @@ export function createDelegationVerification(
         revocationChecker: delegationConfig?.revocationChecker,
         ...(trustedRootIssuers !== undefined ? { trustedRootIssuers } : {}),
         ...(maxChainLength !== undefined ? { maxChainLength } : {}),
+        dependencyTimeoutMs,
       },
     );
     if (!result.valid && envelopeFailure !== undefined) return { ...result, reason: envelopeFailure };

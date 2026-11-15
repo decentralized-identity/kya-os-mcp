@@ -132,7 +132,7 @@ export interface VerificationMethod {
  *
  * The answer is read strictly: `true` is revoked, `false` is not, and any other value, which only
  * untyped code can give, denies the credential as `status_unresolvable`. So does a `checkStatus`
- * that has not answered within the deadline a DID resolver has.
+ * that has not answered within the verifier's `dependencyTimeoutMs`, 5,000 ms by default.
  */
 export interface StatusListResolver {
   checkStatus(status: CredentialStatus, context?: StatusCheckContext): Promise<boolean>;
@@ -154,7 +154,7 @@ export interface StatusCheckResult {
  * Verifies a credential's embedded proof under `publicKeyJwk`. The answer is read strictly: the
  * signature verifies only on an object whose `valid` is the literal `true`, and any other answer,
  * which only untyped code can give, leaves it unverified. So does a verifier that has not answered
- * within the deadline a DID resolver has.
+ * within the verifier's `dependencyTimeoutMs`, 5,000 ms by default.
  */
 export interface SignatureVerificationFunction {
   (

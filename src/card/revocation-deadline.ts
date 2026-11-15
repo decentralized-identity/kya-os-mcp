@@ -1,5 +1,5 @@
 /**
- * A revocation checker asked under the deadline every dependency a verifier waits on gets
+ * A revocation checker asked under the deadline its verifier gives every dependency it waits on
  * (`utils/deadline.ts`). The chain walk and `verifyCard` both ask through here, so a checker the
  * host supplies, or the list read and proof check behind the shipped one, cannot hold either open.
  */
@@ -13,19 +13,20 @@ export type AskedRevocation = { answer: unknown } | { expired: string };
 
 /**
  * What `check` answers about `entry`, with `context` when there is one, unread: the caller reads it
- * as any revocation answer is read. A checker that has not answered by the deadline is not waited
+ * as any revocation answer is read. A checker that has not answered in `timeoutMs` is not waited
  * on, and the result says so, apart from any answer, so an answer that is itself text is never
  * taken for it. A checker that throws still throws.
  */
 export async function checkWithinDeadline(
   check: BitstringRevocationChecker,
   entry: RevocationStatusEntry,
-  context?: StatusCheckContext,
+  context: StatusCheckContext | undefined,
+  timeoutMs: number,
 ): Promise<AskedRevocation> {
   try {
     const answer: unknown = await answerWithinDeadline('the revocation checker', () =>
       context === undefined ? check(entry) : check(entry, context),
-    );
+    timeoutMs);
     return { answer };
   } catch (error) {
     if (error instanceof DeadlineExceededError) return { expired: error.message };

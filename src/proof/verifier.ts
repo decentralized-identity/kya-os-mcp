@@ -16,6 +16,7 @@ import {
   type MetaPolicy,
 } from "../types/protocol.js";
 import { canonicalizeJson } from "../utils/canonical-json.js";
+import { dependencyTimeout } from "../utils/deadline.js";
 import {
   ProofVerificationError,
   PROOF_VERIFICATION_ERROR_CODES,
@@ -60,6 +61,7 @@ export class ProofVerifier {
   private timestampSkewSeconds: number;
   private nonceTtlSeconds: number;
   private requireAtomicNonce: boolean;
+  private readonly timeoutMs: number;
   private cryptoProvider: CryptoProvider;
 
   constructor(config: ProofVerifierConfig) {
@@ -77,6 +79,7 @@ export class ProofVerifier {
       config.nonceTtlSeconds ?? 300, // Default 5 minutes
     );
     this.requireAtomicNonce = config.requireAtomicNonce ?? false;
+    this.timeoutMs = dependencyTimeout(config.dependencyTimeoutMs);
     checkNonceStore(this.nonceCache, { requireAtomicNonce: this.requireAtomicNonce });
   }
 
@@ -531,7 +534,7 @@ export class ProofVerifier {
       checkProofIdentifiers(did, kid);
       // Built before resolving, so a kid naming another DID fails without a fetch.
       const matchesKid = kid ? verificationMethodMatcher(did, kid) : undefined;
-      const didDoc = await resolveProofDid(this.fetch, did, kid);
+      const didDoc = await resolveProofDid(this.fetch, did, kid, this.timeoutMs);
 
       if (!didDoc) {
         throw new ProofVerificationError(

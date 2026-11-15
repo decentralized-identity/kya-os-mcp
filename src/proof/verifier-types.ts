@@ -39,4 +39,9 @@ export interface ProofVerifierConfig {
    * to `has()` then `add()`. The constructor throws for such a cache.
    */
   requireAtomicNonce?: boolean;
+  /**
+   * How long, in milliseconds, `fetchProvider.resolveDID` may take to answer: a number greater than
+   * 0 and at most 2,147,483,647. Default 5,000. Any other value throws a `TypeError` naming the option.
+   */
+  dependencyTimeoutMs?: number;
 }

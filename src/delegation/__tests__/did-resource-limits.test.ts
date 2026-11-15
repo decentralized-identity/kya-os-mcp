@@ -217,7 +217,7 @@ describe('DID resource boundaries', () => {
     process.on('unhandledRejection', unhandled);
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
-      const deadline = resolutionDeadline();
+      const deadline = resolutionDeadline(DID_RESOLUTION_TIMEOUT_MS);
       vi.advanceTimersByTime(DID_RESOLUTION_TIMEOUT_MS);
       await new Promise(resolve => setImmediate(resolve));
       expect(unhandled).not.toHaveBeenCalled();

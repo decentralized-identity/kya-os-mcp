@@ -4,7 +4,7 @@
  * bound what an attacker who names many DIDs can make a verifier hold.
  *
  * It holds only documents the walk admitted, which are frozen, so a hit is served as stored with no
- * second walk. Concurrent resolutions of one DID share one load until the resolution deadline: a
+ * second walk. Concurrent resolutions of one DID share one load until its resolver's deadline: a
  * load still pending then is dropped, so no load that hangs can hold every later resolution of its
  * DID, and the next one starts afresh.
  */
@@ -29,6 +29,9 @@ export class DidDocumentCache {
   private readonly entries = new Map<string, Entry>();
   private readonly loading = new Map<string, Promise<DIDDocument | null>>();
   private bytes = 0;
+
+  /** `loadTimeoutMs` is the deadline of the resolver's read, after which a pending load is dropped. */
+  constructor(private readonly loadTimeoutMs: number = DID_RESOLUTION_TIMEOUT_MS) {}
 
   /** The unexpired document cached for `did`, now the most recently used. */
   get(did: string): DIDDocument | undefined {
@@ -81,7 +84,7 @@ export class DidDocumentCache {
       clearTimeout(deadline);
       drop();
     });
-    const deadline = setTimeout(drop, DID_RESOLUTION_TIMEOUT_MS);
+    const deadline = setTimeout(drop, this.loadTimeoutMs);
     this.loading.set(did, loaded);
     return loaded;
   }

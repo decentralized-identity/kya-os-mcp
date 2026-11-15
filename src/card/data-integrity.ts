@@ -33,13 +33,14 @@ const MAX_PROOF_VALUE_BASE58 = 100;
  * Verify a document's single `DataIntegrityProof` / `eddsa-jcs-2022` proof made for `proofPurpose`
  * by an Ed25519 key the issuer's DID document lists under the `proofPurpose` verification
  * relationship. Resolves `true` only when every check passes; a malformed proof, an unresolvable
- * key or a key listed only for other purposes resolves `false`. A throwing resolver propagates, so
- * a caller that wants a boolean wraps the call.
+ * key or a key listed only for other purposes resolves `false`. A throwing resolver propagates, and
+ * so does one that has not answered in `timeoutMs`, by default 5,000 ms, so a caller that wants a boolean wraps the call.
  */
 export async function verifyEddsaJcs2022(
   document: Record<string, unknown>,
   didResolver: DIDResolver,
   proofPurpose: VerificationRelationship,
+  timeoutMs?: number,
 ): Promise<boolean> {
   const proof = document.proof;
   // One proof object: a proof set or chain is not a shape this check reads.
@@ -57,7 +58,7 @@ export async function verifyEddsaJcs2022(
   const signature = base58Decode(proofValue.slice(1), MAX_PROOF_VALUE_BASE58);
   if (signature.length !== ED25519_SIGNATURE_LENGTH) return false;
 
-  const didDocument = await resolveBoundedDid(didResolver, did, verificationMethod);
+  const didDocument = await resolveBoundedDid(didResolver, did, verificationMethod, timeoutMs);
   const method = didDocument
     ? retrieveVerificationMethod(didDocument, did, verificationMethod, proofPurpose)
     : undefined;

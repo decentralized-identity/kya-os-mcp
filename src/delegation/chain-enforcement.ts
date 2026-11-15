@@ -17,7 +17,8 @@ import {
   type DelegationCredential,
 } from "../types/protocol.js";
 import { canonicalizeJson } from "../utils/canonical-json.js";
-import { answerWithinDeadline } from "../utils/deadline.js";
+import { answerWithinDeadline, dependencyTimeoutRefusal } from "../utils/deadline.js";
+import { OUTBOUND_READ_TIMEOUT_MS } from "../utils/outbound-read-limits.js";
 import { readVerdict } from "../utils/verdict.js";
 import { verifyDelegationAudience } from "./audience-validator.js";
 import { chainResolutionFailure, revocationCheckFailure, revocationRefusal } from "./chain-reasons.js";
@@ -226,8 +227,8 @@ export interface DelegationCredentialVerifierPort {
  * cascade-revocation that hadn't flipped the leaf's own bit could be missed.
  *
  * The answer is read strictly: a chain passes only on `revoked: false`, is revoked only on
- * `revoked: true`, and is refused as unreadable on anything else. Each call gets the deadline a
- * DID resolver has, and one that has not answered by then fails the check.
+ * `revoked: true`, and is refused as unreadable on anything else. Each call gets
+ * `dependencyTimeoutMs` to answer, and one that has not answered by then fails the check.
  */
 export interface RevocationChecker {
   isRevoked(delegationId: string): Promise<{
@@ -245,7 +246,7 @@ export interface ChainEnforcementDeps {
   /**
    * Resolve ancestor credentials for a re-delegated leaf. May return ancestors
    * only (root→parent) or the full chain (root→leaf). Required when the leaf has
-   * a `parentId`. It gets the deadline a DID resolver has: a chain it has not
+   * a `parentId`. It gets `dependencyTimeoutMs` to answer: a chain it has not
    * returned by then is refused as one that could not be resolved.
    */
   resolveDelegationChain?: (
@@ -283,6 +284,11 @@ export interface ChainEnforcementDeps {
    * counts the same way.
    */
   maxChainLength?: number;
+  /**
+   * How long, in milliseconds, `resolveDelegationChain` and each `revocationChecker` call may take to answer: a number greater than 0 and at most
+   * 2,147,483,647. Default 5,000. Any other value rejects every chain.
+   */
+  dependencyTimeoutMs?: number;
 }
 
 export interface ChainValidationResult {
@@ -338,6 +344,9 @@ export async function validateDelegationChain(
         "Malformed delegation credential: missing credentialSubject.delegation or its constraints",
     };
   }
+  const { dependencyTimeoutMs: timeoutMs = OUTBOUND_READ_TIMEOUT_MS } = deps;
+  const timeoutRefusal = dependencyTimeoutRefusal(timeoutMs);
+  if (timeoutRefusal !== undefined) return { valid: false, reason: timeoutRefusal };
   const leafDelegation = extractDelegationFromVC(leafCredential);
   let chain: DelegationCredential[] = [leafCredential];
 
@@ -352,7 +361,7 @@ export async function validateDelegationChain(
     let resolvedChain: DelegationCredential[];
     try {
       const resolve = deps.resolveDelegationChain;
-      resolvedChain = await answerWithinDeadline("the chain resolver", () => resolve(leafCredential));
+      resolvedChain = await answerWithinDeadline("the chain resolver", () => resolve(leafCredential), timeoutMs);
     } catch (error) {
       return {
         valid: false,
@@ -515,7 +524,7 @@ export async function validateDelegationChain(
       let answer: unknown;
       try {
         const checker = deps.revocationChecker;
-        answer = await answerWithinDeadline("the revocation checker", () => checker.isRevoked(delegationId));
+        answer = await answerWithinDeadline("the revocation checker", () => checker.isRevoked(delegationId), timeoutMs);
       } catch (error) {
         return {
           valid: false,

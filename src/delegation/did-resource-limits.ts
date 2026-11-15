@@ -7,7 +7,7 @@
 
 import type { DIDDocument, DIDResolver } from './vc-verifier.types.js';
 import { startDeadline, type Deadline } from '../utils/deadline.js';
-import { boundedIdentifiers } from './did-resource-policy.js';
+import { boundedIdentifiers, DID_RESOLUTION_TIMEOUT_MS } from './did-resource-policy.js';
 import { isAdmittedDidDocument, measureDidDocument } from './did-document-walk.js';
 
 export * from './did-resource-policy.js';
@@ -17,9 +17,9 @@ export { DidDocumentCache, type LoadedDidDocument } from './did-document-cache.j
 /** One deadline that the steps of a resolution share, so together they take at most its length. */
 export type ResolutionDeadline = Deadline;
 
-/** A {@link ResolutionDeadline} of {@link DID_RESOLUTION_TIMEOUT_MS}, starting now. */
-export function resolutionDeadline(): ResolutionDeadline {
-  return startDeadline('DID resolution deadline exceeded');
+/** A {@link ResolutionDeadline} of `timeoutMs`, starting now. */
+export function resolutionDeadline(timeoutMs: number): ResolutionDeadline {
+  return startDeadline('DID resolution deadline exceeded', timeoutMs);
 }
 
 /**
@@ -39,19 +39,20 @@ const REFUSED: BoundedResolution = { status: 'refused' };
  * Resolve `did` through an application-supplied resolver within the limits. A DID or `key` over
  * its limit is refused before the resolver is asked. A document a built-in resolver admitted is not
  * walked again; any other is walked on every resolution, and neither copied nor frozen. A missed
- * deadline rejects, apart from a resolver that found nothing. Without a `deadline` from the caller,
- * the resolution has one of its own.
+ * deadline rejects, apart from a resolver that found nothing. `within` is the deadline the caller
+ * shares with its other steps, or the milliseconds of one this resolution has to itself, by default
+ * {@link DID_RESOLUTION_TIMEOUT_MS}.
  */
 export async function resolveWithinLimits(
-  resolver: DIDResolver, did: string, key?: unknown, deadline?: ResolutionDeadline,
+  resolver: DIDResolver, did: string, key?: unknown, within: ResolutionDeadline | number = DID_RESOLUTION_TIMEOUT_MS,
 ): Promise<BoundedResolution> {
   if (!boundedIdentifiers(did, key)) return REFUSED;
-  const bound = deadline ?? resolutionDeadline();
+  const bound = typeof within === 'number' ? resolutionDeadline(within) : within;
   let doc: DIDDocument | null | undefined;
   try {
     doc = await bound.within(resolver.resolve(did));
   } finally {
-    if (bound !== deadline) bound.clear();
+    if (bound !== within) bound.clear();
   }
   if (doc === null || doc === undefined) return NOT_FOUND;
   return isAdmittedDidDocument(doc) || measureDidDocument(doc).ok ? { status: 'found', document: doc } : REFUSED;
@@ -59,8 +60,8 @@ export async function resolveWithinLimits(
 
 /** {@link resolveWithinLimits}'s document, or `null` when it found none or refused it. */
 export async function resolveBoundedDid(
-  resolver: DIDResolver, did: string, key?: unknown, deadline?: ResolutionDeadline,
+  resolver: DIDResolver, did: string, key?: unknown, within?: ResolutionDeadline | number,
 ): Promise<DIDDocument | null> {
-  const resolution = await resolveWithinLimits(resolver, did, key, deadline);
+  const resolution = await resolveWithinLimits(resolver, did, key, within);
   return resolution.status === 'found' ? resolution.document : null;
 }

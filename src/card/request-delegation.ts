@@ -18,7 +18,7 @@
  *   - {@link requireDelegation}: the same check pre-bound to its seams, with 401/403-shaped results.
  */
 
-import { answerWithinDeadline, DeadlineExceededError } from '../utils/deadline.js';
+import { answerWithinDeadline, DeadlineExceededError, dependencyTimeout } from '../utils/deadline.js';
 import { isRecord } from '../utils/guards.js';
 import { admitsRootIssuer, assertTrustedRootIssuers } from '../delegation/root-admission.js';
 import {
@@ -172,6 +172,11 @@ export interface VerifyRequestDelegationDeps {
   maxChainLength?: number;
   /** Injectable clock (epoch ms) for the expiry gate; default `Date.now`. */
   now?: () => number;
+  /**
+   * How long, in milliseconds, `resolveDelegationChain`, `verifyHopProof` and `checkRevocation` may each take to answer: a number greater than 0 and at most
+   * 2,147,483,647. Default 5,000. Any other value throws a `TypeError` naming the option.
+   */
+  dependencyTimeoutMs?: number;
 }
 
 /** What one call presents for {@link verifyRequestDelegation}. */
@@ -221,14 +226,16 @@ export type RequestDelegationResult =
  * Cheap, local checks run before the ones that may touch the network. Never throws on a
  * malformed input or a throwing seam; returns `{ ok: false, code, reasons }`. Rejects with a
  * `TypeError` for a `trustedRootIssuers` that is not an array of DIDs, each a string that starts
- * with `did:` and has no white space around it.
+ * with `did:` and has no white space around it, and for a `dependencyTimeoutMs` that is not a
+ * number of milliseconds it can wait.
  */
 export async function verifyRequestDelegation(
   input: RequestDelegationInput,
   deps: VerifyRequestDelegationDeps,
 ): Promise<RequestDelegationResult> {
   assertTrustedRootIssuers(deps.trustedRootIssuers);
-  const obtained = await obtainChain(input, deps);
+  const timeoutMs = dependencyTimeout(deps.dependencyTimeoutMs);
+  const obtained = await obtainChain(input, deps, timeoutMs);
   if (!obtained.ok) return obtained;
   const { chain, credentials, source } = obtained;
   const reject = (code: DelegationGateCode, reasons: string[]): RequestDelegationResult => ({
@@ -260,7 +267,7 @@ export async function verifyRequestDelegation(
   }
 
   for (const [hop, credential] of credentials.entries()) {
-    const refusal = await hopProofRefusal(credential, deps.verifyHopProof);
+    const refusal = await hopProofRefusal(credential, deps.verifyHopProof, timeoutMs);
     if (refusal !== undefined) return reject('delegation_invalid', [`hop ${hop}: ${refusal}`]);
   }
 
@@ -272,7 +279,9 @@ export async function verifyRequestDelegation(
     deps.resourceOwner !== undefined || deps.trustedRootIssuers !== undefined ? responsibleParty : undefined;
   let revocation: Awaited<ReturnType<typeof evaluateRevocationChain>>;
   try {
-    revocation = await evaluateRevocationChain(revocationEntriesOf(chain, pinnedRoot), deps.checkRevocation);
+    revocation = await evaluateRevocationChain(revocationEntriesOf(chain, pinnedRoot), deps.checkRevocation, {
+      dependencyTimeoutMs: timeoutMs,
+    });
   } catch {
     return reject('delegation_revoked', ['revocation checker threw: status unprovable, fail-closed']);
   }
@@ -294,6 +303,7 @@ export async function verifyRequestDelegation(
 async function obtainChain(
   input: RequestDelegationInput,
   deps: VerifyRequestDelegationDeps,
+  timeoutMs: number,
 ): Promise<
   | { ok: true; chain: DelegationChain; credentials: readonly Record<string, unknown>[]; source: DelegationChainSource }
   | { ok: false; code: DelegationGateCode; reasons: string[]; source?: DelegationChainSource }
@@ -317,7 +327,7 @@ async function obtainChain(
   let resolved: DelegationChain | undefined;
   try {
     const resolve = deps.resolveDelegationChain;
-    resolved = await answerWithinDeadline('the chain resolver', () => resolve({ proofDid: input.proofDid }));
+    resolved = await answerWithinDeadline('the chain resolver', () => resolve({ proofDid: input.proofDid }), timeoutMs);
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'unknown error';
     return {
@@ -343,16 +353,17 @@ async function obtainChain(
 }
 
 /**
- * Run the hop-proof seam, fail-closed, under the deadline every dependency gets: why the hop is
+ * Run the hop-proof seam, fail-closed, under a deadline of `timeoutMs`: why the hop is
  * refused, or `undefined` when its proof verified. A throw refuses the hop, and so does a verifier
  * that has not answered by the deadline, with a reason that says so.
  */
 async function hopProofRefusal(
   credential: Record<string, unknown>,
   verifyHopProof: DelegationProofVerifier,
+  timeoutMs: number,
 ): Promise<string | undefined> {
   try {
-    const verified = await answerWithinDeadline('the hop proof verifier', () => verifyHopProof(credential));
+    const verified = await answerWithinDeadline('the hop proof verifier', () => verifyHopProof(credential), timeoutMs);
     return verified === true ? undefined : 'proof did not verify';
   } catch (error) {
     return error instanceof DeadlineExceededError ? error.message : 'proof did not verify';
@@ -400,11 +411,13 @@ const GATE_MESSAGES: Record<DelegationGateCode, string> = {
  * ```
  *
  * Throws a `TypeError`, naming the option, for a `trustedRootIssuers` that is not an array of
- * DIDs, each a string that starts with `did:` and has no white space around it, so a mistyped list
+ * DIDs, each a string that starts with `did:` and has no white space around it, and for a
+ * `dependencyTimeoutMs` that is not a number of milliseconds it can wait, so a mistyped option
  * fails when the guard is built.
  */
 export function requireDelegation(deps: VerifyRequestDelegationDeps): DelegationGuard {
   assertTrustedRootIssuers(deps.trustedRootIssuers);
+  dependencyTimeout(deps.dependencyTimeoutMs);
   return async (input) => {
     const result = await verifyRequestDelegation(input, deps);
     if (result.ok) return result;

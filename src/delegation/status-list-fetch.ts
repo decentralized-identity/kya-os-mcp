@@ -1,6 +1,7 @@
 /**
  * How a status list named by a credential is read (SPEC §4.4.2): the one bounded reader, with at
- * most 1 MiB of response body and one 5,000 ms deadline for the headers and the body together,
+ * most 1 MiB of response body and one deadline for the headers and the body together, 5,000 ms
+ * unless the reader's `dependencyTimeoutMs` sets another,
  * through the private-network rule (`utils/private-network-rule.ts`), since the credential names
  * the host.
  *
@@ -16,7 +17,8 @@ import { DID_DOCUMENT_JSON, DID_RESOLUTION_TIMEOUT_MS, MAX_DID_DOCUMENT_BYTES } 
 
 /** Bytes of status-list response body read before the read is refused: the DID document's limit. */
 export const MAX_STATUS_LIST_RESPONSE_BYTES = MAX_DID_DOCUMENT_BYTES;
-/** One deadline for a status-list request's headers and body: a DID resolution's. */
+
+/** The default deadline for a status-list request's headers and body: a DID resolution's. */
 export const STATUS_LIST_TIMEOUT_MS = DID_RESOLUTION_TIMEOUT_MS;
 
 const STATUS_LIST_READ: BoundedJsonPolicy = {
@@ -26,7 +28,9 @@ const STATUS_LIST_READ: BoundedJsonPolicy = {
   json: DID_DOCUMENT_JSON,
 };
 
-/** GET the status list at `url` and parse its JSON, within the status-list limits. */
-export function fetchStatusListJson(fetcher: PrivateNetworkTransport, url: string, init: RequestInit = {}): Promise<unknown> {
-  return fetchBoundedJson(underPrivateNetworkRule(fetcher), url, init, STATUS_LIST_READ);
+/** GET the status list at `url` and parse its JSON, within the status-list limits and `timeoutMs`, by default the policy's. */
+export function fetchStatusListJson(
+  fetcher: PrivateNetworkTransport, url: string, init: RequestInit = {}, timeoutMs = STATUS_LIST_READ.timeoutMs,
+): Promise<unknown> {
+  return fetchBoundedJson(underPrivateNetworkRule(fetcher), url, init, { ...STATUS_LIST_READ, timeoutMs });
 }

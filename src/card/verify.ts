@@ -27,7 +27,7 @@ import {
 import { CHECKER_REASON_LENGTH, type BitstringRevocationChecker } from './revocation.js';
 import { sanitizeForMessage } from '../utils/message-text.js';
 import { readRevocationAnswer } from '../utils/revocation-answer.js';
-import { answerWithinDeadline, DeadlineExceededError } from '../utils/deadline.js';
+import { answerWithinDeadline, DeadlineExceededError, dependencyTimeout } from '../utils/deadline.js';
 import { isRecord } from '../utils/guards.js';
 import { checkWithinDeadline } from './revocation-deadline.js';
 import type { ProofAssurance, ProofVerifyResult } from './proof/index.js';
@@ -141,6 +141,11 @@ export interface VerifyCardDeps {
   cimdKeyProven?: boolean;
   /** Trusted issuer allowlist. Default: `DEFAULT_TRUSTED_ISSUERS`. */
   trustedIssuers?: readonly string[];
+  /**
+   * How long, in milliseconds, each seam `verifyCard` asks may take to answer: a number greater than 0 and at most
+   * 2,147,483,647. Default 5,000. Any other value makes `verifyCard` reject with a `TypeError`.
+   */
+  dependencyTimeoutMs?: number;
 }
 
 export interface VerifyCardResult {
@@ -175,13 +180,14 @@ export interface VerifyCardResult {
  */
 export async function verifyCard(card: EntityCard, deps: VerifyCardDeps): Promise<VerifyCardResult> {
   const trustedIssuers = deps.trustedIssuers ?? DEFAULT_TRUSTED_ISSUERS;
-  const check = await checkCapabilities(card, deps, trustedIssuers);
-  const proof = await recomputeProof(deps);
+  const timeoutMs = dependencyTimeout(deps.dependencyTimeoutMs);
+  const check = await checkCapabilities(card, deps, trustedIssuers, timeoutMs);
+  const proof = await recomputeProof(deps, timeoutMs);
   const proofDid = proof?.ok ? proof.did : undefined;
 
-  const accountability = await checkAccountability(card, deps, trustedIssuers, proofDid);
-  const attestations = await checkAttestations(card, deps, trustedIssuers);
-  const revocation = await checkCardRevocation(card, deps.statusListChecker, verifiedResponsibleParty(accountability));
+  const accountability = await checkAccountability(card, deps, trustedIssuers, proofDid, timeoutMs);
+  const attestations = await checkAttestations(card, deps, trustedIssuers, timeoutMs);
+  const revocation = await checkCardRevocation(card, deps.statusListChecker, verifiedResponsibleParty(accountability), timeoutMs);
 
   const accountabilityOk = !card.responsibleParty || Boolean(accountability?.verified);
   const attestationsOk = attestations.every((a) => a.verified);
@@ -229,6 +235,7 @@ async function checkCapabilities(
   card: EntityCard,
   deps: VerifyCardDeps,
   trustedIssuers: readonly string[],
+  timeoutMs: number,
 ): Promise<CapabilityCheckResult> {
   const capabilities = card.capabilities ?? [];
   const verifier = deps.capabilityVerifier;
@@ -236,7 +243,7 @@ async function checkCapabilities(
   if (!verifier) return unverified;
   const answer: unknown = await unlessUnanswered<unknown>('the capability verifier', unverified, () =>
     verifier(capabilities, { subjectDid: card.id, trustedIssuers }),
-  );
+  timeoutMs);
   return readCapabilityCheck(answer) ?? unverified;
 }
 
@@ -266,13 +273,12 @@ function readCapabilityCheck(answer: unknown): CapabilityCheckResult | undefined
 }
 
 /**
- * What a seam the host supplies answers, asked under the deadline every dependency a verifier waits
- * on gets, or `unanswered`, the verdict of a claim that did not verify, when it has not answered by
+ * What a seam the host supplies answers, asked under a deadline of `timeoutMs`, or `unanswered`, the verdict of a claim that did not verify, when it has not answered by
  * then: `verifyCard` does not wait on, and does not throw for it. A seam that throws still throws.
  */
-async function unlessUnanswered<T>(who: string, unanswered: T, ask: () => T | Promise<T>): Promise<T> {
+async function unlessUnanswered<T>(who: string, unanswered: T, ask: () => T | Promise<T>, timeoutMs: number): Promise<T> {
   try {
-    return await answerWithinDeadline(who, ask);
+    return await answerWithinDeadline(who, ask, timeoutMs);
   } catch (error) {
     if (error instanceof DeadlineExceededError) return unanswered;
     throw error;
@@ -288,13 +294,14 @@ async function checkAccountability(
   deps: VerifyCardDeps,
   trustedIssuers: readonly string[],
   proofDid: string | undefined,
+  timeoutMs: number,
 ): Promise<VerifyCardResult['accountability']> {
   if (!card.responsibleParty) return undefined;
   const verifier = deps.accountabilityVerifier;
   const raw = verifier
     ? await unlessUnanswered<boolean | AccountabilityResult>('the accountability verifier', false, () =>
         verifier(card, { trustedIssuers, proofDid }),
-      )
+      timeoutMs)
     : false;
   // This trusted plugin boundary can still receive untyped JavaScript results. A truthy string such
   // as "false" must neither grant status-list signing authority nor keep the Card's L3: only a
@@ -310,6 +317,7 @@ async function checkAttestations(
   card: EntityCard,
   deps: VerifyCardDeps,
   trustedIssuers: readonly string[],
+  timeoutMs: number,
 ): Promise<VerifyCardResult['attestations']> {
   const verifier = deps.attestationVerifier;
   return Promise.all(
@@ -320,7 +328,7 @@ async function checkAttestations(
       verified: verifier
         ? (await unlessUnanswered<unknown>('the attestation verifier', false, () =>
             verifier(a, { subjectDid: a.subject ?? card.id, trustedIssuers }),
-          )) === true
+          timeoutMs)) === true
         : false,
     })),
   );
@@ -331,12 +339,12 @@ async function checkAttestations(
  * supplied (the level then rests at the capability floor, no proof lift). Fail-closed: a throwing
  * verifier yields `{ ok:false }` (a demotion) rather than escaping `verifyCard`.
  */
-async function recomputeProof(deps: VerifyCardDeps): Promise<ProofVerifyResult | undefined> {
+async function recomputeProof(deps: VerifyCardDeps, timeoutMs: number): Promise<ProofVerifyResult | undefined> {
   const { proofVerifier, proof, request } = deps;
   if (!proofVerifier || proof === undefined || request === undefined) return undefined;
   let answer: unknown;
   try {
-    answer = await answerWithinDeadline('the proof verifier', () => proofVerifier(proof, request));
+    answer = await answerWithinDeadline('the proof verifier', () => proofVerifier(proof, request), timeoutMs);
   } catch (error) {
     return { ok: false, reasons: [error instanceof DeadlineExceededError ? error.message : 'proof_verifier_threw'] };
   }
@@ -398,13 +406,14 @@ async function checkCardRevocation(
   card: EntityCard,
   checker: BitstringRevocationChecker | undefined,
   responsibleParty: string | undefined,
+  timeoutMs: number,
 ): Promise<CardRevocationVerdict> {
   if (!checker || !card.revocation) return { checked: false, revoked: false, fresh: true };
   try {
     const asked = await checkWithinDeadline(checker, card.revocation, {
       credentialIssuer: card.id,
       ...(responsibleParty === undefined ? {} : { trustedRootIssuer: responsibleParty }),
-    });
+    }, timeoutMs);
     if ('expired' in asked) return { checked: true, revoked: true, fresh: false, reason: asked.expired };
     const status = readRevocationAnswer(asked.answer);
     if (status.revoked === undefined) {

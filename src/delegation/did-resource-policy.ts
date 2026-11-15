@@ -23,7 +23,10 @@ export const MAX_JSON_MEMBER_LENGTH = 256;
 export const MAX_JSON_MEMBERS = 8_192;
 /** Entries of `verificationMethod` and the five verification relationships, in all. */
 export const MAX_VERIFICATION_ENTRIES = 8_192;
-/** One deadline for a resolution: the fetch and its body, or a resolver's promise. */
+/**
+ * One deadline for a resolution, the fetch and its body or a resolver's promise, unless the host
+ * sets another as `dependencyTimeoutMs` (`utils/deadline.ts`).
+ */
 export const DID_RESOLUTION_TIMEOUT_MS = OUTBOUND_READ_TIMEOUT_MS;
 /** Each built-in network resolver's cache: documents, and their compact JSON bytes in all. */
 export const MAX_CACHED_DOCUMENTS = 128;
@@ -36,7 +39,7 @@ export const DID_DOCUMENT_JSON: JsonLimits = {
   maxMemberLength: MAX_JSON_MEMBER_LENGTH,
 };
 
-/** How a built-in resolver reads a DID document it fetches itself. */
+/** How a built-in resolver reads a DID document it fetches itself; the resolver sets its own `timeoutMs`. */
 export const DID_DOCUMENT_READ: BoundedJsonPolicy = {
   label: 'DID resolution',
   maxBytes: MAX_DID_DOCUMENT_BYTES,

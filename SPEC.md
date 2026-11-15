@@ -331,7 +331,7 @@ The reference implementation refuses DID resolution and status-list inputs over 
 | JSON object members | 8,192 in all, counting duplicate names before parsing |
 | Entries of `verificationMethod` and the five verification relationships | 8,192 in all |
 | Status-list response | 1,048,576 decompressed UTF-8 bytes, under the same JSON nesting, member name and member limits as a DID document |
-| Fetch and body consumption | One 5-second deadline for each DID resolution and each status-list read |
+| Fetch and body consumption | One deadline for each DID resolution and each status-list read: 5 seconds, unless the host sets another as `dependencyTimeoutMs` |
 | Redirects a did:web or status-list read follows | 3 |
 | Each built-in network resolver's cache | 128 documents and 8 MiB of compact JSON, plus its TTL, evicting the least recently used |
 
@@ -374,7 +374,7 @@ A provider that drops it lets its runtime follow a redirect, making the request 
 The reader then refuses, unread, a response that says it was redirected or names a URL other than the one requested; it cannot undo the request, nor detect a provider that reports neither.
 In a browser, which hides where a redirect leads, every redirect is refused.
 
-Before a verifier calls a resolver it checks the DID and key identifier limits, it waits at most 5 seconds for the resolver's promise, and it checks the document returned before it selects a key.
+Before a verifier calls a resolver it checks the DID and key identifier limits, it waits at most 5 seconds, or the time the host set, for the resolver's promise, and it checks the document returned before it selects a key.
 That check walks the document as plain JSON data: it refuses cycles, an accessor on an object member, enumerable or not, sparse arrays, enumerable symbol keys, objects other than arrays and plain objects of any realm, and values JSON cannot hold, and it never calls an object member's getter or `toJSON`.
 It reads array elements as values, since a descriptor read for each index costs several times as much.
 So a getter on an array index is not refused: it runs, as the application code it is, like a Proxy trap, and the walk measures the value it returns, or refuses the document when it throws.

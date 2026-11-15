@@ -8,7 +8,12 @@ import { fetchBoundedJson } from '../utils/bounded-read.js';
 import { underPrivateNetworkRule, type PrivateNetworkTransport } from '../utils/private-network-rule.js';
 import { DID_DOCUMENT_READ } from './did-resource-policy.js';
 
-/** GET `url` and parse it as a DID document's JSON, within the document's byte, shape and time limits. */
-export function fetchDidJson(fetcher: PrivateNetworkTransport, url: string, init: RequestInit = {}): Promise<unknown> {
-  return fetchBoundedJson(underPrivateNetworkRule(fetcher), url, init, DID_DOCUMENT_READ);
+/**
+ * GET `url` and parse it as a DID document's JSON, within the document's byte and shape limits and
+ * `timeoutMs`, by default the policy's.
+ */
+export function fetchDidJson(
+  fetcher: PrivateNetworkTransport, url: string, init: RequestInit = {}, timeoutMs = DID_DOCUMENT_READ.timeoutMs,
+): Promise<unknown> {
+  return fetchBoundedJson(underPrivateNetworkRule(fetcher), url, init, { ...DID_DOCUMENT_READ, timeoutMs });
 }

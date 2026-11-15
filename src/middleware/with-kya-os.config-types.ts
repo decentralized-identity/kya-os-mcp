@@ -51,7 +51,7 @@ export interface KyaOsDelegationConfig {
   /**
    * Optional custom DID resolver, asked first. If it returns null, middleware
    * falls back to `didResolvers`, then built-in did:key resolution and
-   * fetch-backed did:web resolution. One 5-second deadline covers the whole
+   * fetch-backed did:web resolution. One deadline, `dependencyTimeoutMs`, covers the whole
    * resolution, and the document it returns is held to the limits of SPEC
    * §4.4.2 on every call, with an `id` that is a DID: a document they refuse
    * ends the resolution, with no fallback. It is neither copied nor frozen.
@@ -121,6 +121,16 @@ export interface KyaOsDelegationConfig {
    * a resolver that fetches one parent at a time should apply its own limit.
    */
   maxChainLength?: number;
+  /**
+   * How long, in milliseconds, the delegation gate waits for each dependency it
+   * asks: a DID resolution, a did:web or status-list read through the default
+   * `fetchProvider`, `statusListResolver`, `resolveDelegationChain` and
+   * `revocationChecker`. A number greater than 0 and at most 2,147,483,647.
+   * Default 5,000. Any other value is refused at startup with a `TypeError`.
+   * A `fetchProvider`, `didResolver` or `statusListResolver` built by the host
+   * takes its own `dependencyTimeoutMs`.
+   */
+  dependencyTimeoutMs?: number;
   /**
    * Holder-of-key enforcement for inbound calls (spec §11.8). A valid delegation
    * is a *bearer* credential; holder binding additionally requires the caller to

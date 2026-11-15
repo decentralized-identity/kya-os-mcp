@@ -13,6 +13,7 @@ import type { FetchProvider } from '../../providers/base.js';
 import type { DIDResolverFactory } from '../../delegation/did-resolver-registry.js';
 import type { DIDDocument, DIDResolver } from '../../delegation/vc-verifier.js';
 import { hasIdTypeAndController } from '../../delegation/verification-method-shape.js';
+import { dependencyTimeout } from '../../utils/deadline.js';
 import { logger } from '../../logging/index.js';
 import { isRecord, stripTrailingSlashes } from '../../utils/index.js';
 
@@ -35,6 +36,11 @@ export interface DidCheqdResolverOptions {
   resolverUrl: string;
   cacheTtl?: number;
   headers?: Record<string, string> | (() => Promise<Record<string, string>>);
+  /**
+   * How long, in milliseconds, one resolution, its `headers` function, request and body together, may take: a number greater than 0 and at most
+   * 2,147,483,647. Default 5,000. Any other value throws a `TypeError` naming the option.
+   */
+  dependencyTimeoutMs?: number;
 }
 
 interface DidResolutionResult {
@@ -74,13 +80,15 @@ export class DidCheqdResolver implements DIDResolver {
   private readonly cache: DidDocumentCache;
   private readonly cacheTtl: number;
   private readonly headers?: Record<string, string> | (() => Promise<Record<string, string>>);
+  private readonly timeoutMs: number;
 
   constructor(fetchProvider: FetchProvider, options: DidCheqdResolverOptions) {
     this.fetchProvider = fetchProvider;
     this.resolverUrl = options.resolverUrl;
     this.cacheTtl = options.cacheTtl ?? 300_000;
     this.headers = options.headers;
-    this.cache = new DidDocumentCache();
+    this.timeoutMs = dependencyTimeout(options.dependencyTimeoutMs);
+    this.cache = new DidDocumentCache(this.timeoutMs);
   }
 
   async resolve(did: string): Promise<DIDDocument | null> {
@@ -99,7 +107,8 @@ export class DidCheqdResolver implements DIDResolver {
     try {
       const init = this.requestHeaders().then((headers): RequestInit => ({ method: 'GET', headers }));
       const json = await fetchBoundedJson(
-        this.fetchProvider, didCheqdToResolverUrl(did, this.resolverUrl), init, DID_RESOLUTION_ENVELOPE_READ,
+        this.fetchProvider, didCheqdToResolverUrl(did, this.resolverUrl), init,
+        { ...DID_RESOLUTION_ENVELOPE_READ, timeoutMs: this.timeoutMs },
       );
       const document = extractDidDocument(json);
       const measure = admitParsedDidDocument(document);

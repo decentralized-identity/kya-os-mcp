@@ -24,12 +24,14 @@ export function checkProofIdentifiers(did: string, kid?: string): void {
 }
 
 /**
- * `did`'s document from `fetcher.resolveDID`, within the resolution deadline and the document
+ * `did`'s document from `fetcher.resolveDID`, within a deadline of `timeoutMs` and the document
  * limits. The walk trusts only its own brand: a document a built-in resolver admitted, frozen as it
  * was measured, is not walked again, whichever provider, subclass or wrapper returns it; any other
  * document, `RuntimeFetchProvider`'s for a configured resolver and did:key included, is walked on
  * each resolution.
  */
-export function resolveProofDid(fetcher: FetchProvider, did: string, kid?: string): Promise<DIDDocument | null> {
-  return resolveBoundedDid({ resolve: (value) => fetcher.resolveDID(value) }, did, kid);
+export function resolveProofDid(
+  fetcher: FetchProvider, did: string, kid?: string, timeoutMs?: number,
+): Promise<DIDDocument | null> {
+  return resolveBoundedDid({ resolve: (value) => fetcher.resolveDID(value) }, did, kid, timeoutMs);
 }

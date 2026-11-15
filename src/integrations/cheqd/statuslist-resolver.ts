@@ -65,6 +65,7 @@ import {
 } from '../../utils/statuslist-bits.js';
 import { acceptEntrySize, acceptStatusList } from '../../utils/statuslist-acceptance.js';
 import { base64urlDecodeToBytes, bytesToBase64 } from '../../utils/base64.js';
+import { dependencyTimeout } from '../../utils/deadline.js';
 import { TtlCache } from '../../utils/ttl-cache.js';
 
 export interface CheqdStatusListResolverOptions {
@@ -89,6 +90,11 @@ export interface CheqdStatusListResolverOptions {
   decompressor: DecompressionFunction;
   /** In-memory TTL for the fetched VERIFIED list; 0 disables. Default 10s. */
   cacheTtlMs?: number;
+  /**
+   * How long, in milliseconds, the list read may take, and the resolution of the issuer DID after it: a number greater than 0 and at most
+   * 2,147,483,647. Default 5,000. Any other value throws a `TypeError` naming the option.
+   */
+  dependencyTimeoutMs?: number;
 }
 
 export class CheqdStatusListResolver implements StatusListResolver {
@@ -96,9 +102,11 @@ export class CheqdStatusListResolver implements StatusListResolver {
   private readonly cacheTtlMs: number;
   private cache: TtlCache<StatusList2021Credential>;
   private bustNextFetch = false;
+  private readonly timeoutMs: number;
 
   constructor(options: CheqdStatusListResolverOptions) {
     this.opts = options;
+    this.timeoutMs = dependencyTimeout(options.dependencyTimeoutMs);
     this.cacheTtlMs = options.cacheTtlMs ?? 10_000;
     // A single issuer realistically publishes a handful of lists; 16 entries
     // is generous without being unbounded.
@@ -181,7 +189,7 @@ export class CheqdStatusListResolver implements StatusListResolver {
           ? { 'Cache-Control': 'no-cache', Pragma: 'no-cache' }
           : {}),
       },
-    })) as StatusList2021Credential;
+    }, this.timeoutMs)) as StatusList2021Credential;
     this.assertShape(body);
     return body;
   }
@@ -238,7 +246,7 @@ export class CheqdStatusListResolver implements StatusListResolver {
 
     const named: unknown = proof['verificationMethod'];
     const keyId = typeof named === 'string' ? named : undefined;
-    const didDoc = await resolveBoundedDid(this.opts.didResolver, this.opts.expectedIssuerDid, keyId);
+    const didDoc = await resolveBoundedDid(this.opts.didResolver, this.opts.expectedIssuerDid, keyId, this.timeoutMs);
     if (!didDoc) {
       throw new Error(`Could not resolve issuer DID ${this.opts.expectedIssuerDid}`);
     }

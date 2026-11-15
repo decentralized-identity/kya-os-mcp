@@ -20,6 +20,7 @@ import {
 import { credentialIssuerDid, JWT_NBF_LEEWAY_SECONDS } from "../vc-jwt-verify.js";
 import type { DelegationCredential } from "../../types/protocol.js";
 import { issuerDidDocument, methodOf } from "../../__tests__/utils/did-documents.js";
+import { keyOf, signedJwt } from "../../__tests__/utils/delegation-credentials.js";
 
 const ISSUER_DID = "did:web:example.com:u:alice";
 const KID = `${ISSUER_DID}#0`;
@@ -214,11 +215,7 @@ describe("verifyDelegationJwt (VC-JWT / compact JWS wire format)", () => {
         },
       },
     });
-    const mint = (issuer: string) =>
-      new SignJWT({ vc: delegationVcClaim({ issuer }) })
-        .setProtectedHeader({ alg: "EdDSA", typ: "JWT", kid: `${issuer}#0` })
-        .setIssuer(issuer)
-        .sign(privateKey);
+    const mint = async (issuer: string) => signedJwt(await keyOf(issuer, "0"), { kid: `${issuer}#0` });
     const refused = await isolated.verifyDelegationJwt(await mint(long), { skipCache: true });
     expect(refused.reason).toBe(`Could not resolve issuer DID: "${long.slice(0, 64)}"...`);
     expect(asked).toEqual([]);

@@ -1,17 +1,17 @@
 kind: Spec
 body: |-
-    **SPEC.md §6.6: a verifier holds a status list to an issuer it trusts
-    for the credential, and conformance suite 1.4.0 tests it.** A list's
-    proof shows only who signed it, so the credential is rejected unless
-    the list's `issuer` is the credential's issuer, the root issuer of its
-    chain when the verifier pins that root, or one the verifier is
-    configured to accept for the credential's issuer; for an Entity Card, a
-    verified `responsibleParty` takes the root's place. The list's
-    `statusPurpose` must include the entry's, and its `id` must be its URL,
-    byte for byte; only the credential's own issuer, when no other is
-    accepted, may omit the `id`. §6.6 names the three substitutions this
-    leaves open. SPEC.md §6.10, SPEC-ENTITY-CARD.md §4.1, §10.3 and
-    Appendix B, and CONFORMANCE.md L3.11 say the same. The suite gains 27
-    vectors, 95 in all, and `conformance/verify.py` checks every status-list
-    vector. UPGRADING.md, "Conformance suite 1.4.0", lists them.
+    **SPEC.md §6.6: every status-list URL has one keeper, and conformance
+    suite 1.4.0 tests it.** A list's proof shows only who signed it, and
+    its `id` binds it to a URL but not the URL to a signer. A verifier
+    MUST decide, before any fetch, the one issuer whose list it reads at
+    the URL a status entry names: the issuer its configuration binds that
+    URL or its `https:` origin to, else the pinned root of the chain when
+    the root's own credential names the URL, else the credential's
+    issuer. The list's `statusPurpose` must include the entry's, and its
+    `id` must be its URL, byte for byte, unless the credential's issuer
+    alone keeps any URL. An entry whose `statusSize` is not 1 MUST be
+    rejected under the `revocation` or `suspension` purpose. SPEC.md
+    §6.10, SPEC-ENTITY-CARD.md §4.1, §10.3 and Appendix B, and
+    CONFORMANCE.md L3.11 say the same. The suite gains 27 vectors, 95 in
+    all. UPGRADING.md, "Conformance suite 1.4.0", lists them.
 time: 2026-11-12T13:24:04.000000-06:00

@@ -54,7 +54,7 @@ The middleware resolves and verifies the entire delegation chain and checks `cre
 - A parent-linked credential presented without a configured `resolveDelegationChain` handler is rejected.
 - A credential carrying `credentialStatus` without a configured `statusListResolver` is rejected.
 - The `statusListResolver` is told each credential's issuer DID, so it can hold a status list to an issuer it trusts for that credential: `acceptStatusList` applies the rule, and `CheqdStatusListResolver` applies it with its `expectedIssuerDid` pin as the one issuer it trusts.
-  It is not told the chain's root, even when `trustedRootIssuers` pins it, so a list the root signed for a re-delegated credential is refused unless the resolver's own configuration accepts the root for that credential's issuer and the list states its URL as its `id`.
+  It is not told the chain's root, even when `trustedRootIssuers` pins it, so a list the root signed for a re-delegated credential is refused unless the resolver's own configuration binds the list's URL, or its origin, to the root and the list states its URL as its `id`.
 
 There is no mode that accepts parent-linked credentials without chain resolution or skips StatusList checks.
 
@@ -70,7 +70,7 @@ Only a literal `true`, returned bare or as `verified`, grants authority, and a `
 Its `maxStalenessMs` permits stale results, and it keeps them across a change of trust configuration, so replace the cache along with that configuration.
 Three substitutions remain open to whoever controls what a status-list URL returns:
 
-- A list that states no `id` is bound to no URL, so it can be served in place of another list its own issuer signed, only where that issuer is the only one the verifier accepts for the credential.
+- A list that states no `id` is bound to no URL, so it can be served in place of another list its own issuer signed, only where that issuer is the credential's own, the verifier pins no other root and its configuration names no other status-list issuer.
   An issuer should state the `id` of each list.
 - An earlier version of a list, signed before a credential was revoked, can be served in place of the current one.
   Its verdict is reported fresh until the version's `validUntil`, or indefinitely when it states none, and after that only a verifier that requires a fresh verdict refuses it.

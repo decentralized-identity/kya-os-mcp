@@ -235,7 +235,7 @@ top-level properties.
 | `didDocument` | string | MAY | URL of the DID document (for `did:web`, otherwise derivable, §5.3). |
 | `proofProfile` | literal `"org.kya-os/proof.v1"` | MAY | Names the per-request proof profile the Entity's requests carry (§8). The proof itself is NEVER on the Card. |
 | `cimd` | `{clientId, jwksUri}` | MAY | CIMD on-ramp coordinates (§7). |
-| `revocation` | `{statusListCredential, statusListIndex}` | MAY | W3C Bitstring Status List v1.0 entry for the Card's backing credential, on a list the Entity or its verified `responsibleParty` signs (§10.3). |
+| `revocation` | `{statusListCredential, statusListIndex}` | MAY | W3C Bitstring Status List v1.0 entry for the Card's backing credential, on a list the Entity signs, or the issuer the Verifier's configuration binds the list's URL to (§10.3). |
 
 ### 4.2 Claim-minimalism
 
@@ -768,17 +768,19 @@ fail-closed (an unreachable or malformed list reads as revoked) and report fresh
 cached non-revoked verdict, L3 requires a live one (§9). The chain walk is cascading: a revoked
 ancestor invalidates the subtree. Mechanics, the `RevocationChecker` seam, and the fail-closed
 rules: SPEC.md §6.10.
-A checker that verifies the list's proof reads the Card's list only when the list's `issuer` is one of (SPEC.md §6.6):
+A checker that verifies the list's proof reads the Card's list only when the list's `issuer` is the one keeper of the URL the Card's `revocation` entry names (SPEC.md §6.6), which is the first of these that applies:
 
-- the Entity, the Card's `id`;
-- the Card's `responsibleParty`, once the accountability check (§11.1 step 3) has verified it as the root issuer of the Card's delegation chain, `responsibleParty === issuer(rootVC)` (§10.2), since it can revoke the root credential and with it the Entity's chain;
-- an issuer the checker accepts for the Card's `id`.
+- the issuer the checker's configuration binds that URL, or its `https:` origin, to;
+- the Entity, the Card's `id`.
 
-With no `responsibleParty`, or one that did not verify, only the Entity and the issuers the checker accepts for it count.
-The Entity's list may state no `id` only when the Entity is the only issuer accepted for the Card, and any other list MUST state the `statusListCredential` URL, byte for byte, as its `id`.
+The Card's `responsibleParty`, once the accountability check (§11.1 step 3) has verified it as the root issuer of the Card's delegation chain, `responsibleParty === issuer(rootVC)` (§10.2), can revoke the root credential and with it the Entity's chain.
+A Verifier names it to the checker as that root.
+It keeps the URLs the checker's configuration binds to it, so its list counts for the Card only at such a URL, and a list it signs is rejected at a URL the Entity keeps.
+With no `responsibleParty`, or one that did not verify, the same two rules apply and no root is named.
+The Entity's list may state no `id` only when the Entity keeps the URL by the second rule, no responsible party is verified and the configuration names no other issuer, and any other list MUST state the `statusListCredential` URL, byte for byte, as its `id`.
 Card verification runs the accountability check before the revocation check, so a Verifier names the responsible party to the checker only once verified, never as the Card states it.
 The injected `accountabilityVerifier` is a trusted authority boundary.
-A literal `true` (or `{ verified: true }`) authorizes the Card's `responsibleParty` to sign the Card's list; a truthy value that is not `true` does not.
+A literal `true` (or `{ verified: true }`) has the Card's `responsibleParty` named as that root, so that the lists the configuration binds to it count for the Card; a truthy value that is not `true` does not.
 Before granting this authority the accountability verifier MUST verify every delegation hop's proof, check the chain's continuity, attenuation, expiry and required revocation status, bind the resolved chain to `delegationRef` and the Card's Entity, confirm the root equals `responsibleParty`, and perform the live leaf/proof join when `proofDid` is supplied.
 It MUST also authorize that root for this Card under the Verifier's own policy; the Card's claim and a structurally valid chain alone do not establish this authority.
 A root allowlist, a resource-owner pin or an authenticated Card-to-root registry can supply that decision inside the seam.
@@ -786,7 +788,7 @@ A root allowlist, a resource-owner pin or an authenticated Card-to-root registry
 Returning a root DID in place of a boolean would still require all these checks.
 A bare boolean cannot communicate freshness; implementations SHOULD return `{ verified, fresh }`, and MUST NOT claim `fresh: true` unless every required chain status was read live under the Verifier's freshness policy.
 A Verifier reads a `fresh` that is present and not a boolean as `false`, which demotes L3 to L2 as a stale chain does, and an omitted `fresh` as unknown, which demotes nothing.
-The checker holds each hop's list to the hop's issuer, the chain's root issuer when the Verifier pins it (the resource owner, or a trusted root issuer as in §11.4), or an issuer the checker accepts for the hop's issuer, and every list MUST state its `id` unless the hop's own issuer signed it and is the only issuer accepted for the hop.
+The checker holds each hop's list to the keeper of the URL the hop's entry names (SPEC.md §6.6): the issuer its configuration binds the URL or its origin to, else the chain's root issuer when the Verifier pins it (the resource owner, or a trusted root issuer as in §11.4) and the root hop's own entry names the same URL, else the hop's issuer; and every list MUST state its `id` unless the hop's own issuer keeps the URL by the last of those, no other root is pinned and the configuration names no other issuer.
 
 ### 10.4 KYC/KYB
 
@@ -967,7 +969,7 @@ An Entity's secret key is exfiltrated. Mitigations: short-lived proofs and deleg
 revocation (§10.3); key rotation via DID-document update (old keys SHOULD remain for historical proof
 verification; reissue delegations bound to specific `kid`s). Residual: the window between compromise
 and detection/revocation.
-The Entity is an accepted signer of its own Card's status list (§10.3), so whoever holds its key and controls what the list's URL returns can serve a list with the Card's bit clear in place of the one its responsible party revoked the Card on.
+The Entity keeps the URL its own Card's status entry names unless the Verifier's configuration binds that URL to another issuer (§10.3), so whoever holds its key and controls what the list's URL returns can serve a list with the Card's bit clear.
 Against a compromised Entity key the responsible party therefore revokes the root delegation credential, which the accountability check (§11.1 step 3) reads, so the Card fails that check whatever its own list says.
 
 ### 12.6 Revocation freshness
@@ -1212,7 +1214,7 @@ Golden, `parseCard`-valid Cards, one per type (full fixtures: the `entity-card` 
   "revocation": { "statusListCredential": "https://example.com/status/cards", "statusListIndex": "3" } }
 ```
 
-The list at `https://example.com/status/cards` is signed by the responsible party `did:web:api.example` and states that URL as its `id` (§10.3).
+The list at `https://example.com/status/cards` is signed by the responsible party `did:web:api.example`, to which the Verifier's configuration binds that URL, and states that URL as its `id` (§10.3).
 
 **`client`** (CIMD on-ramp)
 ```json

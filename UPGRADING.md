@@ -62,7 +62,7 @@ Code that matches on reason text needs the new wording.
 | `Could not resolve issuer DID: <issuer>`; for a VC-JWT `iss` that is not a string, ``Credential `issuer` does not match the JWT `iss` (the verified signer)`` | `Credential issuer "<v>" is not a URL`, `Credential issuer id "<v>" is not a URL`, `JWT iss "<v>" is not a URL` |
 | a `TypeError`, or the tool ran | `Delegation credential holds a value that cannot be encoded as RFC 8785 text` |
 | `Delegation status is revoked`, `Unsupported credential proof.type: <type>`, `Could not resolve issuer DID: <issuer>`, `Could not resolve issuer DID <issuer>: <error>`, `Credential revoked via <type> (<purpose>)`, `credentialSubject contains non-delegation field(s): <a>, <b>`, `Status list fetch failed: HTTP <status> for <url>`, `Revocation check failed for delegation <id>: <error>`, `Delegation <id> is revoked via ancestor <id>`, `Delegation <id> is revoked: <reason>` | the same with each value quoted, as in `Delegation status is "revoked"` and `credentialSubject contains non-delegation field(s): "<a>, <b>"` |
-| `Status list issuer "<issuer>" is not the expected issuer "<issuer>"`, values as written | `status list issuer "<issuer>" is not the expected issuer ("<issuer>")`, naming at most three accepted issuers and then how many more, as in `("<a>" or "<b>" or "<c>" and 47 more)`, or `status list names no issuer` for an `issuer` that is neither a string nor an object with a string `id` |
+| `Status list issuer "<issuer>" is not the expected issuer "<issuer>"`, values as written | `status list issuer "<issuer>" does not keep this list's URL: "<keeper>" does, as <why>`, where `<why>` is `the issuer statusListIssuers binds this URL to`, `the issuer statusListIssuers binds this URL's origin to`, `the pinned root whose own credential names it`, `the issuer of the credential` or, from `CheqdStatusListResolver`, `the issuer this resolver is configured with`; or `status list names no issuer` for an `issuer` that is neither a string nor an object with a string `id` |
 | `status list statusPurpose mismatch: "<purpose>" ≠ "<purpose>"`, values as written | `status list statusPurpose mismatch: the list's is "<purpose>" and the entry's is "<purpose>"` |
 | `status list has no statusPurpose (expected "<purpose>")`, an em dash and `fail-closed`, also for a `statusPurpose` array | `status list has no statusPurpose (the entry's is "<purpose>")`, or for an array on a list that is not a Bitstring Status List, `status list statusPurpose is an array, which only a BitstringStatusListCredential with a BitstringStatusList subject may state (the entry's is "<purpose>")` |
 | none: the list was read | `status list id "<id>" is not the URL it was fetched from ("<url>")`, adding `; they first differ at character <n>` when the two read the same once cut, or `status list states no id, but must state the URL it was fetched from ("<url>")` |
@@ -75,35 +75,82 @@ Code that matches on reason text needs the new wording.
 
 ### Status lists held to their credential
 
-A status list is read only when an issuer the verifier accepts for the credential signed it, its `statusPurpose` includes the entry's, and it states as its `id` the URL it was fetched from (SPEC.md §6.6).
+A status list is read only when the one keeper of its URL signed it, its `statusPurpose` includes the entry's, and it states as its `id` the URL it was fetched from (SPEC.md §6.6).
 So a status check that passed on 1.22.0 can deny.
-Find your setup below.
+Read the first two subsections, then find your setup below.
+
+#### Who keeps a status-list URL
+
+Every `statusListCredential` URL has one keeper, the issuer whose signature a list fetched from it must carry.
+A reader given `verifyStatusList` decides the keeper before it fetches, from its configuration and the signed credentials, never from the list, by the first of these that applies:
+
+1. the issuer `statusListIssuers` binds that exact URL to;
+2. the issuer `statusListIssuers` binds the URL's `https:` origin to;
+3. the chain's root issuer, when the verifier pins it and the root's own credential's status entry names the same URL, byte for byte;
+4. the credential's own issuer.
+
+A list any other issuer signed is refused, with a reason that names the keeper and why it keeps the URL, such as `status list issuer "did:web:a.example" does not keep this list's URL: "did:web:b.example" does, as the pinned root whose own credential names it`.
+The configuration decides before a root's credential does, and at a URL a configured issuer or the root keeps, a list the credential's own issuer signed is refused as any other is.
+On 1.22.0 a list was read whoever signed it, so the DID that signed a list could differ from every one of these.
+
+#### How to write `statusListIssuers`
+
+`createRevocationChecker` takes `statusListIssuers`, keyed by the DID of the issuer that keeps the lists, each value the URLs that issuer keeps:
+
+```ts
+statusListIssuers: {
+  'did:web:status.example': ['https://status.example'],
+  'did:web:acme.example': ['https://lists.acme.example/herd/1', 'https://lists.acme.example/herd/2'],
+}
+```
+
+A value is a whole origin, written `https://`, a lower-case host and an optional port with nothing after it, or an exact URL, which an entry must name byte for byte.
+A URL is at an origin when it continues the origin's string with `/`, `?` or `#`; nothing is parsed or normalised, so `https://status.example.evil.example/1`, `https://status.example:8443/1` and `https://STATUS.example/1` are not at `https://status.example`.
+An origin whose host is an IPv6 literal is not offered; bind exact URLs.
+The map is not scoped by credential issuer: a credential opts in to a keeper by naming, in the status entry its issuer signed, a URL the map binds to that keeper.
+One URL or origin has one keeper, so the same value under two issuers throws.
+An exact URL of one issuer may lie at an origin of another, and the exact URL decides.
+The checker throws a `TypeError` when it is built if the map is not a plain object, a key is empty, a value is not an array, an array holds anything but a string that starts with `https://` or `http://`, or one value is under two issuers, or if the map is given without `verifyStatusList`.
+A map from a credential issuer to the issuers accepted for it holds DIDs where URLs belong, so it throws as well, with a message that says each value names the URLs an issuer keeps.
 
 #### A hop whose status entry is on a list its own issuer did not issue
 
-With `verifyStatusList` it reads as revoked, unless the list's issuer is the chain's root and the verifier pins that root, or the checker's `statusListIssuers` accepts the list's issuer for the hop's issuer.
-A list signed by an issuer between the root and the hop needs that issuer listed under `statusListIssuers` for the hop's issuer.
+With `verifyStatusList` it reads as revoked, unless the list's issuer is the keeper of the entry's URL: `statusListIssuers` binds that URL, or its origin, to the list's issuer, or the list's issuer is the chain's pinned root and the root's own credential names the same list.
+A list signed by an issuer between the root and the hop needs its URL bound to that issuer in `statusListIssuers`.
+A deployment whose lists one status service signs binds the service's origin, or each list URL, to the service.
 
-#### A chain whose root signs the lists of the hops below it, checked without a pinned root
+#### A chain whose root signs the lists of the hops below it
 
-The root's list now counts only for the root's own credential.
-Pin the root, with `trustedRootIssuers` or `resourceOwner` for `verifyRequestDelegation` and `requireDelegation`, or `resourceOwner` for `evaluateDelegationChain`, and its list counts for every hop of its chains.
+The root's list counts for a hop below it only at the URL the root's own credential names, when the verifier pins the root, or at a URL `statusListIssuers` binds to the root.
+Pin the root, with `trustedRootIssuers` or `resourceOwner` for `verifyRequestDelegation` and `requireDelegation`, or `resourceOwner` for `evaluateDelegationChain`, and a hop whose entry names the list the root's own credential is on is read from the root's list.
+`revocationEntriesOf(chain, trustedRootIssuer)` reads that URL from the root hop's `credentialStatus` and names it to the checker as `trustedRootStatusList`.
+A root that keeps other lists for its delegates, the shards of one herd list for example, binds them once, by URL or by origin, as `statusListIssuers: { [root]: [...] }`, and they count for every delegate, pinned or not.
+A deployment whose root credential carries no status entry does one of two things: it binds the root's list URLs to the root in `statusListIssuers`, or it gives the root credential a status entry on that list.
+Without either, a hop's entry is held to the hop's own issuer, so the root's list at the URL that entry names is refused.
+That holds even where the root in fact serves a list at that URL: nothing the verifier holds says the URL is the root's, so the list is refused, which fails closed, and a list the hop's own issuer signs there is read as that issuer's own list.
+A hop's issuer always decides the status of its own credential by the list it names; bind a URL to the root for the root's list to decide it there.
 
 #### A Card whose `revocation` list another DID issues
 
-With `verifyStatusList` it reads as revoked, unless that DID is the Card's `responsibleParty` and the Card's `accountabilityVerifier` verifies it as the root issuer of the Card's delegation chain, or `statusListIssuers` accepts it for the Card's `id`.
+With `verifyStatusList` it reads as revoked, unless `statusListIssuers` binds the list's URL, or its origin, to that DID.
+That holds for the Card's `responsibleParty` too.
+Once the Card's `accountabilityVerifier` verifies it as the root issuer of the Card's delegation chain, `verifyCard` names it to the checker as the root, with no status-list URL, so its list counts for the Card only at a URL the configuration binds to it, and at the Card's own list URL a list it signs is refused.
+At a URL bound to it, the Entity's own list is refused.
 A responsible party's list counts for its Cards only once verified, never as the Card states it.
 
 #### A list that states no `id`, signed by anyone but the credential's own issuer
 
-The checker with `verifyStatusList` rejects it, so a list from the pinned root, from an issuer `statusListIssuers` accepts, or from a Card's responsible party must state, as its `id`, the URL it is served at.
+The checker with `verifyStatusList` rejects it, so a list from the pinned root, from an issuer `statusListIssuers` binds the URL to, or from a Card's responsible party must state, as its `id`, the URL it is served at.
 `CheqdStatusListResolver` rejects every list that states no `id`.
 `StatusList2021Manager` and the publisher in `examples/revoked` state the `id` of every list they write; re-issue any other list with its URL as its `id`.
 
-#### A list that states no `id`, signed by the credential's own issuer, where the verifier pins a root other than that issuer or `statusListIssuers` accepts another issuer for it
+#### A list that states no `id`, signed by the credential's own issuer
 
-The checker with `verifyStatusList` rejects it too, since it could otherwise stand in for a list another accepted issuer keeps.
-So does `verifyCard` for a Card's own list once the Card's `responsibleParty`, another DID, is verified.
+The checker with `verifyStatusList` reads it only where the credential's issuer keeps the URL by rule 4, the verifier pins no other root, and `statusListIssuers` names no other issuer, whatever it binds to it.
+Everywhere else it is rejected, since it could otherwise stand in for a list at another URL.
+So it is rejected where the verifier pins a root other than that issuer, where `statusListIssuers` has a key other than that issuer, and where `statusListIssuers` binds the URL to that issuer itself.
+A pinned root's own list, at the URL its own credential names, is the root's by rule 3 and must state its `id` too.
+So does `verifyCard` reject a Card's own list without an `id` once the Card's `responsibleParty`, another DID, is verified.
 State the list's URL as its `id`.
 
 #### A list that states an `id` other than its URL, byte for byte
@@ -113,7 +160,8 @@ A DID URL naming the same resource is another `id`, so `CheqdStatusListResolver`
 
 #### A direct call to a checker built with `verifyStatusList`
 
-Name the credential's issuer, `check(entry, { credentialIssuer })`, and the chain's root as `trustedRootIssuer` for a hop of a chain whose root you pin.
+Name the credential's issuer, `check(entry, { credentialIssuer })`, and, for a hop of a chain whose root you pin, the root as `trustedRootIssuer` with the URL the root's own credential names as `trustedRootStatusList`.
+A `trustedRootStatusList` given without `trustedRootIssuer` is ignored.
 A call that names no issuer resolves to revoked and not fresh, before any fetch.
 Pass `evaluateRevocationChain` the hops `revocationEntriesOf(chain, trustedRootIssuer)` builds.
 
@@ -132,7 +180,8 @@ Write each index as a string of decimal digits, as the library's issuers do.
 
 #### A `credentialStatus`, or a Card's `revocation` entry, that states a `statusSize`
 
-W3C Bitstring Status List v1.0 lets an entry state `statusSize`, the size of its status in bits, and keeps the status of an entry in that many bits of the list, starting at its `statusListIndex` times its `statusSize`.
+W3C Bitstring Status List v1.0 §2.1 lets an entry state `statusSize`, the size of its status in bits, an integer greater than zero that is processed as 1 when the entry states none, and its §3.2 (Validate Algorithm, step 10) reads an entry's status at the position its `statusListIndex` multiplied by its `statusSize` gives.
+§2.1 describes the `revocation` and `suspension` purposes as one status bit each and gives entries of several values to the `message` purpose, so a checker of either purpose refuses a wider entry.
 Every status-list reader in the library reads the one bit at the index.
 So on 1.22.0 an entry of two bits at index 7 was read from bit 7, which is entry 3's, and not from its own bits, 14 and 15: a credential whose own bits were set passed, and one whose own bits were clear was refused on another entry's status.
 Each reader now refuses, before it fetches or reads any list, every entry whose `statusSize` is not `1`.
@@ -142,16 +191,17 @@ A checker `createRevocationChecker` builds resolves a refused entry to revoked a
 `StatusList2021Manager.updateStatus` throws the same and sets no bit, since the bit at that index is another entry's.
 A `statusSize` that is not an integer greater than zero, such as `0`, `-1`, `1.5`, `"2"`, `null` or `[2]`, is refused the same way, with a reason such as `the entry's statusSize ("2") is not an integer greater than zero`.
 The hop schema, `DelegationCredentialSchema`, and the Card's entry schema, `BitstringStatusListEntrySchema`, keep `statusSize` and `statusMessage`, so a checker is given the size a hop or a Card states, and reject a `statusSize` that is not an integer greater than zero and a `statusMessage` that is not an array of objects with a string `status` and a string `message`.
+They do not check the two further requirements of §2.1, that an entry of more than one bit state a `statusMessage` and that a `statusMessage` have one element for each value the size allows, since every reader refuses such an entry for its size.
 On 1.22.0 the hop schema dropped both members, and the Card's entry schema rejected a Card that stated either.
 `schemas/kya-os-card.schema.json`, `schemas/card-delegation-credential.json` and `schemas/delegation-credential.json` describe both members.
 `withStatusCache` keeps a verdict per `statusSize` as well, so an entry is never answered from the verdict of an entry of another size at the same index.
 Issue every credential with an entry of one bit, as `StatusList2021Manager.allocateStatusEntry` does, and re-issue any that states another `statusSize`.
-A custom `StatusListResolver` or `BitstringRevocationChecker` is given the entry whole: one that reads the bit at the index should refuse what `acceptEntrySize(status.statusSize)` refuses, before it fetches, and one that reads an entry of several bits where the specification keeps them is not affected.
+A custom `StatusListResolver` or `BitstringRevocationChecker` is given the entry whole: one that reads the bit at the index should refuse what `acceptEntrySize(status.statusSize)` refuses, before it fetches, and one that reads an entry of several bits where §3.2 places them, for the `message` purpose, is not affected.
 
 #### An `accountabilityVerifier` that returns a value other than a boolean
 
 `verifyCard` takes only a literal `true`, returned bare or as `verified`, as verified, so a truthy value such as `"false"` or `1` now fails the Card's accountability check, and it reads a `fresh` that is present and not a boolean as `false`, which demotes L3 to L2.
-Since a verified responsible party's lists now count for the Card, SPEC-ENTITY-CARD.md §10.3 states what the verifier must check before it returns `true`: a check of the chain's structure alone, or a stub that always returns `true`, is not enough.
+Since a verified responsible party is named to the checker as the root of the Card's chain, so that the lists the configuration binds to it count for the Card, SPEC-ENTITY-CARD.md §10.3 states what the verifier must check before it returns `true`: a check of the chain's structure alone, or a stub that always returns `true`, is not enough.
 
 #### A checker built without `verifyStatusList`
 
@@ -161,7 +211,8 @@ Give it `createStatusListProofVerifier`, or a check that resolves `true` only fo
 #### A custom `StatusListResolver` given to `withKyaOs` or `DelegationCredentialVerifier`
 
 The library reads a list only through it, so a list is held to the credential only as the resolver holds it.
-`checkStatus` is now told the credential's issuer; once a list's proof verifies, pass `acceptStatusList(list, statusListExpectationFor(status, context, statusListIssuers))`, as `CheqdStatusListResolver` applies the rule to its pin.
+`checkStatus` is now told the credential's issuer; once a list's proof verifies, pass `acceptStatusList(list, statusListExpectationFor(status, context, statusListIssuers))`, with a `statusListIssuers` of your own in the shape above, as `CheqdStatusListResolver` applies the rule to its pin.
+`CheqdStatusListResolver` names its `expectedIssuerDid` as the keeper of every URL it reads.
 
 #### A `StatusListResolver` or `RevocationChecker` whose answer is not a boolean
 
@@ -193,28 +244,35 @@ A checker that `createRevocationChecker` builds, or one written in TypeScript ag
 
 These are new in `@kya-os/mcp`, `@kya-os/mcp/delegation` and `@kya-os/mcp/card`, for a `StatusListResolver` or checker of your own.
 
-Given a fetched list and the entry's `statusListCredential`, `statusPurpose` and `acceptedIssuers`, `acceptStatusList` returns a `StatusListVerdict`, `{ valid: true }` or `{ valid: false, reason }`.
-The list's `issuer` must be one of `acceptedIssuers`, its `statusPurpose` must include the entry's, as one string unless the list is a `BitstringStatusListCredential` with a `BitstringStatusList` subject, and its `id` must be, byte for byte, the URL it was fetched from.
-A list may leave the `id` out only when its issuer is the one issuer `acceptedIssuers` names, and not even then when the optional `requireId` is `true`, as `CheqdStatusListResolver` sets it.
+Given a fetched list and a `StatusListExpectation`, the entry's `statusListCredential` and `statusPurpose`, the `keeper` of that URL and `requireId`, `acceptStatusList` returns a `StatusListVerdict`, `{ valid: true }` or `{ valid: false, reason }`.
+The list's `issuer` must be `keeper.did`, its `statusPurpose` must include the entry's, as one string unless the list is a `BitstringStatusListCredential` with a `BitstringStatusList` subject, and its `id` must be, byte for byte, the URL it was fetched from.
+A list may leave the `id` out only when `requireId` is `false`.
 The rule decides by the list's `issuer` and checks no proof, so a custom `StatusListResolver` applies it once the list's proof verifies under a key that `issuer` lists under `assertionMethod`.
-`acceptedStatusListIssuers(context, statusListIssuers)` lists, each once, the credential's issuer, the chain's root issuer when the context names it as `trustedRootIssuer`, and those `statusListIssuers` accepts for the credential's issuer, and throws the `TypeError` `createRevocationChecker` throws for a `statusListIssuers` that is not a plain object of string arrays.
-`statusListExpectationFor(entry, context, statusListIssuers)` builds, from those issuers, the expectation `acceptStatusList` takes for an entry, as each reader in the library that holds a list to its credential does, so a custom `StatusListResolver` passes `acceptStatusList(list, statusListExpectationFor(status, context, statusListIssuers))`.
+`statusListKeeperFor(statusListCredential, context, statusListIssuers)` returns the keeper, `{ did, why }`, by the four rules above, where `why` is `configured-url`, `configured-origin`, `root-credential` or `credential-issuer`; a resolver with one pinned issuer, as `CheqdStatusListResolver` is, names `resolver-issuer`.
+It throws the `TypeError` `createRevocationChecker` throws for a `statusListIssuers` it could not apply.
+`statusListExpectationFor(entry, context, statusListIssuers)` builds the expectation `acceptStatusList` takes for an entry, as each reader in the library that holds a list to its credential does: the keeper `statusListKeeperFor` names, and `requireId: false` only where the credential's issuer keeps the URL by rule 4, the context pins no other root and `statusListIssuers` names no other issuer.
+So a custom `StatusListResolver` passes `acceptStatusList(list, statusListExpectationFor(status, context, statusListIssuers))`.
 `acceptEntrySize(statusSize)` returns the same kind of verdict for an entry's `statusSize`: valid when the entry states none or states `1`, and otherwise not, with the reason, for a reader that reads one bit per entry.
 All four, with their types, are exported from `@kya-os/mcp`, `@kya-os/mcp/delegation` and `@kya-os/mcp/card`.
-`StatusListResolver.checkStatus` and `BitstringRevocationChecker` take that `StatusCheckContext` as an optional second argument, `withStatusCache` passes it on and caches per context, and `revocationEntriesOf(chain, trustedRootIssuer)` builds it for every hop of a delegation chain, as a `RevocationChainEntry` that carries the hop's `statusPurpose` and its `position` in the chain.
-`createRevocationChecker` takes `statusListIssuers`, keyed by credential issuer: a deployment whose lists one status service signs lists that service under each credential issuer, or has the chain's pinned root sign its lists.
-It throws a `TypeError` when the value is not a plain object of string arrays, or is given without `verifyStatusList`.
-The delegation middleware names only the credential's own issuer to its resolver, even when `trustedRootIssuers` pins the chain's root, so on that path a list the root signed for a re-delegated credential is refused unless the resolver's own configuration accepts the root for the credential's issuer and the list states its `id`.
+`StatusListResolver.checkStatus` and `BitstringRevocationChecker` take a `StatusCheckContext` as an optional second argument: `credentialIssuer`, and for a chain whose root the verifier pins, `trustedRootIssuer` and `trustedRootStatusList`, the URL the root's own credential names.
+`withStatusCache` passes it on and caches per context, and `revocationEntriesOf(chain, trustedRootIssuer)` builds it for every hop of a delegation chain, as a `RevocationChainEntry` that carries the hop's `statusPurpose` and its `position` in the chain.
+`createRevocationChecker` takes `statusListIssuers`, described under "How to write `statusListIssuers`".
+The delegation middleware names only the credential's own issuer to its resolver, even when `trustedRootIssuers` pins the chain's root, so on that path a list the root signed for a re-delegated credential is refused unless the resolver's own configuration binds the list's URL, or its origin, to the root and the list states its `id`.
 
 ### Conformance suite 1.4.0
 
 The suite adds status-list vectors for the acceptance rule, each with a list whose proof verifies, and has 95 vectors in all.
 
-Six new negative vectors check a revoked credential against a list with its bit unset and a proof that verifies: one another DID issued (`status-list/foreign-issuer-list`), a `suspension` list (`status-list/purpose-mismatch-list`), a StatusList2021 list that states its purposes in an array that includes `revocation` (`status-list/purpose-array-2021-list`), one that states another URL as its `id` (`status-list/id-mismatch-list`), and one that states no `id` from the pinned root of the credential's chain (`status-list/root-no-id-list`) or from an issuer the verifier is configured to accept (`status-list/configured-issuer-no-id-list`).
-Those two carry the new optional inputs `trustedRootIssuer` and `statusListIssuers`, and a verifier without that configuration refuses their lists for the issuer.
+Six new negative vectors check a revoked credential against a list with its bit unset and a proof that verifies: one another DID issued (`status-list/foreign-issuer-list`), a `suspension` list (`status-list/purpose-mismatch-list`), a StatusList2021 list that states its purposes in an array that includes `revocation` (`status-list/purpose-array-2021-list`), one that states another URL as its `id` (`status-list/id-mismatch-list`), and one that states no `id` from the pinned root of the credential's chain, at the URL the root's own credential names (`status-list/root-no-id-list`), or from an issuer the verifier binds the list's URL to (`status-list/configured-issuer-no-id-list`).
+Those two carry the new optional inputs `trustedRootIssuer`, `trustedRootStatusList` and `statusListIssuers`, and a verifier without that configuration refuses their lists for the issuer.
 Two new positive vectors check an active credential against its issuer's list re-issued without an `id` (`status-list/no-id-list`) and against its issuer's `BitstringStatusListCredential` for the purposes `suspension` and `revocation` (`status-list/purpose-array-list`), so an implementation that refuses either form fails.
 `status-list.json` is regenerated in one run, so its three existing vectors change bytes with the same cases and verdicts, and the other files change only their `version`.
-A new file, `status-list-authority.json`, adds six more vectors: a clear list from the pinned root (`status-list/pinned-root-list`) or from an issuer `statusListIssuers` accepts for the credential's issuer (`status-list/configured-service-list`) must be read, so an implementation that reads only the credential's own issuer's lists fails; the second list must be refused when `statusListIssuers` has no entry for the credential's issuer (`status-list/unconfigured-service-list`) or names the credential's issuer under the list's (`status-list/wrong-direction-service-map`); a list without an `id` must be read when the credential's own issuer signed it, even if the verifier also pins that issuer as the root (`status-list/owner-root-alias-no-id`); and such a list must be refused when the verifier pins another root, at whose URL it is served (`status-list/owner-no-id-at-pinned-root-url`).
+A new file, `status-list-authority.json`, adds nine vectors for the keeper of a list's URL, over one credential, one URL and a clear list that states its `id`.
+The pinned root's list must be read at the URL `trustedRootStatusList` says the root's own credential names (`status-list/pinned-root-list`), and refused when that credential names another URL (`status-list/root-list-at-issuer-url`).
+The list of a service `statusListIssuers` binds the exact URL to (`status-list/configured-service-list`), or the URL's origin (`status-list/configured-origin-list`), must be read, so an implementation that reads only the credential's own issuer's lists fails.
+It must be refused when the bound origin is only a prefix of the URL's host (`status-list/lookalike-origin-list`), when nothing is bound (`status-list/unconfigured-service-list`), and when another URL is (`status-list/service-list-at-unbound-url`).
+At a URL bound to the service, the credential's own issuer's list (`status-list/issuer-list-at-bound-url`) and the pinned root's, though its credential names that URL (`status-list/configured-over-root-list`), must be refused.
+Two more hold a list without an `id`: it must be read when the credential's own issuer signed it, even if the verifier also pins that issuer as the root (`status-list/owner-root-alias-no-id`), and refused when the verifier pins another root whose credential names the URL (`status-list/owner-no-id-at-pinned-root-url`).
 Five more vectors in that file hold a signed `statusListIndex` that is not a whole decimal string (`status-list/index-suffix`, `status-list/index-fraction`, `status-list/index-space`, `status-list/index-number`), which must be refused, or one that opens with zeros (`status-list/index-leading-zeros`), which must be read.
 Three more hold a signed entry that states a `statusSize`: an entry of two bits whose value is set at its own bits while the bit at its index is clear (`status-list/status-size-two-bits`) and one that states `0` (`status-list/status-size-zero`) must be refused, and one that states `1` (`status-list/status-size-one`) must be read from the bit at its index.
 The entry of `status-list/status-size-two-bits` states its value, 3, as `revoked` in its `statusMessage`, so an implementation that reads the two bits where Bitstring Status List v1.0 keeps them refuses it as well.

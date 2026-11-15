@@ -1,17 +1,18 @@
 kind: Added
 body: |-
     **`acceptStatusList` is the status-list acceptance rule the readers that
-    verify a list's proof apply, and `acceptedStatusListIssuers` names the
-    issuers a reader accepts for a credential.** A custom
+    verify a list's proof apply, and `statusListKeeperFor` names the one
+    issuer whose list is read at a status-list URL.** A custom
     `StatusListResolver` applies the rule, once a list's proof verifies, as
     `acceptStatusList(list, statusListExpectationFor(status, context,
     statusListIssuers))`. `StatusListResolver.checkStatus` and
     `BitstringRevocationChecker` take that `StatusCheckContext` as an
     optional second argument, `withStatusCache` caches per context, and
     `revocationEntriesOf(chain, trustedRootIssuer)` builds it for every hop
-    of a chain. `createRevocationChecker` takes `statusListIssuers`, keyed
-    by credential issuer, for lists a status service signs. All are
-    exported from `@kya-os/mcp`, `@kya-os/mcp/delegation` and
+    of a chain, with the list URL a pinned root's own credential names.
+    `createRevocationChecker` takes `statusListIssuers`, keyed by the DID
+    of a status-list issuer, with the URLs and `https:` origins it keeps.
+    All are exported from `@kya-os/mcp`, `@kya-os/mcp/delegation` and
     `@kya-os/mcp/card`. The delegation middleware names only the
     credential's own issuer to its resolver, never the pinned root.
     UPGRADING.md, "Status-list exports for a custom reader", has each

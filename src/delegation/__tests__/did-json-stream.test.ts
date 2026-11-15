@@ -8,7 +8,7 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { fetchDidJson } from '../read-did-json.js';
 import { resolveBoundedDid, MAX_DID_DOCUMENT_BYTES as CAP } from '../did-resource-limits.js';
-import type { DIDDocument } from '../vc-verifier.types.js';
+import { documentOf } from '../../__tests__/utils/did-documents.js';
 import type { FetchProvider } from '../../providers/base.js';
 
 const did = 'did:web:limits.example';
@@ -60,8 +60,8 @@ describe('the resolution deadline', () => {
 
   it('leaves no timer behind once a resolver or a response answers', async () => {
     vi.useFakeTimers();
-    expect(await resolveBoundedDid({ resolve: async () => ({ id: did }) as DIDDocument }, did)).toEqual({ id: did });
-    expect(await fetchDidJson(provider(async () => streaming([bytes(`{"id":"${did}"}`)])), url)).toEqual({ id: did });
+    expect(await resolveBoundedDid({ resolve: async () => documentOf({}, did) }, did)).toEqual({ id: did });
+    expect(await fetchDidJson(provider(async () => streaming([bytes(JSON.stringify(documentOf({}, did)))])), url)).toEqual({ id: did });
     expect(vi.getTimerCount()).toBe(0);
   });
 });

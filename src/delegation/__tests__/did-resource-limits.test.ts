@@ -11,16 +11,20 @@ import { DidCheqdResolver } from '../../integrations/cheqd/resolver.js';
 import type { FetchProvider } from '../../providers/base.js';
 import type { DIDDocument } from '../vc-verifier.types.js';
 import { closeLoopback, listenOnLoopback } from '../../__tests__/utils/loopback-server.js';
+import { documentOf, issuerDidDocument, keylessMethod } from '../../__tests__/utils/did-documents.js';
 
 const did = 'did:web:limits.example';
 const provider = (fetch: FetchProvider['fetch']) => ({ fetch }) as FetchProvider;
 const encoded = (value: string) => new TextEncoder().encode(value);
 const checkTokens = (text: string) => checkJsonTokens(text, DID_DOCUMENT_JSON);
-const document = { id: did, verificationMethod: [{ id: '#key', type: 'JsonWebKey', controller: did }], assertionMethod: ['#key'] };
+// A document within every limit. A test that spreads it changes one member on purpose: an oversize
+// member, too many or too long references, a getter, a `toJSON`, an `undefined` member, a
+// `deactivated` literal, or a member name over the limit.
+const document = issuerDidDocument(keylessMethod('#key', did));
 
 describe('DID resource boundaries', () => {
   it.each([1, 511, 8192])('allocates nothing while stalled and linear total storage for %i-byte chunks', async chunkSize => {
-    const data = encoded(JSON.stringify({ id: did, padding: 'x'.repeat(8000) }));
+    const data = encoded(JSON.stringify(documentOf({ padding: 'x'.repeat(8000) }, did)));
     const chunks = Array.from({ length: Math.ceil(data.length / chunkSize) }, (_, i) => data.subarray(i * chunkSize, (i + 1) * chunkSize));
     let controller!: ReadableStreamDefaultController<Uint8Array>;
     let started!: () => void;
@@ -65,7 +69,7 @@ describe('DID resource boundaries', () => {
   });
 
   it('accepts exactly the byte cap and rejects cap + 1 before JSON.parse', async () => {
-    const json = JSON.stringify({ id: did });
+    const json = JSON.stringify(documentOf({}, did));
     const atCap = json + ' '.repeat(CAP - encoded(json).length);
     expect(await fetchDidJson(provider(async () => new Response(atCap)), 'https://limits.example')).toEqual({ id: did });
     const parse = vi.spyOn(JSON, 'parse');
@@ -85,7 +89,7 @@ describe('DID resource boundaries', () => {
   });
 
   it('caps the decompressed body through the real runtime fetch provider', async () => {
-    const compressed = gzipSync(JSON.stringify({ id: did }) + ' '.repeat(CAP));
+    const compressed = gzipSync(JSON.stringify(documentOf({}, did)) + ' '.repeat(CAP));
     const server = createServer((_request, response) => {
       response.writeHead(200, { 'Content-Encoding': 'gzip', 'Content-Length': compressed.length });
       response.end(compressed);
@@ -173,7 +177,7 @@ describe('DID resource boundaries', () => {
     expect(await resolveBoundedDid({ resolve: async () => ({ ...document, extra: 'x'.repeat(CAP) }) }, did)).toBeNull();
     expect(measureDidDocument({ ...document, assertionMethod: Array(8193).fill('#key') }).ok).toBe(false);
     expect(measureDidDocument({ ...document, assertionMethod: ['#'.repeat(MAX_KEY_ID_LENGTH + 1)] }).ok).toBe(false);
-    expect(measureDidDocument({ id: `did:${'d'.repeat(MAX_DID_LENGTH - 4)}` }).ok).toBe(true);
+    expect(measureDidDocument(documentOf({}, `did:${'d'.repeat(MAX_DID_LENGTH - 4)}`)).ok).toBe(true);
   });
 
   it('says whether a resolution found a document within the limits, found none, or was refused', async () => {
@@ -192,13 +196,14 @@ describe('DID resource boundaries', () => {
     const toJSON = vi.fn(() => ({}));
     expect(measureDidDocument({ ...document, toJSON }).ok).toBe(false);
     expect(toJSON).not.toHaveBeenCalled();
+    // Built in two statements, so the document holds itself: a cycle no literal and no helper writes.
     const cycle: Record<string, unknown> = { id: did }; cycle.child = cycle;
     expect(measureDidDocument(cycle)).toEqual({ ok: false, reason: 'document has a cycle' });
     const shared = { kept: [1] };
-    const twice = { id: did, first: shared, second: shared };
+    const twice = documentOf({ first: shared, second: shared }, did);
     expect(measureDidDocument(twice)).toMatchObject({ ok: true, bytes: encoded(JSON.stringify(twice)).length });
     expect(measureDidDocument({ ...document, optional: undefined })).toMatchObject({ ok: true, bytes: encoded(JSON.stringify(document)).length });
-    const unicode = { id: did, unicode: '\uD800😀\n' };
+    const unicode = documentOf({ unicode: '\uD800😀\n' }, did);
     expect(measureDidDocument(unicode)).toMatchObject({ ok: true, bytes: encoded(JSON.stringify(unicode)).length });
     for (const literal of [true, false, null]) {
       const stated = { ...document, deactivated: literal };

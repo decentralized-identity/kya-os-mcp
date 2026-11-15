@@ -9,9 +9,10 @@ import { describe, it, expect, vi } from 'vitest';
 import { DidDocumentCache, type LoadedDidDocument } from '../did-document-cache.js';
 import { DID_RESOLUTION_TIMEOUT_MS, MAX_DID_DOCUMENT_BYTES as MiB } from '../did-resource-policy.js';
 import type { DIDDocument } from '../vc-verifier.types.js';
+import { documentOf } from '../../__tests__/utils/did-documents.js';
 
 const TTL = 60_000;
-const document = (id: string): DIDDocument => ({ id: `did:web:${id}.example` });
+const document = (id: string): DIDDocument => documentOf({}, `did:web:${id}.example`);
 
 /** A cache holding `keys`, least recently used first, each charged `bytes`. */
 function holding(keys: string[], bytes: number): DidDocumentCache {
@@ -118,6 +119,7 @@ describe('DidDocumentCache', () => {
     cache.delete('deleted');
     const fresh = cache.resolve('deleted', TTL, load);
     expect(load).toHaveBeenCalledTimes(3);
+    // `stale: true` marks what the dropped load returns, so the test can tell it from the fresh document.
     finishers[0]!({ document: { ...document('deleted'), stale: true } as DIDDocument, bytes: 10 });
     finishers[1]!({ document: document('kept'), bytes: 10 });
     expect(await stale).toMatchObject({ stale: true });
@@ -143,6 +145,7 @@ describe('DidDocumentCache', () => {
       const afresh = cache.resolve('slow', TTL, fresh);
       expect([hung.mock.calls.length, fresh.mock.calls.length]).toEqual([1, 1]);
       expect(await afresh).toEqual(document('fresh'));
+      // `stale: true` marks what the dropped load returns, which the cache must not hold.
       finishHung({ document: { ...document('slow'), stale: true } as DIDDocument, bytes: 10 });
       await vi.advanceTimersByTimeAsync(0);
       expect(cache.get('slow')).toEqual(document('fresh'));

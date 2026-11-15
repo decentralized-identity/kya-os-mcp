@@ -20,6 +20,7 @@ const timers = new Set<ReturnType<typeof setInterval>>();
 beforeAll(async () => {
   server = createServer((request, response) => {
     response.writeHead(200, { 'Content-Type': 'application/json' });
+    // The first bytes of a document and no more, so the body stalls or trickles part way through it.
     response.write('{"id":');
     if (request.url === '/trickle') {
       const timer = setInterval(() => response.write(' '), 200);

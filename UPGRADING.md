@@ -620,8 +620,13 @@ A `path-prefix` scope also treats a percent-encoded dot segment as the dot segme
 A segment made of one or two dots, each written as `.` or as `%2e` in either case, such as `%2e%2e`, `.%2E` or `%2e`, is refused as `..` and `.` already were.
 So `notes/%2e%2e/secrets/x.md` no longer matches a `path-prefix` scope `notes`, a `path-prefix` pattern such as `notes/%2e%2e` grants nothing, and a re-delegation is not proven inside or through such a pattern.
 On 1.22.0 each of these matched as ordinary text, which reached outside the grant only for a consumer that decodes a path before it resolves dot segments.
-Nothing else is decoded: `notes/%2ea/b` and `notes/a%2e/b` still match, and the `exact`, `prefix` and `regex` matchers compare the text as written.
-A resource whose name is such a segment needs an `exact` scope.
+A `path-prefix` scope also refuses a percent-encoded separator: `%2f` or `%5c`, in either case, anywhere in a value or a pattern, beside a dot segment or not.
+So `notes/..%2fsecrets/x.md`, `notes/%2e%2e%2fsecrets/x.md`, `notes/..%5csecrets/x.md` and `notes/a%2Fb.md` no longer match a `path-prefix` scope `notes`, a `path-prefix` pattern such as `notes%2f2026` grants nothing, and a re-delegation is not proven inside or through such a pattern.
+On 1.22.0 each of these matched as ordinary text, which reached outside the grant only for a consumer that decodes a path before it splits it into segments.
+Nothing else is decoded: `notes/%2ea/b`, `notes/a%2e/b`, `notes/a%20b.md` and `notes/100%.md` still match, and the `exact`, `prefix` and `regex` matchers compare the text as written.
+A doubly encoded form such as `%252f` or `%252e%252e` still matches, because one decoding leaves the text `%2f` or `%2e%2e` and not a separator or a dot segment.
+A consumer that decodes a path more than once has to refuse such a path itself.
+A resource whose name is a dot segment or holds an encoded separator needs an `exact` scope.
 
 ### Conformance suite 1.4.0
 

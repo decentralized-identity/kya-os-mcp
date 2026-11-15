@@ -33,16 +33,30 @@ function pathBase(pattern: string): string {
  */
 const DOT_SEGMENT = /^(?:\.|%2e){1,2}$/i;
 
+/** A percent-encoded `/` (`%2f`) or `\` (`%5c`), in either case, anywhere in the text. */
+const ENCODED_SEPARATOR = /%(?:2f|5c)/i;
+
 /**
- * Whether a path has a `.` or `..` segment ({@link DOT_SEGMENT}), splitting on
- * `/` and `\`. Matching is on the raw string, but a consumer that later
- * normalizes the path would resolve `notes/../secrets/x.md`, or
- * `notes/%2e%2e/secrets/x.md` once it decodes it, to `secrets/x.md`, outside a
- * `notes` grant. Nothing else is decoded: an encoded dot inside a longer name
- * and an encoded separator (`%2f`) are the text they are.
+ * Whether a `path-prefix` pattern or value is unsafe to compare, which is the
+ * one rule for both: it has a `.` or `..` segment ({@link DOT_SEGMENT}) once
+ * split on `/` and `\`, or it holds an encoded separator
+ * ({@link ENCODED_SEPARATOR}) anywhere, beside a dot segment or not.
+ * Matching is on the raw string, but a consumer that normalizes the path
+ * resolves `notes/../secrets/x.md` to `secrets/x.md`, outside a `notes`
+ * grant, and one that decodes the path first reads `notes/%2e%2e/secrets/x.md`
+ * and `notes/..%2fsecrets/x.md` as that same path.
+ *
+ * Nothing else is decoded. An encoded dot inside a longer name (`a%2eb`), any
+ * other escape (`%20`) and a `%` that starts no escape (`100%`, `%2`) are the
+ * text they are. So is a doubly encoded separator (`%252f`): one decoding
+ * leaves the text `%2f`, which is no separator, so it is safe for a consumer
+ * that decodes once, and refusing it would refuse every name with an encoded
+ * `%`. A consumer that decodes more than once has to refuse such a path
+ * itself. The other matcher kinds compare the text as written and do not use
+ * this rule.
  */
-function hasDotSegment(path: string): boolean {
-  return path.split(/[/\\]/).some((segment) => DOT_SEGMENT.test(segment));
+function isUnsafePath(path: string): boolean {
+  return ENCODED_SEPARATOR.test(path) || path.split(/[/\\]/).some((segment) => DOT_SEGMENT.test(segment));
 }
 
 /**
@@ -58,8 +72,9 @@ function hasDotSegment(path: string): boolean {
  *              `notesx/secret.md`). Trailing `/` or `/*` on the pattern is optional
  *              sugar; an empty base matches nothing. A `.` or `..` segment in the
  *              pattern or the value, percent-encoded (`%2e`) or not, matches
- *              nothing, so `notes/../secrets/x.md` cannot pass as "under
- *              notes". Use it for resource paths.
+ *              nothing, and neither does an encoded `/` or `\` (`%2f`, `%5c`),
+ *              so `notes/../secrets/x.md` and `notes/..%2fsecrets/x.md` cannot
+ *              pass as "under notes". Use it for resource paths.
  * - `regex`  : anchored full-string match; never throws (invalid patterns → false).
  *
  * SECURITY: the regex pattern is supplied by the credential ISSUER. JS `RegExp`
@@ -83,8 +98,10 @@ export function matchScope(pattern: string, matcher: ScopeMatcher, value: string
       const base = pathBase(pattern);
       // Refuse to grant universal scope via an empty/`*`-only prefix.
       if (base.length === 0) return false;
-      // A dot segment could resolve outside the base once a consumer normalizes it.
-      if (hasDotSegment(base) || hasDotSegment(value)) return false;
+      // An unsafe value could resolve outside the base once a consumer decodes or normalizes it.
+      // A value that is the base or lies under it holds all of the base's text and segments,
+      // so this refuses every value for an unsafe pattern too.
+      if (isUnsafePath(value)) return false;
       return value === base || value.startsWith(`${base}/`);
     }
     case 'regex': {
@@ -168,8 +185,10 @@ export function matcherContains(outer: CrispScope, inner: CrispScope): boolean {
   if (inner.matcher === 'exact') return matchScope(outer.resource, outer.matcher, inner.resource);
   const rule = CONTAINMENT.get(`${inner.matcher}:${outer.matcher}`);
   const [innerBase, outerBase] = [baseOf(inner), baseOf(outer)];
-  // A path-prefix with a dot segment matches nothing, so it proves nothing either way.
-  if ([inner, outer].some((scope) => scope.matcher === 'path-prefix' && hasDotSegment(baseOf(scope)))) return false;
+  // An unsafe path-prefix (isUnsafePath) matches nothing, so it is inside nothing. One as the
+  // outer scope needs no check of its own: a path-prefix under it holds its text and is refused
+  // here, an exact value under it is refused by matchScope, and no rule puts a prefix inside it.
+  if (inner.matcher === 'path-prefix' && isUnsafePath(innerBase)) return false;
   return rule !== undefined && innerBase.length > 0 && outerBase.length > 0 && rule(innerBase, outerBase);
 }
 

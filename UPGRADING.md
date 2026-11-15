@@ -144,7 +144,11 @@ A hop's issuer always decides the status of its own credential by the list it na
 
 With `verifyStatusList` it reads as revoked, unless `statusListIssuers` binds the list's URL, or its origin, to that DID.
 That holds for the Card's `responsibleParty` too.
-Once the Card's `accountabilityVerifier` verifies it as the root issuer of the Card's delegation chain, `verifyCard` names it to the checker as the root, with no status-list URL, so its list counts for the Card only at a URL the configuration binds to it, and at the Card's own list URL a list it signs is refused.
+Once the Card's `accountabilityVerifier` verifies it as the root issuer of the Card's delegation chain, `verifyCard` names it to the checker as the root.
+Its list then counts for the Card at the URL the verifier's verdict reports as `rootStatusList`, the list URL the status entry of the chain's root credential names, and at a URL the configuration binds to it.
+A verifier that returns a bare `true`, or `{ verified: true }` with no `rootStatusList`, reports no URL, so the responsible party's list counts only at a URL the configuration binds to it, and at the Card's own list URL a list it signs is refused.
+To have it count there, return `{ verified: true, rootStatusList }` with the URL read from the root credential whose proof the verifier checked, or bind the URL to the responsible party in `statusListIssuers`.
+`rootStatusList` is read only beside a literal `verified: true` and only as a non-empty string, and `verifyCard` returns it as `accountability.rootStatusList`.
 At a URL bound to it, the Entity's own list is refused.
 A responsible party's list counts for its Cards only once verified, never as the Card states it.
 

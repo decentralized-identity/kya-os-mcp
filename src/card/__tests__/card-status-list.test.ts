@@ -117,6 +117,18 @@ function verifyWith(list: Record<string, unknown>, deps: Partial<VerifyCardDeps>
   return verifyCard(card, { accountabilityVerifier: accountableThrough(chainFrom(responsibleParty)), statusListChecker, ...deps });
 }
 
+/**
+ * The same policy, also reporting `rootStatusList` as the list URL the root credential of the
+ * Card's chain names, whatever the chain itself states: the report is what `verifyCard` reads.
+ */
+function reportingRootList(rootStatusList: unknown, chain = chainFrom(responsibleParty)): AccountabilityVerifier {
+  const verify = accountableThrough(chain);
+  return async (c, ctx) => {
+    const verdict = (await verify(c, ctx)) as object;
+    return { ...verdict, rootStatusList } as never;
+  };
+}
+
 const READ_CLEAR = { revoked: false, fresh: true };
 const READ_REVOKED = { revoked: true, fresh: true };
 const REFUSED = { revoked: true, fresh: false, reason: expect.any(String) as string };
@@ -205,6 +217,85 @@ describe("the Card's verified responsible party", () => {
   it('signs a list that is refused when it states no id', async () => {
     const result = await verifyWith(cardsList(responsibleParty, [], { statesId: false }), {}, boundToParty);
     expect(result).toMatchObject({ ok: false, revocation: REFUSED });
+  });
+
+  it("signs a list that is read at the Card's own list URL once accountability reports it as the URL the root credential names", async () => {
+    const reported = { accountabilityVerifier: reportingRootList(CARDS_URL) };
+    const clear = await verifyWith(cardsList(responsibleParty), reported);
+    expect(clear.accountability).toMatchObject({ responsibleParty: responsibleParty.did, verified: true, rootStatusList: CARDS_URL });
+    expect(clear).toMatchObject({ ok: true, revocation: READ_CLEAR });
+    expect(await verifyWith(cardsList(responsibleParty, [3]), reported)).toMatchObject({ ok: false, revocation: READ_REVOKED });
+    expect((await verifyWith(cardsList(entity), reported)).revocation).toStrictEqual({
+      revoked: true,
+      fresh: false,
+      reason: `status list issuer "${entity.did}" does not keep this list's URL: "${responsibleParty.did}" does, as the pinned root whose own credential names it`,
+    });
+    expect(await verifyWith(cardsList(responsibleParty, [], { statesId: false }), reported)).toMatchObject({ ok: false, revocation: REFUSED });
+  });
+
+  it.each<[string, unknown]>([
+    ['another URL', 'https://example.com/status/root'],
+    ['a URL that differs from it in case', CARDS_URL.toUpperCase()],
+    ['an empty string', ''],
+    ['a number', 7],
+    ['an array holding the URL', [CARDS_URL]],
+    ['an object', { url: CARDS_URL }],
+    ['null', null],
+  ])("keeps no list at the Card's own list URL when accountability reports %s", async (_label, rootStatusList) => {
+    const result = await verifyWith(cardsList(responsibleParty), { accountabilityVerifier: reportingRootList(rootStatusList) });
+    expect(result.accountability).toMatchObject({ verified: true });
+    expect(result.revocation).toStrictEqual({
+      revoked: true,
+      fresh: false,
+      reason: `status list issuer "${responsibleParty.did}" does not keep this list's URL: "${entity.did}" does, as the issuer of the credential`,
+    });
+  });
+
+  it('lets the configuration decide over the URL accountability reports', async () => {
+    const boundToService = { statusListIssuers: { [statusService.did]: [CARDS_URL] } };
+    const reported = { accountabilityVerifier: reportingRootList(CARDS_URL) };
+    expect(await verifyWith(cardsList(statusService), reported, boundToService)).toMatchObject({ ok: true, revocation: READ_CLEAR });
+    expect(await verifyWith(cardsList(responsibleParty), reported, boundToService)).toMatchObject({ ok: false, revocation: REFUSED });
+  });
+
+  it('is named with the URL accountability reports only when it is verified and the URL is a string', async () => {
+    const check = vi.fn(createRevocationChecker({ fetch: serveAt({}), now }));
+    const run = (accountabilityVerifier: AccountabilityVerifier) => verifyCard(card, { accountabilityVerifier, statusListChecker: check });
+    await run(reportingRootList(CARDS_URL));
+    await run(reportingRootList(7));
+    await run(reportingRootList(''));
+    await run(reportingRootList(CARDS_URL, chainFrom(anotherRoot)));
+    await run(async () => ({ verified: 'true', rootStatusList: CARDS_URL }) as never);
+    const root = { credentialIssuer: entity.did, trustedRootIssuer: responsibleParty.did };
+    expect(check.mock.calls).toStrictEqual([
+      [card.revocation, { ...root, trustedRootStatusList: CARDS_URL }],
+      [card.revocation, root],
+      [card.revocation, root],
+      [card.revocation, { credentialIssuer: entity.did }],
+      [card.revocation, { credentialIssuer: entity.did }],
+    ]);
+    const unverified = await run(reportingRootList(CARDS_URL, chainFrom(anotherRoot)));
+    expect(unverified.accountability).not.toHaveProperty('rootStatusList');
+  });
+
+  it('takes the URL only from the one read of verified, so a getter that turns cannot name it', async () => {
+    const check = vi.fn(createRevocationChecker({ fetch: serveAt({}), now }));
+    const reads = { verified: 0, rootStatusList: 0 };
+    const turning = {
+      get verified() {
+        reads.verified += 1;
+        return reads.verified !== 1;
+      },
+      get rootStatusList() {
+        reads.rootStatusList += 1;
+        return CARDS_URL;
+      },
+    };
+    const result = await verifyCard(card, { accountabilityVerifier: async () => turning as never, statusListChecker: check });
+    expect(result.accountability).toMatchObject({ verified: false });
+    expect(result.accountability).not.toHaveProperty('rootStatusList');
+    expect(check.mock.calls).toStrictEqual([[card.revocation, { credentialIssuer: entity.did }]]);
+    expect(reads).toEqual({ verified: 1, rootStatusList: 1 });
   });
 
   it("is named to the checker as the chain's root only once accountability verified it", async () => {

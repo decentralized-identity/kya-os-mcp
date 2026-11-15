@@ -865,7 +865,7 @@ An origin is `https://`, a lower-case host and an optional port, and a URL is at
 The comparison is on the bytes as written, with no parsing and no normalisation, so that every implementation decides alike and no URL is placed at an origin a URL parser would not place it at.
 A verifier takes the URL the root's credential names (rule 3) only from a root credential whose proof it has verified, since until then the presenter of the chain wrote it.
 
-For an Entity Card's `revocation` entry the Card's `id` is the credential's own `issuer`, and the Card's `responsibleParty` takes the root's place once the Card's accountability check has verified it as the root issuer of the Card's delegation chain (SPEC-ENTITY-CARD.md §10.3).
+For an Entity Card's `revocation` entry the Card's `id` is the credential's own `issuer`, and the Card's `responsibleParty` takes the root's place once the Card's accountability check has verified it as the root issuer of the Card's delegation chain, with the list URL that check reports the root credential names (SPEC-ENTITY-CARD.md §10.3).
 A pinned root can revoke its own credential, which revokes every credential below it in its chains, so the list its own credential is on speaks for each credential of its chains that names that list.
 A root that keeps other lists for its delegates, the shards of one herd list for example, has the verifier bind them to it, by URL or by origin, once for all its delegates.
 A deployment whose root credential carries no status entry does the same, since rule 3 then gives the root no URL.

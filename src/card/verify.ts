@@ -28,6 +28,7 @@ import { CHECKER_REASON_LENGTH, type BitstringRevocationChecker } from './revoca
 import { sanitizeForMessage } from '../utils/message-text.js';
 import { describeValue } from '../utils/describe-value.js';
 import { readRevocationAnswer } from '../utils/revocation-answer.js';
+import type { StatusCheckContext } from '../utils/statuslist-keeper.js';
 import { answerWithinDeadline, DeadlineExceededError, dependencyTimeout } from '../utils/deadline.js';
 import { checkWithinDeadline } from './revocation-deadline.js';
 import type { ProofAssurance, ProofVerifyResult } from './proof/index.js';
@@ -82,6 +83,14 @@ export interface AccountabilityResult {
    * Omitted or `undefined`, freshness is unknown; any other value but `true` reads as `false`.
    */
   fresh?: boolean;
+  /**
+   * The `statusListCredential` URL that the status entry of the chain's root credential names, read
+   * from the credential whose proof the verifier checked. The responsible party keeps the list at
+   * that URL, so its list there counts for the Card's `revocation` entry. It is read only from a
+   * verdict whose `verified` is `true`, and only when it is a non-empty string; omitted, the
+   * responsible party keeps only the URLs the checker's `statusListIssuers` binds to it.
+   */
+  rootStatusList?: string;
 }
 
 /**
@@ -91,7 +100,8 @@ export interface AccountabilityResult {
  * delegation/accountability JOIN of ./delegation, recomputed, asserted nowhere). `proofDid` is
  * OPTIONAL and additive: implementations that ignore it keep the L2 offline check unchanged.
  * Returns a bare boolean (DEPRECATED alias) or an {@link AccountabilityResult} carrying `fresh`.
- * A verified responsible party's status lists also count for the Card's `revocation` entry (see
+ * A verified responsible party's status list also counts for the Card's `revocation` entry, at the
+ * URL the verdict reports as `rootStatusList` or one the configuration binds to it (see
  * `statusListChecker`). Reporting `verified: true` is an authority grant: the host must verify
  * every hop's proof, continuity, attenuation, expiry and revocation under its policy, bind the
  * resolved chain to this Card and its leaf, and confirm the root equality. A structural check or
@@ -131,10 +141,11 @@ export interface VerifyCardDeps {
    * Live W3C Bitstring Status List v1.0 check for `card.revocation` (fail-closed). It is called with
    * `{ credentialIssuer: card.id }`, the Card being its Entity's own statement, and, once the
    * accountability check has verified the Card's `responsibleParty` as the root issuer of the Card's
-   * delegation chain, with that party as `trustedRootIssuer`. No status-list URL of that party is
-   * named, so a checker that verifies the list reads the party's list for the Card only at a URL
-   * its `statusListIssuers` binds to the party, and otherwise the Card's own (`acceptStatusList`).
-   * A responsible party that did not verify is not named.
+   * delegation chain, with that party as `trustedRootIssuer` and, when the verdict reported it, the
+   * list URL the root credential names as `trustedRootStatusList`. A checker that verifies the list
+   * then reads the party's list for the Card only at that URL or at one its `statusListIssuers`
+   * binds to the party, and otherwise the Card's own (`acceptStatusList`). A responsible party
+   * that did not verify is not named, and neither is a URL it reported.
    */
   statusListChecker?: BitstringRevocationChecker;
   /** True iff the caller independently proved CIMD L1 key possession (private_key_jwt ↔ jwks_uri). */
@@ -162,6 +173,8 @@ export interface VerifyCardResult {
     fresh?: boolean;
     /** Why the party did not verify, when the accountability verifier's answer could not be read. */
     reason?: string;
+    /** The list URL a verified verdict reported the root credential names ({@link AccountabilityResult.rootStatusList}). */
+    rootStatusList?: string;
   };
   attestations: Array<{ type: string; subject?: string; verified: boolean }>;
   /** Present when a proof was recomputed: the live holder-of-key verdict. */
@@ -194,7 +207,7 @@ export async function verifyCard(card: EntityCard, deps: VerifyCardDeps): Promis
 
   const accountability = await checkAccountability(card, deps, trustedIssuers, proofDid, timeoutMs);
   const attestations = await checkAttestations(card, deps, trustedIssuers, timeoutMs);
-  const revocation = await checkCardRevocation(card, deps.statusListChecker, verifiedResponsibleParty(accountability), timeoutMs);
+  const revocation = await checkCardRevocation(card, deps.statusListChecker, verifiedRoot(accountability), timeoutMs);
 
   const accountabilityOk = !card.responsibleParty || Boolean(accountability?.verified);
   const attestationsOk = attestations.every((a) => a.verified);
@@ -321,20 +334,25 @@ const ACCOUNTABILITY_ANSWER = "the accountability verifier's answer";
  * `true` (the DEPRECATED bare boolean) or an object whose `verified` is `true`, and is fresh only
  * as a literal `true`; a `fresh` left out or `undefined` stays unknown. An answer that is neither a
  * boolean nor an object, a `verified` that is not a boolean, and an answer that throws when looked
- * at do not verify, with a reason. Each member is read once, inside the `try`, so nothing throws.
+ * at do not verify, with a reason. The `rootStatusList` names what the responsible party may sign
+ * for this Card, so it is kept only from the read that saw `verified: true`, and only as the
+ * non-empty string it is. Each member is read once, inside the `try`, so nothing throws.
  */
 function readAccountability(
   answer: unknown,
-): Pick<NonNullable<VerifyCardResult['accountability']>, 'verified' | 'fresh' | 'reason'> {
+): Pick<NonNullable<VerifyCardResult['accountability']>, 'verified' | 'fresh' | 'reason' | 'rootStatusList'> {
   if (typeof answer === 'boolean') return { verified: answer, fresh: undefined };
   try {
     if (typeof answer !== 'object' || answer === null) {
       const reason = `${ACCOUNTABILITY_ANSWER} (${describeValue(answer)}) is neither a boolean nor an object`;
       return { verified: false, fresh: undefined, reason };
     }
-    const { verified, fresh: stated } = answer as Record<string, unknown>;
+    const { verified, fresh: stated, rootStatusList: reported } = answer as Record<string, unknown>;
     const fresh = stated === undefined ? undefined : stated === true;
-    if (typeof verified === 'boolean') return { verified, fresh };
+    if (typeof verified === 'boolean') {
+      const listed = verified && typeof reported === 'string' && reported.length > 0 ? { rootStatusList: reported } : {};
+      return { verified, fresh, ...listed };
+    }
     const reason = `the verified member of ${ACCOUNTABILITY_ANSWER} (${describeValue(verified)}) is neither true nor false`;
     return { verified: false, fresh, reason };
   } catch {
@@ -422,28 +440,36 @@ interface CardRevocationVerdict {
   reason?: string;
 }
 
-/** The Card's responsible party, once the accountability check has verified it, and never before. */
-function verifiedResponsibleParty(accountability: VerifyCardResult['accountability']): string | undefined {
-  return accountability?.verified ? accountability.responsibleParty : undefined;
+/** The part of a status check's context that names the root of a Card's chain. */
+type CardRoot = Partial<Pick<StatusCheckContext, 'trustedRootIssuer' | 'trustedRootStatusList'>>;
+
+/**
+ * The Card's responsible party as the checker is told of it, once the accountability check has
+ * verified it and never before: the root of the Card's chain, with the list URL the verdict
+ * reported that root's own credential names, when it reported one.
+ */
+function verifiedRoot(
+  accountability: VerifyCardResult['accountability'],
+): CardRoot {
+  if (!accountability?.verified || accountability.responsibleParty === undefined) return {};
+  const { responsibleParty, rootStatusList } = accountability;
+  return { trustedRootIssuer: responsibleParty, ...(rootStatusList === undefined ? {} : { trustedRootStatusList: rootStatusList }) };
 }
 
 /**
  * Live-check `card.revocation` via the injected seam; fail-closed (unreachable ⇒ revoked). The Card's
- * `id` is named as the issuer its status list is held to, and a verified `responsibleParty` as the
- * root of the Card's delegation chain.
+ * `id` is named as the issuer its status list is held to, and `root` names a verified
+ * `responsibleParty` as the root of the Card's delegation chain ({@link verifiedRoot}).
  */
 async function checkCardRevocation(
   card: EntityCard,
   checker: BitstringRevocationChecker | undefined,
-  responsibleParty: string | undefined,
+  root: CardRoot,
   timeoutMs: number,
 ): Promise<CardRevocationVerdict> {
   if (!checker || !card.revocation) return { checked: false, revoked: false, fresh: true };
   try {
-    const asked = await checkWithinDeadline(checker, card.revocation, {
-      credentialIssuer: card.id,
-      ...(responsibleParty === undefined ? {} : { trustedRootIssuer: responsibleParty }),
-    }, timeoutMs);
+    const asked = await checkWithinDeadline(checker, card.revocation, { credentialIssuer: card.id, ...root }, timeoutMs);
     if ('expired' in asked) return { checked: true, revoked: true, fresh: false, reason: asked.expired };
     const status = readRevocationAnswer(asked.answer);
     if (status.revoked === undefined) {

@@ -162,8 +162,17 @@ export function createDidCheqdResolver(
   return new DidCheqdResolver(fetchProvider, options);
 }
 
+/**
+ * A `didResolvers` entry that builds the cheqd resolver over the registry owner's fetch provider.
+ * The resolver waits as long as `options.dependencyTimeoutMs` says, or, when that is left out, as
+ * long as the owner waits: the `dependencyTimeoutMs` of the delegation middleware or of the
+ * `RuntimeFetchProvider` that holds the registry.
+ */
 export function cheqdResolver(options: DidCheqdResolverOptions): DIDResolverFactory {
-  return (fetchProvider) => createDidCheqdResolver(fetchProvider, options);
+  return (fetchProvider, context) => createDidCheqdResolver(
+    fetchProvider,
+    options.dependencyTimeoutMs === undefined ? { ...options, dependencyTimeoutMs: context?.dependencyTimeoutMs } : options,
+  );
 }
 
 /**

@@ -12,6 +12,7 @@ import { DEADLINES, REFUSED_TIMEOUTS, settledAt, timeoutTypeError, type Hang } f
 import { delegationRecord, keyOf, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
+import { cheqdResolver } from '../../integrations/cheqd/resolver.js';
 import type { AgentIdentity, FetchProvider } from '../../providers/base.js';
 import type { CredentialStatus, DelegationCredential } from '../../types/protocol.js';
 import type { KyaOsDelegationConfig } from '../with-kya-os.config-types.js';
@@ -90,6 +91,21 @@ describe.each(DEADLINES)('the delegation gate, %s', (_label, option, ms, stated)
       return provider!.resolveDID('did:web:slow.example');
     });
     expect(resolved).toBeNull();
+  });
+
+  it('gives a resolver it builds from a didResolvers factory, such as the cheqd resolver, the same deadline', async () => {
+    const issuer = await keyOf('did:cheqd:testnet:6c9b1bbe-1a2c-4c1e-9d3c-2e0f0f0b0a01', 'key');
+    const vc = await signedCredential(issuer, {
+      record: delegationRecord(issuer.did, { id: 'del-leaf', constraints: { scopes: ['tools:read'], audience: SERVER, notAfter: Math.floor(Date.now() / 1000) + 3600 } }),
+    });
+    const check = await settledAt(ms, (never) => gate({
+      ...option,
+      trustedRootIssuers: [issuer.did],
+      didResolver: undefined,
+      fetchProvider: { fetch: never } as unknown as FetchProvider,
+      didResolvers: { cheqd: cheqdResolver({ resolverUrl: 'https://resolver.example' }) },
+    })(vc));
+    expect(check).toMatchObject({ valid: false });
   });
 
   describe('a resolver that finds nothing', () => {

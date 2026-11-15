@@ -218,6 +218,7 @@ export {
 export {
   buildDidResolverRegistry,
   type DIDResolverFactory,
+  type DIDResolverFactoryContext,
   type DIDResolverRegistry,
   type DIDResolverRegistryEntry,
 } from './delegation/did-resolver-registry.js';

@@ -91,6 +91,20 @@ describe.each(DEADLINES)('the cheqd resolver and a dependency that never answers
     expect(await settledAt(ms, (never) => createDidCheqdResolver(provider, { ...options, headers: never }).resolve(DID))).toBeNull();
   });
 
+  it('takes the deadline of the registry that builds it from a factory, unless its own options set one', async () => {
+    const factory = cheqdResolver({ resolverUrl: 'https://resolver.example' });
+    expect(await settledAt(ms, (never) => factory({ fetch: never } as unknown as FetchProvider, option).resolve(DID))).toBeNull();
+    vi.useRealTimers();
+    const own = cheqdResolver({ resolverUrl: 'https://resolver.example', dependencyTimeoutMs: 6_000 });
+    expect(await settledAt(6_000, (never) => own({ fetch: never } as unknown as FetchProvider, option).resolve(DID))).toBeNull();
+    vi.useRealTimers();
+    const runtime = new RuntimeFetchProvider({ didResolvers: { cheqd: factory }, ...option });
+    expect(await settledAt(ms, (never) => {
+      vi.spyOn(runtime, 'fetch').mockImplementation(never);
+      return runtime.resolveDID(DID);
+    })).toBeNull();
+  });
+
   it('shares one pending read among resolutions of a DID until the deadline, and starts another after it', async () => {
     vi.useFakeTimers();
     const fetch = vi.fn(() => new Promise<Response>(() => undefined));

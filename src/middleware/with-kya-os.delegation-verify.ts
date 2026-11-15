@@ -160,6 +160,7 @@ export function createDelegationVerification(
   const configuredDidResolvers = buildDidResolverRegistry(
     delegationConfig?.didResolvers,
     fetchProvider,
+    { dependencyTimeoutMs },
   );
   const didResolver: DIDResolver = {
     async resolve(did: string) {

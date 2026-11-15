@@ -404,7 +404,10 @@ Any other value, such as `0`, a negative number, `NaN`, `Infinity`, a numeric st
 
 A deadline covers the whole call it is put on, so a dependency that is itself built from one of these needs the option too.
 For example, a `verifyCard` given 30,000 still fails a status check after 5 seconds when its `statusListChecker` was built by `createRevocationChecker` without the option, or that checker's `verifyStatusList` resolves a DID through a `DidWebResolver` built without it.
-The middleware passes `delegation.dependencyTimeoutMs` to the verifier, the did:web resolver and the fetch provider it builds itself, and not to a `fetchProvider`, a `didResolver`, a resolver in `didResolvers` or a `statusListResolver` the host built, each of which takes its own.
+The middleware passes `delegation.dependencyTimeoutMs` to the verifier, the did:web resolver and the fetch provider it builds itself, and to each factory in `didResolvers`, so a resolver that `cheqdResolver(options)` builds waits as long unless its own options set another time.
+It does not pass it to an object the host built: a `fetchProvider`, a `didResolver`, a resolver instance in `didResolvers` or a `statusListResolver`, such as a `CheqdStatusListResolver`, each of which takes its own.
+A `RuntimeFetchProvider` passes its `dependencyTimeoutMs` to the factories in its `didResolvers` the same way.
+A `didResolvers` factory of your own receives it as the `dependencyTimeoutMs` of a new second argument.
 A reason states the time that was configured: `did not answer within 30 seconds` for 30,000, and in milliseconds when it is not a whole number of seconds, as in `did not answer within 7500 ms`.
 A checker built with `createRevocationChecker` now also has this deadline when it is called directly, where on 1.22.0 it waited without end, and resolves revoked and not fresh when it is missed.
 `verifyVcJwtSignature` takes the time for its DID resolver as an optional fifth argument.

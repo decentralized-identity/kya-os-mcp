@@ -99,7 +99,7 @@ export class RuntimeFetchProvider extends FetchProvider {
     super();
     this.timeoutMs = dependencyTimeout(options?.dependencyTimeoutMs);
     this.allowPrivateNetworkHosts = options?.allowPrivateNetworkHosts === true;
-    this.didResolvers = buildDidResolverRegistry(options?.didResolvers, this);
+    this.didResolvers = buildDidResolverRegistry(options?.didResolvers, this, { dependencyTimeoutMs: this.timeoutMs });
   }
 
   /**

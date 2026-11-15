@@ -119,6 +119,21 @@ describe('CheqdStatusListResolver (real crypto, stubbed transport)', () => {
     expect(await makeResolver().checkStatus(revokedEntry)).toBe(true);
   });
 
+  it.each([['"false"', 'false'], ['1', 1], ['{}', {}], ['undefined', undefined], ['false', false]])(
+    'refuses the list when the crypto provider answers %s for its signature',
+    async (_label, answer) => {
+      const cryptoProvider = { verify: async () => answer } as unknown as typeof crypto;
+      await expect(makeResolver({ cryptoProvider }).checkStatus(clearEntry)).rejects.toThrow(
+        'Status list signature verification FAILED against the issuer DID document',
+      );
+    },
+  );
+
+  it('reads the list when the crypto provider answers the literal true', async () => {
+    const cryptoProvider = { verify: async () => true } as unknown as typeof crypto;
+    expect(await makeResolver({ cryptoProvider }).checkStatus(clearEntry)).toBe(false);
+  });
+
   it('factory returns a working instance', () => {
     expect(
       createCheqdStatusListResolver({

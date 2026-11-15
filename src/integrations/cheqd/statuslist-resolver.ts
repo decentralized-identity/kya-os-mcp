@@ -252,7 +252,8 @@ export class CheqdStatusListResolver implements StatusListResolver {
 
     const jwk = verificationMethodJwk(selection.method);
     const publicKeyBase64 = jwk ? bytesToBase64(base64urlDecodeToBytes(jwk.x)) : undefined;
-    if (!publicKeyBase64 || !(await this.opts.cryptoProvider.verify(data, signature, publicKeyBase64))) {
+    // The crypto provider is the host's: the signature holds only on the literal `true`.
+    if (!publicKeyBase64 || (await this.opts.cryptoProvider.verify(data, signature, publicKeyBase64)) !== true) {
       throw new Error(
         'Status list signature verification FAILED against the issuer DID document',
       );

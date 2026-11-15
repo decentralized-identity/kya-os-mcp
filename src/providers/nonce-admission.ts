@@ -64,7 +64,8 @@ export async function admitNonce(
     return (await consume.call(store, nonce, ttlSeconds, agentDid)) === true;
   }
   checkNonceStore(store, options);
-  if (await store.has(nonce, agentDid)) return false;
+  // Only the literal `false` says the nonce is unseen: any other answer denies, as a replay does.
+  if ((await store.has(nonce, agentDid)) !== false) return false;
   await store.add(nonce, ttlSeconds, agentDid);
   return true;
 }

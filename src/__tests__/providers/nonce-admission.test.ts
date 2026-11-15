@@ -48,6 +48,15 @@ describe('admitNonce', () => {
     expect(store.add).toHaveBeenCalledWith('n', 60, 'did:key:zA');
   });
 
+  it.each([['undefined', undefined], ['null', null], ['0', 0], ['""', ''], ['"false"', 'false'], ['true', true]])(
+    'treats a has result of %s, anything but the literal false, as a replay, and adds nothing',
+    async (_label, answer) => {
+      const store = { ...legacyStore(), has: vi.fn().mockResolvedValue(answer) } as unknown as ReturnType<typeof legacyStore>;
+      expect(await admitNonce(store, 'n', 60, 'did:key:zA')).toBe(false);
+      expect(store.add).not.toHaveBeenCalled();
+    },
+  );
+
   it('warns once per store about the non-atomic fallback', async () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const first = legacyStore();

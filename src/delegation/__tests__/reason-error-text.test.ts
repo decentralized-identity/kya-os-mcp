@@ -21,13 +21,12 @@ vi.mock('jose', async (original) => {
 
 import { DelegationCredentialVerifier } from '../vc-verifier.js';
 import { validateDelegationChain, type ChainEnforcementDeps } from '../chain-enforcement.js';
-import { wrapDelegationAsVC, type DelegationCredential } from '../../types/protocol.js';
 import {
   createRealCryptoProvider,
   createRealIdentity,
   createRealSignatureVerifier,
 } from '../../__tests__/audit/helpers/crypto-helpers.js';
-import { delegationRecord, signedCredential, signedJwt } from '../../__tests__/utils/delegation-credentials.js';
+import { delegationRecord, keyOf, signedCredential, signedJwt } from '../../__tests__/utils/delegation-credentials.js';
 import { createDidKeyResolver } from '../did-key-resolver.js';
 
 const crypto = createRealCryptoProvider();
@@ -84,10 +83,10 @@ describe('a refusal reason that quotes an error the verifier did not write', () 
   });
 
   describe('in the chain walk', () => {
-    const leaf = (parentId?: string): DelegationCredential => ({
-      ...wrapDelegationAsVC(delegationRecord('did:web:acme.example', { id: 'del-1', ...(parentId ? { parentId } : {}) })),
-      proof: { type: 'Ed25519Signature2020', proofValue: 'z', verificationMethod: 'did:web:acme.example#k' },
-    }) as DelegationCredential;
+    const leaf = async (parentId?: string) =>
+      signedCredential(await keyOf('did:web:acme.example', 'k'), {
+        record: delegationRecord('did:web:acme.example', { id: 'del-1', ...(parentId ? { parentId } : {}) }),
+      });
     const deps: ChainEnforcementDeps = {
       serverDid: 'did:web:server.example',
       verifier: { verifyDelegationCredential: async () => ({ valid: true }) },
@@ -95,18 +94,18 @@ describe('a refusal reason that quotes an error the verifier did not write', () 
     };
 
     it('is bounded, well-formed text when the chain resolver throws', async () => {
-      const result = await validateDelegationChain(leaf('del-0'), {
+      const result = await validateDelegationChain(await leaf('del-0'), {
         ...deps, resolveDelegationChain: async () => { throw new Error(HOSTILE); },
       });
       expectSanitized(result.reason, 'Failed to resolve delegation chain: no document\uFFFD');
     });
 
     it('is bounded, well-formed text when the revocation checker throws, or names its reason', async () => {
-      const thrown = await validateDelegationChain(leaf(), {
+      const thrown = await validateDelegationChain(await leaf(), {
         ...deps, revocationChecker: { isRevoked: async () => { throw new Error(HOSTILE); } },
       });
       expectSanitized(thrown.reason, 'Revocation check failed for delegation "del-1": no document\uFFFD');
-      const revoked = await validateDelegationChain(leaf(), {
+      const revoked = await validateDelegationChain(await leaf(), {
         ...deps, revocationChecker: { isRevoked: async () => ({ revoked: true, reason: HOSTILE }) },
       });
       expectSanitized(revoked.reason, 'Delegation "del-1" is revoked: no document\uFFFD');

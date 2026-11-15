@@ -10,29 +10,22 @@
  * grant makes the same check without taking the bytes, and every case here checks that it decides
  * as the gate does.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { encodableDelegationBytes, isEncodableDelegation } from '../with-kya-os.delegation-encoding.js';
 import { canonicalizeJsonBytes } from '../../utils/canonical-json.js';
-import { wrapDelegationAsVC, type DelegationCredential } from '../../types/protocol.js';
+import type { DelegationCredential } from '../../types/protocol.js';
+import { delegationRecord, keyOf, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 
 const JWT = 'header.payload.signature';
 
-/** A delegation credential with a parent and a controller, every member of which encodes. */
-const encodableCredential = (): DelegationCredential => ({
-  ...wrapDelegationAsVC({
-    id: 'del-1',
-    issuerDid: 'did:web:acme.example',
-    subjectDid: 'did:web:agent.example',
-    vcId: 'urn:uuid:1',
-    controller: 'did:web:user.example',
-    parentId: 'del-0',
-    constraints: { scopes: ['orders:place'] },
-    signature: '',
-    status: 'active',
-    createdAt: 1_750_000_000_000,
-  }),
-  proof: { type: 'Ed25519Signature2020', proofValue: 'z', verificationMethod: 'did:web:acme.example#k' },
-}) as DelegationCredential;
+let signed: DelegationCredential;
+beforeAll(async () => {
+  const record = delegationRecord('did:web:acme.example', { controller: 'did:web:user.example', parentId: 'del-0' });
+  signed = await signedCredential(await keyOf('did:web:acme.example', 'k'), { record });
+});
+
+/** A delegation credential with a parent and a controller, every member of which encodes: a copy a test may write to. */
+const encodableCredential = (): DelegationCredential => structuredClone(signed);
 
 /** `encodableCredential()` with `value` written at `path`, as a parsed JSON value would hold it. */
 function holding(path: string[], value: unknown): DelegationCredential {

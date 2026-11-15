@@ -28,7 +28,6 @@ import { CHECKER_REASON_LENGTH, type BitstringRevocationChecker } from './revoca
 import { sanitizeForMessage } from '../utils/message-text.js';
 import { readRevocationAnswer } from '../utils/revocation-answer.js';
 import { answerWithinDeadline, DeadlineExceededError, dependencyTimeout } from '../utils/deadline.js';
-import { isRecord } from '../utils/guards.js';
 import { checkWithinDeadline } from './revocation-deadline.js';
 import type { ProofAssurance, ProofVerifyResult } from './proof/index.js';
 import type { ToolRequest } from '../proof/generator.js';
@@ -259,12 +258,12 @@ const isStringArray = (value: unknown): value is string[] =>
  * member throws when read is not a capability check.
  */
 function readCapabilityCheck(answer: unknown): CapabilityCheckResult | undefined {
-  if (!isRecord(answer)) return undefined;
   let verified: unknown;
   let unverified: unknown;
   let fresh: unknown;
   try {
-    ({ verified, unverified, fresh } = answer);
+    // Reading a member of `undefined` or `null` throws, and any other value that is not an object has none.
+    ({ verified, unverified, fresh } = answer as Record<string, unknown>);
   } catch {
     return undefined;
   }
@@ -365,13 +364,13 @@ const PROOF_ASSURANCES: readonly unknown[] = ['L3', 'L3-minus'] satisfies readon
  * read once.
  */
 function readProofVerdict(answer: unknown): ProofVerifyResult {
-  if (!isRecord(answer)) return UNREADABLE_PROOF_VERDICT;
   let ok: unknown;
   let did: unknown;
   let level: unknown;
   let reasons: unknown;
   try {
-    ({ ok, did, level, reasons } = answer);
+    // Reading a member of `undefined` or `null` throws, and any other value that is not an object has none.
+    ({ ok, did, level, reasons } = answer as Record<string, unknown>);
   } catch {
     return UNREADABLE_PROOF_VERDICT;
   }

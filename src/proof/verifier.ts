@@ -19,8 +19,8 @@ import { canonicalizeJson } from "../utils/canonical-json.js";
 import {
   ProofVerificationError,
   PROOF_VERIFICATION_ERROR_CODES,
-  type ProofVerificationErrorCode,
 } from "./errors.js";
+import type { ProofVerificationOptions, ProofVerificationResult, ProofVerifierConfig } from "./verifier-types.js";
 import { logger } from "../logging/index.js";
 import { verificationMethodJwk } from "../delegation/verification-method-key.js";
 import type { VerificationMethod } from "../delegation/vc-verifier.types.js";
@@ -35,39 +35,7 @@ import {
   type ToolResponse,
 } from "./generator.js";
 
-export interface ProofVerificationResult {
-  valid: boolean;
-  reason?: string;
-  error?: Error;
-  errorCode?: ProofVerificationErrorCode;
-  details?: Record<string, unknown>;
-}
-
-/** Who a verified proof must come from and be addressed to. */
-export interface ProofVerificationOptions {
-  /** `meta.did` must equal this: the signer the caller expects (e.g. the server it called). */
-  expectedDid?: string;
-  /** `meta.audience` must equal this, or be one of the array (DID rotation, multi-DID servers). */
-  expectedAudience?: string | string[];
-}
-
-export interface ProofVerifierConfig {
-  cryptoProvider: CryptoProvider;
-  clockProvider: ClockProvider;
-  nonceCacheProvider: NonceCacheProvider;
-  fetchProvider: FetchProvider;
-  timestampSkewSeconds?: number;
-  /**
-   * Minimum retention in seconds; raised to cover the proof's accepted lifetime
-   * and supported skew updates. 0 keeps each nonce for that window only.
-   */
-  nonceTtlSeconds?: number;
-  /**
-   * Refuse nonce caches without an atomic `consume()` instead of falling back
-   * to `has()` then `add()`. The constructor throws for such a cache.
-   */
-  requireAtomicNonce?: boolean;
-}
+export type { ProofVerificationOptions, ProofVerificationResult, ProofVerifierConfig } from "./verifier-types.js";
 
 /** Default timestamp skew for proof verification (seconds) */
 export const DEFAULT_CLOCK_SKEW_SECONDS = 120;

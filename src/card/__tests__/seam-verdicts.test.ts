@@ -119,6 +119,20 @@ describe('a proof verifier whose answer is not a proof verdict', () => {
       reasons: [],
     });
   });
+
+  it.each([
+    ['a proof and no request', { request: undefined }],
+    ['a request and no proof', { proof: undefined }],
+  ] as const)('is not asked about %s, and the Card has no proof verdict', async (_label, missing) => {
+    let asked = 0;
+    const proofVerifier: VerifyCardDeps['proofVerifier'] = async () => {
+      asked += 1;
+      return { ok: true, did: CARD.id, level: 'L3', reasons: [] };
+    };
+    const result = await verifyCard(CARD, { ...ANSWERING, ...missing, proofVerifier });
+    expect(asked).toBe(0);
+    expect(result.proof).toBeUndefined();
+  });
 });
 
 describe('a capability verifier whose answer is not a capability check', () => {

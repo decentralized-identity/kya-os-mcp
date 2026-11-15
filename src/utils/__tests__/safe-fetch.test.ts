@@ -419,6 +419,8 @@ describe("isBlockedAddress", () => {
     expect(["::ffff:0:7f00:1", "::ffff:0:127.0.0.1", "::ffff:0:10.0.0.1", "0:0:0:0:ffff:0:a9fe:a9fe"].map(isBlockedAddress))
       .toEqual([true, true, true, true]);
     expect(isBlockedAddress("::ffff:0:8.8.8.8")).toBe(false);
+    // The form has both of bytes 10 and 11 zero: with either set, the last four bytes are no IPv4 address.
+    expect(["::ffff:100:a00:1", "::ffff:1:a00:1"].map(isBlockedAddress)).toEqual([false, false]);
   });
 
   it("refuses a host that resolves to an IPv4-translated loopback address, before any request", async () => {

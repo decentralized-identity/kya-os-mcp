@@ -17,6 +17,10 @@ describe('corsSafelistedHeaders', () => {
     })).toEqual({ accept: 'application/did+ld+json;q=1,\tapplication/json', 'accept-language': 'en-US,en;q=0.9', 'content-language': 'de-DE, *' });
   });
 
+  it('keeps a value holding a space, the first byte that is no control byte', () => {
+    expect(kept({ Accept: 'text/html, */*;q=0.8' })).toEqual({ accept: 'text/html, */*;q=0.8' });
+  });
+
   it('keeps a value of 128 bytes, and drops one of 129', () => {
     for (const name of ['Accept', 'Accept-Language', 'Content-Language']) {
       expect(kept({ [name]: 'a'.repeat(128) })).toEqual({ [name.toLowerCase()]: 'a'.repeat(128) });

@@ -540,7 +540,8 @@ Along with it:
   Among what the issuer signed, `undefined`, a bigint, a hole in an array and a `Date` leave the credential with no canonical form, and it is refused.
   In `proof`, which no signature covers, they are passed over in an ancestor, and refuse a presented credential as one the gate cannot encode.
 - `ProofVerifier` and `ProofGenerator.verifyProof` read a proof's JWS as SPEC.md §7.4 now says a verifier must: each segment as RFC 7515 §2 writes base64url, of the URL-safe alphabet alone with no white space and no `=`, the header and the payload as UTF-8 that is well formed, and the `x` of the key it is checked with as strictly.
-  A proof whose segments or key were written in the base64 alphabet, padded with `=`, with white space inside, or with bytes that are not UTF-8 in its header or payload now fails. 1.22.0 verified some of these: a segment or an `x` padded to complete its last group, a segment holding two spaces or a line break, and an `x` holding a space.
+  A proof whose segments or key were written in the base64 alphabet, padded with `=`, with white space inside, or with bytes that are not UTF-8 in its header or payload now fails.
+  1.22.0 verified some of these: a segment or an `x` padded to complete its last group, a segment holding two spaces or a line break, and an `x` holding a space.
   A proof this library or a JWS library signed is unaffected.
 - The embedded `Ed25519Signature2020` verifier of the delegation gate, and `CheqdStatusListResolver` for a status list's proof, read the key's `x` the same way, and require 32 bytes of it.
   In 1.22.0 they read `x` in either alphabet, padded or not, with white space passed over, and handed the runtime whatever bytes that gave.

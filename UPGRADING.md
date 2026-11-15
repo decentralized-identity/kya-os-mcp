@@ -208,7 +208,7 @@ The delegation middleware names only the credential's own issuer to its resolver
 
 ### Conformance suite 1.4.0
 
-The suite adds status-list vectors for the acceptance rule, each with a list whose proof verifies, and has 90 vectors in all.
+The suite adds status-list vectors for the acceptance rule, each with a list whose proof verifies, and has 95 vectors in all.
 
 Six new negative vectors check a revoked credential against a list with its bit unset and a proof that verifies: one another DID issued (`status-list/foreign-issuer-list`), a `suspension` list (`status-list/purpose-mismatch-list`), a StatusList2021 list that states its purposes in an array that includes `revocation` (`status-list/purpose-array-2021-list`), one that states another URL as its `id` (`status-list/id-mismatch-list`), and one that states no `id` from the pinned root of the credential's chain (`status-list/root-no-id-list`) or from an issuer the verifier is configured to accept (`status-list/configured-issuer-no-id-list`).
 Those two carry the new optional inputs `trustedRootIssuer` and `statusListIssuers`, and a verifier without that configuration refuses their lists for the issuer.

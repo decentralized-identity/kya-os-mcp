@@ -40,8 +40,9 @@ export function withStatusCache(
     async checkStatus(status: CredentialStatus, context?: StatusCheckContext): Promise<boolean> {
       // The entry's statusSize is part of the key: entries of different sizes at one index keep
       // their status in different bits, so a verdict for one is no answer for the other.
-      // The context is part of the key: whether a list may speak for a credential depends on the
-      // issuers the context names, so a verdict never crosses credentials that name other issuers.
+      // The context is part of the key: it decides who keeps the entry's URL (the credential's
+      // issuer, or the pinned root when its own credential names that URL), so a verdict is never
+      // served to an entry whose keeper may differ.
       // JSON arrays turn undefined into null. Those are not equivalent: a
       // checker may default an omitted purpose but must refuse explicit null.
       // Object members preserve that distinction (omission versus JSON null).
@@ -52,6 +53,7 @@ export function withStatusCache(
         size: status.statusSize,
         issuer: context?.credentialIssuer,
         root: context?.trustedRootIssuer,
+        rootList: context?.trustedRootStatusList,
       });
       const hit = cache.get(key);
       if (hit !== undefined) return hit;

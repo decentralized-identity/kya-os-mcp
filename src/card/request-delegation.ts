@@ -207,9 +207,10 @@ export type RequestDelegationResult =
  * 4. The root issuer is trusted, when `trustedRootIssuers` is set.
  * 5. Every hop's proof, root to leaf.
  * 6. The action is in the leaf's `allowedAction`.
- * 7. Revocation, root to leaf, each hop's status list held to the hop's issuer or, when step 2 or 4
- *    pinned it, the root issuer, as the proofs step 5 verified name them; a revoked ancestor
- *    invalidates the subtree.
+ * 7. Revocation, root to leaf, each hop's status list held to the one keeper of its URL: the hop's
+ *    issuer or, when step 2 or 4 pinned the root and the root hop's own status entry names the same
+ *    URL, the root issuer, as the proofs step 5 verified name them; a revoked ancestor invalidates
+ *    the subtree.
  *
  * Cheap, local checks run before the ones that may touch the network. Never throws on a
  * malformed input or a throwing seam; returns `{ ok: false, code, reasons }`.

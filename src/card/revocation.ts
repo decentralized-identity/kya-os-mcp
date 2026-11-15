@@ -55,13 +55,14 @@ import type { BitstringStatusListEntry } from './schema.js';
 import type { StatusListProofVerifier } from './status-list-proof.js';
 
 export {
-  acceptedStatusListIssuers,
   acceptEntrySize,
   acceptStatusList,
   statusListExpectationFor,
+  statusListKeeperFor,
   type StatusCheckContext,
   type StatusListExpectation,
   type StatusListIssuers,
+  type StatusListKeeper,
   type StatusListVerdict,
 } from '../utils/statuslist-acceptance.js';
 
@@ -116,7 +117,8 @@ export type RevocationStatusEntry = BitstringStatusListEntry & { statusPurpose?:
  * throws, is refused as a status that could not be read.
  *
  * `context` names the issuer of the credential the entry belongs to and, when the verifier pins it,
- * the root issuer of its delegation chain, so an implementation can hold the status list to them.
+ * the root issuer of its delegation chain with the status-list URL the root's own credential names,
+ * so an implementation can hold the status list to the keeper of its URL.
  * Every caller in this package passes it, and a wrapping variant should pass it through unchanged.
  * Whether a list may be read depends on the context, so a caching variant must key on it as well as
  * on the entry's URL, index and purpose, as `withStatusCache` does: a verdict for one context is no
@@ -168,9 +170,10 @@ export interface RevocationCheckerDeps {
    */
   verifyStatusList?: StatusListProofVerifier;
   /**
-   * Status-list issuers accepted for another issuer's credentials ({@link StatusListIssuers}), which
-   * {@link acceptStatusList} then accepts as well. Off by default. It is checked when the checker is
-   * created: a value that is not a plain object of string arrays, or one given without
+   * The status-list URLs, or whole `https:` origins, each status-list issuer keeps, keyed by that
+   * issuer's DID ({@link StatusListIssuers}). A list at a URL the map binds is read only from the
+   * issuer it binds it to, whoever issued the credential. Off by default. It is checked when the
+   * checker is created: a value {@link assertStatusListIssuers} refuses, or one given without
    * `verifyStatusList`, throws a `TypeError`.
    */
   statusListIssuers?: StatusListIssuers;
@@ -209,7 +212,9 @@ const FAIL_CLOSED: RevocationStatus = { revoked: true, fresh: false };
  * as well ({@link acceptEntrySize}); an entry that states no `statusSize` is one bit wide.
  *
  * With `verifyStatusList`, a list is read only when {@link acceptStatusList} accepts it for the
- * entry and `context`, asked before the proof is checked, so a list from another issuer never
+ * entry and `context`: it must come from the one keeper of the entry's URL, which
+ * {@link statusListKeeperFor} decides before any fetch from `statusListIssuers` and `context`, never
+ * from the list. The rule is asked before the proof is checked, so a list from another issuer never
  * triggers a DID resolution. A call that names no `credentialIssuer` cannot be held to anyone and
  * resolves {@link FAIL_CLOSED} before any fetch.
  * Without `verifyStatusList` nothing about the list is authenticated, so only its `statusPurpose`

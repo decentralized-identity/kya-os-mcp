@@ -1,10 +1,13 @@
 /**
  * Who may sign the status list a Card's `revocation` entry names (SPEC-ENTITY-CARD.md §10.3): the
- * Card's Entity, its `id`; the Card's responsible party, once the accountability check has verified
- * it as the root issuer of the Card's delegation chain (§10.2); and an issuer `statusListIssuers`
- * accepts for the Card's `id`. The Entity is the Card's own issuer, so its list may state no `id`
- * when it is the one issuer accepted for the Card. Otherwise every list is read only when it states,
- * as its `id`, the URL it was fetched from.
+ * one keeper of the entry's URL. That is the issuer `statusListIssuers` binds the URL or its origin
+ * to, and otherwise the Card's Entity, its `id`. The Card's responsible party, once the
+ * accountability check has verified it as the root issuer of the Card's delegation chain (§10.2), is
+ * named to the checker as that root, with no status-list URL of its own, so its list counts for the
+ * Card only at a URL the configuration binds to it: served at the Card's own list URL it is refused.
+ * The Entity is the Card's own issuer, so its list may state no `id` when no responsible party is
+ * verified and nobody else is configured. Otherwise every list is read only when it states, as its
+ * `id`, the URL it was fetched from.
  *
  * The Card and its list take the shape of Appendix B's `agent` example, with did:web DIDs whose
  * documents a stub resolver serves. Every case runs `verifyCard` with the shipped checker and proof
@@ -171,15 +174,40 @@ describe("the Card's verified responsible party", () => {
     expect(await verifyWith(cardsList(responsibleParty), { accountabilityVerifier: accountableThrough(chain) }))
       .toMatchObject({ ok: false, revocation: REFUSED });
   });
-  it('signs a list that is read when it states its URL as its id', async () => {
-    const clear = await verifyWith(cardsList(responsibleParty));
+  /** The verifier's configuration binds the Card's list URL to the responsible party. */
+  const boundToParty = { statusListIssuers: { [responsibleParty.did]: [CARDS_URL] } };
+
+  it('signs a list that is read at a URL the configuration binds to it, when it states that URL as its id', async () => {
+    const clear = await verifyWith(cardsList(responsibleParty), {}, boundToParty);
     expect(clear.accountability).toMatchObject({ responsibleParty: responsibleParty.did, verified: true });
     expect(clear).toMatchObject({ ok: true, revocation: READ_CLEAR });
-    expect(await verifyWith(cardsList(responsibleParty, [3]))).toMatchObject({ ok: false, revocation: READ_REVOKED });
+    expect(await verifyWith(cardsList(responsibleParty, [3]), {}, boundToParty)).toMatchObject({ ok: false, revocation: READ_REVOKED });
+    const origin = { statusListIssuers: { [responsibleParty.did]: [/^https:\/\/[^/]+/.exec(CARDS_URL)![0]] } };
+    expect(await verifyWith(cardsList(responsibleParty), {}, origin)).toMatchObject({ ok: true, revocation: READ_CLEAR });
+  });
+
+  it("signs a list that is refused at the Card's own list URL, which nothing binds to it, though it is verified", async () => {
+    const result = await verifyWith(cardsList(responsibleParty));
+    expect(result.accountability).toMatchObject({ responsibleParty: responsibleParty.did, verified: true });
+    expect(result).toMatchObject({ ok: false });
+    expect(result.revocation).toStrictEqual({
+      revoked: true,
+      fresh: false,
+      reason: `status list issuer "${responsibleParty.did}" does not keep this list's URL: "${entity.did}" does, as the issuer of the credential`,
+    });
+  });
+
+  it("keeps the Entity's own list out of a URL the configuration binds to it", async () => {
+    const result = await verifyWith(cardsList(entity), {}, boundToParty);
+    expect(result.revocation).toStrictEqual({
+      revoked: true,
+      fresh: false,
+      reason: `status list issuer "${entity.did}" does not keep this list's URL: "${responsibleParty.did}" does, as the issuer statusListIssuers binds this URL to`,
+    });
   });
 
   it('signs a list that is refused when it states no id', async () => {
-    const result = await verifyWith(cardsList(responsibleParty, [], { statesId: false }));
+    const result = await verifyWith(cardsList(responsibleParty, [], { statesId: false }), {}, boundToParty);
     expect(result).toMatchObject({ ok: false, revocation: REFUSED });
   });
 
@@ -224,19 +252,19 @@ describe("the Card's Entity and other signers", () => {
     expect(unverified.revocation).toEqual(READ_REVOKED);
   });
 
-  it('signs a list that is read when it states no id only while the Entity is the one issuer accepted for the Card', async () => {
+  it('signs a list that is read when it states no id only while no responsible party is verified and nobody is configured', async () => {
     const idless = (revoked: number[]) => cardsList(entity, revoked, { statesId: false });
     const alone = { accountabilityVerifier: undefined };
     expect((await verifyWith(idless([]), alone)).revocation).toEqual(READ_CLEAR);
     expect((await verifyWith(idless([3]), alone)).revocation).toEqual(READ_REVOKED);
     expect((await verifyWith(idless([]))).revocation).toEqual(REFUSED);
-    const statusListIssuers = { [entity.did]: [statusService.did] };
+    const statusListIssuers = { [statusService.did]: ['https://lists.elsewhere.example'] };
     expect((await verifyWith(idless([]), alone, { statusListIssuers })).revocation).toEqual(REFUSED);
   });
 
-  it("is a third party whose list is refused, unless statusListIssuers accepts it for the Card's id and it states its id", async () => {
+  it("is a third party whose list is refused, unless statusListIssuers binds the Card's list URL to it and it states its id", async () => {
     expect((await verifyWith(cardsList(statusService))).revocation).toEqual(REFUSED);
-    const statusListIssuers = { [entity.did]: [statusService.did] };
+    const statusListIssuers = { [statusService.did]: [CARDS_URL] };
     expect((await verifyWith(cardsList(statusService, [3]), {}, { statusListIssuers })).revocation).toEqual(READ_REVOKED);
     const idless = cardsList(statusService, [], { statesId: false });
     expect((await verifyWith(idless, {}, { statusListIssuers })).revocation).toEqual(REFUSED);

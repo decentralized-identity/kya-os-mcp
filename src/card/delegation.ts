@@ -151,15 +151,23 @@ export function statusEntryOf(vc: DelegationCredential): BitstringStatusListEntr
  * `statusPurpose` the hop states, so a checker of another purpose refuses it rather than reading it,
  * and the hop's position in the chain, the root being 0, which a refusal names it by.
  * Each is paired with the hop's issuer DID, read as {@link issuerOf} reads an `issuer` member, and,
- * when `trustedRootIssuer` is the chain's own root issuer, with that root, whose lists then speak for
- * every hop: pass it only for a root the verifier pins (`trustedRootIssuers` or `resourceOwner`). The
- * checker holds each hop's status list to one of them. A hop whose `issuer` names no DID is paired
- * with no issuer, so a checker that holds lists to an issuer refuses the hop. Hops without a
- * `credentialStatus` are skipped.
+ * when `trustedRootIssuer` is the chain's own root issuer, with that root and the status-list URL
+ * the root hop's own `credentialStatus` names, when it has one: pass it only for a root the verifier
+ * pins (`trustedRootIssuers` or `resourceOwner`). The root's list then speaks for a hop whose entry
+ * names that same URL, and the checker holds every other hop's list to the hop's issuer, or to the
+ * issuer its configuration binds the URL to. The URL is read from the chain as presented, so it is
+ * the root's word only once the root hop's proof has verified, which every caller in this package
+ * requires before it accepts a chain. A hop whose `issuer` names no DID is paired with no issuer, so
+ * a checker that holds lists to an issuer refuses the hop. Hops without a `credentialStatus` are
+ * skipped.
  */
 export function revocationEntriesOf(chain: DelegationChain, trustedRootIssuer?: string): RevocationChainEntry[] {
   const root = issuerOf(chain[0]?.issuer);
-  const pinned = trustedRootIssuer !== undefined && trustedRootIssuer === root ? { trustedRootIssuer } : {};
+  const rootList = chain[0] === undefined ? undefined : statusEntryOf(chain[0])?.statusListCredential;
+  const pinned =
+    trustedRootIssuer !== undefined && trustedRootIssuer === root
+      ? { trustedRootIssuer, ...(rootList === undefined ? {} : { trustedRootStatusList: rootList }) }
+      : {};
   return chain.flatMap((vc, position) => {
     const entry = statusEntryOf(vc);
     if (entry === undefined) return [];

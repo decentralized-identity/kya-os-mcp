@@ -136,7 +136,8 @@ export interface StatusListInput {
   serverDid: string;
   /**
    * The root issuer of the credential's delegation chain, which the verifier
-   * pins (SPEC.md §6.6), so a list it signed may speak for the credential.
+   * pins (SPEC.md §6.6). It keeps the status-list URL `trustedRootStatusList`
+   * names, and the URLs `statusListIssuers` binds to it.
    * Already-authorized per-credential context at this category's boundary;
    * this input supplies no chain and does not test root admission.
    * Omitted, the verifier pins no root (suite ≥ 1.4.0); any value but a
@@ -144,10 +145,21 @@ export interface StatusListInput {
    */
   trustedRootIssuer?: string;
   /**
-   * The issuers the verifier is configured to accept for a credential
-   * issuer's credentials, keyed by that issuer's DID (SPEC.md §6.6). Omitted,
-   * it accepts no other issuer (suite ≥ 1.4.0); a value that is not an object
-   * of string arrays makes the loader refuse the vector.
+   * The `statusListCredential` URL that the status entry of the root's own
+   * credential names (SPEC.md §6.6): a credential whose entry names the same
+   * URL, byte for byte, has its status on the pinned root's list. It counts
+   * only beside `trustedRootIssuer`. Like that member it is context the
+   * verifier already holds, from a root credential whose proof it verified.
+   * Any value but a non-empty string makes the loader refuse the vector.
+   */
+  trustedRootStatusList?: string;
+  /**
+   * The status-list URLs, or whole `https:` origins, each status-list issuer
+   * keeps, keyed by that issuer's DID (SPEC.md §6.6). A list at a bound URL
+   * is read only from the issuer it is bound to. Omitted, nothing is bound
+   * (suite ≥ 1.4.0); a value that is not an object of arrays of `https://`
+   * or `http://` strings, or that binds one string to two issuers, makes the
+   * loader refuse the vector.
    */
   statusListIssuers?: Record<string, string[]>;
 }

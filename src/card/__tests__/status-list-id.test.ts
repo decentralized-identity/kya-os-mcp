@@ -1,11 +1,12 @@
 /**
  * W3C Bitstring Status List v1.0 §2.2 makes a list's `id` optional, but the `id` is all that binds a
- * list to the URL it is served at. A hop's own issuer may leave it out only when it is the one issuer
- * the verifier accepts for the hop, so its list can stand in only for another list that issuer
- * signed. Where the verifier also accepts the chain's pinned root, or an issuer `statusListIssuers`
- * accepts for the hop's issuer, every list must state, as its `id`, the URL it was fetched from:
- * otherwise a list of one of them, with the hop's bit clear, could be served at the URL of another's
- * list and clear the hop's revocation there. Every case runs every shipped path
+ * list to the URL it is served at. A hop's own issuer may leave it out only when nobody else keeps
+ * any URL, so its list can stand in only for another list that issuer signed. Where the verifier
+ * pins the chain's root, or `statusListIssuers` names any other issuer, every list must state, as
+ * its `id`, the URL it was fetched from: otherwise a list an issuer signed for one URL it keeps,
+ * with the hop's bit clear, could be served at another. A root's list at the URL its own credential
+ * names is the root's by that credential, not by default, so it states its `id` as well. Every case
+ * runs every shipped path
  * (./status-list-paths.ts).
  */
 
@@ -36,24 +37,26 @@ describe("the pinned root's list that states no id", () => {
     }
   });
 
-  it("is not read for a hop below the root even at the root's own URL, where the root's list stating that URL is", async () => {
+  it("is read for no hop at the root's own URL while the root is pinned, where the root's list stating that URL is read for each", async () => {
     const c = cast();
     const chain = threeHopChain(c, [c.acme, c.agent, c.acme]);
     await expectAccepted(chain, servedBy(listOf(c.acme), listOf(c.agent)));
-    await expectRevokedAt(2, chain, { ...servedBy(listOf(c.agent)), [listUrlOf(c.acme)]: idlessListOf(c.acme) });
+    await expectRevokedAt(2, chain, servedBy(listOf(c.acme, [2]), listOf(c.agent)));
+    await expectRevokedAt(0, chain, { ...servedBy(listOf(c.agent)), [listUrlOf(c.acme)]: idlessListOf(c.acme) });
   });
 
-  it("is read for the root's own credential, whether the root is pinned or not", async () => {
+  it("is read for the root's own credential only while the root is not pinned, and for no hop below it", async () => {
     const c = cast();
     const chain = threeHopChain(c, [c.acme, c.agent, c.subAgent]);
     const lists = (revoked: number[]) => ({
       ...servedBy(listOf(c.agent), listOf(c.subAgent)),
       [listUrlOf(c.acme)]: idlessListOf(c.acme, revoked),
     });
-    for (const pinned of [true, false]) {
-      await expectAccepted(chain, lists([]), { pinned });
-      await expectRevokedAt(0, chain, lists([0]), { pinned });
-    }
+    await expectAccepted(chain, lists([]), { pinned: false });
+    await expectRevokedAt(0, chain, lists([0]), { pinned: false });
+    // Pinned, the root keeps that URL because its own credential names it, and such a list states its id.
+    await expectRevokedAt(0, chain, lists([]), { pinned: true });
+    await expectAccepted(chain, servedBy(listOf(c.acme), listOf(c.agent), listOf(c.subAgent)), { pinned: true });
   });
 });
 
@@ -61,7 +64,7 @@ describe("a hop issuer's own list that states no id", () => {
   /** Another list of acme's, the pinned root's, at a URL of its own. */
   const ROOT_LIST = 'https://status.example/root-list-2';
 
-  it('is read for each hop it issued, when its issuer is the one issuer the verifier accepts for the hop', async () => {
+  it('is read for each hop it issued, when no root is pinned and nobody is configured', async () => {
     const c = cast();
     const chain = threeHopChain(c, [c.acme, c.agent, c.subAgent]);
     const lists = (revoked: number[]) => ({
@@ -72,28 +75,31 @@ describe("a hop issuer's own list that states no id", () => {
     await expectRevokedAt(1, chain, lists([1]), { pinned: false });
   });
 
-  it('is refused for the hop when the verifier pins the root or accepts another issuer for the hop', async () => {
+  it('is refused for the hop when the verifier pins the root or its configuration names another issuer', async () => {
     const c = cast();
     const chain = threeHopChain(c, [c.acme, c.agent, c.subAgent]);
     const lists = { ...servedBy(listOf(c.acme), listOf(c.subAgent)), [listUrlOf(c.agent)]: idlessListOf(c.agent) };
     await expectRevokedAt(1, chain, lists);
-    await expectRevokedAt(1, chain, lists, { pinned: false, statusListIssuers: { [c.agent.did]: [identity().did] } });
+    await expectRevokedAt(1, chain, lists, { pinned: false, statusListIssuers: { [identity().did]: ['https://lists.elsewhere.example'] } });
+    await expectRevokedAt(1, chain, lists, { pinned: false, statusListIssuers: { [identity().did]: [] } });
   });
 
-  it("does not stand in for the pinned root's list, at that list's URL", async () => {
+  it("does not stand in for the pinned root's list, at a URL the configuration binds to the root", async () => {
     const c = cast();
     const chain = threeHopChain(c, [c.acme, ROOT_LIST, c.subAgent]);
+    const verifier = { statusListIssuers: { [c.acme.did]: [ROOT_LIST] } };
     const atRootList = (list: Record<string, unknown>) => ({ ...servedBy(listOf(c.acme), listOf(c.subAgent)), [ROOT_LIST]: list });
-    await expectAccepted(chain, atRootList(statusList(c.acme, [], { id: ROOT_LIST })));
-    await expectRevokedAt(1, chain, atRootList(statusList(c.acme, [1], { id: ROOT_LIST })));
-    await expectRevokedAt(1, chain, atRootList(idlessListOf(c.agent)));
+    await expectAccepted(chain, atRootList(statusList(c.acme, [], { id: ROOT_LIST })), verifier);
+    await expectRevokedAt(1, chain, atRootList(statusList(c.acme, [1], { id: ROOT_LIST })), verifier);
+    await expectRevokedAt(1, chain, atRootList(idlessListOf(c.agent)), verifier);
+    await expectRevokedAt(1, chain, atRootList(statusList(c.agent, [], { id: ROOT_LIST })), verifier);
   });
 
-  it("does not stand in for the list of an issuer statusListIssuers accepts for the hop, at that list's URL", async () => {
+  it("does not stand in for the list of an issuer statusListIssuers binds the hop's URL to", async () => {
     const c = cast();
     const service = identity();
     const chain = threeHopChain(c, [c.acme, service, c.subAgent]);
-    const verifier = { pinned: false, statusListIssuers: { [c.agent.did]: [service.did] } };
+    const verifier = { pinned: false, statusListIssuers: { [service.did]: [listUrlOf(service)] } };
     const atServices = (list: Record<string, unknown>) => ({ ...servedBy(listOf(c.acme), listOf(c.subAgent)), [listUrlOf(service)]: list });
     await expectAccepted(chain, atServices(listOf(service)), verifier);
     await expectRevokedAt(1, chain, atServices(listOf(service, [1])), verifier);
@@ -101,12 +107,12 @@ describe("a hop issuer's own list that states no id", () => {
   });
 });
 
-describe('the list of an issuer statusListIssuers accepts for a hop, when it states no id', () => {
+describe("the list of an issuer statusListIssuers binds a hop's URL to, when it states no id", () => {
   it('is not read for the hop, where the same list stating its URL is', async () => {
     const c = cast();
     const service = identity();
     const chain = threeHopChain(c, [c.acme, service, c.subAgent]);
-    const statusListIssuers = { [c.agent.did]: [service.did] };
+    const statusListIssuers = { [service.did]: [listUrlOf(service)] };
     const atServices = (list: Record<string, unknown>) => ({
       ...servedBy(listOf(c.acme), listOf(c.subAgent)),
       [listUrlOf(service)]: list,
@@ -120,7 +126,7 @@ describe('the list of an issuer statusListIssuers accepts for a hop, when it sta
     const c = cast();
     const service = identity();
     const chain = threeHopChain(c, [c.acme, c.agent, c.subAgent]);
-    const statusListIssuers = { [c.agent.did]: [service.did] };
+    const statusListIssuers = { [service.did]: [listUrlOf(service)] };
     const atAgents = (list: Record<string, unknown>) => ({
       ...servedBy(listOf(c.acme), listOf(c.subAgent)),
       [listUrlOf(c.agent)]: list,

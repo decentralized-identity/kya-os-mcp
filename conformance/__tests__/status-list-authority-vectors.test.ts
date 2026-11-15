@@ -6,8 +6,10 @@ import { isIndexSet } from '../../src/delegation/bitstring.js';
 import { parseStatusListIndex } from '../../src/utils/statuslist-bits.js';
 
 const indexNames = ['index-suffix', 'index-fraction', 'index-space', 'index-number'];
-const names = ['pinned-root-list', 'configured-service-list', 'unconfigured-service-list',
-  'wrong-direction-service-map', 'owner-root-alias-no-id', 'owner-no-id-at-pinned-root-url', ...indexNames, 'index-leading-zeros',
+const keeperNames = ['pinned-root-list', 'root-list-at-issuer-url', 'configured-service-list', 'configured-origin-list',
+  'lookalike-origin-list', 'unconfigured-service-list', 'service-list-at-unbound-url', 'issuer-list-at-bound-url',
+  'configured-over-root-list'];
+const names = [...keeperNames, 'owner-root-alias-no-id', 'owner-no-id-at-pinned-root-url', ...indexNames, 'index-leading-zeros',
   'status-size-two-bits', 'status-size-zero', 'status-size-one'];
 const vectors = loadVectors();
 const vectorOf = (name: string): ConformanceVector => {
@@ -23,13 +25,23 @@ describe('positive authority and strict index contract', () => {
     expect(result.outcome).toBe(vector.expected);
   });
 
-  it("refuses the credential issuer's list without an id at the pinned root's URL for its missing id", async () => {
+  it("refuses the credential issuer's list without an id at the URL the pinned root's credential names, for its signer", async () => {
     const input = vectorOf('owner-no-id-at-pinned-root-url').input as StatusListInput;
     const [url] = Object.keys(input.statusLists);
+    expect(input.trustedRootStatusList).toBe(url);
     expect(await new ReferenceConformanceAdapter().verifyStatusList(input)).toEqual({
       outcome: 'fail',
-      detail: `Status check error: status list states no id, but must state the URL it was fetched from ("${url}")`,
+      detail:
+        `Status check error: status list issuer "${(input.credential as { issuer: string }).issuer}" does not keep this list's URL: ` +
+        `"${input.trustedRootIssuer}" does, as the pinned root whose own credential names it`,
     });
+  });
+
+  it("reads the credential issuer's list without an id where that issuer is also the pinned root and its credential's URL is not named", async () => {
+    const input = vectorOf('owner-root-alias-no-id').input as StatusListInput;
+    expect(input.trustedRootIssuer).toBe((input.credential as { issuer: string }).issuer);
+    expect(input).not.toHaveProperty('trustedRootStatusList');
+    expect(Object.values(input.statusLists)[0]).not.toHaveProperty('id');
   });
 
   // The adapter takes the index through the library's parser, so its refusal is the parser's.
@@ -47,6 +59,60 @@ describe('positive authority and strict index contract', () => {
       outcome: 'fail',
       detail: `Status check error: ${refusal}`,
     });
+  });
+});
+
+/**
+ * The keeper vectors share one credential, one list URL and a clear list, and differ in who signed
+ * the list and in the configuration, so each verdict is the keeper rule's alone: the reference
+ * adapter refuses each negative one for its signer, naming the keeper and why it keeps the URL.
+ */
+describe('the one keeper of a status-list URL', () => {
+  const inputOf = (name: string) => vectorOf(name).input as StatusListInput;
+  const signerOf = (input: StatusListInput) => (Object.values(input.statusLists)[0] as { issuer: string }).issuer;
+  const issuerOf = (input: StatusListInput) => (input.credential as { issuer: string }).issuer;
+
+  it('holds a clear list, stating its id, in every keeper vector, so nothing but the signer decides', async () => {
+    for (const name of keeperNames) {
+      const input = inputOf(name);
+      const [[url, list]] = Object.entries(input.statusLists) as [[string, { id: string; credentialSubject: { encodedList: string } }]];
+      expect(list.id, name).toBe(url);
+      expect(await isIndexSet(list.credentialSubject.encodedList, 7), name).toBe(false);
+    }
+  });
+
+  it.each([
+    ['root-list-at-issuer-url', 'credential', 'the issuer of the credential'],
+    ['lookalike-origin-list', 'credential', 'the issuer of the credential'],
+    ['unconfigured-service-list', 'credential', 'the issuer of the credential'],
+    ['service-list-at-unbound-url', 'credential', 'the issuer of the credential'],
+    ['issuer-list-at-bound-url', 'service', 'the issuer statusListIssuers binds this URL to'],
+    ['configured-over-root-list', 'service', 'the issuer statusListIssuers binds this URL to'],
+  ] as const)('%s is refused for its signer, the URL being kept by the %s issuer', async (name, keptBy, as) => {
+    const input = inputOf(name);
+    const keeper = keptBy === 'credential' ? issuerOf(input) : Object.keys(input.statusListIssuers ?? {})[0]!;
+    expect(signerOf(input)).not.toBe(keeper);
+    expect(await new ReferenceConformanceAdapter().verifyStatusList(input)).toEqual({
+      outcome: 'fail',
+      detail: `Status check error: status list issuer "${signerOf(input)}" does not keep this list's URL: "${keeper}" does, as ${as}`,
+    });
+  });
+
+  it('pairs each refusal with a vector that reads the same list or the same configuration', () => {
+    // The root's list is read where its credential names the URL, and refused where it names another or the configuration binds the URL.
+    expect(inputOf('root-list-at-issuer-url').statusLists).toEqual(inputOf('pinned-root-list').statusLists);
+    expect(inputOf('configured-over-root-list').statusLists).toEqual(inputOf('pinned-root-list').statusLists);
+    expect(inputOf('configured-over-root-list').trustedRootStatusList).toBe(inputOf('pinned-root-list').trustedRootStatusList);
+    // The service's list is read at a bound URL or origin, and refused where the binding is another URL, a look-alike origin, or absent.
+    for (const name of ['configured-origin-list', 'lookalike-origin-list', 'unconfigured-service-list', 'service-list-at-unbound-url']) {
+      expect(inputOf(name).statusLists, name).toEqual(inputOf('configured-service-list').statusLists);
+    }
+    expect(inputOf('issuer-list-at-bound-url').statusListIssuers).toEqual(inputOf('configured-service-list').statusListIssuers);
+    const [url] = Object.keys(inputOf('configured-service-list').statusLists);
+    const [origin] = Object.values(inputOf('configured-origin-list').statusListIssuers ?? {})[0]!;
+    const [lookalike] = Object.values(inputOf('lookalike-origin-list').statusListIssuers ?? {})[0]!;
+    expect(url!.startsWith(`${origin}/`)).toBe(true);
+    expect(url!.startsWith(lookalike!) && !url!.startsWith(`${lookalike}/`)).toBe(true);
   });
 });
 

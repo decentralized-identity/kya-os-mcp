@@ -6,11 +6,13 @@
  * ({@link acceptEntryPurpose}, then {@link acceptStatusList} with the expectation
  * {@link statusListExpectationFor} builds), and its verdict is compared with the decision table
  * below, which is written from the specifications and never asks the rule:
- * - who may sign the list: SPEC.md §6.6, and SPEC-ENTITY-CARD.md §10.3 for a Card's responsible
- *   party, which counts once the Card's accountability check has verified it;
+ * - who may sign the list: the one keeper of its URL (SPEC.md §6.6), which is the issuer the
+ *   verifier's configuration binds the URL or its origin to, else the pinned root when its own
+ *   credential names the URL, else the credential's own issuer. A Card's responsible party, once
+ *   verified, is named as the root with no URL, so it keeps what the configuration binds to it;
  * - the `id`: it binds a list to the URL it is fetched from, byte for byte, and only the
- *   credential's own issuer's list may leave it out, and only when that issuer is the one issuer
- *   accepted for the credential (SPEC.md §6.6, Bitstring Status List v1.0 §2.2);
+ *   credential's own issuer's list may leave it out, and only when no other root is pinned and the
+ *   configuration names no other issuer (SPEC.md §6.6, Bitstring Status List v1.0 §2.2);
  * - the list's `statusPurpose`: it includes the purpose checked (Bitstring Status List v1.0 §3.2),
  *   in a form the list's data model allows. Verifiable Credentials Status List v2021 §2.2 has a
  *   StatusList2021Credential's be one string: "The purpose of the status entry MUST be a string."
@@ -47,76 +49,155 @@ const RESPONSIBLE_PARTY = 'did:web:api.example';
 const STRANGER = 'did:web:stranger.example';
 
 interface SignerRow {
-  /** Whether the specification lets a list this signer signed speak for the credential. */
+  /** Whether the specification has this signer keep the URL, so that its list speaks for the credential. */
   accepted: boolean;
   /**
    * Whether this signer's list may leave out its `id`: only the credential's own issuer's may, and
-   * only when no other issuer is accepted for the credential.
+   * only when no other root is pinned and the configuration names no other issuer.
    */
   mayOmitId: boolean;
   did: string;
-  /** The context, and the configuration, the verifier checks the list with. */
-  context: StatusCheckContext;
-  statusListIssuers?: StatusListIssuers;
+  /** The context the verifier checks the list at `url` with. */
+  context: (url: string) => StatusCheckContext;
+  /** The configuration it checks it with, if any. */
+  statusListIssuers?: (url: string) => StatusListIssuers;
 }
 
+const ELSEWHERE = 'https://lists.elsewhere.example/1';
+/** The origin of a URL of this table, as a binding writes one. */
+const originOf = (url: string): string => /^https:\/\/[a-z0-9.-]+/.exec(url)![0];
+const issuerAlone = (): StatusCheckContext => ({ credentialIssuer: CREDENTIAL_ISSUER });
+/** The verifier pins the root, whose own credential names `rootList`. */
+const pinning = (rootList?: string): StatusCheckContext => ({
+  credentialIssuer: CREDENTIAL_ISSUER,
+  trustedRootIssuer: ROOT,
+  ...(rootList === undefined ? {} : { trustedRootStatusList: rootList }),
+});
+
 const SIGNERS: Record<string, SignerRow> = {
-  "the credential's own issuer, the one issuer accepted for it": {
+  "the credential's own issuer, with no root pinned and nobody configured": {
     accepted: true,
     mayOmitId: true,
     did: CREDENTIAL_ISSUER,
-    context: { credentialIssuer: CREDENTIAL_ISSUER },
+    context: issuerAlone,
   },
-  "the credential's own issuer, while the verifier pins a root": {
+  "the credential's own issuer, while the verifier pins a root whose credential names another URL": {
     accepted: true,
     mayOmitId: false,
     did: CREDENTIAL_ISSUER,
-    context: { credentialIssuer: CREDENTIAL_ISSUER, trustedRootIssuer: ROOT },
+    context: () => pinning(ELSEWHERE),
   },
-  "the credential's own issuer, while the verifier accepts a status service for it": {
+  "the credential's own issuer, while the verifier pins a root whose credential names no URL": {
     accepted: true,
     mayOmitId: false,
     did: CREDENTIAL_ISSUER,
-    context: { credentialIssuer: CREDENTIAL_ISSUER },
-    statusListIssuers: { [CREDENTIAL_ISSUER]: [SERVICE] },
+    context: () => pinning(),
   },
-  'the pinned root': {
+  "the credential's own issuer, while the configuration binds another URL to a status service": {
+    accepted: true,
+    mayOmitId: false,
+    did: CREDENTIAL_ISSUER,
+    context: issuerAlone,
+    statusListIssuers: () => ({ [SERVICE]: [ELSEWHERE] }),
+  },
+  "the credential's own issuer, at the URL the pinned root's credential names": {
+    accepted: false,
+    mayOmitId: false,
+    did: CREDENTIAL_ISSUER,
+    context: (url) => pinning(url),
+  },
+  "the credential's own issuer, at a URL the configuration binds to a status service": {
+    accepted: false,
+    mayOmitId: false,
+    did: CREDENTIAL_ISSUER,
+    context: issuerAlone,
+    statusListIssuers: (url) => ({ [SERVICE]: [url] }),
+  },
+  'the pinned root, at the URL its own credential names': {
     accepted: true,
     mayOmitId: false,
     did: ROOT,
-    context: { credentialIssuer: CREDENTIAL_ISSUER, trustedRootIssuer: ROOT },
+    context: (url) => pinning(url),
   },
-  'a root that is not pinned': {
+  'the pinned root, at a URL its own credential does not name': {
     accepted: false,
     mayOmitId: false,
     did: ROOT,
-    context: { credentialIssuer: CREDENTIAL_ISSUER },
+    context: () => pinning(ELSEWHERE),
   },
-  'a status service configured for the credential issuer': {
+  'the pinned root, at a URL the configuration binds to it': {
+    accepted: true,
+    mayOmitId: false,
+    did: ROOT,
+    context: () => pinning(),
+    statusListIssuers: (url) => ({ [ROOT]: [ELSEWHERE, url] }),
+  },
+  'a root that is not pinned, at the URL its credential names': {
+    accepted: false,
+    mayOmitId: false,
+    did: ROOT,
+    context: (url) => ({ credentialIssuer: CREDENTIAL_ISSUER, trustedRootStatusList: url }),
+  },
+  'a status service the configuration binds the exact URL to': {
     accepted: true,
     mayOmitId: false,
     did: SERVICE,
-    context: { credentialIssuer: CREDENTIAL_ISSUER },
-    statusListIssuers: { [CREDENTIAL_ISSUER]: [SERVICE] },
+    context: issuerAlone,
+    statusListIssuers: (url) => ({ [SERVICE]: [url] }),
   },
-  "a Card's verified responsible party": {
+  "a status service the configuration binds the URL's origin to": {
+    accepted: true,
+    mayOmitId: false,
+    did: SERVICE,
+    context: issuerAlone,
+    statusListIssuers: (url) => ({ [SERVICE]: [originOf(url)] }),
+  },
+  'a status service the configuration binds another URL to': {
+    accepted: false,
+    mayOmitId: false,
+    did: SERVICE,
+    context: issuerAlone,
+    statusListIssuers: () => ({ [SERVICE]: [ELSEWHERE] }),
+  },
+  "a status service the configuration binds the URL to, though the pinned root's credential names it too": {
+    accepted: true,
+    mayOmitId: false,
+    did: SERVICE,
+    context: (url) => pinning(url),
+    statusListIssuers: (url) => ({ [SERVICE]: [url] }),
+  },
+  'the pinned root, at the URL its credential names, which the configuration binds to a status service': {
+    accepted: false,
+    mayOmitId: false,
+    did: ROOT,
+    context: (url) => pinning(url),
+    statusListIssuers: (url) => ({ [SERVICE]: [originOf(url)] }),
+  },
+  "a Card's verified responsible party, at a URL the configuration binds to it": {
     accepted: true,
     mayOmitId: false,
     did: RESPONSIBLE_PARTY,
-    context: { credentialIssuer: CARD, trustedRootIssuer: RESPONSIBLE_PARTY },
+    context: () => ({ credentialIssuer: CARD, trustedRootIssuer: RESPONSIBLE_PARTY }),
+    statusListIssuers: (url) => ({ [RESPONSIBLE_PARTY]: [url] }),
+  },
+  "a Card's verified responsible party, at a URL nothing binds to it": {
+    accepted: false,
+    mayOmitId: false,
+    did: RESPONSIBLE_PARTY,
+    context: () => ({ credentialIssuer: CARD, trustedRootIssuer: RESPONSIBLE_PARTY }),
   },
   "a Card's responsible party that did not verify": {
     accepted: false,
     mayOmitId: false,
     did: RESPONSIBLE_PARTY,
-    context: { credentialIssuer: CARD },
+    context: () => ({ credentialIssuer: CARD }),
   },
-  'a stranger, while the verifier pins a root and accepts a status service': {
+  'a stranger, while the verifier pins a root and binds other URLs to a status service': {
     accepted: false,
     mayOmitId: false,
     did: STRANGER,
-    context: { credentialIssuer: CREDENTIAL_ISSUER, trustedRootIssuer: ROOT },
-    statusListIssuers: { [CREDENTIAL_ISSUER]: [SERVICE], [STRANGER]: [STRANGER] },
+    context: () => pinning(ELSEWHERE),
+    statusListIssuers: () => ({ [SERVICE]: ['https://lists.elsewhere.example/2'] }),
   },
 };
 
@@ -285,8 +366,8 @@ function verdictOf(c: Case): StatusListVerdict {
   };
   const expectation = statusListExpectationFor(
     { statusListCredential: c.url, statusPurpose: CHECKED },
-    c.signer.context,
-    c.signer.statusListIssuers,
+    c.signer.context(c.url),
+    c.signer.statusListIssuers?.(c.url),
   );
   return acceptStatusList(list, expectation);
 }
@@ -311,15 +392,17 @@ describe('the acceptance rule, over every combination of its inputs', () => {
       return agrees ? [] : [`${c.label}: expected ${failed.length === 0 ? 'read' : `refused on ${failed.join(', ')}`}, got ${verdict.valid ? 'read' : verdict.reason}`];
     });
     expect({ cases: all.length, mismatches: mismatches.length, first: mismatches.slice(0, 5) }).toEqual({
-      cases: 2 * 9 * 2 * 7 * 5 * 9 * 5,
+      cases: 2 * Object.keys(SIGNERS).length * 2 * 7 * 5 * 9 * 5,
       mismatches: 0,
       first: [],
     });
-    // The table reads a list for 392 of the cases. Under an entry the checker may read, in both URL
-    // and issuer forms, the credential's own issuer's list with its URL as its id or, while it is the
-    // one issuer accepted, none, and each other row of an accepted signer with its URL as its id, make
-    // 56; each is read with the checker's purpose as one string on every list type, and in either
-    // array that holds it only on a BitstringStatusListCredential, so 7 times.
-    expect(all.filter((c) => failedChecks(c).length === 0)).toHaveLength(392);
+    expect(Object.keys(SIGNERS)).toHaveLength(19);
+    // The table reads a list for 616 of the cases. Ten rows have a signer that keeps the URL. Each
+    // is read with the URL as its id, and the first, where nobody but the credential's own issuer
+    // keeps any URL, with no id as well: 11, by 2 URLs, 2 issuer forms and the 2 entry purposes the
+    // checker may read, make 88. Each of those is read with the checker's purpose as one string on
+    // every list type, and in either array that holds it only on a BitstringStatusListCredential,
+    // so 7 times.
+    expect(all.filter((c) => failedChecks(c).length === 0)).toHaveLength(616);
   });
 });

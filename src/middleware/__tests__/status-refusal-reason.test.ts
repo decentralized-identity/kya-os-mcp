@@ -105,7 +105,7 @@ describe('the delegation gate refusing a status list', () => {
     await expectSignedRefusal(
       refusal,
       `Delegation del-1 invalid: Status check error: status list issuer "did:key:z6Mk\\ude00y" ` +
-        `is not the expected issuer ("${refusal.statusIssuer}")`,
+        `does not keep this list's URL: "${refusal.statusIssuer}" does, as the issuer this resolver is configured with`,
     );
   });
 

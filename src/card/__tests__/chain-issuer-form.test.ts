@@ -1,14 +1,14 @@
 /**
  * A hop may name its issuer as a DID string or as an object whose `id` is that DID. The chain walk
- * names each hop's issuer, and the root a verifier pins, to the revocation checker, which holds the
- * hop's status list to them. It names the same DIDs whichever form the hops use, so a chain is not
+ * names each hop's issuer, and the root a verifier pins with the status-list URL its own hop names,
+ * to the revocation checker, which holds the hop's status list to the keeper of its URL. It names the same DIDs whichever form the hops use, so a chain is not
  * refused, nor a list accepted, for the way an issuer is written.
  */
 
 import { describe, it, expect } from 'vitest';
 import { evaluateDelegationChain, revocationEntriesOf, type DelegationChain } from '../delegation.js';
 import type { StatusCheckContext } from '../revocation.js';
-import { now, parties, RESOURCE, twoHopChain } from './signed-chain-helpers.js';
+import { now, parties, RESOURCE, STATUS_URL, twoHopChain } from './signed-chain-helpers.js';
 
 /** `chain` with every hop's issuer written as an object, with a member beside its `id`. */
 const withObjectIssuers = (chain: DelegationChain): DelegationChain =>
@@ -40,8 +40,8 @@ describe('a hop that names its issuer as an { id } object', () => {
       const result = await evaluateDelegationChain(chain, check, { resource: RESOURCE, now, resourceOwner: p.acme.did });
       expect(result).toMatchObject({ ok: true });
       expect(named).toEqual([
-        { credentialIssuer: p.acme.did, trustedRootIssuer: p.acme.did },
-        { credentialIssuer: p.agent.did, trustedRootIssuer: p.acme.did },
+        { credentialIssuer: p.acme.did, trustedRootIssuer: p.acme.did, trustedRootStatusList: STATUS_URL },
+        { credentialIssuer: p.agent.did, trustedRootIssuer: p.acme.did, trustedRootStatusList: STATUS_URL },
       ]);
     }
   });

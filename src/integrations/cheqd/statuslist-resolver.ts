@@ -149,7 +149,7 @@ export class CheqdStatusListResolver implements StatusListResolver {
     const verdict = acceptStatusList(credential, {
       statusListCredential: url,
       statusPurpose,
-      acceptedIssuers: [this.opts.expectedIssuerDid],
+      keeper: { did: this.opts.expectedIssuerDid, why: 'resolver-issuer' },
       requireId: true,
     });
     if (!verdict.valid) {

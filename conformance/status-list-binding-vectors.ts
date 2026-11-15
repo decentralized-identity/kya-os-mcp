@@ -17,19 +17,20 @@
  * - `status-list/id-mismatch-list`: the list states another URL as its `id`, so it is not the list
  *   the credential names (§2.2).
  *
- * Two more negative vectors carry a list, with the bit unset, from an issuer other than the
- * credential's that the vector has the verifier accept for the credential, re-issued without its
- * `id`. Only the `id` binds a list to the URL it is served at, so only a list the credential's own
- * issuer signed, where it is the only issuer accepted, may leave it out:
+ * Two more negative vectors carry a list, with the bit unset, from the keeper of the credential's
+ * list URL, an issuer other than the credential's, re-issued without its `id`. Only the `id` binds
+ * a list to the URL it is served at, so only a list the credential's own issuer signed, where
+ * nobody else keeps any URL, may leave it out:
  * - `status-list/root-no-id-list`: a delegate of the issuer issued the credential, and the issuer,
- *   whose list it is, is the chain's root, which the vector pins as `trustedRootIssuer`;
- * - `status-list/configured-issuer-no-id-list`: the vector's `statusListIssuers` accepts the DID of
- *   `status-list/foreign-issuer-list`, which signed the list, for the credential's issuer.
+ *   whose list it is, is the chain's root, which the vector pins as `trustedRootIssuer`, with the
+ *   list's URL as `trustedRootStatusList`, the URL the root's own credential names;
+ * - `status-list/configured-issuer-no-id-list`: the vector's `statusListIssuers` binds the list's
+ *   URL to the DID of `status-list/foreign-issuer-list`, which signed the list.
  *
  * Each positive vector carries an active delegation and a list of its issuer in a form the
  * specification allows, so a verifier that refuses that form fails closed and fails the vector:
  * - `status-list/no-id-list`: the issuer's list re-issued without its `id`, which §2.2 makes
- *   optional, and which the credential's own issuer, the only one accepted, may leave out;
+ *   optional, and which the credential's own issuer may leave out where nobody else keeps a URL;
  * - `status-list/purpose-array-list`: the issuer's BitstringStatusListCredential, which declares the
  *   purposes `suspension` and `revocation` (§2.2), read for a `BitstringStatusListEntry`.
  */
@@ -107,7 +108,7 @@ export async function statusListBindingVectors<P extends Signer>(
     credential: DelegationCredential,
     list: Fields,
     signers: P[],
-    configuration: Pick<StatusListInput, 'trustedRootIssuer' | 'statusListIssuers'> = {},
+    configuration: Pick<StatusListInput, 'trustedRootIssuer' | 'trustedRootStatusList' | 'statusListIssuers'> = {},
   ): ConformanceVector {
     return {
       id: `status-list/${name}`,
@@ -177,24 +178,24 @@ export async function statusListBindingVectors<P extends Signer>(
       'fail',
       {
         description: "Revoked delegation a delegate of the pinned root issued, checked against the root's list with the bit unset, re-issued without an id",
-        reason: "Only the credential's own issuer may leave out a list's id; the pinned root's list must state the URL it is read from, so the check fails closed",
+        reason: "Only the credential's own issuer may leave out a list's id; the pinned root's list, at the URL its own credential names, must state that URL, so the check fails closed",
       },
       input.redelegatedCredential,
       await reissued(input.clearedList, withoutId, issuer),
       [delegate, issuer],
-      { trustedRootIssuer: issuer.did },
+      { trustedRootIssuer: issuer.did, trustedRootStatusList: statusListUrlOf(input.redelegatedCredential) },
     ),
     vector(
       'configured-issuer-no-id-list',
       'fail',
       {
-        description: 'Revoked delegation checked against a list with the bit unset, signed by a DID the verifier accepts for its issuer and stating no id',
+        description: "Revoked delegation checked against a list with the bit unset, signed by the DID the verifier binds the list's URL to and stating no id",
         reason: "A list from an issuer other than the credential's must state the URL it is read from as its id, so the check fails closed",
       },
       revokedCredential,
       await reissued(input.clearedList, (fields) => withoutId({ ...fields, issuer: outsider.did }), outsider),
       [issuer, outsider],
-      { statusListIssuers: { [issuer.did]: [outsider.did] } },
+      { statusListIssuers: { [outsider.did]: [statusListUrlOf(revokedCredential)] } },
     ),
     read(
       'no-id-list',

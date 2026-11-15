@@ -69,7 +69,7 @@ function resolver(mode: Mode, bodies: Record<string, Record<string, unknown>>, c
     const checker = createRevocationChecker({
       fetch: serveAt(bodies),
       verifyStatusList: async (list) => (await verifySignature(list as unknown as DelegationCredential, didResolver, signatureVerifier)).valid,
-      ...(mode === 'configured-root' ? { statusListIssuers: Object.fromEntries(parties.map((p) => [p.did, [root.did]])) } : {}),
+      ...(mode === 'configured-root' ? { statusListIssuers: { [root.did]: ['https://status.example'] } } : {}),
     });
     inner = { checkStatus: async (entry, context) => (await checker(entry, context)).revoked };
   }
@@ -105,9 +105,6 @@ describe.each(['object', 'JWT'] as const)('status authority through the middlewa
       'refuses a defect at hop $hop, cached=$cached',
       async ({ hop, cached }) => {
         for (const defect of ['revoked', 'wrong-id', 'purpose', 'signature', 'missing-id']) {
-          // The root is the only issuer accepted for hop 0, so its list may omit the id; cheqd's global
-          // pin never gets that exemption.
-          if (mode === 'configured-root' && hop === 0 && defect === 'missing-id') continue;
           const reader = resolver(mode, await lists(hop, defect), cached);
           const result = await checkChain(reader, form);
           expect(result.valid, `${mode} ${form} hop ${hop} ${defect}`).toBe(false);

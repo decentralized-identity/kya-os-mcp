@@ -203,13 +203,13 @@ describe('CheqdStatusListResolver (real crypto, stubbed transport)', () => {
     await expect(
       makeResolver({ expectedIssuerDid: 'did:cheqd:testnet:attacker' })
         .checkStatus(clearEntry),
-    ).rejects.toThrow(/not the expected issuer/);
+    ).rejects.toThrow(/does not keep this list.s URL: "did:cheqd:testnet:attacker" does, as the issuer this resolver is configured with$/);
   });
 
   it('names an issuer other than the pinned one as a refusal names any value, never converting it, and quotes the pinned one', async () => {
     const long = `did:cheqd:testnet:${'x'.repeat(100)}`;
     const notPinned = (named: string) =>
-      `status list issuer ${named} is not the expected issuer ("${issuerIdentity.did}")`;
+      `status list issuer ${named} does not keep this list's URL: "${issuerIdentity.did}" does, as the issuer this resolver is configured with`;
     // An issuer read as a credential's is (a string, or an object's string id) is quoted; anything
     // else names no issuer, and is never converted to find one.
     const refusals: [unknown, string][] = [

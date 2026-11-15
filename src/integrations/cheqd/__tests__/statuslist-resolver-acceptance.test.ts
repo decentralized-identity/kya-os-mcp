@@ -109,7 +109,7 @@ describe('CheqdStatusListResolver and the status-list acceptance rule', () => {
       expect(served).toMatchObject({ issuer: other.did });
       for (const context of [undefined, { credentialIssuer: other.did }]) {
         await expect(makeResolver().checkStatus(clearEntry, context)).rejects.toThrow(
-          `status list issuer "${other.did}" is not the expected issuer ("${pinned.did}")`,
+          `status list issuer "${other.did}" does not keep this list's URL: "${pinned.did}" does, as the issuer this resolver is configured with`,
         );
       }
     });
@@ -238,7 +238,7 @@ describe('CheqdStatusListResolver and the status-list acceptance rule', () => {
     it("quotes at most 64 characters of the list's issuer and statusPurpose, and refuses either as absent when it is not a string", async () => {
       served = await resignedList((list) => ({ ...list, issuer: LONG }));
       await expect(makeResolver().checkStatus(clearEntry)).rejects.toThrow(
-        `status list issuer ${LONG_QUOTED} is not the expected issuer ("${pinned.did}")`,
+        `status list issuer ${LONG_QUOTED} does not keep this list's URL: "${pinned.did}" does, as the issuer this resolver is configured with`,
       );
       served = await resignedList((list) => withSubject(list, { statusPurpose: LONG }));
       await expect(makeResolver().checkStatus(clearEntry)).rejects.toThrow(
@@ -380,7 +380,7 @@ describe('CheqdStatusListResolver and the status-list acceptance rule', () => {
       served = await otherSetup.storage.getStatusList(clearEntry.statusListCredential);
       const result = await verify(other, clearEntry);
       expect(result).toMatchObject({ valid: false, stage: 'status', statusOutcome: 'status_unresolvable' });
-      expect(result.reason).toMatch(/is not the expected issuer/);
+      expect(result.reason).toMatch(/does not keep this list's URL/);
     });
 
     it('denies a credential whose index it refuses with a bounded, well-formed reason', async () => {

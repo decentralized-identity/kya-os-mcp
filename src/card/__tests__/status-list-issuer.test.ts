@@ -128,15 +128,23 @@ describe('createRevocationChecker holds a verified list to the credential', () =
     expect(verifyStatusList).not.toHaveBeenCalled();
   });
 
-  it('reads a list from an issuer statusListIssuers accepts for the credential issuer, and only for it', async () => {
+  it('reads a list from the issuer statusListIssuers binds its URL to, whoever issued the credential, and from nobody else there', async () => {
     const acme = identity();
     const statusService = identity();
-    const check = checkerServing(statusList(statusService, [3]), {
-      statusListIssuers: { [acme.did]: [statusService.did] },
-    });
+    const statusListIssuers = { [statusService.did]: [STATUS_URL] };
+    const check = checkerServing(statusList(statusService, [3]), { statusListIssuers });
     expect(await check(entry(3), issuedBy(acme))).toEqual({ revoked: true, fresh: true });
     expect(await check(entry(4), issuedBy(acme))).toEqual({ revoked: false, fresh: true });
-    expect(await check(entry(4), issuedBy(identity()))).toEqual(REVOKED_UNPROVEN);
+    expect(await check(entry(4), issuedBy(identity()))).toEqual({ revoked: false, fresh: true });
+    // The credential's own issuer's list is refused at a URL the configuration binds to another.
+    expect(await checkerServing(statusList(acme), { statusListIssuers })(entry(4), issuedBy(acme))).toEqual({
+      revoked: true,
+      fresh: false,
+      reason: `status list issuer "${acme.did}" does not keep this list's URL: "${statusService.did}" does, as the issuer statusListIssuers binds this URL to`,
+    });
+    // Bound to another URL, the service keeps nothing here.
+    const elsewhere = checkerServing(statusList(statusService), { statusListIssuers: { [statusService.did]: [`${STATUS_URL}/2`] } });
+    expect(await elsewhere(entry(4), issuedBy(acme))).toEqual(REVOKED_UNPROVEN);
   });
 
   it('fails closed on a list whose id names another URL, and reads one that states no id', async () => {
@@ -395,35 +403,56 @@ describe('statusListIssuers is checked when the checker is created', () => {
     expect(create(undefined, {})).not.toThrow();
   });
 
+  const NOT_A_MAP = 'statusListIssuers must be a plain object mapping each status-list issuer DID to the status-list URLs or https origins it keeps';
+
   it('refuses a value that is not a plain object, null included', () => {
     for (const value of [null, [], 'did:web:status.example', 7, new Map(), new (class Issuers {})()]) {
-      expect(create(value)).toThrow(
-        new TypeError('statusListIssuers must be a plain object mapping credential issuer DIDs to arrays of status-list issuer DIDs'),
+      expect(create(value)).toThrow(new TypeError(NOT_A_MAP));
+    }
+  });
+
+  it('refuses an entry that is not an array, naming its key', () => {
+    for (const value of ['https://status.example', null, { 0: 'https://status.example' }]) {
+      expect(create({ 'did:web:acme.example': [], 'did:web:agent.example': value })).toThrow(
+        new TypeError('statusListIssuers["did:web:agent.example"] must be an array of status-list URLs or https origins'),
       );
     }
   });
 
-  it('refuses an entry that is not an array of strings, naming its key', () => {
-    for (const value of ['did:web:status.example', null, [7], ['did:web:status.example', null], { 0: 'did:web:status.example' }]) {
-      expect(create({ 'did:web:acme.example': [], 'did:web:agent.example': value })).toThrow(
-        new TypeError('statusListIssuers["did:web:agent.example"] must be an array of status-list issuer DIDs'),
-      );
+  it('refuses a map from a credential issuer to the issuers accepted for it, whose values are DIDs and not URLs', () => {
+    expect(create({ 'did:web:acme.example': ['did:web:status.example'] })).toThrow(
+      new TypeError(
+        'statusListIssuers["did:web:acme.example"] holds "did:web:status.example", which is not a status-list URL or an https origin: ' +
+          'each value names the URLs that issuer keeps, not the issuers accepted for a credential issuer',
+      ),
+    );
+    for (const binding of [7, null, 'status.example', 'ftp://status.example/1']) {
+      expect(create({ 'did:web:status.example': ['https://status.example', binding] })).toThrow(/which is not a status-list URL or an https origin/);
     }
+  });
+
+  it('refuses one binding under two issuers, and an empty key', () => {
+    expect(create({ 'did:web:a.example': ['https://status.example'], 'did:web:b.example': ['https://status.example'] })).toThrow(
+      new TypeError('statusListIssuers binds "https://status.example" to both "did:web:a.example" and "did:web:b.example", and a URL has one keeper'),
+    );
+    expect(create({ '': ['https://status.example'] })).toThrow(
+      new TypeError('statusListIssuers has an empty key, where it must name a status-list issuer DID'),
+    );
   });
 
   it('quotes the key of an entry it refuses as a refusal quotes a value: bounded, and on one line', () => {
     const key = `did:web:${'k'.repeat(292)}\u2028`;
-    expect(create({ [key]: 'did:web:status.example' })).toThrow(
-      new TypeError(`statusListIssuers["did:web:${'k'.repeat(56)}"...] must be an array of status-list issuer DIDs`),
+    expect(create({ [key]: 'https://status.example' })).toThrow(
+      new TypeError(`statusListIssuers["did:web:${'k'.repeat(56)}"...] must be an array of status-list URLs or https origins`),
     );
     expect(create({ 'did:web:acme.example\u2028': null })).toThrow(
-      new TypeError('statusListIssuers["did:web:acme.example\\u2028"] must be an array of status-list issuer DIDs'),
+      new TypeError('statusListIssuers["did:web:acme.example\\u2028"] must be an array of status-list URLs or https origins'),
     );
   });
 
-  it('takes a plain object of string arrays, however it was made', () => {
-    const bare = Object.assign(Object.create(null) as Record<string, string[]>, { 'did:web:acme.example': ['did:web:status.example'] });
-    for (const value of [undefined, {}, { 'did:web:acme.example': [] }, Object.freeze({ 'did:web:acme.example': Object.freeze(['did:web:s.example']) }), bare]) {
+  it('takes a plain object of arrays of URLs and origins, however it was made', () => {
+    const bare = Object.assign(Object.create(null) as Record<string, string[]>, { 'did:web:status.example': ['https://status.example'] });
+    for (const value of [undefined, {}, { 'did:web:acme.example': [] }, Object.freeze({ 'did:web:s.example': Object.freeze(['https://s.example/1']) }), bare]) {
       expect(create(value)).not.toThrow();
     }
   });

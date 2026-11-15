@@ -125,8 +125,10 @@ export interface VerifyCardDeps {
    * Live W3C Bitstring Status List v1.0 check for `card.revocation` (fail-closed). It is called with
    * `{ credentialIssuer: card.id }`, the Card being its Entity's own statement, and, once the
    * accountability check has verified the Card's `responsibleParty` as the root issuer of the Card's
-   * delegation chain, with that party as `trustedRootIssuer`; a checker that verifies the list holds
-   * it to them as `acceptStatusList` does. A responsible party that did not verify is not named.
+   * delegation chain, with that party as `trustedRootIssuer`. No status-list URL of that party is
+   * named, so a checker that verifies the list reads the party's list for the Card only at a URL
+   * its `statusListIssuers` binds to the party, and otherwise the Card's own (`acceptStatusList`).
+   * A responsible party that did not verify is not named.
    */
   statusListChecker?: BitstringRevocationChecker;
   /** True iff the caller independently proved CIMD L1 key possession (private_key_jwt ↔ jwks_uri). */

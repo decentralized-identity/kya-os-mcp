@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
  * Generator for the status-list authority vectors (suite ≥ 1.4.0),
- * `conformance/vectors/status-list-authority.json`: lists signed by an issuer other than the
- * credential's, read only when the verifier accepts that issuer for the credential; the credential's
- * own issuer's list without an `id`, read only when no other issuer is accepted; entries whose
+ * `conformance/vectors/status-list-authority.json`: lists read only from the one keeper of the URL
+ * a credential's entry names, which is the issuer the verifier binds the URL or its origin to, else
+ * the pinned root when its own credential names the URL, else the credential's issuer; the
+ * credential's own issuer's list without an `id`, read only when nobody else keeps a URL; entries whose
  * `statusListIndex` is a string of decimal digits or not; and entries that state a `statusSize`,
  * read only when it is 1. It runs on its own, so adding a case
  * re-signs this file and no other.
@@ -48,14 +49,32 @@ export async function statusListAuthorityVectors<P extends Signer>(deps: StatusL
     return { id: `status-list/${name}`, category: 'status-list', description: reason, reason, expected, input };
   }
   const common = { credential, didDocuments, serverDid: deps.serverDid };
-  const rootInput = { ...common, trustedRootIssuer: root.did, statusLists: { [url]: await list(root) } };
-  const configuredInput = { ...common, statusListIssuers: { [issuer.did]: [service.did] }, statusLists: { [url]: await list(service) } };
+  /** Another list URL, which the root's own credential names where it does not name `url`. */
+  const elsewhere = 'https://status.example.com/authority-root-own';
+  const origin = 'https://status.example.com';
+  const rootInput = { ...common, trustedRootIssuer: root.did, trustedRootStatusList: url, statusLists: { [url]: await list(root) } };
+  const configuredInput = { ...common, statusListIssuers: { [service.did]: [url] }, statusLists: { [url]: await list(service) } };
   const vectors: ConformanceVector[] = [
-    vector('pinned-root-list', 'pass', 'An authorized per-credential root signs an exactly identified clear list', rootInput),
-    vector('configured-service-list', 'pass', 'A service configured for this credential issuer signs an exactly identified clear list', configuredInput),
-    vector('unconfigured-service-list', 'fail', 'The same service has no authority without a mapping for this issuer', { ...configuredInput, statusListIssuers: {} }),
-    vector('wrong-direction-service-map', 'fail', 'Mapping the service to the issuer does not authorize the service for the issuer', {
-      ...configuredInput, statusListIssuers: { [service.did]: [issuer.did] },
+    vector('pinned-root-list', 'pass', "The pinned root keeps the URL its own credential names, so its exactly identified clear list there is read for a credential that names it too", rootInput),
+    vector('root-list-at-issuer-url', 'fail', "The pinned root's own credential names another URL, so this one is the credential issuer's and the root's list there is refused", {
+      ...rootInput, trustedRootStatusList: elsewhere,
+    }),
+    vector('configured-service-list', 'pass', 'A service the verifier binds the exact list URL to signs an exactly identified clear list', configuredInput),
+    vector('configured-origin-list', 'pass', "A service the verifier binds the list URL's https origin to signs an exactly identified clear list", {
+      ...configuredInput, statusListIssuers: { [service.did]: [origin] },
+    }),
+    vector('lookalike-origin-list', 'fail', 'An origin binding is matched on the bytes as written, so an origin that is only a prefix of the host binds nothing here', {
+      ...configuredInput, statusListIssuers: { [service.did]: [origin.slice(0, -'.com'.length)] },
+    }),
+    vector('unconfigured-service-list', 'fail', 'The same service keeps no URL when the verifier binds none to it', { ...configuredInput, statusListIssuers: {} }),
+    vector('service-list-at-unbound-url', 'fail', 'A service the verifier binds another URL to keeps that URL alone, so its list is refused here', {
+      ...configuredInput, statusListIssuers: { [service.did]: [elsewhere] },
+    }),
+    vector('issuer-list-at-bound-url', 'fail', "At a URL the verifier binds to a service, the credential's own issuer's list is refused as any other is", {
+      ...configuredInput, statusLists: { [url]: await list(issuer) },
+    }),
+    vector('configured-over-root-list', 'fail', "Where the verifier binds a URL to a service and the pinned root's credential names it too, the binding decides and the root's list is refused", {
+      ...rootInput, statusListIssuers: { [service.did]: [url] },
     }),
     vector('owner-root-alias-no-id', 'pass', 'A signer identical to the credential issuer retains the own-issuer id exemption even when also named as root', {
       ...common, trustedRootIssuer: issuer.did, statusLists: { [url]: await list(issuer, false) },

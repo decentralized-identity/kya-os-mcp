@@ -1,11 +1,11 @@
 /**
- * A hop's status list may be its own issuer's, or the chain's root issuer's when the verifier pins
- * that root with `trustedRootIssuers` or `resourceOwner` (SPEC.md §6.6), and nobody else's unless
- * `statusListIssuers` accepts it for the hop's issuer. A hop commits to its parent only by an id its
- * parent's issuer chose, so whoever presents a chain decides who stands between the root and a hop:
- * only the pinned root is held to the verifier's own configuration. It can revoke its own credential,
- * which revokes every hop below it, so its list may speak for each of them when it states its URL as
- * its `id` (./status-list-id.test.ts). Every case runs the shipped checker, proof verifiers and chain
+ * A hop's status list is its own issuer's, or the chain's root issuer's when the verifier pins that
+ * root with `trustedRootIssuers` or `resourceOwner` and the root's own credential names the same
+ * list URL (SPEC.md §6.6), and nobody else's unless `statusListIssuers` binds the URL to them. A hop
+ * commits to its parent only by an id its parent's issuer chose, so whoever presents a chain decides
+ * who stands between the root and a hop: only the pinned root is held to the verifier's own
+ * configuration. It can revoke its own credential, which revokes every hop below it, so the list its
+ * own credential is on may speak for each hop that names it (./status-list-id.test.ts). Every case runs the shipped checker, proof verifiers and chain
  * evaluators over hops and lists signed by real keys; only the network is faked.
  */
 
@@ -33,7 +33,7 @@ import { cast, expectAccepted, expectRevokedAt, listOf, listUrlOf, servedBy, thr
 const didResolver = createDidKeyResolver();
 const ctx = { resource: RESOURCE, now };
 
-describe("the pinned root's list speaks for every hop of its chains", () => {
+describe("the pinned root's list speaks for every hop that names the list the root's own credential is on", () => {
   it("reads a leaf entry on the root's list, as a two-hop chain carried by value documents it", async () => {
     const p = parties();
     const chain = twoHopChain(p);
@@ -61,14 +61,14 @@ describe("the pinned root's list speaks for every hop of its chains", () => {
   });
 });
 
-describe("no other issuer's list does, unless statusListIssuers accepts it", () => {
+describe("no other issuer's list does, unless statusListIssuers binds the list's URL to it", () => {
   it("refuses a hop's entry on the list of an issuer between it and the root", async () => {
     const c = cast();
     const chain = threeHopChain(c, [c.acme, c.agent, c.agent]);
     const lists = (revoked: number[]) => servedBy(listOf(c.acme), listOf(c.agent, revoked));
     await expectRevokedAt(2, chain, lists([]));
 
-    const statusListIssuers = { [c.subAgent.did]: [c.agent.did] };
+    const statusListIssuers = { [c.agent.did]: [listUrlOf(c.agent)] };
     await expectAccepted(chain, lists([]), { statusListIssuers });
     await expectRevokedAt(2, chain, lists([2]), { statusListIssuers });
   });
@@ -128,7 +128,7 @@ describe("no other issuer's list does, unless statusListIssuers accepts it", () 
     const chain = twoHopChain(p);
     await expectRevokedAt(1, chain, { [STATUS_URL]: statusList(p.acme) }, { pinned: false });
     await expectRevokedAt(0, chain, { [STATUS_URL]: statusList(p.acme, [3]) }, { pinned: false });
-    await expectAccepted(chain, { [STATUS_URL]: statusList(p.acme) }, { pinned: false, statusListIssuers: { [p.agent.did]: [p.acme.did] } });
+    await expectAccepted(chain, { [STATUS_URL]: statusList(p.acme) }, { pinned: false, statusListIssuers: { [p.acme.did]: [STATUS_URL] } });
   });
 
   it("refuses the root's entry on a list an issuer below it signed", async () => {
@@ -188,8 +188,20 @@ describe("each path names a hop's issuer, and the chain's root only as the verif
       { entry: statusOf(1, c.agent), credentialIssuer: c.agent.did, position: 1 },
       { entry: statusOf(2, c.subAgent), credentialIssuer: c.subAgent.did, position: 2 },
     ]);
-    expect(revocationEntriesOf([root, unlisted as typeof middle, leaf], c.acme.did)).toEqual([
-      { entry: statusOf(0, c.acme), credentialIssuer: c.acme.did, position: 0, trustedRootIssuer: c.acme.did },
+    // The root is named with the list URL its own hop's status entry names.
+    const rooted = { trustedRootIssuer: c.acme.did, trustedRootStatusList: listUrlOf(c.acme) };
+    expect(revocationEntriesOf([root, unlisted as typeof middle, leaf], c.acme.did)).toStrictEqual([
+      { entry: statusOf(0, c.acme), credentialIssuer: c.acme.did, position: 0, ...rooted },
+      { entry: statusOf(2, c.subAgent), credentialIssuer: c.subAgent.did, position: 2, ...rooted },
+    ]);
+  });
+
+  it("revocationEntriesOf names no status-list URL for a pinned root whose own hop has no status entry", () => {
+    const c = cast();
+    const [root, middle, leaf] = threeHopChain(c, [c.acme, c.agent, c.subAgent]);
+    const { credentialStatus: _status, ...unlistedRoot } = root;
+    expect(revocationEntriesOf([unlistedRoot as typeof root, middle, leaf], c.acme.did)).toStrictEqual([
+      { entry: statusOf(1, c.agent), credentialIssuer: c.agent.did, position: 1, trustedRootIssuer: c.acme.did },
       { entry: statusOf(2, c.subAgent), credentialIssuer: c.subAgent.did, position: 2, trustedRootIssuer: c.acme.did },
     ]);
   });
@@ -258,7 +270,11 @@ describe("each path names a hop's issuer, and the chain's root only as the verif
           { resource: RESOURCE, verifyHopProof: createDelegationProofVerifier({ didResolver }), checkRevocation: check, now, ...deps },
         );
     const unpinned = issuers.map((credentialIssuer) => ({ credentialIssuer }));
-    const pinned = issuers.map((credentialIssuer) => ({ credentialIssuer, trustedRootIssuer: c.acme.did }));
+    const pinned = issuers.map((credentialIssuer) => ({
+      credentialIssuer,
+      trustedRootIssuer: c.acme.did,
+      trustedRootStatusList: listUrlOf(c.acme),
+    }));
 
     expect(await contexts((check) => evaluateDelegationChain(chain, check, ctx))).toEqual(unpinned);
     expect(await contexts((check) => evaluateDelegationChain(chain, check, { ...ctx, resourceOwner: c.acme.did }))).toEqual(pinned);
@@ -267,7 +283,7 @@ describe("each path names a hop's issuer, and the chain's root only as the verif
     expect(await contexts(request({ resourceOwner: c.acme.did }))).toEqual(pinned);
   });
 
-  it('the checker reads a list from the root a direct call names, and from no other issuer it names', async () => {
+  it("the checker reads the root's list for a direct call only at the URL the call says the root's credential names", async () => {
     const c = cast();
     const check = createRevocationChecker({
       fetch: serveAt(servedBy(listOf(c.acme, [5]))),
@@ -275,15 +291,29 @@ describe("each path names a hop's issuer, and the chain's root only as the verif
       verifyStatusList: createStatusListProofVerifier({ didResolver }),
     });
     const onAcmes = (index: number) => ({ statusListCredential: listUrlOf(c.acme), statusListIndex: String(index) });
-    const below = { credentialIssuer: c.subAgent.did, trustedRootIssuer: c.acme.did };
+    const below = { credentialIssuer: c.subAgent.did, trustedRootIssuer: c.acme.did, trustedRootStatusList: listUrlOf(c.acme) };
     expect(await check(onAcmes(5), below)).toEqual({ revoked: true, fresh: true });
     expect(await check(onAcmes(6), below)).toEqual({ revoked: false, fresh: true });
-    for (const trustedRootIssuer of [undefined, c.agent.did, c.mallory.did]) {
-      expect(await check(onAcmes(6), { credentialIssuer: c.subAgent.did, trustedRootIssuer })).toEqual({
-        revoked: true,
-        fresh: false,
-        reason: expect.any(String),
-      });
+    const refusedFor = (did: string, as: string) => ({
+      revoked: true,
+      fresh: false,
+      reason: `status list issuer "${c.acme.did}" does not keep this list's URL: "${did}" does, as ${as}`,
+    });
+    // A root named with no URL, or with another, keeps nothing here, and a URL with no root is ignored.
+    for (const context of [
+      { trustedRootIssuer: c.acme.did },
+      { trustedRootIssuer: c.acme.did, trustedRootStatusList: `${listUrlOf(c.acme)}/` },
+      { trustedRootStatusList: listUrlOf(c.acme) },
+      {},
+    ]) {
+      expect(await check(onAcmes(6), { credentialIssuer: c.subAgent.did, ...context })).toEqual(
+        refusedFor(c.subAgent.did, 'the issuer of the credential'),
+      );
+    }
+    for (const trustedRootIssuer of [c.agent.did, c.mallory.did]) {
+      expect(await check(onAcmes(6), { ...below, trustedRootIssuer })).toEqual(
+        refusedFor(trustedRootIssuer, 'the pinned root whose own credential names it'),
+      );
     }
   });
 });

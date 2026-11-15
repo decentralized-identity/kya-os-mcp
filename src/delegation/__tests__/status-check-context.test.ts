@@ -107,12 +107,13 @@ describe('DelegationCredentialVerifier names the credential issuer to the status
     }
   });
 
-  it("reads the credential issuer's list that states no id only while the resolver accepts that issuer alone", async () => {
+  it("reads the credential issuer's list that states no id only while the resolver's configuration names no other issuer", async () => {
     const idless = { issuer: ISSUER, credentialSubject: { statusPurpose: 'revocation' } };
     const verify = async (resolver: StatusListResolver) =>
       new DelegationCredentialVerifier().verifyDelegationCredential(await credential(ISSUER), { skipSignature: true, statusListResolver: resolver });
     expect(await verify(ruleResolver(idless))).toMatchObject({ valid: true });
-    expect(await verify(ruleResolver(idless, { [ISSUER]: [ROOT] }))).toMatchObject({
+    expect(await verify(ruleResolver(idless, { [ISSUER]: ['https://lists.elsewhere.example'] }))).toMatchObject({ valid: true });
+    expect(await verify(ruleResolver(idless, { [ROOT]: ['https://lists.elsewhere.example'] }))).toMatchObject({
       valid: false,
       statusOutcome: 'status_unresolvable',
       reason: `Status check error: status list states no id, but must state the URL it was fetched from ("${STATUS.statusListCredential}")`,
@@ -160,7 +161,22 @@ describe('withStatusCache and the status check context', () => {
     await expect(cached.checkStatus(STATUS)).rejects.toThrow();
   });
 
-  it('caches per issuer and pinned root, and a call that names none under its own key', async () => {
+  it("never serves a verdict kept for one root status-list URL to an entry whose root's credential names another", async () => {
+    // The root's list, read by the rule: it is the root's only where the root's credential names its URL.
+    const list = { id: STATUS.statusListCredential, issuer: ROOT, credentialSubject: { statusPurpose: 'revocation' } };
+    const resolver = ruleResolver(list);
+    const cached = withStatusCache(resolver, { maxStalenessMs: 60_000 });
+    const pinned = { credentialIssuer: ISSUER, trustedRootIssuer: ROOT };
+    const named = { ...pinned, trustedRootStatusList: STATUS.statusListCredential };
+    expect(await cached.checkStatus(STATUS, named)).toBe(false);
+    expect(await cached.checkStatus(STATUS, named)).toBe(false);
+    for (const context of [{ ...pinned, trustedRootStatusList: 'https://root.example/own' }, pinned]) {
+      await expect(cached.checkStatus(STATUS, context)).rejects.toThrow(/does not keep this list's URL/);
+    }
+    expect(resolver.checkStatus).toHaveBeenCalledTimes(3);
+  });
+
+  it('caches per issuer, pinned root and root status-list URL, and a call that names none under its own key', async () => {
     const resolver = clearStatus();
     const cached = withStatusCache(resolver, { maxStalenessMs: 60_000 });
     const contexts = [
@@ -168,6 +184,8 @@ describe('withStatusCache and the status check context', () => {
       { credentialIssuer: 'did:web:other.example' },
       { credentialIssuer: ISSUER, trustedRootIssuer: ROOT },
       { credentialIssuer: ISSUER, trustedRootIssuer: SUBJECT },
+      { credentialIssuer: ISSUER, trustedRootIssuer: ROOT, trustedRootStatusList: STATUS.statusListCredential },
+      { credentialIssuer: ISSUER, trustedRootIssuer: ROOT, trustedRootStatusList: 'https://root.example/own' },
       undefined,
     ];
     for (let i = 0; i < 2; i += 1) {
@@ -216,12 +234,16 @@ describe("the delegation middleware's path names no root to the resolver", () =>
     const resolver = rootListResolver();
     const result = await verifyChain(resolver);
     expect(result.valid).toBe(false);
-    expect(result.reason).toMatch(new RegExp(`status list issuer "${ROOT}" is not the expected issuer \\("${ISSUER}"\\)`));
+    expect(result.reason).toContain(
+      `status list issuer "${ROOT}" does not keep this list's URL: "${ISSUER}" does, as the issuer of the credential`,
+    );
     expect(resolver.checkStatus.mock.calls).toEqual([[STATUS, { credentialIssuer: ISSUER }]]);
   });
 
-  it("reads it once the resolver's own configuration accepts the root for the credential's issuer", async () => {
-    const result = await verifyChain(rootListResolver({ [ISSUER]: [ROOT] }));
-    expect(result).toMatchObject({ valid: true });
+  it("reads it once the resolver's own configuration binds the list's URL, or its origin, to the root", async () => {
+    expect(await verifyChain(rootListResolver({ [ROOT]: [STATUS.statusListCredential] }))).toMatchObject({ valid: true });
+    const origin = /^https:\/\/[^/]+/.exec(STATUS.statusListCredential)![0];
+    expect(await verifyChain(rootListResolver({ [ROOT]: [origin] }))).toMatchObject({ valid: true });
+    expect((await verifyChain(rootListResolver({ [ROOT]: [`${STATUS.statusListCredential}/other`] }))).valid).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
 /**
- * A delegation chain's status lists are read only when both rules hold: the list's issuer is one the
- * checker accepts for the hop (`acceptStatusList`), and the list's proof verifies with a key that
+ * A delegation chain's status lists are read only when both rules hold: the list's issuer is the
+ * keeper of the URL the hop names (`acceptStatusList`), and the list's proof verifies with a key that
  * issuer's DID document lists under `assertionMethod` (SPEC.md §6.2). Each path that reads a chain's
  * lists is run: `evaluateDelegationChain`, `verifyRequestDelegation` and `requireDelegation`.
  *
@@ -13,13 +13,13 @@
 import { describe, it } from 'vitest';
 import { createDidKeyResolver } from '../../delegation/did-key-resolver.js';
 import type { DIDResolver } from '../../delegation/vc-verifier.types.js';
-import { cast, expectAccepted, expectRevokedAt, listOf, servedBy, threeHopChain } from './status-list-paths.js';
+import { cast, expectAccepted, expectRevokedAt, listOf, listUrlOf, servedBy, threeHopChain } from './status-list-paths.js';
 
 const c = cast();
 const chain = threeHopChain(c, [c.acme, c.agent, c.mallory]);
 const lists = servedBy(listOf(c.acme), listOf(c.agent), listOf(c.mallory));
-/** The verifier accepts Mallory's lists for the sub-agent's credentials. */
-const malloryForSubAgent = { [c.subAgent.did]: [c.mallory.did] };
+/** The verifier binds the URL of Mallory's list to her, so she keeps the list the sub-agent's hop names. */
+const malloryForSubAgent = { [c.mallory.did]: [listUrlOf(c.mallory)] };
 
 const didKeys = createDidKeyResolver();
 /** Each did:key's own document, but Mallory's lists her key only under `authentication`. */

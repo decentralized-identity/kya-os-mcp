@@ -43,22 +43,40 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 /**
  * Throw a `TypeError` unless the verifier configuration a status-list input states (SPEC.md §6.6)
- * is well formed: a `trustedRootIssuer`, when present, is a non-empty string, and a
- * `statusListIssuers`, when present, is a plain object that maps each credential issuer to an array
- * of strings. `conformance/status_list.py` refuses the same inputs in the same words, so the
- * suite's two readers refuse the same malformed vector, and the reference adapter calls this too.
+ * is well formed: a `trustedRootIssuer` and a `trustedRootStatusList`, when present, are non-empty
+ * strings, and a `statusListIssuers`, when present, is a plain object that maps each status-list
+ * issuer, a non-empty key, to an array of the status-list URLs and `https:` origins it keeps, each
+ * a string that starts with `https://` or `http://`, none of them under two issuers.
+ * `conformance/status_list.py` refuses the same inputs in the same words, so the suite's two
+ * readers refuse the same malformed vector, and the reference adapter calls this too.
  */
 export function assertStatusListConfiguration(input: unknown): void {
   const fields: Record<string, unknown> = isPlainObject(input) ? input : {};
-  const root = fields['trustedRootIssuer'];
-  if (root !== undefined && (typeof root !== 'string' || root.length === 0)) {
-    throw new TypeError('trustedRootIssuer is not a non-empty string');
+  for (const member of ['trustedRootIssuer', 'trustedRootStatusList']) {
+    const value = fields[member];
+    if (value !== undefined && (typeof value !== 'string' || value.length === 0)) {
+      throw new TypeError(`${member} is not a non-empty string`);
+    }
   }
   const issuers = fields['statusListIssuers'];
   if (issuers === undefined) return;
-  const lists = isPlainObject(issuers) ? Object.values(issuers) : undefined;
-  if (lists === undefined || !lists.every((list) => Array.isArray(list) && list.every((did) => typeof did === 'string'))) {
-    throw new TypeError('statusListIssuers does not map issuers to lists of strings');
+  if (!isPlainObject(issuers)) {
+    throw new TypeError('statusListIssuers does not map issuers to lists of URLs');
+  }
+  const keeperOf = new Map<string, string>();
+  for (const [keeper, bindings] of Object.entries(issuers)) {
+    if (keeper === '' || !Array.isArray(bindings)) {
+      throw new TypeError('statusListIssuers does not map issuers to lists of URLs');
+    }
+    for (const binding of bindings as unknown[]) {
+      if (typeof binding !== 'string' || !/^https?:\/\//.test(binding)) {
+        throw new TypeError('statusListIssuers does not map issuers to lists of URLs');
+      }
+      if ((keeperOf.get(binding) ?? keeper) !== keeper) {
+        throw new TypeError('statusListIssuers binds one URL to two issuers');
+      }
+      keeperOf.set(binding, keeper);
+    }
   }
 }
 

@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  acceptedStatusListIssuers,
   acceptEntryPurpose,
   acceptStatusList,
   acceptStatusPurpose,
@@ -8,6 +7,7 @@ import {
   type StatusCheckContext,
   type StatusListExpectation,
   type StatusListIssuers,
+  type StatusListKeeper,
 } from '../statuslist-acceptance.js';
 
 const ISSUER = 'did:web:acme.example';
@@ -17,7 +17,8 @@ const LIST_URL = 'https://acme.example/status/1';
 const expected: StatusListExpectation = {
   statusListCredential: LIST_URL,
   statusPurpose: 'revocation',
-  acceptedIssuers: [ISSUER],
+  keeper: { did: ISSUER, why: 'credential-issuer' },
+  requireId: false,
 };
 
 /**
@@ -44,35 +45,37 @@ const LONG = 'v'.repeat(100_000);
 const LONG_QUOTED = `"${'v'.repeat(64)}"...`;
 const NAMED: unknown = JSON.parse('{"toString":"revocation"}');
 
+/** `expected` with `did` as the keeper of the list's URL, because of `why`. */
+const keptBy = (did: string, why: StatusListKeeper['why'] = 'credential-issuer'): StatusListExpectation => ({
+  ...expected,
+  keeper: { did, why },
+});
+
 describe('acceptStatusList: the issuer', () => {
-  it("accepts a list issued by an accepted issuer, written as a string or as an object's id", () => {
+  it("accepts a list the keeper of its URL issued, written as a string or as an object's id", () => {
     expect(acceptStatusList(list(), expected)).toEqual({ valid: true });
     expect(acceptStatusList(list({ issuer: { id: ISSUER, name: 'Acme' } }), expected)).toEqual({ valid: true });
-    const either = { ...expected, acceptedIssuers: [OTHER, ISSUER] };
-    expect(acceptStatusList(list(), either)).toEqual({ valid: true });
-    expect(acceptStatusList(list({ issuer: { id: OTHER } }), either)).toEqual({ valid: true });
+    expect(acceptStatusList(list({ issuer: { id: OTHER } }), keptBy(OTHER, 'configured-url'))).toEqual({ valid: true });
   });
 
-  it('rejects a list issued by any other DID, written either way, naming the issuers it expected', () => {
+  it.each([
+    ['configured-url', 'the issuer statusListIssuers binds this URL to'],
+    ['configured-origin', "the issuer statusListIssuers binds this URL's origin to"],
+    ['root-credential', 'the pinned root whose own credential names it'],
+    ['credential-issuer', 'the issuer of the credential'],
+    ['resolver-issuer', 'the issuer this resolver is configured with'],
+  ] as const)('rejects a list any other DID issued, written either way, naming the keeper and that it keeps the URL as %s', (why, phrase) => {
     for (const issuer of [OTHER, { id: OTHER }]) {
-      expect(rejection(acceptStatusList(list({ issuer }), expected))).toBe(
-        `status list issuer "${OTHER}" is not the expected issuer ("${ISSUER}")`,
+      expect(rejection(acceptStatusList(list({ issuer }), keptBy(ISSUER, why)))).toBe(
+        `status list issuer "${OTHER}" does not keep this list's URL: "${ISSUER}" does, as ${phrase}`,
       );
     }
-    const either = { ...expected, acceptedIssuers: [ISSUER, 'did:web:root.example'] };
-    expect(rejection(acceptStatusList(list({ issuer: OTHER }), either))).toBe(
-      `status list issuer "${OTHER}" is not the expected issuer ("${ISSUER}" or "did:web:root.example")`,
-    );
   });
 
-  it('names each expected issuer once', () => {
-    expect(rejection(acceptStatusList(list({ issuer: OTHER }), { ...expected, acceptedIssuers: [ISSUER, ISSUER] }))).toBe(
-      `status list issuer "${OTHER}" is not the expected issuer ("${ISSUER}")`,
+  it("rejects the credential's own issuer's list at a URL another issuer keeps", () => {
+    expect(rejection(acceptStatusList(list(), keptBy(OTHER, 'root-credential')))).toBe(
+      `status list issuer "${ISSUER}" does not keep this list's URL: "${OTHER}" does, as the pinned root whose own credential names it`,
     );
-  });
-
-  it('accepts no list when no issuer is accepted', () => {
-    expect(acceptStatusList(list(), { ...expected, acceptedIssuers: [] }).valid).toBe(false);
   });
 
   it('compares the issuer exactly', () => {
@@ -92,52 +95,6 @@ describe('acceptStatusList: the issuer', () => {
     for (const candidate of [null, undefined, 'list', 42, [list()]]) {
       expect(rejection(acceptStatusList(candidate, expected))).toBe('status list names no issuer');
     }
-  });
-});
-
-describe('acceptedStatusListIssuers', () => {
-  const ROOT = 'did:web:root.example';
-
-  it("names the credential's issuer, then the pinned root, then those configured for the credential's issuer", () => {
-    expect(acceptedStatusListIssuers({ credentialIssuer: ISSUER })).toEqual([ISSUER]);
-    expect(acceptedStatusListIssuers({ credentialIssuer: ISSUER, trustedRootIssuer: ROOT })).toEqual([ISSUER, ROOT]);
-    expect(acceptedStatusListIssuers({ credentialIssuer: ISSUER, trustedRootIssuer: ROOT }, { [ISSUER]: [OTHER] })).toEqual([
-      ISSUER,
-      ROOT,
-      OTHER,
-    ]);
-    expect(acceptedStatusListIssuers({ credentialIssuer: ISSUER }, { [ISSUER]: [OTHER, ROOT] })).toEqual([ISSUER, OTHER, ROOT]);
-  });
-
-  it("takes configured issuers only for the credential's own issuer, not for the root's", () => {
-    const configured = { [ROOT]: [OTHER], 'did:web:someone-else.example': ['did:web:x.example'] };
-    expect(acceptedStatusListIssuers({ credentialIssuer: ISSUER, trustedRootIssuer: ROOT }, configured)).toEqual([
-      ISSUER,
-      ROOT,
-    ]);
-  });
-
-  it('names each issuer once, where it first comes', () => {
-    expect(acceptedStatusListIssuers({ credentialIssuer: ISSUER, trustedRootIssuer: ISSUER })).toEqual([ISSUER]);
-    const configured = { [ISSUER]: [ROOT, OTHER, ISSUER, OTHER] };
-    expect(acceptedStatusListIssuers({ credentialIssuer: ISSUER, trustedRootIssuer: ROOT }, configured)).toEqual([ISSUER, ROOT, OTHER]);
-  });
-
-  it('adds nobody through a key the map does not own', () => {
-    expect(acceptedStatusListIssuers({ credentialIssuer: 'constructor' }, {})).toEqual(['constructor']);
-    expect(acceptedStatusListIssuers({ credentialIssuer: 'toString' }, { [ISSUER]: [OTHER] })).toEqual(['toString']);
-  });
-
-  it('throws the TypeError a misconfigured checker throws for a map that is not a plain object of string arrays', () => {
-    const NOT_A_MAP = 'statusListIssuers must be a plain object mapping credential issuer DIDs to arrays of status-list issuer DIDs';
-    const entry = { statusListCredential: LIST_URL, statusPurpose: 'revocation' };
-    for (const map of [null, OTHER, [], new Map(), Object.create({ [ISSUER]: [OTHER] })]) {
-      expect(() => acceptedStatusListIssuers({ credentialIssuer: ISSUER }, map)).toThrow(new TypeError(NOT_A_MAP));
-      expect(() => statusListExpectationFor(entry, { credentialIssuer: ISSUER }, map)).toThrow(new TypeError(NOT_A_MAP));
-    }
-    expect(() => acceptedStatusListIssuers({ credentialIssuer: ISSUER }, { [ISSUER]: OTHER } as never)).toThrow(
-      new TypeError(`statusListIssuers["${ISSUER}"] must be an array of status-list issuer DIDs`),
-    );
   });
 });
 
@@ -220,31 +177,16 @@ describe('acceptStatusList: the stated id', () => {
   const { id: _id, ...noId } = list();
   const NO_ID = `status list states no id, but must state the URL it was fetched from ("${LIST_URL}")`;
 
-  it('accepts a list whose id is the URL it was fetched from, or one that states no id from the one issuer accepted', () => {
+  it('accepts a list whose id is the URL it was fetched from, or one that states no id where the reader requires none', () => {
     expect(acceptStatusList(list(), expected)).toEqual({ valid: true });
+    expect(acceptStatusList(list(), { ...expected, requireId: true })).toEqual({ valid: true });
     expect(acceptStatusList(noId, expected)).toEqual({ valid: true });
     expect(acceptStatusList({ ...noId, issuer: { id: ISSUER } }, expected)).toEqual({ valid: true });
-    expect(acceptStatusList(noId, { ...expected, acceptedIssuers: [ISSUER, ISSUER], requireId: false })).toEqual({ valid: true });
   });
 
-  it('rejects a list that states no id from any other accepted issuer, or when the reader requires one', () => {
-    const either = { ...expected, acceptedIssuers: [ISSUER, OTHER] };
-    expect(acceptStatusList(list({ issuer: OTHER }), either)).toEqual({ valid: true });
-    expect(rejection(acceptStatusList({ ...noId, issuer: OTHER }, either))).toBe(NO_ID);
-    const strict = { ...expected, requireId: true };
-    expect(acceptStatusList(list(), strict)).toEqual({ valid: true });
-    expect(rejection(acceptStatusList(noId, strict))).toBe(NO_ID);
-  });
-
-  // The rule itself decides when a list may leave out its id, so an expectation a caller builds or edits
-  // cannot let one list stand in for another that a second accepted issuer keeps.
-  it('rejects a list that states no id from its signer whenever another issuer is accepted, however the expectation is built', () => {
-    const derived = statusListExpectationFor(expected, { credentialIssuer: ISSUER, trustedRootIssuer: OTHER });
-    for (const handBuilt of [derived, { ...derived, requireId: false }, ...[[ISSUER, OTHER], [OTHER, ISSUER, ISSUER]].map(
-      (acceptedIssuers) => ({ ...expected, acceptedIssuers }),
-    )]) {
-      expect(rejection(acceptStatusList(noId, handBuilt))).toBe(NO_ID);
-    }
+  it('rejects a list that states no id when the reader requires one, whoever keeps the URL', () => {
+    expect(rejection(acceptStatusList(noId, { ...expected, requireId: true }))).toBe(NO_ID);
+    expect(rejection(acceptStatusList({ ...noId, issuer: OTHER }, { ...keptBy(OTHER, 'configured-url'), requireId: true }))).toBe(NO_ID);
   });
 
   it('rejects a list that states another id, naming one that is not a string by its type', () => {
@@ -298,44 +240,89 @@ describe('acceptStatusList: the verdict', () => {
 
   it('reads its inputs without changing them', () => {
     const frozen = Object.freeze(list({ issuer: Object.freeze({ id: OTHER }) }));
-    const acceptedIssuers = Object.freeze([ISSUER, OTHER]);
-    expect(acceptStatusList(frozen, Object.freeze({ ...expected, acceptedIssuers }))).toEqual({ valid: true });
-    const context = Object.freeze({ credentialIssuer: ISSUER, trustedRootIssuer: OTHER });
-    expect(acceptedStatusListIssuers(context, Object.freeze({ [ISSUER]: Object.freeze([OTHER]) }))).toEqual([ISSUER, OTHER]);
+    const keeper = Object.freeze({ did: OTHER, why: 'configured-url' } as const);
+    expect(acceptStatusList(frozen, Object.freeze({ ...expected, keeper }))).toEqual({ valid: true });
+    const context = Object.freeze({ credentialIssuer: ISSUER, trustedRootIssuer: OTHER, trustedRootStatusList: LIST_URL });
+    const bound = Object.freeze({ [OTHER]: Object.freeze(['https://status.example']) });
+    expect(statusListExpectationFor({ statusListCredential: LIST_URL, statusPurpose: 'revocation' }, context, bound).keeper).toEqual({
+      did: OTHER,
+      why: 'root-credential',
+    });
   });
 });
 
 describe('statusListExpectationFor', () => {
   const ROOT = 'did:web:root.example';
+  const ROOT_URL = 'https://root.example/status/1';
   const entry = { statusListCredential: LIST_URL, statusPurpose: 'suspension' };
+  const pinned = { credentialIssuer: ISSUER, trustedRootIssuer: ROOT, trustedRootStatusList: ROOT_URL };
 
-  it('expects a list from an issuer acceptedStatusListIssuers names', () => {
-    const context = { credentialIssuer: ISSUER, trustedRootIssuer: ROOT };
-    expect(statusListExpectationFor(entry, context, { [ISSUER]: [OTHER] })).toStrictEqual({
-      statusListCredential: LIST_URL,
-      statusPurpose: 'suspension',
-      acceptedIssuers: [ISSUER, ROOT, OTHER],
-    });
+  it("expects a list from the keeper statusListKeeperFor names, with the entry's URL and purpose", () => {
     expect(statusListExpectationFor(entry, { credentialIssuer: ISSUER })).toStrictEqual({
       statusListCredential: LIST_URL,
       statusPurpose: 'suspension',
-      acceptedIssuers: [ISSUER],
+      keeper: { did: ISSUER, why: 'credential-issuer' },
+      requireId: false,
+    });
+    expect(statusListExpectationFor({ ...entry, statusListCredential: ROOT_URL }, pinned)).toStrictEqual({
+      statusListCredential: ROOT_URL,
+      statusPurpose: 'suspension',
+      keeper: { did: ROOT, why: 'root-credential' },
+      requireId: true,
+    });
+    expect(statusListExpectationFor(entry, pinned, { [OTHER]: [LIST_URL] }).keeper).toEqual({ did: OTHER, why: 'configured-url' });
+    expect(statusListExpectationFor(entry, pinned, { [OTHER]: ['https://acme.example'] }).keeper).toEqual({
+      did: OTHER,
+      why: 'configured-origin',
     });
   });
 
-  it("reads the credential's own issuer's list that states no id only while that issuer is the one accepted for the credential", () => {
+  it('throws the TypeError a misconfigured checker throws for a map it could not apply', () => {
+    const NOT_A_MAP = 'statusListIssuers must be a plain object mapping each status-list issuer DID to the status-list URLs or https origins it keeps';
+    for (const map of [null, OTHER, [], new Map(), Object.create({ [OTHER]: [LIST_URL] })]) {
+      expect(() => statusListExpectationFor(entry, { credentialIssuer: ISSUER }, map)).toThrow(new TypeError(NOT_A_MAP));
+    }
+    expect(() => statusListExpectationFor(entry, { credentialIssuer: ISSUER }, { [ISSUER]: [OTHER] })).toThrow(TypeError);
+  });
+
+  // A list may leave out its id only where the credential's own issuer is the only issuer whose
+  // list the reader would take at any URL. Each line below is one part of that condition.
+  it("requires an id of every list but the credential's own issuer's, and of that one unless nobody else keeps any URL", () => {
+    const requires = (context: StatusCheckContext, statusListIssuers?: StatusListIssuers, url = LIST_URL) =>
+      statusListExpectationFor({ ...entry, statusListCredential: url }, context, statusListIssuers).requireId;
+    expect(requires({ credentialIssuer: ISSUER })).toBe(false);
+    expect(requires({ credentialIssuer: ISSUER }, {})).toBe(false);
+    expect(requires({ credentialIssuer: ISSUER, trustedRootIssuer: ISSUER })).toBe(false);
+    expect(requires({ credentialIssuer: ISSUER, trustedRootIssuer: ISSUER, trustedRootStatusList: ROOT_URL })).toBe(false);
+    expect(requires({ credentialIssuer: ISSUER }, { [ISSUER]: ['https://elsewhere.example'] })).toBe(false);
+    // Another root is pinned, whatever URL its credential names, or none.
+    expect(requires({ credentialIssuer: ISSUER, trustedRootIssuer: ROOT })).toBe(true);
+    expect(requires(pinned)).toBe(true);
+    // The configuration names another issuer, whatever it binds to it.
+    expect(requires({ credentialIssuer: ISSUER }, { [OTHER]: [] })).toBe(true);
+    expect(requires({ credentialIssuer: ISSUER }, { [OTHER]: ['https://status.example'] })).toBe(true);
+    expect(requires({ credentialIssuer: ISSUER }, { [ISSUER]: [LIST_URL], [OTHER]: ['https://status.example'] })).toBe(true);
+    // The keeper is not the credential's issuer by the last rule: the root, or a configured issuer,
+    // the credential's own issuer included when the configuration binds the URL to it.
+    expect(requires(pinned, undefined, ROOT_URL)).toBe(true);
+    expect(requires({ credentialIssuer: ROOT, trustedRootIssuer: ROOT, trustedRootStatusList: ROOT_URL }, undefined, ROOT_URL)).toBe(true);
+    expect(requires({ credentialIssuer: ISSUER }, { [OTHER]: [LIST_URL] })).toBe(true);
+    expect(requires({ credentialIssuer: ISSUER }, { [ISSUER]: [LIST_URL] })).toBe(true);
+    expect(requires({ credentialIssuer: ISSUER }, { [ISSUER]: ['https://acme.example'] })).toBe(true);
+  });
+
+  it("reads the credential's own issuer's list that states no id only in those cases", () => {
     const { id: _id, ...noId } = list();
     const read = (context: StatusCheckContext, statusListIssuers?: StatusListIssuers) =>
       rejection(
         acceptStatusList(noId, statusListExpectationFor({ ...entry, statusPurpose: 'revocation' }, context, statusListIssuers)),
       );
     expect(read({ credentialIssuer: ISSUER })).toBe('accepted');
-    expect(read({ credentialIssuer: ISSUER, trustedRootIssuer: ISSUER }, { [ISSUER]: [ISSUER], [OTHER]: [ROOT] })).toBe('accepted');
-    expect(read({ credentialIssuer: ISSUER }, { [ISSUER]: [] })).toBe('accepted');
+    expect(read({ credentialIssuer: ISSUER, trustedRootIssuer: ISSUER }, { [ISSUER]: ['https://elsewhere.example'] })).toBe('accepted');
     const NO_ID = `status list states no id, but must state the URL it was fetched from ("${LIST_URL}")`;
     expect(read({ credentialIssuer: ISSUER, trustedRootIssuer: ROOT })).toBe(NO_ID);
-    expect(read({ credentialIssuer: ISSUER }, { [ISSUER]: [OTHER] })).toBe(NO_ID);
-    expect(read({ credentialIssuer: ISSUER }, { [ISSUER]: [ISSUER, OTHER] })).toBe(NO_ID);
+    expect(read({ credentialIssuer: ISSUER }, { [OTHER]: ['https://status.example'] })).toBe(NO_ID);
+    expect(read({ credentialIssuer: ISSUER }, { [ISSUER]: [LIST_URL] })).toBe(NO_ID);
   });
 });
 
@@ -394,28 +381,19 @@ describe('acceptStatusPurpose', () => {
 // the first 64 characters of a value the list, the entry or the credential chose, and names one that
 // is not a string by its type, never converting it.
 describe('acceptStatusList: the values a reason quotes', () => {
-  it("quotes the list's issuer and each expected issuer; a list issuer that is not a string names no issuer", () => {
+  it("quotes the list's issuer and the keeper; a list issuer that is not a string names no issuer", () => {
     expect(rejection(acceptStatusList(list({ issuer: LONG }), expected))).toBe(
-      `status list issuer ${LONG_QUOTED} is not the expected issuer ("${ISSUER}")`,
+      `status list issuer ${LONG_QUOTED} does not keep this list's URL: "${ISSUER}" does, as the issuer of the credential`,
     );
     for (const issuer of [NAMED, { id: NAMED }]) {
       expect(rejection(acceptStatusList(list({ issuer }), expected))).toBe('status list names no issuer');
     }
-    const acceptedIssuers = [ISSUER, LONG, NAMED as string];
-    expect(rejection(acceptStatusList(list({ issuer: OTHER }), { ...expected, acceptedIssuers }))).toBe(
-      `status list issuer "${OTHER}" is not the expected issuer ("${ISSUER}" or ${LONG_QUOTED} or of type object)`,
+    expect(rejection(acceptStatusList(list({ issuer: OTHER }), keptBy(LONG)))).toBe(
+      `status list issuer "${OTHER}" does not keep this list's URL: ${LONG_QUOTED} does, as the issuer of the credential`,
     );
-  });
-
-  it('names at most three expected issuers, then how many more it accepts', () => {
-    const many = Array.from({ length: 50 }, (_, i) => `did:web:${i}${'q'.repeat(100)}`);
-    const quoted = (i: number) => `"did:web:${i}${'q'.repeat(64 - `did:web:${i}`.length)}"...`;
-    const reason = rejection(acceptStatusList(list({ issuer: OTHER }), { ...expected, acceptedIssuers: many }));
-    expect(reason).toBe(
-      `status list issuer "${OTHER}" is not the expected issuer (${quoted(0)} or ${quoted(1)} or ${quoted(2)} and 47 more)`,
+    expect(rejection(acceptStatusList(list({ issuer: OTHER }), keptBy(NAMED as string)))).toBe(
+      `status list issuer "${OTHER}" does not keep this list's URL: of type object does, as the issuer of the credential`,
     );
-    const four = rejection(acceptStatusList(list({ issuer: OTHER }), { ...expected, acceptedIssuers: [...many.slice(0, 3), ISSUER] }));
-    expect(four).toBe(`status list issuer "${OTHER}" is not the expected issuer (${quoted(0)} or ${quoted(1)} or ${quoted(2)} and 1 more)`);
   });
 
   it("quotes the entry's statusPurpose, whether the list states another or none", () => {

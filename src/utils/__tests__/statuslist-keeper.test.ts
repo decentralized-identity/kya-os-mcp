@@ -173,6 +173,8 @@ describe('assertStatusListIssuers', () => {
     ['a URL of another scheme', 'ftp://status.example/1', '"ftp://status.example/1"'],
     ['a scheme in another case', 'HTTPS://status.example', '"HTTPS://status.example"'],
     ['an empty string', '', '""'],
+    ['an array that holds a URL, which converts to one', ['https://status.example'], 'of type array'],
+    ['an object that converts to a URL', { toString: () => 'https://status.example' }, 'of type object'],
   ])('refuses a binding that is %s, and says what a value must hold', (_label, binding, named) => {
     expect(() => assertStatusListIssuers({ [ISSUER]: [URL, binding] })).toThrow(
       new TypeError(

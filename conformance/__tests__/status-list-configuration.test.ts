@@ -1,6 +1,6 @@
 /**
- * A status-list vector may state the verifier configuration it is checked with, `trustedRootIssuer`
- * and `statusListIssuers` (SPEC.md §6.6). The two readers of the suite refuse the same malformed
+ * A status-list vector may state the verifier configuration it is checked with, `trustedRootIssuer`,
+ * `trustedRootStatusList` and `statusListIssuers` (SPEC.md §6.6). The two readers of the suite refuse the same malformed
  * configuration: the TypeScript loader refuses the vector, and the reference adapter fails it when
  * handed it directly, while `conformance/status_list.py` reads it as refused. A well-formed
  * configuration leaves the vector's verdict as the vector states it.
@@ -36,17 +36,27 @@ const MALFORMED: Variant[] = [
   ...[null, 7, '', ['did:x'], { id: 'did:x' }].map((root): Variant => [
     `trustedRootIssuer ${JSON.stringify(root)}`, () => ({ trustedRootIssuer: root }),
   ]),
-  ...[null, 'did:x', [], { 'did:x': 'did:y' }].map((map): Variant => [
+  ...[null, 7, '', ['https://x.example'], { id: 'https://x.example' }].map((url): Variant => [
+    `trustedRootStatusList ${JSON.stringify(url)}`, (owner) => ({ trustedRootIssuer: owner, trustedRootStatusList: url }),
+  ]),
+  ...[null, 'did:x', [], { 'did:x': 'https://x.example' }, { '': ['https://x.example'] }].map((map): Variant => [
     `statusListIssuers ${JSON.stringify(map)}`, () => ({ statusListIssuers: map }),
   ]),
   ['statusListIssuers naming a number for the issuer', (owner) => ({ statusListIssuers: { [owner]: [7] } })],
-  ['statusListIssuers naming one DID for the issuer, not an array', (owner) => ({ statusListIssuers: { [owner]: 'did:z' } })],
+  ['statusListIssuers naming one URL for the issuer, not an array', (owner) => ({ statusListIssuers: { [owner]: 'https://z.example' } })],
+  ['statusListIssuers naming a DID for the issuer, as a map of accepted issuers would', (owner) => ({ statusListIssuers: { [owner]: ['did:z'] } })],
+  ['statusListIssuers naming an array that holds a URL', (owner) => ({ statusListIssuers: { [owner]: [['https://z.example']] } })],
+  ['statusListIssuers naming a URL of another scheme', (owner) => ({ statusListIssuers: { [owner]: ['ftp://z.example/1'] } })],
+  ['statusListIssuers binding one URL to two issuers', (owner) => ({ statusListIssuers: { [owner]: ['https://z.example'], 'did:z': ['https://z.example'] } })],
 ];
 
 const WELL_FORMED: Variant[] = [
   ['the credential issuer pinned as the root', (owner) => ({ trustedRootIssuer: owner })],
   ['an empty statusListIssuers', () => ({ statusListIssuers: {} })],
-  ['statusListIssuers accepting no one for the issuer', (owner) => ({ statusListIssuers: { [owner]: [] } })],
+  ['statusListIssuers binding nothing to the issuer', (owner) => ({ statusListIssuers: { [owner]: [] } })],
+  ['statusListIssuers binding another URL, an origin and an http URL to the issuer, one of them twice', (owner) => ({
+    statusListIssuers: { [owner]: ['https://z.example/1', 'https://z.example', 'http://z.example/1', 'https://z.example/1'] },
+  })],
 ];
 
 /** Whether the loader reads `vector` from a vector file of its own, or the error it refuses it with. */
@@ -102,8 +112,12 @@ describe('a status-list vector that states its verifier configuration', () => {
     expect(load(configured(IDS[0]!, () => ({ trustedRootIssuer: 7 })))).toMatch(
       /^Vector status-list\/no-id-list in .*status-list\.json: trustedRootIssuer is not a non-empty string$/,
     );
+    expect(load(configured(IDS[0]!, () => ({ trustedRootStatusList: '' })))).toMatch(/: trustedRootStatusList is not a non-empty string$/);
     expect(load(configured(IDS[0]!, () => ({ statusListIssuers: null })))).toMatch(
-      /: statusListIssuers does not map issuers to lists of strings$/,
+      /: statusListIssuers does not map issuers to lists of URLs$/,
+    );
+    expect(load(configured(IDS[0]!, () => ({ statusListIssuers: { 'did:a': ['https://z.example'], 'did:b': ['https://z.example'] } })))).toMatch(
+      /: statusListIssuers binds one URL to two issuers$/,
     );
   });
 

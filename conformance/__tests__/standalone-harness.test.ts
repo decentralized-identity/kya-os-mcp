@@ -30,8 +30,11 @@ describe('the harness files an implementer copies', () => {
 
   it('refuse and admit the statusListIssuers the library refuses and admits', () => {
     const maps: unknown[] = [
-      undefined, {}, { 'did:x': [] }, { 'did:x': ['did:y', 'did:z'] }, Object.create(null),
-      null, 'did:x', 7, [], ['did:x'], { 'did:x': 'did:y' }, { 'did:x': [7] }, { 'did:x': null }, new Map(), new Date(0),
+      undefined, {}, { 'did:x': [] }, { 'did:x': ['https://y.example', 'https://y.example/1', 'http://y.example/1'] }, Object.create(null),
+      { 'did:x': ['https://y.example/1', 'https://y.example/1'], 'did:z': ['https://Y.example'] },
+      null, 'did:x', 7, [], ['did:x'], { 'did:x': 'https://y.example' }, { 'did:x': [7] }, { 'did:x': null }, new Map(), new Date(0),
+      { 'did:x': ['did:y', 'did:z'] }, { 'did:x': ['y.example'] }, { 'did:x': [['https://y.example']] }, { 'did:x': ['ftp://y.example'] }, { 'did:x': [''] }, { '': ['https://y.example'] },
+      { 'did:x': ['https://y.example'], 'did:z': ['https://y.example'] },
     ];
     const refuses = (check: () => void): boolean => {
       try {

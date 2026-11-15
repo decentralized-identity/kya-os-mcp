@@ -44,8 +44,7 @@ export type Cast = ReturnType<typeof cast>;
 /** Each party's status list, at its own URL. */
 export const listUrlOf = (party: TestIdentity) => `https://status.example/${party.did.slice(-12)}`;
 export function listOf(party: TestIdentity, revoked: number[] = []): Record<string, unknown> {
-  const url = listUrlOf(party);
-  return statusList(party, revoked, { id: url, credentialSubject: { id: `${url}#list` } });
+  return listAt(party, listUrlOf(party), revoked);
 }
 
 /** The list {@link listOf} makes for `party`, signed again without its `id`. */
@@ -140,15 +139,39 @@ export async function expectAccepted(
   expect(guarded).toMatchObject({ ok: true });
 }
 
+/**
+ * That every path refuses the chain at hop `hopIndex`, and, when `because` is given, that each
+ * refusal ends with it: the reason the checker gave for the hop.
+ */
 export async function expectRevokedAt(
   hopIndex: number,
   chain: DelegationChain,
   lists: Record<string, Record<string, unknown>>,
   verifier?: Verifier,
+  because?: string,
 ) {
   const { evaluated, request, guarded } = await verdicts(chain, lists, verifier);
+  const reasons = [expect.stringMatching(new RegExp(`^revocation: hop ${hopIndex} `))];
   expect(evaluated.ok).toBe(false);
-  expect(evaluated.reasons).toEqual([expect.stringMatching(new RegExp(`^revocation: hop ${hopIndex} `))]);
-  expect(request).toMatchObject({ ok: false, code: 'delegation_revoked' });
-  expect(guarded).toMatchObject({ ok: false, status: 403, error: { code: 'delegation_revoked' } });
+  expect(evaluated.reasons).toEqual(reasons);
+  expect(request).toMatchObject({ ok: false, code: 'delegation_revoked', reasons });
+  expect(guarded).toMatchObject({ ok: false, status: 403, error: { code: 'delegation_revoked', reasons } });
+  if (because !== undefined) {
+    const refused = [evaluated.reasons, request.ok ? [] : request.reasons, guarded.ok ? [] : guarded.error.reasons];
+    for (const [reason] of refused) expect(reason?.endsWith(`, subtree invalidated: ${because}`), reason).toBe(true);
+  }
 }
+
+/** A list `signer` signed that states `url` as its `id`, with the `revoked` bits set. */
+export function listAt(signer: TestIdentity, url: string, revoked: number[] = []): Record<string, unknown> {
+  return statusList(signer, revoked, { id: url, credentialSubject: { id: `${url}#list` } });
+}
+
+/** Why a list `signer` signed is refused at a URL `keeper` keeps, `as` saying why it keeps it. */
+export const notKeeper = (signer: TestIdentity, keeper: TestIdentity, as: string): string =>
+  `status list issuer "${signer.did}" does not keep this list's URL: "${keeper.did}" does, as ${as}`;
+/** The phrases a refusal says a keeper keeps a URL by. */
+export const AS_ISSUER = 'the issuer of the credential';
+export const AS_ROOT = 'the pinned root whose own credential names it';
+export const AS_BOUND_URL = 'the issuer statusListIssuers binds this URL to';
+export const AS_BOUND_ORIGIN = "the issuer statusListIssuers binds this URL's origin to";

@@ -51,9 +51,9 @@ describe("the card's status-list reader holds a list to a trusted issuer and to 
   });
 
   it('refuses a list signed with an assertionMethod key of an issuer not trusted for the credential', async () => {
-    // Refused before its proof is checked; accepting that issuer for Acme's credentials reads it.
+    // Refused before its proof is checked; binding the list's URL to that issuer reads it.
     expect(await check(service)).toEqual({ verdict: REFUSED, proofVerdicts: [] });
-    expect(await check(service, { [ACME]: [SERVICE] })).toEqual({ verdict: READ, proofVerdicts: [true] });
+    expect(await check(service, { [SERVICE]: [STATUS_URL] })).toEqual({ verdict: READ, proofVerdicts: [true] });
   });
 
   it("reads the credential issuer's list signed with the key it lists under assertionMethod", async () => {

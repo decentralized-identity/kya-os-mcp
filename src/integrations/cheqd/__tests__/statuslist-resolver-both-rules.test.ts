@@ -84,7 +84,7 @@ describe("CheqdStatusListResolver holds a list to its trusted issuer and to that
   });
 
   it('refuses a list signed with an assertionMethod key of an issuer the resolver does not trust', async () => {
-    await expect(check(otherAssert)).rejects.toThrow(`status list issuer "${OTHER}" is not the expected issuer ("${ACME}")`);
+    await expect(check(otherAssert)).rejects.toThrow(`status list issuer "${OTHER}" does not keep this list's URL: "${ACME}" does, as the issuer this resolver is configured with`);
     // The key is sound: pinned to its issuer, the same list is read.
     expect(await check(otherAssert, OTHER)).toBe(false);
   });

@@ -145,6 +145,11 @@ describe("verifyCard and a checker's reason", () => {
     expect((await verify(statusList(owner))).revocation).toStrictEqual({ revoked: false, fresh: true });
   });
 
+  it('reports no reason a checker gives for a Card it does not revoke', async () => {
+    const result = await verifyCard(card, { statusListChecker: async () => ({ revoked: false, fresh: true, reason: 'all clear' }) });
+    expect(result.revocation).toStrictEqual({ revoked: false, fresh: true });
+  });
+
   it('bounds the reason of a custom checker', async () => {
     const result = await verifyCard(card, { statusListChecker: async () => ({ revoked: true, fresh: false, reason: `a\n${'c'.repeat(1000)}` }) });
     expect(result.revocation).toStrictEqual({ revoked: true, fresh: false, reason: `a\uFFFD${'c'.repeat(254)}\u2026` });

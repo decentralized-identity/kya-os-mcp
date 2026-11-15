@@ -148,7 +148,7 @@ const BINDING_VECTORS: [string, (list: List, credential: Credential) => List, Re
   [
     'status-list/foreign-issuer-list',
     (list, credential) => ({ ...list, issuer: credential.issuer }),
-    /status list issuer .* is not the expected issuer/,
+    /status list issuer .* does not keep this list's URL: .* does, as the issuer of the credential$/,
   ],
   [
     'status-list/purpose-mismatch-list',
@@ -237,14 +237,19 @@ function unsignedListOf(id: string): List {
 
 /**
  * Each negative vector whose list an issuer other than the credential's signed, the issuer the
- * vector has the verifier accept for the credential, and the list the vector carries with its `id`
- * stated: a list from that issuer the verifier reads.
+ * vector has keep the credential's list URL, and the list the vector carries with its `id` stated:
+ * a list from that issuer the verifier reads.
  */
+const urlOf = (input: StatusListInput): string => (input.credential as Credential).credentialStatus.statusListCredential;
 const OTHER_SIGNER_VECTORS: [string, (input: StatusListInput) => string | undefined, () => List][] = [
-  ['status-list/root-no-id-list', (input) => input.trustedRootIssuer, () => undoneListOf(BINDING_VECTORS[0]!)],
+  [
+    'status-list/root-no-id-list',
+    (input) => (input.trustedRootStatusList === urlOf(input) ? input.trustedRootIssuer : undefined),
+    () => undoneListOf(BINDING_VECTORS[0]!),
+  ],
   [
     'status-list/configured-issuer-no-id-list',
-    (input) => input.statusListIssuers?.[(input.credential as Credential).issuer]?.[0],
+    (input) => Object.entries(input.statusListIssuers ?? {}).find(([, bindings]) => bindings.includes(urlOf(input)))?.[0],
     () => unsignedListOf('status-list/foreign-issuer-list'),
   ],
 ];
@@ -255,7 +260,7 @@ describe.each(OTHER_SIGNER_VECTORS)('%s', (id, accepted, stating) => {
   const url = credential.credentialStatus.statusListCredential;
   const { proof: _proof, ...unsigned } = listOf(input);
 
-  it('is a negative vector whose list another issuer signed, which the vector has the verifier accept', () => {
+  it("is a negative vector whose list another issuer signed, which the vector has keep the list's URL", () => {
     expect(byId(id).expected).toBe('fail');
     expect(unsigned.issuer).not.toBe(credential.issuer);
     expect(accepted(input)).toBe(unsigned.issuer);
@@ -281,8 +286,10 @@ describe.each(OTHER_SIGNER_VECTORS)('%s', (id, accepted, stating) => {
       outcome: 'fail',
       detail: `Status check error: status list states no id, but must state the URL it was fetched from ("${url}")`,
     });
-    const { trustedRootIssuer: _root, statusListIssuers: _issuers, ...unconfigured } = input;
-    expect((await adapter.verifyStatusList(unconfigured)).detail).toMatch(/status list issuer .* is not the expected issuer/);
+    const { trustedRootIssuer: _root, trustedRootStatusList: _rootList, statusListIssuers: _issuers, ...unconfigured } = input;
+    expect((await adapter.verifyStatusList(unconfigured)).detail).toMatch(
+      /status list issuer .* does not keep this list's URL: .* does, as the issuer of the credential$/,
+    );
   });
 });
 
@@ -382,7 +389,7 @@ describe('the reference adapter, refusing a list', () => {
   const LONG = 'v'.repeat(100_000);
   const LONG_QUOTED = `"${'v'.repeat(64)}"...`;
   const named: [string, (list: List) => List, string][] = [
-    ['issuer', (list) => ({ ...list, issuer: LONG }), `status list issuer ${LONG_QUOTED} is not the expected issuer ("${credential.issuer}")`],
+    ['issuer', (list) => ({ ...list, issuer: LONG }), `status list issuer ${LONG_QUOTED} does not keep this list's URL: "${credential.issuer}" does, as the issuer of the credential`],
     ['id', (list) => ({ ...list, id: LONG }), `status list id ${LONG_QUOTED} is not the URL it was fetched from ("${url}")`],
     [
       'id, when it is not a string,',

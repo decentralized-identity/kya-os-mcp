@@ -238,8 +238,10 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
       // and the status-list issuers the vector configures the verifier with
       // (suite ≥ 1.4.0). A throw here denies the credential as
       // status_unresolvable.
-      const pinnedRoot =
-        input.trustedRootIssuer === undefined ? {} : { trustedRootIssuer: input.trustedRootIssuer };
+      const pinnedRoot = {
+        ...(input.trustedRootIssuer === undefined ? {} : { trustedRootIssuer: input.trustedRootIssuer }),
+        ...(input.trustedRootStatusList === undefined ? {} : { trustedRootStatusList: input.trustedRootStatusList }),
+      };
       const statusListResolver = {
         checkStatus: async (s: CredentialStatus, context: StatusCheckContext): Promise<boolean> => {
           const list = input.statusLists[s.statusListCredential] as

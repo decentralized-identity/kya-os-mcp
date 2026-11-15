@@ -11,7 +11,7 @@ body: |-
     byte for byte; only the credential's own issuer, when no other is
     accepted, may omit the `id`. §6.6 names the three substitutions this
     leaves open. SPEC.md §6.10, SPEC-ENTITY-CARD.md §4.1, §10.3 and
-    Appendix B, and CONFORMANCE.md L3.11 say the same. The suite gains 22
-    vectors, 90 in all, and `conformance/verify.py` checks every status-list
+    Appendix B, and CONFORMANCE.md L3.11 say the same. The suite gains 27
+    vectors, 95 in all, and `conformance/verify.py` checks every status-list
     vector. UPGRADING.md, "Conformance suite 1.4.0", lists them.
 time: 2026-11-12T13:24:04.000000-06:00

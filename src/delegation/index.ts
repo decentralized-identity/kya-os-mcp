@@ -13,13 +13,14 @@ export * from './vc-jwt-verify.js';
 export * from './bitstring.js';
 export { statusListGzipCodec } from '../utils/statuslist-gzip.js';
 export {
-  acceptedStatusListIssuers,
   acceptEntrySize,
   acceptStatusList,
   statusListExpectationFor,
+  statusListKeeperFor,
   type StatusCheckContext,
   type StatusListExpectation,
   type StatusListIssuers,
+  type StatusListKeeper,
   type StatusListVerdict,
 } from '../utils/statuslist-acceptance.js';
 export * from './statuslist-manager.js';

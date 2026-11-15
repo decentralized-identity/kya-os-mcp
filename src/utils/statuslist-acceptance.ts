@@ -4,36 +4,30 @@
  * list's proof apply all of it: the card revocation checker given `verifyStatusList`, the cheqd
  * status-list resolver and the conformance reference adapter. The readers that verify none, the card
  * checker without `verifyStatusList` and the delegation status-list manager, apply its purpose part
- * alone, since nothing else about the list is authenticated. Each reader decides only whom it trusts.
+ * alone, since nothing else about the list is authenticated.
  *
  * A status list's proof shows only who signed it. W3C Bitstring Status List v1.0 lets that signer
- * differ from the credential's issuer (§2.2), and expects a verifier to trust "the issuer of a
- * verifiable credential, as well as the issuer of the associated BitstringStatusListCredential"
- * (§3.2). Without a check that ties the two together, whoever controls what a status-list URL
- * returns can sign a list of their own with the bit cleared, and its proof verifies. So a list is
- * accepted for an entry only when:
- * - its `issuer` is one the reader accepts for the entry;
+ * differ from the credential's issuer (§2.2), and an informative note in its §3.2 has a verifier
+ * trust the issuer of the credential as well as the issuer of the list. Without a check that ties
+ * the list to the entry, whoever controls what a status-list URL returns can sign a list of their
+ * own with the bit cleared, and its proof verifies. So a list is accepted for an entry only when:
+ * - its `issuer` is the one keeper of the URL the entry names ({@link statusListKeeperFor}), which
+ *   is decided from the verifier's configuration and the signed credentials, never from the list;
  * - its `statusPurpose` includes the entry's (§3.2 step 5), and is one string unless the list is
  *   typed as a Bitstring Status List in both places §2.2 names;
  * - it states, as its `id`, the URL it was fetched from, the entry's `statusListCredential`, byte for
- *   byte (§2.2), unless its issuer is the one issuer the reader accepts and the reader does not
- *   require an `id` (`requireId`).
+ *   byte (§2.2), unless the reader does not require an `id` (`requireId`).
  *
- * Only the `id` binds a list to the URL it is served at. §2.2 makes it optional, so the rule lets a
- * list leave it out only where its issuer is the only issuer accepted for the entry, and such a list
- * can be served in place of another list its own issuer signed. Where the reader accepts more than
- * one issuer, a pinned root or a configured status issuer, every list must state it: a list of any of
- * them, with the bit clear, could otherwise be served at the URL of a list another of them keeps.
- * Nor does the rule tell versions of one list apart: an earlier version, signed before a credential
- * was revoked, can be served in place of the current one.
+ * The `id` binds a list to the URL it is served at, and the keeper binds that URL to one signer.
+ * §2.2 makes the `id` optional, so the rule lets a list leave it out only where nobody but the
+ * credential's own issuer keeps any URL: no other root is pinned and the configuration names no
+ * other issuer ({@link statusListExpectationFor}). Such a list can be served in place of another
+ * list its own issuer signed. Nor does the rule tell versions of one list apart: an earlier version,
+ * signed before a credential was revoked, can be served in place of the current one.
  *
- * A reader that holds a list to the credential it covers expects what
- * {@link statusListExpectationFor} names: an issuer {@link acceptedStatusListIssuers} names (the
- * credential's issuer, its chain's root issuer when the verifier pins that root, and any it is
- * configured to accept for the credential's issuer), so a list may leave its `id` out only when the
- * credential's issuer is the one it names. A reader that answers for one purpose alone first holds
- * the entry to it ({@link acceptEntryPurpose}), and a reader that reads one bit per entry first holds
- * the entry to that size ({@link acceptEntrySize}).
+ * A reader that answers for one purpose alone first holds the entry to it
+ * ({@link acceptEntryPurpose}), and a reader that reads one bit per entry first holds the entry to
+ * that size ({@link acceptEntrySize}).
  *
  * The rule is pure and checks no proof. It means something only together with a proof verified under
  * a key the list's `issuer` lists under `assertionMethod`: until then, every field it reads, the
@@ -41,32 +35,22 @@
  */
 
 import { describeValue } from './describe-value.js';
-import { isPlainObjectOfThisRealm, isRecord, issuerOf } from './guards.js';
+import { isRecord, issuerOf } from './guards.js';
+import {
+  namesAnotherKeeper,
+  statusListKeeperFor,
+  type StatusCheckContext,
+  type StatusListIssuers,
+  type StatusListKeeper,
+} from './statuslist-keeper.js';
 
-/**
- * Status-list issuers a verifier accepts for another issuer's credentials, keyed by the credential
- * issuer's DID: `{ 'did:web:acme.example': ['did:web:status.example'] }`. A credential issuer's own
- * lists need no entry. Off by default: with no map, no other issuer is accepted. A deployment whose
- * lists one status service signs names that service for each credential issuer.
- */
-export type StatusListIssuers = Readonly<Record<string, readonly string[]>>;
-
-/** The credential whose status a status-list reader checks. */
-export interface StatusCheckContext {
-  /** The DID of the credential's issuer: its `issuer`, or `issuer.id`. */
-  credentialIssuer: string;
-  /**
-   * The issuer of the first credential of the credential's delegation chain, named only when the
-   * verifier pins it (`trustedRootIssuers` or `resourceOwner`), or, for an Entity Card, the Card's
-   * responsible party once the Card's accountability check has verified it as that root. The root
-   * can revoke its own credential, which revokes every credential below it, so its lists speak for
-   * every credential of its chains, each stating its `id`. The issuers between the root and the
-   * credential are not named: a credential commits to its parent only by an id the parent's issuer
-   * chose, so whoever presents a chain decides who stands between them, while the root is held to
-   * the verifier's own configuration.
-   */
-  trustedRootIssuer?: string;
-}
+export {
+  assertStatusListIssuers,
+  statusListKeeperFor,
+  type StatusCheckContext,
+  type StatusListIssuers,
+  type StatusListKeeper,
+} from './statuslist-keeper.js';
 
 /** What a status entry expects of the list it names. */
 export interface StatusListExpectation {
@@ -74,13 +58,10 @@ export interface StatusListExpectation {
   statusListCredential: string;
   /** The entry's `statusPurpose`, which the list's `statusPurpose` must include. */
   statusPurpose: string;
-  /** The issuers whose lists may be read for the entry. */
-  acceptedIssuers: readonly string[];
-  /**
-   * Whether every list must state its `id`. Omitted or `false`, a list may leave it out only when its
-   * signer is the one issuer accepted.
-   */
-  requireId?: boolean;
+  /** The one issuer whose list is read at that URL. */
+  keeper: StatusListKeeper;
+  /** Whether the list must state its `id`. */
+  requireId: boolean;
 }
 
 /** Whether a status list may be read for an entry and, when it may not, why. */
@@ -88,45 +69,21 @@ export type StatusListVerdict = { valid: true } | { valid: false; reason: string
 
 /**
  * Apply the acceptance rule to `list`, a fetched status-list credential whose proof the caller
- * verifies as well. The list's `issuer` (a string, or an object's `id`) and its stated `id` are
- * compared exactly; its `statusPurpose` is one string, or a non-empty array of strings on a list
- * typed as a Bitstring Status List v1.0 list in both its `type` and its subject's. A `reason`
- * quotes each value it names as `describeValue` does, as a JSON string of at most its first 64
- * characters, and names a value that is not a string by its type alone, never converting it. It
- * names the issuer first, then the purpose, then the `id`.
+ * verifies as well. The list's `issuer` (a string, or an object's `id`) must be the keeper's DID,
+ * and it and the list's stated `id` are compared exactly; its `statusPurpose` is one string, or a
+ * non-empty array of strings on a list typed as a Bitstring Status List v1.0 list in both its `type`
+ * and its subject's. A `reason` quotes each value it names as `describeValue` does, as a JSON string
+ * of at most its first 64 characters, and names a value that is not a string by its type alone,
+ * never converting it. It names the issuer first, with the keeper and why it keeps the URL, then
+ * the purpose, then the `id`.
  */
 export function acceptStatusList(list: unknown, expected: StatusListExpectation): StatusListVerdict {
   const fields: Record<string, unknown> = isRecord(list) ? list : {};
-  const issuer = issuerOf(fields.issuer);
   return verdict(
-    issuerRejection(issuer, expected.acceptedIssuers) ??
+    keeperRejection(issuerOf(fields.issuer), expected.keeper) ??
       purposeRejection(fields, expected.statusPurpose) ??
-      idRejection(fields.id, mayOmitId(issuer, expected), expected.statusListCredential),
+      idRejection(fields.id, !expected.requireId, expected.statusListCredential),
   );
-}
-
-/**
- * The status-list issuers accepted for the credential `context` names, each once: its issuer, its
- * chain's pinned root issuer, and those `statusListIssuers` lists for its issuer. Only an entry the
- * map owns counts, so an inherited key such as `constructor` adds nobody.
- *
- * @throws TypeError when `statusListIssuers` is malformed, as {@link assertStatusListIssuers} words it.
- */
-export function acceptedStatusListIssuers(
-  context: StatusCheckContext,
-  statusListIssuers?: StatusListIssuers,
-): string[] {
-  assertStatusListIssuers(statusListIssuers);
-  const { credentialIssuer, trustedRootIssuer } = context;
-  const configured =
-    statusListIssuers !== undefined && Object.prototype.hasOwnProperty.call(statusListIssuers, credentialIssuer)
-      ? statusListIssuers[credentialIssuer]
-      : undefined;
-  return distinct([
-    credentialIssuer,
-    ...(trustedRootIssuer === undefined ? [] : [trustedRootIssuer]),
-    ...(configured ?? []),
-  ]);
 }
 
 /**
@@ -134,16 +91,31 @@ export function acceptedStatusListIssuers(
  * `context` names, as each in-tree reader that holds a list to its credential derives it; a custom
  * `StatusListResolver` passes it the same way:
  * `acceptStatusList(list, statusListExpectationFor(status, context, statusListIssuers))`.
+ *
+ * The list must come from the keeper of the entry's URL ({@link statusListKeeperFor}). It may leave
+ * out its `id` only when all of these hold: that keeper is the credential's own issuer, because
+ * nobody else keeps the URL; no root is pinned but that same issuer; and the configuration names
+ * no other issuer. Then the credential's issuer is the only issuer whose list the reader would take
+ * at any URL, so a list without an `id` can stand in for no list another issuer keeps.
+ *
+ * @throws TypeError when `statusListIssuers` is malformed, as {@link assertStatusListIssuers} words it.
  */
 export function statusListExpectationFor(
   entry: { statusListCredential: string; statusPurpose: string },
   context: StatusCheckContext,
   statusListIssuers?: StatusListIssuers,
 ): StatusListExpectation {
+  const keeper = statusListKeeperFor(entry.statusListCredential, context, statusListIssuers);
+  const { credentialIssuer, trustedRootIssuer } = context;
+  const aloneAsIssuer =
+    keeper.why === 'credential-issuer' &&
+    (trustedRootIssuer === undefined || trustedRootIssuer === credentialIssuer) &&
+    !namesAnotherKeeper(statusListIssuers, credentialIssuer);
   return {
     statusListCredential: entry.statusListCredential,
     statusPurpose: entry.statusPurpose,
-    acceptedIssuers: acceptedStatusListIssuers(context, statusListIssuers),
+    keeper,
+    requireId: !aloneAsIssuer,
   };
 }
 
@@ -183,26 +155,6 @@ export function acceptEntrySize(statusSize: unknown): StatusListVerdict {
 }
 
 /**
- * Throw a `TypeError` unless `statusListIssuers` is absent or a plain object whose own values are
- * arrays of strings. A reader checks it when it is configured: a map it could not apply is a
- * configuration error, never a refusal of each list it reads. {@link acceptedStatusListIssuers}
- * checks it as well, so a reader that skips that check meets this error, not another.
- */
-export function assertStatusListIssuers(value: unknown): asserts value is StatusListIssuers | undefined {
-  if (value === undefined) return;
-  if (!isPlainObjectOfThisRealm(value)) {
-    throw new TypeError(
-      'statusListIssuers must be a plain object mapping credential issuer DIDs to arrays of status-list issuer DIDs',
-    );
-  }
-  for (const [credentialIssuer, accepted] of Object.entries(value)) {
-    if (!Array.isArray(accepted) || !accepted.every((did) => typeof did === 'string')) {
-      throw new TypeError(`statusListIssuers[${describeValue(credentialIssuer)}] must be an array of status-list issuer DIDs`);
-    }
-  }
-}
-
-/**
  * The `statusPurpose` part of the rule alone, for a reader that verifies no proof and so cannot hold
  * the list to an issuer or an `id`. A list of a DIFFERENT kind (e.g. a `suspension` list read as
  * `revocation`) must not be accepted: its clear bit would otherwise report "not revoked" from the
@@ -217,28 +169,27 @@ function verdict(reason: string | undefined): StatusListVerdict {
   return reason === undefined ? { valid: true } : { valid: false, reason };
 }
 
-/** `values` without repeats, each where it first comes. */
-function distinct(values: readonly string[]): string[] {
-  return [...new Set(values)];
-}
+/** Why a keeper keeps a URL, as a refusal says it after "as". */
+const KEEPS_AS: Record<StatusListKeeper['why'], string> = {
+  'configured-url': 'the issuer statusListIssuers binds this URL to',
+  'configured-origin': "the issuer statusListIssuers binds this URL's origin to",
+  'root-credential': 'the pinned root whose own credential names it',
+  'credential-issuer': 'the issuer of the credential',
+  'resolver-issuer': 'the issuer this resolver is configured with',
+};
 
-/**
- * How many accepted issuers a refusal names before it counts the rest, so its length does not grow
- * with the verifier's configuration, which the reason would otherwise echo whole.
- */
-const NAMED_ISSUERS = 3;
-
-function issuerRejection(issuer: string | undefined, acceptedIssuers: readonly string[]): string | undefined {
+/** Why a list `issuer` signed may not be read at a URL `keeper` keeps, if it may not. */
+function keeperRejection(issuer: string | undefined, keeper: StatusListKeeper): string | undefined {
   if (!issuer) {
     return 'status list names no issuer';
   }
-  if (acceptedIssuers.includes(issuer)) {
+  if (issuer === keeper.did) {
     return undefined;
   }
-  const accepted = distinct(acceptedIssuers);
-  const named = accepted.slice(0, NAMED_ISSUERS).map(describeValue).join(' or ');
-  const more = accepted.length > NAMED_ISSUERS ? ` and ${accepted.length - NAMED_ISSUERS} more` : '';
-  return `status list issuer ${describeValue(issuer)} is not the expected issuer (${named}${more})`;
+  return (
+    `status list issuer ${describeValue(issuer)} does not keep this list's URL: ` +
+    `${describeValue(keeper.did)} does, as ${KEEPS_AS[keeper.why]}`
+  );
 }
 
 /**
@@ -287,17 +238,9 @@ function isBitstringStatusList(type: unknown, subjectType: unknown): boolean {
 }
 
 /**
- * Whether a list `issuer` signed may leave out its `id`: only when the reader does not require one and
- * every accepted issuer is that signer, so the list can stand in for no list another accepted issuer
- * keeps. The rule reaches this only for an accepted issuer, so it then accepts that issuer alone.
- */
-function mayOmitId(issuer: string | undefined, expected: StatusListExpectation): boolean {
-  return !expected.requireId && expected.acceptedIssuers.every((accepted) => accepted === issuer);
-}
-
-/**
- * `mayOmit`: whether the list may leave its `id` out ({@link mayOmitId}). When the `id` and the URL
- * quote the same once cut, the reason says where they first differ, so it still shows that they do.
+ * `mayOmit`: whether the list may leave its `id` out, which is when the reader does not require
+ * one. When the `id` and the URL quote the same once cut, the reason says where they first differ,
+ * so it still shows that they do.
  */
 function idRejection(listId: unknown, mayOmit: boolean, statusListCredential: string): string | undefined {
   if (listId === undefined ? mayOmit : listId === statusListCredential) {

@@ -15,15 +15,27 @@ const entry = { type: 'BitstringStatusListEntry', statusPurpose: 'revocation', s
 /** The chains, each by its hops' issuers. Raw identities deliberately collide across roles. */
 const CHAINS = [['did:r', 'did:i', 'did:l'], ['did:r', 'did:i', 'did:r'], ['did:r', 'did:r', 'did:l']].map((issuers) => ({ issuers }));
 
-/** Every case on one chain; there is no signer-row verdict. */
-function cases(issuers: readonly string[]) {
+/** The URL the root's own credential names when it is not the list the cases read. */
+const ROOT_OWN = 'https://status.example/root-own';
+/** What a verifier's configuration binds: nothing, the list's URL or its origin to a service, another URL, or the URL to a party of the chain. */
+const SERVICES: StatusListIssuers[] = [
+  {},
+  { 'did:s': [url] },
+  { 'did:s': ['https://status.example'] },
+  { 'did:s': ['https://status.example.evil.example', 'https://status.example/list'], 'did:l': ['https://lists.elsewhere.example'] },
+  { 'did:r': ['https://status.example/other', url] },
+  { 'did:i': [], 'did:l': [url] },
+];
+
+/** Every case on one chain whose root's own credential names `rootList`; there is no signer-row verdict. */
+function cases(issuers: readonly string[], rootList: string) {
   const rows = [];
   const chain = issuers.map((issuer, index) => ({
     issuer: index === 1 ? { id: issuer } : issuer,
-    credentialStatus: entry,
+    credentialStatus: index === 0 ? { ...entry, statusListCredential: rootList } : entry,
   }));
   for (const pin of [undefined, 'did:r', 'did:wrong']) {
-    for (const services of [{}, { 'did:l': ['did:s'] }, { 'did:i': ['did:r', 'did:l'] }] as StatusListIssuers[]) {
+    for (const services of SERVICES) {
       for (const hop of [0, 1, 2]) {
         for (const issuer of ['did:r', 'did:i', 'did:l', 'did:s', 'did:wrong', { id: 'did:l' }, { id: 7 }]) {
           for (const id of [{}, { id: url }, { id: 'https://status.example/list' }, { id: null }]) {
@@ -34,7 +46,7 @@ function cases(issuers: readonly string[]) {
               { type: ['BitstringStatusListCredential'], credentialSubject: { type: 'BitstringStatusList', statusPurpose: ['revocation', null] } },
               { credentialSubject: { statusPurpose: 'suspension' } },
               { credentialSubject: { statusPurpose: null } },
-            ]) rows.push({ chain, hop, pin, services, url, list: { issuer, ...id, ...shape } });
+            ]) rows.push({ chain, hop, pin, services, url, rootList, list: { issuer, ...id, ...shape } });
           }
         }
       }
@@ -60,12 +72,14 @@ describe('independent status authority derivation', () => {
     expect(JSON.parse(output)).toBe(true);
   });
 
-  // One chain per test, 4,536 cases each, keeps each run of the Python port well inside a test's time.
-  it.for(CHAINS)('agrees with Python on the raw chain $issuers: root admission, role aliases, mapping direction and hostile lists', ({ issuers }, test) => {
+  // One chain and one root URL per test, 9,072 cases each, keeps each run of the Python port well inside a test's time.
+  const ROOTED = CHAINS.flatMap((chain) => [url, ROOT_OWN].map((rootList) => ({ ...chain, rootList })));
+  it.for(ROOTED)('agrees with Python on the raw chain $issuers, its root on $rootList: the keeper of the URL, role aliases, bindings and hostile lists', ({ issuers, rootList }, test) => {
     const [python, ...args] = requirePython(test);
-    const rows = cases(issuers);
+    const rows = cases(issuers, rootList);
     const script = fileURLToPath(new URL('../status_list.py', import.meta.url));
-    // The Python port reads no hop but its issuer, so it is sent each hop's issuer, not its status entry.
+    // The Python port reads no hop but its issuer, so it is sent each hop's issuer, and the URL the
+    // root's own entry names beside them, not the status entries.
     const output = execFileSync(python, [...args, '-B', script], {
       input: rows.map((row) => JSON.stringify({ ...row, chain: row.chain.map(({ issuer }) => ({ issuer })) })).join('\n') + '\n',
       encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
@@ -80,6 +94,7 @@ describe('independent status authority derivation', () => {
       const observed = acceptStatusList(row.list, statusListExpectationFor(entry, {
         credentialIssuer: context.credentialIssuer!,
         ...(context.trustedRootIssuer === undefined ? {} : { trustedRootIssuer: context.trustedRootIssuer }),
+        ...(context.trustedRootStatusList === undefined ? {} : { trustedRootStatusList: context.trustedRootStatusList }),
       }, row.services)).valid;
       return observed === expected[i] ? [] : [{ row, observed, expected: expected[i] }];
     });

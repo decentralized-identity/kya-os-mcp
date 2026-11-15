@@ -1,6 +1,6 @@
 /**
- * The status-list acceptance API, `acceptStatusList`, `acceptedStatusListIssuers`, `acceptEntrySize`
- * and `statusListExpectationFor` with their types, is exported from the entries a user needs:
+ * The status-list acceptance API, `acceptStatusList`, `acceptEntrySize`, `statusListExpectationFor`
+ * and `statusListKeeperFor` with their types, is exported from the entries a user needs:
  * `@kya-os/mcp`, `@kya-os/mcp/delegation` for a custom `StatusListResolver`, and `@kya-os/mcp/card`
  * for a custom revocation checker. Each exports the module's own values and types, and no other
  * module re-exports them.
@@ -17,8 +17,8 @@ import * as rootEntry from '../../index.js';
 import { typeErrors } from '../../__tests__/utils/type-errors.js';
 
 const ENTRIES = { root: rootEntry, delegation: delegationEntry, card: cardEntry };
-const VALUES = ['acceptStatusList', 'acceptedStatusListIssuers', 'acceptEntrySize', 'statusListExpectationFor'] as const;
-const TYPES = ['StatusCheckContext', 'StatusListIssuers', 'StatusListExpectation', 'StatusListVerdict'];
+const VALUES = ['acceptStatusList', 'acceptEntrySize', 'statusListExpectationFor', 'statusListKeeperFor'] as const;
+const TYPES = ['StatusCheckContext', 'StatusListIssuers', 'StatusListExpectation', 'StatusListKeeper', 'StatusListVerdict'];
 
 const REPO = fileURLToPath(new URL('../../../', import.meta.url));
 
@@ -89,5 +89,10 @@ describe('the rule on the public entries', () => {
     const reexport = /^export\b[^;]*?\bfrom\s+['"][^'"]*\/statuslist-acceptance\.js['"]/m;
     const reexporters = sources(join(REPO, 'src')).filter((file) => reexport.test(readFileSync(join(REPO, file), 'utf8')));
     expect(reexporters.sort()).toEqual(['src/card/revocation.ts', 'src/delegation/index.ts', 'src/index.ts']);
+    // The keeper rule reaches the entries through the acceptance module, which alone re-exports it.
+    const keeper = /^export\b[^;]*?\bfrom\s+['"][^'"]*\/statuslist-keeper\.js['"]/m;
+    expect(sources(join(REPO, 'src')).filter((file) => keeper.test(readFileSync(join(REPO, file), 'utf8')))).toEqual([
+      'src/utils/statuslist-acceptance.ts',
+    ]);
   });
 });

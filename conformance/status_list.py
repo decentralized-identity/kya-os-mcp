@@ -23,22 +23,44 @@ def issuer(value):
     return None
 
 
-def accepts(document, owner, root, services, url, purpose="revocation"):
-    """A signer is authorized by identity, not by its position in a role table."""
+ORIGIN = re.compile(r"https://[a-z0-9.-]+(:[0-9]{1,5})?")
+
+
+def keeper(url, owner, root, root_list, services):
+    """The one issuer whose list is read at url, and whether it is the owner by default.
+
+    First match: the issuer the configuration binds the exact URL to; the issuer it binds
+    the URL's https origin to, matched on the bytes as written; the pinned root, when its
+    own credential names the URL; the credential's own issuer.
+    """
+    for did, bindings in services.items():
+        if url in bindings:
+            return did, False
+    for did, bindings in services.items():
+        for binding in bindings:
+            if ORIGIN.fullmatch(binding) and any(url.startswith(binding + mark) for mark in "/?#"):
+                return did, False
+    if root is not None and root_list == url:
+        return root, False
+    return owner, True
+
+
+def accepts(document, owner, root, services, url, purpose="revocation", root_list=None):
+    """A list is read only from the keeper of its URL, never from whoever else is trusted."""
     if not isinstance(document, dict) or not isinstance(owner, str) or not owner:
         return False
     signer = issuer(document.get("issuer"))
     if not signer:
         return False
-    others = ([root] if root is not None else []) + services.get(owner, [])
-    if signer != owner and signer not in others:
+    kept_by, by_default = keeper(url, owner, root, root_list, services)
+    if signer != kept_by:
         return False
-    # Only the id binds a list to its URL. The owner's list may leave it out only
-    # when no other issuer is authorized, so it can stand in for no list but its own.
+    # Only the id binds a list to its URL. The owner's list may leave it out only where
+    # nobody else keeps any URL: no other root is pinned and no other issuer is configured.
     if "id" in document:
         if not isinstance(document["id"], str) or document["id"] != url:
             return False
-    elif signer != owner or any(other != owner for other in others):
+    elif not by_default or root not in (None, owner) or any(did != owner for did in services):
         return False
     subject = document.get("credentialSubject")
     if not isinstance(subject, dict):
@@ -57,18 +79,27 @@ def accepts(document, owner, root, services, url, purpose="revocation"):
 def configuration(value):
     """The verifier configuration an input states, as the TypeScript loader holds it.
 
-    A trustedRootIssuer, when present, is a non-empty string, and a statusListIssuers, when
-    present, maps each issuer to a list of strings. Anything else raises ValueError.
+    A trustedRootIssuer and a trustedRootStatusList, when present, are non-empty strings,
+    and a statusListIssuers, when present, maps each issuer, a non-empty key, to a list of
+    URLs, each a string that starts with https:// or http://, none under two issuers.
+    Anything else raises ValueError. The root's URL counts only beside the root.
     """
+    for member in ("trustedRootIssuer", "trustedRootStatusList"):
+        if member in value and not (isinstance(value[member], str) and value[member]):
+            raise ValueError(member + " is not a non-empty string")
     root = value.get("trustedRootIssuer")
-    if "trustedRootIssuer" in value and not (isinstance(root, str) and root):
-        raise ValueError("trustedRootIssuer is not a non-empty string")
     services = value.get("statusListIssuers", {})
     if not isinstance(services, dict) or not all(
-            isinstance(accepted, list) and all(isinstance(did, str) for did in accepted)
-            for accepted in services.values()):
-        raise ValueError("statusListIssuers does not map issuers to lists of strings")
-    return root, services
+            did and isinstance(bindings, list)
+            and all(isinstance(binding, str) and re.match(r"https?://", binding) for binding in bindings)
+            for did, bindings in services.items()):
+        raise ValueError("statusListIssuers does not map issuers to lists of URLs")
+    bound = {}
+    for did, bindings in services.items():
+        for binding in bindings:
+            if bound.setdefault(binding, did) != did:
+                raise ValueError("statusListIssuers binds one URL to two issuers")
+    return root, value.get("trustedRootStatusList"), services
 
 
 def graph_case(case):
@@ -81,7 +112,8 @@ def graph_case(case):
     owner = issuer(chain[case["hop"]]["issuer"])
     root = issuer(chain[0]["issuer"])
     pinned = root if case.get("pin") == root else None
-    return accepts(case["list"], owner, pinned, case.get("services", {}), case["url"])
+    return accepts(case["list"], owner, pinned, case.get("services", {}), case["url"],
+                   root_list=case.get("rootList") if pinned is not None else None)
 
 
 def decode64(value):
@@ -118,9 +150,9 @@ def verify_input(value, canonicalize, verify_signature):
         url = entry["statusListCredential"]
         document = value["statusLists"][url]
         purpose = entry["statusPurpose"]
-        root, services = configuration(value)
+        root, root_list, services = configuration(value)
         if not isinstance(purpose, str) or not accepts(
-                document, issuer(credential["issuer"]), root, services, url, purpose):
+                document, issuer(credential["issuer"]), root, services, url, purpose, root_list):
             return False
         documents = value["didDocuments"]
         if not verify_document(credential, documents, canonicalize, verify_signature):

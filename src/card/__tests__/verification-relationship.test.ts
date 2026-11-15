@@ -78,7 +78,7 @@ describe('the verification relationship of a status list key', () => {
   });
 
   it('rejects a key listed under assertionMethod that another DID controls, by reference or embedded', async () => {
-    const foreign = { ...methodOf(key), controller: 'did:web:other.example' };
+    const foreign = methodOf(key, { controller: 'did:web:other.example' });
     expect(await verifyList(documentOf({ verificationMethod: [foreign], assertionMethod: [key.method] }), list)).toBe(false);
     expect(await verifyList(documentOf({ assertionMethod: [foreign] }), list)).toBe(false);
   });
@@ -195,7 +195,7 @@ describe('the verification relationship of a delegation hop key', () => {
   it('rejects a hop signed with the key Acme lists under assertionMethod when another DID controls it', async () => {
     const assert = acmeKey('assert-1');
     const controlledBy = (controller: string) =>
-      resolverWith(documentOf({ verificationMethod: [{ ...methodOf(assert), controller }], assertionMethod: [assert.method] }));
+      resolverWith(documentOf({ verificationMethod: [methodOf(assert, { controller })], assertionMethod: [assert.method] }));
     const granted = hop({
       issuer: assert,
       invoker: identity().did,

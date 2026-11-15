@@ -12,6 +12,7 @@ import {
   type VerificationRelationship,
 } from '../verification-relationship.js';
 import type { DIDDocument, VerificationMethod } from '../vc-verifier.types.js';
+import { documentOf, keylessMethod } from '../../__tests__/utils/did-documents.js';
 
 const ownMap = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -74,7 +75,7 @@ const sameSelection = (a: AssertionMethodSelection, b: AssertionMethodSelection)
 const did = 'did:web:reference.example';
 /** Another DID exactly as long as `did`, so that only its characters tell the two apart. */
 const sameLength = 'did:web:elsewhere.example';
-const vm = (id: string, controller = did) => ({ id, type: 'JsonWebKey', controller });
+const vm = (id: string, controller = did) => keylessMethod(id, controller);
 const entries: unknown[] = [null, 7, [], { id: 7 }, '#a', `${did}#a`, '#missing', did, 'bad',
   vm('#a'), vm(`${did}#a`), vm('#a', 'did:web:other.example'), { id: '#a' }, vm('#b'), vm(did),
   vm(`${did}/path#a`), vm('did:web:other.example#a')];
@@ -111,8 +112,8 @@ describe('lookup agrees with an independent reference', () => {
   it('exhausts every pair of malformed, duplicate, embedded and referenced entries', () => {
     const found: string[] = [];
     for (const published of entries) for (const first of entries) for (const second of entries) {
-      found.push(...disagreements({ id: did, verificationMethod: [published], assertionMethod: [first, second],
-        authentication: [vm('#b')] } as DIDDocument));
+      found.push(...disagreements(documentOf({ verificationMethod: [published], assertionMethod: [first, second],
+        authentication: [vm('#b')] }, did)));
     }
     expect(found.slice(0, 5)).toEqual([]);
   });
@@ -124,11 +125,10 @@ describe('lookup agrees with an independent reference', () => {
     const list = () => Array.from({ length: random(7) }, () => generated[random(generated.length)]);
     const found: string[] = [];
     for (let i = 0; i < 2_000; i++) {
-      const doc = JSON.parse(JSON.stringify({
-        id: i % 11 === 0 ? 'did:web:other.example' : did,
+      const doc = JSON.parse(JSON.stringify(documentOf({
         verificationMethod: list(),
         ...Object.fromEntries(relationships.map(name => [name, random(5) === 0 ? null : list()])),
-      })) as DIDDocument;
+      }, i % 11 === 0 ? 'did:web:other.example' : did))) as DIDDocument;
       found.push(...disagreements(doc, i % 13 === 0 ? `${did}#fragment` : did));
     }
     expect(found.slice(0, 5)).toEqual([]);

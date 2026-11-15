@@ -9,7 +9,7 @@ import { describe, it, expect, vi } from "vitest";
 import { checkCredentialStatus, validateBasicProperties, verifySignature } from "../vc-verification-checks.js";
 import type { SignatureVerificationFunction } from "../vc-verifier.types.js";
 import type { CredentialStatus, DelegationCredential } from "../../types/protocol.js";
-import { issuerDidDocument } from "../../__tests__/utils/did-documents.js";
+import { issuerDidDocument, methodOf } from "../../__tests__/utils/did-documents.js";
 
 const ISSUER = "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK";
 
@@ -166,12 +166,8 @@ describe("refusal reasons quote what the credential chose as describeValue does"
 
 describe("verifySignature: fail-closed paths", () => {
   const verificationMethodId = `${ISSUER}#${ISSUER.slice("did:key:".length)}`;
-  const issuerDocument = issuerDidDocument({
-    id: verificationMethodId,
-    type: "Ed25519VerificationKey2020",
-    controller: ISSUER,
-    publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo" },
-  });
+  const publicKey = Buffer.from("11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo", "base64url").toString("base64");
+  const issuerDocument = issuerDidDocument(methodOf({ did: ISSUER, kid: verificationMethodId, publicKey }));
   const resolver = { resolve: async () => issuerDocument };
 
   it("rejects a credential with no proof before calling the signature verifier", async () => {

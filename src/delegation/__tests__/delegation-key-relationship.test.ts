@@ -98,7 +98,7 @@ describe('the Data Integrity path', () => {
   it('rejects a key Acme lists under assertionMethod that another DID controls, saying so, or that has no type', async () => {
     const { type: _type, ...untyped } = methodOf(assert);
     const published: [Record<string, unknown>, string][] = [
-      [{ ...methodOf(assert), controller: OTHER }, anotherDidReason(assert.kid, 'controller')],
+      [methodOf(assert, { controller: OTHER }), anotherDidReason(assert.kid, 'controller')],
       [untyped, `Verification method "${assert.kid}" not found under assertionMethod of "${ACME}"`],
     ];
     for (const [method, reason] of published) {
@@ -251,7 +251,7 @@ describe('the VC-JWT path', () => {
   it('requires a kid when the first assertion entry is dangling, malformed or ambiguous', async () => {
     const good = methodOf(assert);
     for (const entry of ['#gone', 7, { id: '#bad' }, '#twice']) {
-      const document = documentOf({ verificationMethod: [good, { ...good, id: '#twice' }, { ...good, id: '#twice' }],
+      const document = documentOf({ verificationMethod: [good, methodOf(assert, { id: '#twice' }), methodOf(assert, { id: '#twice' })],
         assertionMethod: [entry, assert.kid] });
       expect(await verify(document, await signedJwt(assert)))
         .toMatchObject({ valid: false, stage: 'signature', reason: noUsableFirstEntry(QUOTED_ACME) });
@@ -272,7 +272,7 @@ describe('the VC-JWT path', () => {
   });
 
   it('rejects a key Acme lists under assertionMethod that another DID controls, with a kid or without, saying so', async () => {
-    const document = documentOf({ verificationMethod: [{ ...methodOf(assert), controller: OTHER }], assertionMethod: [assert.kid] });
+    const document = documentOf({ verificationMethod: [methodOf(assert, { controller: OTHER })], assertionMethod: [assert.kid] });
     for (const kid of [assert.kid, undefined]) {
       expect(await verify(document, await signedJwt(assert, { kid })))
         .toMatchObject({ valid: false, stage: 'signature', reason: anotherDidReason(assert.kid, 'controller') });

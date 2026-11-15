@@ -13,7 +13,7 @@ import { CheqdStatusListResolver } from '../statuslist-resolver.js';
 import { createRealCryptoProvider, createRealStatusListManager } from '../../../__tests__/audit/helpers/crypto-helpers.js';
 import { keyOf } from '../../../__tests__/utils/delegation-credentials.js';
 import { statusListGzipCodec } from '../../../utils/statuslist-gzip.js';
-import { anotherDidReason, methodOf } from '../../../__tests__/utils/did-documents.js';
+import { anotherDidReason, documentOf, issuerDidDocument, keylessMethod, methodOf } from '../../../__tests__/utils/did-documents.js';
 import type { AgentIdentity, FetchProvider } from '../../../providers/base.js';
 import type { DIDDocument } from '../../../delegation/vc-verifier.types.js';
 import type { NodeCryptoProvider } from '../../../__tests__/utils/node-crypto-provider.js';
@@ -45,7 +45,7 @@ describe('CheqdStatusListResolver and the verification relationship of the list 
 
   /** The issuer's document: its keys published, the relationships as given. */
   const documentWith = (relationships: Record<string, unknown>): DIDDocument =>
-    ({ id: ISSUER, verificationMethod: [published(login), published(assert), published(second)], ...relationships }) as DIDDocument;
+    documentOf({ verificationMethod: [published(login), published(assert), published(second)], ...relationships }, ISSUER);
 
   const listResolverFor = (document: DIDDocument) =>
     new CheqdStatusListResolver({
@@ -148,7 +148,7 @@ describe('CheqdStatusListResolver and the verification relationship of the list 
   });
 
   it('rejects a list whose listed method carries no key it can read, without a signature check', async () => {
-    const keyless = { id: `${ISSUER}#key-3`, type: 'Ed25519VerificationKey2020', controller: ISSUER };
+    const keyless = keylessMethod(`${ISSUER}#key-3`, ISSUER);
     const named = (proof: Record<string, unknown>) => ({ ...proof, verificationMethod: keyless.id });
     const verify = vi.spyOn(crypto, 'verify');
     try {
@@ -166,9 +166,9 @@ describe('CheqdStatusListResolver and the verification relationship of the list 
   it("rejects a list when the resolver returns another DID's document, whatever it lists, saying so of a key it lists as the issuer's", async () => {
     // The other DID's own document, its key under its own DID and controlled by it: only the
     // document's id tells it from a document of the issuer.
-    const othersOwn = { id: OTHER, verificationMethod: [published(other, OTHER)], assertionMethod: [other.kid] } as DIDDocument;
+    const othersOwn = issuerDidDocument(published(other, OTHER));
     for (const proof of [undefined, unnamed]) await expect(check(othersOwn, other, proof)).rejects.toThrow(refusalFor(proof));
-    const listingIssuers = { id: OTHER, verificationMethod: [published(assert)], assertionMethod: [assert.kid] } as DIDDocument;
+    const listingIssuers = documentOf({ verificationMethod: [published(assert)], assertionMethod: [assert.kid] }, OTHER);
     for (const proof of [undefined, unnamed]) {
       await expect(check(listingIssuers, assert, proof)).rejects.toThrow(new Error(anotherDidReason(assert.kid, "document's id", { did: ISSUER, other: OTHER })));
     }
@@ -203,9 +203,9 @@ describe('CheqdStatusListResolver and the verification relationship of the list 
   });
 
   it('rejects a list signed with a key the issuer lists under assertionMethod that another DID controls, saying so', async () => {
-    const document = { id: ISSUER, verificationMethod: [published(login), published(assert, OTHER)], assertionMethod: [assert.kid] };
+    const document = documentOf({ verificationMethod: [published(login), published(assert, OTHER)], assertionMethod: [assert.kid] }, ISSUER);
     for (const proof of [undefined, unnamed]) {
-      await expect(check(document as DIDDocument, assert, proof)).rejects.toThrow(new Error(anotherDidReason(assert.kid, 'controller', { did: ISSUER, other: OTHER })));
+      await expect(check(document, assert, proof)).rejects.toThrow(new Error(anotherDidReason(assert.kid, 'controller', { did: ISSUER, other: OTHER })));
     }
   });
 });

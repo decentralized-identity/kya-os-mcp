@@ -12,7 +12,7 @@ import * as guards from '../../utils/guards.js';
 import * as descriptions from '../../utils/describe-value.js';
 import * as shapes from '../verification-method-shape.js';
 import type { DIDDocument } from '../vc-verifier.types.js';
-import { keylessMethod as method } from '../../__tests__/utils/did-documents.js';
+import { documentOf, keylessMethod as method } from '../../__tests__/utils/did-documents.js';
 import { compileMeteredLookup } from '../../__tests__/utils/lookup-work.js';
 
 const source = readFileSync(new URL('../verification-relationship.ts', import.meta.url), 'utf8');
@@ -54,15 +54,14 @@ function documentAt(scale: number, didUnits = 250 * scale, keyUnits = 25 * scale
   const did = `did:web:example.com:${'a'.repeat(didUnits)}`;
   const key = `#key-${'k'.repeat(keyUnits)}`;
   const other = 'did:web:other.example';
-  const text = JSON.stringify({
-    id: did,
+  const text = JSON.stringify(documentOf({
     verificationMethod: [...Array.from({ length: 50 * scale }, (_, i) => method(`#method-${i}`, other)), method(key, did)],
     assertionMethod: [
       `${did}${key}`,
       ...Array.from({ length: 200 * scale }, (_, i) => `#reference-${i}`),
       ...Array.from({ length: 50 * scale }, (_, i) => method(`#embedded-${i}`, other)),
     ],
-  });
+  }, did));
   return { document: JSON.parse(text) as DIDDocument, did, key, size: text.length };
 }
 

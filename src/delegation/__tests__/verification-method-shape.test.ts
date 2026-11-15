@@ -7,12 +7,9 @@
 
 import { describe, it, expect } from 'vitest';
 import { hasIdTypeAndController } from '../verification-method-shape.js';
+import { keylessMethod } from '../../__tests__/utils/did-documents.js';
 
-const method = {
-  id: 'did:web:acme.example#key-1',
-  type: 'Ed25519VerificationKey2020',
-  controller: 'did:web:acme.example',
-};
+const method = keylessMethod('did:web:acme.example#key-1');
 
 describe('hasIdTypeAndController', () => {
   it('accepts a map with a non-empty string id, type and controller, whatever else it carries', () => {

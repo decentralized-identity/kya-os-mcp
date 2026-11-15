@@ -16,16 +16,15 @@ import {
   createRealStatusListManager,
   type RealStatusListSetup,
 } from '../../../__tests__/audit/helpers/crypto-helpers.js';
-import { createDidKeyResolver } from '../../../delegation/did-key-resolver.js';
 import { statusListGzipCodec } from '../../../utils/statuslist-gzip.js';
 import { base58Encode } from '../../../utils/base58.js';
-import { base64urlDecodeToBytes, base64urlEncodeFromBytes } from '../../../utils/base64.js';
+import { base64urlEncodeFromBytes } from '../../../utils/base64.js';
 import { canonicalizeJSON } from '../../../delegation/utils.js';
 import type { AgentIdentity } from '../../../providers/base.js';
 import type { FetchProvider } from '../../../providers/base.js';
 import type { DIDResolver } from '../../../delegation/vc-verifier.types.js';
 import type { NodeCryptoProvider } from '../../../__tests__/utils/node-crypto-provider.js';
-import { issuerDidDocument } from '../../../__tests__/utils/did-documents.js';
+import { issuerDidDocument, methodOf } from '../../../__tests__/utils/did-documents.js';
 import type {
   CredentialStatus,
   StatusList2021Credential,
@@ -90,19 +89,10 @@ describe('CheqdStatusListResolver (real crypto, stubbed transport)', () => {
 
     // Publish the issuer's key MULTIBASE-ONLY (cheqd DID documents publish
     // publicKeyMultibase, not JWKs) under the kid the signing function names.
-    const didKeyDoc = await createDidKeyResolver().resolve(issuerIdentity.did);
-    const jwk = didKeyDoc?.verificationMethod?.[0]?.publicKeyJwk as { x: string };
-    const raw = base64urlDecodeToBytes(jwk.x);
-    const multibase = `z${base58Encode(new Uint8Array([0xed, 0x01, ...raw]))}`;
     didResolver = {
       async resolve(did: string) {
         if (did !== issuerIdentity.did) return null;
-        return issuerDidDocument({
-          id: issuerIdentity.kid,
-          type: 'Ed25519VerificationKey2020',
-          controller: did,
-          publicKeyMultibase: multibase,
-        });
+        return issuerDidDocument(methodOf(issuerIdentity, { form: 'multibase' }));
       },
     };
   });

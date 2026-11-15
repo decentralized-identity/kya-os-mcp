@@ -13,7 +13,7 @@ import { CompactJwsAuditSignatureVerifier } from '../audit/crypto.js';
 import { buildCardProof, verifyCardProof, verifyHttpSignature, type ProofSigner } from '../card/index.js';
 import { verifyVcJwtSignature } from '../delegation/vc-jwt-verify.js';
 import type { DIDResolver } from '../delegation/vc-verifier.js';
-import { issuerDidDocument } from './utils/did-documents.js';
+import { issuerDidDocument, methodOf } from './utils/did-documents.js';
 import { base64urlEncodeFromBytes } from '../utils/base64.js';
 import { generateDidKeyFromBytes } from '../utils/did-helpers.js';
 import { AUD, NONCE, PROOF_KEY, REQ, clock, deps, keypair } from '../card/__tests__/proof-helpers.js';
@@ -43,7 +43,7 @@ describe.each([
     const did = generateDidKeyFromBytes(smallOrderKey);
     const kid = `${did}#key-1`;
     const resolver: DIDResolver = {
-      resolve: async () => issuerDidDocument({ id: kid, type: 'JsonWebKey2020', controller: did, publicKeyJwk: okp(smallOrderKey) }),
+      resolve: async () => issuerDidDocument(methodOf({ did, kid, publicKey: Buffer.from(smallOrderKey).toString('base64') })),
     };
     const jwt = forgedJws(
       { alg: 'EdDSA', kid },
@@ -59,12 +59,7 @@ describe.each([
     const kid = `${did}#key-1`;
     const resolver: DIDResolver = {
       resolve: async () =>
-        issuerDidDocument({
-          id: kid,
-          type: 'Ed25519VerificationKey2020',
-          controller: did,
-          publicKeyMultibase: did.slice('did:key:'.length),
-        }),
+        issuerDidDocument(methodOf({ did, kid, publicKey: Buffer.from(smallOrderKey).toString('base64') }, { form: 'multibase' })),
     };
     const result = await verifyVcJwtSignature(forgedJws({ alg: 'EdDSA', kid }, '{}'), did, kid, resolver);
     expect(result.valid).toBe(false);

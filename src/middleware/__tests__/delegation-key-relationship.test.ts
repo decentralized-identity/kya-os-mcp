@@ -17,7 +17,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { delegationGate, type GateOptions, type Resolution } from './helpers/delegation-gate.js';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
-import { ACME, acmeDocument, methodOf } from '../../__tests__/utils/did-documents.js';
+import { ACME, acmeDocument, documentOf, methodOf } from '../../__tests__/utils/did-documents.js';
 import {
   credentialNaming,
   delegationRecord,
@@ -106,7 +106,7 @@ describe('the delegation gate and the key that signed the delegation', () => {
     // deployment configures may serve one, and the gate holds every key it retrieves to the method
     // shape, and to a controller that is the issuer's DID.
     const { type: _type, ...untyped } = methodOf(assert);
-    for (const published of [untyped as VerificationMethod, { ...methodOf(assert), controller: 'did:web:other.example' }]) {
+    for (const published of [untyped as VerificationMethod, methodOf(assert, { controller: 'did:web:other.example' })]) {
       const gate = await acmeGate(resolving({ ...acmeDocument(login, assert), verificationMethod: [methodOf(login), published] }));
       for (const delegation of [await signedCredential(assert), await signedJwt(assert, { kid: assert.kid }), await signedJwt(assert)]) {
         expect(await gate.call(delegation)).toBe('delegation_invalid');
@@ -122,7 +122,7 @@ describe('the delegation gate and the key that signed the delegation', () => {
     // it (src/delegation/__tests__/verification-relationship-scaling.test.ts).
     const large: DIDDocument = {
       ...acmeDocument(login, assert),
-      verificationMethod: [{ ...methodOf(assert), id: `${ACME}#unlisted` }, methodOf(login), methodOf(assert)],
+      verificationMethod: [methodOf(assert, { id: `${ACME}#unlisted` }), methodOf(login), methodOf(assert)],
       assertionMethod: [...Array.from({ length: 100_000 }, (_, i) => `#absent-${i}`), assert.kid],
     };
     const gate = await acmeGate(serving(large));
@@ -140,7 +140,7 @@ describe('the delegation gate and the key that signed the delegation', () => {
     const did = `did:web:long.example:${'a'.repeat(400_000 - 'did:web:long.example:'.length)}`;
     const key = await keyOf(did, 'key-1');
     const references = Array.from({ length: 60_000 }, (_, i) => `#${String(i).padStart(5, '0')}`);
-    const gate = await acmeGate(serving({ id: did, assertionMethod: references } as DIDDocument));
+    const gate = await acmeGate(serving(documentOf({ assertionMethod: references }, did)));
     const credential = await signedCredential(key);
     const quoted = `"${did.slice(0, 64)}"...`;
     const refusals: [unknown, string][] = [

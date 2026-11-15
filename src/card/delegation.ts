@@ -389,9 +389,10 @@ export interface DelegationChainEvaluation extends DelegationChainResult {
 /** Validate structure AND revocation: run {@link validateDelegationChain}, then (only if it passes —
  *  fail-closed) cascade the injected {@link BitstringRevocationChecker} root→leaf via
  *  {@link evaluateRevocationChain}, naming each hop's issuer and, when `ctx.resourceOwner` pins it, the
- *  chain's root. A revoked ancestor invalidates the subtree. No hop proof is checked here, so those
- *  issuers are only as authentic as the proofs the caller verifies ({@link verifyRequestDelegation}
- *  verifies them before revocation). */
+ *  chain's root with the status-list URL the root hop's own entry names. A revoked ancestor
+ *  invalidates the subtree. No hop proof is checked here, so those issuers, and that URL, are only
+ *  as authentic as the proofs the caller verifies ({@link verifyRequestDelegation} verifies them
+ *  before revocation). */
 export async function evaluateDelegationChain(
   chain: DelegationChain,
   check: BitstringRevocationChecker,

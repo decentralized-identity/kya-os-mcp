@@ -7,6 +7,24 @@
 
 const CHECKER = "the revocation checker's answer";
 
+/**
+ * Bare answers that are neither `true` nor `false`, as a `StatusListResolver` or a status-list
+ * manager may give one, each with how a reason names it.
+ */
+export const NOT_BOOLEANS: readonly (readonly [string, unknown, string])[] = [
+  ['undefined', undefined, 'of type undefined'],
+  ['null', null, 'of type null'],
+  ['0', 0, 'of type number'],
+  ['1', 1, 'of type number'],
+  ['NaN', Number.NaN, 'of type number'],
+  ['an empty string', '', '""'],
+  ['the string "false"', 'false', '"false"'],
+  ['the string "true"', 'true', '"true"'],
+  ['an empty object', {}, 'of type object'],
+  ['an array', [], 'of type array'],
+  ['a boxed false', new Boolean(false), 'of type object'],
+];
+
 /** Answers that are not an object, each with how a reason names it. */
 export const NOT_OBJECT_ANSWERS: readonly (readonly [string, unknown, string])[] = [
   ['undefined', undefined, `${CHECKER} (of type undefined) is not an object`],

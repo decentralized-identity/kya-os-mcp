@@ -223,6 +223,7 @@ On 1.22.0 each answer was read by its truthiness, so a credential passed on `und
 An answer's `reason` and `revokedAncestor` are now used only when they are strings.
 Each member of a `RevocationChecker`'s answer is read once, and an answer with a member whose getter throws is refused as well, with a reason that names the member, such as `Revocation status of delegation "del-1" could not be read: the revoked member of the revocation checker's answer threw when it was read`; `validateDelegationChain` returns that refusal and does not reject, and the delegation gate answers with it.
 `withStatusCache` does not keep an answer that is not a boolean, so the next check asks its resolver again.
+`CascadingRevocationManager` reads what its status list's `checkStatus` answers the same way: `isRevoked` reports a delegation as revoked, itself or through the ancestor concerned, when the answer is neither `true` nor `false`, with the reason `Credential status could not be read: the status list resolver's answer (<v>) is neither true nor false`, and does not throw on it; on 1.22.0 it read the answer by its truthiness, so `undefined`, `null`, `0` or `""` left the delegation reading as live.
 A resolver or checker written in TypeScript against the library's types already answers a boolean and needs no change; make any other return `true` or `false`, or throw when it cannot tell.
 
 #### A `BitstringRevocationChecker` whose answer is not `{ revoked, fresh }` with literal booleans

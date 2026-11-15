@@ -10,7 +10,7 @@ import { createRealSignatureVerifier } from '../../__tests__/audit/helpers/crypt
 import { delegationRecord, keyOf, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
-import { countingAnswer, THROWING_ANSWERS, throwingMember } from '../../__tests__/utils/revocation-answers.js';
+import { countingAnswer, NOT_BOOLEANS, THROWING_ANSWERS, throwingMember } from '../../__tests__/utils/revocation-answers.js';
 import type { AgentIdentity } from '../../providers/base.js';
 import type { CredentialStatus } from '../../types/protocol.js';
 import { validateDelegationChain, type RevocationChecker } from '../chain-enforcement.js';
@@ -25,21 +25,6 @@ const STATUS: CredentialStatus = {
   statusListIndex: '7',
   statusListCredential: 'https://status.example/1',
 };
-
-/** Answers that are neither `true` nor `false`, each with how a reason names it. */
-const NOT_BOOLEANS: readonly (readonly [string, unknown, string])[] = [
-  ['undefined', undefined, 'of type undefined'],
-  ['null', null, 'of type null'],
-  ['0', 0, 'of type number'],
-  ['1', 1, 'of type number'],
-  ['NaN', Number.NaN, 'of type number'],
-  ['an empty string', '', '""'],
-  ['the string "false"', 'false', '"false"'],
-  ['the string "true"', 'true', '"true"'],
-  ['an empty object', {}, 'of type object'],
-  ['an array', [], 'of type array'],
-  ['a boxed false', new Boolean(false), 'of type object'],
-];
 
 let issuer: AgentIdentity;
 beforeAll(async () => {

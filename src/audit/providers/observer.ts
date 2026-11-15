@@ -67,7 +67,7 @@ export class MemoryAuditCheckpointObserver implements AuditCheckpointObserverPro
   private async publishSerialized(
     checkpoint: SignedAuditCheckpointV1,
   ): Promise<AuditObservationReceiptV1> {
-    if (!(await this.config.verifyCheckpoint(checkpoint))) {
+    if ((await this.config.verifyCheckpoint(checkpoint)) !== true) {
       throw new AuditProtocolError(
         AUDIT_ERROR_CODES.CHECKPOINT_INVALID,
         'Observer rejected an invalid checkpoint',
@@ -102,7 +102,7 @@ export class MemoryAuditCheckpointObserver implements AuditCheckpointObserverPro
       // as long as tree consistency with its last observation verifies
       // cryptographically. The consistency proof, not the checkpoint chain
       // link, is the split-view guarantee.
-      if (!(await this.config.verifyConsistency(existing.checkpoint, checkpoint))) {
+      if ((await this.config.verifyConsistency(existing.checkpoint, checkpoint)) !== true) {
         throw new AuditProtocolError(
           AUDIT_ERROR_CODES.CHECKPOINT_CONFLICT,
           'Checkpoint does not consistently extend the previously observed tree',

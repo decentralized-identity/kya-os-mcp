@@ -13,6 +13,16 @@ import { sanitizeForMessage } from './message-text.js';
 /** A verdict as a verifier holds it: `valid` is a boolean, and a refusal's `reason` is bounded text. */
 export type Verdict = { readonly valid: true } | { readonly valid: false; readonly reason?: string };
 
+/** The refusal of a verdict of `who` that could not be read, for the reason `why`. */
+function unreadableVerdict(who: string, why: string): Verdict {
+  return { valid: false, reason: `The verdict of ${who} could not be read: ${why}` };
+}
+
+/** The refusal of an answer of `who` one of whose members threw when it was read. */
+export function verdictReadThrew(who: string): Verdict {
+  return unreadableVerdict(who, 'reading its answer threw');
+}
+
 /**
  * The verdict `answer`, which `who` gave, comes to. It is valid only when `answer` is an object
  * whose `valid` is the literal `true`. On the literal `false` it is a refusal with the `reason` the
@@ -23,24 +33,18 @@ export type Verdict = { readonly valid: true } | { readonly valid: false; readon
  * nothing is converted, so no answer makes this throw.
  */
 export function readVerdict(who: string, answer: unknown): Verdict {
-  const unreadable = `The verdict of ${who} could not be read: `;
-  if (!isRecord(answer)) {
-    return { valid: false, reason: `${unreadable}its answer (${describeValue(answer)}) is not an object` };
-  }
+  if (!isRecord(answer)) return unreadableVerdict(who, `its answer (${describeValue(answer)}) is not an object`);
   let valid: unknown;
   let reason: unknown;
   try {
     valid = answer.valid;
     reason = answer.reason;
   } catch {
-    return { valid: false, reason: `${unreadable}reading its answer threw` };
+    return verdictReadThrew(who);
   }
   if (valid === true) return { valid: true };
   if (valid !== false) {
-    return {
-      valid: false,
-      reason: `${unreadable}the valid member of its answer (${describeValue(valid)}) is neither true nor false`,
-    };
+    return unreadableVerdict(who, `the valid member of its answer (${describeValue(valid)}) is neither true nor false`);
   }
   return typeof reason === 'string' ? { valid: false, reason: sanitizeForMessage(reason) } : { valid: false };
 }

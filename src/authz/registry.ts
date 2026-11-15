@@ -35,13 +35,14 @@ export class AuthorizationServerRegistry {
 
   /**
    * Resolve the adapter that must run for a tool protection. Returns undefined
-   * when the tool needs no authorization (`type: 'none'`) or no adapter is
-   * registered for its requirement type.
+   * when the tool needs no authorization (`type: 'none'`), no adapter is
+   * registered for its requirement type, or the adapter's `isRequired` answers
+   * the literal `false`: on any other answer the adapter runs.
    */
   resolve(protection: ToolProtection): AuthorizationServerAdapter | undefined {
     if (protection.requirement.type === 'none') return undefined;
     const adapter = this.adapters.get(protection.requirement.type);
-    return adapter?.isRequired(protection) ? adapter : undefined;
+    return adapter?.isRequired(protection) === false ? undefined : adapter;
   }
 
   /** Freeze the registry; subsequent registration throws. */

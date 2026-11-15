@@ -171,7 +171,7 @@ export class MemoryAuditEvidenceProvider implements AuditEvidenceProvider {
 
   async get(ref: EvidenceRef, context: EvidenceAccessContext): Promise<Uint8Array | null> {
     if (this.options.authorizeAccess !== undefined &&
-      !(await this.options.authorizeAccess({ ref, context }))) {
+      (await this.options.authorizeAccess({ ref, context })) !== true) {
       await this.options.onAccess?.({ ref, context, result: 'denied' });
       throw new AuditProtocolError(
         AUDIT_ERROR_CODES.EVIDENCE_ACCESS_DENIED,

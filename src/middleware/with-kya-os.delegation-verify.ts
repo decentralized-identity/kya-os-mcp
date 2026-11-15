@@ -232,7 +232,7 @@ export function createDelegationVerification(
     const pubKeyBytes = base64urlDecodeToBytes(jwk.x);
     const pubKeyBase64 = bytesToBase64(pubKeyBytes);
 
-    const valid = await cryptoProvider.verify(data, sigBytes, pubKeyBase64);
+    const valid = (await cryptoProvider.verify(data, sigBytes, pubKeyBase64)) === true;
     return {
       valid,
       reason: valid ? undefined : "Signature verification failed",

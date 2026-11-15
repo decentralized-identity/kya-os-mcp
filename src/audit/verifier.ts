@@ -531,11 +531,11 @@ export class AuditArtifactVerifier {
     if (digest !== validatedReceipt.observationDigest) {
       reasons.add(AUDIT_REASON_CODES.OBSERVATION_DIGEST_MISMATCH);
     }
-    if (!(await this.options.signatures.verify(
+    if ((await this.options.signatures.verify(
       canonicalizeJsonBytes(core),
       validatedReceipt.jws,
       core.observer,
-    ))) {
+    )) !== true) {
       reasons.add(AUDIT_REASON_CODES.OBSERVATION_SIGNATURE_INVALID);
     }
     return dimension(verdictOf(reasons), reasons);
@@ -591,11 +591,11 @@ export class AuditArtifactVerifier {
     if (expectedDigest !== validated.checkpointDigest) {
       reasons.add(AUDIT_REASON_CODES.CHECKPOINT_DIGEST_MISMATCH);
     }
-    if (!(await this.options.signatures.verify(
+    if ((await this.options.signatures.verify(
       canonicalizeJsonBytes(core),
       validated.jws,
       core.issuer,
-    ))) {
+    )) !== true) {
       reasons.add(AUDIT_REASON_CODES.CHECKPOINT_SIGNATURE_INVALID);
     }
     return { kind: 'checked', core, reasons };
@@ -671,11 +671,11 @@ export class AuditArtifactVerifier {
     if (!exactJson(expectedReceipt, entry.recorderReceipt.core)) {
       reasons.add(AUDIT_REASON_CODES.RECEIPT_MISMATCH);
     }
-    if (!(await this.options.signatures.verify(
+    if ((await this.options.signatures.verify(
       canonicalizeJsonBytes(entry.recorderReceipt.core),
       entry.recorderReceipt.jws,
       entry.core.recorder,
-    ))) {
+    )) !== true) {
       reasons.add(AUDIT_REASON_CODES.SIGNATURE_INVALID);
     }
   }

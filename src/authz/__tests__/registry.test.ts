@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { NOT_FALSE } from '../../__tests__/utils/verdict-answers.js';
 import { AuthorizationServerRegistry } from '../registry.js';
 import { GenericOidcAdapter } from '../oidc/oidc-adapter.js';
 import type { AuthorizationServerAdapter } from '../adapter.js';
@@ -60,5 +61,26 @@ describe('AuthorizationServerRegistry', () => {
     expect(registry.isSealed()).toBe(true);
     const another: AuthorizationServerAdapter = { ...oidc(), type: 'idv' } as AuthorizationServerAdapter;
     expect(() => registry.register(another)).toThrow(/sealed/i);
+  });
+
+  describe('an adapter asked whether it must run', () => {
+    const protection = { toolName: 'vault.read', requirement: { type: 'oauth' as const, provider: 'generic-oidc' } };
+    const answering = (answer: unknown): AuthorizationServerAdapter =>
+      ({ ...oidc(), type: 'oauth', isRequired: () => answer }) as unknown as AuthorizationServerAdapter;
+    const resolved = (answer: unknown) => {
+      const registry = new AuthorizationServerRegistry();
+      const adapter = answering(answer);
+      registry.register(adapter);
+      return { adapter, resolved: registry.resolve(protection) };
+    };
+
+    it('is skipped only when it answers the literal false', () => {
+      expect(resolved(false).resolved).toBeUndefined();
+    });
+
+    it.each(NOT_FALSE)('runs when it answers %s', (_label, answer) => {
+      const { adapter, resolved: routed } = resolved(answer);
+      expect(routed).toBe(adapter);
+    });
   });
 });

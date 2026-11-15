@@ -591,7 +591,7 @@ async function verifySupportingAnchors(
     } else if (verifyReceipt === undefined) {
       reasons.add(AUDIT_REASON_CODES.NOT_EVALUATED);
       notEvaluated = true;
-    } else if (!(await verifyReceipt(checkpoint, receipt))) {
+    } else if ((await verifyReceipt(checkpoint, receipt)) !== true) {
       reasons.add(AUDIT_REASON_CODES.SUPPORTING_ANCHOR_INVALID);
     }
   }
@@ -709,11 +709,11 @@ export async function verifyAuditBundle(
     if (policyDigest !== core.verificationPolicyDigest) {
       reasons.add(AUDIT_REASON_CODES.VERIFICATION_POLICY_MISMATCH);
     }
-    if (!(await dependencies.signatures.verify(
+    if ((await dependencies.signatures.verify(
       canonicalizeJsonBytes(core),
       replayBundle.manifest.jws,
       core.exporter,
-    ))) {
+    )) !== true) {
       reasons.add(AUDIT_REASON_CODES.BUNDLE_SIGNATURE_INVALID);
     }
 

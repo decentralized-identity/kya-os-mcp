@@ -14,9 +14,9 @@ import type {
   NeedsAuthorizationError,
   AuthorizationDisplay,
 } from '../types/protocol.js';
-import { createNeedsAuthorizationError } from '../types/protocol.js';
-import type { DelegationRecord } from '../types/protocol.js';
+import { createNeedsAuthorizationError, type DelegationRecord } from '../types/protocol.js';
 import { logger } from '../logging/index.js';
+import { readDelegationVerdict } from './delegation-verdict.js';
 import type { DelegationVerifier, VerifyDelegationResult } from './types.js';
 
 export type { DelegationVerifier, VerifyDelegationResult };
@@ -318,7 +318,7 @@ export async function verifyOrHints(
   let delegationResult: VerifyDelegationResult;
 
   try {
-    delegationResult = await config.delegationVerifier.verify(agentDid, scopes);
+    delegationResult = readDelegationVerdict(await config.delegationVerifier.verify(agentDid, scopes));
   } catch (error) {
     logger.error('[AuthHandshake] Delegation verification failed:', error);
     const errorMessage = `Delegation verification error: ${error instanceof Error ? error.message : 'Unknown error'}`;

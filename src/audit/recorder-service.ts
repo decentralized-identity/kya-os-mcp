@@ -153,7 +153,7 @@ export class AuditRecorderService {
     const producerEvent = parseAuditProducerEvent(submission.producerEvent);
     this.validateEventAuthority(producerEvent, context);
     if (this.config.authorizer !== undefined &&
-      !(await this.config.authorizer.authorize({ submission, context }))) {
+      (await this.config.authorizer.authorize({ submission, context })) !== true) {
       throw new AuditProtocolError(
         AUDIT_ERROR_CODES.UNAUTHORIZED_SUBMISSION,
         'Audit producer is not authorized for this ledger',
@@ -349,7 +349,7 @@ export class AuditRecorderService {
         nextEpochId: this.config.ledgerEpochId,
         previousTerminalCheckpointDigest: this.config.previousTerminalCheckpointDigest!,
       });
-      if (!verifiedAndSealed) {
+      if (verifiedAndSealed !== true) {
         throw new AuditProtocolError(
           AUDIT_ERROR_CODES.INVALID_CONFIGURATION,
           'Predecessor checkpoint could not be verified and sealed',

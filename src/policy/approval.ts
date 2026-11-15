@@ -66,7 +66,7 @@ export async function verifyApprovalQuorum(
     if (g.decision !== 'approve') continue;
     if (!actionHashes.includes(g.requestHash)) continue; // TOCTOU guard
     if (quorum.approvers.length > 0 && !quorum.approvers.includes(g.approverDid)) continue;
-    if (!(await isValidSignature(g))) continue;
+    if ((await isValidSignature(g)) !== true) continue;
     approvers.add(g.approverDid);
   }
 

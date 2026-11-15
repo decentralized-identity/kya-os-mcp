@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { NOT_TRUE } from '../../__tests__/utils/verdict-answers.js';
 import { verifyApprovalQuorum, type ApprovalGrant } from '../approval.js';
 
 const grant = (over: Partial<ApprovalGrant> = {}): ApprovalGrant => ({
@@ -99,5 +100,11 @@ describe('verifyApprovalQuorum', () => {
 
     const invalid = await verifyApprovalQuorum(grants, 'sha256:abc', { n: 0, approvers: [] }, validSig);
     expect(invalid.approvers).toEqual([]);
+  });
+
+  it.each(NOT_TRUE)('counts no approver whose signature check answers %s, only the literal true', async (_label, answer) => {
+    const isValid = (async () => answer) as unknown as () => Promise<boolean>;
+    const result = await verifyApprovalQuorum([grant({ approverDid: 'did:a' })], 'sha256:abc', { n: 1, approvers: [] }, isValid);
+    expect(result).toMatchObject({ satisfied: false, approvers: [] });
   });
 });

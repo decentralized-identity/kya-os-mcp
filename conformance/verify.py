@@ -230,6 +230,10 @@ def main() -> int:
                     binding("ref-digest-form-suffixed") == "bound"))
     results.append(("credential id holding a bidi override or a zero-width space is named by its SHA-256",
                     all(binding(name) == "bound" for name in ("ref-bidi-override", "ref-zero-width"))))
+    results.append(("credential id holding a code point that renders as nothing by default is named by its SHA-256",
+                    all(binding(name) == "bound" for name in (
+                        "ref-grapheme-joiner", "ref-hangul-filler", "ref-variation-selector",
+                        "ref-variation-selector-supplement"))))
     results.append(("credential id that is the word unknown is named by its SHA-256",
                     binding("ref-unknown") == "bound"))
     results.append(("credential object whose issuer signed a __proto__ member is digested with it",

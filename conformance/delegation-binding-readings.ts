@@ -5,9 +5,10 @@
  * otherwise than the spec does, and so derives another reference or another
  * digest: a payload with a number its parser refuses or an id written twice,
  * an id at either edge of the control characters, one that holds a format
- * character, one that reads as a digest with a character after it, and one
- * that is the word `unknown`, a member named `__proto__`, and a number that
- * is an integer above 2^53 - 1 only once it is read.
+ * character, one that holds a code point that only renders as nothing, one
+ * that reads as a digest with a character after it, and one that is the word
+ * `unknown`, a member named `__proto__`, and a number that is an integer above
+ * 2^53 - 1 only once it is read.
  */
 
 import { canonicalize } from 'json-canonicalize';
@@ -21,6 +22,19 @@ import { isDigest } from '../src/delegation/digest-form.js';
 import { payloadText, type BindingKit } from './delegation-binding-kit.js';
 import { READ_AS_LARGE_INTEGER } from './numbers-as-written.js';
 import type { ConformanceVector } from './types.js';
+
+/**
+ * Code points that are no control, format or separator character and render
+ * as nothing by default (Default_Ignorable_Code_Point), one of each of four
+ * runs of `./unseen-code-points.json`: the vector's name, what the code point
+ * is, and the code point.
+ */
+const RENDERED_AS_NOTHING = [
+  ['grapheme-joiner', 'a combining grapheme joiner', 0x034f],
+  ['hangul-filler', 'a Hangul filler', 0x3164],
+  ['variation-selector', 'a variation selector', 0xfe0f],
+  ['variation-selector-supplement', 'a variation selector outside the basic plane', 0xe0100],
+] as const;
 
 /** The vectors of the readings of a credential that two implementations could make differently. */
 export async function readingVectors<P extends { did: string }>(kit: BindingKit<P>): Promise<ConformanceVector[]> {
@@ -97,6 +111,29 @@ export async function readingVectors<P extends { did: string }>(kit: BindingKit<
   const bidiProof = await kit.boundAlone(bidiCredential);
   const zeroWidthProof = await kit.boundAlone(zeroWidthCredential);
   const unknownProof = await kit.boundAlone(unknownCredential);
+
+  // Ids that hold a code point Unicode gives no control or format category
+  // and that renders as nothing by default, so each prints as the id without
+  // it does. Each is referred to by its digest.
+  const renderedAsNothingVectors: ConformanceVector[] = [];
+  for (const [name, what, codePoint] of RENDERED_AS_NOTHING) {
+    const written = `U+${codePoint.toString(16).toUpperCase().padStart(4, '0')}`;
+    const credential = await kit.credential(`del-id-${name}`, {
+      vcId: `urn:uuid:del-${String.fromCodePoint(codePoint)}1`,
+    });
+    if (!isDigest(await kit.reference(credential))) {
+      throw new Error(`expected the id holding ${written} referred to by its digest`);
+    }
+    renderedAsNothingVectors.push({
+      id: `signed-proof/delegation-ref-${name}`,
+      category: 'signed-proof',
+      description: `Proof binding a single credential whose id holds ${written}, ${what}, with delegationRef the SHA-256 of the id`,
+      expected: 'pass',
+      reason:
+        'An id that holds a code point that renders as nothing by default, whatever its general category, is referred to by sha256 of its UTF-8 bytes: an implementation that hashes only ids with a control or format character names the credential by the id itself',
+      input: kit.inputOf(await kit.boundAlone(credential), { request, response, delegationChain: [credential] }),
+    });
+  }
 
   // A credential object whose issuer signed a member named `__proto__`: it is
   // a member like any other, so it is in the signed form and the digest.
@@ -201,6 +238,7 @@ export async function readingVectors<P extends { did: string }>(kit: BindingKit<
         'An id that holds a format character, one that prints as nothing among them, is referred to by sha256 of its UTF-8 bytes: an implementation that hashes only ids with a control character names the credential by the id itself',
       input: kit.inputOf(zeroWidthProof, { request, response, delegationChain: [zeroWidthCredential] }),
     },
+    ...renderedAsNothingVectors,
     {
       id: 'signed-proof/delegation-ref-unknown',
       category: 'signed-proof',

@@ -215,6 +215,11 @@ describe('signed-proof/delegation-ref-* vectors', () => {
   it.each([
     ['ref-bidi-override', 'a right-to-left override', 'urn:uuid:del-\u202egnp.exe'],
     ['ref-zero-width', 'a zero-width space', 'urn:uuid:del-\u200b1'],
+    // Code points that are in the table only as rendering as nothing by default, one of each run.
+    ['ref-grapheme-joiner', 'a combining grapheme joiner', 'urn:uuid:del-\u034f1'],
+    ['ref-hangul-filler', 'a Hangul filler', 'urn:uuid:del-\u31641'],
+    ['ref-variation-selector', 'a variation selector', 'urn:uuid:del-\ufe0f1'],
+    ['ref-variation-selector-supplement', 'a variation selector outside the basic plane', 'urn:uuid:del-\u{e0100}1'],
   ])('%s: a credential whose id holds %s, which does not print as itself, is named by the digest of the id', async (name, _what, id) => {
     const credential = await boundAlone(name);
     expect(credential.id).toBe(id);

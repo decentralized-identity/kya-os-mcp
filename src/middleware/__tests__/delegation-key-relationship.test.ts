@@ -154,6 +154,7 @@ describe('the delegation gate and the key that signed the delegation', () => {
   });
 
   it("refuses a delegation when its issuer's resolved document is over 1 MiB, though it lists the key, on either path", async () => {
+    // Acme's document with a `padding` member of 1 MiB added on purpose, which puts it over the byte limit.
     const gate = await acmeGate(resolving({ ...acmeDocument(login, assert), padding: 'x'.repeat(1_048_576) } as DIDDocument));
     const credential = await signedCredential(assert);
     const reason = `Could not resolve issuer DID: "${ACME}"`;
@@ -175,7 +176,7 @@ describe('the delegation gate and the key that signed the delegation', () => {
     const large: DIDDocument = {
       ...acmeDocument(login, assert),
       verificationMethod: [
-        ...Array.from({ length: 5_000 }, (_, i) => ({ ...methodOf(assert), id: `#filler-${i}` })),
+        ...Array.from({ length: 5_000 }, (_, i) => methodOf(assert, { id: `#filler-${i}` })),
         methodOf(login),
         methodOf(assert),
       ],

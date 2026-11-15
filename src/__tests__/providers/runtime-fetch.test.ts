@@ -5,6 +5,7 @@ import { generateDidKeyFromBase64 } from '../../utils/did-helpers.js';
 import { cheqdResolver } from '../../integrations/cheqd/index.js';
 import type { FetchProvider } from '../../providers/base.js';
 import { LOCAL_HOST_NAMES, PUBLIC_NAME_FOR_LOOPBACK } from '../utils/local-host-names.js';
+import { documentOf } from '../utils/did-documents.js';
 
 const statusList = { type: ['StatusList2021Credential'], credentialSubject: { type: 'StatusList2021', encodedList: 'H4sIAAAAAAAA' } };
 
@@ -79,7 +80,7 @@ describe('RuntimeFetchProvider', () => {
       vi.useFakeTimers();
       try {
         const did = 'did:web:quick.example';
-        const quick = new RuntimeFetchProvider({ didResolvers: { web: { resolve: async () => ({ id: did }) } } });
+        const quick = new RuntimeFetchProvider({ didResolvers: { web: { resolve: async () => documentOf({}, did) } } });
         expect(await quick.resolveDID(did)).toEqual({ id: did });
         expect(vi.getTimerCount()).toBe(0);
       } finally {
@@ -91,11 +92,11 @@ describe('RuntimeFetchProvider', () => {
       const crypto = new NodeCryptoProvider();
       const didKey = generateDidKeyFromBase64((await crypto.generateKeyPair()).publicKey);
       const didWeb = 'did:web:fallback.example';
-      const overLimit = { id: 'd'.repeat(2_049) };
+      const overLimit = documentOf({}, 'd'.repeat(2_049));
       for (const [did, method] of [[didWeb, 'web'], [didKey, 'key']] as const) {
         for (const answer of [null, overLimit]) {
           const configured = new RuntimeFetchProvider({ didResolvers: { [method]: { resolve: async () => answer } } });
-          const fetch = vi.spyOn(configured, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ id: did })));
+          const fetch = vi.spyOn(configured, 'fetch').mockImplementation(async () => new Response(JSON.stringify(documentOf({}, did))));
           const resolved = await configured.resolveDID(did);
           expect(resolved === null ? null : resolved.id).toBe(answer === null ? did : null);
           expect(fetch).toHaveBeenCalledTimes(answer === null && method === 'web' ? 1 : 0);

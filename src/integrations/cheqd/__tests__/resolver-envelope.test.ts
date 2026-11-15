@@ -11,6 +11,8 @@ import type { FetchProvider } from '../../../providers/base.js';
 
 const did = 'did:cheqd:mainnet:zF7rhDBfUt9d1gJPjx7s1JXfUY7oVWkY';
 const resolverUrl = 'https://resolver.example';
+// A document as the cheqd resolver writes one, which no helper does: `@context`, `controller` as a
+// list, a published multibase key under both relationships. The tests compare what resolves with it.
 const document = {
   '@context': ['https://www.w3.org/ns/did/v1', 'https://w3id.org/security/suites/ed25519-2020/v1'],
   id: did, controller: [did],
@@ -80,6 +82,7 @@ describe('DidCheqdResolver and the resolution envelope', () => {
   });
 
   it('holds the document inside an envelope to every document limit', async () => {
+    // The document with one reference over the entry limit, then padded one byte over 1 MiB.
     const over = { ...document, assertionMethod: Array(8_193).fill(`${did}#key-1`) };
     expect(await serving(JSON.stringify(envelope(10, over))).resolver.resolve(did)).toBeNull();
     const big = { ...document, pad: 'x'.repeat(1_048_576 - bytes({ ...document, pad: '' }) + 1) };

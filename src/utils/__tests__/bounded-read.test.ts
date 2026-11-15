@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fetchBoundedJson, readCappedBody } from '../bounded-read.js';
 import { DID_DOCUMENT_READ } from '../../delegation/did-resource-policy.js';
 import { fetchTransport } from '../safe-fetch.js';
+import { documentOf } from '../../__tests__/utils/did-documents.js';
 
 /** A body that sends nothing and never ends, with a spy on its cancellation. */
 function stalled() {
@@ -56,7 +57,7 @@ describe('fetchBoundedJson', () => {
       const cancel = vi.fn();
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
-          controller.enqueue(new TextEncoder().encode('{"id":"did:web:status.example"}'));
+          controller.enqueue(new TextEncoder().encode(JSON.stringify(documentOf({}, 'did:web:status.example'))));
           controller.close();
         },
         cancel,

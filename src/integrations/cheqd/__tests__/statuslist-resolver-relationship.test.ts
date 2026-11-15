@@ -96,6 +96,7 @@ describe('CheqdStatusListResolver and the verification relationship of the list 
   });
 
   it("rejects a list when the issuer's document lists the key but is over 1 MiB", async () => {
+    // The issuer's document with a `padding` member of 1 MiB added on purpose, which puts it over the byte limit.
     const padded = { ...issuerDocument(), padding: 'x'.repeat(1_048_576) } as DIDDocument;
     await expect(check(padded, assert)).rejects.toThrow(`Could not resolve issuer DID ${ISSUER}`);
   });
@@ -185,6 +186,8 @@ describe('CheqdStatusListResolver and the verification relationship of the list 
   });
 
   it('quotes at most 64 characters of the verification method a proof names, and resolves nothing for one over 4,096', async () => {
+    // Each proof below is the signed list's own with its `verificationMethod` restated: a name the
+    // document does not list, longer than a reason quotes, then one over the key id limit.
     const verificationMethod = `${ISSUER}#${'k'.repeat(1_000)}`;
     await expect(check(issuerDocument(), assert, (proof) => ({ ...proof, verificationMethod }))).rejects.toThrow(
       new Error(

@@ -12,10 +12,11 @@ import { RuntimeFetchProvider } from '../../providers/runtime-fetch.js';
 import { fetchDidJson } from '../../delegation/read-did-json.js';
 import { fetchStatusListJson } from '../../delegation/status-list-fetch.js';
 import { closeLoopback, listenOnLoopback } from '../utils/loopback-server.js';
+import { documentOf } from '../utils/did-documents.js';
 
 const did = 'did:web:public.example';
 const didUrl = 'https://public.example/.well-known/did.json';
-const document = { id: did };
+const document = documentOf({}, did);
 const list = {
   id: 'list', type: ['VerifiableCredential', 'StatusList2021Credential'],
   credentialSubject: { type: 'StatusList2021', encodedList: 'H4sIAAAAAAAA' },

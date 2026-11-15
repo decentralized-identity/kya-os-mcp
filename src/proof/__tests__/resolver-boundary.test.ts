@@ -10,12 +10,13 @@ import {
   admitParsedDidDocument, DID_RESOLUTION_TIMEOUT_MS, MAX_DID_DOCUMENT_BYTES, MAX_DID_LENGTH, MAX_KEY_ID_LENGTH,
 } from '../../delegation/did-resource-limits.js';
 import { resolveProofDid } from '../proof-did.js';
+import { documentOf, methodOf } from '../../__tests__/utils/did-documents.js';
 
 const did = 'did:web:proof.example';
 const jwk = { kty: 'OKP', crv: 'Ed25519', x: 'VCpo2LMLhn6iWku8MKvSLg2ZAoC-nlOyPVQaO3FxVeQ' };
-const document = (): DIDDocument => ({
-  id: did, verificationMethod: [{ id: `${did}#key`, type: 'JsonWebKey2020', controller: did, publicKeyJwk: jwk }],
-});
+const document = (): DIDDocument => documentOf({
+  verificationMethod: [methodOf({ did, kid: `${did}#key`, publicKey: Buffer.from(jwk.x, 'base64url').toString('base64') })],
+}, did);
 function verifier(fetchProvider: FetchProvider) {
   return new ProofVerifier({
     fetchProvider, cryptoProvider: new NodeCryptoProvider(),
@@ -107,6 +108,7 @@ describe('proof DID resource boundary', () => {
 
   it('validates an instance override and rejects custom documents missing id', async () => {
     const fetcher = new RuntimeFetchProvider();
+    // The document with its `id` taken out, which is all that is wrong with it.
     const { id: _id, ...withoutId } = document();
     fetcher.resolveDID = async () => withoutId as DIDDocument;
     await expect(verifier(fetcher).fetchPublicKeyFromDID(did)).rejects.toThrow();

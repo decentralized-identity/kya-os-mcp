@@ -14,9 +14,10 @@ import { RuntimeFetchProvider } from '../../../providers/runtime-fetch.js';
 import { DID_RESOLUTION_TIMEOUT_MS } from '../../../delegation/did-resource-policy.js';
 import { logger } from '../../../logging/index.js';
 import type { FetchProvider } from '../../../providers/base.js';
+import { documentOf } from '../../../__tests__/utils/did-documents.js';
 
 const DID = 'did:cheqd:testnet:6c9b1bbe-1a2c-4c1e-9d3c-2e0f0f0b0a01';
-const document = { id: DID, verificationMethod: [] };
+const document = documentOf({ verificationMethod: [] }, DID);
 
 /** A provider whose `fetch` answers `response` and counts its calls. */
 const answering = (response: () => Response) => {

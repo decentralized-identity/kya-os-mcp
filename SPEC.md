@@ -815,7 +815,8 @@ Only a list typed as a Bitstring Status List v1.0 list in both places its §2.2 
 Any other list, a `StatusList2021Credential` among them, states one string, as Verifiable Credentials Status List v2021 §2.2 requires, and the credential is rejected when it states an array, whatever the array holds.
 The credential is likewise rejected when the list states an `id` that is not, byte for byte, the `statusListCredential` URL it was fetched from.
 Only the `id` binds a list to the URL it is served at, and Bitstring Status List v1.0 §2.2 makes it optional.
-A list the credential's own `issuer` signed MAY be read when it states no `id`, but only when that issuer keeps the URL by rule 4 and nobody else keeps any URL: the verifier pins no other root, and its configuration names no other issuer.
+A list the credential's own `issuer` signed MAY be read when it states no `id`, but only when that issuer keeps the URL as the credential's issuer, by rule 4 or as the pinned root whose own credential it is (rule 3), and nobody else keeps any URL: the verifier pins no other root, and its configuration names no other issuer.
+So a pinned root's list without an `id` MAY be read for the root's own credential, and MUST NOT be read for a credential below it.
 A reader may refuse it, as the reference implementation's `CheqdStatusListResolver` does: it reads only a list that states its URL as its `id`.
 Any other list MUST state that URL as its `id`, or the credential is rejected.
 A keeper signs lists for other URLs as well, and one of them, with the credential's bit clear, could otherwise be served at this one.
@@ -992,7 +993,7 @@ The default checker resolves `statusListCredential` via SafeFetch (SPEC-ENTITY-C
 A verifier MUST verify the status list credential's proof before it reads a bit, as Bitstring Status List v1.0 requires.
 The reference checker does so when given its `verifyStatusList` seam (optional until 2.0) and ships a verifier for `eddsa-jcs-2022` lists.
 With that seam it also holds each hop's list to the keeper §6.6 names for the URL of the hop's entry: the issuer its `statusListIssuers` option binds the URL or its origin to, else the chain's root issuer when the verifier pins it with its trusted root issuers or the resource owner it asserts and the root hop's own entry names the same URL, else the hop's own issuer.
-A list is read without an `id` only when the hop's own issuer keeps the URL by the last of those, no other root is pinned and `statusListIssuers` names no other issuer; any other list is read only when it states its URL as its `id`.
+A list is read without an `id` only when the hop's own issuer signed it and keeps the URL as that issuer, not by a binding, no other root is pinned and `statusListIssuers` names no other issuer; any other list is read only when it states its URL as its `id`.
 The hop's own issuer is the one the hop names, so a verifier checks every hop's proof before it reads their status (SPEC-ENTITY-CARD.md §11.4).
 It is **fail-closed**: an unreachable list, malformed credential, rejected list proof, list `issuer` that is not the keeper of the entry's URL, list `id` other than the `statusListCredential` URL, no list `id` where §6.6 requires one, a list `statusPurpose` that does not include the checker's, a `statusPurpose` array on a list §6.6 holds to one string, an entry whose `statusPurpose`, when present, is not the checker's (`null` included), an entry whose `statusSize`, when present, is not 1, or out-of-range index all resolve to `{ revoked: true }`, with a `reason` that says which.
 Each verdict also reports `fresh` - `true` only when read from a live, in-validity-window (`validFrom`/`validUntil`, or `issuanceDate`/`expirationDate`) status list.

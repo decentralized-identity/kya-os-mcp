@@ -20,8 +20,9 @@
  *
  * The `id` binds a list to the URL it is served at, and the keeper binds that URL to one signer.
  * §2.2 makes the `id` optional, so the rule lets a list leave it out only where nobody but the
- * credential's own issuer keeps any URL: no other root is pinned and the configuration names no
- * other issuer ({@link statusListExpectationFor}). Such a list can be served in place of another
+ * credential's own issuer keeps any URL: that issuer signed it, no other root is pinned and the
+ * configuration names no issuer but, at most, that one for other URLs
+ * ({@link statusListExpectationFor}). Such a list can be served in place of another
  * list its own issuer signed. Nor does the rule tell versions of one list apart: an earlier version,
  * signed before a credential was revoked, can be served in place of the current one.
  *
@@ -93,10 +94,13 @@ export function acceptStatusList(list: unknown, expected: StatusListExpectation)
  * `acceptStatusList(list, statusListExpectationFor(status, context, statusListIssuers))`.
  *
  * The list must come from the keeper of the entry's URL ({@link statusListKeeperFor}). It may leave
- * out its `id` only when all of these hold: that keeper is the credential's own issuer, because
- * nobody else keeps the URL; no root is pinned but that same issuer; and the configuration names
- * no other issuer. Then the credential's issuer is the only issuer whose list the reader would take
- * at any URL, so a list without an `id` can stand in for no list another issuer keeps.
+ * out its `id` only when all of these hold: that keeper is the credential's own issuer, and not
+ * because the configuration binds the URL to it, but as the issuer of the credential or as the
+ * pinned root whose own credential this is; no root is pinned but that same issuer; and the
+ * configuration names no other issuer. Then the credential's issuer is the only issuer whose list
+ * the reader would take at any URL, so a list without an `id` can stand in for no list another
+ * issuer keeps. A pinned root's list is thus read without an `id` for the root's own credential,
+ * and for no credential below it, whose issuer the root is not.
  *
  * @throws TypeError when `statusListIssuers` is malformed, as {@link assertStatusListIssuers} words it.
  */
@@ -107,8 +111,11 @@ export function statusListExpectationFor(
 ): StatusListExpectation {
   const keeper = statusListKeeperFor(entry.statusListCredential, context, statusListIssuers);
   const { credentialIssuer, trustedRootIssuer } = context;
+  // No binding names the keeper: it is the credential's issuer or the pinned root. The next line
+  // holds the root to being that same issuer, so the keeper is then the credential's own issuer.
+  const unbound = keeper.why === 'credential-issuer' || keeper.why === 'root-credential';
   const aloneAsIssuer =
-    keeper.why === 'credential-issuer' &&
+    unbound &&
     (trustedRootIssuer === undefined || trustedRootIssuer === credentialIssuer) &&
     !namesAnotherKeeper(statusListIssuers, credentialIssuer);
   return {

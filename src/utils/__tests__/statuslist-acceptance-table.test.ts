@@ -52,8 +52,9 @@ interface SignerRow {
   /** Whether the specification has this signer keep the URL, so that its list speaks for the credential. */
   accepted: boolean;
   /**
-   * Whether this signer's list may leave out its `id`: only the credential's own issuer's may, and
-   * only when no other root is pinned and the configuration names no other issuer.
+   * Whether this signer's list may leave out its `id`: only the credential's own issuer's may, a
+   * pinned root's for its own credential included, and only when no other root is pinned and the
+   * configuration names no other issuer.
    */
   mayOmitId: boolean;
   did: string;
@@ -118,6 +119,12 @@ const SIGNERS: Record<string, SignerRow> = {
     mayOmitId: false,
     did: ROOT,
     context: (url) => pinning(url),
+  },
+  'the pinned root, for its own credential, at the URL that credential names': {
+    accepted: true,
+    mayOmitId: true,
+    did: ROOT,
+    context: (url) => ({ credentialIssuer: ROOT, trustedRootIssuer: ROOT, trustedRootStatusList: url }),
   },
   'the pinned root, at a URL its own credential does not name': {
     accepted: false,
@@ -396,13 +403,13 @@ describe('the acceptance rule, over every combination of its inputs', () => {
       mismatches: 0,
       first: [],
     });
-    expect(Object.keys(SIGNERS)).toHaveLength(19);
-    // The table reads a list for 616 of the cases. Ten rows have a signer that keeps the URL. Each
-    // is read with the URL as its id, and the first, where nobody but the credential's own issuer
-    // keeps any URL, with no id as well: 11, by 2 URLs, 2 issuer forms and the 2 entry purposes the
-    // checker may read, make 88. Each of those is read with the checker's purpose as one string on
-    // every list type, and in either array that holds it only on a BitstringStatusListCredential,
-    // so 7 times.
-    expect(all.filter((c) => failedChecks(c).length === 0)).toHaveLength(616);
+    expect(Object.keys(SIGNERS)).toHaveLength(20);
+    // The table reads a list for 728 of the cases. Eleven rows have a signer that keeps the URL.
+    // Each is read with the URL as its id, and two with no id as well: the credential's own issuer
+    // where nobody else keeps any URL, and the pinned root for its own credential. Those 13, by 2
+    // URLs, 2 issuer forms and the 2 entry purposes the checker may read, make 104. Each of those
+    // is read with the checker's purpose as one string on every list type, and in either array
+    // that holds it only on a BitstringStatusListCredential, so 7 times.
+    expect(all.filter((c) => failedChecks(c).length === 0)).toHaveLength(728);
   });
 });

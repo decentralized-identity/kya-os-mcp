@@ -9,7 +9,7 @@ const indexNames = ['index-suffix', 'index-fraction', 'index-space', 'index-numb
 const keeperNames = ['pinned-root-list', 'root-list-at-issuer-url', 'configured-service-list', 'configured-origin-list',
   'lookalike-origin-list', 'unconfigured-service-list', 'service-list-at-unbound-url', 'issuer-list-at-bound-url',
   'configured-over-root-list'];
-const names = [...keeperNames, 'owner-root-alias-no-id', 'owner-no-id-at-pinned-root-url', ...indexNames, 'index-leading-zeros',
+const names = [...keeperNames, 'owner-root-alias-no-id', 'pinned-root-own-no-id', 'pinned-root-no-id-for-delegate', 'owner-no-id-at-pinned-root-url', ...indexNames, 'index-leading-zeros',
   'status-size-two-bits', 'status-size-zero', 'status-size-one'];
 const vectors = loadVectors();
 const vectorOf = (name: string): ConformanceVector => {
@@ -42,6 +42,25 @@ describe('positive authority and strict index contract', () => {
     expect(input.trustedRootIssuer).toBe((input.credential as { issuer: string }).issuer);
     expect(input).not.toHaveProperty('trustedRootStatusList');
     expect(Object.values(input.statusLists)[0]).not.toHaveProperty('id');
+  });
+
+  it("reads the pinned root's list without an id for the root's own credential, and refuses the same list for a delegate's", async () => {
+    const own = vectorOf('pinned-root-own-no-id').input as StatusListInput;
+    const delegates = vectorOf('pinned-root-no-id-for-delegate').input as StatusListInput;
+    const [url] = Object.keys(own.statusLists);
+    expect(own.trustedRootIssuer).toBe((own.credential as { issuer: string }).issuer);
+    expect(own.trustedRootStatusList).toBe(url);
+    expect(Object.values(own.statusLists)[0]).not.toHaveProperty('id');
+    // The neighbour differs in the credential alone, which another party issued.
+    const { credential: _own, ...rest } = own;
+    const { credential, ...delegatesRest } = delegates;
+    expect(delegatesRest).toEqual(rest);
+    expect((credential as { issuer: string }).issuer).not.toBe(own.trustedRootIssuer);
+    expect((credential as { credentialStatus: { statusListCredential: string } }).credentialStatus.statusListCredential).toBe(url);
+    expect(await new ReferenceConformanceAdapter().verifyStatusList(delegates)).toEqual({
+      outcome: 'fail',
+      detail: `Status check error: status list states no id, but must state the URL it was fetched from ("${url}")`,
+    });
   });
 
   // The adapter takes the index through the library's parser, so its refusal is the parser's.

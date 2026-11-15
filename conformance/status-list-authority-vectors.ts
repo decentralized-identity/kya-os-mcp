@@ -24,10 +24,10 @@ import type { StatusListVectorDeps } from './status-list-vectors.js';
 import type { ConformanceVector, StatusListInput, VectorFile } from './types.js';
 
 export async function statusListAuthorityVectors<P extends Signer>(deps: StatusListVectorDeps<P>): Promise<VectorFile> {
-  const [issuer, root, service, holder] = await Promise.all(Array.from({ length: 4 }, () => deps.mintParty()));
-  if (!issuer || !root || !service || !holder) throw new Error('missing signing parties');
+  const [issuer, root, service, holder, delegate] = await Promise.all(Array.from({ length: 5 }, () => deps.mintParty()));
+  if (!issuer || !root || !service || !holder || !delegate) throw new Error('missing signing parties');
   const url = 'https://status.example.com/authority?version=1';
-  const didDocuments = Object.fromEntries([issuer, root, service].map((p) => [p.did, deps.didDocumentFor(p)]));
+  const didDocuments = Object.fromEntries([issuer, root, service, delegate].map((p) => [p.did, deps.didDocumentFor(p)]));
   const bits = new BitstringManager(131072, statusListGzipCodec, statusListGzipCodec);
   const encodedList = await bits.encode();
   const entry: CredentialStatus = {
@@ -78,6 +78,14 @@ export async function statusListAuthorityVectors<P extends Signer>(deps: StatusL
     }),
     vector('owner-root-alias-no-id', 'pass', 'A signer identical to the credential issuer retains the own-issuer id exemption even when also named as root', {
       ...common, trustedRootIssuer: issuer.did, statusLists: { [url]: await list(issuer, false) },
+    }),
+    vector('pinned-root-own-no-id', 'pass', "A pinned root is the issuer of its own credential, so its list without an id is read for that credential at the URL the credential names", {
+      ...common, trustedRootIssuer: issuer.did, trustedRootStatusList: url, statusLists: { [url]: await list(issuer, false) },
+    }),
+    vector('pinned-root-no-id-for-delegate', 'fail', "The same list is refused for a delegate's credential whose entry names that URL: the root keeps it, and only a credential's own issuer may leave out an id", {
+      ...common,
+      credential: await deps.signDelegation(delegate, holder.did, 'authority-delegate', entry),
+      trustedRootIssuer: issuer.did, trustedRootStatusList: url, statusLists: { [url]: await list(issuer, false) },
     }),
     vector('owner-no-id-at-pinned-root-url', 'fail', "With another root pinned, the credential issuer's list without an id cannot stand in for the root's list at the root's URL", {
       ...rootInput, statusLists: { [url]: await list(issuer, false) },

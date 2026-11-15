@@ -788,7 +788,7 @@ A root allowlist, a resource-owner pin or an authenticated Card-to-root registry
 Returning a root DID in place of a boolean would still require all these checks.
 A bare boolean cannot communicate freshness; implementations SHOULD return `{ verified, fresh }`, and MUST NOT claim `fresh: true` unless every required chain status was read live under the Verifier's freshness policy.
 A Verifier reads a `fresh` that is present and not a boolean as `false`, which demotes L3 to L2 as a stale chain does, and an omitted `fresh` as unknown, which demotes nothing.
-The checker holds each hop's list to the keeper of the URL the hop's entry names (SPEC.md §6.6): the issuer its configuration binds the URL or its origin to, else the chain's root issuer when the Verifier pins it (the resource owner, or a trusted root issuer as in §11.4) and the root hop's own entry names the same URL, else the hop's issuer; and every list MUST state its `id` unless the hop's own issuer keeps the URL by the last of those, no other root is pinned and the configuration names no other issuer.
+The checker holds each hop's list to the keeper of the URL the hop's entry names (SPEC.md §6.6): the issuer its configuration binds the URL or its origin to, else the chain's root issuer when the Verifier pins it (the resource owner, or a trusted root issuer as in §11.4) and the root hop's own entry names the same URL, else the hop's issuer; and every list MUST state its `id` unless the hop's own issuer signed it and keeps the URL as that issuer, not by a binding, no other root is pinned and the configuration names no other issuer.
 
 ### 10.4 KYC/KYB
 

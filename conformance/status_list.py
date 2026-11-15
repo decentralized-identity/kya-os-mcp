@@ -27,7 +27,10 @@ ORIGIN = re.compile(r"https://[a-z0-9.-]+(:[0-9]{1,5})?")
 
 
 def keeper(url, owner, root, root_list, services):
-    """The one issuer whose list is read at url, and whether it is the owner by default.
+    """The one issuer whose list is read at url, and whether no binding names it.
+
+    Unbound, it is the credential's issuer or the pinned root; a caller that lets a list
+    leave out its id holds the root to being that same issuer.
 
     First match: the issuer the configuration binds the exact URL to; the issuer it binds
     the URL's https origin to, matched on the bytes as written; the pinned root, when its
@@ -41,7 +44,7 @@ def keeper(url, owner, root, root_list, services):
             if ORIGIN.fullmatch(binding) and any(url.startswith(binding + mark) for mark in "/?#"):
                 return did, False
     if root is not None and root_list == url:
-        return root, False
+        return root, True
     return owner, True
 
 
@@ -52,7 +55,7 @@ def accepts(document, owner, root, services, url, purpose="revocation", root_lis
     signer = issuer(document.get("issuer"))
     if not signer:
         return False
-    kept_by, by_default = keeper(url, owner, root, root_list, services)
+    kept_by, unbound = keeper(url, owner, root, root_list, services)
     if signer != kept_by:
         return False
     # Only the id binds a list to its URL. The owner's list may leave it out only where
@@ -60,7 +63,7 @@ def accepts(document, owner, root, services, url, purpose="revocation", root_lis
     if "id" in document:
         if not isinstance(document["id"], str) or document["id"] != url:
             return False
-    elif not by_default or root not in (None, owner) or any(did != owner for did in services):
+    elif not unbound or root not in (None, owner) or any(did != owner for did in services):
         return False
     subject = document.get("credentialSubject")
     if not isinstance(subject, dict):

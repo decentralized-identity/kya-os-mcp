@@ -295,6 +295,8 @@ describe('statusListExpectationFor', () => {
     expect(requires({ credentialIssuer: ISSUER, trustedRootIssuer: ISSUER })).toBe(false);
     expect(requires({ credentialIssuer: ISSUER, trustedRootIssuer: ISSUER, trustedRootStatusList: ROOT_URL })).toBe(false);
     expect(requires({ credentialIssuer: ISSUER }, { [ISSUER]: ['https://elsewhere.example'] })).toBe(false);
+    // The pinned root's own credential, at the URL that credential names: the root is its issuer.
+    expect(requires({ credentialIssuer: ROOT, trustedRootIssuer: ROOT, trustedRootStatusList: ROOT_URL }, undefined, ROOT_URL)).toBe(false);
     // Another root is pinned, whatever URL its credential names, or none.
     expect(requires({ credentialIssuer: ISSUER, trustedRootIssuer: ROOT })).toBe(true);
     expect(requires(pinned)).toBe(true);
@@ -302,14 +304,44 @@ describe('statusListExpectationFor', () => {
     expect(requires({ credentialIssuer: ISSUER }, { [OTHER]: [] })).toBe(true);
     expect(requires({ credentialIssuer: ISSUER }, { [OTHER]: ['https://status.example'] })).toBe(true);
     expect(requires({ credentialIssuer: ISSUER }, { [ISSUER]: [LIST_URL], [OTHER]: ['https://status.example'] })).toBe(true);
-    // The keeper is not the credential's issuer by the last rule: the root, or a configured issuer,
-    // the credential's own issuer included when the configuration binds the URL to it.
+    expect(requires({ credentialIssuer: ROOT, trustedRootIssuer: ROOT, trustedRootStatusList: ROOT_URL }, { [OTHER]: [] }, ROOT_URL)).toBe(true);
+    // The keeper is not the credential's issuer: the pinned root, for a delegate's entry at the
+    // URL the root's credential names.
     expect(requires(pinned, undefined, ROOT_URL)).toBe(true);
-    expect(requires({ credentialIssuer: ROOT, trustedRootIssuer: ROOT, trustedRootStatusList: ROOT_URL }, undefined, ROOT_URL)).toBe(true);
+    // The configuration names the keeper, the credential's own issuer included.
     expect(requires({ credentialIssuer: ISSUER }, { [OTHER]: [LIST_URL] })).toBe(true);
     expect(requires({ credentialIssuer: ISSUER }, { [ISSUER]: [LIST_URL] })).toBe(true);
     expect(requires({ credentialIssuer: ISSUER }, { [ISSUER]: ['https://acme.example'] })).toBe(true);
   });
+
+  // The rule this one replaced accepted, for a credential, its issuer, the pinned root and the
+  // issuers a map keyed by credential issuer listed for it, and let a list leave out its id only
+  // when its signer was every one of them. Each row is a case of that rule with the same case of
+  // this one beside it: `old` and `now` say whether the credential's own issuer's list may leave
+  // out its id. No row is wider now. The two that are narrower differ in the configuration, whose
+  // shape changed: a map that binds this URL to the issuer itself names a keeper by configuration,
+  // and a key for any other issuer names another keeper, where the old map's key for another
+  // credential issuer said nothing of this one.
+  it.each([
+    ['nobody pinned, nothing configured', { credentialIssuer: ISSUER }, undefined, LIST_URL, true, true],
+    ["a root pinned, the credential the root's own, its URL not named", { credentialIssuer: ROOT, trustedRootIssuer: ROOT }, undefined, ROOT_URL, true, true],
+    ["a root pinned, the credential the root's own, at the URL it names", { credentialIssuer: ROOT, trustedRootIssuer: ROOT, trustedRootStatusList: ROOT_URL }, undefined, ROOT_URL, true, true],
+    ["a root pinned, the credential a delegate's, at its own URL", { credentialIssuer: ISSUER, trustedRootIssuer: ROOT, trustedRootStatusList: ROOT_URL }, undefined, LIST_URL, false, false],
+    ["a root pinned, the credential a delegate's, at the URL the root's credential names", { credentialIssuer: ISSUER, trustedRootIssuer: ROOT, trustedRootStatusList: ROOT_URL }, undefined, ROOT_URL, false, false],
+    ['the configuration naming the issuer itself, for another URL', { credentialIssuer: ISSUER }, { [ISSUER]: ['https://elsewhere.example'] }, LIST_URL, true, true],
+    ['the configuration naming the issuer itself, for this URL', { credentialIssuer: ISSUER }, { [ISSUER]: [LIST_URL] }, LIST_URL, true, false],
+    ['the configuration naming another issuer, for this URL', { credentialIssuer: ISSUER }, { [OTHER]: [LIST_URL] }, LIST_URL, false, false],
+    ['the configuration naming another issuer, for another URL', { credentialIssuer: ISSUER }, { [OTHER]: ['https://elsewhere.example'] }, LIST_URL, true, false],
+    ["a root pinned, the credential the root's own, the configuration naming another issuer", { credentialIssuer: ROOT, trustedRootIssuer: ROOT, trustedRootStatusList: ROOT_URL }, { [OTHER]: ['https://elsewhere.example'] }, ROOT_URL, true, false],
+  ] as [string, StatusCheckContext, StatusListIssuers | undefined, string, boolean, boolean][])(
+    'is no wider than the rule it replaced: %s',
+    (_label, context, statusListIssuers, url, old, now) => {
+      const { keeper, requireId } = statusListExpectationFor({ ...entry, statusListCredential: url }, context, statusListIssuers);
+      const mayOmit = keeper.did === context.credentialIssuer && !requireId;
+      expect(mayOmit).toBe(now);
+      expect(now && !old).toBe(false);
+    },
+  );
 
   it("reads the credential's own issuer's list that states no id only in those cases", () => {
     const { id: _id, ...noId } = list();

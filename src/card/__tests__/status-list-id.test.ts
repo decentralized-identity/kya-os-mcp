@@ -4,9 +4,9 @@
  * any URL, so its list can stand in only for another list that issuer signed. Where the verifier
  * pins the chain's root, or `statusListIssuers` names any other issuer, every list must state, as
  * its `id`, the URL it was fetched from: otherwise a list an issuer signed for one URL it keeps,
- * with the hop's bit clear, could be served at another. A root's list at the URL its own credential
- * names is the root's by that credential, not by default, so it states its `id` as well. Every case
- * runs every shipped path
+ * with the hop's bit clear, could be served at another. A pinned root is the issuer of its own
+ * credential, so its list may leave the `id` out for that credential, and for no hop below it.
+ * Every case runs every shipped path
  * (./status-list-paths.ts).
  */
 
@@ -37,26 +37,33 @@ describe("the pinned root's list that states no id", () => {
     }
   });
 
-  it("is read for no hop at the root's own URL while the root is pinned, where the root's list stating that URL is read for each", async () => {
+  it("is not read for a hop below the root even at the URL the root's own credential names, where the root's list stating that URL is", async () => {
     const c = cast();
     const chain = threeHopChain(c, [c.acme, c.agent, c.acme]);
     await expectAccepted(chain, servedBy(listOf(c.acme), listOf(c.agent)));
     await expectRevokedAt(2, chain, servedBy(listOf(c.acme, [2]), listOf(c.agent)));
-    await expectRevokedAt(0, chain, { ...servedBy(listOf(c.agent)), [listUrlOf(c.acme)]: idlessListOf(c.acme) });
+    // The root's own hop reads it, and the sub-agent's hop, another party's credential, does not.
+    await expectRevokedAt(2, chain, { ...servedBy(listOf(c.agent)), [listUrlOf(c.acme)]: idlessListOf(c.acme) });
   });
 
-  it("is read for the root's own credential only while the root is not pinned, and for no hop below it", async () => {
+  it("is read for the root's own credential, whether the root is pinned or not", async () => {
     const c = cast();
     const chain = threeHopChain(c, [c.acme, c.agent, c.subAgent]);
     const lists = (revoked: number[]) => ({
       ...servedBy(listOf(c.agent), listOf(c.subAgent)),
       [listUrlOf(c.acme)]: idlessListOf(c.acme, revoked),
     });
-    await expectAccepted(chain, lists([]), { pinned: false });
-    await expectRevokedAt(0, chain, lists([0]), { pinned: false });
-    // Pinned, the root keeps that URL because its own credential names it, and such a list states its id.
-    await expectRevokedAt(0, chain, lists([]), { pinned: true });
-    await expectAccepted(chain, servedBy(listOf(c.acme), listOf(c.agent), listOf(c.subAgent)), { pinned: true });
+    for (const pinned of [true, false]) {
+      await expectAccepted(chain, lists([]), { pinned });
+      await expectRevokedAt(0, chain, lists([0]), { pinned });
+    }
+  });
+
+  it("is not read for the root's own credential once the configuration names another issuer", async () => {
+    const c = cast();
+    const chain = threeHopChain(c, [c.acme, c.agent, c.subAgent]);
+    const lists = { ...servedBy(listOf(c.agent), listOf(c.subAgent)), [listUrlOf(c.acme)]: idlessListOf(c.acme) };
+    await expectRevokedAt(0, chain, lists, { statusListIssuers: { [c.mallory.did]: ['https://lists.elsewhere.example'] } });
   });
 });
 

@@ -12,6 +12,6 @@ body: |-
     alone keeps any URL. An entry whose `statusSize` is not 1 MUST be
     rejected under the `revocation` or `suspension` purpose. SPEC.md
     §6.10, SPEC-ENTITY-CARD.md §4.1, §10.3 and Appendix B, and
-    CONFORMANCE.md L3.11 say the same. The suite gains 27 vectors, 95 in
+    CONFORMANCE.md L3.11 say the same. The suite gains 29 vectors, 97 in
     all. UPGRADING.md, "Conformance suite 1.4.0", lists them.
 time: 2026-11-12T13:24:04.000000-06:00

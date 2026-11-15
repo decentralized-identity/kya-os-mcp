@@ -132,6 +132,7 @@ describe('CryptoService.verifyJWS reads each segment as a JWS segment', () => {
   it('says which segment it could not read, and how it reads one', () => {
     const [payload, signature] = [base64url('{}'), base64url(new Uint8Array(64))];
 
+    // A `*`, which base64url does not write, for the header and then after the signature.
     expect(() => service.parseJWS(`*.${payload}.${signature}`)).toThrow(
       new Error('Invalid header base64: not base64url of UTF-8 text as RFC 7515 §2 writes it'),
     );

@@ -191,6 +191,7 @@ describe('an allowed call', () => {
     );
     const { root, middle, leaf } = await threeHops(server.did);
     ancestors.push(root, middle);
+    // A result that carries a proof an upstream server made, which this server did not sign.
     const relaying: KyaOsToolHandler = async () => ({
       content: [{ type: 'text', text: 'relayed' }],
       _meta: { [KYA_OS_PROOF_META_KEY]: { jws: 'relayed.from.upstream', meta: { did: 'did:web:upstream.example' } } },

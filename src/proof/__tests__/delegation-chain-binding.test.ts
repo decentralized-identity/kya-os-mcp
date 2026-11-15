@@ -304,6 +304,7 @@ describe("the credential a proof names, for a verifier that holds the chain", ()
     ["already written as a digest", `sha256:${"ab".repeat(32)}`],
     ["that is the word an audit record names a credential with no id by", "unknown"],
   ])("requires the digest of an id %s, and not the id", async (_name, id) => {
+    // A placeholder proof, as ROOT has: nothing checks its signature, and the id is the case.
     const chain = [ROOT, { id, proof: { proofValue: "bGVhZg" } }];
     const reference = await delegationRefOf(chain[1], hash);
     expect(reference).toMatch(/^sha256:[0-9a-f]{64}$/);

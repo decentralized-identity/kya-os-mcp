@@ -4,6 +4,12 @@
  * These tests hold the two things that reading must get right: a signature is
  * one value however its string was written, and a member is never dropped or
  * re-read on the way to being checked.
+ *
+ * Every proof and VC-JWT here is fixed text that no key signed: `c2ln` is
+ * `sig`, `c2lnbmF0dXJl` is `signature`, and `aGVhZGVy.cGF5bG9hZA` is
+ * `header.payload`. Nothing here checks a signature, and the forms and bytes
+ * are asserted character for character, which a freshly signed credential
+ * would not allow. Each case rewrites, pads, nests or hides that text.
  */
 import { describe, it, expect } from 'vitest';
 import {

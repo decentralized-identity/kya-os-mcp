@@ -48,6 +48,7 @@ describe('signVC', () => {
       written.push(unsigned);
       return `issuer's form of ${JSON.stringify(unsigned)}`;
     };
+    // A proof left on the credential, which signVC takes out of what it signs.
     const credential = { ...UNSIGNED, issuedAt: 2 ** 53, proof: { proofValue: 'replaced' } };
 
     const proof = await signVC(crypto, credential, privateKey, 'did:web:user.example.com#key-1', canonicalize);
@@ -75,6 +76,7 @@ describe('signProofMeta', () => {
     const { privateKey } = await ed25519Signer();
     const seed = Buffer.from(privateKey, 'base64').subarray(0, ED25519_KEY_SIZE);
     const key = createPrivateKey({ key: Buffer.concat([ED25519_PKCS8_DER_HEADER, seed]), format: 'der', type: 'pkcs8' });
+    // Signed by a JWS library and not by the kit: the answer the kit is held to.
     const jws = await new CompactSign(new TextEncoder().encode(signedPayload()))
       .setProtectedHeader({ alg: 'EdDSA', kid: META.kid })
       .sign(key);

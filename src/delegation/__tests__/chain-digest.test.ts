@@ -219,6 +219,7 @@ describe('delegation chain digests', () => {
   describe('of a VC-JWT', () => {
     it('moves with the header, the payload or the signature', async () => {
       const [header, payload, signature] = LEAF_JWT.split('.') as [string, string, string];
+      // The vector's VC-JWT with one segment changed each time.
       const variants = await Promise.all([
         delegationCredentialDigest(`${header}x.${payload}.${signature}`, hash),
         delegationCredentialDigest(`${header}.${payload}x.${signature}`, hash),
@@ -243,6 +244,7 @@ describe('delegation chain digests', () => {
 
     it('is not the digest of an object with the same claims', async () => {
       const [header, payload, signature] = LEAF_JWT.split('.') as [string, string, string];
+      // The JWT's signing input and signature as members of an object, which is another credential.
       const lookalike = { jwt: `${header}.${payload}`, proof: { proofValue: signature } };
       expect(await delegationCredentialDigest(lookalike, hash)).not.toBe(LEAF_DIGEST);
     });

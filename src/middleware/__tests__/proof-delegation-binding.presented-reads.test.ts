@@ -58,6 +58,7 @@ describe('the reads the gate makes of a presented credential', () => {
 
   it('describes a credential refused as nesting too deep from the walk that refused it, and reads it no more', async () => {
     const { present, recorded, leaf } = await gate();
+    // 63 arrays in a member of the proof, which no signature covers, make it 65 levels deep.
     const deep = { ...leaf, id: 'urn:uuid:read-by-the-walk', proof: { ...leaf.proof!, note: arrays(63) } };
     const shallow = { ...leaf, id: 'urn:uuid:read-after-the-walk' };
     /** A credential that answers as `deep` for its first `first` reads, and as `shallow` after. */
@@ -88,6 +89,7 @@ describe('the reads the gate makes of a presented credential', () => {
     const { present, recorded, leaf } = await gate();
     const { id: _id, ...noId } = leaf;
     const subject = leaf.credentialSubject;
+    // The leaf with no id of its own, and 65 levels deep by a member of its proof.
     const deep = {
       ...noId,
       credentialSubject: { ...subject, delegation: { ...subject.delegation, id: 'del-read-by-the-walk' } },

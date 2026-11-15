@@ -85,6 +85,7 @@ describe('delegationCredentialId', () => {
     // An id is two members down at most, so it is read however deep the rest
     // nests: a credential object that has no signed form is still named.
     it('is shown by an object nested deeper than a credential may be', () => {
+      // A placeholder no key signed: an id is read with no signature checked.
       const proof = { proofValue: 'c2lnbmF0dXJl' };
       expect(delegationCredentialId({ id: 'urn:a', n: arrays(64), proof })).toBe('urn:a');
       expect(delegationCredentialId({ ...nested, n: arrays(200_000), proof })).toBe('del-1');
@@ -189,6 +190,7 @@ describe('delegationCredentialId', () => {
       });
 
       it('is read whatever the header nests: an id is in the payload', () => {
+        // Written out, as `vcJwt` fixes the header and here the header is the case.
         const header = base64url(utf8(`{"alg":"EdDSA","n":${'['.repeat(64)}${']'.repeat(64)}}`));
         expect(delegationCredentialId(`${header}.${base64url(utf8(claims))}.c2lnbmF0dXJl`)).toBe('urn:a');
       });

@@ -230,7 +230,8 @@ describe('VC-JWT', () => {
 
     // SPEC §7.8: a header or a payload whose arrays and objects nest more than
     // 64 deep is not read as JSON. Each is counted from its own outermost
-    // object, which is level 1.
+    // object, which is level 1. Each JWT ends in `sig`, which is no signature:
+    // the parser checks none.
     describe('a header or a payload nested as deep as a credential may be', () => {
       const segment = (json: string): string => base64urlEncodeFromBytes(new TextEncoder().encode(json));
       const nestedTo = (levels: number): string => `{"n":${'['.repeat(levels - 1)}${']'.repeat(levels - 1)}}`;

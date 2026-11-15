@@ -125,6 +125,7 @@ describe("verifyCard's revocation check", () => {
   const verify = (answer: unknown) =>
     verifyCard(card, {
       capabilityVerifier: async () => ({ verified: ['payments.transfer'], unverified: [] }),
+      // An empty proof on purpose: the stub verifier below answers for it without reading it.
       proof: {},
       request: { method: 'tools/call', params: { name: 'search' } },
       proofVerifier: async () => ({ ok: true, reasons: [], level: 'L3', did: card.id }),

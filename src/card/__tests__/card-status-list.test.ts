@@ -22,10 +22,12 @@ import { createRevocationChecker, type RevocationCheckerDeps } from '../revocati
 import type { EntityCard } from '../schema.js';
 import { createStatusListProofVerifier } from '../status-list-proof.js';
 import { verifyCard, type AccountabilityVerifier, type VerifyCardDeps } from '../verify.js';
-import type { DIDDocument, DIDResolver } from '../../delegation/vc-verifier.types.js';
+import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
+import type { DIDResolver } from '../../delegation/vc-verifier.types.js';
 import {
   hop,
   identity,
+  published,
   RESOURCE,
   serveAt,
   signEddsaJcs2022,
@@ -50,13 +52,7 @@ const statusService = webIdentity('did:web:status.example');
 const didResolver: DIDResolver = {
   resolve: async (did) => {
     const party = [entity, responsibleParty, anotherRoot, statusService].find((p) => p.did === did);
-    if (!party) return null;
-    const document: DIDDocument = {
-      id: did,
-      verificationMethod: [{ id: party.method, type: 'JsonWebKey2020', controller: did, publicKeyJwk: party.publicJwk }],
-      assertionMethod: [party.method],
-    };
-    return document;
+    return party ? issuerDidDocument(methodOf(published(party))) : null;
   },
 };
 

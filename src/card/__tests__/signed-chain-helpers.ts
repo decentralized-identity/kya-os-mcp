@@ -48,6 +48,14 @@ export function identity(): TestIdentity {
   };
 }
 
+/**
+ * `key` as the shared DID document helpers (`methodOf`, `issuerDidDocument`, `acmeDocument`) take a
+ * key: with its verification method id as `kid` and its raw public key in base64.
+ */
+export function published(key: TestIdentity): TestIdentity & { kid: string; publicKey: string } {
+  return { ...key, kid: key.method, publicKey: Buffer.from(key.publicJwk.x, 'base64url').toString('base64') };
+}
+
 /** eddsa-jcs-2022 over `document`, signed by `signer` (proof options overridable). */
 export function signEddsaJcs2022<T extends Record<string, unknown>>(
   document: T,

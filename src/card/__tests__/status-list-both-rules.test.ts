@@ -11,20 +11,20 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createRevocationChecker, type StatusListIssuers } from '../revocation.js';
 import { createStatusListProofVerifier } from '../status-list-proof.js';
-import { identity, NOW_MS, serve, STATUS_URL, statusList, type TestIdentity } from './signed-chain-helpers.js';
+import { ACME, acmeDocument, issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
+import { identity, NOW_MS, published, serve, STATUS_URL, statusList, type TestIdentity } from './signed-chain-helpers.js';
 import type { DIDDocument } from '../../delegation/vc-verifier.types.js';
 
-const ACME = 'did:web:acme.example';
 const SERVICE = 'did:web:status-service.example';
-const keyOf = (did: string, fragment: string): TestIdentity => ({ ...identity(), did, method: `${did}#${fragment}` });
-const login = keyOf(ACME, 'login-1');
-const assert = keyOf(ACME, 'key-1');
-const service = keyOf(SERVICE, 'key-1');
+/** A fresh key of `did`, published as `#<fragment>`, as the shared DID document helpers take one. */
+const webKey = (did: string, fragment: string) => published({ ...identity(), did, method: `${did}#${fragment}` });
+const login = webKey(ACME, 'login-1');
+const assert = webKey(ACME, 'key-1');
+const service = webKey(SERVICE, 'key-1');
 
-const methodOf = (key: TestIdentity) => ({ id: key.method, type: 'JsonWebKey2020', controller: key.did, publicKeyJwk: key.publicJwk });
 const documents: Record<string, DIDDocument> = {
-  [ACME]: { id: ACME, verificationMethod: [methodOf(login), methodOf(assert)], authentication: [login.method], assertionMethod: [assert.method] },
-  [SERVICE]: { id: SERVICE, verificationMethod: [methodOf(service)], assertionMethod: [service.method] },
+  [ACME]: acmeDocument(login, assert),
+  [SERVICE]: issuerDidDocument(methodOf(service)),
 };
 
 const READ = { revoked: false, fresh: true };

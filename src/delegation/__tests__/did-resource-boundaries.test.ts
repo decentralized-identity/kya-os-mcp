@@ -64,7 +64,7 @@ describe('the DID document walk', () => {
   it('measures every string as compact JSON writes it in UTF-8', () => {
     for (const text of ['\u0000\u0001\u001f', '"\\\b\f\n\r\t', '\u007f\u0080\u07ff\u0800\uffff', '\u{1F600}', '\uD800', '\uDC00x']) {
       const document = { id: did, text };
-      expect(measureDidDocument(document)).toEqual({ ok: true, bytes: utf8Length(document) });
+      expect(measureDidDocument(document)).toMatchObject({ ok: true, bytes: utf8Length(document) });
     }
   });
 });

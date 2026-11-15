@@ -125,15 +125,15 @@ describe('a prototype that is not an Object.prototype', () => {
 describe('a prototype the walk admits', () => {
   it('is null, this realm\'s Object.prototype, or the Object.prototype of another realm', () => {
     const bytes = JSON.stringify({ id: DID }).length;
-    expect(measureDidDocument(inheriting(null, { id: DID }))).toEqual({ ok: true, bytes });
-    expect(measureDidDocument({ id: DID })).toEqual({ ok: true, bytes });
-    expect(measureDidDocument(vm.runInNewContext(`({ id: '${DID}' })`))).toEqual({ ok: true, bytes });
+    expect(measureDidDocument(inheriting(null, { id: DID }))).toMatchObject({ ok: true, bytes });
+    expect(measureDidDocument({ id: DID })).toMatchObject({ ok: true, bytes });
+    expect(measureDidDocument(vm.runInNewContext(`({ id: '${DID}' })`))).toMatchObject({ ok: true, bytes });
   });
 
   it('carries only member names this realm\'s Object.prototype has, so no key of a document is inherited', () => {
     const bytes = JSON.stringify({ id: DID }).length;
     const sameNames = handBuiltPrototype('Object', { toString: { value: () => 'x' }, hasOwnProperty: { value: () => true } });
-    expect(measureDidDocument(inheriting(sameNames, { id: DID }))).toEqual({ ok: true, bytes });
-    expect(measureDidDocument(inheriting(handBuiltPrototype('Object'), { id: DID }))).toEqual({ ok: true, bytes });
+    expect(measureDidDocument(inheriting(sameNames, { id: DID }))).toMatchObject({ ok: true, bytes });
+    expect(measureDidDocument(inheriting(handBuiltPrototype('Object'), { id: DID }))).toMatchObject({ ok: true, bytes });
   });
 });

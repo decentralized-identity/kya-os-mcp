@@ -37,8 +37,9 @@ const REFUSED: BoundedResolution = { status: 'refused' };
 
 /**
  * Resolve `did` through an application-supplied resolver within the limits. A DID or `key` over
- * its limit is refused before the resolver is asked. A document a built-in resolver admitted is not
- * walked again; any other is walked on every resolution, and neither copied nor frozen. A missed
+ * its limit is refused before the resolver is asked. A document a walk already handed back, frozen,
+ * is not walked again and is returned as it is; any other is walked on every resolution, and what
+ * is returned is the walk's frozen copy of it, never the resolver's own object. A missed
  * deadline rejects, apart from a resolver that found nothing. `within` is the deadline the caller
  * shares with its other steps, or the milliseconds of one this resolution has to itself, by default
  * {@link DID_RESOLUTION_TIMEOUT_MS}.
@@ -55,7 +56,9 @@ export async function resolveWithinLimits(
     if (bound !== within) bound.clear();
   }
   if (doc === null || doc === undefined) return NOT_FOUND;
-  return isAdmittedDidDocument(doc) || measureDidDocument(doc).ok ? { status: 'found', document: doc } : REFUSED;
+  if (isAdmittedDidDocument(doc)) return { status: 'found', document: doc };
+  const measure = measureDidDocument(doc);
+  return measure.ok ? { status: 'found', document: measure.document } : REFUSED;
 }
 
 /** {@link resolveWithinLimits}'s document, or `null` when it found none or refused it. */

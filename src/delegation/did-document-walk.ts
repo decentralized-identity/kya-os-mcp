@@ -1,14 +1,21 @@
 /**
- * The walk that measures a DID document as JSON data against SPEC §4.4.2, without serializing it.
+ * The walk that measures a DID document as JSON data against SPEC §4.4.2, without serializing it,
+ * and hands back the document a verifier reads.
  *
  * A document a built-in resolver parsed is walked once: the walk freezes each container as it
  * leaves it and brands the document, so no later check walks it again and nobody can change it
  * after it was measured. A document from a custom resolver is walked strictly on each resolution,
- * and neither copied nor frozen, so the application keeps the object it returned: the walk refuses
- * accessors on object members and anything else JSON could not have produced, and it never calls a
- * getter or `toJSON`. Array elements are read as values in both walks: a descriptor
- * read per index costs about eight times as much, and an accessor on an array index, like a Proxy
- * trap, can only come from application code.
+ * and the walk builds a copy as it goes: a plain object of this realm for each object, holding its
+ * own enumerable data members, and a plain array of this realm for each array, holding the
+ * elements read by index, each value read once. The copy is frozen and branded like a parsed
+ * document, and it is what a verifier reads, so a verifier reads exactly what was measured,
+ * whatever the resolver's object does afterwards or answers a second time: a replaced or inherited
+ * `Symbol.iterator` or array method, a getter on an index, a `Proxy`, a member that is not
+ * enumerable, or a change made after the walk. The application keeps the object it returned, which
+ * is neither frozen nor changed. The strict walk refuses accessors on object members and anything
+ * else JSON could not have produced, and it never calls an object member's getter or `toJSON`. An
+ * accessor on an array index, like a Proxy trap, runs once, and the value it gives is the one
+ * measured and copied.
  */
 
 import {
@@ -17,10 +24,14 @@ import {
 } from './did-resource-policy.js';
 import { isValidDid } from '../utils/did-helpers.js';
 import { isRecord } from '../utils/guards.js';
+import type { DIDDocument } from './vc-verifier.types.js';
 
-/** A document's compact JSON size in UTF-8 bytes, or why it is refused. */
+/**
+ * A document's compact JSON size in UTF-8 bytes and the document a verifier may read, which is
+ * frozen and branded, or why it is refused.
+ */
 export type DidDocumentMeasure =
-  | { readonly ok: true; readonly bytes: number }
+  | { readonly ok: true; readonly bytes: number; readonly document: DIDDocument }
   | { readonly ok: false; readonly reason: string };
 
 const RELATIONSHIPS = ['verificationMethod', 'authentication', 'assertionMethod', 'keyAgreement',
@@ -30,13 +41,13 @@ const RELATIONSHIPS = ['verificationMethod', 'authentication', 'assertionMethod'
 const ASCII_WIDTH = new Uint8Array(128).map((_, code) => code < 0x20 ? 6 : 1);
 for (const code of [0x08, 0x09, 0x0a, 0x0c, 0x0d, 0x22, 0x5c]) ASCII_WIDTH[code] = 2;
 
-/** Documents a built-in resolver parsed, measured and froze. */
+/** Documents the walk measured and froze: one a built-in resolver parsed, or the walk's copy of any other. */
 const admitted = new WeakSet<object>();
 
 /** Ends a walk with the reason a document is refused. */
 class Refusal extends Error {}
 
-/** Whether `value` is a document {@link admitParsedDidDocument} admitted, so it needs no walk. */
+/** Whether `value` is a document a walk handed back, measured and frozen, so it needs no walk. */
 export function isAdmittedDidDocument(value: unknown): boolean {
   return typeof value === 'object' && value !== null && admitted.has(value);
 }
@@ -46,20 +57,23 @@ export function isAdmittedDidDocument(value: unknown): boolean {
  * Parsed JSON holds only plain data, so members are read as values too.
  */
 export function admitParsedDidDocument(value: unknown): DidDocumentMeasure {
-  const measure = measureWith(value, true);
-  if (measure.ok) admitted.add(value as object);
-  return measure;
+  return measureWith(value, true);
 }
 
-/** Measure a document from a custom resolver, strictly, as it is now. */
+/**
+ * Measure a document from a custom resolver, strictly, as it is now. Its `document` is the walk's
+ * frozen copy of what it measured, and `value` itself is left as it was.
+ */
 export function measureDidDocument(value: unknown): DidDocumentMeasure {
   return measureWith(value, false);
 }
 
 function measureWith(value: unknown, parsed: boolean): DidDocumentMeasure {
   try {
-    const bytes = new Walk(parsed).document(value);
-    return { ok: true, bytes };
+    const walk = new Walk(parsed);
+    const document = walk.document(value);
+    admitted.add(document);
+    return { ok: true, bytes: walk.bytes, document };
   } catch (error) {
     if (error instanceof Refusal) return { ok: false, reason: error.message };
     // A Proxy trap or an accessor on an array index threw: the value is not JSON data.
@@ -68,18 +82,19 @@ function measureWith(value: unknown, parsed: boolean): DidDocumentMeasure {
 }
 
 class Walk {
-  private bytes = 0;
+  bytes = 0;
   private members = 0;
   /** The containers enclosing the one being walked: at most 64, so a scan is cheaper than a set. */
   private readonly ancestors: object[] = [];
 
   constructor(private readonly parsed: boolean) {}
 
-  document(value: unknown): number {
+  /** The document a verifier may read: `value` itself when it was parsed, else the copy of it. */
+  document(value: unknown): DIDDocument {
     if (!isRecord(value)) throw new Refusal('document is not a JSON object');
-    this.value(value, 1);
-    checkIdentifiers(value);
-    return this.bytes;
+    const held = this.value(value, 1) as Record<string, unknown>;
+    checkIdentifiers(held);
+    return held as unknown as DIDDocument;
   }
 
   private charge(bytes: number): void {
@@ -87,18 +102,18 @@ class Walk {
     if (this.bytes > MAX_DID_DOCUMENT_BYTES) throw new Refusal('document byte limit exceeded');
   }
 
-  private value(item: unknown, depth: number): void {
+  /** Measures `item` and returns it as a verifier may hold it: a container frozen, or copied and frozen. */
+  private value(item: unknown, depth: number): unknown {
     switch (typeof item) {
-      case 'string': this.string(item); return;
-      case 'boolean': this.charge(item ? 4 : 5); return;
+      case 'string': this.string(item); return item;
+      case 'boolean': this.charge(item ? 4 : 5); return item;
       case 'number':
         if (!Number.isFinite(item)) throw new Refusal('number JSON cannot hold');
         this.charge(String(item).length);
-        return;
+        return item;
       case 'object':
-        if (item === null) { this.charge(4); return; }
-        this.container(item, depth);
-        return;
+        if (item === null) { this.charge(4); return item; }
+        return this.container(item, depth);
       default: throw new Refusal(`${typeof item} JSON cannot hold`);
     }
   }
@@ -116,29 +131,40 @@ class Walk {
     this.charge(width);
   }
 
-  private container(item: object, depth: number): void {
+  private container(item: object, depth: number): object {
     if (depth > MAX_JSON_DEPTH) throw new Refusal('nesting limit exceeded');
     // Parsed JSON is a tree; only a custom resolver's document can hold a cycle.
     if (!this.parsed && this.ancestors.includes(item)) throw new Refusal('document has a cycle');
     this.ancestors.push(item);
     this.charge(2);
-    if (Array.isArray(item)) this.array(item, depth);
-    else if (isPlainObjectOfAnyRealm(item)) this.object(item, depth);
+    let held: object;
+    if (Array.isArray(item)) held = this.array(item, depth);
+    else if (isPlainObjectOfAnyRealm(item)) held = this.object(item, depth);
     else throw new Refusal('value is neither an array nor a plain object');
     this.ancestors.pop();
-    if (this.parsed) Object.freeze(item);
+    return Object.freeze(held);
   }
 
-  /** Every element costs at least one byte and every comma one more, so the byte limit ends a long array. */
-  private array(item: unknown[], depth: number): void {
-    for (let i = 0; i < item.length; i++) {
+  /**
+   * Every element costs at least one byte and every comma one more, so the byte limit ends a long
+   * array. The length and each element are read once, by index, and no method or iterator of the
+   * array is called; a parsed array is kept, and any other is copied into an array of this realm.
+   */
+  private array(item: unknown[], depth: number): unknown[] {
+    const held: unknown[] = this.parsed ? item : [];
+    const length = item.length;
+    for (let i = 0; i < length; i++) {
       if (!Object.hasOwn(item, i)) throw new Refusal('array is sparse');
       if (i > 0) this.charge(1);
-      this.value(item[i], depth + 1);
+      const element = this.value(item[i], depth + 1);
+      if (!this.parsed) held[i] = element;
     }
+    return held;
   }
 
-  private object(item: object, depth: number): void {
+  /** A parsed object is kept; any other is copied, member by member, into a plain object of this realm. */
+  private object(item: object, depth: number): object {
+    const held: object = this.parsed ? item : {};
     let written = 0;
     const keys = this.parsed ? Object.keys(item) : Reflect.ownKeys(item);
     for (const key of keys) {
@@ -153,8 +179,11 @@ class Walk {
       written++;
       this.string(key);
       this.charge(1);
-      this.value(member, depth + 1);
+      const value = this.value(member, depth + 1);
+      // Defined, not assigned: assigning a member named `__proto__` would set the copy's prototype.
+      if (!this.parsed) Object.defineProperty(held, key, { value, enumerable: true });
     }
+    return held;
   }
 }
 
@@ -209,21 +238,21 @@ function isLowSurrogate(code: number): boolean {
 }
 
 /**
- * Whether `item` is a plain object of any realm: one that inherits no member a verifier could read
- * in place of an own one. The walk measures own members, and a key lookup reads a document's and a
- * method's members by name, so an inherited `verificationMethod` would be read without having been
- * measured. This rule is what makes the two agree. It admits a prototype that is:
+ * Whether `item` is a plain object of any realm, the only kind of object, beside an array, that
+ * JSON data holds. It admits a prototype that is:
  * - `null`, or this realm's `Object.prototype`; or
  * - the `Object.prototype` of another realm, since a resolver may parse a document in a `vm`
  *   context or a frame: an object with no prototype of its own, whose `constructor` is a function
  *   named `Object` that points back to it, and whose every own member name, getters and symbols
  *   included, is one this realm's `Object.prototype` has too.
  *
- * So whatever an admitted object inherits has a name such as `toString` or `hasOwnProperty`, never
- * a name of the DID data model, and a class instance, a `Date`, a `Map` and a prototype built by
- * hand to carry a document's members are refused. The constructor's members are read from their
- * descriptors, so no getter runs. `isPlainObjectOfThisRealm` (`utils/guards.ts`) is the stricter
- * rule: it holds configuration to this realm's `Object.prototype` alone.
+ * So a class instance, a `Date`, a `Map` and a prototype built by hand to carry a document's
+ * members are refused, and whatever an admitted object inherits has a name such as `toString` or
+ * `hasOwnProperty`, never a name of the DID data model. The walk copies own members only, so a
+ * verifier, which reads the copy, reads nothing an object inherits either way; the rule refuses
+ * what is not data, and does so without running a getter, reading the constructor's members from
+ * their descriptors. `isPlainObjectOfThisRealm` (`utils/guards.ts`) is the stricter rule: it holds
+ * configuration to this realm's `Object.prototype` alone.
  */
 function isPlainObjectOfAnyRealm(item: object): boolean {
   const proto = Object.getPrototypeOf(item) as object | null;

@@ -42,29 +42,29 @@ describe('the walk measures compact JSON in UTF-8', () => {
     const generate = generator(7);
     for (let i = 0; i < 500; i++) {
       const document = generate();
-      expect(measureDidDocument(document)).toEqual({ ok: true, bytes: utf8(document) });
-      expect(admitParsedDidDocument(JSON.parse(JSON.stringify(document)))).toEqual({ ok: true, bytes: utf8(document) });
+      expect(measureDidDocument(document)).toMatchObject({ ok: true, bytes: utf8(document) });
+      expect(admitParsedDidDocument(JSON.parse(JSON.stringify(document)))).toMatchObject({ ok: true, bytes: utf8(document) });
     }
   });
 
   it('counts a surrogate pair as four bytes and a lone surrogate as the six of its escape', () => {
     const strings = ['\ud83d\ude00', '\ud800', '\ud800a', '\ud800\ud800', '\udc00\ud800', 'a\udfff', '\ud800\u00e9'];
     for (const value of strings) {
-      expect(measureDidDocument({ id: did, value }), JSON.stringify(value)).toEqual({ ok: true, bytes: utf8({ id: did, value }) });
+      expect(measureDidDocument({ id: did, value }), JSON.stringify(value)).toMatchObject({ ok: true, bytes: utf8({ id: did, value }) });
     }
   });
 
   it('counts a null as four bytes and each array comma as one', () => {
     for (const value of [null, [null], [null, null, null], [[], [], []], [{}, {}]]) {
-      expect(measureDidDocument({ id: did, value })).toEqual({ ok: true, bytes: utf8({ id: did, value }) });
+      expect(measureDidDocument({ id: did, value })).toMatchObject({ ok: true, bytes: utf8({ id: did, value }) });
     }
   });
 
   it('skips a member that is not enumerable, or whose value is undefined, as JSON.stringify does', () => {
     const document = Object.defineProperty({ id: did, kept: 1, gone: undefined }, 'hidden', { value: 'x'.repeat(2_000_000) });
-    expect(measureDidDocument(document)).toEqual({ ok: true, bytes: utf8({ id: did, kept: 1 }) });
+    expect(measureDidDocument(document)).toMatchObject({ ok: true, bytes: utf8({ id: did, kept: 1 }) });
     const hiddenSymbol = Object.defineProperty({ id: did }, Symbol('hidden'), { value: 1 });
-    expect(measureDidDocument(hiddenSymbol)).toEqual({ ok: true, bytes: utf8({ id: did }) });
+    expect(measureDidDocument(hiddenSymbol)).toMatchObject({ ok: true, bytes: utf8({ id: did }) });
   });
 });
 
@@ -98,7 +98,7 @@ describe('the walk refuses what JSON could not hold', () => {
 
   it('runs a getter on an array index, as application code, and measures what it returns, or refuses when it throws', () => {
     const value = Object.defineProperty([0], 0, { get: () => 'returned', enumerable: true });
-    expect(measureDidDocument({ id: did, value })).toEqual({ ok: true, bytes: utf8({ id: did, value: ['returned'] }) });
+    expect(measureDidDocument({ id: did, value })).toMatchObject({ ok: true, bytes: utf8({ id: did, value: ['returned'] }) });
     const throwing = Object.defineProperty([0], 0, { get: () => { throw new Error('getter'); }, enumerable: true });
     expect(measureDidDocument({ id: did, value: throwing }))
       .toEqual({ ok: false, reason: 'document could not be read as JSON data' });
@@ -118,9 +118,9 @@ describe('a plain object from another realm', () => {
   it('is accepted, written as a literal there or parsed by that realm', () => {
     const literal = vm.runInNewContext(`({ id: '${did}', value: [1, { nested: null }], empty: Object.create(null) })`) as object;
     expect(Object.getPrototypeOf(literal)).not.toBe(Object.prototype);
-    expect(measureDidDocument(literal)).toEqual({ ok: true, bytes: utf8(literal) });
+    expect(measureDidDocument(literal)).toMatchObject({ ok: true, bytes: utf8(literal) });
     const parsed = vm.runInNewContext('JSON.parse(text)', { text: JSON.stringify({ id: did, value: [{ a: 1 }] }) }) as object;
-    expect(measureDidDocument(parsed)).toEqual({ ok: true, bytes: utf8(parsed) });
+    expect(measureDidDocument(parsed)).toMatchObject({ ok: true, bytes: utf8(parsed) });
   });
 
   it('is refused when it is a class instance there', () => {
@@ -155,7 +155,7 @@ describe('a document a built-in resolver parsed', () => {
     expect([isAdmittedDidDocument(measured), Object.isFrozen(measured)]).toEqual([false, false]);
   });
 
-  it('is not walked again by the verifier boundary, while any other document is walked on each resolution', async () => {
+  it('is not walked again by the verifier boundary, while any other document is walked, and copied, on each resolution', async () => {
     const admitted = JSON.parse(JSON.stringify({ id: did, value: [1, 2] })) as DIDDocument;
     admitParsedDidDocument(admitted);
     const other = { id: did, value: [1, 2] } as DIDDocument;
@@ -163,11 +163,15 @@ describe('a document a built-in resolver parsed', () => {
     try {
       expect(await resolveBoundedDid({ resolve: async () => admitted }, did)).toBe(admitted);
       expect(ownKeys).not.toHaveBeenCalled();
-      expect(await resolveBoundedDid({ resolve: async () => other }, did)).toBe(other);
-      expect(await resolveBoundedDid({ resolve: async () => other }, did)).toBe(other);
+      const first = await resolveBoundedDid({ resolve: async () => other }, did);
+      const second = await resolveBoundedDid({ resolve: async () => other }, did);
       expect(ownKeys.mock.calls.filter(([target]) => target === other)).toHaveLength(2);
-      // Neither copied nor frozen: the verifier uses what the resolver returned, as it is.
-      expect(Object.isFrozen(other)).toBe(false);
+      // The verifier reads the walk's frozen copy; the resolver keeps its own object as it was.
+      expect([first, second]).toEqual([other, other]);
+      expect([first === other, second === first, Object.isFrozen(first), Object.isFrozen(other)]).toEqual([false, false, true, false]);
+      ownKeys.mockClear();
+      expect(await resolveBoundedDid({ resolve: async () => first }, did)).toBe(first);
+      expect(ownKeys).not.toHaveBeenCalled();
     } finally { ownKeys.mockRestore(); }
   });
 });

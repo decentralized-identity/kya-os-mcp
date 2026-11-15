@@ -196,13 +196,13 @@ describe('DID resource boundaries', () => {
     expect(measureDidDocument(cycle)).toEqual({ ok: false, reason: 'document has a cycle' });
     const shared = { kept: [1] };
     const twice = { id: did, first: shared, second: shared };
-    expect(measureDidDocument(twice)).toEqual({ ok: true, bytes: encoded(JSON.stringify(twice)).length });
-    expect(measureDidDocument({ ...document, optional: undefined })).toEqual({ ok: true, bytes: encoded(JSON.stringify(document)).length });
+    expect(measureDidDocument(twice)).toMatchObject({ ok: true, bytes: encoded(JSON.stringify(twice)).length });
+    expect(measureDidDocument({ ...document, optional: undefined })).toMatchObject({ ok: true, bytes: encoded(JSON.stringify(document)).length });
     const unicode = { id: did, unicode: '\uD800😀\n' };
-    expect(measureDidDocument(unicode)).toEqual({ ok: true, bytes: encoded(JSON.stringify(unicode)).length });
+    expect(measureDidDocument(unicode)).toMatchObject({ ok: true, bytes: encoded(JSON.stringify(unicode)).length });
     for (const literal of [true, false, null]) {
       const stated = { ...document, deactivated: literal };
-      expect(measureDidDocument(stated)).toEqual({ ok: true, bytes: encoded(JSON.stringify(stated)).length });
+      expect(measureDidDocument(stated)).toMatchObject({ ok: true, bytes: encoded(JSON.stringify(stated)).length });
     }
     vi.useFakeTimers();
     try {

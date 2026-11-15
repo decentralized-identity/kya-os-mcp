@@ -52,11 +52,10 @@ describe('proof DID resource boundary', () => {
     // Nothing here reaches the network: a did:web fallback, were there one, would read this.
     const fetch = vi.spyOn(runtime, 'fetch').mockImplementation(async () => new Response(null, { status: 404 }));
     const fetcher = kind === 'runtime' ? runtime : kind === 'subclass' ? new Override() : kind === 'wrapper' ? wrapping(runtime) : custom;
-    // RuntimeFetchProvider walks a configured resolver's document for each of its callers, and the verifier walks it again.
-    const walks = kind === 'runtime' || kind === 'wrapper' ? 2 : 1;
+    // Whoever walks the document first, RuntimeFetchProvider or the verifier, hands on its frozen copy, which is not walked again.
     const check = verifier(fetcher);
     expect(await check.fetchPublicKeyFromDID(did)).toMatchObject(jwk);
-    expect(ownKeys).toHaveBeenCalledTimes(walks);
+    expect(ownKeys).toHaveBeenCalledOnce();
     ownKeys.mockClear();
     doc.id = 'd'.repeat(MAX_DID_LENGTH + 1);
     await expect(check.fetchPublicKeyFromDID(did)).rejects.toThrow();

@@ -377,11 +377,12 @@ In a browser, which hides where a redirect leads, every redirect is refused.
 Before a verifier calls a resolver it checks the DID and key identifier limits, it waits at most 5 seconds, or the time the host set, for the resolver's promise, and it checks the document returned before it selects a key.
 That check walks the document as plain JSON data: it refuses cycles, an accessor on an object member, enumerable or not, sparse arrays, enumerable symbol keys, objects other than arrays and plain objects of any realm, and values JSON cannot hold, and it never calls an object member's getter or `toJSON`.
 It reads array elements as values, since a descriptor read for each index costs several times as much.
-So a getter on an array index is not refused: it runs, as the application code it is, like a Proxy trap, and the walk measures the value it returns, or refuses the document when it throws.
+So a getter on an array index is not refused: it runs once, as the application code it is, like a Proxy trap, and the walk measures the value it returns, or refuses the document when it throws.
 It skips an object member that is a data member but not enumerable, or whose value is `undefined`, as `JSON.stringify` does, and measures the document's compact JSON size in UTF-8 without serializing it.
 A returned document, including one from a custom `FetchProvider.resolveDID`, must have an `id` that is a DID, a string that starts with `did:`, within the DID limit.
 A document a built-in resolver parses is walked once, frozen and branded, so neither its cache nor a verifier walks it again and no caller can change it; a verifier knows it by that brand, whichever provider, subclass or wrapper returns it.
-Any other document is walked on each resolution, by the verifier as well as by a `RuntimeFetchProvider` that returns it from a configured resolver, and is neither copied nor frozen.
+Any other document is walked on each resolution, and the walk copies what it measures, each own enumerable data member and each array element by index, read once, into plain objects and arrays that it freezes and brands as it does a parsed document.
+A verifier reads that copy, and so does a caller of a `RuntimeFetchProvider` that returns it from a configured resolver, so what is read is what was measured, whatever the resolver's object inherits, answers a second time or becomes afterwards; the resolver's own object is neither frozen nor changed.
 Concurrent resolutions of one DID by one built-in resolver share one fetch until the resolution deadline; a fetch still pending then is dropped, so the next resolution starts a fresh one.
 
 A custom resolver remains responsible for bounding its own network, parsing and CPU work.

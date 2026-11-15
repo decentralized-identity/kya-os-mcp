@@ -54,7 +54,9 @@ export interface KyaOsDelegationConfig {
    * fetch-backed did:web resolution. One deadline, `dependencyTimeoutMs`, covers the whole
    * resolution, and the document it returns is held to the limits of SPEC
    * §4.4.2 on every call, with an `id` that is a DID: a document they refuse
-   * ends the resolution, with no fallback. It is neither copied nor frozen.
+   * ends the resolution, with no fallback. The gate reads its own copy of the
+   * document, made as it is checked; the object returned is neither frozen nor
+   * changed.
    */
   didResolver?: DIDResolver;
   /**

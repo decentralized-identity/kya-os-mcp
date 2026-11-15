@@ -9,13 +9,10 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { CheqdStatusListResolver } from '../statuslist-resolver.js';
-import {
-  createRealCryptoProvider,
-  createRealIdentity,
-  createRealStatusListManager,
-} from '../../../__tests__/audit/helpers/crypto-helpers.js';
+import { createRealCryptoProvider, createRealStatusListManager } from '../../../__tests__/audit/helpers/crypto-helpers.js';
+import { keyOf } from '../../../__tests__/utils/delegation-credentials.js';
+import { documentOf, issuerDidDocument, methodOf } from '../../../__tests__/utils/did-documents.js';
 import { statusListGzipCodec } from '../../../utils/statuslist-gzip.js';
-import { base58Encode } from '../../../utils/base58.js';
 import type { AgentIdentity, FetchProvider } from '../../../providers/base.js';
 import type { DIDDocument } from '../../../delegation/vc-verifier.types.js';
 import type { NodeCryptoProvider } from '../../../__tests__/utils/node-crypto-provider.js';
@@ -31,13 +28,6 @@ describe("CheqdStatusListResolver holds a list to its trusted issuer and to that
   let otherAssert: AgentIdentity;
   const signedWith = new Map<AgentIdentity, { entry: CredentialStatus; list: StatusList2021Credential }>();
   let documents: Record<string, DIDDocument>;
-
-  const methodOf = (key: AgentIdentity) => ({
-    id: key.kid,
-    type: 'Ed25519VerificationKey2020',
-    controller: key.did,
-    publicKeyMultibase: `z${base58Encode(new Uint8Array([0xed, 0x01, ...Buffer.from(key.publicKey, 'base64')]))}`,
-  });
 
   /** Check the entry of the list `key` signed, with the resolver pinned to `pinned`. */
   const check = (key: AgentIdentity, pinned = ACME) => {
@@ -57,17 +47,14 @@ describe("CheqdStatusListResolver holds a list to its trusted issuer and to that
 
   beforeAll(async () => {
     crypto = createRealCryptoProvider();
-    const keyOf = async (did: string, fragment: string): Promise<AgentIdentity> => ({
-      ...(await createRealIdentity(crypto)),
-      did,
-      kid: `${did}#${fragment}`,
-    });
     login = await keyOf(ACME, 'login-1');
     assert = await keyOf(ACME, 'key-1');
     otherAssert = await keyOf(OTHER, 'key-1');
+    // Each key is published as cheqd publishes one, as a multibase Ed25519 public key.
+    const method = (key: AgentIdentity) => methodOf(key, { form: 'multibase' });
     documents = {
-      [ACME]: { id: ACME, verificationMethod: [methodOf(login), methodOf(assert)], authentication: [login.kid], assertionMethod: [assert.kid] } as DIDDocument,
-      [OTHER]: { id: OTHER, verificationMethod: [methodOf(otherAssert)], assertionMethod: [otherAssert.kid] } as DIDDocument,
+      [ACME]: documentOf({ verificationMethod: [method(login), method(assert)], authentication: [login.kid], assertionMethod: [assert.kid] }, ACME),
+      [OTHER]: issuerDidDocument(method(otherAssert)),
     };
     for (const key of [login, assert, otherAssert]) {
       const setup = createRealStatusListManager(crypto, key, { statusListBaseUrl: 'https://status.example' });

@@ -163,6 +163,8 @@ export function createDelegationVerification(
   );
   const didResolver: DIDResolver = {
     async resolve(did: string) {
+      // The verifier stops waiting at its deadline, so no further resolver is asked once it has passed.
+      const deadline = Date.now() + dependencyTimeoutMs;
       const customResolver = delegationConfig?.didResolver;
       if (customResolver) {
         const resolved = await customResolver.resolve(did);
@@ -172,7 +174,7 @@ export function createDelegationVerification(
       }
 
       const method = getDidMethod(did);
-      const configuredResolver = method ? configuredDidResolvers[method] : undefined;
+      const configuredResolver = method && Date.now() < deadline ? configuredDidResolvers[method] : undefined;
       if (configuredResolver) {
         try {
           const resolved = await configuredResolver.resolve(did);
@@ -188,7 +190,7 @@ export function createDelegationVerification(
         return didKeyResolver.resolve(did);
       }
 
-      if (did.startsWith("did:web:")) {
+      if (did.startsWith("did:web:") && Date.now() < deadline) {
         return didWebResolver?.resolve(did) ?? null;
       }
 

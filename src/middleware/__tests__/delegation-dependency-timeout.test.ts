@@ -92,6 +92,43 @@ describe.each(DEADLINES)('the delegation gate, %s', (_label, option, ms, stated)
     expect(resolved).toBeNull();
   });
 
+  describe('a resolver that finds nothing', () => {
+    /** A resolver that answers `null` after `delay` ms. */
+    const nothingAfter = (delay: number) => ({ resolve: () => new Promise<null>((resolve) => setTimeout(() => resolve(null), delay)) });
+    /** How many did:web reads the gate starts for a credential whose resolvers are `config`, once the clock is well past the deadline. */
+    const fallbackReads = async (config: KyaOsDelegationConfig) => {
+      const vc = await credential();
+      vi.useFakeTimers();
+      const fetch = vi.fn(() => new Promise<Response>(() => undefined));
+      vi.stubGlobal('fetch', fetch);
+      const check = gate({ ...option, didResolver: undefined, ...config })(vc);
+      await vi.advanceTimersByTimeAsync(3 * ms);
+      expect((await check).valid).toBe(false);
+      return fetch.mock.calls.length;
+    };
+
+    it('is followed by the did:web read when it answers before the deadline', async () => {
+      expect(await fallbackReads({ didResolver: nothingAfter(ms - 1) })).toBe(1);
+      vi.useRealTimers();
+      expect(await fallbackReads({ didResolvers: { web: nothingAfter(ms - 1) } })).toBe(1);
+    });
+
+    it('starts no did:web read when it answers at the deadline or after it', async () => {
+      for (const delay of [ms, ms + 1, 2 * ms]) {
+        expect(await fallbackReads({ didResolver: nothingAfter(delay) })).toBe(0);
+        vi.useRealTimers();
+        expect(await fallbackReads({ didResolvers: { web: nothingAfter(delay) } })).toBe(0);
+        vi.useRealTimers();
+      }
+    });
+
+    it('asks no configured resolver when the custom one answers at the deadline or after it', async () => {
+      const configured = vi.fn(async () => null);
+      expect(await fallbackReads({ didResolver: nothingAfter(ms), didResolvers: { web: { resolve: configured } } })).toBe(0);
+      expect(configured).not.toHaveBeenCalled();
+    });
+  });
+
   it('refuses a delegation whose status its resolver has not answered for by the deadline', async () => {
     expect(await refusal(await credential({ status: STATUS }), (never) => ({ statusListResolver: { checkStatus: never } })))
       .toBe(`Delegation del-leaf invalid: Status check error: the status list resolver did not answer within ${stated}`);

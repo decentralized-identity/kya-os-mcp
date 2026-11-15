@@ -13,16 +13,14 @@ import {
   createRealCryptoProvider,
   createRealIdentity,
   createRealSignatureVerifier,
-  createRealSigningFunction,
   createRealStatusListManager,
   type RealStatusListSetup,
 } from '../../../__tests__/audit/helpers/crypto-helpers.js';
 import { createDidKeyResolver } from '../../../delegation/did-key-resolver.js';
 import { DelegationCredentialVerifier, type StatusListResolver } from '../../../delegation/vc-verifier.js';
-import { canonicalizeJSON } from '../../../delegation/utils.js';
 import { statusListGzipCodec } from '../../../utils/statuslist-gzip.js';
 import type { AgentIdentity, FetchProvider } from '../../../providers/base.js';
-import { delegationRecord, signedCredential } from '../../../__tests__/utils/delegation-credentials.js';
+import { delegationRecord, resignedCredential, signedCredential } from '../../../__tests__/utils/delegation-credentials.js';
 import type { NodeCryptoProvider } from '../../../__tests__/utils/node-crypto-provider.js';
 import type { CredentialStatus } from '../../../types/protocol.js';
 
@@ -57,10 +55,7 @@ describe('CheqdStatusListResolver and the status-list acceptance rule', () => {
   /** The pinned issuer's list with `change` applied, signed again by that issuer, so its proof verifies. */
   async function resignedList(change: (unsigned: Record<string, unknown>) => Record<string, unknown>) {
     const stored = await setup.storage.getStatusList(clearEntry.statusListCredential);
-    const { proof: _proof, ...unsigned } = stored as unknown as Record<string, unknown>;
-    const changed = change(unsigned);
-    const sign = createRealSigningFunction(crypto, pinned);
-    return { ...changed, proof: await sign(canonicalizeJSON(changed), pinned.did, pinned.kid) };
+    return resignedCredential(stored as never, change, pinned);
   }
 
   beforeAll(async () => {
@@ -307,9 +302,8 @@ describe('CheqdStatusListResolver and the status-list acceptance rule', () => {
         cacheTtlMs: 60_000,
       });
       const stored = await setup.storage.getStatusList(clearEntry.statusListCredential);
-      const { proof: _proof, ...unsigned } = stored as unknown as Record<string, unknown>;
-      const signedByOther = createRealSigningFunction(crypto, other);
-      served = { ...unsigned, proof: await signedByOther(canonicalizeJSON(unsigned), pinned.did, pinned.kid) };
+      // Forged on purpose: the pinned issuer's list, signed with another DID's key under the pinned issuer's key id.
+      served = await resignedCredential(stored as never, {}, other, pinned.kid);
       for (let read = 0; read < 2; read += 1) {
         await expect(resolver.checkStatus(clearEntry)).rejects.toThrow(
           'Status list signature verification FAILED against the issuer DID document',

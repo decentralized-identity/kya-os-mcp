@@ -1,8 +1,8 @@
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { createRevocationChecker } from '../../card/revocation.js';
-import { createRealSignatureVerifier, createRealSigningFunction } from '../../__tests__/audit/helpers/crypto-helpers.js';
-import { credentialJwt, delegationRecord, keyFromJwk, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
+import { createRealSignatureVerifier } from '../../__tests__/audit/helpers/crypto-helpers.js';
+import { credentialJwt, delegationRecord, keyFromJwk, resignedCredential, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 import { NodeCryptoProvider as TestCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
 import { identity, serveAt } from '../../card/__tests__/signed-chain-helpers.js';
 import { CheqdStatusListResolver } from '../../integrations/cheqd/statuslist-resolver.js';
@@ -13,7 +13,6 @@ import { statusListGzipCodec } from '../../utils/statuslist-gzip.js';
 import { validateDelegationChain } from '../chain-enforcement.js';
 import { createDidKeyResolver } from '../did-key-resolver.js';
 import { withStatusCache } from '../status-cache.js';
-import { canonicalizeJSON } from '../utils.js';
 import { verifySignature } from '../vc-verification-checks.js';
 import { DelegationCredentialVerifier, type StatusListResolver } from '../vc-verifier.js';
 
@@ -25,9 +24,9 @@ const url = (hop: number) => `https://status.example/hop-${hop}`;
 const crypto = new TestCryptoProvider();
 /** Each party's key as the shared credential helpers take one. */
 const keys = parties.map((party) => keyFromJwk(party.did, party.method, party.privateJwk));
-/** `document`, a status list, with a proof the root makes over it through the shared signing function. */
+/** `document`, a status list, with a proof the root makes over it, as the shared helper signs a credential. */
 async function signedList(document: Record<string, unknown>): Promise<Record<string, unknown>> {
-  return { ...document, proof: await createRealSigningFunction(crypto, keys[0]!)(canonicalizeJSON(document), root.did, root.method) };
+  return (await resignedCredential(document as never, {}, keys[0]!)) as unknown as Record<string, unknown>;
 }
 const signatureVerifier = createRealSignatureVerifier(crypto);
 const chain = await Promise.all([0, 1, 2].map((hop) => signedCredential(keys[hop]!, {

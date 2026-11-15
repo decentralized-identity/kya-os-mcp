@@ -90,18 +90,19 @@ export function signedJwt(
 
 /**
  * `credential` with `changes` made to it, and a Data Integrity proof `key` makes over the result
- * naming `kid` (default: `key`'s own id). The proof verifies only under a key of the issuer the
+ * naming `kid` (default: `key`'s own id). `changes` is the members to set, or, to take a member out
+ * or change one in place, a function from the credential without its proof to the one to sign. The proof verifies only under a key of the issuer the
  * result names, so a test forges a credential by signing one that names another issuer, or another's
  * key id.
  */
 export async function resignedCredential(
   credential: Omit<DelegationCredential, 'proof'>,
-  changes: Partial<Record<keyof DelegationCredential, unknown>>,
+  changes: Partial<Record<keyof DelegationCredential, unknown>> | ((unsigned: Record<string, unknown>) => Record<string, unknown>),
   key: AgentIdentity,
   kid: string = key.kid,
 ): Promise<DelegationCredential> {
   const { proof: _proof, ...unsigned } = credential as DelegationCredential;
-  const changed = { ...unsigned, ...changes };
+  const changed = typeof changes === 'function' ? changes(unsigned) : { ...unsigned, ...changes };
   const proof = await createRealSigningFunction(crypto, key)(canonicalizeJSON(changed), key.did, kid);
   return { ...changed, proof } as unknown as DelegationCredential;
 }

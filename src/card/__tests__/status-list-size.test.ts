@@ -10,7 +10,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { MALFORMED_STATUS_SIZES, TWO_BIT_MESSAGES } from '../../__tests__/utils/status-sizes.js';
+import { MALFORMED_STATUS_SIZES, TWO_BIT_MESSAGES, wideSizeReason } from '../../__tests__/utils/status-sizes.js';
 import {
   DelegationCredentialSchema,
   DelegationCredentialStatusSchema,
@@ -221,7 +221,7 @@ describe('a Card whose revocation entry is two bits wide', () => {
       const result = await verifyCard({ ...card, revocation }, { statusListChecker });
       return { revocation: result.revocation, fetches };
     };
-    expect(await run(card.revocation)).toEqual({ revocation: { revoked: true, fresh: false }, fetches: 0 });
+    expect(await run(card.revocation)).toEqual({ revocation: { revoked: true, fresh: false, reason: wideSizeReason(2) }, fetches: 0 });
     // The same entry of one bit is read from the list, which shows the size alone refused it.
     const { statusSize: _size, statusMessage: _message, ...oneBit } = card.revocation!;
     expect(await run(oneBit)).toEqual({ revocation: { revoked: bits.includes(7), fresh: true }, fetches: 1 });

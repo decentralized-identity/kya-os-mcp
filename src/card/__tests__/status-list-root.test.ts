@@ -282,6 +282,7 @@ describe("each path names a hop's issuer, and the chain's root only as the verif
       expect(await check(onAcmes(6), { credentialIssuer: c.subAgent.did, trustedRootIssuer })).toEqual({
         revoked: true,
         fresh: false,
+        reason: expect.any(String),
       });
     }
   });

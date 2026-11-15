@@ -32,6 +32,7 @@
 
 import { describeValue } from '../utils/describe-value.js';
 import { isRecord, issuerOf } from '../utils/guards.js';
+import { sanitizeForMessage } from '../utils/message-text.js';
 import { readRevocationAnswer } from '../utils/revocation-answer.js';
 import {
   acceptEntryPurpose,
@@ -87,6 +88,13 @@ export interface RevocationStatus {
   revoked: boolean;
   /** True iff read from a LIVE, in-validity-window status list (drives the L2/L3 gate). */
   fresh: boolean;
+  /**
+   * Why the status could not be proven clear, when it could not: text for people, which
+   * {@link evaluateRevocationChain} appends to the hop's refusal and `verifyCard` reports. The
+   * checker {@link createRevocationChecker} builds gives one for every entry it fails closed on,
+   * and none for an entry whose bit it read.
+   */
+  reason?: string;
 }
 
 /**
@@ -177,6 +185,12 @@ export interface RevocationCheckerDeps {
   decompress?: Decompress;
 }
 
+/**
+ * How much of a checker's `reason` a refusal carries, in UTF-16 code units: a custom checker's
+ * reason is as long as its author likes, and a refusal is shown to people and written to logs.
+ */
+export const CHECKER_REASON_LENGTH = 256;
+
 /** Fail-closed verdict: status indeterminate ⇒ treat as revoked AND not fresh. */
 const FAIL_CLOSED: RevocationStatus = { revoked: true, fresh: false };
 
@@ -241,10 +255,21 @@ export function createRevocationChecker(
       const bits = await decodeStatusList(credential, decompress);
       const revoked = readStatusBit(bits, parseStatusListIndex(entry.statusListIndex));
       return { revoked, fresh: isLive(credential, clock()) };
-    } catch {
-      return FAIL_CLOSED;
+    } catch (error) {
+      return { ...FAIL_CLOSED, reason: failureReason(error) };
     }
   };
+}
+
+/**
+ * Why the checker failed closed, from what a step threw: the message of an `Error`, without the
+ * `revocation: ` this module opens its own with, bounded and free of control characters as
+ * `sanitizeForMessage` leaves it, since a fetch or a decompressor the host injected may have
+ * thrown it. Anything else thrown is not converted.
+ */
+function failureReason(error: unknown): string {
+  if (!(error instanceof Error)) return 'the status could not be proven';
+  return sanitizeForMessage(error.message.replace(/^revocation: /, ''));
 }
 
 /**
@@ -287,6 +312,10 @@ export interface RevocationChainEntry extends Omit<StatusCheckContext, 'credenti
  * the hop with a reason that says what could not be read. No answer makes the walk throw; a checker
  * that throws or rejects still does, and the callers in this package catch that and fail closed.
  *
+ * A revoked hop's refusal ends with the `reason` its checker gave, when it gave one, after a colon:
+ * at most its first {@link CHECKER_REASON_LENGTH} UTF-16 code units, with every control character
+ * replaced, as `sanitizeForMessage` leaves text.
+ *
  * The reason for a refused hop names the hop by its `position` in the chain, or by its place among
  * `entries` when it has none, and names the list and the index its entry states. Whoever issued the
  * hop wrote both, so the reason quotes each as `describeValue` does, at most its first 64
@@ -321,8 +350,11 @@ export async function evaluateRevocationChain(
         ok: false,
         fresh: false,
         reasons: [
-          `${hopName(hop, entry)} ` +
+          [
+            `${hopName(hop, entry)} ` +
             'is revoked or unresolvable — fail-closed, subtree invalidated',
+            ...(status.reason ? [sanitizeForMessage(status.reason, CHECKER_REASON_LENGTH)] : []),
+          ].join(': '),
         ],
       };
     }

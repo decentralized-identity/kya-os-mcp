@@ -28,7 +28,7 @@ const documents: Record<string, DIDDocument> = {
 };
 
 const READ = { revoked: false, fresh: true };
-const REFUSED = { revoked: true, fresh: false };
+const REFUSED = { revoked: true, fresh: false, reason: expect.any(String) as string };
 
 /** Check Acme's credential's clear entry against the list `signer` signed, recording the proof verdicts. */
 async function check(signer: TestIdentity, statusListIssuers?: StatusListIssuers) {

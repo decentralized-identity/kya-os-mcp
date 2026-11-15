@@ -24,7 +24,8 @@ import {
   type Capability,
   type Attestation,
 } from './schema.js';
-import type { BitstringRevocationChecker } from './revocation.js';
+import { CHECKER_REASON_LENGTH, type BitstringRevocationChecker } from './revocation.js';
+import { sanitizeForMessage } from '../utils/message-text.js';
 import { readRevocationAnswer } from '../utils/revocation-answer.js';
 import type { ProofAssurance, ProofVerifyResult } from './proof/index.js';
 import type { ToolRequest } from '../proof/generator.js';
@@ -149,7 +150,8 @@ export interface VerifyCardResult {
    * Present when the card declares `revocation` and a `statusListChecker` was supplied. The checker's
    * answer is read as `evaluateRevocationChain` reads one: only a literal `revoked: false` passes and
    * only a literal `fresh: true` is fresh. An answer that could not be read is reported as revoked and
-   * not fresh, with the `reason`.
+   * not fresh, with the `reason`; a revoked Card carries the `reason` its checker gave, when it gave
+   * one, bounded as `evaluateRevocationChain` bounds it.
    */
   revocation?: { revoked: boolean; fresh: boolean; reason?: string };
   /** Echoes `deps.cimdKeyProven` — the caller's L1 CIMD key-possession evidence. */
@@ -286,7 +288,7 @@ interface CardRevocationVerdict {
   checked: boolean;
   revoked: boolean;
   fresh: boolean;
-  /** Why the Card reads as revoked, when its checker's answer could not be read. */
+  /** Why the Card reads as revoked, when its checker said why or its answer could not be read. */
   reason?: string;
 }
 
@@ -316,7 +318,8 @@ async function checkCardRevocation(
       const reason = `the Card's revocation status could not be read: ${status.unreadable}`;
       return { checked: true, revoked: true, fresh: false, reason };
     }
-    return { checked: true, revoked: status.revoked, fresh: status.fresh };
+    const given = status.revoked && status.reason ? { reason: sanitizeForMessage(status.reason, CHECKER_REASON_LENGTH) } : {};
+    return { checked: true, revoked: status.revoked, fresh: status.fresh, ...given };
   } catch {
     return { checked: true, revoked: true, fresh: false };
   }

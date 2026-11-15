@@ -217,7 +217,7 @@ describe('createRevocationChecker with verifyStatusList', () => {
     const signed = signEddsaJcs2022(statusList([5], { id: ISSUER, name: 'Status issuer' }));
     const check = checker(signed, (credential) => verify(credential));
     expect(await check(entry(6), ofIssuer)).toEqual({ revoked: false, fresh: true });
-    expect(await check(entry(6), { credentialIssuer: 'did:web:other.example' })).toEqual({ revoked: true, fresh: false });
+    expect(await check(entry(6), { credentialIssuer: 'did:web:other.example' })).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
   });
 
   it('reads the bits of a list whose proof verifies', async () => {
@@ -231,7 +231,7 @@ describe('createRevocationChecker with verifyStatusList', () => {
     const cleared = { ...signed, credentialSubject: statusList([]).credentialSubject };
     const verifyStatusList = createStatusListProofVerifier({ didResolver: resolverFor(didDocument()) });
     expect(await checker(cleared, undefined)(entry(5))).toEqual({ revoked: false, fresh: true });
-    expect(await checker(cleared, verifyStatusList)(entry(5), ofIssuer)).toEqual({ revoked: true, fresh: false });
+    expect(await checker(cleared, verifyStatusList)(entry(5), ofIssuer)).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
   });
 
   it('hands the verifier the fetched credential and fails closed on false, a throw, or a non-true value', async () => {
@@ -240,9 +240,9 @@ describe('createRevocationChecker with verifyStatusList', () => {
     expect(await checker(list, seen)(entry(5), ofIssuer)).toEqual({ revoked: false, fresh: true });
     expect(seen).toHaveBeenCalledWith(list);
 
-    expect(await checker(list, () => false)(entry(5), ofIssuer)).toEqual({ revoked: true, fresh: false });
-    expect(await checker(list, () => { throw new Error('bad'); })(entry(5), ofIssuer)).toEqual({ revoked: true, fresh: false });
-    expect(await checker(list, async () => 'yes' as unknown as boolean)(entry(5), ofIssuer)).toEqual({ revoked: true, fresh: false });
+    expect(await checker(list, () => false)(entry(5), ofIssuer)).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
+    expect(await checker(list, () => { throw new Error('bad'); })(entry(5), ofIssuer)).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
+    expect(await checker(list, async () => 'yes' as unknown as boolean)(entry(5), ofIssuer)).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
   });
 
   it('fails a chain whose list the verifier rejects', async () => {

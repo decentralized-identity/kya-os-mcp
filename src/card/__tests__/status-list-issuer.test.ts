@@ -54,7 +54,7 @@ function checkerServing(list: Record<string, unknown>, deps: Partial<RevocationC
 const entry = (index: number) => ({ statusListCredential: STATUS_URL, statusListIndex: String(index) });
 const issuedBy = (party: TestIdentity) => ({ credentialIssuer: party.did });
 
-const REVOKED_UNPROVEN: RevocationStatus = { revoked: true, fresh: false };
+const REVOKED_UNPROVEN: RevocationStatus = { revoked: true, fresh: false, reason: expect.any(String) as string };
 
 function cardOf(entity: TestIdentity): EntityCard {
   return {

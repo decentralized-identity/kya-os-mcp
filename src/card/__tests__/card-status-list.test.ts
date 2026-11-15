@@ -120,7 +120,7 @@ function verifyWith(list: Record<string, unknown>, deps: Partial<VerifyCardDeps>
 
 const READ_CLEAR = { revoked: false, fresh: true };
 const READ_REVOKED = { revoked: true, fresh: true };
-const REFUSED = { revoked: true, fresh: false };
+const REFUSED = { revoked: true, fresh: false, reason: expect.any(String) as string };
 
 describe("the Card's verified responsible party", () => {
   it.each(['false', 1, {}, null])('does not grant authority for a malformed seam verdict: %j', async (verified) => {

@@ -24,7 +24,7 @@ describe('the card checker and an index that is not a string', () => {
     expect(await check({ statusListCredential: STATUS_URL, statusListIndex: '7' }, context)).toEqual({ revoked: false, fresh: true });
     for (const statusListIndex of [7, ['7']]) {
       const entry = { statusListCredential: STATUS_URL, statusListIndex } as unknown as { statusListCredential: string; statusListIndex: string };
-      expect(await check(entry, context)).toEqual({ revoked: true, fresh: false });
+      expect(await check(entry, context)).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
     }
   });
 });

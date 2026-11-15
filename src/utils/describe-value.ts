@@ -10,26 +10,24 @@
  * key id with a zero width space in it reads as the id without one, so every character that renders
  * as nothing by default (Unicode's Default_Ignorable_Code_Point) and every format character
  * (General_Category Cf, which holds the bidirectional controls) is escaped as well, which shows it.
+ * The characters are those of the frozen table an issuer is refused for ({@link hasUnseenCodePoint}),
+ * not the runtime's Unicode tables, so a reason reads the same, and signs the same, on every runtime.
  */
+
+import { hasUnseenCodePoint, replaceUnseenCodePoints } from './unseen-code-points.js';
 
 /** How many characters of a string a refusal reason quotes, counted as code points. */
 export const QUOTED_VALUE_LENGTH = 64;
 
 /**
- * What a JSON string may hold unescaped and a quote escapes: DEL and the C1 controls, the line and
- * paragraph separators, every format character, the bidirectional controls among them, and every
- * character that renders as nothing by default, such as a zero width space or a tag character.
- */
-const ESCAPED_CHARACTER = /[\u007f-\u009f\u2028\u2029\p{Cf}\p{Default_Ignorable_Code_Point}]/u;
-const ESCAPED = new RegExp(ESCAPED_CHARACTER.source, 'gu');
-
-/**
- * Whether `character`, one code point, is one a quote escapes beyond those `JSON.stringify` escapes
- * ({@link ESCAPED_CHARACTER}). `sanitizeForMessage` replaces the same ones, so text for people
- * shows none of them as it stands, quoted or not.
+ * Whether `character`, one code point, is one a quote escapes: a control character, a line or
+ * paragraph separator, a format character, the bidirectional controls among them, or a character
+ * that renders as nothing by default, such as a zero width space or a tag character.
+ * `sanitizeForMessage` replaces the same ones, so text for people shows none of them as it stands,
+ * quoted or not.
  */
 export function isEscapedCharacter(character: string): boolean {
-  return ESCAPED_CHARACTER.test(character);
+  return hasUnseenCodePoint(character);
 }
 
 /**
@@ -61,11 +59,12 @@ export function describeValue(value: unknown): string {
 
 /**
  * `text` as a JSON string. `JSON.stringify` escapes the C0 controls, a quote mark, a backslash and
- * a lone surrogate; the characters of {@link ESCAPED} are escaped here the same way, as `\uXXXX`
- * for each UTF-16 code unit, so one outside the Basic Multilingual Plane reads as its surrogate pair.
+ * a lone surrogate; the other characters a quote escapes ({@link isEscapedCharacter}) are escaped
+ * here the same way, as `\uXXXX` for each UTF-16 code unit, so one outside the Basic Multilingual
+ * Plane reads as its surrogate pair.
  */
 function quote(text: string): string {
-  return JSON.stringify(text).replace(ESCAPED, (character) => {
+  return replaceUnseenCodePoints(JSON.stringify(text), (character) => {
     let escaped = '';
     for (let unit = 0; unit < character.length; unit += 1) {
       escaped += `\\u${character.charCodeAt(unit).toString(16).padStart(4, '0')}`;

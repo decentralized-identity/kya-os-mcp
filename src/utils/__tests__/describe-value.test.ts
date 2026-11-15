@@ -5,6 +5,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { describeValue } from '../describe-value.js';
+import { UNSEEN_CODE_POINTS } from '../unseen-code-points.js';
 
 const EMOJI = '\u{1F600}';
 const LONE_HIGH = '\uD83D';
@@ -92,6 +93,20 @@ describe('describeValue', () => {
     expect(JSON.parse(describeValue('a\u{E0041}\u200bb'))).toBe('a\u{E0041}\u200bb');
     const besideThem = `${String.fromCharCode(0x00ac, 0x00ae, 0x200a, 0x2010, 0x3163, 0x3165, 0xfefc)}${EMOJI}`;
     expect(describeValue(besideThem)).toBe(`"${besideThem}"`);
+  });
+
+  // The issuer rule of SPEC.md section 6.2 refuses these characters from one frozen table. A reason
+  // is signed into response proofs, so it escapes the same table and not the runtime's Unicode version.
+  it('escapes exactly the code points of the frozen table, a quote mark, a backslash and the surrogates', () => {
+    const listed = (code: number): boolean => UNSEEN_CODE_POINTS.some(([first, last]) => code >= first && code <= last);
+    const differ: string[] = [];
+    for (let code = 0; code <= 0x10ffff; code += 1) {
+      const surrogate = code >= 0xd800 && code <= 0xdfff;
+      const character = surrogate ? String.fromCharCode(code) : String.fromCodePoint(code);
+      const escapes = surrogate || listed(code) || character === '"' || character === '\\';
+      if ((describeValue(character) !== `"${character}"`) !== escapes) differ.push(code.toString(16));
+    }
+    expect(differ).toEqual([]);
   });
 
   it('quotes a string so that it reads apart from a type it is named by, and parses back to the value', () => {

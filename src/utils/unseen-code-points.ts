@@ -46,7 +46,9 @@ export const UNSEEN_CODE_POINTS: readonly (readonly [number, number])[] = [
 ];
 
 const escaped = (code: number): string => `\\u{${code.toString(16)}}`;
-const UNSEEN = new RegExp(`[${UNSEEN_CODE_POINTS.map(([first, last]) => `${escaped(first)}-${escaped(last)}`).join('')}]`, 'u');
+const UNSEEN_SOURCE = `[${UNSEEN_CODE_POINTS.map(([first, last]) => `${escaped(first)}-${escaped(last)}`).join('')}]`;
+const UNSEEN = new RegExp(UNSEEN_SOURCE, 'u');
+const EVERY_UNSEEN = new RegExp(UNSEEN_SOURCE, 'gu');
 
 /**
  * Whether `value` holds a code point of {@link UNSEEN_CODE_POINTS}. A surrogate without its pair
@@ -54,4 +56,9 @@ const UNSEEN = new RegExp(`[${UNSEEN_CODE_POINTS.map(([first, last]) => `${escap
  */
 export function hasUnseenCodePoint(value: string): boolean {
   return UNSEEN.test(value);
+}
+
+/** `text` with each code point of {@link UNSEEN_CODE_POINTS} in it replaced by what `shown` makes of it. */
+export function replaceUnseenCodePoints(text: string, shown: (codePoint: string) => string): string {
+  return text.replace(EVERY_UNSEEN, shown);
 }

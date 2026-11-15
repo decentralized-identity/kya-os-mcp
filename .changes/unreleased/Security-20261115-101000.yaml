@@ -1,0 +1,18 @@
+kind: Security
+body: |-
+    **`verifyCard` reads each seam's verdict as the literal its type
+    promises.** Only the accountability verdict was read strictly. An
+    `attestationVerifier` that answered a truthy value such as `"false"`
+    verified the attestation, a `proofVerifier` whose `ok` was truthy
+    lifted the Card to L3, a `capabilityVerifier` whose `fresh` was truthy
+    kept L3, and one that answered no `verified` array made `verifyCard`
+    throw. An attestation now verifies only on the literal `true`, a proof
+    only on an object whose `ok` is `true` and whose `did` is a string,
+    and a capability check counts only when `verified` and `unverified`
+    are arrays of strings, with a `fresh` other than `true` read as
+    `false`. Any other answer leaves the claim unverified, the proof with
+    the reason `proof_verdict_unreadable`, and nothing throws. A seam typed
+    against the library needs no change. See UPGRADING.md, "A custom
+    `signatureVerifier`, or another dependency, whose verdict is not the
+    boolean its type promises".
+time: 2026-11-15T10:10:00.000000-06:00

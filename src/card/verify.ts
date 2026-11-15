@@ -28,6 +28,7 @@ import { CHECKER_REASON_LENGTH, type BitstringRevocationChecker } from './revoca
 import { sanitizeForMessage } from '../utils/message-text.js';
 import { readRevocationAnswer } from '../utils/revocation-answer.js';
 import { answerWithinDeadline, DeadlineExceededError } from '../utils/deadline.js';
+import { isRecord } from '../utils/guards.js';
 import { checkWithinDeadline } from './revocation-deadline.js';
 import type { ProofAssurance, ProofVerifyResult } from './proof/index.js';
 import type { ToolRequest } from '../proof/generator.js';
@@ -43,7 +44,10 @@ export interface CapabilityCheckResult {
   verified: string[];
   /** Capability names that were self-declared (bare string) or failed. */
   unverified: string[];
-  /** True iff every attested capability's status was read from a LIVE list (§9.3 L3 gate). Omitted ⇒ unknown ⇒ no demotion. */
+  /**
+   * True iff every attested capability's status was read from a LIVE list (§9.3 L3 gate). Omitted ⇒ unknown ⇒ no demotion;
+   * any other value but the literal `true` reads as `false`.
+   */
   fresh?: boolean;
 }
 
@@ -57,7 +61,7 @@ export type CapabilityVerifier = (
   ctx: { subjectDid: string; trustedIssuers: readonly string[] },
 ) => Promise<CapabilityCheckResult>;
 
-/** Verifies a single attestation VC (trusted issuer + signature + expiry). */
+/** Verifies a single attestation VC (trusted issuer + signature + expiry). Only the literal `true` verifies it. */
 export type AttestationVerifier = (
   attestation: Attestation,
   ctx: { subjectDid: string; trustedIssuers: readonly string[] },
@@ -230,9 +234,35 @@ async function checkCapabilities(
   const verifier = deps.capabilityVerifier;
   const unverified: CapabilityCheckResult = { verified: [], unverified: capabilityNames(capabilities) };
   if (!verifier) return unverified;
-  return unlessUnanswered('the capability verifier', unverified, () =>
+  const answer: unknown = await unlessUnanswered<unknown>('the capability verifier', unverified, () =>
     verifier(capabilities, { subjectDid: card.id, trustedIssuers }),
   );
+  return readCapabilityCheck(answer) ?? unverified;
+}
+
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+
+/**
+ * The capability check `answer`, which the host's capability verifier gave, comes to, or `undefined`
+ * when it is not one: `verified` and `unverified` must each be an array of strings, and a caller
+ * then counts no capability verified.
+ * `fresh` is read as the accountability verdict's is: left out or `undefined` it is unknown, and
+ * any other value but the literal `true` is `false`. Each member is read once, and an answer whose
+ * member throws when read is not a capability check.
+ */
+function readCapabilityCheck(answer: unknown): CapabilityCheckResult | undefined {
+  if (!isRecord(answer)) return undefined;
+  let verified: unknown;
+  let unverified: unknown;
+  let fresh: unknown;
+  try {
+    ({ verified, unverified, fresh } = answer);
+  } catch {
+    return undefined;
+  }
+  if (!isStringArray(verified) || !isStringArray(unverified)) return undefined;
+  return { verified, unverified, ...(fresh === undefined ? {} : { fresh: fresh === true }) };
 }
 
 /**
@@ -286,10 +316,11 @@ async function checkAttestations(
     (card.attestations ?? []).map(async (a) => ({
       type: a.type,
       subject: a.subject,
+      // Only the literal `true` verifies: a truthy answer such as "false" does not.
       verified: verifier
-        ? await unlessUnanswered('the attestation verifier', false, () =>
+        ? (await unlessUnanswered<unknown>('the attestation verifier', false, () =>
             verifier(a, { subjectDid: a.subject ?? card.id, trustedIssuers }),
-          )
+          )) === true
         : false,
     })),
   );
@@ -303,11 +334,44 @@ async function checkAttestations(
 async function recomputeProof(deps: VerifyCardDeps): Promise<ProofVerifyResult | undefined> {
   const { proofVerifier, proof, request } = deps;
   if (!proofVerifier || proof === undefined || request === undefined) return undefined;
+  let answer: unknown;
   try {
-    return await answerWithinDeadline('the proof verifier', () => proofVerifier(proof, request));
+    answer = await answerWithinDeadline('the proof verifier', () => proofVerifier(proof, request));
   } catch (error) {
     return { ok: false, reasons: [error instanceof DeadlineExceededError ? error.message : 'proof_verifier_threw'] };
   }
+  return readProofVerdict(answer);
+}
+
+/** What `verifyCard` reports for a proof verifier's answer that is not a proof verdict. */
+const UNREADABLE_PROOF_VERDICT: ProofVerifyResult = { ok: false, reasons: ['proof_verdict_unreadable'] };
+const PROOF_ASSURANCES: readonly unknown[] = ['L3', 'L3-minus'] satisfies readonly ProofAssurance[];
+
+/**
+ * The proof verdict `answer`, which the host's proof verifier gave, comes to. The proof verified
+ * only when `answer` is an object whose `ok` is the literal `true` and whose `did` is a string; its
+ * `level` is kept when it is one a proof can have. On the literal `false` it is a refusal with the
+ * `reasons` the answer gave that are strings. Anything else is a refusal with the one reason
+ * `proof_verdict_unreadable`: an answer that is not an object, an `ok` that is not a boolean, a
+ * verified proof that names no DID, and an answer whose member throws when read. Each member is
+ * read once.
+ */
+function readProofVerdict(answer: unknown): ProofVerifyResult {
+  if (!isRecord(answer)) return UNREADABLE_PROOF_VERDICT;
+  let ok: unknown;
+  let did: unknown;
+  let level: unknown;
+  let reasons: unknown;
+  try {
+    ({ ok, did, level, reasons } = answer);
+  } catch {
+    return UNREADABLE_PROOF_VERDICT;
+  }
+  if (ok === false) {
+    return { ok, reasons: Array.isArray(reasons) ? reasons.filter((reason): reason is string => typeof reason === 'string') : [] };
+  }
+  if (ok !== true || typeof did !== 'string') return UNREADABLE_PROOF_VERDICT;
+  return { ok, did, reasons: [], ...(PROOF_ASSURANCES.includes(level) ? { level: level as ProofAssurance } : {}) };
 }
 
 /** Verdict for the card's own credential status entry (`card.revocation`). */

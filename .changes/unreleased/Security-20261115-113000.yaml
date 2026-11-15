@@ -1,9 +1,9 @@
 kind: Security
 body: |-
     **A status entry of more than one bit is no longer read from another
-    entry's bit.** W3C Bitstring Status List v1.0 lets an entry state
-    `statusSize` and keeps its status in that many bits, starting at
-    `statusListIndex` times `statusSize`. Every reader read the one bit at
+    entry's bit.** W3C Bitstring Status List v1.0 §2.1 lets an entry
+    state `statusSize`, and §3.2 reads its status at `statusListIndex`
+    times `statusSize`. Every reader read the one bit at
     the index, and the hop schema dropped the member, so an entry of two
     bits at index 7 was read from bit 7, which is entry 3's: a revoked
     credential could pass, and a live one be refused. The checker

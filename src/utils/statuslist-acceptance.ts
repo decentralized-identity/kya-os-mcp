@@ -135,15 +135,18 @@ export function acceptEntryPurpose(statusPurpose: unknown, checkerPurpose: strin
 }
 
 /**
- * Whether a reader that reads one bit per entry may read an entry that states `statusSize`. Bitstring
- * Status List v1.0 §2.1 has the member optional, an integer greater than zero when stated and 1
- * when not, and has an entry's status kept in that many bits of the list, starting at its
- * `statusListIndex` times its `statusSize`. The bit at the index of a wider entry is therefore
- * another entry's, and a reader that answers revoked or not for one purpose has no use for a wider
- * value, so only an entry that states no size, or states 1, is read. Every other is refused before
- * any list is fetched: one stating a value that is not an integer greater than zero as malformed,
- * with nothing converted, and one stating a greater integer as wider than the reader reads. Every
- * status-list reader in the library asks here, so the decision is made once.
+ * Whether a reader that reads one bit per entry may read an entry that states `statusSize`. W3C
+ * Bitstring Status List v1.0 §2.1 has the member optional: "If present, statusSize MUST be an
+ * integer greater than zero", and an entry that states none "MUST be processed as 1". Its §3.2
+ * (Validate Algorithm, step 10) reads an entry's status as "the value in the bitstring at the
+ * position indicated by the credentialIndex multiplied by the size", so the bit at the index of a
+ * wider entry is another entry's. §2.1 describes the `revocation` and `suspension` purposes as one
+ * status bit each and gives entries of several values to the `message` purpose, so a reader that
+ * answers revoked or not for one of those purposes reads only an entry that states no size, or
+ * states 1. Every other is refused before any list is fetched: one stating a value that is not an
+ * integer greater than zero as malformed, with nothing converted, and one stating a greater integer
+ * as wider than the reader reads. Every status-list reader in the library asks here, so the
+ * decision is made once.
  */
 export function acceptEntrySize(statusSize: unknown): StatusListVerdict {
   if (statusSize === undefined || statusSize === 1) return verdict(undefined);

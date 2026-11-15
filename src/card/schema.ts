@@ -114,7 +114,9 @@ export const CimdBindingSchema = z
  * (an entry that states none is one bit wide), and `statusMessage`, an array that gives each value
  * of the entry a `status`, written as a hexadecimal string, and a `message`. A Card's entry and a
  * delegation hop's share them. They are kept so that a status-list reader sees the size the entry
- * states: one that reads one bit per entry refuses an entry of any other size.
+ * states: one that reads one bit per entry refuses an entry of any other size. Section 2.1 also
+ * has an entry of more than one bit state a `statusMessage`, with one element for each value its
+ * size allows; the schema does not check either, since every reader refuses such an entry.
  */
 export const statusEntrySizeShape = {
   statusSize: z.number().int().positive().optional(),

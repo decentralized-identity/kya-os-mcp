@@ -68,6 +68,7 @@ describe("DelegationCredentialVerifier", () => {
     id: "did:web:example.com:issuer#key-1",
     type: "Ed25519VerificationKey2020",
     controller: "did:web:example.com:issuer",
+    // A stand-in, not key bytes: the mocked signature verifier is handed it and never reads it.
     publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: "mock-key" },
   };
 

@@ -92,6 +92,7 @@ describe('retrieveVerificationMethod', () => {
   it("retrieves nothing from a document that is not the DID's own, or names no DID", () => {
     const members = { verificationMethod: [method('#a')], assertionMethod: ['#a'] };
     for (const id of [OTHER, `${ACME}:users:alice`]) expect(retrieve(documentOf(members, id), '#a')).toBeUndefined();
+    // The members alone, with no id: a document that names no DID.
     expect(retrieve(members as unknown as DIDDocument, '#a')).toBeUndefined();
   });
 
@@ -119,6 +120,7 @@ describe('retrieveVerificationMethod', () => {
   it('retrieves a method, referenced or embedded, only when it has an id, a type and a controller', () => {
     const { type: _type, ...untyped } = method('#a');
     const { controller: _controller, ...uncontrolled } = method('#b');
+    // Malformed on purpose: no type, no controller, an empty type, a controller that is not a string.
     const malformed = [untyped, uncontrolled, { ...method('#c'), type: '' }, { ...method('#d'), controller: 7 }];
     const names = ['#a', '#b', '#c', '#d'];
     const referencing = documentOf({ verificationMethod: [...malformed, method('#e')], assertionMethod: [...names, '#e'] });

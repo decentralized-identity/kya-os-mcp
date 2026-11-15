@@ -16,6 +16,7 @@ import { canonicalizeJsonBytes } from '../../utils/canonical-json.js';
 import type { DelegationCredential } from '../../types/protocol.js';
 import { delegationRecord, keyOf, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 
+/** Three segments that are no base64url of anything: the check hands a VC-JWT on without reading it. */
 const JWT = 'header.payload.signature';
 
 let signed: DelegationCredential;

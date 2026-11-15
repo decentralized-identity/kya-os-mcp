@@ -701,6 +701,11 @@ Verifiers MUST treat `prefix` and `path-prefix` as distinct: applying `prefix`
 to a resource path lets a grant for `notes` authorize `notesx/secret.md`, which
 is a boundary escape, not a match.
 
+A verifier MUST NOT match a `path-prefix` value or pattern that has a `.` or `..` segment, each dot written as `.` or as `%2e` in either case, or that holds `%2f` or `%5c` in either case anywhere.
+A consumer that decodes or normalizes such a path would resolve it outside the granted path.
+A verifier MUST NOT take a `prefix` scope as contained in a `path-prefix` scope when it checks that a re-delegation narrows its parent.
+A verifier decodes nothing else, and the `exact`, `prefix` and `regex` matchers compare the text as written.
+
 ### 6.4 Delegation Graph
 
 Delegations form a directed acyclic graph (DAG):

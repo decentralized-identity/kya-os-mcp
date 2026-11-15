@@ -209,18 +209,28 @@ function isLowSurrogate(code: number): boolean {
 }
 
 /**
- * Whether `item` is a plain object of any realm: its prototype is `null` or some realm's
- * `Object.prototype`, which is the prototype of no other object and has a `constructor` named
- * `Object` that points back to it. A class instance, a `Date` or a `Map` is refused. A resolver may
- * parse a document in another realm (a `vm` context, a frame), so this rule admits what
- * `isPlainObjectOfThisRealm` (`utils/guards.ts`) refuses: that one holds
- * configuration to this realm's `Object.prototype` alone.
+ * Whether `item` is a plain object of any realm: one that inherits no member a verifier could read
+ * in place of an own one. The walk measures own members, and a key lookup reads a document's and a
+ * method's members by name, so an inherited `verificationMethod` would be read without having been
+ * measured. This rule is what makes the two agree. It admits a prototype that is:
+ * - `null`, or this realm's `Object.prototype`; or
+ * - the `Object.prototype` of another realm, since a resolver may parse a document in a `vm`
+ *   context or a frame: an object with no prototype of its own, whose `constructor` is a function
+ *   named `Object` that points back to it, and whose every own member name, getters and symbols
+ *   included, is one this realm's `Object.prototype` has too.
+ *
+ * So whatever an admitted object inherits has a name such as `toString` or `hasOwnProperty`, never
+ * a name of the DID data model, and a class instance, a `Date`, a `Map` and a prototype built by
+ * hand to carry a document's members are refused. The constructor's members are read from their
+ * descriptors, so no getter runs. `isPlainObjectOfThisRealm` (`utils/guards.ts`) is the stricter
+ * rule: it holds configuration to this realm's `Object.prototype` alone.
  */
 function isPlainObjectOfAnyRealm(item: object): boolean {
   const proto = Object.getPrototypeOf(item) as object | null;
   if (proto === null || proto === Object.prototype) return true;
   if (Object.getPrototypeOf(proto) !== null) return false;
   const constructor = ownValue(proto, 'constructor');
-  return typeof constructor === 'function' && constructor.name === 'Object' &&
-    ownValue(constructor, 'prototype') === proto;
+  return typeof constructor === 'function' && ownValue(constructor, 'name') === 'Object' &&
+    ownValue(constructor, 'prototype') === proto &&
+    Reflect.ownKeys(proto).every((name) => Object.hasOwn(Object.prototype, name));
 }

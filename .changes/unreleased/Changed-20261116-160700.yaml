@@ -7,5 +7,7 @@ body: |-
     `TypeError` that names the fix for an origin followed by `/`, an origin
     whose host has an upper-case letter, and any other binding that ends in
     `/`, each of which would be read as an exact URL that no list names.
-    UPGRADING.md, "How to write `statusListIssuers`", has each fix.
+    Each fix names the origin to bind, or, where no binding can hold a list
+    whose own URL ends in `/`, says to change that list's URL. UPGRADING.md,
+    "How to write `statusListIssuers`", has each fix.
 time: 2026-11-16T16:07:00.000000-06:00

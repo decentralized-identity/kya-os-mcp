@@ -1,17 +1,21 @@
 kind: Added
 body: |-
-    **A refusal says why an issuer's DID could not be resolved.** When the
-    resolver reports why it found no document, `Could not resolve issuer
-    DID: "<did>"` ends with that detail in parentheses, such as `(DID
-    resolution failed: HTTP 404 for "<url>")`, for a VC-JWT as for a
-    credential with an embedded proof, and so does
-    `CheqdStatusListResolver`'s `Could not resolve issuer DID <did>`.
-    `DIDResolver` has a new optional `lastFailure(did)`, which the library's
-    did:web and did:cheqd resolvers and the delegation gate's resolver
-    answer, with a `DidResolutionFailure`: a `cause`, one of `host_refused`,
-    `deadline_exceeded`, `unavailable` and `invalid_document`, and a
-    `detail`. Both types are exported. A transport's own error stays in the
-    log. The delegation gate of `withKyaOs` sends the reason, detail
-    included, to its client. UPGRADING.md, "Changed refusal reasons", has
-    the wording.
+    **A resolver may say why a DID did not resolve, and a refusal is coded
+    by it.** `DIDResolver` has a new optional `lastFailure(did)`, which the
+    library's did:web, did:key and did:cheqd resolvers and the delegation
+    gate's resolver answer, with a `DidResolutionFailure`: a `cause`, one of
+    `host_refused`, `deadline_exceeded`, `unavailable`, `too_large` and
+    `invalid_document`, and a `detail`. Both types are exported. A verifier
+    codes its refusal by the cause. Whoever presents a credential chooses
+    its issuer's DID, so `Could not resolve issuer DID: "<did>"`, for a
+    VC-JWT as for a credential with an embedded proof, and
+    `CheqdStatusListResolver`'s `Could not resolve issuer DID <did>` end
+    with the detail in parentheses only where the resolver decided it from
+    the DID itself, before any request, such as a did:web DID that names a
+    private or local host, or where the deadline passed. Whatever the
+    network answered, such as an HTTP status, a document over the byte cap
+    or not JSON, a refused redirect or an address `SafeFetch` looked up,
+    goes only to the operator's log, and the refusal's code says which kind
+    of failure it was. The delegation gate of `withKyaOs` sends the reason
+    to its client. UPGRADING.md, "Changed refusal reasons", has the wording.
 time: 2026-11-16T16:03:00.000000-06:00

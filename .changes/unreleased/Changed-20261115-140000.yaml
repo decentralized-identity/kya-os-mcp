@@ -10,10 +10,11 @@ body: |-
     `evaluateRevocationChain` appends a checker's reason to the hop's
     refusal after a colon, so `evaluateDelegationChain`,
     `verifyRequestDelegation` and `requireDelegation` carry it, and
-    `verifyCard` reports it as `revocation.reason`. A reason is cut after
-    512 UTF-16 code units, `CHECKER_REASON_LENGTH`, with control
-    characters replaced. Code that compares that checker's verdict with
-    `{ revoked: true, fresh: false }` exactly, or matches a refused hop's
-    whole text, must allow for the reason. UPGRADING.md, "Changed refusal
-    reasons", has the wording.
+    `verifyCard` reports it as `revocation.reason`. The checker's reason
+    is at most 512 UTF-16 code units, `CHECKER_REASON_LENGTH`, and those
+    readers keep up to 640 of a reason, with control characters replaced.
+    Code that compares that checker's verdict with `{ revoked: true,
+    fresh: false }` exactly, or matches a refused hop's whole text, must
+    allow for the reason. UPGRADING.md, "Changed refusal reasons", has
+    the wording.
 time: 2026-11-15T14:00:00.000000-06:00

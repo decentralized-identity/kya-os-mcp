@@ -1,3 +1,5 @@
 # Vector suite bytes are the conformance pin: no checkout-time eol conversion.
 conformance/vectors/*.json -text
 conformance/SUITE-MANIFEST.json -text
+# Schema bytes are what schema.kya-os.org serves at each $id: no checkout-time eol conversion.
+schemas/*.json -text

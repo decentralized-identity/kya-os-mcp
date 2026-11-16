@@ -167,6 +167,17 @@ describe.each(DEADLINES)('%s', (_label, option, ms, stated) => {
       expect(result.revocation).toEqual({ revoked: true, fresh: false, reason: `the revocation checker did not answer within ${stated}` });
     });
 
+    it.each(['capabilityVerifier', 'accountabilityVerifier', 'attestationVerifier'] as const)(
+      'still throws what the %s throws, as it did',
+      async (seam) => {
+        const thrown = new Error(`${seam} offline`);
+        const throwing = async (): Promise<never> => {
+          throw thrown;
+        };
+        await expect(verifyCard(card, { ...answering, [seam]: throwing })).rejects.toBe(thrown);
+      },
+    );
+
     it('reads an answer that is the text of a missed deadline as an answer it cannot read, not as a missed deadline', async () => {
       const text = `the revocation checker did not answer within ${stated}`;
       const result = await verifyCard(card, { ...answering, statusListChecker: (async () => text) as never });

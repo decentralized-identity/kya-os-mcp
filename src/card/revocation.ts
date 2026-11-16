@@ -91,7 +91,7 @@ export type Decompress = (bytes: Uint8Array) => Uint8Array | Promise<Uint8Array>
 // The 16 MiB inflation cap and the multibase/base64url/bit-read mechanics live in
 // `utils/statuslist-bits` — ONE implementation shared with the delegation readers, so the two
 // paths can no longer drift. Exceeding the cap (or any malformed input) throws, which this
-// checker converts to FAIL_CLOSED — the module's uniform posture. Without the cap, the ~786 KB
+// checker converts to a fail-closed verdict, the module's uniform posture. Without the cap, the ~786 KB
 // of GZIP that fits inside SafeFetch's 1 MiB body cap inflates to ~800 MB.
 
 /**
@@ -164,13 +164,13 @@ export interface RevocationCheckerDeps {
   now?: () => number;
   /**
    * `statusPurpose` to honour; default {@link STATUS_PURPOSE_REVOCATION}. An entry that states
-   * another purpose resolves {@link FAIL_CLOSED}.
+   * another purpose fails closed ({@link failedClosed}).
    */
   statusPurpose?: string;
   /**
    * Checks the fetched status-list credential's proof before any bit is read, as W3C Bitstring
    * Status List v1.0 requires (SPEC.md §6.10). A list it rejects (`false` or a throw) resolves
-   * {@link FAIL_CLOSED}. {@link createStatusListProofVerifier} covers `eddsa-jcs-2022` lists.
+   * a fail-closed verdict ({@link failedClosed}). {@link createStatusListProofVerifier} covers `eddsa-jcs-2022` lists.
    * A proof shows only who signed the list, so with this seam the checker also holds the list to
    * the credential it covers (see {@link createRevocationChecker}), by the list's `issuer`: the seam
    * resolves `true` only when the proof verifies under a key that `issuer` lists under
@@ -205,26 +205,26 @@ export interface RevocationCheckerDeps {
 
 export { CHECKER_REASON_LENGTH } from '../utils/revocation-answer.js';
 
-/** Fail-closed verdict: status indeterminate ⇒ treat as revoked AND not fresh. */
-const FAIL_CLOSED: RevocationStatus = { revoked: true, fresh: false };
-
-/** A {@link FAIL_CLOSED} verdict, with the code of why the status could not be proven clear. */
+/**
+ * The fail-closed verdict: a status that could not be proven clear is revoked AND not fresh, with
+ * the code of why, and the reason when there is one.
+ */
 function failedClosed(code: RefusalCode, reason?: string): RevocationStatus & Coded {
-  return { ...FAIL_CLOSED, ...(reason === undefined ? {} : { reason }), ...coded(code) };
+  return { revoked: true, fresh: false, ...(reason === undefined ? {} : { reason }), ...coded(code) };
 }
 
 /**
  * Build the default `RevocationChecker` over W3C Bitstring Status List v1.0. Every outbound
  * request rides the injected {@link SafeFetch}; any failure on the path (unreachable, non-2xx,
- * malformed, wrong purpose, out-of-range index) resolves {@link FAIL_CLOSED}.
+ * malformed, wrong purpose, out-of-range index) fails closed ({@link failedClosed}).
  *
  * The checker answers for one purpose, its `statusPurpose`. An entry that states another (a
  * `suspension` entry under a revocation checker), or a value that is not a string, `null` included,
- * says nothing about that purpose, so it resolves {@link FAIL_CLOSED} before any fetch rather than
+ * says nothing about that purpose, so it fails closed ({@link failedClosed}) before any fetch rather than
  * being read as the checker's. Only an entry that states no purpose is read as the checker's.
  *
  * The checker reads one bit per entry, the bit at `statusListIndex`. An entry whose `statusSize` is
- * not 1 keeps its status elsewhere in the list, so it resolves {@link FAIL_CLOSED} before any fetch
+ * not 1 keeps its status elsewhere in the list, so it fails closed ({@link failedClosed}) before any fetch
  * as well ({@link acceptEntrySize}); an entry that states no `statusSize` is one bit wide.
  *
  * With `verifyStatusList`, a list is read only when {@link acceptStatusList} accepts it for the
@@ -233,7 +233,7 @@ function failedClosed(code: RefusalCode, reason?: string): RevocationStatus & Co
  * from the list. The rule is asked before the proof is checked, so a list from another issuer never
  * triggers a DID resolution. The context is `context` when it is given, or else the one `entry`
  * carries ({@link BitstringRevocationChecker}). A call that names no `credentialIssuer` either way
- * cannot be held to anyone and resolves {@link FAIL_CLOSED} before any fetch, with a reason that
+ * cannot be held to anyone and fails closed ({@link failedClosed}) before any fetch, with a reason that
  * says a checker or resolver wrapping this one must pass its second argument on. A list another DID
  * signed is refused with a reason that ends with the `statusListIssuers` configuration that would
  * accept it, as a condition the operator judges, or says where to name that DID when the

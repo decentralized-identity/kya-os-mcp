@@ -21,7 +21,8 @@
  * stop any other name whose address is internal, such as a public name that
  * points at a loopback address (or DNS rebinding). Run verifiers behind an
  * egress control. Pass `{ allowPrivateNetworkHosts: true }` for trusted
- * internal use. Both read the response within the limits of SPEC §4.4.2.
+ * internal use, or `{ development: true }` in local development alone. Both
+ * read the response within the limits of SPEC §4.4.2.
  * The raw `fetch()` escape hatch is intentionally unguarded — it is the caller's
  * responsibility.
  *
@@ -56,6 +57,7 @@ import {
   type DIDResolverRegistry,
 } from "../delegation/did-resolver-registry.js";
 import { dependencyTimeout } from "../utils/deadline.js";
+import { developmentMode } from "../utils/development-mode.js";
 import { getDidMethod } from "../utils/did-helpers.js";
 import type { DIDDocument } from "../delegation/vc-verifier.js";
 import type {
@@ -71,6 +73,17 @@ export interface RuntimeFetchProviderOptions {
    * it: any other value, `1` or `'true'` included, leaves such hosts refused.
    */
   allowPrivateNetworkHosts?: boolean;
+  /**
+   * Read DID documents and status lists on private and local hosts, such as a
+   * `*.localhost` name in a local demo, as `allowPrivateNetworkHosts: true`
+   * does. Nothing else changes: the scheme rule, checked redirects, byte caps
+   * and deadlines all hold. For development only: while `NODE_ENV` is
+   * `production` it throws when the provider is built, and it warns once per
+   * process. A production deployment that reads intranet hosts sets
+   * `allowPrivateNetworkHosts: true` instead. Any value but a boolean throws a
+   * `TypeError`.
+   */
+  development?: boolean;
   /**
    * Optional DID method resolver registry. Entries dispatch by DID method before
    * built-in did:key and did:web fallback. A factory receives this fetch provider
@@ -90,7 +103,8 @@ export class RuntimeFetchProvider extends FetchProvider {
   private readonly didResolvers: Record<string, { resolve(did: string): Promise<DIDDocument | null> }>;
   /**
    * The private-network rule's opt-out, read by every did:web and status-list
-   * read through this provider, including the delegation gate's.
+   * read through this provider, including the delegation gate's: `true` when
+   * `allowPrivateNetworkHosts` or `development` is.
    */
   readonly allowPrivateNetworkHosts: boolean;
   private readonly timeoutMs: number;
@@ -98,7 +112,8 @@ export class RuntimeFetchProvider extends FetchProvider {
   constructor(options?: RuntimeFetchProviderOptions) {
     super();
     this.timeoutMs = dependencyTimeout(options?.dependencyTimeoutMs);
-    this.allowPrivateNetworkHosts = options?.allowPrivateNetworkHosts === true;
+    const development = developmentMode(options?.development, "RuntimeFetchProviderOptions.development");
+    this.allowPrivateNetworkHosts = development || options?.allowPrivateNetworkHosts === true;
     this.didResolvers = buildDidResolverRegistry(options?.didResolvers, this, { dependencyTimeoutMs: this.timeoutMs });
   }
 

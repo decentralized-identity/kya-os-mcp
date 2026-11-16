@@ -24,7 +24,7 @@ import { carryingContext } from "../utils/status-check-carrier.js";
 import { readVerdict } from "../utils/verdict.js";
 import { credentialIssuerRefusal } from "./credential-issuer.js";
 import { DID_RESOLUTION_TIMEOUT_MS, resolveBoundedDid } from "./did-resource-limits.js";
-import { readRevoked, unreadableStatusReason } from "../utils/revocation-answer.js";
+import { CHECKER_REASON_LENGTH, readRevoked, unreadableStatusReason } from "../utils/revocation-answer.js";
 import type {
   DIDResolver,
   StatusListResolver,
@@ -316,7 +316,10 @@ export async function verifySignature(
  * only a literal `true` DENIES as `revoked`. The resolver is
  * told `credentialIssuer`, the issuer DID of the credential, and holds the
  * status list to it; a credential that names none cannot be held to anyone, so
- * it DENIES as `status_unresolvable` without a read.
+ * it DENIES as `status_unresolvable` without a read. The context is passed as
+ * the second argument and carried by the copy of the entry passed as the first
+ * (`carryingContext`). A resolver that throws is refused with its message, at
+ * most `CHECKER_REASON_LENGTH` UTF-16 code units of it.
  */
 export async function checkCredentialStatus(
   status: CredentialStatus,
@@ -378,7 +381,7 @@ export async function checkCredentialStatus(
   } catch (error) {
     return {
       valid: false,
-      reason: `Status check error: ${error instanceof Error ? sanitizeForMessage(error.message) : "Unknown error"}`,
+      reason: `Status check error: ${error instanceof Error ? sanitizeForMessage(error.message, CHECKER_REASON_LENGTH) : "Unknown error"}`,
       outcome: "status_unresolvable",
       durationMs: Date.now() - startTime,
     };

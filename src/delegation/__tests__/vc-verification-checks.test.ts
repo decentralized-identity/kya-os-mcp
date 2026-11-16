@@ -10,6 +10,7 @@ import { checkCredentialStatus, validateBasicProperties, verifySignature } from 
 import type { SignatureVerificationFunction } from "../vc-verifier.types.js";
 import type { CredentialStatus, DelegationCredential } from "../../types/protocol.js";
 import { issuerDidDocument, methodOf } from "../../__tests__/utils/did-documents.js";
+import { CHECKER_REASON_LENGTH } from "../../utils/revocation-answer.js";
 
 const ISSUER = "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK";
 
@@ -159,7 +160,7 @@ describe("refusal reasons quote what the credential chose as describeValue does"
     const raw = `status list statusPurpose mismatch: "revocation" != "${purpose}"`;
     const { reason } = await checkCredentialStatus(credentialStatus(purpose), thrower(raw), ISSUER);
     const expectedMessage = `status list statusPurpose mismatch: "revocation" != "${"x\uFFFD".repeat(1000)}`;
-    expect(reason).toBe(`Status check error: ${expectedMessage.slice(0, 256)}\u2026`);
+    expect(reason).toBe(`Status check error: ${expectedMessage.slice(0, CHECKER_REASON_LENGTH)}\u2026`);
     expect(reason).not.toMatch(/\p{Cs}/u);
   });
 });

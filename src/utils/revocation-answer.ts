@@ -12,6 +12,14 @@ import { describeValue } from "./describe-value.js";
 import { isRecord } from "./guards.js";
 
 /**
+ * How much of the reason a status check gives a refusal carries, in UTF-16 code units: a custom
+ * checker's or resolver's reason is as long as its author likes, and a refusal is shown to people
+ * and written to logs. It is long enough for the library's own keeper refusal to end with the whole
+ * `statusListIssuers` configuration that would accept the list.
+ */
+export const CHECKER_REASON_LENGTH = 512;
+
+/**
  * Whether `answer` says revoked: `true` or `false` when it is that literal, and `undefined` for
  * anything else, a boxed boolean included. Nothing is converted. A caller refuses on `undefined`.
  */

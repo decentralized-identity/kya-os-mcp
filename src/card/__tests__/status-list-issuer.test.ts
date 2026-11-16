@@ -37,6 +37,7 @@ import {
   type TestIdentity,
   now,
 } from './signed-chain-helpers.js';
+import { moveBinding } from './status-list-paths.js';
 
 const didResolver = createDidKeyResolver();
 const ctx = { resource: RESOURCE, now };
@@ -140,7 +141,9 @@ describe('createRevocationChecker holds a verified list to the credential', () =
     expect(await checkerServing(statusList(acme), { statusListIssuers })(entry(4), issuedBy(acme))).toEqual({
       revoked: true,
       fresh: false,
-      reason: `status list issuer "${acme.did}" does not keep this list's URL: "${statusService.did}" does, as the issuer statusListIssuers binds this URL to`,
+      reason:
+        `status list issuer "${acme.did}" does not keep this list's URL: "${statusService.did}" does, as the issuer statusListIssuers binds this URL to` +
+        moveBinding(acme.did, STATUS_URL),
     });
     // Bound to another URL, the service keeps nothing here.
     const elsewhere = checkerServing(statusList(statusService), { statusListIssuers: { [statusService.did]: [`${STATUS_URL}/2`] } });

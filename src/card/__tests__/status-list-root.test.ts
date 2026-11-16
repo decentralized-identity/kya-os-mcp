@@ -28,7 +28,7 @@ import {
   type TestIdentity,
   now,
 } from './signed-chain-helpers.js';
-import { cast, expectAccepted, expectRevokedAt, listOf, listUrlOf, servedBy, threeHopChain } from './status-list-paths.js';
+import { cast, expectAccepted, expectRevokedAt, listOf, listUrlOf, nameSigner, servedBy, threeHopChain } from './status-list-paths.js';
 
 const didResolver = createDidKeyResolver();
 const ctx = { resource: RESOURCE, now };
@@ -297,7 +297,7 @@ describe("each path names a hop's issuer, and the chain's root only as the verif
     const refusedFor = (did: string, as: string) => ({
       revoked: true,
       fresh: false,
-      reason: `status list issuer "${c.acme.did}" does not keep this list's URL: "${did}" does, as ${as}`,
+      reason: `status list issuer "${c.acme.did}" does not keep this list's URL: "${did}" does, as ${as}${nameSigner(c.acme.did, 'https://status.example/')}`,
     });
     // A root named with no URL, or with another, keeps nothing here, and a URL with no root is ignored.
     for (const context of [

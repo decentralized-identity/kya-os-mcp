@@ -34,8 +34,9 @@ import { answerWithinDeadline, dependencyTimeout } from '../utils/deadline.js';
 import { describeValue } from '../utils/describe-value.js';
 import { isRecord, issuerOf } from '../utils/guards.js';
 import { sanitizeForMessage } from '../utils/message-text.js';
-import { readRevocationAnswer } from '../utils/revocation-answer.js';
+import { CHECKER_REASON_LENGTH, readRevocationAnswer } from '../utils/revocation-answer.js';
 import { carriedContext } from '../utils/status-check-carrier.js';
+import { withStatusListIssuersRemedy } from '../utils/statuslist-remedy.js';
 import {
   acceptEntryPurpose,
   acceptEntrySize,
@@ -201,11 +202,7 @@ export interface RevocationCheckerDeps {
   dependencyTimeoutMs?: number;
 }
 
-/**
- * How much of a checker's `reason` a refusal carries, in UTF-16 code units: a custom checker's
- * reason is as long as its author likes, and a refusal is shown to people and written to logs.
- */
-export const CHECKER_REASON_LENGTH = 256;
+export { CHECKER_REASON_LENGTH } from '../utils/revocation-answer.js';
 
 /** Fail-closed verdict: status indeterminate ⇒ treat as revoked AND not fresh. */
 const FAIL_CLOSED: RevocationStatus = { revoked: true, fresh: false };
@@ -231,7 +228,10 @@ const FAIL_CLOSED: RevocationStatus = { revoked: true, fresh: false };
  * triggers a DID resolution. The context is `context` when it is given, or else the one `entry`
  * carries ({@link BitstringRevocationChecker}). A call that names no `credentialIssuer` either way
  * cannot be held to anyone and resolves {@link FAIL_CLOSED} before any fetch, with a reason that
- * says a checker or resolver wrapping this one must pass its second argument on.
+ * says a checker or resolver wrapping this one must pass its second argument on. A list another DID
+ * signed is refused with a reason that ends with the `statusListIssuers` configuration that would
+ * accept it, as a condition the operator judges, or says where to name that DID when the
+ * configuration cannot be printed whole within {@link CHECKER_REASON_LENGTH}.
  * Without `verifyStatusList` nothing about the list is authenticated, so only its `statusPurpose`
  * is checked and the bits are read as before.
  *
@@ -258,19 +258,21 @@ export function createRevocationChecker(
       if (!entryPurpose.valid) throw new Error(`revocation: ${entryPurpose.reason}`);
       const entrySize = acceptEntrySize(entry.statusSize);
       if (!entrySize.valid) throw new Error(`revocation: ${entrySize.reason}`);
-      const expectation = deps.verifyStatusList
-        ? statusListExpectationFor(
-            { statusListCredential: entry.statusListCredential, statusPurpose: wantedPurpose },
-            boundContext(context ?? carriedContext(entry)),
-            deps.statusListIssuers,
-          )
+      const { statusListCredential } = entry;
+      const { statusListIssuers } = deps;
+      const heldTo = deps.verifyStatusList ? boundContext(context ?? carriedContext(entry)) : undefined;
+      const expectation = heldTo
+        ? statusListExpectationFor({ statusListCredential, statusPurpose: wantedPurpose }, heldTo, statusListIssuers)
         : undefined;
-      const credential = await fetchStatusList(entry.statusListCredential, deps.fetch);
+      const credential = await fetchStatusList(statusListCredential, deps.fetch);
       const verdict =
         expectation === undefined
           ? acceptStatusPurpose(credential, wantedPurpose)
           : acceptStatusList(credential, expectation);
-      if (!verdict.valid) throw new Error(`revocation: ${verdict.reason}`);
+      if (!verdict.valid) {
+        const refused = heldTo && expectation && { list: credential, statusListCredential, context: heldTo, statusListIssuers, keeper: expectation.keeper };
+        throw new Error(`revocation: ${refused ? withStatusListIssuersRemedy(verdict.reason, refused, CHECKER_REASON_LENGTH) : verdict.reason}`);
+      }
       if (deps.verifyStatusList && (await deps.verifyStatusList(credential)) !== true) {
         throw new Error('revocation: status-list proof rejected');
       }
@@ -288,13 +290,13 @@ export function createRevocationChecker(
 
 /**
  * Why the checker failed closed, from what a step threw: the message of an `Error`, without the
- * `revocation: ` this module opens its own with, bounded and free of control characters as
- * `sanitizeForMessage` leaves it, since a fetch or a decompressor the host injected may have
- * thrown it. Anything else thrown is not converted.
+ * `revocation: ` this module opens its own with, at most {@link CHECKER_REASON_LENGTH} UTF-16 code
+ * units and free of control characters as `sanitizeForMessage` leaves it, since a fetch or a
+ * decompressor the host injected may have thrown it. Anything else thrown is not converted.
  */
 function failureReason(error: unknown): string {
   if (!(error instanceof Error)) return 'the status could not be proven';
-  return sanitizeForMessage(error.message.replace(/^revocation: /, ''));
+  return sanitizeForMessage(error.message.replace(/^revocation: /, ''), CHECKER_REASON_LENGTH);
 }
 
 /**

@@ -46,7 +46,6 @@ export {
   type RejectionCoding,
 } from './carried-chain.js';
 
-
 /**
  * A snake_case rejection code. `delegation_missing` means no authority was presented;
  * `delegation_unresolvable` means a by-reference lookup failed; the rest mean the chain was

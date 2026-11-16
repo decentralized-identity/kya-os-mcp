@@ -165,6 +165,13 @@ export interface AuthorizationEvidence {
   policyId?: string;
   policyVersion?: string;
   policyDigest?: Digest;
+  /**
+   * What the verifier concluded, as a stable value. It holds two kinds of value: on an allowed
+   * decision an upper-case marker of what verified, such as `DELEGATION_CHAIN_VALID` or
+   * `DURABLE_GRANT_RESOLVED`, and on a denied delegation the lowercase refusal code it was refused
+   * with, one of `REFUSAL_CODES`, such as `delegation_revoked`. Read `decision` first: the two
+   * kinds share this field.
+   */
   verificationCode?: string;
 }
 

@@ -154,6 +154,8 @@ describe.each(DEADLINES)('%s', (_label, option, ms, stated) => {
       expect(await settledAt(ms, (never) => validate(leaf, { resolveDelegationChain: never }))).toEqual({
         valid: false,
         reason: `Failed to resolve delegation chain: the chain resolver did not answer within ${stated}`,
+        code: 'deadline_exceeded',
+        transient: true,
       });
     });
 
@@ -165,6 +167,8 @@ describe.each(DEADLINES)('%s', (_label, option, ms, stated) => {
       expect(await validate(leaf, { resolveDelegationChain: () => { throw new Error('store offline'); } })).toEqual({
         valid: false,
         reason: 'Failed to resolve delegation chain: store offline',
+        code: 'runtime_error',
+        transient: true,
       });
       expect(vi.getTimerCount()).toBe(0);
     });
@@ -174,6 +178,8 @@ describe.each(DEADLINES)('%s', (_label, option, ms, stated) => {
       expect(await settledAt(ms, (never) => validate(leaf, { revocationChecker: { isRevoked: never } }))).toEqual({
         valid: false,
         reason: `Revocation check failed for delegation "del-leaf": the revocation checker did not answer within ${stated}`,
+        code: 'deadline_exceeded',
+        transient: true,
         evaluated: [leaf],
       });
     });
@@ -265,7 +271,12 @@ describe('a dependencyTimeoutMs that is not a number of milliseconds a timer can
       resolveDelegationChain: asked,
       revocationChecker: { isRevoked: asked },
       statusListConfigured: false,
-    }))).toEqual({ valid: false, reason: timeoutTypeError(got).message.slice('[kya-os] '.length) });
+    }))).toEqual({
+      valid: false,
+      reason: timeoutTypeError(got).message.slice('[kya-os] '.length),
+      code: 'configuration_error',
+      transient: false,
+    });
     expect(asked).not.toHaveBeenCalled();
   });
 });

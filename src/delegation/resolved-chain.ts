@@ -13,6 +13,7 @@
  * Pure: no transport, no framework, no key material.
  */
 import type { DelegationCredential } from "../types/protocol.js";
+import { refusal, type Refusal } from "../utils/refusal.js";
 import type { ChainEnforcementDeps } from "./chain-enforcement.js";
 import { delegationIdMember } from "./delegation-id.js";
 
@@ -61,21 +62,25 @@ export interface EvaluatedCredentials {
  * The ancestors of the leaf whose delegation is `leafId`, root first, from
  * the values the resolver returned: ancestors only, or the whole chain with
  * the resolver's own copy of the leaf last. Each is the copy every check
- * reads (see `snapshotAncestor`). A reason instead when the answer is refused.
+ * reads (see `snapshotAncestor`). A refusal instead when the answer is refused:
+ * `chain_invalid` for more values than `maxChainLength` or a leaf that is not
+ * last, and `delegation_malformed` for a value that could not be copied or is not
+ * a delegation credential.
  */
 export function resolvedAncestors(
   resolvedChain: readonly DelegationCredential[],
   leafId: string,
   deps: Pick<ChainEnforcementDeps, "maxChainLength" | "snapshotAncestor">,
-): { ancestors: DelegationCredential[] } | { reason: string } {
+): { ancestors: DelegationCredential[] } | Refusal {
   // More values than the limit make a chain longer than it, whether or not
   // the last is the resolver's copy of the leaf, so they are refused before
   // any of them is read.
   const limit = deps.maxChainLength;
   if (limit !== undefined && Number.isInteger(limit) && limit >= 1 && resolvedChain.length > limit) {
-    return {
-      reason: `Delegation chain of at least ${resolvedChain.length} credentials exceeds the maximum of ${limit}`,
-    };
+    return refusal(
+      "chain_invalid",
+      `Delegation chain of at least ${resolvedChain.length} credentials exceeds the maximum of ${limit}`,
+    );
   }
 
   // Each value is read once, root first, before anything looks at it: what
@@ -84,14 +89,14 @@ export function resolvedAncestors(
   for (const resolved of resolvedChain) {
     const reading = readingOf(resolved, deps.snapshotAncestor);
     if (reading === undefined) {
-      return { reason: `Resolved delegation chain for ${leafId} holds a value that could not be copied` };
+      return refusal("delegation_malformed", `Resolved delegation chain for ${leafId} holds a value that could not be copied`);
     }
     read.push(reading.copy);
   }
 
   const leafIndex = read.findIndex((credential) => delegationIdMember(credential) === leafId);
   if (leafIndex !== -1 && leafIndex !== read.length - 1) {
-    return { reason: `Resolved delegation chain for ${leafId} must end with the leaf credential` };
+    return refusal("chain_invalid", `Resolved delegation chain for ${leafId} must end with the leaf credential`);
   }
 
   // The presented leaf is the one validated: the resolver's copy of it is set
@@ -102,9 +107,10 @@ export function resolvedAncestors(
   // delegation credential is refused before any credential of the chain is
   // verified.
   if (!ancestors.every(hasDelegationShape)) {
-    return {
-      reason: `Resolved delegation chain for ${leafId} holds a value that is not a delegation credential`,
-    };
+    return refusal(
+      "delegation_malformed",
+      `Resolved delegation chain for ${leafId} holds a value that is not a delegation credential`,
+    );
   }
   return { ancestors };
 }

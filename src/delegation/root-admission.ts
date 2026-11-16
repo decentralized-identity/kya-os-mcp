@@ -7,6 +7,7 @@
 
 import type { DelegationCredential } from '../types/protocol.js';
 import { describeValue } from '../utils/describe-value.js';
+import { refusal, type Refusal } from '../utils/refusal.js';
 import { credentialIssuerDid, credentialIssuerRefusal } from './credential-issuer.js';
 
 /**
@@ -15,20 +16,21 @@ import { credentialIssuerDid, credentialIssuerRefusal } from './credential-issue
  * credential's own `issuer` ({@link credentialIssuerDid}), never the `issuerDid` its delegation
  * claims, and the reason quotes it as {@link describeValue} does, since nothing has authenticated
  * it yet; a root naming no issuer string gets the verifier's basic-stage reason, as it would when
- * verified.
+ * verified. A list that is not one is `configuration_error`, a root naming no issuer
+ * `delegation_malformed`, and one whose issuer the list does not admit `untrusted_root`.
  */
 export function rootAdmissionRefusal(
   root: DelegationCredential,
   trustedRootIssuers: readonly string[] | undefined,
-): string | undefined {
+): Refusal | undefined {
   if (trustedRootIssuers === undefined) return undefined;
   const invalidList = trustedRootIssuersRefusal(trustedRootIssuers);
-  if (invalidList !== undefined) return invalidList;
+  if (invalidList !== undefined) return refusal('configuration_error', invalidList);
   const issuer = credentialIssuerDid(root);
   const id = root.credentialSubject.delegation.id;
-  if (issuer === undefined) return `Delegation ${id} invalid: ${credentialIssuerRefusal(root)}`;
+  if (issuer === undefined) return refusal('delegation_malformed', `Delegation ${id} invalid: ${credentialIssuerRefusal(root)}`);
   if (admitsRootIssuer(trustedRootIssuers, issuer)) return undefined;
-  return `Root delegation ${id} is issued by ${describeValue(issuer)}, which is not a trusted root issuer`;
+  return refusal('untrusted_root', `Root delegation ${id} is issued by ${describeValue(issuer)}, which is not a trusted root issuer`);
 }
 
 /**

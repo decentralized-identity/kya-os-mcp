@@ -346,11 +346,15 @@ describe("validateDelegationChain", () => {
       expect(await validateDelegationChain(freshChild, { ...deps, revocationChecker: leafOnly("Directly revoked") })).toEqual({
         valid: false,
         reason: 'Delegation "fresh-child" is revoked: Directly revoked',
+        code: "delegation_revoked",
+        transient: false,
         evaluated: [parent, freshChild],
       });
       expect(await validateDelegationChain(freshChild, { ...deps, revocationChecker: leafOnly() })).toEqual({
         valid: false,
         reason: 'Delegation "fresh-child" is revoked',
+        code: "delegation_revoked",
+        transient: false,
         evaluated: [parent, freshChild],
       });
     });
@@ -365,6 +369,8 @@ describe("validateDelegationChain", () => {
       expect(r).toEqual({
         valid: false,
         reason: 'Revocation check failed for delegation "root": status list unavailable',
+        code: "status_unavailable",
+        transient: true,
         evaluated: [root],
       });
 
@@ -376,6 +382,8 @@ describe("validateDelegationChain", () => {
       expect(await validateDelegationChain(root, { ...baseDeps, revocationChecker: throwsNonError })).toEqual({
         valid: false,
         reason: 'Revocation check failed for delegation "root": Unknown error',
+        code: "status_unavailable",
+        transient: true,
         evaluated: [root],
       });
     });

@@ -32,11 +32,8 @@ import {
   type SignatureCheck,
   type StatusCheck,
 } from "./vc-verification-checks.js";
-import {
-  credentialIssuerDid,
-  verifyVcJwtSignature,
-  prepareVcJwtCredential,
-} from "./vc-jwt-verify.js";
+import { credentialIssuerDid, prepareVcJwtCredential } from "./vc-jwt-verify.js";
+import { checkVcJwtSignature } from "./vc-jwt-signature.js";
 import { canonicalizeJson } from "../utils/canonical-json.js";
 import { coded } from "../utils/refusal.js";
 import { dependencyTimeout } from "../utils/deadline.js";
@@ -185,7 +182,7 @@ export class DelegationCredentialVerifier {
     const signaturePromise = this.cachedSignature(cacheKey, () =>
       options.skipSignature
         ? Promise.resolve<SignatureCheck>({ valid: true, durationMs: 0 })
-        : verifyVcJwtSignature(
+        : checkVcJwtSignature(
             jwt,
             issuerDid,
             kid,

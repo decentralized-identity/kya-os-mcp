@@ -23,7 +23,7 @@ import { coded, refusal, refusalCodeOf, type Passed, type Refusal } from "../uti
 import { OPERATOR_REASON_LENGTH } from "../utils/revocation-answer.js";
 import { readVerdict } from "../utils/verdict.js";
 import { verifyDelegationAudience } from "./audience-validator.js";
-import { attenuationWarnings, statedExpiry, validateScopeAttenuation } from "./chain-attenuation.js";
+import { attenuationWarnings, checkScopeAttenuation, statedExpiry } from "./chain-attenuation.js";
 import { chainResolutionFailure, revocationCheckFailure, revocationRefusal } from "./chain-reasons.js";
 import { chainLinkageRefusal } from "./chain-linkage.js";
 import { rootAdmissionRefusal } from "./root-admission.js";
@@ -322,7 +322,7 @@ async function walkChain(
       continue;
     }
 
-    const scopeValidation = validateScopeAttenuation(previousCredential, credential);
+    const scopeValidation = checkScopeAttenuation(previousCredential, credential);
     if (!scopeValidation.valid) {
       return scopeValidation;
     }

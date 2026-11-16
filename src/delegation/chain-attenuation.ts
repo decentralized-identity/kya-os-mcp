@@ -7,6 +7,7 @@
 import type { CrispScope, DelegationCredential } from "../types/protocol.js";
 import { canonicalizeJson } from "../utils/canonical-json.js";
 import { refusal, type Checked } from "../utils/refusal.js";
+import type { RefusalCoding } from "./vc-verifier.types.js";
 import { authorityContains, crispScopes, matcherContains, scopeAuthority } from "./scope-matcher.js";
 
 /** Union of a credential's delegation scopes and its constraint scopes. */
@@ -31,9 +32,20 @@ export function getDelegationScopes(credential: DelegationCredential): string[] 
  * anything unprovable, including a malformed entry, fails closed. A credential
  * with no scopes of either kind is not scope-restricted: such a parent accepts
  * any child, and such a child never attenuates a restricted parent. A refusal is
- * `chain_invalid`. Pure.
+ * `chain_invalid`, which its `code` says. Pure.
  */
 export function validateScopeAttenuation(
+  parentCredential: DelegationCredential,
+  childCredential: DelegationCredential,
+): { valid: boolean; reason?: string } & RefusalCoding {
+  return checkScopeAttenuation(parentCredential, childCredential);
+}
+
+/**
+ * {@link validateScopeAttenuation}, with a refusal that cannot be built without its code: the
+ * chain walk reads it through this, so the code of a refusal is typed as always present.
+ */
+export function checkScopeAttenuation(
   parentCredential: DelegationCredential,
   childCredential: DelegationCredential,
 ): Checked {

@@ -18,10 +18,8 @@
  * Related: W3C VC Data Model 1.1 §6.3.1 (JWT), KYA-OS §4.3
  */
 
-import { compactVerify, importJWK } from "jose";
-import type { JWK } from "jose";
 import { DID_RESOLUTION_TIMEOUT_MS } from "./did-resource-limits.js";
-import { resolveExplained, type ExplainedResolution } from "./did-resolution-failure.js";
+import { checkVcJwtSignature } from "./vc-jwt-signature.js";
 import type { DelegationCredential } from "../types/protocol.js";
 import type {
   DIDResolver,
@@ -30,19 +28,10 @@ import type {
 import { credentialIssuerDid, isIssuerUrl } from "./credential-issuer.js";
 import { isRecord } from "../utils/guards.js";
 import { parseVCJWT, type VCJWTPayload } from "./utils.js";
-import { validateBasicProperties, type SignatureCheck } from "./vc-verification-checks.js";
-import { verificationMethodJwk } from "./verification-method-key.js";
-import { assertionMethodRefusal, selectAssertionMethod } from "./verification-relationship.js";
-import { isSmallOrderEd25519CryptoKey } from "../utils/ed25519-public-key.js";
+import { validateBasicProperties } from "./vc-verification-checks.js";
 import { describeValue } from "../utils/describe-value.js";
-import { sanitizeForMessage } from "../utils/message-text.js";
-import { coded, refusal, refusalCodeOf, type Refusal } from "../utils/refusal.js";
+import { coded, refusal, type Refusal } from "../utils/refusal.js";
 import type { RefusalCode } from "../refusal-codes.js";
-
-/** The text of an error the verifier did not write, as a reason holds it: bounded and well-formed. */
-function errMsg(err: unknown): string {
-  return sanitizeForMessage(err instanceof Error ? err.message : String(err));
-}
 
 export { credentialIssuerDid };
 
@@ -211,58 +200,6 @@ export async function verifyVcJwtSignature(
   kid: string | undefined,
   didResolver: DIDResolver | undefined,
   timeoutMs: number = DID_RESOLUTION_TIMEOUT_MS,
-): Promise<SignatureCheck & VcJwtSignatureResult> {
-  const startTime = Date.now();
-  const durationMs = (): number => Date.now() - startTime;
-  const refused = (code: RefusalCode, reason: string): SignatureCheck & VcJwtSignatureResult => ({
-    ...refusal(code, reason),
-    durationMs: durationMs(),
-  });
-
-  if (!didResolver) {
-    return refused("configuration_error", "No DID resolver configured \u2014 signature cannot be verified");
-  }
-
-  const issuer = describeValue(issuerDid);
-  let resolved: ExplainedResolution;
-  try {
-    resolved = await resolveExplained(didResolver, issuerDid, kid, timeoutMs);
-  } catch (err) {
-    return refused(refusalCodeOf(err, "did_unavailable"), `Could not resolve issuer DID ${issuer}: ${errMsg(err)}`);
-  }
-  if (resolved.document === null) {
-    return refused(resolved.code, `Could not resolve issuer DID: ${issuer}${resolved.why}`);
-  }
-  const didDoc = resolved.document;
-
-  // VC-JOSE-COSE §4.1.1 makes `kid` a hint to the key that secured the credential; the relationship
-  // is what lets that key issue it (W3C Controlled Identifiers v1.0 §3.3).
-  const selection = selectAssertionMethod(didDoc, issuerDid, kid);
-  if (!("method" in selection)) {
-    return refused("key_not_authorized", assertionMethodRefusal(selection, "JWT kid", kid, issuerDid));
-  }
-  const publicKeyJwk = verificationMethodJwk(selection.method);
-  if (!publicKeyJwk) {
-    return refused(
-      "did_invalid",
-      "Verification method has no usable public key (publicKeyJwk / publicKeyMultibase / publicKeyBase58)",
-    );
-  }
-
-  let key: Awaited<ReturnType<typeof importJWK>>;
-  try {
-    key = await importJWK(publicKeyJwk as JWK, "EdDSA");
-  } catch (err) {
-    return refused("did_invalid", `JWT envelope signature is not valid: ${errMsg(err)}`);
-  }
-  try {
-    // jose verifies under a small-order key, where one signature fits every payload.
-    if (await isSmallOrderEd25519CryptoKey(key)) {
-      return refused("did_invalid", "Verification method key is a small-order Ed25519 point");
-    }
-    await compactVerify(jwt, key, { algorithms: ["EdDSA"] });
-    return { valid: true, durationMs: durationMs() };
-  } catch (err) {
-    return refused("invalid_proof", `JWT envelope signature is not valid: ${errMsg(err)}`);
-  }
+): Promise<VcJwtSignatureResult> {
+  return checkVcJwtSignature(jwt, issuerDid, kid, didResolver, timeoutMs);
 }

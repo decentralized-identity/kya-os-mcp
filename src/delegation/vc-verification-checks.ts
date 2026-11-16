@@ -66,7 +66,7 @@ export type StatusCheck =
  * `requireEmbeddedProof` (default `true`) demands a Data Integrity `proof`
  * block. The VC-JWT path passes `false`: a compact JWS carries no embedded
  * `proof` — its envelope signature is the proof, verified separately by
- * {@link verifyVcJwtSignature}.
+ * `checkVcJwtSignature` (./vc-jwt-signature).
  */
 export function validateBasicProperties(
   vc: DelegationCredential,

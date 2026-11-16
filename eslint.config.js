@@ -25,6 +25,13 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ['dist/**', 'examples/**', 'adopters/**', '**/__tests__/**', '**/*.test.ts', '*.config.js'],
+    // The adopter suite's runner is plain Node ESM, with the Node globals it uses.
+    files: ['adopters/run.mjs', 'adopters/runner/*.mjs'],
+    languageOptions: {
+      globals: { process: 'readonly', console: 'readonly', setTimeout: 'readonly', clearTimeout: 'readonly' },
+    },
+  },
+  {
+    ignores: ['dist/**', 'examples/**', 'adopters/fixtures/**', '**/__tests__/**', '**/*.test.ts', '*.config.js'],
   }
 );

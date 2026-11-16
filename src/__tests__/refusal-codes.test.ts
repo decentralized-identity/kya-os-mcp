@@ -34,6 +34,7 @@ describe('the refusal code catalog', () => {
       'holder_binding_failed',
       'insufficient_scope',
       'invalid_proof',
+      'needs_authorization',
       'runtime_error',
     ]);
   });

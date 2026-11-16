@@ -147,11 +147,12 @@ describe("verifyCard and a checker's reason", () => {
       revoked: true,
       fresh: false,
       reason: expect.stringMatching(new RegExp(`^status list issuer "${other.did}" `)),
+      ...codedAs('status_signer_untrusted'),
     });
   });
 
   it('reports no reason for a Card whose bit is set, or clear', async () => {
-    expect((await verify(statusList(owner, [7]))).revocation).toStrictEqual({ revoked: true, fresh: true });
+    expect((await verify(statusList(owner, [7]))).revocation).toStrictEqual({ revoked: true, fresh: true, ...BIT_SET });
     expect((await verify(statusList(owner))).revocation).toStrictEqual({ revoked: false, fresh: true });
   });
 
@@ -162,6 +163,11 @@ describe("verifyCard and a checker's reason", () => {
 
   it('bounds the reason of a custom checker', async () => {
     const result = await verifyCard(card, { statusListChecker: async () => ({ revoked: true, fresh: false, reason: `a\n${'c'.repeat(1000)}` }) });
-    expect(result.revocation).toStrictEqual({ revoked: true, fresh: false, reason: `a\uFFFD${'c'.repeat(CHECKER_REASON_LENGTH - 2)}\u2026` });
+    expect(result.revocation).toStrictEqual({
+      revoked: true,
+      fresh: false,
+      reason: `a\uFFFD${'c'.repeat(CHECKER_REASON_LENGTH - 2)}\u2026`,
+      ...BIT_SET,
+    });
   });
 });

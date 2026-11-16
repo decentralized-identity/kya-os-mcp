@@ -19,106 +19,32 @@
  */
 
 import { answerWithinDeadline, DeadlineExceededError, dependencyTimeout } from '../utils/deadline.js';
-import { isRecord } from '../utils/guards.js';
+import { coded, refusalCodeOf, type Coded } from '../utils/refusal.js';
+import type { RefusalCode } from '../refusal-codes.js';
 import { admitsRootIssuer, assertTrustedRootIssuers } from '../delegation/root-admission.js';
+import { revocationEntriesOf, validateDelegationChain, type DelegationChain } from './delegation.js';
 import {
-  DelegationCredentialSchema,
-  MAX_DELEGATION_DEPTH,
-  revocationEntriesOf,
-  validateDelegationChain,
-  type DelegationChain,
-  type DelegationCredential,
-} from './delegation.js';
+  KYA_OS_DELEGATION_CHAIN_META_KEY,
+  parseCredentials,
+  readCarriedChain,
+  rejectionCoded,
+  type RejectionCoded,
+  type RejectionCoding,
+} from './carried-chain.js';
 import type { DelegationProofVerifier } from './delegation-proof.js';
-import { evaluateRevocationChain, type BitstringRevocationChecker } from './revocation.js';
+import type { BitstringRevocationChecker } from './revocation.js';
+import { walkRevocationChain, type RevocationChainWalk } from './revocation-chain.js';
 
-/** The `_meta` key that carries a request's delegation chain (registered in §14.1). */
-export const KYA_OS_DELEGATION_CHAIN_META_KEY = 'org.kya-os/delegation-chain';
+export {
+  DEFAULT_CARRIED_CHAIN_LIMIT,
+  KYA_OS_DELEGATION_CHAIN_META_KEY,
+  readDelegationChain,
+  toDelegationChainMeta,
+  type CarriedChainRead,
+  type DelegationChainMeta,
+  type RejectionCoding,
+} from './carried-chain.js';
 
-/**
- * The most credentials {@link verifyRequestDelegation} accepts in a CARRIED chain unless the caller
- * sets `maxChainLength`. A carried chain's length is chosen by the caller, and every hop can cost a
- * DID resolution and a status-list fetch, so a carried chain is bounded by default. It is a local
- * resource limit, not a protocol rule about how far authority may be delegated (SPEC.md §6.10).
- */
-export const DEFAULT_CARRIED_CHAIN_LIMIT = MAX_DELEGATION_DEPTH;
-
-/** The `_meta` member a caller sends: `{ 'org.kya-os/delegation-chain': [root, ..., leaf] }`. */
-export type DelegationChainMeta = Record<typeof KYA_OS_DELEGATION_CHAIN_META_KEY, DelegationChain>;
-
-/**
- * Build the `_meta` member that carries `chain` (root first, leaf last). Spread it into the same
- * `_meta` that carries the request proof:
- * `{ [KYA_OS_CARD_PROOF_META_KEY]: proof, ...toDelegationChainMeta(chain) }`.
- */
-export function toDelegationChainMeta(chain: DelegationChain): DelegationChainMeta {
-  return { [KYA_OS_DELEGATION_CHAIN_META_KEY]: [...chain] };
-}
-
-/** The outcome of reading the carried chain out of a request's `_meta`. */
-export type CarriedChainRead =
-  | { carried: false }
-  | {
-      carried: true;
-      ok: true;
-      /** The parsed hops, root to leaf, for the chain rules. */
-      chain: DelegationChain;
-      /** The same hops exactly as received, for proof verification (a proof covers every member). */
-      credentials: readonly Record<string, unknown>[];
-    }
-  | { carried: true; ok: false; reasons: string[] };
-
-/**
- * Read `_meta['org.kya-os/delegation-chain']`, fail-closed. Absent means not carried. Anything
- * present must be a non-empty array of `DelegationCredential` objects no longer than
- * `maxChainLength` (default {@link DEFAULT_CARRIED_CHAIN_LIMIT}); the length is checked before any
- * entry is parsed.
- */
-export function readDelegationChain(meta: unknown, opts: { maxChainLength?: number } = {}): CarriedChainRead {
-  if (!isRecord(meta)) return { carried: false };
-  const value = meta[KYA_OS_DELEGATION_CHAIN_META_KEY];
-  if (value === undefined) return { carried: false };
-
-  const reject = (reason: string): CarriedChainRead => ({ carried: true, ok: false, reasons: [reason] });
-  if (!Array.isArray(value)) {
-    return reject(`${KYA_OS_DELEGATION_CHAIN_META_KEY} must be an array of DelegationCredential objects, root to leaf`);
-  }
-  if (value.length === 0) return reject('empty delegation chain');
-  const limit = opts.maxChainLength ?? DEFAULT_CARRIED_CHAIN_LIMIT;
-  if (!Number.isInteger(limit) || limit < 1) {
-    return reject(`maxChainLength must be a positive integer (got ${String(limit)})`);
-  }
-  if (value.length > limit) {
-    return reject(`carried delegation chain of ${value.length} credentials exceeds the limit of ${limit}`);
-  }
-  const parsed = parseCredentials(value);
-  return parsed.ok ? { carried: true, ...parsed } : { carried: true, ok: false, reasons: parsed.reasons };
-}
-
-/** Schema-parse each hop, keeping the as-received object alongside the parsed one. */
-function parseCredentials(
-  entries: readonly unknown[],
-):
-  | { ok: true; chain: DelegationChain; credentials: readonly Record<string, unknown>[] }
-  | { ok: false; reasons: string[] } {
-  const chain: DelegationCredential[] = [];
-  const credentials: Record<string, unknown>[] = [];
-  for (const [hop, entry] of entries.entries()) {
-    if (!isRecord(entry)) return { ok: false, reasons: [`hop ${hop}: not a credential object`] };
-    const parsed = DelegationCredentialSchema.safeParse(entry);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      const where = issue && issue.path.length > 0 ? ` at ${issue.path.join('.')}` : '';
-      return {
-        ok: false,
-        reasons: [`hop ${hop}: not a DelegationCredential${where}: ${issue?.message ?? 'invalid'}`],
-      };
-    }
-    chain.push(parsed.data);
-    credentials.push(entry);
-  }
-  return { ok: true, chain, credentials };
-}
 
 /**
  * A snake_case rejection code. `delegation_missing` means no authority was presented;
@@ -204,9 +130,29 @@ export interface RequestDelegationGrant {
   fresh: boolean;
 }
 
+/**
+ * The verdict on one request's authority: the grant, or a rejection with its gate `code`, its
+ * `reasons`, and the finer {@link RejectionCoding} `refusalCode` and `transient`.
+ */
 export type RequestDelegationResult =
   | ({ ok: true } & RequestDelegationGrant)
-  | { ok: false; code: DelegationGateCode; reasons: string[]; source?: DelegationChainSource };
+  | ({ ok: false; code: DelegationGateCode; reasons: string[]; source?: DelegationChainSource } & RejectionCoding);
+
+/** A rejection as the library builds it: with its refusal code. */
+type Rejection = { ok: false; code: DelegationGateCode; reasons: string[]; source?: DelegationChainSource } & RejectionCoded;
+
+/** What {@link verifyRequestDelegation} comes to, with a rejection that cannot be built without its code. */
+type RequestVerdict = ({ ok: true } & RequestDelegationGrant) | Rejection;
+
+/** The rejection under `code` for `reasons`, with `refusalCode`, from a chain obtained from `source`. */
+function rejection(
+  code: DelegationGateCode,
+  refusalCode: RefusalCode,
+  reasons: string[],
+  source?: DelegationChainSource,
+): Rejection {
+  return { ok: false, code, reasons, ...(source === undefined ? {} : { source }), ...rejectionCoded(refusalCode) };
+}
 
 /**
  * Verify the authority behind one request, fail-closed, in the SPEC-ENTITY-CARD §11.4 order:
@@ -224,7 +170,12 @@ export type RequestDelegationResult =
  *    the subtree.
  *
  * Cheap, local checks run before the ones that may touch the network. Never throws on a
- * malformed input or a throwing seam; returns `{ ok: false, code, reasons }`. Rejects with a
+ * malformed input or a throwing seam; returns `{ ok: false, code, reasons, refusalCode, transient }`.
+ * The `refusalCode` says which rule refused the chain: for example `needs_authorization` for no
+ * chain, `holder_binding_failed` for a leaf delegate that is not `proofDid`, `untrusted_root`,
+ * `invalid_proof` for a hop's proof, `insufficient_scope` for the action, the code of the status
+ * that refused a hop, and `deadline_exceeded` or `runtime_error` for a seam that did not answer in
+ * time or threw. Rejects with a
  * `TypeError` for a `trustedRootIssuers` that is not an array of DIDs, each a string that starts
  * with `did:` and has no white space around it, and for a `dependencyTimeoutMs` that is not a
  * number of milliseconds it can wait.
@@ -233,17 +184,18 @@ export async function verifyRequestDelegation(
   input: RequestDelegationInput,
   deps: VerifyRequestDelegationDeps,
 ): Promise<RequestDelegationResult> {
+  return verifyRequest(input, deps);
+}
+
+/** {@link verifyRequestDelegation}, with a rejection that cannot be built without its code. */
+async function verifyRequest(input: RequestDelegationInput, deps: VerifyRequestDelegationDeps): Promise<RequestVerdict> {
   assertTrustedRootIssuers(deps.trustedRootIssuers);
   const timeoutMs = dependencyTimeout(deps.dependencyTimeoutMs);
   const obtained = await obtainChain(input, deps, timeoutMs);
   if (!obtained.ok) return obtained;
   const { chain, credentials, source } = obtained;
-  const reject = (code: DelegationGateCode, reasons: string[]): RequestDelegationResult => ({
-    ok: false,
-    code,
-    reasons,
-    source,
-  });
+  const reject = (code: DelegationGateCode, refusalCode: RefusalCode, reasons: string[]): Rejection =>
+    rejection(code, refusalCode, reasons, source);
 
   const structural = validateDelegationChain(chain, {
     resource: deps.resource,
@@ -251,41 +203,42 @@ export async function verifyRequestDelegation(
     ...(deps.maxChainLength !== undefined ? { maxChainLength: deps.maxChainLength } : {}),
     ...(deps.now !== undefined ? { now: deps.now } : {}),
   });
-  if (!structural.ok) return reject('delegation_invalid', structural.reasons);
+  // validateDelegationChain codes every chain it refuses.
+  if (!structural.ok) return reject('delegation_invalid', structural.code ?? 'chain_invalid', structural.reasons);
   const { responsibleParty, leafInvoker, invocationTarget, allowedAction, depth } = structural;
   if (responsibleParty === undefined || leafInvoker === undefined || invocationTarget === undefined) {
-    return reject('delegation_invalid', ['delegation chain has no root issuer or leaf delegate']);
+    return reject('delegation_invalid', 'delegation_malformed', ['delegation chain has no root issuer or leaf delegate']);
   }
 
   if (leafInvoker !== input.proofDid) {
-    return reject('delegation_invalid', [
+    return reject('delegation_invalid', 'holder_binding_failed', [
       `leaf delegate ${leafInvoker} is not the request proof's DID ${input.proofDid}`,
     ]);
   }
   if (!admitsRootIssuer(deps.trustedRootIssuers, responsibleParty)) {
-    return reject('delegation_invalid', [`root issuer ${responsibleParty} is not a trusted root issuer`]);
+    return reject('delegation_invalid', 'untrusted_root', [`root issuer ${responsibleParty} is not a trusted root issuer`]);
   }
 
   for (const [hop, credential] of credentials.entries()) {
     const refusal = await hopProofRefusal(credential, deps.verifyHopProof, timeoutMs);
-    if (refusal !== undefined) return reject('delegation_invalid', [`hop ${hop}: ${refusal}`]);
+    if (refusal !== undefined) return reject('delegation_invalid', refusal.code, [`hop ${hop}: ${refusal.reason}`]);
   }
 
   if (!allowedAction.includes(input.action)) {
-    return reject('action_not_delegated', [`action "${input.action}" is not in the delegated allowedAction`]);
+    return reject('action_not_delegated', 'insufficient_scope', [`action "${input.action}" is not in the delegated allowedAction`]);
   }
 
   const pinnedRoot =
     deps.resourceOwner !== undefined || deps.trustedRootIssuers !== undefined ? responsibleParty : undefined;
-  let revocation: Awaited<ReturnType<typeof evaluateRevocationChain>>;
+  let revocation: RevocationChainWalk;
   try {
-    revocation = await evaluateRevocationChain(revocationEntriesOf(chain, pinnedRoot), deps.checkRevocation, {
+    revocation = await walkRevocationChain(revocationEntriesOf(chain, pinnedRoot), deps.checkRevocation, {
       dependencyTimeoutMs: timeoutMs,
     });
   } catch {
-    return reject('delegation_revoked', ['revocation checker threw: status unprovable, fail-closed']);
+    return reject('delegation_revoked', 'status_unavailable', ['revocation checker threw: status unprovable, fail-closed']);
   }
-  if (!revocation.ok) return reject('delegation_revoked', revocation.reasons);
+  if (!revocation.ok) return reject('delegation_revoked', revocation.code, revocation.reasons);
 
   return {
     ok: true,
@@ -306,23 +259,21 @@ async function obtainChain(
   timeoutMs: number,
 ): Promise<
   | { ok: true; chain: DelegationChain; credentials: readonly Record<string, unknown>[]; source: DelegationChainSource }
-  | { ok: false; code: DelegationGateCode; reasons: string[]; source?: DelegationChainSource }
+  | Rejection
 > {
-  const read = readDelegationChain(
+  const read = readCarriedChain(
     input.meta,
     deps.maxChainLength !== undefined ? { maxChainLength: deps.maxChainLength } : {},
   );
   if (read.carried) {
-    if (!read.ok) return { ok: false, code: 'delegation_invalid', reasons: read.reasons, source: 'carried' };
+    if (!read.ok) return rejection('delegation_invalid', read.refusalCode, read.reasons, 'carried');
     return { ok: true, chain: read.chain, credentials: read.credentials, source: 'carried' };
   }
 
   if (deps.resolveDelegationChain === undefined) {
-    return {
-      ok: false,
-      code: 'delegation_missing',
-      reasons: [`no ${KYA_OS_DELEGATION_CHAIN_META_KEY} in _meta, and no by-reference resolver is configured`],
-    };
+    return rejection('delegation_missing', 'needs_authorization', [
+      `no ${KYA_OS_DELEGATION_CHAIN_META_KEY} in _meta, and no by-reference resolver is configured`,
+    ]);
   }
   let resolved: DelegationChain | undefined;
   try {
@@ -330,43 +281,41 @@ async function obtainChain(
     resolved = await answerWithinDeadline('the chain resolver', () => resolve({ proofDid: input.proofDid }), timeoutMs);
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'unknown error';
-    return {
-      ok: false,
-      code: 'delegation_unresolvable',
-      reasons: [`delegation chain could not be resolved: ${detail}`],
-      source: 'resolved',
-    };
+    return rejection(
+      'delegation_unresolvable',
+      refusalCodeOf(error, 'runtime_error'),
+      [`delegation chain could not be resolved: ${detail}`],
+      'resolved',
+    );
   }
   if (!Array.isArray(resolved) || resolved.length === 0) {
-    return {
-      ok: false,
-      code: 'delegation_missing',
-      reasons: [`no delegation chain found for ${input.proofDid}`],
-      source: 'resolved',
-    };
+    return rejection('delegation_missing', 'needs_authorization', [`no delegation chain found for ${input.proofDid}`], 'resolved');
   }
   // The resolver is the verifier's own, but what it returns is still parsed: a malformed hop
   // rejects rather than reaching the chain rules.
   const parsed = parseCredentials(resolved);
-  if (!parsed.ok) return { ok: false, code: 'delegation_invalid', reasons: parsed.reasons, source: 'resolved' };
+  if (!parsed.ok) return rejection('delegation_invalid', parsed.refusalCode, parsed.reasons, 'resolved');
   return { ok: true, chain: parsed.chain, credentials: parsed.credentials, source: 'resolved' };
 }
 
 /**
  * Run the hop-proof seam, fail-closed, under a deadline of `timeoutMs`: why the hop is
- * refused, or `undefined` when its proof verified. A throw refuses the hop, and so does a verifier
- * that has not answered by the deadline, with a reason that says so.
+ * refused, with its code, or `undefined` when its proof verified. A proof that did not verify is
+ * `invalid_proof`; a verifier that threw is `runtime_error`, and one that has not answered by the
+ * deadline is `deadline_exceeded`, with a reason that says so.
  */
 async function hopProofRefusal(
   credential: Record<string, unknown>,
   verifyHopProof: DelegationProofVerifier,
   timeoutMs: number,
-): Promise<string | undefined> {
+): Promise<(Coded & { reason: string }) | undefined> {
   try {
     const verified = await answerWithinDeadline('the hop proof verifier', () => verifyHopProof(credential), timeoutMs);
-    return verified === true ? undefined : 'proof did not verify';
+    return verified === true ? undefined : { reason: 'proof did not verify', ...coded('invalid_proof') };
   } catch (error) {
-    return error instanceof DeadlineExceededError ? error.message : 'proof did not verify';
+    return error instanceof DeadlineExceededError
+      ? { reason: error.message, ...coded('deadline_exceeded') }
+      : { reason: 'proof did not verify', ...coded(refusalCodeOf(error, 'runtime_error')) };
   }
 }
 
@@ -382,11 +331,12 @@ export interface DelegationGateError {
 /**
  * The guard verdict. A pass carries the recomputed grant. A rejection is 401-shaped when no
  * authority was presented (`delegation_missing`, which a server may answer with a consent step-up)
- * and 403-shaped otherwise.
+ * and 403-shaped otherwise. A rejection carries its {@link RejectionCoding} beside `error`, not in
+ * it, so an `error` a server sends to its client is unchanged.
  */
 export type DelegationGateResult =
   | ({ ok: true } & RequestDelegationGrant)
-  | { ok: false; status: 401 | 403; error: DelegationGateError };
+  | ({ ok: false; status: 401 | 403; error: DelegationGateError } & RejectionCoding);
 
 /** A per-request delegation guard. Run it after `requireProof`, passing the `did` it returned. */
 export type DelegationGuard = (input: RequestDelegationInput) => Promise<DelegationGateResult>;
@@ -419,12 +369,14 @@ export function requireDelegation(deps: VerifyRequestDelegationDeps): Delegation
   assertTrustedRootIssuers(deps.trustedRootIssuers);
   dependencyTimeout(deps.dependencyTimeoutMs);
   return async (input) => {
-    const result = await verifyRequestDelegation(input, deps);
+    const result = await verifyRequest(input, deps);
     if (result.ok) return result;
     return {
       ok: false,
       status: result.code === 'delegation_missing' ? 401 : 403,
       error: { code: result.code, message: GATE_MESSAGES[result.code], reasons: result.reasons },
+      refusalCode: result.refusalCode,
+      transient: result.transient,
     };
   };
 }

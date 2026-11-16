@@ -24,13 +24,18 @@ import {
   type Capability,
   type Attestation,
 } from './schema.js';
-import { CHECKER_REASON_LENGTH, type BitstringRevocationChecker } from './revocation.js';
-import { sanitizeForMessage } from '../utils/message-text.js';
+import type { BitstringRevocationChecker } from './revocation.js';
 import { describeValue } from '../utils/describe-value.js';
-import { readRevocationAnswer } from '../utils/revocation-answer.js';
-import type { StatusCheckContext } from '../utils/statuslist-keeper.js';
 import { answerWithinDeadline, DeadlineExceededError, dependencyTimeout } from '../utils/deadline.js';
-import { checkWithinDeadline } from './revocation-deadline.js';
+import { coded, decidingRefusal, type Coded } from '../utils/refusal.js';
+import type { RefusalCoding } from '../delegation/vc-verifier.types.js';
+import {
+  checkCardRevocation,
+  demoteOnRevocation,
+  reportedRevocation,
+  verifiedRoot,
+  type CardRevocation,
+} from './verify-revocation.js';
 import type { ProofAssurance, ProofVerifyResult } from './proof/index.js';
 import type { ToolRequest } from '../proof/generator.js';
 
@@ -159,7 +164,12 @@ export interface VerifyCardDeps {
   dependencyTimeoutMs?: number;
 }
 
-export interface VerifyCardResult {
+/**
+ * What {@link verifyCard} finds. A Card that is not `ok` carries the `code` of why, and whether it is
+ * `transient`: with several claims refused, the code of the first that is not transient, else of the
+ * first, in the order accountability, attestations, revocation. An `ok` Card carries neither.
+ */
+export interface VerifyCardResult extends RefusalCoding {
   /** True iff every trust-bearing claim *present* on the card verified (proof is per-request, not a card claim). */
   ok: boolean;
   entityType: EntityType;
@@ -184,9 +194,11 @@ export interface VerifyCardResult {
    * answer is read as `evaluateRevocationChain` reads one: only a literal `revoked: false` passes and
    * only a literal `fresh: true` is fresh. An answer that could not be read is reported as revoked and
    * not fresh, with the `reason`; a revoked Card carries the `reason` its checker gave, when it gave
-   * one, bounded as `evaluateRevocationChain` bounds it.
+   * one, bounded as `evaluateRevocationChain` bounds it, and the `code` of why it is revoked: the
+   * checker's own, `delegation_revoked` when it gave none, `deadline_exceeded` for a checker that did
+   * not answer in time, and `status_unavailable` for one whose answer could not be read or that threw.
    */
-  revocation?: { revoked: boolean; fresh: boolean; reason?: string };
+  revocation?: CardRevocation;
   /** Echoes `deps.cimdKeyProven` — the caller's L1 CIMD key-possession evidence. */
   cimdKeyProven?: boolean;
 }
@@ -205,15 +217,22 @@ export async function verifyCard(card: EntityCard, deps: VerifyCardDeps): Promis
   const proof = await recomputeProof(deps, timeoutMs);
   const proofDid = proof?.ok ? proof.did : undefined;
 
-  const accountability = await checkAccountability(card, deps, trustedIssuers, proofDid, timeoutMs);
-  const attestations = await checkAttestations(card, deps, trustedIssuers, timeoutMs);
+  const party = await checkAccountability(card, deps, trustedIssuers, proofDid, timeoutMs);
+  const accountability = party?.reported;
+  const attested = await checkAttestations(card, deps, trustedIssuers, timeoutMs);
+  const attestations = attested.map((claim) => claim.reported);
   const revocation = await checkCardRevocation(card, deps.statusListChecker, verifiedRoot(accountability), timeoutMs);
 
-  const accountabilityOk = !card.responsibleParty || Boolean(accountability?.verified);
-  const attestationsOk = attestations.every((a) => a.verified);
+  // The Card is ok exactly when no claim it makes was refused, and each refusal carries its code.
+  const refused = decidingRefusal([
+    ...(party?.refusal ? [party.refusal] : []),
+    ...attested.flatMap((claim) => (claim.refusal ? [claim.refusal] : [])),
+    ...(revocation.revoked ? [revocation] : []),
+  ]);
 
   return {
-    ok: accountabilityOk && attestationsOk && !revocation.revoked,
+    ok: refused === undefined,
+    ...(refused === undefined ? {} : coded(refused.code)),
     entityType: card.entityType,
     conformanceLevel: deriveConformanceLevel(
       demoteOnRevocation(check, revocation.revoked),
@@ -305,9 +324,21 @@ async function unlessUnanswered<T>(who: string, unanswered: T, ask: () => T | Pr
   }
 }
 
+/** What a seam the host supplies stands for when it has not answered in time. */
+const UNANSWERED: unique symbol = Symbol('unanswered');
+
+/** A claim of the Card as the result reports it, with the code of why when it did not verify. */
+interface CheckedClaim<T> {
+  reported: T;
+  refusal?: Coded;
+}
+
 /**
  * Recompute the accountability edge, threading `proofDid` for the leaf-invoker join and surfacing the
  * delegation-chain `fresh` signal the §9.3/§12.6 L3 gate needs. A bare boolean is the DEPRECATED alias.
+ * A party that did not verify is refused with `configuration_error` when no verifier is supplied,
+ * `deadline_exceeded` when it has not answered in time, `claim_unverified` when it answered no, and
+ * `runtime_error` when its answer could not be read.
  */
 async function checkAccountability(
   card: EntityCard,
@@ -315,18 +346,28 @@ async function checkAccountability(
   trustedIssuers: readonly string[],
   proofDid: string | undefined,
   timeoutMs: number,
-): Promise<VerifyCardResult['accountability']> {
+): Promise<CheckedClaim<NonNullable<VerifyCardResult['accountability']>> | undefined> {
   if (!card.responsibleParty) return undefined;
   const verifier = deps.accountabilityVerifier;
-  const raw = verifier
-    ? await unlessUnanswered<unknown>('the accountability verifier', false, () =>
-        verifier(card, { trustedIssuers, proofDid }),
-      timeoutMs)
-    : false;
-  return { responsibleParty: card.responsibleParty, principal: card.principal, ...readAccountability(raw) };
+  const read: AccountabilityRead = verifier
+    ? readAccountability(
+        await unlessUnanswered<unknown>('the accountability verifier', UNANSWERED, () =>
+          verifier(card, { trustedIssuers, proofDid }),
+        timeoutMs),
+      )
+    : { verified: false, fresh: undefined, ...coded('configuration_error') };
+  const reported = { responsibleParty: card.responsibleParty, principal: card.principal };
+  if (read.verified) return { reported: { ...reported, ...read } };
+  const { code, transient, ...found } = read;
+  return { reported: { ...reported, ...found }, refusal: { code, transient } };
 }
 
 const ACCOUNTABILITY_ANSWER = "the accountability verifier's answer";
+
+/** What an accountability verdict comes to: verified, or not, with the code of why. */
+type AccountabilityRead =
+  | { verified: true; fresh: boolean | undefined; rootStatusList?: string }
+  | ({ verified: false; fresh: boolean | undefined; reason?: string } & Coded);
 
 /**
  * What the accountability verifier's `answer` comes to. A truthy string such as "false" must
@@ -336,49 +377,56 @@ const ACCOUNTABILITY_ANSWER = "the accountability verifier's answer";
  * boolean nor an object, a `verified` that is not a boolean, and an answer that throws when looked
  * at do not verify, with a reason. The `rootStatusList` names what the responsible party may sign
  * for this Card, so it is kept only from the read that saw `verified: true`, and only as the
- * non-empty string it is. Each member is read once, inside the `try`, so nothing throws.
+ * non-empty string it is. Each member is read once, inside the `try`, so nothing throws. A party
+ * the verifier did not answer for in time does not verify, with no reason.
  */
-function readAccountability(
-  answer: unknown,
-): Pick<NonNullable<VerifyCardResult['accountability']>, 'verified' | 'fresh' | 'reason' | 'rootStatusList'> {
-  if (typeof answer === 'boolean') return { verified: answer, fresh: undefined };
+function readAccountability(answer: unknown): AccountabilityRead {
+  if (answer === UNANSWERED) return { verified: false, fresh: undefined, ...coded('deadline_exceeded') };
+  if (typeof answer === 'boolean') {
+    return answer ? { verified: true, fresh: undefined } : { verified: false, fresh: undefined, ...coded('claim_unverified') };
+  }
+  const unreadable = (reason: string, fresh?: boolean): AccountabilityRead => ({ verified: false, fresh, reason, ...coded('runtime_error') });
   try {
     if (typeof answer !== 'object' || answer === null) {
-      const reason = `${ACCOUNTABILITY_ANSWER} (${describeValue(answer)}) is neither a boolean nor an object`;
-      return { verified: false, fresh: undefined, reason };
+      return unreadable(`${ACCOUNTABILITY_ANSWER} (${describeValue(answer)}) is neither a boolean nor an object`);
     }
     const { verified, fresh: stated, rootStatusList: reported } = answer as Record<string, unknown>;
     const fresh = stated === undefined ? undefined : stated === true;
-    if (typeof verified === 'boolean') {
-      const listed = verified && typeof reported === 'string' && reported.length > 0 ? { rootStatusList: reported } : {};
+    if (verified === true) {
+      const listed = typeof reported === 'string' && reported.length > 0 ? { rootStatusList: reported } : {};
       return { verified, fresh, ...listed };
     }
-    const reason = `the verified member of ${ACCOUNTABILITY_ANSWER} (${describeValue(verified)}) is neither true nor false`;
-    return { verified: false, fresh, reason };
+    if (verified === false) return { verified, fresh, ...coded('claim_unverified') };
+    return unreadable(`the verified member of ${ACCOUNTABILITY_ANSWER} (${describeValue(verified)}) is neither true nor false`, fresh);
   } catch {
-    return { verified: false, fresh: undefined, reason: `${ACCOUNTABILITY_ANSWER} threw when it was read` };
+    return unreadable(`${ACCOUNTABILITY_ANSWER} threw when it was read`);
   }
 }
 
-/** Recompute each attestation VC via the injected seam (unverified when no seam is injected). */
+/**
+ * Recompute each attestation VC via the injected seam (unverified when no seam is injected). One that
+ * did not verify is refused with `configuration_error` when no verifier is supplied,
+ * `deadline_exceeded` when it has not answered in time, and `claim_unverified` otherwise.
+ */
 async function checkAttestations(
   card: EntityCard,
   deps: VerifyCardDeps,
   trustedIssuers: readonly string[],
   timeoutMs: number,
-): Promise<VerifyCardResult['attestations']> {
+): Promise<CheckedClaim<VerifyCardResult['attestations'][number]>[]> {
   const verifier = deps.attestationVerifier;
   return Promise.all(
-    (card.attestations ?? []).map(async (a) => ({
-      type: a.type,
-      subject: a.subject,
-      // Only the literal `true` verifies: a truthy answer such as "false" does not.
-      verified: verifier
-        ? (await unlessUnanswered<unknown>('the attestation verifier', false, () =>
+    (card.attestations ?? []).map(async (a) => {
+      const answer = verifier
+        ? await unlessUnanswered<unknown>('the attestation verifier', UNANSWERED, () =>
             verifier(a, { subjectDid: a.subject ?? card.id, trustedIssuers }),
-          timeoutMs)) === true
-        : false,
-    })),
+          timeoutMs)
+        : undefined;
+      // Only the literal `true` verifies: a truthy answer such as "false" does not.
+      const verified = answer === true;
+      const code = !verifier ? 'configuration_error' : answer === UNANSWERED ? 'deadline_exceeded' : 'claim_unverified';
+      return { reported: { type: a.type, subject: a.subject, verified }, ...(verified ? {} : { refusal: coded(code) }) };
+    }),
   );
 }
 
@@ -428,72 +476,4 @@ function readProofVerdict(answer: unknown): ProofVerifyResult {
   }
   if (ok !== true || typeof did !== 'string') return UNREADABLE_PROOF_VERDICT;
   return { ok, did, reasons: [], ...(PROOF_ASSURANCES.includes(level) ? { level: level as ProofAssurance } : {}) };
-}
-
-/** Verdict for the card's own credential status entry (`card.revocation`). */
-interface CardRevocationVerdict {
-  /** True iff a `statusListChecker` was supplied AND the card declares `revocation`. */
-  checked: boolean;
-  revoked: boolean;
-  fresh: boolean;
-  /** Why the Card reads as revoked, when its checker said why or its answer could not be read. */
-  reason?: string;
-}
-
-/** The part of a status check's context that names the root of a Card's chain. */
-type CardRoot = Partial<Pick<StatusCheckContext, 'trustedRootIssuer' | 'trustedRootStatusList'>>;
-
-/**
- * The Card's responsible party as the checker is told of it, once the accountability check has
- * verified it and never before: the root of the Card's chain, with the list URL the verdict
- * reported that root's own credential names, when it reported one.
- */
-function verifiedRoot(
-  accountability: VerifyCardResult['accountability'],
-): CardRoot {
-  if (!accountability?.verified || accountability.responsibleParty === undefined) return {};
-  const { responsibleParty, rootStatusList } = accountability;
-  return { trustedRootIssuer: responsibleParty, ...(rootStatusList === undefined ? {} : { trustedRootStatusList: rootStatusList }) };
-}
-
-/**
- * Live-check `card.revocation` via the injected seam; fail-closed (unreachable ⇒ revoked). The Card's
- * `id` is named as the issuer its status list is held to, and `root` names a verified
- * `responsibleParty` as the root of the Card's delegation chain ({@link verifiedRoot}).
- */
-async function checkCardRevocation(
-  card: EntityCard,
-  checker: BitstringRevocationChecker | undefined,
-  root: CardRoot,
-  timeoutMs: number,
-): Promise<CardRevocationVerdict> {
-  if (!checker || !card.revocation) return { checked: false, revoked: false, fresh: true };
-  try {
-    const asked = await checkWithinDeadline(checker, card.revocation, { credentialIssuer: card.id, ...root }, timeoutMs);
-    if ('expired' in asked) return { checked: true, revoked: true, fresh: false, reason: asked.expired };
-    const status = readRevocationAnswer(asked.answer);
-    if (status.revoked === undefined) {
-      const reason = `the Card's revocation status could not be read: ${status.unreadable}`;
-      return { checked: true, revoked: true, fresh: false, reason };
-    }
-    const given = status.revoked && status.reason ? { reason: sanitizeForMessage(status.reason, CHECKER_REASON_LENGTH) } : {};
-    return { checked: true, revoked: status.revoked, fresh: status.fresh, ...given };
-  } catch {
-    return { checked: true, revoked: true, fresh: false };
-  }
-}
-
-/** The revocation verdict as the result reports it, with its `reason` only when it has one. */
-function reportedRevocation({ revoked, fresh, reason }: CardRevocationVerdict): NonNullable<VerifyCardResult['revocation']> {
-  return reason === undefined ? { revoked, fresh } : { revoked, fresh, reason };
-}
-
-/**
- * A REVOKED card credential voids its attested trust: every otherwise-verified capability drops to
- * unverified so the floor collapses to L1 (revocation demotes L3→L2→L1). A clean-but-stale list
- * leaves `check` untouched — it only trims `revocationFresh` (L3→L2). No-op when not revoked.
- */
-function demoteOnRevocation(check: CapabilityCheckResult, revoked: boolean): CapabilityCheckResult {
-  if (!revoked) return check;
-  return { verified: [], unverified: [...check.verified, ...check.unverified] };
 }

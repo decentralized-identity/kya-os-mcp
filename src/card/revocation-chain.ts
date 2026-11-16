@@ -92,8 +92,11 @@ export async function evaluateRevocationChain(
   return walkRevocationChain(entries, check, options);
 }
 
-/** {@link evaluateRevocationChain}, with a refusal that cannot be built without its code. */
-async function walkRevocationChain(
+/**
+ * {@link evaluateRevocationChain}, with a refusal that cannot be built without its code: the library's
+ * own verifiers walk a chain through it, so the code of a refused walk is typed as always present.
+ */
+export async function walkRevocationChain(
   entries: readonly (RevocationStatusEntry | RevocationChainEntry)[],
   check: BitstringRevocationChecker,
   options: { dependencyTimeoutMs?: number },
@@ -137,7 +140,7 @@ async function walkRevocationChain(
 }
 
 /** What the walk comes to: every hop passed, or one was refused with a code. */
-type RevocationChainWalk =
+export type RevocationChainWalk =
   | { readonly ok: true; readonly fresh: boolean; readonly reasons: string[] }
   | (Coded & { readonly ok: false; readonly fresh: false; readonly reasons: string[] });
 

@@ -266,6 +266,8 @@ describe('a merchant verifying a carried chain against Acme', () => {
       code: 'delegation_invalid',
       reasons: ['hop 0: proof did not verify'],
       source: 'carried',
+      refusalCode: 'invalid_proof',
+      transient: false,
     });
   });
 

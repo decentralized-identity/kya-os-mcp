@@ -21,8 +21,9 @@ export const REFUSAL_CODES = Object.freeze({
    * The credential, or a value that stands for one, is not a well-formed delegation credential: it
    * fails the schema, its issuer is not a URL, its delegation names no issuer or subject or states no
    * status the verifier knows, its subject carries other members, it has no proof, a VC-JWT does not
-   * parse, has claims that are not well formed or names another issuer than its `iss`, or it is not
-   * plain data, nests too deep or holds a value that cannot be encoded. Also a status entry no
+   * parse, has claims that are not well formed or names another issuer than its `iss`, a time it
+   * states is not a date, or it is not plain data, nests too deep or holds a value that cannot be
+   * encoded. Also a status entry no
    * checker of the verifier reads: one that states another `statusPurpose` than the checker's, a
    * `statusSize` other than 1, or an index that is not a non-negative decimal string.
    */
@@ -77,6 +78,12 @@ export const REFUSAL_CODES = Object.freeze({
   chain_invalid: 'chain_invalid',
   /** The chain is valid, but does not grant the action the call exercises. */
   insufficient_scope: 'insufficient_scope',
+  /**
+   * No delegation was presented for a call that needs one: the request carries no chain and the
+   * verifier has no by-reference resolver, or the resolver found none. The caller must obtain
+   * authority, for example through a consent step, before it calls again.
+   */
+  needs_authorization: 'needs_authorization',
   /** The chain's leaf delegate is not the DID the request proof verified for. */
   holder_binding_failed: 'holder_binding_failed',
   /**
@@ -86,12 +93,15 @@ export const REFUSAL_CODES = Object.freeze({
    * `statusPurpose` does not include the entry's.
    */
   status_signer_untrusted: 'status_signer_untrusted',
-  /** An Entity Card's accountability, or one of its attestations, did not verify: the verifier the host supplies for it answered no. */
+  /**
+   * An Entity Card's accountability, or one of its attestations, did not verify: the verifier the
+   * host supplies for it answered no.
+   */
   claim_unverified: 'claim_unverified',
   /**
    * The verifier is not set up to decide: it has no DID resolver or signature verifier, no status list
-   * resolver for a credential that has a status, or no `resolveDelegationChain` for a re-delegated
-   * credential; an option such as `trustedRootIssuers`, `maxChainLength` or `dependencyTimeoutMs` has
+   * resolver for a credential that has a status, no `resolveDelegationChain` for a re-delegated
+   * credential, or no verifier for an Entity Card's accountability or attestations; an option such as `trustedRootIssuers`, `maxChainLength` or `dependencyTimeoutMs` has
    * a value it cannot use; or a checker that wraps a library checker passed on neither the context
    * nor the entry it was given.
    */

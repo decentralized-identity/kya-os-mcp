@@ -56,10 +56,8 @@ function checkerServing(list: Record<string, unknown>, deps: Partial<RevocationC
 const entry = (index: number) => ({ statusListCredential: STATUS_URL, statusListIndex: String(index) });
 const issuedBy = (party: TestIdentity) => ({ credentialIssuer: party.did });
 
-/** What a Card's revocation reads as when its status was not proven clear. */
-const CARD_UNPROVEN: RevocationStatus = { revoked: true, fresh: false, reason: expect.any(String) as string };
-/** What the checker answers for a status it could not prove clear, whatever the code of why. */
-const REVOKED_UNPROVEN: RevocationStatus = { ...CARD_UNPROVEN, ...ANY_CODE };
+/** What the checker answers, and a Card's revocation reads as, for a status not proven clear, whatever the code of why. */
+const REVOKED_UNPROVEN: RevocationStatus = { revoked: true, fresh: false, reason: expect.any(String) as string, ...ANY_CODE };
 /** What the checker answers for a set bit on a list it read. */
 const REVOKED: RevocationStatus = { revoked: true, fresh: true, ...BIT_SET };
 
@@ -100,7 +98,7 @@ describe('a status list signed by another DID does not clear a revocation', () =
     const acme = identity();
     const mallory = identity();
     const result = await verifyCard(cardOf(acme), { statusListChecker: checkerServing(statusList(mallory)) });
-    expect(result.revocation).toEqual(CARD_UNPROVEN);
+    expect(result.revocation).toEqual(REVOKED_UNPROVEN);
     expect(result.ok).toBe(false);
   });
 
@@ -108,7 +106,7 @@ describe('a status list signed by another DID does not clear a revocation', () =
     const acme = identity();
     const check = vi.fn(checkerServing(statusList(acme, [3])));
     const revoked = await verifyCard(cardOf(acme), { statusListChecker: check });
-    expect(revoked.revocation).toEqual({ revoked: true, fresh: true });
+    expect(revoked.revocation).toEqual(REVOKED);
     expect(check.mock.calls).toEqual([[cardOf(acme).revocation, issuedBy(acme)]]);
     const clear = await verifyCard(cardOf(acme), { statusListChecker: checkerServing(statusList(acme)) });
     expect(clear.revocation).toEqual({ revoked: false, fresh: true });

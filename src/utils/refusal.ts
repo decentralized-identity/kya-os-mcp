@@ -69,3 +69,11 @@ export function refusalCodeOf(error: unknown, otherwise: RefusalCode): RefusalCo
   const kind = readFailureKind(error);
   return kind === 'host_refused' || kind === 'deadline_exceeded' ? kind : otherwise;
 }
+
+/**
+ * The refusal that speaks for a verdict refused for several reasons at once: the first that is not
+ * transient, since asking again cannot lift it, else the first. `undefined` when there is none.
+ */
+export function decidingRefusal(refusals: readonly Coded[]): Coded | undefined {
+  return refusals.find((refused) => !refused.transient) ?? refusals[0];
+}

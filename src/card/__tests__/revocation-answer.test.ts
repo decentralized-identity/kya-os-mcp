@@ -108,11 +108,14 @@ describe('the paths that walk a delegation chain', () => {
       code: 'delegation_revoked',
       reasons,
       source: 'carried',
+      refusalCode: 'status_unavailable',
+      transient: true,
     });
     expect(await requireDelegation(deps(checker))(input)).toMatchObject({
       ok: false,
       status: 403,
       error: { code: 'delegation_revoked', reasons },
+      refusalCode: 'status_unavailable',
     });
   });
 });
@@ -155,7 +158,7 @@ describe("verifyCard's revocation check", () => {
   it('reads the literal true as revoked', async () => {
     const result = await verify({ revoked: true, fresh: true });
     expect(result).toMatchObject({ ok: false, conformanceLevel: 'L1' });
-    expect(result.revocation).toEqual({ revoked: true, fresh: true });
+    expect(result.revocation).toEqual({ revoked: true, fresh: true, ...BIT_SET });
   });
 
   it.each(UNREADABLE_ANSWERS)('refuses a Card, and does not throw, when its checker answers %s', async (_label, answer, why) => {
@@ -165,6 +168,7 @@ describe("verifyCard's revocation check", () => {
       revoked: true,
       fresh: false,
       reason: `the Card's revocation status could not be read: ${why}`,
+      ...codedAs('status_unavailable'),
     });
   });
 });

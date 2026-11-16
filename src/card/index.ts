@@ -47,6 +47,8 @@ export * from './request-delegation.js';
 
 // The codes the card's refusals carry beside their reasons.
 export { REFUSAL_CODES, isRefusalCode, isTransientRefusal, type RefusalCode } from '../refusal-codes.js';
+export type { RefusalCoding } from '../delegation/vc-verifier.types.js';
+export type { CardRevocation } from './verify-revocation.js';
 
 // The SSRF-hardened fetch is the card's production wiring for resolveCard / status-list
 // resolution — export it (and the address classifier) so consumers can actually reach it,

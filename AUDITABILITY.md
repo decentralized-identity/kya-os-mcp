@@ -287,17 +287,29 @@ ledger/checkpoint, evidence/projection, and administrative lifecycle events.
 Every detail payload is a strict discriminated union. Arbitrary integrity-core
 metadata and unknown fields fail closed.
 
-The MCP adapter excludes raw arguments, response bodies, error text, and tool
-names by default. `includeToolNames` is an explicit policy decision. References
-a caller presents (delegation, grant, consent, scope, and policy references,
-correlation and causation IDs, tool names) are untrusted: one that is empty,
-over the schema bound, or not well-formed UTF-16 is recorded as the `sha256:`
-digest of its UTF-8 encoding, so a hostile identifier cannot keep the event out
-of the ledger, and a long reference handed to the adapter cannot collide with
-another that shares its prefix. One caller still shortens a reference first:
-`wrapWithDelegation` truncates the ID of a rejected delegation credential to
-256 UTF-16 code units, so two rejected credentials whose IDs share that prefix
-are recorded with the same `delegationRef`.
+The MCP adapter excludes raw arguments, response bodies, error text, and tool names by default.
+`includeToolNames` is an explicit policy decision.
+References a caller presents (delegation, grant, consent, scope, and policy references, correlation and causation IDs, tool names) are untrusted: one that is empty, over the schema bound, not well-formed UTF-16, or holding a character that does not print (a control or format character, a line or paragraph separator, or a code point that renders as nothing by default, as SPEC.md §7.8 lists them) is recorded as the `sha256:` digest of its UTF-8 encoding, so a hostile identifier cannot keep the event out of the ledger, break a log line or show a reader another identifier than the one recorded, and a long reference handed to the adapter cannot collide with another that shares its prefix.
+A delegation credential is recorded by the reference SPEC.md §7.8 defines, which `wrapWithDelegation` derives as a verifier derives a proof's `delegationRef`, so an event and a proof that names the credential carry one string.
+It is the ID the credential shows, or the `sha256:` digest of an ID that is over 256 UTF-16 code units, holds a character that does not print or a surrogate without its pair, is itself written as such a digest (`sha256:` and 64 lowercase hex digits), or is the word `unknown`, so a `delegationRef` of that form always stands for the digest of an ID, and never for an ID a caller wrote to look like one, and `unknown` never stands for a credential.
+A credential that shows no ID has no reference: its events carry no `authorization.delegationRef`, and its `delegation.verified` or `delegation.rejected` event names it `unknown`.
+
+A delegated call's authorization evidence carries the presented credential's digest as well as its name: `delegationRef` and `delegationCredentialDigest` (SPEC.md §7.8 defines the digest).
+`wrapWithDelegation` records the pair on the events of its decision, and puts it in the `context.authorization` it hands the handler of a call it allows, and of a retry it allows under a stored grant.
+The events recorded with that context take their evidence from `context.authorization`, as in earlier releases: the tool call's and its proof's from `wrapWithProof`, and a nested `withPolicyGate`'s.
+A presented value that has no signed form has no digest (SPEC.md §7.8): a credential object nested more than 64 levels deep, say, is recorded by its reference alone.
+The events that record the gate's decision also list the chain, as `delegationChainDigests`, one digest per credential evaluated, root first.
+They are `delegation.verified`, `delegation.rejected` and `grant.used`.
+A call refused after its chain verified, on holder binding or scope, has no delegation event, and its refusal is recorded as in earlier releases, without the delegation.
+On a refusal the list is of what the server had read when it refused: the ancestors up to and including the one it stopped at, root first, then the presented credential.
+A refusal made before any ancestor was read lists the presented credential alone.
+Where an ancestor the server read has no signed form, the chain has no digest: the events list no chain, and still carry the presented credential's own digest.
+The reference and the digests of a refusal describe what was presented and examined, not a delegation that is valid: read them with the event's `decision`.
+A chain of more than 256 credentials is not listed, and its events carry the presented credential's digest only.
+
+An auditor holding those events can recompute the chain's `delegationChainDigest` (SPEC.md §7.8) without the credentials, and one holding the credentials can show which hop a substituted chain differs in.
+Signing either claim of SPEC.md §7.8 from the server is not part of this release: its proofs carry neither `delegationRef` nor `delegationChainDigest`.
+
 Identity and resource references declare their privacy form:
 
 - `public_did` for intentionally public correlation;

@@ -1,0 +1,13 @@
+kind: Fixed
+body: |-
+    **The delegation gate refuses a VC-JWT whose payload is not base64url
+    of well-formed UTF-8.** The gate read a VC-JWT's claims with a decoder
+    that repairs a byte that is not UTF-8, and SPEC.md §7.8 reads the id a
+    credential is recorded by from the payload as it stands, so such a
+    VC-JWT, signed by its issuer, ran the tool and was recorded in the
+    audit trail and the handler's context under no `delegationRef`. It is
+    now refused with `Invalid VC-JWT format`, as §7.8 says of a payload
+    that is not read, and every VC-JWT the gate acts on is recorded by
+    the id it acted on. `readsVcJwtClaims` is exported for a verifier of
+    its own that wants the same check.
+time: 2026-11-14T08:45:00.000000-06:00

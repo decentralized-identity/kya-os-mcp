@@ -91,3 +91,9 @@ export class NodeCryptoProvider extends CryptoProvider {
     return new Uint8Array(crypto.randomBytes(length));
   }
 }
+
+/** The provider tests share: it holds no state, so one instance serves every test. */
+export const nodeCrypto = new NodeCryptoProvider();
+
+/** `sha256:` and the hex SHA-256 of `bytes`, by {@link nodeCrypto}: the hash a digest is taken with. */
+export const nodeHash = (bytes: Uint8Array): Promise<string> => nodeCrypto.hash(bytes);

@@ -33,6 +33,26 @@ export * from './audience-validator.js';
 export * from './scope-matcher.js';
 export * from './holder-binding.js';
 export * from './chain-enforcement.js';
+export {
+  delegationCredentialDigest,
+  delegationChainDigest,
+  digestDelegationChain,
+  DELEGATION_CREDENTIAL_DIGEST_DOMAIN,
+  DELEGATION_CHAIN_DIGEST_DOMAIN,
+  type DelegationChainDigests,
+  type ReceivedCredential,
+  type Sha256,
+} from './chain-digest.js';
+export * from './delegation-ref.js';
+export {
+  signedForm,
+  signingInput,
+  NoSignedFormError,
+  MAX_CREDENTIAL_NESTING_DEPTH,
+  type SignedForm,
+  type SignedCredential,
+  type SignedJwt,
+} from './signed-form.js';
 export * from './did-resolver-registry.js';
 export {
   createDidKeyResolver,

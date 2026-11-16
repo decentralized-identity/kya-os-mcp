@@ -1115,7 +1115,13 @@ interface ProofMeta {
                          // challenge content, incl. authorizationUrl); ABSENT on
                          // denial / step-up proofs (no response body).
   scopeId?: string;     // Scope under which the call was made
-  delegationRef?: string; // Reference to delegation credential
+  delegationRef?: string; // Reference of the delegation credential the call presented (§7.8)
+  delegationChainDigest?: string; // Digest of the delegation chain the server
+                         // evaluated, root to leaf (§7.8). ABSENT when the producer
+                         // does not sign the claim, and on a refusal where the
+                         // presented value, or a credential the server
+                         // examined, has no signed form, or where a value
+                         // handed to it for the chain could not be read.
   clientDid?: string;   // Client's DID if authenticated
   outcome?: 'allowed' | 'denied' | 'step_up_required' | 'needs_authorization';
                          // Authorization outcome; ABSENT ⇒ implicitly 'allowed' (success)
@@ -1206,7 +1212,7 @@ BASE64URL(header) . BASE64URL(payload) . BASE64URL(signature)
 ```
 
 An envelope-profile proof (§7.3) additionally carries its `prf` claim in this payload — profile selection is signed, never advisory.
-Every optional `ProofMeta` member present on the proof (`scopeId`, `delegationRef`, `clientDid`, `outcome`, `reason`, `prf`) appears in the payload; the mirrored `meta` block and the decoded payload MUST reconcile exactly.
+Every optional `ProofMeta` member present on the proof (`scopeId`, `delegationRef`, `delegationChainDigest`, `clientDid`, `outcome`, `reason`, `prf`) appears in the payload; the mirrored `meta` block and the decoded payload MUST reconcile exactly.
 
 **Denial** and **step-up** proofs have no response body, so `responseHash` is
 omitted and `outcome` (plus an optional `reason`) is included instead. Keys
@@ -1243,6 +1249,24 @@ substitution — and `outcome: "needs_authorization"`:
   "ts": 1710288000
 }
 ```
+
+**Reading a proof.**
+A verifier MUST read a proof's JWS as follows, and MUST refuse a proof whose JWS does not read so.
+
+1. The JWS is exactly three segments, separated by `.`.
+   Each segment is read as RFC 7515 §2 writes base64url: of the base64url alphabet alone, with no white space and no `=`.
+   A last group of one character is refused, and bits short of a byte are dropped.
+   A segment written in the base64 alphabet, or holding any other character, white space or padding, is no segment of a proof.
+   This reading is for a proof and its key alone: §7.8 reads the third segment of a VC-JWT more loosely, as the JWS libraries that verify a credential read it.
+2. The header is a JSON text in UTF-8, an object whose `alg` is `EdDSA` and whose `kid` is the `kid` of the proof's `meta`.
+   A payload segment, where the JWS carries one, is a JSON text in UTF-8 too.
+3. The key is the Ed25519 key that `kid` names.
+   Given as a JWK, it has `kty` `OKP`, `crv` `Ed25519` and the same `kid`, and its `x` is read as step 1 reads a segment, and is 32 bytes.
+4. The signature is verified over the header segment and the payload rebuilt from `meta` as above, written as base64url without padding.
+   A payload segment the JWS carries that is not that one MUST verify under the same signature too.
+
+So every claim in `meta` is held to what was signed, and a proof whose `meta` differs from its payload fails.
+Reading a segment more loosely would let two strings stand for one signature, and a verifier that accepts one of them where another refuses it would give two verdicts on one proof.
 
 ### 7.5 _meta Attachment
 
@@ -1384,6 +1408,7 @@ The `parentDelegation` field links this record back to the User → Agent A cred
         "requestHash": "sha256:aabbcc...",
         "responseHash": "sha256:ddeeff...",
         "delegationRef": "urn:uuid:2222-bbbb",
+        "delegationChainDigest": "sha256:112233...",
         "clientDid": "did:web:agent-b.example.com"
       }
     }
@@ -1392,6 +1417,154 @@ The `parentDelegation` field links this record back to the User → Agent A cred
 ```
 
 The `delegationRef` in the proof points to Agent B's delegation credential (`urn:uuid:2222-bbbb`), which in turn carries `parentDelegation: urn:uuid:1111-aaaa` back to the original user grant. An auditor can reconstruct the full chain — User → Agent A → Agent B → tool call — by following `delegationRef` → `parentDelegation` links. All three records are independently verifiable offline using the signers' DID documents.
+
+Those links are ids, and an id names a credential without fixing its bytes.
+`delegationChainDigest` is what ties this proof to the two credentials above and to no others: the auditor recomputes it over the chain it reconstructed and compares it with the signed value (§7.8).
+
+### 7.8 Delegation Binding
+
+A proof about a delegated call says which delegation the server decided it under, in two members.
+
+**`delegationRef`** names the credential the caller presented, the last of its chain.
+It is derived from the credential in two steps, and this is its only definition: a producer signs it, an audit trail records it and a verifier that holds the credential recomputes it, all by these steps.
+
+1. **The id a credential shows**, in the form it was presented in, is the first of the following that is a non-empty string.
+   For a credential object (§6.2): its `id`, then `credentialSubject.delegation.id`.
+   For a compact VC-JWT of three segments whose payload is a JSON object with an object member `vc`: `vc.id`, then `jti`, then `vc.credentialSubject.delegation.id`.
+   The payload is read strictly: as a JWS segment (step 1 of the digest, below), as UTF-8, and as JSON (RFC 8259), which a byte order mark is no part of.
+   A number in the payload is read whatever its length, since RFC 8259 sets no limit on one, and its value plays no part in the id.
+   A payload whose arrays and objects nest more than 64 levels deep is not read as JSON at all (the nesting bound, below), so a VC-JWT that carries one shows no id.
+   A credential object shows its id however deep the rest of it nests.
+   A credential with none of these shows no id, and neither does any other value.
+2. **The reference** for an id is the id itself, unless the id is longer than 256 UTF-16 code units, holds a character that does not print or a surrogate without its pair, already reads as `sha256:` followed by 64 lowercase hexadecimal digits, or is the word `unknown`.
+   The reference for such an id is the SHA-256 of its UTF-8 encoding, written in the hash format of §7.3.
+   An id that is not well-formed Unicode has no UTF-8 encoding, and its bytes are its WTF-8 encoding instead: UTF-8, with each surrogate without its pair written as UTF-8 writes a code point of the same value, in three bytes from `ED A0 80` to `ED BF BF`.
+   The characters that do not print are those Unicode 16.0 and 17.0 give the general category Cc, Cf, Zl or Zp or the property Default_Ignorable_Code_Point, the set §6.2 refuses in an issuer, listed here and in `conformance/unseen-code-points.json` so that every implementation hashes the same ids whatever Unicode version its platform follows: U+0000 to U+001F, U+007F to U+009F, U+00AD, U+034F, U+0600 to U+0605, U+061C, U+06DD, U+070F, U+0890 to U+0891, U+08E2, U+115F to U+1160, U+17B4 to U+17B5, U+180B to U+180F, U+200B to U+200F, U+2028 to U+202E, U+2060 to U+206F, U+3164, U+FE00 to U+FE0F, U+FEFF, U+FFA0, U+FFF0 to U+FFFB, U+110BD, U+110CD, U+13430 to U+1343F, U+1BCA0 to U+1BCA3, U+1D173 to U+1D17A, and U+E0000 to U+E0FFF.
+
+A proof about a credential that shows no id carries no `delegationRef`.
+The id of a refused credential is untrusted and of any length, which is what step 2 is for: a reference is bounded and prints as what it holds whatever a caller wrote, and unlike cutting, the digest keeps two long ids with the same beginning apart.
+A control character could break a log line, and a format character, a bidirectional override say, or a zero-width space, could show a reader another id than the one recorded.
+The word `unknown` is what an audit record names a credential that shows no id by (AUDITABILITY.md), so an id written so is replaced by its digest, and the word never stands for a credential.
+An id that already reads as a digest is replaced by its own, so that a reference of that form always stands for the digest of an id, and never for an id a caller wrote to look like one.
+A reference is a name.
+An auditor uses it to find the credential, and follows the parent links from there (§7.7).
+Nothing stops two credentials from showing one id: an issuer can sign a second credential under an id it has already used, and on a refused call the id is whatever the caller wrote.
+
+**`delegationChainDigest`** fixes the chain.
+It is built from one digest per credential, each over the credential's signed form: what its issuer's signature covers, and that signature.
+
+1. **Signed form.**
+   For a VC-JWT, the JSON object `{"jwt": "<header>.<payload>", "signature": S}`, with the two segments exactly as received, neither of them empty.
+   For a credential object (§6.2), the JSON object `{"credential": C, "signature": S}`, where `C` is the credential without its `proof` member.
+   `S` is the base64url encoding (RFC 4648 §5), without padding, of the signature's bytes.
+   The two forms carry those bytes in two kinds of string, and each is read the way its verifiers read it.
+
+   A VC-JWT's third segment is read as a JWS segment: base64url as RFC 7515 §2 has it, and no more loosely than JWS libraries in use read it.
+   This reading applies to a VC-JWT a chain holds, and to its payload segment read for its id, alone; a response proof's segments, and the `x` of its key, are read strictly, as §7.4 says.
+   Its characters are of the base64url alphabet alone.
+   ASCII whitespace (space, tab, line feed, carriage return, form feed) is passed over wherever it stands.
+   `=` may only complete the last group of four characters: two after a group of two, one after a group of three.
+   A last group of one character is refused, and bits short of a byte are dropped.
+   `+` and `/` are not base64url, and a segment written with them was never a JWS segment.
+
+   A credential object's `proof.proofValue` is read more loosely, because the decoders that read one differ: its characters in order, each one of the base64 or base64url alphabet, with `-` and `+` both standing for 62 and `_` and `/` for 63; ASCII whitespace passed over wherever it stands; `=`, in any number, passed over after the last of those characters; and bits short of a byte dropped.
+   A `=` with a character of the alphabet after it is not padding, and decoders do not agree on it: some pass over it, and some stop reading there.
+
+   Padding, a line break, the spare bits of a last character and, in a `proofValue`, the other alphabet each give another string that is read to the same bytes, so one signature has several strings, and these readings give them one `S`.
+   A string outside its reading, or one that yields no byte, is not a signature, and the value that carries it has no signed form.
+2. **Credential digest.** `SHA-256(UTF8("org.kya-os.delegation.credential.v1") || 0x00 || JCS(signed form))`, written in the hash format of §7.3.
+3. **Chain digest.** `SHA-256(UTF8("org.kya-os.delegation.chain.v1") || 0x00 || JCS(D))`, where `D` is the JSON array of the credential digests, ordered root to leaf.
+
+The chain of an allowed call is the one the server evaluated: the presented credential last, preceded by the ancestors the server resolved for it (§6.4).
+A single credential is a chain of one.
+What the digest of a refusal covers is listed below.
+Appendix C.4 gives a vector.
+
+The signed form leaves out everything the issuer did not sign.
+The other members of a §6.2 `proof` (`type`, `created`, `verificationMethod`, `proofPurpose`, and anything a holder adds) are outside the signature, so they are outside the digest, and so is the choice among the strings that carry one signature.
+A credential therefore has one digest however it was stored, re-serialized or presented.
+
+A value has no signed form when it is neither a compact JWS of three segments, the header and the payload not empty, nor an object carrying a `proof.proofValue`, or when its signature string is not a signature as step 1 reads one.
+A credential object has none either when it nests deeper than the nesting bound below allows, or when `C` has no RFC 8785 form.
+`C` has none when it holds a string that is not well-formed Unicode, or a number that is not finite or is an integer of magnitude above 2^53 - 1, which a receiver need not read as an exact value (RFC 7493 §2.2).
+A number is first read as an IEEE 754 binary64 value, the form RFC 8785 serializes a number from (§3.2.2.3), and it is that value that is held to these rules, whatever the text the number was written as.
+So a `C` that holds `9007199254740993.5` has none: the number is no integer as written, and it reads as 9007199254740994.
+No signature covers such a value in a way two parties compute alike, so it is no credential: it does not verify, and it has no digest.
+
+**The nesting bound.**
+The arrays and objects of a credential nest at most 64 levels deep.
+A credential object is level 1, and an array or an object that is a member or an element of another is one level deeper than it.
+The whole object is counted, its `proof` included, although no signature covers `proof`.
+A credential object that nests deeper has no signed form.
+The header and the payload of a VC-JWT are each counted the same way, from the outermost array or object of the JSON text, and one that nests deeper MUST NOT be read as JSON.
+A VC-JWT whose header or payload is not read does not verify, and one whose payload is not read shows no id.
+It still has a signed form, since that is made of its segments as received and reads neither of them, and so it still has a digest.
+
+An implementation MUST accept nesting of exactly 64 levels, and MUST reach the answers above for a value nested to any depth.
+It therefore counts the levels before it parses, copies or canonicalizes what it counts, by a means that does not itself fail on a deep value.
+The number is the protocol's, and is not a limit an implementation may choose.
+Parsers and serializers recurse, and run out of stack at a depth that differs from one runtime to the next, so without one number two implementations would disagree on whether a deeply nested credential verifies and whether it has a digest.
+That a value has no signed form is a statement about the value, the same in every implementation.
+An implementation's own failure to read a value (a call stack that ran out, memory, a hash provider that failed) MUST NOT be reported as the value having no signed form.
+
+**Members that share a name.**
+RFC 8259 leaves open how an object that holds two members of one name is read, and parsers differ: most keep the last, some keep the first, and some refuse the text.
+Every JSON text this section reads is read keeping, of the members of one object that share a name, the lexically last, as ECMAScript's `JSON.parse` does and as RFC 7515 §4 and RFC 7519 §4 permit a JWS or JWT parser to.
+That is the header and the payload of a VC-JWT, and any JSON text a credential object is received in, such as the arguments of a call.
+An implementation whose parser keeps another of the members, or refuses the text, MUST still read it so.
+For a VC-JWT the rule decides the id the credential shows and the claims it is verified by, and not its digest, which is over its segments as received.
+For a credential object it decides `C`, and so the digest: two parties that read one text two ways would digest two credentials.
+
+A producer that signs `delegationChainDigest` MUST verify each credential's signature over this same signed form: over `C`, every member of the credential but `proof`, or over the two JWT segments, with the signature bytes read as above.
+Verification and digest are then one reading of the credential.
+Were they two, a member that one kept and the other dropped, or a signature string that one decoded and the other did not, would let a credential verify as its issuer signed it and be digested as something else, and the party holding it could make the producer sign a digest that the issuer's own copy fails to reproduce.
+
+Hashing the digests rather than the credentials is deliberate.
+A party that holds the per-credential digests, which the audit event of the server's decision records as `authorization.delegationChainDigests` (§15.3), recomputes the chain digest without the credentials themselves, and can tell which hop of a chain it was handed differs from the one the server saw.
+
+**When the members are present.**
+A producer that signs `delegationRef` sets it on every proof about a call that presented a credential, whatever the outcome.
+A producer that signs `delegationChainDigest` sets it on the same proofs.
+The members are those of the call the proof is about.
+A proof about a call that presented no credential carries neither member, unless the server authorized the call from a delegation it holds from an earlier presentation and verified again for this call.
+
+**What the members say.**
+On a proof with no `outcome`, or with `outcome: "allowed"`, the members describe the chain that authorized the call.
+On any other outcome they describe what the server was shown and did not act on: a chain it refused, or a chain it verified for a call it then refused on other grounds.
+`reason` says which.
+On such a proof the members are evidence of what was presented and examined, never a statement that it is valid.
+A caller chooses what it presents, so anyone can have a server sign a reference and a digest of their own choosing by presenting a chain the server refuses.
+The digest of a refusal covers the credentials the server had examined when it refused, root first:
+
+- A call refused after its chain verified (on scope, on holder binding, by policy, or by the handler): the whole chain.
+- A chain refused part way through: the ancestors examined, up to and including the one the server stopped at, then the presented credential.
+  The ancestors after that one are not covered, although the server may have read them to assemble the chain.
+- A presentation refused before any ancestor was examined: the presented credential alone.
+  That is a VC-JWT whose header or payload is not read as JSON, or whose claims are not a delegation credential's, a credential object that is not a delegation credential, ancestors that could not be resolved into a chain of delegation credentials, a chain longer than the server evaluates (§6.4), and a chain whose links, or whose root's issuer, the server refuses, which it checks before it verifies any credential.
+  A VC-JWT whose envelope signature does not verify is refused when the server reaches it, after its ancestors, as the last credential of a chain refused part way through.
+- No digest, whichever case above the refusal is, when the presented value has no signed form, when a credential the server examined has none, or when a value handed to the server for the chain could not be read at all.
+  A credential object nested past the bound has no signed form, and the server does not read one handed to it for the chain, nor a value that is not JSON data, such as an in-process object that is not plain data.
+  The proof carries `delegationRef` where the presented value shows an id.
+
+The audit event of a refusal lists the digest of each credential covered (§15.3), so a party that holds the event knows which credentials the proof's digest is over.
+
+**Verification.**
+Both members are covered by the JWS signature (§7.4).
+A verifier that holds a chain, and is to take a proof as evidence that the server decided the call under it, MUST:
+
+1. Reject a proof whose outcome is not the one it expects.
+   Unless it is deliberately checking what a refusal recorded, it expects an allowed call: a proof with no `outcome`, or with `outcome: "allowed"`.
+   A refusal binds what was presented, so a matching digest on its own shows only that the chain was put before the server.
+2. Recompute the chain digest and reject a proof whose `delegationChainDigest` differs, or that carries none: an equal `delegationRef` is not evidence of which chain was evaluated.
+3. Derive the reference of the chain's last credential and reject a proof whose `delegationRef` is not that reference, or that carries one where the credential has none.
+
+A verifier that holds only part of the chain, such as a caller that knows its own credential and not the ancestors the server resolved, cannot recompute the digest and leaves the comparison to a party that can.
+
+**Compatibility.**
+`delegationChainDigest` is a new signed claim.
+A verifier that predates it rebuilds the payload of §7.4 without it and rejects the proof, so a producer SHOULD make the claim an explicit opt-in until the verifiers of its proofs know it.
+Signing either member from the server is not part of this release of the reference implementation: its server sets neither `delegationRef` nor `delegationChainDigest`, and its verifier checks both against a chain it is given.
+`delegationRef` has been a payload member since the first version of this chapter and needs no opt-in.
 
 ---
 
@@ -1667,6 +1840,8 @@ and the residual risk an operator carries.
 | **Revocation race** — an invocation arrives while a revocation is propagating. | Status-list TTL bounded ≤ 60s for high-privilege scopes; side-channel revocation signals honored immediately; expiry as primary revocation mechanism. See §6.5.2. | Unavoidable Lamport-concurrent race. Operators bound the window; they cannot eliminate it. |
 | **Downgrade** — a client strips KYA-OS headers entirely. | Fail-closed: servers requiring identity MUST reject sessionless calls; `/.well-known/mcp` advertises requirements. See §11.7. | A non-compliant client that the operator has not configured to require identity. |
 | **Consent-URL substitution** — a malicious in-path intermediary swaps the `authorizationUrl` in a `needs_authorization` challenge to phish the user toward an attacker-controlled consent page. | The challenge is signed (`outcome: 'needs_authorization'`); its `responseHash` binds the challenge content incl. the URL (§7.4, §9.2). A client recomputes `responseHash` over the received challenge and verifies the proof against the resource DID, detecting the swap. | A client that does not verify the challenge proof / recompute the hash — the check is the verifier's responsibility (a §11.7-style downgrade). TLS protects the URL in transit; this adds defense against a malicious in-path component. |
+| **Delegation substitution** - after the fact, a party presents a different chain as the one a signed call was decided under: a credential re-issued under the same id, or another set of ancestors. | `delegationChainDigest` in the response proof, covered by the signature, over every credential the server evaluated; on a refusal as well as on an allowed call (§7.8). | A proof without the digest names the delegation by `delegationRef` alone, a name, so a verifier that needs the binding must require the digest. |
+| **Refusal shown as acceptance** - a party presents a chain of its own making, is refused, and shows the signed refusal, whose digest is that chain's, as evidence that the server accepted it. | The proof's `outcome` is covered by the signature, and a verifier that checks a chain rejects any outcome but the one it expects, an allowed call unless it says otherwise (§7.8). | A verifier that compares the digest and not the outcome. |
 | **Denial of service** | Per-session and per-handshake rate limiting; session caps; external session storage with TTL eviction. See §11.9. | Standard transport-layer DoS exposure (DDoS) is out of scope — operators rely on conventional network defenses. |
 
 ### 11.2 Nonce Replay Attacks
@@ -1986,6 +2161,7 @@ rules, and operational requirements are specified in [`AUDITABILITY.md`](./AUDIT
 - **[RFC7517]** IETF. *JSON Web Key (JWK)*. https://datatracker.ietf.org/doc/html/rfc7517
 - **[RFC7515]** IETF. *JSON Web Signature (JWS)*. https://datatracker.ietf.org/doc/html/rfc7515
 - **[RFC8785]** IETF. *JSON Canonicalization Scheme (JCS)*. https://datatracker.ietf.org/doc/html/rfc8785
+- **[RFC7493]** IETF. *The I-JSON Message Format*. https://datatracker.ietf.org/doc/html/rfc7493
 
 ### Informative References
 
@@ -2144,6 +2320,65 @@ Ed25519Sign(privateKey, BASE64URL(header) || "." || BASE64URL(canonicalize(paylo
 ```
 
 Note: Actual signature values are key-dependent. Implementers should verify the structure and use the test key material from the reference implementation's test suite for bit-exact validation.
+
+### C.4 Delegation Chain Digest
+
+A two-credential chain (§7.8): the root as a credential object, the leaf as a compact VC-JWT.
+The credentials and their signatures are shortened to keep the vector readable; neither signature is meant to verify.
+
+**Root credential (object):**
+```json
+{
+  "id": "urn:uuid:1111-aaaa",
+  "type": ["VerifiableCredential", "DelegationCredential"],
+  "issuer": "did:web:user.example.com",
+  "credentialSubject": { "id": "did:web:agent-a.example.com" },
+  "proof": {
+    "type": "Ed25519Signature2020",
+    "created": "2024-03-01T12:00:00Z",
+    "verificationMethod": "did:web:user.example.com#key-1",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "c2lnbmF0dXJlLW9mLXJvb3Q"
+  }
+}
+```
+
+**Root signed form, canonical (RFC 8785):**
+```
+{"credential":{"credentialSubject":{"id":"did:web:agent-a.example.com"},"id":"urn:uuid:1111-aaaa","issuer":"did:web:user.example.com","type":["VerifiableCredential","DelegationCredential"]},"signature":"c2lnbmF0dXJlLW9mLXJvb3Q"}
+```
+
+**Root credential digest** (SHA-256 over `org.kya-os.delegation.credential.v1`, a zero byte, and the line above):
+```
+sha256:6fbe4c0f04413cb40ec3b3069bf7c73dc1b6a681765e95ac451672136328712e
+```
+
+The same digest results when `proofValue` is `c2lnbmF0dXJlLW9mLXJvb3R` (a spare bit set), `c2lnbmF0dXJlLW9mLXJvb3Q=` (padded) or `c2lnbmF0dXJl LW9mLXJvb3Q` (a space inside), each of which carries the same signature, and when any other member of `proof` changes.
+
+**Leaf credential (compact VC-JWT):**
+```
+eyJhbGciOiJFZERTQSJ9.eyJ2YyI6e319.c2lnbmF0dXJlLW9mLWxlYWY
+```
+
+**Leaf signed form, canonical:**
+```
+{"jwt":"eyJhbGciOiJFZERTQSJ9.eyJ2YyI6e319","signature":"c2lnbmF0dXJlLW9mLWxlYWY"}
+```
+
+**Leaf credential digest:**
+```
+sha256:d29d65862fce70137390bea2859696c7ad80ce88cede778fea1cab24d513eed1
+```
+
+**Chain, canonical, root first:**
+```
+["sha256:6fbe4c0f04413cb40ec3b3069bf7c73dc1b6a681765e95ac451672136328712e","sha256:d29d65862fce70137390bea2859696c7ad80ce88cede778fea1cab24d513eed1"]
+```
+
+**`delegationChainDigest`** (SHA-256 over `org.kya-os.delegation.chain.v1`, a zero byte, and the line above):
+```
+sha256:2df99ab7f9b80436dba945e0dfb7a37bd7b35400c82bbc72a5c2744f516eb788
+```
 
 ---
 

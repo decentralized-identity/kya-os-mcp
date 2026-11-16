@@ -10,7 +10,7 @@
 import type { DelegationCredential } from '../types/protocol.js';
 import { describeValue } from '../utils/describe-value.js';
 import { isRecord, issuerOf } from '../utils/guards.js';
-import { hasUnseenCodePoint } from '../utils/unseen-code-points.js';
+import { hasUnprintableCharacter } from '../utils/plain-text.js';
 
 /**
  * The credential's own declared issuer as a DID string: `issuer` itself, or the `id` of an `issuer`
@@ -37,24 +37,21 @@ export function credentialIssuerRefusal(credential: DelegationCredential): strin
     : `Credential issuer ${describeValue(issuer)} is not a URL`;
 }
 
-/** A surrogate without its pair: with the `u` flag a paired surrogate is one code point and does not match. */
-const LONE_SURROGATE = /[\ud800-\udfff]/u;
-
 /**
  * Whether `value` names an issuer as a URL as it stands, the rule for a credential's issuer and a
  * VC-JWT's `iss`: a string the WHATWG URL parser parses against no base without first cleaning it,
  * with nothing in it that reads as another character or as none. The parser removes leading and
  * trailing C0 controls and spaces, and every ASCII tab, CR and LF, before it parses, so a string
- * with white space at either end, as `trim` removes it, is not one. The parser accepts a control
- * or format character, a line or paragraph separator, a character that renders as nothing by
- * default and a lone surrogate, percent-encoding some, and an issuer holding one prints as another
- * issuer does, so a string holding one anywhere is not one either ({@link hasUnseenCodePoint},
- * whose table is fixed and the same on every runtime). Constructing a `URL` asks what
- * `URL.canParse` asks, on Node.js 20, the oldest release the package runs on, and in the browsers
- * released before `URL.canParse` (2023) alike.
+ * with white space at either end, as `trim` removes it, is not one. The parser accepts the
+ * characters a reader does not see ({@link hasUnprintableCharacter}: a control or format character,
+ * a line or paragraph separator, a code point that renders as nothing by default, or a lone
+ * surrogate), percent-encoding some, and an issuer holding one prints as another issuer does, so a
+ * string holding one anywhere is not one either. Constructing a `URL` asks what `URL.canParse`
+ * asks, on Node.js 20, the oldest release the package runs on, and in the browsers released before
+ * `URL.canParse` (2023) alike.
  */
 export function isIssuerUrl(value: string): boolean {
-  if (value.trim() !== value || hasUnseenCodePoint(value) || LONE_SURROGATE.test(value)) return false;
+  if (value.trim() !== value || hasUnprintableCharacter(value)) return false;
   try {
     new URL(value);
   } catch {

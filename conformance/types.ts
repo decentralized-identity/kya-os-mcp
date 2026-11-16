@@ -100,6 +100,23 @@ export interface SignedProofInput {
   expected?: {
     request: { method: string; params?: unknown };
     response?: { data: unknown };
+    /**
+     * OPTIONAL delegation chain (suite 1.5.0 or later): the chain the verifier holds,
+     * root first, each credential an object (with its `proof`) or a compact
+     * VC-JWT string. `null` is no chain. When present the proof MUST carry a
+     * `delegationChainDigest` equal to the digest recomputed over it (SPEC.md
+     * §7.8), and a proof that carries none MUST be rejected; its
+     * `delegationRef` MUST be the reference of the chain's last credential, or
+     * absent when that credential shows no id; and it MUST state the outcome
+     * `outcome` requires.
+     */
+    delegationChain?: unknown[];
+    /**
+     * OPTIONAL outcome (suite 1.5.0 or later) the proof MUST state. A proof with no
+     * `outcome` states `allowed`. Absent or `null`, the requirement is
+     * `allowed` when `delegationChain` is present, and none otherwise.
+     */
+    outcome?: 'allowed' | 'denied' | 'step_up_required' | 'needs_authorization';
   };
 }
 

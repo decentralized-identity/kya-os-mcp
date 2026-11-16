@@ -124,6 +124,38 @@ When an agent calls `checkout` without a delegation credential, it gets back a `
 
 > Try it yourself: [examples/consent-basic](./examples/consent-basic/) walks through the full consent flow end-to-end.
 
+### Check which delegation a call was decided under
+
+SPEC.md §7.8 defines two claims a response proof may carry about a delegated call: `delegationRef`, the reference of the credential the caller presented, and `delegationChainDigest`, a digest of the whole chain, root to leaf.
+A reference is a name and does not pin bytes; the digest does.
+Signing either claim from the server is not part of this release: `withKyaOs` sets neither, and the verifier checks both against a chain it is given.
+Whoever holds the chain checks it against a proof that carries them:
+
+```typescript
+const result = await verifier.verifyProofArtifact(proof, serverKey, {
+  request,
+  response,
+  delegationChain: [root, middle, leaf], // root first: credential objects or compact VC-JWTs
+});
+// result.valid: the proof's signer allowed this call under exactly this chain
+```
+
+Given a chain, the verifier accepts only the proof of a call that was allowed.
+A refusal is signed too, and where it carries `delegationRef` and `delegationChainDigest` they describe what the caller presented and the signer examined, not a delegation that is valid: anyone can have a refusal name a chain of their own making by presenting it.
+To check what a refusal recorded, say so with `outcome: 'denied'` beside the chain, and pass the credentials its digest covers: the ancestors the signer had examined when it refused, then the presented credential.
+A proof that fails these checks says which one in `result.errorCode` and `result.details`:
+
+| `errorCode` | `details` | The proof |
+| --- | --- | --- |
+| `OUTCOME_MISMATCH` | `{ binding: 'outcome', outcome }` | records `outcome`, not the one required |
+| `DELEGATION_BINDING_MISMATCH` | `{ binding: 'delegation-chain-unbound' }` | binds no chain |
+| `DELEGATION_BINDING_MISMATCH` | `{ binding: 'delegation-chain' }` | binds another chain than the one supplied |
+| `DELEGATION_BINDING_MISMATCH` | `{ binding: 'delegation-ref' }` | names another credential than the chain's last |
+
+`details` has the shape of the exported `ProofBindingMismatch` for these codes and for `CONTENT_BINDING_MISMATCH`, which the request and response comparisons keep.
+The digest covers what each issuer signed and nothing else, so a copy of a credential with other proof metadata, or its signature padded or broken across lines, still matches.
+SPEC.md §7.8 defines the reference and the digest and Appendix C.4 gives a vector; `digestDelegationChain` and `delegationRefOf` compute them.
+
 ### Prove the outcomes your own code decides
 
 A server that enforces authorization itself, checking OAuth scopes in the tool handler for example, returns its own challenges and denials as tool results. `withKyaOs` proves the results it can attribute, but it sends an error result its own gates did not produce as the handler returned it, without a proof. `proveOutcome` gives that result the proof the gates attach to theirs, with the same claims, `_meta` keys and audit events:

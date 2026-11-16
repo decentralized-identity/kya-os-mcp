@@ -1,0 +1,15 @@
+kind: Spec
+body: |-
+    **SPEC.md §7.8: a response proof binds the delegation chain by
+    digest.** The new optional `ProofMeta` member `delegationChainDigest`
+    is a domain-separated SHA-256 over the digests of every credential the
+    server evaluated, root to leaf, each taken over the credential's signed
+    form: what its issuer's signature covers, and that signature. §7.8
+    defines both digests, gives `delegationRef` its one definition, bounds
+    a credential's nesting at 64 levels, and says how a credential's JSON
+    is read. §7.4 says how a verifier reads a proof's JWS: base64url as
+    RFC 7515 section 2 writes it. CONFORMANCE.md adds L3.28, suite 1.5.0
+    has 140 vectors, and `conformance/verify.py` re-derives them in Python.
+    UPGRADING.md, "SPEC.md §7.8 and conformance suite 1.5.0", has the full
+    text of the change and the vectors.
+time: 2026-11-11T21:30:02.000000-08:00

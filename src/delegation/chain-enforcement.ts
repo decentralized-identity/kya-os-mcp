@@ -15,6 +15,7 @@ import {
   extractDelegationFromVC,
   type CrispScope,
   type DelegationCredential,
+  type DelegationRecord,
 } from "../types/protocol.js";
 import { canonicalizeJson } from "../utils/canonical-json.js";
 import { answerWithinDeadline, dependencyTimeoutRefusal } from "../utils/deadline.js";
@@ -26,6 +27,8 @@ import { authorityContains, crispScopes, matcherContains, scopeAuthority } from 
 import { credentialIssuerDid } from "./credential-issuer.js";
 import { chainLinkageRefusal } from "./chain-linkage.js";
 import { rootAdmissionRefusal } from "./root-admission.js";
+import { hasDelegationShape, resolvedAncestors } from "./resolved-chain.js";
+import type { AncestorReading, EvaluatedCredentials } from "./resolved-chain.js";
 
 /** Union of a credential's delegation scopes and its constraint scopes. */
 export function getDelegationScopes(credential: DelegationCredential): string[] {
@@ -238,7 +241,7 @@ export interface RevocationChecker {
   }>;
 }
 
-export interface ChainEnforcementDeps {
+export interface ChainEnforcementDeps extends AncestorReading {
   /** The verifying server's DID — every chain credential's audience must include it. */
   serverDid: string;
   /** Per-credential verifier (signature / schema / expiry / own status). */
@@ -279,7 +282,9 @@ export interface ChainEnforcementDeps {
    *
    * It is checked after `resolveDelegationChain` returns, so it does not bound
    * the resolver itself: a resolver that walks `parentId` one fetch at a time
-   * should apply its own limit. The Entity Card profile's
+   * should apply its own limit. More values from the resolver than the limit
+   * refuse the chain before any of them is read, as one of at least that many
+   * credentials (see `snapshotAncestor`). The Entity Card profile's
    * `validateDelegationChain` (`@kya-os/mcp/card`) takes the same option and
    * counts the same way.
    */
@@ -291,7 +296,7 @@ export interface ChainEnforcementDeps {
   dependencyTimeoutMs?: number;
 }
 
-export interface ChainValidationResult {
+export interface ChainValidationResult extends EvaluatedCredentials {
   valid: boolean;
   reason?: string;
   /** Earliest verified credential/constraint expiry across the chain (ms epoch). */
@@ -325,19 +330,8 @@ export async function validateDelegationChain(
 ): Promise<ChainValidationResult> {
   // Shape guard (validate* never-throw contract): a structurally malformed leaf
   // returns a { valid, reason } result rather than letting extractDelegationFromVC
-  // or the downstream scope check throw. Requires both
-  // credentialSubject.delegation AND .constraints (the verifier's own invariant).
-  const leafDelegationObj = (
-    leafCredential?.credentialSubject as
-      | { delegation?: { constraints?: unknown } }
-      | undefined
-  )?.delegation;
-  if (
-    !leafDelegationObj ||
-    typeof leafDelegationObj !== "object" ||
-    !leafDelegationObj.constraints ||
-    typeof leafDelegationObj.constraints !== "object"
-  ) {
+  // or the downstream scope check throw.
+  if (!hasDelegationShape(leafCredential)) {
     return {
       valid: false,
       reason:
@@ -376,23 +370,14 @@ export async function validateDelegationChain(
       };
     }
 
-    const leafIndex = resolvedChain.findIndex(
-      (credential) =>
-        credential.credentialSubject.delegation.id === leafDelegation.id,
-    );
-    if (leafIndex !== -1 && leafIndex !== resolvedChain.length - 1) {
-      return {
-        valid: false,
-        reason: `Resolved delegation chain for ${leafDelegation.id} must end with the leaf credential`,
-      };
+    const resolved = resolvedAncestors(resolvedChain, leafDelegation.id, deps);
+    if ("reason" in resolved) {
+      return { valid: false, reason: resolved.reason };
     }
 
     // Always validate the presented leaf. A resolver may return a copy, but it
     // must not replace the credential whose JWT envelope was authenticated.
-    chain = [
-      ...(leafIndex === -1 ? resolvedChain : resolvedChain.slice(0, -1)),
-      leafCredential,
-    ];
+    chain = [...resolved.ancestors, leafCredential];
   }
 
   // Checked before any credential is verified, so an over-long chain costs no
@@ -424,11 +409,30 @@ export async function validateDelegationChain(
   const rootRefusal = rootAdmissionRefusal(chain[0]!, deps.trustedRootIssuers);
   if (rootRefusal !== undefined) return { valid: false, reason: rootRefusal };
 
+  // Every result of the walk carries the credentials it reached.
+  const evaluated: DelegationCredential[] = [];
+  return { ...(await walkChain(chain, evaluated, leafCredential, leafDelegation, deps, timeoutMs, options)), evaluated };
+}
+
+/**
+ * The per-credential and per-link checks of a chain, adding each credential reached to `evaluated`.
+ * Each revocation check gets `timeoutMs` to answer.
+ */
+async function walkChain(
+  chain: readonly DelegationCredential[],
+  evaluated: DelegationCredential[],
+  leafCredential: DelegationCredential,
+  leafDelegation: DelegationRecord,
+  deps: ChainEnforcementDeps,
+  timeoutMs: number,
+  options?: { skipSignature?: boolean },
+): Promise<Omit<ChainValidationResult, "evaluated">> {
   let expiresAt: number | undefined;
   const warnings: string[] = [];
   let previousCredential: DelegationCredential | undefined;
 
   for (const credential of chain) {
+    evaluated.push(credential);
     const delegation = extractDelegationFromVC(credential);
 
     if (credential.credentialStatus && !deps.statusListConfigured) {

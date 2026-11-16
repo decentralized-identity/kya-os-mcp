@@ -9,7 +9,7 @@
  * load-bearing public API consumed by production services.
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import {
   createUnsignedVCJWT,
   completeVCJWT,
@@ -226,6 +226,50 @@ describe('VC-JWT', () => {
 
       const parsed = parseVCJWT(jwt);
       expect(parsed!.signingInput).toBe(signingInput);
+    });
+
+    // SPEC §7.8: a header or a payload whose arrays and objects nest more than
+    // 64 deep is not read as JSON. Each is counted from its own outermost
+    // object, which is level 1. Each JWT ends in `sig`, which is no signature:
+    // the parser checks none.
+    describe('a header or a payload nested as deep as a credential may be', () => {
+      const segment = (json: string): string => base64urlEncodeFromBytes(new TextEncoder().encode(json));
+      const nestedTo = (levels: number): string => `{"n":${'['.repeat(levels - 1)}${']'.repeat(levels - 1)}}`;
+      const header = segment('{"alg":"EdDSA","typ":"JWT"}');
+      const payload = segment('{"vc":{}}');
+
+      it.each<[string, (json: string) => string]>([
+        ['payload', (json) => `${header}.${segment(json)}.sig`],
+        ['header', (json) => `${segment(json)}.${payload}.sig`],
+      ])('reads a %s nested 64 levels deep, and none nested 65', (_name, jwtWith) => {
+        expect(parseVCJWT(jwtWith(nestedTo(64)))).not.toBeNull();
+        expect(parseVCJWT(jwtWith(nestedTo(65)))).toBeNull();
+      });
+
+      it.each<[string, (json: string) => string]>([
+        ['payload', (json) => `${header}.${segment(json)}.sig`],
+        ['header', (json) => `${segment(json)}.${payload}.sig`],
+      ])('hands no parser either segment when the %s nests deeper than that', (_name, jwtWith) => {
+        const parse = vi.spyOn(JSON, 'parse');
+        let parsed: unknown;
+        let calls: number;
+        try {
+          parsed = parseVCJWT(jwtWith(nestedTo(200_000)));
+          calls = parse.mock.calls.length;
+        } finally {
+          parse.mockRestore();
+        }
+        expect(parsed).toBeNull();
+        expect(calls).toBe(0);
+      });
+
+      it('counts what is nested, and not a bracket a string holds', () => {
+        const brackets = `${'['.repeat(100)}\\"${'{'.repeat(100)}`;
+        const holding = (levels: number): string =>
+          `{"vc":{},"s":"${brackets}","n":${'['.repeat(levels - 1)}${']'.repeat(levels - 1)}}`;
+        expect(parseVCJWT(`${header}.${segment(holding(64))}.sig`)!.payload).toEqual(JSON.parse(holding(64)));
+        expect(parseVCJWT(`${header}.${segment(holding(65))}.sig`)).toBeNull();
+      });
     });
   });
 

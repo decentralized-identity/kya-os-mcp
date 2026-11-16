@@ -187,6 +187,34 @@ export {
   type HolderBindingStatus,
 } from './delegation/holder-binding.js';
 
+export {
+  delegationCredentialDigest,
+  delegationChainDigest,
+  digestDelegationChain,
+  DELEGATION_CREDENTIAL_DIGEST_DOMAIN,
+  DELEGATION_CHAIN_DIGEST_DOMAIN,
+  type DelegationChainDigests,
+  type ReceivedCredential,
+  type Sha256,
+} from './delegation/chain-digest.js';
+
+export {
+  delegationCredentialId,
+  readsVcJwtClaims,
+  delegationReference,
+  delegationRefOf,
+} from './delegation/delegation-ref.js';
+
+export {
+  signedForm,
+  signingInput,
+  NoSignedFormError,
+  MAX_CREDENTIAL_NESTING_DEPTH,
+  type SignedForm,
+  type SignedCredential,
+  type SignedJwt,
+} from './delegation/signed-form.js';
+
 export { MemoryStatusListStorage } from './delegation/storage/memory-statuslist-storage.js';
 
 export { MemoryDelegationGraphStorage } from './delegation/storage/memory-graph-storage.js';
@@ -272,6 +300,8 @@ export {
   type ToolRequest,
   type ToolResponse,
   type ProofOptions,
+  type ExpectedContent,
+  type ProofBindingMismatch,
 } from './proof/index.js';
 
 export {

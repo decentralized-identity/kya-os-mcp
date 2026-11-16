@@ -70,7 +70,7 @@ import {
   type Digest,
 } from '../src/audit/index.js';
 import { canonicalizeJson } from '../src/utils/canonical-json.js';
-import { ed25519SignatureVerifier } from './crypto-kit.js';
+import { embeddedSignatureVerifier } from '../src/delegation/embedded-signature.js';
 import { assertStatusListConfiguration } from './loader.js';
 import { statusListGzipCodec } from '../src/utils/statuslist-gzip.js';
 import {
@@ -153,6 +153,11 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
 
   async verifySignedProof(input: SignedProofInput): Promise<AdapterResult> {
     try {
+      // The verifier's clock and skew, as numbers. A vector that gives either
+      // otherwise is refused, as conformance/verify.py refuses it, not coerced.
+      if (typeof input.now !== 'number' || typeof input.skewSeconds !== 'number') {
+        return fail('a signed-proof vector gives now and skewSeconds as numbers');
+      }
       const verifier = new ProofVerifier({
         cryptoProvider: this.crypto,
         clockProvider: new PinnedClock(input.now * 1000),
@@ -181,7 +186,7 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
 
       const credentialVerifier = new DelegationCredentialVerifier({
         didResolver,
-        signatureVerifier: ed25519SignatureVerifier(this.crypto),
+        signatureVerifier: embeddedSignatureVerifier(this.crypto),
       });
       // A leaf that travels as a VC-JWT is the credential its claims carry, verified as that VC-JWT.
       const jwt = typeof input.leaf === 'string' ? input.leaf : undefined;
@@ -226,7 +231,7 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
 
       const fetchProvider = new StaticFetchProvider(input.didDocuments);
       const didResolver = makeMultiResolver(input.didDocuments, fetchProvider);
-      const signatureVerifier = ed25519SignatureVerifier(this.crypto);
+      const signatureVerifier = embeddedSignatureVerifier(this.crypto);
 
       // Status resolver backed by the supplied status lists, decoded with the
       // SAME bitstring primitive the manager uses (DRY). A list is signed like

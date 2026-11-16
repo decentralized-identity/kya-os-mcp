@@ -131,6 +131,22 @@ class Walk {
     this.charge(width);
   }
 
+  /**
+   * One array or object of the document, `depth` levels down, as a verifier may hold it: frozen
+   * when it was parsed, else copied and the copy frozen. Depth is counted in this walk, the one
+   * that charges bytes, counts members, refuses what JSON cannot hold and freezes a parsed
+   * document or copies any other, so the document is read once and is refused for the first limit
+   * it breaks, in document order. Recursion is safe here: the first container past
+   * `MAX_JSON_DEPTH` is refused.
+   *
+   * `nestsDeeperThan` (`utils/plain-data.ts`) counts depth with no call stack, for values of any
+   * depth, and cannot count it here. It would be a second reading of the document, before this one,
+   * so a document both too deep and too large would be refused for its depth after every container
+   * within the limit was read, where this walk stops at the byte limit. It reads each array element
+   * by its descriptor, which this walk does not pay for. And it gives one answer for all it finds:
+   * a `Date` counts as one value and a cycle as nesting too deep, where this walk refuses each by
+   * its own reason.
+   */
   private container(item: object, depth: number): object {
     if (depth > MAX_JSON_DEPTH) throw new Refusal('nesting limit exceeded');
     // Parsed JSON is a tree; only a custom resolver's document can hold a cycle.

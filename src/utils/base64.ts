@@ -1,8 +1,27 @@
 /**
- * Base64URL Encoding/Decoding Utilities
+ * Base64 and base64url, encoded and decoded by the runtime: `Buffer` where there is one, `atob`,
+ * `btoa` and `TextDecoder` otherwise, so that the helpers work in Node.js and in Cloudflare Workers.
  *
- * Environment-aware base64url helpers that work in both Node.js and Cloudflare Workers.
- * Uses Buffer in Node.js, TextEncoder/Decoder fallback for Workers.
+ * The decoders read what the runtime's decoder reads. That is none of the protocol's readings
+ * (`./base64-reading.ts`), and it is not the same on every runtime:
+ *
+ * - `base64urlDecodeToString`, with `Buffer`: characters of either alphabet and no white space;
+ *   `=` only where it completes the last group of four or falls one short of completing it; a last
+ *   group of one character refused. The bytes are read as UTF-8, a byte that is not UTF-8 as
+ *   U+FFFD, and a byte order mark stays in the text. Without `Buffer` it reads as the byte
+ *   decoders do, and a byte order mark is dropped.
+ * - `base64urlDecodeToBytes` and `base64ToBytes`, with `atob`: characters of either alphabet; `=`
+ *   as above; ASCII white space passed over, but counted when the string is padded to a multiple
+ *   of four, so a string with white space is read only when its length is the length its
+ *   characters alone would be padded to. Without `atob`, `Buffer` reads every string: it passes
+ *   over what is outside the alphabets and stops at the first `=`.
+ *
+ * These decoders remain, beside the protocol's readings, for the values SPEC.md states no reading
+ * of its own for: among them a key a host configures, a card proof's signatures, audit evidence,
+ * a status list's bits, and the segments of a VC-JWT as `parseVCJWT` reads them for verification.
+ * None of the protocol's readings accepts exactly the strings these accept, so a caller moved from
+ * one to the other would reach another verdict on the strings that differ.
+ * `__tests__/base64.runtime-decoders.test.ts` holds what each accepts, string by string.
  */
 
 export function base64urlDecodeToString(input: string): string {
@@ -90,21 +109,9 @@ export function bytesToBase64(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString('base64');
 }
 
+/** Standard base64 or base64url to bytes: the reading of {@link base64urlDecodeToBytes}. */
 export function base64ToBytes(base64: string): Uint8Array {
-  let standardBase64 = base64.replace(/-/g, '+').replace(/_/g, '/');
-  const paddingNeeded = (4 - (standardBase64.length % 4)) % 4;
-  standardBase64 += '='.repeat(paddingNeeded);
-
-  if (typeof atob !== 'undefined') {
-    const binaryString = atob(standardBase64);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    return bytes;
-  }
-
-  return new Uint8Array(Buffer.from(standardBase64, 'base64'));
+  return base64urlDecodeToBytes(base64);
 }
 
 function addPadding(input: string): string {

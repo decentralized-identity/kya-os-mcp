@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schema.kya-os.org/v1/protocol/proof/detached/v1.1.0",
+  "$id": "https://schema.kya-os.org/v1/protocol/proof/detached/v1.2.0",
   "title": "KYA-OS Detached Proof",
   "description": "Cryptographic proof binding an MCP tool request/response pair to an agent's identity and session context.",
   "type": "object",
@@ -68,7 +68,12 @@
         },
         "delegationRef": {
           "type": "string",
-          "description": "Optional reference to delegation credential authorizing this action."
+          "description": "Reference of the delegation credential the call presented: its id, or the digest of that id where SPEC §7.8 says so. On a proof whose outcome is not 'allowed' it names what was presented, which the server may have refused."
+        },
+        "delegationChainDigest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "description": "Digest of the delegation chain the server evaluated, root to leaf, taken over each credential's own digest (SPEC §7.8). Covered by the JWS signature. On a proof whose outcome is not 'allowed' it covers what was presented and examined, which the server may have refused. Format: 'sha256:<64 hex chars>'."
         },
         "clientDid": {
           "type": "string",

@@ -10,8 +10,8 @@
  * gate signs its refusal, reason included, as it signs any outcome, and the reason is well-formed
  * text whatever the delegation quotes. A delegation must name its issuer by a DID (VC Data Model
  * 2.0 §4.7), and the last test of the first block names it otherwise. The gate refuses a delegation
- * holding a value it cannot encode, and leaves a failure of its hash provider to its caller,
- * as it always has. Real Ed25519 keys sign everything.
+ * holding a value it cannot encode, and one it cannot digest (SPEC.md §7.8) because its hash
+ * provider fails. Real Ed25519 keys sign everything.
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
@@ -30,26 +30,23 @@ import { didWebToUrl } from '../../delegation/did-web-resolver.js';
 import type { DIDDocument, VerificationMethod } from '../../delegation/vc-verifier.js';
 import type { FetchProvider } from '../../providers/base.js';
 import { canonicalizeJsonBytes } from '../../utils/canonical-json.js';
+import { isCredentialDigestInput } from '../../__tests__/utils/digests.js';
 import type { AgentIdentity } from '../../providers/base.js';
 
-/** Node's crypto, with a `hash` that fails, as a provider that is down fails, for the bytes it is told to refuse. */
+/** Node's crypto, with a `hash` that fails, as a provider that is down fails, for credential digests (SPEC.md §7.8) while told to. */
 class FailingHash extends NodeCryptoProvider {
   readonly failure = new Error('hash provider unavailable');
-  private readonly refused = new Set<string>();
+  private failing = false;
 
-  refuse(bytes: Uint8Array): void {
-    this.refused.add(Buffer.from(bytes).toString('base64'));
+  failCredentialDigests(failing = true): void {
+    this.failing = failing;
   }
 
   override async hash(data: Uint8Array): Promise<string> {
-    if (this.refused.has(Buffer.from(data).toString('base64'))) throw this.failure;
+    if (this.failing && isCredentialDigestInput(data)) throw this.failure;
     return super.hash(data);
   }
 }
-
-/** The bytes the gate takes a delegation's audit digest over: a VC-JWT as sent, or the credential in RFC 8785 form. */
-const auditBytes = (delegation: unknown): Uint8Array =>
-  typeof delegation === 'string' ? new TextEncoder().encode(delegation) : canonicalizeJsonBytes(delegation);
 
 let login: AgentIdentity;
 let assert: AgentIdentity;
@@ -336,36 +333,32 @@ describe('the delegation gate and the audit digest of a delegation', () => {
     expect(gate.runs()).toBe(0);
   });
 
-  it('leaves a failure of its hash provider to its caller, with no refusal and no run', async () => {
+  it.each([
+    ['would run', 'orders:place'],
+    ['would be refused for its scope', 'orders:cancel'],
+  ])('refuses a delegation it cannot digest because its hash provider fails, and signs that refusal, for a call that %s', async (_call, scopeId) => {
     const provider = new FailingHash();
-    const gate = await acmeGate(undefined, { provider });
+    const gate = await acmeGate(undefined, { provider, scopeId });
+    provider.failCredentialDigests();
     for (const delegation of [await signedCredential(assert), await signedJwt(assert, { kid: assert.kid })]) {
-      provider.refuse(auditBytes(delegation));
-      await expect(gate.inSession(delegation)).rejects.toBe(provider.failure);
-    }
-    expect(gate.runs()).toBe(0);
-  });
-
-  it('signs a refusal it decides after verification even when its hash provider fails', async () => {
-    const provider = new FailingHash();
-    const gate = await acmeGate(undefined, { provider, scopeId: 'orders:cancel' });
-    for (const delegation of [await signedCredential(assert), await signedJwt(assert, { kid: assert.kid })]) {
-      provider.refuse(auditBytes(delegation));
+      // The digest is part of the verification, so the call is refused before its scope is read.
       expect(await gate.inSession(delegation)).toEqual({
-        outcome: 'insufficient_scope', reason: 'Required scope "orders:cancel" not in delegation scopes',
+        outcome: 'delegation_invalid', reason: 'Delegation credential could not be verified',
         proved: true, verified: true,
       });
     }
     expect(gate.runs()).toBe(0);
   });
 
-  it('runs a call its session grant authorizes without hashing the credential again', async () => {
+  it('authorizes no call through a session grant while its hash provider fails to digest the credential, and runs the next once it recovers', async () => {
     const provider = new FailingHash();
     const gate = await acmeGate(undefined, { provider });
     for (const delegation of [await signedCredential(assert), await signedJwt(assert, { kid: assert.kid })]) {
       const session = await gate.session();
       expect(await gate.callIn(session, delegation)).toBe('ran');
-      provider.refuse(auditBytes(delegation));
+      provider.failCredentialDigests();
+      expect(await gate.callIn(session)).toBe('needs_authorization');
+      provider.failCredentialDigests(false);
       expect(await gate.callIn(session)).toBe('ran');
     }
     expect(gate.runs()).toBe(4);

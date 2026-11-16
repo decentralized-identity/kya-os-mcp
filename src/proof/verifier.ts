@@ -27,14 +27,11 @@ import { verificationMethodJwk } from "../delegation/verification-method-key.js"
 import type { VerificationMethod } from "../delegation/vc-verifier.types.js";
 import {
   buildProofJwsPayload,
-  findContentBindingMismatch,
   KYA_OS_PROOF_META_KEY,
   LEGACY_NAMESPACED_PROOF_META_KEY,
   LEGACY_PROOF_META_KEY,
-  type ContentBindingMismatch,
-  type ToolRequest,
-  type ToolResponse,
 } from "./generator.js";
+import { bindingFailure, findBindingMismatch, type ExpectedContent } from "./binding.js";
 
 export type { ProofVerificationOptions, ProofVerificationResult, ProofVerifierConfig } from "./verifier-types.js";
 
@@ -120,6 +117,10 @@ export class ProofVerifier {
    * used (computeCanonicalHashes) and compared to the bound requestHash/
    * responseHash. A mismatch fails with CONTENT_BINDING_MISMATCH.
    *
+   * A refusal is signed too, and may name the delegation presented with it: to
+   * take a proof for evidence of an allowed call, pass `expected.outcome` or a
+   * `delegationChain`, which requires one (see `ExpectedContent`).
+   *
    * @param proof - The proof to verify
    * @param publicKeyJwk - Ed25519 public key in JWK format (from DID document)
    * @param expected - Optional content binding: the `request` you sent and the
@@ -136,7 +137,10 @@ export class ProofVerifier {
    *   `tools/call` request you sent (`{method: "tools/call", params: {name,
    *   arguments}}`) or in the legacy `{method: <tool name>, params: <arguments>}`
    *   shape: a `requestHash` over either shape of that call is accepted (SPEC
-   *   §7.3; 1.x producers sign the legacy shape).
+   *   §7.3; 1.x producers sign the legacy shape). The delegation chain the
+   *   server evaluated and the outcome it recorded are compared as
+   *   `ExpectedContent` says: they fail with DELEGATION_BINDING_MISMATCH and
+   *   OUTCOME_MISMATCH, and `details` names the comparison that failed.
    * @param options - Optional signer binding: the `did` the proof must come
    *   from and the `audience` it must be addressed to. Independently of these,
    *   a `kid` naming a key of a DID other than `meta.did` always fails.
@@ -145,7 +149,7 @@ export class ProofVerifier {
   async verifyProof(
     proof: DetachedProof,
     publicKeyJwk: Ed25519JWK,
-    expected?: { request: ToolRequest; response?: ToolResponse },
+    expected?: ExpectedContent,
     options: ProofVerificationOptions = {},
   ): Promise<ProofVerificationResult> {
     try {
@@ -176,7 +180,7 @@ export class ProofVerifier {
   async verifyProofArtifact(
     proof: DetachedProof,
     publicKeyJwk: Ed25519JWK,
-    expected?: { request: ToolRequest; response?: ToolResponse },
+    expected?: ExpectedContent,
   ): Promise<ProofVerificationResult> {
     try {
       const structureValidation = await this.validateProofStructure(proof);
@@ -255,7 +259,7 @@ export class ProofVerifier {
     validatedProof: DetachedProof,
     publicKeyJwk: Ed25519JWK,
     canonicalPayloadBytes: Uint8Array,
-    expected?: { request: ToolRequest; response?: ToolResponse },
+    expected?: ExpectedContent,
     options: ProofVerificationOptions = {},
   ): Promise<ProofVerificationResult> {
     // 1. Signer binding: kid belongs to the claimed did, and did and audience
@@ -361,25 +365,21 @@ export class ProofVerifier {
    * received (via the same hashing the signer used) and compare to the proof's
    * bound hashes. Fails CONTENT_BINDING_MISMATCH on any divergence — the check
    * that makes a signed proof tamper-evident against content substitution.
+   * The outcome and the delegation chain are compared too (`findBindingMismatch`).
    * @private
    */
   private async validateContentBinding(
     proof: DetachedProof,
-    expected: { request: ToolRequest; response?: ToolResponse }
+    expected: ExpectedContent
   ): Promise<ProofVerificationResult> {
     // The rule (fail-closed response binding, response profile from the
     // proof's own `prf`) is shared with ProofGenerator.verifyProof.
-    const mismatch = await findContentBindingMismatch(
+    const mismatch = await findBindingMismatch(
       proof.meta,
       expected,
       (bytes) => this.cryptoProvider.hash(bytes),
     );
-    if (mismatch === undefined) return { valid: true };
-    return {
-      valid: false,
-      reason: CONTENT_BINDING_REASONS[mismatch],
-      errorCode: PROOF_VERIFICATION_ERROR_CODES.CONTENT_BINDING_MISMATCH,
-    };
+    return mismatch === undefined ? { valid: true } : { valid: false, ...bindingFailure(mismatch) };
   }
 
   /**
@@ -652,16 +652,6 @@ export class ProofVerifier {
     return new TextEncoder().encode(this.buildCanonicalPayload(meta));
   }
 }
-
-const CONTENT_BINDING_REASONS: Record<ContentBindingMismatch, string> = {
-  request: "Request hash mismatch: the proof does not bind the request you supplied",
-  "response-missing":
-    "Proof binds a response (responseHash present) but no response was supplied to verify against — pass expected.response",
-  "response-unexpected":
-    "A response was supplied but the proof binds none — content/proof mismatch",
-  response:
-    "Response hash mismatch: received content differs from what the server signed (possible substitution / MITM)",
-};
 
 /**
  * The DID an absolute DID URL `kid` (`did:…#frag`, the form proofs carry)

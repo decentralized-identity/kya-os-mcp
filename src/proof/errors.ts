@@ -21,6 +21,15 @@ export const PROOF_VERIFICATION_ERROR_CODES = {
   // the request/response the verifier actually received does not match the hash
   // bound in the (authentic) proof — i.e. the content was substituted in transit.
   CONTENT_BINDING_MISMATCH: "CONTENT_BINDING_MISMATCH",
+  // Outcome: the proof is authentic and binds the content, but states another
+  // outcome than the one required of it. A refusal is a signed proof too, so a
+  // verifier that takes a proof for evidence that a call was allowed, or that
+  // a delegation was accepted, requires the outcome (SPEC §7.8).
+  OUTCOME_MISMATCH: "OUTCOME_MISMATCH",
+  // Delegation binding: the delegation chain the verifier supplied is not the
+  // one the proof binds, the proof binds none, or its `delegationRef` is not
+  // the reference of that chain's last credential (SPEC §7.8).
+  DELEGATION_BINDING_MISMATCH: "DELEGATION_BINDING_MISMATCH",
   // Signer binding: `kid` names a key of a DID other than the claimed `did`,
   // or the proof's `did` / `audience` is not the one the caller expected.
   KID_DID_MISMATCH: "KID_DID_MISMATCH",

@@ -331,6 +331,7 @@ An MRTR profile (§7.3) additionally requires `inputRequests` under proof covera
 
 Authority is conveyed only by a verifiable delegation chain: the W3C VC model of SPEC.md §6, including the VC 2.0 + ZCAP-LD profile of SPEC.md §6.10, with the designation invariant (SPEC.md §6.4.1), revocation (SPEC.md §6.5-§6.6, SPEC-ENTITY-CARD §10.3), and the recomputed accountability joins (SPEC-ENTITY-CARD §10.2).
 A proof references its authority via `delegationRef`, or the request carries the chain itself in `_meta["org.kya-os/delegation-chain"]` (SPEC-ENTITY-CARD §10.5); declaring the extension conveys no authority by itself.
+A response proof can also bind the chain the server evaluated, by digest, so that a holder of the chain can show it is the one a signed call was decided under (`delegationChainDigest`, SPEC.md §7.8).
 A carried chain is not unsigned `_meta` in the sense of §10 item 2: each credential carries its issuer's proof, and the chain binds to the request through the leaf join, its leaf delegate equal to the verified `proof.did` (SPEC-ENTITY-CARD §10.2, §11.4).
 
 Revocation status lists SHOULD be published per issuing authority - each delegation's status served from the issuer's own domain - rather than through a single centralized registry, preserving the no-central-authority property (§13.2).

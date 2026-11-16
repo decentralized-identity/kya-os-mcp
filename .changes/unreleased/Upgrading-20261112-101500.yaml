@@ -1,0 +1,13 @@
+kind: Upgrading
+body: |-
+    **Two things to check: one if your server uses `wrapWithDelegation`,
+    and one if you hand the verifier keys of your own.** A consumer that
+    recomputes `authorization.delegationCredentialDigest` must compute the
+    credential digest of SPEC.md §7.8 in place of a SHA-256 of the bytes
+    presented, and a digest recorded before the upgrade does not equal one
+    recorded after it for the same credential. A custom DID resolver or
+    key provider that hands the verifier an Ed25519 JWK must write its `x`
+    as RFC 8037 has it: base64url of the URL-safe alphabet, with no `=`
+    and no white space, of 32 bytes. UPGRADING.md, "Digests and keys to
+    recheck", has both in full.
+time: 2026-11-12T10:15:00.000000-08:00

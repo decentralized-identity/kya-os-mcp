@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { sha256Of } from '../../__tests__/utils/digests.js';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
 import { McpAuditEventAdapter } from '../adapters/mcp.js';
 import { CryptoProviderAuditHasher } from '../crypto.js';
@@ -197,5 +198,115 @@ describe('MCP audit event adapter catalog', () => {
     });
     expect(event.correlationId).toBe(event.authorization?.delegationRef);
     expect(event.causationId).toBe('causation-1');
+  });
+
+  describe('a reference that holds a control character', () => {
+    function capturing(options?: ConstructorParameters<typeof McpAuditEventAdapter>[1]) {
+      const events: Array<Partial<AuditProducerEventCoreV1>> = [];
+      const trail: Pick<AuditTrailService, 'record'> = {
+        record: async (event) => {
+          events.push(event);
+          return { status: 'pending', event: event as AuditProducerEventCoreV1 };
+        },
+      };
+      return { events, adapter: new McpAuditEventAdapter(trail, options) };
+    }
+
+    it('is recorded by its digest, wherever an event carries a reference', async () => {
+      const { events, adapter } = capturing({ includeToolNames: true });
+      // A line break in a reference is a line the audit log never wrote.
+      const forged = (name: string): string => `${name}\n2026-01-01 delegation.verified by admin`;
+
+      await adapter.tool('completed', {
+        toolName: forged('tool'),
+        outcome: 'succeeded',
+        context: {
+          authorization: {
+            source: 'delegation',
+            decision: 'allowed',
+            scopeId: forged('scope'),
+            delegationRef: forged('delegation'),
+            grantRef: forged('grant'),
+            policyId: forged('policy'),
+            policyVersion: forged('version'),
+            verificationCode: forged('code'),
+          },
+          correlationId: forged('correlation'),
+          causationId: forged('causation'),
+        },
+      });
+      await adapter.authorization('grant_used', { outcome: 'succeeded', grantRef: forged('grant') });
+      await adapter.delegation('verified', {
+        delegationRef: forged('delegation'),
+        parentRef: forged('parent'),
+        outcome: 'succeeded',
+      });
+      await adapter.consent('approved', { outcome: 'succeeded', consentRef: forged('consent') });
+
+      const [tool, grant, delegation, consent] = events;
+      expect(tool?.action).toEqual({ category: 'tool.call', name: sha256Of(forged('tool')) });
+      expect(tool?.authorization).toEqual({
+        source: 'delegation',
+        decision: 'allowed',
+        scopeId: sha256Of(forged('scope')),
+        delegationRef: sha256Of(forged('delegation')),
+        grantRef: sha256Of(forged('grant')),
+        policyId: sha256Of(forged('policy')),
+        policyVersion: sha256Of(forged('version')),
+        verificationCode: sha256Of(forged('code')),
+      });
+      expect(tool?.correlationId).toBe(sha256Of(forged('correlation')));
+      expect(tool?.causationId).toBe(sha256Of(forged('causation')));
+      expect(grant?.details).toEqual({
+        family: 'authorization',
+        phase: 'grant_used',
+        grantRef: sha256Of(forged('grant')),
+      });
+      expect(delegation?.details).toEqual({
+        family: 'delegation',
+        phase: 'verified',
+        delegationRef: sha256Of(forged('delegation')),
+        parentRef: sha256Of(forged('parent')),
+      });
+      expect(consent?.details).toEqual({
+        family: 'consent',
+        phase: 'approved',
+        consentRef: sha256Of(forged('consent')),
+      });
+      // Nothing of the line a reference carried is in what was recorded.
+      expect(JSON.stringify(events)).not.toMatch(/\\n|admin/);
+    });
+
+    it.each([
+      ['NUL', '\u0000'],
+      ['a tab', '\t'],
+      ['a line feed', '\n'],
+      ['a carriage return', '\r'],
+      ['ESC', '\u001b'],
+      ['the last of C0', '\u001f'],
+      ['DEL', '\u007f'],
+      ['the first of C1', '\u0080'],
+      ['NEL, a line break of C1', '\u0085'],
+      ['the last of C1', '\u009f'],
+    ])('is so for %s', async (_name, control) => {
+      const { events, adapter } = capturing();
+      const reference = `del-${control}1`;
+
+      await adapter.delegation('verified', { delegationRef: reference, outcome: 'succeeded' });
+
+      expect(events[0]?.details).toMatchObject({ delegationRef: sha256Of(reference) });
+    });
+
+    it.each([
+      ['a space, the character after C0', 'del 1'],
+      ['a tilde, the character before DEL', 'del~1'],
+      ['a no-break space, the character after C1', 'del\u00a01'],
+    ])('is not so for %s, which is kept as it is', async (_name, reference) => {
+      const { events, adapter } = capturing();
+
+      await adapter.delegation('verified', { delegationRef: reference, outcome: 'succeeded' });
+
+      expect(events[0]?.details).toMatchObject({ delegationRef: reference });
+    });
   });
 });

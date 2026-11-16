@@ -5,7 +5,8 @@
  * `#login-1` under `authentication` and `#key-1` under `assertionMethod`, both published
  * multibase-only as cheqd publishes them; some tests add `#key-2` under `assertionMethod` after
  * `#key-1`, one embeds there a method that carries no key, one names a method far longer than a
- * refusal reason quotes, and one publishes `#key-1` under another DID's control. A real signed
+ * refusal reason quotes, and one publishes `#key-1` under another DID's control. One publishes
+ * `#key-1` as a JWK, to read its `x` as every proof's key is read (SPEC.md §7.4). A real signed
  * list, served through a stub transport, as in `statuslist-resolver.test.ts`.
  */
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
@@ -218,6 +219,39 @@ describe('CheqdStatusListResolver and the verification relationship of the list 
     const document = documentOf({ verificationMethod: [published(login), published(assert, OTHER)], assertionMethod: [assert.kid] }, ISSUER);
     for (const proof of [undefined, unnamed]) {
       await expect(check(document, assert, proof)).rejects.toThrow(new Error(anotherDidReason(assert.kid, 'controller', { did: ISSUER, other: OTHER })));
+    }
+  });
+
+  it('reads the key in x as every proof key is read, and the proofValue as a credential signature is', async () => {
+    // `#key-1` as a JWK whose x is written by `rewrite`.
+    const withX = (rewrite: (x: string) => string): DIDDocument => {
+      const { publicKeyJwk, ...method } = methodOf(assert, { controller: ISSUER });
+      const jwk = publicKeyJwk as { x: string };
+      return issuerDidDocument({ ...method, publicKeyJwk: { ...jwk, x: rewrite(jwk.x) } });
+    };
+    expect(await check(withX((x) => x), assert)).toBe(true);
+    // The same key, written as RFC 7515 §2 does not write base64url (SPEC.md §7.4).
+    for (const rewrite of [(x: string) => `${x}=`, (x: string) => ` ${x}`]) {
+      await expect(check(withX(rewrite), assert)).rejects.toThrow(/signature verification FAILED/);
+    }
+    // The same signature, written as SPEC.md §7.8 reads a proofValue, and one that is no signature.
+    const proofValue = (rewrite: (value: string) => string) => (proof: Record<string, unknown>) =>
+      ({ ...proof, proofValue: rewrite(proof['proofValue'] as string) });
+    for (const rewrite of [
+      (value: string) => value.replaceAll('-', '+').replaceAll('_', '/'),
+      (value: string) => `${value}==`,
+      (value: string) => `${value.slice(0, 40)}\n${value.slice(40)}`,
+    ]) {
+      expect(await check(issuerDocument(), assert, proofValue(rewrite))).toBe(true);
+    }
+    // One that is no signature fails before the crypto provider is handed anything.
+    const verify = vi.spyOn(crypto, 'verify');
+    try {
+      await expect(check(issuerDocument(), assert, proofValue((value) => `${value.slice(0, 10)}!${value.slice(10)}`)))
+        .rejects.toThrow(/signature verification FAILED/);
+      expect(verify).not.toHaveBeenCalled();
+    } finally {
+      verify.mockRestore();
     }
   });
 });

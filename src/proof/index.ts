@@ -16,6 +16,8 @@ export {
   type ResponseProofProfile,
 } from './generator.js';
 
+export { type ExpectedContent, type ProofBindingMismatch } from './binding.js';
+
 export {
   ProofVerifier,
   validateMetaStructure,

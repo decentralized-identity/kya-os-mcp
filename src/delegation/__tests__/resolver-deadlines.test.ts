@@ -174,6 +174,7 @@ describe.each(DEADLINES)('%s', (_label, option, ms, stated) => {
       expect(await settledAt(ms, (never) => validate(leaf, { revocationChecker: { isRevoked: never } }))).toEqual({
         valid: false,
         reason: `Revocation check failed for delegation "del-leaf": the revocation checker did not answer within ${stated}`,
+        evaluated: [leaf],
       });
     });
   });

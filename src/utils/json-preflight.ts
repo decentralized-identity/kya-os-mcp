@@ -14,6 +14,14 @@ export interface JsonLimits {
   readonly maxMemberLength: number;
 }
 
+/**
+ * The deepest the arrays and objects of JSON this package reads from another party may nest: a
+ * value on its own is level 1, and an array or object inside another is one level deeper. The
+ * protocol's bounds on a DID document (SPEC §4.4.2) and on a delegation credential (SPEC §7.8)
+ * are both this number, each under its own name beside the rule it serves.
+ */
+export const MAX_JSON_NESTING_DEPTH = 64;
+
 const OPEN_OBJECT = 0x7b, OPEN_ARRAY = 0x5b, CLOSE_OBJECT = 0x7d, CLOSE_ARRAY = 0x5d;
 const QUOTE = 0x22, BACKSLASH = 0x5c, COLON = 0x3a, LETTER_U = 0x75;
 

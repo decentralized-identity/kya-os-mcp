@@ -1,17 +1,16 @@
 /**
- * What the delegation gate encodes of a delegation it verified. It takes the digest of one sent with
- * a Data Integrity proof over the credential's RFC 8785 bytes, so all of the credential must encode;
- * a VC-JWT's over the JWT, so only the members whose values it hands on, into its audit record, the
- * authorization context a tool and a policy gate receive, and its grant, must
- * (./with-kya-os.delegation-encoding.test.ts). It decides this whether or not an audit store is
- * configured, and refuses a delegation that fails as `delegation_invalid`, with a reason its response
- * proof signs. A session grant hands on values of the credential it holds too, so its credential
- * passes the same check, without being encoded, each time the grant authorizes a call, and a grant
- * bound before the check, whose credential fails it, authorizes none. A stand-in for
- * `canonicalizeJsonBytes` counts each credential the middleware encodes, and otherwise encodes as
- * the real one does. The issuer is a
- * did:key, which the gate resolves itself; its credentials travel with a Data Integrity proof and as
- * VC-JWTs.
+ * What the delegation gate encodes of a delegation it verified. It digests each credential in its
+ * signed form (SPEC.md §7.8), and hands values of it on, into its audit record, the authorization
+ * context a tool and a policy gate receive, and its grant, which holds all of a credential sent with
+ * a Data Integrity proof: so all of such a credential must encode, and of a VC-JWT only the members
+ * whose values it hands on (./with-kya-os.delegation-encoding.test.ts). It decides this whether or
+ * not an audit store is configured, and refuses a delegation that fails as `delegation_invalid`, with
+ * a reason its response proof signs. A session grant hands on values of the credential it holds too,
+ * so its credential passes the same check, without being encoded whole, each time the grant
+ * authorizes a call, and a grant bound before the check, whose credential fails it, authorizes none.
+ * A stand-in for `canonicalizeJsonBytes` counts each credential the middleware encodes whole, and
+ * each signed form it digests, and otherwise encodes as the real one does. The issuer is a did:key,
+ * which the gate resolves itself; its credentials travel with a Data Integrity proof and as VC-JWTs.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -45,9 +44,13 @@ const REFUSED = {
   verified: true,
 };
 
-/** How many delegation credentials the middleware has encoded so far. */
-const credentialsEncoded = () =>
-  encoded.filter((value) => typeof value === 'object' && value !== null && 'credentialSubject' in value).length;
+/** Whether a value the middleware encoded is an object with all of `members`. */
+const encodedWith = (...members: string[]) =>
+  encoded.filter((value) => typeof value === 'object' && value !== null && members.every((member) => member in value)).length;
+/** How many delegation credentials the middleware has encoded whole, `proof` included, so far. */
+const credentialsEncoded = () => encodedWith('credentialSubject', 'proof');
+/** How many credentials the middleware has digested in their signed form (SPEC.md §7.8) so far. */
+const signedFormsDigested = () => encodedWith('credential', 'signature') + encodedWith('jwt', 'signature');
 
 /** How `issuer` signs a delegation to the agent, for a user, with its key named: a VC-JWT's JSON text as `edit` rewrites it. */
 const signing = (issuer: AgentIdentity, edit?: (json: string) => string) => ({
@@ -81,18 +84,20 @@ beforeEach(() => {
 });
 
 describe('the encoding of a delegation the gate verified', () => {
-  it('encodes a credential with a Data Integrity proof once for the call it is sent with, and never through a session grant or as a VC-JWT', async () => {
+  it('digests a credential once in its signed form for each call it authorizes, and never encodes one whole, with a Data Integrity proof or as a VC-JWT', async () => {
     const issuer = await createRealIdentity(crypto);
     const gate = await delegationGate({ trustedRootIssuers: [issuer.did] });
-    for (const [delegation, encodings] of [[await signedCredential(issuer, signing(issuer)), 1], [await signedJwt(issuer, signing(issuer)), 0]] as const) {
+    for (const delegation of [await signedCredential(issuer, signing(issuer)), await signedJwt(issuer, signing(issuer))]) {
       const session = await gate.session();
-      const before = credentialsEncoded();
+      const before = signedFormsDigested();
       expect(await gate.callIn(session, delegation)).toBe('ran');
-      expect(credentialsEncoded() - before).toBe(encodings);
+      expect(signedFormsDigested() - before).toBe(1);
+      // A call its session grant authorizes is recorded under the credential's digest too.
       expect(await gate.callIn(session)).toBe('ran');
       expect(await gate.callIn(session)).toBe('ran');
-      expect(credentialsEncoded() - before).toBe(encodings);
+      expect(signedFormsDigested() - before).toBe(3);
     }
+    expect(credentialsEncoded()).toBe(0);
   });
 
   it.each([false, true])('refuses a credential with a Data Integrity proof that holds a member it cannot encode, audit store %s', async (audited) => {

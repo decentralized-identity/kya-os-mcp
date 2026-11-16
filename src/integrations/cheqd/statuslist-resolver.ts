@@ -57,15 +57,18 @@ import {
   proofPurposeMismatch,
   selectAssertionMethod,
 } from '../../delegation/verification-relationship.js';
-import { canonicalizeJSON } from '../../delegation/utils.js';
+import { credentialWithoutProof } from '../../delegation/signed-form.js';
 import {
   decodeStatusListPayload,
   parseStatusListIndex,
   readStatusBit,
 } from '../../utils/statuslist-bits.js';
 import { acceptEntrySize, acceptStatusList } from '../../utils/statuslist-acceptance.js';
-import { base64urlDecodeToBytes, bytesToBase64 } from '../../utils/base64.js';
+import { bytesToBase64 } from '../../utils/base64.js';
+import { base64EitherBytes } from '../../utils/base64-reading.js';
+import { canonicalizeJsonBytes } from '../../utils/canonical-json.js';
 import { dependencyTimeout } from '../../utils/deadline.js';
+import { ed25519KeyBytes } from '../../utils/ed25519-public-key.js';
 import { TtlCache } from '../../utils/ttl-cache.js';
 
 export interface CheqdStatusListResolverOptions {
@@ -239,10 +242,16 @@ export class CheqdStatusListResolver implements StatusListResolver {
       throw new Error(purposeMismatch);
     }
 
-    const unsigned: Record<string, unknown> = { ...vc };
-    delete unsigned['proof'];
-    const data = new TextEncoder().encode(canonicalizeJSON(unsigned));
-    const signature = base64urlDecodeToBytes(proofValue);
+    // What the signature covers is what an embedded proof covers on any credential (SPEC.md
+    // §6.2): the object without `proof`, in its RFC 8785 form.
+    const data = canonicalizeJsonBytes(credentialWithoutProof(vc));
+    // Read as a credential's proofValue is (SPEC.md §7.8), so one string is one signature on
+    // every runtime; a string that carries none fails the check below. The list is not read
+    // through `signedCredential`, whose refusals are a delegation credential's: it refuses such
+    // a string, and a signature of no bytes, in its own words and before the issuer's DID is
+    // resolved, and it bounds nesting as SPEC.md §7.8 does. A list is refused below, once its
+    // issuer's key is selected, as a signature that failed.
+    const signature = base64EitherBytes(proofValue);
 
     const named: unknown = proof['verificationMethod'];
     const keyId = typeof named === 'string' ? named : undefined;
@@ -259,13 +268,25 @@ export class CheqdStatusListResolver implements StatusListResolver {
     }
 
     const jwk = verificationMethodJwk(selection.method);
-    const publicKeyBase64 = jwk ? bytesToBase64(base64urlDecodeToBytes(jwk.x)) : undefined;
+    const publicKeyBase64 = jwk ? ed25519KeyBase64(jwk) : undefined;
     // The crypto provider is the host's: the signature holds only on the literal `true`.
-    if (!publicKeyBase64 || (await this.opts.cryptoProvider.verify(data, signature, publicKeyBase64)) !== true) {
+    if (!signature || !publicKeyBase64 || (await this.opts.cryptoProvider.verify(data, signature, publicKeyBase64)) !== true) {
       throw new Error(
         'Status list signature verification FAILED against the issuer DID document',
       );
     }
+  }
+}
+
+/**
+ * The base64 of the Ed25519 key a JWK carries in `x`, read as every proof's key is (SPEC.md §7.4):
+ * base64url as RFC 7515 §2 writes it, of 32 bytes. Undefined for an `x` not so written.
+ */
+function ed25519KeyBase64(jwk: { x?: unknown }): string | undefined {
+  try {
+    return bytesToBase64(ed25519KeyBytes(jwk));
+  } catch {
+    return undefined;
   }
 }
 

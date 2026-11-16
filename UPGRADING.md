@@ -72,6 +72,16 @@ Code that matches on reason text needs the new wording.
 | `statusListIndex "<index>" exceeds the safe integer range`, the index as written | the same with the index quoted |
 | `revocation: hop <n> (<url>#<index>) is revoked or unresolvable` and the rest, `<n>` counting only the hops with a status entry | `revocation: hop <n> (list "<url>", index "<index>") is revoked or unresolvable` and the same rest, `<n>` the hop's position in its chain, the root being 0, then `: <reason>` when the checker said why, as the checker `createRevocationChecker` builds does for every entry it fails closed on; a reason is cut after 256 UTF-16 code units and marked with U+2026, with control and hidden characters read as U+FFFD |
 | the `<error>` or `<reason>` in `Status check error`, `Signature verification error`, `Could not resolve issuer DID`, `JWT envelope signature is not valid`, `Failed to resolve delegation chain`, `Revocation check failed` and `Delegation <id> is revoked`, as written | cut after 256 UTF-16 code units and marked with U+2026, with control and hidden characters and lone surrogates read as U+FFFD |
+| the gate threw, for a value with no JSON form, such as `undefined`, among what a presented credential's issuer signed | `Unreadable credential content: <why>`, given before the reason above |
+| the gate threw for a presented credential holding a value that is not plain data, such as an accessor or a class instance, and an ancestor holding one at its top level or in its `proof`, or a Proxy that passes every read through, verified | `Malformed delegation credential: it is not plain data`, or for an ancestor `Resolved delegation chain for <id> holds a value that could not be copied` |
+| none: a credential nested deeper than 64 levels, and within the runtime's call stack, verified | `Malformed delegation credential: it nests more than 64 levels deep`, for an ancestor `Resolved delegation chain for <id> holds a value that could not be copied`, and for a VC-JWT `Invalid VC-JWT format` |
+| `Delegation credential could not be verified`, where reading a value the resolver returned threw | `Resolved delegation chain for <id> holds a value that is not a delegation credential` |
+| `Delegation chain of <n> credentials exceeds the maximum of <max>`, for a resolver that returned more values than `maxChainLength` | `Delegation chain of at least <n> credentials exceeds the maximum of <max>`, `<n>` the number of values returned |
+| none: the gate threw when its hash provider failed on a verified delegation | `Delegation credential could not be verified`, with the fault logged |
+| `Signature verification error: <error>` from the runtime's base64 decoder, or a verdict on the bytes it gave, for a `proofValue` with a character outside base64, `=` ahead of a base64 character, or no bytes | `Unreadable proofValue: A credential signature is base64url`, or the same and `of at least one byte`; for a status list `CheqdStatusListResolver` reads, `Status list signature verification FAILED against the issuer DID document` |
+| none: the signature verified, for an Ed25519 `x` padded with `=` or holding white space, and, but for a response proof, one in the base64 alphabet | `Unreadable x in publicKeyJwk: <why>` for a delegation credential's embedded signature, `Status list signature verification FAILED against the issuer DID document` for a status list `CheqdStatusListResolver` reads, and `errorCode` `INVALID_JWS_SIGNATURE` for a response proof |
+| none: the response proof verified, for a JWS segment padded to complete its last group or holding two spaces or a line break | `errorCode` `INVALID_JWS_SIGNATURE` |
+| `Proof binds a response (responseHash present) but no response was supplied to verify against`, an em dash and `pass expected.response`; `A response was supplied but the proof binds none`, an em dash and `content/proof mismatch` | the same with a colon for the em dash |
 
 ### Status lists held to their credential
 
@@ -461,6 +471,98 @@ Any other dependency that misses it gives a reason that ends `did not answer wit
 On 1.22.0 it read any unique id without `/`, `?` or `#`, and asked the resolver for it.
 `didCheqdToResolverUrl` writes the DID as one path segment, percent-encoded except for its colons, so a DID of the method is written as before.
 
+### Checking a proof against a delegation chain
+
+A response proof can bind the delegation chain a call was decided under, and a verifier that holds the chain checks it.
+SPEC.md §7.8 defines the two claims a proof may carry about a delegation, both covered by its signature: `delegationRef`, the reference of the credential the call presented, and `delegationChainDigest`, one digest over each credential of the chain, root to leaf, each taken over what its issuer signed and that signature, so a copy of a credential with other proof metadata, or its signature padded or broken across lines, gives the same value.
+Signing either claim from the server is not part of this release: `withKyaOs` sets neither.
+
+Whoever holds the chain checks it by passing `delegationChain` with the request and response that `ProofVerifier.verifyProof` and `verifyProofArtifact` compare.
+The proof must then bind that chain, name its last credential, and record a call that was allowed.
+A chain given as `null` is none, as an outcome given as `null` is, and one that is not an array, as an untyped caller may pass, is a chain no proof binds.
+A refusal is signed too, and binds what the caller presented and its signer examined, which says nothing of whether it is valid: to check one, pass the new `outcome` member (`'denied'`, say) with the chain.
+A failure names the comparison in `details`, in the shape of the new `ProofBindingMismatch` type, under two new error codes: `OUTCOME_MISMATCH` for a proof that records another outcome, and `DELEGATION_BINDING_MISMATCH` for one that binds no chain (`delegation-chain-unbound`), binds another (`delegation-chain`), or names another credential than the chain's last (`delegation-ref`).
+`CONTENT_BINDING_MISMATCH` stays the code for a request or response that does not match, and now carries `details` as well.
+`ProofVerificationErrorCode` gains the two new codes, so a `switch` over it that the compiler checks for exhaustiveness needs a case for each.
+
+`delegationCredentialDigest`, `delegationChainDigest`, `digestDelegationChain` and `signedForm` compute the digests anywhere.
+`delegationCredentialId`, `delegationReference` and `delegationRefOf` derive the reference a proof names a credential by.
+`signingInput` gives the bytes a credential's signature is checked over, and a value that has no signed form throws `NoSignedFormError`.
+They read a credential object as the JSON it stands for: an array's elements whether or not they are enumerable, any other member only when it is, and a member keyed by a symbol leaves it with no signed form.
+Each takes the hash it digests with as a `Sha256`: a function from bytes to `sha256:<64 lowercase hex>`, such as a bound `CryptoProvider.hash`.
+All of these are exported from the package root and from `@kya-os/mcp/delegation`, and the types `ExpectedContent` and `ProofBindingMismatch` from the root and from `@kya-os/mcp/proof`.
+Exported beside them, from the root and from `@kya-os/mcp/delegation`, are the constants `DELEGATION_CREDENTIAL_DIGEST_DOMAIN`, `DELEGATION_CHAIN_DIGEST_DOMAIN` and `MAX_CREDENTIAL_NESTING_DEPTH` (64: how deep the arrays and objects of a credential may nest, SPEC.md §7.8), and the types `ReceivedCredential`, `DelegationChainDigests`, `SignedForm`, `SignedCredential`, `SignedJwt` and `Sha256`.
+
+### Delegation audit events, and how the gate reads a credential
+
+The audit events of the delegation gate's decision say which delegation it decided on, by the reference and the digests of SPEC.md §7.8.
+`delegation.rejected` now carries `delegationRef` and `delegationCredentialDigest` in its authorization evidence, where it carried none, and a retry allowed under a stored grant carries those of the delegation the grant was minted from, on `grant.used` and in the context handed to the handler.
+`delegation.verified`, `delegation.rejected` and `grant.used` also list `delegationChainDigests`, one digest per credential evaluated.
+On a refusal that is what the server had examined when it refused: the ancestors up to the one it stopped at, then the presented credential.
+A refusal in which a value a resolver returned could not be read lists none.
+`delegationCredentialDigest` is now the digest of SPEC.md §7.8 rather than a hash of the bytes presented, so it no longer changes with proof metadata the issuer did not sign.
+The events recorded with the context the gate hands the handler take their evidence from `context.authorization`, and a call the gate refuses after its chain verified, on holder binding or scope, is recorded without the delegation, both as before.
+Response proofs are unchanged and carry no delegation claim.
+Along with it:
+
+- `delegationRef` has one definition, in SPEC.md §7.8, for the audit trail and for a proof that carries it.
+  A refused credential's id is no longer cut to 256 characters.
+  An id that is too long is recorded as its `sha256:` digest, so two long ids with the same beginning stay apart.
+  So is an id that holds a character that does not print as itself (a control or format character, a bidirectional override or a zero-width space among them, a line or paragraph separator, or a code point that renders as nothing by default, such as a variation selector, as SPEC.md §7.8 lists them), and so is one that holds a surrogate without its pair, hashed over its WTF-8 bytes.
+  So is one that is itself written as such a digest, so a reference of that form never stands for an id a caller chose, and one that is the word `unknown`, which the events name a credential that shows no id by.
+  A VC-JWT with no credential id is recorded by its `jti`.
+  An empty `id` is no id: a credential whose `id` is `""` is recorded by the id of its delegation (`credentialSubject.delegation.id`), where the empty string used to be taken for its id.
+  Every other audit reference that holds a character that does not print is now recorded as its digest too.
+- A `proofValue` is read one way wherever it is checked, a delegation credential's and a status list's that `CheqdStatusListResolver` reads: its base64 characters in either alphabet, with ASCII whitespace passed over, and `=` passed over at the end.
+  One written with those verifies on every runtime, where it used to depend on the decoder underneath.
+  One with any other character, with `=` ahead of a base64 character, or of no bytes at all does not.
+  A VC-JWT is read as it was: every JWT that verified still verifies, and none that did not now does.
+- The gate reads the presented credential, and each value a resolver returns, once, as plain data: the credential when it is presented, and each value the resolver returns, root first, as soon as it is returned and before anything else reads it.
+  It checks the value, copies it, and verifies and records the copy, so what it verifies and what it records are one reading, and `resolveDelegationChain` is handed the copy of the presented credential.
+  The copy is not frozen, so a resolver that changes it changes what is verified and recorded, and how deep it nests is counted again each time it is read: one nested deeper than 64 levels since is refused with `Unreadable credential content: A credential object nests at most 64 levels deep`.
+  Every server does this, whether or not it keeps an audit trail: the verdict on a credential does not turn on what the server records.
+  A value that is not plain data is refused wherever in a credential it is, `proof` included: a Proxy, an accessor, a symbol-keyed member, an array element that is not enumerable (a copy leaves it out, and JSON has it), a class instance, a `Map` or any other object that is neither a plain object nor an array, and a function or a symbol.
+  In 1.22.0 a presented credential holding one of these made the gate throw, an ancestor holding one at its top level or in its `proof` verified, and so did a Proxy that passes every read through, presented or resolved, wherever it stood.
+  All of these are now refused.
+  A resolved value that is not shaped as a delegation credential refuses the chain by name.
+  The resolver's own copy of the leaf is read like the rest and then set aside, as in 1.22.0, whatever it holds; one that cannot be read now refuses the chain, where 1.22.0 passed over it.
+  A resolver that returns more values than `maxChainLength` has the chain refused before any of them is read.
+- The arrays and objects of a credential nest at most 64 levels deep (SPEC.md §7.8, `MAX_CREDENTIAL_NESTING_DEPTH`), counted before anything parses, copies or canonicalizes them.
+  A credential object nested deeper, in what its issuer signed or in its `proof`, has no signed form, and neither has one that contains itself: presented, it is refused, and returned by a resolver it refuses the chain.
+  A VC-JWT whose header or payload nests deeper is not parsed: `parseVCJWT` returns `null` for it, and the gate refuses it.
+  The limit used to be the call stack of the runtime, a few thousand levels and different from one runtime to the next, so a credential nested deeper than 64 levels and within that limit verified, and is now refused.
+- `ChainValidationResult` gains `evaluated`: the credentials the walk reached, root first, set on a refusal too, and absent when the walk never started.
+  `validateDelegationChain` takes `snapshotAncestor`, which a host sets to copy each value the resolver returns, root first and before anything reads it, and to refuse one it will not read.
+- A hash provider that fails while a verified delegation is being recorded used to make the gate throw.
+  The call is now refused and the fault is logged.
+- A presented credential that held a value with no JSON form made the gate throw.
+  It now gets a verdict.
+  Among what the issuer signed, `undefined`, a bigint, a hole in an array and a `Date` leave the credential with no canonical form, and it is refused.
+  In `proof`, which no signature covers, they are passed over in an ancestor, and refuse a presented credential as one the gate cannot encode.
+- `ProofVerifier` and `ProofGenerator.verifyProof` read a proof's JWS as SPEC.md §7.4 now says a verifier must: each segment as RFC 7515 §2 writes base64url, of the URL-safe alphabet alone with no white space and no `=`, the header and the payload as UTF-8 that is well formed, and the `x` of the key it is checked with as strictly.
+  A proof whose segments or key were written in the base64 alphabet, padded with `=`, with white space inside, or with bytes that are not UTF-8 in its header or payload now fails.
+  1.22.0 verified some of these: a segment or an `x` padded to complete its last group, a segment holding two spaces or a line break, and an `x` holding a space.
+  A proof this library or a JWS library signed is unaffected.
+- The embedded `Ed25519Signature2020` verifier of the delegation gate, and `CheqdStatusListResolver` for a status list's proof, read the key's `x` the same way, and require 32 bytes of it.
+  In 1.22.0 they read `x` in either alphabet, padded or not, with white space passed over, and handed the runtime whatever bytes that gave.
+  Such an `x` now refuses the credential or the list.
+
+### A VC-JWT whose payload is not well-formed UTF-8
+
+The delegation gate refuses, with `Invalid VC-JWT format`, a VC-JWT whose payload segment is not base64url of well-formed UTF-8 as SPEC.md §7.8 reads it.
+On 1.22.0 a byte that is not UTF-8 was read as U+FFFD and the credential was verified.
+An issuer that writes its payloads as RFC 7519 has them is not affected.
+
+### Digests and keys to recheck
+
+Two things to check: one if your server uses `wrapWithDelegation`, and one if you hand the verifier keys of your own.
+
+- A consumer that recomputes `authorization.delegationCredentialDigest` from a credential it holds must compute the credential digest of SPEC.md §7.8, a domain-separated SHA-256 over what the issuer signed and the signature, in place of the SHA-256 of the VC-JWT string or of the canonical JSON of the whole credential, `proof` included.
+  A digest recorded before the upgrade does not equal one recorded after it for the same credential, and the `delegation.rejected` event and the events of a retry allowed under a stored grant now carry it too.
+  It should also expect `delegationRef` to be the `sha256:` digest of an id over 256 code units, of one that holds a character that does not print (SPEC.md §7.8 lists them) or a surrogate without its pair, of one written as a `sha256:` digest and of the id `unknown`, and the `jti` of a VC-JWT whose credential has no `id`.
+- A custom DID resolver or key provider that hands the verifier an Ed25519 JWK must write its `x` as RFC 8037 has it: base64url of the URL-safe alphabet alone, with no `=` and no white space, of 32 bytes.
+  An `x` in the standard base64 alphabet, padded or holding white space is refused even when it is the same key, for a response proof, a delegation credential's embedded signature and a status list that `CheqdStatusListResolver` reads.
+
 ### Conformance suite 1.4.0
 
 The suite adds status-list vectors for the acceptance rule, each with a list whose proof verifies, and has 97 vectors in all.
@@ -479,3 +581,33 @@ Five more vectors in that file hold a signed `statusListIndex` that is not a who
 Three more hold a signed entry that states a `statusSize`: an entry of two bits whose value is set at its own bits while the bit at its index is clear (`status-list/status-size-two-bits`) and one that states `0` (`status-list/status-size-zero`) must be refused, and one that states `1` (`status-list/status-size-one`) must be read from the bit at its index.
 The entry of `status-list/status-size-two-bits` states its value, 3, as `revoked` in its `statusMessage`, so an implementation that reads the two bits where Bitstring Status List v1.0 keeps them refuses it as well.
 The reference adapter applies `acceptStatusList`, and `conformance/verify.py` checks every status-list vector too.
+
+### SPEC.md §7.8 and conformance suite 1.5.0
+
+SPEC.md §7.8: a response proof binds the delegation chain by digest.
+The new optional `ProofMeta` member `delegationChainDigest` is a domain-separated SHA-256 over the digests of every credential the server evaluated, root to leaf, each taken over the credential's signed form: what its issuer's signature covers, and that signature.
+It is covered by the proof's own signature.
+§7.8 defines both digests, and gives `delegationRef` its one definition: the id a credential shows, or the SHA-256 of an id that is over 256 code units, holds a character that does not print (the control and format characters, the line and paragraph separators and the code points that render as nothing by default, listed by code point) or a surrogate without its pair, reads as a digest, or is the word `unknown`.
+An id that is not well-formed Unicode is hashed over its WTF-8 bytes.
+A number in a VC-JWT's payload is read whatever its length, and plays no part in the id.
+Every JSON text §7.8 reads, a VC-JWT's header and payload and any text a credential object arrives in, is read keeping the last of the members of an object that share a name, as `JSON.parse` keeps it, whatever the parser an implementation uses.
+It says how a signature string is read (a VC-JWT's as a JWS segment, a `proofValue` more loosely) and which values have no signed form, and so neither verify nor have a digest: among them a credential object holding a number that is an integer of magnitude above 2^53 - 1 once read as an IEEE 754 binary64 value, whatever the text it was written as.
+It bounds how deep the arrays and objects of a credential nest, at 64 levels, counted before anything parses or canonicalizes them: a credential object nested deeper has no signed form, the header or payload of a VC-JWT nested deeper is not read as JSON, and an implementation's own failure to read a value is never reported as the value having no signed form.
+Whether a credential verifies and has a digest then does not turn on the call stack of the runtime reading it.
+It says what the two members mean on an allowed call and on a refusal, where they describe what was presented and examined and never that it is valid, and what the digest of each kind of refusal covers: the credentials the server examined, and none where a value handed to it for the chain could not be read.
+A verifier that holds the chain MUST reject an outcome it does not expect (an allowed call, unless it is checking a refusal), a digest that differs or is absent, and a `delegationRef` that is not the reference of the chain's last credential.
+Signing either claim from the server is not part of this release of the reference implementation: its server sets neither `delegationRef` nor `delegationChainDigest`, and its verifier checks both against a chain it is given.
+§7.2 and §7.4 list the member, §7.7 uses it, §11.1 adds delegation substitution and a refusal shown as acceptance to the threat model, and Appendix C.4 gives a vector.
+Additive: a proof without the member is unchanged.
+`schemas/detached-proof.json` admits the member and its `$id` moves to `proof/detached/v1.2.0`.
+CONFORMANCE.md adds L3.28, and conformance suite 1.5.0 adds the `signed-proof/delegation-chain-*` and `signed-proof/delegation-ref-*` vectors, which `conformance/verify.py` re-derives in Python.
+Among them are credentials at the nesting bound and one level past it, ids at either edge of the control range, one a character longer than the digest form, ids holding a right-to-left override or a zero-width space, four ids each holding a code point that only renders as nothing by default (U+034F, U+3164, U+FE0F and U+E0100), and the id `unknown`, a VC-JWT whose payload holds an integer of 4301 digits, one whose payload holds the credential id twice, a credential object holding 9007199254740993.5, and a credential object whose issuer signed a `__proto__` member.
+A verifier built against suite 1.4.0 or earlier fails them until it implements L3.28.
+
+§7.4 now says how a verifier reads a proof's JWS, and it MUST refuse a proof that does not read so: exactly three segments, each base64url as RFC 7515 §2 writes it, with no white space and no `=`; a header whose `alg` is `EdDSA` and whose `kid` is the proof's; an Ed25519 key whose `x` is 32 bytes read the same way; and a signature that verifies over the payload rebuilt from `meta`, and over any other payload segment the JWS carries.
+Every claim in `meta` is then held to what was signed, and two verifiers give one verdict on one proof.
+§7.8 reads a VC-JWT's segments more loosely, as the JWS libraries that verify a credential read them, and that reading applies there alone.
+The 15 `signed-proof/delegation-proof-*` vectors of suite 1.5.0 hold a verifier to it: a signature segment with one or four characters outside base64url, written in the base64 alphabet, holding a line break, or padded with `=`; a fourth segment; a header with a character outside ASCII; `requestHash`, `nonce` or `sessionId` altered after signing; a proof checked against another call than the one it proves; a header that names another algorithm, or another key of the signer's DID; a `meta` whose `did` is not the signer's; and a proof of a request with no `params`, which verifies.
+`conformance/verify.py` checks them by a reading of its own, and refuses an Ed25519 key of small order, as the TypeScript reference does.
+The reference adapter refuses a signed-proof vector that gives `now` or `skewSeconds` as anything but a number, as `verify.py` does.
+`signed-proof.json` is generated whole by one run, its earlier vectors signed again under that run's keys; the other 11 vector files change only their `version`, and the suite has 140 vectors.

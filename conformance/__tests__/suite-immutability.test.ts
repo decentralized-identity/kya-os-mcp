@@ -120,3 +120,54 @@ describe('documented vector counts', () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * CONFORMANCE.md prints what `conformance/verify.py` reports, and a reader
+ * holds a run of their own against it. A check added to the verifier and not
+ * to the document leaves that reader with output the document does not show.
+ *
+ * The document lists every check the verifier makes, by the name the verifier
+ * reports it under, in the order it makes them. Of the checks it makes of the
+ * status-list vectors, one under each vector's id, it shows the first by name
+ * and then one line that stands for every one.
+ */
+describe('the verifier output CONFORMANCE.md shows', () => {
+  const REPO_ROOT = join(VECTORS_DIR, '..', '..');
+  /** The line that stands for the check of each status-list vector. */
+  const EACH_STATUS_LIST_VECTOR = '... one result for every status-list vector ...';
+  /** A file of the repository with its lines ended by line feeds, as a CRLF checkout does not leave them. */
+  const readLines = (...path: string[]) => readFileSync(join(REPO_ROOT, ...path), 'utf8').replace(/\r\n/g, '\n');
+
+  it('lists the checks conformance/verify.py makes, in the order it makes them', () => {
+    const verifier = readLines('conformance', 'verify.py');
+    const made = [...verifier.matchAll(/results\.append\(\(\s*(?:"((?:[^"\\]|\\.)*)"|item\["id"\],)/g)]
+      .map((match) => match[1] ?? EACH_STATUS_LIST_VECTOR);
+    const calls = verifier.match(/results\.append\(/g) ?? [];
+    expect(made.length, 'no check was read from conformance/verify.py').toBeGreaterThan(0);
+    expect(made.length, 'a check in conformance/verify.py is named in a way this test does not read').toBe(calls.length);
+
+    const document = readLines('CONFORMANCE.md');
+    const output = /Expected output:\n\n```\n(KYA-OS cross-language verifier[^]*?)```/.exec(document)?.[1];
+    expect(output, 'CONFORMANCE.md shows no output of the cross-language verifier').toBeDefined();
+    const shown = output!.split('\n').flatMap((line) => {
+      if (line.startsWith('  [PASS] ')) return [line.slice('  [PASS] '.length)];
+      return line.trim() === EACH_STATUS_LIST_VECTOR ? [EACH_STATUS_LIST_VECTOR] : [];
+    });
+
+    // The status-list checks shown by name are the first the verifier makes,
+    // in the order of the files it reads, just before the line for them all.
+    const statusListIds = committedNames.flatMap((name) => {
+      const parsed = JSON.parse(readFileSync(join(VECTORS_DIR, name), 'utf8')) as {
+        category?: string;
+        vectors: { id: string }[];
+      };
+      return parsed.category === 'status-list' ? parsed.vectors.map(({ id }) => id) : [];
+    });
+    const named = shown.filter((name) => statusListIds.includes(name));
+    const standing = shown.indexOf(EACH_STATUS_LIST_VECTOR);
+    expect(named).toEqual(statusListIds.slice(0, named.length));
+    expect(shown.slice(standing - named.length, standing)).toEqual(named);
+
+    expect(shown.filter((name) => !statusListIds.includes(name))).toEqual(made);
+  });
+});

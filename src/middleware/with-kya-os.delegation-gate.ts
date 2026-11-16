@@ -14,6 +14,7 @@ import {
 } from "../delegation/holder-binding.js";
 import { scopeSatisfies } from "../delegation/scope-matcher.js";
 import { getDelegationScopes } from "../delegation/chain-enforcement.js";
+import { NO_DELEGATION_ID } from "../delegation/delegation-id.js";
 import { type DetachedProof } from "../types/protocol.js";
 import { logger } from "../logging/index.js";
 import { KYA_OS_ERROR_CODES } from "../errors.js";
@@ -25,36 +26,12 @@ import type {
 import type { MiddlewareDeps, AttachOutcomeProof, RequireProofLayer } from "./with-kya-os.deps.js";
 import type { GrantResolution } from "./with-kya-os.grants.js";
 import { DEFAULT_APPROVALS_KEY, sanitizeForMessage, withoutControlArgs } from "./with-kya-os.helpers.js";
-import type { Digest } from "../audit/types.js";
 import {
+  type DelegationRecords,
   type DelegationVerification,
   type DelegationGateConfig,
 } from "./with-kya-os.delegation-verify.js";
-
-const MAX_AUDIT_REFERENCE_LENGTH = 256;
-
-/** Extract only a bounded string from an untrusted credential-shaped value. */
-function rejectedDelegationRef(value: unknown): string {
-  try {
-    if (typeof value !== 'object' || value === null) return 'unknown';
-    const credential = value as Record<string, unknown>;
-    const direct = credential.id;
-    if (typeof direct === 'string' && direct.length > 0) {
-      return direct.slice(0, MAX_AUDIT_REFERENCE_LENGTH);
-    }
-    const subject = credential.credentialSubject;
-    if (typeof subject !== 'object' || subject === null) return 'unknown';
-    const delegation = (subject as Record<string, unknown>).delegation;
-    if (typeof delegation !== 'object' || delegation === null) return 'unknown';
-    const nested = (delegation as Record<string, unknown>).id;
-    return typeof nested === 'string' && nested.length > 0
-      ? nested.slice(0, MAX_AUDIT_REFERENCE_LENGTH)
-      : 'unknown';
-  } catch {
-    // A hostile Proxy/getter must not turn a deny decision into an exception.
-    return 'unknown';
-  }
-}
+import type { AuthorizationEvidence } from "../audit/types.js";
 
 /**
  * Approval grants for a composed policy gate. They ride the reserved
@@ -64,6 +41,19 @@ function rejectedDelegationRef(value: unknown): string {
 function forwardedApprovals(args: Record<string, unknown>): Pick<KyaOsCallContext, "approvals"> {
   const approvals = args[DEFAULT_APPROVALS_KEY];
   return approvals === undefined ? {} : { approvals };
+}
+
+/**
+ * `context` for an audit event that records the gate's verdict on a
+ * delegation: its authorization evidence, with the digest of each credential
+ * evaluated. The list is recorded with the verdict and not carried with the
+ * call, whose later events refer to the credential by reference and digest.
+ */
+function withChainEvidence<C extends { authorization: AuthorizationEvidence }>(
+  context: C,
+  records: Pick<DelegationRecords, "chainEvidence">,
+): C {
+  return { ...context, authorization: { ...context.authorization, ...records.chainEvidence } };
 }
 
 /** Collaborators the delegation gate borrows from its sibling sub-factories. */
@@ -79,11 +69,11 @@ export function createDelegationGate(
   deps: MiddlewareDeps,
   wiring: DelegationGateWiring,
 ): Pick<KyaOsDelegationGate, "wrapWithDelegation"> {
-  const { identity, holderBindingMode, holderBindingVerifier, audit, cryptoProvider } = deps;
+  const { identity, holderBindingMode, holderBindingVerifier, audit } = deps;
   const { attachOutcomeProof, requireProofLayer, resolveExistingGrant, bindGrantOnSuccess } =
     wiring;
   const {
-    verifyDelegationForAudit,
+    verifyEncodableDelegation,
     buildDelegationErrorResponse,
     buildNeedsAuthorizationChallenge,
   } = wiring.delegationVerification;
@@ -121,18 +111,21 @@ export function createDelegationGate(
             ...(existingGrant.userDid?.startsWith('did:')
               ? { responsibleParty: { kind: 'pairwise_did' as const, did: existingGrant.userDid } }
               : {}),
+            // A grant stands for the delegation it was minted from, verified
+            // again just now, so its events refer to that delegation too.
             authorization: {
               source: 'grant' as const,
               decision: 'allowed' as const,
               scopeId: config.scopeId,
               grantRef: existingGrant.id,
+              ...resolvedGrant.evidence,
               verificationCode: 'DURABLE_GRANT_RESOLVED',
             },
           };
           await audit?.authorization('grant_used', {
             outcome: 'succeeded',
             grantRef: existingGrant.id,
-            context: grantContext,
+            context: withChainEvidence(grantContext, resolvedGrant),
           });
           return handler(grantArgs, sessionId, {
             ...grantContext,
@@ -169,14 +162,19 @@ export function createDelegationGate(
       // string) and normalize it to a verified credential. verifyDelegation owns
       // the wire-form-specific signature checks — the gate never sets
       // skipSignature itself, so a JWT envelope can't be silently skipped. The
-      // gate records the credential, so it also takes the bytes of its audit digest.
-      const check = await verifyDelegationForAudit(delegationArg);
+      // gate hands the credential's values on, so it refuses those it cannot encode.
+      const check = await verifyEncodableDelegation(delegationArg);
       if (!check.valid) {
         try {
           await audit?.delegation('rejected', {
-            delegationRef: rejectedDelegationRef(check.vc),
+            delegationRef: check.evidence.delegationRef ?? NO_DELEGATION_ID,
             outcome: 'failed',
             reasonCode: 'DELEGATION_VERIFICATION_FAILED',
+            // What was refused, by reference and digest.
+            context: withChainEvidence(
+              { authorization: { source: 'delegation', decision: 'denied', ...check.evidence } },
+              check,
+            ),
           });
         } catch (error) {
           logger.error('[kya-os] Failed to record rejected delegation audit event', {
@@ -195,7 +193,7 @@ export function createDelegationGate(
           check.reason,
         );
       }
-      const { vc, isJwt, serializedCredential } = check;
+      const { vc, isJwt } = check;
 
       // Holder binding (spec §11.8): the delegation is valid, but a valid
       // *credential* is a bearer token until we also prove the caller holds the
@@ -294,16 +292,13 @@ export function createDelegationGate(
         );
       }
 
-      const credentialDigest = await cryptoProvider.hash(serializedCredential) as Digest;
-      const delegationRef = vc.id ?? vc.credentialSubject.delegation.id;
       const actor = { kind: 'pairwise_did' as const, did: vc.credentialSubject.id };
       const controller = vc.credentialSubject.delegation.controller;
       const authorization = {
         source: 'delegation' as const,
         decision: 'allowed' as const,
         scopeId: config.scopeId,
-        delegationRef,
-        delegationCredentialDigest: credentialDigest,
+        ...check.evidence,
         verificationCode: 'DELEGATION_CHAIN_VALID',
       };
       const callContext = {
@@ -316,10 +311,10 @@ export function createDelegationGate(
       };
 
       await audit?.delegation('verified', {
-        delegationRef,
+        delegationRef: check.evidence.delegationRef ?? NO_DELEGATION_ID,
         outcome: 'succeeded',
         parentRef: vc.credentialSubject.delegation.parentId,
-        context: callContext,
+        context: withChainEvidence(callContext, check),
       });
       await audit?.authorization('approved', {
         outcome: 'succeeded',

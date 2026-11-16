@@ -12,7 +12,7 @@ import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
 import { countingAnswer, NOT_BOOLEANS, THROWING_ANSWERS, throwingMember } from '../../__tests__/utils/revocation-answers.js';
 import type { AgentIdentity } from '../../providers/base.js';
-import type { CredentialStatus } from '../../types/protocol.js';
+import type { CredentialStatus, DelegationCredential } from '../../types/protocol.js';
 import { validateDelegationChain, type RevocationChecker } from '../chain-enforcement.js';
 import { withStatusCache } from '../status-cache.js';
 import { DelegationCredentialVerifier, type StatusListResolver } from '../vc-verifier.js';
@@ -102,21 +102,24 @@ describe('the delegation status check', () => {
 
 describe("validateDelegationChain's revocation check", () => {
   const ID = 'del-leaf';
-  const validate = async (answer: unknown) =>
-    validateDelegationChain(
-      await signedCredential(issuer, {
-        record: delegationRecord(issuer.did, {
-          id: ID,
-          constraints: { scopes: ['orders:place'], audience: SERVER, notAfter: Math.floor(Date.now() / 1000) + 3600 },
-        }),
+  let leaf: DelegationCredential;
+  beforeAll(async () => {
+    leaf = await signedCredential(issuer, {
+      record: delegationRecord(issuer.did, {
+        id: ID,
+        constraints: { scopes: ['orders:place'], audience: SERVER, notAfter: Math.floor(Date.now() / 1000) + 3600 },
       }),
-      {
-        serverDid: SERVER,
-        verifier: verifierWith(),
-        statusListConfigured: false,
-        revocationChecker: { isRevoked: async () => answer } as RevocationChecker,
-      },
-    );
+    });
+  });
+  const validate = async (answer: unknown) =>
+    validateDelegationChain(leaf, {
+      serverDid: SERVER,
+      verifier: verifierWith(),
+      statusListConfigured: false,
+      revocationChecker: { isRevoked: async () => answer } as RevocationChecker,
+    });
+  /** A refusal at the revocation check, which comes after the chain was evaluated. */
+  const refused = (reason: string) => ({ valid: false, reason, evaluated: [leaf] });
 
   /** Why the chain is refused when the checker's answer is not an object. */
   const notAnObject = (named: string) =>
@@ -131,31 +134,22 @@ describe("validateDelegationChain's revocation check", () => {
   });
 
   it('refuses a chain as revoked only on an answer whose revoked is a literal true', async () => {
-    expect(await validate({ revoked: true })).toEqual({ valid: false, reason: `Delegation "${ID}" is revoked` });
-    expect(await validate({ revoked: true, reason: 'key compromise' })).toEqual({
-      valid: false,
-      reason: `Delegation "${ID}" is revoked: key compromise`,
-    });
-    expect(await validate({ revoked: true, revokedAncestor: 'del-root' })).toEqual({
-      valid: false,
-      reason: `Delegation "${ID}" is revoked via ancestor "del-root"`,
-    });
+    expect(await validate({ revoked: true })).toEqual(refused(`Delegation "${ID}" is revoked`));
+    expect(await validate({ revoked: true, reason: 'key compromise' })).toEqual(refused(`Delegation "${ID}" is revoked: key compromise`));
+    expect(await validate({ revoked: true, revokedAncestor: 'del-root' })).toEqual(refused(`Delegation "${ID}" is revoked via ancestor "del-root"`));
   });
 
   it('names a revoked chain without a reason or an ancestor that is not a string', async () => {
-    expect(await validate({ revoked: true, reason: 5, revokedAncestor: { id: 'del-root' } })).toEqual({
-      valid: false,
-      reason: `Delegation "${ID}" is revoked`,
-    });
+    expect(await validate({ revoked: true, reason: 5, revokedAncestor: { id: 'del-root' } })).toEqual(refused(`Delegation "${ID}" is revoked`));
   });
 
   it.each(NOT_BOOLEANS)('refuses a chain when the answer has %s as its revoked member', async (_label, revoked, named) => {
-    expect(await validate({ revoked })).toEqual({ valid: false, reason: notABoolean(named) });
+    expect(await validate({ revoked })).toEqual(refused(notABoolean(named)));
   });
 
   it('refuses a chain when the answer has no revoked member', async () => {
-    expect(await validate({})).toEqual({ valid: false, reason: notABoolean('of type undefined') });
-    expect(await validate({ reason: 'not revoked' })).toEqual({ valid: false, reason: notABoolean('of type undefined') });
+    expect(await validate({})).toEqual(refused(notABoolean('of type undefined')));
+    expect(await validate({ reason: 'not revoked' })).toEqual(refused(notABoolean('of type undefined')));
   });
 
   it.each([
@@ -168,14 +162,11 @@ describe("validateDelegationChain's revocation check", () => {
     ['the string "false"', 'false', '"false"'],
     ['an array', [{ revoked: false }], 'of type array'],
   ] as const)('refuses a chain when the checker answers %s, not an object', async (_label, answer, named) => {
-    expect(await validate(answer)).toEqual({ valid: false, reason: notAnObject(named) });
+    expect(await validate(answer)).toEqual(refused(notAnObject(named)));
   });
 
   it.each(THROWING_ANSWERS)('refuses a chain, and does not reject, on an answer with %s', async (_label, answer, why) => {
-    expect(await validate(answer)).toEqual({
-      valid: false,
-      reason: `Revocation status of delegation "${ID}" could not be read: ${why}`,
-    });
+    expect(await validate(answer)).toEqual(refused(`Revocation status of delegation "${ID}" could not be read: ${why}`));
   });
 
   it('reads each member of an answer once', async () => {

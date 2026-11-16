@@ -145,19 +145,23 @@ describe('a signature verifier that answers a verdict', () => {
 });
 
 describe("validateDelegationChain's credential verifier", () => {
-  const validate = async (answer: unknown) => {
-    const leaf = await signedCredential(issuer, {
+  let leaf: DelegationCredential;
+  beforeAll(async () => {
+    leaf = await signedCredential(issuer, {
       record: delegationRecord(issuer.did, {
         id: 'del-leaf',
         constraints: { scopes: ['orders:place'], audience: SERVER, notAfter: Math.floor(Date.now() / 1000) + 3600 },
       }),
     });
-    return validateDelegationChain(leaf, {
+  });
+  const validate = (answer: unknown) =>
+    validateDelegationChain(leaf, {
       serverDid: SERVER,
       verifier: { verifyDelegationCredential: (async () => answer) as never },
       statusListConfigured: false,
     });
-  };
+  /** A refusal at the credential's verification, which the walk reaches the credential to make. */
+  const refused = (reason: string) => ({ valid: false, reason, evaluated: [leaf] });
   const unreadable = 'Delegation del-leaf invalid: The verdict of the credential verifier could not be read: ';
 
   it('passes a credential only on the literal true', async () => {
@@ -165,26 +169,17 @@ describe("validateDelegationChain's credential verifier", () => {
   });
 
   it('refuses the chain, and does not throw, on any other answer', async () => {
-    expect(await validate({ valid: 'false' })).toEqual({
-      valid: false,
-      reason: `${unreadable}the valid member of its answer ("false") is neither true nor false`,
-    });
-    expect(await validate({ valid: 1 })).toEqual({
-      valid: false,
-      reason: `${unreadable}the valid member of its answer (of type number) is neither true nor false`,
-    });
-    expect(await validate(undefined)).toEqual({
-      valid: false,
-      reason: `${unreadable}its answer (of type undefined) is not an object`,
-    });
-    expect(await validate(null)).toEqual({ valid: false, reason: `${unreadable}its answer (of type null) is not an object` });
+    expect(await validate({ valid: 'false' })).toEqual(refused(`${unreadable}the valid member of its answer ("false") is neither true nor false`));
+    expect(await validate({ valid: 1 })).toEqual(refused(`${unreadable}the valid member of its answer (of type number) is neither true nor false`));
+    expect(await validate(undefined)).toEqual(refused(`${unreadable}its answer (of type undefined) is not an object`));
+    expect(await validate(null)).toEqual(refused(`${unreadable}its answer (of type null) is not an object`));
     const reads = { count: 0 };
-    expect(await validate(throwingOn('valid', {}, reads))).toEqual({ valid: false, reason: `${unreadable}reading its answer threw` });
+    expect(await validate(throwingOn('valid', {}, reads))).toEqual(refused(`${unreadable}reading its answer threw`));
     expect(reads.count).toBe(1);
-    expect(await validate({ valid: revokedProxy() })).toEqual({ valid: false, reason: `${unreadable}reading its answer threw` });
+    expect(await validate({ valid: revokedProxy() })).toEqual(refused(`${unreadable}reading its answer threw`));
   });
 
   it('refuses on the literal false with the reason the verifier gave', async () => {
-    expect(await validate({ valid: false, reason: 'expired' })).toEqual({ valid: false, reason: 'Delegation del-leaf invalid: expired' });
+    expect(await validate({ valid: false, reason: 'expired' })).toEqual(refused('Delegation del-leaf invalid: expired'));
   });
 });

@@ -6,10 +6,19 @@
  */
 
 import { isRecord } from '../utils/guards.js';
+import type { Refusal } from '../utils/refusal.js';
 import { readVerdict, verdictReadThrew } from '../utils/verdict.js';
 import type { VerifyDelegationResult } from './types.js';
 
 const WHO = 'the delegation verifier';
+
+/**
+ * The handshake's refusal for `verdict`, with its reason and without the code a verdict carries: the
+ * handshake's result keeps the shape it has always had.
+ */
+function handshakeRefusal(verdict: Refusal): VerifyDelegationResult {
+  return verdict.reason === undefined ? { valid: false } : { valid: false, reason: verdict.reason };
+}
 
 /**
  * The result `answer` comes to. It is valid only when `answer` is an object whose `valid` is the
@@ -19,14 +28,14 @@ const WHO = 'the delegation verifier';
  * verdict could not be read. Each member is read once, and no answer makes this throw.
  */
 export function readDelegationVerdict(answer: unknown): VerifyDelegationResult {
-  const verdict = readVerdict(WHO, answer);
-  if (!verdict.valid) return verdict;
+  const verdict = readVerdict(WHO, answer, 'delegation_invalid');
+  if (!verdict.valid) return handshakeRefusal(verdict);
   let delegation: unknown;
   let credential: unknown;
   try {
     ({ delegation, credential } = answer as Record<string, unknown>);
   } catch {
-    return verdictReadThrew(WHO);
+    return handshakeRefusal(verdictReadThrew(WHO));
   }
   if (!isRecord(delegation)) return { valid: false };
   return {

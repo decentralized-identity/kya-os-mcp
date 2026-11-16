@@ -7,6 +7,7 @@
  * refusal should.
  */
 
+import type { RefusalCode } from '../refusal-codes.js';
 import { describeTimeout } from '../utils/deadline.js';
 import { describeValue } from '../utils/describe-value.js';
 import { isRecord } from '../utils/guards.js';
@@ -90,27 +91,56 @@ export function reportedFailure(resolver: DIDResolver, did: string): DidResoluti
 }
 
 /**
- * What a refusal of `did` as unresolvable ends with: the detail of the failure `resolver` reports
- * for it, in parentheses after a space and sanitized for a message, or nothing.
+ * The refusal code of each cause a resolver reports: a refused host and a passed deadline keep their
+ * names, a document that could not be read leaves the DID unavailable for now, and an invalid one is
+ * an invalid DID.
  */
-export function resolutionFailureSuffix(resolver: DIDResolver, did: string): string {
-  const failure = reportedFailure(resolver, did);
+const CAUSE_CODES: Readonly<Record<DidResolutionFailureCause, RefusalCode>> = Object.freeze({
+  host_refused: 'host_refused',
+  deadline_exceeded: 'deadline_exceeded',
+  unavailable: 'did_unavailable',
+  invalid_document: 'did_invalid',
+});
+
+/**
+ * The refusal code of a DID the resolver found no document for: that of the cause of the failure it
+ * reports, or `did_unavailable` when it reports none, since the verifier cannot tell a DID that has
+ * no document from one whose document could not be read just now.
+ */
+export function unresolvedCode(failure: DidResolutionFailure | undefined): RefusalCode {
+  return failure === undefined ? 'did_unavailable' : CAUSE_CODES[failure.cause];
+}
+
+/**
+ * What a refusal of a DID as unresolvable ends with: the detail of `failure`, the failure the
+ * resolver reports for it, in parentheses after a space and sanitized for a message, or nothing.
+ */
+function failureSuffix(failure: DidResolutionFailure | undefined): string {
   return failure === undefined ? '' : ` (${sanitizeForMessage(failure.detail, DETAIL_LENGTH)})`;
 }
 
-/** A document found within the limits, or none, with what a refusal of the DID as unresolvable ends with. */
-export type ExplainedResolution = { readonly document: DIDDocument } | { readonly document: null; readonly why: string };
+/**
+ * A document found within the limits, or none, with what a refusal of the DID as unresolvable ends
+ * with and the code it is refused with.
+ */
+export type ExplainedResolution =
+  | { readonly document: DIDDocument }
+  | { readonly document: null; readonly why: string; readonly code: RefusalCode };
 
 /**
  * Resolve `did` through `resolver` within the limits, as `resolveBoundedDid` does, and when no
- * document is found say why: the failure the resolver reports, as {@link resolutionFailureSuffix}
- * writes it, when it found nothing, and nothing when the limits refused the DID, its key or what
- * it returned, since the resolver's last failure is then not this one.
+ * document is found say why. When the resolver found nothing, that is the failure it reports, as a
+ * suffix in parentheses, with the code of its cause ({@link unresolvedCode}). When the limits refused
+ * the DID, its key or what the resolver returned, it is nothing, since the resolver's last failure
+ * is then not this one, with `did_invalid`. A resolver that throws, or a deadline that passes,
+ * rejects, as `resolveWithinLimits` does.
  */
 export async function resolveExplained(
   resolver: DIDResolver, did: string, key?: unknown, within?: ResolutionDeadline | number,
 ): Promise<ExplainedResolution> {
   const resolution = await resolveWithinLimits(resolver, did, key, within);
   if (resolution.status === 'found') return { document: resolution.document };
-  return { document: null, why: resolution.status === 'not found' ? resolutionFailureSuffix(resolver, did) : '' };
+  if (resolution.status === 'refused') return { document: null, why: '', code: 'did_invalid' };
+  const failure = reportedFailure(resolver, did);
+  return { document: null, why: failureSuffix(failure), code: unresolvedCode(failure) };
 }

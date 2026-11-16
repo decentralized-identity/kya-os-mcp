@@ -58,11 +58,14 @@ function withConstraints(constraints: Record<string, unknown>): DelegationCreden
   return vc;
 }
 
+/** The code an expired credential is refused with. */
+const EXPIRED = { code: "delegation_expired", transient: false } as const;
+
 describe("validateBasicProperties: validity bounds and status fail closed", () => {
   it("treats an unparseable expirationDate as expired, not as no expiry", () => {
     for (const expirationDate of ["2020-02-30T25:00:00Z", "not a date", "", 4102444800 as unknown as string]) {
       const result = validateBasicProperties(credential({ expirationDate }));
-      expect(result, String(expirationDate)).toEqual({ valid: false, reason: "Delegation credential expired" });
+      expect(result, String(expirationDate)).toEqual({ valid: false, reason: "Delegation credential expired", ...EXPIRED });
     }
     expect(validateBasicProperties(credential({ expirationDate: "2099-01-01T00:00:00Z" }))).toEqual({ valid: true });
   });
@@ -70,7 +73,7 @@ describe("validateBasicProperties: validity bounds and status fail closed", () =
   it("treats a non-numeric constraints.notAfter as expired, and still honours a numeric one", () => {
     for (const notAfter of ["2020-01-01", "4102444800", null, Number.NaN, Number.POSITIVE_INFINITY]) {
       const result = validateBasicProperties(withConstraints({ notAfter }));
-      expect(result, String(notAfter)).toEqual({ valid: false, reason: "Delegation credential expired" });
+      expect(result, String(notAfter)).toEqual({ valid: false, reason: "Delegation credential expired", ...EXPIRED });
     }
     const nowSec = Math.floor(Date.now() / 1000);
     expect(validateBasicProperties(withConstraints({ notAfter: nowSec + 60 })).valid).toBe(true);
@@ -81,13 +84,19 @@ describe("validateBasicProperties: validity bounds and status fail closed", () =
     expect(validateBasicProperties(withConstraints({ notAfter: 0 }))).toEqual({
       valid: false,
       reason: "Delegation credential expired",
+      ...EXPIRED,
     });
   });
 
   it("treats a non-numeric constraints.notBefore as not yet valid, and still honours a numeric one", () => {
     for (const notBefore of ["2020-01-01", null, Number.NaN]) {
       const result = validateBasicProperties(withConstraints({ notBefore }));
-      expect(result, String(notBefore)).toEqual({ valid: false, reason: "Delegation credential not yet valid" });
+      expect(result, String(notBefore)).toEqual({
+        valid: false,
+        reason: "Delegation credential not yet valid",
+        code: "delegation_not_yet_valid",
+        transient: false,
+      });
     }
     const nowSec = Math.floor(Date.now() / 1000);
     expect(validateBasicProperties(withConstraints({ notBefore: nowSec - 60 })).valid).toBe(true);
@@ -96,15 +105,15 @@ describe("validateBasicProperties: validity bounds and status fail closed", () =
 
   it("passes only an active delegation", () => {
     expect(validateBasicProperties(credential())).toEqual({ valid: true });
-    for (const [status, reason] of [
-      ["revoked", 'Delegation status is "revoked"'],
-      ["expired", 'Delegation status is "expired"'],
-      ["suspended", 'Delegation status is "suspended"'],
-      [undefined, "Delegation status is missing"],
+    for (const [status, reason, code] of [
+      ["revoked", 'Delegation status is "revoked"', "delegation_revoked"],
+      ["expired", 'Delegation status is "expired"', "delegation_expired"],
+      ["suspended", 'Delegation status is "suspended"', "delegation_malformed"],
+      [undefined, "Delegation status is missing", "delegation_malformed"],
     ] as const) {
       const vc = credential();
       (vc.credentialSubject.delegation as { status?: string }).status = status;
-      expect(validateBasicProperties(vc)).toEqual({ valid: false, reason });
+      expect(validateBasicProperties(vc)).toEqual({ valid: false, reason, code, transient: false });
     }
   });
 });
@@ -122,7 +131,12 @@ describe("refusal reasons quote what the credential chose as describeValue does"
     for (const [status, named] of statuses) {
       const vc = credential();
       (vc.credentialSubject.delegation as { status?: unknown }).status = status;
-      expect(validateBasicProperties(vc)).toEqual({ valid: false, reason: `Delegation status is ${named}` });
+      expect(validateBasicProperties(vc)).toEqual({
+        valid: false,
+        reason: `Delegation status is ${named}`,
+        code: "delegation_malformed",
+        transient: false,
+      });
     }
   });
 
@@ -153,6 +167,8 @@ describe("refusal reasons quote what the credential chose as describeValue does"
       valid: false,
       outcome: "status_unresolvable",
       reason: "Status check error: list\uFFFDunavailable\uFFFD",
+      code: "status_unavailable",
+      transient: true,
       durationMs: expect.any(Number),
     });
     // A resolver that quotes a purpose the credential chose, raw: 2,074 UTF-16 units, not well-formed.

@@ -30,12 +30,14 @@ import type {
 import { credentialIssuerDid, isIssuerUrl } from "./credential-issuer.js";
 import { isRecord } from "../utils/guards.js";
 import { parseVCJWT, type VCJWTPayload } from "./utils.js";
-import { validateBasicProperties } from "./vc-verification-checks.js";
+import { validateBasicProperties, type SignatureCheck } from "./vc-verification-checks.js";
 import { verificationMethodJwk } from "./verification-method-key.js";
 import { assertionMethodRefusal, selectAssertionMethod } from "./verification-relationship.js";
 import { isSmallOrderEd25519CryptoKey } from "../utils/ed25519-public-key.js";
 import { describeValue } from "../utils/describe-value.js";
 import { sanitizeForMessage } from "../utils/message-text.js";
+import { coded, refusal, refusalCodeOf, type Refusal } from "../utils/refusal.js";
+import type { RefusalCode } from "../refusal-codes.js";
 
 /** The text of an error the verifier did not write, as a reason holds it: bounded and well-formed. */
 function errMsg(err: unknown): string {
@@ -44,14 +46,16 @@ function errMsg(err: unknown): string {
 
 export { credentialIssuerDid };
 
+/** The result of a VC-JWT refused at the basic stage, as `refused` says, with how long it took. */
 function jwtBasicFailure(
-  reason: string | undefined,
+  refused: Refusal,
   startTime: number,
   basicCheckMs?: number,
 ): DelegationVCVerificationResult {
   return {
     valid: false,
-    reason,
+    reason: refused.reason,
+    ...coded(refused.code),
     stage: "basic",
     metrics:
       basicCheckMs !== undefined
@@ -73,17 +77,17 @@ export const JWT_NBF_LEEWAY_SECONDS = 30;
  * sections 4.1.4/4.1.5). Check them on every invocation, outside the signature
  * cache. Missing claims remain compatible; a present claim must be NumericDate.
  */
-function validateJwtTimeBounds(payload: VCJWTPayload, nowMs: number): string | undefined {
+function validateJwtTimeBounds(payload: VCJWTPayload, nowMs: number): Refusal | undefined {
   for (const claim of ["exp", "nbf"] as const) {
     const value = payload[claim];
     if (value !== undefined && (typeof value !== "number" || !Number.isFinite(value))) {
-      return `JWT ${claim} must be a finite NumericDate`;
+      return refusal("delegation_malformed", `JWT ${claim} must be a finite NumericDate`);
     }
   }
   const nowSeconds = nowMs / 1000;
-  if (payload.exp !== undefined && nowSeconds >= payload.exp) return "JWT expired (exp)";
+  if (payload.exp !== undefined && nowSeconds >= payload.exp) return refusal("delegation_expired", "JWT expired (exp)");
   if (payload.nbf !== undefined && nowSeconds + JWT_NBF_LEEWAY_SECONDS < payload.nbf) {
-    return "JWT not yet valid (nbf)";
+    return refusal("delegation_not_yet_valid", "JWT not yet valid (nbf)");
   }
   return undefined;
 }
@@ -95,9 +99,9 @@ function validateJwtTimeBounds(payload: VCJWTPayload, nowMs: number): string | u
  * from `iss`. An absent `iss` is left to the consistency check, which refuses
  * it: the basic stage lets through only a credential whose issuer names a DID.
  */
-function jwtIssuerRefusal(iss: unknown): string | undefined {
+function jwtIssuerRefusal(iss: unknown): Refusal | undefined {
   if (iss === undefined || (typeof iss === "string" && isIssuerUrl(iss))) return undefined;
-  return `JWT iss ${describeValue(iss)} is not a URL`;
+  return refusal("delegation_malformed", `JWT iss ${describeValue(iss)} is not a URL`);
 }
 
 /** A parsed, structurally-valid VC-JWT plus the coordinates to look up its key. */
@@ -134,7 +138,7 @@ export function prepareVcJwtCredential(
     !isRecord(parsed.payload) ||
     (parsed.header.kid !== undefined && typeof parsed.header.kid !== "string")
   ) {
-    return { failure: jwtBasicFailure("Not a valid VC-JWT (parse failed)", startTime) };
+    return { failure: jwtBasicFailure(refusal("delegation_malformed", "Not a valid VC-JWT (parse failed)"), startTime) };
   }
 
   const basicCheckStart = Date.now();
@@ -151,14 +155,14 @@ export function prepareVcJwtCredential(
 
   if (!basicValidation.valid) {
     return {
-      failure: jwtBasicFailure(basicValidation.reason, startTime, basicCheckMs),
+      failure: jwtBasicFailure(basicValidation, startTime, basicCheckMs),
     };
   }
 
   if (credentialIssuerDid(vc) !== parsed.payload.iss) {
     return {
       failure: jwtBasicFailure(
-        "Credential `issuer` does not match the JWT `iss` (the verified signer)",
+        refusal("delegation_malformed", "Credential `issuer` does not match the JWT `iss` (the verified signer)"),
         startTime,
         basicCheckMs,
       ),
@@ -173,10 +177,18 @@ export function prepareVcJwtCredential(
   };
 }
 
+/**
+ * What {@link verifyVcJwtSignature} answers: whether the envelope signature verified, and when it did
+ * not, why, with the refusal's code and whether it is transient.
+ */
 export interface VcJwtSignatureResult {
   valid: boolean;
   reason?: string;
   durationMs: number;
+  /** Why the signature was refused, as a stable value to branch on; set on every refusal. */
+  code?: RefusalCode;
+  /** Whether the refusal is transient; set on every refusal. */
+  transient?: boolean;
 }
 
 /**
@@ -189,7 +201,9 @@ export interface VcJwtSignatureResult {
  * cannot downgrade the suite or claim `alg: none`. Fail-closed: any
  * resolution, key-import, or verification problem denies, and none throws.
  * The DID resolver gets `timeoutMs` to answer, 5,000 ms unless the caller
- * passes another.
+ * passes another. A refusal carries its code: a key the issuer's document does
+ * not provide is `did_invalid`, and a signature that does not hold under it is
+ * `invalid_proof`.
  */
 export async function verifyVcJwtSignature(
   jwt: string,
@@ -197,19 +211,16 @@ export async function verifyVcJwtSignature(
   kid: string | undefined,
   didResolver: DIDResolver | undefined,
   timeoutMs: number = DID_RESOLUTION_TIMEOUT_MS,
-): Promise<VcJwtSignatureResult> {
+): Promise<SignatureCheck & VcJwtSignatureResult> {
   const startTime = Date.now();
-  const done = (valid: boolean, reason?: string): VcJwtSignatureResult => ({
-    valid,
-    reason,
-    durationMs: Date.now() - startTime,
+  const durationMs = (): number => Date.now() - startTime;
+  const refused = (code: RefusalCode, reason: string): SignatureCheck & VcJwtSignatureResult => ({
+    ...refusal(code, reason),
+    durationMs: durationMs(),
   });
 
   if (!didResolver) {
-    return done(
-      false,
-      "No DID resolver configured — signature cannot be verified",
-    );
+    return refused("configuration_error", "No DID resolver configured — signature cannot be verified");
   }
 
   const issuer = describeValue(issuerDid);
@@ -217,10 +228,10 @@ export async function verifyVcJwtSignature(
   try {
     resolved = await resolveExplained(didResolver, issuerDid, kid, timeoutMs);
   } catch (err) {
-    return done(false, `Could not resolve issuer DID ${issuer}: ${errMsg(err)}`);
+    return refused(refusalCodeOf(err, "did_unavailable"), `Could not resolve issuer DID ${issuer}: ${errMsg(err)}`);
   }
   if (resolved.document === null) {
-    return done(false, `Could not resolve issuer DID: ${issuer}${resolved.why}`);
+    return refused(resolved.code, `Could not resolve issuer DID: ${issuer}${resolved.why}`);
   }
   const didDoc = resolved.document;
 
@@ -228,25 +239,30 @@ export async function verifyVcJwtSignature(
   // is what lets that key issue it (W3C Controlled Identifiers v1.0 §3.3).
   const selection = selectAssertionMethod(didDoc, issuerDid, kid);
   if (!("method" in selection)) {
-    return done(false, assertionMethodRefusal(selection, "JWT kid", kid, issuerDid));
+    return refused("key_not_authorized", assertionMethodRefusal(selection, "JWT kid", kid, issuerDid));
   }
   const publicKeyJwk = verificationMethodJwk(selection.method);
   if (!publicKeyJwk) {
-    return done(
-      false,
+    return refused(
+      "did_invalid",
       "Verification method has no usable public key (publicKeyJwk / publicKeyMultibase / publicKeyBase58)",
     );
   }
 
+  let key: Awaited<ReturnType<typeof importJWK>>;
   try {
-    const key = await importJWK(publicKeyJwk as JWK, "EdDSA");
+    key = await importJWK(publicKeyJwk as JWK, "EdDSA");
+  } catch (err) {
+    return refused("did_invalid", `JWT envelope signature is not valid: ${errMsg(err)}`);
+  }
+  try {
     // jose verifies under a small-order key, where one signature fits every payload.
     if (await isSmallOrderEd25519CryptoKey(key)) {
-      return done(false, "Verification method key is a small-order Ed25519 point");
+      return refused("did_invalid", "Verification method key is a small-order Ed25519 point");
     }
     await compactVerify(jwt, key, { algorithms: ["EdDSA"] });
-    return done(true);
+    return { valid: true, durationMs: durationMs() };
   } catch (err) {
-    return done(false, `JWT envelope signature is not valid: ${errMsg(err)}`);
+    return refused("invalid_proof", `JWT envelope signature is not valid: ${errMsg(err)}`);
   }
 }

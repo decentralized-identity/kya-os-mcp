@@ -6,8 +6,22 @@
  * `DIDResolver` / `SignatureVerificationFunction` / … are unchanged.
  */
 
+import type { RefusalCode } from "../refusal-codes.js";
 import type { CredentialStatus } from "../types/protocol.js";
 import type { StatusCheckContext } from "../utils/statuslist-acceptance.js";
+
+/**
+ * The code a refusal carries beside its `reason`, and whether it is transient. Both are set on every
+ * refusal the library returns and absent from a result that verified. They are optional in the types
+ * so that a result built by other code, such as a test double or a verifier the host supplies, still
+ * fits.
+ */
+export interface RefusalCoding {
+  /** Why the verifier refused, as a stable value to branch on (see `REFUSAL_CODES`). */
+  code?: RefusalCode;
+  /** Whether the verifier could not decide because a dependency failed, so the same request may succeed later. */
+  transient?: boolean;
+}
 
 /**
  * Machine-readable outcome of the credential-status check. Both values still
@@ -26,13 +40,14 @@ export type StatusOutcome = "revoked" | "status_unresolvable";
  * path (`verifySignature`) and the VC-JWT path (`verifyVcJwtSignature`,
  * whose `VcJwtSignatureResult` is structurally identical).
  */
-export interface SignatureVerificationResult {
+export interface SignatureVerificationResult extends RefusalCoding {
   valid: boolean;
   reason?: string;
   durationMs?: number;
 }
 
-export interface DelegationVCVerificationResult {
+/** The verdict on a delegation credential, with its code and whether it is transient when it is refused. */
+export interface DelegationVCVerificationResult extends RefusalCoding {
   valid: boolean;
   reason?: string;
   /**
@@ -184,7 +199,7 @@ export interface StatusListResolver {
  * deny (see {@link StatusOutcome}); it is surfaced as
  * `DelegationVCVerificationResult.statusOutcome`.
  */
-export interface StatusCheckResult {
+export interface StatusCheckResult extends RefusalCoding {
   valid: boolean;
   reason?: string;
   outcome?: StatusOutcome;
@@ -194,8 +209,10 @@ export interface StatusCheckResult {
 /**
  * Verifies a credential's embedded proof under `publicKeyJwk`. The answer is read strictly: the
  * signature verifies only on an object whose `valid` is the literal `true`, and any other answer,
- * which only untyped code can give, leaves it unverified. So does a verifier that has not answered
- * within the verifier's `dependencyTimeoutMs`, 5,000 ms by default.
+ * which only untyped code can give, leaves it unverified as `runtime_error`. So does a verifier that
+ * has not answered within the verifier's `dependencyTimeoutMs`, 5,000 ms by default, as
+ * `deadline_exceeded`. A refusal is `invalid_proof` unless it names another code of the catalog as
+ * its `code`.
  */
 export interface SignatureVerificationFunction {
   (
@@ -204,5 +221,6 @@ export interface SignatureVerificationFunction {
   ): Promise<{
     valid: boolean;
     reason?: string;
+    code?: RefusalCode;
   }>;
 }

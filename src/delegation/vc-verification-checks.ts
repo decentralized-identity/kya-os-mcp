@@ -22,14 +22,16 @@ import { issuerOf } from "../utils/guards.js";
 import { sanitizeForMessage } from "../utils/message-text.js";
 import { carryingContext } from "../utils/status-check-carrier.js";
 import { readVerdict } from "../utils/verdict.js";
+import { coded, refusal, refusalCodeOf, type Checked, type Refusal } from "../utils/refusal.js";
+import type { RefusalCode } from "../refusal-codes.js";
 import { credentialIssuerRefusal } from "./credential-issuer.js";
 import { DID_RESOLUTION_TIMEOUT_MS } from "./did-resource-limits.js";
-import { resolveExplained } from "./did-resolution-failure.js";
+import { resolveExplained, type ExplainedResolution } from "./did-resolution-failure.js";
 import { CHECKER_REASON_LENGTH, readRevoked, unreadableStatusReason } from "../utils/revocation-answer.js";
 import type {
   DIDResolver,
   StatusListResolver,
-  StatusCheckResult,
+  StatusOutcome,
   SignatureVerificationFunction,
   DelegationVCVerificationResult,
 } from "./vc-verifier.types.js";
@@ -48,6 +50,14 @@ import {
  */
 const DELEGATION_SUBJECT_KEYS: readonly string[] = ["id", "delegation"];
 
+/** What the signature check comes to, with how long it took. */
+export type SignatureCheck = Checked & { readonly durationMs: number };
+
+/** What the status check comes to, with how long it took; a refusal also says whether the status is settled. */
+export type StatusCheck =
+  | { readonly valid: true; readonly durationMs: number }
+  | (Refusal & { readonly outcome: StatusOutcome; readonly durationMs: number });
+
 /**
  * Stage 1: schema, issuer, expiry, status field, and subject-shape checks (no network).
  * The credential must name its issuer by a DID (./credential-issuer), so every
@@ -61,58 +71,53 @@ const DELEGATION_SUBJECT_KEYS: readonly string[] = ["id", "delegation"];
 export function validateBasicProperties(
   vc: DelegationCredential,
   options: { requireEmbeddedProof?: boolean } = {},
-): {
-  valid: boolean;
-  reason?: string;
-} {
+): Checked {
   const schemaValidation = validateDelegationCredential(vc);
   if (!schemaValidation.success) {
-    return {
-      valid: false,
-      reason: `Schema validation failed: ${schemaValidation.error?.message}`,
-    };
+    return refusal("delegation_malformed", `Schema validation failed: ${schemaValidation.error?.message}`);
   }
 
   const issuerRefusal = credentialIssuerRefusal(vc);
   if (issuerRefusal) {
-    return { valid: false, reason: issuerRefusal };
+    return refusal("delegation_malformed", issuerRefusal);
   }
 
   if (isDelegationCredentialExpired(vc)) {
-    return { valid: false, reason: "Delegation credential expired" };
+    return refusal("delegation_expired", "Delegation credential expired");
   }
 
   if (isDelegationCredentialNotYetValid(vc)) {
-    return { valid: false, reason: "Delegation credential not yet valid" };
+    return refusal("delegation_not_yet_valid", "Delegation credential not yet valid");
   }
 
   // Only an active delegation authorizes anything: a status outside the
   // schema's enum, or none at all, is not "active" and fails closed.
   const delegation = vc.credentialSubject.delegation;
   if (delegation.status !== "active") {
-    return {
-      valid: false,
-      reason:
-        delegation.status === undefined
-          ? "Delegation status is missing"
-          : `Delegation status is ${describeValue(delegation.status)}`,
-    };
+    return delegation.status === undefined
+      ? refusal("delegation_malformed", "Delegation status is missing")
+      : refusal(delegationStatusCode(delegation.status), `Delegation status is ${describeValue(delegation.status)}`);
   }
 
   if (!delegation.issuerDid || !delegation.subjectDid) {
-    return { valid: false, reason: "Missing issuer or subject DID" };
+    return refusal("delegation_malformed", "Missing issuer or subject DID");
   }
 
   if ((options.requireEmbeddedProof ?? true) && !vc.proof) {
-    return { valid: false, reason: "Missing proof" };
+    return refusal("delegation_malformed", "Missing proof");
   }
 
-  const subjectShape = validateSubjectShape(vc);
-  if (!subjectShape.valid) {
-    return subjectShape;
-  }
+  return validateSubjectShape(vc);
+}
 
-  return { valid: true };
+/**
+ * The code of a delegation whose `status` is `status`, not `active`: a revoked or an expired one is
+ * refused as such, and any other status, which the schema does not know, is malformed.
+ */
+function delegationStatusCode(status: unknown): RefusalCode {
+  if (status === "revoked") return "delegation_revoked";
+  if (status === "expired") return "delegation_expired";
+  return "delegation_malformed";
 }
 
 /**
@@ -121,10 +126,7 @@ export function validateBasicProperties(
  * credential separate designation from authorization — the confused-deputy
  * class (KYA-OS §11.6). Unconditional as of 1.4.0.
  */
-function validateSubjectShape(vc: DelegationCredential): {
-  valid: boolean;
-  reason?: string;
-} {
+function validateSubjectShape(vc: DelegationCredential): Checked {
   const extraneous = Object.keys(vc.credentialSubject).filter(
     (key) => !DELEGATION_SUBJECT_KEYS.includes(key),
   );
@@ -133,12 +135,11 @@ function validateSubjectShape(vc: DelegationCredential): {
     return { valid: true };
   }
 
-  return {
-    valid: false,
-    reason:
-      `credentialSubject contains non-delegation field(s): ${describeValue(extraneous.join(", "))}. ` +
+  return refusal(
+    "delegation_malformed",
+    `credentialSubject contains non-delegation field(s): ${describeValue(extraneous.join(", "))}. ` +
       `A DelegationCredential subject MUST carry only 'id' and 'delegation' (KYA-OS §11.6).`,
-  };
+  );
 }
 
 /**
@@ -147,15 +148,17 @@ function validateSubjectShape(vc: DelegationCredential): {
  * caches a valid result itself). Shared by the Data Integrity and VC-JWT paths,
  * which both reach here only after `validateBasicProperties` passed, so
  * `basicValid` is true. A status left unread (`undefined`, after a signature
- * that failed) is not checked: `checks` then has no `statusValid`.
+ * that failed) is not checked: `checks` then has no `statusValid`. A refusal
+ * carries the code of the check that refused.
  */
 export function combineVerificationResult(
-  signatureResult: { valid: boolean; reason?: string; durationMs?: number },
-  statusResult: StatusCheckResult | undefined,
+  signatureResult: SignatureCheck,
+  statusResult: StatusCheck | undefined,
   basicCheckMs: number,
   startTime: number,
 ): DelegationVCVerificationResult {
   const allValid = signatureResult.valid && statusResult?.valid === true;
+  const refused = !signatureResult.valid ? signatureResult : statusResult?.valid === false ? statusResult : undefined;
   // A failed verdict names the check that failed (signature first, since a
   // bad signature makes the status answer moot); "complete" is reserved for
   // a verdict where both checks ran and passed.
@@ -166,10 +169,11 @@ export function combineVerificationResult(
       : "signature";
   return {
     valid: allValid,
-    reason: !allValid
-      ? signatureResult.reason || statusResult?.reason || "Unknown failure"
-      : undefined,
-    statusOutcome: statusResult?.outcome,
+    reason: !allValid ? refused?.reason || "Unknown failure" : undefined,
+    // A status that was never read, after a signature that verified, cannot happen; were it to,
+    // the verification faulted and reached no verdict.
+    ...(!allValid && coded(refused?.code ?? "runtime_error")),
+    statusOutcome: statusResult?.valid === false ? statusResult.outcome : undefined,
     stage,
     metrics: {
       basicCheckMs,
@@ -202,26 +206,23 @@ export async function verifySignature(
   didResolver: DIDResolver | undefined,
   signatureVerifier: SignatureVerificationFunction | undefined,
   timeoutMs: number = DID_RESOLUTION_TIMEOUT_MS,
-): Promise<{ valid: boolean; reason?: string; durationMs?: number }> {
+): Promise<SignatureCheck> {
   const startTime = Date.now();
+  const timed = (check: Checked): SignatureCheck => ({ ...check, durationMs: Date.now() - startTime });
+  const refused = (code: RefusalCode, reason: string | undefined): SignatureCheck =>
+    timed({ valid: false, reason, ...coded(code) });
 
   try {
     const issuerDid = issuerOf(vc.issuer);
     if (issuerDid === undefined) {
-      return {
-        valid: false,
-        reason: credentialIssuerRefusal(vc),
-        durationMs: Date.now() - startTime,
-      };
+      return refused("delegation_malformed", credentialIssuerRefusal(vc));
     }
 
     if (!didResolver || !signatureVerifier) {
-      return {
-        valid: false,
-        reason:
-          "No DID resolver or signature verifier configured — signature cannot be verified",
-        durationMs: Date.now() - startTime,
-      };
+      return refused(
+        "configuration_error",
+        "No DID resolver or signature verifier configured — signature cannot be verified",
+      );
     }
 
     // Bind the declared proof suite to one this path can actually verify. The
@@ -233,39 +234,29 @@ export async function verifySignature(
     // verification entirely (its envelope JWS is the proof), so it never reaches
     // this check and its `JwtProof2020` marker is correctly exempt.
     if (vc.proof && !isSupportedCredentialProofType(vc.proof.type)) {
-      return {
-        valid: false,
-        reason: `Unsupported credential proof.type: ${describeValue(vc.proof.type)}`,
-        durationMs: Date.now() - startTime,
-      };
+      return refused("invalid_proof", `Unsupported credential proof.type: ${describeValue(vc.proof.type)}`);
     }
 
     const purposeMismatch = proofPurposeMismatch(vc.proof, ASSERTION_METHOD);
     if (purposeMismatch) {
-      return {
-        valid: false,
-        reason: purposeMismatch,
-        durationMs: Date.now() - startTime,
-      };
+      return refused("key_not_authorized", purposeMismatch);
     }
 
     const keyId = typeof vc.proof?.verificationMethod === "string" ? vc.proof.verificationMethod : undefined;
-    const resolved = await resolveExplained(didResolver, issuerDid, keyId, timeoutMs);
+    let resolved: ExplainedResolution;
+    try {
+      resolved = await resolveExplained(didResolver, issuerDid, keyId, timeoutMs);
+    } catch (error) {
+      // A resolver that throws, or does not answer in time, leaves the document unread.
+      return refused(refusalCodeOf(error, "did_unavailable"), signatureErrorReason(error));
+    }
     if (resolved.document === null) {
-      return {
-        valid: false,
-        reason: `Could not resolve issuer DID: ${describeValue(issuerDid)}${resolved.why}`,
-        durationMs: Date.now() - startTime,
-      };
+      return refused(resolved.code, `Could not resolve issuer DID: ${describeValue(issuerDid)}${resolved.why}`);
     }
     const didDoc = resolved.document;
 
     if (!vc.proof) {
-      return {
-        valid: false,
-        reason: "Proof is missing",
-        durationMs: Date.now() - startTime,
-      };
+      return refused("delegation_malformed", "Proof is missing");
     }
 
     // A Data Integrity proof names its key: a DID URL of the issuer, or a `#fragment` read against it.
@@ -274,23 +265,20 @@ export async function verifySignature(
       ? undefined
       : selectAssertionMethod(didDoc, issuerDid, verificationMethodId);
     if (selection === undefined || !("method" in selection)) {
-      return {
-        valid: false,
-        reason: selection === undefined
+      return refused(
+        "key_not_authorized",
+        selection === undefined
           ? "Proof missing verificationMethod"
           : assertionMethodRefusal(selection, "Proof verificationMethod", verificationMethodId, issuerDid),
-        durationMs: Date.now() - startTime,
-      };
+      );
     }
 
     const publicKeyJwk = verificationMethodJwk(selection.method);
     if (!publicKeyJwk) {
-      return {
-        valid: false,
-        reason:
-          "Verification method has no usable public key (publicKeyJwk / publicKeyMultibase / publicKeyBase58)",
-        durationMs: Date.now() - startTime,
-      };
+      return refused(
+        "did_invalid",
+        "Verification method has no usable public key (publicKeyJwk / publicKeyMultibase / publicKeyBase58)",
+      );
     }
 
     // The verifier is the host's code: its answer verifies only as the literal `true`.
@@ -298,14 +286,15 @@ export async function verifySignature(
       signatureVerifier(vc, publicKeyJwk),
     timeoutMs);
 
-    return { ...readVerdict("the signature verifier", answer), durationMs: Date.now() - startTime };
+    return timed(readVerdict("the signature verifier", answer, "invalid_proof"));
   } catch (error) {
-    return {
-      valid: false,
-      reason: `Signature verification error: ${error instanceof Error ? sanitizeForMessage(error.message) : "Unknown error"}`,
-      durationMs: Date.now() - startTime,
-    };
+    return refused(refusalCodeOf(error, "runtime_error"), signatureErrorReason(error));
   }
+}
+
+/** The reason a signature check that threw `error` is refused with. */
+function signatureErrorReason(error: unknown): string {
+  return `Signature verification error: ${error instanceof Error ? sanitizeForMessage(error.message) : "Unknown error"}`;
 }
 
 /**
@@ -328,28 +317,27 @@ export async function checkCredentialStatus(
   statusListResolver: StatusListResolver | undefined,
   credentialIssuer: string | undefined,
   timeoutMs: number = DID_RESOLUTION_TIMEOUT_MS,
-): Promise<StatusCheckResult> {
+): Promise<StatusCheck> {
   const startTime = Date.now();
+  const refused = (code: RefusalCode, reason: string, outcome: StatusOutcome = "status_unresolvable"): StatusCheck => ({
+    ...refusal(code, reason),
+    outcome,
+    durationMs: Date.now() - startTime,
+  });
 
   try {
     if (!statusListResolver) {
-      return {
-        valid: false,
-        reason:
-          "Credential has credentialStatus but no status list resolver is configured — cannot verify revocation status",
-        outcome: "status_unresolvable",
-        durationMs: Date.now() - startTime,
-      };
+      return refused(
+        "configuration_error",
+        "Credential has credentialStatus but no status list resolver is configured — cannot verify revocation status",
+      );
     }
 
     if (!credentialIssuer) {
-      return {
-        valid: false,
-        reason:
-          "Credential names no issuer DID to hold its status list to, so its revocation status cannot be verified",
-        outcome: "status_unresolvable",
-        durationMs: Date.now() - startTime,
-      };
+      return refused(
+        "delegation_malformed",
+        "Credential names no issuer DID to hold its status list to, so its revocation status cannot be verified",
+      );
     }
 
     const context = { credentialIssuer };
@@ -359,21 +347,15 @@ export async function checkCredentialStatus(
     const revoked = readRevoked(answer);
 
     if (revoked === undefined) {
-      return {
-        valid: false,
-        reason: unreadableStatusReason(answer),
-        outcome: "status_unresolvable",
-        durationMs: Date.now() - startTime,
-      };
+      return refused("status_unavailable", unreadableStatusReason(answer));
     }
 
     if (revoked) {
-      return {
-        valid: false,
-        reason: `Credential revoked via ${describeValue(status.type)} (${describeValue(status.statusPurpose)})`,
-        outcome: "revoked",
-        durationMs: Date.now() - startTime,
-      };
+      return refused(
+        "delegation_revoked",
+        `Credential revoked via ${describeValue(status.type)} (${describeValue(status.statusPurpose)})`,
+        "revoked",
+      );
     }
 
     return {
@@ -381,11 +363,9 @@ export async function checkCredentialStatus(
       durationMs: Date.now() - startTime,
     };
   } catch (error) {
-    return {
-      valid: false,
-      reason: `Status check error: ${error instanceof Error ? sanitizeForMessage(error.message, CHECKER_REASON_LENGTH) : "Unknown error"}`,
-      outcome: "status_unresolvable",
-      durationMs: Date.now() - startTime,
-    };
+    return refused(
+      refusalCodeOf(error, "status_unavailable"),
+      `Status check error: ${error instanceof Error ? sanitizeForMessage(error.message, CHECKER_REASON_LENGTH) : "Unknown error"}`,
+    );
   }
 }

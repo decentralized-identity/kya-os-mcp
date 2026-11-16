@@ -103,6 +103,7 @@ export {
   DelegationCredentialVerifier,
   createDelegationVerifier,
   type DelegationVCVerificationResult,
+  type RefusalCoding,
   type StatusOutcome,
   type VerifyDelegationVCOptions,
   type DIDResolver,

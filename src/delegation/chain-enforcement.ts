@@ -449,7 +449,7 @@ async function walkChain(
           ? { skipSignature: true }
           : {}),
       },
-    ));
+    ), "delegation_invalid");
     if (!credentialVerification.valid) {
       return {
         valid: false,

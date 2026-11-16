@@ -21,6 +21,20 @@ import { isRecord } from "./guards.js";
 export const CHECKER_REASON_LENGTH = 512;
 
 /**
+ * How much of a status reason a reader carries when a host's resolver or checker gave it, in UTF-16
+ * code units: a resolver or checker that wraps a library checker may put up to 128 code units of its
+ * own words before that checker's reason, which then still ends whole.
+ */
+export const WRAPPED_REASON_LENGTH = CHECKER_REASON_LENGTH + 128;
+
+/**
+ * How much of a refused delegation's reason is carried where the operator reads it, in UTF-16 code
+ * units: the reason a credential verifier gives the chain walk, and the gate's log line. Either may
+ * end with a wrapped status reason, after the verifier's words and the chain walk's.
+ */
+export const OPERATOR_REASON_LENGTH = 1024;
+
+/**
  * Whether `answer` says revoked: `true` or `false` when it is that literal, and `undefined` for
  * anything else, a boxed boolean included. Nothing is converted. A caller refuses on `undefined`.
  */

@@ -20,6 +20,7 @@ import type { RefusalCode } from "../refusal-codes.js";
 import { answerWithinDeadline, dependencyTimeoutRefusal } from "../utils/deadline.js";
 import { OUTBOUND_READ_TIMEOUT_MS } from "../utils/outbound-read-limits.js";
 import { coded, refusal, refusalCodeOf, type Passed, type Refusal } from "../utils/refusal.js";
+import { OPERATOR_REASON_LENGTH } from "../utils/revocation-answer.js";
 import { readVerdict } from "../utils/verdict.js";
 import { verifyDelegationAudience } from "./audience-validator.js";
 import { attenuationWarnings, statedExpiry, validateScopeAttenuation } from "./chain-attenuation.js";
@@ -274,6 +275,7 @@ async function walkChain(
     }
 
     // The verifier is a port the host may supply: a credential passes only on the literal `true`.
+    // Its reason is kept as far as the operator reads one, so a status reason it ends with stays whole.
     const credentialVerification = readVerdict("the credential verifier", await deps.verifier.verifyDelegationCredential(
       credential,
       {
@@ -281,7 +283,7 @@ async function walkChain(
           ? { skipSignature: true }
           : {}),
       },
-    ), "delegation_invalid");
+    ), "delegation_invalid", OPERATOR_REASON_LENGTH);
     if (!credentialVerification.valid) {
       return {
         valid: false,

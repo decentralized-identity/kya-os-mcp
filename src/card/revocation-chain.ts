@@ -10,7 +10,7 @@ import { describeValue } from '../utils/describe-value.js';
 import { isRecord } from '../utils/guards.js';
 import { sanitizeForMessage } from '../utils/message-text.js';
 import { coded, type Coded } from '../utils/refusal.js';
-import { CHECKER_REASON_LENGTH, readRevocationAnswer } from '../utils/revocation-answer.js';
+import { WRAPPED_REASON_LENGTH, readRevocationAnswer } from '../utils/revocation-answer.js';
 import type { StatusCheckContext } from '../utils/statuslist-acceptance.js';
 import { checkWithinDeadline } from './revocation-deadline.js';
 import type { BitstringRevocationChecker, RevocationStatusEntry } from './revocation.js';
@@ -67,8 +67,9 @@ export interface RevocationChainEntry extends Omit<StatusCheckContext, 'credenti
  * that throws or rejects still does, and the callers in this package catch that and fail closed.
  *
  * A revoked hop's refusal ends with the `reason` its checker gave, when it gave one, after a colon:
- * at most its first {@link CHECKER_REASON_LENGTH} UTF-16 code units, with every control character
- * replaced, as `sanitizeForMessage` leaves text.
+ * at most its first {@link WRAPPED_REASON_LENGTH} UTF-16 code units, so the reason of a library
+ * checker that a checker of the host's wrapped in words of its own still ends whole, with every
+ * control character replaced, as `sanitizeForMessage` leaves text.
  *
  * The reason for a refused hop names the hop by its `position` in the chain, or by its place among
  * `entries` when it has none, and names the list and the index its entry states. Whoever issued the
@@ -131,7 +132,7 @@ export async function walkRevocationChain(
         [
           `${hopName(hop, entry)} ` +
           'is revoked or unresolvable \u2014 fail-closed, subtree invalidated',
-          ...(status.reason ? [sanitizeForMessage(status.reason, CHECKER_REASON_LENGTH)] : []),
+          ...(status.reason ? [sanitizeForMessage(status.reason, WRAPPED_REASON_LENGTH)] : []),
         ].join(': '),
       );
     }

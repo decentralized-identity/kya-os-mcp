@@ -27,7 +27,7 @@ import type { RefusalCode } from "../refusal-codes.js";
 import { credentialIssuerRefusal } from "./credential-issuer.js";
 import { DID_RESOLUTION_TIMEOUT_MS } from "./did-resource-limits.js";
 import { resolveExplained, type ExplainedResolution } from "./did-resolution-failure.js";
-import { CHECKER_REASON_LENGTH, readRevoked, unreadableStatusReason } from "../utils/revocation-answer.js";
+import { WRAPPED_REASON_LENGTH, readRevoked, unreadableStatusReason } from "../utils/revocation-answer.js";
 import type {
   DIDResolver,
   StatusListResolver,
@@ -310,7 +310,8 @@ function signatureErrorReason(error: unknown): string {
  * it DENIES as `status_unresolvable` without a read. The context is passed as
  * the second argument and carried by the copy of the entry passed as the first
  * (`carryingContext`). A resolver that throws is refused with its message, at
- * most `CHECKER_REASON_LENGTH` UTF-16 code units of it.
+ * most `WRAPPED_REASON_LENGTH` UTF-16 code units of it, so a library checker's
+ * reason it wrapped in words of its own still ends whole.
  */
 export async function checkCredentialStatus(
   status: CredentialStatus,
@@ -365,7 +366,7 @@ export async function checkCredentialStatus(
   } catch (error) {
     return refused(
       refusalCodeOf(error, "status_unavailable"),
-      `Status check error: ${error instanceof Error ? sanitizeForMessage(error.message, CHECKER_REASON_LENGTH) : "Unknown error"}`,
+      `Status check error: ${error instanceof Error ? sanitizeForMessage(error.message, WRAPPED_REASON_LENGTH) : "Unknown error"}`,
     );
   }
 }

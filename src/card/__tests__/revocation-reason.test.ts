@@ -4,8 +4,10 @@
  * that refused it: the entry's purpose or size, the fetch, the list's purpose, issuer or `id`, its
  * proof, or its bits. `evaluateRevocationChain` appends the reason a checker gives to the hop's
  * refusal, so it reaches `evaluateDelegationChain`, `verifyRequestDelegation` and
- * `requireDelegation`, and `verifyCard` reports it. A reason is text for people: a custom checker's
- * is cut at `CHECKER_REASON_LENGTH`, 512, UTF-16 code units and shows no control character.
+ * `requireDelegation`, and `verifyCard` reports it. A reason is text for people: the shipped
+ * checker's own is cut at `CHECKER_REASON_LENGTH`, 512, UTF-16 code units, a custom checker's at
+ * `WRAPPED_REASON_LENGTH`, 640, which leaves room for a wrapper's words before the shipped
+ * checker's reason, and neither shows a control character.
  */
 import { describe, expect, it } from 'vitest';
 import { createDidKeyResolver } from '../../delegation/did-key-resolver.js';
@@ -15,6 +17,7 @@ import { verifyCard } from '../verify.js';
 import type { EntityCard } from '../schema.js';
 import { identity, now, serve, statusList, STATUS_URL } from './signed-chain-helpers.js';
 import { BIT_SET, codedAs } from '../../__tests__/utils/refusal-coding.js';
+import { WRAPPED_REASON_LENGTH } from '../../utils/revocation-answer.js';
 import type { RefusalCode } from '../../refusal-codes.js';
 import { cast, listOf, listUrlOf, servedBy, threeHopChain, verdicts } from './status-list-paths.js';
 
@@ -112,9 +115,9 @@ describe("evaluateRevocationChain and a checker's reason", () => {
     expect(result.reasons).toEqual([HOP]);
   });
 
-  it('cuts a reason at CHECKER_REASON_LENGTH UTF-16 code units and replaces its control characters', async () => {
+  it('cuts a reason at WRAPPED_REASON_LENGTH UTF-16 code units and replaces its control characters', async () => {
     const result = await evaluateRevocationChain([ENTRY], async () => ({ revoked: true, fresh: false, reason: `a\u0000b${'c'.repeat(1000)}` }));
-    expect(result.reasons).toEqual([`${HOP}: a\uFFFDb${'c'.repeat(CHECKER_REASON_LENGTH - 3)}\u2026`]);
+    expect(result.reasons).toEqual([`${HOP}: a\uFFFDb${'c'.repeat(WRAPPED_REASON_LENGTH - 3)}\u2026`]);
   });
 
   it('carries the reason of the shipped checker through all three paths', async () => {
@@ -166,7 +169,7 @@ describe("verifyCard and a checker's reason", () => {
     expect(result.revocation).toStrictEqual({
       revoked: true,
       fresh: false,
-      reason: `a\uFFFD${'c'.repeat(CHECKER_REASON_LENGTH - 2)}\u2026`,
+      reason: `a\uFFFD${'c'.repeat(WRAPPED_REASON_LENGTH - 2)}\u2026`,
       ...BIT_SET,
     });
   });

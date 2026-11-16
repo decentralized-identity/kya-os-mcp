@@ -6,12 +6,12 @@
  * answer that is not a status, or threw.
  */
 
-import { CHECKER_REASON_LENGTH, type BitstringRevocationChecker } from './revocation.js';
+import type { BitstringRevocationChecker } from './revocation.js';
 import type { EntityCard } from './schema.js';
 import type { CapabilityCheckResult } from './verify.js';
 import type { RefusalCoding } from '../delegation/vc-verifier.types.js';
 import { sanitizeForMessage } from '../utils/message-text.js';
-import { readRevocationAnswer } from '../utils/revocation-answer.js';
+import { WRAPPED_REASON_LENGTH, readRevocationAnswer } from '../utils/revocation-answer.js';
 import { coded, refusalCodeOf, type Coded } from '../utils/refusal.js';
 import type { StatusCheckContext } from '../utils/statuslist-keeper.js';
 import type { RefusalCode } from '../refusal-codes.js';
@@ -77,7 +77,7 @@ export async function checkCardRevocation(
       return unproven('status_unavailable', `the Card's revocation status could not be read: ${status.unreadable}`);
     }
     if (!status.revoked) return { checked: true, revoked: false, fresh: status.fresh };
-    const given = status.reason ? { reason: sanitizeForMessage(status.reason, CHECKER_REASON_LENGTH) } : {};
+    const given = status.reason ? { reason: sanitizeForMessage(status.reason, WRAPPED_REASON_LENGTH) } : {};
     return { checked: true, revoked: true, fresh: status.fresh, ...given, ...coded(status.code ?? 'delegation_revoked') };
   } catch (error) {
     return unproven(refusalCodeOf(error, 'status_unavailable'));

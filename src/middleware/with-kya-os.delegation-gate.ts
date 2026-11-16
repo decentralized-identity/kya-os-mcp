@@ -18,7 +18,7 @@ import { NO_DELEGATION_ID } from "../delegation/delegation-id.js";
 import { type DetachedProof } from "../types/protocol.js";
 import { logger } from "../logging/index.js";
 import { KYA_OS_ERROR_CODES } from "../errors.js";
-import { CHECKER_REASON_LENGTH } from "../utils/revocation-answer.js";
+import { CHECKER_REASON_LENGTH, OPERATOR_REASON_LENGTH } from "../utils/revocation-answer.js";
 import { coded } from "../utils/refusal.js";
 import type {
   KyaOsCallContext,
@@ -189,10 +189,10 @@ export function createDelegationGate(
             error: error instanceof Error ? error.message : String(error),
           });
         }
-        // The operator's log line carries the code and the full reason, up to the length a checker's
-        // reason may have; the client's reason stays cut at 256.
+        // The operator's log line carries the code and the full reason, up to the length an operator
+        // reads, so a statusListIssuers remedy it ends with is whole; the client's reason stays cut at 256.
         logger.warn(
-          `[kya-os] Delegation verification failed for "${toolName}": ${sanitizeForMessage(check.reason, CHECKER_REASON_LENGTH)}`,
+          `[kya-os] Delegation verification failed for "${toolName}": ${sanitizeForMessage(check.reason, OPERATOR_REASON_LENGTH)}`,
           { code: check.code, transient: check.transient },
         );
         return attachOutcomeProof(

@@ -14,10 +14,20 @@
  * the keeper rule gives the URL to the list's issuer, and where no configuration would, as for a
  * URL that ends in `/` and could be bound only as itself, which no binding may be, there is no
  * remedy to offer. Where it cannot be printed whole and exactly, within the length a reason may
- * have, the refusal says where to name the list's issuer instead.
+ * have, the refusal says where to name the list's issuer instead, and where that does not fit
+ * either, it offers none. The words of a remedy are `./remedy-text`'s, which also keeps a reason cut
+ * for length from ending inside one.
  */
 
 import { isRecord, issuerOf } from './guards.js';
+import {
+  BOUND_GENERAL_REMEDY,
+  exactRemedy,
+  type ExactRemedyKind,
+  PRINTABLE_DID,
+  PRINTABLE_URL,
+  UNBOUND_GENERAL_REMEDY,
+} from './remedy-text.js';
 import {
   originBindingOf,
   statusListKeeperFor,
@@ -40,29 +50,25 @@ export interface KeeperRefusal {
   readonly keeper: StatusListKeeper;
 }
 
-/** A DID as `statusListIssuers` names an issuer, written so that a refusal prints it whole and exactly. */
-const PRINTABLE_DID = /^did:[a-z0-9]+:[A-Za-z0-9._:%-]+$/;
-/** A URL a refusal prints whole and exactly: visible ASCII, with nothing JSON would escape. */
-const PRINTABLE_URL = /^[\x21\x23-\x5b\x5d-\x7e]+$/;
-
 /**
  * `reason`, the keeper rule's refusal of `refused.list`, ending with the `statusListIssuers`
  * configuration that would accept the list, or with where to name its issuer when that does not fit
- * in `maxLength` UTF-16 code units or cannot be printed exactly. A list whose `issuer` is no DID, or
- * the keeper itself, a list a resolver holds to the one issuer it is configured with, and a list at
- * a URL no binding can name gain nothing: no configuration accepts them.
+ * in `maxLength` UTF-16 code units or cannot be printed exactly, or with neither when that does not
+ * fit either, so that the reason never needs to be cut inside a remedy. A list whose `issuer` is no
+ * DID, or the keeper itself, a list a resolver holds to the one issuer it is configured with, and a
+ * list at a URL no binding can name gain nothing: no configuration accepts them.
  */
 export function withStatusListIssuersRemedy(reason: string, refused: KeeperRefusal, maxLength: number): string {
   const signer = issuerOf(isRecord(refused.list) ? refused.list.issuer : undefined);
   const { keeper } = refused;
   if (!signer?.startsWith('did:') || signer === keeper.did || keeper.why === 'resolver-issuer') return reason;
-  const exact = exactRemedy(signer, refused);
+  const exact = configurationRemedy(signer, refused);
   if (exact === NONE) return reason;
-  if (exact !== undefined && reason.length + exact.length <= maxLength) return reason + exact;
-  return reason + generalRemedy(keeper);
+  const fitting = [exact, generalRemedy(keeper)].find((remedy) => remedy !== undefined && reason.length + remedy.length <= maxLength);
+  return fitting === undefined ? reason : reason + fitting;
 }
 
-/** What {@link exactRemedy} answers when no configuration would give the URL to the list's issuer. */
+/** What {@link configurationRemedy} answers when no configuration would give the URL to the list's issuer. */
 const NONE = Symbol('no remedy');
 
 /** Whether no binding names the keeper: it keeps the URL as the credential's issuer or as the pinned root. */
@@ -75,17 +81,18 @@ function isUnbound(keeper: StatusListKeeper): boolean {
  * value it would print cannot be printed exactly; or {@link NONE} when that configuration, checked
  * as a reader checks it, would not give the URL to `signer`, so that none would.
  */
-function exactRemedy(signer: string, refused: KeeperRefusal): string | undefined | typeof NONE {
+function configurationRemedy(signer: string, refused: KeeperRefusal): string | undefined | typeof NONE {
   const { statusListCredential: url, keeper } = refused;
   const binding = (isUnbound(keeper) ? originBindingOf(url) : undefined) ?? url;
   if (!acceptsSigner(signer, binding, refused)) return NONE;
   if (!PRINTABLE_DID.test(signer) || !PRINTABLE_URL.test(binding)) return undefined;
-  const configuration = `{ ${JSON.stringify(signer)}: [${JSON.stringify(binding)}] }`;
-  if (isUnbound(keeper)) {
-    return `; if ${JSON.stringify(signer)} signs this issuer's lists, name it in statusListIssuers: ${configuration}`;
-  }
-  const remedy = keeper.why === 'configured-url' ? "move the URL's binding to it" : 'name it';
-  return `; if ${JSON.stringify(signer)} signs the list at this URL, ${remedy} in statusListIssuers: ${configuration}`;
+  return exactRemedy(signer, binding, remedyKind(keeper));
+}
+
+/** What the remedy asks of the operator, from why `keeper` keeps the URL. */
+function remedyKind(keeper: StatusListKeeper): ExactRemedyKind {
+  if (isUnbound(keeper)) return 'unbound';
+  return keeper.why === 'configured-url' ? 'moved' : 'bound';
 }
 
 /**
@@ -111,7 +118,5 @@ function acceptsSigner(signer: string, binding: string, refused: KeeperRefusal):
 
 /** Where to name the list's issuer, for a refusal that cannot print the configuration whole. */
 function generalRemedy(keeper: StatusListKeeper): string {
-  return isUnbound(keeper)
-    ? "; if the list's issuer signs this issuer's lists, name it in statusListIssuers with this list's https origin or URL"
-    : "; if the list's issuer signs the list at this URL, bind the URL to it in statusListIssuers";
+  return isUnbound(keeper) ? UNBOUND_GENERAL_REMEDY : BOUND_GENERAL_REMEDY;
 }

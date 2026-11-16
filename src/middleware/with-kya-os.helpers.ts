@@ -33,10 +33,15 @@ export function withoutControlArgs(
   return clean;
 }
 
-/** Best-effort projection of a delegation VC into policy principal facts. */
+/**
+ * What a `_kyaos_delegation` argument that nothing verified claims about its caller, for a
+ * `withPolicyGate` that no `wrapWithDelegation` precedes: the subject the credential names and the
+ * scopes it lists, both only claims of whoever wrote the argument. It names no Responsible Party:
+ * that is the root issuer of a verified chain (SPEC.md §2), which only the delegation gate
+ * establishes, and the `controller` a credential states is a DID its author chose.
+ */
 export function extractPolicyPrincipal(del: unknown): {
   agentDid: string;
-  responsibleParty?: string;
   delegatedScopes: string[];
 } {
   if (!del || typeof del !== "object") {
@@ -46,21 +51,16 @@ export function extractPolicyPrincipal(del: unknown): {
     const vc = del as DelegationCredential;
     const subject = vc.credentialSubject as unknown as {
       id?: string;
-      delegation?: { subjectDid?: string; controller?: string };
+      delegation?: { subjectDid?: string };
     };
     const agentDid = subject?.delegation?.subjectDid ?? subject?.id ?? "unknown";
-    const responsibleParty = subject?.delegation?.controller;
     let delegatedScopes: string[] = [];
     try {
       delegatedScopes = getDelegationScopes(vc);
     } catch {
       delegatedScopes = [];
     }
-    return {
-      agentDid,
-      ...(responsibleParty ? { responsibleParty } : {}),
-      delegatedScopes,
-    };
+    return { agentDid, delegatedScopes };
   } catch {
     return { agentDid: "unknown", delegatedScopes: [] };
   }

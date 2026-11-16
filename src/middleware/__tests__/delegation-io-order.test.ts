@@ -65,7 +65,7 @@ for (const form of ['object', 'JWT'] as const) {
 
   describe(`${form}: a status list is read only for a credential whose signature verified`, () => {
     it('reads none for a root that names the trusted issuer but is signed by another key', async () => {
-      const named = await resignedCredential(await credential(attacker, 'forged-root', delegate.did), { issuer: root.did, credentialStatus: statusEntry }, attacker, root.kid);
+      const named = await resignedCredential(await credential(attacker, 'forged-root', delegate.did, undefined, root.did), { credentialStatus: statusEntry }, attacker, root.kid);
       const { verify, resolve, checkStatus } = gate();
       expect(await verify(await wire(named, attacker, root.kid))).toMatchObject({ valid: false });
       expect(resolve.mock.calls.map(([did]) => did)).toEqual([root.did]);

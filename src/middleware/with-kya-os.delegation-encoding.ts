@@ -25,8 +25,8 @@ export const UNENCODABLE_DELEGATION_REASON =
  *   are checked, so whether a delegation is accepted does not depend on which of them it carries;
  * - its subject's `id`: the `actor` of the context and of every audit event, the context's
  *   `principal.agentDid` and the grant's `agentDid`;
- * - its delegation's `controller`: the context's `responsibleParty` and `principal.responsibleParty`,
- *   and the grant's `userDid`;
+ * - its chain's root issuer, a DID the basic stage has held to the issuer rule: the context's
+ *   `responsibleParty` and `principal.responsibleParty`, and the grant's `responsibleParty`;
  * - its delegation's `parentId`: the audit record's `parentRef`;
  * - its delegation's `scopes` and the `scopes` of its `constraints`: together the context's
  *   `principal.delegatedScopes`, which a tool and a composed policy gate receive, and the grant's

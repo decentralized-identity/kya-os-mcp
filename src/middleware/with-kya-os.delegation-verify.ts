@@ -23,7 +23,7 @@ import {
   type ChainValidationResult,
 } from "../delegation/chain-enforcement.js";
 import { RuntimeFetchProvider } from "../providers/runtime-fetch.js";
-import { credentialIssuerRefusal } from "../delegation/credential-issuer.js";
+import { credentialIssuerDid, credentialIssuerRefusal } from "../delegation/credential-issuer.js";
 import { readsVcJwtClaims } from "../delegation/delegation-ref.js";
 import { assertTrustedRootIssuers } from "../delegation/root-admission.js";
 import { parseVCJWT } from "../delegation/utils.js";
@@ -32,6 +32,7 @@ import { createDelegationDescriber, type DelegationRecords } from "./with-kya-os
 import {
   checkPresentation,
   readOnce,
+  UNVERIFIABLE_DELEGATION,
   verifyEnvelope,
   type Authenticated,
   type DelegationCheck,
@@ -224,10 +225,9 @@ export function createDelegationVerification(
     );
   }
 
-  // A root whose claimed issuerDid is not its signer, and a re-delegation that
-  // is wider than its parent (attenuationWarnings), are accepted
-  // for compatibility but reported: each distinct message at most once an hour,
-  // with the oldest evicted first so the set stays bounded.
+  // A re-delegation that is wider than its parent (attenuationWarnings) is
+  // accepted for compatibility but reported: each distinct message at most
+  // once an hour, with the oldest evicted first so the set stays bounded.
   const reportedChainWarnings = new TtlCache<true>({ ttlMs: 60 * 60 * 1000, maxEntries: 256 });
   const reportChainWarnings = (warnings: readonly string[] | undefined): void => {
     for (const warning of warnings ?? []) {
@@ -354,7 +354,7 @@ export function createDelegationVerification(
       });
       chain = {
         valid: false,
-        reason: "Delegation credential could not be verified",
+        reason: UNVERIFIABLE_DELEGATION,
       };
     }
 
@@ -378,8 +378,16 @@ export function createDelegationVerification(
     const expiresAt = jwtExpiresAt === undefined
       ? chain.expiresAt
       : Math.min(jwtExpiresAt, chain.expiresAt ?? jwtExpiresAt);
+    // The chain validated, so the walk verified its root's signature under a key of the issuer
+    // the root names, trustedRootIssuers admitted that issuer, and the root's issuerDid is that
+    // same DID (chainLinkageRefusal): the Responsible Party, as SPEC.md §2 defines it. A root
+    // that named no issuer did not validate, so this refusal is never reached and only keeps the type.
+    const rootIssuer = credentialIssuerDid(chain.evaluated?.[0] ?? vc);
+    if (rootIssuer === undefined) {
+      return { verdict: { valid: false, reason: UNVERIFIABLE_DELEGATION, vc }, ancestors };
+    }
     return {
-      verdict: { valid: true, vc, isJwt, ...(expiresAt !== undefined ? { expiresAt } : {}) },
+      verdict: { valid: true, vc, isJwt, rootIssuer, ...(expiresAt !== undefined ? { expiresAt } : {}) },
       ancestors,
     };
   }

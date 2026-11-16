@@ -171,7 +171,7 @@ describe('wrapWithDelegation — grant retry resolution', () => {
     expect(reached(result)).toBe(true);
   });
 
-  it('attributes a responsible party when a durable grant carries a user DID', async () => {
+  it('names the root issuer as the responsible party under a grant stored with a user DID', async () => {
     const store = new MemoryGrantStore();
     const events: Array<Parameters<AuditTrailService['record']>[0]> = [];
     const { server, middleware } = await makeServer({
@@ -182,23 +182,15 @@ describe('wrapWithDelegation — grant retry resolution', () => {
       },
     });
     const sessionId = await openSession(middleware, server.did);
-    store.bind(activeGrant({
-      agentDid: 'did:key:zAgent',
-      userDid: 'did:example:responsible-party',
-      delegationCredential: await issueVC('did:key:zAgent', [SCOPE], 'did:example:responsible-party'),
-      sessionId,
-    }));
+    // A grant stored before grants named a Responsible Party: its userDid is its leaf's controller.
+    const delegationCredential = await issueVC('did:key:zAgent', [SCOPE], 'did:example:user');
+    store.bind(activeGrant({ agentDid: 'did:key:zAgent', userDid: 'did:example:user', delegationCredential, sessionId }));
 
     const result = await delegationHandler(middleware)({ item: 'laptop' }, sessionId);
 
     expect(reached(result)).toBe(true);
     expect(events.find((event) => event.eventType === 'grant.used'))
-      .toMatchObject({
-        responsibleParty: {
-          kind: 'pairwise_did',
-          did: 'did:example:responsible-party',
-        },
-      });
+      .toMatchObject({ responsibleParty: { kind: 'pairwise_did', did: delegationCredential.issuer } });
   });
 
   it('getByAgent: a session-less grant resolves behind a valid holder-of-key proof (portable)', async () => {
@@ -340,7 +332,7 @@ describe('wrapWithDelegation — grant retry resolution', () => {
     expect(reached(result)).toBe(true);
   });
 
-  it('binds the user (controller) onto the grant when the delegation names one', async () => {
+  it('binds the Responsible Party, the issuer, onto the grant, and not the controller the delegation names', async () => {
     const store = new MemoryGrantStore();
     const agent = await makeIdentity();
     const { server, middleware } = await makeServer({ grantStore: store });
@@ -355,7 +347,7 @@ describe('wrapWithDelegation — grant retry resolution', () => {
     expect(reached(result)).toBe(true);
 
     const [bound] = await store.getByAgent(agent.did, [SCOPE]);
-    expect(bound?.userDid).toBe(userDid);
+    expect([bound?.responsibleParty, bound?.userDid]).toEqual([vc.issuer, undefined]);
     expect(bound?.scopes).toContain(SCOPE);
   });
 
@@ -835,8 +827,7 @@ describe('delegation issuer anchoring and nonce admission settings', () => {
     expect(reached(await handler({}, 'session'))).toBe(true);
   });
 
-  it('accepts a root whose issuerDid is not its signer, logging it once', async () => {
-    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+  it('refuses a root whose issuerDid is not the issuer of its credential', async () => {
     const server = await makeIdentity();
     const signer = await makeIdentity();
     const agent = await makeIdentity();
@@ -850,11 +841,11 @@ describe('delegation issuer anchoring and nonce admission settings', () => {
       issuer: signer.did,
     } as Record<string, unknown>);
     const { middleware } = await makeServer({ server });
-    const handler = delegationHandler(middleware);
-    expect(reached(await handler({ _kyaos_delegation: mismatched }, 'first'))).toBe(true);
-    expect(reached(await handler({ _kyaos_delegation: mismatched }, 'second'))).toBe(true);
-    const reports = warn.mock.calls.filter(([message]) => String(message).includes('names issuerDid did:web:user.example'));
-    expect(reports).toHaveLength(1);
+    const refused = JSON.parse((await delegationHandler(middleware)({ _kyaos_delegation: mismatched }, 'first')).content[0]!.text);
+    expect(refused).toEqual({
+      error: 'delegation_invalid',
+      reason: `Root delegation del-mismatch names issuerDid "did:web:user.example" but its credential names issuer "${signer.did}"`,
+    });
   });
 
   it('accepts a re-delegation that is wider than its parent, logging each finding once', async () => {

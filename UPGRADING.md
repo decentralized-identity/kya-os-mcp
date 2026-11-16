@@ -144,7 +144,11 @@ A hop's issuer always decides the status of its own credential by the list it na
 
 With `verifyStatusList` it reads as revoked, unless `statusListIssuers` binds the list's URL, or its origin, to that DID.
 That holds for the Card's `responsibleParty` too.
-Once the Card's `accountabilityVerifier` verifies it as the root issuer of the Card's delegation chain, `verifyCard` names it to the checker as the root, with no status-list URL, so its list counts for the Card only at a URL the configuration binds to it, and at the Card's own list URL a list it signs is refused.
+Once the Card's `accountabilityVerifier` verifies it as the root issuer of the Card's delegation chain, `verifyCard` names it to the checker as the root.
+Its list then counts for the Card at the URL the verifier's verdict reports as `rootStatusList`, the list URL the status entry of the chain's root credential names, and at a URL the configuration binds to it.
+A verifier that returns a bare `true`, or `{ verified: true }` with no `rootStatusList`, reports no URL, so the responsible party's list counts only at a URL the configuration binds to it, and at the Card's own list URL a list it signs is refused.
+To have it count there, return `{ verified: true, rootStatusList }` with the URL read from the root credential whose proof the verifier checked, or bind the URL to the responsible party in `statusListIssuers`.
+`rootStatusList` is read only beside a literal `verified: true` and only as a non-empty string, and `verifyCard` returns it as `accountability.rootStatusList`.
 At a URL bound to it, the Entity's own list is refused.
 A responsible party's list counts for its Cards only once verified, never as the Card states it.
 
@@ -562,6 +566,35 @@ Two things to check: one if your server uses `wrapWithDelegation`, and one if yo
   It should also expect `delegationRef` to be the `sha256:` digest of an id over 256 code units, of one that holds a character that does not print (SPEC.md §7.8 lists them) or a surrogate without its pair, of one written as a `sha256:` digest and of the id `unknown`, and the `jti` of a VC-JWT whose credential has no `id`.
 - A custom DID resolver or key provider that hands the verifier an Ed25519 JWK must write its `x` as RFC 8037 has it: base64url of the URL-safe alphabet alone, with no `=` and no white space, of 32 bytes.
   An `x` in the standard base64 alphabet, padded or holding white space is refused even when it is the same key, for a response proof, a delegation credential's embedded signature and a status list that `CheqdStatusListResolver` reads.
+
+### The Responsible Party of a delegated call
+
+The delegation gate names the root issuer of the chain as the Responsible Party, as SPEC.md §2 defines it.
+On 1.22.0 it named the `controller` of the presented credential, a value that credential's own issuer writes and no one else signs.
+What changes:
+
+- `context.responsibleParty` and `context.principal.responsibleParty`, which a tool handler and a composed `withPolicyGate` receive, are the issuer of the chain's root credential, whose signature the gate verified and whom `trustedRootIssuers` admitted.
+  For a credential with no parent that is the credential's own issuer.
+  Both are now always present; on 1.22.0 they were absent when the credential named no `controller`.
+- The `delegation.verified`, `authorization.approved` and `grant.used` audit events name the same DID as `responsibleParty`.
+  An audit consumer that grouped events by the old value will see the root issuer from the upgrade on.
+- A grant the gate stores has `responsibleParty`, the root issuer, and no `userDid`.
+  The gate verifies the stored delegation again on every reuse and honours the grant only while it verifies to that issuer.
+  A grant stored by 1.22.0 keeps working: it is held to the `userDid` it recorded, and the call it authorizes is still attributed to the root issuer.
+- After a rollback to 1.22.0 over the same grant store, 1.22.0 refuses a grant stored since the upgrade whose credential names a `controller`, and answers `needs_authorization`, so the user approves again.
+  1.22.0 honours a grant only when its credential's `controller` equals the grant's `userDid`, which such a grant does not have; a grant whose credential names no `controller` keeps working there.
+  The gate does not write `userDid` to spare that approval: the field would again hold a DID nobody verified, in a row that a `GrantStore` and whatever reads it take as the user on whose behalf the grant stands.
+- A handler that needs the `controller` a credential states reads it from the credential it is given; the gate no longer hands it on under another name.
+- A `withPolicyGate` that no `wrapWithDelegation` precedes verifies no delegation, and no longer gives its `PolicyEngine` a `principal.responsibleParty`.
+  On 1.22.0 it gave the `controller` of the `_kyaos_delegation` argument, which nothing had verified, so whoever wrote the argument chose it.
+  The `agentDid` and `delegatedScopes` it still gives are that argument's claims as well.
+  An engine rule that reads `principal.responsibleParty` needs the gate composed inside `wrapWithDelegation`, where it is the verified root issuer.
+- A root credential, one with no `parentId`, is refused unless the `issuerDid` of its delegation is the `issuer` of the credential itself, whose key signs it.
+  `validateDelegationChain` and the gate refuse it before they resolve any DID, with `Root delegation <id> names issuerDid "<issuerDid>" but its credential names issuer "<issuer>"` (`"<v>"` as in "Changed refusal reasons"), and the gate answers `delegation_invalid`.
+  1.22.0 accepted such a root and logged `Root delegation <id> names issuerDid <issuerDid> but is signed by <issuer>`; that warning is gone, from `ChainValidationResult.warnings` too.
+  So the root's `issuerDid`, which SPEC.md §2 names, and the issuer the gate verified are one DID.
+  `DelegationCredentialIssuer` and `wrapDelegationAsVC` write the two from one value, so a credential they issued is unaffected; an issuer that set `issuer` apart from `issuerDid` must issue the credential again with both naming the DID whose key signs it, and a stored grant that holds such a root is refused on reuse, so its user approves again.
+  The Entity Card profile (SPEC.md §6.10) has no `issuerDid` beside `issuer`, so nothing changes there.
 
 ### Conformance suite 1.4.0
 

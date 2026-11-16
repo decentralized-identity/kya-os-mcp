@@ -775,12 +775,16 @@ A checker that verifies the list's proof reads the Card's list only when the lis
 
 The Card's `responsibleParty`, once the accountability check (§11.1 step 3) has verified it as the root issuer of the Card's delegation chain, `responsibleParty === issuer(rootVC)` (§10.2), can revoke the root credential and with it the Entity's chain.
 A Verifier names it to the checker as that root.
-It keeps the URLs the checker's configuration binds to it, so its list counts for the Card only at such a URL, and a list it signs is rejected at a URL the Entity keeps.
+It keeps the URL that the status entry of the chain's root credential names, when the accountability check reports that URL beside its verdict, and the URLs the checker's configuration binds to it.
+Its list counts for the Card only at such a URL, and a list it signs is rejected at a URL the Entity keeps.
+A responsible party reported without a URL keeps only what the configuration binds to it.
+An accountability verifier that reports the URL MUST read it from the root credential whose proof it verified, and a Verifier MUST ignore a URL reported beside a verdict that is not a literal `{ verified: true }`, or one that is not a non-empty string.
+Where the configuration binds the URL to another issuer, the configuration decides.
 With no `responsibleParty`, or one that did not verify, the same two rules apply and no root is named.
 The Entity's list may state no `id` only when the Entity keeps the URL by the second rule, no responsible party is verified and the configuration names no other issuer, and any other list MUST state the `statusListCredential` URL, byte for byte, as its `id`.
 Card verification runs the accountability check before the revocation check, so a Verifier names the responsible party to the checker only once verified, never as the Card states it.
 The injected `accountabilityVerifier` is a trusted authority boundary.
-A literal `true` (or `{ verified: true }`) has the Card's `responsibleParty` named as that root, so that the lists the configuration binds to it count for the Card; a truthy value that is not `true` does not.
+A literal `true` (or `{ verified: true }`) has the Card's `responsibleParty` named as that root, so that the list at the URL it reports and the lists the configuration binds to it count for the Card; a truthy value that is not `true` does not.
 Before granting this authority the accountability verifier MUST verify every delegation hop's proof, check the chain's continuity, attenuation, expiry and required revocation status, bind the resolved chain to `delegationRef` and the Card's Entity, confirm the root equals `responsibleParty`, and perform the live leaf/proof join when `proofDid` is supplied.
 It MUST also authorize that root for this Card under the Verifier's own policy; the Card's claim and a structurally valid chain alone do not establish this authority.
 A root allowlist, a resource-owner pin or an authenticated Card-to-root registry can supply that decision inside the seam.

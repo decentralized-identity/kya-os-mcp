@@ -25,9 +25,14 @@ import { copyPlainData } from "../utils/plain-data.js";
 import { logger } from "../logging/index.js";
 import type { DelegationDescriber, DelegationRecords } from "./with-kya-os.delegation-records.js";
 
-/** A presented delegation as authenticated. */
+/**
+ * A presented delegation as authenticated. A valid one names `rootIssuer`, the issuer of its
+ * chain's root credential, whose signature the chain walk verified and whom `trustedRootIssuers`
+ * admitted: the call's Responsible Party (SPEC.md §2, §6.4). It is the credential's own issuer
+ * when the credential has no parent.
+ */
 export type Verdict =
-  | { valid: true; vc: DelegationCredential; isJwt: boolean; expiresAt?: number }
+  | { valid: true; vc: DelegationCredential; isJwt: boolean; rootIssuer: string; expiresAt?: number }
   | { valid: false; reason: string; vc?: DelegationCredential };
 
 /** A verdict, with what it was reached on. */
@@ -48,6 +53,8 @@ export interface Authenticated {
  */
 export type DelegationCheck = Verdict & DelegationRecords;
 
+/** The reason for a delegation whose verification faulted: it says nothing of the fault, which is logged. */
+export const UNVERIFIABLE_DELEGATION = "Delegation credential could not be verified";
 const NOT_PLAIN_DATA = "is not plain data";
 const NESTS_TOO_DEEP = `nests more than ${MAX_CREDENTIAL_NESTING_DEPTH} levels deep` as const;
 
@@ -172,7 +179,7 @@ export async function checkPresentation(
     });
     return {
       valid: false,
-      reason: "Delegation credential could not be verified",
+      reason: UNVERIFIABLE_DELEGATION,
       vc: verdict.vc,
       ...(await refused()),
     };

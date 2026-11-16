@@ -3,13 +3,15 @@
  * `loader.ts` and `runner.ts`, beside the vectors, and writing an adapter of its own. So those
  * three stand alone: each imports only Node.js built-ins and the other two, never the package's
  * source. The loader's check of a status-list vector's configuration is therefore its own code, and
- * it refuses and admits what the library's `assertStatusListIssuers` does.
+ * it refuses and admits what the library's `assertStatusListIssuers` does, the bindings SPEC.md §6.6
+ * says a verifier should refuse among them.
  */
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { assertStatusListConfiguration } from '../loader.js';
 import { assertStatusListIssuers } from '../../src/utils/statuslist-acceptance.js';
+import { LOOK_ALIKE_BINDINGS, MISTAKEN_BINDINGS } from './helpers/status-list-bindings.js';
 
 const STANDALONE = ['types.ts', 'loader.ts', 'runner.ts'];
 const ALLOWED = new Set(STANDALONE.map((file) => `./${file.replace(/\.ts$/, '.js')}`));
@@ -28,6 +30,17 @@ describe('the harness files an implementer copies', () => {
     }
   });
 
+  /** Whether `check` throws, which it may only do with a `TypeError`. */
+  const refuses = (check: () => void): boolean => {
+    try {
+      check();
+      return false;
+    } catch (error) {
+      expect(error).toBeInstanceOf(TypeError);
+      return true;
+    }
+  };
+
   it('refuse and admit the statusListIssuers the library refuses and admits', () => {
     const maps: unknown[] = [
       undefined, {}, { 'did:x': [] }, { 'did:x': ['https://y.example', 'https://y.example/1', 'http://y.example/1'] }, Object.create(null),
@@ -35,20 +48,25 @@ describe('the harness files an implementer copies', () => {
       null, 'did:x', 7, [], ['did:x'], { 'did:x': 'https://y.example' }, { 'did:x': [7] }, { 'did:x': null }, new Map(), new Date(0),
       { 'did:x': ['did:y', 'did:z'] }, { 'did:x': ['y.example'] }, { 'did:x': [['https://y.example']] }, { 'did:x': ['ftp://y.example'] }, { 'did:x': [''] }, { '': ['https://y.example'] },
       { 'did:x': ['https://y.example'], 'did:z': ['https://y.example'] },
+      { 'did:x': ['https://y.example'], 'did:z': ['https://y.example/'] },
+      ...MISTAKEN_BINDINGS.map(([binding]) => ({ 'did:x': ['https://y.example/1', binding] })),
+      ...LOOK_ALIKE_BINDINGS.map((binding) => ({ 'did:x': ['https://y.example/1', binding] })),
     ];
-    const refuses = (check: () => void): boolean => {
-      try {
-        check();
-        return false;
-      } catch (error) {
-        expect(error).toBeInstanceOf(TypeError);
-        return true;
-      }
-    };
     for (const statusListIssuers of maps) {
       const label = JSON.stringify(statusListIssuers) ?? String(statusListIssuers);
       expect(refuses(() => assertStatusListConfiguration({ statusListIssuers })), label)
         .toBe(refuses(() => assertStatusListIssuers(statusListIssuers)));
+    }
+  });
+
+  it('refuse each binding SPEC.md §6.6 says a verifier should refuse, in its own words, and admit each look-alike', () => {
+    for (const [binding, words] of MISTAKEN_BINDINGS) {
+      expect(() => assertStatusListConfiguration({ statusListIssuers: { 'did:x': [binding] } }), binding).toThrow(new TypeError(words));
+      expect(refuses(() => assertStatusListIssuers({ 'did:x': [binding] })), binding).toBe(true);
+    }
+    for (const binding of LOOK_ALIKE_BINDINGS) {
+      expect(refuses(() => assertStatusListConfiguration({ statusListIssuers: { 'did:x': [binding] } })), binding).toBe(false);
+      expect(refuses(() => assertStatusListIssuers({ 'did:x': [binding] })), binding).toBe(false);
     }
   });
 });

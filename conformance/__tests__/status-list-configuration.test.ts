@@ -2,9 +2,12 @@
  * A status-list vector may state the verifier configuration it is checked with, `trustedRootIssuer`,
  * `trustedRootStatusList` and `statusListIssuers` (SPEC.md §6.6). The two readers of the suite refuse the same malformed
  * configuration: the TypeScript loader refuses the vector, and the reference adapter fails it when
- * handed it directly, while `conformance/status_list.py` reads it as refused. A well-formed
- * configuration leaves the vector's verdict as the vector states it. Both read a proof's key and
- * signature alike too: the key's `x` as SPEC.md §7.4 reads it, and the `proofValue` as §7.8 does.
+ * handed it directly, while `conformance/status_list.py` reads it as refused. The loader and the
+ * Python reader refuse it in the same words. A configuration that binds what SPEC.md §6.6 says a
+ * verifier should refuse, an origin followed by `/`, an origin whose host is not in lower case or
+ * any other binding that ends in `/`, is malformed too. A well-formed configuration leaves the
+ * vector's verdict as the vector states it. Both read a proof's key and signature alike too: the
+ * key's `x` as SPEC.md §7.4 reads it, and the `proofValue` as §7.8 does.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -13,9 +16,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { loadVectors } from '../loader.js';
+import { assertStatusListConfiguration, loadVectors } from '../loader.js';
 import { ReferenceConformanceAdapter } from '../reference-adapter.js';
-import { requirePython } from './python.js';
+import { ENDS_IN_SLASH, LOOK_ALIKE_BINDINGS, MISTAKEN_BINDINGS, ORIGIN_NOT_LOWER_CASE, ORIGIN_WITH_SLASH } from './helpers/status-list-bindings.js';
+import { requirePython, type Interpreter } from './python.js';
 import type { ConformanceVector } from '../types.js';
 
 const HERE = fileURLToPath(new URL('..', import.meta.url));
@@ -49,6 +53,9 @@ const MALFORMED: Variant[] = [
   ['statusListIssuers naming an array that holds a URL', (owner) => ({ statusListIssuers: { [owner]: [['https://z.example']] } })],
   ['statusListIssuers naming a URL of another scheme', (owner) => ({ statusListIssuers: { [owner]: ['ftp://z.example/1'] } })],
   ['statusListIssuers binding one URL to two issuers', (owner) => ({ statusListIssuers: { [owner]: ['https://z.example'], 'did:z': ['https://z.example'] } })],
+  ...MISTAKEN_BINDINGS.map(([binding]): Variant => [
+    `statusListIssuers binding ${JSON.stringify(binding)} to the issuer`, (owner) => ({ statusListIssuers: { [owner]: [binding] } }),
+  ]),
 ];
 
 const WELL_FORMED: Variant[] = [
@@ -57,6 +64,9 @@ const WELL_FORMED: Variant[] = [
   ['statusListIssuers binding nothing to the issuer', (owner) => ({ statusListIssuers: { [owner]: [] } })],
   ['statusListIssuers binding another URL, an origin and an http URL to the issuer, one of them twice', (owner) => ({
     statusListIssuers: { [owner]: ['https://z.example/1', 'https://z.example', 'http://z.example/1', 'https://z.example/1'] },
+  })],
+  ['statusListIssuers binding to the issuer every look-alike of a binding SPEC.md §6.6 says to refuse', (owner) => ({
+    statusListIssuers: { [owner]: [...LOOK_ALIKE_BINDINGS] },
   })],
 ];
 
@@ -85,6 +95,37 @@ function python(interpreter: readonly string[], cases: readonly ConformanceVecto
     input: cases.map((vector) => JSON.stringify(vector.input)).join('\n') + '\n', encoding: 'utf8',
   });
   return output.trim().split('\n').map((line) => JSON.parse(line) as boolean);
+}
+
+/** `text` as a regular expression that matches it alone. */
+const literally = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** The words the loader refuses `statusListIssuers` in, or `null` where it reads it. */
+function loaderWords(statusListIssuers: unknown): string | null {
+  try {
+    assertStatusListConfiguration({ statusListIssuers });
+    return null;
+  } catch (error) {
+    return (error as Error).message;
+  }
+}
+
+/** The words `conformance/status_list.py` refuses each of `maps` in as a `statusListIssuers`, or `null` where it reads it. */
+function pythonWords(interpreter: Interpreter, maps: readonly unknown[]): (string | null)[] {
+  const [command, ...args] = interpreter;
+  const reader = [
+    'import json, sys', 'sys.path.insert(0, sys.argv[1])', 'from status_list import configuration',
+    'for line in sys.stdin.buffer:',
+    '    try:',
+    '        configuration({"statusListIssuers": json.loads(line)})',
+    '        print("null")',
+    '    except ValueError as error:',
+    '        print(json.dumps(str(error)))',
+  ].join('\n');
+  const output = execFileSync(command, [...args, '-I', '-B', '-c', reader, HERE], {
+    input: maps.map((map) => JSON.stringify(map)).join('\n') + '\n', encoding: 'utf8',
+  });
+  return output.trim().split('\n').map((line) => JSON.parse(line) as string | null);
 }
 
 const adapter = new ReferenceConformanceAdapter();
@@ -120,11 +161,30 @@ describe('a status-list vector that states its verifier configuration', () => {
     expect(load(configured(IDS[0]!, () => ({ statusListIssuers: { 'did:a': ['https://z.example'], 'did:b': ['https://z.example'] } })))).toMatch(
       /: statusListIssuers binds one URL to two issuers$/,
     );
+    for (const [binding, words] of [['https://z.example/', ORIGIN_WITH_SLASH], ['https://Z.example', ORIGIN_NOT_LOWER_CASE], ['https://z.example/lists/', ENDS_IN_SLASH]]) {
+      expect(load(configured(IDS[0]!, () => ({ statusListIssuers: { 'did:a': [binding] } }))), binding).toMatch(new RegExp(`: ${literally(words!)}$`));
+    }
   });
 
   it('keeps the verdict the vector states when the configuration is well formed', async (context) => {
     const read = await verdicts(requirePython(context), WELL_FORMED);
     expect(read).toEqual(read.map(({ name, expected }) => ({ name, expected, loader: 'read', adapter: expected, python: expected === 'pass' })));
+  });
+});
+
+describe('a statusListIssuers the suite reads', () => {
+  it('is refused in the same words, or read, by the loader and the Python reader, whichever refusal comes first', (context) => {
+    const maps: unknown[] = [
+      ...MISTAKEN_BINDINGS.map(([binding]) => ({ 'did:x': [binding] })),
+      ...LOOK_ALIKE_BINDINGS.map((binding) => ({ 'did:x': [binding] })),
+      { 'did:x': ['https://y.example'], 'did:z': ['https://y.example'] },
+      { 'did:x': ['https://y.example/1'], 'did:z': ['https://y.example/1', 'https://y.example/'] },
+      { 'did:x': ['https://y.example/'], 'did:z': ['https://y.example/1', 7] },
+      { 'did:x': ['https://y.example'], 'did:z': ['https://y.example', 7] },
+      { 'did:x': ['https://Y.example'], 'did:z': 'https://y.example' },
+      null, [], { 'did:x': 'https://y.example' }, { '': ['https://y.example'] }, { 'did:x': ['ftp://y.example'] },
+    ];
+    expect(pythonWords(requirePython(context), maps)).toEqual(maps.map(loaderWords));
   });
 });
 

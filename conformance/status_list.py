@@ -31,6 +31,9 @@ def issuer(value):
 
 
 ORIGIN = re.compile(r"https://[a-z0-9.-]+(:[0-9]{1,5})?")
+# An origin with a host in any case, and perhaps a "/" after it, which group 1 holds. Matched with
+# fullmatch, never with $, which also matches before a final line feed.
+ORIGIN_IN_ANY_FORM = re.compile(r"https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?(/?)")
 
 
 def keeper(url, owner, root, root_list, services):
@@ -86,27 +89,51 @@ def accepts(document, owner, root, services, url, purpose="revocation", root_lis
             and subject.get("type") == "BitstringStatusList")
 
 
+def mistaken_binding(binding):
+    """The words a binding SPEC §6.6 says a verifier should refuse is refused in, or None.
+
+    An origin followed by "/", an origin whose host has an upper-case letter A to Z, and any
+    other binding that ends in "/". Read as written, each is an exact URL, but it is almost
+    always an origin or a prefix written in a form §6.6 does not read as one. The rule is on the
+    string as written, with no URL parsing, as the TypeScript loader applies it.
+    """
+    written = ORIGIN_IN_ANY_FORM.fullmatch(binding)
+    if written and written.group(1) == "/":
+        return 'statusListIssuers binds an origin followed by "/"'
+    if written and re.search(r"[A-Z]", binding):
+        return "statusListIssuers binds an origin whose host is not in lower case"
+    if binding.endswith("/"):
+        return 'statusListIssuers binds a URL that ends in "/"'
+    return None
+
+
 def configuration(value):
     """The verifier configuration an input states, as the TypeScript loader holds it.
 
     A trustedRootIssuer and a trustedRootStatusList, when present, are non-empty strings,
     and a statusListIssuers, when present, maps each issuer, a non-empty key, to a list of
-    URLs, each a string that starts with https:// or http://, none under two issuers.
-    Anything else raises ValueError. The root's URL counts only beside the root.
+    URLs, each a string that starts with https:// or http://, none of them one
+    mistaken_binding refuses, and none under two issuers, checked binding by binding in that
+    order, so each refusal is in the loader's words. Anything else raises ValueError. The
+    root's URL counts only beside the root.
     """
     for member in ("trustedRootIssuer", "trustedRootStatusList"):
         if member in value and not (isinstance(value[member], str) and value[member]):
             raise ValueError(member + " is not a non-empty string")
     root = value.get("trustedRootIssuer")
     services = value.get("statusListIssuers", {})
-    if not isinstance(services, dict) or not all(
-            did and isinstance(bindings, list)
-            and all(isinstance(binding, str) and re.match(r"https?://", binding) for binding in bindings)
-            for did, bindings in services.items()):
+    if not isinstance(services, dict):
         raise ValueError("statusListIssuers does not map issuers to lists of URLs")
     bound = {}
     for did, bindings in services.items():
+        if not did or not isinstance(bindings, list):
+            raise ValueError("statusListIssuers does not map issuers to lists of URLs")
         for binding in bindings:
+            if not (isinstance(binding, str) and re.match(r"https?://", binding)):
+                raise ValueError("statusListIssuers does not map issuers to lists of URLs")
+            mistaken = mistaken_binding(binding)
+            if mistaken:
+                raise ValueError(mistaken)
             if bound.setdefault(binding, did) != did:
                 raise ValueError("statusListIssuers binds one URL to two issuers")
     return root, value.get("trustedRootStatusList"), services

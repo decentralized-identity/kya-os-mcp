@@ -90,6 +90,7 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
+    "test:adopters": "node adopters/run.mjs",
     "test:e2e:cheqd:testnet": "vitest run src/integrations/cheqd/__tests__/registrar.live.test.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

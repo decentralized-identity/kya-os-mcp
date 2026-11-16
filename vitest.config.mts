@@ -29,8 +29,9 @@ export default defineConfig({
     // Run only the main working tree: skip any nested git worktrees a
     // contributor may have checked out under these dirs (each holds a full repo
     // copy whose tests would otherwise be collected twice). No-op on a clean
-    // checkout / CI, where these dirs do not exist.
-    exclude: [...configDefaults.exclude, '**/.worktrees/**', '**/.claude/**'],
+    // checkout / CI, where these dirs do not exist. The adopter apps run
+    // against the packed package through `pnpm test:adopters`, never here.
+    exclude: [...configDefaults.exclude, '**/.worktrees/**', '**/.claude/**', 'adopters/**'],
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],

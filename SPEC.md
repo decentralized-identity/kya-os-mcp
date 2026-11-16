@@ -349,7 +349,11 @@ A refusal names the URL by its origin and path alone, never the credentials befo
 They cancel a refused response, and refuse one that sends more than 64 empty body chunks.
 A response buffer grows with the bytes received, up to the cap, so a stalled read does not reserve the whole cap.
 A read that misses its deadline fails with that deadline's own reason, such as `DID resolution deadline exceeded`.
-A custom `FetchProvider` must return a `Response` whose `body` is a WHATWG `ReadableStream`; the Node stream that node-fetch v2 returns is not one.
+A response whose `body` is a WHATWG `ReadableStream` is read as it streams, never through its `text()` or `json()`, which hold the whole body before the reader can count it.
+A custom `FetchProvider` may return a response whose body is not one, such as a response with no body, or one whose body is the Node stream that node-fetch v2 returns.
+The reader reads such a response through its `text()`, which must answer a string, or, when it has none, through its `json()`, whose value it reads as the JSON text `JSON.stringify` writes for it, and it refuses a response with neither, and a value that has no JSON text.
+It waits for that answer within the read's one deadline, counts the UTF-8 bytes of the text against the same byte cap, and holds the text to the same JSON limits before it parses it.
+The provider has by then held the whole body, so only the provider bounds what that costs.
 
 A status list holds at least 131,072 entries, 16 KiB, under both StatusList2021 and Bitstring Status List 1.0, gzip-compressed and base64url-encoded in its credential.
 An incompressible list of that minimum encodes to about 22 KB, and 1 MiB holds an incompressible list of about 6.3 million entries, 48 times the minimum; a list with few entries set compresses to a few hundred bytes.
@@ -362,11 +366,14 @@ It resolves the application's `headers` within the read's one deadline, so a hea
 
 Every did:web read, by the delegation gate, `DidWebResolver`, `createDidWebResolver` or `RuntimeFetchProvider.resolveDID`, and every status-list read, by `CheqdStatusListResolver` or `RuntimeFetchProvider.fetchStatusList`, goes through one private-network rule, whatever `FetchProvider` it is given.
 Before any request, the rule refuses a URL that is not an absolute http or https URL.
-Unless the provider's `allowPrivateNetworkHosts` is `true`, it also refuses a URL whose host is a non-public IP literal or a local name, in any case and with any trailing dots.
+Unless the provider's `allowPrivateNetworkHosts` is `true`, or the reader was built with `development: true`, it also refuses a URL whose host is a non-public IP literal or a local name, in any case and with any trailing dots.
 A local name is a single label, such as `ip6-localhost` or `metadata`, which a resolver completes through its search domains to a host on the local network.
 It is also `localhost` (RFC 6761 §6.3), `localdomain`, `localdomain6`, `local` (RFC 6762), `internal`, which is reserved for private use, or `home.arpa` (RFC 8375), or a name under one of them, such as `localhost.localdomain`, `localhost6.localdomain6` or the cloud metadata names `metadata.google.internal` and `instance-data.ec2.internal`.
 It classifies an IP literal as `SafeFetch` classifies a resolved address, so an IPv4-mapped, IPv4-translated or NAT64 form of a private address is refused as that address is.
 It resolves no name, so it does not refuse any other name whose address is private, such as a public name that points at a loopback address: a verifier needs an egress control that refuses private addresses for that.
+`development: true` is an option of `DidWebResolverOptions`, of `CheqdStatusListResolverOptions` and of the middleware's `KyaOsConfig`, which `withKyaOs` passes on, and on the middleware it holds for every resolver and reader the middleware builds, whatever its provider.
+It admits non-public IP literals and local names as `allowPrivateNetworkHosts: true` does, for a local deployment whose parties run on names such as `*.localhost`, and changes nothing else: the scheme rule, the checked redirects, the byte caps and the deadlines all hold.
+It is for development alone: set while `NODE_ENV` is `production`, it throws when what it is set on is built, naming the setting, so a deployment that must read a private host in production gives its provider `allowPrivateNetworkHosts: true` instead.
 Each read asks its provider not to follow redirects (`redirect: "manual"`) and follows at most 3 itself, within the one deadline, holding each target to the same rule and refusing a step from https down to http.
 A redirect to an origin other than the first carries only the CORS-safelisted request headers `Accept`, `Accept-Language` and `Content-Language`, when the Fetch standard safelists their values, and the request's cache directives `Cache-Control` and `Pragma`, which carry no credential, and drops every other header.
 A provider that passes `redirect` on to its request keeps every request to hosts the rule admits.
@@ -868,6 +875,8 @@ A configuration binds a URL to exactly one issuer, and a verifier MUST refuse a 
 An exact URL bound to one issuer MAY lie at an origin bound to another, and the exact binding decides.
 An origin is `https://`, a lower-case host and an optional port, and a URL is at an origin when it continues the origin's string with `/`, `?` or `#`.
 The comparison is on the bytes as written, with no parsing and no normalisation, so that every implementation decides alike and no URL is placed at an origin a URL parser would not place it at.
+A verifier SHOULD refuse, as a configuration error, a binding that is an origin followed by `/`, a binding that is an origin but for an upper-case letter (`A` to `Z`) in its host, and any other binding that ends in `/`, since each is almost always an origin or a prefix written in a form this section does not read as one.
+Read as this section reads it, each is an exact URL, which binds only an entry that names it byte for byte; any other exact URL, whatever the case of its host, is read as written.
 A verifier takes the URL the root's credential names (rule 3) only from a root credential whose proof it has verified, since until then the presenter of the chain wrote it.
 
 For an Entity Card's `revocation` entry the Card's `id` is the credential's own `issuer`, and the Card's `responsibleParty` takes the root's place once the Card's accountability check has verified it as the root issuer of the Card's delegation chain, with the list URL that check reports the root credential names (SPEC-ENTITY-CARD.md §10.3).

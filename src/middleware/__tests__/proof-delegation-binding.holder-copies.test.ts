@@ -5,6 +5,7 @@
  * the audit trail records it under the issuer's reference (SPEC.md §7.8).
  */
 import { afterEach, describe, it, expect, vi } from 'vitest';
+import { withOwnProto } from '../../__tests__/utils/own-proto.js';
 import { DelegationCredentialVerifier } from '../../delegation/vc-verifier.js';
 import type { DelegationCredential } from '../../types/protocol.js';
 import { UNENCODABLE_DELEGATION_REASON } from '../with-kya-os.delegation-encoding.js';
@@ -62,8 +63,8 @@ describe('an allowed call', () => {
     /** Edits to what the issuer signed, or to the signature: the copy must not verify. */
     const signedEdits: Array<[string, (credential: DelegationCredential) => DelegationCredential]> = [
       ['adds a member', (c) => ({ ...c, note: 'mine' }) as DelegationCredential],
-      ['adds a member named __proto__', (c) => reparsed(c, (json) => json.replace('{', '{"__proto__":{"scope":"all"},'))],
-      ['adds a scalar member named __proto__', (c) => reparsed(c, (json) => json.replace('{', '{"__proto__":1,'))],
+      ['adds a member named __proto__', (c) => withOwnProto(c, { scope: 'all' })],
+      ['adds a scalar member named __proto__', (c) => withOwnProto(c, 1)],
       ['widens a scope', (c) => reparsed(c, (json) => json.replaceAll(`"${SCOPE}"`, `"${SCOPE}","records:delete"`))],
       ['replaces the signature', (c) => withProof(c, { proofValue: signature(c).split('').reverse().join('') })],
       ['puts a character that is not base64 in the signature', (c) => withProof(c, {
@@ -212,7 +213,7 @@ describe('an allowed call', () => {
       const { root, middle, leaf } = await threeHops(server.did);
       ancestors.push(root, middle);
       const handler = kyaos.wrapWithDelegation(TOOL, CONSENT, kyaos.wrapWithProof(TOOL, released));
-      const smuggled = reparsed(leaf, (json) => json.replace('{', '{"__proto__":{"scope":"all"},'));
+      const smuggled = withOwnProto(leaf, { scope: 'all' });
 
       const result = await handler({ ...ARGS, _kyaos_delegation: smuggled });
 

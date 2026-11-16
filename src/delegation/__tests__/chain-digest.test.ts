@@ -22,6 +22,7 @@ import {
 import { NoSignedFormError } from '../signed-form.js';
 import { arrays, objects } from '../../__tests__/utils/nesting.js';
 import { nodeHash as hash } from '../../__tests__/utils/node-crypto-provider.js';
+import { withOwnProto } from '../../__tests__/utils/own-proto.js';
 
 /** SPEC.md Appendix C.4: a root credential object and a leaf presented as a VC-JWT. */
 const ROOT = {
@@ -136,7 +137,7 @@ describe('delegation chain digests', () => {
     });
 
     it('counts a member named __proto__ as the member it is', async () => {
-      const smuggled = JSON.parse(JSON.stringify(ROOT).replace('{', '{"__proto__":{"scope":"all"},')) as object;
+      const smuggled: object = withOwnProto(ROOT, { scope: 'all' });
       expect(Object.keys(smuggled)).toContain('__proto__');
       expect(await delegationCredentialDigest(smuggled, hash)).not.toBe(ROOT_DIGEST);
     });

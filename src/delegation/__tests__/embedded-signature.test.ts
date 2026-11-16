@@ -9,6 +9,7 @@ import { keyOf, resignedCredential } from '../../__tests__/utils/delegation-cred
 import { methodOf } from '../../__tests__/utils/did-documents.js';
 import { nodeCrypto } from '../../__tests__/utils/node-crypto-provider.js';
 import { arrays } from '../../__tests__/utils/nesting.js';
+import { withOwnProto } from '../../__tests__/utils/own-proto.js';
 import type { DelegationCredential } from '../../types/protocol.js';
 import { embeddedSignatureVerifier } from '../embedded-signature.js';
 
@@ -68,9 +69,7 @@ describe('embeddedSignatureVerifier', () => {
     const { credential, jwk } = await signed();
     // Parsed, as a credential arrives: `__proto__` is then an own member, which
     // a copy made by assignment would drop from what is checked.
-    const smuggled = JSON.parse(
-      JSON.stringify(credential).replace('{', '{"__proto__":{"scope":"all"},'),
-    ) as DelegationCredential;
+    const smuggled = withOwnProto(credential, { scope: 'all' });
 
     expect(Object.keys(smuggled)).toContain('__proto__');
     expect((await verify(smuggled, jwk)).valid).toBe(false);

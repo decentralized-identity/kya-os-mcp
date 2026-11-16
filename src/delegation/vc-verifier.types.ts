@@ -121,11 +121,12 @@ export interface DIDResolver {
  * - `deadline_exceeded`: no document arrived within the resolver's deadline.
  * - `unavailable`: the host could not be reached, or answered with something other than a document:
  *   an HTTP error, no body, or text that is not JSON.
- * - `invalid_document`: what was read is not a valid document of this DID, more bytes than a
- *   document may hold included; or the DID is one the resolver can never resolve, a did:key whose
- *   public key does not decode, or a DID of a method it does not serve.
+ * - `too_large`: the host answered with more bytes than any DID document may hold.
+ * - `invalid_document`: what was read is not a valid document of this DID; or the DID is one the
+ *   resolver can never resolve, a did:key whose public key does not decode, or a DID of a method it
+ *   does not serve.
  */
-export type DidResolutionFailureCause = 'host_refused' | 'deadline_exceeded' | 'unavailable' | 'invalid_document';
+export type DidResolutionFailureCause = 'host_refused' | 'deadline_exceeded' | 'unavailable' | 'too_large' | 'invalid_document';
 
 /** The cause of a resolver's failure to find a DID's document, and what to tell a person about it. */
 export interface DidResolutionFailure {
@@ -135,8 +136,8 @@ export interface DidResolutionFailure {
    * What failed, and how to fix it where the library knows how, in one sentence or two in the
    * library's own words. It quotes no error of the transport's, which the log records instead. A
    * verifier shows it to the party that presented the credential only for `host_refused`,
-   * `deadline_exceeded` and `invalid_document`; for `unavailable` it says what the host answered,
-   * which is for the operator alone.
+   * `deadline_exceeded` and `invalid_document`; for `unavailable` and `too_large` it says what the
+   * host answered, which is for the operator alone.
    */
   readonly detail: string;
 }

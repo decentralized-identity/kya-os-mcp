@@ -9,7 +9,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createDidKeyResolver, logger, type DIDResolver } from '../../index.js';
+import { createDidKeyResolver, createDidWebResolver, logger, type DIDResolver } from '../../index.js';
 import {
   createDelegationProofVerifier,
   createRevocationChecker,
@@ -20,6 +20,7 @@ import {
   type RefusalCode,
   type RevocationStatusEntry,
 } from '../index.js';
+import { AnsweringFetchProvider } from '../../__tests__/utils/adopter-providers.js';
 import { NOW_MS, RESOURCE, now, parties, serve, statusList, twoHopChain } from './signed-chain-helpers.js';
 
 afterEach(() => {
@@ -36,6 +37,11 @@ const failingFor = (did: string, fail: DIDResolver): DIDResolver => ({
   resolve: (asked) => (asked === did ? fail.resolve(asked) : keys.resolve(asked)),
   lastFailure: (asked) => (asked === did ? fail.lastFailure?.(asked) : keys.lastFailure?.(asked)),
 });
+
+/** A did:web resolver whose internal host answers `INTERNAL` with a document over the byte cap, as a resolver of every DID. */
+const INTERNAL = 'did:web:jenkins.corp.example';
+const oversized = createDidWebResolver(new AnsweringFetchProvider(() => Response.json({ id: INTERNAL, padding: 'x'.repeat(2 * 1024 * 1024) })));
+const readingOversized: DIDResolver = { resolve: () => oversized.resolve(INTERNAL), lastFailure: () => oversized.lastFailure?.(INTERNAL) };
 
 /** Each way a signer's DID document may not be read, the code it is refused with, and what its reason ends with. */
 const OUTAGES: [string, DIDResolver, RefusalCode, string][] = [
@@ -62,6 +68,7 @@ const OUTAGES: [string, DIDResolver, RefusalCode, string][] = [
     'host_refused',
     ' (Request to "issuer.localhost" refused)',
   ],
+  ['reads a document over the byte cap from an internal host', readingOversized, 'did_invalid', ''],
   [
     'reports a document that is not the DID\'s',
     { resolve: async () => null, lastFailure: () => ({ cause: 'invalid_document', detail: 'names another DID as its id' }) },
@@ -94,6 +101,7 @@ describe("a status list whose signer's DID document cannot be read", () => {
     expect(answer).toEqual({ revoked: true, fresh: false, reason: `Could not resolve issuer DID: "${p.acme.did}"${suffix}`, ...coded(code) });
     expect(answer.reason).not.toContain(ADDRESS);
     if (_name === 'throws') expect(warn.mock.calls.flat().join(' ')).toContain(ADDRESS);
+    if (resolver === readingOversized) expect(warn.mock.calls.flat().join(' ')).toContain(`${INTERNAL}: DID resolution byte limit exceeded`);
   });
 
   it('is refused as deadline_exceeded when its resolver does not answer in time', async () => {

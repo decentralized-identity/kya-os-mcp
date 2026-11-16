@@ -110,7 +110,7 @@ export class DidCheqdResolver implements DIDResolver {
 
   /**
    * Why the last resolution of `did` found no document: its deadline passed, the endpoint
-   * unavailable, the document invalid, or the DID not a did:cheqd DID of mainnet or testnet this
+   * unavailable, its answer over the byte cap, the document invalid, or the DID not a did:cheqd DID of mainnet or testnet this
    * resolver can ask for, which is `invalid_document` too. `undefined` once a read of it has found
    * one, and for a DID this resolver was never asked for.
    */

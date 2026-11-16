@@ -12,7 +12,7 @@
  * deadline passed; or the document is not the DID's. A DID whose document could not be read is
  * refused as unresolvable alone, so that no HTTP status, byte cap or answer that is not JSON tells
  * the presenter what an internal name answered; the library's resolvers log that detail for the
- * operator.
+ * operator. A document over the byte cap is refused so, though as an invalid DID.
  */
 
 import type { RefusalCode } from '../refusal-codes.js';
@@ -29,6 +29,7 @@ const CAUSES: ReadonlySet<string> = new Set<DidResolutionFailureCause>([
   'host_refused',
   'deadline_exceeded',
   'unavailable',
+  'too_large',
   'invalid_document',
 ]);
 
@@ -69,9 +70,8 @@ export class DidResolutionFailures {
 
 /**
  * The failure an error thrown while reading a DID document from `url` stands for, under a deadline
- * of `timeoutMs`. A transport's own error is `unavailable`, and its words are left to the log. A
- * body over the byte cap is `invalid_document`: no document of the DID may be that large, so asking
- * again does not help.
+ * of `timeoutMs`: the kind of read failure it carries, or `unavailable` for a transport's own error,
+ * whose words are left to the log.
  */
 export function readFailureOf(error: unknown, url: string, timeoutMs: number): DidResolutionFailure {
   const kind = readFailureKind(error);
@@ -82,7 +82,7 @@ export function readFailureOf(error: unknown, url: string, timeoutMs: number): D
   if (kind === 'deadline_exceeded') {
     return { cause: kind, detail: `${message}: no document arrived within ${describeTimeout(timeoutMs)}` };
   }
-  return { cause: kind === 'too_large' ? 'invalid_document' : kind, detail: message };
+  return { cause: kind, detail: message };
 }
 
 /** An `invalid_document` failure: `resolver`, a resolver of some methods, resolves no DID of `did`'s method. */
@@ -118,13 +118,14 @@ export function reportedFailure(resolver: DIDResolver, did: string): DidResoluti
 
 /**
  * The refusal code of each cause a resolver reports: a refused host and a passed deadline keep their
- * names, a document that could not be read leaves the DID unavailable for now, and an invalid one is
- * an invalid DID.
+ * names, a document that could not be read leaves the DID unavailable for now, and one over the byte
+ * cap, which no document of the DID may be, or an invalid one, is an invalid DID.
  */
 const CAUSE_CODES: Readonly<Record<DidResolutionFailureCause, RefusalCode>> = Object.freeze({
   host_refused: 'host_refused',
   deadline_exceeded: 'deadline_exceeded',
   unavailable: 'did_unavailable',
+  too_large: 'did_invalid',
   invalid_document: 'did_invalid',
 });
 

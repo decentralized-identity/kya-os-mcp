@@ -70,8 +70,8 @@ describe('a DID the verifier can never resolve', () => {
     });
   });
 
-  it('is did_invalid when its document is over the byte cap, read directly or through SafeFetch', async () => {
-    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+  it('is did_invalid when its document is over the byte cap, read directly or through SafeFetch, with the cap logged and not shown', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const did = 'did:web:large.example';
     const url = 'https://large.example/.well-known/did.json';
     const document = { ...buildDidWebDocument(await keyOf(did, 'key-1')), padding: 'x'.repeat(2 * 1024 * 1024) };
@@ -81,11 +81,8 @@ describe('a DID the verifier can never resolve', () => {
       [direct, 'DID resolution byte limit exceeded'],
       [safe, 'safe-fetch: response body exceeds size cap 1048576'],
     ] as const) {
-      expect(await refusalOf(did, resolver)).toEqual({
-        valid: false,
-        reason: `Could not resolve issuer DID: "${did}" (${detail})`,
-        ...codedAs('did_invalid'),
-      });
+      expect(await refusalOf(did, resolver)).toEqual({ valid: false, reason: `Could not resolve issuer DID: "${did}"`, ...codedAs('did_invalid') });
+      expect(warn.mock.calls.flat().join(' ')).toContain(`${did}: ${detail}`);
     }
   });
 

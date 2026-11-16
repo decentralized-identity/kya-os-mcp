@@ -103,7 +103,7 @@ export class DidWebResolver implements DIDResolver {
 
   /**
    * Why the last read of `did`'s document found none: its host refused, its deadline passed, its
-   * host unavailable, or its document invalid. `undefined` once a read of it has found one, and for
+   * host unavailable, its document over the byte cap, or its document invalid. `undefined` once a read of it has found one, and for
    * a DID this resolver never read.
    */
   lastFailure(did: string): DidResolutionFailure | undefined {

@@ -143,6 +143,16 @@ describe('a response read through text() or json()', () => {
     expect(await refusalOf(textResponse(text.slice(0, -2) + '"'))).not.toBe('Status list fetch byte limit exceeded');
   });
 
+  it('counts a two-byte character as two, a surrogate pair as four and a lone surrogate as three, as UTF-8 writes them', async () => {
+    const LIMIT = 'Status list fetch byte limit exceeded';
+    // Each set fills 1 MiB, two quote marks included, to within a character, and one more is over it.
+    for (const [character, fitting] of [['é', 524_287], ['\u{1F600}', 262_143], ['\uD800', 349_524]] as const) {
+      const text = (count: number) => `"${character.repeat(count)}"`;
+      expect(await refusalOf(textResponse(text(fitting))), `${fitting} of U+${character.codePointAt(0)!.toString(16)}`).not.toBe(LIMIT);
+      expect(await refusalOf(textResponse(text(fitting + 1))), `${fitting + 1} of U+${character.codePointAt(0)!.toString(16)}`).toBe(LIMIT);
+    }
+  });
+
   it('refuses a json() value whose JSON text is over the byte cap', async () => {
     expect(await refusalOf(jsonResponse('x'.repeat(1_048_575)))).toBe('Status list fetch byte limit exceeded');
   });

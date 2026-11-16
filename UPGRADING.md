@@ -609,6 +609,25 @@ On 1.22.0 no proof could be made for it: the result was returned with `_meta.pro
 A verifier on 1.22.0 cannot check such a proof, because it fails to hash the result it received, so a client that verifies envelope proofs of such results needs this release too.
 The body profile, the default, covers `content` alone and is unchanged.
 
+### A `prefix` scope under a `path-prefix` parent
+
+A re-delegation whose scope uses the `prefix` matcher is no longer accepted under a parent scope that uses `path-prefix`.
+On 1.22.0 a child `prefix` scope `notes/` validated under a parent `path-prefix` scope `notes`.
+The chain is now refused with the reason for a scope outside its parent.
+Write the child's scope with the `path-prefix` matcher.
+
+A `path-prefix` scope also treats a percent-encoded dot segment as the dot segment it encodes.
+A segment made of one or two dots, each written as `.` or as `%2e` in either case, such as `%2e%2e`, `.%2E` or `%2e`, is refused as `..` and `.` already were.
+So `notes/%2e%2e/secrets/x.md` no longer matches a `path-prefix` scope `notes`, a `path-prefix` pattern such as `notes/%2e%2e` grants nothing, and a re-delegation is not proven inside or through such a pattern.
+On 1.22.0 each of these matched as ordinary text, which reached outside the grant only for a consumer that decodes a path before it resolves dot segments.
+A `path-prefix` scope also refuses a percent-encoded separator: `%2f` or `%5c`, in either case, anywhere in a value or a pattern, beside a dot segment or not.
+So `notes/..%2fsecrets/x.md`, `notes/%2e%2e%2fsecrets/x.md`, `notes/..%5csecrets/x.md` and `notes/a%2Fb.md` no longer match a `path-prefix` scope `notes`, a `path-prefix` pattern such as `notes%2f2026` grants nothing, and a re-delegation is not proven inside or through such a pattern.
+On 1.22.0 each of these matched as ordinary text, which reached outside the grant only for a consumer that decodes a path before it splits it into segments.
+Nothing else is decoded: `notes/%2ea/b`, `notes/a%2e/b`, `notes/a%20b.md` and `notes/100%.md` still match, and the `exact`, `prefix` and `regex` matchers compare the text as written.
+A doubly encoded form such as `%252f` or `%252e%252e` still matches, because one decoding leaves the text `%2f` or `%2e%2e` and not a separator or a dot segment.
+A consumer that decodes a path more than once has to refuse such a path itself.
+A resource whose name is a dot segment or holds an encoded separator needs an `exact` scope.
+
 ### Conformance suite 1.4.0
 
 The suite adds status-list vectors for the acceptance rule, each with a list whose proof verifies, and has 97 vectors in all.

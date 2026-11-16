@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import type { CrispScope } from '../../types/protocol.js';
 import { authorityContains, matchScope, matcherContains, scopeSatisfies } from '../scope-matcher.js';
 
+/** A percent-encoded `/` and `\`, in each case a path can spell them. */
+const ENCODED_SEPARATORS = ['%2f', '%2F', '%5c', '%5C'];
+
 describe('matchScope', () => {
   it('exact: matches identical strings only', () => {
     expect(matchScope('repo:write', 'exact', 'repo:write')).toBe(true);
@@ -52,6 +55,89 @@ describe('matchScope', () => {
       expect(matchScope('notes', 'path-prefix', value)).toBe(false);
       expect(matchScope('notes/', 'path-prefix', value)).toBe(false);
     }
+  });
+
+  it('path-prefix: a percent-encoded dot segment in the value is the dot segment it encodes', () => {
+    for (const value of [
+      'notes/%2e%2e/a',
+      'notes/%2E%2E/a',
+      'notes/%2e%2E/a',
+      'notes/%2e/a',
+      'notes/%2E/a',
+      'notes/.%2e/a',
+      'notes/%2e./a',
+      'notes/%2e%2e',
+      'notes/a\\%2e%2e\\b',
+    ]) {
+      expect(matchScope('notes', 'path-prefix', value)).toBe(false);
+      expect(matchScope('notes/', 'path-prefix', value)).toBe(false);
+    }
+  });
+
+  it('path-prefix: an encoded dot inside a name is not a dot segment, and nothing else is decoded', () => {
+    for (const value of ['notes/%2ea/b', 'notes/a%2e/b', 'notes/%2e%2e%2e/b', 'notes/...%2e/b', 'notes/%252e%252e/b']) {
+      expect(matchScope('notes', 'path-prefix', value)).toBe(true);
+    }
+  });
+
+  it('path-prefix: an encoded separator beside a dot segment never matches', () => {
+    for (const value of ['notes/..%2fsecrets/x.md', 'notes/%2e%2e%2fsecrets/x.md', 'notes/..%5csecrets/x.md']) {
+      expect(matchScope('notes', 'path-prefix', value), value).toBe(false);
+      expect(matchScope('notes/', 'path-prefix', value), value).toBe(false);
+    }
+  });
+
+  it.each(ENCODED_SEPARATORS)('path-prefix: a value with %s never matches, dot segment or not', (escape) => {
+    for (const value of [`notes/a${escape}b.md`, `notes/${escape}/b`, `notes/2026/plan.md${escape}`, `notes/%2e${escape}/b`, `notes/%${escape}`]) {
+      expect(matchScope('notes', 'path-prefix', value), value).toBe(false);
+    }
+  });
+
+  it.each(ENCODED_SEPARATORS)('path-prefix: a pattern with %s grants nothing', (escape) => {
+    for (const pattern of [`notes${escape}2026`, `${escape}notes`, `notes/a${escape}`]) {
+      for (const value of [pattern, `${pattern}/plan.md`, 'notes', 'notes/2026/plan.md']) {
+        expect(matchScope(pattern, 'path-prefix', value), `${pattern} for ${value}`).toBe(false);
+        expect(matchScope(`${pattern}/*`, 'path-prefix', value), `${pattern}/* for ${value}`).toBe(false);
+      }
+    }
+  });
+
+  it('path-prefix: a percent sign that is not an encoded separator is the text it is', () => {
+    for (const value of [
+      'notes/a%20b.md', 'notes/a%2eb.md', 'notes/100%.md', 'notes/a%2', 'notes/a%5', 'notes/a%2/f', 'notes/a%5/c',
+      'notes/a%2g', 'notes/a%5d', 'notes/a%2 f', 'notes/a2fb5c',
+    ]) {
+      expect(matchScope('notes', 'path-prefix', value), value).toBe(true);
+    }
+    expect(matchScope('notes/100%', 'path-prefix', 'notes/100%/a%2e.md')).toBe(true);
+  });
+
+  it('path-prefix: a doubly encoded separator is text to a consumer that decodes once, and matches', () => {
+    for (const value of ['notes/a%252fb.md', 'notes/a%255Cb.md', 'notes/..%252fsecrets/x.md']) {
+      expect(decodeURIComponent(value)).toMatch(/%(2f|5c)/i);
+      expect(matchScope('notes', 'path-prefix', value), value).toBe(true);
+    }
+    expect(matchScope('notes%252fa', 'path-prefix', 'notes%252fa/b')).toBe(true);
+  });
+
+  it.each(ENCODED_SEPARATORS)('exact, prefix and regex compare %s as the text it is', (escape) => {
+    const value = `notes/..${escape}secrets/x.md`;
+    expect(matchScope(value, 'exact', value)).toBe(true);
+    expect(matchScope('notes/', 'prefix', value)).toBe(true);
+    expect(matchScope(`notes/..${escape}`, 'prefix', value)).toBe(true);
+    expect(matchScope(`notes/\\.\\.${escape}.*`, 'regex', value)).toBe(true);
+    expect(matchScope('notes/.*', 'regex', value)).toBe(true);
+  });
+
+  it('path-prefix: a pattern with a percent-encoded dot segment grants nothing', () => {
+    expect(matchScope('notes/%2e%2e', 'path-prefix', 'notes/%2e%2e')).toBe(false);
+    expect(matchScope('notes/%2e%2e', 'path-prefix', 'notes/%2e%2e/x.md')).toBe(false);
+    expect(matchScope('notes/%2E/secrets', 'path-prefix', 'notes/%2E/secrets/x.md')).toBe(false);
+    expect(matchScope('%2e/notes', 'path-prefix', '%2e/notes/x.md')).toBe(false);
+    // The other matchers compare the text as written.
+    expect(matchScope('notes/%2e%2e', 'exact', 'notes/%2e%2e')).toBe(true);
+    expect(matchScope('notes/', 'prefix', 'notes/%2e%2e/a')).toBe(true);
+    expect(matchScope('notes/%2e%2e/.*', 'regex', 'notes/%2e%2e/a')).toBe(true);
   });
 
   it('path-prefix: dots inside a name are not dot segments', () => {
@@ -147,11 +233,64 @@ describe('scopeSatisfies', () => {
 describe('matcherContains (attenuation across matcher kinds)', () => {
   const m = (matcher: CrispScope['matcher'], resource: string): CrispScope => ({ matcher, resource });
 
+  it('never proves a prefix inside a path-prefix, which refuses values the prefix matches', () => {
+    // A path-prefix matches no value with a dot segment; a prefix matches any value that starts
+    // with its base. So the prefix grants `notes/../admin`, which its would-be parent does not.
+    const [parent, child] = [m('path-prefix', 'notes'), m('prefix', 'notes/')];
+    const value = 'notes/../admin';
+    expect([matchScope(child.resource, child.matcher, value), matchScope(parent.resource, parent.matcher, value)]).toEqual([true, false]);
+    expect(matcherContains(parent, child)).toBe(false);
+    expect(matcherContains(m('path-prefix', 'notes/'), m('prefix', 'notes/2026/'))).toBe(false);
+    // The same authority written as a path-prefix is still proven inside its parent.
+    expect(matcherContains(parent, m('path-prefix', 'notes/2026'))).toBe(true);
+  });
+
   it('never proves containment through a path-prefix with a dot segment', () => {
     expect(matcherContains(m('path-prefix', 'notes'), m('path-prefix', 'notes/../secrets'))).toBe(false);
     expect(matcherContains(m('path-prefix', 'notes/..'), m('path-prefix', 'notes/../x'))).toBe(false);
     expect(matcherContains(m('path-prefix', 'notes'), m('exact', 'notes/../secrets/x.md'))).toBe(false);
     expect(matcherContains(m('prefix', 'notes'), m('path-prefix', 'notes/../secrets'))).toBe(false);
+  });
+
+  it('never proves containment through a path-prefix with a percent-encoded dot segment', () => {
+    expect(matcherContains(m('path-prefix', 'notes'), m('path-prefix', 'notes/%2e%2e/secrets'))).toBe(false);
+    expect(matcherContains(m('path-prefix', 'notes/%2E%2E'), m('path-prefix', 'notes/%2E%2E/x'))).toBe(false);
+    expect(matcherContains(m('path-prefix', 'notes'), m('exact', 'notes/%2e%2e/secrets/x.md'))).toBe(false);
+    expect(matcherContains(m('prefix', 'notes'), m('path-prefix', 'notes/.%2e/secrets'))).toBe(false);
+    // An encoded dot inside a name leaves the pattern an ordinary one.
+    expect(matcherContains(m('path-prefix', 'notes'), m('path-prefix', 'notes/%2ea'))).toBe(true);
+  });
+
+  it.each(ENCODED_SEPARATORS)('never proves a path-prefix with %s inside anything but itself', (escape) => {
+    for (const resource of [`notes/a${escape}b`, `notes/..${escape}secrets`, `notes${escape}a`, `notes/a${escape}/*`]) {
+      const inner = m('path-prefix', resource);
+      expect(matcherContains(m('path-prefix', 'notes'), inner), resource).toBe(false);
+      expect(matcherContains(m('prefix', 'notes'), inner), resource).toBe(false);
+      expect(matcherContains(m('path-prefix', resource), m('path-prefix', `${resource}/x`)), resource).toBe(false);
+    }
+    // The same entry is the same authority, which is none.
+    expect(matcherContains(m('path-prefix', `notes${escape}a`), m('path-prefix', `notes${escape}a`))).toBe(true);
+  });
+
+  it.each(ENCODED_SEPARATORS)('never proves anything inside a path-prefix with %s', (escape) => {
+    const outer = m('path-prefix', `notes${escape}a`);
+    for (const inner of [
+      m('path-prefix', `notes${escape}a/2026`), m('path-prefix', `notes${escape}a/`), m('exact', `notes${escape}a`),
+      m('exact', `notes${escape}a/plan.md`), m('prefix', `notes${escape}a/`), m('path-prefix', 'notes'),
+    ]) {
+      expect(matcherContains(outer, inner), `${inner.matcher}:${inner.resource}`).toBe(false);
+    }
+    expect(matcherContains(m('path-prefix', 'notes'), m('exact', `notes/a${escape}b.md`))).toBe(false);
+  });
+
+  it('proves containment as before for a prefix or an exact scope with an encoded separator, and for its neighbours', () => {
+    expect(matcherContains(m('prefix', 'notes%2f'), m('prefix', 'notes%2fa'))).toBe(true);
+    expect(matcherContains(m('prefix', 'notes%5C'), m('exact', 'notes%5Ca'))).toBe(true);
+    expect(matcherContains(m('regex', 'notes%2f.*'), m('exact', 'notes%2fa'))).toBe(true);
+    for (const resource of ['notes/a%20b', 'notes/a%2eb', 'notes/100%', 'notes/a%2', 'notes/a%5', 'notes/a%252fb']) {
+      expect(matcherContains(m('path-prefix', 'notes'), m('path-prefix', resource)), resource).toBe(true);
+      expect(matcherContains(m('path-prefix', resource), m('path-prefix', `${resource}/x`)), resource).toBe(true);
+    }
   });
 
   const pool = [
@@ -184,8 +323,8 @@ describe('matcherContains (attenuation across matcher kinds)', () => {
   it('proves a narrower prefix or path, never a wider one or one across the path boundary', () => {
     expect(matcherContains(m('prefix', 'repo:*'), m('prefix', 'repo:read'))).toBe(true);
     expect(matcherContains(m('path-prefix', 'notes/'), m('path-prefix', 'notes/2026'))).toBe(true);
+    expect(matcherContains(m('path-prefix', 'notes/'), m('path-prefix', 'notes'))).toBe(true);
     expect(matcherContains(m('prefix', 'notes'), m('path-prefix', 'notes/2026'))).toBe(true);
-    expect(matcherContains(m('path-prefix', 'notes'), m('prefix', 'notes/'))).toBe(true);
     expect(matcherContains(m('prefix', 'repo:read'), m('prefix', 'repo:'))).toBe(false);
     expect(matcherContains(m('path-prefix', 'notes'), m('path-prefix', 'notesx'))).toBe(false);
     expect(matcherContains(m('path-prefix', 'notes'), m('prefix', 'notes'))).toBe(false);

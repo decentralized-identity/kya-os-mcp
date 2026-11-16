@@ -94,7 +94,7 @@ describe('statusListKeeperFor', () => {
   });
 
   it('rule 2 takes only an origin binding for an origin: a URL with a path binds itself alone', () => {
-    const statusListIssuers = { [SERVICE]: ['https://status.example/lists', 'https://Status.example', 'https://status.example/'] };
+    const statusListIssuers = { [SERVICE]: ['https://status.example/lists'] };
     for (const url of ['https://status.example/lists/1', 'https://status.example/lists?x', 'https://Status.example/1', 'https://status.example//1']) {
       expect(statusListKeeperFor(url, { credentialIssuer: ISSUER }, statusListIssuers), url).toEqual({ did: ISSUER, why: 'credential-issuer' });
     }
@@ -102,6 +102,22 @@ describe('statusListKeeperFor', () => {
       did: SERVICE,
       why: 'configured-url',
     });
+  });
+
+  it('rule 2 reads an origin written with its trailing slash as the same origin, binding the same URLs', () => {
+    for (const origin of ['https://status.example/', 'https://status.example']) {
+      const statusListIssuers = { [SERVICE]: [origin] };
+      for (const url of ['https://status.example', 'https://status.example/', 'https://status.example/lists/1',
+        'https://status.example?list=1', 'https://status.example#list']) {
+        expect(statusListKeeperFor(url, { credentialIssuer: ISSUER }, statusListIssuers).did, `${origin} ${url}`).toBe(SERVICE);
+      }
+      for (const url of ['https://status.example.evil.example/1', 'https://status.example@evil.example/1', 'https://STATUS.example/1',
+        'http://status.example/1', 'https://status.example:8443/1']) {
+        expect(statusListKeeperFor(url, { credentialIssuer: ISSUER }, statusListIssuers).did, `${origin} ${url}`).toBe(ISSUER);
+      }
+    }
+    expect(statusListKeeperFor('https://status.example/lists/1', { credentialIssuer: ISSUER }, { [SERVICE]: ['https://status.example/'] }))
+      .toEqual({ did: SERVICE, why: 'configured-origin' });
   });
 
   it('tries the rules in order: an exact binding before an origin, and the configuration before the root', () => {
@@ -140,6 +156,7 @@ describe('assertStatusListIssuers', () => {
   it('takes no map, an empty one, and one of origins and exact URLs', () => {
     for (const value of [undefined, {}, Object.create(null), { [SERVICE]: [] }, Object.freeze({ [SERVICE]: Object.freeze(['https://status.example']) }),
       { [SERVICE]: ['https://status.example', 'https://status.example:8443', 'https://status.example/lists/1', 'http://plain.example/1', 'https://[::1]/1'] },
+      { [SERVICE]: ['https://status.example/', 'https://status.example:8443/', 'https://status.example'] },
       { [SERVICE]: [URL, URL] }]) {
       expect(() => assertStatusListIssuers(value)).not.toThrow();
     }
@@ -195,6 +212,49 @@ describe('assertStatusListIssuers', () => {
       new TypeError(`statusListIssuers binds "${long.slice(0, 64)}"... to both "${SERVICE}" and "${HERD}", and a URL has one keeper`),
     );
   });
+
+  it('refuses one origin under two issuers whichever form each writes it in', () => {
+    expect(() => assertStatusListIssuers({ [SERVICE]: ['https://status.example'], [HERD]: ['https://status.example/'] })).toThrow(
+      new TypeError(`statusListIssuers binds "https://status.example/" to both "${SERVICE}" and "${HERD}", and a URL has one keeper`),
+    );
+  });
+
+  it.each([
+    ['a path prefix', 'https://status.example/lists/', ', such as "https://status.example/"'],
+    ['a prefix at a port', 'https://status.example:8443/lists/', ', such as "https://status.example:8443/"'],
+    ['an http: origin', 'http://status.example/', ''],
+    ['an origin whose host is an IPv6 literal', 'https://[::1]/', ''],
+  ])('refuses %s that ends in "/", which binds no URL that merely starts with it', (_label, binding, example) => {
+    expect(() => assertStatusListIssuers({ [SERVICE]: [binding] })).toThrow(
+      new TypeError(
+        `statusListIssuers["${SERVICE}"] holds "${binding}", which ends in "/" but is not a whole origin: ` +
+          `a binding is a status list's exact URL or a whole https origin${example}, and binds no URL that merely starts with it`,
+      ),
+    );
+  });
+
+  it.each([
+    ['https://Status.example', 'status.example'],
+    ['https://status.EXAMPLE/lists/1', 'status.example'],
+    ['https://user@Status.example/lists/1', 'status.example'],
+    ['https://[::FFFF:7f00:1]/lists/1', '[::ffff:7f00:1]'],
+  ])('refuses %s, whose host is not in lower case, naming the host to write', (binding, host) => {
+    expect(() => assertStatusListIssuers({ [SERVICE]: [binding] })).toThrow(
+      new TypeError(
+        `statusListIssuers["${SERVICE}"] holds "${binding}", whose host is not in lower case, so no status list's URL can match it: ` +
+          `write the host as "${host}"`,
+      ),
+    );
+  });
+
+  it.each(['https://', 'https://status example/1', 'https://status.example:99999/1', 'http://[::1/1'])(
+    'refuses %s, which no URL parser takes',
+    (binding) => {
+      expect(() => assertStatusListIssuers({ [SERVICE]: [binding] })).toThrow(
+        new TypeError(`statusListIssuers["${SERVICE}"] holds "${binding}", which is not a URL, so no status list's URL can match it`),
+      );
+    },
+  );
 
   it('lets an exact URL of one issuer lie inside an origin of another', () => {
     const statusListIssuers: StatusListIssuers = { [SERVICE]: ['https://status.example'], [HERD]: ['https://status.example/herd/1'] };

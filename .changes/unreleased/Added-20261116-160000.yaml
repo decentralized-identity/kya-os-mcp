@@ -1,0 +1,21 @@
+kind: Added
+body: |-
+    **Every refusal of a delegation, its chain, its status or an Entity Card
+    carries a stable code, and says whether it is transient.** A reason is
+    text for people, and its wording changed in this release; branch on the
+    code instead. `REFUSAL_CODES` lists 21 codes, exported with
+    `RefusalCode`, `isRefusalCode` and `isTransientRefusal` from
+    `@kya-os/mcp`, `@kya-os/mcp/delegation` and `@kya-os/mcp/card`. The
+    refusals of the delegation and Entity Card verifiers carry `code` and
+    `transient`, and a rejection from `verifyRequestDelegation`,
+    `requireDelegation` or `readDelegationChain` carries `refusalCode` and
+    `transient`. Four codes are transient, `did_unavailable`,
+    `status_unavailable`, `deadline_exceeded` and `runtime_error`: the
+    verifier could not decide, and the same request may pass later. A custom
+    signature verifier, chain verifier or `BitstringRevocationChecker` may
+    name a code in its answer. The delegation gate of `withKyaOs` records
+    the code as `authorization.verificationCode` on `delegation.rejected`,
+    and logs it as `{ code, transient }` beside a reason it now keeps up to
+    512 UTF-16 code units. What a client receives is unchanged.
+    UPGRADING.md, "Refusal codes", has the catalog.
+time: 2026-11-16T16:00:00.000000-06:00

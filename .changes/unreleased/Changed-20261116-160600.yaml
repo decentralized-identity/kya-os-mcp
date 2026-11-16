@@ -1,0 +1,14 @@
+kind: Changed
+body: |-
+    **A status list refused for its signer says which `statusListIssuers`
+    line would accept it.** When the checker refuses a list another DID
+    signed, its reason ends with that configuration as a condition only the
+    operator can judge, such as `; if "<signer>" signs this issuer's lists,
+    name it in statusListIssuers: { "<signer>": ["<origin>"] }`, or says
+    where to name the signer when the line cannot be printed whole. So that
+    the line is not cut, a status check's reason is kept up to 512 UTF-16
+    code units, `CHECKER_REASON_LENGTH`, exported from `@kya-os/mcp/card`,
+    in the checker, the chain walk, `verifyCard` and the `Status check
+    error` of `DelegationCredentialVerifier`, which kept 256. UPGRADING.md,
+    "How to write `statusListIssuers`", has each form.
+time: 2026-11-16T16:06:00.000000-06:00

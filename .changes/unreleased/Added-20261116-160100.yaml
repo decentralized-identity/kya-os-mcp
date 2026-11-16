@@ -1,0 +1,17 @@
+kind: Added
+body: |-
+    **`development: true` reads did:web documents and status lists on
+    `localhost`, `*.localhost` names and private IPs, for local
+    development.** Set it on `withKyaOs` or `createKyaOsMiddleware`, where
+    it holds for every resolver and reader the middleware builds and reaches
+    each `didResolvers` factory in its context, or on
+    `DidWebResolverOptions`, `CheqdStatusListResolverOptions` or
+    `SafeFetchOptions`. It admits private and local hosts and changes
+    nothing else. It warns once per process, throws when what it is set on
+    is built while `NODE_ENV` is `production`, and throws a `TypeError` for
+    any value but a boolean. To read private hosts in production, give the
+    fetch provider `allowPrivateNetworkHosts: true` as before. UPGRADING.md,
+    "A did:web DID or status list served from a private IP address or a
+    local name, such as `localhost`, as in development", says where to set
+    it.
+time: 2026-11-16T16:01:00.000000-06:00

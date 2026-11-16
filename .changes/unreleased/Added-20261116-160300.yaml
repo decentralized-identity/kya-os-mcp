@@ -1,0 +1,15 @@
+kind: Added
+body: |-
+    **A refusal says why an issuer's DID could not be resolved.** When the
+    resolver reports why it found no document, `Could not resolve issuer
+    DID: "<did>"` ends with that detail in parentheses, such as `(DID
+    resolution failed: HTTP 404 for "<url>")`, for a VC-JWT as for a
+    credential with an embedded proof, and so does
+    `CheqdStatusListResolver`'s `Could not resolve issuer DID <did>`.
+    `DIDResolver` has a new optional `lastFailure(did)`, which the library's
+    did:web and did:cheqd resolvers and the delegation gate's resolver
+    answer, with a `DidResolutionFailure`: a `cause`, one of `host_refused`,
+    `deadline_exceeded`, `unavailable` and `invalid_document`, and a
+    `detail`. Both types are exported. A transport's own error stays in the
+    log. UPGRADING.md, "Changed refusal reasons", has the wording.
+time: 2026-11-16T16:03:00.000000-06:00

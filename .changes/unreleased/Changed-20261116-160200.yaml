@@ -1,0 +1,12 @@
+kind: Changed
+body: |-
+    **The refusal of a private or local host names the settings that admit
+    it.** A did:web or status-list read refused for its host now says `In
+    local development, set development: true; to read private hosts in
+    production, give the fetch provider allowPrivateNetworkHosts: true.`,
+    and `createSafeFetch`'s refusal of a non-public address now ends `: in
+    local development, set development: true; to read a host you own in
+    production, list each origin you own in SafeFetch's allowOrigins`. Code
+    that matches on either text needs the new wording. UPGRADING.md,
+    "Changed refusal reasons", has both.
+time: 2026-11-16T16:02:00.000000-06:00

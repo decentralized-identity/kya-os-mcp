@@ -8,11 +8,15 @@
  *
  * Whoever presents a credential chooses its issuer's DID, and a did:web host may be an internal one
  * behind split-horizon DNS, so a refusal shows a failure's detail only where it tells the presenter
- * nothing it does not already know: the host its DID names was refused, with how to admit it; the
- * deadline passed; or the document is not the DID's. A DID whose document could not be read is
- * refused as unresolvable alone, so that no HTTP status, byte cap or answer that is not JSON tells
- * the presenter what an internal name answered; the library's resolvers log that detail for the
- * operator. A document over the byte cap is refused so, though as an invalid DID.
+ * nothing the verifier's network answered: where the library's own resolvers decided it from the
+ * DID alone, before any request or DNS lookup (the private-network rule refusing an IP literal or a
+ * local name the DID names, a DID of a method no resolver serves, a did:key that does not decode,
+ * or a did:cheqd DID of no network the resolver asks), or where the resolution ran out of time,
+ * which the presenter observes anyway. Anything else was learned from the network, or is reported
+ * by a host's resolver that cannot say it was not: an HTTP status, a byte cap, an answer that is not
+ * JSON, a redirect, a document that is not the DID's, or a name that resolves to a private address.
+ * The refusal then says only that the DID could not be resolved, with the code of the cause, and the
+ * library's resolvers log the detail for the operator.
  */
 
 import type { RefusalCode } from '../refusal-codes.js';
@@ -20,7 +24,7 @@ import { describeTimeout } from '../utils/deadline.js';
 import { describeValue } from '../utils/describe-value.js';
 import { isRecord } from '../utils/guards.js';
 import { sanitizeForMessage } from '../utils/message-text.js';
-import { readFailureKind } from '../utils/read-failure.js';
+import { readFailureKind, refusedBeforeRequest } from '../utils/read-failure.js';
 import type { DIDDocument, DIDResolver, DidResolutionFailure, DidResolutionFailureCause } from './vc-verifier.types.js';
 import { resolveWithinLimits, type ResolutionDeadline } from './did-resource-limits.js';
 
@@ -39,12 +43,24 @@ const MAX_RECORDED_FAILURES = 256;
 /** The most UTF-16 code units of a failure's detail a refusal shows. */
 const DETAIL_LENGTH = 256;
 
-/** The causes whose detail a refusal shows, since it tells the presenter of the DID nothing it does not know. */
-const SHOWN_CAUSES: ReadonlySet<DidResolutionFailureCause> = new Set<DidResolutionFailureCause>([
-  'host_refused',
-  'deadline_exceeded',
-  'invalid_document',
-]);
+/**
+ * The failures the library's own resolvers decided from the DID alone, before any request or DNS
+ * lookup, whose detail a refusal may show ({@link shownToPresenter}). They are kept by identity, so
+ * a host's resolver cannot claim one, and each is frozen, so none changes once marked.
+ */
+const DECIDED_FROM_DID = new WeakSet<object>();
+
+/** A frozen copy of `failure`, marked as decided from the DID alone. */
+function decidedFromDid(failure: DidResolutionFailure): DidResolutionFailure {
+  const kept = Object.freeze({ cause: failure.cause, detail: failure.detail });
+  DECIDED_FROM_DID.add(kept);
+  return kept;
+}
+
+/** A frozen copy of `failure`, read from `from`, marked as decided from the DID alone when `from` was. */
+function keptAs(from: object, failure: DidResolutionFailure): DidResolutionFailure {
+  return DECIDED_FROM_DID.has(from) ? decidedFromDid(failure) : Object.freeze({ cause: failure.cause, detail: failure.detail });
+}
 
 /** A resolver's record of the last failure for each DID, of at most {@link MAX_RECORDED_FAILURES} DIDs. */
 export class DidResolutionFailures {
@@ -53,7 +69,7 @@ export class DidResolutionFailures {
   /** Record `failure` as the last for `did`, forgetting the least recent DID's when the record is full. */
   record(did: string, failure: DidResolutionFailure): void {
     this.byDid.delete(did);
-    this.byDid.set(did, Object.freeze({ cause: failure.cause, detail: failure.detail }));
+    this.byDid.set(did, keptAs(failure, failure));
     if (this.byDid.size > MAX_RECORDED_FAILURES) this.byDid.delete(this.byDid.keys().next().value!);
   }
 
@@ -70,8 +86,9 @@ export class DidResolutionFailures {
 
 /**
  * The failure an error thrown while reading a DID document from `url` stands for, under a deadline
- * of `timeoutMs`: the kind of read failure it carries, or `unavailable` for a transport's own error,
- * whose words are left to the log.
+ * of `timeoutMs`: the kind of read failure it carries, decided from the DID alone where the read
+ * refused its URL before any request, or `unavailable` for a transport's own error, whose words are
+ * left to the log.
  */
 export function readFailureOf(error: unknown, url: string, timeoutMs: number): DidResolutionFailure {
   const kind = readFailureKind(error);
@@ -82,27 +99,31 @@ export function readFailureOf(error: unknown, url: string, timeoutMs: number): D
   if (kind === 'deadline_exceeded') {
     return { cause: kind, detail: `${message}: no document arrived within ${describeTimeout(timeoutMs)}` };
   }
-  return { cause: kind, detail: message };
+  const failure: DidResolutionFailure = { cause: kind, detail: message };
+  return refusedBeforeRequest(error) ? decidedFromDid(failure) : failure;
 }
 
-/** An `invalid_document` failure: `resolver`, a resolver of some methods, resolves no DID of `did`'s method. */
+/** An `invalid_document` failure decided from the DID alone: `detail` says what about it no resolution can change. */
+export function invalidDid(detail: string): DidResolutionFailure {
+  return decidedFromDid({ cause: 'invalid_document', detail });
+}
+
+/** An `invalid_document` failure decided from the DID alone: `resolver`, a resolver of some methods, resolves no DID of `did`'s method. */
 export function unservedMethod(resolver: string, did: string): DidResolutionFailure {
   const method = /^did:([^:]*):/.exec(did)?.[1];
-  return {
-    cause: 'invalid_document',
-    detail: method === undefined ? `${resolver} resolves no such DID` : `${resolver} resolves no ${describeValue(method)} DID`,
-  };
+  return invalidDid(method === undefined ? `${resolver} resolves no such DID` : `${resolver} resolves no ${describeValue(method)} DID`);
 }
 
-/** An `invalid_document` failure: the document read from `url` is not a valid one of the DID, as `why` says. */
+/** An `invalid_document` failure learned from the network: the document read from `url` is not a valid one of the DID, as `why` says. */
 export function invalidDocument(url: string, why: string): DidResolutionFailure {
   return { cause: 'invalid_document', detail: `The document at ${describeValue(url)} ${why}` };
 }
 
 /**
  * The failure `resolver` reports for `did`, when it has `lastFailure` and that answers a failure
- * with a known cause and a detail. A resolver is the host's code, so one that throws, or answers
- * anything else, reports nothing.
+ * with a known cause and a detail, decided from the DID alone only where it is one of the library's
+ * own failures that was. A resolver is the host's code, so one that throws, or answers anything
+ * else, reports nothing.
  */
 export function reportedFailure(resolver: DIDResolver, did: string): DidResolutionFailure | undefined {
   try {
@@ -110,7 +131,7 @@ export function reportedFailure(resolver: DIDResolver, did: string): DidResoluti
     if (!isRecord(failure)) return undefined;
     const { cause, detail } = failure;
     if (typeof cause !== 'string' || !CAUSES.has(cause) || typeof detail !== 'string') return undefined;
-    return { cause: cause as DidResolutionFailureCause, detail };
+    return keptAs(failure, { cause: cause as DidResolutionFailureCause, detail });
   } catch {
     return undefined;
   }
@@ -139,12 +160,22 @@ export function unresolvedCode(failure: DidResolutionFailure | undefined): Refus
 }
 
 /**
+ * Whether a refusal may show `failure`'s detail to whoever presented the DID: where the resolution
+ * ran out of time, which the presenter observes anyway, or where the library decided it from the DID
+ * alone, before any request or DNS lookup. Anything else was learned from the network, or is
+ * reported by a host's resolver that cannot say it was not, and is for the operator alone.
+ */
+function shownToPresenter(failure: DidResolutionFailure): boolean {
+  return failure.cause === 'deadline_exceeded' || DECIDED_FROM_DID.has(failure);
+}
+
+/**
  * What a refusal of a DID as unresolvable ends with: the detail of `failure`, the failure the
- * resolver reports for it, in parentheses after a space and sanitized for a message, when its cause
- * is one of {@link SHOWN_CAUSES}, or nothing.
+ * resolver reports for it, in parentheses after a space and sanitized for a message, where it is
+ * {@link shownToPresenter}, or nothing.
  */
 function failureSuffix(failure: DidResolutionFailure | undefined): string {
-  if (failure === undefined || !SHOWN_CAUSES.has(failure.cause)) return '';
+  if (failure === undefined || !shownToPresenter(failure)) return '';
   return ` (${sanitizeForMessage(failure.detail, DETAIL_LENGTH)})`;
 }
 
@@ -159,10 +190,10 @@ export type ExplainedResolution =
 /**
  * Resolve `did` through `resolver` within the limits, as `resolveBoundedDid` does, and when no
  * document is found say why. When the resolver found nothing, that is the failure it reports, as a
- * suffix in parentheses where its cause is one a refusal shows ({@link failureSuffix}), with the code
- * of its cause ({@link unresolvedCode}). When the limits refused
- * the DID, its key or what the resolver returned, it is nothing, since the resolver's last failure
- * is then not this one, with `did_invalid`. A resolver that throws, or a deadline that passes,
+ * suffix in parentheses where a refusal may show it ({@link failureSuffix}), with the code of its
+ * cause ({@link unresolvedCode}). When the limits refused the DID, its key or what the resolver
+ * returned, it is nothing, since the resolver's last failure is then not this one, with
+ * `did_invalid`. A resolver that throws, or a deadline that passes,
  * rejects, as `resolveWithinLimits` does.
  */
 export async function resolveExplained(

@@ -19,7 +19,7 @@ import { didKeyFragment } from '../utils/did-helpers.js';
 import { base64urlEncodeFromBytes } from '../utils/base64.js';
 import type { DIDResolver, DIDDocument, DidResolutionFailure, VerificationMethod } from './vc-verifier.js';
 import { logger } from '../logging/index.js';
-import { DidResolutionFailures, unservedMethod } from './did-resolution-failure.js';
+import { DidResolutionFailures, invalidDid, unservedMethod } from './did-resolution-failure.js';
 
 /** Ed25519 multicodec prefix (0xed 0x01) */
 export const ED25519_MULTICODEC_PREFIX = new Uint8Array([0xed, 0x01]);
@@ -136,7 +136,7 @@ export function createDidKeyResolver(): DIDResolver {
       }
       const document = resolveDidKeySync(did);
       if (document === null) {
-        return failed(did, { cause: 'invalid_document', detail: UNDECODABLE_DID_KEY });
+        return failed(did, invalidDid(UNDECODABLE_DID_KEY));
       }
       failures.clear(did);
       return document;

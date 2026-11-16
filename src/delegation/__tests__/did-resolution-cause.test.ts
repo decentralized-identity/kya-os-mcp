@@ -3,10 +3,11 @@
  * DID: "<did>"`, and the developer needs to know why: a host the private-network rule refused, a
  * host too slow to answer, one that could not be reached, or a document that is not the DID's. The
  * library's resolvers report the cause of their last failure for a DID through `lastFailure`, as an
- * object a caller can branch on, and the verifier codes the refusal by it and appends what it says,
- * in parentheses, where that tells the presenter of the DID nothing it does not know; a host that
- * could not be read is left to the log. A resolver of the host's own, without `lastFailure`, is
- * refused as before. Every test uses the package's public exports, as an adopter would.
+ * object a caller can branch on, and the verifier codes the refusal by it. It appends what the
+ * failure says, in parentheses, only where that was decided from the DID alone, before any request,
+ * or the deadline passed; what the network answered is left to the log and `lastFailure`. A
+ * resolver of the host's own, without `lastFailure`, is refused as before. Every test uses the
+ * package's public exports, as an adopter would.
  */
 
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -95,12 +96,13 @@ describe("the refusal of a credential whose issuer's did:web document cannot be 
     expect(cause).toBe('host_refused');
   });
 
-  it('says a redirect the scheme rule refuses was refused, as host_refused', async () => {
-    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+  it('leaves a redirect the scheme rule refuses, which the host answered, to the log and lastFailure, as host_refused', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const resolver = createDidWebResolver(network());
     const [reason] = await refusals(resolver, HOPPING.did);
-    expect(reason).toBe(`Could not resolve issuer DID: "${HOPPING.did}" (Redirect to a "file:" URL refused)`);
-    expect(resolver.lastFailure?.(HOPPING.did)?.cause).toBe('host_refused');
+    expect(reason).toBe(`Could not resolve issuer DID: "${HOPPING.did}"`);
+    expect(resolver.lastFailure?.(HOPPING.did)).toEqual({ cause: 'host_refused', detail: 'Redirect to a "file:" URL refused' });
+    expect(warn).toHaveBeenCalledWith(`[DidWebResolver] Error resolving ${HOPPING.did}: Redirect to a "file:" URL refused`);
   });
 
   it("says the document did not arrive within the resolver's deadline, as deadline_exceeded", async () => {
@@ -130,14 +132,16 @@ describe("the refusal of a credential whose issuer's did:web document cannot be 
     expect(warn).toHaveBeenCalledWith(`[DidWebResolver] Error resolving ${GONE.did}: ${detail}`);
   });
 
-  it("says a document that is another DID's is not this DID's, as invalid_document", async () => {
-    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+  it("leaves a document that is another DID's to the log and lastFailure, as invalid_document", async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const resolver = createDidWebResolver(network());
     const [reason] = await refusals(resolver, ELSEWHERE.did);
-    expect(reason).toBe(
-      `Could not resolve issuer DID: "${ELSEWHERE.did}" (The document at "${ELSEWHERE.url}" names another DID as its id)`,
-    );
-    expect(resolver.lastFailure?.(ELSEWHERE.did)?.cause).toBe('invalid_document');
+    expect(reason).toBe(`Could not resolve issuer DID: "${ELSEWHERE.did}"`);
+    expect(resolver.lastFailure?.(ELSEWHERE.did)).toEqual({
+      cause: 'invalid_document',
+      detail: `The document at "${ELSEWHERE.url}" names another DID as its id`,
+    });
+    expect(warn).toHaveBeenCalledWith(`[DidWebResolver] DID Document id mismatch: expected ${ELSEWHERE.did}, got ${FOUND.did}`);
   });
 
   it('keeps the failures of the last 256 DIDs alone, so a counterparty that names many makes it hold little', async () => {
@@ -182,12 +186,12 @@ describe("a resolver of the host's own", () => {
     }
   });
 
-  it('that reports a failure of its own a refusal shows, has it appended, sanitized and cut as any reason is', async () => {
+  it('that reports a deadline it let pass, the one failure of its own a refusal shows, has it appended, sanitized and cut as any reason is', async () => {
     const own: DIDResolver = {
       resolve: async () => null,
-      lastFailure: () => ({ cause: 'invalid_document', detail: `the registry's document is not the DID's\n${'x'.repeat(400)}` }),
+      lastFailure: () => ({ cause: 'deadline_exceeded', detail: `the registry did not answer in time\n${'x'.repeat(400)}` }),
     };
-    const shown = `the registry's document is not the DID's\uFFFD${'x'.repeat(215)}\u2026`;
+    const shown = `the registry did not answer in time\uFFFD${'x'.repeat(220)}\u2026`;
     expect(await refusals(own, GONE.did)).toEqual(Array(2).fill(`Could not resolve issuer DID: "${GONE.did}" (${shown})`));
   });
 });

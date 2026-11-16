@@ -80,7 +80,7 @@ function assertHttpsUrl(raw: string): string {
     throw new Error(`safe-fetch: invalid URL "${raw}"`);
   }
   if (url.protocol !== 'https:') {
-    throw new ReadFailureError('host_refused', `safe-fetch: only https is allowed (got "${url.protocol}")`);
+    throw new ReadFailureError('host_refused', `safe-fetch: only https is allowed (got "${url.protocol}")`, { beforeRequest: true });
   }
   return url.href;
 }

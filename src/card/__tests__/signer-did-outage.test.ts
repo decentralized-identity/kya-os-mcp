@@ -3,16 +3,19 @@
  * the Card verifiers refuse as the delegation verifier does: with the code of why, so an outage is
  * `did_unavailable` or `deadline_exceeded`, both transient, and never a verdict on the signer
  * (`status_signer_untrusted`, `invalid_proof`) that asking again could not lift. The reason says
- * the DID could not be resolved, and never what the resolver's network answered, which is logged.
- * Every accept and refuse decision is as before. Every test uses `@kya-os/mcp/card` as an adopter
- * calls it, over real signed hops and lists.
+ * why only where that was decided from the DID alone, before any request; what the resolver learned
+ * from its network, read directly or through SafeFetch, or what a host's resolver reports, is
+ * logged, and the reason says only that the DID could not be resolved. Every accept and refuse
+ * decision is as before. Every test uses `@kya-os/mcp/card` as an adopter calls it, over real
+ * signed hops and lists.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createDidKeyResolver, createDidWebResolver, logger, type DIDResolver } from '../../index.js';
+import { buildDidWebDocument, createDidKeyResolver, createDidWebResolver, logger, type DIDResolver } from '../../index.js';
 import {
   createDelegationProofVerifier,
   createRevocationChecker,
+  createSafeFetch,
   createStatusListProofVerifier,
   isTransientRefusal,
   toDelegationChainMeta,
@@ -20,7 +23,8 @@ import {
   type RefusalCode,
   type RevocationStatusEntry,
 } from '../index.js';
-import { AnsweringFetchProvider } from '../../__tests__/utils/adopter-providers.js';
+import { AnsweringFetchProvider, safeFetchProvider, safeFetchServing } from '../../__tests__/utils/adopter-providers.js';
+import { keyOf } from '../../__tests__/utils/delegation-credentials.js';
 import { NOW_MS, RESOURCE, now, parties, serve, statusList, twoHopChain } from './signed-chain-helpers.js';
 
 afterEach(() => {
@@ -31,6 +35,9 @@ const p = parties();
 const chain = twoHopChain(p);
 const keys = createDidKeyResolver();
 const ADDRESS = '10.0.0.9';
+const INTERNAL = 'did:web:jenkins.corp.example';
+const INTERNAL_URL = 'https://jenkins.corp.example/.well-known/did.json';
+const LOCAL = 'did:web:issuer.localhost%3A4101';
 
 /** The did:key resolver, but with `fail` answering for `did`. */
 const failingFor = (did: string, fail: DIDResolver): DIDResolver => ({
@@ -38,42 +45,102 @@ const failingFor = (did: string, fail: DIDResolver): DIDResolver => ({
   lastFailure: (asked) => (asked === did ? fail.lastFailure?.(asked) : keys.lastFailure?.(asked)),
 });
 
-/** A did:web resolver whose internal host answers `INTERNAL` with a document over the byte cap, as a resolver of every DID. */
-const INTERNAL = 'did:web:jenkins.corp.example';
-const oversized = createDidWebResolver(new AnsweringFetchProvider(() => Response.json({ id: INTERNAL, padding: 'x'.repeat(2 * 1024 * 1024) })));
-const readingOversized: DIDResolver = { resolve: () => oversized.resolve(INTERNAL), lastFailure: () => oversized.lastFailure?.(INTERNAL) };
+/** `resolver` reading `did`'s document whatever DID it is asked for, as a signer's resolver that reads it from that host. */
+const readingAs = (did: string, resolver: DIDResolver): DIDResolver => ({
+  resolve: () => resolver.resolve(did),
+  lastFailure: () => resolver.lastFailure?.(did),
+});
 
-/** Each way a signer's DID document may not be read, the code it is refused with, and what its reason ends with. */
-const OUTAGES: [string, DIDResolver, RefusalCode, string][] = [
+/** A did:web resolver whose provider answers every URL with `answer`. */
+const answering = (answer: () => unknown) => createDidWebResolver(new AnsweringFetchProvider(answer));
+
+/** A document of the internal host that names another DID as its id. */
+const anotherDids = async () => buildDidWebDocument(await keyOf('did:web:other.example', 'key-1'));
+
+/**
+ * Each way a signer's DID document may not be read: how it is resolved, the code it is refused
+ * with, what its reason ends with, and what the log says of it, where the test checks.
+ */
+const OUTAGES: [string, () => Promise<DIDResolver>, RefusalCode, string, string][] = [
   [
     'reports its host unavailable',
-    { resolve: async () => null, lastFailure: () => ({ cause: 'unavailable', detail: `HTTP 503 from ${ADDRESS}` }) },
+    async () => ({ resolve: async () => null, lastFailure: () => ({ cause: 'unavailable', detail: `HTTP 503 from ${ADDRESS}` }) }),
     'did_unavailable',
     '',
+    '',
   ],
-  ['finds nothing and says no more', { resolve: async () => null }, 'did_unavailable', ''],
+  ['finds nothing and says no more', async () => ({ resolve: async () => null }), 'did_unavailable', '', ''],
   [
     'throws',
-    {
+    async () => ({
       resolve: async () => {
         throw new Error(`getaddrinfo EAI_AGAIN ${ADDRESS}`);
       },
-    },
+    }),
     'did_unavailable',
     '',
+    ADDRESS,
   ],
   [
     'reports its host refused',
-    { resolve: async () => null, lastFailure: () => ({ cause: 'host_refused', detail: 'Request to "issuer.localhost" refused' }) },
+    async () => ({ resolve: async () => null, lastFailure: () => ({ cause: 'host_refused', detail: `${ADDRESS} refused` }) }),
     'host_refused',
-    ' (Request to "issuer.localhost" refused)',
+    '',
+    '',
   ],
-  ['reads a document over the byte cap from an internal host', readingOversized, 'did_invalid', ''],
   [
-    'reports a document that is not the DID\'s',
-    { resolve: async () => null, lastFailure: () => ({ cause: 'invalid_document', detail: 'names another DID as its id' }) },
+    "reports a document that is not the DID's",
+    async () => ({ resolve: async () => null, lastFailure: () => ({ cause: 'invalid_document', detail: 'names another DID as its id' }) }),
     'did_invalid',
-    ' (names another DID as its id)',
+    '',
+    '',
+  ],
+  [
+    'reads a document over the byte cap from an internal host',
+    async () => readingAs(INTERNAL, answering(() => Response.json({ id: INTERNAL, padding: 'x'.repeat(2 * 1024 * 1024) }))),
+    'did_invalid',
+    '',
+    `${INTERNAL}: DID resolution byte limit exceeded`,
+  ],
+  [
+    'reads a document naming another DID from an internal host',
+    async () => {
+      const document = await anotherDids();
+      return readingAs(INTERNAL, answering(() => Response.json(document)));
+    },
+    'did_invalid',
+    '',
+    'got did:web:other.example',
+  ],
+  [
+    'reads, through SafeFetch, a name that resolves to a private address',
+    async () => {
+      const safeFetch = createSafeFetch({
+        lookup: async () => [{ address: ADDRESS, family: 4 }],
+        transport: async () => {
+          throw new Error('never reached');
+        },
+      });
+      return readingAs(INTERNAL, createDidWebResolver(safeFetchProvider(safeFetch)));
+    },
+    'host_refused',
+    '',
+    `resolves to the non-public address ${ADDRESS}`,
+  ],
+  [
+    'reads, through SafeFetch, a document naming another DID from an internal host',
+    async () => readingAs(INTERNAL, createDidWebResolver(safeFetchProvider(safeFetchServing({ [INTERNAL_URL]: await anotherDids() })))),
+    'did_invalid',
+    '',
+    'got did:web:other.example',
+  ],
+  [
+    'refuses, before any request, the local host the DID names',
+    async () => readingAs(LOCAL, answering(() => Response.json({}))),
+    'host_refused',
+    ' (Request to "issuer.localhost:4101" refused: a private or local host. In local development, set development: true; ' +
+      'to read private hosts in production, give the fetch provider allowPrivateNetworkHosts: true.)',
+    '',
   ],
 ];
 
@@ -95,13 +162,12 @@ describe("a status list whose signer's DID document cannot be read", () => {
       verifyStatusList: createStatusListProofVerifier({ didResolver: failingFor(p.acme.did, didResolver), dependencyTimeoutMs: 20 }),
     })(entry, { credentialIssuer: p.acme.did });
 
-  it.each(OUTAGES)('is refused with the code of why, when its resolver %s', async (_name, resolver, code, suffix) => {
+  it.each(OUTAGES)('is refused with the code of why, when its resolver %s', async (_name, resolver, code, suffix, logged) => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
-    const answer = await checkWith(resolver);
+    const answer = await checkWith(await resolver());
     expect(answer).toEqual({ revoked: true, fresh: false, reason: `Could not resolve issuer DID: "${p.acme.did}"${suffix}`, ...coded(code) });
     expect(answer.reason).not.toContain(ADDRESS);
-    if (_name === 'throws') expect(warn.mock.calls.flat().join(' ')).toContain(ADDRESS);
-    if (resolver === readingOversized) expect(warn.mock.calls.flat().join(' ')).toContain(`${INTERNAL}: DID resolution byte limit exceeded`);
+    expect(warn.mock.calls.flat().join(' ')).toContain(logged);
   });
 
   it('is refused as deadline_exceeded when its resolver does not answer in time', async () => {
@@ -140,14 +206,15 @@ describe("a delegation hop whose issuer's DID document cannot be read", () => {
     return result.ok ? result : { code: result.code, refusalCode: result.refusalCode, transient: result.transient, reasons: result.reasons };
   };
 
-  it.each(OUTAGES)('is refused with the code of why, when its resolver %s', async (_name, resolver, code, suffix) => {
-    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
-    expect(await refusalOf(resolver)).toEqual({
+  it.each(OUTAGES)('is refused with the code of why, when its resolver %s', async (_name, resolver, code, suffix, logged) => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    expect(await refusalOf(await resolver())).toEqual({
       code: 'delegation_invalid',
       refusalCode: code,
       transient: isTransientRefusal(code),
       reasons: [`hop 1: Could not resolve issuer DID: "${p.agent.did}"${suffix}`],
     });
+    expect(warn.mock.calls.flat().join(' ')).toContain(logged);
   });
 
   it('is refused as deadline_exceeded when its resolver does not answer in time', async () => {

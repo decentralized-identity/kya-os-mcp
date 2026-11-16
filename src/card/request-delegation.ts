@@ -47,6 +47,12 @@ export {
 } from './carried-chain.js';
 
 /**
+ * The most UTF-16 code units of a hop proof verifier's refusal that a hop's reason keeps: enough for
+ * the library's refusal of an issuer DID it could not resolve to keep a remedy it shows whole.
+ */
+const HOP_REFUSAL_LENGTH = 512;
+
+/**
  * A snake_case rejection code. `delegation_missing` means no authority was presented;
  * `delegation_unresolvable` means a by-reference lookup failed; the rest mean the chain was
  * presented and does not authorize the call.
@@ -316,7 +322,7 @@ async function hopProofRefusal(
     return verified === true ? undefined : { reason: 'proof did not verify', ...coded('invalid_proof') };
   } catch (error) {
     if (error instanceof DeadlineExceededError) return { reason: error.message, ...coded('deadline_exceeded') };
-    if (error instanceof RefusalError) return { reason: sanitizeForMessage(error.message), ...coded(error.code) };
+    if (error instanceof RefusalError) return { reason: sanitizeForMessage(error.message, HOP_REFUSAL_LENGTH), ...coded(error.code) };
     return { reason: 'proof did not verify', ...coded(refusalCodeOf(error, 'runtime_error')) };
   }
 }

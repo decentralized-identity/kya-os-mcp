@@ -101,12 +101,16 @@ export interface DIDResolver {
    * the resolver the delegation middleware builds. `RuntimeFetchProvider.resolveDID` is not a
    * resolver of this kind and reports none. When the verifier refuses a credential as `Could not
    * resolve issuer DID: "<did>"` over a resolver that has it, it codes the refusal by the
-   * failure's `cause`, and appends its `detail` in parentheses where the cause is `host_refused`,
-   * `deadline_exceeded` or `invalid_document`, which tell the party that presented the credential
-   * nothing it does not know.
-   * An `unavailable` failure's detail, what the host answered, is not shown: the library's resolvers
-   * log it for the operator. A resolver that wraps one of them may pass it on, as
-   * `lastFailure: (did) => inner.lastFailure?.(did)`.
+   * failure's `cause`, and appends its `detail` in parentheses only where that tells the party that
+   * presented the credential nothing the verifier's network answered: where the cause is
+   * `deadline_exceeded`, whose timing the presenter observes anyway, or where one of the library's
+   * resolvers decided the failure from the DID alone, before any request or DNS lookup (the
+   * private-network rule refusing an IP literal or a local name the DID names, a DID of a method no
+   * resolver serves, a did:key that does not decode, a did:cheqd DID of no network the resolver
+   * asks). Any other detail was learned from the network, or comes from a resolver the library
+   * cannot vouch for, and is not shown: the library's resolvers log it for the operator. A resolver
+   * that wraps one of them may pass its failure on as it is, as
+   * `lastFailure: (did) => inner.lastFailure?.(did)`, and the refusal shows what it would have.
    * It reports the last failure for the DID, so a resolution of the same DID that ends in between
    * may answer for it: read it as a diagnosis, never as a security decision.
    */
@@ -135,9 +139,9 @@ export interface DidResolutionFailure {
   /**
    * What failed, and how to fix it where the library knows how, in one sentence or two in the
    * library's own words. It quotes no error of the transport's, which the log records instead. A
-   * verifier shows it to the party that presented the credential only for `host_refused`,
-   * `deadline_exceeded` and `invalid_document`; for `unavailable` and `too_large` it says what the
-   * host answered, which is for the operator alone.
+   * verifier shows it to the party that presented the credential only for `deadline_exceeded`, and
+   * for a failure one of the library's resolvers decided from the DID alone, before any request or
+   * DNS lookup ({@link DIDResolver.lastFailure}); anything else is for the operator alone.
    */
   readonly detail: string;
 }

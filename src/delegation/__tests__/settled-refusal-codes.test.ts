@@ -1,7 +1,7 @@
 /**
  * A refusal asking again cannot lift is coded as a verdict, never as transient: a did:key that does
- * not decode, a did:cheqd DID the cheqd resolver cannot ask for, a DID whose method no resolver of
- * the verifier serves, a DID document over the byte cap, and a status entry whose index is past the
+ * not decode, a did:web DID that names no URL, a did:cheqd DID the cheqd resolver cannot ask for, a
+ * DID whose method no resolver of the verifier serves, a DID document over the byte cap, and a status entry whose index is past the
  * end of its list. Each was coded as though the
  * DID or the list could not be read just now, inviting a retry that can only fail again. Every test
  * uses the package's public exports.
@@ -42,6 +42,22 @@ describe('a DID the verifier can never resolve', () => {
     expect(await refusalOf(did, createDidKeyResolver())).toEqual({
       valid: false,
       reason: `Could not resolve issuer DID: "${did}" (the DID is not an Ed25519 did:key whose public key decodes)`,
+      ...codedAs('did_invalid'),
+    });
+  });
+
+  it.each([
+    ['whose host decodes to more than a host', 'did:web:issuer.example%40elsewhere.example'],
+    ['with an empty path segment', 'did:web:issuer.example::doc'],
+    ['with a dot segment', 'did:web:issuer.example:..'],
+  ])('is did_invalid, with no request, when it is a did:web DID %s, and says so', async (_name, did) => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const resolver = createDidWebResolver(new AnsweringFetchProvider(() => {
+      throw new Error('no request expected');
+    }));
+    expect(await refusalOf(did, resolver)).toEqual({
+      valid: false,
+      reason: `Could not resolve issuer DID: "${did}" (the DID is not a did:web DID whose host and path make a URL)`,
       ...codedAs('did_invalid'),
     });
   });

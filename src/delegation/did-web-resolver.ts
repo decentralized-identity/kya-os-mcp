@@ -22,7 +22,7 @@ import { developmentMode } from '../utils/development-mode.js';
 import { admittingPrivateHosts, type PrivateNetworkTransport } from '../utils/private-network-rule.js';
 import { fetchDidJson } from './read-did-json.js';
 import { didWebToUrl, isDidWeb } from './did-web-url.js';
-import { DidResolutionFailures, invalidDocument, readFailureOf } from './did-resolution-failure.js';
+import { DidResolutionFailures, invalidDid, invalidDocument, readFailureOf } from './did-resolution-failure.js';
 
 export { didWebToUrl, isDidWeb, parseDidWeb } from './did-web-url.js';
 
@@ -38,6 +38,9 @@ function hasWellFormedMethods(document: DIDDocument): boolean {
     (Array.isArray(methods) && methods.every((method) => hasIdTypeAndController(method)))
   );
 }
+
+/** Why the did:web resolver finds no document for a did:web DID whose host and path make no URL. */
+const UNADDRESSABLE_DID_WEB = 'the DID is not a did:web DID whose host and path make a URL';
 
 /** Options of {@link DidWebResolver} and {@link createDidWebResolver}. */
 export interface DidWebResolverOptions {
@@ -89,11 +92,11 @@ export class DidWebResolver implements DIDResolver {
       return null;
     }
 
-    // Convert to URL
+    // Convert to URL. A DID that names none can never be resolved, so it is a verdict, never a retry.
     const url = didWebToUrl(did);
     if (!url) {
       logger.warn(`[DidWebResolver] Invalid did:web format: ${did}`);
-      return null;
+      return this.failed(did, invalidDid(UNADDRESSABLE_DID_WEB));
     }
 
     // A cached document is frozen and was walked when it was fetched; concurrent
@@ -103,7 +106,9 @@ export class DidWebResolver implements DIDResolver {
 
   /**
    * Why the last read of `did`'s document found none: its host refused, its deadline passed, its
-   * host unavailable, its document over the byte cap, or its document invalid. `undefined` once a read of it has found one, and for
+   * host unavailable, its document over the byte cap, or its document invalid; or the DID names no
+   * URL, which is `invalid_document` too. A DID of another method records nothing, so a resolver
+   * that composes this one with others reports the failure of the one that serves the DID. `undefined` once a read of it has found one, and for
    * a DID this resolver never read.
    */
   lastFailure(did: string): DidResolutionFailure | undefined {

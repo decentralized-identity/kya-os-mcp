@@ -136,6 +136,7 @@ describe('a delegation the gate refuses', () => {
     ["whose issuer's key has an x that is no Ed25519 key", { didResolver: paddedKeys }, granted, 'did_invalid'],
     ['whose issuer is a did:key that does not decode', {}, grantedBy('did:key:zNotAKey'), 'did_invalid'],
     ['whose issuer is a DID of a method no resolver serves', {}, grantedBy('did:ion:EiAbc'), 'did_invalid'],
+    ['whose issuer is a did:web DID that names no URL', {}, grantedBy('did:web:issuer.example%40elsewhere.example'), 'did_invalid'],
     [
       'whose chain is not resolved in time',
       { resolveDelegationChain: never },

@@ -52,7 +52,9 @@ function signedOrReason(vc: DelegationCredential): { signed: SignedCredential; d
  * carries is told why: it has no proof, no `proofValue` in it, or one that
  * is no signature (`Unreadable proofValue`); what its issuer signed has no
  * canonical form or nests too deep (`Unreadable credential content`); or the
- * key has no `x`, or one that is not an Ed25519 key as SPEC.md §7.4 reads one.
+ * key has no `x`, or one that is not an Ed25519 key as SPEC.md §7.4 reads one,
+ * which is refused as `did_invalid`, since the issuer's DID document lists no
+ * usable key for the proof.
  */
 export function embeddedSignatureVerifier(crypto: Pick<CryptoProvider, 'verify'>): SignatureVerificationFunction {
   return async (vc: DelegationCredential, publicKeyJwk: unknown) => {
@@ -63,12 +65,12 @@ export function embeddedSignatureVerifier(crypto: Pick<CryptoProvider, 'verify'>
 
     // The key is read as a proof's key is (SPEC §7.4); the provider takes base64.
     const jwk = publicKeyJwk as { x?: unknown };
-    if (!jwk.x) return { valid: false, reason: 'No x field in publicKeyJwk' };
+    if (!jwk.x) return { valid: false, reason: 'No x field in publicKeyJwk', code: 'did_invalid' };
     let publicKey: string;
     try {
       publicKey = bytesToBase64(ed25519KeyBytes(jwk));
     } catch (error) {
-      return { valid: false, reason: `Unreadable x in publicKeyJwk: ${(error as Error).message}` };
+      return { valid: false, reason: `Unreadable x in publicKeyJwk: ${(error as Error).message}`, code: 'did_invalid' };
     }
 
     // The crypto provider is the host's: the signature holds only on the literal `true`.

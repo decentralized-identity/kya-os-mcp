@@ -29,6 +29,8 @@ import { failCredentialDigests, makeServer } from './helpers/delegation-gate-ser
 import { ARGS, CONSENT, SCOPE, TOOL, released } from './helpers/delegated-call.js';
 import { delegate, party, type Party } from './helpers/delegating-party.js';
 import { delegationRecord, keyOf, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
+import { createDidKeyResolver } from '../../delegation/did-key-resolver.js';
+import type { DIDResolver } from '../../delegation/vc-verifier.types.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -70,6 +72,16 @@ async function built(input: AuditTrailEventInput): Promise<unknown> {
 
 /** A dependency that never answers. */
 const never = <T>(): Promise<T> => new Promise<T>(() => undefined);
+
+/** A host resolver that answers each did:key DID with its document, the key's `x` padded as base64url never is. */
+const paddedKeys: DIDResolver = {
+  resolve: async (did) => {
+    const document = await createDidKeyResolver().resolve(did);
+    const [method] = document?.verificationMethod ?? [];
+    const jwk = method?.publicKeyJwk as { x: string } | undefined;
+    return document && method && jwk ? { ...document, verificationMethod: [{ ...method, publicKeyJwk: { ...jwk, x: `${jwk.x}=` } }] } : null;
+  },
+};
 
 /** What the gate answers, records and logs when it is presented `presented`. */
 async function presentedTo(delegation: KyaOsDelegationConfig, presented: (user: Party, agent: Party) => Promise<unknown>) {
@@ -121,6 +133,7 @@ describe('a delegation the gate refuses', () => {
       'delegation_malformed',
     ],
     ['whose issuer DID is not resolved in time', { didResolver: { resolve: never } }, granted, 'deadline_exceeded'],
+    ["whose issuer's key has an x that is no Ed25519 key", { didResolver: paddedKeys }, granted, 'did_invalid'],
     ['whose issuer is a did:key that does not decode', {}, grantedBy('did:key:zNotAKey'), 'did_invalid'],
     ['whose issuer is a DID of a method no resolver serves', {}, grantedBy('did:ion:EiAbc'), 'did_invalid'],
     [

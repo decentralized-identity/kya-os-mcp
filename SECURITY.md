@@ -114,8 +114,11 @@ Every did:web read, by the delegation gate, `DidWebResolver`, `createDidWebResol
 The rule resolves no host name, so it does not refuse any other name whose address is private, such as a public name that points at a loopback address, or that changes its address (DNS rebinding).
 
 - **Real mitigation:** run verifier deployments behind an egress control that refuses private addresses, and treat every DID resolution and status-list read as an outbound request to an untrusted host.
-- **Opt out:** give the reader `new RuntimeFetchProvider({ allowPrivateNetworkHosts: true })`, or a custom `FetchProvider` whose `allowPrivateNetworkHosts` member is `true`, for trusted internal deployments only.
-  It admits non-public IP literals and local names; the scheme rule and the redirect checks still hold.
+- **Opt out:** in local development, set `development: true` on `withKyaOs` or `createKyaOsMiddleware`, `DidWebResolverOptions` or `CheqdStatusListResolverOptions`.
+  It warns once per process, and while `NODE_ENV` is `production` building what it is set on throws, so a deployment that sets `NODE_ENV` to `production` does not start with it.
+  For trusted internal deployments in production only, give the reader `new RuntimeFetchProvider({ allowPrivateNetworkHosts: true })`, or a custom `FetchProvider` whose `allowPrivateNetworkHosts` member is `true`.
+  Each admits non-public IP literals and local names; the scheme rule and the redirect checks still hold.
 - The Entity Card's resolution and status-list reads go through `SafeFetch` (`createSafeFetch`) instead, which resolves each host name, refuses a private address, pins the connection to the address it checked, and follows only same-origin redirects.
+  Its `development: true` admits private and local addresses for a local demo, under the same production guard, and in production `allowOrigins` names the origins you own, which it fetches without the guard.
 - The raw `fetch()` escape hatch of a `FetchProvider` is intentionally unguarded: it is the caller's responsibility.
 

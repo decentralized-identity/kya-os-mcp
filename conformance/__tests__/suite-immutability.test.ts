@@ -135,16 +135,18 @@ describe('the verifier output CONFORMANCE.md shows', () => {
   const REPO_ROOT = join(VECTORS_DIR, '..', '..');
   /** The line that stands for the check of each status-list vector. */
   const EACH_STATUS_LIST_VECTOR = '... one result for every status-list vector ...';
+  /** A file of the repository with its lines ended by line feeds, as a CRLF checkout does not leave them. */
+  const readLines = (...path: string[]) => readFileSync(join(REPO_ROOT, ...path), 'utf8').replace(/\r\n/g, '\n');
 
   it('lists the checks conformance/verify.py makes, in the order it makes them', () => {
-    const verifier = readFileSync(join(REPO_ROOT, 'conformance', 'verify.py'), 'utf8');
+    const verifier = readLines('conformance', 'verify.py');
     const made = [...verifier.matchAll(/results\.append\(\(\s*(?:"((?:[^"\\]|\\.)*)"|item\["id"\],)/g)]
       .map((match) => match[1] ?? EACH_STATUS_LIST_VECTOR);
     const calls = verifier.match(/results\.append\(/g) ?? [];
     expect(made.length, 'no check was read from conformance/verify.py').toBeGreaterThan(0);
     expect(made.length, 'a check in conformance/verify.py is named in a way this test does not read').toBe(calls.length);
 
-    const document = readFileSync(join(REPO_ROOT, 'CONFORMANCE.md'), 'utf8');
+    const document = readLines('CONFORMANCE.md');
     const output = /Expected output:\n\n```\n(KYA-OS cross-language verifier[^]*?)```/.exec(document)?.[1];
     expect(output, 'CONFORMANCE.md shows no output of the cross-language verifier').toBeDefined();
     const shown = output!.split('\n').flatMap((line) => {

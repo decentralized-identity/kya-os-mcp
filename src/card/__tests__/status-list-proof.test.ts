@@ -84,14 +84,20 @@ describe('createStatusListProofVerifier (eddsa-jcs-2022)', () => {
     expect(await verify(signEddsaJcs2022(statusList([5])))).toBe(true);
   });
 
-  it('accepts a list signed by builders.kya-os.org, an independent signer', async () => {
+  it('accepts a list signed by builders.kya-os.org, an independent signer, once its key is an assertionMethod', async () => {
     const fixture = JSON.parse(
       readFileSync(new URL('./__fixtures__/builders-status-list.json', import.meta.url), 'utf8'),
     ) as { didDocument: DIDDocument; statusListCredential: Record<string, unknown> };
-    const didResolver: DIDResolver = {
-      resolve: async (did) => (did === fixture.didDocument.id ? fixture.didDocument : null),
-    };
-    const verifyList = createStatusListProofVerifier({ didResolver });
+    const verifyWith = (document: DIDDocument) =>
+      createStatusListProofVerifier({ didResolver: { resolve: async (did) => (did === document.id ? document : null) } });
+
+    // As recorded, the DID document publishes the list's key in verificationMethod without listing
+    // it under assertionMethod, so the proof is refused (Controlled Identifiers v1.0 §3.3).
+    expect(await verifyWith(fixture.didDocument)(fixture.statusListCredential)).toBe(false);
+
+    const { verificationMethod } = fixture.statusListCredential.proof as { verificationMethod: string };
+    const assertionMethod = [...(fixture.didDocument.assertionMethod ?? []), verificationMethod];
+    const verifyList = verifyWith({ ...fixture.didDocument, assertionMethod });
     expect(await verifyList(fixture.statusListCredential)).toBe(true);
 
     const subject = fixture.statusListCredential.credentialSubject as Record<string, unknown>;
@@ -188,6 +194,14 @@ describe('signStatusListCredential', () => {
     await expect(signStatusListCredential(statusList([5], 'did:web:other.example'), await signer())).rejects.toThrow(
       /is not a verification method of the issuer did:web:other\.example/,
     );
+  });
+
+  it('refuses a list whose issuer names no DID, never converting the issuer', async () => {
+    for (const issuer of [{ id: 5 }, { id: JSON.parse('{"toString":"x"}') }, [ISSUER]]) {
+      await expect(signStatusListCredential(statusList([5], issuer), await signer())).rejects.toThrow(
+        new Error(`signer key ${METHOD} is not a verification method of the issuer undefined`),
+      );
+    }
   });
 });
 

@@ -104,7 +104,10 @@ export interface SignedProofInput {
 }
 
 export interface DelegationChainInput {
-  /** The leaf DelegationCredential (signed). */
+  /**
+   * The leaf DelegationCredential: signed with an embedded proof, or, as a
+   * string, a VC-JWT whose `vc` claim it is (suite ≥ 1.3.0).
+   */
   leaf: unknown;
   /** Ancestors root→parent (signed), if the leaf is a re-delegation. */
   ancestors?: unknown[];

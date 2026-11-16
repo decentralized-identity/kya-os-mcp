@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
     # labeled/unlabeled re-run the entry check when `no-changelog` is toggled.
     types: [opened, synchronize, reopened, labeled, unlabeled]
 

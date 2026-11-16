@@ -136,4 +136,14 @@ describe('DidCheqdResolver', () => {
     expect(await new DidCheqdResolver(fetchProvider({ didDocument: { verificationMethod: [] } }), { resolverUrl: 'https://r' }).resolve(did)).toBeNull();
     expect(await new DidCheqdResolver(fetchProvider({ didDocument: { ...didDocument, id: 'did:cheqd:testnet:other' } }), { resolverUrl: 'https://r' }).resolve(did)).toBeNull();
   });
+
+  it('returns null for a document with a verification method that lacks a non-empty id, type or controller', async () => {
+    const [method] = didDocument.verificationMethod ?? [];
+    const malformed: unknown[] = [{ ...method, id: '' }, { ...method, type: undefined }, { ...method, controller: 7 }, `${did}#key-1`];
+    for (const entry of malformed) {
+      const document = { ...didDocument, verificationMethod: [entry] };
+      const resolver = new DidCheqdResolver(fetchProvider({ didDocument: document }), { resolverUrl: 'https://r' });
+      expect(await resolver.resolve(did), JSON.stringify(entry)).toBeNull();
+    }
+  });
 });

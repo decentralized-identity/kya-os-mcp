@@ -1,0 +1,975 @@
+{
+  "version": "1.3.0",
+  "category": "delegation-chain",
+  "vectors": [
+    {
+      "id": "delegation-chain/assertion-method-key",
+      "category": "delegation-chain",
+      "description": "A delegation signed with the key its issuer's DID document lists under assertionMethod",
+      "expected": "pass",
+      "reason": "The issuer's own document lists the signing key under assertionMethod, and the proof states that purpose",
+      "input": {
+        "leaf": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-issuer-agent",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:web:issuer.example.com",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:web:agent.example.com",
+            "delegation": {
+              "id": "del-issuer-agent",
+              "issuerDid": "did:web:issuer.example.com",
+              "subjectDid": "did:web:agent.example.com",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:web:issuer.example.com#assert-1",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "qUmh2S5DczSZHoWPIx_rjKnO1SG9H9g5J8H8JVOO-L_3lo6ujFUQ2LrMWykJqjPsSj_6sFchjwHGEtUBIGTJDQ"
+          }
+        },
+        "serverDid": "did:web:server.example.com",
+        "didDocuments": {
+          "did:web:issuer.example.com": {
+            "id": "did:web:issuer.example.com",
+            "verificationMethod": [
+              {
+                "id": "did:web:issuer.example.com#login-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                }
+              },
+              {
+                "id": "did:web:issuer.example.com#assert-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                }
+              }
+            ],
+            "authentication": [
+              "did:web:issuer.example.com#login-1"
+            ],
+            "assertionMethod": [
+              "did:web:issuer.example.com#assert-1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "delegation-chain/authentication-key",
+      "category": "delegation-chain",
+      "description": "The same delegation signed with the key its issuer's DID document lists only under authentication",
+      "expected": "fail",
+      "reason": "A key listed only under authentication signs the issuer in and does not verify its credentials (SPEC.md §6.2)",
+      "input": {
+        "leaf": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-issuer-agent",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:web:issuer.example.com",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:web:agent.example.com",
+            "delegation": {
+              "id": "del-issuer-agent",
+              "issuerDid": "did:web:issuer.example.com",
+              "subjectDid": "did:web:agent.example.com",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:web:issuer.example.com#login-1",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "yCqX100tvKPZFQyblnYMWgo73UlxFrxG4rV1LfouGFRtS75FwThqDLBjWVBaz6YBRTuXY0lKbFPGDh8iet4OCQ"
+          }
+        },
+        "serverDid": "did:web:server.example.com",
+        "didDocuments": {
+          "did:web:issuer.example.com": {
+            "id": "did:web:issuer.example.com",
+            "verificationMethod": [
+              {
+                "id": "did:web:issuer.example.com#login-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                }
+              },
+              {
+                "id": "did:web:issuer.example.com#assert-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                }
+              }
+            ],
+            "authentication": [
+              "did:web:issuer.example.com#login-1"
+            ],
+            "assertionMethod": [
+              "did:web:issuer.example.com#assert-1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "delegation-chain/proof-purpose-authentication",
+      "category": "delegation-chain",
+      "description": "The verifying delegation with its proof stating proofPurpose \"authentication\"",
+      "expected": "fail",
+      "reason": "A proof that states a purpose other than assertionMethod is rejected, although the member is outside the signature (SPEC.md §6.2)",
+      "input": {
+        "leaf": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-issuer-agent",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:web:issuer.example.com",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:web:agent.example.com",
+            "delegation": {
+              "id": "del-issuer-agent",
+              "issuerDid": "did:web:issuer.example.com",
+              "subjectDid": "did:web:agent.example.com",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:web:issuer.example.com#assert-1",
+            "proofPurpose": "authentication",
+            "proofValue": "qUmh2S5DczSZHoWPIx_rjKnO1SG9H9g5J8H8JVOO-L_3lo6ujFUQ2LrMWykJqjPsSj_6sFchjwHGEtUBIGTJDQ"
+          }
+        },
+        "serverDid": "did:web:server.example.com",
+        "didDocuments": {
+          "did:web:issuer.example.com": {
+            "id": "did:web:issuer.example.com",
+            "verificationMethod": [
+              {
+                "id": "did:web:issuer.example.com#login-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                }
+              },
+              {
+                "id": "did:web:issuer.example.com#assert-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                }
+              }
+            ],
+            "authentication": [
+              "did:web:issuer.example.com#login-1"
+            ],
+            "assertionMethod": [
+              "did:web:issuer.example.com#assert-1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "delegation-chain/issuer-document-id-mismatch",
+      "category": "delegation-chain",
+      "description": "The verifying delegation, with the DID document supplied for its issuer naming another DID as its id",
+      "expected": "fail",
+      "reason": "Only the issuer's own DID document, whose id is the issuer's DID, lists the issuer's keys (SPEC.md §6.2)",
+      "input": {
+        "leaf": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-issuer-agent",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:web:issuer.example.com",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:web:agent.example.com",
+            "delegation": {
+              "id": "del-issuer-agent",
+              "issuerDid": "did:web:issuer.example.com",
+              "subjectDid": "did:web:agent.example.com",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:web:issuer.example.com#assert-1",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "qUmh2S5DczSZHoWPIx_rjKnO1SG9H9g5J8H8JVOO-L_3lo6ujFUQ2LrMWykJqjPsSj_6sFchjwHGEtUBIGTJDQ"
+          }
+        },
+        "serverDid": "did:web:server.example.com",
+        "didDocuments": {
+          "did:web:issuer.example.com": {
+            "id": "did:web:other.example.com",
+            "verificationMethod": [
+              {
+                "id": "did:web:issuer.example.com#login-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                }
+              },
+              {
+                "id": "did:web:issuer.example.com#assert-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                }
+              }
+            ],
+            "authentication": [
+              "did:web:issuer.example.com#login-1"
+            ],
+            "assertionMethod": [
+              "did:web:issuer.example.com#assert-1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "delegation-chain/assertion-key-other-controller",
+      "category": "delegation-chain",
+      "description": "The verifying delegation, with the issuer's DID document naming another DID as the controller of #assert-1, the key it lists under assertionMethod",
+      "expected": "fail",
+      "reason": "A verification method whose controller is another DID is not the issuer's (CID §3.3 step 10, SPEC.md §6.2), so no key the issuer lists under assertionMethod verifies the delegation",
+      "input": {
+        "leaf": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-issuer-agent",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:web:issuer.example.com",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:web:agent.example.com",
+            "delegation": {
+              "id": "del-issuer-agent",
+              "issuerDid": "did:web:issuer.example.com",
+              "subjectDid": "did:web:agent.example.com",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:web:issuer.example.com#assert-1",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "qUmh2S5DczSZHoWPIx_rjKnO1SG9H9g5J8H8JVOO-L_3lo6ujFUQ2LrMWykJqjPsSj_6sFchjwHGEtUBIGTJDQ"
+          }
+        },
+        "serverDid": "did:web:server.example.com",
+        "didDocuments": {
+          "did:web:issuer.example.com": {
+            "id": "did:web:issuer.example.com",
+            "verificationMethod": [
+              {
+                "id": "did:web:issuer.example.com#login-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                }
+              },
+              {
+                "id": "did:web:issuer.example.com#assert-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:other.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                }
+              }
+            ],
+            "authentication": [
+              "did:web:issuer.example.com#login-1"
+            ],
+            "assertionMethod": [
+              "did:web:issuer.example.com#assert-1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "delegation-chain/assertion-key-defined-twice",
+      "category": "delegation-chain",
+      "description": "The verifying delegation, with the issuer's DID document defining #assert-1 twice: in verificationMethod, and again embedded in assertionMethod",
+      "expected": "fail",
+      "reason": "A method id the document defines more than once, among verificationMethod and the methods assertionMethod embeds, names no method, even when every definition holds the same key (SPEC.md §6.2)",
+      "input": {
+        "leaf": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-issuer-agent",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:web:issuer.example.com",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:web:agent.example.com",
+            "delegation": {
+              "id": "del-issuer-agent",
+              "issuerDid": "did:web:issuer.example.com",
+              "subjectDid": "did:web:agent.example.com",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:web:issuer.example.com#assert-1",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "qUmh2S5DczSZHoWPIx_rjKnO1SG9H9g5J8H8JVOO-L_3lo6ujFUQ2LrMWykJqjPsSj_6sFchjwHGEtUBIGTJDQ"
+          }
+        },
+        "serverDid": "did:web:server.example.com",
+        "didDocuments": {
+          "did:web:issuer.example.com": {
+            "id": "did:web:issuer.example.com",
+            "verificationMethod": [
+              {
+                "id": "did:web:issuer.example.com#login-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                }
+              },
+              {
+                "id": "did:web:issuer.example.com#assert-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                }
+              }
+            ],
+            "authentication": [
+              "did:web:issuer.example.com#login-1"
+            ],
+            "assertionMethod": [
+              {
+                "id": "did:web:issuer.example.com#assert-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "delegation-chain/assertion-entry-other-did",
+      "category": "delegation-chain",
+      "description": "The verifying delegation, its key and the issuer's DID document naming #assert-1 under another DID, though the issuer's document defines it under the issuer's control and lists it under assertionMethod",
+      "expected": "fail",
+      "reason": "Only a method whose id is under the issuer's DID is the issuer's, so an assertionMethod entry naming a key under another DID names none of its keys (SPEC.md §6.2)",
+      "input": {
+        "leaf": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-issuer-agent",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:web:issuer.example.com",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:web:agent.example.com",
+            "delegation": {
+              "id": "del-issuer-agent",
+              "issuerDid": "did:web:issuer.example.com",
+              "subjectDid": "did:web:agent.example.com",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:web:other.example.com#assert-1",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "qUmh2S5DczSZHoWPIx_rjKnO1SG9H9g5J8H8JVOO-L_3lo6ujFUQ2LrMWykJqjPsSj_6sFchjwHGEtUBIGTJDQ"
+          }
+        },
+        "serverDid": "did:web:server.example.com",
+        "didDocuments": {
+          "did:web:issuer.example.com": {
+            "id": "did:web:issuer.example.com",
+            "verificationMethod": [
+              {
+                "id": "did:web:issuer.example.com#login-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                }
+              },
+              {
+                "id": "did:web:other.example.com#assert-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                }
+              }
+            ],
+            "authentication": [
+              "did:web:issuer.example.com#login-1"
+            ],
+            "assertionMethod": [
+              "did:web:other.example.com#assert-1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "delegation-chain/unlisted-key",
+      "category": "delegation-chain",
+      "description": "The same delegation signed with #unlisted-1, which the issuer's DID document publishes in verificationMethod and lists under no relationship",
+      "expected": "fail",
+      "reason": "A key the issuer publishes but does not list under assertionMethod does not verify its credentials (SPEC.md §6.2)",
+      "input": {
+        "leaf": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-issuer-agent",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:web:issuer.example.com",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:web:agent.example.com",
+            "delegation": {
+              "id": "del-issuer-agent",
+              "issuerDid": "did:web:issuer.example.com",
+              "subjectDid": "did:web:agent.example.com",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:web:issuer.example.com#unlisted-1",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "vYvk6hYVqlQkq02cy7tQyEV_MtcX_6u7ik9SgI1pxBJ4P5-d0rj5YQOU37NI67GVcGZBaAn4lxwCWeRfX0mVBw"
+          }
+        },
+        "serverDid": "did:web:server.example.com",
+        "didDocuments": {
+          "did:web:issuer.example.com": {
+            "id": "did:web:issuer.example.com",
+            "verificationMethod": [
+              {
+                "id": "did:web:issuer.example.com#login-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                }
+              },
+              {
+                "id": "did:web:issuer.example.com#assert-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                }
+              },
+              {
+                "id": "did:web:issuer.example.com#unlisted-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "z2vToSSQ_aW0ZXqZ2mJFXtDKxfo7NJH7q2J1UqpkTKg"
+                }
+              }
+            ],
+            "authentication": [
+              "did:web:issuer.example.com#login-1"
+            ],
+            "assertionMethod": [
+              "did:web:issuer.example.com#assert-1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "delegation-chain/assertion-key-without-type",
+      "category": "delegation-chain",
+      "description": "The verifying delegation, with the issuer's DID document publishing #assert-1, the key it lists under assertionMethod, with no type",
+      "expected": "fail",
+      "reason": "A verification method without a non-empty string type is no method (CID §3.3 step 8, SPEC.md §6.2), so no key the issuer lists under assertionMethod verifies the delegation",
+      "input": {
+        "leaf": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-issuer-agent",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:web:issuer.example.com",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:web:agent.example.com",
+            "delegation": {
+              "id": "del-issuer-agent",
+              "issuerDid": "did:web:issuer.example.com",
+              "subjectDid": "did:web:agent.example.com",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:web:issuer.example.com#assert-1",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "qUmh2S5DczSZHoWPIx_rjKnO1SG9H9g5J8H8JVOO-L_3lo6ujFUQ2LrMWykJqjPsSj_6sFchjwHGEtUBIGTJDQ"
+          }
+        },
+        "serverDid": "did:web:server.example.com",
+        "didDocuments": {
+          "did:web:issuer.example.com": {
+            "id": "did:web:issuer.example.com",
+            "verificationMethod": [
+              {
+                "id": "did:web:issuer.example.com#login-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                }
+              },
+              {
+                "id": "did:web:issuer.example.com#assert-1",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                }
+              }
+            ],
+            "authentication": [
+              "did:web:issuer.example.com#login-1"
+            ],
+            "assertionMethod": [
+              "did:web:issuer.example.com#assert-1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "delegation-chain/assertion-key-without-controller",
+      "category": "delegation-chain",
+      "description": "The verifying delegation, with the issuer's DID document publishing #assert-1, the key it lists under assertionMethod, with no controller",
+      "expected": "fail",
+      "reason": "A verification method without a non-empty string controller is no method (CID §3.3 step 8, SPEC.md §6.2), so no key the issuer lists under assertionMethod verifies the delegation",
+      "input": {
+        "leaf": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-issuer-agent",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:web:issuer.example.com",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:web:agent.example.com",
+            "delegation": {
+              "id": "del-issuer-agent",
+              "issuerDid": "did:web:issuer.example.com",
+              "subjectDid": "did:web:agent.example.com",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:web:issuer.example.com#assert-1",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "qUmh2S5DczSZHoWPIx_rjKnO1SG9H9g5J8H8JVOO-L_3lo6ujFUQ2LrMWykJqjPsSj_6sFchjwHGEtUBIGTJDQ"
+          }
+        },
+        "serverDid": "did:web:server.example.com",
+        "didDocuments": {
+          "did:web:issuer.example.com": {
+            "id": "did:web:issuer.example.com",
+            "verificationMethod": [
+              {
+                "id": "did:web:issuer.example.com#login-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                }
+              },
+              {
+                "id": "did:web:issuer.example.com#assert-1",
+                "type": "Ed25519VerificationKey2020",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                }
+              }
+            ],
+            "authentication": [
+              "did:web:issuer.example.com#login-1"
+            ],
+            "assertionMethod": [
+              "did:web:issuer.example.com#assert-1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "delegation-chain/vc-jwt-no-kid-first-entry",
+      "category": "delegation-chain",
+      "description": "The delegation as a VC-JWT signed with #assert-1, its JOSE header naming no kid; the issuer's DID document publishes #login-1 first and lists #assert-1 first under assertionMethod",
+      "expected": "pass",
+      "reason": "A VC-JWT with no kid is checked with the method the first assertionMethod entry names (SPEC.md §6.2), which made its signature",
+      "input": {
+        "leaf": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJkaWQ6d2ViOmlzc3Vlci5leGFtcGxlLmNvbSIsInZjIjp7IkBjb250ZXh0IjpbImh0dHBzOi8vd3d3LnczLm9yZy8yMDE4L2NyZWRlbnRpYWxzL3YxIiwiaHR0cHM6Ly9zY2hlbWEua3lhLW9zLm9yZy92MS9wcm90b2NvbC9kZWxlZ2F0aW9uL2NvbnRleHQvdjEuMC4wIl0sImlkIjoidXJuOnV1aWQ6ZGVsLWlzc3Vlci1hZ2VudCIsInR5cGUiOlsiVmVyaWZpYWJsZUNyZWRlbnRpYWwiLCJEZWxlZ2F0aW9uQ3JlZGVudGlhbCJdLCJpc3N1ZXIiOiJkaWQ6d2ViOmlzc3Vlci5leGFtcGxlLmNvbSIsImlzc3VhbmNlRGF0ZSI6IjIwMjYtMDEtMDFUMDA6MDA6MDAuMDAwWiIsImNyZWRlbnRpYWxTdWJqZWN0Ijp7ImlkIjoiZGlkOndlYjphZ2VudC5leGFtcGxlLmNvbSIsImRlbGVnYXRpb24iOnsiaWQiOiJkZWwtaXNzdWVyLWFnZW50IiwiaXNzdWVyRGlkIjoiZGlkOndlYjppc3N1ZXIuZXhhbXBsZS5jb20iLCJzdWJqZWN0RGlkIjoiZGlkOndlYjphZ2VudC5leGFtcGxlLmNvbSIsInNjb3BlcyI6WyJncmVldGluZzpyZWFkIl0sImNvbnN0cmFpbnRzIjp7InNjb3BlcyI6WyJncmVldGluZzpyZWFkIl0sImF1ZGllbmNlIjoiZGlkOndlYjpzZXJ2ZXIuZXhhbXBsZS5jb20ifSwic3RhdHVzIjoiYWN0aXZlIiwiY3JlYXRlZEF0IjoxNzUwMDAwMDAwMDAwfX19LCJzdWIiOiJkaWQ6d2ViOmFnZW50LmV4YW1wbGUuY29tIiwiaWF0IjoxNzY3MjI1NjAwLCJqdGkiOiJ1cm46dXVpZDpkZWwtaXNzdWVyLWFnZW50In0.WEeWY-nxMZhzEkfPiKppizIUeSCFtLg6dC-h4mMEkdQko_7GLOzCEUq06gZPnUbstOSkAeQiP77F5RJmx-qzBg",
+        "serverDid": "did:web:server.example.com",
+        "didDocuments": {
+          "did:web:issuer.example.com": {
+            "id": "did:web:issuer.example.com",
+            "verificationMethod": [
+              {
+                "id": "did:web:issuer.example.com#login-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                }
+              },
+              {
+                "id": "did:web:issuer.example.com#assert-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                }
+              }
+            ],
+            "authentication": [
+              "did:web:issuer.example.com#login-1"
+            ],
+            "assertionMethod": [
+              "did:web:issuer.example.com#assert-1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "delegation-chain/vc-jwt-kid-authentication-key",
+      "category": "delegation-chain",
+      "description": "The same VC-JWT signed with #login-1, which its kid names and the issuer's DID document lists only under authentication",
+      "expected": "fail",
+      "reason": "A key listed only under authentication signs the issuer in and does not verify its credentials, whatever the kid names (SPEC.md §6.2)",
+      "input": {
+        "leaf": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCIsImtpZCI6ImRpZDp3ZWI6aXNzdWVyLmV4YW1wbGUuY29tI2xvZ2luLTEifQ.eyJpc3MiOiJkaWQ6d2ViOmlzc3Vlci5leGFtcGxlLmNvbSIsInZjIjp7IkBjb250ZXh0IjpbImh0dHBzOi8vd3d3LnczLm9yZy8yMDE4L2NyZWRlbnRpYWxzL3YxIiwiaHR0cHM6Ly9zY2hlbWEua3lhLW9zLm9yZy92MS9wcm90b2NvbC9kZWxlZ2F0aW9uL2NvbnRleHQvdjEuMC4wIl0sImlkIjoidXJuOnV1aWQ6ZGVsLWlzc3Vlci1hZ2VudCIsInR5cGUiOlsiVmVyaWZpYWJsZUNyZWRlbnRpYWwiLCJEZWxlZ2F0aW9uQ3JlZGVudGlhbCJdLCJpc3N1ZXIiOiJkaWQ6d2ViOmlzc3Vlci5leGFtcGxlLmNvbSIsImlzc3VhbmNlRGF0ZSI6IjIwMjYtMDEtMDFUMDA6MDA6MDAuMDAwWiIsImNyZWRlbnRpYWxTdWJqZWN0Ijp7ImlkIjoiZGlkOndlYjphZ2VudC5leGFtcGxlLmNvbSIsImRlbGVnYXRpb24iOnsiaWQiOiJkZWwtaXNzdWVyLWFnZW50IiwiaXNzdWVyRGlkIjoiZGlkOndlYjppc3N1ZXIuZXhhbXBsZS5jb20iLCJzdWJqZWN0RGlkIjoiZGlkOndlYjphZ2VudC5leGFtcGxlLmNvbSIsInNjb3BlcyI6WyJncmVldGluZzpyZWFkIl0sImNvbnN0cmFpbnRzIjp7InNjb3BlcyI6WyJncmVldGluZzpyZWFkIl0sImF1ZGllbmNlIjoiZGlkOndlYjpzZXJ2ZXIuZXhhbXBsZS5jb20ifSwic3RhdHVzIjoiYWN0aXZlIiwiY3JlYXRlZEF0IjoxNzUwMDAwMDAwMDAwfX19LCJzdWIiOiJkaWQ6d2ViOmFnZW50LmV4YW1wbGUuY29tIiwiaWF0IjoxNzY3MjI1NjAwLCJqdGkiOiJ1cm46dXVpZDpkZWwtaXNzdWVyLWFnZW50In0.hC4P2F70ot3dRgH28C6ZaturF2DVFYdQGRVhMejn1TxtoZCstbxdS17S9XlhsXnKFz62oFzSXzy7hB2a57ANBg",
+        "serverDid": "did:web:server.example.com",
+        "didDocuments": {
+          "did:web:issuer.example.com": {
+            "id": "did:web:issuer.example.com",
+            "verificationMethod": [
+              {
+                "id": "did:web:issuer.example.com#login-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                }
+              },
+              {
+                "id": "did:web:issuer.example.com#assert-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                }
+              }
+            ],
+            "authentication": [
+              "did:web:issuer.example.com#login-1"
+            ],
+            "assertionMethod": [
+              "did:web:issuer.example.com#assert-1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "delegation-chain/vc-jwt-empty-kid",
+      "category": "delegation-chain",
+      "description": "The verifying VC-JWT with an empty kid in its JOSE header, still signed with #assert-1, the key the first assertionMethod entry names",
+      "expected": "fail",
+      "reason": "An empty kid names no key and is never read as naming none (SPEC.md §6.2), so the VC-JWT is rejected although the key it would otherwise be checked with made its signature",
+      "input": {
+        "leaf": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCIsImtpZCI6IiJ9.eyJpc3MiOiJkaWQ6d2ViOmlzc3Vlci5leGFtcGxlLmNvbSIsInZjIjp7IkBjb250ZXh0IjpbImh0dHBzOi8vd3d3LnczLm9yZy8yMDE4L2NyZWRlbnRpYWxzL3YxIiwiaHR0cHM6Ly9zY2hlbWEua3lhLW9zLm9yZy92MS9wcm90b2NvbC9kZWxlZ2F0aW9uL2NvbnRleHQvdjEuMC4wIl0sImlkIjoidXJuOnV1aWQ6ZGVsLWlzc3Vlci1hZ2VudCIsInR5cGUiOlsiVmVyaWZpYWJsZUNyZWRlbnRpYWwiLCJEZWxlZ2F0aW9uQ3JlZGVudGlhbCJdLCJpc3N1ZXIiOiJkaWQ6d2ViOmlzc3Vlci5leGFtcGxlLmNvbSIsImlzc3VhbmNlRGF0ZSI6IjIwMjYtMDEtMDFUMDA6MDA6MDAuMDAwWiIsImNyZWRlbnRpYWxTdWJqZWN0Ijp7ImlkIjoiZGlkOndlYjphZ2VudC5leGFtcGxlLmNvbSIsImRlbGVnYXRpb24iOnsiaWQiOiJkZWwtaXNzdWVyLWFnZW50IiwiaXNzdWVyRGlkIjoiZGlkOndlYjppc3N1ZXIuZXhhbXBsZS5jb20iLCJzdWJqZWN0RGlkIjoiZGlkOndlYjphZ2VudC5leGFtcGxlLmNvbSIsInNjb3BlcyI6WyJncmVldGluZzpyZWFkIl0sImNvbnN0cmFpbnRzIjp7InNjb3BlcyI6WyJncmVldGluZzpyZWFkIl0sImF1ZGllbmNlIjoiZGlkOndlYjpzZXJ2ZXIuZXhhbXBsZS5jb20ifSwic3RhdHVzIjoiYWN0aXZlIiwiY3JlYXRlZEF0IjoxNzUwMDAwMDAwMDAwfX19LCJzdWIiOiJkaWQ6d2ViOmFnZW50LmV4YW1wbGUuY29tIiwiaWF0IjoxNzY3MjI1NjAwLCJqdGkiOiJ1cm46dXVpZDpkZWwtaXNzdWVyLWFnZW50In0.rysQpxqieLXVviXPN2Z7bfjYOHevCqbZgl6UJNsB-PlD-PbGqm9kFM9o-25thtwTLfjGsB_VtJEEuLq5MNwfBA",
+        "serverDid": "did:web:server.example.com",
+        "didDocuments": {
+          "did:web:issuer.example.com": {
+            "id": "did:web:issuer.example.com",
+            "verificationMethod": [
+              {
+                "id": "did:web:issuer.example.com#login-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                }
+              },
+              {
+                "id": "did:web:issuer.example.com#assert-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:issuer.example.com",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                }
+              }
+            ],
+            "authentication": [
+              "did:web:issuer.example.com#login-1"
+            ],
+            "assertionMethod": [
+              "did:web:issuer.example.com#assert-1"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

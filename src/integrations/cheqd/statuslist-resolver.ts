@@ -15,9 +15,9 @@
  *
  * Fail-closed matrix (all throw → verifier denies as `status_unresolvable`):
  * non-https URL, malformed index, network error / non-200, malformed VC,
- * unsigned VC, wrong issuer, purpose mismatch, missing proofValue,
- * unresolvable issuer DID, no usable verification method, bad signature,
- * out-of-range index.
+ * unsigned VC, wrong issuer, purpose mismatch, missing proofValue, a
+ * verification method named by anything but a non-empty string, unresolvable
+ * issuer DID, no usable verification method, bad signature, out-of-range index.
  *
  * Freshness: an internal {@link TtlCache} holds the VERIFIED document
  * (default 10 s — one fetch amortizes across every credential on a list;
@@ -36,6 +36,12 @@ import type {
   StatusList2021Credential,
 } from '../../types/protocol.js';
 import { verificationMethodJwk } from '../../delegation/verification-method-key.js';
+import {
+  ASSERTION_METHOD,
+  assertionMethodRefusal,
+  proofPurposeMismatch,
+  selectAssertionMethod,
+} from '../../delegation/verification-relationship.js';
 import { canonicalizeJSON } from '../../delegation/utils.js';
 import {
   decodeStatusListPayload,
@@ -43,6 +49,8 @@ import {
   readStatusBit,
 } from '../../utils/statuslist-bits.js';
 import { assertStatusPurpose } from '../../utils/statuslist-purpose.js';
+import { describeValue } from '../../utils/describe-value.js';
+import { issuerOf } from '../../utils/guards.js';
 import { base64urlDecodeToBytes, bytesToBase64 } from '../../utils/base64.js';
 import { TtlCache } from '../../utils/ttl-cache.js';
 
@@ -134,7 +142,7 @@ export class CheqdStatusListResolver implements StatusListResolver {
       },
     });
     if (!response.ok) {
-      throw new Error(`Status list fetch failed: HTTP ${response.status} for ${url}`);
+      throw new Error(`Status list fetch failed: HTTP ${response.status} for ${describeValue(url)}`);
     }
 
     const body = (await response.json()) as StatusList2021Credential;
@@ -167,11 +175,17 @@ export class CheqdStatusListResolver implements StatusListResolver {
     }
   }
 
+  /**
+   * The list's issuer, read as a credential's is (VC Data Model 2.0 §4.7), must be
+   * the pinned issuer. The reason quotes it as a refusal quotes any value the
+   * other party chose, or names the type of what stands where it should be, and
+   * quotes the pinned issuer the same way.
+   */
   private assertIssuer(vc: StatusList2021Credential): void {
-    const issuer = typeof vc.issuer === 'string' ? vc.issuer : vc.issuer?.id;
+    const issuer = issuerOf(vc.issuer);
     if (issuer !== this.opts.expectedIssuerDid) {
       throw new Error(
-        `Status list issuer "${issuer}" is not the expected issuer "${this.opts.expectedIssuerDid}"`,
+        `Status list issuer ${describeValue(issuer ?? vc.issuer)} is not the expected issuer ${describeValue(this.opts.expectedIssuerDid)}`,
       );
     }
   }
@@ -181,13 +195,24 @@ export class CheqdStatusListResolver implements StatusListResolver {
    * (minus `proof`) against the issuer's on-chain DID document. Key material
    * arrives however the DID method publishes it — `verificationMethodJwk`
    * accepts `publicKeyJwk`, `publicKeyMultibase` (cheqd's format), or legacy
-   * `publicKeyBase58`.
+   * `publicKeyBase58`. A status list is an assertion by its issuer, so only a
+   * key the issuer's DID document lists under `assertionMethod` is tried
+   * ({@link selectAssertionMethod}): the one `proof.verificationMethod` names,
+   * or, when it names none, the first listed there, so a list costs one
+   * signature check. A proof that states another `proofPurpose` is refused
+   * before the issuer's DID is resolved, and one that names its verification
+   * method by anything but a non-empty string is refused (SPEC.md §6.2): an
+   * empty name names no key, and is not read as no name.
    */
   private async assertSignature(vc: StatusList2021Credential): Promise<void> {
     const proof = vc.proof as Record<string, unknown>;
     const proofValue = proof['proofValue'];
     if (typeof proofValue !== 'string' || proofValue.length === 0) {
       throw new Error('Status list proof is missing proofValue');
+    }
+    const purposeMismatch = proofPurposeMismatch(proof, ASSERTION_METHOD);
+    if (purposeMismatch) {
+      throw new Error(purposeMismatch);
     }
 
     const unsigned: Record<string, unknown> = { ...vc };
@@ -200,31 +225,21 @@ export class CheqdStatusListResolver implements StatusListResolver {
       throw new Error(`Could not resolve issuer DID ${this.opts.expectedIssuerDid}`);
     }
 
-    const verificationMethodId =
-      typeof proof['verificationMethod'] === 'string'
-        ? proof['verificationMethod']
-        : undefined;
-    const methods = didDoc.verificationMethod ?? [];
-    const candidates = verificationMethodId
-      ? methods.filter((m) => m.id === verificationMethodId)
-      : methods;
-    if (candidates.length === 0) {
+    const named: unknown = proof['verificationMethod'];
+    const selection = selectAssertionMethod(didDoc, this.opts.expectedIssuerDid, named);
+    if (!('method' in selection)) {
       throw new Error(
-        `Issuer DID document has no verification method matching "${verificationMethodId ?? '(any)'}"`,
+        assertionMethodRefusal(selection, 'Status list proof verificationMethod', named, this.opts.expectedIssuerDid),
       );
     }
 
-    for (const method of candidates) {
-      const jwk = verificationMethodJwk(method);
-      if (!jwk) continue;
-      const publicKeyBase64 = bytesToBase64(base64urlDecodeToBytes(jwk.x));
-      if (await this.opts.cryptoProvider.verify(data, signature, publicKeyBase64)) {
-        return;
-      }
+    const jwk = verificationMethodJwk(selection.method);
+    const publicKeyBase64 = jwk ? bytesToBase64(base64urlDecodeToBytes(jwk.x)) : undefined;
+    if (!publicKeyBase64 || !(await this.opts.cryptoProvider.verify(data, signature, publicKeyBase64))) {
+      throw new Error(
+        'Status list signature verification FAILED against the issuer DID document',
+      );
     }
-    throw new Error(
-      'Status list signature verification FAILED against the issuer DID document',
-    );
   }
 }
 

@@ -4,11 +4,12 @@
  * Centralizes the Ed25519 VC signing/verification convention
  * (`Ed25519Signature2020` over RFC 8785 canonicalized VC, minus `proof`), so the
  * generator and the verifier cannot drift. Pure Node built-ins + the package's
- * public canonicalize primitives — no test-only helpers. Status lists use the
- * package's own `statusListGzipCodec`.
+ * public canonicalize and JWK primitives, with no test-only helpers. Status
+ * lists use the package's own `statusListGzipCodec`.
  */
 
 import { canonicalizeJSON } from '../src/delegation/utils.js';
+import { publicKeyToJwk } from '../src/delegation/did-key-resolver.js';
 import type { NodeCryptoProvider } from '../src/providers/node-crypto.js';
 import type { DelegationCredential, Proof } from '../src/index.js';
 import type { SignatureVerificationFunction } from '../src/delegation/vc-verifier.js';
@@ -35,6 +36,18 @@ export async function signVC(
     proofPurpose: 'assertionMethod',
     proofValue: Buffer.from(signature).toString('base64url'),
   };
+}
+
+/**
+ * The `Ed25519VerificationKey2020` verification method `id` that publishes the raw Ed25519 public
+ * key `publicKey` as a JWK, under `controller`: the form every DID document in the vectors uses.
+ */
+export function ed25519VerificationMethod(
+  id: string,
+  controller: string,
+  publicKey: Uint8Array,
+): Record<string, unknown> {
+  return { id, type: 'Ed25519VerificationKey2020', controller, publicKeyJwk: publicKeyToJwk(publicKey) };
 }
 
 /**

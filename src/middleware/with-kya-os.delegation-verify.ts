@@ -40,6 +40,11 @@ import type {
 import type { MiddlewareDeps } from "./with-kya-os.deps.js";
 import { sanitizeForMessage } from "./with-kya-os.helpers.js";
 import { withoutOutcomeMeta } from "./with-kya-os.session.js";
+import {
+  encodableDelegationBytes,
+  isEncodableDelegation,
+  UNENCODABLE_DELEGATION_REASON,
+} from "./with-kya-os.delegation-encoding.js";
 
 /** Per-tool delegation-gate config shared by the gate + its challenge builder. */
 export interface DelegationGateConfig {
@@ -79,6 +84,16 @@ export type DelegationCheck =
   | { valid: true; vc: DelegationCredential; isJwt: boolean; expiresAt?: number }
   | { valid: false; reason: string; vc?: DelegationCredential };
 
+/** A {@link DelegationCheck} whose success also carries the bytes the audit digest is taken over. */
+export type AuditedDelegationCheck =
+  | (Extract<DelegationCheck, { valid: true }> & { serializedCredential: Uint8Array })
+  | Extract<DelegationCheck, { valid: false }>;
+
+/** The JWT a delegation `check` verified arrived as, or `undefined` for one with a Data Integrity proof. */
+function arrivedAsJwt(check: { isJwt: boolean }, delegationArg: unknown): string | undefined {
+  return check.isJwt ? delegationArg as string : undefined;
+}
+
 export interface DelegationVerification {
   /**
    * Authenticate and normalize a presented `_kyaos_delegation`, in either wire
@@ -91,6 +106,18 @@ export interface DelegationVerification {
    * never throws on normal or structurally-malformed input.
    */
   verifyDelegation(delegationArg: unknown): Promise<DelegationCheck>;
+  /**
+   * {@link verifyDelegation}, for a caller that hands the credential's values on:
+   * it also refuses a credential holding one that has no RFC 8785 encoding, and
+   * returns the bytes its digest is taken over (./with-kya-os.delegation-encoding.ts).
+   */
+  verifyDelegationForAudit(delegationArg: unknown): Promise<AuditedDelegationCheck>;
+  /**
+   * {@link verifyDelegation}, for a caller that hands the credential's values on but takes no
+   * digest of it, as a session grant does: it refuses the credentials
+   * {@link verifyDelegationForAudit} refuses, and produces no bytes.
+   */
+  verifyEncodableDelegation(delegationArg: unknown): Promise<DelegationCheck>;
   /** A structured `{ error, reason }` tool response with a sanitized reason. */
   buildDelegationErrorResponse(
     error: string,
@@ -362,6 +389,28 @@ export function createDelegationVerification(
     };
   }
 
+  async function verifyDelegationForAudit(
+    delegationArg: unknown,
+  ): Promise<AuditedDelegationCheck> {
+    const check = await verifyDelegation(delegationArg);
+    if (!check.valid) return check;
+    // Decided INSIDE this trust boundary, so a successful check cannot hand the gate a credential
+    // holding a value that later throws while being encoded. Never repair signed credential data. Only the
+    // encoding is decided here; the gate hashes these bytes, and a failure of its crypto provider
+    // there is not a property of the credential.
+    const serializedCredential = encodableDelegationBytes(check.vc, arrivedAsJwt(check, delegationArg));
+    if (serializedCredential === undefined) {
+      return { valid: false, reason: UNENCODABLE_DELEGATION_REASON, vc: check.vc };
+    }
+    return { ...check, serializedCredential };
+  }
+
+  async function verifyEncodableDelegation(delegationArg: unknown): Promise<DelegationCheck> {
+    const check = await verifyDelegation(delegationArg);
+    if (!check.valid || isEncodableDelegation(check.vc, arrivedAsJwt(check, delegationArg))) return check;
+    return { valid: false, reason: UNENCODABLE_DELEGATION_REASON, vc: check.vc };
+  }
+
   async function buildNeedsAuthorizationChallenge(
     toolName: string,
     config: DelegationGateConfig,
@@ -421,6 +470,8 @@ export function createDelegationVerification(
 
   return {
     verifyDelegation,
+    verifyDelegationForAudit,
+    verifyEncodableDelegation,
     buildDelegationErrorResponse,
     buildNeedsAuthorizationChallenge,
   };

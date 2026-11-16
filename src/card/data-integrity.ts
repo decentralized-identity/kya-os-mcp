@@ -6,15 +6,21 @@
  * carrying the document's `@context`, and the document without `proof`, each RFC 8785-canonicalized
  * and SHA-256 hashed; the signature is Ed25519 over the two hashes concatenated, `proofValue` is
  * base58btc multibase. The key is the issuer's verification method `proof.verificationMethod`
- * names, and that method must belong to the document's `issuer`. Every failure returns `false`.
+ * names, and that method must belong to the document's `issuer`, whose DID document must list it
+ * under the verification relationship the proof purpose names
+ * (../delegation/verification-relationship). Every failure returns `false`.
  */
 
 import { canonicalize } from 'json-canonicalize';
-import { isRecord } from '../utils/guards.js';
+import { isRecord, issuerOf } from '../utils/guards.js';
 import { base58Decode, base58Encode } from '../utils/base58.js';
 import { base64urlDecodeToBytes } from '../utils/base64.js';
 import { verificationMethodJwk } from '../delegation/verification-method-key.js';
-import type { DIDResolver, VerificationMethod } from '../delegation/vc-verifier.types.js';
+import type { DIDResolver } from '../delegation/vc-verifier.types.js';
+import {
+  retrieveVerificationMethod,
+  type VerificationRelationship,
+} from '../delegation/verification-relationship.js';
 import { ed25519VerifyRaw, sha256 } from './proof/canonical.js';
 import type { ProofSigner } from './proof/types.js';
 
@@ -24,14 +30,15 @@ const MAX_PROOF_VALUE_BASE58 = 100;
 
 /**
  * Verify a document's single `DataIntegrityProof` / `eddsa-jcs-2022` proof made for `proofPurpose`
- * by an Ed25519 key in the issuer's DID document. Resolves `true` only when every check passes; a
- * malformed proof or an unresolvable key resolves `false`. A throwing resolver propagates, so a
- * caller that wants a boolean wraps the call.
+ * by an Ed25519 key the issuer's DID document lists under the `proofPurpose` verification
+ * relationship. Resolves `true` only when every check passes; a malformed proof, an unresolvable
+ * key or a key listed only for other purposes resolves `false`. A throwing resolver propagates, so
+ * a caller that wants a boolean wraps the call.
  */
 export async function verifyEddsaJcs2022(
   document: Record<string, unknown>,
   didResolver: DIDResolver,
-  proofPurpose: string,
+  proofPurpose: VerificationRelationship,
 ): Promise<boolean> {
   const proof = document.proof;
   // One proof object: a proof set or chain is not a shape this check reads.
@@ -42,7 +49,7 @@ export async function verifyEddsaJcs2022(
   if (typeof proofValue !== 'string' || !proofValue.startsWith('z')) return false;
   if (typeof verificationMethod !== 'string') return false;
 
-  const issuer = issuerOf(document);
+  const issuer = issuerOf(document.issuer);
   const did = verificationMethod.split('#')[0];
   if (issuer === undefined || did !== issuer) return false;
 
@@ -50,7 +57,9 @@ export async function verifyEddsaJcs2022(
   if (signature.length !== ED25519_SIGNATURE_LENGTH) return false;
 
   const didDocument = await didResolver.resolve(did);
-  const method = didDocument?.verificationMethod?.find((vm) => methodId(vm, did) === verificationMethod);
+  const method = didDocument
+    ? retrieveVerificationMethod(didDocument, did, verificationMethod, proofPurpose)
+    : undefined;
   const jwk = method ? verificationMethodJwk(method) : undefined;
   if (!jwk || jwk.kty !== 'OKP' || jwk.crv !== 'Ed25519') return false;
 
@@ -105,7 +114,7 @@ export async function signEddsaJcs2022<T extends Record<string, unknown>>(
   }
   if (!signer.signRaw) throw new Error('eddsa-jcs-2022 needs a signer with signRaw');
   if (document.proof !== undefined) throw new Error('document already carries a proof');
-  const issuer = issuerOf(document);
+  const issuer = issuerOf(document.issuer);
   if (issuer === undefined || signer.kid.split('#')[0] !== issuer) {
     throw new Error(`signer key ${signer.kid} is not a verification method of the issuer ${String(issuer)}`);
   }
@@ -133,18 +142,6 @@ async function hashData(options: Record<string, unknown>, unsecured: Record<stri
   data.set(proofHash, 0);
   data.set(documentHash, proofHash.length);
   return data;
-}
-
-/** The document's `issuer` DID, whether a bare string or an `{ id }` object. */
-function issuerOf(document: Record<string, unknown>): string | undefined {
-  const issuer = document.issuer;
-  if (typeof issuer === 'string') return issuer;
-  return isRecord(issuer) && typeof issuer.id === 'string' ? issuer.id : undefined;
-}
-
-/** A verification method's absolute id: DID documents may write it relative (`#key-1`). */
-function methodId(method: VerificationMethod, did: string): string {
-  return method.id.startsWith('#') ? `${did}${method.id}` : method.id;
 }
 
 function contexts(value: unknown): unknown[] {

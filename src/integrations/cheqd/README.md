@@ -80,6 +80,44 @@ Runtime proof generation does not perform registrar writes. Create/update/DLR
 publishing should be triggered by an explicit operator workflow, deployment
 step, or admin tool.
 
+### Issuer signing keys
+
+`CheqdStatusListResolver`, like the package's delegation credential verifiers, checks an issuer's signature only with a key that the issuer's DID document lists under `assertionMethod` (SPEC.md §6.2).
+It uses the key the list's `proof.verificationMethod` names.
+When the proof names no key, it uses only the first entry the issuer's DID document lists under `assertionMethod`, and refuses the list when that entry does not name a key SPEC.md §6.2 accepts; it does not try later entries.
+A proof whose `verificationMethod` is empty names no usable key, and the list is refused.
+To sign with a key listed after the first, name it in `proof.verificationMethod`.
+A key listed only under `authentication` verifies neither a status list nor a delegation credential.
+
+`createDidPayload` in `@cheqd/sdk` lists the keys only under `authentication` in every release from 1.2.6 through 5.3.2, and under both `authentication` and `assertionMethod` from 5.3.3.
+The cheqd DID registrar's `/did-document` helper builds its document with `createDidPayload`, and locks 5.3.2 or earlier in every registrar release before 2.7.1, and 5.3.7 or later from 2.7.1.
+A cheqd DID created from a payload or a hand-built document that lists its key only under `authentication` needs a DID update that adds the key under `assertionMethod`.
+Earlier releases of this package accepted any key the document published, so make the update before the verifiers of that issuer's credentials and status lists upgrade:
+
+```typescript
+import { createDidCheqdResolver } from '@kya-os/mcp/cheqd';
+
+const issuerDid = 'did:cheqd:testnet:...';
+const keyId = `${issuerDid}#key-1`;
+const resolver = createDidCheqdResolver(fetchProvider, {
+  resolverUrl: 'https://resolver.cheqd.net',
+});
+const current = await resolver.resolve(issuerDid);
+if (!current) {
+  throw new Error(`Could not resolve ${issuerDid}`);
+}
+
+await registrar.updateDid({
+  did: issuerDid,
+  didDocument: {
+    ...current,
+    assertionMethod: [...(current.assertionMethod ?? []), keyId],
+  },
+  signer,
+  verificationMethodId: keyId,
+});
+```
+
 ### DID linkage
 
 For `did:web` <-> `did:cheqd` binding, publish reciprocal `alsoKnownAs` values

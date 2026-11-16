@@ -189,6 +189,7 @@ async function createTestnetDidFixture(cryptoProvider: NodeCryptoProvider): Prom
         },
       ],
       authentication: [kid],
+      assertionMethod: [kid],
     } as DIDDocument,
   };
 }

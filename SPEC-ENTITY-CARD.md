@@ -785,6 +785,10 @@ This is the cross-organizational case: a resource server can verify an agent act
    The bound is local policy, as in SPEC.md §6.10; the reference implementation defaults it to `MAX_DELEGATION_DEPTH` (10) for a carried chain.
    Every DID and status-list URL in a carried chain is caller-chosen, so each fetch it triggers goes through SafeFetch (§6.6).
 3. **Hop signatures.** Every hop MUST carry a `DataIntegrityProof` with the `eddsa-jcs-2022` cryptosuite, made for the `assertionMethod` purpose by a verification method of that hop's own `issuer`.
+   The issuer's DID document MUST list that method under `assertionMethod`, by reference or embedded (W3C Controlled Identifiers v1.0 [CID] §3.3); a key it lists only under another relationship, such as `authentication`, does not verify a hop.
+   The method MUST also be a conforming verification method whose `controller` is the issuer's DID (CID §3.3 steps 8 and 10), as the cryptosuite's retrieval of the key requires.
+   The method is looked for only among those in `verificationMethod` and those `assertionMethod` embeds, never among those another relationship embeds.
+   If more than one of them has the method's id, written as an absolute DID URL of the issuer or a `#fragment`, the id names no method, whether or not each of them conforms or names the issuer as its `controller`, and a Verifier MUST NOT verify the hop with any of them.
    A Verifier MUST verify each hop's proof over the credential as received, since the signature covers members a schema does not name.
 4. **Binding to the request.** The member sits inside `params._meta`, so `requestHash` does not cover it (§8.3).
    It is bound to the request by the leaf join of §10.2 instead: the leaf hop's delegate MUST equal the verified `proof.did`.
@@ -1330,6 +1334,7 @@ Retained for the legacy session-bound path (§15.5): `handshake_failed`, `sessio
 - **[RFC9421]** IETF. *HTTP Message Signatures*. https://datatracker.ietf.org/doc/html/rfc9421
 - **[RFC9449]** IETF. *OAuth 2.0 Demonstrating Proof of Possession (DPoP)*. https://datatracker.ietf.org/doc/html/rfc9449
 - **[DID-CORE]** W3C. *Decentralized Identifiers (DIDs) v1.0*. https://www.w3.org/TR/did-core/
+- **[CID]** W3C. *Controlled Identifiers v1.0*. https://www.w3.org/TR/cid-1.0/
 - **[DID-WEB]** W3C CCG. *did:web Method Specification*. https://w3c-ccg.github.io/did-method-web/
 - **[DID-KEY]** W3C CCG. *did:key Method Specification*. https://w3c-ccg.github.io/did-method-key/
 - **[VC-DATA-MODEL-2]** W3C. *Verifiable Credentials Data Model v2.0*. https://www.w3.org/TR/vc-data-model-2.0/

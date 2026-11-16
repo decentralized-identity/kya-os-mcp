@@ -8,17 +8,15 @@
  * names. The key must belong to the hop's own `issuer`, so a hop cannot borrow another party's
  * signature. {@link signDelegationCredential} is the issuing side, for a Responsible Party minting
  * the root and for a delegate re-delegating below it. The proof purpose is `assertionMethod`, the
- * purpose the profile's credentials carry today (SPEC.md §6.2). Every verification failure returns
- * `false`.
+ * purpose the profile's credentials carry today (SPEC.md §6.2), so the issuer's DID document must
+ * list the key under `assertionMethod`. Every verification failure returns `false`.
  */
 
 import type { DIDResolver } from '../delegation/vc-verifier.types.js';
+import { ASSERTION_METHOD } from '../delegation/verification-relationship.js';
 import { signEddsaJcs2022, verifyEddsaJcs2022 } from './data-integrity.js';
 import { DelegationCredentialSchema, type DelegationCredential } from './delegation.js';
 import type { ProofSigner } from './proof/types.js';
-
-/** The proof purpose of a delegation hop's `eddsa-jcs-2022` proof. */
-const HOP_PROOF_PURPOSE = 'assertionMethod';
 
 /**
  * Checks one `DelegationCredential` hop's proof. Resolves `true` only when the proof verifies;
@@ -40,7 +38,7 @@ export interface DelegationProofVerifierDeps {
 export function createDelegationProofVerifier(deps: DelegationProofVerifierDeps): DelegationProofVerifier {
   return async function verifyHopProof(credential: Record<string, unknown>): Promise<boolean> {
     try {
-      return await verifyEddsaJcs2022(credential, deps.didResolver, HOP_PROOF_PURPOSE);
+      return await verifyEddsaJcs2022(credential, deps.didResolver, ASSERTION_METHOD);
     } catch {
       return false;
     }
@@ -58,9 +56,10 @@ export type UnsignedDelegationCredential = {
 
 /**
  * Sign one delegation hop as its issuer. `signer` is the issuer's Ed25519 key (`signer.kid` a
- * verification method of `credential.issuer`), e.g. from `ed25519SignerFromJwk`; any
- * {@link ProofSigner} with `signRaw` works, a KMS or non-extractable key included. Throws when the
- * credential is not a §6.10 `DelegationCredential` or the signer cannot sign for its issuer.
+ * verification method `credential.issuer` lists under `assertionMethod`), e.g. from
+ * `ed25519SignerFromJwk`; any {@link ProofSigner} with `signRaw` works, a KMS or non-extractable
+ * key included. Throws when the credential is not a §6.10 `DelegationCredential` or the signer
+ * cannot sign for its issuer.
  */
 export async function signDelegationCredential(
   credential: UnsignedDelegationCredential,
@@ -72,5 +71,5 @@ export async function signDelegationCredential(
     const issue = parsed.error.issues[0];
     throw new Error(`not a DelegationCredential at ${issue?.path.join('.') ?? '(root)'}: ${issue?.message ?? 'invalid'}`);
   }
-  return signEddsaJcs2022(credential, signer, { proofPurpose: HOP_PROOF_PURPOSE, created: options.created });
+  return signEddsaJcs2022(credential, signer, { proofPurpose: ASSERTION_METHOD, created: options.created });
 }

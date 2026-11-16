@@ -2,7 +2,7 @@
 
 **Compliance levels for KYA-OS implementations**
 
-Version: 1.2.0
+Version: 1.3.0
 Status: Stable
 
 ---
@@ -201,6 +201,7 @@ All Level 2 requirements, plus:
 | L3.7 | Reject not-yet-valid credentials | `src/delegation/__tests__/vc-verifier.test.ts` | `Basic Validation Stage > should reject not-yet-valid credentials` |
 | L3.8 | Reject revoked credentials (status field) | `src/delegation/__tests__/vc-verifier.test.ts` | `Basic Validation Stage > should reject revoked credentials` |
 | L3.9 | Verify credential signature | `src/delegation/__tests__/vc-verifier.test.ts` | `Signature Verification > should succeed when signature verification passes` |
+| L3.9a | Verify it only with a key the issuer's DID document lists under `assertionMethod`, from a conforming method whose id is under the issuer's DID, whose `controller` is the issuer and that the document defines once; a VC-JWT by its non-empty `kid`, or with none by the first `assertionMethod` entry (SPEC §6.2) | `src/delegation/__tests__/delegation-key-relationship.test.ts`; `conformance/vectors/delegation-chain-key-relationship.json` and `conformance/vectors/status-list-key-relationship.json` | All tests; every vector in both files |
 | L3.10 | Resolve issuer DID for signature verification | `src/delegation/__tests__/vc-verifier.test.ts` | `Signature Verification > should fail when DID resolution fails` |
 | L3.11 | Check credential status via StatusList2021 | `src/delegation/__tests__/vc-verifier.test.ts` | `Status Checking > should fail when credential is revoked` |
 | L3.12 | Cache verification results | `src/delegation/__tests__/vc-verifier.test.ts` | `Caching > should return cached result when available` |
@@ -431,7 +432,9 @@ so it is reproducible against any implementation without re-signing.
 |------|----------|----------|----------|
 | `vectors/signed-proof.json` | Detached proof verification | valid signature + in-window ts; envelope content binding (profile `org.kya-os/response-proof.envelope`) | tampered signature, tampered meta, wrong key, timestamp skew exceeded; tampered `structuredContent` under envelope coverage, `prf` stripped (downgrade), unknown profile |
 | `vectors/delegation-chain.json` | Delegation chain verification | single-hop, two-hop attenuated | broken issuer↔subject linkage, scope widening, tampered signature, audience mismatch |
+| `vectors/delegation-chain-key-relationship.json` | Delegation chain verification: the issuer's key (SPEC.md §6.2) | signed with the key the issuer lists under `assertionMethod`; as a VC-JWT with no `kid`, signed with the key its first `assertionMethod` entry names | signed with a key it lists only under `authentication`, proof stating `proofPurpose: "authentication"`, issuer document whose `id` is another DID, signing key whose method names another DID as its `controller`, signing key whose method the document defines twice, signing key under another DID's id, signing key under no relationship, signing key whose method has no `type` or no `controller`; as a VC-JWT, a `kid` naming the `authentication` key, an empty `kid` |
 | `vectors/status-list.json` | StatusList2021 revocation | active (bit unset) | revoked (bit set), list altered after signing |
+| `vectors/status-list-key-relationship.json` | StatusList2021 revocation: the list issuer's key (SPEC.md §6.2) | list signed with the key the issuer lists under `assertionMethod` | list signed with a key it lists only under `authentication`, list proof stating `proofPurpose: "authentication"`, issuer document whose `id` is another DID, list signed with a key it lists under `assertionMethod` whose method names another DID as its `controller`, list signed with a key whose method the document defines twice |
 | `vectors/did-key-resolution.json` | did:key resolution | valid Ed25519 | malformed multibase, wrong method |
 | `vectors/did-web-resolution.json` | did:web resolution | well-formed id-matched document | document id mismatch, not found |
 | `vectors/card-proof.json` | `org.kya-os/proof.v1` holder-of-key proof | valid signed proof, in-window, audience-bound | tampered body, tampered signature, wrong audience, expired, kid⇄did forgery |
@@ -464,6 +467,22 @@ This vector carries the revoked credential and its signed list with the revoked 
 A verifier that reads the bits without verifying the list's proof reports the credential active and passes a vector it must reject (L3.11).
 Suites before 1.2.0 shipped a list whose proof did not verify, so an implementation that checked it failed `status-list/active-credential`.
 
+**On the key-relationship vectors (suite ≥ 1.3.0).**
+Their issuer is a did:web whose DID document lists `#login-1` under `authentication` and `#assert-1` under `assertionMethod`.
+Each file has one vector a verifier accepts, signed with `#assert-1`, and five that it rejects, each for one thing: the credential, or its status list, signed with `#login-1`; its proof stating `proofPurpose: "authentication"`; the document supplied for the issuer naming another DID as its `id`; that document naming another DID as the `controller` of the key that signs; or that document defining the method of the key that signs twice, in `verificationMethod` and again embedded in `assertionMethod`.
+A verifier that takes any key the document publishes, accepts a proof that states `authentication`, reads a document without checking whose it is, takes a key whose method another DID controls, or takes the first of two definitions of a method, passes a vector it must reject (L3.9a).
+In `status-list/issuer-document-id-mismatch` the list's issuer is the credential's, so one document serves both proofs, and a conformant verifier rejects the credential's proof before it reads a bit.
+For the same reason, `status-list/assertion-key-other-controller-list` signs the list with `#login-1` and has its document also list that key under `assertionMethod`, with another DID as its controller, so that the credential's proof verifies and the list's does not.
+`status-list/assertion-key-defined-twice-list` signs the list with `#login-1` too, and has its document embed a second definition of it in `assertionMethod`.
+The delegation file also rejects a delegation whose key the document publishes under another DID's id, under no relationship, or with no `type` or no `controller`.
+It also carries the delegation as a VC-JWT, as a string `leaf`.
+With no `kid`, it verifies with `#assert-1`, the key the first `assertionMethod` entry names, though the document publishes `#login-1` first.
+With a `kid` naming `#login-1`, or an empty `kid`, it is rejected; the empty-`kid` VC-JWT is signed with `#assert-1`, so a verifier that reads an empty `kid` as none accepts it.
+The Entity Card's `eddsa-jcs-2022` proofs on status lists and delegation hops have no vector: no adapter method verifies such a proof, and the card vectors carry placeholder proofs.
+`conformance/__tests__/key-relationship-vectors.test.ts` shows that the reference adapter rejects each negative for its one thing, and accepts it once that thing is undone.
+`conformance/__tests__/credential-proof-construction.test.ts` checks every credential, status list and VC-JWT in the `delegation-chain` and `status-list` vectors against the SPEC.md §6.2 text, with `node:crypto` and an RFC 8785 library and none of the package's verifier code.
+It checks the specification's construction against the bytes the suite ships; it is not an implementation, and no adapter runs it.
+
 ### Running the reference implementation
 
 ```bash
@@ -485,6 +504,7 @@ pnpm run conformance:generate
 
 Re-running mints fresh keys but preserves every positive/negative relationship by
 construction.
+The key-relationship files have their own generator, `pnpm run conformance:generate:key-relationship`, which also mints fresh keys.
 Because fresh keys change the committed bytes, regenerated output MUST NOT be committed over an existing `suiteVersion` (see [Suite versioning and immutability](#suite-versioning-and-immutability)).
 
 ### Suite versioning and immutability
@@ -510,7 +530,7 @@ import type { ConformanceAdapter } from "./conformance/types.js";
 const myAdapter: ConformanceAdapter = {
   name: "my-implementation",
   async verifySignedProof(input)      { /* return { outcome: "pass" | "fail" } */ },
-  async verifyDelegationChain(input)  { /* ... */ },
+  async verifyDelegationChain(input)  { /* a string leaf is a VC-JWT */ },
   async verifyStatusList(input)       { /* ... */ },
   async resolveDidKey(input)          { /* ... */ },
   async resolveDidWeb(input)          { /* ... */ },

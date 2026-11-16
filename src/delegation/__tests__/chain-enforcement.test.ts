@@ -334,7 +334,7 @@ describe("validateDelegationChain", () => {
       };
       const r = await validateDelegationChain(root, { ...baseDeps, revocationChecker: checker });
       expect(r.valid).toBe(false);
-      expect(r.reason).toMatch(/revoked via ancestor root-parent/);
+      expect(r.reason).toMatch(/revoked via ancestor "root-parent"/);
     });
 
     it("passes a clean chain through the revocation checker", async () => {
@@ -372,7 +372,7 @@ describe("validateDelegationChain", () => {
         revocationChecker: revocation,
       });
       expect(r.valid).toBe(false);
-      expect(r.reason).toBe("Delegation fresh-child is revoked via ancestor p");
+      expect(r.reason).toBe('Delegation "fresh-child" is revoked via ancestor "p"');
     });
 
     it("asks about every credential in the verified chain, root first, and names the one revoked", async () => {
@@ -394,11 +394,11 @@ describe("validateDelegationChain", () => {
       });
       expect(await validateDelegationChain(freshChild, { ...deps, revocationChecker: leafOnly("Directly revoked") })).toEqual({
         valid: false,
-        reason: "Delegation fresh-child is revoked: Directly revoked",
+        reason: 'Delegation "fresh-child" is revoked: Directly revoked',
       });
       expect(await validateDelegationChain(freshChild, { ...deps, revocationChecker: leafOnly() })).toEqual({
         valid: false,
-        reason: "Delegation fresh-child is revoked",
+        reason: 'Delegation "fresh-child" is revoked',
       });
     });
 
@@ -411,7 +411,7 @@ describe("validateDelegationChain", () => {
       const r = await validateDelegationChain(root, { ...baseDeps, revocationChecker: checker });
       expect(r).toEqual({
         valid: false,
-        reason: "Revocation check failed for delegation root: status list unavailable",
+        reason: 'Revocation check failed for delegation "root": status list unavailable',
       });
 
       const throwsNonError: RevocationChecker = {
@@ -421,7 +421,7 @@ describe("validateDelegationChain", () => {
       };
       expect(await validateDelegationChain(root, { ...baseDeps, revocationChecker: throwsNonError })).toEqual({
         valid: false,
-        reason: "Revocation check failed for delegation root: Unknown error",
+        reason: 'Revocation check failed for delegation "root": Unknown error',
       });
     });
   });

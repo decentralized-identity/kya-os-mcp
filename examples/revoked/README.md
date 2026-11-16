@@ -88,6 +88,9 @@ npm run issue:delegation          # mint the scoped, capped, revocable credentia
 npm run serve                     # protected server + verifier console
 ```
 
+`npm run create:did` takes the issuer's DID document from the registrar's `/did-document` helper, which lists the key under `assertionMethod` only from registrar release 2.7.1.
+The package's verifiers do not take an issuer's key from `authentication`, so an issuer DID whose document lists its key only there, as one the helper made before 2.7.1 or one created from `createDidPayload` in `@cheqd/sdk` before 5.3.3 does, needs the DID update that the [cheqd integration's README](../../src/integrations/cheqd/README.md#issuer-signing-keys) shows.
+
 Open the console, press `[1]` send / `[2]` over-cap / `[5]` theft / `[3]` revoke / `[4]` retry. Presenter mode is `P`, high-contrast is `C`.
 
 ### Tier 2: a live agent (Claude Desktop)

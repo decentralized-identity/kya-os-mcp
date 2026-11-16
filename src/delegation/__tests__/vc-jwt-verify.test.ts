@@ -19,6 +19,7 @@ import {
 } from "../vc-verifier.js";
 import { credentialIssuerDid, JWT_NBF_LEEWAY_SECONDS } from "../vc-jwt-verify.js";
 import type { DelegationCredential } from "../../types/protocol.js";
+import { issuerDidDocument, methodOf } from "../../__tests__/utils/did-documents.js";
 
 const ISSUER_DID = "did:web:example.com:u:alice";
 const KID = `${ISSUER_DID}#0`;
@@ -56,17 +57,7 @@ describe("verifyDelegationJwt (VC-JWT / compact JWS wire format)", () => {
   const resolverFor = (jwk: JWK): DIDResolver => ({
     async resolve(did: string): Promise<DIDDocument | null> {
       if (did !== ISSUER_DID) return null;
-      return {
-        id: ISSUER_DID,
-        verificationMethod: [
-          {
-            id: KID,
-            type: "JsonWebKey2020",
-            controller: ISSUER_DID,
-            publicKeyJwk: jwk,
-          },
-        ],
-      };
+      return issuerDidDocument(methodOf({ did: ISSUER_DID, kid: KID, publicKey: Buffer.from(jwk.x!, "base64url").toString("base64") }));
     },
   });
 
@@ -209,7 +200,7 @@ describe("verifyDelegationJwt (VC-JWT / compact JWS wire format)", () => {
     const jwt = await mintVcJwt(privateKey);
     const result = await isolated.verifyDelegationJwt(jwt, { skipCache: true });
     expect(result).toMatchObject({ valid: false, stage: "signature" });
-    expect(result.reason).toBe(`Could not resolve issuer DID ${ISSUER_DID}: resolver down`);
+    expect(result.reason).toBe(`Could not resolve issuer DID "${ISSUER_DID}": resolver down`);
   });
 
   it("rejects, without throwing, a JOSE header that is not a JSON object", async () => {
@@ -292,23 +283,11 @@ describe("verifyDelegationJwt (VC-JWT / compact JWS wire format)", () => {
   });
 
   it("accepts a VC-JWT when the issuer publishes only publicKeyMultibase", async () => {
-    const { base58Encode } = await import("../../utils/base58.js");
-    const raw = Buffer.from(publicJwk.x as string, "base64url");
-    const multibase = `z${base58Encode(new Uint8Array([0xed, 0x01, ...raw]))}`;
+    const publicKey = Buffer.from(publicJwk.x as string, "base64url").toString("base64");
     const multibaseResolver: DIDResolver = {
       async resolve(did: string): Promise<DIDDocument | null> {
         if (did !== ISSUER_DID) return null;
-        return {
-          id: ISSUER_DID,
-          verificationMethod: [
-            {
-              id: KID,
-              type: "Ed25519VerificationKey2020",
-              controller: ISSUER_DID,
-              publicKeyMultibase: multibase,
-            },
-          ],
-        };
+        return issuerDidDocument(methodOf({ did: ISSUER_DID, kid: KID, publicKey }, { form: "multibase" }));
       },
     };
     const verifier = new DelegationCredentialVerifier({ didResolver: multibaseResolver });

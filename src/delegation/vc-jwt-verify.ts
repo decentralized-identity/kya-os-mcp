@@ -24,34 +24,23 @@ import type { DelegationCredential } from "../types/protocol.js";
 import type {
   DIDDocument,
   DIDResolver,
-  VerificationMethod,
   DelegationVCVerificationResult,
 } from "./vc-verifier.types.js";
+import { credentialIssuerDid, isIssuerUrl } from "./credential-issuer.js";
 import { parseVCJWT, type VCJWTPayload } from "./utils.js";
 import { validateBasicProperties } from "./vc-verification-checks.js";
 import { verificationMethodJwk } from "./verification-method-key.js";
+import { assertionMethodRefusal, selectAssertionMethod } from "./verification-relationship.js";
 import { isSmallOrderEd25519CryptoKey } from "../utils/ed25519-public-key.js";
+import { describeValue } from "../utils/describe-value.js";
+import { sanitizeForMessage } from "../utils/message-text.js";
 
+/** The text of an error the verifier did not write, as a reason holds it: bounded and well-formed. */
 function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  return sanitizeForMessage(err instanceof Error ? err.message : String(err));
 }
 
-/**
- * The credential's own declared issuer as a DID string (VC `issuer` may be a
- * string or an object with `id`). `undefined` when absent/malformed. The
- * verifier requires this to equal the JWT `iss` — a credential must not claim
- * an issuer other than the key that actually signed the envelope.
- */
-export function credentialIssuerDid(
-  credential: DelegationCredential,
-): string | undefined {
-  const iss = credential.issuer;
-  if (typeof iss === "string") return iss;
-  if (iss && typeof iss === "object" && typeof iss.id === "string") {
-    return iss.id;
-  }
-  return undefined;
-}
+export { credentialIssuerDid };
 
 function jwtBasicFailure(
   reason: string | undefined,
@@ -98,6 +87,18 @@ function validateJwtTimeBounds(payload: VCJWTPayload, nowMs: number): string | u
 }
 
 /**
+ * Why the basic stage refuses a VC-JWT's `iss` claim, or `undefined` when it is
+ * absent or a URL by the rule the credential's issuer is held to
+ * ({@link isIssuerUrl}, VC Data Model 2.0 §4.7), since the issuer DID is taken
+ * from `iss`. An absent `iss` is left to the consistency check, which refuses
+ * it: the basic stage lets through only a credential whose issuer names a DID.
+ */
+function jwtIssuerRefusal(iss: unknown): string | undefined {
+  if (iss === undefined || (typeof iss === "string" && isIssuerUrl(iss))) return undefined;
+  return `JWT iss ${describeValue(iss)} is not a URL`;
+}
+
+/**
  * A JOSE header and a JWT claims set are JSON objects (RFC 7515 §4,
  * RFC 7519 §7.2). Both segments are attacker-supplied, and `null` or an array
  * parses as valid JSON, so check before reading a member.
@@ -123,6 +124,8 @@ export type PreparedVcJwt =
  * issuer other than the key that signs it). Returns the validated credential
  * and its key-lookup coordinates, or a terminal `failure` at the `basic` stage.
  * The issuer DID is taken from the `iss` claim, never the inner `vc.issuer`.
+ * A present `iss` must be a string, and the credential must name its issuer by
+ * one (./credential-issuer), so the issuer DID returned is always a string.
  */
 export function prepareVcJwtCredential(
   jwt: string,
@@ -139,9 +142,10 @@ export function prepareVcJwtCredential(
   }
 
   const basicCheckStart = Date.now();
-  const timeFailure = validateJwtTimeBounds(parsed.payload, basicCheckStart);
-  if (timeFailure) {
-    return { failure: jwtBasicFailure(timeFailure, startTime, Date.now() - basicCheckStart) };
+  const claimFailure =
+    validateJwtTimeBounds(parsed.payload, basicCheckStart) ?? jwtIssuerRefusal(parsed.payload.iss);
+  if (claimFailure) {
+    return { failure: jwtBasicFailure(claimFailure, startTime, Date.now() - basicCheckStart) };
   }
   const vc = parsed.payload.vc as DelegationCredential;
   const basicValidation = validateBasicProperties(vc, {
@@ -179,17 +183,12 @@ export interface VcJwtSignatureResult {
   durationMs: number;
 }
 
-function selectVerificationMethod(
-  methods: VerificationMethod[],
-  kid: string | undefined,
-): VerificationMethod | undefined {
-  return kid ? methods.find((m) => m.id === kid) : methods[0];
-}
-
 /**
  * Verify a VC-JWT's EdDSA envelope signature against the issuer's published
  * key. Resolves `issuerDid`, selects the verification method named by `kid`
- * (or the first when `kid` is absent), imports its `publicKeyJwk`, and checks
+ * among those its DID document lists under `assertionMethod` (or the first of
+ * those when `kid` is absent; an empty `kid` names none and is refused),
+ * imports its `publicKeyJwk`, and checks
  * the compact JWS with `jose` — `algorithms` pinned to `EdDSA`, so a token
  * cannot downgrade the suite or claim `alg: none`. Fail-closed: any
  * resolution, key-import, or verification problem denies, and none throws.
@@ -214,26 +213,24 @@ export async function verifyVcJwtSignature(
     );
   }
 
+  const issuer = describeValue(issuerDid);
   let didDoc: DIDDocument | null;
   try {
     didDoc = await didResolver.resolve(issuerDid);
   } catch (err) {
-    return done(false, `Could not resolve issuer DID ${issuerDid}: ${errMsg(err)}`);
+    return done(false, `Could not resolve issuer DID ${issuer}: ${errMsg(err)}`);
   }
   if (!didDoc) {
-    return done(false, `Could not resolve issuer DID: ${issuerDid}`);
+    return done(false, `Could not resolve issuer DID: ${issuer}`);
   }
 
-  const vm = selectVerificationMethod(didDoc.verificationMethod ?? [], kid);
-  if (!vm) {
-    return done(
-      false,
-      kid
-        ? `Verification method ${kid} not found in DID Document`
-        : "DID Document has no verification method",
-    );
+  // VC-JOSE-COSE §4.1.1 makes `kid` a hint to the key that secured the credential; the relationship
+  // is what lets that key issue it (W3C Controlled Identifiers v1.0 §3.3).
+  const selection = selectAssertionMethod(didDoc, issuerDid, kid);
+  if (!("method" in selection)) {
+    return done(false, assertionMethodRefusal(selection, "JWT kid", kid, issuerDid));
   }
-  const publicKeyJwk = verificationMethodJwk(vm);
+  const publicKeyJwk = verificationMethodJwk(selection.method);
   if (!publicKeyJwk) {
     return done(
       false,

@@ -78,6 +78,10 @@ export interface DIDResolver {
   resolve(did: string): Promise<DIDDocument | null>;
 }
 
+/**
+ * A DID document as a resolver returns it. Each verification relationship lists methods by
+ * reference (an absolute or relative DID URL) or embeds them (W3C Controlled Identifiers v1.0 §2.3).
+ */
 export interface DIDDocument {
   '@context'?: string | string[];
   id: string;
@@ -85,6 +89,9 @@ export interface DIDDocument {
   verificationMethod?: VerificationMethod[];
   authentication?: (string | VerificationMethod)[];
   assertionMethod?: (string | VerificationMethod)[];
+  keyAgreement?: (string | VerificationMethod)[];
+  capabilityInvocation?: (string | VerificationMethod)[];
+  capabilityDelegation?: (string | VerificationMethod)[];
 }
 
 export interface VerificationMethod {

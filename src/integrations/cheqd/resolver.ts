@@ -8,7 +8,8 @@
 
 import type { FetchProvider } from '../../providers/base.js';
 import type { DIDResolverFactory } from '../../delegation/did-resolver-registry.js';
-import type { DIDDocument, DIDResolver, VerificationMethod } from '../../delegation/vc-verifier.js';
+import type { DIDDocument, DIDResolver } from '../../delegation/vc-verifier.js';
+import { hasIdTypeAndController } from '../../delegation/verification-method-shape.js';
 import { logger } from '../../logging/index.js';
 import { isRecord, stripTrailingSlashes } from '../../utils/index.js';
 
@@ -185,27 +186,13 @@ function isValidDIDDocument(value: unknown): value is DIDDocument {
       return false;
     }
     for (const method of value['verificationMethod']) {
-      if (!isValidVerificationMethod(method)) {
+      if (!hasIdTypeAndController(method)) {
         return false;
       }
     }
   }
 
   return true;
-}
-
-function isValidVerificationMethod(value: unknown): value is VerificationMethod {
-  if (!isRecord(value)) {
-    return false;
-  }
-  return (
-    typeof value['id'] === 'string' &&
-    value['id'].length > 0 &&
-    typeof value['type'] === 'string' &&
-    value['type'].length > 0 &&
-    typeof value['controller'] === 'string' &&
-    value['controller'].length > 0
-  );
 }
 
 function isStringArray(value: unknown): value is string[] {

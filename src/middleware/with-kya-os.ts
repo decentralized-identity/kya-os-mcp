@@ -211,11 +211,12 @@ export function createKyaOsMiddleware(
 
   // Durable-grant resolution (the no-paste retry) re-verifies stored evidence
   // with the same delegation verification the gate applies to presented
-  // credentials. Both depend only on the immutable deps above, so they lift out
-  // cleanly with no shared session state.
+  // credentials, which also refuses one holding a value the gate hands on and
+  // cannot encode. Both depend only on the immutable deps above, so they lift
+  // out cleanly with no shared session state.
   const delegationVerification = createDelegationVerification(deps);
   const { resolveExistingGrant, bindGrantOnSuccess } =
-    createGrantResolution(deps, delegationVerification.verifyDelegation);
+    createGrantResolution(deps, delegationVerification.verifyEncodableDelegation);
 
   const { wrapWithDelegation } = createDelegationGate(deps, {
     delegationVerification,

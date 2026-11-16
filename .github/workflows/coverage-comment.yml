@@ -43,11 +43,18 @@ jobs:
               commit_sha: context.payload.workflow_run.head_sha,
             });
 
-            const pr = pulls.find(p => p.state === 'open') ?? pulls[0];
-            if (!pr) {
-              core.setFailed(`No pull request found for head_sha ${context.payload.workflow_run.head_sha}`);
+            // A stacked commit can belong to several PRs. Only the current head identifies
+            // the report's PR; an older run must not overwrite its newer coverage report.
+            const candidates = pulls.filter(p =>
+              p.state === 'open' &&
+              p.head.sha === context.payload.workflow_run.head_sha &&
+              p.base.repo.full_name === `${context.repo.owner}/${context.repo.repo}`
+            );
+            if (candidates.length !== 1) {
+              core.info('Skipping coverage comment: no unique open PR still has this head.');
               return;
             }
+            const pr = candidates[0];
             const prNumber = pr.number;
 
             const body = fs.readFileSync('/tmp/coverage-comment/coverage-comment-body.md', 'utf8');
@@ -59,7 +66,9 @@ jobs:
             });
 
             const marker = '## Coverage Report';
-            const existing = comments.find(c => c.body?.startsWith(marker));
+            const existing = comments.find(c =>
+              c.user?.login === 'github-actions[bot]' && c.body?.startsWith(marker)
+            );
 
             if (existing) {
               await github.rest.issues.updateComment({

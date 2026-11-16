@@ -40,7 +40,7 @@ import type {
   KyaOsCallContext,
 } from "./with-kya-os.types.js";
 import type { MiddlewareDeps, AttachOutcomeProof, RequireProofLayer } from "./with-kya-os.deps.js";
-import { sanitizeForMessage, withoutControlArgs } from "./with-kya-os.helpers.js";
+import { sanitizeForMessage, withoutControlArgs, type MessageText } from "./with-kya-os.helpers.js";
 import type { McpAuditContext } from "../audit/adapters/mcp.js";
 
 /** The `_meta` member carrying this middleware's audit-lifecycle marker. */
@@ -141,8 +141,8 @@ interface PendingOutcomeProof {
   /** Re-read when the proof is made; the proof's audience comes from it. */
   sessionId: string;
   outcome: KyaOsAuthorizationOutcome;
-  /** Already sanitized, so bounded. */
-  reason: string;
+  /** Constructed only through the message sanitizer at the shared outcome boundary. */
+  reason: MessageText;
   /** Whether the outcome's terminal audit events were delivered. */
   terminalAuditDelivered: boolean;
 }
@@ -1315,7 +1315,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
           : undefined;
       const proof = await proofGenerator.generateProof(hashedRequest(toolName), proofResponse, session, signedOver(requestHash, {
         outcome,
-        reason: sanitizeForMessage(reason),
+        reason,
         profile: responseProofProfile,
       }));
       proved = withMembers(response, {

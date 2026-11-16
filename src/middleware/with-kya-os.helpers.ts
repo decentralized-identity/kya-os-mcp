@@ -10,6 +10,9 @@ import type { DelegationCredential } from "../types/protocol.js";
 import { getDelegationScopes } from "../delegation/chain-enforcement.js";
 import { isKyaOsControlArg } from "../proof/covered-request.js";
 
+// The delegation verifier sanitizes text with it too, so it is defined below both, in utils.
+export { sanitizeForMessage, type MessageText } from "../utils/message-text.js";
+
 /**
  * The argument that carries approval grants by default, and the one
  * `wrapWithDelegation` forwards to a composed policy gate in the call context.
@@ -28,28 +31,6 @@ export function withoutControlArgs(
     if (!isKyaOsControlArg(key)) clean[key] = value;
   }
   return clean;
-}
-
-/**
- * Strip control characters and cap length on caller-derived values before they
- * are interpolated into client-facing reasons or log lines. A hostile
- * credential could otherwise embed newlines / control chars in an id or scope to
- * forge or corrupt log entries (log injection) or break a terminal. The fixed
- * parts of a reason contain no control chars, so sanitizing the whole assembled
- * string at the emission boundary is equivalent to sanitizing each interpolated
- * value, and is idempotent.
- */
-export function sanitizeForMessage(value: unknown, maxLen = 256): string {
-  const s = typeof value === "string" ? value : String(value);
-  // Replace C0/C1 control chars (incl. CR, LF, TAB, ESC, DEL) with U+FFFD so a
-  // hostile id/scope cannot forge log lines or break a terminal. Filtered by
-  // code point to keep this source ASCII-only (no literal control chars).
-  let out = "";
-  for (const ch of s) {
-    const code = ch.codePointAt(0) ?? 0;
-    out += code <= 0x1f || (code >= 0x7f && code <= 0x9f) ? "\uFFFD" : ch;
-  }
-  return out.length > maxLen ? `${out.slice(0, maxLen)}\u2026` : out;
 }
 
 /** Best-effort projection of a delegation VC into policy principal facts. */

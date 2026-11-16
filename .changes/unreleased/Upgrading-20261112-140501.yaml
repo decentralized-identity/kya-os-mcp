@@ -1,0 +1,15 @@
+kind: Upgrading
+body: |-
+    **A delegation credential, status list or delegation hop must be signed
+    with a key its issuer's DID document lists under `assertionMethod`.**
+    did:key documents, did:web documents built with `buildDidWebDocument`
+    and every signer in this package already comply. Before verifiers
+    upgrade, any other issuer lists each signing key under
+    `assertionMethod`, with its own DID as the method's `controller`,
+    states `proofPurpose: assertionMethod`, names its key, and names
+    itself by a URL as written. Some did:cheqd documents need a DID
+    update. Refusal reasons now quote the values they name, so code that
+    matches on their text needs the new wording. UPGRADING.md, "From
+    1.22.0", has the steps for each setup and a table of every changed
+    reason.
+time: 2026-11-12T14:05:01.000000-06:00

@@ -19,6 +19,7 @@ import {
 } from "../types/protocol.js";
 import { canonicalizeJson } from "../utils/canonical-json.js";
 import { verifyDelegationAudience } from "./audience-validator.js";
+import { chainResolutionFailure, revocationCheckFailure, revokedReason } from "./chain-reasons.js";
 import { authorityContains, crispScopes, matcherContains, scopeAuthority } from "./scope-matcher.js";
 import { credentialIssuerDid } from "./vc-jwt-verify.js";
 
@@ -340,7 +341,7 @@ export async function validateDelegationChain(
     } catch (error) {
       return {
         valid: false,
-        reason: `Failed to resolve delegation chain: ${error instanceof Error ? error.message : "Unknown error"}`,
+        reason: chainResolutionFailure(error),
       };
     }
 
@@ -543,7 +544,7 @@ export async function validateDelegationChain(
       } catch (error) {
         return {
           valid: false,
-          reason: `Revocation check failed for delegation ${delegationId}: ${error instanceof Error ? error.message : "Unknown error"}`,
+          reason: revocationCheckFailure(delegationId, error),
         };
       }
       if (!revocation.revoked) {
@@ -554,9 +555,7 @@ export async function validateDelegationChain(
         (delegationId === leafDelegation.id ? undefined : delegationId);
       return {
         valid: false,
-        reason: revokedAncestor
-          ? `Delegation ${leafDelegation.id} is revoked via ancestor ${revokedAncestor}`
-          : `Delegation ${leafDelegation.id} is revoked${revocation.reason ? `: ${revocation.reason}` : ""}`,
+        reason: revokedReason(leafDelegation.id, revokedAncestor, revocation.reason),
       };
     }
   }

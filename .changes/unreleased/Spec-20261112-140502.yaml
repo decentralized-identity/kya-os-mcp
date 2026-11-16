@@ -1,0 +1,14 @@
+kind: Spec
+body: |-
+    **SPEC.md §6.2 and §6.10 and SPEC-ENTITY-CARD.md §10.5: a proof
+    verifies only with a key its issuer's DID document lists under
+    `assertionMethod`**, by reference or embedded, in a conforming method
+    defined once, with an id under the issuer's DID and the issuer as its
+    `controller` (Controlled Identifiers v1.0 §3.3). §6.2 also rejects a
+    stated `proofPurpose` other than `assertionMethod`, an empty or
+    non-string `kid` or `verificationMethod`, and an issuer or VC-JWT `iss`
+    that is not a URL as written, and lets a VC-JWT with no `kid` be checked
+    with the first `assertionMethod` entry alone. §11.5 says how to rotate
+    keys under these rules. SPEC.md adds the CID, VC Data Model 2.0 and URL
+    Standard references and cites VC-JOSE-COSE; SPEC-ENTITY-CARD.md adds CID.
+time: 2026-11-12T14:05:02.000000-06:00

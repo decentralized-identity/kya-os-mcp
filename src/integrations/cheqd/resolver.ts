@@ -13,7 +13,7 @@ import type { FetchProvider } from '../../providers/base.js';
 import type { DIDResolverFactory } from '../../delegation/did-resolver-registry.js';
 import type { DIDDocument, DIDResolver, DidResolutionFailure } from '../../delegation/vc-verifier.js';
 import {
-  DidResolutionFailures, invalidDid, invalidDocument, readFailureOf, unservedMethod,
+  DidResolutionFailures, invalidDid, invalidDocument, readFailureOf,
 } from '../../delegation/did-resolution-failure.js';
 import { hasIdTypeAndController } from '../../delegation/verification-method-shape.js';
 import { dependencyTimeout } from '../../utils/deadline.js';
@@ -99,11 +99,12 @@ export class DidCheqdResolver implements DIDResolver {
     if (!boundedDid(did)) {
       return null;
     }
+    // A DID of another method records nothing, so a resolver that composes this one reports the
+    // failure of the one that serves it.
+    if (!isDidCheqd(did)) return null;
     if (!parseDidCheqd(did)) {
       // Asking the endpoint again could not change this, so it is a verdict, never a retry.
-      return this.failed(did, isDidCheqd(did)
-        ? invalidDid('the DID is not a did:cheqd DID of mainnet or testnet')
-        : unservedMethod('the did:cheqd resolver', did));
+      return this.failed(did, invalidDid('the DID is not a did:cheqd DID of mainnet or testnet'));
     }
     return this.cache.resolve(did, this.cacheTtl, () => this.fetchDocument(did));
   }
@@ -112,7 +113,8 @@ export class DidCheqdResolver implements DIDResolver {
    * Why the last resolution of `did` found no document: its deadline passed, the endpoint
    * unavailable, its answer over the byte cap, the document invalid, or the DID not a did:cheqd DID
    * of mainnet or testnet this resolver can ask for, which is `invalid_document` too. `undefined`
-   * once a read of it has found one, and for a DID this resolver was never asked for.
+   * once a read of it has found one, for a DID this resolver was never asked for, and for a DID of
+   * another method.
    */
   lastFailure(did: string): DidResolutionFailure | undefined {
     return this.failures.get(did);

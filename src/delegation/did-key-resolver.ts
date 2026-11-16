@@ -19,7 +19,7 @@ import { didKeyFragment } from '../utils/did-helpers.js';
 import { base64urlEncodeFromBytes } from '../utils/base64.js';
 import type { DIDResolver, DIDDocument, DidResolutionFailure, VerificationMethod } from './vc-verifier.js';
 import { logger } from '../logging/index.js';
-import { DidResolutionFailures, invalidDid, unservedMethod } from './did-resolution-failure.js';
+import { DidResolutionFailures, invalidDid } from './did-resolution-failure.js';
 
 /** Ed25519 multicodec prefix (0xed 0x01) */
 export const ED25519_MULTICODEC_PREFIX = new Uint8Array([0xed, 0x01]);
@@ -117,8 +117,10 @@ const UNDECODABLE_DID_KEY = 'the DID is not an Ed25519 did:key whose public key 
  *
  * Returns a DIDResolver that can resolve did:key DIDs to DID Documents.
  * Currently supports only Ed25519 keys. Its `lastFailure` says why it found
- * no document for a DID: a DID of another method, or a did:key that does not
- * decode, is `invalid_document`, since asking again cannot change either.
+ * no document for a did:key: one that does not decode is `invalid_document`,
+ * since asking again cannot change that. A DID of another method records
+ * nothing, so a resolver that composes this one with others reports the
+ * failure of the one that serves the DID.
  *
  * @returns DIDResolver implementation for did:key
  */
@@ -131,9 +133,7 @@ export function createDidKeyResolver(): DIDResolver {
   };
   return {
     resolve: async (did: string): Promise<DIDDocument | null> => {
-      if (!did.startsWith('did:key:')) {
-        return failed(did, unservedMethod('the did:key resolver', did));
-      }
+      if (!did.startsWith('did:key:')) return null;
       const document = resolveDidKeySync(did);
       if (document === null) {
         return failed(did, invalidDid(UNDECODABLE_DID_KEY));

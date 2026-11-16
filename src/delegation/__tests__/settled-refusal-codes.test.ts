@@ -62,18 +62,9 @@ describe('a DID the verifier can never resolve', () => {
     });
   });
 
-  it('is did_invalid when no resolver of the verifier serves its method, and says so', async () => {
-    expect(await refusalOf('did:ion:EiAbc', createDidKeyResolver())).toEqual({
-      valid: false,
-      reason: 'Could not resolve issuer DID: "did:ion:EiAbc" (the did:key resolver resolves no "ion" DID)',
-      ...codedAs('did_invalid'),
-    });
-  });
-
   it.each([
     ['a did:cheqd DID whose identifier the method does not allow', 'did:cheqd:mainnet:not.an.id', 'the DID is not a did:cheqd DID of mainnet or testnet'],
     ['a did:cheqd DID of another network', 'did:cheqd:devnet:zAbc', 'the DID is not a did:cheqd DID of mainnet or testnet'],
-    ['a DID of another method', 'did:ion:EiAbc', 'the did:cheqd resolver resolves no "ion" DID'],
   ])('is did_invalid, with no request, when the cheqd resolver is given %s', async (_name, did, why) => {
     const endpoint = new AnsweringFetchProvider(() => {
       throw new Error('no request expected');
@@ -104,6 +95,33 @@ describe('a DID the verifier can never resolve', () => {
 
   it('is still did_unavailable, transient, where a resolver that serves its method found nothing and says no more', async () => {
     expect(await refusalOf('did:ion:EiAbc', { resolve: async () => null })).toMatchObject(codedAs('did_unavailable'));
+  });
+});
+
+describe('a DID of a method a resolver does not serve', () => {
+  it.each<[string, () => DIDResolver]>([
+    ['the did:key resolver', () => createDidKeyResolver()],
+    ['the did:web resolver', () => createDidWebResolver(new AnsweringFetchProvider(() => new Response('busy', { status: 503 })))],
+    ['the did:cheqd resolver', () => createDidCheqdResolver(new AnsweringFetchProvider(() => new Response('busy', { status: 503 })), { resolverUrl: 'https://resolver.example/1.0/identifiers' })],
+  ])('records nothing in %s, which cannot know whether another resolver serves it', async (_name, resolver) => {
+    const asked = resolver();
+    expect(await asked.resolve('did:ion:EiAbc')).toBeNull();
+    expect(asked.lastFailure?.('did:ion:EiAbc')).toBeUndefined();
+  });
+
+  it("leaves a resolver that composes several to report the failure of the one that serves the DID, so a did:web outage stays transient", async () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const key = createDidKeyResolver();
+    const web = createDidWebResolver(new AnsweringFetchProvider(() => new Response('busy', { status: 503 })));
+    const composite: DIDResolver = {
+      resolve: async (did) => (await key.resolve(did)) ?? web.resolve(did),
+      lastFailure: (did) => key.lastFailure?.(did) ?? web.lastFailure?.(did),
+    };
+    expect(await refusalOf('did:web:busy.example', composite)).toEqual({
+      valid: false,
+      reason: 'Could not resolve issuer DID: "did:web:busy.example"',
+      ...codedAs('did_unavailable'),
+    });
   });
 });
 

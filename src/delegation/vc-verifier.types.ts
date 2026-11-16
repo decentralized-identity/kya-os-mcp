@@ -127,8 +127,9 @@ export interface DIDResolver {
  *   an HTTP error, no body, or text that is not JSON.
  * - `too_large`: the host answered with more bytes than any DID document may hold.
  * - `invalid_document`: what was read is not a valid document of this DID; or the DID is one the
- *   resolver can never resolve, a did:key whose public key does not decode, or a DID of a method it
- *   does not serve.
+ *   resolver can never resolve: a did:key whose public key does not decode, a did:web DID that names
+ *   no URL, or, for a resolver that composes others, as the delegation middleware's does, a DID of a
+ *   method none of them serves. A resolver of some methods records nothing for a DID of another.
  */
 export type DidResolutionFailureCause = 'host_refused' | 'deadline_exceeded' | 'unavailable' | 'too_large' | 'invalid_document';
 

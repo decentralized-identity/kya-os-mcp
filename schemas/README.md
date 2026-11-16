@@ -81,8 +81,14 @@ except ValidationError as e:
 All schemas use JSON Schema draft 2020-12 and are published at:
 
 ```
-https://schema.kya-os.org/v1/protocol/{family}/{resource}/v1.0.0
+https://schema.kya-os.org/v1/protocol/{family}/{resource}/v{major}.{minor}.{patch}
 ```
+
+A published `$id` keeps its bytes, except for a change that only widens what the schema accepts, which kya-os-schema records in `packages/protocol-core/in-place-transitions.json`.
+Any other change takes a new version in the `$id`, and the earlier version stays published.
+In this repository, `src/__tests__/published-schemas.json` records the SHA-256 of the bytes published at each `$id`, and a test fails when a schema changes under one of them.
+
+`delegation/credential` has two lines: v1.0.x is the legacy VC 1.x shape (`delegation-credential.json`), and v1.1.0 onward is the VC 2.0 and ZCAP-LD profile (`card-delegation-credential.json`).
 
 Schemas can reference each other using `$ref`. For example, the delegation credential schema references shared definitions for constraints and proof structures.
 
@@ -139,7 +145,7 @@ These schemas implement types defined in the [KYA-OS Specification](../SPEC.md):
 
 When modifying schemas:
 
-1. Ensure backward compatibility or increment the schema version
+1. Keep the `$id` only for a change that widens what the schema accepts; otherwise give it a new version (see Schema References)
 2. Update the `examples` array with valid instances
 3. Run validation tests against the examples
 4. Update this README if adding new schemas

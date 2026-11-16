@@ -208,6 +208,11 @@ The hop schema, `DelegationCredentialSchema`, and the Card's entry schema, `Bits
 They do not check the two further requirements of §2.1, that an entry of more than one bit state a `statusMessage` and that a `statusMessage` have one element for each value the size allows, since every reader refuses such an entry for its size.
 On 1.22.0 the hop schema dropped both members, and the Card's entry schema rejected a Card that stated either.
 `schemas/kya-os-card.schema.json`, `schemas/card-delegation-credential.json` and `schemas/delegation-credential.json` describe both members.
+The two delegation credential schemas reject a `statusSize` or `statusMessage` that the schema published at their old `$id` accepts, so each takes a new `$id`: `schemas/card-delegation-credential.json` is `delegation/credential/v1.2.0`, and `schemas/delegation-credential.json` is `delegation/credential/v1.0.1`.
+`delegation/credential/v1.2.0` also requires `DelegationCredential` in `type`, as `DelegationCredentialSchema` has since 1.17.0, which the schema published at `v1.1.0` does not.
+The Card's schema only gains the two members, so it keeps `identity/card/v1.1.0`.
+A document that names an old `$id` is still validated against the schema published there, which does not change.
+Code that loads either file from the package and looks it up or `$ref`s it by `$id` names the new `$id`.
 `withStatusCache` keeps a verdict per `statusSize` as well, so an entry is never answered from the verdict of an entry of another size at the same index.
 Issue every credential with an entry of one bit, as `StatusList2021Manager.allocateStatusEntry` does, and re-issue any that states another `statusSize`.
 A custom `StatusListResolver` or `BitstringRevocationChecker` is given the entry whole: one that reads the bit at the index should refuse what `acceptEntrySize(status.statusSize)` refuses, before it fetches, and one that reads an entry of several bits where §3.2 places them, for the `message` purpose, is not affected.

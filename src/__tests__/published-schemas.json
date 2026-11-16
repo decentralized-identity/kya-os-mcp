@@ -1,0 +1,28 @@
+{
+  "$comment": "The SHA-256 of the bytes schema.kya-os.org serves at each $id, or will serve once the release that adds the $id is published. A published $id is immutable: a schema whose bytes change takes a new version in its $id. A change that only widens what a schema accepts may keep its $id; it then updates the digest here and is recorded in kya-os-schema's packages/protocol-core/in-place-transitions.json. An $id no file carries any more stays listed, so it is never reused for other bytes. published-schemas.test.ts holds every file in schemas/ to this list.",
+  "schemas": {
+    "https://schema.kya-os.org/v1/protocol/audit/anchor-receipt/v1.0.0": "c2510a7bce41a1b04456c0c419f3ecd3c2a71991a0c38a091f71f3aa2d3cc660",
+    "https://schema.kya-os.org/v1/protocol/audit/bundle-manifest/v1.0.0": "076cf9ea8fbf6ee87bdc60a6818163944369b30bd98b24965e68a3468a218881",
+    "https://schema.kya-os.org/v1/protocol/audit/checkpoint/v1.0.0": "169363776b3c55accc52d637e10acaba453845ea3cc0917003f4f1d84b27f504",
+    "https://schema.kya-os.org/v1/protocol/audit/consistency-proof/v1.0.0": "6ec02bf4f2327ba3c4cb836303723b43a376af9640f8178d4d3f0e6e022b7f4b",
+    "https://schema.kya-os.org/v1/protocol/audit/entry/v1.0.0": "fbeaa4cc621d11bfad891cfe6b2ce5b02fd517262f11def777e260d4ebc6fc15",
+    "https://schema.kya-os.org/v1/protocol/audit/event/v1.0.0": "caffed753161c77e95e56dad6536a47f01534d0afbe4181cfe5548d947b605d3",
+    "https://schema.kya-os.org/v1/protocol/audit/inclusion-proof/v1.0.0": "41c584b93003fd5edec26180d657a4f7276c8e374918473ef7812b0cac647e6c",
+    "https://schema.kya-os.org/v1/protocol/audit/observation/v1.0.0": "1be37de9d2ce0acda6bc06973ea4e6ae7b5fbae4a04bda9fb2ed2ea0e4310631",
+    "https://schema.kya-os.org/v1/protocol/audit/receipt/v1.0.0": "35d2f9c1011f6d1737976cb501fd039ab8c9d438adef115b5becebd4db7ea33c",
+    "https://schema.kya-os.org/v1/protocol/audit/verification-policy/v1.0.0": "c294514dcd15f23198456bd2cb834f7a69358fcf2972478f24cc7ff221239853",
+    "https://schema.kya-os.org/v1/protocol/audit/verification-report/v1.0.0": "61c4390e7adda8790f3bc4608830945bf3bbc43cec6addc1f2599c578aafd0e9",
+    "https://schema.kya-os.org/v1/protocol/delegation/credential/v1.0.0": "8b57f3d19ba2bcc3e10f2b8c416e61ac8b90697b383a2c1758c684ee8d6d4e3a",
+    "https://schema.kya-os.org/v1/protocol/delegation/credential/v1.0.1": "0e3c3464b2ba3f8875406604aa1da89012c7e1a9a91f54ac18069a6973a21aec",
+    "https://schema.kya-os.org/v1/protocol/delegation/credential/v1.1.0": "0ad17faed15e1ce477cca75076894f2c2d29fd648f3edef28c7f8dc96964d42b",
+    "https://schema.kya-os.org/v1/protocol/delegation/credential/v1.2.0": "6e47e1fd7cfeeef9dce4a5b83e9622401cb28d5ca263c08cd1862ab527c35b85",
+    "https://schema.kya-os.org/v1/protocol/handshake/request/v1.0.0": "5efcc84bed67e334de04a3015b992edcf05dc10cca6cb2c80421d16eb9c74b55",
+    "https://schema.kya-os.org/v1/protocol/handshake/response/v1.0.0": "a682b4f0de690c1c63e2070f43f9c7f4574ee3b5fe51d6c967fd1b96661e4f4d",
+    "https://schema.kya-os.org/v1/protocol/identity/card/v1.1.0": "c572bc3409686dbfd1fcf71c536e9c7d6e7e45d340331f27fc952e3f73b34e2b",
+    "https://schema.kya-os.org/v1/protocol/mcp-extension/settings/v1.0.0": "5b0eb3389a9b8e79512111b6ba113c62e84da2bd753830526ade289c1fb7d249",
+    "https://schema.kya-os.org/v1/protocol/proof/detached/v1.0.0": "64bc751519999f25162c72921b7615c5f2c80d5a75d40e08b0687bc4ac0f2b90",
+    "https://schema.kya-os.org/v1/protocol/proof/detached/v1.1.0": "9a9b97cef44b11a2677e8cc6b116f1ffe9fa9546da76dbeec22dd72800dab827",
+    "https://schema.kya-os.org/v1/protocol/proof/detached/v1.2.0": "a817fe1ebc52d121dbdfd83dc1c3ece8ce2209c86aca0178f5dab2b4b8abef22",
+    "https://schema.kya-os.org/v1/protocol/well-known/v1.0.0": "6b1c04536f2b12464628f397954d26b275f082a4b1f23cbdfb82e8de581e7e33"
+  }
+}

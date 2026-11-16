@@ -82,3 +82,23 @@ describe('a delegation verifier whose answer is not a verdict', () => {
     expect(result.delegation).toBeUndefined();
   });
 });
+
+describe('the code of a refusal the delegation verifier gave', () => {
+  it('is handed to the operator beside the reason, and not to the client', async () => {
+    const result = await outcome({ valid: false, reason: 'expired', code: 'delegation_expired' });
+    expect(result).toMatchObject({ authorized: false, reason: 'expired', code: 'delegation_expired', transient: false });
+    expect(JSON.stringify(result.authError)).not.toContain('delegation_expired');
+    expect(Object.keys(result.authError!).sort()).toEqual(Object.keys((await outcome({ valid: false, reason: 'expired' })).authError!).sort());
+  });
+
+  it('is delegation_invalid where the verifier refused without one, and runtime_error where its answer could not be read', async () => {
+    expect(await outcome({ valid: false })).toMatchObject({ authorized: false, code: 'delegation_invalid', transient: false });
+    expect(await outcome({ valid: 'false' })).toMatchObject({ authorized: false, code: 'runtime_error', transient: true });
+    expect(await outcome(throwingOn('delegation', { valid: true }))).toMatchObject({ authorized: false, code: 'runtime_error', transient: true });
+  });
+
+  it('is absent where the agent was authorized, or the verifier named no delegation', async () => {
+    expect(await outcome({ valid: true, delegation: DELEGATION })).not.toHaveProperty('code');
+    expect(await outcome({ valid: true })).not.toHaveProperty('code');
+  });
+});

@@ -127,3 +127,29 @@ describe("the delegation RevocationChecker port's answer", () => {
     COMPILE_MS,
   );
 });
+
+describe("the handshake's DelegationVerifier port", () => {
+  it(
+    'lets a host state the code of a refusal, and reads it back from verifyOrHints',
+    () => {
+      expect(
+        typeErrors(
+          `
+          import { verifyOrHints, type AuthHandshakeConfig, type DelegationVerifier, type RefusalCode } from '../index.js';
+
+          export const verifier: DelegationVerifier = {
+            verify: async () => ({ valid: false, reason: 'expired', code: 'delegation_expired', transient: false }),
+          };
+          declare const config: AuthHandshakeConfig;
+          export async function codeOf(agentDid: string): Promise<RefusalCode | undefined> {
+            const result = await verifyOrHints(agentDid, ['read'], config);
+            return result.transient === true ? result.code : undefined;
+          }
+          `,
+          AT,
+        ),
+      ).toBe('');
+    },
+    COMPILE_MS,
+  );
+});

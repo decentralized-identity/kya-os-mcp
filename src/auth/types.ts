@@ -5,8 +5,14 @@
  */
 
 import type { DelegationRecord } from '../types/protocol.js';
+import type { RefusalCoding } from '../delegation/vc-verifier.types.js';
 
-export interface VerifyDelegationResult {
+/**
+ * What a `DelegationVerifier` answers, and what the handshake reads it as. A refusal may carry its
+ * `code`, a code of `REFUSAL_CODES`, which the handshake hands to the operator beside its reason;
+ * one that states none is `delegation_invalid`. Its `transient` is taken from the code.
+ */
+export interface VerifyDelegationResult extends RefusalCoding {
   valid: boolean;
   delegation?: DelegationRecord;
   credential?: {

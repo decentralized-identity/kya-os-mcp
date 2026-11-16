@@ -27,11 +27,11 @@ const REFUSAL_MARKS: Record<string, string> = { valid: 'false', ok: 'false', rev
 const NOT_CODED: Record<string, { literals: number; why: string }> = {
   'src/delegation/embedded-signature.ts': {
     literals: 4,
-    why: "the signature verifier the middleware supplies answers its port, whose shape the conformance suite pins; the credential verifier codes a refusal it gives invalid_proof",
+    why: "the signature verifier the middleware supplies answers its port, whose shape the conformance suite pins; the credential verifier codes a refusal it gives by the code it names, did_invalid for a key it cannot read, else invalid_proof",
   },
   'src/auth/delegation-verdict.ts': {
-    literals: 3,
-    why: 'the handshake keeps the result shape it always had, so it drops the code of the coded verdict it reads',
+    literals: 1,
+    why: 'a verdict that is valid but names no delegation is refused by the handshake, not by the verifier, so it carries none of the codes the handshake hands the operator',
   },
   'src/utils/statuslist-acceptance.ts': {
     literals: 1,

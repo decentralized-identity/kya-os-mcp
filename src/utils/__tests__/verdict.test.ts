@@ -20,7 +20,7 @@ describe('a verdict that throws when it is looked at', () => {
 
   it('is refused as unreadable by readDelegationVerdict, which does not throw', () => {
     const reason = `The verdict of the delegation verifier ${UNREADABLE}`;
-    expect(readDelegationVerdict(revokedProxy())).toEqual({ valid: false, reason });
-    expect(readDelegationVerdict({ valid: revokedProxy() })).toEqual({ valid: false, reason });
+    expect(readDelegationVerdict(revokedProxy())).toEqual({ valid: false, reason, code: 'runtime_error', transient: true });
+    expect(readDelegationVerdict({ valid: revokedProxy() })).toEqual({ valid: false, reason, code: 'runtime_error', transient: true });
   });
 });

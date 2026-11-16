@@ -18,6 +18,7 @@ import { createNeedsAuthorizationError, type DelegationRecord } from '../types/p
 import { logger } from '../logging/index.js';
 import { readDelegationVerdict } from './delegation-verdict.js';
 import type { DelegationVerifier, VerifyDelegationResult } from './types.js';
+import type { RefusalCode } from '../refusal-codes.js';
 
 export type { DelegationVerifier, VerifyDelegationResult };
 
@@ -98,6 +99,14 @@ export interface VerifyOrHintsResult {
   authError?: NeedsAuthorizationError;
   reputation?: AgentReputation;
   reason?: string;
+  /**
+   * The code of the delegation verifier's refusal, when it refused: the code its answer stated,
+   * `delegation_invalid` when it stated none, or `runtime_error` when its answer could not be read.
+   * For the operator, as `reason` is: `authError`, which the client receives, does not carry it.
+   */
+  code?: RefusalCode;
+  /** Whether {@link code} is transient: the same agent may be authorized when it asks again. */
+  transient?: boolean;
 }
 
 export interface ResumeTokenStore {
@@ -361,11 +370,13 @@ export async function verifyOrHints(
     delegationResult.reason ?? 'No valid delegation found'
   );
 
+  const { code, transient } = delegationResult;
   return {
     authorized: false,
     authError,
     reputation,
     reason: delegationResult.reason ?? 'No delegation',
+    ...(code === undefined ? {} : { code, transient }),
   };
 }
 

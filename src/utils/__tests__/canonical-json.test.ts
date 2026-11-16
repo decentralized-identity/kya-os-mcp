@@ -206,6 +206,27 @@ describe('canonicalizeJson', () => {
       );
     });
 
+    it('refuses an element that is gone when it is written, though it was there when the holes were checked, which only a Proxy can show', () => {
+      const asked: string[] = [];
+      const vanishing = new Proxy([1, 2], {
+        getOwnPropertyDescriptor(target, key) {
+          asked.push(String(key));
+          const readsOfOne = asked.filter((read) => read === '1').length;
+          return key === '1' && readsOfOne > 1 ? undefined : Reflect.getOwnPropertyDescriptor(target, key);
+        },
+      });
+      let thrown: unknown;
+      try {
+        canonicalizeJson(vanishing);
+      } catch (error) {
+        thrown = error;
+      }
+      // Each index is read once to check for holes, then once to be written.
+      expect(asked).toEqual(['0', '1', '0', '1']);
+      expect(thrown).toBeInstanceOf(CanonicalJsonError);
+      expect((thrown as Error).message).toBe('Cannot canonicalize sparse array element at $[1]');
+    });
+
     it('still accepts an array that shares structure without a cycle', () => {
       const shared = { a: 1 };
       expect(canonicalizeJson([shared, shared])).toBe('[{"a":1},{"a":1}]');

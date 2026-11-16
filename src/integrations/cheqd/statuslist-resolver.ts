@@ -32,7 +32,7 @@
  * anything but a non-empty string, unresolvable issuer DID, no usable
  * verification method, bad signature, out-of-range index. The refusal carries
  * its code: `host_refused` for a URL that is not https, `delegation_malformed`
- * for an entry it does not read, `status_signer_untrusted` for a list that may
+ * for an entry it does not read, one that names its list by no string included, `status_signer_untrusted` for a list that may
  * not answer or whose proof does not verify, the resolution's code for an
  * issuer DID that could not be resolved, and `status_unavailable` otherwise.
  *
@@ -147,7 +147,10 @@ export class CheqdStatusListResolver implements StatusListResolver {
   /** TRUE = revoked. Throws on anything unprovable — the verifier fails closed. */
   async checkStatus(status: CredentialStatus): Promise<boolean> {
     const url = status.statusListCredential;
-    if (typeof url !== 'string' || !/^https:\/\//.test(url)) {
+    if (typeof url !== 'string') {
+      throw new RefusalError('delegation_malformed', 'credentialStatus.statusListCredential must be an https URL');
+    }
+    if (!/^https:\/\//.test(url)) {
       throw new RefusalError('host_refused', 'credentialStatus.statusListCredential must be an https URL');
     }
     // One bit is read per entry, so an entry of another size is refused before any fetch.

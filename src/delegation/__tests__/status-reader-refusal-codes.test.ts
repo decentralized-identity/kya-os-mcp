@@ -85,6 +85,7 @@ describe('the cheqd status list resolver', () => {
   it.each<[string, () => StatusListResolver, () => CredentialStatus, RefusalCode]>([
     ['a set bit', () => cheqd(), () => entries[REVOKED]!, 'delegation_revoked'],
     ['an entry whose list is not at an https URL', () => cheqd(), () => ({ ...entries[CLEAR]!, statusListCredential: 'http://status.example/revocation/v1' }), 'host_refused'],
+    ['an entry whose list is named by no string', () => cheqd(), () => ({ ...entries[CLEAR]!, statusListCredential: 7 as never }), 'delegation_malformed'],
     ['an entry two bits wide', () => cheqd(), () => ({ ...entries[CLEAR]!, statusSize: 2 }), 'delegation_malformed'],
     ['an entry whose index is not a decimal string', () => cheqd(), () => ({ ...entries[CLEAR]!, statusListIndex: '+3' }), 'delegation_malformed'],
     ['a list that is not served', () => cheqd(), () => ({ ...entries[CLEAR]!, statusListCredential: `${BASE}/missing` }), 'status_unavailable'],

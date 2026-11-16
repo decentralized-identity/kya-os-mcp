@@ -22,10 +22,11 @@ Find your setup below; most need nothing.
 | Wrote your own `DIDResolver` | Return a document whose `id` is the DID, within the limits and within 5 seconds; add `lastFailure` if you want a refusal to say why a DID did not resolve. | [`DIDResolver`](#a-custom-did-resolver-delegationdidresolver-a-resolver-in-didresolvers-the-didresolver-of-delegationcredentialverifier-cheqdstatuslistresolver-createstatuslistproofverifier-or-createdelegationproofverifier-or-a-fetchproviderresolvedid-that-proofverifier-uses) |
 | Sign with a key your DID document lists outside `assertionMethod` | List each signing key under `assertionMethod`, and update issuers before verifiers. | [`assertionMethod`](#signing-keys-and-assertionmethod) |
 | Have a dependency that can take longer than 5 seconds to answer | Set `dependencyTimeoutMs` on whatever waits for it. | [Deadlines](#a-dependency-that-can-take-longer-than-5-seconds-to-answer) |
+| Match on the text of a refusal's reason, in code or tests | Match on its `code` instead, and on `transient` to tell a failing dependency from a refusal, since many reasons were reworded. | [Refusal codes](#refusal-codes) |
 
 This is a minor release, made for security.
 Code that was correct on 1.22.0 keeps working.
-What may be refused after you upgrade is input that was unsafe to accept, such as a status list another DID signed or a key outside `assertionMethod`; a private or local host, which one setting admits in development and another in production; or a reason whose wording changed, as "Changed refusal reasons" lists.
+What may be refused after you upgrade is input that was unsafe to accept, such as a status list another DID signed or a key outside `assertionMethod`; a private or local host, which one setting admits in development and another in production; or a reason whose wording changed, as "Changed refusal reasons" lists, which a refusal's code does not.
 
 ### Signing keys and `assertionMethod`
 
@@ -64,14 +65,94 @@ The characters are a fixed list, `conformance/unseen-code-points.json`, the same
 
 The delegation gate refuses, as `delegation_invalid`, a delegation holding a value RFC 8785 cannot encode.
 In 1.22.0 such a call threw a `TypeError` or ran the tool.
+Its refusal code, in the operator's log line and the audit event, is `delegation_malformed`.
 Issue no delegation that holds one.
+
+### Refusal codes
+
+Every refusal of a delegation credential, a delegation chain, an Entity Card, the delegation a request carries or a credential's status now carries a `code` from a fixed catalog, and `transient`, which says whether the same request may pass later.
+A reason is text for people, and its wording changed in this release and may change in another; a code does not.
+Branch on the code, and show or log the reason.
+What a client receives is unchanged: the same `error`, the same reason, and no new member.
+
+`REFUSAL_CODES`, its type `RefusalCode`, `isRefusalCode(value)` and `isTransientRefusal(code)` are exported from `@kya-os/mcp`, `@kya-os/mcp/delegation` and `@kya-os/mcp/card`.
+A code has the name of a `KYA_OS_ERROR_CODES` value where the two mean the same.
+
+```ts
+import { isTransientRefusal } from "@kya-os/mcp";
+
+const result = await verifier.verifyDelegationCredential(credential);
+if (!result.valid) {
+  if (isTransientRefusal(result.code)) {
+    // A DID host, a status list or a dependency failed: refuse this call, and retry later or alert.
+  } else if (result.code === "delegation_expired") {
+    // Ask the user to delegate again.
+  } else {
+    // A verdict: refuse, and log result.reason for the operator.
+  }
+}
+```
+
+#### What each code means
+
+| Code | The verifier refused because |
+| --- | --- |
+| `delegation_malformed` | The credential is not a well-formed delegation credential: it fails the schema, does not parse, is not plain data, nests too deep or holds a value that cannot be encoded, or its status entry is one no checker reads, such as one of another `statusPurpose`. |
+| `delegation_expired` | The credential, or one in its chain, is past its expiry. |
+| `delegation_not_yet_valid` | The credential, or one in its chain, is not yet valid. |
+| `delegation_revoked` | The credential, one in its chain, or an Entity Card is revoked. |
+| `delegation_invalid` | A credential verifier you gave a chain walk refused a credential and gave no code. |
+| `invalid_proof` | A signature does not verify. |
+| `key_not_authorized` | The proof's key is not listed under `assertionMethod` of the issuer's own DID document, or its `proofPurpose` is not `assertionMethod`. |
+| `did_invalid` | The issuer's DID or its document is over a limit, or the document is not a valid document of that DID. |
+| `host_refused` | The reader's own rules refused the host of a DID document or a status list, such as a private or local host without `development: true`. |
+| `untrusted_root` | The chain's root issuer is not in `trustedRootIssuers`, or is not the `resourceOwner` the verifier pins. |
+| `chain_invalid` | The credentials do not make one line of authority valid here, such as a broken link, a re-delegation wider than its parent, an audience that does not name this server, or a chain longer than `maxChainLength`. |
+| `insufficient_scope` | The chain is valid, but does not grant the action. |
+| `needs_authorization` | No delegation was presented for a call that needs one. |
+| `holder_binding_failed` | The chain's leaf delegate is not the DID the request proof verified for. |
+| `status_signer_untrusted` | A status list was read but may not answer for the credential: its issuer does not keep its URL, its proof does not verify, its `id` is another URL, or its `statusPurpose` does not include the entry's. |
+| `claim_unverified` | An Entity Card's accountability or one of its attestations did not verify. |
+| `configuration_error` | The verifier is not set up to decide, such as one missing a resolver or verifier, or with an option it cannot use. |
+| `did_unavailable` | Transient: the issuer's DID document could not be read. |
+| `status_unavailable` | Transient: the credential's status could not be read. |
+| `deadline_exceeded` | Transient: a dependency did not answer within `dependencyTimeoutMs`, 5 seconds by default. |
+| `runtime_error` | Transient: a dependency you supply threw or gave an answer it may not give, or the verification faulted. |
+
+#### Transient codes
+
+`did_unavailable`, `status_unavailable`, `deadline_exceeded` and `runtime_error` are transient: the verifier could not decide, because a DID host, a status list or a dependency failed or did not answer in time.
+The request is still refused, since the library fails closed, but the credential may be sound, so retry later, or alert whoever runs what failed.
+Every other code is a verdict on the credential, its chain or your configuration, which asking again does not change: refuse the request.
+Whether a code is transient is fixed by the code, so `transient` and `isTransientRefusal(code)` always agree.
+When `verifyCard` refuses several claims of a Card, it reports the code of the first that is not transient, so a failing dependency does not hide a verdict.
+
+#### Where the code is
+
+- `code` and `transient` are on a refusal from `DelegationCredentialVerifier` (`DelegationVCVerificationResult`, with its `StatusCheckResult` and `SignatureVerificationResult`), the delegation `validateDelegationChain` (`ChainValidationResult`), the Card's `validateDelegationChain` and `evaluateDelegationChain` (`DelegationChainResult`), `evaluateRevocationChain` (`RevocationChainResult`), the checker `createRevocationChecker` builds (`RevocationStatus`), and `verifyCard` (`VerifyCardResult`) and its `revocation` (`CardRevocation`).
+- `refusalCode` and `transient` are on a rejection from `verifyRequestDelegation` (`RequestDelegationResult`) and from the `requireDelegation` guard (`DelegationGateResult`), since there `code`, or the guard's `error.code`, already holds the gate's code, such as `delegation_invalid`, and on a refused `readDelegationChain` (`CarriedChainRead`).
+  The guard's `error`, which a server sends its client, is unchanged.
+- The delegation gate of `withKyaOs` records the code of a delegation it refuses as `authorization.verificationCode` of the `delegation.rejected` audit event, as `delegation.verified` records `DELEGATION_CHAIN_VALID`.
+  The event's `reasonCode` stays `DELEGATION_VERIFICATION_FAILED`, and it carries no reason text and no other new member.
+- The gate's warning for a refused delegation, `[kya-os] Delegation verification failed for "<tool>": <reason>`, has a second argument, `{ code, transient }`, and its holder-binding and missing-scope warnings have one with `holder_binding_failed` and `insufficient_scope`.
+  The reason in these warnings is kept up to 512 UTF-16 code units, `CHECKER_REASON_LENGTH`, while the reason sent to the client is still cut after 256.
+
+So under `withKyaOs` and its defaults, a root the server does not trust is still `delegation_invalid` to the client, while the warning and the audit event say `untrusted_root`.
+`RefusalCoding`, the `code` and `transient` pair, is exported from `@kya-os/mcp`, `@kya-os/mcp/delegation` and `@kya-os/mcp/card`, and `RejectionCoding`, the `refusalCode` and `transient` pair, and `CardRevocation` from `@kya-os/mcp/card`.
+
+#### A verifier or checker of your own
+
+A `signatureVerifier` given to `DelegationCredentialVerifier`, the `verifier` given to the delegation `validateDelegationChain`, and a `BitstringRevocationChecker` may name a code of the catalog as `code` in an answer that refuses, such as `{ valid: false, reason, code: "key_not_authorized" }` or `{ revoked: true, fresh: false, code: "status_unavailable" }`, and the refusal carries it, with the `transient` that code fixes.
+An answer that refuses with no `code`, or with a value not in the catalog, is coded as the library codes that refusal: `invalid_proof` for a signature, `delegation_invalid` for a credential of a chain, and `delegation_revoked` for a status.
+A dependency that answers only `true` or `false`, such as a `StatusListResolver`, cannot give a code.
+An answer the library cannot read is coded `runtime_error`, or `status_unavailable` for a status, as is a throw the library turns into a refusal, and a dependency that does not answer in time `deadline_exceeded`.
 
 ### Changed refusal reasons
 
 A refusal reason is text for people, and its wording changed where it quotes a value the other party chose.
 `"<v>"` quotes a value as a JSON string of at most its first 64 characters, with `...` after it when cut, and with control and hidden characters, quote marks, backslashes and lone surrogates escaped.
 A value that is not a string reads `of type <type>`.
-Code that matches on reason text needs the new wording.
+Code that matches on reason text needs the new wording; match on the refusal's code instead, as "Refusal codes" says, and the next change of wording will not touch it.
 
 | 1.22.0 | Now |
 | --- | --- |
@@ -176,7 +257,8 @@ When the checker refuses a list another DID signed, its reason ends with the con
 
 Where the configuration cannot be printed whole and exactly within the reason's 512 UTF-16 code units, the reason ends `; if the list's issuer signs this issuer's lists, name it in statusListIssuers with this list's https origin or URL`, or `; if the list's issuer signs the list at this URL, bind the URL to it in statusListIssuers`.
 Nothing is added for a list whose `issuer` is no DID, for one at a URL no binding could give to its signer, such as one that ends in `/` at no https origin, or for a refusal by `CheqdStatusListResolver`, which holds every list to the one issuer it is configured with.
-The checker's reason keeps the configuration whole, and so do `evaluateRevocationChain`, `verifyCard` and the `Status check error` of `DelegationCredentialVerifier`; the delegation gate of `withKyaOs` cuts the reason it sends and logs after 256 UTF-16 code units, as it cuts every refusal, so there it may lose its end.
+The checker's reason keeps the configuration whole, and so do `evaluateRevocationChain`, `verifyCard` and the `Status check error` of `DelegationCredentialVerifier`.
+The delegation gate of `withKyaOs` logs up to 512 UTF-16 code units of its refusal's reason and sends its client at most 256, as it does for every refusal, so the client's copy may lose its end.
 Each configuration is checked before it is offered: written into yours, with the URL's binding moved where it says so, it makes the list's signer the keeper of its URL.
 The list must still meet the rest of the rule, such as stating its URL as its `id`.
 
@@ -415,7 +497,7 @@ Every did:web read, by the delegation gate, `DidWebResolver`, `createDidWebResol
 A local name is a single label, such as `ip6-localhost`, `metadata` or an intranet host's short name, or `localhost`, `localdomain`, `localdomain6`, `local`, `internal` or `home.arpa`, or a name under one of them, such as `localhost.localdomain`, `localhost6.localdomain6`, `printer.local`, `router.home.arpa` or `metadata.google.internal`.
 It classifies an address as `SafeFetch` does, so it refuses more than `RuntimeFetchProvider` did, such as an IPv4-mapped, IPv4-translated or NAT64 IPv6 form of a private address, shared address space (100.64.0.0/10), the documentation ranges and multicast.
 The refusal names both ways to admit the host: `Request to "<host>" refused: a private or local host. In local development, set development: true; to read private hosts in production, give the fetch provider allowPrivateNetworkHosts: true.`, or the same starting `Redirect to` for a redirect.
-For did:web it reaches a verifier's reason inside `Could not resolve issuer DID: "<did>" (...)`.
+For did:web it reaches a verifier's reason inside `Could not resolve issuer DID: "<did>" (...)`, and the refusal's code is `host_refused`, which is not transient: asking again does not change it.
 
 In local development, set `development: true`:
 
@@ -479,6 +561,7 @@ It now has 5 seconds to return, so a resolver that walks `parentId` one read at 
 #### A dependency that can take longer than 5 seconds to answer
 
 Each call a verifier makes to a dependency the host supplies now has 5 seconds, and one that has not answered by then is refused as below, never thrown, where on 1.22.0 the verification waited without end.
+The refusal's code is `deadline_exceeded`, which is transient, so the same request may pass once the dependency answers in time.
 The dependency's own work is not cancelled, so one that reads over a network should bound each read itself, and a later verification asks it again.
 
 | Dependency | Refused as |
@@ -536,6 +619,7 @@ A checker built with `createRevocationChecker` now also has this deadline when i
 `DelegationCredentialVerifier` takes the answer of a custom `signatureVerifier` as a verified signature only when it is an object whose `valid` is the literal `true`.
 On 1.22.0 `valid` was read by its truthiness, so a credential whose signature did not hold verified on `{ valid: "false" }`, `{ valid: 1 }` or `{ valid: {} }`.
 An answer whose `valid` is the literal `false` refuses the credential with the answer's `reason`, when that is a string, as text of at most 256 UTF-16 code units with no control character.
+It may also name a code of the catalog as `code`, which the refusal then carries, as "Refusal codes" says.
 Any other answer refuses it with a reason that starts `The verdict of the signature verifier could not be read`: one that is not an object, one whose `valid` is not a boolean, and one whose `valid` or `reason` throws when read.
 `validateDelegationChain` reads the answer of the `verifier` it is given the same way, with a reason that names `the credential verifier`, where on 1.22.0 it passed a credential on any truthy `valid` and threw a `TypeError` on an answer of `undefined` or `null`.
 A verifier written in TypeScript against the library's types already answers a boolean and needs no change; make any other return `{ valid: true }` or `{ valid: false, reason }`.
@@ -566,13 +650,16 @@ For a VC-JWT whose envelope does not verify, it now has the `proof: { type: "Jwt
 
 #### Code that matches on a failure `reason`
 
+Match on the refusal's `code` instead, as "Refusal codes" says: the wording of a reason changed in each of the ways below and may change again, and a code does not.
+What follows is for code that must still read the text.
 A chain's links, and then its root's `issuer` against `trustedRootIssuers`, are checked before any credential is verified, so a broken link or an untrusted root now gives that reason even when a signature would also fail, and for a VC-JWT the reasons for a malformed chain, a missing `resolveDelegationChain`, `maxChainLength` and root admission come before the envelope's.
 An untrusted root reads `Root delegation <id> is issued by "<issuer>", which is not a trusted root issuer`, the issuer quoted as other reasons quote a value.
 `Could not resolve issuer DID` is the reason for an issuer DID over its limit, for a VC-JWT as for a credential with an embedded proof, without asking the resolver, and with nothing after the DID.
-When a resolver finds no document and says why through `lastFailure`, as the library's own do, the reason ends with that detail in parentheses, so match on its start, or ask the resolver's `lastFailure(did)` for the `cause`.
+When a resolver finds no document and says why through `lastFailure`, as the library's own do, the reason ends with that detail in parentheses, so match on its start, or branch on the refusal's code, which follows the `cause`: `host_refused`, `deadline_exceeded`, `did_unavailable` for `unavailable` and `did_invalid` for `invalid_document`.
 A resolution that misses the verifier's deadline fails with a reason that ends `DID resolution deadline exceeded`, or, when the resolver's own deadline is the shorter, one that ends `(DID resolution deadline exceeded: no document arrived within <time>)`, and a status-list read with one that ends `Status list fetch deadline exceeded`, or names the limit it exceeded.
 The refusal of a private or local host, and `createSafeFetch`'s of a non-public address, now end by naming the settings that admit the host.
 The reason of a status check, in `Status check error`, the chain walk and `verifyCard`, is cut after 512 UTF-16 code units, and the other texts a reason quotes after 256, as "Changed refusal reasons" says.
+The delegation gate of `withKyaOs` logs up to 512 UTF-16 code units of a reason, where it logged 256, and still sends its client at most 256.
 Any other dependency that misses it gives a reason that ends `did not answer within 5 seconds`, or within the time `dependencyTimeoutMs` sets, listed under "A dependency that can take longer than 5 seconds to answer".
 `ProofVerifier` refuses a DID or key id over its limit with `DID or key identifier exceeds resource limit`, and an empty DID with `DID is empty`.
 
@@ -607,7 +694,7 @@ Exported beside them, from the root and from `@kya-os/mcp/delegation`, are the c
 ### Delegation audit events, and how the gate reads a credential
 
 The audit events of the delegation gate's decision say which delegation it decided on, by the reference and the digests of SPEC.md §7.8.
-`delegation.rejected` now carries `delegationRef` and `delegationCredentialDigest` in its authorization evidence, where it carried none, and a retry allowed under a stored grant carries those of the delegation the grant was minted from, on `grant.used` and in the context handed to the handler.
+`delegation.rejected` now carries `delegationRef` and `delegationCredentialDigest` in its authorization evidence, where it carried none, and the refusal's code as `verificationCode`, as "Refusal codes" says, and a retry allowed under a stored grant carries those of the delegation the grant was minted from, on `grant.used` and in the context handed to the handler.
 `delegation.verified`, `delegation.rejected` and `grant.used` also list `delegationChainDigests`, one digest per credential evaluated.
 On a refusal that is what the server had examined when it refused: the ancestors up to the one it stopped at, then the presented credential.
 A refusal in which a value a resolver returned could not be read lists none.

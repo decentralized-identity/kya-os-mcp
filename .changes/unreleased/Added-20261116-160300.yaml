@@ -11,5 +11,7 @@ body: |-
     answer, with a `DidResolutionFailure`: a `cause`, one of `host_refused`,
     `deadline_exceeded`, `unavailable` and `invalid_document`, and a
     `detail`. Both types are exported. A transport's own error stays in the
-    log. UPGRADING.md, "Changed refusal reasons", has the wording.
+    log. The delegation gate of `withKyaOs` sends the reason, detail
+    included, to its client. UPGRADING.md, "Changed refusal reasons", has
+    the wording.
 time: 2026-11-16T16:03:00.000000-06:00

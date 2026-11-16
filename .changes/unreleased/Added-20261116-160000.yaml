@@ -13,9 +13,14 @@ body: |-
     `status_unavailable`, `deadline_exceeded` and `runtime_error`: the
     verifier could not decide, and the same request may pass later. A custom
     signature verifier, chain verifier or `BitstringRevocationChecker` may
-    name a code in its answer. The delegation gate of `withKyaOs` records
-    the code as `authorization.verificationCode` on `delegation.rejected`,
-    and logs it as `{ code, transient }` beside a reason it now keeps up to
-    512 UTF-16 code units. What a client receives is unchanged.
-    UPGRADING.md, "Refusal codes", has the catalog.
+    name a code in its answer. Every revoked answer of the checker
+    `createRevocationChecker` builds, a set bit included, now carries `code`
+    and `transient`, so a test that compares one exactly must allow for
+    them, and a server that returns a `requireDelegation` rejection to its
+    client as it is now sends `refusalCode` and `transient` too. The
+    delegation gate of `withKyaOs` records the code as
+    `authorization.verificationCode` on `delegation.rejected`, and logs it
+    as `{ code, transient }` beside a reason it now keeps up to 512 UTF-16
+    code units. What the gate sends a client is unchanged. UPGRADING.md,
+    "Refusal codes", has the catalog.
 time: 2026-11-16T16:00:00.000000-06:00

@@ -14,6 +14,8 @@ import { createStatusListProofVerifier } from '../status-list-proof.js';
 import { verifyCard } from '../verify.js';
 import type { EntityCard } from '../schema.js';
 import { identity, now, serve, statusList, STATUS_URL } from './signed-chain-helpers.js';
+import { BIT_SET, codedAs } from '../../__tests__/utils/refusal-coding.js';
+import type { RefusalCode } from '../../refusal-codes.js';
 import { cast, listOf, listUrlOf, servedBy, threeHopChain, verdicts } from './status-list-paths.js';
 
 const owner = identity();
@@ -32,7 +34,7 @@ const checked = (body: Record<string, unknown> | undefined, entry: Record<string
 describe('the reason the shipped checker gives', () => {
   it('gives none for an entry it reads, set or clear', async () => {
     expect(await checked(statusList(owner, []))).toStrictEqual({ revoked: false, fresh: true });
-    expect(await checked(statusList(owner, [7]))).toStrictEqual({ revoked: true, fresh: true });
+    expect(await checked(statusList(owner, [7]))).toStrictEqual({ revoked: true, fresh: true, ...BIT_SET });
   });
 
   it.each([
@@ -40,21 +42,21 @@ describe('the reason the shipped checker gives', () => {
     ['is two bits wide', { ...ENTRY, statusSize: 2 }, statusList(owner), "the entry's statusSize is 2, and only an entry of one bit is read"],
     ['names an index that is not a decimal string', { ...ENTRY, statusListIndex: '7x' }, statusList(owner), 'Invalid statusListIndex "7x": must be a non-negative decimal string'],
   ])('says why it refuses an entry that %s', async (_label, entry, body, reason) => {
-    expect(await checked(body, entry)).toStrictEqual({ revoked: true, fresh: false, reason });
+    expect(await checked(body, entry)).toStrictEqual({ revoked: true, fresh: false, reason, ...codedAs('delegation_malformed') });
   });
 
-  it.each([
-    ['is not served', undefined, `status-list GET ${STATUS_URL} \u2192 503`],
-    ['is of another purpose', statusList(owner, [], { credentialSubject: { statusPurpose: 'suspension' } }), `status list statusPurpose mismatch: the list's is "suspension" and the entry's is "revocation"`],
-    ['states another id', statusList(owner, [], { id: 'https://elsewhere.example/1' }), `status list id "https://elsewhere.example/1" is not the URL it was fetched from ("${STATUS_URL}")`],
-    ['has no encodedList', statusList(owner, [], { credentialSubject: { encodedList: '' } }), 'status-list has no encodedList'],
-  ])('says why it refuses an entry whose list %s', async (_label, body, reason) => {
-    expect(await checked(body)).toStrictEqual({ revoked: true, fresh: false, reason });
+  it.each<[string, Record<string, unknown> | undefined, string, RefusalCode]>([
+    ['is not served', undefined, `status-list GET ${STATUS_URL} \u2192 503`, 'status_unavailable'],
+    ['is of another purpose', statusList(owner, [], { credentialSubject: { statusPurpose: 'suspension' } }), `status list statusPurpose mismatch: the list's is "suspension" and the entry's is "revocation"`, 'status_signer_untrusted'],
+    ['states another id', statusList(owner, [], { id: 'https://elsewhere.example/1' }), `status list id "https://elsewhere.example/1" is not the URL it was fetched from ("${STATUS_URL}")`, 'status_signer_untrusted'],
+    ['has no encodedList', statusList(owner, [], { credentialSubject: { encodedList: '' } }), 'status-list has no encodedList', 'status_unavailable'],
+  ])('says why it refuses an entry whose list %s', async (_label, body, reason, code) => {
+    expect(await checked(body)).toStrictEqual({ revoked: true, fresh: false, reason, ...codedAs(code) });
   });
 
   it('says that a list altered after it was signed has a proof that does not verify', async () => {
     const altered = { ...statusList(owner), validFrom: '2026-02-02T00:00:00Z' };
-    expect(await checked(altered)).toStrictEqual({ revoked: true, fresh: false, reason: 'status-list proof rejected' });
+    expect(await checked(altered)).toStrictEqual({ revoked: true, fresh: false, reason: 'status-list proof rejected', ...codedAs('status_signer_untrusted') });
   });
 
   it('says that a call naming no credential issuer cannot be held to anyone', async () => {
@@ -69,6 +71,7 @@ describe('the reason the shipped checker gives', () => {
       reason:
         'no credential issuer named to hold the status list to: a resolver or checker that wraps a library ' +
         'checker must pass its second argument on, or else the very entry it was given',
+      ...codedAs('configuration_error'),
     });
   });
 
@@ -79,7 +82,12 @@ describe('the reason the shipped checker gives', () => {
       },
       now,
     });
-    expect(await checker(ENTRY)).toStrictEqual({ revoked: true, fresh: false, reason: `boom\uFFFD${'x'.repeat(CHECKER_REASON_LENGTH - 5)}\u2026` });
+    expect(await checker(ENTRY)).toStrictEqual({
+      revoked: true,
+      fresh: false,
+      reason: `boom\uFFFD${'x'.repeat(CHECKER_REASON_LENGTH - 5)}\u2026`,
+      ...codedAs('status_unavailable'),
+    });
   });
 
   it('gives a reason when what was thrown is not an Error', async () => {
@@ -89,14 +97,14 @@ describe('the reason the shipped checker gives', () => {
       },
       now,
     });
-    expect(await checker(ENTRY)).toStrictEqual({ revoked: true, fresh: false, reason: 'the status could not be proven' });
+    expect(await checker(ENTRY)).toStrictEqual({ revoked: true, fresh: false, reason: 'the status could not be proven', ...codedAs('status_unavailable') });
   });
 });
 
 describe("evaluateRevocationChain and a checker's reason", () => {
   it('appends the reason a checker gives for a revoked hop', async () => {
     const result = await evaluateRevocationChain([ENTRY], async () => ({ revoked: true, fresh: false, reason: 'status-list proof rejected' }));
-    expect(result).toEqual({ ok: false, fresh: false, reasons: [`${HOP}: status-list proof rejected`] });
+    expect(result).toEqual({ ok: false, fresh: false, reasons: [`${HOP}: status-list proof rejected`], ...BIT_SET });
   });
 
   it.each([undefined, '', 7, { text: 'why' }])('appends nothing for a reason of %o', async (reason) => {

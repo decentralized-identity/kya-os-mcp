@@ -30,7 +30,11 @@
  * unsigned VC, wrong issuer, purpose mismatch, no `id` or an `id` other than
  * the fetched URL, missing proofValue, a verification method named by
  * anything but a non-empty string, unresolvable issuer DID, no usable
- * verification method, bad signature, out-of-range index.
+ * verification method, bad signature, out-of-range index. The refusal carries
+ * its code: `host_refused` for a URL that is not https, `delegation_malformed`
+ * for an entry it does not read, `status_signer_untrusted` for a list that may
+ * not answer or whose proof does not verify, the resolution's code for an
+ * issuer DID that could not be resolved, and `status_unavailable` otherwise.
  *
  * Freshness: an internal {@link TtlCache} holds the VERIFIED document
  * (default 10 s — one fetch amortizes across every credential on a list;
@@ -71,6 +75,7 @@ import { dependencyTimeout } from '../../utils/deadline.js';
 import { developmentMode } from '../../utils/development-mode.js';
 import { admittingPrivateHosts, type PrivateNetworkTransport } from '../../utils/private-network-rule.js';
 import { ed25519KeyBytes } from '../../utils/ed25519-public-key.js';
+import { RefusalError } from '../../utils/refusal.js';
 import { TtlCache } from '../../utils/ttl-cache.js';
 
 export interface CheqdStatusListResolverOptions {
@@ -143,12 +148,12 @@ export class CheqdStatusListResolver implements StatusListResolver {
   async checkStatus(status: CredentialStatus): Promise<boolean> {
     const url = status.statusListCredential;
     if (typeof url !== 'string' || !/^https:\/\//.test(url)) {
-      throw new Error('credentialStatus.statusListCredential must be an https URL');
+      throw new RefusalError('host_refused', 'credentialStatus.statusListCredential must be an https URL');
     }
     // One bit is read per entry, so an entry of another size is refused before any fetch.
     const size = acceptEntrySize(status.statusSize);
     if (!size.valid) {
-      throw new Error(size.reason);
+      throw new RefusalError('delegation_malformed', size.reason);
     }
 
     const index = parseStatusListIndex(status.statusListIndex);
@@ -183,7 +188,7 @@ export class CheqdStatusListResolver implements StatusListResolver {
       requireId: true,
     });
     if (!verdict.valid) {
-      throw new Error(verdict.reason);
+      throw new RefusalError('status_signer_untrusted', verdict.reason);
     }
     if (!cached) {
       await this.assertSignature(credential);
@@ -249,11 +254,11 @@ export class CheqdStatusListResolver implements StatusListResolver {
     const proof = vc.proof as Record<string, unknown>;
     const proofValue = proof['proofValue'];
     if (typeof proofValue !== 'string' || proofValue.length === 0) {
-      throw new Error('Status list proof is missing proofValue');
+      throw new RefusalError('status_signer_untrusted', 'Status list proof is missing proofValue');
     }
     const purposeMismatch = proofPurposeMismatch(proof, ASSERTION_METHOD);
     if (purposeMismatch) {
-      throw new Error(purposeMismatch);
+      throw new RefusalError('status_signer_untrusted', purposeMismatch);
     }
 
     // What the signature covers is what an embedded proof covers on any credential (SPEC.md
@@ -271,13 +276,14 @@ export class CheqdStatusListResolver implements StatusListResolver {
     const keyId = typeof named === 'string' ? named : undefined;
     const resolved = await resolveExplained(this.opts.didResolver, this.opts.expectedIssuerDid, keyId, this.timeoutMs);
     if (resolved.document === null) {
-      throw new Error(`Could not resolve issuer DID ${this.opts.expectedIssuerDid}${resolved.why}`);
+      throw new RefusalError(resolved.code, `Could not resolve issuer DID ${this.opts.expectedIssuerDid}${resolved.why}`);
     }
     const didDoc = resolved.document;
 
     const selection = selectAssertionMethod(didDoc, this.opts.expectedIssuerDid, named);
     if (!('method' in selection)) {
-      throw new Error(
+      throw new RefusalError(
+        'status_signer_untrusted',
         assertionMethodRefusal(selection, 'Status list proof verificationMethod', named, this.opts.expectedIssuerDid),
       );
     }
@@ -286,7 +292,8 @@ export class CheqdStatusListResolver implements StatusListResolver {
     const publicKeyBase64 = jwk ? ed25519KeyBase64(jwk) : undefined;
     // The crypto provider is the host's: the signature holds only on the literal `true`.
     if (!signature || !publicKeyBase64 || (await this.opts.cryptoProvider.verify(data, signature, publicKeyBase64)) !== true) {
-      throw new Error(
+      throw new RefusalError(
+        'status_signer_untrusted',
         'Status list signature verification FAILED against the issuer DID document',
       );
     }

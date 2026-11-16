@@ -18,6 +18,7 @@ import type { EntityCard } from '../schema.js';
 import { verifyCard } from '../verify.js';
 import { now, RESOURCE } from './signed-chain-helpers.js';
 import { cast, threeHopChain } from './status-list-paths.js';
+import { BIT_SET, codedAs } from '../../__tests__/utils/refusal-coding.js';
 
 const ENTRY: RevocationStatusEntry = { statusListCredential: 'https://status.example/1', statusListIndex: '7' };
 /** A checker whose every answer is `answer`, typed as the status it claims to be. */
@@ -50,6 +51,7 @@ describe('evaluateRevocationChain', () => {
       reasons: [
         `revocation: hop 0 (list "https://status.example/1", index "7") is revoked or unresolvable ${String.fromCodePoint(0x2014)} fail-closed, subtree invalidated`,
       ],
+      ...BIT_SET,
     });
   });
 
@@ -58,6 +60,7 @@ describe('evaluateRevocationChain', () => {
       ok: false,
       fresh: false,
       reasons: [unreadableHop(0, ENTRY.statusListCredential, ENTRY.statusListIndex, why)],
+      ...codedAs('status_unavailable'),
     });
   });
 

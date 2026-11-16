@@ -22,6 +22,7 @@ import {
 } from '../index.js';
 import { documentsOf, servingFromMemory, signedStatusList, webParty, type WebParty } from '../../__tests__/utils/adopter-issuers.js';
 import { credentialJwt, delegationRecord, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
+import { codedAs } from '../../__tests__/utils/refusal-coding.js';
 
 const LIST_URL = 'https://issuer.example/status/1';
 const CLEAR = 3;
@@ -170,7 +171,8 @@ describe('a BitstringRevocationChecker that wraps the library checker and forwar
       reason:
         'no credential issuer named to hold the status list to: a resolver or checker that wraps a library ' +
         'checker must pass its second argument on, or else the very entry it was given',
+      ...codedAs('configuration_error'),
     });
-    expect(await checker({ ...entry })).toMatchObject({ revoked: true, fresh: false });
+    expect(await checker({ ...entry })).toMatchObject({ revoked: true, fresh: false, ...codedAs('configuration_error') });
   });
 });

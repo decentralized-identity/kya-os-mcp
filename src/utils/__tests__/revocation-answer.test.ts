@@ -52,6 +52,13 @@ describe('readRevocationAnswer', () => {
     });
   });
 
+  it('reads a code only when it is one of the catalog\'s refusal codes', () => {
+    expect(readRevocationAnswer({ revoked: true, code: 'status_signer_untrusted' })).toMatchObject({ code: 'status_signer_untrusted' });
+    for (const code of ['revoked', 5, { code: 'delegation_revoked' }, undefined]) {
+      expect(readRevocationAnswer({ revoked: true, code })).toMatchObject({ revoked: true, code: undefined });
+    }
+  });
+
   it.each(UNREADABLE_ANSWERS)('reads %s as an answer that could not be read, and says why', (_label, answer, why) => {
     expect(readRevocationAnswer(answer)).toEqual({ revoked: undefined, unreadable: why });
   });
@@ -60,8 +67,8 @@ describe('readRevocationAnswer', () => {
     for (const members of [{ revoked: false, fresh: true }, { revoked: true, reason: 'r', revokedAncestor: 'a' }, {}]) {
       const { answer, reads } = countingAnswer(members);
       readRevocationAnswer(answer);
-      expect(reads).toEqual({ revoked: 1, fresh: 1, reason: 1, revokedAncestor: 1 });
-      expect(Object.keys(reads)).toEqual(['revoked', 'fresh', 'reason', 'revokedAncestor']);
+      expect(reads).toEqual({ revoked: 1, fresh: 1, reason: 1, revokedAncestor: 1, code: 1 });
+      expect(Object.keys(reads)).toEqual(['revoked', 'fresh', 'reason', 'revokedAncestor', 'code']);
     }
   });
 

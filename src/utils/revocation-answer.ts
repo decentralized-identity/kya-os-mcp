@@ -8,6 +8,7 @@
  * answer is read once, where a getter that throws is caught.
  */
 
+import { isRefusalCode, type RefusalCode } from "../refusal-codes.js";
 import { describeValue } from "./describe-value.js";
 import { isRecord } from "./guards.js";
 
@@ -33,17 +34,24 @@ export function unreadableStatusReason(answer: unknown): string {
 }
 
 /** The members a reader takes from a revocation checker's answer, in the order they are read. */
-const ANSWER_MEMBERS = ["revoked", "fresh", "reason", "revokedAncestor"] as const;
+const ANSWER_MEMBERS = ["revoked", "fresh", "reason", "revokedAncestor", "code"] as const;
 
 /**
  * A revocation checker's answer as {@link readRevocationAnswer} read it. `revoked` is the literal
  * the answer stated. `fresh` is `true` only when the answer's is the literal `true`. `reason` and
- * `revokedAncestor` are the answer's when they are strings. An answer that could not be read has
+ * `revokedAncestor` are the answer's when they are strings, and `code` when it is one of the
+ * catalog's refusal codes, as the library's checkers give one. An answer that could not be read has
  * `revoked: undefined` and says why in `unreadable`, a bounded line of well-formed text that
  * completes "could not be read: ".
  */
 export type RevocationAnswer =
-  | { revoked: boolean; fresh: boolean; reason: string | undefined; revokedAncestor: string | undefined }
+  | {
+      revoked: boolean;
+      fresh: boolean;
+      reason: string | undefined;
+      revokedAncestor: string | undefined;
+      code: RefusalCode | undefined;
+    }
   | { revoked: undefined; unreadable: string };
 
 /**
@@ -78,6 +86,7 @@ export function readRevocationAnswer(answer: unknown): RevocationAnswer {
       fresh: read.fresh === true,
       reason: typeof read.reason === "string" ? read.reason : undefined,
       revokedAncestor: typeof read.revokedAncestor === "string" ? read.revokedAncestor : undefined,
+      code: isRefusalCode(read.code) ? read.code : undefined,
     };
   } catch {
     return {

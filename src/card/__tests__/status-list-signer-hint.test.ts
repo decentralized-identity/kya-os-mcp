@@ -19,6 +19,7 @@ import {
 } from '../index.js';
 import { documentsOf, servingFromMemory, signedStatusList, webParty, type WebParty } from '../../__tests__/utils/adopter-issuers.js';
 import { credentialJwt, delegationRecord, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
+import { codedAs } from '../../__tests__/utils/refusal-coding.js';
 
 const LIST_URL = 'https://issuer.example/lists/1';
 const ENTRY = { statusListCredential: LIST_URL, statusListIndex: '3', statusPurpose: 'revocation' as const };
@@ -64,6 +65,7 @@ describe("a list signed by a DID other than the credential's issuer", () => {
       revoked: true,
       fresh: false,
       reason: `${KEEPER_REFUSAL}, as the issuer of the credential${ORIGIN_HINT}`,
+      ...codedAs('status_signer_untrusted'),
     });
     const configured = hintedConfiguration(refused.reason);
     expect(configured).toEqual({ [signer.did]: ['https://issuer.example'] });

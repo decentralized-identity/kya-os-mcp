@@ -9,6 +9,7 @@ import { createDidKeyResolver } from '../../delegation/did-key-resolver.js';
 import { createRevocationChecker } from '../revocation.js';
 import { createStatusListProofVerifier } from '../status-list-proof.js';
 import { NOW_MS, parties, serve, statusList, STATUS_URL } from './signed-chain-helpers.js';
+import { codedAs } from '../../__tests__/utils/refusal-coding.js';
 
 const didResolver = createDidKeyResolver();
 
@@ -24,7 +25,7 @@ describe('the card checker and an index that is not a string', () => {
     expect(await check({ statusListCredential: STATUS_URL, statusListIndex: '7' }, context)).toEqual({ revoked: false, fresh: true });
     for (const statusListIndex of [7, ['7']]) {
       const entry = { statusListCredential: STATUS_URL, statusListIndex } as unknown as { statusListCredential: string; statusListIndex: string };
-      expect(await check(entry, context)).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
+      expect(await check(entry, context)).toEqual({ revoked: true, fresh: false, reason: expect.any(String), ...codedAs('delegation_malformed') });
     }
   });
 });

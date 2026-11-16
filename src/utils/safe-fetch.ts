@@ -32,6 +32,7 @@
 
 import { developmentMode } from './development-mode.js';
 import { isBlockedAddress } from './ip-classifier.js';
+import { ReadFailureError } from './read-failure.js';
 import { followRedirects, MAX_REDIRECTS, type RedirectRefusals, type RedirectTarget } from './redirect-follower.js';
 import {
   defaultLookup,
@@ -78,7 +79,7 @@ function assertHttpsUrl(raw: string): string {
     throw new Error(`safe-fetch: invalid URL "${raw}"`);
   }
   if (url.protocol !== 'https:') {
-    throw new Error(`safe-fetch: only https is allowed (got "${url.protocol}")`);
+    throw new ReadFailureError('host_refused', `safe-fetch: only https is allowed (got "${url.protocol}")`);
   }
   return url.href;
 }
@@ -98,7 +99,8 @@ async function resolveAndPin(hostname: string, lookup: DnsLookup, admitPrivate: 
   }
   for (const candidate of admitPrivate ? [] : addresses) {
     if (isBlockedAddress(candidate.address)) {
-      throw new Error(
+      throw new ReadFailureError(
+        'host_refused',
         `safe-fetch: refusing non-public address ${candidate.address} for host "${hostname}": in local development, ` +
           `set development: true; to read a host you own in production, ${OWNED_ORIGINS}`,
       );
@@ -108,7 +110,7 @@ async function resolveAndPin(hostname: string, lookup: DnsLookup, admitPrivate: 
 }
 
 const nonHttpsTarget = (target: URL): Error =>
-  new Error(`safe-fetch: redirect to non-https target "${target.protocol}" blocked`);
+  new ReadFailureError('host_refused', `safe-fetch: redirect to non-https target "${target.protocol}" blocked`);
 
 const REDIRECT_REFUSALS: RedirectRefusals = {
   limitExceeded: (maxRedirects) => new Error(`safe-fetch: too many redirects (> ${maxRedirects})`),
@@ -123,7 +125,7 @@ const REDIRECT_REFUSALS: RedirectRefusals = {
 function vetRedirectTarget({ target, from, crossOrigin }: RedirectTarget): void {
   if (target.protocol !== 'https:') throw nonHttpsTarget(target);
   if (crossOrigin) {
-    throw new Error(`safe-fetch: cross-origin redirect blocked (${from.origin} → ${target.origin})`);
+    throw new ReadFailureError('host_refused', `safe-fetch: cross-origin redirect blocked (${from.origin} → ${target.origin})`);
   }
 }
 
@@ -147,7 +149,10 @@ async function finalize(raw: RawResponse, maxBytes: number): Promise<SafeFetchRe
 
 /**
  * Build an SSRF-hardened fetcher. The returned function is structurally compatible with the
- * card's `FetchLike`: `(url) => Promise<{ ok, status, json }>`.
+ * card's `FetchLike`: `(url) => Promise<{ ok, status, json }>`. A URL or redirect its own rules
+ * refuse (a scheme other than https, a non-public address, a cross-origin redirect) rejects with
+ * an error that carries the `host_refused` read-failure kind, and a hop that runs out of time with
+ * one of `deadline_exceeded`, so a verifier codes the refusal without reading its message.
  */
 export function createSafeFetch(options: SafeFetchOptions = {}): SafeFetch {
   const cfg: HopConfig = {
@@ -216,7 +221,7 @@ async function withTimeout(
 ): Promise<RawResponse> {
   const controller = new AbortController();
   const timer = setTimeout(
-    () => controller.abort(new Error(`safe-fetch: request to ${hostname} timed out after ${timeoutMs}ms`)),
+    () => controller.abort(new ReadFailureError('deadline_exceeded', `safe-fetch: request to ${hostname} timed out after ${timeoutMs}ms`)),
     timeoutMs,
   );
   try {

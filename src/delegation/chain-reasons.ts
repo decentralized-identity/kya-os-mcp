@@ -31,8 +31,8 @@ export function revocationCheckFailure(delegationId: string, error: unknown): st
  * `delegationId`, one of its credentials, or `undefined` when the answer lets it pass. The answer
  * is read by the reader every revocation check shares ({@link readRevocationAnswer}): it passes
  * only on an object whose `revoked` is the literal `false`, and is revoked only on the literal
- * `true`, through the ancestor the answer names, or `delegationId` when that is not the leaf, as
- * `delegation_revoked`. Any other answer, one with a member whose getter throws included, is a
+ * `true`, through the ancestor the answer names, or `delegationId` when that is not the leaf, with
+ * the code the answer names, else `delegation_revoked`. Any other answer, one with a member whose getter throws included, is a
  * status that could not be read, `status_unavailable`, so no answer makes this throw.
  */
 export function revocationRefusal(leafId: string, delegationId: string, answer: unknown): Refusal | undefined {
@@ -45,7 +45,7 @@ export function revocationRefusal(leafId: string, delegationId: string, answer: 
     );
   }
   const revokedAncestor = read.revokedAncestor ?? (delegationId === leafId ? undefined : delegationId);
-  return refusal("delegation_revoked", revokedReason(leafId, revokedAncestor, read.reason));
+  return refusal(read.code ?? "delegation_revoked", revokedReason(leafId, revokedAncestor, read.reason));
 }
 
 /**

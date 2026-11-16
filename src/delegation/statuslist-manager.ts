@@ -15,6 +15,7 @@ import { parseStatusListIndex } from '../utils/statuslist-bits.js';
 import type { VCSigningFunction } from './vc-issuer.js';
 import { canonicalizeJSON } from './utils.js';
 import { acceptEntrySize, acceptStatusPurpose } from '../utils/statuslist-acceptance.js';
+import { RefusalError } from '../utils/refusal.js';
 
 export interface StatusListStorageProvider {
   getStatusList(statusListId: string): Promise<StatusList2021Credential | null>;
@@ -188,7 +189,7 @@ export class StatusList2021Manager {
     // storage with no proof checked, so only the purpose part of the rule applies.
     const purpose = acceptStatusPurpose(statusList, credentialStatus.statusPurpose);
     if (!purpose.valid) {
-      throw new Error(purpose.reason);
+      throw new RefusalError('status_signer_untrusted', purpose.reason);
     }
 
     const manager = await BitstringManager.decode(
@@ -306,7 +307,7 @@ export class StatusList2021Manager {
 function assertOneBitEntry(credentialStatus: CredentialStatus): void {
   const size = acceptEntrySize(credentialStatus.statusSize);
   if (!size.valid) {
-    throw new Error(size.reason);
+    throw new RefusalError('delegation_malformed', size.reason);
   }
 }
 

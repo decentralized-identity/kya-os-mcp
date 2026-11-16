@@ -30,6 +30,7 @@ import type {
 import { gzipSync } from "node:zlib";
 import { statusListGzipCodec } from "../../utils/statuslist-gzip.js";
 import { createRevocationChecker } from "../../card/revocation.js";
+import { BIT_SET } from "../../__tests__/utils/refusal-coding.js";
 
 /** The `encodedList` of a raw bitstring, GZIP'd independently of the codec under test. */
 const encodedListOf = (bytes: Uint8Array): string =>
@@ -739,7 +740,7 @@ describe("StatusList2021Manager status lists are GZIP", () => {
     for (const [index, entry] of entries.entries()) {
       const revoked = index === 1;
       expect(await manager.checkStatus(entry)).toBe(revoked);
-      expect(await check(entry)).toEqual({ revoked, fresh: true });
+      expect(await check(entry)).toEqual({ revoked, fresh: true, ...(revoked ? BIT_SET : {}) });
     }
   });
 

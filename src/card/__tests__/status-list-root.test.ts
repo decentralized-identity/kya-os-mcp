@@ -29,6 +29,7 @@ import {
   now,
 } from './signed-chain-helpers.js';
 import { cast, expectAccepted, expectRevokedAt, listOf, listUrlOf, nameSigner, servedBy, threeHopChain } from './status-list-paths.js';
+import { BIT_SET, codedAs } from '../../__tests__/utils/refusal-coding.js';
 
 const didResolver = createDidKeyResolver();
 const ctx = { resource: RESOURCE, now };
@@ -244,12 +245,19 @@ describe("each path names a hop's issuer, and the chain's root only as the verif
       now,
       verifyStatusList: createStatusListProofVerifier({ didResolver }),
     });
-    for (const item of [{}, null, 'entry', { entry: null, credentialIssuer: acme.did }]) {
+    // An item that is no object is malformed; any other names no credential issuer to hold its list to.
+    for (const [item, code] of [
+      [{}, 'configuration_error'],
+      [null, 'delegation_malformed'],
+      ['entry', 'configuration_error'],
+      [{ entry: null, credentialIssuer: acme.did }, 'configuration_error'],
+    ] as const) {
       const result = await evaluateRevocationChain([item] as never, check);
       expect(result).toEqual({
         ok: false,
         fresh: false,
         reasons: [expect.stringMatching(/^revocation: hop 0 \(list of type undefined, index of type undefined\) /)],
+        ...codedAs(code),
       });
     }
   });
@@ -292,12 +300,13 @@ describe("each path names a hop's issuer, and the chain's root only as the verif
     });
     const onAcmes = (index: number) => ({ statusListCredential: listUrlOf(c.acme), statusListIndex: String(index) });
     const below = { credentialIssuer: c.subAgent.did, trustedRootIssuer: c.acme.did, trustedRootStatusList: listUrlOf(c.acme) };
-    expect(await check(onAcmes(5), below)).toEqual({ revoked: true, fresh: true });
+    expect(await check(onAcmes(5), below)).toEqual({ revoked: true, fresh: true, ...BIT_SET });
     expect(await check(onAcmes(6), below)).toEqual({ revoked: false, fresh: true });
     const refusedFor = (did: string, as: string) => ({
       revoked: true,
       fresh: false,
       reason: `status list issuer "${c.acme.did}" does not keep this list's URL: "${did}" does, as ${as}${nameSigner(c.acme.did, 'https://status.example')}`,
+      ...codedAs('status_signer_untrusted'),
     });
     // A root named with no URL, or with another, keeps nothing here, and a URL with no root is ignored.
     for (const context of [

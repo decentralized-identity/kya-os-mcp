@@ -21,7 +21,7 @@ import { documentsOf, servingFromMemory, signedStatusList, webParty, type WebPar
 import { credentialJwt, delegationRecord, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 
 const LIST_URL = 'https://issuer.example/lists/1';
-const ENTRY = { statusListCredential: LIST_URL, statusListIndex: '3', statusPurpose: 'revocation' };
+const ENTRY = { statusListCredential: LIST_URL, statusListIndex: '3', statusPurpose: 'revocation' as const };
 
 let issuer: WebParty;
 let signer: WebParty;

@@ -1,0 +1,17 @@
+kind: Security
+body: |-
+    **A revocation answer that is not a boolean no longer passes a
+    credential.** `DelegationCredentialVerifier` read what a
+    `StatusListResolver` answered by its truthiness, and
+    `validateDelegationChain` read a `RevocationChecker` the same way, so a
+    custom resolver or checker that answered `undefined`, `null`, `0` or
+    `""`, as untyped code or a fault can, let a revoked credential through,
+    and `validateDelegationChain` threw on `undefined` or `null`. Only a
+    literal `false` now passes and only a literal `true` revokes; any other
+    answer denies the credential, as `status_unresolvable` from the status
+    check, with a reason that says the status could not be read. 1.22.0
+    read both this way. The shipped resolvers and
+    `CascadingRevocationManager` answer booleans and were not affected.
+    UPGRADING.md, "A `StatusListResolver` or `RevocationChecker` whose
+    answer is not a boolean", has the reasons and what to change.
+time: 2026-11-14T09:00:00.000000-06:00

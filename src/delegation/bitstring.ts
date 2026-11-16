@@ -169,6 +169,12 @@ export class BitstringManager {
  * NaN index cannot be proven clear, so `readStatusBit` throws rather than
  * reading as "not set".
  *
+ * It reads the one bit at `index`, which is an entry's status only when the
+ * entry is one bit wide. A caller that reads it for a status entry first
+ * holds the entry to that size (`acceptEntrySize` in
+ * `utils/statuslist-acceptance`), as `StatusList2021Manager` does: an entry
+ * that states another `statusSize` keeps its status in other bits.
+ *
  * @param decompressor - Inflates the GZIP payload. Defaults to
  *   {@link statusListGzipCodec}; reading throws on a payload that is not GZIP
  *   and on a decompressor that returns its input unchanged.

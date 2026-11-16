@@ -5,6 +5,11 @@
  * (version + category + vectors), and returns a flat, deduplicated list of
  * {@link ConformanceVector}. Fails loudly on a malformed vector file so a typo in
  * a vector never silently weakens the suite.
+ *
+ * This file, `types.ts` and `runner.ts` are what an implementer of another library copies beside
+ * the vectors, so the three import only Node.js built-ins and each other, never the package's
+ * source: whatever the loader checks, it checks with code of its own
+ * (`__tests__/standalone-harness.test.ts`).
  */
 
 import { readdirSync, readFileSync } from 'node:fs';
@@ -28,6 +33,52 @@ const VALID_CATEGORIES: readonly VectorCategory[] = [
   'audit-integrity',
   'negotiation',
 ];
+
+/** A JSON object, or one built in code as an object literal: not an array, a `Map` or a class instance. */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null) return false;
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+/**
+ * Throw a `TypeError` unless the verifier configuration a status-list input states (SPEC.md §6.6)
+ * is well formed: a `trustedRootIssuer` and a `trustedRootStatusList`, when present, are non-empty
+ * strings, and a `statusListIssuers`, when present, is a plain object that maps each status-list
+ * issuer, a non-empty key, to an array of the status-list URLs and `https:` origins it keeps, each
+ * a string that starts with `https://` or `http://`, none of them under two issuers.
+ * `conformance/status_list.py` refuses the same inputs in the same words, so the suite's two
+ * readers refuse the same malformed vector, and the reference adapter calls this too.
+ */
+export function assertStatusListConfiguration(input: unknown): void {
+  const fields: Record<string, unknown> = isPlainObject(input) ? input : {};
+  for (const member of ['trustedRootIssuer', 'trustedRootStatusList']) {
+    const value = fields[member];
+    if (value !== undefined && (typeof value !== 'string' || value.length === 0)) {
+      throw new TypeError(`${member} is not a non-empty string`);
+    }
+  }
+  const issuers = fields['statusListIssuers'];
+  if (issuers === undefined) return;
+  if (!isPlainObject(issuers)) {
+    throw new TypeError('statusListIssuers does not map issuers to lists of URLs');
+  }
+  const keeperOf = new Map<string, string>();
+  for (const [keeper, bindings] of Object.entries(issuers)) {
+    if (keeper === '' || !Array.isArray(bindings)) {
+      throw new TypeError('statusListIssuers does not map issuers to lists of URLs');
+    }
+    for (const binding of bindings as unknown[]) {
+      if (typeof binding !== 'string' || !/^https?:\/\//.test(binding)) {
+        throw new TypeError('statusListIssuers does not map issuers to lists of URLs');
+      }
+      if ((keeperOf.get(binding) ?? keeper) !== keeper) {
+        throw new TypeError('statusListIssuers binds one URL to two issuers');
+      }
+      keeperOf.set(binding, keeper);
+    }
+  }
+}
 
 function assertVectorFile(file: unknown, source: string): asserts file is VectorFile {
   if (typeof file !== 'object' || file === null) {
@@ -78,6 +129,16 @@ function assertVector(
   }
   if (!('input' in v)) {
     throw new Error(`Vector ${String(v['id'])} in ${source} is missing "input"`);
+  }
+  if (category === 'status-list') {
+    try {
+      assertStatusListConfiguration(v['input']);
+    } catch (error) {
+      throw new Error(
+        `Vector ${String(v['id'])} in ${source}: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
   }
 }
 

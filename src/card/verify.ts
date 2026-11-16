@@ -24,7 +24,9 @@ import {
   type Capability,
   type Attestation,
 } from './schema.js';
-import type { BitstringRevocationChecker } from './revocation.js';
+import { CHECKER_REASON_LENGTH, type BitstringRevocationChecker } from './revocation.js';
+import { sanitizeForMessage } from '../utils/message-text.js';
+import { readRevocationAnswer } from '../utils/revocation-answer.js';
 import type { ProofAssurance, ProofVerifyResult } from './proof/index.js';
 import type { ToolRequest } from '../proof/generator.js';
 
@@ -63,11 +65,16 @@ export type AttestationVerifier = (
  * The accountability seam's verdict. `fresh` is the freshness channel a bare boolean cannot express
  * (SPEC §9.3/§12.6): a stale-but-non-revoked chain stays `verified:true` (keeps §10.6's cached L2)
  * yet `fresh:false` demotes L3→L2; omitted `fresh` ⇒ freshness UNKNOWN so no demotion (back-compat).
+ * `verifyCard` reads only a literal `true` as verified, and a `fresh` that is present and not a
+ * boolean as `false`, so a malformed verdict neither grants authority nor keeps L3.
  */
 export interface AccountabilityResult {
   /** True iff the delegation edge verified (`responsibleParty === issuer(rootVC)`, leaf-invoker join). */
   verified: boolean;
-  /** True iff every leaf/chain delegation credential status was read from a LIVE list (drives L2→L3). */
+  /**
+   * True iff every leaf/chain delegation credential status was read from a LIVE list (drives L2→L3).
+   * Omitted or `undefined`, freshness is unknown; any other value but `true` reads as `false`.
+   */
   fresh?: boolean;
 }
 
@@ -78,6 +85,12 @@ export interface AccountabilityResult {
  * delegation/accountability JOIN of ./delegation, recomputed, asserted nowhere). `proofDid` is
  * OPTIONAL and additive: implementations that ignore it keep the L2 offline check unchanged.
  * Returns a bare boolean (DEPRECATED alias) or an {@link AccountabilityResult} carrying `fresh`.
+ * A verified responsible party's status lists also count for the Card's `revocation` entry (see
+ * `statusListChecker`). Reporting `verified: true` is an authority grant: the host must verify
+ * every hop's proof, continuity, attenuation, expiry and revocation under its policy, bind the
+ * resolved chain to this Card and its leaf, and confirm the root equality. A structural check or
+ * a Card-supplied root alone is insufficient. The host must authorize that root for this Card;
+ * `trustedIssuers` is attestation policy, not an automatic root pin. See SPEC-ENTITY-CARD §10.3.
  */
 export type AccountabilityVerifier = (
   card: EntityCard,
@@ -108,7 +121,15 @@ export interface VerifyCardDeps {
   request?: ToolRequest;
   /** Recomputes `proof` against `request` (pre-bound ./proof `verifyCardProof`). Lifts L2 → L3. */
   proofVerifier?: CardProofVerifier;
-  /** Live W3C Bitstring Status List v1.0 check for `card.revocation` (fail-closed). */
+  /**
+   * Live W3C Bitstring Status List v1.0 check for `card.revocation` (fail-closed). It is called with
+   * `{ credentialIssuer: card.id }`, the Card being its Entity's own statement, and, once the
+   * accountability check has verified the Card's `responsibleParty` as the root issuer of the Card's
+   * delegation chain, with that party as `trustedRootIssuer`. No status-list URL of that party is
+   * named, so a checker that verifies the list reads the party's list for the Card only at a URL
+   * its `statusListIssuers` binds to the party, and otherwise the Card's own (`acceptStatusList`).
+   * A responsible party that did not verify is not named.
+   */
   statusListChecker?: BitstringRevocationChecker;
   /** True iff the caller independently proved CIMD L1 key possession (private_key_jwt ↔ jwks_uri). */
   cimdKeyProven?: boolean;
@@ -127,8 +148,14 @@ export interface VerifyCardResult {
   attestations: Array<{ type: string; subject?: string; verified: boolean }>;
   /** Present when a proof was recomputed: the live holder-of-key verdict. */
   proof?: { verified: boolean; did?: string; level?: ProofAssurance; reasons: string[] };
-  /** Present when the card declares `revocation` and a `statusListChecker` was supplied. */
-  revocation?: { revoked: boolean; fresh: boolean };
+  /**
+   * Present when the card declares `revocation` and a `statusListChecker` was supplied. The checker's
+   * answer is read as `evaluateRevocationChain` reads one: only a literal `revoked: false` passes and
+   * only a literal `fresh: true` is fresh. An answer that could not be read is reported as revoked and
+   * not fresh, with the `reason`; a revoked Card carries the `reason` its checker gave, when it gave
+   * one, bounded as `evaluateRevocationChain` bounds it.
+   */
+  revocation?: { revoked: boolean; fresh: boolean; reason?: string };
   /** Echoes `deps.cimdKeyProven` — the caller's L1 CIMD key-possession evidence. */
   cimdKeyProven?: boolean;
 }
@@ -148,7 +175,7 @@ export async function verifyCard(card: EntityCard, deps: VerifyCardDeps): Promis
 
   const accountability = await checkAccountability(card, deps, trustedIssuers, proofDid);
   const attestations = await checkAttestations(card, deps, trustedIssuers);
-  const revocation = await checkCardRevocation(card, deps.statusListChecker);
+  const revocation = await checkCardRevocation(card, deps.statusListChecker, verifiedResponsibleParty(accountability));
 
   const accountabilityOk = !card.responsibleParty || Boolean(accountability?.verified);
   const attestationsOk = attestations.every((a) => a.verified);
@@ -167,7 +194,7 @@ export async function verifyCard(card: EntityCard, deps: VerifyCardDeps): Promis
     proof: proof
       ? { verified: proof.ok, did: proof.did, level: proof.level, reasons: proof.reasons }
       : undefined,
-    revocation: revocation.checked ? { revoked: revocation.revoked, fresh: revocation.fresh } : undefined,
+    revocation: revocation.checked ? reportedRevocation(revocation) : undefined,
     cimdKeyProven: deps.cimdKeyProven,
   };
 }
@@ -217,7 +244,12 @@ async function checkAccountability(
   const raw = deps.accountabilityVerifier
     ? await deps.accountabilityVerifier(card, { trustedIssuers, proofDid })
     : false;
-  const { verified, fresh } = typeof raw === 'boolean' ? { verified: raw, fresh: undefined } : raw;
+  // This trusted plugin boundary can still receive untyped JavaScript results. A truthy string such
+  // as "false" must neither grant status-list signing authority nor keep the Card's L3: only a
+  // literal `true` verifies or is fresh, and an omitted `fresh` stays unknown.
+  const verdict = typeof raw === 'object' && raw !== null ? raw : undefined;
+  const verified = raw === true || verdict?.verified === true;
+  const fresh = verdict?.fresh === undefined ? undefined : verdict.fresh === true;
   return { responsibleParty: card.responsibleParty, principal: card.principal, verified, fresh };
 }
 
@@ -258,20 +290,46 @@ interface CardRevocationVerdict {
   checked: boolean;
   revoked: boolean;
   fresh: boolean;
+  /** Why the Card reads as revoked, when its checker said why or its answer could not be read. */
+  reason?: string;
 }
 
-/** Live-check `card.revocation` via the injected seam; fail-closed (unreachable ⇒ revoked). */
+/** The Card's responsible party, once the accountability check has verified it, and never before. */
+function verifiedResponsibleParty(accountability: VerifyCardResult['accountability']): string | undefined {
+  return accountability?.verified ? accountability.responsibleParty : undefined;
+}
+
+/**
+ * Live-check `card.revocation` via the injected seam; fail-closed (unreachable ⇒ revoked). The Card's
+ * `id` is named as the issuer its status list is held to, and a verified `responsibleParty` as the
+ * root of the Card's delegation chain.
+ */
 async function checkCardRevocation(
   card: EntityCard,
   checker: BitstringRevocationChecker | undefined,
+  responsibleParty: string | undefined,
 ): Promise<CardRevocationVerdict> {
   if (!checker || !card.revocation) return { checked: false, revoked: false, fresh: true };
   try {
-    const status = await checker(card.revocation);
-    return { checked: true, revoked: status.revoked, fresh: status.fresh };
+    const answer: unknown = await checker(card.revocation, {
+      credentialIssuer: card.id,
+      ...(responsibleParty === undefined ? {} : { trustedRootIssuer: responsibleParty }),
+    });
+    const status = readRevocationAnswer(answer);
+    if (status.revoked === undefined) {
+      const reason = `the Card's revocation status could not be read: ${status.unreadable}`;
+      return { checked: true, revoked: true, fresh: false, reason };
+    }
+    const given = status.revoked && status.reason ? { reason: sanitizeForMessage(status.reason, CHECKER_REASON_LENGTH) } : {};
+    return { checked: true, revoked: status.revoked, fresh: status.fresh, ...given };
   } catch {
     return { checked: true, revoked: true, fresh: false };
   }
+}
+
+/** The revocation verdict as the result reports it, with its `reason` only when it has one. */
+function reportedRevocation({ revoked, fresh, reason }: CardRevocationVerdict): NonNullable<VerifyCardResult['revocation']> {
+  return reason === undefined ? { revoked, fresh } : { revoked, fresh, reason };
 }
 
 /**

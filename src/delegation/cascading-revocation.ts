@@ -10,6 +10,7 @@
 import { DelegationGraphManager, type DelegationNode } from './delegation-graph.js';
 import { nodeStatusEntry } from './delegation-status-entry.js';
 import { StatusList2021Manager } from './statuslist-manager.js';
+import { readRevoked, unreadableStatusReason } from '../utils/revocation-answer.js';
 
 export interface RevocationEvent {
   delegationId: string;
@@ -158,13 +159,20 @@ export class CascadingRevocationManager {
     // target's own (cascade-set) bit. getChain() already returns root-first order.
     // A node counts as revoked when the graph marks it or its status bit is
     // set; a node with no status list entry is read from the mark alone.
+    // The status list's answer is read by the shared reader: only a literal
+    // false is a clear bit. Any answer that is neither true nor false reads as
+    // revoked, with a reason that says the status could not be read, and does
+    // not throw, since reading it by its truthiness did not.
     const chain = await this.graph.getChain(delegationId);
 
     for (const node of chain) {
-      if (node.revoked || (await this.isStatusBitSet(node))) {
+      const answer: unknown = node.revoked ? true : await this.statusAnswer(node);
+      const bit = readRevoked(answer);
+      if (bit !== false) {
+        const revoked = node.id === delegationId ? 'Directly revoked' : 'Ancestor revoked';
         return {
           revoked: true,
-          reason: node.id === delegationId ? 'Directly revoked' : 'Ancestor revoked',
+          reason: bit === undefined ? unreadableStatusReason(answer) : revoked,
           revokedAncestor: node.id === delegationId ? undefined : node.id,
         };
       }
@@ -173,7 +181,8 @@ export class CascadingRevocationManager {
     return { revoked: false };
   }
 
-  private async isStatusBitSet(node: DelegationNode): Promise<boolean> {
+  /** What the status list answers for the node's entry, unread, or `false` for a node that has none. */
+  private async statusAnswer(node: DelegationNode): Promise<unknown> {
     const credentialStatus = nodeStatusEntry(node);
     return credentialStatus ? this.statusList.checkStatus(credentialStatus) : false;
   }

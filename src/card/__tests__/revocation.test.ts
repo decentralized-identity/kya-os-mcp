@@ -87,7 +87,7 @@ describe('createRevocationChecker (W3C Bitstring Status List v1.0)', () => {
   it('demotes to NOT fresh for a stale (past validUntil) list — still readable, cached-OK at L2', async () => {
     const cred = statusCredential([5], { validUntil: '2020-01-01T00:00:00Z' });
     const check = createRevocationChecker({ fetch: jsonFetch(cred), now: NOW });
-    expect(await check(entryAt(5))).toEqual({ revoked: true, fresh: false });
+    expect(await check(entryAt(5))).toStrictEqual({ revoked: true, fresh: false });
   });
 
   it('demotes to NOT fresh for a not-yet-valid (future validFrom) list', async () => {
@@ -102,19 +102,19 @@ describe('createRevocationChecker (W3C Bitstring Status List v1.0)', () => {
         throw new Error('ECONNREFUSED');
       },
     });
-    expect(await check(entryAt(5))).toEqual({ revoked: true, fresh: false });
+    expect(await check(entryAt(5))).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
   });
 
   it('FAIL-CLOSED on a non-2xx status-list response', async () => {
     const check = createRevocationChecker({ fetch: jsonFetch({}, 404), now: NOW });
-    expect(await check(entryAt(5))).toEqual({ revoked: true, fresh: false });
+    expect(await check(entryAt(5))).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
   });
 
   it('FAIL-CLOSED on a malformed (non-inflatable) encodedList', async () => {
     const cred = statusCredential([5]);
     (cred.credentialSubject as Record<string, unknown>).encodedList = 'u_not_gzip_';
     const check = createRevocationChecker({ fetch: jsonFetch(cred), now: NOW });
-    expect(await check(entryAt(5))).toEqual({ revoked: true, fresh: false });
+    expect(await check(entryAt(5))).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
   });
 
   it.each([
@@ -124,18 +124,18 @@ describe('createRevocationChecker (W3C Bitstring Status List v1.0)', () => {
     ['an empty encodedList', { credentialSubject: { statusPurpose: STATUS_PURPOSE_REVOCATION, encodedList: '' } }],
   ])('FAIL-CLOSED on a status-list credential with %s', async (_label, body) => {
     const check = createRevocationChecker({ fetch: jsonFetch(body), now: NOW });
-    expect(await check(entryAt(5))).toEqual({ revoked: true, fresh: false });
+    expect(await check(entryAt(5))).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
   });
 
   it('FAIL-CLOSED on a statusListIndex out of range for the bitstring', async () => {
     const check = createRevocationChecker({ fetch: jsonFetch(statusCredential([5])), now: NOW });
-    expect(await check(entryAt(99_999))).toEqual({ revoked: true, fresh: false });
+    expect(await check(entryAt(99_999))).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
   });
 
   it('FAIL-CLOSED when the list is for a different statusPurpose (suspension ≠ revocation)', async () => {
     const cred = statusCredential([5], { statusPurpose: 'suspension' });
     const check = createRevocationChecker({ fetch: jsonFetch(cred), now: NOW });
-    expect(await check(entryAt(5))).toEqual({ revoked: true, fresh: false });
+    expect(await check(entryAt(5))).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
   });
 
   // ── Security regressions (fail-closed hardening) ───────────────────────────
@@ -148,7 +148,7 @@ describe('createRevocationChecker (W3C Bitstring Status List v1.0)', () => {
     const bomb = Buffer.from(gzipSync(Buffer.alloc(17 * 1024 * 1024))).toString('base64url');
     (cred.credentialSubject as Record<string, unknown>).encodedList = `u${bomb}`;
     const check = createRevocationChecker({ fetch: jsonFetch(cred), now: NOW });
-    expect(await check(entryAt(5))).toEqual({ revoked: true, fresh: false });
+    expect(await check(entryAt(5))).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
   });
 
   it('FAIL-CLOSED on a statusListIndex ≥ 2^32 (no 32-bit wrap onto a clear low bit)', async () => {
@@ -156,7 +156,7 @@ describe('createRevocationChecker (W3C Bitstring Status List v1.0)', () => {
     // this onto byte 0 / bit 5 — clear on an empty list ⇒ fail-OPEN {revoked:false}. Full-precision
     // arithmetic indexes past the 32-byte bitstring ⇒ out-of-range ⇒ FAIL_CLOSED.
     const check = createRevocationChecker({ fetch: jsonFetch(statusCredential([])), now: NOW });
-    expect(await check(entryAt(4_294_967_301))).toEqual({ revoked: true, fresh: false });
+    expect(await check(entryAt(4_294_967_301))).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
   });
 });
 
@@ -169,7 +169,7 @@ describe('createRevocationChecker (validity window)', () => {
     ['an unparseable legacy expirationDate', { expirationDate: 'never' }],
   ])('%s is a list of unknown validity — readable, but NOT fresh', async (_label, dates) => {
     const check = createRevocationChecker({ fetch: jsonFetch({ ...statusCredential([5]), ...dates }), now: NOW });
-    expect(await check(entryAt(5))).toEqual({ revoked: true, fresh: false });
+    expect(await check(entryAt(5))).toStrictEqual({ revoked: true, fresh: false });
     expect(await check(entryAt(6))).toEqual({ revoked: false, fresh: false });
   });
 });
@@ -216,7 +216,7 @@ describe('createRevocationChecker (injected decompress seam)', () => {
       now: NOW,
       decompress: () => new Uint8Array(17 * 1024 * 1024), // an unbounded edge impl inflates past the cap
     });
-    expect(await check(entryAt(5))).toEqual({ revoked: true, fresh: false });
+    expect(await check(entryAt(5))).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
   });
 
   it('FAIL-CLOSED on an out-of-range index under an injected decompress (MSB read still guards)', async () => {
@@ -225,7 +225,7 @@ describe('createRevocationChecker (injected decompress seam)', () => {
       now: NOW,
       decompress: webStreamsGunzip,
     });
-    expect(await check(entryAt(99_999))).toEqual({ revoked: true, fresh: false });
+    expect(await check(entryAt(99_999))).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
   });
 
   it('FAIL-CLOSED on a pass-through decompress, which would read the GZIP header as status bits', async () => {
@@ -237,7 +237,7 @@ describe('createRevocationChecker (injected decompress seam)', () => {
       decompress: (bytes) => bytes,
     });
     for (const index of [0, 1, 2]) {
-      expect(await check(entryAt(index))).toEqual({ revoked: true, fresh: false });
+      expect(await check(entryAt(index))).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
     }
   });
 
@@ -249,7 +249,7 @@ describe('createRevocationChecker (injected decompress seam)', () => {
     (raw.credentialSubject as Record<string, unknown>).encodedList =
       `u${Buffer.from(new Uint8Array(BYTE_LEN)).toString('base64url')}`;
     const rawUnderDefault = createRevocationChecker({ fetch: jsonFetch(raw), now: NOW });
-    expect(await rawUnderDefault(entryAt(5))).toEqual({ revoked: true, fresh: false });
+    expect(await rawUnderDefault(entryAt(5))).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
   });
 });
 

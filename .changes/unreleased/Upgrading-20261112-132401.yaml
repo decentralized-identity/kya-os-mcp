@@ -1,0 +1,17 @@
+kind: Upgrading
+body: |-
+    **A status list is now held to the credential it covers, so a status
+    check that passed on 1.22.0 can deny.** A reader that verifies a
+    list's proof reads the list only from the one keeper of its URL: the
+    issuer `statusListIssuers` binds the URL or its origin to, else the
+    chain's pinned root when its own credential names the URL, else the
+    credential's issuer, and only when the list states its URL as its
+    `id`. Bind each list URL another issuer signs in
+    `statusListIssuers`, or put the root credential on the root's list
+    and pin the root, and re-issue each list with its URL as its `id`. A
+    `statusListIndex` must be a string of decimal digits, an entry of
+    another `statusPurpose` or of a `statusSize` other than 1 reads as
+    revoked, and `verifyCard` takes only a literal `true` from an
+    `accountabilityVerifier`. UPGRADING.md, "Status lists held to their
+    credential", takes each setup in turn.
+time: 2026-11-12T13:24:01.000000-06:00

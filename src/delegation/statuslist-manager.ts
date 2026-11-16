@@ -14,7 +14,7 @@ import { BitstringManager, type CompressionFunction, type DecompressionFunction 
 import { parseStatusListIndex } from '../utils/statuslist-bits.js';
 import type { VCSigningFunction } from './vc-issuer.js';
 import { canonicalizeJSON } from './utils.js';
-import { assertStatusPurpose } from '../utils/statuslist-purpose.js';
+import { acceptEntrySize, acceptStatusPurpose } from '../utils/statuslist-acceptance.js';
 
 export interface StatusListStorageProvider {
   getStatusList(statusListId: string): Promise<StatusList2021Credential | null>;
@@ -98,6 +98,7 @@ export class StatusList2021Manager {
   }
 
   async updateStatus(credentialStatus: CredentialStatus, revoked: boolean): Promise<void> {
+    assertOneBitEntry(credentialStatus);
     await this.withListLock(credentialStatus.statusListCredential, () =>
       this.doUpdateStatus(credentialStatus, revoked)
     );
@@ -135,9 +136,11 @@ export class StatusList2021Manager {
       this.decompressor
     );
 
-    // Same strict parse as checkStatus: a lenient one reads "5abc" as 5 and
-    // would flip another credential's bit.
-    const index = parseStatusListIndex(statusListIndex);
+    // The parse checkStatus uses, which reads "5abc" as no index rather than as 5, so it never flips
+    // another credential's bit. It also takes a non-negative safe integer: the entry is this
+    // manager's own record, which a storage layer may hand back with the index as a number, and
+    // refusing it would leave a revoked credential's bit clear.
+    const index = parseStatusListIndex(statusListIndex, { acceptNumber: true });
     manager.setBit(index, revoked);
 
     const encodedList = await manager.encode();
@@ -169,6 +172,7 @@ export class StatusList2021Manager {
   }
 
   async checkStatus(credentialStatus: CredentialStatus): Promise<boolean> {
+    assertOneBitEntry(credentialStatus);
     const { statusListCredential, statusListIndex } = credentialStatus;
 
     const statusList = await this.storage.getStatusList(statusListCredential);
@@ -178,10 +182,14 @@ export class StatusList2021Manager {
       );
     }
 
-    // Fail-CLOSED on statusPurpose parity via the shared validator: the resolved list MUST be the
-    // SAME KIND the credential points at, else its clear bit would report "not revoked" from the
-    // wrong list — a fail-OPEN revocation bypass.
-    assertStatusPurpose(statusList.credentialSubject.statusPurpose, credentialStatus.statusPurpose);
+    // Fail-CLOSED on statusPurpose parity via the shared acceptance rule: the resolved list MUST be
+    // the SAME KIND the credential points at, else its clear bit would report "not revoked" from the
+    // wrong list, a fail-OPEN revocation bypass. The list is this manager's own, read from its
+    // storage with no proof checked, so only the purpose part of the rule applies.
+    const purpose = acceptStatusPurpose(statusList, credentialStatus.statusPurpose);
+    if (!purpose.valid) {
+      throw new Error(purpose.reason);
+    }
 
     const manager = await BitstringManager.decode(
       statusList.credentialSubject.encodedList,
@@ -286,6 +294,19 @@ export class StatusList2021Manager {
 
   getDefaultListSize(): number {
     return this.defaultListSize;
+  }
+}
+
+/**
+ * Throw unless `credentialStatus` is one bit wide, as the shared rule decides it
+ * ({@link acceptEntrySize}). The manager reads and writes the bit at an entry's index, and an entry
+ * of another `statusSize` keeps its status in other bits, so the bit at its index is another
+ * entry's. It throws before any list is read from storage.
+ */
+function assertOneBitEntry(credentialStatus: CredentialStatus): void {
+  const size = acceptEntrySize(credentialStatus.statusSize);
+  if (!size.valid) {
+    throw new Error(size.reason);
   }
 }
 

@@ -19,8 +19,10 @@ import { signEddsaJcs2022, verifyEddsaJcs2022, type EddsaJcs2022Proof } from './
 import type { ProofSigner } from './proof/types.js';
 
 /**
- * Checks a fetched status-list credential's proof. Resolves `true` only when the proof verifies;
- * `false` or a throw rejects the list, and the revocation checker then fails closed.
+ * Checks a fetched status-list credential's proof. Resolves `true` only when the proof verifies
+ * under a key the list's `issuer` lists under `assertionMethod`, since the revocation checker
+ * decides by that `issuer` whom the list speaks for; `false` or a throw rejects the list, and the
+ * revocation checker then fails closed.
  */
 export type StatusListProofVerifier = (credential: Record<string, unknown>) => boolean | Promise<boolean>;
 

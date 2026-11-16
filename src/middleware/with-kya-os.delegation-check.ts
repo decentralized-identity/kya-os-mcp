@@ -22,6 +22,7 @@ import type {
 import { DELEGATION_ID_LEVELS } from "../delegation/delegation-id.js";
 import type { DelegationCredential } from "../types/protocol.js";
 import { copyPlainData } from "../utils/plain-data.js";
+import { coded, type Coded } from "../utils/refusal.js";
 import { logger } from "../logging/index.js";
 import type { DelegationDescriber, DelegationRecords } from "./with-kya-os.delegation-records.js";
 
@@ -29,11 +30,11 @@ import type { DelegationDescriber, DelegationRecords } from "./with-kya-os.deleg
  * A presented delegation as authenticated. A valid one names `rootIssuer`, the issuer of its
  * chain's root credential, whose signature the chain walk verified and whom `trustedRootIssuers`
  * admitted: the call's Responsible Party (SPEC.md §2, §6.4). It is the credential's own issuer
- * when the credential has no parent.
+ * when the credential has no parent. A refused one carries the code of why, for the operator.
  */
 export type Verdict =
   | { valid: true; vc: DelegationCredential; isJwt: boolean; rootIssuer: string; expiresAt?: number }
-  | { valid: false; reason: string; vc?: DelegationCredential };
+  | ({ valid: false; reason: string; vc?: DelegationCredential } & Coded);
 
 /** A verdict, with what it was reached on. */
 export interface Authenticated {
@@ -112,7 +113,7 @@ export async function verifyEnvelope(
   verifier: Pick<DelegationCredentialVerifier, "verifyDelegationJwt">,
   jwt: string,
   options: VerifyDelegationVCOptions,
-): Promise<Pick<DelegationVCVerificationResult, "valid" | "reason" | "stage">> {
+): Promise<Pick<DelegationVCVerificationResult, "valid" | "reason" | "stage" | "code" | "transient">> {
   let envelopeJwt: string | undefined;
   try {
     envelopeJwt = canonicalVcJwt(jwt);
@@ -121,7 +122,12 @@ export async function verifyEnvelope(
   }
   const checked = await verifier.verifyDelegationJwt(envelopeJwt ?? jwt, options);
   return checked.valid && envelopeJwt === undefined
-    ? { valid: false, reason: "JWT envelope signature is not valid: its signature is not base64url", stage: "signature" }
+    ? {
+        valid: false,
+        reason: "JWT envelope signature is not valid: its signature is not base64url",
+        stage: "signature",
+        ...coded("invalid_proof"),
+      }
     : checked;
 }
 
@@ -144,6 +150,7 @@ export async function checkPresentation(
       return {
         valid: false,
         reason: `Malformed delegation credential: it ${read.unread}`,
+        ...coded("delegation_malformed"),
         // Plain data nested too deep is a presentation with no signed
         // form: it has no digest, and is named by the id the walk that
         // refused it read. Of a value that is not plain data nothing is
@@ -181,6 +188,7 @@ export async function checkPresentation(
       valid: false,
       reason: UNVERIFIABLE_DELEGATION,
       vc: verdict.vc,
+      ...coded("runtime_error"),
       ...(await refused()),
     };
   }

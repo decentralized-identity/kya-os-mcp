@@ -41,6 +41,7 @@ import {
 import { logger } from "../logging/index.js";
 import { TtlCache } from "../utils/ttl-cache.js";
 import { isRecord } from "../utils/guards.js";
+import { coded } from "../utils/refusal.js";
 import type {
   KyaOsChallengeFormatter,
   KyaOsToolHandler,
@@ -285,7 +286,7 @@ export function createDelegationVerification(
       // parseVCJWT repairs a payload that is not well-formed UTF-8, and SPEC §7.8 does not read
       // one: a VC-JWT acted on here must also show the id it is recorded by.
       if (!parsed?.payload?.vc || !readsVcJwtClaims(delegationArg)) {
-        return { verdict: { valid: false, reason: "Invalid VC-JWT format" }, ancestors: [] };
+        return { verdict: { valid: false, reason: "Invalid VC-JWT format", ...coded("delegation_malformed") }, ancestors: [] };
       }
       // Parse only here. The chain must admit the claimed root before any
       // issuer document is resolved, including the JWT leaf's. The verifier
@@ -295,7 +296,7 @@ export function createDelegationVerification(
       // Admission reads this claim before the envelope verifier. Preserve the
       // JWT basic-stage diagnostic when it cannot name an issuer at all.
       const issuerFailure = credentialIssuerRefusal(vc);
-      if (issuerFailure) return { verdict: { valid: false, reason: issuerFailure, vc }, ancestors: [] };
+      if (issuerFailure) return { verdict: { valid: false, reason: issuerFailure, vc, ...coded("delegation_malformed") }, ancestors: [] };
       // Preserve the normalized credential's proof marker. It is never used as
       // evidence: the leaf verifier receives the original compact JWT below.
       if (!vc.proof) {
@@ -325,6 +326,7 @@ export function createDelegationVerification(
       chain = {
         valid: false,
         reason: UNVERIFIABLE_DELEGATION,
+        ...coded("runtime_error"),
       };
     }
 
@@ -337,6 +339,8 @@ export function createDelegationVerification(
           valid: false,
           reason: chain.reason ?? "Unknown delegation validation error",
           vc,
+          // The chain walk codes every chain it refuses.
+          ...coded(chain.code ?? "delegation_invalid"),
         },
         ancestors,
         ...(unreadAncestor ? { unreadAncestor } : {}),
@@ -354,7 +358,7 @@ export function createDelegationVerification(
     // that named no issuer did not validate, so this refusal is never reached and only keeps the type.
     const rootIssuer = credentialIssuerDid(chain.evaluated?.[0] ?? vc);
     if (rootIssuer === undefined) {
-      return { verdict: { valid: false, reason: UNVERIFIABLE_DELEGATION, vc }, ancestors };
+      return { verdict: { valid: false, reason: UNVERIFIABLE_DELEGATION, vc, ...coded("runtime_error") }, ancestors };
     }
     return {
       verdict: { valid: true, vc, isJwt, rootIssuer, ...(expiresAt !== undefined ? { expiresAt } : {}) },
@@ -368,7 +372,14 @@ export function createDelegationVerification(
     // holding a value that later throws while being encoded. Never repair signed credential data.
     if (!check.valid || isEncodableDelegation(check.vc, arrivedAsJwt(check, delegationArg))) return check;
     const { evidence, chainEvidence } = check;
-    return { valid: false, reason: UNENCODABLE_DELEGATION_REASON, vc: check.vc, evidence, chainEvidence };
+    return {
+      valid: false,
+      reason: UNENCODABLE_DELEGATION_REASON,
+      vc: check.vc,
+      evidence,
+      chainEvidence,
+      ...coded("delegation_malformed"),
+    };
   }
 
   async function buildNeedsAuthorizationChallenge(

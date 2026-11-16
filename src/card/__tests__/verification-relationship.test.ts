@@ -77,19 +77,23 @@ describe('the verification relationship of a status list key', () => {
     expect(await verifyList(documentOf({ verificationMethod: [methodOf(key)] }), list)).toBe(false);
   });
 
-  it('rejects a key listed under assertionMethod when its document is over 1 MiB', async () => {
+  it('refuses a key listed under assertionMethod as did_invalid when its document is over 1 MiB', async () => {
     const padding = 'x'.repeat(1_048_576);
-    expect(await verifyList(documentOf({ verificationMethod: [methodOf(key)], assertionMethod: [key.method], padding }), list)).toBe(false);
+    await expect(
+      verifyList(documentOf({ verificationMethod: [methodOf(key)], assertionMethod: [key.method], padding }), list),
+    ).rejects.toMatchObject({ code: 'did_invalid' });
   });
 
-  it('verifies with a key id of 4,096 units, and resolves nothing for a proof naming one over that', async () => {
+  it('verifies with a key id of 4,096 units, and refuses one over that as did_invalid, resolving nothing', async () => {
     for (const [length, verifies] of [[4_096, true], [4_097, false]] as const) {
       const long = acmeKey('k'.repeat(length - `${ACME}#`.length));
       const document = documentOf({ verificationMethod: [methodOf(long)], assertionMethod: [long.method] });
       const asked: string[] = [];
       const resolve = resolverWith(document);
       const verify = createStatusListProofVerifier({ didResolver: { resolve: async (did) => (asked.push(did), resolve.resolve(did)) } });
-      expect(await verify(statusList(long))).toBe(verifies);
+      const verified = Promise.resolve(verify(statusList(long)));
+      if (verifies) expect(await verified).toBe(true);
+      else await expect(verified).rejects.toMatchObject({ code: 'did_invalid' });
       expect(asked).toEqual(verifies ? [ACME] : []);
     }
   });
@@ -159,9 +163,9 @@ describe('verifyEddsaJcs2022 and the proof purpose it checks for', () => {
     expect(await verifyEddsaJcs2022(invocation, listedUnder('assertionMethod'), 'capabilityInvocation')).toBe(false);
   });
 
-  it('resolves false, without throwing, when the DID resolves to no document', async () => {
+  it('throws did_unavailable, not a verdict on the proof, when the DID resolves to no document', async () => {
     const nothing: DIDResolver = { resolve: async () => null };
-    expect(await verifyEddsaJcs2022(invocation, nothing, 'capabilityInvocation')).toBe(false);
+    await expect(verifyEddsaJcs2022(invocation, nothing, 'capabilityInvocation')).rejects.toMatchObject({ code: 'did_unavailable' });
   });
 
   it('finds no key for an empty issuer, whatever document a resolver returns for it', async () => {

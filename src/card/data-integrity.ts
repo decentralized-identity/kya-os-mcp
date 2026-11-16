@@ -8,16 +8,22 @@
  * base58btc multibase. The key is the issuer's verification method `proof.verificationMethod`
  * names, and that method must belong to the document's `issuer`, whose DID document must list it
  * under the verification relationship the proof purpose names
- * (../delegation/verification-relationship). Every failure returns `false`.
+ * (../delegation/verification-relationship). A proof that does not verify returns `false`; an
+ * issuer DID document that cannot be read throws a coded refusal instead, as the delegation
+ * verifier codes it, since that says nothing about the proof.
  */
 
 import { canonicalize } from 'json-canonicalize';
-import { resolveBoundedDid } from '../delegation/did-resource-limits.js';
+import { resolveExplained, type ExplainedResolution } from '../delegation/did-resolution-failure.js';
+import { logger } from '../logging/index.js';
+import { DeadlineExceededError } from '../utils/deadline.js';
+import { describeValue } from '../utils/describe-value.js';
+import { RefusalError, refusalCodeOf } from '../utils/refusal.js';
 import { isRecord, issuerOf } from '../utils/guards.js';
 import { base58Decode, base58Encode } from '../utils/base58.js';
 import { base64urlDecodeToBytes } from '../utils/base64.js';
 import { verificationMethodJwk } from '../delegation/verification-method-key.js';
-import type { DIDResolver } from '../delegation/vc-verifier.types.js';
+import type { DIDDocument, DIDResolver } from '../delegation/vc-verifier.types.js';
 import {
   retrieveVerificationMethod,
   type VerificationRelationship,
@@ -32,9 +38,11 @@ const MAX_PROOF_VALUE_BASE58 = 100;
 /**
  * Verify a document's single `DataIntegrityProof` / `eddsa-jcs-2022` proof made for `proofPurpose`
  * by an Ed25519 key the issuer's DID document lists under the `proofPurpose` verification
- * relationship. Resolves `true` only when every check passes; a malformed proof, an unresolvable
- * key or a key listed only for other purposes resolves `false`. A throwing resolver propagates, and
- * so does one that has not answered in `timeoutMs`, by default 5,000 ms, so a caller that wants a boolean wraps the call.
+ * relationship. Resolves `true` only when every check passes; a malformed proof, a key the document
+ * does not list or lists only for other purposes resolves `false`. An issuer DID document that
+ * cannot be read throws a {@link RefusalError} coded by why, as {@link issuerDocument} says, and one
+ * not read within `timeoutMs`, by default 5,000 ms, a {@link DeadlineExceededError}, so a caller
+ * that wants a boolean wraps the call, as {@link verifyEddsaJcs2022Proof} does.
  */
 export async function verifyEddsaJcs2022(
   document: Record<string, unknown>,
@@ -53,15 +61,13 @@ export async function verifyEddsaJcs2022(
 
   const issuer = issuerOf(document.issuer);
   const did = verificationMethod.split('#')[0];
-  if (issuer === undefined || did !== issuer) return false;
+  if (!issuer || did !== issuer) return false;
 
   const signature = base58Decode(proofValue.slice(1), MAX_PROOF_VALUE_BASE58);
   if (signature.length !== ED25519_SIGNATURE_LENGTH) return false;
 
-  const didDocument = await resolveBoundedDid(didResolver, did, verificationMethod, timeoutMs);
-  const method = didDocument
-    ? retrieveVerificationMethod(didDocument, did, verificationMethod, proofPurpose)
-    : undefined;
+  const didDocument = await issuerDocument(didResolver, did, verificationMethod, timeoutMs);
+  const method = retrieveVerificationMethod(didDocument, did, verificationMethod, proofPurpose);
   const jwk = method ? verificationMethodJwk(method) : undefined;
   if (!jwk || jwk.kty !== 'OKP' || jwk.crv !== 'Ed25519') return false;
 
@@ -77,6 +83,50 @@ export async function verifyEddsaJcs2022(
   if (unsecured['@context'] !== undefined) options['@context'] = unsecured['@context'];
 
   return ed25519VerifyRaw(jwk, signature, await hashData(options, unsecured));
+}
+
+/**
+ * {@link verifyEddsaJcs2022} as a proof verifier seam answers: `true` or `false` for the proof, a
+ * refusal coded by why when the issuer's DID document cannot be read, and a
+ * {@link DeadlineExceededError} when it is not read in time, both for the caller to code as it codes
+ * any throw. Any other throw, from a proof the decoder or the signature check cannot read, is `false`.
+ */
+export async function verifyEddsaJcs2022Proof(
+  document: Record<string, unknown>,
+  didResolver: DIDResolver,
+  proofPurpose: VerificationRelationship,
+  timeoutMs?: number,
+): Promise<boolean> {
+  try {
+    return await verifyEddsaJcs2022(document, didResolver, proofPurpose, timeoutMs);
+  } catch (error) {
+    if (error instanceof RefusalError || error instanceof DeadlineExceededError) throw error;
+    return false;
+  }
+}
+
+/**
+ * The DID document of `did`, the proof's issuer, resolved within the limits for its key `key`. When
+ * none is found it throws a {@link RefusalError} as the delegation verifier refuses the DID: `Could
+ * not resolve issuer DID`, with the code of the cause the resolver reports and its detail where a
+ * refusal shows it, or `did_invalid` when the limits refused it. A resolver that throws is
+ * `did_unavailable`, unless its error carries a code of its own, and its words are logged, never
+ * shown; a deadline that passes rejects as it does.
+ */
+async function issuerDocument(
+  didResolver: DIDResolver, did: string, key: string, timeoutMs: number | undefined,
+): Promise<DIDDocument> {
+  const unresolved = (why: string): string => `Could not resolve issuer DID: ${describeValue(did)}${why}`;
+  let resolved: ExplainedResolution;
+  try {
+    resolved = await resolveExplained(didResolver, did, key, timeoutMs);
+  } catch (error) {
+    if (error instanceof RefusalError || error instanceof DeadlineExceededError) throw error;
+    logger.warn(`[eddsa-jcs-2022] Resolving ${did} failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new RefusalError(refusalCodeOf(error, 'did_unavailable'), unresolved(''));
+  }
+  if (resolved.document === null) throw new RefusalError(resolved.code, unresolved(resolved.why));
+  return resolved.document;
 }
 
 /**

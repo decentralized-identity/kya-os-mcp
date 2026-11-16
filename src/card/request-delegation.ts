@@ -19,7 +19,8 @@
  */
 
 import { answerWithinDeadline, DeadlineExceededError, dependencyTimeout } from '../utils/deadline.js';
-import { coded, refusalCodeOf, type Coded } from '../utils/refusal.js';
+import { coded, RefusalError, refusalCodeOf, type Coded } from '../utils/refusal.js';
+import { sanitizeForMessage } from '../utils/message-text.js';
 import type { RefusalCode } from '../refusal-codes.js';
 import { admitsRootIssuer, assertTrustedRootIssuers } from '../delegation/root-admission.js';
 import { revocationEntriesOf, validateDelegationChain, type DelegationChain } from './delegation.js';
@@ -301,8 +302,10 @@ async function obtainChain(
 /**
  * Run the hop-proof seam, fail-closed, under a deadline of `timeoutMs`: why the hop is
  * refused, with its code, or `undefined` when its proof verified. A proof that did not verify is
- * `invalid_proof`; a verifier that threw is `runtime_error`, and one that has not answered by the
- * deadline is `deadline_exceeded`, with a reason that says so.
+ * `invalid_proof`; a verifier that threw a {@link RefusalError}, as the library's does when the
+ * issuer's DID document cannot be read, is refused with its code and message; any other throw is
+ * `runtime_error`; and a verifier, or its DID resolution, that has not answered by the deadline is
+ * `deadline_exceeded`, with a reason that says so.
  */
 async function hopProofRefusal(
   credential: Record<string, unknown>,
@@ -313,9 +316,9 @@ async function hopProofRefusal(
     const verified = await answerWithinDeadline('the hop proof verifier', () => verifyHopProof(credential), timeoutMs);
     return verified === true ? undefined : { reason: 'proof did not verify', ...coded('invalid_proof') };
   } catch (error) {
-    return error instanceof DeadlineExceededError
-      ? { reason: error.message, ...coded('deadline_exceeded') }
-      : { reason: 'proof did not verify', ...coded(refusalCodeOf(error, 'runtime_error')) };
+    if (error instanceof DeadlineExceededError) return { reason: error.message, ...coded('deadline_exceeded') };
+    if (error instanceof RefusalError) return { reason: sanitizeForMessage(error.message), ...coded(error.code) };
+    return { reason: 'proof did not verify', ...coded(refusalCodeOf(error, 'runtime_error')) };
   }
 }
 

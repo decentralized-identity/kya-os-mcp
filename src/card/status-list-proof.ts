@@ -10,13 +10,15 @@
  *
  * The cryptosuite itself is in ./data-integrity; a status list is an assertion by its issuer, so
  * the proof purpose is `assertionMethod`, and the issuer's DID document must list the key under
- * `assertionMethod`. Every failure returns `false`.
+ * `assertionMethod`. A list whose proof does not verify returns `false`; one whose issuer's DID
+ * document cannot be read throws a refusal coded by why, `did_unavailable` or `deadline_exceeded`
+ * for an outage, which the revocation checker fails closed with, as it does with any throw.
  */
 
 import type { DIDResolver } from '../delegation/vc-verifier.types.js';
 import { dependencyTimeout } from '../utils/deadline.js';
 import { ASSERTION_METHOD } from '../delegation/verification-relationship.js';
-import { signEddsaJcs2022, verifyEddsaJcs2022, type EddsaJcs2022Proof } from './data-integrity.js';
+import { signEddsaJcs2022, verifyEddsaJcs2022Proof, type EddsaJcs2022Proof } from './data-integrity.js';
 import type { ProofSigner } from './proof/types.js';
 
 /**
@@ -45,11 +47,7 @@ export interface StatusListProofVerifierDeps {
 export function createStatusListProofVerifier(deps: StatusListProofVerifierDeps): StatusListProofVerifier {
   const timeoutMs = dependencyTimeout(deps.dependencyTimeoutMs);
   return async function verifyStatusList(credential: Record<string, unknown>): Promise<boolean> {
-    try {
-      return await verifyEddsaJcs2022(credential, deps.didResolver, ASSERTION_METHOD, timeoutMs);
-    } catch {
-      return false;
-    }
+    return verifyEddsaJcs2022Proof(credential, deps.didResolver, ASSERTION_METHOD, timeoutMs);
   };
 }
 

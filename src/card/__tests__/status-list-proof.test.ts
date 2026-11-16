@@ -9,6 +9,7 @@ import { ed25519SignerFromJwk } from '../proof/signer.js';
 import { base58Encode } from '../../utils/base58.js';
 import type { DIDDocument, DIDResolver } from '../../delegation/vc-verifier.types.js';
 import type { SafeFetch } from '../../utils/safe-fetch.js';
+import { logger } from '../../logging/index.js';
 import { BIT_SET, codedAs } from '../../__tests__/utils/refusal-coding.js';
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -136,10 +137,10 @@ describe('createStatusListProofVerifier (eddsa-jcs-2022)', () => {
     expect(await verify(signed, didDocument({ id: METHOD, publicKeyMultibase: multibase }))).toBe(true);
   });
 
-  it('rejects when the method is not in the DID document, or the DID does not resolve', async () => {
+  it('rejects when the method is not in the DID document, and throws did_unavailable when the DID does not resolve', async () => {
     const signed = signEddsaJcs2022(statusList([5]));
     expect(await verify(signed, didDocument({ id: `${ISSUER}#other`, publicKeyJwk: publicJwk }))).toBe(false);
-    expect(await verify(signed, null)).toBe(false);
+    await expect(verify(signed, null)).rejects.toMatchObject({ code: 'did_unavailable', message: `Could not resolve issuer DID: "${ISSUER}"` });
   });
 
   it('rejects a key from a different pair', async () => {
@@ -168,10 +169,16 @@ describe('createStatusListProofVerifier (eddsa-jcs-2022)', () => {
     expect(await verify(foreign)).toBe(false);
   });
 
-  it('returns false rather than throwing when the resolver throws', async () => {
+  it('throws did_unavailable, without its words, when the resolver throws, and logs them', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const didResolver: DIDResolver = { resolve: async () => { throw new Error('offline'); } };
     const verifyList = createStatusListProofVerifier({ didResolver });
-    expect(await verifyList(signEddsaJcs2022(statusList([5])))).toBe(false);
+    await expect(verifyList(signEddsaJcs2022(statusList([5])))).rejects.toMatchObject({
+      code: 'did_unavailable',
+      message: `Could not resolve issuer DID: "${ISSUER}"`,
+    });
+    expect(warn).toHaveBeenCalledWith(`[eddsa-jcs-2022] Resolving ${ISSUER} failed: offline`);
+    warn.mockRestore();
   });
 });
 

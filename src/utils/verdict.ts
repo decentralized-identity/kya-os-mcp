@@ -3,7 +3,7 @@
  * it: a custom signature verifier, or the per-credential verifier of a chain walk. Such code can
  * answer anything, and reading `valid` by its truthiness would verify on `"false"`, `1` or `{}`,
  * so a verdict passes only on the literal `true` the type promises, the rule
- * `delegation/revocation-answer.ts` applies to a revocation answer.
+ * `utils/revocation-answer.ts` applies to a revocation answer.
  */
 
 import { describeValue } from './describe-value.js';

@@ -3,10 +3,11 @@
  * resolver first, then the resolver `delegation.didResolvers` configures for the DID's method, then
  * the built-in did:key and did:web resolvers, the network ones only while the verifier's deadline
  * holds. For each DID it reports the failure the last resolver it asked reported, so that a
- * refusal of the DID as unresolvable says why.
+ * refusal of the DID as unresolvable says why. A DID of a method none of them serves, with no
+ * resolver of the host's to ask, is `invalid_document`: asking again cannot change that.
  */
 
-import { DidResolutionFailures, reportedFailure } from "../delegation/did-resolution-failure.js";
+import { DidResolutionFailures, reportedFailure, unservedMethod } from "../delegation/did-resolution-failure.js";
 import type { DIDDocument, DIDResolver } from "../delegation/vc-verifier.js";
 import { getDidMethod } from "../utils/did-helpers.js";
 
@@ -28,6 +29,12 @@ export interface GateDidResolvers {
 export function createGateDidResolver(resolvers: GateDidResolvers): DIDResolver {
   const { custom, configured, didKey, didWeb, dependencyTimeoutMs } = resolvers;
   const failures = new DidResolutionFailures();
+
+  /** Whether a resolver other than the host's own serves `did`'s method, `method`, deadline or not. */
+  const serves = (did: string, method: string | null): boolean =>
+    (method !== null && Object.hasOwn(configured, method)) ||
+    did.startsWith("did:key:") ||
+    (didWeb !== undefined && did.startsWith("did:web:"));
 
   /** `document`, after recording for `did` the failure `asked`, the last resolver asked, reports when it is `null`. */
   const answer = (did: string, asked: DIDResolver | undefined, document: DIDDocument | null): DIDDocument | null => {
@@ -68,6 +75,10 @@ export function createGateDidResolver(resolvers: GateDidResolvers): DIDResolver 
         return answer(did, didWeb, (await didWeb.resolve(did)) ?? null);
       }
 
+      if (custom === undefined && !serves(did, method)) {
+        failures.record(did, unservedMethod("the delegation gate", did));
+        return null;
+      }
       return answer(did, asked, null);
     },
     lastFailure: (did: string) => failures.get(did),

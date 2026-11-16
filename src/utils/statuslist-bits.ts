@@ -152,16 +152,17 @@ export async function decodeStatusListPayload(
  * than 32-bit bitwise ops, which coerce to uint32 first: an index ≥ 2^32
  * would silently wrap onto a low byte and read the WRONG — often clear — bit,
  * turning an out-of-range index that MUST fail-closed into a fail-OPEN "not
- * revoked". NaN/negative/fractional/out-of-buffer indexes throw.
+ * revoked". NaN/negative/fractional/out-of-buffer indexes throw a
+ * `delegation_malformed` {@link RefusalError}: the entry names a bit the list
+ * does not have, which no later read of the list changes.
  */
 export function readStatusBit(bits: Uint8Array, index: number): boolean {
   const byte = Number.isInteger(index) && index >= 0
     ? bits[Math.floor(index / 8)]
     : undefined;
   if (byte === undefined) {
-    throw new Error(
-      `Bit index ${index} out of range for the status list`,
-    );
+    // The entry names a bit the list does not have: no later read of the list changes that.
+    throw new RefusalError('delegation_malformed', `Bit index ${index} out of range for the status list`);
   }
   return (byte & (0x80 >> index % 8)) !== 0;
 }

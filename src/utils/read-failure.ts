@@ -1,13 +1,14 @@
 /**
  * Why a read of a URL failed, kept on the error the read throws in its own words, so that a caller
  * can say why without parsing the message. The reader's own rules refused the host (the
- * private-network rule or the scheme rule, on the URL or on a redirect), its deadline passed, or what
- * came back could not be read as what was asked for. An error the transport throws carries none:
- * its words are the transport's, and may say more about the network than a refusal should.
+ * private-network rule or the scheme rule, on the URL or on a redirect), its deadline passed, what
+ * came back held more bytes than the read allows, or it could not be read as what was asked for. An
+ * error the transport throws carries none: its words are the transport's, and may say more about
+ * the network than a refusal should.
  */
 
 /** The kind of failure a {@link ReadFailureError} stands for. */
-export type ReadFailureKind = 'host_refused' | 'deadline_exceeded' | 'unavailable';
+export type ReadFailureKind = 'host_refused' | 'deadline_exceeded' | 'too_large' | 'unavailable';
 
 /**
  * An error a reader throws in its own words, with the {@link ReadFailureKind} it stands for. The

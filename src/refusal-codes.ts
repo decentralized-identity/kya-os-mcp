@@ -25,7 +25,8 @@ export const REFUSAL_CODES = Object.freeze({
    * states is not a date, or it is not plain data, nests too deep or holds a value that cannot be
    * encoded. Also a status entry no
    * checker of the verifier reads: one that states another `statusPurpose` than the checker's, a
-   * `statusSize` other than 1, or an index that is not a non-negative decimal string.
+   * `statusSize` other than 1, an index that is not a non-negative decimal string, or an index past
+   * the end of its status list.
    */
   delegation_malformed: 'delegation_malformed',
   /** The credential, a VC-JWT's `exp`, or a credential of the chain is past its expiry, or its delegation's `status` is `expired`. */
@@ -56,8 +57,10 @@ export const REFUSAL_CODES = Object.freeze({
   key_not_authorized: 'key_not_authorized',
   /**
    * The issuer's DID, or the document resolved for it, is not valid: the DID or the key id is over
-   * its length limit, the document is over a limit, is not plain JSON data or is not a document of
-   * that DID, or the key it lists for the proof is not a usable Ed25519 public key.
+   * its length limit, the DID is a did:key whose public key does not decode or a DID of a method no
+   * resolver of the verifier serves, the document is over a limit, its byte limit included, is not
+   * plain JSON data or is not a document of that DID, or the key it lists for the proof is not a
+   * usable Ed25519 public key.
    */
   did_invalid: 'did_invalid',
   /**

@@ -69,7 +69,9 @@ export class DidResolutionFailures {
 
 /**
  * The failure an error thrown while reading a DID document from `url` stands for, under a deadline
- * of `timeoutMs`. A transport's own error is `unavailable`, and its words are left to the log.
+ * of `timeoutMs`. A transport's own error is `unavailable`, and its words are left to the log. A
+ * body over the byte cap is `invalid_document`: no document of the DID may be that large, so asking
+ * again does not help.
  */
 export function readFailureOf(error: unknown, url: string, timeoutMs: number): DidResolutionFailure {
   const kind = readFailureKind(error);
@@ -80,7 +82,16 @@ export function readFailureOf(error: unknown, url: string, timeoutMs: number): D
   if (kind === 'deadline_exceeded') {
     return { cause: kind, detail: `${message}: no document arrived within ${describeTimeout(timeoutMs)}` };
   }
-  return { cause: kind, detail: message };
+  return { cause: kind === 'too_large' ? 'invalid_document' : kind, detail: message };
+}
+
+/** An `invalid_document` failure: `resolver`, a resolver of some methods, resolves no DID of `did`'s method. */
+export function unservedMethod(resolver: string, did: string): DidResolutionFailure {
+  const method = /^did:([^:]*):/.exec(did)?.[1];
+  return {
+    cause: 'invalid_document',
+    detail: method === undefined ? `${resolver} resolves no such DID` : `${resolver} resolves no ${describeValue(method)} DID`,
+  };
 }
 
 /** An `invalid_document` failure: the document read from `url` is not a valid one of the DID, as `why` says. */

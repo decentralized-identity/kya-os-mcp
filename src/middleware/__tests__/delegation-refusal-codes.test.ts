@@ -26,8 +26,9 @@ import { AuditRecorderService } from '../../audit/recorder-service.js';
 import { createAuditTrail, type AuditTrailEventInput } from '../../audit/service.js';
 import type { PartyRef } from '../../audit/types.js';
 import { failCredentialDigests, makeServer } from './helpers/delegation-gate-server.js';
-import { ARGS, CONSENT, TOOL, released } from './helpers/delegated-call.js';
+import { ARGS, CONSENT, SCOPE, TOOL, released } from './helpers/delegated-call.js';
 import { delegate, party, type Party } from './helpers/delegating-party.js';
+import { delegationRecord, keyOf, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -84,6 +85,12 @@ async function presentedTo(delegation: KyaOsDelegationConfig, presented: (user: 
 /** A credential `user` grants `agent`. */
 const granted = (user: Party, agent: Party): Promise<DelegationCredential> => delegate(user, agent.did);
 
+/** A credential the DID `issuer` grants `agent`, signed with a key of its own. */
+const grantedBy = (issuer: string) => async (_user: Party, agent: Party): Promise<DelegationCredential> => {
+  const constraints = { scopes: [SCOPE], notAfter: Math.floor(Date.now() / 1000) + 3600 };
+  return signedCredential(await keyOf(issuer, 'key-1'), { record: delegationRecord(issuer, { subjectDid: agent.did, constraints }) });
+};
+
 describe('a delegation the gate refuses', () => {
   it.each<[string, KyaOsDelegationConfig, (user: Party, agent: Party) => Promise<unknown>, RefusalCode]>([
     ['whose root trustedRootIssuers does not list', { trustedRootIssuers: ['did:web:trusted.example'] }, granted, 'untrusted_root'],
@@ -114,6 +121,8 @@ describe('a delegation the gate refuses', () => {
       'delegation_malformed',
     ],
     ['whose issuer DID is not resolved in time', { didResolver: { resolve: never } }, granted, 'deadline_exceeded'],
+    ['whose issuer is a did:key that does not decode', {}, grantedBy('did:key:zNotAKey'), 'did_invalid'],
+    ['whose issuer is a DID of a method no resolver serves', {}, grantedBy('did:ion:EiAbc'), 'did_invalid'],
     [
       'whose chain is not resolved in time',
       { resolveDelegationChain: never },

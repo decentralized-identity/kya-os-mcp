@@ -6,7 +6,7 @@
  * URL's origin and path as a refusal quotes any value its sender chose (`describeValue`), since an
  * operator may keep a key in its credentials, query or fragment; and the bytes must be valid UTF-8.
  * Each refusal in the read's own words is a {@link ReadFailureError}: the deadline is
- * `deadline_exceeded`, and every other is `unavailable`.
+ * `deadline_exceeded`, a body over the byte cap is `too_large`, and every other is `unavailable`.
  *
  * A WHATWG `ReadableStream` body is read as it streams, never through `response.json()` or
  * `response.text()`, which allocate the whole body before a caller can check its size. A response
@@ -142,7 +142,7 @@ export async function fetchBoundedText(
     const bytes = await readCappedBody(response.body, {
       maxBytes: policy.maxBytes,
       signal: controller.signal,
-      tooLarge: () => new ReadFailureError('unavailable', `${label} byte limit exceeded`),
+      tooLarge: () => new ReadFailureError('too_large', `${label} byte limit exceeded`),
       maxEmptyChunks: MAX_EMPTY_CHUNKS,
       tooManyEmptyChunks: () => new ReadFailureError('unavailable', `${label} empty-chunk limit exceeded`),
     });
@@ -187,7 +187,7 @@ async function readWithoutStream(response: Response, policy: BoundedReadPolicy, 
         'or a response with a text() or json() method',
     );
   }
-  if (exceedsUtf8Bytes(read, policy.maxBytes)) throw new ReadFailureError('unavailable', `${label} byte limit exceeded`);
+  if (exceedsUtf8Bytes(read, policy.maxBytes)) throw new ReadFailureError('too_large', `${label} byte limit exceeded`);
   return read;
 }
 

@@ -137,15 +137,15 @@ function vetRedirectTarget({ target, from, crossOrigin }: RedirectTarget): void 
   }
 }
 
-/** Enforce the size cap and project a RawResponse into the FetchLike-compatible shape. */
+/** Enforce the size cap, refusing a larger body as `too_large`, and project a RawResponse into the FetchLike-compatible shape. */
 async function finalize(raw: RawResponse, maxBytes: number): Promise<SafeFetchResponse> {
   const declared = Number(raw.headers.get('content-length'));
   if (Number.isFinite(declared) && declared > maxBytes) {
-    throw new Error(`safe-fetch: declared content-length ${declared} exceeds cap ${maxBytes}`);
+    throw new ReadFailureError('too_large', `safe-fetch: declared content-length ${declared} exceeds cap ${maxBytes}`);
   }
   const body = await raw.text();
   if (Buffer.byteLength(body, 'utf8') > maxBytes) {
-    throw new Error(`safe-fetch: response body exceeds size cap ${maxBytes}`);
+    throw new ReadFailureError('too_large', `safe-fetch: response body exceeds size cap ${maxBytes}`);
   }
   return {
     ok: raw.status >= 200 && raw.status < 300,

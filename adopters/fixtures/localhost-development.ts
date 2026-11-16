@@ -2,7 +2,8 @@
  * An adopter runs every party on its own machine, each on a `*.localhost` name, and serves the DID
  * documents from memory through its own `FetchProvider`. The private-network rule refuses those
  * names, as it must in production; `development: true` on the did:web resolver lets a developer
- * read them, the refusal says so, and production refuses the switch itself.
+ * read them, the refusal says so with the code `host_refused`, and production refuses the switch
+ * itself.
  */
 import assert from 'node:assert/strict';
 import { DelegationCredentialVerifier, createDidWebResolver } from '@kya-os/mcp';
@@ -41,12 +42,14 @@ if (isProductionChild()) {
       },
     },
     {
-      name: 'without development: true, resolution fails and the reason names development: true',
+      name: 'without development: true, resolution fails as host_refused and the reason names development: true',
       run: async () => {
         assert.equal(await createDidWebResolver(provider).resolve(ISSUER_DID), null, 'a *.localhost document resolved');
         const result = await verifierOver(false).verifyDelegationCredential(credential);
         assert.equal(result.valid, false, 'the credential verified');
         assert.ok(result.reason?.includes('development: true'), `the reason does not name development: true: ${result.reason}`);
+        assert.equal(result.code, 'host_refused', result.reason ?? 'no reason given');
+        assert.equal(result.transient, false, 'a refused host was refused as transient');
       },
     },
     {

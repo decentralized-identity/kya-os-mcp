@@ -7,6 +7,10 @@
  * The issuer is a did:key that signs its own credentials and its own status list, the simplest
  * deployment there is, so the only thing between the adopter and a verified credential is the
  * wrapper.
+ *
+ * Each refusal carries a `code` the adopter can branch on and whether it is `transient`: a revoked
+ * credential is `delegation_revoked` and stays refused, and a resolver that never answers is
+ * `deadline_exceeded`, which a later call may get past.
  */
 import assert from 'node:assert/strict';
 import { DelegationCredentialVerifier, createDidKeyResolver, type StatusListResolver } from '@kya-os/mcp';
@@ -57,7 +61,7 @@ const revoked = await issueDelegation(issuer, {
   credentialStatus: revocationEntry(LIST_URL, REVOKED_INDEX),
 });
 
-await runCases('wrapped-status-checker', 'a resolver that wraps createRevocationChecker passes a live credential and refuses a revoked one as revoked', [
+await runCases('wrapped-status-checker', 'a resolver that wraps createRevocationChecker passes a live credential, refuses a revoked one as delegation_revoked, and a stalled one as deadline_exceeded', [
   {
     name: "control: the checker, told the credential's issuer, reads the live entry as clear",
     run: async () => {
@@ -78,6 +82,23 @@ await runCases('wrapped-status-checker', 'a resolver that wraps createRevocation
       const result = await verifier.verifyDelegationCredential(revoked);
       assert.equal(result.valid, false, 'the revoked credential verified');
       assert.equal(result.statusOutcome, 'revoked', result.reason ?? 'no reason given');
+      assert.equal(result.code, 'delegation_revoked', result.reason ?? 'no reason given');
+      assert.equal(result.transient, false, 'a revoked credential was refused as transient');
+    },
+  },
+  {
+    name: 'a resolver that never answers is refused as deadline_exceeded, transient',
+    run: async () => {
+      const stalled = new DelegationCredentialVerifier({
+        didResolver,
+        signatureVerifier: ed25519SignatureVerifier,
+        statusListResolver: { checkStatus: () => new Promise<boolean>(() => undefined) },
+        dependencyTimeoutMs: 100,
+      });
+      const result = await stalled.verifyDelegationCredential(live);
+      assert.equal(result.valid, false, 'the credential verified without a status');
+      assert.equal(result.code, 'deadline_exceeded', result.reason ?? 'no reason given');
+      assert.equal(result.transient, true, 'a deadline was refused as lasting');
     },
   },
 ]);

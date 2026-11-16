@@ -2,8 +2,9 @@
  * An adopter adds KYA-OS to an MCP server with `withKyaOs` and its defaults, pins the one root it
  * trusts, and calls a delegated tool in process through `serveInProcess`, as a script or a test
  * does. Every party is a did:key, so nothing is read over a network. A root it does not trust is
- * refused with the error code a client sees. `KyaOsConfig` takes `development: true`, and refuses it
- * at startup in production.
+ * refused with the error code a client sees, `delegation_invalid`, while the operator's log line
+ * says why in a code: `untrusted_root`. `KyaOsConfig` takes `development: true`, and refuses it at
+ * startup in production.
  */
 import assert from 'node:assert/strict';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -22,6 +23,23 @@ import { buildInProduction, isProductionChild, reportProductionBuild } from './s
 
 const TOOL = 'notes.read';
 const SCOPE = 'notes:read';
+
+/**
+ * What `work` comes to, and the lines it writes to the console as warnings and errors, where the
+ * library's default logger writes the lines an operator reads.
+ */
+async function withOperatorLines<T>(work: () => Promise<T>): Promise<{ value: T; lines: unknown[][] }> {
+  const lines: unknown[][] = [];
+  const { warn, error } = console;
+  console.warn = (...line: unknown[]) => void lines.push(line);
+  console.error = (...line: unknown[]) => void lines.push(line);
+  try {
+    return { value: await work(), lines };
+  } finally {
+    console.warn = warn;
+    console.error = error;
+  }
+}
 
 /** The middleware configuration a developer runs locally: the defaults, and `development: true`. */
 const developmentConfig = async (): Promise<KyaOsConfig> => ({ identity: await generateIdentity(crypto), development: true });
@@ -66,7 +84,7 @@ if (isProductionChild()) {
     })),
   );
 
-  await runCases('with-kya-os-defaults', 'withKyaOs with its defaults allows a call under the pinned root, refuses another root, and takes development: true', [
+  await runCases('with-kya-os-defaults', 'withKyaOs with its defaults allows a call under the pinned root, refuses another root and logs why in a code, and takes development: true', [
     {
       name: 'a delegated call under the pinned root is allowed',
       run: async () => {
@@ -76,12 +94,16 @@ if (isProductionChild()) {
       },
     },
     {
-      name: 'a call whose root is not trusted is refused as delegation_invalid',
+      name: 'a call whose root is not trusted is refused as delegation_invalid, and logged as untrusted_root',
       run: async () => {
-        const result = await readNote({ id: '7', _kyaos_delegation: strangerLeaf });
+        const { value: result, lines } = await withOperatorLines(() => readNote({ id: '7', _kyaos_delegation: strangerLeaf }));
         assert.equal(result.isError, true, 'the call under an untrusted root was allowed');
-        const refusal = JSON.parse(result.content[0]?.text ?? '{}') as { error?: unknown; reason?: unknown };
+        const refusal = JSON.parse(result.content[0]?.text ?? '{}') as Record<string, unknown>;
         assert.equal(refusal.error, 'delegation_invalid', String(refusal.reason));
+        assert.deepEqual(Object.keys(refusal).sort(), ['error', 'reason'], 'the client was told more than before');
+        const logged = lines.find(([text]) => String(text).startsWith('[kya-os] Delegation verification failed'));
+        assert.ok(logged, `no refusal was logged: ${JSON.stringify(lines)}`);
+        assert.deepEqual(logged[1], { code: 'untrusted_root', transient: false }, String(logged[0]));
       },
     },
     {

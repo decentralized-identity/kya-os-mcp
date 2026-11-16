@@ -18,6 +18,7 @@ import { withoutControlArgs } from '../../proof/covered-request.js';
 import { computeCanonicalHashes, RESPONSE_PROOF_PROFILE_ENVELOPE } from '../../proof/generator.js';
 import { keyOf, delegationRecord, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
+import { withOwnProto } from '../../__tests__/utils/own-proto.js';
 import type { PolicyEngine } from '../../policy/engine.js';
 import { didKeyFragment, generateDidKeyFromBase64 } from '../../utils/did-helpers.js';
 import { createKyaOsMiddleware } from '../with-kya-os.js';
@@ -25,7 +26,7 @@ import { createMiddleware, crypto, handshake, served, verifyReceived } from './h
 
 /** `call` as it arrives off the wire, with a member named `__proto__` that holds `amount`. */
 const withProtoMember = (call: Record<string, unknown>): Record<string, unknown> =>
-  JSON.parse(JSON.stringify(call).replace(/}$/, ',"__proto__":{"amount":999999}}')) as Record<string, unknown>;
+  withOwnProto(call, { amount: 999999 });
 
 /** What a copy shows of a call sent with `to` and a `__proto__` member: its keys, prototype and `amount`. */
 const shape = (copy: Record<string, unknown>) => ({
@@ -122,7 +123,7 @@ describe('a tool response with a member named __proto__, under the envelope prof
 
     const plain = await answer(PLAIN);
     expect((await verifyReceived(plain, expected)).valid).toBe(true);
-    const altered = JSON.parse(JSON.stringify(plain).replace(/}$/, ',"__proto__":{"isError":true}}')) as Record<string, unknown>;
+    const altered = withOwnProto(plain, { isError: true });
     expect((await verifyReceived(altered, expected)).valid).toBe(false);
   });
 });

@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { revokedProxy } from '../../__tests__/utils/verdict-answers.js';
 import type { DelegationRecord } from '../../types/protocol.js';
 import { MemoryResumeTokenStore, verifyOrHints, type AuthHandshakeConfig } from '../handshake.js';
 
@@ -73,6 +74,7 @@ describe('a delegation verifier whose answer is not a verdict', () => {
     ['an answer whose reason throws', throwingOn('reason', { valid: true, delegation: DELEGATION }), 'reading its answer threw'],
     ['an answer whose delegation throws', throwingOn('delegation', { valid: true }), 'reading its answer threw'],
     ['an answer whose credential throws', throwingOn('credential', { valid: true, delegation: DELEGATION }), 'reading its answer threw'],
+    ['an answer whose valid throws when it is looked at', { valid: revokedProxy(), delegation: DELEGATION }, 'reading its answer threw'],
   ])('does not authorize, and does not throw, on %s', async (_label, answer, why) => {
     const result = await outcome(answer);
     expect(result).toMatchObject({ authorized: false, reason: `${UNREADABLE}${why}` });

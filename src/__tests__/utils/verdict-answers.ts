@@ -27,3 +27,10 @@ export const NOT_FALSE: [string, unknown][] = [
   ['null', null],
   ['true', true],
 ];
+
+/** A proxy whose handler was revoked: `typeof` still names it an object, but any other look at it throws, `Array.isArray` included. */
+export function revokedProxy(): object {
+  const { proxy, revoke } = Proxy.revocable({}, {});
+  revoke();
+  return proxy;
+}

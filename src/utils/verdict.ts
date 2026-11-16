@@ -28,23 +28,22 @@ export function verdictReadThrew(who: string): Verdict {
  * whose `valid` is the literal `true`. On the literal `false` it is a refusal with the `reason` the
  * answer gave, when that is a string, as `sanitizeForMessage` bounds it. Anything else is a refusal
  * whose reason says the verdict could not be read: an answer that is not an object, a `valid` that
- * is not a boolean, a boxed one included, and an answer whose `valid` or `reason` throws when read.
- * Each member is read once, so a getter cannot answer one thing here and another later, and
- * nothing is converted, so no answer makes this throw.
+ * is not a boolean, a boxed one included, and an answer, or a `valid`, that throws when it is
+ * looked at, such as a getter that throws or a revoked proxy. Each member is read once, so a getter
+ * cannot answer one thing here and another later, nothing is converted, and every look at the
+ * answer is inside the `try`, so no answer makes this throw.
  */
 export function readVerdict(who: string, answer: unknown): Verdict {
-  if (!isRecord(answer)) return unreadableVerdict(who, `its answer (${describeValue(answer)}) is not an object`);
-  let valid: unknown;
-  let reason: unknown;
   try {
-    valid = answer.valid;
-    reason = answer.reason;
+    if (!isRecord(answer)) return unreadableVerdict(who, `its answer (${describeValue(answer)}) is not an object`);
+    const valid: unknown = answer.valid;
+    const reason: unknown = answer.reason;
+    if (valid === true) return { valid: true };
+    if (valid !== false) {
+      return unreadableVerdict(who, `the valid member of its answer (${describeValue(valid)}) is neither true nor false`);
+    }
+    return typeof reason === 'string' ? { valid: false, reason: sanitizeForMessage(reason) } : { valid: false };
   } catch {
     return verdictReadThrew(who);
   }
-  if (valid === true) return { valid: true };
-  if (valid !== false) {
-    return unreadableVerdict(who, `the valid member of its answer (${describeValue(valid)}) is neither true nor false`);
-  }
-  return typeof reason === 'string' ? { valid: false, reason: sanitizeForMessage(reason) } : { valid: false };
 }

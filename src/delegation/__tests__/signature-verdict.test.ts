@@ -9,6 +9,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { delegationRecord, keyOf, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
+import { revokedProxy } from '../../__tests__/utils/verdict-answers.js';
 import type { AgentIdentity } from '../../providers/base.js';
 import type { DelegationCredential } from '../../types/protocol.js';
 import { validateDelegationChain } from '../chain-enforcement.js';
@@ -97,6 +98,14 @@ describe('a signature verifier whose answer is not a verdict', () => {
     }
   });
 
+  it('refuses, and does not throw on, an answer whose valid member throws when it is looked at', async () => {
+    expect(await verdictOn({ valid: revokedProxy() })).toMatchObject({
+      valid: false,
+      stage: 'signature',
+      reason: `${UNREADABLE}reading its answer threw`,
+    });
+  });
+
   it('reads valid and reason once each on an answer it accepts', async () => {
     const reads = { valid: 0, reason: 0 };
     const answer = {
@@ -172,6 +181,7 @@ describe("validateDelegationChain's credential verifier", () => {
     const reads = { count: 0 };
     expect(await validate(throwingOn('valid', {}, reads))).toEqual({ valid: false, reason: `${unreadable}reading its answer threw` });
     expect(reads.count).toBe(1);
+    expect(await validate({ valid: revokedProxy() })).toEqual({ valid: false, reason: `${unreadable}reading its answer threw` });
   });
 
   it('refuses on the literal false with the reason the verifier gave', async () => {

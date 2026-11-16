@@ -148,6 +148,27 @@ describe('a chain refused as its credentials are verified', () => {
   });
 });
 
+describe('a chain whose leaf is not stable data', () => {
+  it('is refused as chain_invalid when the walk ends at another delegation than the leaf it was given', async () => {
+    const root = cred({ id: 'root', issuerDid: 'did:user', subjectDid: 'did:agent', scopes: ['read'], audience: SERVER });
+    const delegation = { ...root.credentialSubject.delegation };
+    let verified = false;
+    // The leaf's delegation id reads as `root` until the verifier has passed it, and as another after.
+    Object.defineProperty(delegation, 'id', { enumerable: true, get: () => (verified ? 'swapped' : 'root') });
+    const shifting = { ...root, credentialSubject: { ...root.credentialSubject, delegation } } as DelegationCredential;
+    const verifier: ChainEnforcementDeps['verifier'] = {
+      verifyDelegationCredential: async () => {
+        verified = true;
+        return { valid: true };
+      },
+    };
+
+    const result = await validateDelegationChain(shifting, { ...baseDeps, verifier });
+    expectRefused(result, 'chain_invalid');
+    expect(result.reason).toMatch(/ended at .* instead of leaf/);
+  });
+});
+
 describe('a chain refused by its revocation checker', () => {
   const checking = (isRevoked: (id: string) => Promise<unknown>): Partial<ChainEnforcementDeps> => ({
     revocationChecker: { isRevoked: isRevoked as never },

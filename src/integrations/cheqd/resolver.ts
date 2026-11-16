@@ -11,7 +11,8 @@
 
 import type { FetchProvider } from '../../providers/base.js';
 import type { DIDResolverFactory } from '../../delegation/did-resolver-registry.js';
-import type { DIDDocument, DIDResolver } from '../../delegation/vc-verifier.js';
+import type { DIDDocument, DIDResolver, DidResolutionFailure } from '../../delegation/vc-verifier.js';
+import { DidResolutionFailures, invalidDocument, readFailureOf } from '../../delegation/did-resolution-failure.js';
 import { hasIdTypeAndController } from '../../delegation/verification-method-shape.js';
 import { dependencyTimeout } from '../../utils/deadline.js';
 import { logger } from '../../logging/index.js';
@@ -81,6 +82,7 @@ export class DidCheqdResolver implements DIDResolver {
   private readonly cacheTtl: number;
   private readonly headers?: Record<string, string> | (() => Promise<Record<string, string>>);
   private readonly timeoutMs: number;
+  private readonly failures = new DidResolutionFailures();
 
   constructor(fetchProvider: FetchProvider, options: DidCheqdResolverOptions) {
     this.fetchProvider = fetchProvider;
@@ -99,37 +101,51 @@ export class DidCheqdResolver implements DIDResolver {
   }
 
   /**
+   * Why the last read of `did`'s document from the resolver endpoint found none: its deadline
+   * passed, the endpoint unavailable, or the document invalid. `undefined` once a read of it has
+   * found one, and for a DID this resolver never read.
+   */
+  lastFailure(did: string): DidResolutionFailure | undefined {
+    return this.failures.get(did);
+  }
+
+  /**
    * Fetch, measure, freeze and check the document for `did`, or `null`. The read's one deadline
    * holds the configured headers too, so a headers function that never answers ends the resolution
    * at the deadline and leaves nothing pending for the next one to join.
    */
   private async fetchDocument(did: string): Promise<LoadedDidDocument | null> {
+    const url = didCheqdToResolverUrl(did, this.resolverUrl);
     try {
       const init = this.requestHeaders().then((headers): RequestInit => ({ method: 'GET', headers }));
-      const json = await fetchBoundedJson(
-        this.fetchProvider, didCheqdToResolverUrl(did, this.resolverUrl), init,
-        { ...DID_RESOLUTION_ENVELOPE_READ, timeoutMs: this.timeoutMs },
-      );
+      const json = await fetchBoundedJson(this.fetchProvider, url, init, { ...DID_RESOLUTION_ENVELOPE_READ, timeoutMs: this.timeoutMs });
       const document = extractDidDocument(json);
       const measure = admitParsedDidDocument(document);
       if (!measure.ok || !isValidDIDDocument(document)) {
         const reason = measure.ok ? '' : `: ${measure.reason}`;
         logger.warn(`[DidCheqdResolver] Invalid DID Document resolving ${did}${reason}`);
-        return null;
+        return this.failed(did, invalidDocument(url, `is not a valid DID document${reason}`));
       }
 
       if (document.id !== did) {
         logger.warn(`[DidCheqdResolver] DID Document id mismatch: expected ${did}, got ${document.id}`);
-        return null;
+        return this.failed(did, invalidDocument(url, 'names another DID as its id'));
       }
 
+      this.failures.clear(did);
       return { document, bytes: measure.bytes };
     } catch (error) {
       logger.warn(
         `[DidCheqdResolver] Error resolving ${did}: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
-      return null;
+      return this.failed(did, readFailureOf(error, url, this.timeoutMs));
     }
+  }
+
+  /** Record `failure` as the last for `did`, and find no document. */
+  private failed(did: string, failure: DidResolutionFailure): null {
+    this.failures.record(did, failure);
+    return null;
   }
 
   clearCache(): void {

@@ -13,11 +13,7 @@ import { dependencyTimeout } from "../utils/deadline.js";
 import {
   buildDidResolverRegistry,
 } from "../delegation/did-resolver-registry.js";
-import { getDidMethod } from "../utils/did-helpers.js";
-import {
-  DelegationCredentialVerifier,
-  type DIDResolver,
-} from "../delegation/vc-verifier.js";
+import { DelegationCredentialVerifier } from "../delegation/vc-verifier.js";
 import {
   validateDelegationChain as validateDelegationChainCore,
   type ChainValidationResult,
@@ -29,6 +25,7 @@ import { assertTrustedRootIssuers } from "../delegation/root-admission.js";
 import { parseVCJWT } from "../delegation/utils.js";
 import { embeddedSignatureVerifier } from "../delegation/embedded-signature.js";
 import { createDelegationDescriber, type DelegationRecords } from "./with-kya-os.delegation-records.js";
+import { createGateDidResolver } from "./with-kya-os.did-resolver.js";
 import {
   checkPresentation,
   readOnce,
@@ -150,42 +147,13 @@ export function createDelegationVerification(
     fetchProvider,
     { dependencyTimeoutMs, ...developing },
   );
-  const didResolver: DIDResolver = {
-    async resolve(did: string) {
-      // The verifier stops waiting at its deadline, so no further resolver is asked once it has passed.
-      const deadline = Date.now() + dependencyTimeoutMs;
-      const customResolver = delegationConfig?.didResolver;
-      if (customResolver) {
-        const resolved = await customResolver.resolve(did);
-        if (resolved) {
-          return resolved;
-        }
-      }
-
-      const method = getDidMethod(did);
-      const configuredResolver = method && Date.now() < deadline ? configuredDidResolvers[method] : undefined;
-      if (configuredResolver) {
-        try {
-          const resolved = await configuredResolver.resolve(did);
-          if (resolved) {
-            return resolved;
-          }
-        } catch {
-          return null;
-        }
-      }
-
-      if (did.startsWith("did:key:")) {
-        return didKeyResolver.resolve(did);
-      }
-
-      if (did.startsWith("did:web:") && Date.now() < deadline) {
-        return didWebResolver?.resolve(did) ?? null;
-      }
-
-      return null;
-    },
-  };
+  const didResolver = createGateDidResolver({
+    custom: delegationConfig?.didResolver,
+    configured: configuredDidResolvers,
+    didKey: didKeyResolver,
+    didWeb: didWebResolver,
+    dependencyTimeoutMs,
+  });
 
   const verifier = new DelegationCredentialVerifier({
     didResolver,

@@ -23,7 +23,8 @@ import { sanitizeForMessage } from "../utils/message-text.js";
 import { carryingContext } from "../utils/status-check-carrier.js";
 import { readVerdict } from "../utils/verdict.js";
 import { credentialIssuerRefusal } from "./credential-issuer.js";
-import { DID_RESOLUTION_TIMEOUT_MS, resolveBoundedDid } from "./did-resource-limits.js";
+import { DID_RESOLUTION_TIMEOUT_MS } from "./did-resource-limits.js";
+import { resolveExplained } from "./did-resolution-failure.js";
 import { CHECKER_REASON_LENGTH, readRevoked, unreadableStatusReason } from "../utils/revocation-answer.js";
 import type {
   DIDResolver,
@@ -249,14 +250,15 @@ export async function verifySignature(
     }
 
     const keyId = typeof vc.proof?.verificationMethod === "string" ? vc.proof.verificationMethod : undefined;
-    const didDoc = await resolveBoundedDid(didResolver, issuerDid, keyId, timeoutMs);
-    if (!didDoc) {
+    const resolved = await resolveExplained(didResolver, issuerDid, keyId, timeoutMs);
+    if (resolved.document === null) {
       return {
         valid: false,
-        reason: `Could not resolve issuer DID: ${describeValue(issuerDid)}`,
+        reason: `Could not resolve issuer DID: ${describeValue(issuerDid)}${resolved.why}`,
         durationMs: Date.now() - startTime,
       };
     }
+    const didDoc = resolved.document;
 
     if (!vc.proof) {
       return {

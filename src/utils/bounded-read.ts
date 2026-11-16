@@ -5,6 +5,8 @@
  * always surfaces as that deadline's own reason; a non-2xx response is refused whatever its body says, quoting its
  * URL's origin and path as a refusal quotes any value its sender chose (`describeValue`), since an
  * operator may keep a key in its credentials, query or fragment; and the bytes must be valid UTF-8.
+ * Each refusal in the read's own words is a {@link ReadFailureError}: the deadline is
+ * `deadline_exceeded`, and every other is `unavailable`.
  *
  * A WHATWG `ReadableStream` body is read as it streams, never through `response.json()` or
  * `response.text()`, which allocate the whole body before a caller can check its size. A response
@@ -16,6 +18,7 @@
 import { describeValue } from './describe-value.js';
 import type { FetchPort } from './fetch-port.js';
 import { checkJsonTokens, type JsonLimits } from './json-preflight.js';
+import { ReadFailureError } from './read-failure.js';
 
 /** What a bounded read allows, and the name its refusals carry. */
 export interface BoundedReadPolicy {
@@ -116,7 +119,7 @@ export async function fetchBoundedText(
   policy: BoundedReadPolicy,
 ): Promise<string> {
   const { label } = policy;
-  const deadline = new Error(`${label} deadline exceeded`);
+  const deadline = new ReadFailureError('deadline_exceeded', `${label} deadline exceeded`);
   const controller = new AbortController();
   let timedOut = false;
   let finished = false;
@@ -133,15 +136,15 @@ export async function fetchBoundedText(
     const response = await untilAborted(fetching, controller.signal);
     if (!response.ok) {
       cancelQuietly(() => response.body?.cancel());
-      throw new Error(`${label} failed: HTTP ${response.status} for ${describeValue(originAndPath(url))}`);
+      throw new ReadFailureError('unavailable', `${label} failed: HTTP ${response.status} for ${describeValue(originAndPath(url))}`);
     }
     if (!isReadableStream(response.body)) return await readWithoutStream(response, policy, controller.signal);
     const bytes = await readCappedBody(response.body, {
       maxBytes: policy.maxBytes,
       signal: controller.signal,
-      tooLarge: () => new Error(`${label} byte limit exceeded`),
+      tooLarge: () => new ReadFailureError('unavailable', `${label} byte limit exceeded`),
       maxEmptyChunks: MAX_EMPTY_CHUNKS,
-      tooManyEmptyChunks: () => new Error(`${label} empty-chunk limit exceeded`),
+      tooManyEmptyChunks: () => new ReadFailureError('unavailable', `${label} empty-chunk limit exceeded`),
     });
     return decodeUtf8(bytes, label);
   } catch (error) {
@@ -173,17 +176,18 @@ async function readWithoutStream(response: Response, policy: BoundedReadPolicy, 
   let read: string;
   if (typeof text === 'function') {
     const answer: unknown = await untilAborted(Promise.resolve((text as () => unknown).call(response)), signal);
-    if (typeof answer !== 'string') throw new Error(`${label} response text() did not answer a string`);
+    if (typeof answer !== 'string') throw new ReadFailureError('unavailable', `${label} response text() did not answer a string`);
     read = answer;
   } else if (typeof json === 'function') {
     read = jsonText(await untilAborted(Promise.resolve((json as () => unknown).call(response)), signal), label);
   } else {
-    throw new Error(
+    throw new ReadFailureError(
+      'unavailable',
       `${label} response has no body to read: a FetchProvider must return a Response whose body is a ReadableStream, ` +
         'or a response with a text() or json() method',
     );
   }
-  if (exceedsUtf8Bytes(read, policy.maxBytes)) throw new Error(`${label} byte limit exceeded`);
+  if (exceedsUtf8Bytes(read, policy.maxBytes)) throw new ReadFailureError('unavailable', `${label} byte limit exceeded`);
   return read;
 }
 
@@ -195,7 +199,7 @@ function jsonText(value: unknown, label: string): string {
   } catch {
     text = undefined;
   }
-  if (typeof text !== 'string') throw new Error(`${label} response json() answered a value with no JSON text`);
+  if (typeof text !== 'string') throw new ReadFailureError('unavailable', `${label} response json() answered a value with no JSON text`);
   return text;
 }
 
@@ -235,12 +239,17 @@ export async function fetchBoundedJson(
   policy: BoundedJsonPolicy,
 ): Promise<unknown> {
   const text = await fetchBoundedText(fetcher, url, init, policy);
-  checkJsonTokens(text, policy.json);
+  try {
+    checkJsonTokens(text, policy.json);
+  } catch (error) {
+    // The shape check throws only errors of its own, which name the limit and quote nothing.
+    throw new ReadFailureError('unavailable', (error as Error).message);
+  }
   try {
     return JSON.parse(text) as unknown;
   } catch {
     // The engine's own message quotes the text, which the server chose.
-    throw new Error(`${policy.label} response is not JSON`);
+    throw new ReadFailureError('unavailable', `${policy.label} response is not JSON`);
   }
 }
 
@@ -259,7 +268,7 @@ function decodeUtf8(bytes: Uint8Array, label: string): string {
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
   } catch {
-    throw new Error(`${label} response is not valid UTF-8`);
+    throw new ReadFailureError('unavailable', `${label} response is not valid UTF-8`);
   }
 }
 

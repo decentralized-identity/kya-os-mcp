@@ -98,6 +98,8 @@ export {
   type StatusOutcome,
   type VerifyDelegationVCOptions,
   type DIDResolver,
+  type DidResolutionFailure,
+  type DidResolutionFailureCause,
   type DIDDocument,
   type VerificationMethod,
   type StatusListResolver,

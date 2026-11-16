@@ -13,6 +13,7 @@
 
 import { cancelQuietly } from './bounded-read.js';
 import { crossOriginRequestHeaders } from './cors-safelisted-headers.js';
+import { ReadFailureError } from './read-failure.js';
 import { followRedirects, type RedirectRefusals } from './redirect-follower.js';
 
 /** Fetch one URL as given, without following a redirect. */
@@ -24,11 +25,16 @@ export type SingleFetch = (url: string, init: RequestInit) => Promise<Response>;
  */
 export type TargetRefusal = (url: string) => string | undefined;
 
+/**
+ * How a redirect is refused. A redirect the server got wrong leaves the resource `unavailable`; one
+ * the scheme rule refuses, a step down from https, is `host_refused`, as is a target the caller's
+ * rule refuses and a redirect the provider followed itself.
+ */
 const REFUSALS: RedirectRefusals = {
-  limitExceeded: maxRedirects => new Error(`Redirect limit of ${maxRedirects} exceeded`),
-  missingLocation: () => new Error('Redirect without a Location header'),
-  invalidLocation: () => new Error('Redirect to an invalid URL'),
-  httpsToHttp: () => new Error('Redirect from https to http refused'),
+  limitExceeded: maxRedirects => new ReadFailureError('unavailable', `Redirect limit of ${maxRedirects} exceeded`),
+  missingLocation: () => new ReadFailureError('unavailable', 'Redirect without a Location header'),
+  invalidLocation: () => new ReadFailureError('unavailable', 'Redirect to an invalid URL'),
+  httpsToHttp: () => new ReadFailureError('host_refused', 'Redirect from https to http refused'),
 };
 
 /**
@@ -48,13 +54,13 @@ export function fetchWithCheckedRedirects(
       const response = await fetch(hop.url, { ...sent, redirect: 'manual' });
       if (followedByProvider(response, hop.url)) {
         cancelQuietly(() => response.body?.cancel());
-        throw new Error('Redirect followed by the fetch provider refused');
+        throw new ReadFailureError('host_refused', 'Redirect followed by the fetch provider refused');
       }
       return response;
     },
     vetTarget({ target }) {
       const refused = refusal(target.href);
-      if (refused !== undefined) throw new Error(`Redirect to ${refused}`);
+      if (refused !== undefined) throw new ReadFailureError('host_refused', `Redirect to ${refused}`);
     },
     discard: redirect => cancelQuietly(() => redirect.body?.cancel()),
     // An empty Location is the relative reference to the URL that sent it, which is asked again

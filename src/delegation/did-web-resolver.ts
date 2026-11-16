@@ -12,7 +12,7 @@
  */
 
 import type { FetchProvider } from '../providers/base.js';
-import type { DIDResolver, DIDDocument } from './vc-verifier.js';
+import type { DIDResolver, DIDDocument, DidResolutionFailure } from './vc-verifier.js';
 import { logger } from '../logging/index.js';
 import { hasIdTypeAndController } from './verification-method-shape.js';
 
@@ -22,6 +22,7 @@ import { developmentMode } from '../utils/development-mode.js';
 import { admittingPrivateHosts, type PrivateNetworkTransport } from '../utils/private-network-rule.js';
 import { fetchDidJson } from './read-did-json.js';
 import { didWebToUrl, isDidWeb } from './did-web-url.js';
+import { DidResolutionFailures, invalidDocument, readFailureOf } from './did-resolution-failure.js';
 
 export { didWebToUrl, isDidWeb, parseDidWeb } from './did-web-url.js';
 
@@ -66,6 +67,7 @@ export class DidWebResolver implements DIDResolver {
   private cache: DidDocumentCache;
   private cacheTtl: number;
   private readonly timeoutMs: number;
+  private readonly failures = new DidResolutionFailures();
 
   constructor(fetchProvider: Pick<FetchProvider, 'fetch' | 'allowPrivateNetworkHosts'>, options?: DidWebResolverOptions) {
     const development = developmentMode(options?.development, 'DidWebResolverOptions.development');
@@ -99,6 +101,15 @@ export class DidWebResolver implements DIDResolver {
     return this.cache.resolve(did, this.cacheTtl, () => this.fetchDocument(did, url));
   }
 
+  /**
+   * Why the last read of `did`'s document found none: its host refused, its deadline passed, its
+   * host unavailable, or its document invalid. `undefined` once a read of it has found one, and for
+   * a DID this resolver never read.
+   */
+  lastFailure(did: string): DidResolutionFailure | undefined {
+    return this.failures.get(did);
+  }
+
   /** Fetch, measure, freeze and check the document `did` names at `url`, or `null`. */
   private async fetchDocument(did: string, url: string): Promise<LoadedDidDocument | null> {
     try {
@@ -106,28 +117,35 @@ export class DidWebResolver implements DIDResolver {
       const measure = admitParsedDidDocument(json);
       if (!measure.ok) {
         logger.warn(`[DidWebResolver] DID Document from ${url} refused: ${measure.reason}`);
-        return null;
+        return this.failed(did, invalidDocument(url, `is refused: ${measure.reason}`));
       }
 
       const { document } = measure;
       if (!hasWellFormedMethods(document)) {
         logger.warn(`[DidWebResolver] Invalid DID Document structure from ${url}`);
-        return null;
+        return this.failed(did, invalidDocument(url, 'has a verification method without an id, a type and a controller'));
       }
 
       // Verify the id matches the DID
       if (document.id !== did) {
         logger.warn(`[DidWebResolver] DID Document id mismatch: expected ${did}, got ${document.id}`);
-        return null;
+        return this.failed(did, invalidDocument(url, 'names another DID as its id'));
       }
 
+      this.failures.clear(did);
       return { document, bytes: measure.bytes };
     } catch (error) {
       logger.warn(
         `[DidWebResolver] Error resolving ${did}: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
-      return null;
+      return this.failed(did, readFailureOf(error, url, this.timeoutMs));
     }
+  }
+
+  /** Record `failure` as the last for `did`, and find no document. */
+  private failed(did: string, failure: DidResolutionFailure): null {
+    this.failures.record(did, failure);
+    return null;
   }
 
   /**

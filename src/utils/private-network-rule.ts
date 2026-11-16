@@ -22,6 +22,7 @@ import { describeValue } from './describe-value.js';
 import type { FetchPort, PrivateNetworkTransport } from './fetch-port.js';
 import { PRODUCTION_PRIVATE_HOSTS } from './development-mode.js';
 import { isBlockedAddress } from './ip-classifier.js';
+import { ReadFailureError } from './read-failure.js';
 
 export type { PrivateNetworkTransport } from './fetch-port.js';
 
@@ -110,7 +111,8 @@ export function privateNetworkRefusal(url: string, allowPrivateNetworkHosts = fa
 /**
  * `transport`'s `fetch` under the rule; a transport whose `allowPrivateNetworkHosts` is true admits
  * private hosts. A refused request or redirect throws `Request to <url> refused` or
- * `Redirect to <url> refused`, and for a private host goes on with {@link PRIVATE_HOST_REMEDY}.
+ * `Redirect to <url> refused`, and for a private host goes on with {@link PRIVATE_HOST_REMEDY}; either
+ * is a `host_refused` {@link ReadFailureError}.
  */
 export function underPrivateNetworkRule(transport: PrivateNetworkTransport): FetchPort {
   const allowPrivateNetworkHosts = transport.allowPrivateNetworkHosts === true;
@@ -121,7 +123,7 @@ export function underPrivateNetworkRule(transport: PrivateNetworkTransport): Fet
   return {
     async fetch(url, init) {
       const refused = refusal(url);
-      if (refused !== undefined) throw new Error(`Request to ${refused}`);
+      if (refused !== undefined) throw new ReadFailureError('host_refused', `Request to ${refused}`);
       return fetchWithCheckedRedirects((target, options) => transport.fetch(target, options), url, (init ?? {}) as RequestInit, refusal);
     },
   };

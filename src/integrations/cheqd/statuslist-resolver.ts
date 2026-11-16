@@ -38,7 +38,7 @@
  * declared per-bit staleness SLA. `invalidateCache()` drops the document and
  * defeats upstream HTTP caches on the next fetch.
  */
-import { resolveBoundedDid } from '../../delegation/did-resource-limits.js';
+import { resolveExplained } from '../../delegation/did-resolution-failure.js';
 import { fetchStatusListJson } from '../../delegation/status-list-fetch.js';
 import type { FetchProvider, CryptoProvider } from '../../providers/base.js';
 import type {
@@ -269,10 +269,11 @@ export class CheqdStatusListResolver implements StatusListResolver {
 
     const named: unknown = proof['verificationMethod'];
     const keyId = typeof named === 'string' ? named : undefined;
-    const didDoc = await resolveBoundedDid(this.opts.didResolver, this.opts.expectedIssuerDid, keyId, this.timeoutMs);
-    if (!didDoc) {
-      throw new Error(`Could not resolve issuer DID ${this.opts.expectedIssuerDid}`);
+    const resolved = await resolveExplained(this.opts.didResolver, this.opts.expectedIssuerDid, keyId, this.timeoutMs);
+    if (resolved.document === null) {
+      throw new Error(`Could not resolve issuer DID ${this.opts.expectedIssuerDid}${resolved.why}`);
     }
+    const didDoc = resolved.document;
 
     const selection = selectAssertionMethod(didDoc, this.opts.expectedIssuerDid, named);
     if (!('method' in selection)) {

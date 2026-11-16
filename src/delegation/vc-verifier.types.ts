@@ -78,6 +78,40 @@ export interface VerifyDelegationVCOptions {
 
 export interface DIDResolver {
   resolve(did: string): Promise<DIDDocument | null>;
+  /**
+   * Why this resolver's last resolution of `did` found no document, or `undefined` when it found
+   * one, was never asked, or cannot say. Optional: the verifier reads a resolver without it as
+   * before. The library's own resolvers have it, and when one refuses a credential as `Could not
+   * resolve issuer DID: "<did>"` the verifier appends the failure's `detail` in parentheses. A
+   * resolver that wraps one of them may pass it on, as `lastFailure: (did) => inner.lastFailure?.(did)`.
+   * It reports the last failure for the DID, so a resolution of the same DID that ends in between
+   * may answer for it: read it as a diagnosis, never as a security decision.
+   */
+  lastFailure?(did: string): DidResolutionFailure | undefined;
+}
+
+/**
+ * Why a resolver found no document for a DID:
+ *
+ * - `host_refused`: the read's own rules refused the host, the private-network rule or the scheme
+ *   rule, on the document's URL or on a redirect.
+ * - `deadline_exceeded`: no document arrived within the resolver's deadline.
+ * - `unavailable`: the host could not be reached, or answered with something other than a document:
+ *   an HTTP error, no body, too many bytes, or text that is not JSON.
+ * - `invalid_document`: a document was read, but it is not a valid document of this DID.
+ */
+export type DidResolutionFailureCause = 'host_refused' | 'deadline_exceeded' | 'unavailable' | 'invalid_document';
+
+/** The cause of a resolver's failure to find a DID's document, and what to tell a person about it. */
+export interface DidResolutionFailure {
+  /** The class of the failure, for a caller to branch on. */
+  readonly cause: DidResolutionFailureCause;
+  /**
+   * What failed, and how to fix it where the library knows how, in one sentence or two in the
+   * library's own words. It quotes no error of the transport's, which the log records instead, so
+   * a verifier may show it to the party that presented the credential.
+   */
+  readonly detail: string;
 }
 
 /**

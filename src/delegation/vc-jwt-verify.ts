@@ -20,10 +20,10 @@
 
 import { compactVerify, importJWK } from "jose";
 import type { JWK } from "jose";
-import { DID_RESOLUTION_TIMEOUT_MS, resolveBoundedDid } from "./did-resource-limits.js";
+import { DID_RESOLUTION_TIMEOUT_MS } from "./did-resource-limits.js";
+import { resolveExplained, type ExplainedResolution } from "./did-resolution-failure.js";
 import type { DelegationCredential } from "../types/protocol.js";
 import type {
-  DIDDocument,
   DIDResolver,
   DelegationVCVerificationResult,
 } from "./vc-verifier.types.js";
@@ -213,15 +213,16 @@ export async function verifyVcJwtSignature(
   }
 
   const issuer = describeValue(issuerDid);
-  let didDoc: DIDDocument | null;
+  let resolved: ExplainedResolution;
   try {
-    didDoc = await resolveBoundedDid(didResolver, issuerDid, kid, timeoutMs);
+    resolved = await resolveExplained(didResolver, issuerDid, kid, timeoutMs);
   } catch (err) {
     return done(false, `Could not resolve issuer DID ${issuer}: ${errMsg(err)}`);
   }
-  if (!didDoc) {
-    return done(false, `Could not resolve issuer DID: ${issuer}`);
+  if (resolved.document === null) {
+    return done(false, `Could not resolve issuer DID: ${issuer}${resolved.why}`);
   }
+  const didDoc = resolved.document;
 
   // VC-JOSE-COSE §4.1.1 makes `kid` a hint to the key that secured the credential; the relationship
   // is what lets that key issue it (W3C Controlled Identifiers v1.0 §3.3).

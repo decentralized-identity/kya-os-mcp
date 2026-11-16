@@ -98,11 +98,16 @@ describe('withKyaOs with a root on a *.localhost did:web name', () => {
     );
   });
 
-  it('refuses the call without it, before any request', async () => {
+  it('refuses the call without it, before any request, saying what admits the host', async () => {
     for (const development of [undefined, false]) {
       const provider = servingRoot();
       const outcome = await callUnderRoot(await serverWith({ fetchProvider: provider }, development));
       expect(outcome).toMatchObject({ allowed: false, refusal: { error: 'delegation_invalid' } });
+      // The client's reason is cut at 256 code units, as every delegation refusal is; the log has the rest.
+      expect(outcome.refusal?.reason).toContain(
+        `invalid: Could not resolve issuer DID: "${ROOT}" (Request to "root.localhost:4101" refused: a private or local host. ` +
+          'In local development, set development: true;',
+      );
       expect(provider.requested).toEqual([]);
     }
   });

@@ -92,6 +92,20 @@ describe('a proof left for the transport', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('is closed as not sent only while it waits: closing an id with nothing waiting under it closes nothing', async () => {
+    vi.useFakeTimers();
+    const { proofs, closed } = store();
+    const left = proof('left');
+    const leftId = proofs.leave(left);
+    const sentId = sent(proofs, proof('sent'));
+    await proofs.closeUnsent(sentId);
+    await proofs.closeUnsent('never-left');
+    expect(closed).toEqual([]);
+    await proofs.closeUnsent(leftId);
+    await proofs.closeUnsent(leftId);
+    expect(closed).toEqual([left]);
+  });
+
   it('waits five minutes when no window is given', async () => {
     vi.useFakeTimers();
     const { proofs, closed } = store();

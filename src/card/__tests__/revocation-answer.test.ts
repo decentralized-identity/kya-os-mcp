@@ -8,7 +8,7 @@
  * `evaluateDelegationChain`, `verifyRequestDelegation`, `requireDelegation` and `verifyCard`.
  */
 import { describe, expect, it } from 'vitest';
-import { countingAnswer, UNREADABLE_ANSWERS } from '../../__tests__/utils/revocation-answers.js';
+import { countingAnswer, PASSING_WITH_THROWING_CODE, UNREADABLE_ANSWERS } from '../../__tests__/utils/revocation-answers.js';
 import { evaluateDelegationChain, leafInvokerOf } from '../delegation.js';
 import { createDelegationProofVerifier } from '../delegation-proof.js';
 import { createDidKeyResolver } from '../../delegation/did-key-resolver.js';
@@ -71,6 +71,10 @@ describe('evaluateRevocationChain', () => {
     expect(result).toMatchObject({ ok: false, fresh: false });
     expect(result.reasons).toEqual([expect.stringMatching(/^revocation: hop 1 .* has a status that could not be read: /)]);
     expect(asked).toBe(2);
+  });
+
+  it('passes a hop on an answer that does not revoke, whatever its code getter would do', async () => {
+    expect(await evaluateRevocationChain([ENTRY], answering(PASSING_WITH_THROWING_CODE))).toMatchObject({ ok: true, fresh: true });
   });
 
   it('reads each member of an answer once', async () => {

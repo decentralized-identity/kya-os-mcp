@@ -10,7 +10,13 @@ import { createRealSignatureVerifier } from '../../__tests__/audit/helpers/crypt
 import { delegationRecord, keyOf, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
-import { countingAnswer, NOT_BOOLEANS, THROWING_ANSWERS, throwingMember } from '../../__tests__/utils/revocation-answers.js';
+import {
+  countingAnswer,
+  NOT_BOOLEANS,
+  PASSING_WITH_THROWING_CODE,
+  THROWING_ANSWERS,
+  throwingMember,
+} from '../../__tests__/utils/revocation-answers.js';
 import type { AgentIdentity } from '../../providers/base.js';
 import { isTransientRefusal, type RefusalCode } from '../../refusal-codes.js';
 import type { CredentialStatus, DelegationCredential } from '../../types/protocol.js';
@@ -170,6 +176,10 @@ describe("validateDelegationChain's revocation check", () => {
 
   it.each(THROWING_ANSWERS)('refuses a chain, and does not reject, on an answer with %s', async (_label, answer, why) => {
     expect(await validate(answer)).toEqual(refused(`Revocation status of delegation "${ID}" could not be read: ${why}`));
+  });
+
+  it('passes a chain on an answer that does not revoke, whatever its code getter would do', async () => {
+    expect((await validate(PASSING_WITH_THROWING_CODE)).valid).toBe(true);
   });
 
   it('reads each member of an answer once', async () => {

@@ -110,8 +110,9 @@ async function readCapped(response: Response, maxBytes: number, signal: AbortSig
  * `autoSelectFamily=true`, which invokes a custom lookup with `{ all: true }` and expects an ARRAY
  * of `{ address, family }`; a scalar 3-arg callback yields "Invalid IP address: undefined" and
  * breaks every real request. Honour the array form when `all` is asked, the scalar form otherwise.
- * Exported for direct unit testing (the request wiring around it is integration-only — no TLS in
- * the unit suite). Not re-exported from the package barrels; the public surface is unchanged.
+ * Exported for direct unit testing; the request wiring around it is tested against a stand-in for
+ * `node:https`, since the unit suite makes no TLS connection. Not re-exported from the package
+ * barrels; the public surface is unchanged.
  */
 export function buildPinnedLookup(pinnedAddress: string, family: 4 | 6): LookupFunction {
   return (_hostname, options, cb) => {

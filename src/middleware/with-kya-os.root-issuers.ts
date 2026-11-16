@@ -14,13 +14,15 @@
  */
 
 import { logger } from "../logging/index.js";
-import { assertTrustedRootIssuers } from "../delegation/root-admission.js";
-import { describeValue } from "../utils/describe-value.js";
+import { rootIssuerPolicy, type RootIssuerOptionNames } from "../delegation/root-issuer-rule.js";
 import type { KyaOsDelegationConfig } from "./with-kya-os.config-types.js";
 import type { KyaOsDelegationGate } from "./with-kya-os.types.js";
 
 /** The `wrapWithDelegation` of a middleware. */
 type WrapWithDelegation = KyaOsDelegationGate["wrapWithDelegation"];
+
+/** The middleware's options of the rule, each under `delegation`. */
+const OPTION_NAMES: RootIssuerOptionNames = { prefix: "delegation.", resourceOwner: false };
 
 /**
  * The trust-root requirement of one middleware, built from its options by
@@ -38,7 +40,8 @@ export interface RootIssuerRequirement {
 
 /**
  * The trust-root requirement for a middleware whose `delegation` options are `delegation` and
- * whose development switch, already checked, is `development`.
+ * whose development switch, already checked, is `development`, under the rule every API that
+ * accepts a delegation chain follows (`../delegation/root-issuer-rule.ts`).
  *
  * Throws a `TypeError`, naming the option, for a `trustedRootIssuers` that is not an array of
  * DIDs, for an `allowAnyRootIssuer` that is not a boolean, and for `allowAnyRootIssuer: true`
@@ -48,24 +51,22 @@ export function rootIssuerRequirement(
   delegation: KyaOsDelegationConfig | undefined,
   development: boolean,
 ): RootIssuerRequirement {
-  const trustedRootIssuers: unknown = delegation?.trustedRootIssuers;
-  assertTrustedRootIssuers(trustedRootIssuers, "delegation.");
-  const allowAnyRootIssuer = readAllowAnyRootIssuer(delegation?.allowAnyRootIssuer);
-  if (allowAnyRootIssuer && trustedRootIssuers !== undefined) {
-    throw new TypeError(
-      "[kya-os] delegation.allowAnyRootIssuer is true and delegation.trustedRootIssuers is set, and they " +
-        "contradict each other: the list names the only issuers to trust, and allowAnyRootIssuer trusts " +
-        "every issuer. Set one or the other.",
-    );
-  }
-  // Settled once the list is set, or once the first wrap has warned that it is not.
-  let settled = trustedRootIssuers !== undefined;
+  const policy = rootIssuerPolicy(
+    {
+      trustedRootIssuers: delegation?.trustedRootIssuers,
+      allowAnyRootIssuer: delegation?.allowAnyRootIssuer,
+      development,
+    },
+    OPTION_NAMES,
+  );
+  // Settled once the root is pinned, or once the first wrap has warned that it is not.
+  let settled = policy.kind === "pinned";
   return {
     admit(toolName) {
       if (settled) return;
-      if (!allowAnyRootIssuer && !development) throw new Error(refusal(toolName));
+      if (policy.kind === "unpinned") throw new Error(policy.refusal(`wrapWithDelegation("${toolName}")`));
       settled = true;
-      logger.warn(acceptingAnyIssuer(allowAnyRootIssuer ? ALLOWED_BY_NAME : ALLOWED_IN_DEVELOPMENT));
+      logger.warn(policy.warning("wrapWithDelegation"));
     },
   };
 }
@@ -84,36 +85,4 @@ export function requiringRootIssuers(
       return gate.wrapWithDelegation(toolName, config, handler);
     },
   };
-}
-
-/** Why a delegation from any issuer is accepted, when `allowAnyRootIssuer` is true. */
-const ALLOWED_BY_NAME = "delegation.allowAnyRootIssuer is true";
-
-/** Why a delegation from any issuer is accepted, in development. */
-const ALLOWED_IN_DEVELOPMENT =
-  "development is true; outside development, wrapWithDelegation throws without it";
-
-/** `value`, the `allowAnyRootIssuer` option: absent reads as `false`, and any other value but a boolean throws. */
-function readAllowAnyRootIssuer(value: unknown): boolean {
-  if (value === undefined || typeof value === "boolean") return value === true;
-  throw new TypeError(`[kya-os] delegation.allowAnyRootIssuer must be true or false (got a value ${describeValue(value)})`);
-}
-
-/** The refusal to wrap `toolName` outside development, naming every setting that would allow it. */
-function refusal(toolName: string): string {
-  return (
-    `[kya-os] delegation.trustedRootIssuers is not set, so wrapWithDelegation("${toolName}") would accept a ` +
-    "delegation from any issuer, including one an agent signs for itself. Set delegation.trustedRootIssuers " +
-    "to the DIDs allowed to grant authority; in local development, set development: true; to accept any " +
-    "issuer anyway, set delegation.allowAnyRootIssuer: true."
-  );
-}
-
-/** The warning a server that accepts any issuer logs once, saying `why` it may. */
-function acceptingAnyIssuer(why: string): string {
-  return (
-    "[kya-os] delegation.trustedRootIssuers is not set, so a delegation from any issuer is accepted, " +
-    `including one an agent signs for itself, because ${why}. Set delegation.trustedRootIssuers to the DIDs ` +
-    "allowed to grant authority."
-  );
 }

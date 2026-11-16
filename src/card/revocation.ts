@@ -35,6 +35,7 @@ import { describeValue } from '../utils/describe-value.js';
 import { isRecord, issuerOf } from '../utils/guards.js';
 import { sanitizeForMessage } from '../utils/message-text.js';
 import { readRevocationAnswer } from '../utils/revocation-answer.js';
+import { carriedContext } from '../utils/status-check-carrier.js';
 import {
   acceptEntryPurpose,
   acceptEntrySize,
@@ -122,6 +123,11 @@ export type RevocationStatusEntry = BitstringStatusListEntry & { statusPurpose?:
  * the root issuer of its delegation chain with the status-list URL the root's own credential names,
  * so an implementation can hold the status list to the keeper of its URL.
  * Every caller in this package passes it, and a wrapping variant should pass it through unchanged.
+ * Each caller in this package that passes it also passes a fresh copy of the entry that carries it,
+ * under the non-enumerable key `Symbol.for('@kya-os/mcp/status-check-context')`, and the checkers
+ * this package builds read it there when they are given no `context`, so a wrapping variant that
+ * passes on only the very entry it was given still keeps it. The copy has the entry's own
+ * enumerable members and no others; a copy made of it by spreading or by JSON does not carry it.
  * Whether a list may be read depends on the context, so a caching variant must key on it as well as
  * on the entry's URL, index and purpose, as `withStatusCache` does: a verdict for one context is no
  * answer for another.
@@ -222,8 +228,10 @@ const FAIL_CLOSED: RevocationStatus = { revoked: true, fresh: false };
  * entry and `context`: it must come from the one keeper of the entry's URL, which
  * {@link statusListKeeperFor} decides before any fetch from `statusListIssuers` and `context`, never
  * from the list. The rule is asked before the proof is checked, so a list from another issuer never
- * triggers a DID resolution. A call that names no `credentialIssuer` cannot be held to anyone and
- * resolves {@link FAIL_CLOSED} before any fetch.
+ * triggers a DID resolution. The context is `context` when it is given, or else the one `entry`
+ * carries ({@link BitstringRevocationChecker}). A call that names no `credentialIssuer` either way
+ * cannot be held to anyone and resolves {@link FAIL_CLOSED} before any fetch, with a reason that
+ * says a checker or resolver wrapping this one must pass its second argument on.
  * Without `verifyStatusList` nothing about the list is authenticated, so only its `statusPurpose`
  * is checked and the bits are read as before.
  *
@@ -253,7 +261,7 @@ export function createRevocationChecker(
       const expectation = deps.verifyStatusList
         ? statusListExpectationFor(
             { statusListCredential: entry.statusListCredential, statusPurpose: wantedPurpose },
-            boundContext(context),
+            boundContext(context ?? carriedContext(entry)),
             deps.statusListIssuers,
           )
         : undefined;
@@ -411,12 +419,16 @@ function isPosition(position: unknown): position is number {
 /**
  * The credential a verified list is held to, its issuer read as a credential's `issuer` member names
  * one ({@link issuerOf}). A list's proof shows only who signed it, so a call that names no credential
- * issuer DID cannot be bound to anyone and throws (fail-closed).
+ * issuer DID cannot be bound to anyone and throws (fail-closed), saying how a wrapper that dropped
+ * the context keeps it.
  */
 function boundContext(context: StatusCheckContext | undefined): StatusCheckContext {
   const credentialIssuer = issuerOf(context?.credentialIssuer);
   if (!credentialIssuer) {
-    throw new Error('revocation: no credential issuer named to hold the status list to');
+    throw new Error(
+      'revocation: no credential issuer named to hold the status list to: a resolver or checker that ' +
+        'wraps a library checker must pass its second argument on, or else the very entry it was given',
+    );
   }
   return { ...context, credentialIssuer };
 }

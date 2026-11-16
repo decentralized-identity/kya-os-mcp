@@ -12,11 +12,15 @@
  * Fail-closed is preserved: a resolver THROW is never cached (the next call
  * retries), nor is an answer that is not a boolean, and `maxStalenessMs <= 0` makes the wrapper a pass-through. The
  * `context` naming the credential's issuer, and its chain's pinned root,
- * reaches the wrapped resolver unchanged and is part of the cache key.
+ * reaches the wrapped resolver unchanged and is part of the cache key. A call
+ * that passes no context, as a wrapper written before the context existed
+ * makes, is read under the context its entry carries (`carriedContext`), so it
+ * is keyed and passed on as the call that carried it in was.
  */
 import type { CredentialStatus } from '../types/protocol.js';
 import type { StatusCheckContext } from '../utils/statuslist-acceptance.js';
 import { readRevoked } from '../utils/revocation-answer.js';
+import { carriedContext, carryingContext } from '../utils/status-check-carrier.js';
 import type { StatusListResolver } from './vc-verifier.types.js';
 import { TtlCache } from '../utils/ttl-cache.js';
 
@@ -37,7 +41,8 @@ export function withStatusCache(
   });
 
   return {
-    async checkStatus(status: CredentialStatus, context?: StatusCheckContext): Promise<boolean> {
+    async checkStatus(status: CredentialStatus, given?: StatusCheckContext): Promise<boolean> {
+      const context = given ?? carriedContext(status);
       // The entry's statusSize is part of the key: entries of different sizes at one index keep
       // their status in different bits, so a verdict for one is no answer for the other.
       // The context is part of the key: it decides who keeps the entry's URL (the credential's
@@ -58,7 +63,7 @@ export function withStatusCache(
       const hit = cache.get(key);
       if (hit !== undefined) return hit;
       // A throw propagates uncached — fail-closed deny now, retry next call.
-      const revoked = await resolver.checkStatus(status, context);
+      const revoked = await resolver.checkStatus(carryingContext(status, context), context);
       // An answer that is not a boolean is refused by its reader and, like a throw, is not kept.
       if (readRevoked(revoked) !== undefined) cache.set(key, revoked);
       return revoked;

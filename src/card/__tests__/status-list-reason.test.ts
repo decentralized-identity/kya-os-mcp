@@ -121,7 +121,7 @@ describe('how the chain walk names a hop it refuses', () => {
   it('names a hop by its position, the root 0 included, wherever it stands among the entries', async () => {
     const p = parties();
     const clear = { entry: { statusListCredential: 'https://acme.example/status/clear', statusListIndex: '1' }, credentialIssuer: p.acme.did };
-    const check = async (entry: unknown) => ({ revoked: entry === OBJECTS, fresh: true });
+    const check = async (entry: { statusListIndex: unknown }) => ({ revoked: entry.statusListIndex === NAMED, fresh: true });
     for (const position of [0, 1, 4]) {
       const result = await evaluateRevocationChain([clear, clear, { entry: OBJECTS, credentialIssuer: p.acme.did, position }], check);
       expect(hopNumber(result.reasons), `position ${position}`).toBe(String(position));

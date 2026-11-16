@@ -130,6 +130,13 @@ export interface VerificationMethod {
  * Whether a list may be read depends on the context, so a caching wrapper must key on it as well as
  * on the entry's URL, index and purpose, as `withStatusCache` does.
  *
+ * The verifier also passes `status` as a fresh copy of the credential's entry that carries the
+ * context, under the non-enumerable key `Symbol.for('@kya-os/mcp/status-check-context')`, and the
+ * library's own checkers and `withStatusCache` read it there when they are given no `context`. So a
+ * resolver that wraps a library checker and passes on only the very `status` it was given still
+ * holds the list to the credential. The copy has the entry's own enumerable members and no others,
+ * so it serializes as the entry does; a copy made of it by spreading or by JSON does not carry it.
+ *
  * The answer is read strictly: `true` is revoked, `false` is not, and any other value, which only
  * untyped code can give, denies the credential as `status_unresolvable`. So does a `checkStatus`
  * that has not answered within the verifier's `dependencyTimeoutMs`, 5,000 ms by default.

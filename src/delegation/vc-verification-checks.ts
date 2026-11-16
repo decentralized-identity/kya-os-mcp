@@ -20,6 +20,7 @@ import { answerWithinDeadline } from "../utils/deadline.js";
 import { describeValue } from "../utils/describe-value.js";
 import { issuerOf } from "../utils/guards.js";
 import { sanitizeForMessage } from "../utils/message-text.js";
+import { carryingContext } from "../utils/status-check-carrier.js";
 import { readVerdict } from "../utils/verdict.js";
 import { credentialIssuerRefusal } from "./credential-issuer.js";
 import { DID_RESOLUTION_TIMEOUT_MS, resolveBoundedDid } from "./did-resource-limits.js";
@@ -346,8 +347,9 @@ export async function checkCredentialStatus(
       };
     }
 
+    const context = { credentialIssuer };
     const answer: unknown = await answerWithinDeadline("the status list resolver", () =>
-      statusListResolver.checkStatus(status, { credentialIssuer }),
+      statusListResolver.checkStatus(carryingContext(status, context), context),
     timeoutMs);
     const revoked = readRevoked(answer);
 

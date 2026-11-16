@@ -66,7 +66,9 @@ describe('the reason the shipped checker gives', () => {
     expect(await checker(ENTRY)).toStrictEqual({
       revoked: true,
       fresh: false,
-      reason: 'no credential issuer named to hold the status list to',
+      reason:
+        'no credential issuer named to hold the status list to: a resolver or checker that wraps a library ' +
+        'checker must pass its second argument on, or else the very entry it was given',
     });
   });
 

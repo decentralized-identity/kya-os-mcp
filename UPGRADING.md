@@ -6,6 +6,27 @@ CHANGELOG.md says what changed and names the section here that says what to do a
 
 ## From 1.22.0
 
+### Do I need to change anything?
+
+Find your setup below; most need nothing.
+
+| If you | Do this | Details |
+| --- | --- | --- |
+| Use `withKyaOs` or `createKyaOsMiddleware` with their defaults, with your DID documents and status lists on public hosts | Nothing. | |
+| Run locally, with did:web documents or status lists on `localhost`, a `*.localhost` name or a private IP | Set `development: true` on `withKyaOs` and on any resolver or reader you build yourself, and never in production, where it throws. | [Private hosts](#a-didweb-did-or-status-list-served-from-a-private-ip-address-or-a-local-name-such-as-localhost-as-in-development) |
+| Read did:web documents or status lists from private hosts in production, such as an intranet | Give the fetch provider `allowPrivateNetworkHosts: true`. | [Private hosts](#a-didweb-did-or-status-list-served-from-a-private-ip-address-or-a-local-name-such-as-localhost-as-in-development) |
+| Have status lists signed by a DID other than the credential's issuer | Once you know that DID signs your lists, add the one `statusListIssuers` line the refusal prints, such as `{ "did:web:issuer.example:status": ["https://issuer.example"] }`. | [`statusListIssuers`](#how-to-write-statuslistissuers) |
+| Publish status lists with your own code | State each list's URL as its `id`, as `StatusList2021Manager` does. | [Status lists](#status-lists-held-to-their-credential) |
+| Wrote your own `FetchProvider` | Pass `redirect` on and return a response that names the URL asked for, or none; a response read through `text()` or `json()`, such as what `createSafeFetch` or node-fetch v2 returns, works unchanged. | [`FetchProvider`](#a-custom-fetchprovider-given-to-the-didweb-or-cheqd-resolver-or-to-cheqdstatuslistresolver) |
+| Wrote your own `StatusListResolver` | Answer `true` or `false` within 5 seconds and hold each list to its credential with `acceptStatusList`; one that wraps `createRevocationChecker` and passes on only the entry works unchanged. | [`StatusListResolver`](#a-custom-statuslistresolver-given-to-withkyaos-or-delegationcredentialverifier) |
+| Wrote your own `DIDResolver` | Return a document whose `id` is the DID, within the limits and within 5 seconds; add `lastFailure` if you want a refusal to say why a DID did not resolve. | [`DIDResolver`](#a-custom-did-resolver-delegationdidresolver-a-resolver-in-didresolvers-the-didresolver-of-delegationcredentialverifier-cheqdstatuslistresolver-createstatuslistproofverifier-or-createdelegationproofverifier-or-a-fetchproviderresolvedid-that-proofverifier-uses) |
+| Sign with a key your DID document lists outside `assertionMethod` | List each signing key under `assertionMethod`, and update issuers before verifiers. | [`assertionMethod`](#signing-keys-and-assertionmethod) |
+| Have a dependency that can take longer than 5 seconds to answer | Set `dependencyTimeoutMs` on whatever waits for it. | [Deadlines](#a-dependency-that-can-take-longer-than-5-seconds-to-answer) |
+
+This is a minor release, made for security.
+Code that was correct on 1.22.0 keeps working.
+What may be refused after you upgrade is input that was unsafe to accept, such as a status list another DID signed or a key outside `assertionMethod`; a private or local host, which one setting admits in development and another in production; or a reason whose wording changed, as "Changed refusal reasons" lists.
+
 ### Signing keys and `assertionMethod`
 
 A delegation credential, a status list and a delegation hop verify only under a key their issuer's own DID document lists under `assertionMethod` (SPEC.md §6.2, §6.10, §11.5).
@@ -70,8 +91,9 @@ Code that matches on reason text needs the new wording.
 | none: the chain passed, a revoked reason, or a `TypeError`, for an `isRevoked` answer that is not an object with a boolean `revoked` | `Revocation status of delegation "<id>" could not be read: the revocation checker's answer (<v>) is not an object`, or ending `the revoked member of the revocation checker's answer (<v>) is neither true nor false` |
 | `Invalid statusListIndex "<index>"`, an em dash and `must be a canonical non-negative decimal`; for an index that is not a string, such as `7` or `["7"]`, none: it was converted and read | `Invalid statusListIndex "<index>": must be a non-negative decimal string`, ending `must be a non-negative safe integer or a non-negative decimal string` from `StatusList2021Manager.updateStatus` and `CascadingRevocationManager`, which read their own records |
 | `statusListIndex "<index>" exceeds the safe integer range`, the index as written | the same with the index quoted |
-| `revocation: hop <n> (<url>#<index>) is revoked or unresolvable` and the rest, `<n>` counting only the hops with a status entry | `revocation: hop <n> (list "<url>", index "<index>") is revoked or unresolvable` and the same rest, `<n>` the hop's position in its chain, the root being 0, then `: <reason>` when the checker said why, as the checker `createRevocationChecker` builds does for every entry it fails closed on; a reason is cut after 256 UTF-16 code units and marked with U+2026, with control and hidden characters read as U+FFFD |
-| the `<error>` or `<reason>` in `Status check error`, `Signature verification error`, `Could not resolve issuer DID`, `JWT envelope signature is not valid`, `Failed to resolve delegation chain`, `Revocation check failed` and `Delegation <id> is revoked`, as written | cut after 256 UTF-16 code units and marked with U+2026, with control and hidden characters and lone surrogates read as U+FFFD |
+| `revocation: hop <n> (<url>#<index>) is revoked or unresolvable` and the rest, `<n>` counting only the hops with a status entry | `revocation: hop <n> (list "<url>", index "<index>") is revoked or unresolvable` and the same rest, `<n>` the hop's position in its chain, the root being 0, then `: <reason>` when the checker said why, as the checker `createRevocationChecker` builds does for every entry it fails closed on; a reason is cut after 512 UTF-16 code units (`CHECKER_REASON_LENGTH`) and marked with U+2026, with control and hidden characters read as U+FFFD |
+| the `<error>` or `<reason>` in `Signature verification error`, `Could not resolve issuer DID`, `JWT envelope signature is not valid`, `Failed to resolve delegation chain`, `Revocation check failed` and `Delegation <id> is revoked`, as written | cut after 256 UTF-16 code units and marked with U+2026, with control and hidden characters and lone surrogates read as U+FFFD |
+| the `<error>` in `Status check error`, as written | cut after 512 UTF-16 code units (`CHECKER_REASON_LENGTH`) and marked with U+2026, with control and hidden characters and lone surrogates read as U+FFFD |
 | the gate threw, for a value with no JSON form, such as `undefined`, among what a presented credential's issuer signed | `Unreadable credential content: <why>`, given before the reason above |
 | the gate threw for a presented credential holding a value that is not plain data, such as an accessor or a class instance, and an ancestor holding one at its top level or in its `proof`, or a Proxy that passes every read through, verified | `Malformed delegation credential: it is not plain data`, or for an ancestor `Resolved delegation chain for <id> holds a value that could not be copied` |
 | none: a credential nested deeper than 64 levels, and within the runtime's call stack, verified | `Malformed delegation credential: it nests more than 64 levels deep`, for an ancestor `Resolved delegation chain for <id> holds a value that could not be copied`, and for a VC-JWT `Invalid VC-JWT format` |
@@ -82,6 +104,14 @@ Code that matches on reason text needs the new wording.
 | none: the signature verified, for an Ed25519 `x` padded with `=` or holding white space, and, but for a response proof, one in the base64 alphabet | `Unreadable x in publicKeyJwk: <why>` for a delegation credential's embedded signature, `Status list signature verification FAILED against the issuer DID document` for a status list `CheqdStatusListResolver` reads, and `errorCode` `INVALID_JWS_SIGNATURE` for a response proof |
 | none: the response proof verified, for a JWS segment padded to complete its last group or holding two spaces or a line break | `errorCode` `INVALID_JWS_SIGNATURE` |
 | `Proof binds a response (responseHash present) but no response was supplied to verify against`, an em dash and `pass expected.response`; `A response was supplied but the proof binds none`, an em dash and `content/proof mismatch` | the same with a colon for the em dash |
+| none: a checker `createRevocationChecker` builds with `verifyStatusList` read a list whoever signed it | for a list another DID signed, the `does not keep this list's URL` reason above, ending with the `statusListIssuers` configuration that would accept the list, such as `; if "did:web:issuer.example:status" signs this issuer's lists, name it in statusListIssuers: { "did:web:issuer.example:status": ["https://issuer.example"] }`, or where to name the signer when that cannot be printed whole, as "How to write `statusListIssuers`" lists |
+| `Could not resolve issuer DID: <issuer>`, and `Could not resolve issuer DID <issuer>` from `CheqdStatusListResolver` | the same, the first with the issuer quoted, then ` (<detail>)` when the resolver says why it found no document, such as `Could not resolve issuer DID: "did:web:issuer.localhost%3A4101" (Request to "issuer.localhost:4101" refused: a private or local host. ...)`, `(DID resolution failed: HTTP 404 for "<url>")`, `(DID resolution deadline exceeded: no document arrived within 5 seconds)`, `(The fetch provider could not fetch "<url>"; its error is logged)` or `(The document at "<url>" names another DID as its id)`; the detail is cut after 256 UTF-16 code units |
+| none: the host was read, or `RuntimeFetchProvider` found nothing at an IP literal it refused | `Request to "<host>" refused: a private or local host. In local development, set development: true; to read private hosts in production, give the fetch provider allowPrivateNetworkHosts: true.`, or the same starting `Redirect to "<host>" refused` for a redirect, as the detail above or after `Status check error: ` |
+| `safe-fetch: refusing non-public address <address> for host "<host>"` | the same, ending `: in local development, set development: true; to read a host you own in production, list each origin you own in SafeFetch's allowOrigins` |
+| none: the status was read, with no issuer to hold its list to | `Credential names no issuer DID to hold its status list to, so its revocation status cannot be verified`, the outcome `status_unresolvable` |
+| none: a checker `createRevocationChecker` builds with `verifyStatusList` read a list for a call that named no credential issuer | `no credential issuer named to hold the status list to: a resolver or checker that wraps a library checker must pass its second argument on, or else the very entry it was given`, the checker's reason |
+| the runtime's own error for a body that is not JSON, which quotes the text the server sent | `DID resolution response is not JSON` or `Status list fetch response is not JSON` |
+| none: what the response's `json()` answered was read, or, for a response without `json()`, a `TypeError`, in the log or after `Status check error: ` | `<read> response has no body to read: a FetchProvider must return a Response whose body is a ReadableStream, or a response with a text() or json() method`, `<read> response text() did not answer a string` or `<read> response json() answered a value with no JSON text`, where `<read>` is `DID resolution` or `Status list fetch` |
 
 ### Status lists held to their credential
 
@@ -100,6 +130,7 @@ A reader given `verifyStatusList` decides the keeper before it fetches, from its
 4. the credential's own issuer.
 
 A list any other issuer signed is refused, with a reason that names the keeper and why it keeps the URL, such as `status list issuer "did:web:a.example" does not keep this list's URL: "did:web:b.example" does, as the pinned root whose own credential names it`.
+The checker `createRevocationChecker` builds ends that reason with the `statusListIssuers` configuration that would accept the list, when one would, as "How to write `statusListIssuers`" shows.
 The configuration decides before a root's credential does, and at a URL a configured issuer or the root keeps, a list the credential's own issuer signed is refused as any other is.
 On 1.22.0 a list was read whoever signed it, so the DID that signed a list could differ from every one of these.
 
@@ -120,8 +151,34 @@ An origin whose host is an IPv6 literal is not offered; bind exact URLs.
 The map is not scoped by credential issuer: a credential opts in to a keeper by naming, in the status entry its issuer signed, a URL the map binds to that keeper.
 One URL or origin has one keeper, so the same value under two issuers throws.
 An exact URL of one issuer may lie at an origin of another, and the exact URL decides.
-The checker throws a `TypeError` when it is built if the map is not a plain object, a key is empty, a value is not an array, an array holds anything but a string that starts with `https://` or `http://`, or one value is under two issuers, or if the map is given without `verifyStatusList`.
+
+Three kinds of value are almost always an origin or a prefix written in another form, so they are refused, as SPEC.md §6.6 says a verifier should, with a `TypeError` that names the fix:
+
+| Value | Example | The fix the error names |
+| --- | --- | --- |
+| An origin followed by `/` | `https://status.example/` | `write it as "https://status.example"` |
+| An origin whose host has an upper-case letter | `https://Status.example` | `write the host in lower case, as "https://status.example"` |
+| Any other value that ends in `/`, which reads as a path prefix | `https://lists.acme.example/herd/` | `bind the origin, "https://lists.acme.example", or each list URL`, or `bind each list URL` where no origin can hold it, as for an `http:` value |
+
+Read as written, each would bind only itself, as an exact URL, and no list at that origin or under that path.
+Any other exact URL is taken as written, upper-case letters included.
+The standalone conformance harness, `conformance/loader.ts` and `conformance/status_list.py`, refuses the same values.
+
+The checker throws a `TypeError` when it is built if the map is not a plain object, a key is empty, a value is not an array, an array holds anything but a string that starts with `https://` or `http://`, a value is one of the three above, or one value is under two issuers, or if the map is given without `verifyStatusList`.
 A map from a credential issuer to the issuers accepted for it holds DIDs where URLs belong, so it throws as well, with a message that says each value names the URLs an issuer keeps.
+
+You need not work the line out yourself.
+When the checker refuses a list another DID signed, its reason ends with the configuration that would accept the list, written as a condition, since only you know whether that DID signs for the URL:
+
+- `; if "<signer>" signs this issuer's lists, name it in statusListIssuers: { "<signer>": ["<origin>"] }` where the URL's keeper is the credential's issuer or the pinned root, `<origin>` being the list URL's origin as above, or the list's own URL where no origin can hold it, as for an `http:` URL or a host with an upper-case letter.
+- `; if "<signer>" signs the list at this URL, name it in statusListIssuers: { "<signer>": ["<url>"] }` where the configuration binds the URL's origin to another issuer.
+- `; if "<signer>" signs the list at this URL, move the URL's binding to it in statusListIssuers: { "<signer>": ["<url>"] }` where it binds the URL itself to another issuer.
+
+Where the configuration cannot be printed whole and exactly within the reason's 512 UTF-16 code units, the reason ends `; if the list's issuer signs this issuer's lists, name it in statusListIssuers with this list's https origin or URL`, or `; if the list's issuer signs the list at this URL, bind the URL to it in statusListIssuers`.
+Nothing is added for a list whose `issuer` is no DID, for one at a URL no binding could give to its signer, such as one that ends in `/` at no https origin, or for a refusal by `CheqdStatusListResolver`, which holds every list to the one issuer it is configured with.
+The checker's reason keeps the configuration whole, and so do `evaluateRevocationChain`, `verifyCard` and the `Status check error` of `DelegationCredentialVerifier`; the delegation gate of `withKyaOs` cuts the reason it sends and logs after 256 UTF-16 code units, as it cuts every refusal, so there it may lose its end.
+Each configuration is checked before it is offered: written into yours, with the URL's binding moved where it says so, it makes the list's signer the keeper of its URL.
+The list must still meet the rest of the rule, such as stating its URL as its `id`.
 
 #### A hop whose status entry is on a list its own issuer did not issue
 
@@ -176,7 +233,11 @@ A DID URL naming the same resource is another `id`, so `CheqdStatusListResolver`
 
 Name the credential's issuer, `check(entry, { credentialIssuer })`, and, for a hop of a chain whose root you pin, the root as `trustedRootIssuer` with the URL the root's own credential names as `trustedRootStatusList`.
 A `trustedRootStatusList` given without `trustedRootIssuer` is ignored.
-A call that names no issuer resolves to revoked and not fresh, before any fetch.
+Every call the library makes with that context, from `DelegationCredentialVerifier`, `withStatusCache`, `evaluateRevocationChain` and `verifyCard`, also passes the entry as a fresh copy that carries the context under the non-enumerable key `Symbol.for('@kya-os/mcp/status-check-context')`.
+The checker reads the context there when it is given no second argument, and so does `withStatusCache`.
+So a `StatusListResolver` or checker of yours that wraps the checker and passes on only the very entry it was given keeps working, as it did on 1.22.0.
+A copy of the entry made by spreading it or through JSON does not carry the context, so a wrapper that rebuilds the entry must pass the second argument on.
+A call with neither, such as your own call with a bare entry, resolves to revoked and not fresh, before any fetch, with the reason `no credential issuer named to hold the status list to: a resolver or checker that wraps a library checker must pass its second argument on, or else the very entry it was given`.
 Pass `evaluateRevocationChain` the hops `revocationEntriesOf(chain, trustedRootIssuer)` builds.
 
 #### A hop whose `credentialStatus` states a `statusPurpose` other than the checker's, or one that is not a string, `null` included
@@ -232,6 +293,8 @@ Give it `createStatusListProofVerifier`, or a check that resolves `true` only fo
 The library reads a list only through it, so a list is held to the credential only as the resolver holds it.
 `checkStatus` is now told the credential's issuer; once a list's proof verifies, pass `acceptStatusList(list, statusListExpectationFor(status, context, statusListIssuers))`, with a `statusListIssuers` of your own in the shape above, as `CheqdStatusListResolver` applies the rule to its pin.
 `CheqdStatusListResolver` names its `expectedIssuerDid` as the keeper of every URL it reads.
+A resolver that wraps `createRevocationChecker` and calls it with only the entry it was given, as one written for 1.22.0 does, keeps working: the entry the verifier passes carries the context, as "A direct call to a checker built with `verifyStatusList`" says.
+Pass the second argument on all the same, and always when the resolver rebuilds the entry before it calls the checker.
 
 #### A `StatusListResolver` or `RevocationChecker` whose answer is not a boolean
 
@@ -256,7 +319,7 @@ Any other answer, such as `undefined`, `null`, `0`, `{}`, `{ revoked: 0 }`, `{ r
 On 1.22.0 each member was read by its truthiness: a hop or a Card passed on `{}` or `{ revoked: 0 }`, was revoked on `{ revoked: "false" }`, was fresh on any truthy `fresh`, such as `1` or `"false"`, and `evaluateRevocationChain` threw a `TypeError` on `undefined` or `null`.
 `RevocationStatus` has a new optional member, `reason`: why the status could not be proven clear.
 The checker `createRevocationChecker` builds gives one whenever it fails closed, such as `status-list proof rejected` or the reason `acceptStatusList` gave, and a custom checker may give its own.
-`evaluateRevocationChain` appends it to the refusal of a revoked hop, and `verifyCard` reports it as `revocation.reason`, each cut after 256 UTF-16 code units.
+`evaluateRevocationChain` appends it to the refusal of a revoked hop, and `verifyCard` reports it as `revocation.reason`, each cut after 512 UTF-16 code units, `CHECKER_REASON_LENGTH`, so that the configuration a keeper refusal ends with is not cut.
 Code that compares a verdict of that checker with `{ revoked: true, fresh: false }` exactly must allow for the member.
 A checker that `createRevocationChecker` builds, or one written in TypeScript against `RevocationStatus`, already answers two booleans and needs no change; make any other return `{ revoked: true, fresh: false }` when it cannot tell.
 
@@ -276,7 +339,9 @@ So a custom `StatusListResolver` passes `acceptStatusList(list, statusListExpect
 All four, with their types, are exported from `@kya-os/mcp`, `@kya-os/mcp/delegation` and `@kya-os/mcp/card`.
 `StatusListResolver.checkStatus` and `BitstringRevocationChecker` take a `StatusCheckContext` as an optional second argument: `credentialIssuer`, and for a chain whose root the verifier pins, `trustedRootIssuer` and `trustedRootStatusList`, the URL the root's own credential names.
 `withStatusCache` passes it on and caches per context, and `revocationEntriesOf(chain, trustedRootIssuer)` builds it for every hop of a delegation chain, as a `RevocationChainEntry` that carries the hop's `statusPurpose` and its `position` in the chain.
+The library also passes the entry as a copy that carries the context under `Symbol.for('@kya-os/mcp/status-check-context')`, which the checker `createRevocationChecker` builds and `withStatusCache` read when they are given no second argument, as "A direct call to a checker built with `verifyStatusList`" says.
 `createRevocationChecker` takes `statusListIssuers`, described under "How to write `statusListIssuers`".
+`CHECKER_REASON_LENGTH`, exported from `@kya-os/mcp/card`, is how much of a status check's reason a refusal keeps: 512 UTF-16 code units.
 The delegation middleware names only the credential's own issuer to its resolver, even when `trustedRootIssuers` pins the chain's root, so on that path a list the root signed for a re-delegated credential is refused unless the resolver's own configuration binds the list's URL, or its origin, to the root and the list states its `id`.
 
 ### Limits on DID resolution and status-list reads
@@ -297,14 +362,19 @@ One dependency of theirs has no deadline from the library: the `verifier` that `
 A custom one must set its own, and so must a provider no function above calls, such as the nonce cache and the session store of `ProofVerifier` and the middleware.
 Anything over a limit is refused, never cut to fit, so check that your DID documents and status lists are within these limits before you upgrade.
 SPEC.md §4.4.2 explains each limit.
-Every did:web and status-list read also holds its host, and each redirect, to one private-network rule, whatever `FetchProvider` it reads through.
+Every did:web and status-list read also holds its host, and each redirect, to one private-network rule, whatever `FetchProvider` it reads through, which admits a private or local host only under `development: true` or a provider's `allowPrivateNetworkHosts: true`.
 Find your setup below.
 
 #### A custom `FetchProvider` given to the did:web or cheqd resolver, or to `CheqdStatusListResolver`
 
-Its `fetch` must return a `Response` whose `body` is a WHATWG `ReadableStream`.
-The readers read the body as a stream and no longer call `json()`, so an adapter or mock that implements only `json()` resolves nothing, and neither does node-fetch v2, whose body is a Node stream.
-A body that is not valid UTF-8 is refused, where `json()` replaced the invalid bytes.
+Its `fetch` may return a `Response` whose `body` is a WHATWG `ReadableStream`, which the readers read as it streams, counting each byte against the cap.
+It may also return a response whose body is not one, such as the `{ ok, status, json, text }` that `createSafeFetch` answers, or a node-fetch v2 response, whose body is a Node stream.
+The readers read such a response through its `text()`, which must answer a string, or, when it has none, through its `json()`, which 1.22.0 called for every response.
+They wait for that answer within the read's one deadline, hold the UTF-8 bytes of the text to the same byte cap, and hold the text to the same JSON limits before they parse it.
+`text()` and `json()` hold the whole body before the reader can count it, so only the provider bounds what that costs; `createSafeFetch` holds a body to its own `maxBytes`, 1 MiB by default.
+A response with none of the three is refused, saying what a provider must return, as "Changed refusal reasons" lists.
+A stream body that is not valid UTF-8 is refused, where `json()` replaced the invalid bytes, and text that is not JSON is refused as `DID resolution response is not JSON` or `Status list fetch response is not JSON`.
+`SafeFetchResponse` has a new optional member, `text()`, which `createSafeFetch` answers, so a provider over it is read from the exact text the server sent.
 
 #### A `DidCheqdResolver` given `headers`
 
@@ -319,11 +389,19 @@ Its document is checked on every resolution, and the object it returned is neith
 The verifier copies it as it checks it and reads only the copy, so the resolver need not return a new object each time, and a change it makes to a returned object is seen at the next resolution, not during a verification.
 A key the document must publish has to be an own enumerable member, and an array's entries its elements by index, as `JSON.stringify` would write them.
 
+`DIDResolver` has a new optional member, `lastFailure(did)`, which answers why the resolver's last resolution of `did` found no document, as a `DidResolutionFailure`, `{ cause, detail }`.
+The `cause` is `host_refused`, `deadline_exceeded`, `unavailable` or `invalid_document`, and the `detail` says what failed, and how to fix it where the library knows, in the library's own words, never quoting a transport's error, which stays in the log.
+`DidWebResolver`, `createDidWebResolver`, `DidCheqdResolver` and the delegation gate's own resolver have it, and a verifier that refuses a credential as `Could not resolve issuer DID` adds the detail in parentheses, as "Changed refusal reasons" shows.
+A resolver without it is refused as before; one that wraps a library resolver may pass it on, as `lastFailure: (did) => inner.lastFailure?.(did)`.
+It reports the last failure for the DID, so a resolution that ends in between may answer for it: read it as a diagnosis, never as a security decision.
+`DidResolutionFailure` and `DidResolutionFailureCause` are exported from `@kya-os/mcp` and `@kya-os/mcp/delegation`.
+
 #### A custom `FetchProvider` that reads did:web documents or status lists, such as `delegation.fetchProvider`
 
 Each read now calls its `fetch` with `redirect: "manual"` and follows a redirect itself, refusing a target the private-network rule refuses and a step from https down to http, and sending another origin only the CORS-safelisted request headers and the request's `Cache-Control` and `Pragma`; in a browser, which hides where a redirect leads, it refuses every redirect.
 The provider's `fetch` must pass `redirect` on to the request.
 One that drops it lets the runtime follow a redirect before the read sees the response: the read then refuses a response that says it was redirected, or names a URL other than the one asked for, but the request has been made.
+A provider over `createSafeFetch`, whose `fetch` takes only a URL, passes nothing on, and needs no change: SafeFetch follows only a redirect to the same https origin, under the same address screen as the first request, and its answer names no URL.
 
 #### A custom `FetchProvider` whose response names a URL other than the one asked for, such as a gateway, a proxy or a test double that rewrites URLs
 
@@ -336,17 +414,38 @@ Rebuilding a response after following a redirect itself would hide that redirect
 Every did:web read, by the delegation gate, `DidWebResolver`, `createDidWebResolver` or `RuntimeFetchProvider.resolveDID`, and every status-list read, by `CheqdStatusListResolver` or `RuntimeFetchProvider.fetchStatusList`, now refuses a URL whose host is a non-public IP literal or a local name, in any case and with any trailing dots, through any provider.
 A local name is a single label, such as `ip6-localhost`, `metadata` or an intranet host's short name, or `localhost`, `localdomain`, `localdomain6`, `local`, `internal` or `home.arpa`, or a name under one of them, such as `localhost.localdomain`, `localhost6.localdomain6`, `printer.local`, `router.home.arpa` or `metadata.google.internal`.
 It classifies an address as `SafeFetch` does, so it refuses more than `RuntimeFetchProvider` did, such as an IPv4-mapped, IPv4-translated or NAT64 IPv6 form of a private address, shared address space (100.64.0.0/10), the documentation ranges and multicast.
-To read from such a host, give the reader `new RuntimeFetchProvider({ allowPrivateNetworkHosts: true })`, as `delegation.fetchProvider` for the gate, or a custom provider whose `allowPrivateNetworkHosts` member, now declared on `FetchProvider`, is `true`; `RuntimeFetchProvider` now exposes its option as that read-only member.
+The refusal names both ways to admit the host: `Request to "<host>" refused: a private or local host. In local development, set development: true; to read private hosts in production, give the fetch provider allowPrivateNetworkHosts: true.`, or the same starting `Redirect to` for a redirect.
+For did:web it reaches a verifier's reason inside `Could not resolve issuer DID: "<did>" (...)`.
+
+In local development, set `development: true`:
+
+- On `withKyaOs` or `createKyaOsMiddleware` (`KyaOsConfig.development`), for every resolver and reader the middleware builds.
+  Its did:web resolver admits private and local hosts whatever provider it reads through, `delegation.fetchProvider` included, the `RuntimeFetchProvider` it builds when it is given no `delegation.fetchProvider` has `allowPrivateNetworkHosts: true`, and each factory in `delegation.didResolvers` gets `development: true` in its context.
+  An object you build and hand it, such as a `CheqdStatusListResolver` as `statusListResolver` or a `delegation.didResolver`, takes its own setting.
+- On `DidWebResolverOptions`, for `DidWebResolver` and `createDidWebResolver`, and on `CheqdStatusListResolverOptions`, for a resolver you build yourself.
+- On `SafeFetchOptions`, as "Code that calls `isBlockedAddress` or `createSafeFetch`" says.
+
+It admits private and local hosts as `allowPrivateNetworkHosts: true` does, and changes nothing else: the scheme rule, checked redirects, byte caps and deadlines all hold.
+It is for development alone.
+The first time it is on in a process it logs one warning, and while `NODE_ENV` is `production` building what it is set on throws an error that names the setting, so `withKyaOs` rejects and `createKyaOsMiddleware` throws at startup.
+Any value but `true` or `false` throws a `TypeError`, such as `KyaOsConfig.development must be true or false`.
+A `didResolvers` factory of your own that builds a did:web resolver passes it on, as `createDidWebResolver(fetchProvider, { development: context?.development })`.
+
+To read private hosts in production, such as an intranet, give the reader `new RuntimeFetchProvider({ allowPrivateNetworkHosts: true })`, as `delegation.fetchProvider` for the gate, or a custom provider whose `allowPrivateNetworkHosts` member, now declared on `FetchProvider`, is `true`; `RuntimeFetchProvider` now exposes its option as that read-only member.
 Only `true` opts in: `RuntimeFetchProvider` no longer reads another truthy value, such as `1` or `'true'`, as `true`.
 The rule resolves no name, so it does not refuse any other name whose address is private, such as a public name that points at a loopback address: a verifier needs an egress control that refuses private addresses for that.
 
 #### Code that calls `isBlockedAddress` or `createSafeFetch`
 
 An IPv4-translated IPv6 address (`::ffff:0:0:0/96`) is now classified by the IPv4 address it embeds, as an IPv4-mapped one is, so one that embeds a private address is refused.
+`createSafeFetch`'s refusal of a non-public address now ends with the two ways to admit it: `: in local development, set development: true; to read a host you own in production, list each origin you own in SafeFetch's allowOrigins`.
+`SafeFetchOptions` takes `development: true`, which admits private and local addresses for a local demo: SafeFetch still resolves and pins the host, reads only https, refuses a redirect to another origin, and holds the size cap and the timeout.
+It warns once, throws a `TypeError` for any value but a boolean, and makes `createSafeFetch` throw while `NODE_ENV` is `production`, saying to list in `allowOrigins` the origins you own instead.
+`SafeFetchResponse` has a new optional member, `text()`, which `createSafeFetch` answers, so a `FetchProvider` whose `fetch` returns SafeFetch's answer is read by the did:web and status-list readers, as "A custom `FetchProvider` given to the did:web or cheqd resolver, or to `CheqdStatusListResolver`" says.
 
 #### A did:web or status-list URL whose scheme is not http or https
 
-Every did:web and status-list read now refuses a URL that is not an absolute http or https URL, such as a `data:` or `file:` URL, before any request, whatever `allowPrivateNetworkHosts` says.
+Every did:web and status-list read now refuses a URL that is not an absolute http or https URL, such as a `data:` or `file:` URL, before any request, whatever `allowPrivateNetworkHosts` or `development` says.
 `RuntimeFetchProvider.fetchStatusList` read such a URL through the runtime's `fetch`.
 
 #### A DID longer than 2,048 UTF-16 code units, such as a did:key for an ML-DSA-65 or ML-DSA-87 post-quantum key, or a did:peer:2 that lists many keys or services
@@ -426,7 +525,7 @@ For example, a `verifyCard` given 30,000 still fails a status check after 5 seco
 The middleware passes `delegation.dependencyTimeoutMs` to the verifier, the did:web resolver and the fetch provider it builds itself, and to each factory in `didResolvers`, so a resolver that `cheqdResolver(options)` builds waits as long unless its own options set another time.
 It does not pass it to an object the host built: a `fetchProvider`, a `didResolver`, a resolver instance in `didResolvers` or a `statusListResolver`, such as a `CheqdStatusListResolver`, each of which takes its own.
 A `RuntimeFetchProvider` passes its `dependencyTimeoutMs` to the factories in its `didResolvers` the same way.
-A `didResolvers` factory of your own receives it as the `dependencyTimeoutMs` of a new second argument.
+A `didResolvers` factory of your own receives it as the `dependencyTimeoutMs` of a new second argument, `DIDResolverFactoryContext`, which from the middleware also carries `development: true` under `KyaOsConfig.development`.
 A reason states the time that was configured: `did not answer within 30 seconds` for 30,000, and in milliseconds when it is not a whole number of seconds, as in `did not answer within 7500 ms`.
 A checker built with `createRevocationChecker` now also has this deadline when it is called directly, where on 1.22.0 it waited without end, and resolves revoked and not fresh when it is missed.
 `verifyVcJwtSignature` takes the time for its DID resolver as an optional fifth argument.
@@ -469,8 +568,11 @@ For a VC-JWT whose envelope does not verify, it now has the `proof: { type: "Jwt
 
 A chain's links, and then its root's `issuer` against `trustedRootIssuers`, are checked before any credential is verified, so a broken link or an untrusted root now gives that reason even when a signature would also fail, and for a VC-JWT the reasons for a malformed chain, a missing `resolveDelegationChain`, `maxChainLength` and root admission come before the envelope's.
 An untrusted root reads `Root delegation <id> is issued by "<issuer>", which is not a trusted root issuer`, the issuer quoted as other reasons quote a value.
-`Could not resolve issuer DID` is the reason for an issuer DID over its limit, for a VC-JWT as for a credential with an embedded proof, without asking the resolver.
-A resolution that misses its deadline fails with a reason that ends `DID resolution deadline exceeded`, and a status-list read with one that ends `Status list fetch deadline exceeded`, or names the limit it exceeded.
+`Could not resolve issuer DID` is the reason for an issuer DID over its limit, for a VC-JWT as for a credential with an embedded proof, without asking the resolver, and with nothing after the DID.
+When a resolver finds no document and says why through `lastFailure`, as the library's own do, the reason ends with that detail in parentheses, so match on its start, or ask the resolver's `lastFailure(did)` for the `cause`.
+A resolution that misses the verifier's deadline fails with a reason that ends `DID resolution deadline exceeded`, or, when the resolver's own deadline is the shorter, one that ends `(DID resolution deadline exceeded: no document arrived within <time>)`, and a status-list read with one that ends `Status list fetch deadline exceeded`, or names the limit it exceeded.
+The refusal of a private or local host, and `createSafeFetch`'s of a non-public address, now end by naming the settings that admit the host.
+The reason of a status check, in `Status check error`, the chain walk and `verifyCard`, is cut after 512 UTF-16 code units, and the other texts a reason quotes after 256, as "Changed refusal reasons" says.
 Any other dependency that misses it gives a reason that ends `did not answer within 5 seconds`, or within the time `dependencyTimeoutMs` sets, listed under "A dependency that can take longer than 5 seconds to answer".
 `ProofVerifier` refuses a DID or key id over its limit with `DID or key identifier exceeds resource limit`, and an empty DID with `DID is empty`.
 

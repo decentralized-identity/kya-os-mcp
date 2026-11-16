@@ -429,7 +429,7 @@ The built-in DID resolvers and status-list readers bound what a delegation or a 
 They refuse an identifier, document, list or response over a limit, never cut it to fit, and give up on one that is too slow.
 [SPEC.md §4.4.2](./SPEC.md#442-reference-implementation-resource-policy) lists every limit, and the Upgrading notes in the changelog say what changes for callers.
 Check that your DID documents and status lists are within those limits before you upgrade.
-A custom `FetchProvider` must return a `Response` whose `body` is a WHATWG `ReadableStream`, since the readers read it as a stream and never call `json()`.
+A custom `FetchProvider` may return a `Response` whose `body` is a WHATWG `ReadableStream`, which the readers read as it streams, or a response with a `text()` or `json()` method, such as what `createSafeFetch` returns, which they read through it under the same limits.
 Verifiers bound how long they wait for any `DIDResolver` and check the document it returns, but a custom resolver must bound its own fetching and parsing.
 The application still has to limit the size of incoming requests and how many resolutions run at once.
 

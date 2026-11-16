@@ -26,6 +26,7 @@ import {
 } from './schema.js';
 import { CHECKER_REASON_LENGTH, type BitstringRevocationChecker } from './revocation.js';
 import { sanitizeForMessage } from '../utils/message-text.js';
+import { describeValue } from '../utils/describe-value.js';
 import { readRevocationAnswer } from '../utils/revocation-answer.js';
 import { answerWithinDeadline, DeadlineExceededError, dependencyTimeout } from '../utils/deadline.js';
 import { checkWithinDeadline } from './revocation-deadline.js';
@@ -154,7 +155,14 @@ export interface VerifyCardResult {
   /** RECOMPUTED — the card's self-declared `conformanceLevel` is never trusted. */
   conformanceLevel: ConformanceLevel;
   verifiedCapabilities: string[];
-  accountability?: { responsibleParty?: string; principal?: string; verified: boolean; fresh?: boolean };
+  accountability?: {
+    responsibleParty?: string;
+    principal?: string;
+    verified: boolean;
+    fresh?: boolean;
+    /** Why the party did not verify, when the accountability verifier's answer could not be read. */
+    reason?: string;
+  };
   attestations: Array<{ type: string; subject?: string; verified: boolean }>;
   /** Present when a proof was recomputed: the live holder-of-key verdict. */
   proof?: { verified: boolean; did?: string; level?: ProofAssurance; reasons: string[] };
@@ -298,17 +306,40 @@ async function checkAccountability(
   if (!card.responsibleParty) return undefined;
   const verifier = deps.accountabilityVerifier;
   const raw = verifier
-    ? await unlessUnanswered<boolean | AccountabilityResult>('the accountability verifier', false, () =>
+    ? await unlessUnanswered<unknown>('the accountability verifier', false, () =>
         verifier(card, { trustedIssuers, proofDid }),
       timeoutMs)
     : false;
-  // This trusted plugin boundary can still receive untyped JavaScript results. A truthy string such
-  // as "false" must neither grant status-list signing authority nor keep the Card's L3: only a
-  // literal `true` verifies or is fresh, and an omitted `fresh` stays unknown.
-  const verdict = typeof raw === 'object' && raw !== null ? raw : undefined;
-  const verified = raw === true || verdict?.verified === true;
-  const fresh = verdict?.fresh === undefined ? undefined : verdict.fresh === true;
-  return { responsibleParty: card.responsibleParty, principal: card.principal, verified, fresh };
+  return { responsibleParty: card.responsibleParty, principal: card.principal, ...readAccountability(raw) };
+}
+
+const ACCOUNTABILITY_ANSWER = "the accountability verifier's answer";
+
+/**
+ * What the accountability verifier's `answer` comes to. A truthy string such as "false" must
+ * neither grant status-list authority nor keep the Card's L3, so it verifies only as the literal
+ * `true` (the DEPRECATED bare boolean) or an object whose `verified` is `true`, and is fresh only
+ * as a literal `true`; a `fresh` left out or `undefined` stays unknown. An answer that is neither a
+ * boolean nor an object, a `verified` that is not a boolean, and an answer that throws when looked
+ * at do not verify, with a reason. Each member is read once, inside the `try`, so nothing throws.
+ */
+function readAccountability(
+  answer: unknown,
+): Pick<NonNullable<VerifyCardResult['accountability']>, 'verified' | 'fresh' | 'reason'> {
+  if (typeof answer === 'boolean') return { verified: answer, fresh: undefined };
+  try {
+    if (typeof answer !== 'object' || answer === null) {
+      const reason = `${ACCOUNTABILITY_ANSWER} (${describeValue(answer)}) is neither a boolean nor an object`;
+      return { verified: false, fresh: undefined, reason };
+    }
+    const { verified, fresh: stated } = answer as Record<string, unknown>;
+    const fresh = stated === undefined ? undefined : stated === true;
+    if (typeof verified === 'boolean') return { verified, fresh };
+    const reason = `the verified member of ${ACCOUNTABILITY_ANSWER} (${describeValue(verified)}) is neither true nor false`;
+    return { verified: false, fresh, reason };
+  } catch {
+    return { verified: false, fresh: undefined, reason: `${ACCOUNTABILITY_ANSWER} threw when it was read` };
+  }
 }
 
 /** Recompute each attestation VC via the injected seam (unverified when no seam is injected). */

@@ -11,7 +11,8 @@ body: |-
     and a capability check counts only when `verified` and `unverified`
     are arrays of strings, with a `fresh` other than `true` read as
     `false`. Any other answer leaves the claim unverified, the proof with
-    the reason `proof_verdict_unreadable`, and nothing throws. A seam typed
+    the reason `proof_verdict_unreadable` and the accountability check with
+    an `accountability.reason`, and nothing throws. A seam typed
     against the library needs no change. See UPGRADING.md, "A custom
     `signatureVerifier`, or another dependency, whose verdict is not the
     boolean its type promises".

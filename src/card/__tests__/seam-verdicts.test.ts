@@ -2,11 +2,13 @@
  * The seams `verifyCard` asks are code the host supplies, and one written in JavaScript, or one with
  * a fault, can answer anything. Each verdict counts only as the literal its type promises: an
  * attestation verifies on `true`, a proof on an object whose `ok` is `true` and whose `did` is a
- * string, a capability on a name in an array of strings, and a capability check is fresh on `true`.
+ * string, a capability on a name in an array of strings, a responsible party on `true` or an
+ * object whose `verified` is `true`, and a capability or accountability check is fresh on `true`.
  * Any other answer leaves the claim unverified, and `verifyCard` does not throw for it.
  */
 
 import { describe, expect, it } from 'vitest';
+import { revokedProxy } from '../../__tests__/utils/verdict-answers.js';
 import { verifyCard, type EntityCard, type VerifyCardDeps } from '../index.js';
 
 const CARD: EntityCard = {
@@ -173,5 +175,54 @@ describe('a capability verifier whose answer is not a capability check', () => {
       conformanceLevel: 'L1',
       verifiedCapabilities: ['handshake'],
     });
+  });
+});
+
+describe('an accountability verifier whose answer is not an accountability verdict', () => {
+  const ANSWER = "the accountability verifier's answer";
+  it.each([
+    ['"true"', 'true', `${ANSWER} ("true") is neither a boolean nor an object`],
+    ['1', 1, `${ANSWER} (of type number) is neither a boolean nor an object`],
+    ['undefined', undefined, `${ANSWER} (of type undefined) is neither a boolean nor an object`],
+    ['null', null, `${ANSWER} (of type null) is neither a boolean nor an object`],
+    ['{ verified: "true" }', { verified: 'true', fresh: true }, `the verified member of ${ANSWER} ("true") is neither true nor false`],
+    ['a boxed true', { verified: new Boolean(true) }, `the verified member of ${ANSWER} (of type object) is neither true nor false`],
+    ['{}', {}, `the verified member of ${ANSWER} (of type undefined) is neither true nor false`],
+    ['an answer whose verified throws', throwingOn('verified', { fresh: true }), `${ANSWER} threw when it was read`],
+    ['an answer whose fresh throws', throwingOn('fresh', { verified: true }), `${ANSWER} threw when it was read`],
+    ['a verified that throws when it is looked at', { verified: revokedProxy() }, `${ANSWER} threw when it was read`],
+  ])('does not verify the responsible party, says why, and does not throw, on %s', async (_label, answer, reason) => {
+    const result = await withAnswer('accountabilityVerifier', answer);
+    expect(result.ok).toBe(false);
+    expect(result.accountability).toMatchObject({ responsibleParty: CARD.responsibleParty, verified: false, reason });
+  });
+
+  it('verifies on the literal true, or an object whose verified is true, and does not on false, with no reason', async () => {
+    for (const [answer, verified] of [[true, true], [{ verified: true }, true], [false, false], [{ verified: false }, false]] as const) {
+      const { accountability } = await withAnswer('accountabilityVerifier', answer);
+      expect(accountability).toMatchObject({ verified });
+      expect(accountability).not.toHaveProperty('reason');
+    }
+  });
+
+  it('reads verified and fresh once each, so a getter is held to what it first answered', async () => {
+    const reads = { verified: 0, fresh: 0 };
+    const answer = {
+      get verified() {
+        reads.verified += 1;
+        return reads.verified === 1;
+      },
+      get fresh() {
+        reads.fresh += 1;
+        return reads.fresh === 1;
+      },
+    };
+    const result = await withAnswer('accountabilityVerifier', answer);
+    expect(result.accountability).toMatchObject({ verified: true, fresh: true });
+    expect(reads).toEqual({ verified: 1, fresh: 1 });
+    let asked = 0;
+    const turning = { get verified() { asked += 1; return asked !== 1; } };
+    expect((await withAnswer('accountabilityVerifier', turning)).accountability).toMatchObject({ verified: false });
+    expect(asked).toBe(1);
   });
 });

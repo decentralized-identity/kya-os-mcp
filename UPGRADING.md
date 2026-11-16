@@ -73,7 +73,8 @@ Issue no delegation that holds one.
 Every refusal of a delegation credential, a delegation chain, an Entity Card, the delegation a request carries or a credential's status now carries a `code` from a fixed catalog, and `transient`, which says whether the same request may pass later.
 A reason is text for people, and its wording changed in this release and may change in another; a code does not.
 Branch on the code, and show or log the reason.
-What a client receives is unchanged: the same `error`, the same reason, and no new member.
+What the delegation gate of `withKyaOs` sends its client is unchanged: the same `error`, the same reason, and no new member.
+A server of your own that sends its client a whole result, rather than the members the client needs, now sends the code too, as "Where the code is" says.
 
 `REFUSAL_CODES`, its type `RefusalCode`, `isRefusalCode(value)` and `isTransientRefusal(code)` are exported from `@kya-os/mcp`, `@kya-os/mcp/delegation` and `@kya-os/mcp/card`.
 A code has the name of a `KYA_OS_ERROR_CODES` value where the two mean the same.
@@ -131,7 +132,8 @@ When `verifyCard` refuses several claims of a Card, it reports the code of the f
 
 - `code` and `transient` are on a refusal from `DelegationCredentialVerifier` (`DelegationVCVerificationResult`, with its `StatusCheckResult` and `SignatureVerificationResult`), the delegation `validateDelegationChain` (`ChainValidationResult`), the Card's `validateDelegationChain` and `evaluateDelegationChain` (`DelegationChainResult`), `evaluateRevocationChain` (`RevocationChainResult`), the checker `createRevocationChecker` builds (`RevocationStatus`), and `verifyCard` (`VerifyCardResult`) and its `revocation` (`CardRevocation`).
 - `refusalCode` and `transient` are on a rejection from `verifyRequestDelegation` (`RequestDelegationResult`) and from the `requireDelegation` guard (`DelegationGateResult`), since there `code`, or the guard's `error.code`, already holds the gate's code, such as `delegation_invalid`, and on a refused `readDelegationChain` (`CarriedChainRead`).
-  The guard's `error`, which a server sends its client, is unchanged.
+  The guard's `status` and `error` are unchanged, but a server that sends its client a rejection as it is, as `if (!authority.ok) return authority;` does, now sends `refusalCode` and `transient` as well.
+  Send only what the client needs, such as `{ status: authority.status, error: authority.error }`, and log the code.
 - The delegation gate of `withKyaOs` records the code of a delegation it refuses as `authorization.verificationCode` of the `delegation.rejected` audit event, as `delegation.verified` records `DELEGATION_CHAIN_VALID`.
   The event's `reasonCode` stays `DELEGATION_VERIFICATION_FAILED`, and it carries no reason text and no other new member.
 - The gate's warning for a refused delegation, `[kya-os] Delegation verification failed for "<tool>": <reason>`, has a second argument, `{ code, transient }`, and its holder-binding and missing-scope warnings have one with `holder_binding_failed` and `insufficient_scope`.
@@ -396,13 +398,14 @@ This is the checker given to `evaluateRevocationChain` and `evaluateDelegationCh
 Its answer is read by the reader the delegation side uses, so the rule is the same on both sides.
 A hop or a Card passes only on an answer whose `revoked` is the literal `false`, is revoked only when it is the literal `true`, and is fresh only when `fresh` is the literal `true`.
 Any other answer, such as `undefined`, `null`, `0`, `{}`, `{ revoked: 0 }`, `{ revoked: "false" }` or one with a member whose getter throws, refuses the hop with a reason that says what was wrong, such as `revocation: hop 0 (list "https://status.example/1", index "7") has a status that could not be read: the revoked member of the revocation checker's answer (of type number) is neither true nor false`.
-`verifyRequestDelegation` and `requireDelegation` refuse the call as `delegation_revoked` with that reason.
-`verifyCard` reports such a Card as `revocation: { revoked: true, fresh: false, reason }`, where `reason`, a new optional member, says what could not be read; it is `ok: false` at L1, as any revoked Card is.
+`verifyRequestDelegation` and `requireDelegation` refuse the call as `delegation_revoked` with that reason, and the `refusalCode` `status_unavailable`.
+`verifyCard` reports such a Card as `revocation: { revoked: true, fresh: false, reason, code: "status_unavailable", transient: true }`, where `reason`, a new optional member, says what could not be read; it is `ok: false` at L1, as any revoked Card is.
 On 1.22.0 each member was read by its truthiness: a hop or a Card passed on `{}` or `{ revoked: 0 }`, was revoked on `{ revoked: "false" }`, was fresh on any truthy `fresh`, such as `1` or `"false"`, and `evaluateRevocationChain` threw a `TypeError` on `undefined` or `null`.
 `RevocationStatus` has a new optional member, `reason`: why the status could not be proven clear.
 The checker `createRevocationChecker` builds gives one whenever it fails closed, such as `status-list proof rejected` or the reason `acceptStatusList` gave, and a custom checker may give its own.
 `evaluateRevocationChain` appends it to the refusal of a revoked hop, and `verifyCard` reports it as `revocation.reason`, each cut after 512 UTF-16 code units, `CHECKER_REASON_LENGTH`, so that the configuration a keeper refusal ends with is not cut.
-Code that compares a verdict of that checker with `{ revoked: true, fresh: false }` exactly must allow for the member.
+Every revoked verdict of that checker also carries `code` and `transient`, a set bit included, as `{ revoked: true, fresh: true, code: "delegation_revoked", transient: false }`, as "Refusal codes" says.
+So code or a test that compares a verdict of that checker exactly, with `{ revoked: true, fresh: false }` or with a set bit's `{ revoked: true, fresh: true }`, must allow for these members, and one that compares a refused `verifyCard` result or its `revocation` exactly must allow for `code` and `transient` too.
 A checker that `createRevocationChecker` builds, or one written in TypeScript against `RevocationStatus`, already answers two booleans and needs no change; make any other return `{ revoked: true, fresh: false }` when it cannot tell.
 
 ### Status-list exports for a custom reader
@@ -455,7 +458,9 @@ The readers read such a response through its `text()`, which must answer a strin
 They wait for that answer within the read's one deadline, hold the UTF-8 bytes of the text to the same byte cap, and hold the text to the same JSON limits before they parse it.
 `text()` and `json()` hold the whole body before the reader can count it, so only the provider bounds what that costs; `createSafeFetch` holds a body to its own `maxBytes`, 1 MiB by default.
 A response with none of the three is refused, saying what a provider must return, as "Changed refusal reasons" lists.
-A stream body that is not valid UTF-8 is refused, where `json()` replaced the invalid bytes, and text that is not JSON is refused as `DID resolution response is not JSON` or `Status list fetch response is not JSON`.
+A stream body that is not valid UTF-8 is refused, as `DID resolution response is not valid UTF-8` or `Status list fetch response is not valid UTF-8`, where `json()` replaced the invalid bytes.
+A response read through its `text()` is read as the string it answers, so the provider's own decoding decides, and a `Response`'s `text()` replaces invalid bytes with U+FFFD.
+Text that is not JSON is refused as `DID resolution response is not JSON` or `Status list fetch response is not JSON`.
 `SafeFetchResponse` has a new optional member, `text()`, which `createSafeFetch` answers, so a provider over it is read from the exact text the server sent.
 
 #### A `DidCheqdResolver` given `headers`
@@ -474,6 +479,7 @@ A key the document must publish has to be an own enumerable member, and an array
 `DIDResolver` has a new optional member, `lastFailure(did)`, which answers why the resolver's last resolution of `did` found no document, as a `DidResolutionFailure`, `{ cause, detail }`.
 The `cause` is `host_refused`, `deadline_exceeded`, `unavailable` or `invalid_document`, and the `detail` says what failed, and how to fix it where the library knows, in the library's own words, never quoting a transport's error, which stays in the log.
 `DidWebResolver`, `createDidWebResolver`, `DidCheqdResolver` and the delegation gate's own resolver have it, and a verifier that refuses a credential as `Could not resolve issuer DID` adds the detail in parentheses, as "Changed refusal reasons" shows.
+The delegation gate of `withKyaOs` sends that reason to its client, so the client sees the detail too, within the 256 UTF-16 code units of the reason, such as `(DID resolution failed: HTTP 404 for "<url>")` or the private-host refusal, which names the host.
 A resolver without it is refused as before; one that wraps a library resolver may pass it on, as `lastFailure: (did) => inner.lastFailure?.(did)`.
 It reports the last failure for the DID, so a resolution that ends in between may answer for it: read it as a diagnosis, never as a security decision.
 `DidResolutionFailure` and `DidResolutionFailureCause` are exported from `@kya-os/mcp` and `@kya-os/mcp/delegation`.

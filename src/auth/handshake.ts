@@ -14,22 +14,12 @@ import type {
   NeedsAuthorizationError,
   AuthorizationDisplay,
 } from '../types/protocol.js';
-import { createNeedsAuthorizationError, type DelegationRecord } from '../types/protocol.js';
+import { createNeedsAuthorizationError } from '../types/protocol.js';
 import { logger } from '../logging/index.js';
 import { readDelegationVerdict } from './delegation-verdict.js';
-import type { DelegationVerifier, VerifyDelegationResult } from './types.js';
-import type { RefusalCode } from '../refusal-codes.js';
+import type { AgentReputation, DelegationVerifier, VerifyDelegationResult, VerifyOrHintsResult } from './types.js';
 
-export type { DelegationVerifier, VerifyDelegationResult };
-
-export interface AgentReputation {
-  agentDid: string;
-  score: number | null;
-  totalInteractions: number;
-  successRate: number;
-  riskLevel: 'low' | 'medium' | 'high' | 'unknown';
-  updatedAt: number;
-}
+export type { AgentReputation, DelegationVerifier, VerifyDelegationResult, VerifyOrHintsResult };
 
 /**
  * Policy for handling agents with no reputation history.
@@ -69,44 +59,6 @@ export interface AuthHandshakeConfig {
     minReputationScore?: number;
   };
   debug?: boolean;
-}
-
-export interface VerifyOrHintsResult {
-  authorized: boolean;
-  delegation?: DelegationRecord;
-  credential?: {
-    agent_did: string;
-    user_did: string;
-    scopes: string[];
-    authorization: {
-      type:
-        | 'oauth'
-        | 'oauth2'
-        | 'password'
-        | 'credential'
-        | 'webauthn'
-        | 'siwe'
-        | 'none';
-      provider?: string;
-      credentialType?: string;
-      rpId?: string;
-      userVerification?: 'required' | 'preferred' | 'discouraged';
-      chainId?: number;
-      domain?: string;
-    };
-    [key: string]: unknown;
-  };
-  authError?: NeedsAuthorizationError;
-  reputation?: AgentReputation;
-  reason?: string;
-  /**
-   * The code of the delegation verifier's refusal, when it refused: the code its answer stated,
-   * `delegation_invalid` when it stated none, or `runtime_error` when its answer could not be read.
-   * For the operator, as `reason` is: `authError`, which the client receives, does not carry it.
-   */
-  code?: RefusalCode;
-  /** Whether {@link code} is transient: the same agent may be authorized when it asks again. */
-  transient?: boolean;
 }
 
 export interface ResumeTokenStore {

@@ -208,12 +208,16 @@ describe('verifyOrHints — needs_authorization challenge', () => {
   }
 
   it('states expiresAt in Unix seconds, per the needs-authorization schema', async () => {
-    const nowSeconds = Math.floor(Date.now() / 1000);
-    const { expiresAt } = await challenge();
+    // Half way through a second, so seconds that are rounded or rounded up are told apart.
+    const now = 1_794_000_000_500;
+    vi.useFakeTimers({ toFake: ['Date'], now });
+    try {
+      const { expiresAt } = await challenge();
 
-    expect(Number.isInteger(expiresAt)).toBe(true);
-    expect(expiresAt).toBeGreaterThan(nowSeconds);
-    expect(expiresAt).toBeLessThanOrEqual(nowSeconds + 600);
+      expect(expiresAt).toBe(Math.floor(now / 1000) + 600);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('keeps the resume token out of third-party QR services', async () => {

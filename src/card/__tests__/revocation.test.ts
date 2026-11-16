@@ -127,6 +127,15 @@ describe('createRevocationChecker (W3C Bitstring Status List v1.0)', () => {
     expect(await check(entryAt(5))).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
   });
 
+  it('refuses a list with no credentialSubject by its purpose, before reading its bits', async () => {
+    const check = createRevocationChecker({ fetch: jsonFetch({ id: STATUS_URL }), now: NOW });
+    expect(await check(entryAt(5))).toEqual({
+      revoked: true,
+      fresh: false,
+      reason: `status list has no statusPurpose (the entry's is "${STATUS_PURPOSE_REVOCATION}")`,
+    });
+  });
+
   it('FAIL-CLOSED on a statusListIndex out of range for the bitstring', async () => {
     const check = createRevocationChecker({ fetch: jsonFetch(statusCredential([5])), now: NOW });
     expect(await check(entryAt(99_999))).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });

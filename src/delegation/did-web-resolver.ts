@@ -32,35 +32,16 @@ interface ParsedDidWeb {
 }
 
 /**
- * Type guard for checking if value is a valid DID Document structure
+ * Whether a document the walk admitted, an object whose `id` is a DID, states its
+ * `verificationMethod`, when it states one, as an array of methods that each name an `id`, a
+ * `type` and a `controller`.
  */
-function isValidDIDDocument(value: unknown): value is DIDDocument {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const doc = value as Record<string, unknown>;
-
-  // id is required and must be a string
-  if (typeof doc['id'] !== 'string' || doc['id'].length === 0) {
-    return false;
-  }
-
-  // verificationMethod is optional but if present must be an array
-  if (doc['verificationMethod'] !== undefined) {
-    if (!Array.isArray(doc['verificationMethod'])) {
-      return false;
-    }
-
-    // Each verification method must have required fields
-    for (const vm of doc['verificationMethod']) {
-      if (!hasIdTypeAndController(vm)) {
-        return false;
-      }
-    }
-  }
-
-  return true;
+function hasWellFormedMethods(document: DIDDocument): boolean {
+  const methods: unknown = (document as unknown as Record<string, unknown>)['verificationMethod'];
+  return (
+    methods === undefined ||
+    (Array.isArray(methods) && methods.every((method) => hasIdTypeAndController(method)))
+  );
 }
 
 /**
@@ -235,19 +216,19 @@ export class DidWebResolver implements DIDResolver {
         return null;
       }
 
-      // Validate structure
-      if (!isValidDIDDocument(json)) {
+      const { document } = measure;
+      if (!hasWellFormedMethods(document)) {
         logger.warn(`[DidWebResolver] Invalid DID Document structure from ${url}`);
         return null;
       }
 
       // Verify the id matches the DID
-      if (json.id !== did) {
-        logger.warn(`[DidWebResolver] DID Document id mismatch: expected ${did}, got ${json.id}`);
+      if (document.id !== did) {
+        logger.warn(`[DidWebResolver] DID Document id mismatch: expected ${did}, got ${document.id}`);
         return null;
       }
 
-      return { document: json, bytes: measure.bytes };
+      return { document, bytes: measure.bytes };
     } catch (error) {
       logger.warn(
         `[DidWebResolver] Error resolving ${did}: ${error instanceof Error ? error.message : 'Unknown error'}`

@@ -639,8 +639,8 @@ describe('durable delegation grant validation', () => {
       // A `kid` that is not a string is malformed (RFC 7515 §4.1.4), so the
       // token is rejected before any issuer key is looked up.
       `${segment('{"alg":"EdDSA","typ":"JWT","kid":42}')}.${claims}.${signature}`,
-      // A JSON `null` claims set fails the middleware's own read of `vc`; the
-      // grant gate maps that throw to unauthorized, never to a pass.
+      // A JSON `null` claims set has no `vc` to read, so the credential is
+      // refused as malformed, before any issuer is resolved.
       `${segment('{"alg":"EdDSA"}')}.${segment('null')}.sig`,
     ];
     for (const credentialJwt of malformed) {

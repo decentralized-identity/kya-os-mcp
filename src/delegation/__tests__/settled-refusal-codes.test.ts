@@ -1,7 +1,8 @@
 /**
  * A refusal asking again cannot lift is coded as a verdict, never as transient: a did:key that does
- * not decode, a DID whose method no resolver of the verifier serves, a DID document over the byte
- * cap, and a status entry whose index is past the end of its list. Each was coded as though the
+ * not decode, a did:cheqd DID the cheqd resolver cannot ask for, a DID whose method no resolver of
+ * the verifier serves, a DID document over the byte cap, and a status entry whose index is past the
+ * end of its list. Each was coded as though the
  * DID or the list could not be read just now, inviting a retry that can only fail again. Every test
  * uses the package's public exports.
  */
@@ -16,6 +17,7 @@ import {
   type DIDResolver,
 } from '../../index.js';
 import { createRevocationChecker } from '../../card/index.js';
+import { createDidCheqdResolver } from '../../integrations/cheqd/index.js';
 import { AnsweringFetchProvider, safeFetchProvider, safeFetchServing } from '../../__tests__/utils/adopter-providers.js';
 import { delegationRecord, keyOf, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 import { codedAs } from '../../__tests__/utils/refusal-coding.js';
@@ -48,6 +50,22 @@ describe('a DID the verifier can never resolve', () => {
     expect(await refusalOf('did:ion:EiAbc', createDidKeyResolver())).toEqual({
       valid: false,
       reason: 'Could not resolve issuer DID: "did:ion:EiAbc" (the did:key resolver resolves no "ion" DID)',
+      ...codedAs('did_invalid'),
+    });
+  });
+
+  it.each([
+    ['a did:cheqd DID whose identifier the method does not allow', 'did:cheqd:mainnet:not.an.id', 'the DID is not a did:cheqd DID of mainnet or testnet'],
+    ['a did:cheqd DID of another network', 'did:cheqd:devnet:zAbc', 'the DID is not a did:cheqd DID of mainnet or testnet'],
+    ['a DID of another method', 'did:ion:EiAbc', 'the did:cheqd resolver resolves no "ion" DID'],
+  ])('is did_invalid, with no request, when the cheqd resolver is given %s', async (_name, did, why) => {
+    const endpoint = new AnsweringFetchProvider(() => {
+      throw new Error('no request expected');
+    });
+    const resolver = createDidCheqdResolver(endpoint, { resolverUrl: 'https://resolver.example/1.0/identifiers' });
+    expect(await refusalOf(did, resolver)).toEqual({
+      valid: false,
+      reason: `Could not resolve issuer DID: "${did}" (${why})`,
       ...codedAs('did_invalid'),
     });
   });

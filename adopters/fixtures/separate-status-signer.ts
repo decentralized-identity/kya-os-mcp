@@ -3,7 +3,9 @@
  * status lists with a separate identity, `did:web:issuer.example:status`, as a deployment that keeps
  * the list-signing key apart does. A verifier holds a list to the one keeper of its URL, so it
  * refuses that list until it is told, in `statusListIssuers`, that the status identity keeps the
- * issuer's lists. The refusal has to say so.
+ * issuer's lists. The refusal has to say so, printing the origin to bind as SPEC.md §6.6 reads one,
+ * `https://issuer.example`. Written with a `/` after it, the origin would bind only itself, as an
+ * exact URL, so the configuration is refused when it is given, naming the form to write.
  *
  * The chain is verified as the Entity Card gate verifies a request, `verifyRequestDelegation`, with
  * `createRevocationChecker` as its revocation check, so the checker's reason reaches the adopter.
@@ -79,14 +81,25 @@ await runCases('separate-status-signer', 'a list signed by a separate status DID
       assert.equal(result.code, 'delegation_revoked');
       const reasons = result.reasons.join('; ');
       assert.ok(reasons.includes('statusListIssuers'), `the reason does not name statusListIssuers: ${reasons}`);
+      const hint = `{ "${statusSigner.did}": ["https://issuer.example"] }`;
+      assert.ok(reasons.includes(hint), `the reason does not give the configuration ${hint}: ${reasons}`);
     },
   },
   {
-    name: 'with statusListIssuers binding https://issuer.example/ to the status DID, it is accepted',
-    run: async () => assertAccepted(await verifyChain({ [statusSigner.did]: ['https://issuer.example/'] })),
+    name: 'with statusListIssuers binding https://issuer.example, the form the refusal prints, to the status DID, it is accepted',
+    run: async () => assertAccepted(await verifyChain({ [statusSigner.did]: ['https://issuer.example'] })),
   },
   {
-    name: 'control: with the origin written https://issuer.example, it is accepted',
-    run: async () => assertAccepted(await verifyChain({ [statusSigner.did]: ['https://issuer.example'] })),
+    name: 'with the origin written https://issuer.example/, the configuration throws, naming https://issuer.example',
+    run: () => {
+      assert.throws(
+        () => verifyChain({ [statusSigner.did]: ['https://issuer.example/'] }),
+        (error: unknown) => {
+          assert.ok(error instanceof TypeError, `it threw ${String(error)}, not a TypeError`);
+          assert.ok(error.message.includes('write it as "https://issuer.example"'), `the error does not name the origin to write: ${error.message}`);
+          return true;
+        },
+      );
+    },
   },
 ]);

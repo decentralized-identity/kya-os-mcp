@@ -18,7 +18,10 @@ import { followRedirects, type RedirectRefusals } from './redirect-follower.js';
 /** Fetch one URL as given, without following a redirect. */
 export type SingleFetch = (url: string, init: RequestInit) => Promise<Response>;
 
-/** How the caller's rule names a URL it refuses, or `undefined` when it admits the URL. */
+/**
+ * How the caller's rule refuses a URL, as the text that follows `Redirect to `: the URL's name, the
+ * word `refused`, and anything the rule says after it; or `undefined` when it admits the URL.
+ */
 export type TargetRefusal = (url: string) => string | undefined;
 
 const REFUSALS: RedirectRefusals = {
@@ -51,7 +54,7 @@ export function fetchWithCheckedRedirects(
     },
     vetTarget({ target }) {
       const refused = refusal(target.href);
-      if (refused !== undefined) throw new Error(`Redirect to ${refused} refused`);
+      if (refused !== undefined) throw new Error(`Redirect to ${refused}`);
     },
     discard: redirect => cancelQuietly(() => redirect.body?.cancel()),
     // An empty Location is the relative reference to the URL that sent it, which is asked again

@@ -74,4 +74,13 @@ export interface SafeFetchOptions {
   maxBytes?: number;
   /** Maximum same-origin redirects to follow (default 3). */
   maxRedirects?: number;
+  /**
+   * Read hosts whose addresses are private or local, such as a `*.localhost` name in a local demo:
+   * the host is still resolved once and pinned, but its address is not screened. Nothing else
+   * changes: https alone, the origin rule for redirects, the size cap and the timeout all hold. For
+   * development only: while `NODE_ENV` is `production` it throws when the fetcher is built, and it
+   * warns once per process. A production deployment lists the origins it owns in `allowOrigins`
+   * instead. Any value but a boolean throws a `TypeError`.
+   */
+  development?: boolean;
 }

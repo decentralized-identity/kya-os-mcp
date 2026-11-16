@@ -24,11 +24,13 @@
  * First-party escape hatch: `allowOrigins` / `firstPartyOrigin` list origins a caller owns. A
  * request whose origin equals a configured one is fetched plain (origin-equality is not
  * attacker-routable); every other origin still takes the guarded path, fail-closed.
+ * `development: true` admits private and local addresses on that path, for a local demo only.
  *
  * All I/O is injected via pluggable seams (`lookup`, `transport`) so the policy is unit tested
  * with mocked DNS + transport. No crypto here — no mcp-i-core dependency leaks in.
  */
 
+import { developmentMode } from './development-mode.js';
 import { isBlockedAddress } from './ip-classifier.js';
 import { followRedirects, MAX_REDIRECTS, type RedirectRefusals, type RedirectTarget } from './redirect-follower.js';
 import {
@@ -81,16 +83,25 @@ function assertHttpsUrl(raw: string): string {
   return url.href;
 }
 
-/** Resolve the host ONCE, reject if ANY resolved address is non-public, and pin the first. */
-async function resolveAndPin(hostname: string, lookup: DnsLookup): Promise<DnsAddress> {
+/** The production opt-in SafeFetch's refusals and its production guard name beside `development: true`. */
+const OWNED_ORIGINS = "list each origin you own in SafeFetch's allowOrigins";
+
+/**
+ * Resolve the host ONCE, reject if ANY resolved address is non-public, unless `admitPrivate`, and
+ * pin the first. The refusal says what admits such an address.
+ */
+async function resolveAndPin(hostname: string, lookup: DnsLookup, admitPrivate: boolean): Promise<DnsAddress> {
   const addresses = await lookup(hostname);
   const [first] = addresses;
   if (!first) {
     throw new Error(`safe-fetch: DNS lookup for "${hostname}" returned no addresses`);
   }
-  for (const candidate of addresses) {
+  for (const candidate of admitPrivate ? [] : addresses) {
     if (isBlockedAddress(candidate.address)) {
-      throw new Error(`safe-fetch: refusing non-public address ${candidate.address} for host "${hostname}"`);
+      throw new Error(
+        `safe-fetch: refusing non-public address ${candidate.address} for host "${hostname}": in local development, ` +
+          `set development: true; to read a host you own in production, ${OWNED_ORIGINS}`,
+      );
     }
   }
   return first;
@@ -145,6 +156,7 @@ export function createSafeFetch(options: SafeFetchOptions = {}): SafeFetch {
     timeoutMs: options.timeoutMs ?? DEFAULT_HOP_TIMEOUT_MS,
     maxBytes: options.maxBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
     trustedOrigins: normalizeTrustedOrigins(options),
+    admitPrivate: developmentMode(options.development, 'SafeFetchOptions.development', OWNED_ORIGINS),
   };
   const maxRedirects = options.maxRedirects ?? MAX_REDIRECTS;
 
@@ -168,6 +180,8 @@ interface HopConfig {
   timeoutMs: number;
   maxBytes: number;
   trustedOrigins: ReadonlySet<string>;
+  /** Whether `development: true` admits private and local addresses. */
+  admitPrivate: boolean;
 }
 
 /**
@@ -182,7 +196,7 @@ async function requestOnce(url: string, cfg: HopConfig): Promise<RawResponse> {
       fetchTransport(url, { signal, hostname, pinnedAddress: '', family: 4, maxBytes: cfg.maxBytes }),
     );
   }
-  const pinned = await resolveAndPin(hostname, cfg.lookup);
+  const pinned = await resolveAndPin(hostname, cfg.lookup, cfg.admitPrivate);
   return withTimeout(hostname, cfg.timeoutMs, (signal) =>
     cfg.transport(url, {
       signal,

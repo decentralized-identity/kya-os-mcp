@@ -13,11 +13,14 @@
  * The one opt-out is `allowPrivateNetworkHosts: true` on the transport, an option of
  * `RuntimeFetchProvider` and a member any `FetchProvider` may declare. It admits non-public IP
  * literals and local names; the scheme rule holds, and redirects are still followed by hand.
+ * `development: true` on a reader turns it on for that reader's transport ({@link admittingPrivateHosts}),
+ * and the refusal of a private host names both settings.
  */
 
 import { fetchWithCheckedRedirects, type TargetRefusal } from './checked-redirects.js';
 import { describeValue } from './describe-value.js';
 import type { FetchPort, PrivateNetworkTransport } from './fetch-port.js';
+import { PRODUCTION_PRIVATE_HOSTS } from './development-mode.js';
 import { isBlockedAddress } from './ip-classifier.js';
 
 export type { PrivateNetworkTransport } from './fetch-port.js';
@@ -74,28 +77,60 @@ function isPrivateHost(hostname: string): boolean {
   return isLocalName(host);
 }
 
+/** What the refusal of a private or local host says after `refused`: what it is, and the two settings that admit it. */
+export const PRIVATE_HOST_REMEDY =
+  `: a private or local host. In local development, set development: true; to read private hosts in production, ${PRODUCTION_PRIVATE_HOSTS}.`;
+
+/** How the rule refuses a URL: the name it gives the URL, and whether it refuses it as a private host. */
+interface RuleRefusal {
+  readonly named: string;
+  readonly privateHost: boolean;
+}
+
+/** Why the rule refuses `url`, or `undefined` when it admits it. */
+function ruleRefusal(url: string, allowPrivateNetworkHosts: boolean): RuleRefusal | undefined {
+  const target = parsed(url);
+  if (target === undefined) return { named: 'a URL that does not parse', privateHost: false };
+  if (target.protocol !== 'https:' && target.protocol !== 'http:') {
+    return { named: `a ${describeValue(target.protocol)} URL`, privateHost: false };
+  }
+  if (!allowPrivateNetworkHosts && isPrivateHost(target.hostname)) return { named: describeValue(target.host), privateHost: true };
+  return undefined;
+}
+
 /**
  * How the rule names `url` when it refuses it, or `undefined` when it admits it: a URL that does
  * not parse as an absolute URL, which a runtime might resolve against a base of its own choosing; a
  * scheme other than http and https; and, unless `allowPrivateNetworkHosts` is true, a private host.
  */
 export function privateNetworkRefusal(url: string, allowPrivateNetworkHosts = false): string | undefined {
-  const target = parsed(url);
-  if (target === undefined) return 'a URL that does not parse';
-  if (target.protocol !== 'https:' && target.protocol !== 'http:') return `a ${describeValue(target.protocol)} URL`;
-  if (!allowPrivateNetworkHosts && isPrivateHost(target.hostname)) return describeValue(target.host);
-  return undefined;
+  return ruleRefusal(url, allowPrivateNetworkHosts)?.named;
 }
 
-/** `transport`'s `fetch` under the rule; a transport whose `allowPrivateNetworkHosts` is true admits private hosts. */
+/**
+ * `transport`'s `fetch` under the rule; a transport whose `allowPrivateNetworkHosts` is true admits
+ * private hosts. A refused request or redirect throws `Request to <url> refused` or
+ * `Redirect to <url> refused`, and for a private host goes on with {@link PRIVATE_HOST_REMEDY}.
+ */
 export function underPrivateNetworkRule(transport: PrivateNetworkTransport): FetchPort {
   const allowPrivateNetworkHosts = transport.allowPrivateNetworkHosts === true;
-  const refusal: TargetRefusal = url => privateNetworkRefusal(url, allowPrivateNetworkHosts);
+  const refusal: TargetRefusal = url => {
+    const refused = ruleRefusal(url, allowPrivateNetworkHosts);
+    return refused && `${refused.named} refused${refused.privateHost ? PRIVATE_HOST_REMEDY : ''}`;
+  };
   return {
     async fetch(url, init) {
       const refused = refusal(url);
-      if (refused !== undefined) throw new Error(`Request to ${refused} refused`);
+      if (refused !== undefined) throw new Error(`Request to ${refused}`);
       return fetchWithCheckedRedirects((target, options) => transport.fetch(target, options), url, (init ?? {}) as RequestInit, refusal);
     },
   };
+}
+
+/**
+ * `transport` with the rule's opt-out turned on, for a reader given `development: true`: the same
+ * `fetch`, called on `transport`, and `allowPrivateNetworkHosts: true`.
+ */
+export function admittingPrivateHosts(transport: PrivateNetworkTransport): PrivateNetworkTransport {
+  return { fetch: (url, options) => transport.fetch(url, options), allowPrivateNetworkHosts: true };
 }

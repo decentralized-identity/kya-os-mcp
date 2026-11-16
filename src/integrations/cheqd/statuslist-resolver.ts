@@ -68,6 +68,8 @@ import { bytesToBase64 } from '../../utils/base64.js';
 import { base64EitherBytes } from '../../utils/base64-reading.js';
 import { canonicalizeJsonBytes } from '../../utils/canonical-json.js';
 import { dependencyTimeout } from '../../utils/deadline.js';
+import { developmentMode } from '../../utils/development-mode.js';
+import { admittingPrivateHosts, type PrivateNetworkTransport } from '../../utils/private-network-rule.js';
 import { ed25519KeyBytes } from '../../utils/ed25519-public-key.js';
 import { TtlCache } from '../../utils/ttl-cache.js';
 
@@ -98,17 +100,29 @@ export interface CheqdStatusListResolverOptions {
    * 2,147,483,647. Default 5,000. Any other value throws a `TypeError` naming the option.
    */
   dependencyTimeoutMs?: number;
+  /**
+   * Read status lists on private and local hosts, such as a `*.localhost` name in a local demo, as
+   * a provider with `allowPrivateNetworkHosts: true` does, whatever the provider. Nothing else
+   * changes: the https rule, checked redirects, byte caps and deadlines all hold. For development
+   * only: while `NODE_ENV` is `production` it throws when the resolver is built, and it warns once
+   * per process. Any value but a boolean throws a `TypeError`.
+   */
+  development?: boolean;
 }
 
 export class CheqdStatusListResolver implements StatusListResolver {
   private readonly opts: CheqdStatusListResolverOptions;
+  /** What the list is read through: the provider, admitting private hosts under `development`. */
+  private readonly transport: PrivateNetworkTransport;
   private readonly cacheTtlMs: number;
   private cache: TtlCache<StatusList2021Credential>;
   private bustNextFetch = false;
   private readonly timeoutMs: number;
 
   constructor(options: CheqdStatusListResolverOptions) {
+    const development = developmentMode(options.development, 'CheqdStatusListResolverOptions.development');
     this.opts = options;
+    this.transport = development ? admittingPrivateHosts(options.fetchProvider) : options.fetchProvider;
     this.timeoutMs = dependencyTimeout(options.dependencyTimeoutMs);
     this.cacheTtlMs = options.cacheTtlMs ?? 10_000;
     // A single issuer realistically publishes a handful of lists; 16 entries
@@ -184,7 +198,7 @@ export class CheqdStatusListResolver implements StatusListResolver {
     // DID URL dereferencing input and 400s (invalidDidUrl) on unknown params
     // (verified live). The endpoint is served cf-cache-status DYNAMIC, so
     // post-revocation freshness only needs a no-cache header.
-    const body = (await fetchStatusListJson(this.opts.fetchProvider, url, {
+    const body = (await fetchStatusListJson(this.transport, url, {
       method: 'GET',
       headers: {
         Accept: 'application/json',

@@ -73,4 +73,9 @@ export interface MiddlewareDeps {
    * envelope minus `_meta`; the body profile binds the content array only.
    */
   responseProofProfile: ResponseProofProfile;
+  /**
+   * Whether `config.development` is on, checked once when the middleware is created: every
+   * resolver and reader the middleware builds then admits private and local hosts.
+   */
+  development: boolean;
 }

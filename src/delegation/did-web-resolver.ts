@@ -21,6 +21,8 @@ import { hasIdTypeAndController } from './verification-method-shape.js';
 
 import { admitParsedDidDocument, boundedDid, DidDocumentCache, type LoadedDidDocument } from './did-resource-limits.js';
 import { dependencyTimeout } from '../utils/deadline.js';
+import { developmentMode } from '../utils/development-mode.js';
+import { admittingPrivateHosts, type PrivateNetworkTransport } from '../utils/private-network-rule.js';
 import { fetchDidJson } from './read-did-json.js';
 
 /**
@@ -164,19 +166,29 @@ export interface DidWebResolverOptions {
    * 2,147,483,647. Default 5,000. Any other value throws a `TypeError` naming the option.
    */
   dependencyTimeoutMs?: number;
+  /**
+   * Read documents on private and local hosts, such as a `*.localhost` name in a local demo, as a
+   * provider with `allowPrivateNetworkHosts: true` does, whatever the provider. Nothing else
+   * changes: the scheme rule, checked redirects, byte caps and deadlines all hold. For development
+   * only: while `NODE_ENV` is `production` it throws when the resolver is built, and it warns once
+   * per process. A production deployment that reads intranet hosts gives its fetch provider
+   * `allowPrivateNetworkHosts: true` instead. Any value but a boolean throws a `TypeError`.
+   */
+  development?: boolean;
 }
 
 /**
  * DID:web resolver implementation
  */
 export class DidWebResolver implements DIDResolver {
-  private fetchProvider: Pick<FetchProvider, 'fetch' | 'allowPrivateNetworkHosts'>;
+  private fetchProvider: PrivateNetworkTransport;
   private cache: DidDocumentCache;
   private cacheTtl: number;
   private readonly timeoutMs: number;
 
   constructor(fetchProvider: Pick<FetchProvider, 'fetch' | 'allowPrivateNetworkHosts'>, options?: DidWebResolverOptions) {
-    this.fetchProvider = fetchProvider;
+    const development = developmentMode(options?.development, 'DidWebResolverOptions.development');
+    this.fetchProvider = development ? admittingPrivateHosts(fetchProvider) : fetchProvider;
     this.timeoutMs = dependencyTimeout(options?.dependencyTimeoutMs);
     this.cache = new DidDocumentCache(this.timeoutMs);
     this.cacheTtl = options?.cacheTtl ?? 300_000; // 5 minutes default
@@ -256,7 +268,7 @@ export class DidWebResolver implements DIDResolver {
  * Create a did:web resolver with the given fetch provider
  *
  * @param fetchProvider - Provider for making HTTP requests, read through the private-network rule
- *   unless it has `allowPrivateNetworkHosts: true`
+ *   unless it has `allowPrivateNetworkHosts: true` or `options.development` is true
  * @param options - Optional configuration
  * @returns DIDResolver implementation for did:web
  */

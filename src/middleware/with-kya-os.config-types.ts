@@ -69,7 +69,8 @@ export interface KyaOsDelegationConfig {
    * as SafeFetch's, read through it under the same limits; and it must pass
    * `redirect: "manual"` on, so each redirect is followed and checked by hand.
    * Its `allowPrivateNetworkHosts`, when `true`, admits private IP literals and
-   * local names, as in development.
+   * local names: the production opt-in for intranet hosts. In local
+   * development set `KyaOsConfig.development` instead.
    */
   fetchProvider?: FetchProvider;
   /**
@@ -270,6 +271,20 @@ export interface KyaOsConfig {
   responseProofProfile?: ResponseProofProfile;
   /** Delegation verification overrides */
   delegation?: KyaOsDelegationConfig;
+  /**
+   * Local development: every resolver and reader the middleware builds reads
+   * did:web documents on private and local hosts, such as a `*.localhost`
+   * name, as a fetch provider with `allowPrivateNetworkHosts: true` does,
+   * whatever `delegation.fetchProvider` is, and each factory in
+   * `delegation.didResolvers` is told so in its context. Nothing else
+   * changes: the scheme rule, checked redirects, byte caps and deadlines all
+   * hold. While `NODE_ENV` is `production`, creating the middleware throws;
+   * the first time it is on in a process, it warns once. To read intranet
+   * hosts in production, give the fetch provider
+   * `allowPrivateNetworkHosts: true`. Any value but a boolean throws a
+   * `TypeError`.
+   */
+  development?: boolean;
   /**
    * When true, automatically creates a session on the first tool call
    * if no session exists. Useful for demos and development where

@@ -8,6 +8,12 @@ export interface DIDResolverFactoryContext {
    * builds to wait as long, unless the factory's own options set another.
    */
   dependencyTimeoutMs?: number;
+  /**
+   * `true` when the owner runs with `development: true`, for a resolver the factory builds to admit
+   * private and local hosts as the owner's own resolvers do, for example by passing it on as
+   * `createDidWebResolver(fetchProvider, { development: context?.development })`.
+   */
+  development?: boolean;
 }
 
 export type DIDResolverFactory = (fetchProvider: FetchProvider, context?: DIDResolverFactoryContext) => DIDResolver;

@@ -130,7 +130,7 @@ export interface DelegationVerification {
 export function createDelegationVerification(
   deps: MiddlewareDeps,
 ): DelegationVerification {
-  const { identity, cryptoProvider, delegationConfig } = deps;
+  const { identity, cryptoProvider, delegationConfig, development } = deps;
 
   // Refused at startup, before anything that waits is built.
   const dependencyTimeoutMs = dependencyTimeout(delegationConfig?.dependencyTimeoutMs, "delegation.");
@@ -138,15 +138,17 @@ export function createDelegationVerification(
   const fetchProvider =
     delegationConfig?.fetchProvider ??
     (typeof globalThis.fetch === "function"
-      ? new RuntimeFetchProvider({ dependencyTimeoutMs })
+      ? new RuntimeFetchProvider({ dependencyTimeoutMs, allowPrivateNetworkHosts: development })
       : undefined);
+  // In development every resolver built here admits private and local hosts, whatever provider it reads through.
+  const developing = development ? { development } : {};
   const didWebResolver = fetchProvider
-    ? createDidWebResolver(fetchProvider, { dependencyTimeoutMs })
+    ? createDidWebResolver(fetchProvider, { dependencyTimeoutMs, ...developing })
     : undefined;
   const configuredDidResolvers = buildDidResolverRegistry(
     delegationConfig?.didResolvers,
     fetchProvider,
-    { dependencyTimeoutMs },
+    { dependencyTimeoutMs, ...developing },
   );
   const didResolver: DIDResolver = {
     async resolve(did: string) {

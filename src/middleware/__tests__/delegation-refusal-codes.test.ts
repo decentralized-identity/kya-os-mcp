@@ -166,6 +166,23 @@ describe('a delegation the gate refuses', () => {
     expect(warn.mock.calls.find(([text]) => String(text).startsWith(`[kya-os] ${line}`))?.[1]).toEqual({ code, transient: false });
   });
 
+  it.each<[string, unknown, string]>([
+    ['no holder-of-key proof', undefined, `[kya-os] Holder binding: "${TOOL}" called without _kyaos_proof; the call was allowed, as holderBinding is "warn"`],
+    ['a holder-of-key proof that does not bind', {}, `[kya-os] Holder binding `],
+  ])('logs a call with %s where binding only warns as allowed, with no code', async (_name, proof, line) => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const { kyaos } = await makeServer({ holderBinding: 'warn' });
+    const [user, agent] = await Promise.all([party(), party()]);
+    const call = { ...ARGS, _kyaos_delegation: await granted(user, agent), ...(proof === undefined ? {} : { _kyaos_proof: proof }) };
+    const result = await kyaos.wrapWithDelegation(TOOL, CONSENT, released)(call);
+    expect(result.isError).toBeUndefined();
+    const logged = warn.mock.calls.filter(([text]) => String(text).startsWith('[kya-os] Holder binding'));
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toHaveLength(1);
+    expect(String(logged[0]![0])).toContain(line);
+    expect(String(logged[0]![0])).toContain('the call was allowed, as holderBinding is "warn"');
+  });
+
   it('logs the full reason, up to the length a checker reason may have, and tells the client the reason cut as before', async () => {
     const said = 'r'.repeat(CHECKER_REASON_LENGTH);
     const { body, logged } = await presentedTo({ revocationChecker: { isRevoked: async () => ({ revoked: true, reason: said }) } }, granted);

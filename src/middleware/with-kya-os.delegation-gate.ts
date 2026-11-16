@@ -74,6 +74,20 @@ export function createDelegationGate(
   const { identity, holderBindingMode, holderBindingVerifier, audit } = deps;
   const { attachOutcomeProof, requireProofLayer, resolveExistingGrant, bindGrantOnSuccess } =
     wiring;
+
+  /**
+   * Log a call whose holder-of-key proof is missing or does not bind, as `what` says, with the
+   * proof's `reason` when there is one. Under `enforce` the call is refused, so the line carries
+   * the refusal's code; under `warn` it is let through, so the line says so and carries none.
+   */
+  const logUnboundHolder = (what: string, reason?: string): void => {
+    const why = reason === undefined ? "" : `: ${sanitizeForMessage(reason, CHECKER_REASON_LENGTH)}`;
+    if (holderBindingMode === "enforce") {
+      logger.warn(`[kya-os] Holder binding${what}${why}`, coded("holder_binding_failed"));
+    } else {
+      logger.warn(`[kya-os] Holder binding${what}; the call was allowed, as holderBinding is "warn"${why}`);
+    }
+  };
   const {
     verifyEncodableDelegation,
     buildDelegationErrorResponse,
@@ -217,10 +231,7 @@ export function createDelegationGate(
           if (proofArg === undefined) {
             const reason =
               "Holder-of-key proof (_kyaos_proof) is required for this delegation subject";
-            logger.warn(
-              `[kya-os] Holder binding: "${toolName}" called without _kyaos_proof`,
-              coded("holder_binding_failed"),
-            );
+            logUnboundHolder(`: "${toolName}" called without _kyaos_proof`);
             if (holderBindingMode === "enforce") {
               return attachOutcomeProof(
                 buildDelegationErrorResponse(
@@ -253,10 +264,7 @@ export function createDelegationGate(
               const reason =
                 binding.reason ??
                 "Holder-of-key proof did not bind the delegation subject";
-              logger.warn(
-                `[kya-os] Holder binding ${binding.status} for "${toolName}": ${sanitizeForMessage(reason, CHECKER_REASON_LENGTH)}`,
-                coded("holder_binding_failed"),
-              );
+              logUnboundHolder(` ${binding.status} for "${toolName}"`, reason);
               if (holderBindingMode === "enforce") {
                 return attachOutcomeProof(
                   buildDelegationErrorResponse(

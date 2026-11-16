@@ -7,12 +7,13 @@
  * issuer is accepted, including one an agent signs for itself, so the check means nothing. Outside
  * development such an API refuses to run, naming every fix; `development: true`, or
  * `allowAnyRootIssuer: true` by name, lets it run with one warning. The middleware
- * (`../middleware/with-kya-os.root-issuers.ts`) decides by {@link rootIssuerPolicy} and says so in
- * the words built here, with its own option names, so any other API that accepts a chain can
- * follow the same rule in the same words.
+ * (`../middleware/with-kya-os.root-issuers.ts`) and the Entity Card guards
+ * (`../card/request-root-issuers.ts`) both decide by {@link rootIssuerPolicy} and say so in the
+ * words built here, each with its own option names, so the two never drift apart.
  */
 
 import { describeValue } from '../utils/describe-value.js';
+import { developmentSwitch } from '../utils/development-mode.js';
 import { assertTrustedRootIssuers } from './root-admission.js';
 
 /** How an API names the options of the rule in its messages. */
@@ -84,6 +85,21 @@ export function rootIssuerPolicy(settings: RootIssuerSettings, names: RootIssuer
   };
 }
 
+/**
+ * Whether `value`, the `development` option of an API named `setting` that reads no host, turns
+ * development on, which lets the API accept any issuer. It is checked as everywhere else: anything
+ * but a boolean throws a `TypeError`, and `true` throws an `Error` naming every fix while `NODE_ENV`
+ * is `production`. The API's root-issuer warning says what it changes, so it logs nothing itself.
+ */
+export function rootIssuerDevelopment(value: unknown, setting: string, names: RootIssuerOptionNames): boolean {
+  return developmentSwitch(
+    value,
+    setting,
+    'development: true accepts a delegation from any issuer and must never run in production. Remove it, and ' +
+      `${lowerFirst(pinFix(names))}; to accept any issuer anyway, set ${names.prefix}allowAnyRootIssuer: true.`,
+  );
+}
+
 /** The option that pins the root, and what it trusts, or `undefined` when none does. */
 function pinOf(
   settings: RootIssuerSettings,
@@ -115,4 +131,9 @@ function unpinned({ prefix, resourceOwner }: RootIssuerOptionNames): string {
 function pinFix({ prefix, resourceOwner }: RootIssuerOptionNames): string {
   const owner = resourceOwner ? `, or ${prefix}resourceOwner to the DID that owns the resource` : '';
   return `Set ${prefix}trustedRootIssuers to the DIDs allowed to grant authority${owner}`;
+}
+
+/** `text` with its first letter in lower case, to follow a comma. */
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
 }

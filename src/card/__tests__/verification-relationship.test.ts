@@ -28,6 +28,7 @@ import {
   statusList,
   type TestIdentity,
 } from './signed-chain-helpers.js';
+import { anyRootUnlessPinned } from './root-issuers.js';
 
 /** An Ed25519 key of Acme's did:web identity, published as `#<fragment>`, and its raw public key, for `methodOf`. */
 function acmeKey(fragment: string): TestIdentity & PublishedKey {
@@ -239,7 +240,7 @@ describe('a merchant verifying a carried chain against Acme', () => {
   const verify = (didResolver: DIDResolver, chain: DelegationChain, list: Record<string, unknown>) =>
     verifyRequestDelegation(
       { meta: toDelegationChainMeta(chain), proofDid: agent.did, action: 'orders.place' },
-      {
+      anyRootUnlessPinned({
         resource: RESOURCE,
         verifyHopProof: createDelegationProofVerifier({ didResolver }),
         checkRevocation: createRevocationChecker({
@@ -248,7 +249,7 @@ describe('a merchant verifying a carried chain against Acme', () => {
           verifyStatusList: createStatusListProofVerifier({ didResolver }),
         }),
         now: () => NOW_MS,
-      },
+      }),
     );
 
   it('accepts a root and a status list Acme signed with its assertionMethod key', async () => {

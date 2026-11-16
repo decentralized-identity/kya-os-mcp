@@ -27,17 +27,31 @@ export const PRODUCTION_PRIVATE_HOSTS = 'give the fetch provider allowPrivateNet
  * first time it is turned on in a process it warns once. Any other value throws a `TypeError`.
  */
 export function developmentMode(value: unknown, setting: string, productionOptIn = PRODUCTION_PRIVATE_HOSTS): boolean {
+  const on = developmentSwitch(
+    value,
+    setting,
+    'development: true reads private and local hosts and must never run in production. Remove it; to read ' +
+      `private hosts in production, ${productionOptIn}.`,
+  );
+  if (on) warnOnce(setting);
+  return on;
+}
+
+/**
+ * Whether `value`, the `development` option of `setting`, turns development on, read as
+ * {@link developmentMode} reads it, for a setting that reads no host: absent or `false` leaves it off,
+ * `true` turns it on unless `NODE_ENV` is `production`, when it throws an `Error` that names `setting`
+ * and then says `inProduction`, and any other value throws a `TypeError`. It logs nothing, so the
+ * setting warns of what development changes there itself.
+ */
+export function developmentSwitch(value: unknown, setting: string, inProduction: string): boolean {
   if (value === undefined || value === false) return false;
   if (value !== true) {
     throw new TypeError(`${setting} must be true or false`);
   }
   if (runsInProduction()) {
-    throw new Error(
-      `${setting} is true while NODE_ENV is "production": development: true reads private and local hosts and ` +
-        `must never run in production. Remove it; to read private hosts in production, ${productionOptIn}.`,
-    );
+    throw new Error(`${setting} is true while NODE_ENV is "production": ${inProduction}`);
   }
-  warnOnce(setting);
   return true;
 }
 

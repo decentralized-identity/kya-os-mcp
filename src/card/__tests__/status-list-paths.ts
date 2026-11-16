@@ -31,6 +31,7 @@ import {
   type TestIdentity,
   now,
 } from './signed-chain-helpers.js';
+import { anyRootUnlessPinned } from './root-issuers.js';
 
 const didKeys = createDidKeyResolver();
 const ctx = { resource: RESOURCE, now };
@@ -116,13 +117,13 @@ export async function verdicts(
   const root = responsiblePartyOf(chain) ?? '';
   const evaluated = await evaluateDelegationChain(chain, checkRevocation, pinned ? { ...ctx, resourceOwner: root } : ctx);
   const input = { meta: toDelegationChainMeta(chain), proofDid: leafInvokerOf(chain) ?? '', action: 'orders.place' };
-  const deps = {
+  const deps = anyRootUnlessPinned({
     resource: RESOURCE,
     verifyHopProof: createDelegationProofVerifier({ didResolver }),
     checkRevocation,
     now,
     ...(pinned ? { trustedRootIssuers: [root] } : {}),
-  };
+  });
   const request = await verifyRequestDelegation(input, deps);
   const guarded = await requireDelegation(deps)(input);
   return { evaluated, request, guarded };

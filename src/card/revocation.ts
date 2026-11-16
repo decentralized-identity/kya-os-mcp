@@ -409,24 +409,20 @@ async function fetchStatusList(url: string, fetch: SafeFetch): Promise<Record<st
   return body;
 }
 
-/** The `credentialSubject` of a status-list credential (throws if absent). */
-function statusListSubject(credential: Record<string, unknown>): Record<string, unknown> {
-  const subject = credential.credentialSubject;
-  if (!isRecord(subject)) throw new Error('revocation: status-list has no credentialSubject');
-  return subject;
-}
-
 /**
  * Inflate the multibase / GZIP `encodedList` into the raw status bitstring bytes via the shared
  * `decodeStatusListPayload` primitive (strip + decode + POST-inflation 16 MiB backstop): the
  * default gunzip caps mid-stream, but an injected (edge) decompressor that does not bound its
- * own output is still fail-closed against an oversized bitstring at this seam.
+ * own output is still fail-closed against an oversized bitstring at this seam. The purpose rule
+ * has already refused a list with no `credentialSubject`; read without one, a list has no
+ * `encodedList`.
  */
 async function decodeStatusList(
   credential: Record<string, unknown>,
   decompress: Decompress,
 ): Promise<Uint8Array> {
-  const encoded = statusListSubject(credential).encodedList;
+  const subject = credential.credentialSubject;
+  const encoded = isRecord(subject) ? subject.encodedList : undefined;
   if (typeof encoded !== 'string' || encoded.length === 0) {
     throw new Error('revocation: status-list has no encodedList');
   }

@@ -5,14 +5,16 @@
  *
  * W3C Bitstring Status List v1.0 lets a list's issuer differ from the credential's and leaves
  * trusting it to the verifier; `statusListIssuers` is that decision. So the remedy names the list's
- * issuer and what to bind to it: the canonical form of the list URL's origin when no binding names
- * the URL's keeper, so that the DID keeps every list at that origin, and the list's own URL when the
- * configuration binds the URL or its origin to another issuer, moving that issuer's binding of the
- * URL itself when it has one. The remedy is checked before it is offered: the configuration it
- * prints is one `assertStatusListIssuers` takes and under which the keeper rule gives the URL to the
- * list's issuer, and where no configuration would, as for a URL whose host has an upper-case
- * letter, there is no remedy to offer. Where it cannot be printed whole and exactly, within the
- * length a reason may have, the refusal says where to name the list's issuer instead.
+ * issuer and what to bind to it: the list URL's origin, in SPEC.md §6.6's form with nothing after
+ * it, when no binding names the URL's keeper, so that the DID keeps every list at that origin; and
+ * the list's own URL when no origin binding holds it, as for an `http:` URL or a host with an
+ * upper-case letter, or when the configuration binds the URL or its origin to another issuer,
+ * moving that issuer's binding of the URL itself when it has one. The remedy is checked before it
+ * is offered: the configuration it prints is one `assertStatusListIssuers` takes and under which
+ * the keeper rule gives the URL to the list's issuer, and where no configuration would, as for a
+ * URL that ends in `/` and could be bound only as itself, which no binding may be, there is no
+ * remedy to offer. Where it cannot be printed whole and exactly, within the length a reason may
+ * have, the refusal says where to name the list's issuer instead.
  */
 
 import { isRecord, issuerOf } from './guards.js';

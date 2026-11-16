@@ -204,7 +204,7 @@ describe("the Card's verified responsible party", () => {
       fresh: false,
       reason:
         `status list issuer "${responsibleParty.did}" does not keep this list's URL: "${entity.did}" does, as the issuer of the credential` +
-        nameSigner(responsibleParty.did, 'https://example.com/'),
+        nameSigner(responsibleParty.did, 'https://example.com'),
     });
   });
 
@@ -235,7 +235,7 @@ describe("the Card's verified responsible party", () => {
       fresh: false,
       reason:
         `status list issuer "${entity.did}" does not keep this list's URL: "${responsibleParty.did}" does, as the pinned root whose own credential names it` +
-        nameSigner(entity.did, 'https://example.com/'),
+        nameSigner(entity.did, 'https://example.com'),
     });
     expect(await verifyWith(cardsList(responsibleParty, [], { statesId: false }), reported)).toMatchObject({ ok: false, revocation: REFUSED });
   });
@@ -256,7 +256,7 @@ describe("the Card's verified responsible party", () => {
       fresh: false,
       reason:
         `status list issuer "${responsibleParty.did}" does not keep this list's URL: "${entity.did}" does, as the issuer of the credential` +
-        nameSigner(responsibleParty.did, 'https://example.com/'),
+        nameSigner(responsibleParty.did, 'https://example.com'),
     });
   });
 

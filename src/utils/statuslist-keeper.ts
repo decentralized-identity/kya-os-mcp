@@ -23,22 +23,22 @@ import { isPlainObjectOfThisRealm } from './guards.js';
  * The status-list URLs each status-list issuer keeps, keyed by that issuer's DID:
  *
  *     {
- *       'did:web:status.example': ['https://status.example/'],
+ *       'did:web:status.example': ['https://status.example'],
  *       'did:web:acme.example': ['https://lists.acme.example/herd/1', 'https://lists.acme.example/herd/2'],
  *     }
  *
- * A binding is a whole `https:` origin, written as `https://` and a lower-case host with an
- * optional port and nothing after it but, at most, one `/`, or an exact URL, which a status entry
- * must name byte for byte. `https://status.example/` and `https://status.example` are one origin;
- * the first is the form refusals print. A credential opts in to a keeper by naming, in the status
- * entry its issuer signed, a URL the map binds to that keeper; the map is not scoped by credential
- * issuer. One binding has one keeper, so the same URL, or the same origin in either form, under two
- * issuers is refused. An exact URL of one issuer may lie inside an origin of another, and the exact
- * binding then decides. There is no prefix binding: a URL that ends in `/` and is not a whole
- * origin is refused, and so is a binding with an upper-case letter in its host, since neither could
- * match the URL of a list. An origin whose host is an IPv6 literal is not offered: such a deployment
- * binds exact URLs. Off by default: with no map, a URL is kept by a pinned root whose own
- * credential names it, or else by the credential's own issuer.
+ * A binding is read as SPEC.md §6.6 reads it: a whole `https:` origin, written as `https://` and a
+ * lower-case host with an optional port and nothing after it, or else an exact URL, which a status
+ * entry must name byte for byte. A credential opts in to a keeper by naming, in the status entry its
+ * issuer signed, a URL the map binds to that keeper; the map is not scoped by credential issuer. One
+ * binding has one keeper, so the same string under two issuers is refused. An exact URL of one
+ * issuer may lie inside an origin of another, and the exact binding then decides. There is no other
+ * form of an origin and no prefix binding, so the bindings that are almost always one written in
+ * another form are refused, as §6.6 says a verifier should, naming the fix: an origin followed by
+ * `/`, an origin whose host has an upper-case letter, and any other binding that ends in `/`. Any
+ * other exact URL is taken as written, upper-case letters included. An origin whose host is an IPv6
+ * literal is not offered: such a deployment binds exact URLs. Off by default: with no map, a URL is
+ * kept by a pinned root whose own credential names it, or else by the credential's own issuer.
  */
 export type StatusListIssuers = Readonly<Record<string, readonly string[]>>;
 
@@ -78,43 +78,39 @@ export interface StatusListKeeper {
   why: 'configured-url' | 'configured-origin' | 'root-credential' | 'credential-issuer' | 'resolver-issuer';
 }
 
-/** A binding that is a whole origin: `https://`, a lower-case host, an optional port, and at most a `/` after. */
-const ORIGIN = /^https:\/\/[a-z0-9.-]+(:[0-9]{1,5})?\/?$/;
+/** A binding that is a whole origin: `https://`, a lower-case host, an optional port, nothing after. */
+const ORIGIN = /^https:\/\/[a-z0-9.-]+(:[0-9]{1,5})?$/;
+/**
+ * A binding written as an origin with a host in any case, and perhaps a `/` after it: its host and
+ * port are the first group, and the `/` the second. Only {@link ORIGIN} is an origin.
+ */
+const ORIGIN_IN_ANY_FORM = /^https:\/\/([A-Za-z0-9.-]+(?::[0-9]{1,5})?)(\/?)$/;
 /** The whole origin a URL is at, in the form {@link ORIGIN} takes, when one of {@link AFTER_ORIGIN} follows it. */
 const AT_ORIGIN = /^https:\/\/[a-z0-9.-]+(?::[0-9]{1,5})?(?=[/?#])/;
 /** What an exact URL binding must start with. */
 const URL_SCHEME = /^https?:\/\//;
-/** The authority of a binding that starts with {@link URL_SCHEME}, as written. */
-const AUTHORITY = /^https?:\/\/([^/?#]*)/;
 /** The characters that end the authority of an `https:` URL, so one of them follows an origin in a URL at it. */
 const AFTER_ORIGIN = ['/', '?', '#'];
 
-/** The origin an origin binding names, without the `/` it may end in, or `undefined` for an exact URL binding. */
-function originOf(binding: string): string | undefined {
-  return ORIGIN.test(binding) ? binding.replace(/\/$/, '') : undefined;
-}
-
 /**
- * The origin binding that holds `url`, in the form refusals print, `https://`, the host, its port if
- * written, and `/`, or `undefined` when no origin binding holds it, as for an `http:` URL, a host
- * with an upper-case letter or an IPv6 literal.
+ * The origin binding that holds `url`, in SPEC.md §6.6's form, `https://`, the host and its port if
+ * written, or `undefined` when no origin binding holds it, as for an `http:` URL, a host with an
+ * upper-case letter or an IPv6 literal, or a URL that is itself an origin.
  */
 export function originBindingOf(url: string): string | undefined {
-  const origin = AT_ORIGIN.exec(url)?.[0];
-  return origin === undefined ? undefined : `${origin}/`;
+  return AT_ORIGIN.exec(url)?.[0];
 }
 
 /**
  * Throw a `TypeError` unless `statusListIssuers` is absent or a plain object whose own keys are
  * non-empty strings and whose values are arrays of bindings, each an `https:` origin or a URL that
- * starts with `https://` or `http://`, and none bound to two issuers, an origin in either of its
- * forms. A binding that could match no list's URL is refused, with what to write instead: one that
- * a URL parser does not take, one with an upper-case letter in its host, and one that ends in `/`
- * but is not a whole origin, which would bind only the URL that ends there. A reader checks it when it is
- * configured: a map it could not apply is a configuration error, never a refusal of each list it
- * reads. {@link statusListKeeperFor} checks it as well, so a reader that skips that check meets
- * this error, not another. A value that is not a URL, such as a DID, is refused, which catches a
- * map written the other way round, from a credential issuer to the issuers accepted for it.
+ * starts with `https://` or `http://`, none of them one {@link assertNotMistaken} refuses, and none
+ * bound to two issuers. A reader checks it when it is configured: a map it could not apply, or one
+ * that writes an origin or a prefix in a form SPEC.md §6.6 does not read as one, is a configuration
+ * error, never a refusal of each list it reads. {@link statusListKeeperFor} checks it as well, so a
+ * reader that skips that check meets this error, not another. A value that is not a URL, such as a
+ * DID, is refused, which catches a map written the other way round, from a credential issuer to the
+ * issuers accepted for it.
  */
 export function assertStatusListIssuers(value: unknown): asserts value is StatusListIssuers | undefined {
   if (value === undefined) return;
@@ -138,62 +134,52 @@ export function assertStatusListIssuers(value: unknown): asserts value is Status
             'each value names the URLs that issuer keeps, not the issuers accepted for a credential issuer',
         );
       }
-      assertMatchable(keeper, binding);
-      const bound = originOf(binding) ?? binding;
-      const other = keeperOf.get(bound);
+      assertNotMistaken(keeper, binding);
+      const other = keeperOf.get(binding);
       if (other !== undefined && other !== keeper) {
         throw new TypeError(
           `statusListIssuers binds ${describeValue(binding)} to both ${describeValue(other)} and ${describeValue(keeper)}, and a URL has one keeper`,
         );
       }
-      keeperOf.set(bound, keeper);
+      keeperOf.set(binding, keeper);
     }
   }
 }
 
 /**
- * Throw a `TypeError` saying what to write instead when `binding`, which starts with `http://` or
- * `https://`, could match no status list's URL. A list is fetched from its URL, so a binding a URL
- * parser does not take matches none. A host is compared as written, and a URL parser writes it in
- * lower case. And a binding that ends in `/` but is not a whole origin reads as a path prefix, which
- * binds nothing: it is an exact URL, matched only by the URL that ends at that `/`.
+ * Throw a `TypeError` naming the fix when `binding`, which starts with `http://` or `https://`, is
+ * one SPEC.md §6.6 says a verifier should refuse, since it is almost always an origin or a prefix
+ * written in a form §6.6 does not read as one: an origin followed by `/`, an origin whose host has
+ * an upper-case letter, or any other binding that ends in `/`. Read as written, each is an exact
+ * URL, which binds only the status entries that name it byte for byte. The rule is on the bytes as
+ * written, as the keeper rule is, so the conformance harness refuses exactly these bindings too.
  */
-function assertMatchable(keeper: string, binding: string): void {
+function assertNotMistaken(keeper: string, binding: string): void {
   const holds = `statusListIssuers[${describeValue(keeper)}] holds ${describeValue(binding)}`;
-  if (!parsesAsUrl(binding)) {
-    throw new TypeError(`${holds}, which is not a URL, so no status list's URL can match it`);
-  }
-  const authority = AUTHORITY.exec(binding)?.[1] ?? '';
-  const host = authority.slice(authority.lastIndexOf('@') + 1);
-  if (host !== host.toLowerCase()) {
+  const written = ORIGIN_IN_ANY_FORM.exec(binding);
+  if (written !== null && !ORIGIN.test(binding)) {
+    // The host and port are ASCII letters, digits, `.`, `-` and `:`, so JSON prints them exactly.
+    const origin = JSON.stringify(`https://${written[1]!.toLowerCase()}`);
     throw new TypeError(
-      `${holds}, whose host is not in lower case, so no status list's URL can match it: write the host as ${describeValue(host.toLowerCase())}`,
+      written[2] === '/'
+        ? `${holds}, an origin followed by "/", which binds only itself, as an exact URL, and no other URL at that origin: ` +
+            `write it as ${origin}`
+        : `${holds}, an origin whose host is not in lower case, which binds only itself, as an exact URL, and no URL at ` +
+            `that origin: write the host in lower case, as ${origin}`,
     );
   }
-  if (binding.endsWith('/') && originOf(binding) === undefined) {
+  if (binding.endsWith('/')) {
     const origin = originBindingOf(binding);
     throw new TypeError(
-      `${holds}, which ends in "/" but is not a whole origin: a binding is a status list's exact URL or a whole https origin` +
-        (origin === undefined ? '' : `, such as ${describeValue(origin)}`) +
-        ', and binds no URL that merely starts with it',
+      `${holds}, which ends in "/" as a path prefix would, but a binding is an https origin or a list's exact URL, never a prefix: ` +
+        (origin === undefined ? 'bind each list URL' : `bind the origin, ${JSON.stringify(origin)}, or each list URL`),
     );
-  }
-}
-
-/** Whether `value` is a URL a URL parser takes. */
-function parsesAsUrl(value: string): boolean {
-  try {
-    new URL(value);
-    return true;
-  } catch {
-    return false;
   }
 }
 
 /**
- * Whether the URL `url` is at the origin `origin`, an origin binding without the `/` it may end in:
- * it is that string, or continues it with `/`, `?` or `#`. So both forms of one origin bind the same
- * URLs, though rule 1 takes first the URL that is a binding's own string. This is a rule on the
+ * Whether the URL `url` is at the origin binding `origin`: it continues that string with `/`, `?`
+ * or `#`. (The origin's own string, named as a URL, is an exact binding.) This is a rule on the
  * bytes as written, with no parsing and no normalisation, so every implementation decides alike.
  * It never gives a keeper a URL a parser would place at another host: the authority of an
  * `https:` URL ends at the first `/`, `?` or `#`, so a URL that continues the origin with anything
@@ -201,8 +187,8 @@ function parsesAsUrl(value: string): boolean {
  * below, which hand it only to the issuer that chose to write it in its own credential. A host
  * written in another case is likewise not at the origin.
  */
-function isAtOrigin(url: string, origin: string | undefined): boolean {
-  return origin !== undefined && (url === origin || AFTER_ORIGIN.some((next) => url.startsWith(origin + next)));
+function isAtOrigin(url: string, origin: string): boolean {
+  return AFTER_ORIGIN.some((next) => url.startsWith(origin + next));
 }
 
 /**
@@ -225,7 +211,7 @@ export function statusListKeeperFor(
     if (bindings.includes(statusListCredential)) return { did, why: 'configured-url' };
   }
   for (const [did, bindings] of bound) {
-    if (bindings.some((binding) => isAtOrigin(statusListCredential, originOf(binding)))) {
+    if (bindings.some((binding) => ORIGIN.test(binding) && isAtOrigin(statusListCredential, binding))) {
       return { did, why: 'configured-origin' };
     }
   }

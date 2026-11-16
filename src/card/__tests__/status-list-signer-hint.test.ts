@@ -55,7 +55,7 @@ function hintedConfiguration(reason: string | undefined): StatusListIssuers {
 const KEEPER_REFUSAL = `status list issuer "did:web:issuer.example:status" does not keep this list's URL: "did:web:issuer.example" does`;
 const ORIGIN_HINT =
   '; if "did:web:issuer.example:status" signs this issuer\'s lists, name it in statusListIssuers: ' +
-  '{ "did:web:issuer.example:status": ["https://issuer.example/"] }';
+  '{ "did:web:issuer.example:status": ["https://issuer.example"] }';
 
 describe("a list signed by a DID other than the credential's issuer", () => {
   it('is refused with the configuration that would accept it, which then accepts it', async () => {
@@ -66,7 +66,7 @@ describe("a list signed by a DID other than the credential's issuer", () => {
       reason: `${KEEPER_REFUSAL}, as the issuer of the credential${ORIGIN_HINT}`,
     });
     const configured = hintedConfiguration(refused.reason);
-    expect(configured).toEqual({ [signer.did]: ['https://issuer.example/'] });
+    expect(configured).toEqual({ [signer.did]: ['https://issuer.example'] });
     expect(await checkerWith(configured)(ENTRY, { credentialIssuer: issuer.did })).toEqual({ revoked: false, fresh: true });
   });
 
@@ -81,7 +81,7 @@ describe("a list signed by a DID other than the credential's issuer", () => {
   });
 
   it("binds the list's own URL where the configuration binds its origin to another issuer", async () => {
-    const configured = { [root.did]: ['https://issuer.example/'] };
+    const configured = { [root.did]: ['https://issuer.example'] };
     const refused = await checkerWith(configured)(ENTRY, { credentialIssuer: issuer.did });
     expect(refused.reason).toBe(
       `status list issuer "${signer.did}" does not keep this list's URL: "${root.did}" does, as the issuer statusListIssuers binds this URL's origin to; ` +
@@ -125,8 +125,23 @@ describe("a list signed by a DID other than the credential's issuer", () => {
     expect(refused.reason!.length).toBeLessThanOrEqual(CHECKER_REASON_LENGTH);
   });
 
-  it('adds nothing where no binding could accept the list: a URL whose host has an upper-case letter', async () => {
+  it('binds the exact URL of a list whose host has an upper-case letter, which no origin binding holds', async () => {
     const url = 'https://Issuer.example/lists/1';
+    const served = { fetch: servingFromMemory({ [url]: await signedStatusList(signer, url) }) };
+    const verifyStatusList = createStatusListProofVerifier({ didResolver: documentsOf(issuer, signer) });
+    const entry = { ...ENTRY, statusListCredential: url };
+    const refused = await createRevocationChecker({ ...served, verifyStatusList })(entry, { credentialIssuer: issuer.did });
+    expect(refused.reason).toBe(
+      `${KEEPER_REFUSAL}, as the issuer of the credential; if "${signer.did}" signs this issuer's lists, ` +
+        `name it in statusListIssuers: { "${signer.did}": ["${url}"] }`,
+    );
+    const statusListIssuers = hintedConfiguration(refused.reason);
+    expect(await createRevocationChecker({ ...served, verifyStatusList, statusListIssuers })(entry, { credentialIssuer: issuer.did }))
+      .toEqual({ revoked: false, fresh: true });
+  });
+
+  it('adds nothing where no binding could accept the list: a URL that ends in "/" at no https origin', async () => {
+    const url = 'http://issuer.example/lists/';
     const checker = createRevocationChecker({
       fetch: servingFromMemory({ [url]: await signedStatusList(signer, url) }),
       verifyStatusList: createStatusListProofVerifier({ didResolver: documentsOf(issuer, signer) }),
@@ -176,43 +191,44 @@ describe("a list signed by a DID other than the credential's issuer", () => {
 });
 
 describe('statusListIssuers bindings, as an operator writes them', () => {
-  it('takes a bare origin with or without its trailing slash, as one origin', async () => {
-    for (const origin of ['https://issuer.example/', 'https://issuer.example']) {
-      expect(await checkerWith({ [signer.did]: [origin] })(ENTRY, { credentialIssuer: issuer.did }), origin).toEqual({
+  it('takes an origin with nothing after it, and an exact URL, whatever the case of its host', async () => {
+    for (const binding of ['https://issuer.example', LIST_URL]) {
+      expect(await checkerWith({ [signer.did]: [binding] })(ENTRY, { credentialIssuer: issuer.did }), binding).toEqual({
         revoked: false,
         fresh: true,
       });
     }
-    expect(() => checkerWith({ [signer.did]: ['https://issuer.example/'], [root.did]: ['https://issuer.example'] })).toThrow(
-      new TypeError(`statusListIssuers binds "https://issuer.example" to both "${signer.did}" and "${root.did}", and a URL has one keeper`),
-    );
+    for (const binding of ['https://ISSUER.example/lists/1', 'https://issuer example/lists/1']) {
+      expect(() => checkerWith({ [signer.did]: [binding] }), binding).not.toThrow();
+    }
   });
 
   it.each([
     [
+      'an origin followed by "/"',
+      'https://issuer.example/',
+      'an origin followed by "/", which binds only itself, as an exact URL, and no other URL at that origin: ' +
+        'write it as "https://issuer.example"',
+    ],
+    [
+      'an origin whose host has an upper-case letter',
+      'https://Issuer.example',
+      'an origin whose host is not in lower case, which binds only itself, as an exact URL, and no URL at that origin: ' +
+        'write the host in lower case, as "https://issuer.example"',
+    ],
+    [
       'a path that ends in "/", which reads as a prefix',
       'https://issuer.example/lists/',
-      'which ends in "/" but is not a whole origin: a binding is a status list\'s exact URL or a whole https origin, ' +
-        'such as "https://issuer.example/", and binds no URL that merely starts with it',
+      'which ends in "/" as a path prefix would, but a binding is an https origin or a list\'s exact URL, never a prefix: ' +
+        'bind the origin, "https://issuer.example", or each list URL',
     ],
     [
       'an http: origin, which no origin binding is',
       'http://issuer.example/',
-      'which ends in "/" but is not a whole origin: a binding is a status list\'s exact URL or a whole https origin, ' +
-        'and binds no URL that merely starts with it',
+      'which ends in "/" as a path prefix would, but a binding is an https origin or a list\'s exact URL, never a prefix: ' +
+        'bind each list URL',
     ],
-    [
-      'a host with an upper-case letter',
-      'https://Issuer.example/',
-      'whose host is not in lower case, so no status list\'s URL can match it: write the host as "issuer.example"',
-    ],
-    [
-      'an exact URL whose host has an upper-case letter',
-      'https://ISSUER.example/lists/1',
-      'whose host is not in lower case, so no status list\'s URL can match it: write the host as "issuer.example"',
-    ],
-    ['a URL no parser takes', 'https://issuer example/lists/1', "which is not a URL, so no status list's URL can match it"],
-  ])('refuses %s when the checker is created, saying what to write', (_label, binding, why) => {
+  ])('refuses %s when the checker is created, naming the fix', (_label, binding, why) => {
     expect(() => checkerWith({ [signer.did]: [binding] })).toThrow(
       new TypeError(`statusListIssuers["${signer.did}"] holds "${binding}", ${why}`),
     );

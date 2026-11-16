@@ -41,12 +41,17 @@ export function developmentMode(value: unknown, setting: string, productionOptIn
   return true;
 }
 
-/** Whether `NODE_ENV` is `production`, in a runtime that has a `process` whose environment can be read. */
+/**
+ * Whether `NODE_ENV` is `production`. The expression is written out whole, as a bundler that
+ * defines `process.env.NODE_ENV` finds it, and nothing is asked of `process` before it, so a build
+ * that inlines `"production"` here refuses development even where no `process` is left, as in a
+ * Worker. A runtime with no `process`, or one that refuses to read the environment, is not
+ * production as far as this can tell.
+ */
 function runsInProduction(): boolean {
   try {
-    return typeof process !== 'undefined' && process.env?.['NODE_ENV'] === 'production';
+    return process.env.NODE_ENV === 'production';
   } catch {
-    // A runtime that refuses to read the environment says nothing about it.
     return false;
   }
 }

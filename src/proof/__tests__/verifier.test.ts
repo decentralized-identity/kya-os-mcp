@@ -36,6 +36,7 @@ import {
   PROOF_VERIFICATION_ERROR_CODES,
 } from '../errors.js';
 import { extractPublicKeyFromDidKey, publicKeyToJwk } from '../../delegation/did-key-resolver.js';
+import { documentOf } from '../../__tests__/utils/did-documents.js';
 
 describe('ProofVerifier Security', () => {
   let proofVerifier: ProofVerifier;
@@ -117,12 +118,12 @@ describe('ProofVerifier Security', () => {
     };
 
     mockFetchProvider = {
-      resolveDID: vi.fn().mockResolvedValue({
+      resolveDID: vi.fn().mockResolvedValue(documentOf({
         verificationMethod: [{
           id: 'did:key:z123#z123',
           publicKeyJwk: validJwk,
         }],
-      }),
+      }, 'did:key:z123')),
       fetchStatusList: vi.fn(),
       fetchDelegationChain: vi.fn(),
       fetch: vi.fn(),
@@ -715,7 +716,7 @@ describe('ProofVerifier Security', () => {
 
     it('throws PUBLIC_KEY_NOT_FOUND when publicKeyMultibase is not an Ed25519 key', async () => {
       // An X25519 multikey (multicodec 0xec01) is not a signing key.
-      mockFetchProvider.resolveDID = vi.fn().mockResolvedValue({
+      mockFetchProvider.resolveDID = vi.fn().mockResolvedValue(documentOf({
         verificationMethod: [
           {
             id: 'did:key:z123#z123',
@@ -723,7 +724,7 @@ describe('ProofVerifier Security', () => {
             publicKeyMultibase: 'z6LSbysY2xFMRpGMhb7tFTLMpeuPRaqaWM1yECx2AtzE3KCc',
           },
         ],
-      });
+      }, 'did:key:z123'));
 
       await expect(proofVerifier.fetchPublicKeyFromDID('did:key:z123')).rejects.toMatchObject({
         code: PROOF_VERIFICATION_ERROR_CODES.PUBLIC_KEY_NOT_FOUND,
@@ -732,9 +733,9 @@ describe('ProofVerifier Security', () => {
 
     it('matches a DID URL kid against a method the document lists by fragment', async () => {
       const publicKeyJwk = { kty: 'OKP', crv: 'Ed25519', x: 'AAA' };
-      mockFetchProvider.resolveDID = vi.fn().mockResolvedValue({
+      mockFetchProvider.resolveDID = vi.fn().mockResolvedValue(documentOf({
         verificationMethod: [{ id: '#key-1', publicKeyJwk }],
-      });
+      }, 'did:web:a.example'));
 
       const jwk = await proofVerifier.fetchPublicKeyFromDID('did:web:a.example', 'did:web:a.example#key-1');
 
@@ -743,9 +744,9 @@ describe('ProofVerifier Security', () => {
 
     it('resolves a fragment kid against the DID', async () => {
       const publicKeyJwk = { kty: 'OKP', crv: 'Ed25519', x: 'BBB' };
-      mockFetchProvider.resolveDID = vi.fn().mockResolvedValue({
+      mockFetchProvider.resolveDID = vi.fn().mockResolvedValue(documentOf({
         verificationMethod: [{ id: 'did:web:a.example#key-2', publicKeyJwk }],
-      });
+      }, 'did:web:a.example'));
 
       const jwk = await proofVerifier.fetchPublicKeyFromDID('did:web:a.example', '#key-2');
 
@@ -803,9 +804,7 @@ describe('ProofVerifier Security', () => {
     });
 
     it('should throw ProofVerificationError if verification method not found', async () => {
-      mockFetchProvider.resolveDID = vi.fn().mockResolvedValue({
-        verificationMethod: [],
-      });
+      mockFetchProvider.resolveDID = vi.fn().mockResolvedValue(documentOf({ verificationMethod: [] }, 'did:key:z123'));
 
       await expect(
         proofVerifier.fetchPublicKeyFromDID('did:key:z123', 'key-1')
@@ -822,11 +821,11 @@ describe('ProofVerifier Security', () => {
     });
 
     it('throws VERIFICATION_METHOD_NOT_FOUND when the kid matches no method', async () => {
-      mockFetchProvider.resolveDID = vi.fn().mockResolvedValue({
+      mockFetchProvider.resolveDID = vi.fn().mockResolvedValue(documentOf({
         verificationMethod: [
           { id: 'did:key:z123#other', publicKeyJwk: { kty: 'OKP', crv: 'Ed25519', x: 'AAA' } },
         ],
-      });
+      }, 'did:key:z123'));
 
       await expect(
         proofVerifier.fetchPublicKeyFromDID('did:key:z123', 'no-such-kid'),
@@ -841,9 +840,9 @@ describe('ProofVerifier Security', () => {
     });
 
     it('throws PUBLIC_KEY_NOT_FOUND when the verification method has no publicKeyJwk', async () => {
-      mockFetchProvider.resolveDID = vi.fn().mockResolvedValue({
+      mockFetchProvider.resolveDID = vi.fn().mockResolvedValue(documentOf({
         verificationMethod: [{ id: 'did:key:z123#z123' }],
-      });
+      }, 'did:key:z123'));
 
       await expect(
         proofVerifier.fetchPublicKeyFromDID('did:key:z123'),
@@ -858,7 +857,7 @@ describe('ProofVerifier Security', () => {
     });
 
     it('should throw ProofVerificationError if JWK is not Ed25519', async () => {
-      mockFetchProvider.resolveDID = vi.fn().mockResolvedValue({
+      mockFetchProvider.resolveDID = vi.fn().mockResolvedValue(documentOf({
         verificationMethod: [{
           id: 'did:key:z123#z123',
           publicKeyJwk: {
@@ -867,7 +866,7 @@ describe('ProofVerifier Security', () => {
             n: 'invalid',
           },
         }],
-      });
+      }, 'did:key:z123'));
 
       await expect(
         proofVerifier.fetchPublicKeyFromDID('did:key:z123')

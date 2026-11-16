@@ -5,7 +5,8 @@
  * `FetchProvider`, with the issuer's key published MULTIBASE-ONLY in the DID
  * document — the cheqd-realistic shape `verificationMethodJwk` exists for.
  */
-import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeAll, beforeEach } from 'vitest';
+import { DEADLINES, REFUSED_TIMEOUTS, settledAt, timeoutTypeError } from '../../../__tests__/utils/deadlines.js';
 import {
   CheqdStatusListResolver,
   createCheqdStatusListResolver,
@@ -50,11 +51,9 @@ describe('CheqdStatusListResolver (real crypto, stubbed transport)', () => {
       const body = serveOverride
         ? serveOverride()
         : await setup.storage.getStatusList(url);
-      return {
-        ok: serveStatus === 200 && body != null,
+      return new Response(JSON.stringify(body ?? null), {
         status: body == null && serveStatus === 200 ? 404 : serveStatus,
-        json: async () => body,
-      } as unknown as Response;
+      });
     },
   } as unknown as FetchProvider;
 
@@ -111,6 +110,34 @@ describe('CheqdStatusListResolver (real crypto, stubbed transport)', () => {
     serveStatus = 200;
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // ── The deadline of each dependency ───────────────────────────
+
+  /** How `checkStatus` on a clear entry ends: `resolved`, or the message it rejects with. */
+  const ending = (resolver: CheqdStatusListResolver) =>
+    resolver.checkStatus(clearEntry).then(() => 'resolved', (error: Error) => error.message);
+
+  it.each(DEADLINES)('%s: gives up on a list read that has not answered by the deadline', async (_label, option, ms) => {
+    const outcome = await settledAt(ms, (never) => ending(makeResolver({ fetchProvider: { fetch: never } as unknown as FetchProvider, ...option })));
+    expect(outcome).toBe('Status list fetch deadline exceeded');
+  });
+
+  it.each(DEADLINES)('%s: gives up on an issuer DID its resolver has not resolved by the deadline', async (_label, option, ms) => {
+    const outcome = await settledAt(ms, (never) => ending(makeResolver({ didResolver: { resolve: never }, ...option })));
+    expect(outcome).toBe('DID resolution deadline exceeded');
+  });
+
+  it.each(REFUSED_TIMEOUTS)('throws a TypeError when built with a dependencyTimeoutMs of %s', (_label, value, got) => {
+    const dependencyTimeoutMs = value as number;
+    expect(() => makeResolver({ dependencyTimeoutMs })).toThrow(timeoutTypeError(got));
+    expect(() => createCheqdStatusListResolver({
+      fetchProvider, didResolver, cryptoProvider: crypto, expectedIssuerDid: issuerIdentity.did, decompressor: statusListGzipCodec, dependencyTimeoutMs,
+    })).toThrow(timeoutTypeError(got));
+  });
+
   // ── Verdicts ──────────────────────────────────────────────────
 
   it('returns false for a clear index', async () => {
@@ -119,6 +146,21 @@ describe('CheqdStatusListResolver (real crypto, stubbed transport)', () => {
 
   it('returns true for a revoked index', async () => {
     expect(await makeResolver().checkStatus(revokedEntry)).toBe(true);
+  });
+
+  it.each([['"false"', 'false'], ['1', 1], ['{}', {}], ['undefined', undefined], ['false', false]])(
+    'refuses the list when the crypto provider answers %s for its signature',
+    async (_label, answer) => {
+      const cryptoProvider = { verify: async () => answer } as unknown as typeof crypto;
+      await expect(makeResolver({ cryptoProvider }).checkStatus(clearEntry)).rejects.toThrow(
+        'Status list signature verification FAILED against the issuer DID document',
+      );
+    },
+  );
+
+  it('reads the list when the crypto provider answers the literal true', async () => {
+    const cryptoProvider = { verify: async () => true } as unknown as typeof crypto;
+    expect(await makeResolver({ cryptoProvider }).checkStatus(clearEntry)).toBe(false);
   });
 
   it('factory returns a working instance', () => {

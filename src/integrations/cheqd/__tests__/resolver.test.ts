@@ -8,16 +8,20 @@ import {
 import type { FetchProvider } from '../../../providers/base.js';
 import type { DIDDocument } from '../../../delegation/vc-verifier.js';
 
+/** The URL and the headers, by lowercase name, of each request `provider` was asked to make. */
+function requests(provider: FetchProvider) {
+  return vi.mocked(provider.fetch).mock.calls.map(([url, init]) => {
+    const { headers, ...rest } = init as RequestInit;
+    return [url, { ...rest, headers: Object.fromEntries(new Headers(headers)) }];
+  });
+}
+
 function fetchProvider(response: unknown, status = 200): FetchProvider {
   return {
     resolveDID: vi.fn(),
     fetchStatusList: vi.fn(),
     fetchDelegationChain: vi.fn(),
-    fetch: vi.fn().mockResolvedValue({
-      ok: status >= 200 && status < 300,
-      status,
-      json: vi.fn().mockResolvedValue(response),
-    }),
+    fetch: vi.fn().mockImplementation(async () => new Response(JSON.stringify(response), { status })),
   };
 }
 
@@ -35,11 +39,7 @@ function invalidJsonFetchProvider(): FetchProvider {
     resolveDID: vi.fn(),
     fetchStatusList: vi.fn(),
     fetchDelegationChain: vi.fn(),
-    fetch: vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: vi.fn().mockRejectedValue(new SyntaxError('bad json')),
-    }),
+    fetch: vi.fn().mockImplementation(async () => new Response('not json')),
   };
 }
 
@@ -95,10 +95,10 @@ describe('DidCheqdResolver', () => {
     const resolved = await resolver.resolve(did);
 
     expect(resolved?.id).toBe(did);
-    expect(provider.fetch).toHaveBeenCalledWith(
+    expect(requests(provider)).toEqual([[
       `https://resolver.cheqd.net/1.0/identifiers/${did}`,
-      { method: 'GET', headers: undefined },
-    );
+      { method: 'GET', headers: { accept: 'application/did+ld+json' }, signal: expect.any(AbortSignal) },
+    ]]);
   });
 
   it('resolves a DID Resolution Result response', async () => {
@@ -120,11 +120,25 @@ describe('DidCheqdResolver', () => {
     await resolver.resolve(did);
     await resolver.resolve(did);
 
-    expect(provider.fetch).toHaveBeenCalledTimes(1);
-    expect(provider.fetch).toHaveBeenCalledWith(
+    expect(requests(provider)).toEqual([[
       `https://resolver.cheqd.net/1.0/identifiers/${did}`,
-      { method: 'GET', headers: { Authorization: 'Bearer token' } },
-    );
+      {
+        method: 'GET',
+        headers: { accept: 'application/did+ld+json', authorization: 'Bearer token' },
+        signal: expect.any(AbortSignal),
+      },
+    ]]);
+  });
+
+  it("asks for the document alone, replacing a configured Accept in any case, and sends the other configured headers", async () => {
+    for (const name of ['accept', 'Accept', 'ACCEPT']) {
+      const provider = fetchProvider(didDocument);
+      const headers = { [name]: 'application/json', Authorization: 'Bearer token' };
+      await new DidCheqdResolver(provider, { resolverUrl: 'https://resolver.cheqd.net', headers }).resolve(did);
+      expect(requests(provider).map(([, init]) => (init as { headers: unknown }).headers)).toEqual([
+        { accept: 'application/did+ld+json', authorization: 'Bearer token' },
+      ]);
+    }
   });
 
   it('returns null on invalid DID, fetch errors, HTTP errors, invalid documents, and id mismatch', async () => {

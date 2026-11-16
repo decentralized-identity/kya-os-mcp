@@ -63,6 +63,7 @@ export interface DelegationVCVerificationResult {
   checks?: {
     basicValid?: boolean;
     signatureValid?: boolean;
+    /** Absent when the status was not checked: it is read only once the signature has verified. */
     statusValid?: boolean;
   };
 }
@@ -130,7 +131,8 @@ export interface VerificationMethod {
  * on the entry's URL, index and purpose, as `withStatusCache` does.
  *
  * The answer is read strictly: `true` is revoked, `false` is not, and any other value, which only
- * untyped code can give, denies the credential as `status_unresolvable`.
+ * untyped code can give, denies the credential as `status_unresolvable`. So does a `checkStatus`
+ * that has not answered within the verifier's `dependencyTimeoutMs`, 5,000 ms by default.
  */
 export interface StatusListResolver {
   checkStatus(status: CredentialStatus, context?: StatusCheckContext): Promise<boolean>;
@@ -148,6 +150,12 @@ export interface StatusCheckResult {
   durationMs?: number;
 }
 
+/**
+ * Verifies a credential's embedded proof under `publicKeyJwk`. The answer is read strictly: the
+ * signature verifies only on an object whose `valid` is the literal `true`, and any other answer,
+ * which only untyped code can give, leaves it unverified. So does a verifier that has not answered
+ * within the verifier's `dependencyTimeoutMs`, 5,000 ms by default.
+ */
 export interface SignatureVerificationFunction {
   (
     vc: import("../types/protocol.js").DelegationCredential,

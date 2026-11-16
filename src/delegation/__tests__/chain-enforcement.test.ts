@@ -500,7 +500,7 @@ describe("validateDelegationChain: who actually issued each link", () => {
       const selfIssued = cred({ id: "self", issuerDid: "did:rogue", subjectDid: "did:rogue", scopes: ["read"] });
       const result = await validateDelegationChain(selfIssued, { ...baseDeps, trustedRootIssuers: ["did:user"] });
       expect(result.valid).toBe(false);
-      expect(result.reason).toContain("did:rogue, which is not a trusted root issuer");
+      expect(result.reason).toContain('"did:rogue", which is not a trusted root issuer');
     });
 
     it("judges the root by its signer, not its claimed issuerDid", async () => {

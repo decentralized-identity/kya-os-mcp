@@ -1,0 +1,13 @@
+kind: Security
+body: |-
+    **`SafeFetch` no longer admits an IPv4-translated IPv6 form of a private
+    address.** `createSafeFetch` and `isBlockedAddress`, which the Entity
+    Card's reads go through, classified an address in `::ffff:0:0:0/96` (RFC
+    2765) as public, so a host that resolved to the translated form of a
+    private address, such as `::ffff:0:7f00:1` for 127.0.0.1, was connected
+    to. They now classify it by the IPv4 address it embeds, as they do an
+    IPv4-mapped address. This affected 1.9.0 through 1.22.0. Such an address
+    reaches the private host only through a stateless IP/ICMP translator on
+    the verifier's network: a deployment with one should upgrade, and others
+    are not exposed.
+time: 2026-11-13T02:00:03.000000-06:00

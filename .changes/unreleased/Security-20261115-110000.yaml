@@ -1,0 +1,16 @@
+kind: Security
+body: |-
+    **A verifier reads its own copy of a custom resolver's DID document.**
+    The walk that holds such a document to the DID limits read each array
+    by index, and the key lookup and `ProofVerifier` then iterated the same
+    arrays, so an array with its own or an inherited `Symbol.iterator`, a
+    replaced `find`, a getter on an index or a `Proxy` could hand a
+    verifier a verification method that was never measured, as could a
+    member that is not enumerable or a change made after the walk. The
+    walk now copies what it measures, each own enumerable data member and
+    each element by index, read once, into frozen plain objects and
+    arrays, and every verifier reads that copy. The resolver's own object
+    is left as it was. `RuntimeFetchProvider.resolveDID` returns the frozen
+    copy for a resolver set in `didResolvers`. See UPGRADING.md, "Limits on
+    DID resolution and status-list reads".
+time: 2026-11-15T11:00:00.000000-06:00

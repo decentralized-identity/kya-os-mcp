@@ -260,6 +260,207 @@ All four, with their types, are exported from `@kya-os/mcp`, `@kya-os/mcp/delega
 `createRevocationChecker` takes `statusListIssuers`, described under "How to write `statusListIssuers`".
 The delegation middleware names only the credential's own issuer to its resolver, even when `trustedRootIssuers` pins the chain's root, so on that path a list the root signed for a re-delegated credential is refused unless the resolver's own configuration binds the list's URL, or its origin, to the root and the list states its `id`.
 
+### Limits on DID resolution and status-list reads
+
+DID resolution and status-list reads refuse inputs over fixed limits, and give up after 5 seconds, or after the time the host sets as `dependencyTimeoutMs`.
+A DID may have at most 2,048 UTF-16 code units and a key id at most 4,096, whether a verifier is asked to resolve it or a DID document names it, as its `id` or, in `verificationMethod` and the verification relationships, as a method's `id` or `controller` or a reference to a method; any other identifier in a document, such as its top-level `controller` or an `alsoKnownAs` entry, is held only to the document's limits below.
+A DID document may nest at most 64 levels deep and have at most 8,192 members, member names of at most 256 UTF-16 code units, 8,192 entries across `verificationMethod` and the five verification relationships, and 1 MiB of compact JSON.
+A did:web response, and a status list read by `CheqdStatusListResolver` or `RuntimeFetchProvider.fetchStatusList`, may have at most 1 MiB decompressed, within the same nesting and member limits; a cheqd resolver response may have at most 4 MiB, 65 levels deep and 131,072 members, room for a DID Resolution Result that lists thousands of resources.
+Each read has one 5-second deadline for the fetch and the body, a did:web or status-list read follows at most 3 redirects, and each built-in DID resolver caches at most 128 documents and 8 MiB, evicting the least recently used.
+`DelegationCredentialVerifier`, `CheqdStatusListResolver`, `createStatusListProofVerifier`, `createDelegationProofVerifier` and `ProofVerifier` wait at most 5 seconds for any resolver and hold the document it returns to the same limits, and to plain JSON data: a document with a getter on an object member, enumerable or not, a cycle, a class instance or a value JSON cannot hold, such as a function or `NaN`, is refused.
+So is a document, or an object inside it, that inherits from anything but `null` or an `Object.prototype`, of this realm or of another such as a `vm` context, so a verifier reads no member, and runs no getter, that an object inherits under a name `Object.prototype` does not have.
+A getter on an array element is not refused: it runs, once, and the value it returns is held to the same limits and is the value a verifier reads, or the document is refused when it throws.
+A verifier reads its own copy of a custom resolver's document, made as the document is measured: plain objects and arrays that hold each own enumerable data member and each array element by index, each read once.
+So nothing else of the returned object reaches a verifier: a member that is not enumerable, which 1.22.0 read, an array's own or inherited `Symbol.iterator` or a method such as `find`, a `Proxy` trap's second answer, or a change made after the document was measured.
+`DelegationCredentialVerifier`, `validateDelegationChain`, `verifyRequestDelegation`, `requireDelegation`, `evaluateDelegationChain`, `verifyCard` and `verifyCardProof` give the same 5 seconds to each other dependency the host supplies that they wait on, such as a `StatusListResolver`, a `resolveDelegationChain` or a `RevocationChecker`.
+"A dependency that can take longer than 5 seconds to answer", below, lists each and how it is refused.
+One dependency of theirs has no deadline from the library: the `verifier` that `validateDelegationChain` is given to verify each credential, since the library's own, `DelegationCredentialVerifier`, bounds each of its steps, and one limit on the whole would refuse a verification whose steps each kept theirs.
+A custom one must set its own, and so must a provider no function above calls, such as the nonce cache and the session store of `ProofVerifier` and the middleware.
+Anything over a limit is refused, never cut to fit, so check that your DID documents and status lists are within these limits before you upgrade.
+SPEC.md §4.4.2 explains each limit.
+Every did:web and status-list read also holds its host, and each redirect, to one private-network rule, whatever `FetchProvider` it reads through.
+Find your setup below.
+
+#### A custom `FetchProvider` given to the did:web or cheqd resolver, or to `CheqdStatusListResolver`
+
+Its `fetch` must return a `Response` whose `body` is a WHATWG `ReadableStream`.
+The readers read the body as a stream and no longer call `json()`, so an adapter or mock that implements only `json()` resolves nothing, and neither does node-fetch v2, whose body is a Node stream.
+A body that is not valid UTF-8 is refused, where `json()` replaced the invalid bytes.
+
+#### A `DidCheqdResolver` given `headers`
+
+Each request now sends `Accept: application/did+ld+json`, which asks the cheqd DID resolver for the DID document alone, in place of any `Accept` header the option sets, and the provider's `fetch` receives the headers as a `Headers` object, not the object the option gives.
+A `headers` function now runs under the read's 5-second deadline: one that has not answered by then fails that resolution, and the next resolution calls it again.
+
+#### A custom DID resolver: `delegation.didResolver`, a resolver in `didResolvers`, the `didResolver` of `DelegationCredentialVerifier`, `CheqdStatusListResolver`, `createStatusListProofVerifier` or `createDelegationProofVerifier`, or a `FetchProvider.resolveDID` that `ProofVerifier` uses
+
+The document it returns must have an `id` that is a DID, a string that starts with `did:`, of at most 2,048 UTF-16 code units.
+Without one it verifies nothing, even when it lists the key.
+Its document is checked on every resolution, and the object it returned is neither frozen nor changed.
+The verifier copies it as it checks it and reads only the copy, so the resolver need not return a new object each time, and a change it makes to a returned object is seen at the next resolution, not during a verification.
+A key the document must publish has to be an own enumerable member, and an array's entries its elements by index, as `JSON.stringify` would write them.
+
+#### A custom `FetchProvider` that reads did:web documents or status lists, such as `delegation.fetchProvider`
+
+Each read now calls its `fetch` with `redirect: "manual"` and follows a redirect itself, refusing a target the private-network rule refuses and a step from https down to http, and sending another origin only the CORS-safelisted request headers and the request's `Cache-Control` and `Pragma`; in a browser, which hides where a redirect leads, it refuses every redirect.
+The provider's `fetch` must pass `redirect` on to the request.
+One that drops it lets the runtime follow a redirect before the read sees the response: the read then refuses a response that says it was redirected, or names a URL other than the one asked for, but the request has been made.
+
+#### A custom `FetchProvider` whose response names a URL other than the one asked for, such as a gateway, a proxy or a test double that rewrites URLs
+
+Every did:web and status-list read through it is now refused as a redirect the provider followed itself (`Redirect followed by the fetch provider refused`).
+Its `fetch` must pass `redirect` on, so that the read follows and checks each redirect, and return a response whose `url` is the URL asked for, or empty, and whose `redirected` is not `true`, such as `new Response(response.body, response)` built from the response it got.
+Rebuilding a response after following a redirect itself would hide that redirect from the read.
+
+#### A did:web DID or status list served from a private IP address or a local name, such as `localhost`, as in development
+
+Every did:web read, by the delegation gate, `DidWebResolver`, `createDidWebResolver` or `RuntimeFetchProvider.resolveDID`, and every status-list read, by `CheqdStatusListResolver` or `RuntimeFetchProvider.fetchStatusList`, now refuses a URL whose host is a non-public IP literal or a local name, in any case and with any trailing dots, through any provider.
+A local name is a single label, such as `ip6-localhost`, `metadata` or an intranet host's short name, or `localhost`, `localdomain`, `localdomain6`, `local`, `internal` or `home.arpa`, or a name under one of them, such as `localhost.localdomain`, `localhost6.localdomain6`, `printer.local`, `router.home.arpa` or `metadata.google.internal`.
+It classifies an address as `SafeFetch` does, so it refuses more than `RuntimeFetchProvider` did, such as an IPv4-mapped, IPv4-translated or NAT64 IPv6 form of a private address, shared address space (100.64.0.0/10), the documentation ranges and multicast.
+To read from such a host, give the reader `new RuntimeFetchProvider({ allowPrivateNetworkHosts: true })`, as `delegation.fetchProvider` for the gate, or a custom provider whose `allowPrivateNetworkHosts` member, now declared on `FetchProvider`, is `true`; `RuntimeFetchProvider` now exposes its option as that read-only member.
+Only `true` opts in: `RuntimeFetchProvider` no longer reads another truthy value, such as `1` or `'true'`, as `true`.
+The rule resolves no name, so it does not refuse any other name whose address is private, such as a public name that points at a loopback address: a verifier needs an egress control that refuses private addresses for that.
+
+#### Code that calls `isBlockedAddress` or `createSafeFetch`
+
+An IPv4-translated IPv6 address (`::ffff:0:0:0/96`) is now classified by the IPv4 address it embeds, as an IPv4-mapped one is, so one that embeds a private address is refused.
+
+#### A did:web or status-list URL whose scheme is not http or https
+
+Every did:web and status-list read now refuses a URL that is not an absolute http or https URL, such as a `data:` or `file:` URL, before any request, whatever `allowPrivateNetworkHosts` says.
+`RuntimeFetchProvider.fetchStatusList` read such a URL through the runtime's `fetch`.
+
+#### A DID longer than 2,048 UTF-16 code units, such as a did:key for an ML-DSA-65 or ML-DSA-87 post-quantum key, or a did:peer:2 that lists many keys or services
+
+A verifier now refuses it before asking any resolver, so no credential or proof such a DID issued verifies.
+The limit is the reference implementation's, not DID syntax's, and cannot be changed.
+
+#### Code that calls `RuntimeFetchProvider.resolveDID` or `fetchStatusList` directly
+
+Each now applies these limits and its deadline itself, and returns `null` for a document or list over a limit, a read that misses its deadline, or a URL or redirect the private-network rule refuses.
+`resolveDID` falls back from a resolver set in `didResolvers` to the built-in did:web or did:key resolver only when the configured one finds no document, not after it returns a document these limits refuse or misses the deadline, and spends one 5-second deadline across both.
+
+#### Code that changes a resolved DID document
+
+`DidWebResolver` and `DidCheqdResolver`, and `RuntimeFetchProvider.resolveDID` through them, return a deeply frozen document, which their cache and concurrent resolutions of the same DID share.
+`RuntimeFetchProvider.resolveDID` also returns a deeply frozen document for a resolver set in `didResolvers`: the copy made as that resolver's document was checked, not the object the resolver returned.
+Copy it before you change it: assigning to it throws in strict mode.
+
+#### `delegation.trustedRootIssuers`, and the `trustedRootIssuers` of `requireDelegation` and `verifyRequestDelegation`
+
+It must be an array of DIDs, each a string that starts with `did:` and has no white space around it, compared whole with the root's `issuer`.
+Creating the middleware or a `requireDelegation` guard with any other value throws a `TypeError` naming the option, `verifyRequestDelegation` rejects with one, and `validateDelegationChain` returns `{ valid: false }` with its reason.
+`null` no longer admits every root in the middleware, and a string is no longer searched for the issuer in either.
+
+#### A `delegation.resolveDelegationChain`
+
+For a VC-JWT whose leaf names a parent, it now runs on the leaf's payload before the envelope's signature is checked, so it must treat that payload as unauthenticated, as it already had to for a credential with an embedded proof, whose proof is checked after it runs.
+The chain it returns is verified as before.
+It now has 5 seconds to return, so a resolver that walks `parentId` one read at a time should finish, or give up, within that time.
+
+#### A dependency that can take longer than 5 seconds to answer
+
+Each call a verifier makes to a dependency the host supplies now has 5 seconds, and one that has not answered by then is refused as below, never thrown, where on 1.22.0 the verification waited without end.
+The dependency's own work is not cancelled, so one that reads over a network should bound each read itself, and a later verification asks it again.
+
+| Dependency | Refused as |
+| --- | --- |
+| `StatusListResolver.checkStatus`, for `DelegationCredentialVerifier`, the shipped `CheqdStatusListResolver` and a resolver wrapped in `withStatusCache` included | the credential denied with the outcome `status_unresolvable` and `Status check error: the status list resolver did not answer within 5 seconds` |
+| a custom `signatureVerifier` of `DelegationCredentialVerifier` | `Signature verification error: the signature verifier did not answer within 5 seconds` |
+| `resolveDelegationChain`, for `validateDelegationChain` and the delegation middleware | `Failed to resolve delegation chain: the chain resolver did not answer within 5 seconds` |
+| `RevocationChecker.isRevoked`, for the same two | `Revocation check failed for delegation "<id>": the revocation checker did not answer within 5 seconds` |
+| `resolveDelegationChain` of `verifyRequestDelegation` and `requireDelegation` | the code `delegation_unresolvable` and `delegation chain could not be resolved: the chain resolver did not answer within 5 seconds` |
+| `verifyHopProof` of the same two | the code `delegation_invalid` and `hop <n>: the hop proof verifier did not answer within 5 seconds` |
+| `checkRevocation` of the same two, and the checker given to `evaluateDelegationChain` or `evaluateRevocationChain` | the code `delegation_revoked`, or a chain that is not ok and not fresh, and `revocation: hop <n> (list "<url>", index "<index>") is unresolvable: the revocation checker did not answer within 5 seconds` |
+| `capabilityVerifier`, `accountabilityVerifier` and `attestationVerifier` of `verifyCard` | the claim unverified: no capability verified, the Card not accountable, or that attestation unverified |
+| `proofVerifier` of `verifyCard` | the proof unverified, with the reason `the proof verifier did not answer within 5 seconds` |
+| `statusListChecker` of `verifyCard` | the Card revoked and not fresh, with the `revocation.reason` `the revocation checker did not answer within 5 seconds` |
+| `resolveKey`, `resolveDidKeys` and `consumeNonceIfFresh` of `verifyCardProof` and `requireProof` | the reasons `key_unresolvable`, `did_keys_unresolvable` and `nonce_cache_unavailable`, as when each throws |
+
+The 5 seconds cover the whole call, so a checker built with `createRevocationChecker` has them for its list read and its `verifyStatusList` together, and `CheqdStatusListResolver` for its list read and its DID resolution together.
+A dependency that throws is handled as on 1.22.0.
+
+To give a dependency longer, set `dependencyTimeoutMs`, in milliseconds, on the verifier, resolver or provider that waits for it.
+It is one option with one name on every entry point below, and its default is 5,000.
+It must be a number greater than 0 and at most 2,147,483,647, the longest delay a timer holds, about 24.8 days.
+Any other value, such as `0`, a negative number, `NaN`, `Infinity`, a numeric string or `null`, throws a `TypeError` that names the option where the verifier is built, and nothing is converted.
+
+| Entry point | The waits its `dependencyTimeoutMs` sets |
+| --- | --- |
+| `delegation.dependencyTimeoutMs` of `withKyaOs` and `createKyaOsMiddleware` | every wait of the delegation gate: its DID resolution, a did:web read through the fetch provider it builds, `statusListResolver`, `resolveDelegationChain` and `revocationChecker`; a bad value is refused at startup as `delegation.dependencyTimeoutMs` |
+| `DelegationCredentialVerifier` and `createDelegationVerifier` | the DID resolver, a custom `signatureVerifier` and the `StatusListResolver` |
+| the dependencies of `validateDelegationChain` | `resolveDelegationChain` and `RevocationChecker.isRevoked`; a bad value returns `{ valid: false }` with its reason, as a bad `trustedRootIssuers` does |
+| the dependencies of `verifyRequestDelegation` and `requireDelegation` | `resolveDelegationChain`, `verifyHopProof` and `checkRevocation`; the first rejects with the `TypeError`, the second throws it when the guard is built |
+| the context of `evaluateDelegationChain`, and a new third argument of `evaluateRevocationChain`, `{ dependencyTimeoutMs }` | each answer of the revocation checker; each rejects with the `TypeError` |
+| the dependencies of `verifyCard` | `capabilityVerifier`, `accountabilityVerifier`, `attestationVerifier`, `proofVerifier` and `statusListChecker`; it rejects with the `TypeError` |
+| the dependencies of `verifyCardProof` and `requireProof` | `resolveKey`, `resolveDidKeys` and `consumeNonceIfFresh`; the first rejects with the `TypeError`, the second throws it when the guard is built |
+| `createRevocationChecker` | one check, its list read and its `verifyStatusList` together |
+| `createDelegationProofVerifier` and `createStatusListProofVerifier` | the DID resolver |
+| `DidWebResolver` and `createDidWebResolver` | one read of a did:web document, and how long resolutions of one DID share a pending read |
+| `DidCheqdResolver`, `createDidCheqdResolver` and `cheqdResolver` | one resolution: its `headers` function, the request and the body |
+| `CheqdStatusListResolver` and `createCheqdStatusListResolver` | the list read, and the resolution of the issuer's DID |
+| `RuntimeFetchProvider` | one `resolveDID`, across a configured resolver and the built-in one, and one `fetchStatusList` |
+| `ProofVerifier` | `fetchProvider.resolveDID` |
+
+A deadline covers the whole call it is put on, so a dependency that is itself built from one of these needs the option too.
+For example, a `verifyCard` given 30,000 still fails a status check after 5 seconds when its `statusListChecker` was built by `createRevocationChecker` without the option, or that checker's `verifyStatusList` resolves a DID through a `DidWebResolver` built without it.
+The middleware passes `delegation.dependencyTimeoutMs` to the verifier, the did:web resolver and the fetch provider it builds itself, and to each factory in `didResolvers`, so a resolver that `cheqdResolver(options)` builds waits as long unless its own options set another time.
+It does not pass it to an object the host built: a `fetchProvider`, a `didResolver`, a resolver instance in `didResolvers` or a `statusListResolver`, such as a `CheqdStatusListResolver`, each of which takes its own.
+A `RuntimeFetchProvider` passes its `dependencyTimeoutMs` to the factories in its `didResolvers` the same way.
+A `didResolvers` factory of your own receives it as the `dependencyTimeoutMs` of a new second argument.
+A reason states the time that was configured: `did not answer within 30 seconds` for 30,000, and in milliseconds when it is not a whole number of seconds, as in `did not answer within 7500 ms`.
+A checker built with `createRevocationChecker` now also has this deadline when it is called directly, where on 1.22.0 it waited without end, and resolves revoked and not fresh when it is missed.
+`verifyVcJwtSignature` takes the time for its DID resolver as an optional fifth argument.
+`SafeFetch`'s `timeoutMs`, which bounds each hop of its own fetch, is a separate option and is unchanged.
+
+#### A custom `signatureVerifier`, or another dependency, whose verdict is not the boolean its type promises
+
+`DelegationCredentialVerifier` takes the answer of a custom `signatureVerifier` as a verified signature only when it is an object whose `valid` is the literal `true`.
+On 1.22.0 `valid` was read by its truthiness, so a credential whose signature did not hold verified on `{ valid: "false" }`, `{ valid: 1 }` or `{ valid: {} }`.
+An answer whose `valid` is the literal `false` refuses the credential with the answer's `reason`, when that is a string, as text of at most 256 UTF-16 code units with no control character.
+Any other answer refuses it with a reason that starts `The verdict of the signature verifier could not be read`: one that is not an object, one whose `valid` is not a boolean, and one whose `valid` or `reason` throws when read.
+`validateDelegationChain` reads the answer of the `verifier` it is given the same way, with a reason that names `the credential verifier`, where on 1.22.0 it passed a credential on any truthy `valid` and threw a `TypeError` on an answer of `undefined` or `null`.
+A verifier written in TypeScript against the library's types already answers a boolean and needs no change; make any other return `{ valid: true }` or `{ valid: false, reason }`.
+`verifyCard` reads its other seams as it already read `accountabilityVerifier`.
+An `accountabilityVerifier` answer that is neither a boolean nor an object, whose `verified` is not a boolean, or that throws when read leaves the Card not accountable with `accountability.reason` saying why, where a member that threw made `verifyCard` throw.
+An `attestationVerifier` verifies an attestation only on the literal `true`, where a truthy value such as `"false"` or `1` verified it.
+A `proofVerifier` verifies the proof only on an object whose `ok` is the literal `true` and whose `did` is a string, and its `level` is reported only when it is `L3` or `L3-minus`; on the literal `false` the proof is unverified with the `reasons` that are strings, and on any other answer, `undefined` included, with the one reason `proof_verdict_unreadable`, where a truthy `ok` such as `"false"` lifted the Card to L3.
+A `capabilityVerifier` must answer an object whose `verified` and `unverified` are arrays of strings, or no capability counts as verified and the Card stays at L1, where `verifyCard` threw a `TypeError` on an answer without a `verified` array; a `fresh` that is present and not the literal `true` reads as `false`, which demotes L3 to L2, where a truthy value such as `"false"` kept L3.
+`CheqdStatusListResolver` takes a status list's signature as verified only when its `cryptoProvider.verify` answers the literal `true`, where a truthy value such as `"false"` or `1` verified it.
+A nonce cache without `consume()` admits a nonce only when its `has()` answers the literal `false`: any other answer, such as `undefined`, `null` or `0`, now denies the request as a replay and adds nothing, where it admitted the nonce.
+The audit verifiers read each boolean a dependency answers the same way, passing only on the literal `true`, where a truthy value such as `"false"`, `1` or `{}` passed.
+`AuditArtifactVerifier` and `verifyAuditBundle` take `signatures.verify` so for an entry's, a checkpoint's, an observation's and a bundle's signature, and `verifyAuditBundle` its `verifySupportingAnchor` for an anchor.
+`MemoryAuditCheckpointObserver` takes its `verifyCheckpoint` and `verifyConsistency` so, `AuditRecorderService` its `authorizer.authorize` and its `epochTransitionGuard.verifyAndSeal`, and `MemoryAuditEvidenceProvider` its `authorizeAccess`.
+`verifyApprovalQuorum`, and the policy gate through it, counts an approver only when `isValidApprovalSignature` answers the literal `true`.
+The delegation gate takes a credential's signature as verified only when the middleware's `CryptoProvider.verify` answers the literal `true`; any other answer is refused as `Signature verification failed`.
+`verifyOrHints` authorizes an agent only when its `delegationVerifier` answers an object whose `valid` is the literal `true` and whose `delegation` is an object, and hands back a `credential` only when that is an object.
+On 1.22.0 it read `valid` and `delegation` by their truthiness, and threw a `TypeError` on an answer of `undefined` or `null`; any answer that is not a verdict now leaves the agent unauthorized with a reason that starts `The verdict of the delegation verifier could not be read`.
+`AuthorizationServerRegistry.resolve` skips an adapter only when its `isRequired` answers the literal `false`: on any other answer, such as `undefined`, `null` or `0`, the adapter now runs, where it was skipped.
+
+#### Code that calls `DelegationCredentialVerifier` directly
+
+It now reads a credential's status only once the signature has verified, not alongside it, so a credential whose signature fails causes no status read.
+Its result then reports the status as not checked: `checks` has no `statusValid`, where it held the outcome of a status read, and there is no `statusOutcome`.
+
+#### Code that reads `DelegationCheck.vc` on a failure
+
+For a VC-JWT whose envelope does not verify, it now has the `proof: { type: "JwtProof2020", jwt }` marker that the gate adds to a VC-JWT's credential, where it was the embedded credential without one.
+
+#### Code that matches on a failure `reason`
+
+A chain's links, and then its root's `issuer` against `trustedRootIssuers`, are checked before any credential is verified, so a broken link or an untrusted root now gives that reason even when a signature would also fail, and for a VC-JWT the reasons for a malformed chain, a missing `resolveDelegationChain`, `maxChainLength` and root admission come before the envelope's.
+An untrusted root reads `Root delegation <id> is issued by "<issuer>", which is not a trusted root issuer`, the issuer quoted as other reasons quote a value.
+`Could not resolve issuer DID` is the reason for an issuer DID over its limit, for a VC-JWT as for a credential with an embedded proof, without asking the resolver.
+A resolution that misses its deadline fails with a reason that ends `DID resolution deadline exceeded`, and a status-list read with one that ends `Status list fetch deadline exceeded`, or names the limit it exceeded.
+Any other dependency that misses it gives a reason that ends `did not answer within 5 seconds`, or within the time `dependencyTimeoutMs` sets, listed under "A dependency that can take longer than 5 seconds to answer".
+`ProofVerifier` refuses a DID or key id over its limit with `DID or key identifier exceeds resource limit`, and an empty DID with `DID is empty`.
+
+#### A did:cheqd DID whose unique id is not a UUID or letters and digits
+
+`parseDidCheqd` reads only the unique id cheqd's DID method defines, a UUID or letters and digits, and `DidCheqdResolver` refuses any other DID before a request.
+On 1.22.0 it read any unique id without `/`, `?` or `#`, and asked the resolver for it.
+`didCheqdToResolverUrl` writes the DID as one path segment, percent-encoded except for its colons, so a DID of the method is written as before.
+
 ### Conformance suite 1.4.0
 
 The suite adds status-list vectors for the acceptance rule, each with a list whose proof verifies, and has 97 vectors in all.

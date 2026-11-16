@@ -30,6 +30,7 @@
  * `fresh` (a live status check). NOT wired into `verifyCard` here — a later step injects it.
  */
 
+import { answerWithinDeadline, dependencyTimeout } from '../utils/deadline.js';
 import { describeValue } from '../utils/describe-value.js';
 import { isRecord, issuerOf } from '../utils/guards.js';
 import { sanitizeForMessage } from '../utils/message-text.js';
@@ -51,6 +52,7 @@ import {
 } from '../utils/statuslist-bits.js';
 import { statusListGzipCodec } from '../utils/statuslist-gzip.js';
 import type { SafeFetch } from '../utils/safe-fetch.js';
+import { checkWithinDeadline } from './revocation-deadline.js';
 import type { BitstringStatusListEntry } from './schema.js';
 import type { StatusListProofVerifier } from './status-list-proof.js';
 
@@ -186,6 +188,11 @@ export interface RevocationCheckerDeps {
    * as a post-inflation backstop regardless.
    */
   decompress?: Decompress;
+  /**
+   * How long, in milliseconds, one check, its list read and its `verifyStatusList` together, may take: a number greater than 0 and at most
+   * 2,147,483,647. Default 5,000. Any other value throws a `TypeError` naming the option.
+   */
+  dependencyTimeoutMs?: number;
 }
 
 /**
@@ -220,7 +227,8 @@ const FAIL_CLOSED: RevocationStatus = { revoked: true, fresh: false };
  * Without `verifyStatusList` nothing about the list is authenticated, so only its `statusPurpose`
  * is checked and the bits are read as before.
  *
- * @throws TypeError when `statusListIssuers` is malformed, or given without `verifyStatusList`.
+ * @throws TypeError when `statusListIssuers` is malformed, or given without `verifyStatusList`, or
+ *   when `dependencyTimeoutMs` is not a number of milliseconds the checker can wait.
  */
 export function createRevocationChecker(
   deps: RevocationCheckerDeps,
@@ -232,7 +240,8 @@ export function createRevocationChecker(
   const clock = deps.now ?? (() => Date.now());
   const wantedPurpose = deps.statusPurpose ?? STATUS_PURPOSE_REVOCATION;
   const decompress = deps.decompress ?? statusListGzipCodec.decompress;
-  return async function check(
+  const timeoutMs = dependencyTimeout(deps.dependencyTimeoutMs);
+  const read = async function check(
     entry: RevocationStatusEntry,
     context?: StatusCheckContext,
   ): Promise<RevocationStatus> {
@@ -264,6 +273,9 @@ export function createRevocationChecker(
       return { ...FAIL_CLOSED, reason: failureReason(error) };
     }
   };
+  // The list read and its proof check share one deadline, and a miss fails closed as a throw does.
+  return (entry, context) =>
+    answerWithinDeadline('the status list read', () => read(entry, context), timeoutMs).catch(() => FAIL_CLOSED);
 }
 
 /**
@@ -325,26 +337,35 @@ export interface RevocationChainEntry extends Omit<StatusCheckContext, 'credenti
  * `entries` when it has none, and names the list and the index its entry states. Whoever issued the
  * hop wrote both, so the reason quotes each as `describeValue` does, at most its first 64
  * characters, and names one that is not a string by its type alone, never converting it.
+ *
+ * Each answer of the checker gets `options.dependencyTimeoutMs`, 5,000 ms by default, and a hop
+ * whose checker has not answered by then is unresolvable. Rejects with a `TypeError` for a value
+ * that is not a number of milliseconds greater than 0 and at most 2,147,483,647.
  */
 export async function evaluateRevocationChain(
   entries: readonly (RevocationStatusEntry | RevocationChainEntry)[],
   check: BitstringRevocationChecker,
+  options: { dependencyTimeoutMs?: number } = {},
 ): Promise<RevocationChainResult> {
+  const timeoutMs = dependencyTimeout(options.dependencyTimeoutMs);
   let fresh = entries.length > 0; // no entries ⇒ no live signal ⇒ not fresh (fail-closed for L3)
   for (const [index, item] of entries.entries()) {
     let entry: RevocationStatusEntry | undefined;
-    let answer: unknown;
+    let context: StatusCheckContext | undefined;
     let hop = index;
     if (isChainEntry(item)) {
       const { entry: hopEntry, credentialIssuer, position, ...pinned } = item;
       entry = hopEntry;
       if (isPosition(position)) hop = position;
-      answer = await check(entry, credentialIssuer === undefined ? undefined : { ...pinned, credentialIssuer });
+      context = credentialIssuer === undefined ? undefined : { ...pinned, credentialIssuer };
     } else {
       entry = item;
-      answer = await check(entry);
     }
-    const status = readRevocationAnswer(answer);
+    const asked = await checkWithinDeadline(check, entry, context, timeoutMs);
+    if ('expired' in asked) {
+      return { ok: false, fresh: false, reasons: [`${hopName(hop, entry)} is unresolvable: ${asked.expired}`] };
+    }
+    const status = readRevocationAnswer(asked.answer);
     if (status.revoked === undefined) {
       const reason = `${hopName(hop, entry)} has a status that could not be read: ${status.unreadable}`;
       return { ok: false, fresh: false, reasons: [reason] };

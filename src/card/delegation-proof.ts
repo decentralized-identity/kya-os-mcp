@@ -13,6 +13,7 @@
  */
 
 import type { DIDResolver } from '../delegation/vc-verifier.types.js';
+import { dependencyTimeout } from '../utils/deadline.js';
 import { ASSERTION_METHOD } from '../delegation/verification-relationship.js';
 import { signEddsaJcs2022, verifyEddsaJcs2022 } from './data-integrity.js';
 import { DelegationCredentialSchema, type DelegationCredential } from './delegation.js';
@@ -29,6 +30,11 @@ export type DelegationProofVerifier = (credential: Record<string, unknown>) => b
 export interface DelegationProofVerifierDeps {
   /** Resolves each delegator's DID document, e.g. `createDidKeyResolver` or `createDidWebResolver`. */
   didResolver: DIDResolver;
+  /**
+   * How long, in milliseconds, the DID resolver may take to answer: a number greater than 0 and at most
+   * 2,147,483,647. Default 5,000. Any other value throws a `TypeError` naming the option.
+   */
+  dependencyTimeoutMs?: number;
 }
 
 /**
@@ -36,9 +42,10 @@ export interface DelegationProofVerifierDeps {
  * to {@link verifyRequestDelegation} (or {@link requireDelegation}) as `verifyHopProof`.
  */
 export function createDelegationProofVerifier(deps: DelegationProofVerifierDeps): DelegationProofVerifier {
+  const timeoutMs = dependencyTimeout(deps.dependencyTimeoutMs);
   return async function verifyHopProof(credential: Record<string, unknown>): Promise<boolean> {
     try {
-      return await verifyEddsaJcs2022(credential, deps.didResolver, ASSERTION_METHOD);
+      return await verifyEddsaJcs2022(credential, deps.didResolver, ASSERTION_METHOD, timeoutMs);
     } catch {
       return false;
     }

@@ -286,6 +286,11 @@ export interface DelegationChainContext {
   maxDepth?: number;
   /** Injectable clock (epoch ms) for the wall-clock expiry gate; default `Date.now` (deterministic tests inject it). */
   now?: () => number;
+  /**
+   * How long, in milliseconds, `evaluateDelegationChain` waits for each answer of its revocation checker: a number greater than 0 and at most
+   * 2,147,483,647. Default 5,000. Any other value makes it reject with a `TypeError`.
+   */
+  dependencyTimeoutMs?: number;
 }
 
 /**
@@ -403,6 +408,7 @@ export async function evaluateDelegationChain(
   const revocation: RevocationChainResult = await evaluateRevocationChain(
     revocationEntriesOf(chain, ctx.resourceOwner),
     check,
+    { dependencyTimeoutMs: ctx.dependencyTimeoutMs },
   );
   return {
     ...structural,

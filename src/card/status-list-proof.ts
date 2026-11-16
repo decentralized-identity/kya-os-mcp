@@ -14,6 +14,7 @@
  */
 
 import type { DIDResolver } from '../delegation/vc-verifier.types.js';
+import { dependencyTimeout } from '../utils/deadline.js';
 import { ASSERTION_METHOD } from '../delegation/verification-relationship.js';
 import { signEddsaJcs2022, verifyEddsaJcs2022, type EddsaJcs2022Proof } from './data-integrity.js';
 import type { ProofSigner } from './proof/types.js';
@@ -30,6 +31,11 @@ export type StatusListProofVerifier = (credential: Record<string, unknown>) => b
 export interface StatusListProofVerifierDeps {
   /** Resolves the list issuer's DID document, e.g. `createDidWebResolver` or `createDidKeyResolver`. */
   didResolver: DIDResolver;
+  /**
+   * How long, in milliseconds, the DID resolver may take to answer: a number greater than 0 and at most
+   * 2,147,483,647. Default 5,000. Any other value throws a `TypeError` naming the option.
+   */
+  dependencyTimeoutMs?: number;
 }
 
 /**
@@ -37,9 +43,10 @@ export interface StatusListProofVerifierDeps {
  * Pass it to {@link createRevocationChecker} as `verifyStatusList`.
  */
 export function createStatusListProofVerifier(deps: StatusListProofVerifierDeps): StatusListProofVerifier {
+  const timeoutMs = dependencyTimeout(deps.dependencyTimeoutMs);
   return async function verifyStatusList(credential: Record<string, unknown>): Promise<boolean> {
     try {
-      return await verifyEddsaJcs2022(credential, deps.didResolver, ASSERTION_METHOD);
+      return await verifyEddsaJcs2022(credential, deps.didResolver, ASSERTION_METHOD, timeoutMs);
     } catch {
       return false;
     }

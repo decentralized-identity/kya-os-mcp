@@ -20,6 +20,7 @@ import {
 import { credentialIssuerDid, JWT_NBF_LEEWAY_SECONDS } from "../vc-jwt-verify.js";
 import type { DelegationCredential } from "../../types/protocol.js";
 import { issuerDidDocument, methodOf } from "../../__tests__/utils/did-documents.js";
+import { keyOf, signedJwt } from "../../__tests__/utils/delegation-credentials.js";
 
 const ISSUER_DID = "did:web:example.com:u:alice";
 const KID = `${ISSUER_DID}#0`;
@@ -201,6 +202,28 @@ describe("verifyDelegationJwt (VC-JWT / compact JWS wire format)", () => {
     const result = await isolated.verifyDelegationJwt(jwt, { skipCache: true });
     expect(result).toMatchObject({ valid: false, stage: "signature" });
     expect(result.reason).toBe(`Could not resolve issuer DID "${ISSUER_DID}": resolver down`);
+  });
+
+  it("refuses an issuer DID over the length limit without asking its resolver", async () => {
+    const long = `${ISSUER_DID}:${"a".repeat(2_049 - ISSUER_DID.length - 1)}`;
+    const asked: string[] = [];
+    const isolated = new DelegationCredentialVerifier({
+      didResolver: {
+        async resolve(did: string): Promise<DIDDocument | null> {
+          asked.push(did);
+          throw new Error("resolver down");
+        },
+      },
+    });
+    const mint = async (issuer: string) => signedJwt(await keyOf(issuer, "0"), { kid: `${issuer}#0` });
+    const refused = await isolated.verifyDelegationJwt(await mint(long), { skipCache: true });
+    expect(refused.reason).toBe(`Could not resolve issuer DID: "${long.slice(0, 64)}"...`);
+    expect(asked).toEqual([]);
+    // One code unit shorter, the DID is at the limit, and the resolver is asked.
+    const atLimit = long.slice(0, -1);
+    const resolved = await isolated.verifyDelegationJwt(await mint(atLimit), { skipCache: true });
+    expect(resolved.reason).toBe(`Could not resolve issuer DID "${atLimit.slice(0, 64)}"...: resolver down`);
+    expect(asked).toEqual([atLimit]);
   });
 
   it("rejects, without throwing, a JOSE header that is not a JSON object", async () => {

@@ -1,0 +1,16 @@
+kind: Security
+body: |-
+    **A seam that never answers can no longer hold an Entity Card
+    verification open.** `verifyRequestDelegation` and `requireDelegation`
+    waited without a deadline on `resolveDelegationChain`, `verifyHopProof`
+    and `checkRevocation`, `evaluateDelegationChain` on its revocation
+    checker, `verifyCard` on its capability, accountability, attestation
+    and proof verifiers and its `statusListChecker`, and `verifyCardProof`
+    on `resolveKey`, `resolveDidKeys` and `consumeNonceIfFresh`. Each call
+    now has 5 seconds, and one that has not answered by then is refused as
+    that verifier refuses a seam that fails: `delegation_unresolvable`,
+    `delegation_invalid` or `delegation_revoked`, a claim left unverified,
+    the Card revoked, or the proof reason the seam has when it throws. A
+    seam that can take longer now fails where it was slow. UPGRADING.md, "A
+    dependency that can take longer than 5 seconds to answer", lists each.
+time: 2026-11-14T09:20:00.000000-06:00

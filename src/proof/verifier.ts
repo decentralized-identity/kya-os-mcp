@@ -6,23 +6,22 @@
  */
 
 import { CryptoService, type Ed25519JWK } from "../utils/crypto-service.js";
-import { CryptoProvider } from "../providers/base.js";
-import { ClockProvider } from "../providers/base.js";
-import { NonceCacheProvider } from "../providers/base.js";
+import { ClockProvider, CryptoProvider, FetchProvider, NonceCacheProvider } from "../providers/base.js";
 import { nonceRetentionSeconds } from "../providers/nonce-retention.js";
 import { admitNonce, checkNonceStore } from "../providers/nonce-admission.js";
-import { FetchProvider } from "../providers/base.js";
+import { checkProofIdentifiers, resolveProofDid } from "./proof-did.js";
 import {
   validateDetachedProof,
   type DetachedProof,
   type MetaPolicy,
 } from "../types/protocol.js";
 import { canonicalizeJson } from "../utils/canonical-json.js";
+import { dependencyTimeout } from "../utils/deadline.js";
 import {
   ProofVerificationError,
   PROOF_VERIFICATION_ERROR_CODES,
-  type ProofVerificationErrorCode,
 } from "./errors.js";
+import type { ProofVerificationOptions, ProofVerificationResult, ProofVerifierConfig } from "./verifier-types.js";
 import { logger } from "../logging/index.js";
 import { verificationMethodJwk } from "../delegation/verification-method-key.js";
 import type { VerificationMethod } from "../delegation/vc-verifier.types.js";
@@ -37,39 +36,7 @@ import {
   type ToolResponse,
 } from "./generator.js";
 
-export interface ProofVerificationResult {
-  valid: boolean;
-  reason?: string;
-  error?: Error;
-  errorCode?: ProofVerificationErrorCode;
-  details?: Record<string, unknown>;
-}
-
-/** Who a verified proof must come from and be addressed to. */
-export interface ProofVerificationOptions {
-  /** `meta.did` must equal this: the signer the caller expects (e.g. the server it called). */
-  expectedDid?: string;
-  /** `meta.audience` must equal this, or be one of the array (DID rotation, multi-DID servers). */
-  expectedAudience?: string | string[];
-}
-
-export interface ProofVerifierConfig {
-  cryptoProvider: CryptoProvider;
-  clockProvider: ClockProvider;
-  nonceCacheProvider: NonceCacheProvider;
-  fetchProvider: FetchProvider;
-  timestampSkewSeconds?: number;
-  /**
-   * Minimum retention in seconds; raised to cover the proof's accepted lifetime
-   * and supported skew updates. 0 keeps each nonce for that window only.
-   */
-  nonceTtlSeconds?: number;
-  /**
-   * Refuse nonce caches without an atomic `consume()` instead of falling back
-   * to `has()` then `add()`. The constructor throws for such a cache.
-   */
-  requireAtomicNonce?: boolean;
-}
+export type { ProofVerificationOptions, ProofVerificationResult, ProofVerifierConfig } from "./verifier-types.js";
 
 /** Default timestamp skew for proof verification (seconds) */
 export const DEFAULT_CLOCK_SKEW_SECONDS = 120;
@@ -94,6 +61,7 @@ export class ProofVerifier {
   private timestampSkewSeconds: number;
   private nonceTtlSeconds: number;
   private requireAtomicNonce: boolean;
+  private readonly timeoutMs: number;
   private cryptoProvider: CryptoProvider;
 
   constructor(config: ProofVerifierConfig) {
@@ -111,6 +79,7 @@ export class ProofVerifier {
       config.nonceTtlSeconds ?? 300, // Default 5 minutes
     );
     this.requireAtomicNonce = config.requireAtomicNonce ?? false;
+    this.timeoutMs = dependencyTimeout(config.dependencyTimeoutMs);
     checkNonceStore(this.nonceCache, { requireAtomicNonce: this.requireAtomicNonce });
   }
 
@@ -562,9 +531,10 @@ export class ProofVerifier {
     kid?: string
   ): Promise<Ed25519JWK | null> {
     try {
+      checkProofIdentifiers(did, kid);
       // Built before resolving, so a kid naming another DID fails without a fetch.
       const matchesKid = kid ? verificationMethodMatcher(did, kid) : undefined;
-      const didDoc = await this.fetch.resolveDID(did);
+      const didDoc = await resolveProofDid(this.fetch, did, kid, this.timeoutMs);
 
       if (!didDoc) {
         throw new ProofVerificationError(
@@ -636,13 +606,12 @@ export class ProofVerifier {
         );
       }
 
-      // Set kid from verification method ID so downstream kid-matching works
-      const result = jwk as Ed25519JWK;
-      if (!result.kid && verificationMethod.id) {
-        result.kid = verificationMethod.id;
+      // Set kid from verification method ID so downstream kid-matching works,
+      // on a copy: a document a built-in resolver returns is frozen.
+      if (!jwk.kid && verificationMethod.id) {
+        return { ...jwk, kid: verificationMethod.id } as Ed25519JWK;
       }
-
-      return result;
+      return jwk as Ed25519JWK;
     } catch (error) {
       if (error instanceof ProofVerificationError) {
         throw error;

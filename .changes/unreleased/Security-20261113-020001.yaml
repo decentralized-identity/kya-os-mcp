@@ -1,0 +1,19 @@
+kind: Security
+body: |-
+    **A delegation or a request proof can no longer make its verifier fetch
+    and parse a DID document or status list of any size, or wait for one
+    without end.** The did:web and cheqd DID resolvers,
+    `CheqdStatusListResolver` and `RuntimeFetchProvider.fetchStatusList`
+    read a whole response with no size limit or deadline, and the resolvers'
+    caches had no limit, so a caller of a gated tool or of `ProofVerifier`
+    could name a DID or a status list served without end.
+    `trustedRootIssuers` did not stop this: the gate resolved an issuer
+    before it refused the root, and read a status list whether or not its
+    signature verified. These reads are now bounded (see Upgrading); the
+    gate admits a root before any resolution, and reads a status list only
+    after the signature verifies. Affected: the gate from 1.2.0;
+    `RuntimeFetchProvider`, and so `ProofVerifier`, from 1.4.0;
+    `DidCheqdResolver` from 1.9.0; `CheqdStatusListResolver` from 1.14.0.
+    Every verifier that resolves a DID or a status list a counterparty names
+    should upgrade.
+time: 2026-11-13T02:00:01.000000-06:00

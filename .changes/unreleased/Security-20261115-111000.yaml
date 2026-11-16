@@ -1,0 +1,19 @@
+kind: Security
+body: |-
+    **Every boolean a host's dependency answers is read as a literal.** The
+    audit verifiers read `signatures.verify`, `verifySupportingAnchor`,
+    `verifyCheckpoint`, `verifyConsistency`, `authorizer.authorize`,
+    `epochTransitionGuard.verifyAndSeal` and `authorizeAccess` by their
+    truthiness, and so did `verifyApprovalQuorum` its signature check, so
+    an answer such as `"false"`, `1` or `{}` verified a signature, admitted
+    a submission or released evidence. Each now passes only on the literal
+    `true`. `verifyOrHints` authorizes only on a `delegationVerifier`
+    answer whose `valid` is the literal `true` and whose `delegation` is an
+    object, and does not throw on `undefined` or `null`. The delegation
+    gate reads its `CryptoProvider.verify` the same way, and
+    `AuthorizationServerRegistry.resolve` skips an adapter only when
+    `isRequired` answers the literal `false`. Dependencies typed against
+    the library need no change. See UPGRADING.md, "A custom
+    `signatureVerifier`, or another dependency, whose verdict is not the
+    boolean its type promises".
+time: 2026-11-15T11:10:00.000000-06:00

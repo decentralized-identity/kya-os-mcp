@@ -1,13 +1,23 @@
 import type { FetchProvider } from '../providers/base.js';
 import type { DIDResolver } from './vc-verifier.js';
 
-export type DIDResolverFactory = (fetchProvider: FetchProvider) => DIDResolver;
+/** What the owner of a registry tells each factory it calls. */
+export interface DIDResolverFactoryContext {
+  /**
+   * The `dependencyTimeoutMs` the owner gives its own dependencies, for a resolver the factory
+   * builds to wait as long, unless the factory's own options set another.
+   */
+  dependencyTimeoutMs?: number;
+}
+
+export type DIDResolverFactory = (fetchProvider: FetchProvider, context?: DIDResolverFactoryContext) => DIDResolver;
 export type DIDResolverRegistryEntry = DIDResolver | DIDResolverFactory;
 export type DIDResolverRegistry = Record<string, DIDResolverRegistryEntry>;
 
 export function buildDidResolverRegistry(
   entries: DIDResolverRegistry | undefined,
   fetchProvider: FetchProvider | undefined,
+  context?: DIDResolverFactoryContext,
 ): Record<string, DIDResolver> {
   const resolvers: Record<string, DIDResolver> = {};
   if (!entries) {
@@ -20,7 +30,7 @@ export function buildDidResolverRegistry(
     }
     if (typeof entry === 'function') {
       if (fetchProvider) {
-        resolvers[method] = entry(fetchProvider);
+        resolvers[method] = entry(fetchProvider, context);
       }
       continue;
     }

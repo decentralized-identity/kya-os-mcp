@@ -30,6 +30,7 @@ import {
   type HandshakeResult,
 } from "../session/manager.js";
 import { base64urlEncodeFromBytes } from "../utils/base64.js";
+import { isRecord } from "../utils/guards.js";
 import { logger } from "../logging/index.js";
 import { KYA_OS_ERROR_CODES } from "../errors.js";
 import type { DetachedProof, SessionContext } from "../types/protocol.js";
@@ -212,9 +213,6 @@ function withoutMetaKeys<T extends ToolResult>(result: T, keys: readonly string[
 export function withoutOutcomeMeta<T extends ToolResult>(result: T): T {
   return withoutMetaKeys(result, outcomeMetaKeys);
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === 'object' && !Array.isArray(value);
 
 /** What {@link scrubPrivateMeta} found and made of a value. */
 interface Scrubbed<T> {

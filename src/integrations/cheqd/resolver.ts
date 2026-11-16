@@ -2,16 +2,28 @@
  * DID:cheqd Resolver
  *
  * Resolves did:cheqd DIDs through an explicitly configured resolver endpoint.
- * The resolver accepts both Universal Resolver-style DID Resolution Results
- * (`{ didDocument: ... }`) and raw DID Documents.
+ * It asks for the DID document alone (`Accept: application/did+ld+json`, W3C
+ * DID Resolution), which the cheqd resolver answers without the resolution
+ * metadata, and still accepts a Universal Resolver-style DID Resolution Result
+ * (`{ didDocument: ... }`) from a resolver that sends one anyway. That envelope
+ * is read within its own limits; the document inside it meets the document's.
  */
 
 import type { FetchProvider } from '../../providers/base.js';
 import type { DIDResolverFactory } from '../../delegation/did-resolver-registry.js';
 import type { DIDDocument, DIDResolver } from '../../delegation/vc-verifier.js';
 import { hasIdTypeAndController } from '../../delegation/verification-method-shape.js';
+import { dependencyTimeout } from '../../utils/deadline.js';
 import { logger } from '../../logging/index.js';
 import { isRecord, stripTrailingSlashes } from '../../utils/index.js';
+
+import {
+  admitParsedDidDocument, boundedDid, DID_RESOLUTION_ENVELOPE_READ, DidDocumentCache, type LoadedDidDocument,
+} from '../../delegation/did-resource-limits.js';
+import { fetchBoundedJson } from '../../utils/bounded-read.js';
+
+/** The DID document alone, without resolution metadata (W3C DID Resolution). */
+const DID_DOCUMENT_MEDIA_TYPE = 'application/did+ld+json';
 
 export type DidCheqdNetwork = 'mainnet' | 'testnet';
 
@@ -24,6 +36,11 @@ export interface DidCheqdResolverOptions {
   resolverUrl: string;
   cacheTtl?: number;
   headers?: Record<string, string> | (() => Promise<Record<string, string>>);
+  /**
+   * How long, in milliseconds, one resolution, its `headers` function, request and body together, may take: a number greater than 0 and at most
+   * 2,147,483,647. Default 5,000. Any other value throws a `TypeError` naming the option.
+   */
+  dependencyTimeoutMs?: number;
 }
 
 interface DidResolutionResult {
@@ -34,73 +51,70 @@ export function isDidCheqd(did: string): boolean {
   return did.startsWith('did:cheqd:');
 }
 
+/**
+ * The method-specific identifier of a did:cheqd DID, as cheqd's DID method (ADR 001) writes it:
+ * `unique-id = *id-char / UUID`, `id-char = ALPHA / DIGIT`, a UUID in the RFC 4122 text form with
+ * hex digits of either case. Nothing else is one: no `\`, `.`, `%`, `$`, white space or further
+ * `:`, each of which would otherwise reach the request URL built from the DID.
+ */
+const UNIQUE_ID = /^(?:[0-9A-Za-z]+|[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})$/;
+
+/**
+ * `did` as a did:cheqd DID of mainnet or testnet, or `null` when it is not one: another method or
+ * namespace, a DID URL with a path, query or fragment, or a unique id outside {@link UNIQUE_ID}.
+ * The resolver asks its endpoint only for a DID this reads, so a counterparty that names a DID
+ * chooses the identifier it asks for and nothing else about the request.
+ */
 export function parseDidCheqd(did: string): ParsedDidCheqd | null {
-  const match = /^did:cheqd:(mainnet|testnet):([^/?#]+)$/.exec(did);
-  if (!match) {
+  const match = /^did:cheqd:(mainnet|testnet):(.*)$/s.exec(did);
+  const uniqueId = match?.[2];
+  if (!match || uniqueId === undefined || !UNIQUE_ID.test(uniqueId)) {
     return null;
   }
-
-  const uniqueId = match[2] ?? '';
-  if (uniqueId.length === 0) {
-    return null;
-  }
-
-  return {
-    network: match[1] as DidCheqdNetwork,
-    uniqueId,
-  };
+  return { network: match[1] as DidCheqdNetwork, uniqueId };
 }
 
 export class DidCheqdResolver implements DIDResolver {
   private readonly fetchProvider: FetchProvider;
   private readonly resolverUrl: string;
-  private readonly cache: Map<string, { document: DIDDocument; expiresAt: number }>;
+  private readonly cache: DidDocumentCache;
   private readonly cacheTtl: number;
   private readonly headers?: Record<string, string> | (() => Promise<Record<string, string>>);
+  private readonly timeoutMs: number;
 
   constructor(fetchProvider: FetchProvider, options: DidCheqdResolverOptions) {
     this.fetchProvider = fetchProvider;
     this.resolverUrl = options.resolverUrl;
     this.cacheTtl = options.cacheTtl ?? 300_000;
     this.headers = options.headers;
-    this.cache = new Map();
+    this.timeoutMs = dependencyTimeout(options.dependencyTimeoutMs);
+    this.cache = new DidDocumentCache(this.timeoutMs);
   }
 
   async resolve(did: string): Promise<DIDDocument | null> {
-    if (!parseDidCheqd(did)) {
+    if (!boundedDid(did) || !parseDidCheqd(did)) {
       return null;
     }
+    return this.cache.resolve(did, this.cacheTtl, () => this.fetchDocument(did));
+  }
 
-    const cached = this.cache.get(did);
-    if (cached && Date.now() < cached.expiresAt) {
-      return cached.document;
-    }
-
+  /**
+   * Fetch, measure, freeze and check the document for `did`, or `null`. The read's one deadline
+   * holds the configured headers too, so a headers function that never answers ends the resolution
+   * at the deadline and leaves nothing pending for the next one to join.
+   */
+  private async fetchDocument(did: string): Promise<LoadedDidDocument | null> {
     try {
-      const response = await this.fetchProvider.fetch(
-        didCheqdToResolverUrl(did, this.resolverUrl),
-        {
-          method: 'GET',
-          headers: await this.resolveHeaders(),
-        },
+      const init = this.requestHeaders().then((headers): RequestInit => ({ method: 'GET', headers }));
+      const json = await fetchBoundedJson(
+        this.fetchProvider, didCheqdToResolverUrl(did, this.resolverUrl), init,
+        { ...DID_RESOLUTION_ENVELOPE_READ, timeoutMs: this.timeoutMs },
       );
-
-      if (!response.ok) {
-        logger.warn(`[DidCheqdResolver] HTTP ${response.status} resolving ${did}`);
-        return null;
-      }
-
-      let json: unknown;
-      try {
-        json = await response.json();
-      } catch {
-        logger.warn(`[DidCheqdResolver] Invalid JSON resolving ${did}`);
-        return null;
-      }
-
       const document = extractDidDocument(json);
-      if (!document || !isValidDIDDocument(document)) {
-        logger.warn(`[DidCheqdResolver] Invalid DID Document resolving ${did}`);
+      const measure = admitParsedDidDocument(document);
+      if (!measure.ok || !isValidDIDDocument(document)) {
+        const reason = measure.ok ? '' : `: ${measure.reason}`;
+        logger.warn(`[DidCheqdResolver] Invalid DID Document resolving ${did}${reason}`);
         return null;
       }
 
@@ -109,12 +123,7 @@ export class DidCheqdResolver implements DIDResolver {
         return null;
       }
 
-      this.cache.set(did, {
-        document,
-        expiresAt: Date.now() + this.cacheTtl,
-      });
-
-      return document;
+      return { document, bytes: measure.bytes };
     } catch (error) {
       logger.warn(
         `[DidCheqdResolver] Error resolving ${did}: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -129,6 +138,13 @@ export class DidCheqdResolver implements DIDResolver {
 
   clearCacheEntry(did: string): void {
     this.cache.delete(did);
+  }
+
+  /** The configured headers, with `Accept` set to the document's media type in place of any the caller set. */
+  private async requestHeaders(): Promise<Headers> {
+    const headers = new Headers(await this.resolveHeaders());
+    headers.set('Accept', DID_DOCUMENT_MEDIA_TYPE);
+    return headers;
   }
 
   private async resolveHeaders(): Promise<Record<string, string> | undefined> {
@@ -146,19 +162,37 @@ export function createDidCheqdResolver(
   return new DidCheqdResolver(fetchProvider, options);
 }
 
+/**
+ * A `didResolvers` entry that builds the cheqd resolver over the registry owner's fetch provider.
+ * The resolver waits as long as `options.dependencyTimeoutMs` says, or, when that is left out, as
+ * long as the owner waits: the `dependencyTimeoutMs` of the delegation middleware or of the
+ * `RuntimeFetchProvider` that holds the registry.
+ */
 export function cheqdResolver(options: DidCheqdResolverOptions): DIDResolverFactory {
-  return (fetchProvider) => createDidCheqdResolver(fetchProvider, options);
+  return (fetchProvider, context) => createDidCheqdResolver(
+    fetchProvider,
+    options.dependencyTimeoutMs === undefined ? { ...options, dependencyTimeoutMs: context?.dependencyTimeoutMs } : options,
+  );
 }
 
+/**
+ * The URL to ask `resolverUrl` for `did` at: the `{did}` of a template, or under
+ * `/1.0/identifiers/`. The DID is written as one path segment, percent-encoded except for its
+ * colons, which a path segment may hold (RFC 3986 section 3.3) and which resolvers expect as they
+ * stand, so a DID of the method is written unchanged and any other string cannot add a segment, a
+ * query or a fragment. A template takes it through a function, so `$&` and the other replacement
+ * patterns in it are text.
+ */
 export function didCheqdToResolverUrl(did: string, resolverUrl: string): string {
   const base = stripTrailingSlashes(resolverUrl);
+  const segment = encodeURIComponent(did).replace(/%3A/g, ':');
   if (base.includes('{did}')) {
-    return base.replace('{did}', did);
+    return base.replace('{did}', () => segment);
   }
   if (base.endsWith('/1.0/identifiers')) {
-    return `${base}/${did}`;
+    return `${base}/${segment}`;
   }
-  return `${base}/1.0/identifiers/${did}`;
+  return `${base}/1.0/identifiers/${segment}`;
 }
 
 function extractDidDocument(value: unknown): unknown {

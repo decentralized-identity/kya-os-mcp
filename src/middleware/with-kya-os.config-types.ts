@@ -49,13 +49,25 @@ export type KyaOsAction = (typeof KYA_OS_ACTIONS)[number];
 
 export interface KyaOsDelegationConfig {
   /**
-   * Optional custom DID resolver. If it returns null, middleware falls back to
-   * built-in did:key resolution and fetch-backed did:web resolution.
+   * Optional custom DID resolver, asked first. If it returns null, middleware
+   * falls back to `didResolvers`, then built-in did:key resolution and
+   * fetch-backed did:web resolution. One deadline, `dependencyTimeoutMs`, covers the whole
+   * resolution, and the document it returns is held to the limits of SPEC
+   * §4.4.2 on every call, with an `id` that is a DID: a document they refuse
+   * ends the resolution, with no fallback. The gate reads its own copy of the
+   * document, made as it is checked; the object returned is neither frozen nor
+   * changed.
    */
   didResolver?: DIDResolver;
   /**
-   * Optional fetch provider used for did:web resolution.
-   * If omitted, middleware falls back to the runtime global fetch when available.
+   * Optional fetch provider for did:web documents, and for the factories in
+   * `didResolvers`. If omitted, middleware uses a `RuntimeFetchProvider` over
+   * the runtime's global fetch when there is one. Every did:web read through
+   * it is bounded (SPEC §4.4.2) and held to the private-network rule: its
+   * `fetch` must return a `Response` whose `body` is a WHATWG
+   * `ReadableStream`, and must pass `redirect: "manual"` on, so each redirect
+   * is followed and checked by hand. Its `allowPrivateNetworkHosts`, when
+   * `true`, admits private IP literals and local names, as in development.
    */
   fetchProvider?: FetchProvider;
   /**
@@ -72,6 +84,10 @@ export interface KyaOsDelegationConfig {
   /**
    * Resolve ancestor credentials for a delegated chain. The returned array may
    * contain only ancestors (root -> parent) or the full chain (root -> leaf).
+   * It runs before any credential is checked, on the presented leaf (for a
+   * VC-JWT, its payload before the envelope's signature is checked), so it
+   * must treat the leaf as unauthenticated and bound its own I/O: no limit
+   * or deadline of the gate covers it. The chain it returns is verified.
    */
   resolveDelegationChain?: (
     leafCredential: DelegationCredential,
@@ -86,11 +102,15 @@ export interface KyaOsDelegationConfig {
   revocationChecker?: RevocationChecker;
   /**
    * DIDs allowed to issue root delegations, the chain's Responsible Party
-   * (SPEC §6). When set, a delegation whose root credential is signed by any
+   * (SPEC §6). When set, a delegation whose root credential is issued by any
    * other DID is rejected, both when presented and when a stored grant is
-   * reused. Compared as exact strings against the verified signer. An empty
-   * list trusts no issuer. When unset, any issuer is accepted and the
-   * middleware logs a warning at startup; set it for production.
+   * reused. The root's `issuer` is compared whole with each entry before any
+   * DID is resolved, status list read or signature checked, and the root is
+   * then verified with a key of that issuer's DID document. Each entry must
+   * be a DID, a string that starts with `did:` and has no white space around
+   * it; creating the middleware with any other value throws a `TypeError`.
+   * An empty list trusts no issuer. When unset, any issuer is accepted and
+   * the middleware logs a warning at startup; set it for production.
    */
   trustedRootIssuers?: readonly string[];
   /**
@@ -103,6 +123,16 @@ export interface KyaOsDelegationConfig {
    * a resolver that fetches one parent at a time should apply its own limit.
    */
   maxChainLength?: number;
+  /**
+   * How long, in milliseconds, the delegation gate waits for each dependency it
+   * asks: a DID resolution, a did:web or status-list read through the default
+   * `fetchProvider`, `statusListResolver`, `resolveDelegationChain` and
+   * `revocationChecker`. A number greater than 0 and at most 2,147,483,647.
+   * Default 5,000. Any other value is refused at startup with a `TypeError`.
+   * A `fetchProvider`, `didResolver` or `statusListResolver` built by the host
+   * takes its own `dependencyTimeoutMs`.
+   */
+  dependencyTimeoutMs?: number;
   /**
    * Holder-of-key enforcement for inbound calls (spec §11.8). A valid delegation
    * is a *bearer* credential; holder binding additionally requires the caller to

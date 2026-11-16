@@ -1,0 +1,15 @@
+kind: Security
+body: |-
+    **A resolved DID document can no longer hand a verifier a member it
+    inherits.** The walk that holds a custom resolver's document to the
+    DID limits measures each object's own members, and admitted an object
+    whose prototype was built by hand to pass for another realm's
+    `Object.prototype`: one with a `constructor` named `Object`. A getter
+    for `verificationMethod` or `assertionMethod` on that prototype was
+    never measured, and the key lookup then read it. The walk now also
+    refuses a prototype that has any member name `Object.prototype` lacks,
+    so the document is refused before a getter on it runs, and a verifier
+    reads only what was measured. A document that is a plain object, of
+    this realm or another, is read as before. See UPGRADING.md, "Limits on
+    DID resolution and status-list reads".
+time: 2026-11-15T10:30:00.000000-06:00

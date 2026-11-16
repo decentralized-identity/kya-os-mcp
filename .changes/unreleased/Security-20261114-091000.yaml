@@ -1,0 +1,16 @@
+kind: Security
+body: |-
+    **A dependency that never answers can no longer hold a delegation
+    verification open.** `DelegationCredentialVerifier` waited without a
+    deadline on a `StatusListResolver` and on a custom signature verifier,
+    and `validateDelegationChain`, which the delegation gate runs, on
+    `resolveDelegationChain` and a `RevocationChecker`, so a stalled status
+    service, chain store or revocation graph kept a gated call waiting
+    without end, where a DID resolver was given 5 seconds. Each call now
+    has the same 5 seconds, and one that has not answered by then is
+    refused: the credential as `status_unresolvable`, the signature as
+    unverified, the chain as unresolved, the revocation check as failed. A
+    dependency that can take longer, such as one that makes several reads
+    in a row, now fails where it was slow. UPGRADING.md, "A dependency that
+    can take longer than 5 seconds to answer", has each reason.
+time: 2026-11-14T09:10:00.000000-06:00

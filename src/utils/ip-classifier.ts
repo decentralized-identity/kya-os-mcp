@@ -4,8 +4,8 @@
  * Pure, I/O-free RFC classification extracted from `./safe-fetch` so the "which addresses may we
  * connect to" decision is one cohesive, independently-testable unit. Every predicate FAILS CLOSED:
  * an unparseable literal classifies as blocked. IPv6 is classified by its 16 canonical bytes (not
- * its textual form), and every IPv4-bearing transition range (v4-mapped, NAT64, 6to4, v4-compatible)
- * folds down to its embedded v4 so a private tail cannot slip through a v6 wrapper.
+ * its textual form), and every IPv4-bearing transition range (v4-mapped, v4-translated, NAT64, 6to4,
+ * v4-compatible) folds down to its embedded v4 so a private tail cannot slip through a v6 wrapper.
  */
 
 /** True if an IPv4 dotted-quad is NOT a public unicast address (fail-closed on parse error). */
@@ -85,6 +85,11 @@ function isBlockedIpv6(ip: string): boolean {
   const embeddedV4 = (): boolean => isBlockedIpv4(`${b[12]}.${b[13]}.${b[14]}.${b[15]}`);
   // IPv4-mapped ::ffff:a.b.c.d — classify by the embedded v4 (loopback, RFC1918, metadata, …).
   if (b.subarray(0, 10).every((x) => x === 0) && b[10] === 0xff && b[11] === 0xff) return embeddedV4();
+  // IPv4-translated ::ffff:0:a.b.c.d (RFC 2765, ::ffff:0:0:0/96) embeds an IPv4 address too, which a
+  // stateless translator (SIIT) can reach: classify it by that address, as the mapped form above.
+  if (b.subarray(0, 8).every((x) => x === 0) && b[8] === 0xff && b[9] === 0xff && b[10] === 0 && b[11] === 0) {
+    return embeddedV4();
+  }
   if (b.every((x) => x === 0)) return true; // :: unspecified
   if (b.subarray(0, 15).every((x) => x === 0) && b[15] === 1) return true; // ::1 loopback (any form)
   if (b[0] === 0xfe && (b[1]! & 0xc0) === 0x80) return true; // fe80::/10 link-local

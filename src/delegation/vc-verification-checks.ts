@@ -16,10 +16,13 @@ import {
   isSupportedCredentialProofType,
   validateDelegationCredential,
 } from "../types/protocol.js";
+import { answerWithinDeadline } from "../utils/deadline.js";
 import { describeValue } from "../utils/describe-value.js";
 import { issuerOf } from "../utils/guards.js";
 import { sanitizeForMessage } from "../utils/message-text.js";
+import { readVerdict } from "../utils/verdict.js";
 import { credentialIssuerRefusal } from "./credential-issuer.js";
+import { DID_RESOLUTION_TIMEOUT_MS, resolveBoundedDid } from "./did-resource-limits.js";
 import { readRevoked, unreadableStatusReason } from "../utils/revocation-answer.js";
 import type {
   DIDResolver,
@@ -137,19 +140,20 @@ function validateSubjectShape(vc: DelegationCredential): {
 }
 
 /**
- * Fold the parallel signature + status results — with the already-passed basic
- * stage — into the final verification result. Pure (no caching; the verifier
+ * Fold the signature result, the status result read after it, and the
+ * already-passed basic stage into the final verification result. Pure (no caching; the verifier
  * caches a valid result itself). Shared by the Data Integrity and VC-JWT paths,
  * which both reach here only after `validateBasicProperties` passed, so
- * `basicValid` is true.
+ * `basicValid` is true. A status left unread (`undefined`, after a signature
+ * that failed) is not checked: `checks` then has no `statusValid`.
  */
 export function combineVerificationResult(
   signatureResult: { valid: boolean; reason?: string; durationMs?: number },
-  statusResult: StatusCheckResult,
+  statusResult: StatusCheckResult | undefined,
   basicCheckMs: number,
   startTime: number,
 ): DelegationVCVerificationResult {
-  const allValid = signatureResult.valid && statusResult.valid;
+  const allValid = signatureResult.valid && statusResult?.valid === true;
   // A failed verdict names the check that failed (signature first, since a
   // bad signature makes the status answer moot); "complete" is reserved for
   // a verdict where both checks ran and passed.
@@ -161,20 +165,20 @@ export function combineVerificationResult(
   return {
     valid: allValid,
     reason: !allValid
-      ? signatureResult.reason || statusResult.reason || "Unknown failure"
+      ? signatureResult.reason || statusResult?.reason || "Unknown failure"
       : undefined,
-    statusOutcome: statusResult.outcome,
+    statusOutcome: statusResult?.outcome,
     stage,
     metrics: {
       basicCheckMs,
       signatureCheckMs: signatureResult.durationMs || 0,
-      statusCheckMs: statusResult.durationMs || 0,
+      statusCheckMs: statusResult?.durationMs || 0,
       totalMs: Date.now() - startTime,
     },
     checks: {
       basicValid: true,
       signatureValid: signatureResult.valid,
-      statusValid: statusResult.valid,
+      ...(statusResult && { statusValid: statusResult.valid }),
     },
   };
 }
@@ -188,12 +192,14 @@ export function combineVerificationResult(
  * delegations. The proof options are outside the signature (SPEC.md §6.2), so
  * a `proofPurpose` binds nothing; one that names another purpose is still
  * rejected, since the proof was not made as an assertion, and one that is
- * absent is read as an assertion.
+ * absent is read as an assertion. The DID resolver and the signature verifier
+ * each get `timeoutMs` to answer, by default 5,000 ms.
  */
 export async function verifySignature(
   vc: DelegationCredential,
   didResolver: DIDResolver | undefined,
   signatureVerifier: SignatureVerificationFunction | undefined,
+  timeoutMs: number = DID_RESOLUTION_TIMEOUT_MS,
 ): Promise<{ valid: boolean; reason?: string; durationMs?: number }> {
   const startTime = Date.now();
 
@@ -241,7 +247,8 @@ export async function verifySignature(
       };
     }
 
-    const didDoc = await didResolver.resolve(issuerDid);
+    const keyId = typeof vc.proof?.verificationMethod === "string" ? vc.proof.verificationMethod : undefined;
+    const didDoc = await resolveBoundedDid(didResolver, issuerDid, keyId, timeoutMs);
     if (!didDoc) {
       return {
         valid: false,
@@ -283,13 +290,12 @@ export async function verifySignature(
       };
     }
 
-    const verificationResult = await signatureVerifier(vc, publicKeyJwk);
+    // The verifier is the host's code: its answer verifies only as the literal `true`.
+    const answer: unknown = await answerWithinDeadline("the signature verifier", () =>
+      signatureVerifier(vc, publicKeyJwk),
+    timeoutMs);
 
-    return {
-      valid: verificationResult.valid,
-      reason: verificationResult.reason,
-      durationMs: Date.now() - startTime,
-    };
+    return { ...readVerdict("the signature verifier", answer), durationMs: Date.now() - startTime };
   } catch (error) {
     return {
       valid: false,
@@ -303,8 +309,9 @@ export async function verifySignature(
  * Stage 2b: resolve a credential's revocation status, fail-closed. Every deny is
  * labelled with a {@link StatusOutcome} so consumers can tell a settled
  * `revoked` (re-consent) from a transient `status_unresolvable` (retry):
- * a missing resolver or a resolver that throws both DENY as
- * `status_unresolvable`, and so does a resolver whose answer is not a boolean;
+ * a missing resolver, a resolver that throws and one that has not answered
+ * within `timeoutMs` all DENY as `status_unresolvable`, and so
+ * does a resolver whose answer is not a boolean;
  * only a literal `true` DENIES as `revoked`. The resolver is
  * told `credentialIssuer`, the issuer DID of the credential, and holds the
  * status list to it; a credential that names none cannot be held to anyone, so
@@ -314,6 +321,7 @@ export async function checkCredentialStatus(
   status: CredentialStatus,
   statusListResolver: StatusListResolver | undefined,
   credentialIssuer: string | undefined,
+  timeoutMs: number = DID_RESOLUTION_TIMEOUT_MS,
 ): Promise<StatusCheckResult> {
   const startTime = Date.now();
 
@@ -338,7 +346,9 @@ export async function checkCredentialStatus(
       };
     }
 
-    const answer: unknown = await statusListResolver.checkStatus(status, { credentialIssuer });
+    const answer: unknown = await answerWithinDeadline("the status list resolver", () =>
+      statusListResolver.checkStatus(status, { credentialIssuer }),
+    timeoutMs);
     const revoked = readRevoked(answer);
 
     if (revoked === undefined) {

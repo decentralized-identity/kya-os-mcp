@@ -19,6 +19,7 @@
 
 import { calculateJwkThumbprint, flattenedVerify, importJWK } from 'jose';
 import type { JWK } from 'jose';
+import { answerWithinDeadline, dependencyTimeout } from '../../utils/deadline.js';
 import { base64urlDecodeToString, base64urlEncodeFromBytes } from '../../utils/base64.js';
 import type { ToolRequest } from '../../proof/generator.js';
 import { nonceRetentionSeconds } from '../../providers/nonce-retention.js';
@@ -39,6 +40,8 @@ import {
  * Verify an `org.kya-os/proof.v1` against the request it should bind and the injected seams.
  * Fail-closed: returns `{ ok:false, reasons }` on any broken binding; on success returns the
  * derived assurance (`L3` on full cnf fusion, `L3-minus` without an AS `cnf`) and the principal.
+ * Rejects with a `TypeError` for a `dependencyTimeoutMs` that is not a number of milliseconds it
+ * can wait.
  */
 export async function verifyCardProof(
   proof: unknown,
@@ -46,6 +49,7 @@ export async function verifyCardProof(
   deps: VerifyProofDeps,
 ): Promise<ProofVerifyResult> {
   const reasons: string[] = [];
+  const timeoutMs = dependencyTimeout(deps.dependencyTimeoutMs);
   const parsed = CardProofMetaSchema.safeParse(proof);
   if (!parsed.success) return { ok: false, reasons: ['malformed_proof'] };
   const meta = parsed.data;
@@ -56,8 +60,8 @@ export async function verifyCardProof(
   // SHA-256) are INDEPENDENT — run them concurrently. Fail-closed semantics are unchanged: each still
   // appends its own reason. Caching the resolved key belongs at the injected `resolveKey` seam (the
   // consumer owns it); verifyCardProof stays a pure, stateless function — no cross-tenant global cache.
-  const [key, computedHash] = await Promise.all([resolveKey(meta.kid, deps, reasons), computeRequestHash(req)]);
-  if (key) await assertDidMembership(key, meta.did, deps, reasons);
+  const [key, computedHash] = await Promise.all([resolveKey(meta.kid, deps, reasons, timeoutMs), computeRequestHash(req)]);
+  if (key) await assertDidMembership(key, meta.did, deps, reasons, timeoutMs);
   // Bind the declared alg to the resolved key type: an ES256 claim MUST carry a P-256 key, an EdDSA
   // claim an Ed25519 key. `alg` is a signed covered claim, but the KEY type is authoritative here —
   // this closes alg/key confusion. Gate the signature check on it so import always uses a matching alg.
@@ -75,7 +79,7 @@ export async function verifyCardProof(
 
   // Authenticate every binding before claiming state. The shared cache must
   // atomically decide which validated request, if any, first admits this nonce.
-  if (reasons.length === 0) await consumeNonce(meta, deps, reasons);
+  if (reasons.length === 0) await consumeNonce(meta, deps, reasons, timeoutMs);
 
   const ok = reasons.length === 0;
   const withWarnings = warnings.length > 0 ? { warnings } : {};
@@ -89,9 +93,10 @@ async function resolveKey(
   kid: string,
   deps: VerifyProofDeps,
   reasons: string[],
+  timeoutMs: number,
 ): Promise<ProofPublicJwk | undefined> {
   try {
-    return await deps.resolveKey(kid);
+    return await answerWithinDeadline('the key resolver', () => deps.resolveKey(kid), timeoutMs);
   } catch {
     reasons.push('key_unresolvable');
     return undefined;
@@ -113,6 +118,7 @@ async function assertDidMembership(
   did: string,
   deps: VerifyProofDeps,
   reasons: string[],
+  timeoutMs: number,
 ): Promise<void> {
   if (!deps.resolveDidKeys) {
     // No membership seam: a minimal verifier must not silently trust an unbound key.
@@ -121,7 +127,8 @@ async function assertDidMembership(
   }
   let didKeys: ProofPublicJwk[];
   try {
-    didKeys = await deps.resolveDidKeys(did);
+    const resolveDidKeys = deps.resolveDidKeys;
+    didKeys = await answerWithinDeadline('the DID key resolver', () => resolveDidKeys(did), timeoutMs);
   } catch {
     reasons.push('did_keys_unresolvable');
     return;
@@ -149,6 +156,7 @@ async function consumeNonce(
   meta: CardProofMeta,
   deps: VerifyProofDeps,
   reasons: string[],
+  timeoutMs: number,
 ): Promise<void> {
   const consume = deps.consumeNonceIfFresh;
   if (!consume) {
@@ -161,7 +169,8 @@ async function consumeNonce(
       meta.expires + (deps.skewSec ?? DEFAULT_SKEW_SEC),
       deps.now?.() ?? Date.now(),
     );
-    if ((await consume(meta.nonce, meta.did, minTtlSec)) !== true) reasons.push('nonce_replayed');
+    const fresh = await answerWithinDeadline('the nonce cache', () => consume(meta.nonce, meta.did, minTtlSec), timeoutMs);
+    if (fresh !== true) reasons.push('nonce_replayed');
   } catch {
     reasons.push('nonce_cache_unavailable');
   }

@@ -19,6 +19,10 @@ import { base64ToBytes } from '../utils/base64.js';
 import { publicKeyToJwk } from './did-key-resolver.js';
 import { hasIdTypeAndController } from './verification-method-shape.js';
 
+import { admitParsedDidDocument, boundedDid, DidDocumentCache, type LoadedDidDocument } from './did-resource-limits.js';
+import { dependencyTimeout } from '../utils/deadline.js';
+import { fetchDidJson } from './read-did-json.js';
+
 /**
  * Parsed components of a did:web DID
  */
@@ -28,35 +32,16 @@ interface ParsedDidWeb {
 }
 
 /**
- * Type guard for checking if value is a valid DID Document structure
+ * Whether a document the walk admitted, an object whose `id` is a DID, states its
+ * `verificationMethod`, when it states one, as an array of methods that each name an `id`, a
+ * `type` and a `controller`.
  */
-function isValidDIDDocument(value: unknown): value is DIDDocument {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const doc = value as Record<string, unknown>;
-
-  // id is required and must be a string
-  if (typeof doc['id'] !== 'string' || doc['id'].length === 0) {
-    return false;
-  }
-
-  // verificationMethod is optional but if present must be an array
-  if (doc['verificationMethod'] !== undefined) {
-    if (!Array.isArray(doc['verificationMethod'])) {
-      return false;
-    }
-
-    // Each verification method must have required fields
-    for (const vm of doc['verificationMethod']) {
-      if (!hasIdTypeAndController(vm)) {
-        return false;
-      }
-    }
-  }
-
-  return true;
+function hasWellFormedMethods(document: DIDDocument): boolean {
+  const methods: unknown = (document as unknown as Record<string, unknown>)['verificationMethod'];
+  return (
+    methods === undefined ||
+    (Array.isArray(methods) && methods.every((method) => hasIdTypeAndController(method)))
+  );
 }
 
 /**
@@ -170,17 +155,30 @@ export function didWebToUrl(did: string): string | null {
   return url;
 }
 
+/** Options of {@link DidWebResolver} and {@link createDidWebResolver}. */
+export interface DidWebResolverOptions {
+  /** How long a resolved document is cached, in milliseconds. Default 300,000. */
+  cacheTtl?: number;
+  /**
+   * How long, in milliseconds, one read of a did:web document, headers and body, may take: a number greater than 0 and at most
+   * 2,147,483,647. Default 5,000. Any other value throws a `TypeError` naming the option.
+   */
+  dependencyTimeoutMs?: number;
+}
+
 /**
  * DID:web resolver implementation
  */
 export class DidWebResolver implements DIDResolver {
-  private fetchProvider: FetchProvider;
-  private cache: Map<string, { document: DIDDocument; expiresAt: number }>;
+  private fetchProvider: Pick<FetchProvider, 'fetch' | 'allowPrivateNetworkHosts'>;
+  private cache: DidDocumentCache;
   private cacheTtl: number;
+  private readonly timeoutMs: number;
 
-  constructor(fetchProvider: FetchProvider, options?: { cacheTtl?: number }) {
+  constructor(fetchProvider: Pick<FetchProvider, 'fetch' | 'allowPrivateNetworkHosts'>, options?: DidWebResolverOptions) {
     this.fetchProvider = fetchProvider;
-    this.cache = new Map();
+    this.timeoutMs = dependencyTimeout(options?.dependencyTimeoutMs);
+    this.cache = new DidDocumentCache(this.timeoutMs);
     this.cacheTtl = options?.cacheTtl ?? 300_000; // 5 minutes default
   }
 
@@ -192,14 +190,8 @@ export class DidWebResolver implements DIDResolver {
    */
   async resolve(did: string): Promise<DIDDocument | null> {
     // Check if it's a did:web
-    if (!isDidWeb(did)) {
+    if (!boundedDid(did) || !isDidWeb(did)) {
       return null;
-    }
-
-    // Check cache
-    const cached = this.cache.get(did);
-    if (cached && Date.now() < cached.expiresAt) {
-      return cached.document;
     }
 
     // Convert to URL
@@ -209,43 +201,34 @@ export class DidWebResolver implements DIDResolver {
       return null;
     }
 
+    // A cached document is frozen and was walked when it was fetched; concurrent
+    // resolutions of one DID share one fetch.
+    return this.cache.resolve(did, this.cacheTtl, () => this.fetchDocument(did, url));
+  }
+
+  /** Fetch, measure, freeze and check the document `did` names at `url`, or `null`. */
+  private async fetchDocument(did: string, url: string): Promise<LoadedDidDocument | null> {
     try {
-      // Fetch the DID document
-      const response = await this.fetchProvider.fetch(url);
-
-      if (!response.ok) {
-        logger.warn(`[DidWebResolver] HTTP ${response.status} fetching ${url}`);
+      const json: unknown = await fetchDidJson(this.fetchProvider, url, {}, this.timeoutMs);
+      const measure = admitParsedDidDocument(json);
+      if (!measure.ok) {
+        logger.warn(`[DidWebResolver] DID Document from ${url} refused: ${measure.reason}`);
         return null;
       }
 
-      // Parse JSON
-      let json: unknown;
-      try {
-        json = await response.json();
-      } catch {
-        logger.warn(`[DidWebResolver] Invalid JSON from ${url}`);
-        return null;
-      }
-
-      // Validate structure
-      if (!isValidDIDDocument(json)) {
+      const { document } = measure;
+      if (!hasWellFormedMethods(document)) {
         logger.warn(`[DidWebResolver] Invalid DID Document structure from ${url}`);
         return null;
       }
 
       // Verify the id matches the DID
-      if (json.id !== did) {
-        logger.warn(`[DidWebResolver] DID Document id mismatch: expected ${did}, got ${json.id}`);
+      if (document.id !== did) {
+        logger.warn(`[DidWebResolver] DID Document id mismatch: expected ${did}, got ${document.id}`);
         return null;
       }
 
-      // Cache the result
-      this.cache.set(did, {
-        document: json,
-        expiresAt: Date.now() + this.cacheTtl,
-      });
-
-      return json;
+      return { document, bytes: measure.bytes };
     } catch (error) {
       logger.warn(
         `[DidWebResolver] Error resolving ${did}: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -272,13 +255,14 @@ export class DidWebResolver implements DIDResolver {
 /**
  * Create a did:web resolver with the given fetch provider
  *
- * @param fetchProvider - Provider for making HTTP requests
+ * @param fetchProvider - Provider for making HTTP requests, read through the private-network rule
+ *   unless it has `allowPrivateNetworkHosts: true`
  * @param options - Optional configuration
  * @returns DIDResolver implementation for did:web
  */
 export function createDidWebResolver(
-  fetchProvider: FetchProvider,
-  options?: { cacheTtl?: number }
+  fetchProvider: Pick<FetchProvider, 'fetch' | 'allowPrivateNetworkHosts'>,
+  options?: DidWebResolverOptions
 ): DIDResolver {
   return new DidWebResolver(fetchProvider, options);
 }

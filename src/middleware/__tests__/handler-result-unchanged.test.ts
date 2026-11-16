@@ -39,6 +39,7 @@ import {
   proofOf,
   verifyReceived,
 } from './helpers/received-proof.js';
+import { anyRootUnlessListed } from './helpers/root-issuers.js';
 
 const ARGS = { item: 'x' };
 const PROFILES = {
@@ -185,6 +186,7 @@ const serverOptions = (identity: KyaOsIdentityConfig, profile: ProfileName, path
   handshakeExposure: 'none' as const,
   autoSession: PATHS[path].autoSession,
   audit: { record: refusing(() => PATHS[path].failing) },
+  delegation: anyRootUnlessListed(),
 });
 
 /** JSON-RPC messages in a Streamable HTTP response body, JSON or SSE. */

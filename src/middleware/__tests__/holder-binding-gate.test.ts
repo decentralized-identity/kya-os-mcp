@@ -10,6 +10,7 @@ import type { NonceCacheProvider } from '../../providers/base.js';
 import { MemoryNonceCacheProvider } from '../../providers/memory.js';
 import { base64urlEncodeFromBytes } from '../../utils/base64.js';
 import { served } from './helpers/received-proof.js';
+import { anyRootUnlessListed } from './helpers/root-issuers.js';
 
 /**
  * Holder binding at the PEP (spec §11.8). The gate already validates the
@@ -38,7 +39,7 @@ function makeServer(
       {
         identity: server,
         session: { sessionTtlMinutes: 60 },
-        delegation: holderBinding ? { holderBinding } : undefined,
+        delegation: anyRootUnlessListed(holderBinding ? { holderBinding } : undefined),
         ...(nonceCache ? { nonceCache } : {}),
       },
       crypto,

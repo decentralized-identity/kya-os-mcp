@@ -69,9 +69,10 @@ export interface WithKyaOsOptions {
   responseProofProfile?: ResponseProofProfile;
   /**
    * Local development: read did:web documents on private and local hosts,
-   * such as a `*.localhost` name. Never set it in production: while
-   * `NODE_ENV` is `production` this function throws. Passed through to the
-   * middleware (see `KyaOsConfig.development`).
+   * such as a `*.localhost` name, and let a tool be gated on a delegation
+   * while `delegation.trustedRootIssuers` is unset, with a warning. Never
+   * set it in production: while `NODE_ENV` is `production` this function
+   * throws. Passed through to the middleware (see `KyaOsConfig.development`).
    */
   development?: boolean;
   /** Auto-create sessions for non-KYA-OS clients (default: true) */
@@ -91,7 +92,11 @@ export interface WithKyaOsOptions {
   emitLegacyProofKey?: boolean;
   /** Tools to skip proof generation for */
   excludeTools?: string[];
-  /** Delegation verification config */
+  /**
+   * Delegation verification config. A server that gates a tool on a
+   * delegation sets `delegation.trustedRootIssuers` (see
+   * `KyaOsDelegationConfig.trustedRootIssuers`).
+   */
   delegation?: KyaOsDelegationConfig;
   /**
    * Durable store for approved grants, enabling the no-paste retry across

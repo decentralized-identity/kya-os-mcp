@@ -22,6 +22,7 @@ import {
 } from '../../proof/index.js';
 import type { DetachedProof, ResponseProofProfile } from '../../types/protocol.js';
 import { served } from './helpers/received-proof.js';
+import { anyRootUnlessListed } from './helpers/root-issuers.js';
 
 async function createTestMiddleware(options?: {
   responseProofProfile?: ResponseProofProfile;
@@ -36,6 +37,7 @@ async function createTestMiddleware(options?: {
     {
       identity: { did, kid, privateKey: keyPair.privateKey, publicKey: keyPair.publicKey },
       session: { sessionTtlMinutes: 60 },
+      delegation: anyRootUnlessListed(),
       ...(options?.responseProofProfile !== undefined
         ? { responseProofProfile: options.responseProofProfile }
         : {}),

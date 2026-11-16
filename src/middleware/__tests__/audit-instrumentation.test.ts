@@ -7,6 +7,7 @@ import type { AuditTrailService } from '../../audit/service.js';
 import { createKyaOsMiddleware } from '../with-kya-os.js';
 import { KYA_OS_PROOF_META_KEY, LEGACY_PROOF_META_KEY } from '../../proof/index.js';
 import { served } from './helpers/received-proof.js';
+import { anyRootUnlessListed } from './helpers/root-issuers.js';
 
 type AuditEventInput = Parameters<AuditTrailService['record']>[0];
 
@@ -25,6 +26,7 @@ async function setup(
       publicKey: keyPair.publicKey,
     },
     autoSession: options.autoSession ?? true,
+    delegation: anyRootUnlessListed(),
     audit: {
       record,
       ...(options.includeToolNames === undefined

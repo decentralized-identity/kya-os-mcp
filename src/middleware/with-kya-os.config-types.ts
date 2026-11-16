@@ -112,10 +112,32 @@ export interface KyaOsDelegationConfig {
    * then verified with a key of that issuer's DID document. Each entry must
    * be a DID, a string that starts with `did:` and has no white space around
    * it; creating the middleware with any other value throws a `TypeError`.
-   * An empty list trusts no issuer. When unset, any issuer is accepted and
-   * the middleware logs a warning at startup; set it for production.
+   * An empty list trusts no issuer.
+   *
+   * Unset, any issuer would be accepted, including an agent that signs a
+   * delegation for itself. So a server that gates a tool on a delegation
+   * needs it: outside development, `wrapWithDelegation` throws an `Error`
+   * naming each fix while it is unset, unless `allowAnyRootIssuer` is
+   * `true`. With `allowAnyRootIssuer: true`, or with `KyaOsConfig.development`
+   * `true`, the server starts and warns once, when the first tool is
+   * wrapped. A server that gates no tool on a delegation needs none of
+   * this, and is not warned. Set it with `allowAnyRootIssuer: true` and
+   * creating the middleware throws a `TypeError`.
    */
   trustedRootIssuers?: readonly string[];
+  /**
+   * Accept a delegation from any issuer, by name: the opt-out from
+   * `trustedRootIssuers` for a server that gates a tool on a delegation
+   * outside development, such as one whose trust decision is made by its
+   * own code after the gate. Any issuer means any: an agent can sign a
+   * delegation for itself and pass the gate, so prefer `trustedRootIssuers`.
+   * With it `true` the server starts and warns once, when the first tool
+   * is wrapped with `wrapWithDelegation`; absent or `false` changes
+   * nothing. Creating the middleware throws a `TypeError` for a value that
+   * is not a boolean, and for `true` beside a `trustedRootIssuers` list,
+   * an empty one included: set one or the other.
+   */
+  allowAnyRootIssuer?: boolean;
   /**
    * Local cost limit: the most credentials this server will verify in one
    * delegation chain, root to leaf inclusive, checked once the chain is
@@ -276,11 +298,13 @@ export interface KyaOsConfig {
    * did:web documents on private and local hosts, such as a `*.localhost`
    * name, as a fetch provider with `allowPrivateNetworkHosts: true` does,
    * whatever `delegation.fetchProvider` is, and each factory in
-   * `delegation.didResolvers` is told so in its context. Nothing else
-   * changes: the scheme rule, checked redirects, byte caps and deadlines all
-   * hold. While `NODE_ENV` is `production`, creating the middleware throws;
-   * the first time it is on in a process, it warns once. To read intranet
-   * hosts in production, give the fetch provider
+   * `delegation.didResolvers` is told so in its context. Nothing else about
+   * those reads changes: the scheme rule, checked redirects, byte caps and
+   * deadlines all hold. A tool may also be wrapped with `wrapWithDelegation`
+   * while `delegation.trustedRootIssuers` is unset, accepting any issuer,
+   * with one warning. While `NODE_ENV` is `production`, creating the
+   * middleware throws; the first time it is on in a process, it warns once.
+   * To read intranet hosts in production, give the fetch provider
    * `allowPrivateNetworkHosts: true`. Any value but a boolean throws a
    * `TypeError`.
    */

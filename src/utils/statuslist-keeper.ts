@@ -119,6 +119,7 @@ export function assertStatusListIssuers(value: unknown): asserts value is Status
       'statusListIssuers must be a plain object mapping each status-list issuer DID to the status-list URLs or https origins it keeps',
     );
   }
+  const originKeepers = keepersOfOrigins(value);
   const keeperOf = new Map<string, string>();
   for (const [keeper, bindings] of Object.entries(value)) {
     if (keeper === '') {
@@ -134,7 +135,7 @@ export function assertStatusListIssuers(value: unknown): asserts value is Status
             'each value names the URLs that issuer keeps, not the issuers accepted for a credential issuer',
         );
       }
-      assertNotMistaken(keeper, binding);
+      assertNotMistaken(keeper, binding, originKeepers);
       const other = keeperOf.get(binding);
       if (other !== undefined && other !== keeper) {
         throw new TypeError(
@@ -146,6 +147,18 @@ export function assertStatusListIssuers(value: unknown): asserts value is Status
   }
 }
 
+/** The issuer each origin binding of `value`, a plain object, binds its origin to, read without judging the rest. */
+function keepersOfOrigins(value: Readonly<Record<string, unknown>>): ReadonlyMap<string, string> {
+  const keepers = new Map<string, string>();
+  for (const [keeper, bindings] of Object.entries(value)) {
+    if (!Array.isArray(bindings)) continue;
+    for (const binding of bindings as unknown[]) {
+      if (typeof binding === 'string' && ORIGIN.test(binding) && !keepers.has(binding)) keepers.set(binding, keeper);
+    }
+  }
+  return keepers;
+}
+
 /**
  * Throw a `TypeError` naming the fix when `binding`, which starts with `http://` or `https://`, is
  * one SPEC.md §6.6 says a verifier should refuse, since it is almost always an origin or a prefix
@@ -153,8 +166,10 @@ export function assertStatusListIssuers(value: unknown): asserts value is Status
  * an upper-case letter, or any other binding that ends in `/`. Read as written, each is an exact
  * URL, which binds only the status entries that name it byte for byte. The rule is on the bytes as
  * written, as the keeper rule is, so the conformance harness refuses exactly these bindings too.
+ * `originKeepers` names the issuer each origin binding of the configuration keeps, so that the
+ * refusal of a binding that ends in `/` says what accepts a list whose own URL ends in `/`.
  */
-function assertNotMistaken(keeper: string, binding: string): void {
+function assertNotMistaken(keeper: string, binding: string, originKeepers: ReadonlyMap<string, string>): void {
   const holds = `statusListIssuers[${describeValue(keeper)}] holds ${describeValue(binding)}`;
   const written = ORIGIN_IN_ANY_FORM.exec(binding);
   if (written !== null && !ORIGIN.test(binding)) {
@@ -169,12 +184,33 @@ function assertNotMistaken(keeper: string, binding: string): void {
     );
   }
   if (binding.endsWith('/')) {
-    const origin = originBindingOf(binding);
     throw new TypeError(
       `${holds}, which ends in "/" as a path prefix would, but a binding is an https origin or a list's exact URL, never a prefix: ` +
-        (origin === undefined ? 'bind each list URL' : `bind the origin, ${JSON.stringify(origin)}, or each list URL`),
+        trailingSlashFix(keeper, originBindingOf(binding), originKeepers),
     );
   }
+}
+
+/**
+ * What to bind instead of a binding of `keeper`'s that ends in `/` and is at `origin`, if any. A
+ * binding may not end in `/`, so a list whose own URL does is kept only through its origin: the fix
+ * names that origin, and says plainly that the list's URL must change where no origin binding holds
+ * it or the configuration binds its origin to another issuer.
+ */
+function trailingSlashFix(keeper: string, origin: string | undefined, originKeepers: ReadonlyMap<string, string>): string {
+  const eachUrl = 'bind each list URL that does not end in "/"';
+  const changeIt = "change that list's URL";
+  if (origin === undefined) {
+    return `${eachUrl}; no binding can accept a list whose own URL ends in "/" and is at no https origin a binding can name: ${changeIt}`;
+  }
+  const other = originKeepers.get(origin);
+  if (other !== undefined && other !== keeper) {
+    return (
+      `${eachUrl}; no binding can accept a list whose own URL ends in "/" there, since the origin, ${JSON.stringify(origin)}, ` +
+      `is bound to ${describeValue(other)}: ${changeIt}`
+    );
+  }
+  return `bind the origin, ${JSON.stringify(origin)}, which keeps every list at it, one whose own URL ends in "/" included, or ${eachUrl}`;
 }
 
 /**

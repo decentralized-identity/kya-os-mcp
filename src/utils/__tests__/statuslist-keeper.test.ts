@@ -243,19 +243,41 @@ describe('assertStatusListIssuers', () => {
   });
 
   it.each([
-    ['a path prefix', 'https://status.example/lists/', 'bind the origin, "https://status.example", or each list URL'],
-    ['a prefix at a port', 'https://status.example:8443/lists/', 'bind the origin, "https://status.example:8443", or each list URL'],
-    ['a URL whose query ends in "/"', 'https://status.example/lists?after=/', 'bind the origin, "https://status.example", or each list URL'],
-    ['a prefix whose host is not in lower case', 'https://Status.example/lists/', 'bind each list URL'],
-    ['an http: origin', 'http://status.example/', 'bind each list URL'],
-    ['an origin whose host is an IPv6 literal', 'https://[::1]/', 'bind each list URL'],
-    ['a scheme alone', 'https://', 'bind each list URL'],
+    ['a path prefix', 'https://status.example/lists/', 'bind the origin, "https://status.example", which keeps every list at it, one whose own URL ends in "/" included, or bind each list URL that does not end in "/"'],
+    ['a prefix at a port', 'https://status.example:8443/lists/', 'bind the origin, "https://status.example:8443", which keeps every list at it, one whose own URL ends in "/" included, or bind each list URL that does not end in "/"'],
+    ['a URL whose query ends in "/"', 'https://status.example/lists?after=/', 'bind the origin, "https://status.example", which keeps every list at it, one whose own URL ends in "/" included, or bind each list URL that does not end in "/"'],
+    ['a prefix whose host is not in lower case', 'https://Status.example/lists/', `bind each list URL that does not end in "/"; no binding can accept a list whose own URL ends in "/" and is at no https origin a binding can name: change that list's URL`],
+    ['an http: origin', 'http://status.example/', `bind each list URL that does not end in "/"; no binding can accept a list whose own URL ends in "/" and is at no https origin a binding can name: change that list's URL`],
+    ['an origin whose host is an IPv6 literal', 'https://[::1]/', `bind each list URL that does not end in "/"; no binding can accept a list whose own URL ends in "/" and is at no https origin a binding can name: change that list's URL`],
+    ['a scheme alone', 'https://', `bind each list URL that does not end in "/"; no binding can accept a list whose own URL ends in "/" and is at no https origin a binding can name: change that list's URL`],
   ])('refuses %s, any other binding that ends in "/", naming what to bind instead', (_label, binding, fix) => {
     expect(() => assertStatusListIssuers({ [SERVICE]: [binding] })).toThrow(
       new TypeError(
         `statusListIssuers["${SERVICE}"] holds "${binding}", which ends in "/" as a path prefix would, ` +
           `but a binding is an https origin or a list's exact URL, never a prefix: ${fix}`,
       ),
+    );
+  });
+
+  it.each([[[SERVICE, HERD]], [[HERD, SERVICE]]])(
+    'says no binding can accept a list whose own URL ends in "/" where its origin is bound to another issuer, whichever is named first (%j)',
+    (order) => {
+      const configured: Record<string, string[]> = { [SERVICE]: ['https://status.example/lists/'], [HERD]: ['https://status.example'] };
+      const statusListIssuers = Object.fromEntries(order.map((did) => [did, configured[did]!]));
+      expect(() => assertStatusListIssuers(statusListIssuers)).toThrow(
+        new TypeError(
+          `statusListIssuers["${SERVICE}"] holds "https://status.example/lists/", which ends in "/" as a path prefix would, ` +
+            "but a binding is an https origin or a list's exact URL, never a prefix: bind each list URL that does not end in " +
+            `"/"; no binding can accept a list whose own URL ends in "/" there, since the origin, "https://status.example", ` +
+            `is bound to "${HERD}": change that list's URL`,
+        ),
+      );
+    },
+  );
+
+  it('names the origin to bind where it is already bound to the same issuer', () => {
+    expect(() => assertStatusListIssuers({ [SERVICE]: ['https://status.example', 'https://status.example/lists/'] })).toThrow(
+      'bind the origin, "https://status.example", which keeps every list at it, one whose own URL ends in "/" included, or bind each list URL that does not end in "/"',
     );
   });
 

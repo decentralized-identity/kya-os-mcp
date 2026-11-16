@@ -222,13 +222,15 @@ describe('statusListIssuers bindings, as an operator writes them', () => {
       'a path that ends in "/", which reads as a prefix',
       'https://issuer.example/lists/',
       'which ends in "/" as a path prefix would, but a binding is an https origin or a list\'s exact URL, never a prefix: ' +
-        'bind the origin, "https://issuer.example", or each list URL',
+        'bind the origin, "https://issuer.example", which keeps every list at it, one whose own URL ends in "/" included, ' +
+        'or bind each list URL that does not end in "/"',
     ],
     [
       'an http: origin, which no origin binding is',
       'http://issuer.example/',
       'which ends in "/" as a path prefix would, but a binding is an https origin or a list\'s exact URL, never a prefix: ' +
-        'bind each list URL',
+        'bind each list URL that does not end in "/"; no binding can accept a list whose own URL ends in "/" and is at no ' +
+        "https origin a binding can name: change that list's URL",
     ],
   ])('refuses %s when the checker is created, naming the fix', (_label, binding, why) => {
     expect(() => checkerWith({ [signer.did]: [binding] })).toThrow(

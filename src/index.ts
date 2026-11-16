@@ -180,6 +180,7 @@ export {
   toHolderBindingRequest,
   isHolderBindingApplicable,
   isKyaOsControlArg,
+  withoutControlArgs,
   HOLDER_BINDING_ERROR,
   type AssertHolderBindingInput,
   type GenerateRequestProofInput,

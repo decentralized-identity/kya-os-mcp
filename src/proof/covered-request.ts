@@ -41,6 +41,27 @@ export function isKyaOsControlArg(key: string): boolean {
   return key.startsWith(KYAOS_CONTROL_PREFIX);
 }
 
+/**
+ * `args` without the reserved `_kyaos*` control arguments: the call as its handler sees it, as a
+ * gate's request hash and an approval bind it, and as a holder-binding proof covers it. The one
+ * copy every caller makes, so the three cannot differ. A member named `__proto__` stays a member
+ * of the copy (see {@link withoutKeys}): the copy has the keys the call stated and no others, and
+ * its prototype is `Object.prototype`.
+ */
+export function withoutControlArgs(args: Record<string, unknown>): Record<string, unknown> {
+  return withoutKeys(args, isKyaOsControlArg);
+}
+
+/**
+ * `value` without its top-level `_meta` member, which SPEC §7.3 leaves out of what a proof covers
+ * on both sides: a `tools/call` request's params, and under the envelope profile a response.
+ * Nothing nested deeper is touched, and a member named `__proto__` stays a member of the copy
+ * (see {@link withoutKeys}), so the hash covers it like any other.
+ */
+export function withoutTopLevelMeta(value: Record<string, unknown>): Record<string, unknown> {
+  return withoutKeys(value, (key) => key === '_meta');
+}
+
 /** A tool call read from either request shape. */
 interface ToolCall {
   name: string;
@@ -77,7 +98,7 @@ export function alternateRequestShapes(request: ToolRequest): ToolRequest[] {
   return [
     coveredToolCall(call),
     legacy(call.args),
-    legacy(withoutKeys(call.args, isKyaOsControlArg)),
+    legacy(withoutControlArgs(call.args)),
   ];
 }
 
@@ -108,8 +129,8 @@ function asToolCall(request: ToolRequest): ToolCall | undefined {
  * touched, so signer and verifier derive the same request.
  */
 function coveredToolCall(call: ToolCall): ToolRequest {
-  const params = withoutKeys(call.params, (key) => key === '_meta');
-  params['arguments'] = withoutKeys(call.args, isKyaOsControlArg);
+  const params = withoutTopLevelMeta(call.params);
+  params['arguments'] = withoutControlArgs(call.args);
   return { method: TOOLS_CALL_METHOD, params };
 }
 
@@ -117,6 +138,7 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+// The copy this module makes of a JSON object without some of its keys.
 // Object.fromEntries defines own properties, so a received `__proto__` member
 // stays a member instead of becoming the copy's prototype.
 function withoutKeys(

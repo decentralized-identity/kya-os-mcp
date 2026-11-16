@@ -100,6 +100,9 @@ function isProd(namespace: string): boolean {
   return t.includes('prod') || t.includes('production');
 }
 
+// `o` is a hint from the host's own options, never a caller's data, and the
+// result is only spread over the assessment, which reads own members, so a
+// hint key named `__proto__` adds nothing to an assessment.
 function stripUndefined<T extends object>(o?: T): Partial<T> {
   if (!o) return {};
   const out: Partial<T> = {};

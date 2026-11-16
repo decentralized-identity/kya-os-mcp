@@ -8,7 +8,8 @@
 
 import type { DelegationCredential } from "../types/protocol.js";
 import { getDelegationScopes } from "../delegation/chain-enforcement.js";
-import { isKyaOsControlArg } from "../proof/covered-request.js";
+/** The one copy of a call without its control arguments, for the gates in this folder. */
+export { withoutControlArgs } from "../proof/covered-request.js";
 
 // The delegation verifier sanitizes text with it too, so it is defined below both, in utils.
 export { sanitizeForMessage, type MessageText } from "../utils/message-text.js";
@@ -18,20 +19,6 @@ export { sanitizeForMessage, type MessageText } from "../utils/message-text.js";
  * `wrapWithDelegation` forwards to a composed policy gate in the call context.
  */
 export const DEFAULT_APPROVALS_KEY = "_kyaos_approvals";
-
-/**
- * `args` without the reserved `_kyaos*` control arguments: the call as its
- * handler sees it, and as a gate's request hash binds it.
- */
-export function withoutControlArgs(
-  args: Record<string, unknown>,
-): Record<string, unknown> {
-  const clean: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(args)) {
-    if (!isKyaOsControlArg(key)) clean[key] = value;
-  }
-  return clean;
-}
 
 /**
  * What a `_kyaos_delegation` argument that nothing verified claims about its caller, for a

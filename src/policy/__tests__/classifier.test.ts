@@ -4,6 +4,14 @@ import { RiskClassifier } from '../classifier.js';
 const c = new RiskClassifier();
 
 describe('RiskClassifier', () => {
+  it('takes nothing from a hint key named __proto__, as a hint read from JSON may hold one', () => {
+    const hint = JSON.parse('{"severity":"high","__proto__":{"blastRadius":"global"}}') as { severity: 'high' };
+    const assessment = new RiskClassifier({ hints: { 'vault.getSecrets': hint } }).classify({ toolName: 'vault.getSecrets', namespace: 'dev' });
+    expect(Object.keys(assessment)).toEqual(['reversibility', 'blastRadius', 'severity']);
+    expect(assessment).toEqual({ reversibility: 'reversible', blastRadius: 'record', severity: 'high' });
+    expect(Object.getPrototypeOf(assessment)).toBe(Object.prototype);
+  });
+
   it('merges partial hints over the heuristic base, ignoring undefined hint fields', () => {
     const hinted = new RiskClassifier({
       hints: {

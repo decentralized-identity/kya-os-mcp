@@ -25,7 +25,7 @@
 import { extractPublicKeyFromDidKey, publicKeyToJwk } from './did-key-resolver.js';
 import { getDidMethod, didKeyFragment } from '../utils/did-helpers.js';
 import { ProofGenerator } from '../proof/generator.js';
-import { isKyaOsControlArg } from '../proof/covered-request.js';
+import { isKyaOsControlArg, withoutControlArgs } from '../proof/covered-request.js';
 import { base64urlEncodeFromBytes } from '../utils/base64.js';
 import type { ProofVerifier } from '../proof/verifier.js';
 import type { ToolRequest, ToolResponse, ProofAgentIdentity } from '../proof/generator.js';
@@ -33,9 +33,10 @@ import type { DetachedProof } from '../types/protocol.js';
 import type { CryptoProvider } from '../providers/base.js';
 import type { Ed25519JWK } from '../utils/crypto-service.js';
 
-// The control-arg predicate lives with the request-hash rules it feeds; it is
-// re-exported here, where the middleware and package entry point import it.
-export { isKyaOsControlArg };
+// The control-arg predicate, and the copy of a call without its control args,
+// live with the request-hash rules they feed; they are re-exported here, where
+// the package entry point imports them.
+export { isKyaOsControlArg, withoutControlArgs };
 
 /**
  * The canonical request a holder-binding proof binds: the tool name plus the
@@ -52,11 +53,7 @@ export function toHolderBindingRequest(
   toolName: string,
   args: Record<string, unknown>,
 ): ToolRequest {
-  const params: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(args)) {
-    if (!isKyaOsControlArg(k)) params[k] = v;
-  }
-  return { method: toolName, params };
+  return { method: toolName, params: withoutControlArgs(args) };
 }
 
 export interface GenerateRequestProofInput {

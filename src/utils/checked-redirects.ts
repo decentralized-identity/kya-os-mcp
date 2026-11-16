@@ -20,8 +20,9 @@ import { followRedirects, type RedirectRefusals } from './redirect-follower.js';
 export type SingleFetch = (url: string, init: RequestInit) => Promise<Response>;
 
 /**
- * How the caller's rule refuses a URL, as the text that follows `Redirect to `: the URL's name, the
- * word `refused`, and anything the rule says after it; or `undefined` when it admits the URL.
+ * How the caller's rule refuses a URL, as the text that follows `Redirect to `: how it names the
+ * URL, the word `refused`, and anything the rule says after it; or `undefined` when it admits the
+ * URL.
  */
 export type TargetRefusal = (url: string) => string | undefined;
 

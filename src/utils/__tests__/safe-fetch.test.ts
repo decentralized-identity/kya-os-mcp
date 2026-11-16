@@ -196,7 +196,7 @@ describe("createSafeFetch", () => {
           rawResponse({ status: 302, headers: { location: "https://evil.example.net/x" } }),
         ),
       });
-      await expect(fetch("https://example.com/a")).rejects.toThrow(/cross-origin redirect blocked/);
+      await expect(fetch("https://example.com/a")).rejects.toThrow(/cross-origin redirect from https:\/\/example\.com blocked/);
     });
 
     it("blocks a redirect that downgrades to http", async () => {

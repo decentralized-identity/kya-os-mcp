@@ -14,10 +14,13 @@
  * `RuntimeFetchProvider` and a member any `FetchProvider` may declare. It admits non-public IP
  * literals and local names; the scheme rule holds, and redirects are still followed by hand.
  * `development: true` on a reader turns it on for that reader's transport ({@link admittingPrivateHosts}),
- * and the refusal of a private host names both settings.
+ * and the refusal of a private host names both settings. The refusal of a request names the host
+ * the URL names; the refusal of a redirect to a private host does not name it, since the server
+ * chose it and whoever named the URL may not know it, and the target goes to the log.
  */
 
-import { fetchWithCheckedRedirects, type TargetRefusal } from './checked-redirects.js';
+import { logger } from '../logging/index.js';
+import { fetchWithCheckedRedirects } from './checked-redirects.js';
 import { describeValue } from './describe-value.js';
 import type { FetchPort, PrivateNetworkTransport } from './fetch-port.js';
 import { PRODUCTION_PRIVATE_HOSTS } from './development-mode.js';
@@ -78,9 +81,12 @@ function isPrivateHost(hostname: string): boolean {
   return isLocalName(host);
 }
 
+/** The two settings that admit a private or local host. */
+const PRIVATE_HOST_SETTINGS =
+  `In local development, set development: true; to read private hosts in production, ${PRODUCTION_PRIVATE_HOSTS}.`;
+
 /** What the refusal of a private or local host says after `refused`: what it is, and the two settings that admit it. */
-export const PRIVATE_HOST_REMEDY =
-  `: a private or local host. In local development, set development: true; to read private hosts in production, ${PRODUCTION_PRIVATE_HOSTS}.`;
+export const PRIVATE_HOST_REMEDY = `: a private or local host. ${PRIVATE_HOST_SETTINGS}`;
 
 /** How the rule refuses a URL: the name it gives the URL, and whether it refuses it as a private host. */
 interface RuleRefusal {
@@ -110,23 +116,39 @@ export function privateNetworkRefusal(url: string, allowPrivateNetworkHosts = fa
 
 /**
  * `transport`'s `fetch` under the rule; a transport whose `allowPrivateNetworkHosts` is true admits
- * private hosts. A refused request or redirect throws `Request to <url> refused` or
- * `Redirect to <url> refused`, and for a private host goes on with {@link PRIVATE_HOST_REMEDY}; either
+ * private hosts. A refused request throws `Request to <host> refused`, going on for a private host
+ * with {@link PRIVATE_HOST_REMEDY}. A refused redirect throws `Redirect to <what> refused`, where a
+ * private host is named only as one, followed by the settings that admit it, and is logged. Either
  * is a `host_refused` {@link ReadFailureError}.
  */
 export function underPrivateNetworkRule(transport: PrivateNetworkTransport): FetchPort {
   const allowPrivateNetworkHosts = transport.allowPrivateNetworkHosts === true;
-  const refusal: TargetRefusal = url => {
-    const refused = ruleRefusal(url, allowPrivateNetworkHosts);
-    return refused && `${refused.named} refused${refused.privateHost ? PRIVATE_HOST_REMEDY : ''}`;
-  };
   return {
     async fetch(url, init) {
-      const refused = refusal(url);
-      if (refused !== undefined) throw new ReadFailureError('host_refused', `Request to ${refused}`);
-      return fetchWithCheckedRedirects((target, options) => transport.fetch(target, options), url, (init ?? {}) as RequestInit, refusal);
+      const refused = ruleRefusal(url, allowPrivateNetworkHosts);
+      if (refused !== undefined) {
+        throw new ReadFailureError('host_refused', `Request to ${refused.named} refused${refused.privateHost ? PRIVATE_HOST_REMEDY : ''}`);
+      }
+      return fetchWithCheckedRedirects(
+        (target, options) => transport.fetch(target, options),
+        url,
+        (init ?? {}) as RequestInit,
+        target => redirectRefusal(target, allowPrivateNetworkHosts),
+      );
     },
   };
+}
+
+/**
+ * How the rule refuses a redirect to `target`, as the text that follows `Redirect to `, or
+ * `undefined` when it admits it. A private host is not named, and is logged for the operator.
+ */
+function redirectRefusal(target: string, allowPrivateNetworkHosts: boolean): string | undefined {
+  const refused = ruleRefusal(target, allowPrivateNetworkHosts);
+  if (refused === undefined) return undefined;
+  if (!refused.privateHost) return `${refused.named} refused`;
+  logger.warn(`[kya-os] Redirect to ${refused.named} refused: a private or local host`);
+  return `a private or local host refused. ${PRIVATE_HOST_SETTINGS}`;
 }
 
 /**

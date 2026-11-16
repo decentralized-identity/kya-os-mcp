@@ -97,8 +97,12 @@ export interface DIDResolver {
    * Why this resolver's last resolution of `did` found no document, or `undefined` when it found
    * one, was never asked, or cannot say. Optional: the verifier reads a resolver without it as
    * before. The library's own resolvers have it, and when one refuses a credential as `Could not
-   * resolve issuer DID: "<did>"` the verifier appends the failure's `detail` in parentheses. A
-   * resolver that wraps one of them may pass it on, as `lastFailure: (did) => inner.lastFailure?.(did)`.
+   * resolve issuer DID: "<did>"` the verifier codes the refusal by the failure's `cause`, and appends
+   * its `detail` in parentheses where the cause is `host_refused`, `deadline_exceeded` or
+   * `invalid_document`, which tell the party that presented the credential nothing it does not know.
+   * An `unavailable` failure's detail, what the host answered, is not shown: the library's resolvers
+   * log it for the operator. A resolver that wraps one of them may pass it on, as
+   * `lastFailure: (did) => inner.lastFailure?.(did)`.
    * It reports the last failure for the DID, so a resolution of the same DID that ends in between
    * may answer for it: read it as a diagnosis, never as a security decision.
    */
@@ -123,8 +127,10 @@ export interface DidResolutionFailure {
   readonly cause: DidResolutionFailureCause;
   /**
    * What failed, and how to fix it where the library knows how, in one sentence or two in the
-   * library's own words. It quotes no error of the transport's, which the log records instead, so
-   * a verifier may show it to the party that presented the credential.
+   * library's own words. It quotes no error of the transport's, which the log records instead. A
+   * verifier shows it to the party that presented the credential only for `host_refused`,
+   * `deadline_exceeded` and `invalid_document`; for `unavailable` it says what the host answered,
+   * which is for the operator alone.
    */
   readonly detail: string;
 }

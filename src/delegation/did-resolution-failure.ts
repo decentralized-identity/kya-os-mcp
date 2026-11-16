@@ -1,10 +1,18 @@
 /**
  * Why a DID could not be resolved: how the library's resolvers record the cause of their last
- * failure for each DID, and how a verifier reads the cause a resolver reports and appends it to its
- * refusal. The causes are those of {@link DidResolutionFailureCause}. A read that failed carries its
+ * failure for each DID, and how a verifier reads the cause a resolver reports and codes its refusal
+ * by it. The causes are those of {@link DidResolutionFailureCause}. A read that failed carries its
  * kind on the error it threw (`utils/read-failure.ts`); an error of the transport's carries none,
  * and its words go to the log, not into the cause, since they may say more about the network than a
  * refusal should.
+ *
+ * Whoever presents a credential chooses its issuer's DID, and a did:web host may be an internal one
+ * behind split-horizon DNS, so a refusal shows a failure's detail only where it tells the presenter
+ * nothing it does not already know: the host its DID names was refused, with how to admit it; the
+ * deadline passed; or the document is not the DID's. A DID whose document could not be read is
+ * refused as unresolvable alone, so that no HTTP status, byte cap or answer that is not JSON tells
+ * the presenter what an internal name answered; the library's resolvers log that detail for the
+ * operator.
  */
 
 import type { RefusalCode } from '../refusal-codes.js';
@@ -29,6 +37,13 @@ const MAX_RECORDED_FAILURES = 256;
 
 /** The most UTF-16 code units of a failure's detail a refusal shows. */
 const DETAIL_LENGTH = 256;
+
+/** The causes whose detail a refusal shows, since it tells the presenter of the DID nothing it does not know. */
+const SHOWN_CAUSES: ReadonlySet<DidResolutionFailureCause> = new Set<DidResolutionFailureCause>([
+  'host_refused',
+  'deadline_exceeded',
+  'invalid_document',
+]);
 
 /** A resolver's record of the last failure for each DID, of at most {@link MAX_RECORDED_FAILURES} DIDs. */
 export class DidResolutionFailures {
@@ -113,10 +128,12 @@ export function unresolvedCode(failure: DidResolutionFailure | undefined): Refus
 
 /**
  * What a refusal of a DID as unresolvable ends with: the detail of `failure`, the failure the
- * resolver reports for it, in parentheses after a space and sanitized for a message, or nothing.
+ * resolver reports for it, in parentheses after a space and sanitized for a message, when its cause
+ * is one of {@link SHOWN_CAUSES}, or nothing.
  */
 function failureSuffix(failure: DidResolutionFailure | undefined): string {
-  return failure === undefined ? '' : ` (${sanitizeForMessage(failure.detail, DETAIL_LENGTH)})`;
+  if (failure === undefined || !SHOWN_CAUSES.has(failure.cause)) return '';
+  return ` (${sanitizeForMessage(failure.detail, DETAIL_LENGTH)})`;
 }
 
 /**
@@ -130,7 +147,8 @@ export type ExplainedResolution =
 /**
  * Resolve `did` through `resolver` within the limits, as `resolveBoundedDid` does, and when no
  * document is found say why. When the resolver found nothing, that is the failure it reports, as a
- * suffix in parentheses, with the code of its cause ({@link unresolvedCode}). When the limits refused
+ * suffix in parentheses where its cause is one a refusal shows ({@link failureSuffix}), with the code
+ * of its cause ({@link unresolvedCode}). When the limits refused
  * the DID, its key or what the resolver returned, it is nothing, since the resolver's last failure
  * is then not this one, with `did_invalid`. A resolver that throws, or a deadline that passes,
  * rejects, as `resolveWithinLimits` does.

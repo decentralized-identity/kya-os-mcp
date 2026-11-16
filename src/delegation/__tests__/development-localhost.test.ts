@@ -186,7 +186,7 @@ describe('SafeFetch reading a host whose address is a loopback one', () => {
 
   it('refuses it without development: true, saying what admits it', async () => {
     await expect(safeFetch(false)('https://status.localhost/lists/1')).rejects.toThrow(
-      'safe-fetch: refusing non-public address 127.0.0.1 for host "status.localhost": in local development, set development: true; ' +
+      'safe-fetch: refusing host "status.localhost", which resolves to a non-public address: in local development, set development: true; ' +
         "to read a host you own in production, list each origin you own in SafeFetch's allowOrigins",
     );
   });

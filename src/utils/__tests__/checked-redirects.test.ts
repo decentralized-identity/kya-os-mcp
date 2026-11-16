@@ -80,7 +80,7 @@ describe('a redirect followed by hand', () => {
   it.each([
     ['http://public.example/list', 'Redirect from https to http refused'],
     ['https://[bad', 'Redirect to an invalid URL'],
-    ['https://10.0.0.5/admin', 'Redirect to "10.0.0.5" refused'],
+    ['https://10.0.0.5/admin', 'Redirect to a private or local host refused. In local development, set development: true;'],
     ['ftp://public.example/list', 'Redirect to a "ftp:" URL refused'],
   ])('refuses a redirect to %s after one request: %s', async (location, refusal) => {
     const fetch = vi.fn(async () => new Response(null, { status: 302, headers: { location } }));

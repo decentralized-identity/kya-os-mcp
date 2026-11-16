@@ -30,6 +30,7 @@
  * with mocked DNS + transport. No crypto here — no mcp-i-core dependency leaks in.
  */
 
+import { logger } from '../logging/index.js';
 import { developmentMode } from './development-mode.js';
 import { isBlockedAddress } from './ip-classifier.js';
 import { ReadFailureError } from './read-failure.js';
@@ -89,7 +90,8 @@ const OWNED_ORIGINS = "list each origin you own in SafeFetch's allowOrigins";
 
 /**
  * Resolve the host ONCE, reject if ANY resolved address is non-public, unless `admitPrivate`, and
- * pin the first. The refusal says what admits such an address.
+ * pin the first. The refusal names the host and what admits it, never the address, since whoever
+ * named the host may not know what it resolves to; the address goes to the log.
  */
 async function resolveAndPin(hostname: string, lookup: DnsLookup, admitPrivate: boolean): Promise<DnsAddress> {
   const addresses = await lookup(hostname);
@@ -99,9 +101,10 @@ async function resolveAndPin(hostname: string, lookup: DnsLookup, admitPrivate: 
   }
   for (const candidate of admitPrivate ? [] : addresses) {
     if (isBlockedAddress(candidate.address)) {
+      logger.warn(`[kya-os] safe-fetch: host "${hostname}" resolves to the non-public address ${candidate.address}, so it is refused`);
       throw new ReadFailureError(
         'host_refused',
-        `safe-fetch: refusing non-public address ${candidate.address} for host "${hostname}": in local development, ` +
+        `safe-fetch: refusing host "${hostname}", which resolves to a non-public address: in local development, ` +
           `set development: true; to read a host you own in production, ${OWNED_ORIGINS}`,
       );
     }
@@ -121,11 +124,16 @@ const REDIRECT_REFUSALS: RedirectRefusals = {
   httpsToHttp: nonHttpsTarget,
 };
 
-/** Refuse a redirect target the shared rule admits: any scheme but https, and any other origin. */
+/**
+ * Refuse a redirect target the shared rule admits: any scheme but https, and any other origin. A
+ * refusal names the origin redirected from, never the one the server chose to redirect to, which
+ * goes to the log.
+ */
 function vetRedirectTarget({ target, from, crossOrigin }: RedirectTarget): void {
   if (target.protocol !== 'https:') throw nonHttpsTarget(target);
   if (crossOrigin) {
-    throw new ReadFailureError('host_refused', `safe-fetch: cross-origin redirect blocked (${from.origin} → ${target.origin})`);
+    logger.warn(`[kya-os] safe-fetch: redirect from ${from.origin} to ${target.origin} blocked, as cross-origin`);
+    throw new ReadFailureError('host_refused', `safe-fetch: cross-origin redirect from ${from.origin} blocked`);
   }
 }
 

@@ -68,11 +68,11 @@ describe("SafeFetch's vetting of a target", () => {
   });
 
   it.each(['https://other.example/x', 'https://example.com:8443/x', 'https://sub.example.com/x'])(
-    'refuses %s as another origin, naming both origins, with no further request',
+    'refuses %s as another origin, naming the origin it left, with no further request',
     async location => {
       const { fetch, transport } = safeFetchOver({ 'https://example.com/a': location });
       await expect(fetch('https://example.com/a')).rejects.toThrow(
-        `safe-fetch: cross-origin redirect blocked (https://example.com → ${new URL(location).origin})`,
+        new Error('safe-fetch: cross-origin redirect from https://example.com blocked'),
       );
       expect(transport).toHaveBeenCalledOnce();
     },

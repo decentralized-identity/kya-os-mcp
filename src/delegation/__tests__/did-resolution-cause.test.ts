@@ -3,9 +3,10 @@
  * DID: "<did>"`, and the developer needs to know why: a host the private-network rule refused, a
  * host too slow to answer, one that could not be reached, or a document that is not the DID's. The
  * library's resolvers report the cause of their last failure for a DID through `lastFailure`, as an
- * object a caller can branch on, and the verifier appends what it says to the refusal, in
- * parentheses. A resolver of the host's own, without `lastFailure`, is refused as before. Every test
- * uses the package's public exports, as an adopter would.
+ * object a caller can branch on, and the verifier codes the refusal by it and appends what it says,
+ * in parentheses, where that tells the presenter of the DID nothing it does not know; a host that
+ * could not be read is left to the log. A resolver of the host's own, without `lastFailure`, is
+ * refused as before. Every test uses the package's public exports, as an adopter would.
  */
 
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -110,22 +111,23 @@ describe("the refusal of a credential whose issuer's did:web document cannot be 
     expect(resolver.lastFailure?.(SLOW.did)?.cause).toBe('deadline_exceeded');
   });
 
-  it('says the provider could not reach the host, leaving its error to the log, as unavailable', async () => {
+  it('says only that the DID could not be resolved when the provider could not reach the host, leaving its error to the log, as unavailable', async () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const resolver = createDidWebResolver(network());
-    const reason =
-      `Could not resolve issuer DID: "${DOWN.did}" (The fetch provider could not fetch "${DOWN.url}"; its error is logged)`;
+    const reason = `Could not resolve issuer DID: "${DOWN.did}"`;
     expect(await refusals(resolver, DOWN.did)).toEqual([reason, reason]);
     expect(resolver.lastFailure?.(DOWN.did)?.cause).toBe('unavailable');
     expect(warn).toHaveBeenCalledWith(`[DidWebResolver] Error resolving ${DOWN.did}: fetch failed`);
   });
 
-  it('says what the host answered when it is not a document, as unavailable', async () => {
-    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+  it('leaves what the host answered when it is not a document to the log and lastFailure, as unavailable', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const resolver = createDidWebResolver(network());
     const [reason] = await refusals(resolver, GONE.did);
-    expect(reason).toBe(`Could not resolve issuer DID: "${GONE.did}" (DID resolution failed: HTTP 404 for "${GONE.url}")`);
-    expect(resolver.lastFailure?.(GONE.did)?.cause).toBe('unavailable');
+    expect(reason).toBe(`Could not resolve issuer DID: "${GONE.did}"`);
+    const detail = `DID resolution failed: HTTP 404 for "${GONE.url}"`;
+    expect(resolver.lastFailure?.(GONE.did)).toEqual({ cause: 'unavailable', detail });
+    expect(warn).toHaveBeenCalledWith(`[DidWebResolver] Error resolving ${GONE.did}: ${detail}`);
   });
 
   it("says a document that is another DID's is not this DID's, as invalid_document", async () => {
@@ -180,12 +182,12 @@ describe("a resolver of the host's own", () => {
     }
   });
 
-  it('that reports a failure of its own, has it appended, sanitized and cut as any reason is', async () => {
+  it('that reports a failure of its own a refusal shows, has it appended, sanitized and cut as any reason is', async () => {
     const own: DIDResolver = {
       resolve: async () => null,
-      lastFailure: () => ({ cause: 'unavailable', detail: `the registry is down\n${'x'.repeat(400)}` }),
+      lastFailure: () => ({ cause: 'invalid_document', detail: `the registry's document is not the DID's\n${'x'.repeat(400)}` }),
     };
-    const shown = `the registry is down\uFFFD${'x'.repeat(235)}\u2026`;
+    const shown = `the registry's document is not the DID's\uFFFD${'x'.repeat(215)}\u2026`;
     expect(await refusals(own, GONE.did)).toEqual(Array(2).fill(`Could not resolve issuer DID: "${GONE.did}" (${shown})`));
   });
 });

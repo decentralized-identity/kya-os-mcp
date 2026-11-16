@@ -95,3 +95,35 @@ describe('the public results changed since 1.22.0', () => {
     COMPILE_MS,
   );
 });
+
+describe("the delegation RevocationChecker port's answer", () => {
+  it(
+    'lets a host state the code of a revocation, and whether it is transient, without a cast',
+    () => {
+      expect(
+        typeErrors(
+          `
+          import type { RefusalCode } from '../index.js';
+          import type { RevocationChecker } from '../delegation/index.js';
+
+          declare const suspended: RefusalCode;
+          export const checker: RevocationChecker = {
+            isRevoked: async () => ({ revoked: true, reason: 'suspended', code: suspended, transient: false }),
+          };
+          export class Registry implements RevocationChecker {
+            async isRevoked(delegationId: string) {
+              if (delegationId === 'urn:suspended') return { revoked: true, code: suspended, transient: false };
+              return { revoked: false };
+            }
+          }
+          export const stated: Awaited<ReturnType<RevocationChecker['isRevoked']>> = {
+            revoked: true, reason: 'revoked', code: 'delegation_revoked', transient: false,
+          };
+          `,
+          AT,
+        ),
+      ).toBe('');
+    },
+    COMPILE_MS,
+  );
+});

@@ -66,6 +66,16 @@ export interface RevocationChecker {
     revoked: boolean;
     reason?: string;
     revokedAncestor?: string;
+    /**
+     * The code the chain is refused with when `revoked` is `true`: a code of `REFUSAL_CODES`, else
+     * `delegation_revoked`, as it is when the answer states none. Not read when `revoked` is `false`.
+     */
+    code?: RefusalCode;
+    /**
+     * Whether `code` is transient. Optional, so an answer built as any refusal is fits: the verifier
+     * takes it from `code`, as every refusal's is, and does not read this.
+     */
+    transient?: boolean;
   }>;
 }
 

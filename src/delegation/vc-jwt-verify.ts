@@ -220,7 +220,7 @@ export async function verifyVcJwtSignature(
   });
 
   if (!didResolver) {
-    return refused("configuration_error", "No DID resolver configured — signature cannot be verified");
+    return refused("configuration_error", "No DID resolver configured \u2014 signature cannot be verified");
   }
 
   const issuer = describeValue(issuerDid);

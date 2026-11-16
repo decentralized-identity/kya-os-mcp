@@ -221,7 +221,7 @@ export async function verifySignature(
     if (!didResolver || !signatureVerifier) {
       return refused(
         "configuration_error",
-        "No DID resolver or signature verifier configured — signature cannot be verified",
+        "No DID resolver or signature verifier configured \u2014 signature cannot be verified",
       );
     }
 
@@ -329,7 +329,7 @@ export async function checkCredentialStatus(
     if (!statusListResolver) {
       return refused(
         "configuration_error",
-        "Credential has credentialStatus but no status list resolver is configured — cannot verify revocation status",
+        "Credential has credentialStatus but no status list resolver is configured \u2014 cannot verify revocation status",
       );
     }
 

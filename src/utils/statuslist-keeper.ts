@@ -125,12 +125,13 @@ export function assertStatusListIssuers(value: unknown): asserts value is Status
 
 /**
  * Whether the URL `url` is at the origin binding `origin`: it continues that string with `/`, `?`
- * or `#`. (The origin's own string, named as a URL, is an exact binding.) This is a rule on the bytes as written, with no parsing and no normalisation, so
- * every implementation decides alike. It never gives a keeper a URL a parser would place at another
- * host: the authority of an `https:` URL ends at the first `/`, `?` or `#`, so a URL that continues
- * the origin with anything else, more of a host name, a port, an `@` or a `\`, is not at it. Such a
- * URL falls to the rules below, which hand it only to the issuer that chose to write it in its own
- * credential. A host written in another case is likewise not at the origin.
+ * or `#`. (The origin's own string, named as a URL, is an exact binding.) This is a rule on the
+ * bytes as written, with no parsing and no normalisation, so every implementation decides alike.
+ * It never gives a keeper a URL a parser would place at another host: the authority of an
+ * `https:` URL ends at the first `/`, `?` or `#`, so a URL that continues the origin with anything
+ * else, more of a host name, a port, an `@` or a `\`, is not at it. Such a URL falls to the rules
+ * below, which hand it only to the issuer that chose to write it in its own credential. A host
+ * written in another case is likewise not at the origin.
  */
 function isAtOrigin(url: string, origin: string): boolean {
   return AFTER_ORIGIN.some((next) => url.startsWith(origin + next));

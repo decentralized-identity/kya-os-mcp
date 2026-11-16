@@ -64,10 +64,12 @@ export interface KyaOsDelegationConfig {
    * `didResolvers`. If omitted, middleware uses a `RuntimeFetchProvider` over
    * the runtime's global fetch when there is one. Every did:web read through
    * it is bounded (SPEC §4.4.2) and held to the private-network rule: its
-   * `fetch` must return a `Response` whose `body` is a WHATWG
-   * `ReadableStream`, and must pass `redirect: "manual"` on, so each redirect
-   * is followed and checked by hand. Its `allowPrivateNetworkHosts`, when
-   * `true`, admits private IP literals and local names, as in development.
+   * `fetch` returns a `Response` whose `body` is a WHATWG `ReadableStream`,
+   * read as it streams, or a response with a `text()` or `json()` method, such
+   * as SafeFetch's, read through it under the same limits; and it must pass
+   * `redirect: "manual"` on, so each redirect is followed and checked by hand.
+   * Its `allowPrivateNetworkHosts`, when `true`, admits private IP literals and
+   * local names, as in development.
    */
   fetchProvider?: FetchProvider;
   /**

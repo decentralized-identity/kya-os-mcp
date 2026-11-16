@@ -108,8 +108,8 @@ describe('CheqdStatusListResolver reads a list through the bounded reader', () =
     expect(signals.map(signal => signal.aborted)).toEqual([true, true]);
   });
 
-  it('refuses a 2xx response that has no body, with its own reason', async () => {
-    await expect(cheqd(async () => new Response(null)).checkStatus(entry)).rejects.toThrow('Status list fetch has no response body');
+  it('reads a 2xx response that has no body as the empty text its text() answers, which is not JSON', async () => {
+    await expect(cheqd(async () => new Response(null)).checkStatus(entry)).rejects.toThrow('Status list fetch response is not JSON');
   });
 
   it('refuses invalid UTF-8 inside a JSON string', async () => {

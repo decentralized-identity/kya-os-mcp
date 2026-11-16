@@ -6,8 +6,11 @@
  * URL's origin and path as a refusal quotes any value its sender chose (`describeValue`), since an
  * operator may keep a key in its credentials, query or fragment; and the bytes must be valid UTF-8.
  *
- * Never `response.json()` or `response.text()`: both allocate the whole body before a caller can
- * check its size. A custom `FetchProvider` must therefore return a WHATWG `ReadableStream` body.
+ * A WHATWG `ReadableStream` body is read as it streams, never through `response.json()` or
+ * `response.text()`, which allocate the whole body before a caller can check its size. A response
+ * with no such body, as SafeFetch answers and as 1.22.0 read every response, is read through its
+ * `text()`, or else its `json()`, under the same deadline, and held to the same byte cap, counted in
+ * UTF-8, once it has answered ({@link readWithoutStream}).
  */
 
 import { describeValue } from './describe-value.js';
@@ -132,7 +135,7 @@ export async function fetchBoundedText(
       cancelQuietly(() => response.body?.cancel());
       throw new Error(`${label} failed: HTTP ${response.status} for ${describeValue(originAndPath(url))}`);
     }
-    if (!response.body) throw new Error(`${label} has no response body`);
+    if (!isReadableStream(response.body)) return await readWithoutStream(response, policy, controller.signal);
     const bytes = await readCappedBody(response.body, {
       maxBytes: policy.maxBytes,
       signal: controller.signal,
@@ -151,7 +154,80 @@ export async function fetchBoundedText(
   }
 }
 
-/** GET `url` under `policy`, check the JSON text's shape, and only then parse it. */
+/** Whether `body` is a WHATWG `ReadableStream`, which the read can count as it streams. */
+function isReadableStream(body: unknown): body is ReadableStream<Uint8Array> {
+  return typeof body === 'object' && body !== null && typeof (body as { getReader?: unknown }).getReader === 'function';
+}
+
+/**
+ * Read a response that has no WHATWG `ReadableStream` body, as 1.22.0 read every response: through
+ * its `text()` when it has one, so the text measured and parsed is exactly what was sent, or else
+ * through its `json()`, whose value is measured, and later parsed, as the JSON text `JSON.stringify`
+ * writes for it, so it meets the JSON shape limits as any text does. The answer is awaited under
+ * `signal`, the read's one deadline, and then held to the byte cap, counted as the UTF-8 bytes of the
+ * text. Either method allocates the whole body before it answers, so only the provider bounds that.
+ */
+async function readWithoutStream(response: Response, policy: BoundedReadPolicy, signal: AbortSignal): Promise<string> {
+  const { label } = policy;
+  const { text, json } = response as { text?: unknown; json?: unknown };
+  let read: string;
+  if (typeof text === 'function') {
+    const answer: unknown = await untilAborted(Promise.resolve((text as () => unknown).call(response)), signal);
+    if (typeof answer !== 'string') throw new Error(`${label} response text() did not answer a string`);
+    read = answer;
+  } else if (typeof json === 'function') {
+    read = jsonText(await untilAborted(Promise.resolve((json as () => unknown).call(response)), signal), label);
+  } else {
+    throw new Error(
+      `${label} response has no body to read: a FetchProvider must return a Response whose body is a ReadableStream, ` +
+        'or a response with a text() or json() method',
+    );
+  }
+  if (exceedsUtf8Bytes(read, policy.maxBytes)) throw new Error(`${label} byte limit exceeded`);
+  return read;
+}
+
+/** The JSON text of a value `json()` answered, refusing one that has none, such as `undefined` or a bigint. */
+function jsonText(value: unknown, label: string): string {
+  let text: unknown;
+  try {
+    text = JSON.stringify(value);
+  } catch {
+    text = undefined;
+  }
+  if (typeof text !== 'string') throw new Error(`${label} response json() answered a value with no JSON text`);
+  return text;
+}
+
+/**
+ * Whether `text` takes more than `maxBytes` bytes as UTF-8, counted without encoding it and only as
+ * far as the limit. A code unit takes one to three bytes and a surrogate pair four, and a lone
+ * surrogate is counted as the three bytes of the U+FFFD an encoder writes for it.
+ */
+function exceedsUtf8Bytes(text: string, maxBytes: number): boolean {
+  if (text.length > maxBytes) return true;
+  if (text.length * 3 <= maxBytes) return false;
+  let bytes = 0;
+  for (let i = 0; i < text.length && bytes <= maxBytes; i++) {
+    const code = text.charCodeAt(i);
+    if (code < 0x80) bytes += 1;
+    else if (code < 0x800) bytes += 2;
+    else if (code >= 0xd800 && code <= 0xdbff && isLowSurrogate(text.charCodeAt(i + 1))) {
+      bytes += 4;
+      i++;
+    } else bytes += 3;
+  }
+  return bytes > maxBytes;
+}
+
+function isLowSurrogate(code: number): boolean {
+  return code >= 0xdc00 && code <= 0xdfff;
+}
+
+/**
+ * GET `url` under `policy`, check the JSON text's shape, and only then parse it, refusing text that is
+ * not JSON in the read's own words.
+ */
 export async function fetchBoundedJson(
   fetcher: FetchPort,
   url: string,
@@ -160,7 +236,12 @@ export async function fetchBoundedJson(
 ): Promise<unknown> {
   const text = await fetchBoundedText(fetcher, url, init, policy);
   checkJsonTokens(text, policy.json);
-  return JSON.parse(text) as unknown;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    // The engine's own message quotes the text, which the server chose.
+    throw new Error(`${policy.label} response is not JSON`);
+  }
 }
 
 /**

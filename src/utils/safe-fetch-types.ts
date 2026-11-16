@@ -40,6 +40,12 @@ export interface SafeFetchResponse {
   ok: boolean;
   status: number;
   json: () => Promise<unknown>;
+  /**
+   * The body as the text that was sent. `createSafeFetch` answers it, so a did:web or status-list
+   * read through a `FetchProvider` whose `fetch` returns this response measures and parses that exact
+   * text. Optional, so a `SafeFetch` written without it still type-checks: such a read takes `json()`.
+   */
+  text?: () => Promise<string>;
 }
 
 export type SafeFetch = (url: string) => Promise<SafeFetchResponse>;

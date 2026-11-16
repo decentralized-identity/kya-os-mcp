@@ -130,6 +130,7 @@ async function finalize(raw: RawResponse, maxBytes: number): Promise<SafeFetchRe
     ok: raw.status >= 200 && raw.status < 300,
     status: raw.status,
     json: () => Promise.resolve(JSON.parse(body) as unknown),
+    text: () => Promise.resolve(body),
   };
 }
 

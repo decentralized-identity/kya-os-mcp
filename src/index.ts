@@ -105,6 +105,18 @@ export {
 } from './delegation/vc-verifier.js';
 
 export {
+  acceptEntrySize,
+  acceptStatusList,
+  statusListExpectationFor,
+  statusListKeeperFor,
+  type StatusCheckContext,
+  type StatusListExpectation,
+  type StatusListIssuers,
+  type StatusListKeeper,
+  type StatusListVerdict,
+} from './utils/statuslist-acceptance.js';
+
+export {
   DelegationGraphManager,
   createDelegationGraph,
   type DelegationNode,

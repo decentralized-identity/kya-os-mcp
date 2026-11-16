@@ -1,5 +1,5 @@
 {
-  "version": "1.3.0",
+  "version": "1.4.0",
   "category": "status-list",
   "vectors": [
     {
@@ -19,14 +19,14 @@
             "VerifiableCredential",
             "DelegationCredential"
           ],
-          "issuer": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
+          "issuer": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
           "issuanceDate": "2026-01-01T00:00:00.000Z",
           "credentialSubject": {
-            "id": "did:key:z6Mkki1hu4RLoJW7CLpX1M7Vbkh7nboFVXW8omBZqfJwJBzq",
+            "id": "did:key:z6MkmWzGFUw6PYoBvuLdEAJEsH2edRyFpaBNws5YYZ9QhJSm",
             "delegation": {
               "id": "del-active",
-              "issuerDid": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
-              "subjectDid": "did:key:z6Mkki1hu4RLoJW7CLpX1M7Vbkh7nboFVXW8omBZqfJwJBzq",
+              "issuerDid": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+              "subjectDid": "did:key:z6MkmWzGFUw6PYoBvuLdEAJEsH2edRyFpaBNws5YYZ9QhJSm",
               "scopes": [
                 "greeting:read"
               ],
@@ -50,9 +50,9 @@
           "proof": {
             "type": "Ed25519Signature2020",
             "created": "2026-01-01T00:00:00.000Z",
-            "verificationMethod": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze#z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
+            "verificationMethod": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
             "proofPurpose": "assertionMethod",
-            "proofValue": "slC2H0K0CjBlb8vhI3TuwRkV08gdx2EW-2tD8c0s0H-xHrPAljfbY8S1hFhuKfU6iNQvRTMMzzhW3qG74Hi0Dw"
+            "proofValue": "TYISuyn_N7X-w9kVGrIeFzRznOKgZIN1yBB98Uq5LZ3pX_hkZa9MHpUbCCW04OAdHQVpEBxtB0x063K4XkpuAA"
           }
         },
         "statusLists": {
@@ -66,43 +66,43 @@
               "VerifiableCredential",
               "StatusList2021Credential"
             ],
-            "issuer": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
+            "issuer": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
             "issuanceDate": "2026-01-01T00:00:00.000Z",
             "credentialSubject": {
               "id": "https://status.example.com/revocation/v1#list",
               "type": "StatusList2021",
               "statusPurpose": "revocation",
-              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAAzDoEiZf5WT0Qeo6gIAAAAAAAAAAAAAAAAAAACGHjOa7TAAQAAA"
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAAjAoB0GsX9KY_gANbUBAAAAAAAAAAAAAAAAAAAAjw6TJwrvAEAAAA"
             },
             "proof": {
               "type": "Ed25519Signature2020",
               "created": "2026-01-01T00:00:00.000Z",
-              "verificationMethod": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze#z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
+              "verificationMethod": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
               "proofPurpose": "assertionMethod",
-              "proofValue": "h6Xlpcqo114ezsNJ2odgToLliXUwPlIywQZp0ctzeBo-c0tCAxlMSsC6toS-CAXML-qe7vglftKLgze1jYkbCw"
+              "proofValue": "HhEaGuZSaN8tR1vLocnLBCl4b-bu4MTifBgZKjWvyO0gBUfk_Y6EaxLZ8JNVZh958vx-OFt2OxbuxuO1psLjAw"
             }
           }
         },
         "didDocuments": {
-          "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze": {
-            "id": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
+          "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU": {
+            "id": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
             "verificationMethod": [
               {
-                "id": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze#z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
+                "id": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
                 "type": "Ed25519VerificationKey2020",
-                "controller": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
+                "controller": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "fgHLQ5LuGf8RzQCuO2MC89G4CeuTRVTyHEkJGEOVVA8"
+                  "x": "dUaLcKWi6FCjMUtJURtqmX205W1-2ua3y3XjJnT_zE8"
                 }
               }
             ],
             "assertionMethod": [
-              "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze#z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze"
+              "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU"
             ],
             "authentication": [
-              "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze#z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze"
+              "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU"
             ]
           }
         },
@@ -126,14 +126,14 @@
             "VerifiableCredential",
             "DelegationCredential"
           ],
-          "issuer": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
+          "issuer": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
           "issuanceDate": "2026-01-01T00:00:00.000Z",
           "credentialSubject": {
-            "id": "did:key:z6Mkki1hu4RLoJW7CLpX1M7Vbkh7nboFVXW8omBZqfJwJBzq",
+            "id": "did:key:z6MkmWzGFUw6PYoBvuLdEAJEsH2edRyFpaBNws5YYZ9QhJSm",
             "delegation": {
               "id": "del-revoked",
-              "issuerDid": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
-              "subjectDid": "did:key:z6Mkki1hu4RLoJW7CLpX1M7Vbkh7nboFVXW8omBZqfJwJBzq",
+              "issuerDid": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+              "subjectDid": "did:key:z6MkmWzGFUw6PYoBvuLdEAJEsH2edRyFpaBNws5YYZ9QhJSm",
               "scopes": [
                 "greeting:read"
               ],
@@ -157,9 +157,9 @@
           "proof": {
             "type": "Ed25519Signature2020",
             "created": "2026-01-01T00:00:00.000Z",
-            "verificationMethod": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze#z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
+            "verificationMethod": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
             "proofPurpose": "assertionMethod",
-            "proofValue": "ttX5ZaXnbz11kjjNKQ8MuGN5cIrmIy0n2pjbx4kv8ygkJmcd-5FFkbSKzMoggZbz5ctlDYksYKqWZcDmUQHTAw"
+            "proofValue": "RTu9zZ0J9MJqmvuYRcokqMBtxvoixOv5UYtzGsfIVrHAWsVQj6DLpl1l1MVAqDUba5vWK3A9r-ckpyLm2Dr2AA"
           }
         },
         "statusLists": {
@@ -173,43 +173,43 @@
               "VerifiableCredential",
               "StatusList2021Credential"
             ],
-            "issuer": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
+            "issuer": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
             "issuanceDate": "2026-01-01T00:00:00.000Z",
             "credentialSubject": {
               "id": "https://status.example.com/revocation/v1#list",
               "type": "StatusList2021",
               "statusPurpose": "revocation",
-              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAAzDoEiZf5WT0Qeo6gIAAAAAAAAAAAAAAAAAAACGHjOa7TAAQAAA"
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAAjAoB0GsX9KY_gANbUBAAAAAAAAAAAAAAAAAAAAjw6TJwrvAEAAAA"
             },
             "proof": {
               "type": "Ed25519Signature2020",
               "created": "2026-01-01T00:00:00.000Z",
-              "verificationMethod": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze#z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
+              "verificationMethod": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
               "proofPurpose": "assertionMethod",
-              "proofValue": "h6Xlpcqo114ezsNJ2odgToLliXUwPlIywQZp0ctzeBo-c0tCAxlMSsC6toS-CAXML-qe7vglftKLgze1jYkbCw"
+              "proofValue": "HhEaGuZSaN8tR1vLocnLBCl4b-bu4MTifBgZKjWvyO0gBUfk_Y6EaxLZ8JNVZh958vx-OFt2OxbuxuO1psLjAw"
             }
           }
         },
         "didDocuments": {
-          "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze": {
-            "id": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
+          "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU": {
+            "id": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
             "verificationMethod": [
               {
-                "id": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze#z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
+                "id": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
                 "type": "Ed25519VerificationKey2020",
-                "controller": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
+                "controller": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "fgHLQ5LuGf8RzQCuO2MC89G4CeuTRVTyHEkJGEOVVA8"
+                  "x": "dUaLcKWi6FCjMUtJURtqmX205W1-2ua3y3XjJnT_zE8"
                 }
               }
             ],
             "assertionMethod": [
-              "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze#z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze"
+              "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU"
             ],
             "authentication": [
-              "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze#z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze"
+              "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU"
             ]
           }
         },
@@ -233,14 +233,14 @@
             "VerifiableCredential",
             "DelegationCredential"
           ],
-          "issuer": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
+          "issuer": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
           "issuanceDate": "2026-01-01T00:00:00.000Z",
           "credentialSubject": {
-            "id": "did:key:z6Mkki1hu4RLoJW7CLpX1M7Vbkh7nboFVXW8omBZqfJwJBzq",
+            "id": "did:key:z6MkmWzGFUw6PYoBvuLdEAJEsH2edRyFpaBNws5YYZ9QhJSm",
             "delegation": {
               "id": "del-revoked",
-              "issuerDid": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
-              "subjectDid": "did:key:z6Mkki1hu4RLoJW7CLpX1M7Vbkh7nboFVXW8omBZqfJwJBzq",
+              "issuerDid": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+              "subjectDid": "did:key:z6MkmWzGFUw6PYoBvuLdEAJEsH2edRyFpaBNws5YYZ9QhJSm",
               "scopes": [
                 "greeting:read"
               ],
@@ -264,9 +264,9 @@
           "proof": {
             "type": "Ed25519Signature2020",
             "created": "2026-01-01T00:00:00.000Z",
-            "verificationMethod": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze#z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
+            "verificationMethod": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
             "proofPurpose": "assertionMethod",
-            "proofValue": "ttX5ZaXnbz11kjjNKQ8MuGN5cIrmIy0n2pjbx4kv8ygkJmcd-5FFkbSKzMoggZbz5ctlDYksYKqWZcDmUQHTAw"
+            "proofValue": "RTu9zZ0J9MJqmvuYRcokqMBtxvoixOv5UYtzGsfIVrHAWsVQj6DLpl1l1MVAqDUba5vWK3A9r-ckpyLm2Dr2AA"
           }
         },
         "statusLists": {
@@ -280,7 +280,7 @@
               "VerifiableCredential",
               "StatusList2021Credential"
             ],
-            "issuer": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
+            "issuer": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
             "issuanceDate": "2026-01-01T00:00:00.000Z",
             "credentialSubject": {
               "id": "https://status.example.com/revocation/v1#list",
@@ -291,32 +291,960 @@
             "proof": {
               "type": "Ed25519Signature2020",
               "created": "2026-01-01T00:00:00.000Z",
-              "verificationMethod": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze#z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
+              "verificationMethod": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
               "proofPurpose": "assertionMethod",
-              "proofValue": "h6Xlpcqo114ezsNJ2odgToLliXUwPlIywQZp0ctzeBo-c0tCAxlMSsC6toS-CAXML-qe7vglftKLgze1jYkbCw"
+              "proofValue": "HhEaGuZSaN8tR1vLocnLBCl4b-bu4MTifBgZKjWvyO0gBUfk_Y6EaxLZ8JNVZh958vx-OFt2OxbuxuO1psLjAw"
             }
           }
         },
         "didDocuments": {
-          "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze": {
-            "id": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
+          "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU": {
+            "id": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
             "verificationMethod": [
               {
-                "id": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze#z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
+                "id": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
                 "type": "Ed25519VerificationKey2020",
-                "controller": "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze",
+                "controller": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "fgHLQ5LuGf8RzQCuO2MC89G4CeuTRVTyHEkJGEOVVA8"
+                  "x": "dUaLcKWi6FCjMUtJURtqmX205W1-2ua3y3XjJnT_zE8"
                 }
               }
             ],
             "assertionMethod": [
-              "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze#z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze"
+              "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU"
             ],
             "authentication": [
-              "did:key:z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze#z6Mknw9153mufdiwmfeqmMyQEUAL5DPsVSEDQTchg2vqfmze"
+              "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com"
+      }
+    },
+    {
+      "id": "status-list/foreign-issuer-list",
+      "category": "status-list",
+      "description": "Revoked delegation checked against a list with the bit unset, validly signed by another DID",
+      "expected": "fail",
+      "reason": "Another DID's list cannot speak for the credential, so it cannot clear the revocation and the check fails closed",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-revoked",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkmWzGFUw6PYoBvuLdEAJEsH2edRyFpaBNws5YYZ9QhJSm",
+            "delegation": {
+              "id": "del-revoked",
+              "issuerDid": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+              "subjectDid": "did:key:z6MkmWzGFUw6PYoBvuLdEAJEsH2edRyFpaBNws5YYZ9QhJSm",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://status.example.com/revocation/v1#42",
+            "type": "StatusList2021Entry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "42",
+            "statusListCredential": "https://status.example.com/revocation/v1"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "RTu9zZ0J9MJqmvuYRcokqMBtxvoixOv5UYtzGsfIVrHAWsVQj6DLpl1l1MVAqDUba5vWK3A9r-ckpyLm2Dr2AA"
+          }
+        },
+        "statusLists": {
+          "https://status.example.com/revocation/v1": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://w3id.org/vc/status-list/2021/v1"
+            ],
+            "id": "https://status.example.com/revocation/v1",
+            "type": [
+              "VerifiableCredential",
+              "StatusList2021Credential"
+            ],
+            "issuer": "did:key:z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://status.example.com/revocation/v1#list",
+              "type": "StatusList2021",
+              "statusPurpose": "revocation",
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA"
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx#z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "dA3sfAA08x-OwL25e5y09TAXnUA9CYcDIHIQe5Aov7H4ooWNxUwyvfqSV0PMK9v7Y5HvIM1v6Pm0RH2M0T-oBQ"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU": {
+            "id": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "dUaLcKWi6FCjMUtJURtqmX205W1-2ua3y3XjJnT_zE8"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU"
+            ],
+            "authentication": [
+              "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU"
+            ]
+          },
+          "did:key:z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx": {
+            "id": "did:key:z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx#z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "EQ_pTbqr3k0aFPZlbs24nyxOyiGbbI3X0daDvW28fB0"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx#z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx"
+            ],
+            "authentication": [
+              "did:key:z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx#z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com"
+      }
+    },
+    {
+      "id": "status-list/purpose-mismatch-list",
+      "category": "status-list",
+      "description": "Revoked delegation checked against its issuer's suspension list with the bit unset",
+      "expected": "fail",
+      "reason": "A list of another statusPurpose says nothing of revocation, so the check fails closed",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-revoked",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkmWzGFUw6PYoBvuLdEAJEsH2edRyFpaBNws5YYZ9QhJSm",
+            "delegation": {
+              "id": "del-revoked",
+              "issuerDid": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+              "subjectDid": "did:key:z6MkmWzGFUw6PYoBvuLdEAJEsH2edRyFpaBNws5YYZ9QhJSm",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://status.example.com/revocation/v1#42",
+            "type": "StatusList2021Entry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "42",
+            "statusListCredential": "https://status.example.com/revocation/v1"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "RTu9zZ0J9MJqmvuYRcokqMBtxvoixOv5UYtzGsfIVrHAWsVQj6DLpl1l1MVAqDUba5vWK3A9r-ckpyLm2Dr2AA"
+          }
+        },
+        "statusLists": {
+          "https://status.example.com/revocation/v1": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://w3id.org/vc/status-list/2021/v1"
+            ],
+            "id": "https://status.example.com/revocation/v1",
+            "type": [
+              "VerifiableCredential",
+              "StatusList2021Credential"
+            ],
+            "issuer": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://status.example.com/revocation/v1#list",
+              "type": "StatusList2021",
+              "statusPurpose": "suspension",
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA"
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "vuRkBrg1cyyO2P7lcGSr7SRVvXtUYaTc-ItJyY4QBm5W8xZekfxgM_qd0du0_HcHrsSkfjFZsYgnt80LUZzjAg"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU": {
+            "id": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "dUaLcKWi6FCjMUtJURtqmX205W1-2ua3y3XjJnT_zE8"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU"
+            ],
+            "authentication": [
+              "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com"
+      }
+    },
+    {
+      "id": "status-list/purpose-array-2021-list",
+      "category": "status-list",
+      "description": "Revoked delegation checked against its issuer's StatusList2021 list with the bit unset, stating its purposes as an array",
+      "expected": "fail",
+      "reason": "A StatusList2021 list states one statusPurpose, and only a Bitstring Status List v1.0 list may state several, so the check fails closed",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-revoked",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkmWzGFUw6PYoBvuLdEAJEsH2edRyFpaBNws5YYZ9QhJSm",
+            "delegation": {
+              "id": "del-revoked",
+              "issuerDid": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+              "subjectDid": "did:key:z6MkmWzGFUw6PYoBvuLdEAJEsH2edRyFpaBNws5YYZ9QhJSm",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://status.example.com/revocation/v1#42",
+            "type": "StatusList2021Entry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "42",
+            "statusListCredential": "https://status.example.com/revocation/v1"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "RTu9zZ0J9MJqmvuYRcokqMBtxvoixOv5UYtzGsfIVrHAWsVQj6DLpl1l1MVAqDUba5vWK3A9r-ckpyLm2Dr2AA"
+          }
+        },
+        "statusLists": {
+          "https://status.example.com/revocation/v1": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://w3id.org/vc/status-list/2021/v1"
+            ],
+            "id": "https://status.example.com/revocation/v1",
+            "type": [
+              "VerifiableCredential",
+              "StatusList2021Credential"
+            ],
+            "issuer": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://status.example.com/revocation/v1#list",
+              "type": "StatusList2021",
+              "statusPurpose": [
+                "suspension",
+                "revocation"
+              ],
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA"
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "STB3uFBi3thS8-0yEwQ0QVrZthdmAISVn16fwDYxDsKQt_dABbBTh7On6YCN424JtPalwAG_W9GfSUwqmvDxBA"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU": {
+            "id": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "dUaLcKWi6FCjMUtJURtqmX205W1-2ua3y3XjJnT_zE8"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU"
+            ],
+            "authentication": [
+              "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com"
+      }
+    },
+    {
+      "id": "status-list/id-mismatch-list",
+      "category": "status-list",
+      "description": "Revoked delegation checked against its issuer's list for another URL, with the bit unset",
+      "expected": "fail",
+      "reason": "A list that states another URL as its id is not the list the credential names, so the check fails closed",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-revoked",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkmWzGFUw6PYoBvuLdEAJEsH2edRyFpaBNws5YYZ9QhJSm",
+            "delegation": {
+              "id": "del-revoked",
+              "issuerDid": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+              "subjectDid": "did:key:z6MkmWzGFUw6PYoBvuLdEAJEsH2edRyFpaBNws5YYZ9QhJSm",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://status.example.com/revocation/v1#42",
+            "type": "StatusList2021Entry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "42",
+            "statusListCredential": "https://status.example.com/revocation/v1"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "RTu9zZ0J9MJqmvuYRcokqMBtxvoixOv5UYtzGsfIVrHAWsVQj6DLpl1l1MVAqDUba5vWK3A9r-ckpyLm2Dr2AA"
+          }
+        },
+        "statusLists": {
+          "https://status.example.com/revocation/v1": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://w3id.org/vc/status-list/2021/v1"
+            ],
+            "id": "https://status.example.com/revocation/v2",
+            "type": [
+              "VerifiableCredential",
+              "StatusList2021Credential"
+            ],
+            "issuer": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://status.example.com/revocation/v2#list",
+              "type": "StatusList2021",
+              "statusPurpose": "revocation",
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA"
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "uVD369fkP5iF36WEf5TPFtBQM8WeYf_xM41k2p7sIrfiGYbaqoqYVVHLQeU3NQVV5dWU8f68BJSkDeL_SV9VAQ"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU": {
+            "id": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "dUaLcKWi6FCjMUtJURtqmX205W1-2ua3y3XjJnT_zE8"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU"
+            ],
+            "authentication": [
+              "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com"
+      }
+    },
+    {
+      "id": "status-list/root-no-id-list",
+      "category": "status-list",
+      "description": "Revoked delegation a delegate of the pinned root issued, checked against the root's list with the bit unset, re-issued without an id",
+      "expected": "fail",
+      "reason": "Only the credential's own issuer may leave out a list's id; the pinned root's list, at the URL its own credential names, must state that URL, so the check fails closed",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-redelegated",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6Mkmhq2nShgo1cU7fpvRoFZskye2teSFxdREDA7Z9kLoypb",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkmWzGFUw6PYoBvuLdEAJEsH2edRyFpaBNws5YYZ9QhJSm",
+            "delegation": {
+              "id": "del-redelegated",
+              "issuerDid": "did:key:z6Mkmhq2nShgo1cU7fpvRoFZskye2teSFxdREDA7Z9kLoypb",
+              "subjectDid": "did:key:z6MkmWzGFUw6PYoBvuLdEAJEsH2edRyFpaBNws5YYZ9QhJSm",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://status.example.com/revocation/v1#21",
+            "type": "StatusList2021Entry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "21",
+            "statusListCredential": "https://status.example.com/revocation/v1"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6Mkmhq2nShgo1cU7fpvRoFZskye2teSFxdREDA7Z9kLoypb#z6Mkmhq2nShgo1cU7fpvRoFZskye2teSFxdREDA7Z9kLoypb",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "lfNgOQnKYwNCn1YVx0eUUTq1fUeV43Iudth0TTHTMDrS9CEZe5JqqmMxiyy5JnirGStmXRyQHRkH_-fEM43FBQ"
+          }
+        },
+        "statusLists": {
+          "https://status.example.com/revocation/v1": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://w3id.org/vc/status-list/2021/v1"
+            ],
+            "type": [
+              "VerifiableCredential",
+              "StatusList2021Credential"
+            ],
+            "issuer": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://status.example.com/revocation/v1#list",
+              "type": "StatusList2021",
+              "statusPurpose": "revocation",
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA"
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "5sisdAfyBfCH4OYQyuvy0she8wsyf7VfYxNd84jHTXczOCtuhb79fOuvSz9apBB2tzymDGYhVtSWtr9gQQ8XDg"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:key:z6Mkmhq2nShgo1cU7fpvRoFZskye2teSFxdREDA7Z9kLoypb": {
+            "id": "did:key:z6Mkmhq2nShgo1cU7fpvRoFZskye2teSFxdREDA7Z9kLoypb",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6Mkmhq2nShgo1cU7fpvRoFZskye2teSFxdREDA7Z9kLoypb#z6Mkmhq2nShgo1cU7fpvRoFZskye2teSFxdREDA7Z9kLoypb",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6Mkmhq2nShgo1cU7fpvRoFZskye2teSFxdREDA7Z9kLoypb",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "a708v6TxL-QyHFmvdLC6kwtM1meKvbfaoRtJnbaHweg"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6Mkmhq2nShgo1cU7fpvRoFZskye2teSFxdREDA7Z9kLoypb#z6Mkmhq2nShgo1cU7fpvRoFZskye2teSFxdREDA7Z9kLoypb"
+            ],
+            "authentication": [
+              "did:key:z6Mkmhq2nShgo1cU7fpvRoFZskye2teSFxdREDA7Z9kLoypb#z6Mkmhq2nShgo1cU7fpvRoFZskye2teSFxdREDA7Z9kLoypb"
+            ]
+          },
+          "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU": {
+            "id": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "dUaLcKWi6FCjMUtJURtqmX205W1-2ua3y3XjJnT_zE8"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU"
+            ],
+            "authentication": [
+              "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com",
+        "trustedRootIssuer": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+        "trustedRootStatusList": "https://status.example.com/revocation/v1"
+      }
+    },
+    {
+      "id": "status-list/configured-issuer-no-id-list",
+      "category": "status-list",
+      "description": "Revoked delegation checked against a list with the bit unset, signed by the DID the verifier binds the list's URL to and stating no id",
+      "expected": "fail",
+      "reason": "A list from an issuer other than the credential's must state the URL it is read from as its id, so the check fails closed",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-revoked",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkmWzGFUw6PYoBvuLdEAJEsH2edRyFpaBNws5YYZ9QhJSm",
+            "delegation": {
+              "id": "del-revoked",
+              "issuerDid": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+              "subjectDid": "did:key:z6MkmWzGFUw6PYoBvuLdEAJEsH2edRyFpaBNws5YYZ9QhJSm",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://status.example.com/revocation/v1#42",
+            "type": "StatusList2021Entry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "42",
+            "statusListCredential": "https://status.example.com/revocation/v1"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "RTu9zZ0J9MJqmvuYRcokqMBtxvoixOv5UYtzGsfIVrHAWsVQj6DLpl1l1MVAqDUba5vWK3A9r-ckpyLm2Dr2AA"
+          }
+        },
+        "statusLists": {
+          "https://status.example.com/revocation/v1": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://w3id.org/vc/status-list/2021/v1"
+            ],
+            "type": [
+              "VerifiableCredential",
+              "StatusList2021Credential"
+            ],
+            "issuer": "did:key:z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://status.example.com/revocation/v1#list",
+              "type": "StatusList2021",
+              "statusPurpose": "revocation",
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA"
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx#z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "9f7aTtCJQtv1mzhz673vEot_blRHeOIicaBChFeo8OQqQsriSgBvdqUtCHsbPti0odTiqKDqQDGLGDxBjSqcBQ"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU": {
+            "id": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "dUaLcKWi6FCjMUtJURtqmX205W1-2ua3y3XjJnT_zE8"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU"
+            ],
+            "authentication": [
+              "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU"
+            ]
+          },
+          "did:key:z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx": {
+            "id": "did:key:z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx#z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "EQ_pTbqr3k0aFPZlbs24nyxOyiGbbI3X0daDvW28fB0"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx#z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx"
+            ],
+            "authentication": [
+              "did:key:z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx#z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com",
+        "statusListIssuers": {
+          "did:key:z6Mkfbs3m7f34FdmJ7EyZdb83wLngrdd1wMn7uvdM6pm4zAx": [
+            "https://status.example.com/revocation/v1"
+          ]
+        }
+      }
+    },
+    {
+      "id": "status-list/no-id-list",
+      "category": "status-list",
+      "description": "Active delegation checked against its issuer's list, re-issued without an id",
+      "expected": "pass",
+      "reason": "The credential's own issuer's list need not state an id, so it is read and the unset bit means the credential is active",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-active",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkmWzGFUw6PYoBvuLdEAJEsH2edRyFpaBNws5YYZ9QhJSm",
+            "delegation": {
+              "id": "del-active",
+              "issuerDid": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+              "subjectDid": "did:key:z6MkmWzGFUw6PYoBvuLdEAJEsH2edRyFpaBNws5YYZ9QhJSm",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://status.example.com/revocation/v1#7",
+            "type": "StatusList2021Entry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "7",
+            "statusListCredential": "https://status.example.com/revocation/v1"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "TYISuyn_N7X-w9kVGrIeFzRznOKgZIN1yBB98Uq5LZ3pX_hkZa9MHpUbCCW04OAdHQVpEBxtB0x063K4XkpuAA"
+          }
+        },
+        "statusLists": {
+          "https://status.example.com/revocation/v1": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://w3id.org/vc/status-list/2021/v1"
+            ],
+            "type": [
+              "VerifiableCredential",
+              "StatusList2021Credential"
+            ],
+            "issuer": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://status.example.com/revocation/v1#list",
+              "type": "StatusList2021",
+              "statusPurpose": "revocation",
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAAjAoB0GsX9KY_gANbUBAAAAAAAAAAAAAAAAAAAAjw6TJwrvAEAAAA"
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "mQYglTLcMZ_n8U1vv2kbjlO61a_tvgE8KQGZ9ayCS9Qd5sz1AB9tiCzehQNCcM_J8xbPRZ-mljciGoKGTRjBDQ"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU": {
+            "id": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "dUaLcKWi6FCjMUtJURtqmX205W1-2ua3y3XjJnT_zE8"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU"
+            ],
+            "authentication": [
+              "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com"
+      }
+    },
+    {
+      "id": "status-list/purpose-array-list",
+      "category": "status-list",
+      "description": "Active delegation checked against its issuer's Bitstring Status List v1.0 list for suspension and revocation",
+      "expected": "pass",
+      "reason": "A BitstringStatusListCredential may declare several purposes; one that includes revocation is read, and the unset bit means the credential is active",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-bitstring",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkmWzGFUw6PYoBvuLdEAJEsH2edRyFpaBNws5YYZ9QhJSm",
+            "delegation": {
+              "id": "del-bitstring",
+              "issuerDid": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+              "subjectDid": "did:key:z6MkmWzGFUw6PYoBvuLdEAJEsH2edRyFpaBNws5YYZ9QhJSm",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://status.example.com/status/v1#7",
+            "type": "BitstringStatusListEntry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "7",
+            "statusListCredential": "https://status.example.com/status/v1"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "jNlgXHtuvjKwchpfn9pNCjS0V2Ik1GBGcvPHY0mCR9xIU6t5dnm-I9LbFjyyAzZVKTL_eihnYyqXR2g07CLtDA"
+          }
+        },
+        "statusLists": {
+          "https://status.example.com/status/v1": {
+            "@context": [
+              "https://www.w3.org/ns/credentials/v2"
+            ],
+            "id": "https://status.example.com/status/v1",
+            "type": [
+              "VerifiableCredential",
+              "BitstringStatusListCredential"
+            ],
+            "issuer": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+            "validFrom": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://status.example.com/status/v1#list",
+              "type": "BitstringStatusList",
+              "statusPurpose": [
+                "suspension",
+                "revocation"
+              ],
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAAzDoEiZf5WT0Qeo6gIAAAAAAAAAAAAAAAAAAACGHjOa7TAAQAAA"
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "77OAUnaFZ3R9Ad5pIjxotavaustzsocE4oCfimuUfkYuSle0No0SzyCKFLjr7wQT5D6o6fQKvdfU49nXkL1cDg"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU": {
+            "id": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "dUaLcKWi6FCjMUtJURtqmX205W1-2ua3y3XjJnT_zE8"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU"
+            ],
+            "authentication": [
+              "did:key:z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU#z6MknM48rRJa8wRf3qsBfVhQib9A5douGTrKeHPqyUhb1tdU"
             ]
           }
         },

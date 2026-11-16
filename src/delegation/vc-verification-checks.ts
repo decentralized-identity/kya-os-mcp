@@ -20,6 +20,7 @@ import { describeValue } from "../utils/describe-value.js";
 import { issuerOf } from "../utils/guards.js";
 import { sanitizeForMessage } from "../utils/message-text.js";
 import { credentialIssuerRefusal } from "./credential-issuer.js";
+import { readRevoked, unreadableStatusReason } from "../utils/revocation-answer.js";
 import type {
   DIDResolver,
   StatusListResolver,
@@ -303,11 +304,16 @@ export async function verifySignature(
  * labelled with a {@link StatusOutcome} so consumers can tell a settled
  * `revoked` (re-consent) from a transient `status_unresolvable` (retry):
  * a missing resolver or a resolver that throws both DENY as
- * `status_unresolvable`; a set status bit DENIES as `revoked`.
+ * `status_unresolvable`, and so does a resolver whose answer is not a boolean;
+ * only a literal `true` DENIES as `revoked`. The resolver is
+ * told `credentialIssuer`, the issuer DID of the credential, and holds the
+ * status list to it; a credential that names none cannot be held to anyone, so
+ * it DENIES as `status_unresolvable` without a read.
  */
 export async function checkCredentialStatus(
   status: CredentialStatus,
   statusListResolver: StatusListResolver | undefined,
+  credentialIssuer: string | undefined,
 ): Promise<StatusCheckResult> {
   const startTime = Date.now();
 
@@ -322,9 +328,29 @@ export async function checkCredentialStatus(
       };
     }
 
-    const isRevoked = await statusListResolver.checkStatus(status);
+    if (!credentialIssuer) {
+      return {
+        valid: false,
+        reason:
+          "Credential names no issuer DID to hold its status list to, so its revocation status cannot be verified",
+        outcome: "status_unresolvable",
+        durationMs: Date.now() - startTime,
+      };
+    }
 
-    if (isRevoked) {
+    const answer: unknown = await statusListResolver.checkStatus(status, { credentialIssuer });
+    const revoked = readRevoked(answer);
+
+    if (revoked === undefined) {
+      return {
+        valid: false,
+        reason: unreadableStatusReason(answer),
+        outcome: "status_unresolvable",
+        durationMs: Date.now() - startTime,
+      };
+    }
+
+    if (revoked) {
       return {
         valid: false,
         reason: `Credential revoked via ${describeValue(status.type)} (${describeValue(status.statusPurpose)})`,

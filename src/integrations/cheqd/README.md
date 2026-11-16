@@ -118,6 +118,13 @@ await registrar.updateDid({
 });
 ```
 
+### Status lists
+
+`CheqdStatusListResolver` reads a status list only when the list's `issuer` is its `expectedIssuerDid`, the list's `statusPurpose` is the entry's, and the list states, as its `id`, the URL it was fetched from, byte for byte.
+It refuses a list that states no `id`, even one its `expectedIssuerDid` signed, since such a list could be served in place of any other list that DID signs.
+It refuses a list whose `id` is a DID URL for the same resource, since it fetches only `https` URLs.
+`StatusList2021Manager` states the `id` of every list it writes; give each other list its `https` URL as its `id` before you publish it.
+
 ### DID linkage
 
 For `did:web` <-> `did:cheqd` binding, publish reciprocal `alsoKnownAs` values

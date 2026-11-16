@@ -2,7 +2,7 @@
 
 **Compliance levels for KYA-OS implementations**
 
-Version: 1.3.0
+Version: 1.4.0
 Status: Stable
 
 ---
@@ -250,6 +250,10 @@ Implementation MUST validate:
 Implementation MUST:
 - Fetch StatusList2021 credential from `credentialStatus.statusListCredential`
 - Verify the list's `proof` as SPEC.md §6.2 specifies, and reject the credential when it does not verify
+- Reject the credential unless the list's `issuer` is the one keeper of the entry's `statusListCredential` URL (SPEC.md §6.6), decided before the list is fetched: the issuer the verifier's configuration binds that exact URL to, else the issuer it binds the URL's `https:` origin to, else the root issuer of the credential's delegation chain when the verifier pins that root and the root's own credential's status entry names the same URL, else the credential's issuer
+- Reject the credential when the list's `statusPurpose` does not include `credentialStatus.statusPurpose`, or is an array on any list, a `StatusList2021Credential` included, but a `BitstringStatusListCredential` whose subject's `type` is `BitstringStatusList`; read such a list when its array of strings includes `credentialStatus.statusPurpose` (W3C Bitstring Status List v1.0 §2.2)
+- Reject the credential when the list's `id` is not, byte for byte, `credentialStatus.statusListCredential`; only a list the credential's own issuer signed, where the verifier pins no other root and its configuration names no other issuer, may state no `id`, and an implementation at this level reads such a list (`status-list/no-id-list`), though SPEC.md §6.6 lets a reader refuse it, as the reference `CheqdStatusListResolver` does
+- Reject the credential when `credentialStatus.statusSize` is stated and is not an integer greater than zero (`status-list/status-size-zero`), and never read an entry of more than one bit from the bit at its `statusListIndex`, which is another entry's (`status-list/status-size-two-bits`); the reference readers reject every entry whose `statusSize` is not 1, and read one that states 1 as one that states none (`status-list/status-size-one`)
 - Decompress and decode the bitstring
 - Check bit at `statusListIndex`
 - Return revoked status if bit is 1
@@ -433,8 +437,9 @@ so it is reproducible against any implementation without re-signing.
 | `vectors/signed-proof.json` | Detached proof verification | valid signature + in-window ts; envelope content binding (profile `org.kya-os/response-proof.envelope`) | tampered signature, tampered meta, wrong key, timestamp skew exceeded; tampered `structuredContent` under envelope coverage, `prf` stripped (downgrade), unknown profile |
 | `vectors/delegation-chain.json` | Delegation chain verification | single-hop, two-hop attenuated | broken issuer↔subject linkage, scope widening, tampered signature, audience mismatch |
 | `vectors/delegation-chain-key-relationship.json` | Delegation chain verification: the issuer's key (SPEC.md §6.2) | signed with the key the issuer lists under `assertionMethod`; as a VC-JWT with no `kid`, signed with the key its first `assertionMethod` entry names | signed with a key it lists only under `authentication`, proof stating `proofPurpose: "authentication"`, issuer document whose `id` is another DID, signing key whose method names another DID as its `controller`, signing key whose method the document defines twice, signing key under another DID's id, signing key under no relationship, signing key whose method has no `type` or no `controller`; as a VC-JWT, a `kid` naming the `authentication` key, an empty `kid` |
-| `vectors/status-list.json` | StatusList2021 revocation | active (bit unset) | revoked (bit set), list altered after signing |
+| `vectors/status-list.json` | StatusList2021 and Bitstring Status List revocation | active (bit unset), issuer's list stating no `id`, Bitstring list declaring two purposes | revoked (bit set), list altered after signing, list signed by another issuer, list of another purpose, StatusList2021 list declaring its purposes in an array, list stating another URL as its `id`, list of a pinned root or a configured issuer stating no `id` |
 | `vectors/status-list-key-relationship.json` | StatusList2021 revocation: the list issuer's key (SPEC.md §6.2) | list signed with the key the issuer lists under `assertionMethod` | list signed with a key it lists only under `authentication`, list proof stating `proofPurpose: "authentication"`, issuer document whose `id` is another DID, list signed with a key it lists under `assertionMethod` whose method names another DID as its `controller`, list signed with a key whose method the document defines twice |
+| `vectors/status-list-authority.json` | Status list revocation: who may sign a credential's list (SPEC.md §6.6) | pinned root's list at the URL its own credential names, list of a service the verifier binds the exact URL or its origin to, issuer's own list stating no `id` while also named as root, with or without the URL its credential names, index with leading zeros, entry stating a `statusSize` of 1 | pinned root's list at a URL its credential does not name, service bound to no URL, to another URL or to a look-alike origin, issuer's own list at a URL bound to a service, pinned root's list at a URL the configuration binds to a service, pinned root's list stating no `id` for a delegate's credential, issuer's list stating no `id` at a pinned root's URL, index with a suffix, a fraction or a space, index given as a number, entry of two bits whose own bits are set, entry stating a `statusSize` of 0 |
 | `vectors/did-key-resolution.json` | did:key resolution | valid Ed25519 | malformed multibase, wrong method |
 | `vectors/did-web-resolution.json` | did:web resolution | well-formed id-matched document | document id mismatch, not found |
 | `vectors/card-proof.json` | `org.kya-os/proof.v1` holder-of-key proof | valid signed proof, in-window, audience-bound | tampered body, tampered signature, wrong audience, expired, kid⇄did forgery |
@@ -483,6 +488,26 @@ The Entity Card's `eddsa-jcs-2022` proofs on status lists and delegation hops ha
 `conformance/__tests__/credential-proof-construction.test.ts` checks every credential, status list and VC-JWT in the `delegation-chain` and `status-list` vectors against the SPEC.md §6.2 text, with `node:crypto` and an RFC 8785 library and none of the package's verifier code.
 It checks the specification's construction against the bytes the suite ships; it is not an implementation, and no adapter runs it.
 
+**On `status-list/foreign-issuer-list`, `purpose-mismatch-list`, `purpose-array-2021-list` and `id-mismatch-list` (suite ≥ 1.4.0).**
+Each carries a revoked credential and, at its `statusListCredential` URL, a list with the credential's bit unset whose proof verifies against a DID document the vector supplies.
+Each list is the credential issuer's list in all but one respect: another DID issued and signed it, its `statusPurpose` is `suspension`, its `statusPurpose` is the array `["suspension", "revocation"]`, or it states another URL as its `id`.
+A verifier that checks only that the list's proof verifies reports the credential active and passes a vector it must reject (L3.11).
+The list's `issuer` must be the keeper of the entry's URL (SPEC.md §6.6), its `statusPurpose` must include the entry's, and its `id` must be, byte for byte, the URL it was fetched from.
+A `StatusList2021Credential` states its `statusPurpose` as one string (Verifiable Credentials Status List v2021 §2.2), so the list of `purpose-array-2021-list` is refused although its array includes the entry's `revocation`, while a verifier reads the same array on the Bitstring Status List of `purpose-array-list`.
+
+**On `status-list/root-no-id-list` and `configured-issuer-no-id-list` (suite ≥ 1.4.0).**
+Each carries a revoked credential and, at its `statusListCredential` URL, a list with the credential's bit unset whose proof verifies, signed by the issuer the vector has keep the credential's list URL, and re-issued without an `id`.
+In `root-no-id-list` a delegate of the list's issuer issued the credential, and the vector's `trustedRootIssuer` pins the list's issuer as the root of the credential's chain, with the list's URL as `trustedRootStatusList`, the URL the root's own credential names.
+In `configured-issuer-no-id-list` the vector's `statusListIssuers` binds the list's URL to the list's issuer, the DID that signs `foreign-issuer-list`.
+Only the `id` binds a list to the URL it is served at, so a list from an issuer other than the credential's must state it (SPEC.md §6.6), and a verifier that reads either list reports the credential active and passes a vector it must reject (L3.11).
+A verifier without the configuration a vector carries refuses the list for its issuer, which fails closed as well.
+
+**On `status-list/no-id-list` and `purpose-array-list` (suite ≥ 1.4.0).**
+Each carries an active credential and a list its issuer signed, in a form W3C Bitstring Status List v1.0 §2.2 allows.
+In `no-id-list` the issuer's list is re-issued without an `id`, which a list the credential's own issuer signed may leave out where no other root is pinned and the configuration names no other issuer.
+In `purpose-array-list` the credential's `credentialStatus` is a `BitstringStatusListEntry`, and its list a `BitstringStatusListCredential` whose `statusPurpose` is the array `["suspension", "revocation"]`.
+The credential's bit is unset and the list's proof verifies, so a verifier that refuses either form denies an active credential and fails a vector it must pass (L3.11).
+
 ### Running the reference implementation
 
 ```bash
@@ -505,9 +530,33 @@ pnpm run conformance:generate
 Re-running mints fresh keys but preserves every positive/negative relationship by
 construction.
 The key-relationship files have their own generator, `pnpm run conformance:generate:key-relationship`, which also mints fresh keys.
+`status-list-authority.json` has its own generator too, `pnpm run conformance:generate:status-authority`, which also mints fresh keys and writes no other file.
 Because fresh keys change the committed bytes, regenerated output MUST NOT be committed over an existing `suiteVersion` (see [Suite versioning and immutability](#suite-versioning-and-immutability)).
 
 ### Suite versioning and immutability
+
+Suite 1.4.0 adds 29 status-list vectors, for 97 vectors total: eight in `status-list.json` and 21 in a new file, `status-list-authority.json`.
+`status-list.json` is regenerated in one run, so its three earlier vectors are signed again with the same ids, cases and expected outcomes; the other 65 vector objects of suite 1.3.0 are unchanged.
+Nine of the 21 hold the keeper rule, over one credential, one list URL and a clear list that states its `id`, so only the list's signer and the configuration differ.
+`pinned-root-list` requires reading the pinned root's list at the URL `trustedRootStatusList` says the root's own credential names, and `root-list-at-issuer-url` requires refusing the same list when the root's credential names another URL, since the URL is then the credential issuer's.
+`configured-service-list` and `configured-origin-list` require reading the list of a service `statusListIssuers` binds the exact URL, or its `https:` origin, to.
+`lookalike-origin-list` requires refusing it when the bound origin is only a prefix of the URL's host, an origin being matched on the bytes as written and continued only by `/`, `?` or `#`.
+`unconfigured-service-list` and `service-list-at-unbound-url` require refusing it when `statusListIssuers` binds nothing, or another URL, to the service.
+`issuer-list-at-bound-url` requires refusing the credential's own issuer's list at a URL bound to the service, and `configured-over-root-list` the pinned root's list at a URL that its credential names and the configuration binds to the service: the configuration decides first.
+`owner-root-alias-no-id` requires reading a list that the credential's own issuer signed without an `id`, even when the verifier also pins that issuer as the root.
+`pinned-root-own-no-id` requires reading it as well when the vector names the list's URL as the one that root's own credential names, and `pinned-root-no-id-for-delegate` requires refusing the same list for a delegate's credential whose entry names that URL, since the root is not that credential's issuer.
+`owner-no-id-at-pinned-root-url` requires refusing such a list when the verifier pins another root whose credential names the list's URL, which that root then keeps.
+`index-suffix`, `index-fraction`, `index-space` and `index-number` require refusing a signed entry whose `statusListIndex` is not a non-negative decimal string.
+`index-leading-zeros` requires reading an index that opens with 4,300 zeros as the bit its value names.
+`status-size-two-bits` requires refusing a signed entry that states a `statusSize` of 2: its value is set at bits 14 and 15 of its list and the bit at its index, 7, is clear, so an implementation that reads one bit at the index passes it.
+`status-size-zero` requires refusing an entry whose `statusSize` is not an integer greater than zero, over a clear list.
+`status-size-one` requires reading an entry that states a `statusSize` of 1, the size of an entry that states none, from the bit at its index.
+Regenerating `status-list-authority.json` (see [Regenerating the vectors](#regenerating-the-vectors)) changes keys and bytes and still requires the version/manifest process below.
+
+For these status-list vectors, `trustedRootIssuer` and `trustedRootStatusList` are already-authorized context for the supplied credential, not a chain or a root claim to authenticate: an implementation takes the second as the URL a root credential it has verified names.
+The loader refuses a status-list vector whose `trustedRootIssuer` or `trustedRootStatusList` is present and not a non-empty string, or whose `statusListIssuers` is present and not an object that maps non-empty keys to arrays of strings starting with `https://` or `http://`, none of them under two keys, and `status_list.py` refuses the same inputs.
+The category does not test chain admission, or how a verifier finds each hop's issuer and root.
+Passing this category alone does not establish that an implementation authenticates chains.
 
 The committed vector set is immutable at a given `suiteVersion`: the vector bytes may only change together with a `suiteVersion` bump.
 `conformance/SUITE-MANIFEST.json` pins the current set (`suiteVersion`, `vectorSetHash`, `vectorCount`, per-file hashes) and is the anchor CI verifies against.
@@ -637,6 +686,13 @@ reference. It verifies the positive `org.kya-os/proof.v1` vector and independent
 re-derives the audit event's RFC 8785 bytes, domain-separated digest, RFC 9162
 root, inclusion path, and consistency path. Ed25519 uses the RFC 8032 reference
 without `pip install`.
+It also checks every positive and negative status-list vector via `status_list.py`, independently deriving signer authority, exact id/purpose binding, both credential and list signatures, bounded gzip decoding, and the indexed bit.
+This reader is restricted to the vectors' Ed25519Signature2020/JCS, one-bit profile; it is not a general VC engine and does not authenticate a chain from `trustedRootIssuer`.
+The raw-chain differential test, `conformance/__tests__/status-list-independent.test.ts`, compares 13,608 cases against that Python authority predicate, including root-pin mismatch, role collisions, mapping direction, malformed values and exact URL binding.
+This finite partition complements the 56,700-case decision table; neither is an exhaustive proof.
+That test, `status-list-configuration.test.ts`, and `crosslang-verifier.test.ts`, which runs this script in isolated mode (`-I`), use the first of `python3`, `python` and `py -3` that runs Python 3.9 or later.
+Without one, they fail when the `CI` environment variable is set, and are skipped with the reason otherwise.
+The published runtime gains no dependency.
 
 ```bash
 python3 conformance/verify.py       # npm run conformance:verify:crosslang
@@ -653,10 +709,14 @@ KYA-OS cross-language verifier (Python 3.x, stdlib-only)
   [PASS] RFC 9421 httpSig over the signature base
   [PASS] RFC 7638 cnf.jkt thumbprint fusion
   [PASS] audit event JCS canonical bytes
+  [PASS] full JCS value space (fractions, exponents, non-BMP keys)
   [PASS] domain-separated audit event digest
   [PASS] RFC 9162 audit Merkle root
   [PASS] RFC 9162 audit inclusion proof
   [PASS] RFC 9162 audit consistency proof
+  [PASS] status-list/pinned-root-list
+  [PASS] status-list/configured-service-list
+  ... one result for every status-list vector ...
 RESULT: PASS — cross-language JCS + Ed25519 parity confirmed
 ```
 

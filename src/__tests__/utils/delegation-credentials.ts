@@ -1,14 +1,14 @@
 /**
  * Delegation credentials for the tests of the delegation verifier and the delegation gate: an
- * issuer's key, and a delegation it signs with a Data Integrity proof or as a VC-JWT. Every one is
- * signed with a real Ed25519 key.
+ * issuer's key, a delegation it signs with a Data Integrity proof or as a VC-JWT, and a credential
+ * signed again, changed or by another key. Every one is signed with a real Ed25519 key.
  */
 
 import { NodeCryptoProvider } from './node-crypto-provider.js';
 import { createRealSigningFunction } from '../audit/helpers/crypto-helpers.js';
 import { DelegationCredentialIssuer } from '../../delegation/vc-issuer.js';
 import { canonicalizeJSON, completeVCJWT, createUnsignedVCJWT } from '../../delegation/utils.js';
-import { wrapDelegationAsVC, type DelegationCredential, type DelegationRecord } from '../../types/protocol.js';
+import { wrapDelegationAsVC, type CredentialStatus, type DelegationCredential, type DelegationRecord } from '../../types/protocol.js';
 import type { AgentIdentity } from '../../providers/base.js';
 
 const crypto = new NodeCryptoProvider();
@@ -17,6 +17,12 @@ const crypto = new NodeCryptoProvider();
 export async function keyOf(did: string, fragment: string): Promise<AgentIdentity> {
   const { privateKey, publicKey } = await crypto.generateKeyPair();
   return { did, kid: `${did}#${fragment}`, privateKey, publicKey, type: 'development', createdAt: new Date().toISOString() };
+}
+
+/** The key a test holds as a private JWK, as an identity `did` signs with under the id `kid`. */
+export function keyFromJwk(did: string, kid: string, jwk: { readonly x: string; readonly d: string }): AgentIdentity {
+  const base64 = (text: string): string => Buffer.from(text, 'base64url').toString('base64');
+  return { did, kid, privateKey: base64(jwk.d), publicKey: base64(jwk.x), type: 'development', createdAt: new Date().toISOString() };
 }
 
 const unique = (): string => Math.random().toString(16).slice(2);
@@ -39,21 +45,25 @@ export function delegationRecord(issuerDid: string, overrides: Partial<Delegatio
   };
 }
 
-/** How a test signs a delegation: the delegation (default: one by the key's DID), and the key id it names. */
+/**
+ * How a test signs a delegation: the delegation (default: one by the key's DID), the key id it
+ * names, and the credential's `credentialStatus`, if any.
+ */
 export interface Signing {
   readonly record?: DelegationRecord;
   readonly kid?: string;
+  readonly credentialStatus?: CredentialStatus;
 }
 
 /** `record` as a credential with a Data Integrity proof `key` makes, naming `kid` (default: `key`'s own id). */
 export function signedCredential(
   key: AgentIdentity,
-  { record = delegationRecord(key.did), kid = key.kid }: Signing = {},
+  { record = delegationRecord(key.did), kid = key.kid, credentialStatus }: Signing = {},
 ): Promise<DelegationCredential> {
   return new DelegationCredentialIssuer(
     { getDid: () => record.issuerDid, getKeyId: () => kid, getPrivateKey: () => key.privateKey },
     createRealSigningFunction(crypto, key),
-  ).issueDelegationCredential(record);
+  ).issueDelegationCredential(record, { credentialStatus });
 }
 
 /** A VC-JWT whose envelope `key` signs over `encodedPayload`, with `kid` in its header if given, even empty or not a string. */
@@ -70,18 +80,50 @@ export async function envelope(key: AgentIdentity, encodedPayload: string, kid?:
  */
 export function signedJwt(
   key: AgentIdentity,
-  { record = delegationRecord(key.did), kid, edit = (json) => json }:
-    { record?: DelegationRecord; kid?: unknown; edit?: (json: string) => string } = {},
+  { record = delegationRecord(key.did), kid, credentialStatus, edit = (json) => json }:
+    { kid?: unknown; edit?: (json: string) => string } & Omit<Signing, 'kid'> = {},
 ): Promise<string> {
-  const { payload } = createUnsignedVCJWT(wrapDelegationAsVC(record) as unknown as Record<string, unknown>);
+  const vc = wrapDelegationAsVC(record, { credentialStatus });
+  const { payload } = createUnsignedVCJWT(vc as unknown as Record<string, unknown>);
   return envelope(key, Buffer.from(edit(JSON.stringify(payload))).toString('base64url'), kid);
 }
 
+/**
+ * `credential` with `changes` made to it, and a Data Integrity proof `key` makes over the result
+ * naming `kid` (default: `key`'s own id). `changes` is the members to set, or, to take a member out
+ * or change one in place, a function from the credential without its proof to the one to sign. The proof verifies only under a key of the issuer the
+ * result names, so a test forges a credential by signing one that names another issuer, or another's
+ * key id.
+ */
+export async function resignedCredential(
+  credential: Omit<DelegationCredential, 'proof'>,
+  changes: Partial<Record<keyof DelegationCredential, unknown>> | ((unsigned: Record<string, unknown>) => Record<string, unknown>),
+  key: AgentIdentity,
+  kid: string = key.kid,
+): Promise<DelegationCredential> {
+  const { proof: _proof, ...unsigned } = credential as DelegationCredential;
+  const changed = typeof changes === 'function' ? changes(unsigned) : { ...unsigned, ...changes };
+  const proof = await createRealSigningFunction(crypto, key)(canonicalizeJSON(changed), key.did, kid);
+  return { ...changed, proof } as unknown as DelegationCredential;
+}
+
 /** A delegation by `key`'s DID with `issuer` as its issuer, as written, and a Data Integrity proof `key` makes over it naming `kid`. */
-export async function credentialNaming(key: AgentIdentity, issuer: unknown, kid: string = key.kid): Promise<DelegationCredential> {
-  const unsigned = { ...wrapDelegationAsVC(delegationRecord(key.did)), issuer };
-  const proof = await createRealSigningFunction(crypto, key)(canonicalizeJSON(unsigned), key.did, kid);
-  return { ...unsigned, proof } as unknown as DelegationCredential;
+export function credentialNaming(key: AgentIdentity, issuer: unknown, kid: string = key.kid): Promise<DelegationCredential> {
+  return resignedCredential(wrapDelegationAsVC(delegationRecord(key.did)), { issuer }, key, kid);
+}
+
+/**
+ * `credential`, without its proof, as a VC-JWT whose envelope `key` signs, with `kid` (default:
+ * `key`'s own id) in its header and `claims` set over its payload's.
+ */
+export function credentialJwt(
+  credential: DelegationCredential,
+  key: AgentIdentity,
+  { kid = key.kid, claims = {} }: { kid?: string; claims?: Record<string, unknown> } = {},
+): Promise<string> {
+  const { proof: _proof, ...unsigned } = credential;
+  const { payload } = createUnsignedVCJWT(unsigned);
+  return envelope(key, Buffer.from(JSON.stringify({ ...payload, ...claims })).toString('base64url'), kid);
 }
 
 /** A VC-JWT `key` signs whose claims are `claims` and a delegation by `key`'s DID with `issuer` as its issuer, as written. */

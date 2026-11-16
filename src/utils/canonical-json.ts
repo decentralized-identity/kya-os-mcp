@@ -14,6 +14,8 @@
  * ones, and an array's non-index ones) are ignored, never consulted.
  */
 
+import { isPlainObjectOfThisRealm } from './guards.js';
+
 const encoder = new TextEncoder();
 
 /** RFC 8785 requires invalid Unicode data (unpaired UTF-16 surrogates) to fail. */
@@ -154,8 +156,7 @@ function arrayElements(array: unknown[], s: Serializer): Member[] {
  * and are ignored.
  */
 function objectMembers(object: object, s: Serializer): Member[] {
-  const prototype = Object.getPrototypeOf(object) as object | null;
-  if (prototype !== Object.prototype && prototype !== null) s.fail('non-plain object');
+  if (!isPlainObjectOfThisRealm(object)) s.fail('non-plain object');
 
   const members: Member[] = [];
   for (const key of Reflect.ownKeys(object)) {

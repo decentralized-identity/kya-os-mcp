@@ -23,19 +23,73 @@ describe('parseStatusListIndex', () => {
     expect(parseStatusListIndex('131071')).toBe(131071);
   });
 
+  it('reads leading zeros, however many, as naming no other bit', () => {
+    expect(parseStatusListIndex('0005')).toBe(5);
+    expect(parseStatusListIndex(`${'0'.repeat(4300)}7`)).toBe(7);
+    expect(() => parseStatusListIndex(`${'0'.repeat(4300)}9007199254740992`)).toThrow(/exceeds the safe integer range$/);
+  });
+
   it.each(['0x2A', ' 42', '42 ', '+42', '-1', '1e1', '4.2', '', 'abc'])(
     'rejects non-canonical input %j (fail-closed)',
     (raw) => {
       expect(() => parseStatusListIndex(raw)).toThrow(
-        /canonical non-negative decimal/,
+        /must be a non-negative decimal string/,
       );
     },
   );
+
+  it.each([
+    [7, 'number'],
+    [0, 'number'],
+    [['7'], 'array'],
+    [null, 'null'],
+    [undefined, 'undefined'],
+    [true, 'boolean'],
+    [{ toString: () => '7' }, 'object'],
+    [{ toString: '7' }, 'object'],
+  ])('refuses %j, which is not a string, without converting it', (raw, type) => {
+    expect(() => parseStatusListIndex(raw)).toThrow(
+      `Invalid statusListIndex of type ${type}: must be a non-negative decimal string`,
+    );
+  });
 
   it('rejects values beyond the safe integer range', () => {
     expect(() => parseStatusListIndex('9007199254740992')).toThrow(
       /safe integer range/,
     );
+  });
+
+  it('takes a non-negative safe integer number only when the caller accepts one, as a writer of its own records does', () => {
+    const lenient = { acceptNumber: true };
+    for (const index of [0, 7, Number.MAX_SAFE_INTEGER]) {
+      expect(parseStatusListIndex(index, lenient)).toBe(index);
+      expect(parseStatusListIndex(String(index), lenient)).toBe(index);
+      expect(() => parseStatusListIndex(index)).toThrow(
+        new Error('Invalid statusListIndex of type number: must be a non-negative decimal string'),
+      );
+    }
+    const refused = [-1, 7.5, Number.MAX_SAFE_INTEGER + 1, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, ['7'], '7x'];
+    for (const index of refused) {
+      expect(() => parseStatusListIndex(index, lenient)).toThrow(
+        /^Invalid statusListIndex .*: must be a non-negative safe integer or a non-negative decimal string$/,
+      );
+    }
+    expect(() => parseStatusListIndex('9007199254740992', lenient)).toThrow(/safe integer range/);
+  });
+
+  // Whoever signed the entry wrote its index, so a refusal quotes it as any value the other party chose.
+  it('quotes a string index it refuses as a JSON string of at most 64 characters, so the reason is bounded and well-formed', () => {
+    const refusals: [string, string][] = [
+      [
+        `${'7'.repeat(10)}x${'\u{1F600}'.repeat(5000)}\uD800`,
+        `Invalid statusListIndex "${'7'.repeat(10)}x${'\u{1F600}'.repeat(53)}"...: must be a non-negative decimal string`,
+      ],
+      ['7\n\uDE00', 'Invalid statusListIndex "7\\n\\ude00": must be a non-negative decimal string'],
+      ['9'.repeat(20_000), `statusListIndex "${'9'.repeat(64)}"... exceeds the safe integer range`],
+    ];
+    for (const [raw, refusal] of refusals) {
+      expect(() => parseStatusListIndex(raw)).toThrow(new Error(refusal));
+    }
   });
 });
 

@@ -20,10 +20,12 @@
  */
 
 import { z } from 'zod';
-import { Did, type BitstringStatusListEntry } from './schema.js';
+import { issuerOf } from '../utils/guards.js';
+import { Did, statusEntrySizeShape, type BitstringStatusListEntry } from './schema.js';
 import {
   evaluateRevocationChain,
   type BitstringRevocationChecker,
+  type RevocationChainEntry,
   type RevocationChainResult,
 } from './revocation.js';
 
@@ -67,6 +69,7 @@ export const DelegationCredentialStatusSchema = z.object({
   statusPurpose: z.string().optional(),
   statusListIndex: z.string().min(1),
   statusListCredential: z.string().min(1),
+  ...statusEntrySizeShape,
 });
 
 /** Data Integrity proof, `eddsa-jcs-2022` cryptosuite (verified by a separate injected seam). */
@@ -108,9 +111,13 @@ export type DelegationCredentialStatus = z.infer<typeof DelegationCredentialStat
 export type DelegationCredential = z.infer<typeof DelegationCredentialSchema>;
 export type DelegationChain = readonly DelegationCredential[];
 
-/** The issuer (delegator) DID, whether `issuer` is a bare string or an `{id}` object. */
+/**
+ * The issuer (delegator) DID, whether `issuer` is a bare string or an `{id}` object, read as
+ * {@link issuerOf} reads any `issuer` member. The schema admits only those two forms, each naming a
+ * DID, so a `DelegationCredential` always names one.
+ */
 export function issuerDid(vc: DelegationCredential): string {
-  return typeof vc.issuer === 'string' ? vc.issuer : vc.issuer.id;
+  return issuerOf(vc.issuer) as string;
 }
 /** The delegate DID granted this capability (`invoker`, falling back to `controller`). */
 export function invokerDid(vc: DelegationCredential): string | undefined {
@@ -126,11 +133,48 @@ export function leafInvokerOf(chain: DelegationChain): string | undefined {
   const leaf = chain[chain.length - 1];
   return leaf ? invokerDid(leaf) : undefined;
 }
-/** Project a hop's `credentialStatus` onto the revocation-seam entry shape (if present). */
+/**
+ * Project a hop's `credentialStatus` onto the revocation-seam entry shape (if present), with the
+ * `statusSize` it states, so that a checker refuses an entry it cannot read from one bit.
+ */
 export function statusEntryOf(vc: DelegationCredential): BitstringStatusListEntry | undefined {
   const status = vc.credentialStatus;
   if (!status) return undefined;
-  return { statusListCredential: status.statusListCredential, statusListIndex: status.statusListIndex };
+  return {
+    statusListCredential: status.statusListCredential,
+    statusListIndex: status.statusListIndex,
+    ...(status.statusSize === undefined ? {} : { statusSize: status.statusSize }),
+  };
+}
+/**
+ * Every hop's status entry, root to leaf, for {@link evaluateRevocationChain}, with the
+ * `statusPurpose` the hop states, so a checker of another purpose refuses it rather than reading it,
+ * and the hop's position in the chain, the root being 0, which a refusal names it by.
+ * Each is paired with the hop's issuer DID, read as {@link issuerOf} reads an `issuer` member, and,
+ * when `trustedRootIssuer` is the chain's own root issuer, with that root and the status-list URL
+ * the root hop's own `credentialStatus` names, when it has one: pass it only for a root the verifier
+ * pins (`trustedRootIssuers` or `resourceOwner`). The root's list then speaks for a hop whose entry
+ * names that same URL, and the checker holds every other hop's list to the hop's issuer, or to the
+ * issuer its configuration binds the URL to. The URL is read from the chain as presented, so it is
+ * the root's word only once the root hop's proof has verified, which every caller in this package
+ * requires before it accepts a chain. A hop whose `issuer` names no DID is paired with no issuer, so
+ * a checker that holds lists to an issuer refuses the hop. Hops without a `credentialStatus` are
+ * skipped.
+ */
+export function revocationEntriesOf(chain: DelegationChain, trustedRootIssuer?: string): RevocationChainEntry[] {
+  const root = issuerOf(chain[0]?.issuer);
+  const rootList = chain[0] === undefined ? undefined : statusEntryOf(chain[0])?.statusListCredential;
+  const pinned =
+    trustedRootIssuer !== undefined && trustedRootIssuer === root
+      ? { trustedRootIssuer, ...(rootList === undefined ? {} : { trustedRootStatusList: rootList }) }
+      : {};
+  return chain.flatMap((vc, position) => {
+    const entry = statusEntryOf(vc);
+    if (entry === undefined) return [];
+    const statusPurpose = vc.credentialStatus?.statusPurpose;
+    const stated = statusPurpose === undefined ? entry : { ...entry, statusPurpose };
+    return [{ entry: stated, credentialIssuer: issuerOf(vc.issuer), position, ...pinned }];
+  });
 }
 
 /** A non-negative decimal split into its digit strings, or `undefined` when it is not one. */
@@ -344,7 +388,11 @@ export interface DelegationChainEvaluation extends DelegationChainResult {
 
 /** Validate structure AND revocation: run {@link validateDelegationChain}, then (only if it passes —
  *  fail-closed) cascade the injected {@link BitstringRevocationChecker} root→leaf via
- *  {@link evaluateRevocationChain}. A revoked ancestor invalidates the subtree. */
+ *  {@link evaluateRevocationChain}, naming each hop's issuer and, when `ctx.resourceOwner` pins it, the
+ *  chain's root with the status-list URL the root hop's own entry names. A revoked ancestor
+ *  invalidates the subtree. No hop proof is checked here, so those issuers, and that URL, are only
+ *  as authentic as the proofs the caller verifies ({@link verifyRequestDelegation} verifies them
+ *  before revocation). */
 export async function evaluateDelegationChain(
   chain: DelegationChain,
   check: BitstringRevocationChecker,
@@ -352,10 +400,10 @@ export async function evaluateDelegationChain(
 ): Promise<DelegationChainEvaluation> {
   const structural = validateDelegationChain(chain, ctx);
   if (!structural.ok) return { ...structural, fresh: false };
-  const entries = chain
-    .map(statusEntryOf)
-    .filter((entry): entry is BitstringStatusListEntry => entry !== undefined);
-  const revocation: RevocationChainResult = await evaluateRevocationChain(entries, check);
+  const revocation: RevocationChainResult = await evaluateRevocationChain(
+    revocationEntriesOf(chain, ctx.resourceOwner),
+    check,
+  );
   return {
     ...structural,
     ok: structural.ok && revocation.ok,

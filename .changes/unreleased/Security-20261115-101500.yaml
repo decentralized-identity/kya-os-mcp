@@ -1,0 +1,21 @@
+kind: Security
+body: |-
+    **A Card or chain revocation checker whose answer is not a literal
+    boolean no longer passes a credential.** `evaluateRevocationChain`,
+    `evaluateDelegationChain`, `verifyRequestDelegation`,
+    `requireDelegation` and `verifyCard` read a
+    `BitstringRevocationChecker`'s `revoked` and `fresh` by their
+    truthiness, so a custom checker that answered `{}` or `{ revoked: 0 }`
+    let a revoked hop or Card through, and `"false"` revoked one. They now
+    share one reader with the delegation side: only a literal `revoked:
+    false` passes, only a literal `true` revokes, only a literal `fresh:
+    true` is fresh, and any other answer, one whose getter throws
+    included, refuses the hop with a reason that says what could not be
+    read. `validateDelegationChain` returns that refusal where it rejected
+    on a throwing getter. 1.22.0 read the Card side this way. The checker
+    `createRevocationChecker` builds answers booleans and was not
+    affected. `CascadingRevocationManager` reads its status list's answer
+    the same way. UPGRADING.md, "A `BitstringRevocationChecker` whose
+    answer is not `{ revoked, fresh }` with literal booleans", has the
+    detail.
+time: 2026-11-15T10:15:00.000000-06:00

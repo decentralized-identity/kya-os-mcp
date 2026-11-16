@@ -96,10 +96,14 @@ export interface DIDResolver {
   /**
    * Why this resolver's last resolution of `did` found no document, or `undefined` when it found
    * one, was never asked, or cannot say. Optional: the verifier reads a resolver without it as
-   * before. The library's own resolvers have it, and when one refuses a credential as `Could not
-   * resolve issuer DID: "<did>"` the verifier codes the refusal by the failure's `cause`, and appends
-   * its `detail` in parentheses where the cause is `host_refused`, `deadline_exceeded` or
-   * `invalid_document`, which tell the party that presented the credential nothing it does not know.
+   * before. These resolvers of the library have it: `DidWebResolver` and `createDidWebResolver`,
+   * `createDidKeyResolver`, `DidCheqdResolver`, `createDidCheqdResolver` and `cheqdResolver`, and
+   * the resolver the delegation middleware builds. `RuntimeFetchProvider.resolveDID` is not a
+   * resolver of this kind and reports none. When the verifier refuses a credential as `Could not
+   * resolve issuer DID: "<did>"` over a resolver that has it, it codes the refusal by the
+   * failure's `cause`, and appends its `detail` in parentheses where the cause is `host_refused`,
+   * `deadline_exceeded` or `invalid_document`, which tell the party that presented the credential
+   * nothing it does not know.
    * An `unavailable` failure's detail, what the host answered, is not shown: the library's resolvers
    * log it for the operator. A resolver that wraps one of them may pass it on, as
    * `lastFailure: (did) => inner.lastFailure?.(did)`.
@@ -116,8 +120,10 @@ export interface DIDResolver {
  *   rule, on the document's URL or on a redirect.
  * - `deadline_exceeded`: no document arrived within the resolver's deadline.
  * - `unavailable`: the host could not be reached, or answered with something other than a document:
- *   an HTTP error, no body, too many bytes, or text that is not JSON.
- * - `invalid_document`: a document was read, but it is not a valid document of this DID.
+ *   an HTTP error, no body, or text that is not JSON.
+ * - `invalid_document`: what was read is not a valid document of this DID, more bytes than a
+ *   document may hold included; or the DID is one the resolver can never resolve, a did:key whose
+ *   public key does not decode, or a DID of a method it does not serve.
  */
 export type DidResolutionFailureCause = 'host_refused' | 'deadline_exceeded' | 'unavailable' | 'invalid_document';
 

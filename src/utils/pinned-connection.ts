@@ -26,22 +26,22 @@ export interface PinningSeams {
  * the runtime resolves names ({@link runtimeResolvesNames}), and `seams.transport`, or else
  * SafeFetch's default transport, which pins the connection through `node:https` where it loads. It
  * resolves to `undefined` where no lookup was given and the runtime resolves no name, as in a
- * Worker or a browser, or the application routes the runtime's `fetch` through a proxy or another
- * dispatcher of its own (`./routed-fetch`), and the rule then refuses hosts by the URL alone.
+ * Worker or a browser, or the runtime's `fetch` sends the request for the URL it is asked about
+ * through a proxy (`./routed-fetch`), and the rule then refuses that host by the URL alone.
  */
-export function addressPinning(seams: PinningSeams = {}): () => Promise<AddressPinning | undefined> {
+export function addressPinning(seams: PinningSeams = {}): (url: string) => Promise<AddressPinning | undefined> {
   const transport = seams.transport ?? selectDefaultTransport();
   if (seams.lookup !== undefined) {
     const given: AddressPinning = { lookup: seams.lookup, transport };
     return () => Promise.resolve(given);
   }
   const runtime: AddressPinning = { lookup: defaultLookup, transport };
-  return async () => {
+  return async (url) => {
     if (!(await runtimeResolvesNames())) {
       warnHeldToUrlAlone('this runtime resolves no host name, as its node:dns is missing or not implemented');
       return undefined;
     }
-    return fetchRoutedThrough() === undefined ? runtime : undefined;
+    return fetchRoutedThrough(url) === undefined ? runtime : undefined;
   };
 }
 

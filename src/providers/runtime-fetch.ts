@@ -131,7 +131,9 @@ export interface RuntimeFetchProviderOptions {
    * default, `nodeHttpsTransport`, which pins the connection to that address,
    * where `node:https` loads. A serverless runtime where the pinned path is
    * present but broken passes `fetchTransport`, which connects by name after
-   * the check, as SafeFetch's options say.
+   * the check, as SafeFetch's options say. So does an application whose global
+   * `fetch` goes through a proxying dispatcher of its own, other than undici's
+   * `ProxyAgent` and `EnvHttpProxyAgent`, which the provider reads itself.
    */
   transport?: SafeFetchTransport;
   /**
@@ -167,7 +169,7 @@ export class RuntimeFetchProvider extends FetchProvider {
   /** Whether `development` is on, of all the opt-outs the one that also reads a status list over http from a private or local host. */
   private readonly development: boolean;
   private readonly timeoutMs: number;
-  private readonly pinning: () => Promise<AddressPinning | undefined>;
+  private readonly pinning: (url: string) => Promise<AddressPinning | undefined>;
   private readonly trustedRootIssuers: readonly string[] | undefined;
   private readonly statusListIssuers: StatusListIssuers | undefined;
 
@@ -190,8 +192,8 @@ export class RuntimeFetchProvider extends FetchProvider {
    * whose `fetch` is its own makes its own connections, offers none, and
    * says once that its reads are held to the URL alone.
    */
-  readonly [ADDRESS_PINNING] = (): Promise<AddressPinning | undefined> => {
-    if (this.fetch === RuntimeFetchProvider.prototype.fetch) return this.pinning();
+  readonly [ADDRESS_PINNING] = (url: string): Promise<AddressPinning | undefined> => {
+    if (this.fetch === RuntimeFetchProvider.prototype.fetch) return this.pinning(url);
     warnHeldToUrlAlone(`${providerName(this, "A subclass of RuntimeFetchProvider")} has a fetch of its own, which makes its own connections`);
     return Promise.resolve(undefined);
   };

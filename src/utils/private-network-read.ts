@@ -104,7 +104,7 @@ function heldRequest(transport: PrivateNetworkTransport, read: PrivateNetworkRea
     // An IP literal names its own address, which the rule has checked.
     const form = hostForm(hostname);
     if (admitted || form === undefined || 'literal' in form) return transport.fetch(url, init);
-    const pinning = await pinningOf(transport);
+    const pinning = await pinningOf(transport, url);
     if (pinning === undefined) return transport.fetch(url, init);
     const pins = await resolveChecked(form.name, pinning.lookup, lookupRefusals(redirected));
     init.signal?.throwIfAborted();
@@ -123,12 +123,12 @@ function takesHttp(read: PrivateNetworkRead, hostname: string, request: { named:
 }
 
 /**
- * How `transport` connects a request to an address the read checks, or `undefined` where it does not,
- * as for a `FetchProvider` that offers none, which is said once.
+ * How `transport` connects the request for `url` to an address the read checks, or `undefined` where
+ * it does not, as for a `FetchProvider` that offers none, which is said once.
  */
-async function pinningOf(transport: PrivateNetworkTransport): Promise<AddressPinning | undefined> {
+async function pinningOf(transport: PrivateNetworkTransport, url: string): Promise<AddressPinning | undefined> {
   const offered = transport[ADDRESS_PINNING];
-  if (offered !== undefined) return offered();
+  if (offered !== undefined) return offered(url);
   warnHeldToUrlAlone(`${providerName(transport, 'A FetchProvider')} has a fetch of its own, which makes its own connections`);
   return undefined;
 }

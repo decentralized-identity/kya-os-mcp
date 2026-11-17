@@ -22,8 +22,9 @@ export interface AddressPinning {
 }
 
 /**
- * The key under which a transport offers `./private-network-read` its {@link AddressPinning}: a function that
- * resolves to it where the runtime resolves names, and to `undefined` where it does not. Only a
+ * The key under which a transport offers `./private-network-read` its {@link AddressPinning}: a function of
+ * the URL a request is for, which resolves to it where the runtime resolves names and the request
+ * goes straight to its host, and to `undefined` where it does not. Only a
  * transport that makes its own connections offers one, as `RuntimeFetchProvider` does while its
  * `fetch` is the runtime's own. It is registered by name, so every copy of the package the process
  * loads reads the one key.
@@ -39,5 +40,5 @@ export interface PrivateNetworkTransport extends FetchPort {
    * ({@link ADDRESS_PINNING}). A transport without it is read through its own `fetch`, and the
    * private-network rule refuses its hosts by the URL alone.
    */
-  readonly [ADDRESS_PINNING]?: () => Promise<AddressPinning | undefined>;
+  readonly [ADDRESS_PINNING]?: (url: string) => Promise<AddressPinning | undefined>;
 }

@@ -16,7 +16,7 @@ import type {
 } from '../types/protocol.js';
 import { createNeedsAuthorizationError } from '../types/protocol.js';
 import { logger } from '../logging/index.js';
-import { readDelegationVerdict } from './delegation-verdict.js';
+import { readDelegationVerdict, type DelegationVerdict } from './delegation-verdict.js';
 import type { AgentReputation, DelegationVerifier, VerifyDelegationResult, VerifyOrHintsResult } from './types.js';
 
 export type { AgentReputation, DelegationVerifier, VerifyDelegationResult, VerifyOrHintsResult };
@@ -276,7 +276,7 @@ export async function verifyOrHints(
     }
   }
 
-  let delegationResult: VerifyDelegationResult;
+  let delegationResult: DelegationVerdict;
 
   try {
     delegationResult = readDelegationVerdict(await config.delegationVerifier.verify(agentDid, scopes));

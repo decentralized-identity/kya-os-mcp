@@ -5,15 +5,14 @@
  */
 
 import type { DelegationRecord, NeedsAuthorizationError } from '../types/protocol.js';
-import type { RefusalCoding } from '../delegation/vc-verifier.types.js';
 import type { RefusalCode } from '../refusal-codes.js';
 
 /**
- * What a `DelegationVerifier` answers, and what the handshake reads it as. A refusal may carry its
- * `code`, a code of `REFUSAL_CODES`, which the handshake hands to the operator beside its reason;
- * one that states none is `delegation_invalid`. Its `transient` is taken from the code.
+ * What a `DelegationVerifier` answers. A refusal may carry its `code`, a code of `REFUSAL_CODES`,
+ * which the handshake hands to the operator beside its reason; one that states none, or a string
+ * that is no code of the catalog, is `delegation_invalid`. Its `transient` is taken from the code.
  */
-export interface VerifyDelegationResult extends RefusalCoding {
+export interface VerifyDelegationResult {
   valid: boolean;
   delegation?: DelegationRecord;
   credential?: {
@@ -40,6 +39,13 @@ export interface VerifyDelegationResult extends RefusalCoding {
   };
   reason?: string;
   cached?: boolean;
+  /**
+   * The code of a refusal. Typed `string`, so a code read from a variable or from JSON compiles;
+   * the handshake reads only a code of `REFUSAL_CODES`.
+   */
+  code?: string;
+  /** Not read: the handshake takes whether a refusal is transient from its code. */
+  transient?: boolean;
 }
 
 export interface DelegationVerifier {

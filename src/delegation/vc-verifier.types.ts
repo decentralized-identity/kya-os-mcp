@@ -235,7 +235,8 @@ export interface StatusCheckResult extends RefusalCoding {
  * which only untyped code can give, leaves it unverified as `runtime_error`. So does a verifier that
  * has not answered within the verifier's `dependencyTimeoutMs`, 5,000 ms by default, as
  * `deadline_exceeded`. A refusal is `invalid_proof` unless it names another code of the catalog as
- * its `code`.
+ * its `code`, which is typed `string`, so a code read from a variable or from JSON compiles; any
+ * other string is read as no code.
  */
 export interface SignatureVerificationFunction {
   (
@@ -244,6 +245,6 @@ export interface SignatureVerificationFunction {
   ): Promise<{
     valid: boolean;
     reason?: string;
-    code?: RefusalCode;
+    code?: string;
   }>;
 }

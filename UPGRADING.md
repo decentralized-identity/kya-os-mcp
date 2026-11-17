@@ -20,6 +20,7 @@ The presenter is told only that the DID or the list could not be read, with the 
 | Serve a status list over http | Serve it over https. | A status-list read, and each of its redirects, takes https; http is read only from a private or local host that `allowPrivateNetworkHosts` or `development` admits. |
 | Stub the global `fetch` in tests that read through `RuntimeFetchProvider` | Pass `lookup` and `transport: fetchTransport`, or a `FetchProvider` of your own. | Reads no longer reach the global `fetch` unless the provider's lookup says the host is public. |
 | Run on a serverless runtime where the pinned connection fails | Pass `transport: fetchTransport`. | It connects by name after the check, as `SafeFetch`'s option does. |
+| Route the global `fetch` through a proxy, with undici's `setGlobalDispatcher(new ProxyAgent(...))` or Node 24's `NODE_USE_ENV_PROXY=1` and `HTTPS_PROXY`, or serve tests through a global `MockAgent` | Nothing, but have the proxy refuse private and local addresses. | Reads go through `fetch` and the proxy, as on 1.23.0, held to the URL alone, and the provider warns once. |
 | Keep a pinned root's status list on a private host | Pass `verifyHopProof` to `evaluateDelegationChain`; `verifyRequestDelegation`, `requireDelegation` and `verifyCard` need nothing. | `createRevocationChecker` reads the list the root's own credential names on any host, pinned, once that credential's proof has verified, and reads the lists `statusListIssuers` binds on any host too. |
 
 ```ts

@@ -7,6 +7,7 @@
  */
 
 import type { AddressPinning } from './fetch-port.js';
+import { fetchRoutedThrough } from './routed-fetch.js';
 import { defaultLookup, runtimeResolvesNames, selectDefaultTransport } from './safe-fetch-transports.js';
 import type { DnsAddress, DnsLookup, RawResponse, SafeFetchTransport } from './safe-fetch-types.js';
 
@@ -21,7 +22,8 @@ export interface PinningSeams {
  * the runtime resolves names ({@link runtimeResolvesNames}), and `seams.transport`, or else
  * SafeFetch's default transport, which pins the connection through `node:https` where it loads. It
  * resolves to `undefined` where no lookup was given and the runtime resolves no name, as in a
- * Worker or a browser, and the rule then refuses hosts by the URL alone.
+ * Worker or a browser, or the application routes the runtime's `fetch` through a proxy or another
+ * dispatcher of its own (`./routed-fetch`), and the rule then refuses hosts by the URL alone.
  */
 export function addressPinning(seams: PinningSeams = {}): () => Promise<AddressPinning | undefined> {
   const transport = seams.transport ?? selectDefaultTransport();
@@ -30,7 +32,7 @@ export function addressPinning(seams: PinningSeams = {}): () => Promise<AddressP
     return () => Promise.resolve(given);
   }
   const runtime: AddressPinning = { lookup: defaultLookup, transport };
-  return async () => ((await runtimeResolvesNames()) ? runtime : undefined);
+  return async () => ((await runtimeResolvesNames()) && fetchRoutedThrough() === undefined ? runtime : undefined);
 }
 
 /** One request through a pinned transport. */

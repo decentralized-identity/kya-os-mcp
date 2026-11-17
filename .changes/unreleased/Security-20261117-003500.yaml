@@ -1,0 +1,10 @@
+kind: Security
+body: |-
+    **A proxy that carries the global fetch carries did:web and status-list
+    reads again.** Where the global `fetch` goes through a proxy dispatcher,
+    such as undici's `ProxyAgent` or the one Node 24 installs under
+    `NODE_USE_ENV_PROXY`, `RuntimeFetchProvider` reads through it as 1.23.0
+    did, held to the URL alone, and warns once that the proxy must refuse
+    private addresses, instead of resolving the host itself and going
+    around the proxy. See UPGRADING.md.
+time: 2026-11-17T00:35:00.000000-06:00

@@ -58,10 +58,10 @@ export const REFUSAL_CODES = Object.freeze({
   /**
    * The DID of a credential's issuer or of a status list's signer, or the document resolved for it,
    * is not valid: the DID or the key id is over its length limit, the DID is a did:key whose public
-   * key does not decode, a did:web DID that names no URL or a DID of a method no resolver of the
-   * verifier serves, the document is over a limit, its byte limit included, is not plain JSON data or
-   * is not a document of that DID, or the key it lists for the proof is not a usable Ed25519 public
-   * key.
+   * key does not decode, a did:web DID that names no URL or a DID of a method none of the delegation
+   * gate's resolvers serves, the document is over a limit, its byte limit included, is not plain
+   * JSON data or is not a document of that DID, or the key it lists for the proof is not a usable
+   * Ed25519 public key.
    */
   did_invalid: 'did_invalid',
   /**

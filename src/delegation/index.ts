@@ -8,6 +8,7 @@
 export * from './vc-issuer.js';
 export * from './vc-verifier.js';
 export { REFUSAL_CODES, isRefusalCode, isTransientRefusal, type RefusalCode } from '../refusal-codes.js';
+export { RefusalError } from '../utils/refusal.js';
 export * from './status-cache.js';
 export * from './verification-method-key.js';
 export * from './vc-jwt-verify.js';

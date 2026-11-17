@@ -9,7 +9,7 @@ import * as root from '../index.js';
 import * as card from '../card/index.js';
 import * as delegation from '../delegation/index.js';
 import { KYA_OS_ERROR_CODES } from '../errors.js';
-import { REFUSAL_CODES, isRefusalCode, isTransientRefusal, type RefusalCode } from '../index.js';
+import { REFUSAL_CODES, RefusalError, isRefusalCode, isTransientRefusal, type RefusalCode } from '../index.js';
 
 /** The codes that say the verifier could not decide, because a dependency failed. */
 const TRANSIENT: readonly RefusalCode[] = ['did_unavailable', 'status_unavailable', 'deadline_exceeded', 'runtime_error'];
@@ -58,6 +58,7 @@ describe('the refusal code catalog', () => {
       expect(entry['REFUSAL_CODES']).toBe(REFUSAL_CODES);
       expect(entry['isRefusalCode']).toBe(isRefusalCode);
       expect(entry['isTransientRefusal']).toBe(isTransientRefusal);
+      expect(entry['RefusalError']).toBe(RefusalError);
     }
   });
 });

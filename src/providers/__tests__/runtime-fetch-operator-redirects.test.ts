@@ -45,11 +45,12 @@ const transport: SafeFetchTransport = async (url) => {
   return { status: 200, headers: { get: () => null }, text: async () => JSON.stringify(LIST) };
 };
 
-/** The runtime's `fetch` serving `routes`. */
+/** The runtime's `fetch` serving `routes`, looked up by own key alone, and 404 for any other URL. */
 function serving(routes: Record<string, () => Response>) {
+  const served = new Map(Object.entries(routes));
   vi.stubGlobal('fetch', async (url: string) => {
     fetched.push(url);
-    return routes[url]?.() ?? new Response('not found', { status: 404 });
+    return served.get(url)?.() ?? new Response('not found', { status: 404 });
   });
 }
 

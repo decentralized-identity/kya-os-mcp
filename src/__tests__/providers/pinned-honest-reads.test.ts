@@ -34,24 +34,32 @@ const LIST = {
   credentialSubject: { type: 'StatusList2021', encodedList: 'H4sIAAAAAAAA' },
 };
 
-/** Each path's body and the encoding it is served in, whatever the request asked for. */
-const ROUTES: Record<string, () => [string, Buffer]> = {
-  '/.well-known/did.json': () => ['gzip', gzipSync(JSON.stringify({ '@context': 'https://www.w3.org/ns/did/v1', id: didOf(port) }))],
-  '/list': () => ['gzip', gzipSync(JSON.stringify(LIST))],
-  '/x-gzip': () => ['x-gzip', gzipSync('{"ok":true}')],
-  '/plain': () => ['identity', Buffer.from('{"ok":true}')],
-  '/bomb': () => ['gzip', gzipSync(' '.repeat(2 * 1024 * 1024))],
-  '/brotli': () => ['br', brotliCompressSync('{"ok":true}')],
-  '/twice': () => ['gzip, gzip', gzipSync(gzipSync('{"ok":true}'))],
-  '/not-gzip': () => ['gzip', Buffer.from('{"ok":true}')],
-};
+/**
+ * Each path's body and the encoding it is served in, whatever the request asked for. A `Map`, so a
+ * request's path names one of these routes or none, never a property every object has.
+ */
+const ROUTES: ReadonlyMap<string, () => [string, Buffer]> = new Map([
+  ['/.well-known/did.json', () => ['gzip', gzipSync(JSON.stringify({ '@context': 'https://www.w3.org/ns/did/v1', id: didOf(port) }))]],
+  ['/list', () => ['gzip', gzipSync(JSON.stringify(LIST))]],
+  ['/x-gzip', () => ['x-gzip', gzipSync('{"ok":true}')]],
+  ['/plain', () => ['identity', Buffer.from('{"ok":true}')]],
+  ['/bomb', () => ['gzip', gzipSync(' '.repeat(2 * 1024 * 1024))]],
+  ['/brotli', () => ['br', brotliCompressSync('{"ok":true}')]],
+  ['/twice', () => ['gzip, gzip', gzipSync(gzipSync('{"ok":true}'))]],
+  ['/not-gzip', () => ['gzip', Buffer.from('{"ok":true}')]],
+]);
 
 const didOf = (at: number) => `did:web:${HOST}%3A${at}`;
 
 beforeAll(async () => {
   server = https.createServer(tls, (request: IncomingMessage, response: ServerResponse) => {
     seen.push(request.headers);
-    const [encoding, body] = ROUTES[request.url!]!();
+    const route = ROUTES.get(request.url ?? '');
+    if (route === undefined) {
+      response.writeHead(404).end();
+      return;
+    }
+    const [encoding, body] = route();
     response.writeHead(200, { 'content-type': 'application/json', 'content-encoding': encoding, 'content-length': body.length }).end(body);
   });
   https.globalAgent.options.ca = [tls.cert];

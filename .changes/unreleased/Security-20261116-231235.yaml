@@ -1,0 +1,14 @@
+kind: Security
+body: |-
+    **Outbound reads fetch what they check, and SafeFetch has one
+    deadline.** A did:web DID whose host or path segment still holds a `%`
+    after its one percent-decode, such as
+    `did:web:example.com:bob:%252E%252E:alice`, now names no URL: the URL
+    parser decoded it again, so two DIDs could name one document. The
+    private-network rule hands the transport the URL the parser wrote, which
+    is the URL it checked, rather than the string it was given, which a
+    transport could parse to another host. `createSafeFetch`'s `timeoutMs`
+    now covers a whole read, its DNS lookups, every redirect hop and the
+    body, and the fetcher takes an optional `{ signal }` that ends the read.
+    See UPGRADING.md.
+time: 2026-11-16T23:12:35.138538-06:00

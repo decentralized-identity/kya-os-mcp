@@ -48,7 +48,20 @@ export interface SafeFetchResponse {
   text?: () => Promise<string>;
 }
 
-export type SafeFetch = (url: string) => Promise<SafeFetchResponse>;
+/** What a caller may pass a SafeFetch beside the URL: a `RequestInit` fits, and only its `signal` is read. */
+export interface SafeFetchInit {
+  /**
+   * Ends the read when it aborts, at whatever step the read has reached, with the signal's reason,
+   * as `fetch` does. The read's own `timeoutMs` holds as well.
+   */
+  signal?: AbortSignal | null;
+}
+
+/**
+ * The fetcher `createSafeFetch` returns. A function that takes only the URL is one too, and a
+ * caller that passes no `init` reads as before.
+ */
+export type SafeFetch = (url: string, init?: SafeFetchInit) => Promise<SafeFetchResponse>;
 
 export interface SafeFetchOptions {
   /** DNS seam (default: `node:dns` resolving every address). */
@@ -68,7 +81,10 @@ export interface SafeFetchOptions {
   allowOrigins?: string[];
   /** Convenience singular form of {@link SafeFetchOptions.allowOrigins}. */
   firstPartyOrigin?: string;
-  /** Request timeout per hop, in ms (default 5000). */
+  /**
+   * How long one read may take, in ms, from the call to its body: the DNS lookup of each hop, every
+   * redirect hop and the body together (default 5000).
+   */
   timeoutMs?: number;
   /** Maximum response body size, in bytes (default 1 MiB). */
   maxBytes?: number;

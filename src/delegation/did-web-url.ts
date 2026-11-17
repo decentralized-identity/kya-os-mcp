@@ -2,6 +2,11 @@
  * A did:web DID as its method reads it: its host, which must be a host and nothing more, and its
  * path, each segment one segment, and the HTTPS URL of the document it names.
  *
+ * Each part is percent-decoded once and written into the URL as decoded. The URL parser and the
+ * server percent-decode that URL again, so a part that still holds a `%` after the one decode is
+ * refused: `%252E%252E` would become a dot-segment there, `%252F` a separator, and
+ * `example%252Ecom` the host `example.com`, so that two DIDs would name one document.
+ *
  * @see https://w3c-ccg.github.io/did-method-web/
  */
 
@@ -30,9 +35,9 @@ export function isDidWeb(did: string): boolean {
  * must still be a host and nothing more: `@`, `/`, `\`, `?` or `#` would let
  * it supply userinfo, a path, a query or a fragment and fetch from a host or
  * resource other than the one the DID names, and so would whitespace, a
- * control character, or a `:` beyond one port separator (a bracketed IPv6
- * literal keeps its own colons). Returns the host with its optional `:port`,
- * or `null`.
+ * control character, a `%` the URL parser would decode again, or a `:` beyond
+ * one port separator (a bracketed IPv6 literal keeps its own colons). Returns
+ * the host with its optional `:port`, or `null`.
  */
 function parseDidWebHost(label: string): string | null {
   let host: string;
@@ -41,7 +46,7 @@ function parseDidWebHost(label: string): string | null {
   } catch {
     return null;
   }
-  if (host.length === 0 || /[@/\\?#\s\p{Cc}]/u.test(host)) {
+  if (host.length === 0 || /[@/\\?#%\s\p{Cc}]/u.test(host)) {
     return null;
   }
   const afterLiteral = host.startsWith('[') ? host.slice(host.indexOf(']') + 1) : host;
@@ -75,7 +80,8 @@ export function parseDidWeb(did: string): ParsedDidWeb | null {
   }
 
   // Remaining parts form the path. Each is one segment: a decoded separator
-  // or dot-segment would move the fetch to a different resource.
+  // or dot-segment would move the fetch to a different resource, and so would
+  // one the URL parser or the server decodes from a `%` left after this decode.
   let path: string[];
   try {
     path = parts.slice(1).map((p) => decodeURIComponent(p));
@@ -83,7 +89,7 @@ export function parseDidWeb(did: string): ParsedDidWeb | null {
     return null;
   }
   const isSegment = (segment: string): boolean =>
-    segment !== '' && segment !== '.' && segment !== '..' && !/[/\\?#]/.test(segment);
+    segment !== '' && segment !== '.' && segment !== '..' && !/[/\\?#%]/.test(segment);
   if (!path.every(isSegment)) {
     return null;
   }

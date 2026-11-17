@@ -1,6 +1,6 @@
 /**
- * SafeFetch's defaults for the options a caller leaves out (`../safe-fetch`): 5,000 ms for each
- * hop, and 1,048,576 bytes of response body. Each is tested one under, at and one over.
+ * SafeFetch's defaults for the options a caller leaves out (`../safe-fetch`): 5,000 ms for a whole
+ * read, and 1,048,576 bytes of response body. Each is tested one under, at and one over.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -8,7 +8,7 @@ import { createSafeFetch, type DnsLookup, type RawResponse, type TransportInit }
 
 const lookup: DnsLookup = async () => [{ address: '93.184.216.34', family: 4 }];
 
-const HOP_TIMEOUT_MS = 5_000;
+const TIMEOUT_MS = 5_000;
 const MAX_RESPONSE_BYTES = 1_048_576;
 
 const respondingWith = (body: string): RawResponse =>
@@ -38,35 +38,35 @@ describe("SafeFetch's default timeout", () => {
   const stalled = (_url: string, init: TransportInit): Promise<RawResponse> =>
     new Promise((_resolve, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason as Error)));
 
-  it('is 5,000 ms for a hop: still waiting one millisecond before, refused at it', async () => {
+  it('is 5,000 ms for a read: still waiting one millisecond before, refused at it', async () => {
     vi.useFakeTimers();
     let outcome: unknown = 'pending';
     const read = createSafeFetch({ lookup, transport: stalled })('https://example.com/card').catch((error: unknown) => {
       outcome = error;
     });
-    await vi.advanceTimersByTimeAsync(HOP_TIMEOUT_MS - 1);
+    await vi.advanceTimersByTimeAsync(TIMEOUT_MS - 1);
     expect(outcome).toBe('pending');
     await vi.advanceTimersByTimeAsync(1);
     await read;
-    expect(outcome).toEqual(new Error(`safe-fetch: request to example.com timed out after ${HOP_TIMEOUT_MS}ms`));
+    expect(outcome).toEqual(new Error(`safe-fetch: request to example.com timed out after ${TIMEOUT_MS}ms`));
   });
 
-  it('bounds each hop on its own, so a redirect starts a new 5,000 ms', async () => {
+  it('covers every hop together, so a redirect does not start a new 5,000 ms', async () => {
     vi.useFakeTimers();
     const slowRedirect = (url: string, init: TransportInit): Promise<RawResponse> =>
       url.endsWith('/b')
         ? stalled(url, init)
         : new Promise(resolve => setTimeout(() => resolve({
             status: 302, headers: { get: name => (name === 'location' ? '/b' : null) }, text: () => Promise.resolve(''),
-          }), HOP_TIMEOUT_MS - 1));
+          }), TIMEOUT_MS - 1));
     let outcome: unknown = 'pending';
     const read = createSafeFetch({ lookup, transport: slowRedirect })('https://example.com/a').catch((error: unknown) => {
       outcome = error;
     });
-    await vi.advanceTimersByTimeAsync(2 * HOP_TIMEOUT_MS - 2);
+    await vi.advanceTimersByTimeAsync(TIMEOUT_MS - 1);
     expect(outcome).toBe('pending');
     await vi.advanceTimersByTimeAsync(1);
     await read;
-    expect(outcome).toEqual(new Error(`safe-fetch: request to example.com timed out after ${HOP_TIMEOUT_MS}ms`));
+    expect(outcome).toEqual(new Error(`safe-fetch: request to example.com timed out after ${TIMEOUT_MS}ms`));
   });
 });

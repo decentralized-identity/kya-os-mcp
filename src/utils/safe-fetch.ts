@@ -14,7 +14,8 @@
  *     same-origin redirect to a different host triggers a fresh resolve-and-pin cycle for that hop;
  *   - cross-origin redirects are blocked (manual handling; a 3xx to a different origin is
  *     rejected, same-origin redirects are followed up to a small cap);
- *   - a response size cap and an AbortSignal-backed timeout bound resource use.
+ *   - a response size cap, and one deadline over the whole read (its DNS lookups, every redirect hop
+ *     and its body), bound resource use; a caller's AbortSignal ends the read too.
  *
  * The two Node transports live in `./safe-fetch-transports`; the seam vocabulary in
  * `./safe-fetch-types`; the address policy in `./ip-classifier`. This module owns only the
@@ -47,6 +48,7 @@ import type {
   DnsLookup,
   RawResponse,
   SafeFetch,
+  SafeFetchInit,
   SafeFetchOptions,
   SafeFetchResponse,
   SafeFetchTransport,
@@ -64,11 +66,10 @@ export {
 
 /*
  * SafeFetch's defaults for the `timeoutMs` and `maxBytes` options, the package's limits for one
- * outbound read (`./outbound-read-limits.ts`). Here a caller may override them, and the timeout
- * bounds each hop on its own.
+ * outbound read (`./outbound-read-limits.ts`). Here a caller may override them.
  */
-/** Milliseconds one hop may take: its request, its response headers and its body. */
-const DEFAULT_HOP_TIMEOUT_MS = OUTBOUND_READ_TIMEOUT_MS;
+/** Milliseconds one read may take: its DNS lookups, every redirect hop and its body. */
+const DEFAULT_TIMEOUT_MS = OUTBOUND_READ_TIMEOUT_MS;
 /** Bytes of response body read before the response is refused. */
 const DEFAULT_MAX_RESPONSE_BYTES = OUTBOUND_READ_MAX_BYTES;
 
@@ -148,13 +149,16 @@ function vetRedirectTarget({ target, from, crossOrigin }: RedirectTarget): void 
   }
 }
 
-/** Enforce the size cap, refusing a larger body as `too_large`, and project a RawResponse into the FetchLike-compatible shape. */
-async function finalize(raw: RawResponse, maxBytes: number): Promise<SafeFetchResponse> {
+/**
+ * Enforce the size cap, refusing a larger body as `too_large`, and project a RawResponse into the
+ * FetchLike-compatible shape. The body is read within the read's deadline.
+ */
+async function finalize(raw: RawResponse, maxBytes: number, deadline: ReadDeadline): Promise<SafeFetchResponse> {
   const declared = Number(raw.headers.get('content-length'));
   if (Number.isFinite(declared) && declared > maxBytes) {
     throw new ReadFailureError('too_large', `safe-fetch: declared content-length ${declared} exceeds cap ${maxBytes}`);
   }
-  const body = await raw.text();
+  const body = await deadline.within(() => raw.text());
   if (Buffer.byteLength(body, 'utf8') > maxBytes) {
     throw new ReadFailureError('too_large', `safe-fetch: response body exceeds size cap ${maxBytes}`);
   }
@@ -174,28 +178,38 @@ async function finalize(raw: RawResponse, maxBytes: number): Promise<SafeFetchRe
  * one of `deadline_exceeded`, so a verifier codes the refusal without reading its message. A
  * refusal decided from the URL alone, before any DNS lookup or request (its scheme, a non-public IP
  * literal, a localhost name), also says so, so a verifier may tell whoever named the URL why.
+ *
+ * One deadline, `timeoutMs` from the call, covers the whole read: the DNS lookup of each hop, every
+ * redirect hop and the body. A `signal` the caller passes ends the read when it aborts, at whatever
+ * step it has reached, with the signal's reason, as `fetch` does.
  */
 export function createSafeFetch(options: SafeFetchOptions = {}): SafeFetch {
   const cfg: HopConfig = {
     lookup: options.lookup ?? defaultLookup,
     transport: options.transport ?? selectDefaultTransport(),
-    timeoutMs: options.timeoutMs ?? DEFAULT_HOP_TIMEOUT_MS,
+    timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     maxBytes: options.maxBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
     trustedOrigins: normalizeTrustedOrigins(options),
     admitPrivate: developmentMode(options.development, 'SafeFetchOptions.development', OWNED_ORIGINS),
   };
   const maxRedirects = options.maxRedirects ?? MAX_REDIRECTS;
 
-  return async function safeFetch(initialUrl: string): Promise<SafeFetchResponse> {
-    const raw = await followRedirects<RawResponse>(assertHttpsUrl(initialUrl), {
-      request: (hop) => requestOnce(hop.url, cfg),
-      vetTarget: vetRedirectTarget,
-      maxRedirects,
-      // A Location with no value names no target, so it is refused as a missing header is.
-      emptyLocationIsMissing: true,
-      refusals: REDIRECT_REFUSALS,
-    });
-    return finalize(raw, cfg.maxBytes);
+  return async function safeFetch(initialUrl: string, init?: SafeFetchInit): Promise<SafeFetchResponse> {
+    const url = assertHttpsUrl(initialUrl);
+    const deadline = startReadDeadline(new URL(url).hostname, cfg.timeoutMs, init?.signal ?? undefined);
+    try {
+      const raw = await followRedirects<RawResponse>(url, {
+        request: (hop) => requestOnce(hop.url, cfg, deadline),
+        vetTarget: vetRedirectTarget,
+        maxRedirects,
+        // A Location with no value names no target, so it is refused as a missing header is.
+        emptyLocationIsMissing: true,
+        refusals: REDIRECT_REFUSALS,
+      });
+      return await finalize(raw, cfg.maxBytes, deadline);
+    } finally {
+      deadline.clear();
+    }
   };
 }
 
@@ -213,43 +227,57 @@ interface HopConfig {
 /**
  * Perform ONE hop. First-party origins skip the resolve-and-pin SSRF screen (origin-equality is
  * not attacker-routable) and are fetched plain by name; every other origin is resolved, screened,
- * and pinned before the configured transport runs. Both branches are timeout-bounded.
+ * and pinned before the configured transport runs. Every step is bounded by the read's deadline.
  */
-async function requestOnce(url: string, cfg: HopConfig): Promise<RawResponse> {
+async function requestOnce(url: string, cfg: HopConfig, deadline: ReadDeadline): Promise<RawResponse> {
   const { hostname, origin } = new URL(url);
+  const { signal } = deadline;
   if (cfg.trustedOrigins.has(origin)) {
-    return withTimeout(hostname, cfg.timeoutMs, (signal) =>
-      fetchTransport(url, { signal, hostname, pinnedAddress: '', family: 4, maxBytes: cfg.maxBytes }),
-    );
+    return deadline.within(() => fetchTransport(url, { signal, hostname, pinnedAddress: '', family: 4, maxBytes: cfg.maxBytes }));
   }
-  const pinned = await resolveAndPin(hostname, cfg.lookup, cfg.admitPrivate);
-  return withTimeout(hostname, cfg.timeoutMs, (signal) =>
-    cfg.transport(url, {
-      signal,
-      hostname,
-      pinnedAddress: pinned.address,
-      family: pinned.family,
-      maxBytes: cfg.maxBytes,
-    }),
+  const pinned = await deadline.within(() => resolveAndPin(hostname, cfg.lookup, cfg.admitPrivate));
+  return deadline.within(() =>
+    cfg.transport(url, { signal, hostname, pinnedAddress: pinned.address, family: pinned.family, maxBytes: cfg.maxBytes }),
   );
 }
 
-/** Run a transport call under an AbortSignal that fires after `timeoutMs`. */
-async function withTimeout(
-  hostname: string,
-  timeoutMs: number,
-  run: (signal: AbortSignal) => Promise<RawResponse>,
-): Promise<RawResponse> {
+/**
+ * The one deadline of a read. Its `signal` aborts once `timeoutMs` has passed, with a
+ * `deadline_exceeded` read failure, or once the caller's `outside` signal aborts, with that signal's
+ * reason; each transport call is given it. `within` runs a step unless the signal has aborted, and
+ * stops waiting on it once it does, so a lookup or a body reader that ignores the signal still
+ * cannot hold the read open.
+ */
+interface ReadDeadline {
+  readonly signal: AbortSignal;
+  within<T>(step: () => Promise<T>): Promise<T>;
+  clear(): void;
+}
+
+function startReadDeadline(hostname: string, timeoutMs: number, outside: AbortSignal | undefined): ReadDeadline {
   const controller = new AbortController();
+  const { signal } = controller;
   const timer = setTimeout(
     () => controller.abort(new ReadFailureError('deadline_exceeded', `safe-fetch: request to ${hostname} timed out after ${timeoutMs}ms`)),
     timeoutMs,
   );
-  try {
-    return await run(controller.signal);
-  } finally {
-    clearTimeout(timer);
-  }
+  const forward = (): void => controller.abort(outside?.reason);
+  if (outside?.aborted) forward();
+  else outside?.addEventListener('abort', forward, { once: true });
+  const aborted = new Promise<never>((_resolve, reject) => {
+    if (signal.aborted) reject(signal.reason);
+    else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+  });
+  // A step that is not waiting when the read ends leaves no rejection unhandled.
+  aborted.catch(() => undefined);
+  return {
+    signal,
+    within: (step) => (signal.aborted ? aborted : Promise.race([step(), aborted])),
+    clear: () => {
+      clearTimeout(timer);
+      outside?.removeEventListener('abort', forward);
+    },
+  };
 }
 
 /**

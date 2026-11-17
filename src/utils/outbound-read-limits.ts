@@ -4,7 +4,7 @@
  * lowest layer. The DID and status-list policy of SPEC §4.4.2 (`delegation/did-resource-policy.ts`)
  * takes them as fixed limits whose one deadline covers a whole read, redirects included. SafeFetch
  * (`./safe-fetch.ts`) takes them as the defaults of its `timeoutMs` and `maxBytes` options, which a
- * caller may override and which bound each hop on its own.
+ * caller may override, and whose one deadline also covers a whole read.
  */
 
 /** Milliseconds: 5 seconds. */

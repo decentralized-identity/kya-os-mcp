@@ -7,6 +7,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { privateNetworkRefusal, underPrivateNetworkRule } from '../private-network-rule.js';
 import { LOCAL_HOST_NAMES, PUBLIC_NAME_FOR_LOOPBACK } from '../../__tests__/utils/local-host-names.js';
+import { RuntimeFetchProvider } from '../../providers/runtime-fetch.js';
 
 /** Whether the rule, without the opt-out, refuses `url`. */
 const refuses = (url: string) => privateNetworkRefusal(url) !== undefined;
@@ -76,6 +77,26 @@ describe('underPrivateNetworkRule', () => {
     expect(fetch).not.toHaveBeenCalled();
     await underPrivateNetworkRule({ fetch }).fetch('https://example.com/list', { headers: { Accept: 'application/json' } });
     expect(fetch).toHaveBeenCalledWith('https://example.com/list', { headers: { Accept: 'application/json' }, redirect: 'manual' });
+  });
+
+  it('hands the transport the URL as the parser wrote the one it checked, so what is checked is what is fetched', async () => {
+    // The parser reads this host as `localhost.public.example`, which the rule admits; a transport
+    // that parses the string as given otherwise, as Node's legacy url.parse does, would reach `localhost`.
+    const fetch = answering();
+    await underPrivateNetworkRule({ fetch }).fetch('https://localhost%2Epublic.example/list');
+    await underPrivateNetworkRule({ fetch }).fetch('HTTPS://Example.COM:443/a/../list');
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual(['https://localhost.public.example/list', 'https://example.com/list']);
+  });
+
+  it('reads a status list a credential names at the URL the rule checked, through RuntimeFetchProvider', async () => {
+    const fetch = answering();
+    vi.stubGlobal('fetch', fetch);
+    try {
+      await new RuntimeFetchProvider().fetchStatusList('https://localhost%2Epublic.example/list');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual(['https://localhost.public.example/list']);
   });
 
   it('admits a private host, local names included, only for a transport whose allowPrivateNetworkHosts is true', async () => {

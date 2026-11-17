@@ -20,6 +20,7 @@ export {
   fetchTransport,
   isBlockedAddress,
   type SafeFetch,
+  type SafeFetchInit,
   type SafeFetchResponse,
   type SafeFetchOptions,
   type SafeFetchTransport,

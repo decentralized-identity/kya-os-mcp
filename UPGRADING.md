@@ -94,6 +94,22 @@ A re-delegation that states no scope either is still accepted, so a chain used o
 One whose scope fields are not lists is refused, since it cannot be shown to grant nothing.
 If a chain relied on the old reading, have the root issuer grant the scopes its re-delegations need.
 
+### URLs read as they are checked
+
+A did:web DID is percent-decoded once.
+A host or path segment that still holds a `%` after that decode, such as `did:web:example.com:bob:%252E%252E:alice` or `did:web:example%252Ecom`, now names no URL, and the resolver refuses it before any request.
+The URL parser and the server would decode it again, so `%252E%252E` became a dot-segment and two DIDs named one document.
+A DID that writes each character it encodes once, a port as `%3A` included, resolves as before.
+
+The private-network rule now hands the transport the URL as the parser writes it, the URL it checked, rather than the string it was given.
+A custom `FetchProvider` is asked for `https://example.com/list` where it was asked for `HTTPS://Example.COM:443/a/../list`, and for a host in its ASCII form.
+A test double that matches the URLs it is asked for by their exact text may need the parser's form.
+
+`createSafeFetch`'s `timeoutMs` now bounds a whole read: the DNS lookup of each hop, every redirect hop and the body together, from the call.
+It bounded each hop on its own, and the DNS lookup and a body a custom transport read lazily were not bounded at all.
+The fetcher it returns also takes an optional second argument, `{ signal }`, as `fetch` does; the read ends with the signal's reason when it aborts.
+The redirect cap is unchanged.
+
 ### Conformance suite 1.6.0
 
 The suite adds `delegation-chain/scopeless-parent-widening`, a re-delegation that states a scope under a parent that states none, which must be refused, and has 141 vectors.
@@ -803,7 +819,7 @@ A `didResolvers` factory of your own receives it as the `dependencyTimeoutMs` of
 A reason states the time that was configured: `did not answer within 30 seconds` for 30,000, and in milliseconds when it is not a whole number of seconds, as in `did not answer within 7500 ms`.
 A checker built with `createRevocationChecker` now also has this deadline when it is called directly, where on 1.22.0 it waited without end, and resolves revoked and not fresh when it is missed.
 `verifyVcJwtSignature` takes the time for its DID resolver as an optional fifth argument.
-`SafeFetch`'s `timeoutMs`, which bounds each hop of its own fetch, is a separate option and is unchanged.
+`SafeFetch`'s `timeoutMs`, which bounds each of its own reads, is a separate option.
 
 #### A custom `signatureVerifier`, or another dependency, whose verdict is not the boolean its type promises
 

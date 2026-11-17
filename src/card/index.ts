@@ -59,6 +59,7 @@ export {
   fetchTransport,
   isBlockedAddress,
   type SafeFetch,
+  type SafeFetchInit,
   type SafeFetchOptions,
   type SafeFetchResponse,
   type SafeFetchTransport,

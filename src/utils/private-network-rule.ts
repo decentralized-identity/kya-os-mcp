@@ -82,15 +82,24 @@ interface RuleRefusal {
   readonly privateHost: boolean;
 }
 
-/** Why the rule refuses `url`, or `undefined` when it admits it. */
-function ruleRefusal(url: string, allowPrivateNetworkHosts: boolean): RuleRefusal | undefined {
+/**
+ * What the rule makes of `url`: the URL as the parser writes it, which is what a read under the rule
+ * fetches, so the host it checked is the host the transport reaches; or why it refuses `url`.
+ */
+function ruleVerdict(url: string, allowPrivateNetworkHosts: boolean): { readonly admitted: string } | RuleRefusal {
   const target = parsed(url);
   if (target === undefined) return { named: 'a URL that does not parse', privateHost: false };
   if (target.protocol !== 'https:' && target.protocol !== 'http:') {
     return { named: `a ${describeValue(target.protocol)} URL`, privateHost: false };
   }
   if (!allowPrivateNetworkHosts && isPrivateHost(target.hostname)) return { named: describeValue(target.host), privateHost: true };
-  return undefined;
+  return { admitted: target.href };
+}
+
+/** Why the rule refuses `url`, or `undefined` when it admits it. */
+function ruleRefusal(url: string, allowPrivateNetworkHosts: boolean): RuleRefusal | undefined {
+  const verdict = ruleVerdict(url, allowPrivateNetworkHosts);
+  return 'admitted' in verdict ? undefined : verdict;
 }
 
 /**
@@ -104,7 +113,9 @@ export function privateNetworkRefusal(url: string, allowPrivateNetworkHosts = fa
 
 /**
  * `transport`'s `fetch` under the rule; a transport whose `allowPrivateNetworkHosts` is true admits
- * private hosts. A refused request throws `Request to <host> refused`, going on for a private host
+ * private hosts. The transport is asked for the URL as the parser writes the one the rule checked,
+ * never the string as given, which a transport could parse otherwise and so reach another host. A
+ * refused request throws `Request to <host> refused`, going on for a private host
  * with {@link PRIVATE_HOST_REMEDY}, before any request. A refused redirect throws `Redirect to
  * <what> refused`, where a private host is named only as one, followed by the settings that admit
  * it, and is logged. Either is a `host_refused` {@link ReadFailureError}.
@@ -113,17 +124,17 @@ export function underPrivateNetworkRule(transport: PrivateNetworkTransport): Fet
   const allowPrivateNetworkHosts = transport.allowPrivateNetworkHosts === true;
   return {
     async fetch(url, init) {
-      const refused = ruleRefusal(url, allowPrivateNetworkHosts);
-      if (refused !== undefined) {
+      const verdict = ruleVerdict(url, allowPrivateNetworkHosts);
+      if (!('admitted' in verdict)) {
         throw new ReadFailureError(
           'host_refused',
-          `Request to ${refused.named} refused${refused.privateHost ? PRIVATE_HOST_REMEDY : ''}`,
+          `Request to ${verdict.named} refused${verdict.privateHost ? PRIVATE_HOST_REMEDY : ''}`,
           { beforeRequest: true },
         );
       }
       return fetchWithCheckedRedirects(
         (target, options) => transport.fetch(target, options),
-        url,
+        verdict.admitted,
         (init ?? {}) as RequestInit,
         target => redirectRefusal(target, allowPrivateNetworkHosts),
       );

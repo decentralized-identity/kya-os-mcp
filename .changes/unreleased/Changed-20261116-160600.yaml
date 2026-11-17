@@ -11,9 +11,13 @@ body: |-
     of a reason falls inside such a remedy, so a reason carries it whole or
     not at all. The chain walk, `verifyCard` and the `Status check error` of
     `DelegationCredentialVerifier` keep up to 640 UTF-16 code units of a
-    resolver's or checker's reason, so a wrapper may add 128 of its own; the
-    chain walk keeps a credential verifier's reason up to 1,024, and the
+    resolver's or checker's reason, and so does the chain walk of a
+    `RevocationChecker`'s, so a wrapper may add 128 of its own; the chain
+    walk keeps a credential verifier's reason up to 1,024, and the
     delegation gate of `withKyaOs` logs up to 1,024. The reason the gate
     sends its client is cut after 256 and so carries no remedy.
+    `requireDelegation` sends its client a status checker's reason in
+    `error.reasons`, now up to 640 UTF-16 code units, and a hop proof
+    verifier's `RefusalError` up to 512, where each was a short fixed text.
     UPGRADING.md, "How to write `statusListIssuers`", has each form.
 time: 2026-11-16T16:06:00.000000-06:00

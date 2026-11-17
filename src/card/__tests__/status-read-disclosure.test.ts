@@ -115,6 +115,18 @@ describe('the Card revocation checker, when it could not read a status list', ()
     expect(answer).toEqual({ revoked: true, fresh: false, reason, ...coded('host_refused') });
   });
 
+  it.each<[unknown, string]>([
+    [null, 'of type null'],
+    [undefined, 'of type undefined'],
+    ['x', '"x"'],
+    [[], 'of type array'],
+  ])('says the status entry %j is not an object, reading no list', async (entry, named) => {
+    const fetch = vi.fn(async () => { throw new Error('no request expected'); });
+    const answer = await createRevocationChecker({ fetch, now })(entry as never);
+    expect(answer).toEqual({ revoked: true, fresh: false, reason: `the status entry (${named}) is not an object`, ...coded('delegation_malformed') });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('says why where its deadline passed', async () => {
     const { answer } = await answerFor(createSafeFetch({ lookup: async () => [{ address: '93.184.216.34', family: 4 }], transport: (_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason))), timeoutMs: 20 }));
     expect(answer).toEqual({ revoked: true, fresh: false, reason: 'safe-fetch: request to jenkins.corp.example timed out after 20ms', ...coded('deadline_exceeded') });

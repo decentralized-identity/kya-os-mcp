@@ -32,6 +32,7 @@
 
 import type { RefusalCode } from '../refusal-codes.js';
 import { answerWithinDeadline, dependencyTimeout } from '../utils/deadline.js';
+import { describeValue } from '../utils/describe-value.js';
 import { isRecord, issuerOf } from '../utils/guards.js';
 import { coded, RefusalError, refusalCodeOf, type Coded } from '../utils/refusal.js';
 import { CHECKER_REASON_LENGTH } from '../utils/revocation-answer.js';
@@ -261,6 +262,7 @@ export function createRevocationChecker(
     context?: StatusCheckContext,
   ): Promise<RevocationStatus> {
     try {
+      if (!isRecord(entry)) throw new RefusalError('delegation_malformed', `revocation: the status entry (${describeValue(entry)}) is not an object`);
       const entryPurpose = acceptEntryPurpose(entry.statusPurpose, wantedPurpose);
       if (!entryPurpose.valid) throw new RefusalError('delegation_malformed', `revocation: ${entryPurpose.reason}`);
       const entrySize = acceptEntrySize(entry.statusSize);
@@ -291,12 +293,9 @@ export function createRevocationChecker(
       const fresh = isLive(credential, clock());
       return revoked ? { revoked, fresh, ...coded('delegation_revoked') } : { revoked, fresh };
     } catch (error) {
-      // A step that refuses throws its code; a read or a decoder that failed in its own words left
-      // the status unread, unless what it was asked about is not an entry at all.
-      return failedClosed(
-        refusalCodeOf(error, isRecord(entry) ? 'status_unavailable' : 'delegation_malformed'),
-        failureReason(error, isRecord(entry) ? entry.statusListCredential : undefined),
-      );
+      // A step that refuses throws its code, an entry that is not an object included; a read or a
+      // decoder that failed in its own words left the status unread.
+      return failedClosed(refusalCodeOf(error, 'status_unavailable'), failureReason(error, isRecord(entry) ? entry.statusListCredential : undefined));
     }
   };
   // The list read and its proof check share one deadline, and a miss fails closed as a throw does.

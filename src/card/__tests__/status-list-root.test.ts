@@ -249,7 +249,7 @@ describe("each path names a hop's issuer, and the chain's root only as the verif
     for (const [item, code] of [
       [{}, 'configuration_error'],
       [null, 'delegation_malformed'],
-      ['entry', 'configuration_error'],
+      ['entry', 'delegation_malformed'],
       [{ entry: null, credentialIssuer: acme.did }, 'configuration_error'],
     ] as const) {
       const result = await evaluateRevocationChain([item] as never, check);

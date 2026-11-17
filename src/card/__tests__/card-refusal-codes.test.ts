@@ -84,6 +84,22 @@ describe("the card profile's evaluateDelegationChain", () => {
     expect({ ok: result.ok, ...pick(result) }, result.reasons.join()).toEqual({ ok: false, ...coded(code) });
   });
 
+  it.each<[string, (...args: unknown[]) => Promise<never>]>([
+    ['throws', () => { throw new Error('connect ECONNREFUSED 10.0.0.7:443'); }],
+    ['rejects', () => Promise.reject(new Error('connect ECONNREFUSED 10.0.0.7:443'))],
+  ])('refuses, and does not reject, a chain whose checker %s, saying nothing of the network', async (_name, check) => {
+    const result = await evaluateDelegationChain(chain, check as never, { now });
+    expect({ ok: result.ok, fresh: result.fresh, ...pick(result) }).toEqual({ ok: false, fresh: false, ...coded('status_unavailable') });
+    expect(result.reasons).toEqual(['revocation checker threw: status unprovable, fail-closed']);
+  });
+
+  it('refuses a chain whose checker throws a RefusalError with its code and its words', async () => {
+    const check = async () => { throw new RefusalError('did_unavailable', 'the list signer did not resolve'); };
+    const result = await evaluateDelegationChain(chain, check, { now });
+    expect({ ok: result.ok, fresh: result.fresh, ...pick(result) }).toEqual({ ok: false, fresh: false, ...coded('did_unavailable') });
+    expect(result.reasons).toEqual(['revocation checker threw: the list signer did not resolve']);
+  });
+
   it('codes a chain that passes not at all', async () => {
     const result = await evaluateDelegationChain(chain, checkerOf(), { resourceOwner: p.acme.did, now });
     expect(result.ok).toBe(true);

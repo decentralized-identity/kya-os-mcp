@@ -9,8 +9,9 @@ import { dependencyTimeout } from '../utils/deadline.js';
 import { describeValue } from '../utils/describe-value.js';
 import { isRecord } from '../utils/guards.js';
 import { sanitizeForMessage } from '../utils/message-text.js';
-import { coded, type Coded } from '../utils/refusal.js';
+import { coded, refusalCodeOf, type Coded } from '../utils/refusal.js';
 import { WRAPPED_REASON_LENGTH, readRevocationAnswer } from '../utils/revocation-answer.js';
+import { thrownReason } from '../utils/thrown-words.js';
 import type { StatusCheckContext } from '../utils/statuslist-acceptance.js';
 import { checkWithinDeadline } from './revocation-deadline.js';
 import type { BitstringRevocationChecker, RevocationStatusEntry } from './revocation.js';
@@ -64,7 +65,8 @@ export interface RevocationChainEntry extends Omit<StatusCheckContext, 'credenti
  * A checker's answer is read as {@link BitstringRevocationChecker} says: a hop passes only on a
  * literal `revoked: false`, and an answer that is neither that nor a literal `revoked: true` refuses
  * the hop with a reason that says what could not be read. No answer makes the walk throw; a checker
- * that throws or rejects still does, and the callers in this package catch that and fail closed.
+ * that throws or rejects still does, and the callers in this package catch that and fail closed,
+ * `evaluateDelegationChain` with {@link checkerThrew}.
  *
  * A revoked hop's refusal ends with the `reason` its checker gave, when it gave one, after a colon:
  * at most its first {@link WRAPPED_REASON_LENGTH} UTF-16 code units, so the reason of a library
@@ -144,6 +146,21 @@ export async function walkRevocationChain(
 export type RevocationChainWalk =
   | { readonly ok: true; readonly fresh: boolean; readonly reasons: string[] }
   | (Coded & { readonly ok: false; readonly fresh: false; readonly reasons: string[] });
+
+/**
+ * The walk's refusal when its checker threw or rejected with `error`: the code of a `RefusalError`
+ * it threw, `deadline_exceeded` for a deadline that passed, else `status_unavailable`. The reason
+ * holds the error's words only where they may reach whoever presented the chain
+ * (`utils/thrown-words.ts`); any other words, such as a transport's, go to the operator's log.
+ */
+export function checkerThrew(error: unknown): RevocationChainWalk {
+  const reason = thrownReason(error, {
+    withheld: 'revocation checker threw: status unprovable, fail-closed',
+    shown: (words) => `revocation checker threw: ${words}`,
+    tag: '[kya-os]',
+  });
+  return refusedHop(refusalCodeOf(error, 'status_unavailable'), reason);
+}
 
 /** The walk's refusal at a hop, for `reason`, with `code`. */
 function refusedHop(code: RefusalCode, reason: string): RevocationChainWalk {

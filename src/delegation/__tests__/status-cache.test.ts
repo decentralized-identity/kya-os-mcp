@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { withStatusCache } from '../status-cache.js';
 import { describeValue } from '../../utils/describe-value.js';
+import { RefusalError } from '../../utils/refusal.js';
 import type { CredentialStatus } from '../../types/protocol.js';
 
 const entry = (index: string): CredentialStatus => ({
@@ -52,6 +53,23 @@ describe('withStatusCache', () => {
     await expect(cached.checkStatus(entry('3'))).rejects.toThrow('unreachable');
     expect(await cached.checkStatus(entry('3'))).toBe(false);
     expect(calls).toBe(2);
+  });
+
+  it('refuses an entry that is not an object as malformed, without asking the resolver, which cannot then accept it', async () => {
+    let calls = 0;
+    const cached = withStatusCache(
+      { checkStatus: async () => { calls++; return false; } },
+      { maxStalenessMs: 60_000 },
+    );
+    for (const status of [null, undefined, 'x', 7]) {
+      const refusal = await cached.checkStatus(status as never).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(refusal).toBeInstanceOf(RefusalError);
+      expect(refusal).toMatchObject({ code: 'delegation_malformed', message: `the status entry (${describeValue(status)}) is not an object` });
+    }
+    expect(calls).toBe(0);
   });
 
   it('maxStalenessMs <= 0 is a pass-through (every call reads upstream)', async () => {

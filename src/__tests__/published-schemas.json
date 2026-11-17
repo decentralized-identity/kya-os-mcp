@@ -19,6 +19,7 @@
     "https://schema.kya-os.org/v1/protocol/handshake/request/v1.0.0": "5efcc84bed67e334de04a3015b992edcf05dc10cca6cb2c80421d16eb9c74b55",
     "https://schema.kya-os.org/v1/protocol/handshake/response/v1.0.0": "a682b4f0de690c1c63e2070f43f9c7f4574ee3b5fe51d6c967fd1b96661e4f4d",
     "https://schema.kya-os.org/v1/protocol/identity/card/v1.1.0": "c572bc3409686dbfd1fcf71c536e9c7d6e7e45d340331f27fc952e3f73b34e2b",
+    "https://schema.kya-os.org/v1/protocol/identity/card/v1.2.0": "1f64f65f669dc905851d8f4ede0d41c55e892de8ba303352f6bf8620b22fd3c5",
     "https://schema.kya-os.org/v1/protocol/mcp-extension/settings/v1.0.0": "5b0eb3389a9b8e79512111b6ba113c62e84da2bd753830526ade289c1fb7d249",
     "https://schema.kya-os.org/v1/protocol/proof/detached/v1.0.0": "64bc751519999f25162c72921b7615c5f2c80d5a75d40e08b0687bc4ac0f2b90",
     "https://schema.kya-os.org/v1/protocol/proof/detached/v1.1.0": "9a9b97cef44b11a2677e8cc6b116f1ffe9fa9546da76dbeec22dd72800dab827",

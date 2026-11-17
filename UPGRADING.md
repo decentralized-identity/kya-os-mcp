@@ -213,6 +213,47 @@ It bounded each hop on its own, and the DNS lookup and a body a custom transport
 The fetcher it returns also takes an optional second argument, `{ signal }`, as `fetch` does; the read ends with the signal's reason when it aborts.
 The redirect cap is unchanged.
 
+### Each Card DID is a DID as DID Core writes it
+
+| If you | Do this |
+| --- | --- |
+| Build, publish or validate Cards whose DID members are DID URLs, such as a key id ending in `#key-1`, or hold characters DID Core does not allow | Give each member the bare DID, with any other character percent-encoded. |
+
+A Card's DID members, `id`, `responsibleParty`, `principal`, and an attestation's `subject` and `issuer`, now take only a DID as W3C DID Core §3.1 writes one, of did:key or did:web (SPEC-ENTITY-CARD.md §4.1.1).
+In 1.23.0 they took anything after `did:key:` or `did:web:`, so a DID URL passed validation and failed later, where the reason was harder to see: a key id such as `did:web:acme.example#key-1` given as `responsibleParty` never equals the root issuer of a delegation chain, and a DID with a path names another document.
+`Did`, `EntityCardSchema`, `parseCard`, `resolveCard` and the published schema now refuse such a value.
+The rule is DID syntax alone: whether a DID is a usable one of its method is still for its resolver to say.
+
+| Value | Now |
+| --- | --- |
+| `did:web:acme.example` | Accepted. |
+| `did:web:acme.example:agents:pay-1` | Accepted. |
+| `did:web:localhost%3A8443` | Accepted: a port is percent-encoded. |
+| `did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK` | Accepted. |
+| `did:web:acme.example#key-1` | Refused: `is a DID URL: drop the "#key-1" fragment` |
+| `did:web:acme.example?v=1` | Refused: `is a DID URL: drop the "?v=1" query` |
+| `did:web:acme.example/agents` | Refused: `is a DID URL: drop the "/agents" path` |
+| `did:web:has space` | Refused: `contains a space` |
+| `did:web:exämple.com` | Refused: `contains "ä", which a DID writes percent-encoded` |
+| `did:web:acme.example:` | Refused: `ends with ":", so its last part is empty` |
+| `did:web:` | Refused: `has no method-specific id` |
+| `did:web:ex%2` | Refused: `has a "%" not followed by two hex digits` |
+| `DID:web:acme.example` | Refused: `starts with "DID:"; the scheme is written in lower case: "did:"` |
+| `did:ion:abc` | Refused: `uses "did:ion", not did:key or did:web` |
+
+A refusal said `must be a did:key or did:web DID`, and now says what is wrong, as the table shows.
+It is decided by the value alone and quotes at most 64 characters of it, so it may be shown to whoever presented the Card.
+To comply, give each member the bare DID: drop a fragment, query or path, since a key id belongs in `kid`, and percent-encode any character other than a letter, a digit, `.`, `-`, `_` and `:`, as a port is in `did:web:localhost%3A8443`.
+Every DID the library itself mints already complies.
+
+`schemas/kya-os-card.schema.json` moves to `https://schema.kya-os.org/v1/protocol/identity/card/v1.2.0`, since its five DID members refuse values the schema published at `identity/card/v1.1.0` accepts.
+`v1.1.0` stays published as it is, and a document that names it is still validated against it.
+Code that loads the file from the package and looks it up or `$ref`s it by `$id` names the new `$id`.
+The A2A extension URI, `https://kya-os.org/a2a/ext/entity-card/v1`, pins only the major version, so it does not change.
+
+The members that share the Card's DID schema follow the same rule: the request proof's `did` and `audience`, as `CardProofMetaSchema` reads them, and a Card delegation credential's `issuer` and its subject's `controller` and `invoker`, as `DelegationCredentialSchema` reads them.
+The published delegation credential schemas, which take any DID, do not change.
+
 ### Conformance suite 1.6.0
 
 The suite adds `delegation-chain/scopeless-parent-widening`, a re-delegation that states a scope under a parent that states none, which must be refused, and has 141 vectors.

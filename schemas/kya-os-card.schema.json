@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schema.kya-os.org/v1/protocol/identity/card/v1.1.0",
+  "$id": "https://schema.kya-os.org/v1/protocol/identity/card/v1.2.0",
   "title": "KYA-OS Entity Card",
   "description": "A typed, DID-anchored identity card for a KYA-OS entity (mcp | agent | client | verifier | human). One canonical card is anchored by a `KyaOsEntityCard` service entry on the entity's did:web DID document and projected onto the four discovery surfaces the ecosystem already indexes (MCP server.json / catalog.json `_meta['org.kya-os/card']`, A2A AgentExtension, NANDA AgentFacts, and the MCP catalog entry). The card asserts identity + type + declared capabilities; everything trust-bearing (accountability, attested capabilities, KYC/KYB) is proven by referenced credentials, not self-claimed (claim-minimalism). The sender-constrained holder-of-key proof (`org.kya-os/proof.v1`) is NEVER on the static card — it rides per-request `_meta` on top (see detached-proof); `proofProfile` only names the profile a verifier should expect.",
   "type": "object",
@@ -8,8 +8,8 @@
   "properties": {
     "id": {
       "type": "string",
-      "pattern": "^did:(key|web):.+$",
-      "description": "The entity's DID. did:web cards are registry-anchored (trust tiers 1-2 + L2 + KYC/KYB eligible); did:key cards are self-asserted (dev/ephemeral; trust from holder-of-key-on-use only)."
+      "pattern": "^did:(?:key|web):(?:(?:[A-Za-z0-9._-]|%[0-9A-Fa-f]{2})*:)*(?:[A-Za-z0-9._-]|%[0-9A-Fa-f]{2})+$",
+      "description": "The entity's DID. It is a DID as W3C DID Core §3.1 writes one, never a DID URL with a path, query or fragment. did:web cards are registry-anchored (trust tiers 1-2 + L2 + KYC/KYB eligible); did:key cards are self-asserted (dev/ephemeral; trust from holder-of-key-on-use only)."
     },
     "entityType": {
       "type": "string",
@@ -46,12 +46,12 @@
     },
     "responsibleParty": {
       "type": "string",
-      "pattern": "^did:(key|web):.+$",
+      "pattern": "^did:(?:key|web):(?:(?:[A-Za-z0-9._-]|%[0-9A-Fa-f]{2})*:)*(?:[A-Za-z0-9._-]|%[0-9A-Fa-f]{2})+$",
       "description": "DID of the entity ultimately accountable (= root issuerDid of the delegation chain; SPEC Responsible Party). SHOULD be did:web. Verified via delegationRef against the signed DelegationCredential, not self-asserted."
     },
     "principal": {
       "type": "string",
-      "pattern": "^did:(key|web):.+$",
+      "pattern": "^did:(?:key|web):(?:(?:[A-Za-z0-9._-]|%[0-9A-Fa-f]{2})*:)*(?:[A-Za-z0-9._-]|%[0-9A-Fa-f]{2})+$",
       "description": "Optional DID of the immediate delegator / authorizing human (the runtime userDid), when it differs from responsibleParty (SPEC Principal)."
     },
     "delegationRef": {
@@ -138,12 +138,12 @@
         },
         "subject": {
           "type": "string",
-          "pattern": "^did:(key|web):.+$",
+          "pattern": "^did:(?:key|web):(?:(?:[A-Za-z0-9._-]|%[0-9A-Fa-f]{2})*:)*(?:[A-Za-z0-9._-]|%[0-9A-Fa-f]{2})+$",
           "description": "DID the attestation is about. For KYC/KYB this is the responsibleParty, not the agent."
         },
         "issuer": {
           "type": "string",
-          "pattern": "^did:(key|web):.+$",
+          "pattern": "^did:(?:key|web):(?:(?:[A-Za-z0-9._-]|%[0-9A-Fa-f]{2})*:)*(?:[A-Za-z0-9._-]|%[0-9A-Fa-f]{2})+$",
           "description": "Issuer DID. MUST be in the trusted-issuer allowlist (default did:web:example.com)."
         }
       },

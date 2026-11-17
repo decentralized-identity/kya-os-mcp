@@ -1,0 +1,10 @@
+kind: Security
+body: |-
+    **A proxy agent composed with interceptors is read as any other
+    dispatcher.** Where the global dispatcher is undici's `ProxyAgent` or
+    `EnvHttpProxyAgent` composed with interceptors, such as
+    `interceptors.dns()`, which may resolve the host and connect on their
+    own, `RuntimeFetchProvider` resolves, checks and pins the read. Deciding
+    whether a proxy carries a read makes no request and opens no
+    connection. See UPGRADING.md.
+time: 2026-11-17T02:57:24.052142-06:00

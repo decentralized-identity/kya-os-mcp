@@ -7,13 +7,12 @@
  * private-network rule by its URL alone, and says once that the proxy must refuse private addresses
  * itself. Any other dispatcher, and an `EnvHttpProxyAgent` for a host it sends straight to the host,
  * keeps the read resolved, checked and pinned: a dispatcher the provider cannot read never turns the
- * check off. The runtime's `fetch` is stubbed here, standing for the proxy, and the global dispatcher
- * is an object of the class each case names, built as undici builds it where its shape matters; the
- * last case runs Node's own `EnvHttpProxyAgent` in a child process.
+ * check off, and neither does one composed with interceptors, which the provider never dispatches
+ * through to decide. The runtime's `fetch` is stubbed here, standing for the proxy, and the global
+ * dispatcher is an object of the class each case names, built as undici builds it where its shape
+ * matters. `./runtime-fetch-env-proxy.test.ts` asks Node's own undici.
  */
 
-import { spawnSync } from 'node:child_process';
-import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDidWebResolver, logger, RuntimeFetchProvider } from '../../index.js';
 import type { DnsLookup } from '../../card/index.js';
@@ -32,10 +31,14 @@ function dispatcherNamed(name: string, base: new () => object = Object): object 
   return new named();
 }
 
+/** The origin of every request a stand-in agent was dispatched, which on undici's would be sent. */
+const sent: string[] = [];
+
 /** A stand-in for undici's `Agent`, whose every dispatch would send a request. */
 class Agent {
-  dispatch(): boolean {
-    throw new Error('a request was sent');
+  dispatch(options: { origin: string }): boolean {
+    sent.push(options.origin);
+    return true;
   }
 }
 /** A stand-in for undici's `ProxyAgent`. */
@@ -54,7 +57,7 @@ function envHttpProxyAgent(settings: { proxy: boolean; noProxy: string }): objec
     dispatch(options: { origin: string }): unknown {
       const host = new URL(options.origin).hostname;
       const agent = this.#noProxy !== '' && host.endsWith(this.#noProxy) ? direct : proxied;
-      return agent.dispatch.call(agent);
+      return agent.dispatch(options);
     }
   }
   return Object.assign(new EnvHttpProxyAgent(), {
@@ -64,12 +67,26 @@ function envHttpProxyAgent(settings: { proxy: boolean; noProxy: string }): objec
   });
 }
 
+/**
+ * `dispatcher` composed with an interceptor that dispatches later, as undici's `interceptors.dns()`
+ * does once it has resolved the host: undici 7 composes into a proxy of the dispatcher whose
+ * `dispatch` alone is the interceptor's, so it keeps the dispatcher's class and members.
+ */
+function composedLater(dispatcher: object): object {
+  const later = (options: { origin: string }) => {
+    setTimeout(() => (dispatcher as Agent).dispatch(options), 0);
+    return true;
+  };
+  return new Proxy(dispatcher, { get: (target, key) => (key === 'dispatch' ? later : Reflect.get(target, key)) });
+}
+
 /** Every URL the runtime's own `fetch` was asked for. */
 const runtimeFetched: string[] = [];
 let before: { had: boolean; value: unknown };
 
 beforeEach(() => {
   runtimeFetched.length = 0;
+  sent.length = 0;
   before = { had: Object.prototype.hasOwnProperty.call(globals, GLOBAL_DISPATCHER), value: globals[GLOBAL_DISPATCHER] };
   vi.stubGlobal('fetch', async (url: string) => {
     runtimeFetched.push(url);
@@ -104,10 +121,11 @@ describe('a runtime whose fetch sends the request through a proxy', () => {
     globals[GLOBAL_DISPATCHER] = dispatcher;
     expect(await pins(PROXIED)).toBe(false);
     expect(await pins(NOT_PROXIED)).toBe(true);
-    // Each agent's own dispatch is back once the dispatcher is asked.
+    // Each agent's own dispatch is back once the dispatcher is asked, and none sent a request.
     for (const key of Object.getOwnPropertySymbols(dispatcher)) {
       expect(Object.hasOwn((dispatcher as Record<symbol, object>)[key]!, 'dispatch')).toBe(false);
     }
+    expect(sent).toEqual([]);
   });
 
   it('still refuses, before any request, a host whose URL alone names a private or local address', async () => {
@@ -149,45 +167,22 @@ describe('a runtime whose fetch connects to the host it is asked for', () => {
     ['a dispatcher of no name', () => Object.create(null) as object],
     ['an EnvHttpProxyAgent with no proxy set', () => envHttpProxyAgent({ proxy: false, noProxy: '' })],
     ['an EnvHttpProxyAgent whose agents cannot be found', () => dispatcherNamed('EnvHttpProxyAgent')],
-  ])('resolves, checks and pins a host a presenter names, under %s', async (_case, dispatcher) => {
+    ['an EnvHttpProxyAgent composed with an interceptor, for a host it proxies', () => composedLater(envHttpProxyAgent({ proxy: true, noProxy: '' }))],
+    ['an EnvHttpProxyAgent composed with an interceptor, for a host NO_PROXY names', () => composedLater(envHttpProxyAgent({ proxy: true, noProxy: '.proxied.example' }))],
+    ['a ProxyAgent composed with an interceptor', () => composedLater(new ProxyAgent())],
+  ])('resolves, checks and pins a host a presenter names, under %s, and sends nothing to decide', async (_case, dispatcher) => {
     const installed = dispatcher();
     if (installed === undefined) delete globals[GLOBAL_DISPATCHER];
     else globals[GLOBAL_DISPATCHER] = installed;
     expect(await new RuntimeFetchProvider()[ADDRESS_PINNING](PROXIED)).toMatchObject({ lookup: expect.any(Function) });
+    // Long enough for anything an interceptor put off to have been dispatched.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(sent).toEqual([]);
   });
 
   it('keeps a lookup the provider is given, proxy or not', async () => {
     globals[GLOBAL_DISPATCHER] = new ProxyAgent();
     const lookup: DnsLookup = async () => [{ address: '93.184.216.34', family: 4 }];
     expect(await new RuntimeFetchProvider({ lookup })[ADDRESS_PINNING](PROXIED)).toMatchObject({ lookup });
-  });
-});
-
-/** What a child Node process under `NODE_USE_ENV_PROXY=1` installs, and whether the provider pins each URL there. */
-const CHILD = (index: string) => `
-const { RuntimeFetchProvider } = await import(${JSON.stringify(index)});
-const pinning = new RuntimeFetchProvider()[Symbol.for('@kya-os/mcp/address-pinning')];
-const dispatcher = globalThis[Symbol.for('undici.globalDispatcher.1')];
-process.stdout.write(JSON.stringify({
-  dispatcher: dispatcher?.constructor?.name,
-  proxied: (await pinning(${JSON.stringify(PROXIED)})) !== undefined,
-  noProxy: (await pinning(${JSON.stringify(NOT_PROXIED)})) !== undefined,
-}));
-`;
-
-describe("Node's own EnvHttpProxyAgent, under NODE_USE_ENV_PROXY=1", () => {
-  it('reads a host it sends through the proxy through fetch, and pins a host NO_PROXY names', { timeout: 30_000 }, (test) => {
-    const root = fileURLToPath(new URL('../../..', import.meta.url));
-    const index = pathToFileURL(fileURLToPath(new URL('../../index.ts', import.meta.url))).href;
-    const child = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', CHILD(index)], {
-      cwd: root,
-      encoding: 'utf8',
-      env: { ...process.env, NODE_USE_ENV_PROXY: '1', HTTPS_PROXY: 'http://127.0.0.1:9', NO_PROXY: '.internal.example', NODE_NO_WARNINGS: '1' },
-    });
-    expect(child.status, child.stderr).toBe(0);
-    const seen = JSON.parse(child.stdout) as { dispatcher?: string; proxied: boolean; noProxy: boolean };
-    // Node 20 has no NODE_USE_ENV_PROXY, and installs no dispatcher of its own until the first fetch.
-    if (seen.dispatcher !== 'EnvHttpProxyAgent') test.skip();
-    expect(seen).toEqual({ dispatcher: 'EnvHttpProxyAgent', proxied: false, noProxy: true });
   });
 });

@@ -2,7 +2,8 @@
  * SSRF-hardened fetch — the Node I/O adapters (the `SafeFetchTransport` + `DnsLookup` defaults).
  *
  * Two transports ship. The DEFAULT `nodeHttpsTransport` PINS the connection to the pre-validated
- * IP (closing the DNS-rebinding TOCTOU window) via a custom `node:https` `lookup`. That pinned path
+ * IP (closing the DNS-rebinding TOCTOU window) via a custom `node:https` `lookup`, over a connection
+ * of its own that no other request shares (`pinnedRequester`). That pinned path
  * misbehaves in some serverless runtimes — it failed 100% of fetches in the Vercel Node serverless
  * runtime on 2026-07-02, a failure the mocked-transport unit suite cannot catch. For those runtimes,
  * select `fetchTransport`: it connects by HOSTNAME through global `fetch` (the SSRF screen has
@@ -12,7 +13,7 @@
  * `./ip-classifier`; the seam vocabulary lives in `./safe-fetch-types`. No crypto here.
  */
 
-import type { IncomingMessage } from 'node:http';
+import type { Agent, ClientRequest, IncomingMessage } from 'node:http';
 import type { RequestOptions } from 'node:https';
 import type { LookupFunction, TcpNetConnectOpts } from 'node:net';
 import type { DnsAddress, DnsLookup, RawResponse, SafeFetchTransport, TransportInit } from './safe-fetch-types.js';
@@ -77,16 +78,64 @@ function loadNodeHttp(): Promise<NodeHttp | null> {
   ));
 }
 
+type NodeUrl = typeof import('node:url');
+let nodeUrlPromise: Promise<NodeUrl | null> | undefined;
+/** Lazily load (and cache) `node:url`, for the request options a URL makes; resolves to `null` where it's absent. */
+function loadNodeUrl(): Promise<NodeUrl | null> {
+  return (nodeUrlPromise ??= import('node:url').then(
+    (m) => m,
+    () => null,
+  ));
+}
+
+/** One pinned request: the URL, its options and what to do with its response. */
+type PinnedRequester = (url: string, options: PinnedRequestOptions, onResponse: (res: IncomingMessage) => void) => ClientRequest;
+
 /**
- * The `request` of the module that reads a URL: `node:http` for an http one, which SafeFetch hands a
- * transport only where the caller's `operatorNamed` named it, and `node:https` for any other.
+ * How a pinned request is made: as a `node:http` `ClientRequest` through an agent of its own
+ * ({@link ownAgent}), over `node:http` for an http URL, which SafeFetch hands a transport only where
+ * the caller's `operatorNamed` named it, and over `node:https` for any other. Never through the
+ * `request` or `get` of either module, nor its `globalAgent`, which an application, or a package
+ * such as global-agent, may replace to send every request through a proxy that resolves the host
+ * again, and whose pool hands a request a socket another opened, to whatever address it reached.
  */
-async function requestFor(http: boolean): Promise<NodeHttps['request']> {
-  const module = http ? await loadNodeHttp() : await loadNodeHttps();
-  if (!module) {
+async function pinnedRequester(http: boolean): Promise<PinnedRequester> {
+  const [nodeHttp, nodeHttps, nodeUrl] = await Promise.all([loadNodeHttp(), http ? null : loadNodeHttps(), loadNodeUrl()]);
+  const tls = http ? undefined : nodeHttps;
+  if (!nodeHttp || !nodeUrl || tls === null) {
     throw new Error(`safe-fetch: node:${http ? 'http' : 'https'} is unavailable in this runtime; pass transport: fetchTransport`);
   }
-  return module.request;
+  return (url, options, onResponse) => {
+    const agent = tls === undefined ? new nodeHttp.Agent({ keepAlive: false }) : ownAgent(tls);
+    return new nodeHttp.ClientRequest({ ...nodeUrl.urlToHttpOptions(new URL(url)), ...options, agent }, onResponse);
+  };
+}
+
+/**
+ * The TLS settings of `https.globalAgent` a pinned request keeps, as it kept them when it went
+ * through that agent: those that decide which servers it trusts and how it proves itself, such as a
+ * `ca` an application adds. Nothing that pools, routes or resolves, so no `lookup`, proxy or
+ * keep-alive setting there reaches it.
+ */
+const TLS_SETTINGS = ['ca', 'cert', 'key', 'pfx', 'passphrase', 'crl', 'ciphers', 'minVersion', 'maxVersion', 'rejectUnauthorized', 'checkServerIdentity'] as const;
+
+/**
+ * An `https.Agent` for one pinned request, never pooled with another: it keeps no socket alive, so
+ * the request connects to the address it was pinned to and closes after its response. It takes
+ * {@link TLS_SETTINGS} from `https.globalAgent` as the application has set it now, a replaced one
+ * included, and nothing else from it.
+ */
+function ownAgent(nodeHttps: NodeHttps): Agent {
+  const live = (nodeHttps as NodeHttps & { default?: Pick<NodeHttps, 'globalAgent'> }).default ?? nodeHttps;
+  let options: unknown;
+  try {
+    options = (live.globalAgent as { options?: unknown } | undefined)?.options;
+  } catch {
+    options = undefined;
+  }
+  const settings = typeof options === 'object' && options !== null ? (options as Record<string, unknown>) : {};
+  const kept = Object.fromEntries(TLS_SETTINGS.flatMap((name) => (settings[name] === undefined ? [] : [[name, settings[name]]])));
+  return new nodeHttps.Agent({ ...kept, keepAlive: false });
 }
 
 /** Default DNS seam — resolve every address (`all: true`) for full SSRF screening. */
@@ -235,12 +284,13 @@ function requestHeaders(headers: TransportInit['headers']): Record<string, strin
 
 /**
  * Default transport: node:https pinned to the validated IP, TLS SNI preserved, body-capped, gzip
- * decoded. An http URL, which SafeFetch hands it only where the caller's `operatorNamed` named it,
- * is read over node:http, pinned the same way.
+ * decoded, over a connection of its own ({@link pinnedRequester}). An http URL, which SafeFetch
+ * hands it only where the caller's `operatorNamed` named it, is read over node:http, pinned the same
+ * way.
  */
 export const nodeHttpsTransport: SafeFetchTransport = async (url, init) => {
   const http = new URL(url).protocol === 'http:';
-  const request = await requestFor(http);
+  const request = await pinnedRequester(http);
   return new Promise<RawResponse>((resolve, reject) => {
     const family = init.family === 6 ? 6 : 4;
     const pinnedLookup = buildPinnedLookup(init.pinnedAddress, family, init.fallbackAddresses);

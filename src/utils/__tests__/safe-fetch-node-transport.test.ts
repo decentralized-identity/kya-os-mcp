@@ -1,8 +1,9 @@
 /**
- * The default transport, `nodeHttpsTransport`, against a stand-in for `node:https` that answers
- * through the callbacks and events the real module uses: what the transport asks for (a GET of
- * the URL, connected to the validated address, with the hostname as the TLS server name), the
- * response it hands back, and each way a read ends early. No TLS connection is made here.
+ * The default transport, `nodeHttpsTransport`, against stand-ins for `node:http` and `node:https`
+ * that answer through the callbacks and events the real modules use: what the transport asks for (a
+ * GET of the URL, connected to the validated address, with the hostname as the TLS server name,
+ * through an agent of its own), the response it hands back, and each way a read ends early. No TLS
+ * connection is made here.
  */
 
 import { EventEmitter } from 'node:events';
@@ -50,16 +51,30 @@ interface Asked {
 /** How the stand-in answers a request: with a response it then drives, or an error on the request. */
 type Answer = (respond: (res: StandInResponse) => void, request: StandInRequest) => void;
 
-/** The transport as it loads with `node:https` replaced by a stand-in that answers with `answer`. */
-async function transportAnswering(answer: Answer) {
+/** A stand-in for an `http.Agent` or `https.Agent`, which keeps the options it was made with. */
+class StandInAgent {
+  constructor(readonly options: Record<string, unknown>) {}
+}
+
+/**
+ * The transport as it loads with `node:http` and `node:https` replaced by stand-ins that answer
+ * with `answer`: `node:http`'s `ClientRequest` and the `Agent` of each, and a `globalAgent` with
+ * the `options` given, as named exports and on the module's default export, as the real ones have
+ * them. Neither has a `request`, so a transport that called one would fail.
+ */
+async function transportAnswering(answer: Answer, globalOptions: Record<string, unknown> = {}) {
   const asked: Asked[] = [];
-  const request = (url: string, options: RequestOptions, onResponse: (res: StandInResponse) => void) => {
+  function ClientRequest(options: RequestOptions, onResponse: (res: StandInResponse) => void): StandInRequest {
     const req: StandInRequest = new StandInRequest(() => answer(onResponse, req));
-    asked.push({ url, options, request: req });
+    asked.push({ url: `${options.protocol}//${options.hostname}${options.path}`, options, request: req });
     return req;
-  };
+  }
   vi.resetModules();
-  vi.doMock('node:https', () => ({ request }));
+  vi.doMock('node:http', () => ({ ClientRequest, Agent: StandInAgent }));
+  vi.doMock('node:https', () => {
+    const globalAgent = new StandInAgent(globalOptions);
+    return { Agent: StandInAgent, globalAgent, default: { Agent: StandInAgent, globalAgent } };
+  });
   const { nodeHttpsTransport } = await import('../safe-fetch-transports.js');
   return { asked, transport: nodeHttpsTransport };
 }
@@ -95,6 +110,7 @@ function lookedUp(lookup: LookupFunction, options: { all?: boolean }): Promise<u
 }
 
 afterEach(() => {
+  vi.doUnmock('node:http');
   vi.doUnmock('node:https');
   vi.resetModules();
 });
@@ -113,6 +129,18 @@ describe('nodeHttpsTransport, against a stand-in for node:https', () => {
     const lookup = options.lookup as LookupFunction;
     expect(await lookedUp(lookup, {})).toEqual({ address: '93.184.216.34', family: 4 });
     expect(await lookedUp(lookup, { all: true })).toEqual([{ address: '93.184.216.34', family: 4 }]);
+  });
+
+  it('makes each request through an agent of its own, which keeps no socket alive and only the TLS settings of the global agent', async () => {
+    const ca = ['a certificate'];
+    const { asked, transport } = await transportAnswering(replying(200, {}, []), { ca, keepAlive: true, lookup: () => undefined, proxyEnv: {} });
+    await transport('https://example.com/card.json', init());
+    await transport('https://example.com/card.json', init());
+
+    const [first, second] = asked.map(({ options }) => options.agent as StandInAgent);
+    expect(first).toBeInstanceOf(StandInAgent);
+    expect(first!.options).toEqual({ ca, keepAlive: false });
+    expect(second).not.toBe(first);
   });
 
   it('connects to a validated IPv6 address as one', async () => {

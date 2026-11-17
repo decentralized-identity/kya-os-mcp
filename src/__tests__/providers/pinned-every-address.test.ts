@@ -12,7 +12,7 @@
 
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import https from 'node:https';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { logger, RuntimeFetchProvider } from '../../index.js';
 import { createSafeFetch, nodeHttpsTransport, type DnsAddress, type DnsLookup, type SafeFetchTransport, type TransportInit } from '../../utils/safe-fetch.js';
 import { closeLoopback, listenOnLoopback } from '../utils/loopback-server.js';
@@ -39,6 +39,11 @@ beforeAll(async () => {
   });
   https.globalAgent.options.ca = [tls.cert];
   port = await listenOnLoopback(server as unknown as Server);
+});
+
+beforeEach(() => {
+  // No socket a test before this one left in the pool, so the pin alone decides where each read goes.
+  https.globalAgent.destroy();
 });
 
 afterAll(async () => {

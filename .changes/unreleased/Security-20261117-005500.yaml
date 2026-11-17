@@ -6,4 +6,10 @@ body: |-
     capped decompressor, so the byte cap holds the decoded body. A host that
     serves its JSON gzipped whatever the request asks, as an object store
     does, is read again, and a body in another coding is refused and logged.
+    Each pinned request, `SafeFetch`'s included, now has a connection of
+    its own: it never reuses a socket `https.globalAgent` keeps alive for
+    another request, which may have reached another address, nor goes
+    through an agent or `https.request` installed in their place, such as
+    a proxy that would resolve the host again. It keeps only the TLS
+    settings of `https.globalAgent`, such as a `ca`. See UPGRADING.md.
 time: 2026-11-17T00:55:00.000000-06:00

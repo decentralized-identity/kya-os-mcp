@@ -96,7 +96,8 @@ export interface VerifyOrHintsResult {
   reason?: string;
   /**
    * The code of the delegation verifier's refusal, when it refused: the code its answer stated,
-   * `delegation_invalid` when it stated none, or `runtime_error` when its answer could not be read.
+   * `delegation_invalid` when it stated none, or `runtime_error` when its answer could not be read
+   * or it threw, unless what it threw is a `RefusalError`, whose code it is.
    * For the operator, as `reason` is: `authError`, which the client receives, does not carry it.
    */
   code?: RefusalCode;

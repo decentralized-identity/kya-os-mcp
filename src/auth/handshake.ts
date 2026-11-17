@@ -16,6 +16,9 @@ import type {
 } from '../types/protocol.js';
 import { createNeedsAuthorizationError } from '../types/protocol.js';
 import { logger } from '../logging/index.js';
+import { isTransientRefusal } from '../refusal-codes.js';
+import { refusalCodeOf } from '../utils/refusal.js';
+import { shownWords } from '../utils/thrown-words.js';
 import { readDelegationVerdict, type DelegationVerdict } from './delegation-verdict.js';
 import type { AgentReputation, DelegationVerifier, VerifyDelegationResult, VerifyOrHintsResult } from './types.js';
 
@@ -281,15 +284,20 @@ export async function verifyOrHints(
   try {
     delegationResult = readDelegationVerdict(await config.delegationVerifier.verify(agentDid, scopes));
   } catch (error) {
+    // The verifier is the host's, so what it threw is the operator's to read: the challenge the
+    // client receives gives only a RefusalError's words, or a deadline's.
     logger.error('[AuthHandshake] Delegation verification failed:', error);
-    const errorMessage = `Delegation verification error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    const errorMessage = `Delegation verification error: ${shownWords(error) ?? 'the delegation verifier failed'}`;
 
     const authError = await buildNeedsAuthorizationError(agentDid, scopes, config, errorMessage);
+    const code = refusalCodeOf(error, 'runtime_error');
 
     return {
       authorized: false,
       authError,
       reason: errorMessage,
+      code,
+      transient: isTransientRefusal(code),
     };
   }
 

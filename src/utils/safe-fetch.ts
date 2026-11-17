@@ -32,6 +32,7 @@
 
 import { logger } from '../logging/index.js';
 import { developmentMode } from './development-mode.js';
+import { isNonPublicByForm } from './host-form.js';
 import { isBlockedAddress } from './ip-classifier.js';
 import { ReadFailureError } from './read-failure.js';
 import { followRedirects, MAX_REDIRECTS, type RedirectRefusals, type RedirectTarget } from './redirect-follower.js';
@@ -88,12 +89,23 @@ function assertHttpsUrl(raw: string): string {
 /** The production opt-in SafeFetch's refusals and its production guard name beside `development: true`. */
 const OWNED_ORIGINS = "list each origin you own in SafeFetch's allowOrigins";
 
+/** The two settings that admit a host SafeFetch refuses as private or local. */
+const PRIVATE_HOST_SETTINGS = `in local development, set development: true; to read a host you own in production, ${OWNED_ORIGINS}`;
+
 /**
  * Resolve the host ONCE, reject if ANY resolved address is non-public, unless `admitPrivate`, and
- * pin the first. The refusal names the host and what admits it, never the address, since whoever
- * named the host may not know what it resolves to; the address goes to the log.
+ * pin the first. A host that is non-public whatever any resolver answers (a non-public IP literal,
+ * or `localhost` or a name under it, `./host-form`) is refused by the URL alone, before any lookup,
+ * and the refusal says so. The refusal of a name that resolves to a non-public address names the
+ * host and what admits it, never the address, since whoever named the host may not know what it
+ * resolves to; the address goes to the log.
  */
 async function resolveAndPin(hostname: string, lookup: DnsLookup, admitPrivate: boolean): Promise<DnsAddress> {
+  if (!admitPrivate && isNonPublicByForm(hostname)) {
+    throw new ReadFailureError('host_refused', `safe-fetch: refusing host "${hostname}", a private or local host: ${PRIVATE_HOST_SETTINGS}`, {
+      beforeRequest: true,
+    });
+  }
   const addresses = await lookup(hostname);
   const [first] = addresses;
   if (!first) {
@@ -104,8 +116,7 @@ async function resolveAndPin(hostname: string, lookup: DnsLookup, admitPrivate: 
       logger.warn(`[kya-os] safe-fetch: host "${hostname}" resolves to the non-public address ${candidate.address}, so it is refused`);
       throw new ReadFailureError(
         'host_refused',
-        `safe-fetch: refusing host "${hostname}", which resolves to a non-public address: in local development, ` +
-          `set development: true; to read a host you own in production, ${OWNED_ORIGINS}`,
+        `safe-fetch: refusing host "${hostname}", which resolves to a non-public address: ${PRIVATE_HOST_SETTINGS}`,
       );
     }
   }
@@ -160,7 +171,9 @@ async function finalize(raw: RawResponse, maxBytes: number): Promise<SafeFetchRe
  * card's `FetchLike`: `(url) => Promise<{ ok, status, json }>`. A URL or redirect its own rules
  * refuse (a scheme other than https, a non-public address, a cross-origin redirect) rejects with
  * an error that carries the `host_refused` read-failure kind, and a hop that runs out of time with
- * one of `deadline_exceeded`, so a verifier codes the refusal without reading its message.
+ * one of `deadline_exceeded`, so a verifier codes the refusal without reading its message. A
+ * refusal decided from the URL alone, before any DNS lookup or request (its scheme, a non-public IP
+ * literal, a localhost name), also says so, so a verifier may tell whoever named the URL why.
  */
 export function createSafeFetch(options: SafeFetchOptions = {}): SafeFetch {
   const cfg: HopConfig = {

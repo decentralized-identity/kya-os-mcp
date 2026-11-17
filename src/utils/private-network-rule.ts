@@ -24,13 +24,11 @@ import { fetchWithCheckedRedirects } from './checked-redirects.js';
 import { describeValue } from './describe-value.js';
 import type { FetchPort, PrivateNetworkTransport } from './fetch-port.js';
 import { PRODUCTION_PRIVATE_HOSTS } from './development-mode.js';
+import { hostForm } from './host-form.js';
 import { isBlockedAddress } from './ip-classifier.js';
 import { ReadFailureError } from './read-failure.js';
 
 export type { PrivateNetworkTransport } from './fetch-port.js';
-
-/** An IPv4 host as the URL parser writes one, whatever form the URL gave it in. */
-const IPV4_HOST = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 
 /**
  * Special-use domains whose names a resolver answers from local configuration, never from public
@@ -51,17 +49,6 @@ function parsed(url: string): URL | undefined {
 }
 
 /**
- * `hostname`, as the URL parser writes it, without the trailing dots a resolver ignores, written as
- * the parser writes the rest: it keeps `127.0.0.1..` as a name, though a resolver reads it as the
- * address `127.0.0.1`. `undefined` when the rest does not parse, as `1.2.3.4.5` does not.
- */
-function withoutTrailingDots(hostname: string): string | undefined {
-  let end = hostname.length;
-  while (hostname[end - 1] === '.') end--;
-  return end === hostname.length ? hostname : parsed(`http://${hostname.slice(0, end)}/`)?.hostname;
-}
-
-/**
  * Whether `name`, a host name as the URL parser writes it (lowercase, IDNA-mapped, percent-decoded)
  * without trailing dots, is a local name: a single label, which a resolver completes through its
  * search domains to a host of the local network (`ip6-localhost`, or a bare `metadata` on Google
@@ -72,13 +59,14 @@ function isLocalName(name: string): boolean {
   return LOCAL_DOMAINS.some(domain => name === domain || name.endsWith(`.${domain}`));
 }
 
-/** Whether the rule refuses `hostname`: a non-public IP literal, or a local name, with any trailing dots. */
+/**
+ * Whether the rule refuses `hostname`: a non-public IP literal, or a local name, with any trailing
+ * dots, read as `./host-form` reads a host; a host that does not parse without them is refused too.
+ */
 function isPrivateHost(hostname: string): boolean {
-  if (hostname.startsWith('[')) return isBlockedAddress(hostname.slice(1, -1));
-  const host = withoutTrailingDots(hostname);
-  if (host === undefined) return true;
-  if (IPV4_HOST.test(host)) return isBlockedAddress(host);
-  return isLocalName(host);
+  const form = hostForm(hostname);
+  if (form === undefined) return true;
+  return 'literal' in form ? isBlockedAddress(form.literal) : isLocalName(form.name);
 }
 
 /** The two settings that admit a private or local host. */

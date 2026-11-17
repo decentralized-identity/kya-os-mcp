@@ -5,9 +5,10 @@
  * chain, names the list and says only that it could not be read: no HTTP status, no JSON parse error
  * quoting the body, no byte cap, no redirect, no refusal made after a DNS lookup and no transport
  * text, all of which go to the operator's log. It says why only where that was decided from the URL
- * alone, before any request (SafeFetch's https rule), or a deadline passed. The code and whether it
- * is transient are as before, and a verdict on a list that was read keeps its reason. Every test uses
- * `@kya-os/mcp/card` as an adopter calls it.
+ * alone, before any request (SafeFetch's https rule, or its refusal of a private IP literal or a
+ * localhost name), or a deadline passed. The code and whether it is transient are as before, and a
+ * verdict on a list that was read keeps its reason. Every test uses `@kya-os/mcp/card` as an
+ * adopter calls it.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -97,10 +98,21 @@ describe('the Card revocation checker, when it could not read a status list', ()
     expect(outcome.logged).toContain(logged);
   });
 
-  it("says why where SafeFetch refused the URL as written, before any request", async () => {
-    const http = 'http://status.example/lists/1';
-    const { answer } = await answerFor(safeFetchAt('93.184.216.34', async () => { throw new Error('never reached'); }), http);
-    expect(answer).toEqual({ revoked: true, fresh: false, reason: 'safe-fetch: only https is allowed (got "http:")', ...coded('host_refused') });
+  it.each([
+    ['http://status.example/lists/1', 'safe-fetch: only https is allowed (got "http:")'],
+    [
+      'https://10.1.2.3/lists/1',
+      'safe-fetch: refusing host "10.1.2.3", a private or local host: in local development, set development: true; ' +
+        "to read a host you own in production, list each origin you own in SafeFetch's allowOrigins",
+    ],
+    [
+      'https://status.localhost/lists/1',
+      'safe-fetch: refusing host "status.localhost", a private or local host: in local development, set development: true; ' +
+        "to read a host you own in production, list each origin you own in SafeFetch's allowOrigins",
+    ],
+  ])('says why where SafeFetch refused %s as written, before any request', async (url, reason) => {
+    const { answer } = await answerFor(safeFetchAt('93.184.216.34', async () => { throw new Error('never reached'); }), url);
+    expect(answer).toEqual({ revoked: true, fresh: false, reason, ...coded('host_refused') });
   });
 
   it('says why where its deadline passed', async () => {

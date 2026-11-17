@@ -18,9 +18,8 @@
  *   - {@link requireDelegation}: the same check pre-bound to its seams, with 401/403-shaped results.
  */
 
-import { answerWithinDeadline, DeadlineExceededError, dependencyTimeout } from '../utils/deadline.js';
-import { coded, RefusalError, refusalCodeOf, type Coded } from '../utils/refusal.js';
-import { sanitizeForMessage } from '../utils/message-text.js';
+import { answerWithinDeadline, dependencyTimeout } from '../utils/deadline.js';
+import { refusalCodeOf } from '../utils/refusal.js';
 import { thrownReason } from '../utils/thrown-words.js';
 import type { RefusalCode } from '../refusal-codes.js';
 import { admitsRootIssuer } from '../delegation/root-admission.js';
@@ -33,7 +32,7 @@ import {
   type RejectionCoded,
   type RejectionCoding,
 } from './carried-chain.js';
-import { codedVariantOf } from './coded-proof-verifier.js';
+import { firstHopProofRefusal } from './hop-proofs.js';
 import type { DelegationProofVerifier } from './delegation-proof.js';
 import type { BitstringRevocationChecker } from './revocation.js';
 import { walkRevocationChain, type RevocationChainWalk } from './revocation-chain.js';
@@ -48,12 +47,6 @@ export {
   type DelegationChainMeta,
   type RejectionCoding,
 } from './carried-chain.js';
-
-/**
- * The most UTF-16 code units of a hop proof verifier's refusal that a hop's reason keeps: enough for
- * the library's refusal of an issuer DID it could not resolve to keep a remedy it shows whole.
- */
-const HOP_REFUSAL_LENGTH = 512;
 
 /**
  * A snake_case rejection code. `delegation_missing` means no authority was presented;
@@ -254,10 +247,8 @@ async function verifyRequest(input: RequestDelegationInput, deps: VerifyRequestD
     return reject('delegation_invalid', 'untrusted_root', [`root issuer ${responsibleParty} is not a trusted root issuer`]);
   }
 
-  for (const [hop, credential] of credentials.entries()) {
-    const refusal = await hopProofRefusal(credential, deps.verifyHopProof, timeoutMs);
-    if (refusal !== undefined) return reject('delegation_invalid', refusal.code, [`hop ${hop}: ${refusal.reason}`]);
-  }
+  const proofRefusal = await firstHopProofRefusal(credentials, deps.verifyHopProof, timeoutMs);
+  if (proofRefusal !== undefined) return reject('delegation_invalid', proofRefusal.code, [proofRefusal.reason]);
 
   if (!allowedAction.includes(input.action)) {
     return reject('action_not_delegated', 'insufficient_scope', [`action "${input.action}" is not in the delegated allowedAction`]);
@@ -331,34 +322,6 @@ async function obtainChain(
   const parsed = parseCredentials(resolved);
   if (!parsed.ok) return rejection('delegation_invalid', parsed.refusalCode, parsed.reasons, 'resolved');
   return { ok: true, chain: parsed.chain, credentials: parsed.credentials, source: 'resolved' };
-}
-
-/**
- * Run the hop-proof seam, fail-closed, under a deadline of `timeoutMs`: why the hop is
- * refused, with its code, or `undefined` when its proof verified. A proof that did not verify is
- * `invalid_proof`; a verifier that threw a {@link RefusalError}, as the coded variant of the
- * library's (`./coded-proof-verifier`), which this asks in its place, does when the issuer's DID
- * document cannot be read, is refused with its message and its code, or `invalid_proof` where that
- * code is none of the catalog's; any other throw is
- * `runtime_error`; and a verifier, or its DID resolution, that has not answered by the deadline is
- * `deadline_exceeded`, with a reason that says so.
- */
-async function hopProofRefusal(
-  credential: Record<string, unknown>,
-  verifyHopProof: DelegationProofVerifier,
-  timeoutMs: number,
-): Promise<(Coded & { reason: string }) | undefined> {
-  try {
-    const verify = codedVariantOf(verifyHopProof);
-    const verified = await answerWithinDeadline('the hop proof verifier', () => verify(credential), timeoutMs);
-    return verified === true ? undefined : { reason: 'proof did not verify', ...coded('invalid_proof') };
-  } catch (error) {
-    if (error instanceof DeadlineExceededError) return { reason: error.message, ...coded('deadline_exceeded') };
-    if (error instanceof RefusalError) {
-      return { reason: sanitizeForMessage(error.message, HOP_REFUSAL_LENGTH), ...coded(refusalCodeOf(error, 'invalid_proof')) };
-    }
-    return { reason: 'proof did not verify', ...coded(refusalCodeOf(error, 'runtime_error')) };
-  }
 }
 
 // ── Guard: requireDelegation ─────────────────────────────────────────────────

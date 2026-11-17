@@ -2,7 +2,7 @@
  * The coded variant of a proof verifier the library builds. `createStatusListProofVerifier` and
  * `createDelegationProofVerifier` keep their 1.22.0 contract: the function each returns resolves
  * `false` on every failure, an issuer DID document that could not be read included. The library's
- * own callers, the revocation checker and the request verifier, ask the same verifier's coded
+ * own callers, the revocation checker and the chain and request verifiers, ask the same verifier's coded
  * variant instead, which throws a refusal coded by why when that document cannot be read
  * (`did_unavailable` or `deadline_exceeded` for an outage), so an outage stays transient there and
  * is never a verdict on the proof. The variant is kept in a module-private map keyed by the function

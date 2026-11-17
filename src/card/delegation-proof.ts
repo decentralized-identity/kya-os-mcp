@@ -10,7 +10,7 @@
  * the root and for a delegate re-delegating below it. The proof purpose is `assertionMethod`, the
  * purpose the profile's credentials carry today (SPEC.md §6.2), so the issuer's DID document must
  * list the key under `assertionMethod`. Every verification failure returns `false`, as on 1.22.0.
- * The request verifier asks the same verifier for the code of why (`./coded-proof-verifier`), so a
+ * The chain and request verifiers ask the same verifier for the code of why (`./coded-proof-verifier`), so a
  * hop whose issuer's DID document cannot be read is refused there as `did_unavailable` or
  * `deadline_exceeded`, an outage, and never as `invalid_proof`.
  */
@@ -43,9 +43,10 @@ export interface DelegationProofVerifierDeps {
 
 /**
  * Build a {@link DelegationProofVerifier} for `DataIntegrityProof` / `eddsa-jcs-2022` hops. Pass it
- * to {@link verifyRequestDelegation} (or {@link requireDelegation}) as `verifyHopProof`. It resolves
- * `false` on every failure, an issuer DID document that could not be read or was not read in time
- * included; the request verifier it is passed to, as it is, codes such an outage as one.
+ * to {@link evaluateDelegationChain}, {@link verifyRequestDelegation} or {@link requireDelegation}
+ * as `verifyHopProof`. It resolves `false` on every failure, an issuer DID document that could not
+ * be read or was not read in time included; the chain or request verifier it is passed to, as it is,
+ * codes such an outage as one.
  */
 export function createDelegationProofVerifier(deps: DelegationProofVerifierDeps): DelegationProofVerifier {
   const timeoutMs = dependencyTimeout(deps.dependencyTimeoutMs);

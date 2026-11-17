@@ -1038,8 +1038,9 @@ marks a credential of this profile.
 }
 ```
 
-Per-hop signature verification (the `DataIntegrityProof`, `eddsa-jcs-2022`) is a SEPARATE injected
-concern; this profile specifies the attenuation + continuity recompute.
+Per-hop signature verification (the `DataIntegrityProof`, `eddsa-jcs-2022`) is a separate injected concern; this profile specifies the attenuation + continuity recompute.
+The reference implementation accepts that verifier as `verifyHopProof` in the context of `evaluateDelegationChain`: it runs the local chain checks first, then verifies every hop root to leaf, stopping at the first failure, before it reads any status list (SPEC-ENTITY-CARD.md §11).
+The option remains optional for compatibility until the next major version; omitting it keeps the legacy status walk and logs one warning per process.
 Whichever verifier is injected, it MUST accept an `eddsa-jcs-2022` proof, on a hop or on a status list credential, only from a key that the signer's DID document lists under the verification relationship the proof's `proofPurpose` names: `assertionMethod` in this profile, by reference or embedded (W3C Controlled Identifiers v1.0 [CID] §3.3).
 The cryptosuite retrieves that key as CID §3.3 does, so its verification method MUST also be a conforming one (step 8) whose `controller` is the signer's DID (step 10).
 The method is looked for only among those in `verificationMethod` and those `assertionMethod` embeds, never among those another relationship embeds.

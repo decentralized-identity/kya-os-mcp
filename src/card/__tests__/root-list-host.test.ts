@@ -163,6 +163,20 @@ describe('a list statusListIssuers binds on a private host', () => {
     expect(verdict).toMatchObject({ ok: true });
     expect(net.connected).toEqual([[ROOT_LIST, PRIVATE], [AGENT_LIST, PRIVATE]]);
   });
+
+  it.each([
+    ['its host in upper case', 'https://LISTS.corp.example/agent'],
+    ['a /./ in its path', 'https://lists.corp.example/./agent'],
+  ])('is refused before any connection where a credential names it with %s, as the keeper does not bind that spelling', async (_case, spelled) => {
+    const p = parties();
+    const net = network({ [ROOT_LIST]: listAt(p.acme, ROOT_LIST), [AGENT_LIST]: listAt(p.agent, AGENT_LIST) });
+    const checker = net.checker({ statusListIssuers: { [p.agent.did]: [AGENT_LIST] } });
+    const verdict = await evaluateDelegationChain(chainOn(p, ROOT_LIST, spelled), checker, {
+      resource: RESOURCE, now, resourceOwner: p.acme.did, verifyHopProof,
+    });
+    expect(verdict).toMatchObject({ ok: false });
+    expect(net.connected).toEqual([[ROOT_LIST, PRIVATE]]);
+  });
 });
 
 describe("a Card's responsible party", () => {

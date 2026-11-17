@@ -35,6 +35,7 @@ import { logger } from '../logging/index.js';
 import { developmentMode } from './development-mode.js';
 import { isNonPublicByForm } from './host-form.js';
 import { pinnedTo, resolveChecked, UNTOLD, type CheckedAddresses, type LookupRefusals } from './address-check.js';
+import { guardedNamer } from './operator-named.js';
 import { ReadFailureError } from './read-failure.js';
 import { followRedirects, MAX_REDIRECTS, type RedirectRefusals, type RedirectTarget } from './redirect-follower.js';
 import {
@@ -197,7 +198,7 @@ export function createSafeFetch(options: SafeFetchOptions = {}): SafeFetch {
   const maxRedirects = options.maxRedirects ?? MAX_REDIRECTS;
 
   return async function safeFetch(initialUrl: string, init?: SafeFetchInit): Promise<SafeFetchResponse> {
-    const operatorNamed = hopNamer(init?.operatorNamed);
+    const operatorNamed = guardedNamer(init?.operatorNamed);
     const url = assertReadableUrl(initialUrl, operatorNamed);
     const deadline = startReadDeadline(new URL(url).hostname, cfg.timeoutMs, init?.signal ?? undefined);
     try {
@@ -213,21 +214,6 @@ export function createSafeFetch(options: SafeFetchOptions = {}): SafeFetch {
       return await finalize(raw, cfg.maxBytes, deadline);
     } finally {
       deadline.clear();
-    }
-  };
-}
-
-/**
- * Whether the caller's `operatorNamed` names a hop's URL: only its own `true` does, and one that is
- * not a function, or that throws, names none.
- */
-function hopNamer(operatorNamed: unknown): (url: string) => boolean {
-  if (typeof operatorNamed !== 'function') return () => false;
-  return (url) => {
-    try {
-      return (operatorNamed as (url: string) => unknown)(url) === true;
-    } catch {
-      return false;
     }
   };
 }

@@ -127,3 +127,23 @@ describe('the document of a DID the operator pins, whose host redirects', () => 
     expect({ fetched, looked, connected }).toEqual({ fetched: [ROOT_URL], looked: [], connected: [] });
   });
 });
+
+describe('a status-list URL the operator binds exactly on a private host, as a presenter spells it', () => {
+  const BOUND = 'https://intranet.example/list';
+  const provider = () => new RuntimeFetchProvider({ lookup, transport, statusListIssuers: { [KEEPER]: [BOUND] } });
+
+  it('is read wherever its host is, as the operator wrote it', async () => {
+    serving({ [BOUND]: () => Response.json(LIST) });
+    expect(await provider().fetchStatusList(BOUND)).toEqual(LIST);
+    expect({ fetched, looked, connected }).toEqual({ fetched: [BOUND], looked: [], connected: [] });
+  });
+
+  it.each([
+    ['its host in upper case', 'https://INTRANET.example/list'],
+    ['a /./ in its path', 'https://intranet.example/./list'],
+  ])('is held to the rule when spelled with %s, which the keeper does not bind, and never read', async (_case, spelled) => {
+    serving({ [BOUND]: () => Response.json(LIST) });
+    expect(await provider().fetchStatusList(spelled)).toBeNull();
+    expect({ fetched, looked, connected }).toEqual({ fetched: [], looked: ['intranet.example'], connected: [] });
+  });
+});

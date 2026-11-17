@@ -91,7 +91,9 @@ export interface SafeFetchInit {
    * for that URL, as an operator binds a list's exact http URL; a redirect is https alone. Every
    * other hop is held to the rule. The status-list checker passes it for those lists alone, and for
    * a pinned root's own list only over https; never answer `true` for a URL whoever presented a
-   * credential could have chosen.
+   * credential could have chosen. Each hop is asked by its URL as the URL parser writes it; only a
+   * `true` names it, and a function that throws names none. A provider's reads of the hosts its
+   * operator names go through its own `fetch` instead (`./operator-named` says why).
    */
   operatorNamed?: (url: string) => boolean;
 }

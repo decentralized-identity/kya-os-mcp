@@ -33,6 +33,7 @@ import {
   type RejectionCoding,
 } from './carried-chain.js';
 import { firstHopProofRefusal } from './hop-proofs.js';
+import { withVerifiedRoot } from '../utils/verified-root.js';
 import type { DelegationProofVerifier } from './delegation-proof.js';
 import type { BitstringRevocationChecker } from './revocation.js';
 import { walkRevocationChain, type RevocationChainWalk } from './revocation-chain.js';
@@ -268,7 +269,8 @@ async function verifyRequest(input: RequestDelegationInput, deps: VerifyRequestD
     deps.resourceOwner !== undefined || deps.trustedRootIssuers !== undefined ? responsibleParty : undefined;
   let revocation: RevocationChainWalk;
   try {
-    revocation = await walkRevocationChain(revocationEntriesOf(chain, pinnedRoot), deps.checkRevocation, {
+    // Every hop proof has verified, so the pinned root's own list URL is its word (utils/verified-root.ts).
+    revocation = await walkRevocationChain(withVerifiedRoot(revocationEntriesOf(chain, pinnedRoot)), deps.checkRevocation, {
       dependencyTimeoutMs: timeoutMs,
     });
   } catch {

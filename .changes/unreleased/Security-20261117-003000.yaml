@@ -1,0 +1,10 @@
+kind: Security
+body: |-
+    **A verified pinned root's status list may be on a private host.**
+    `createRevocationChecker` reads the list a pinned root's own credential
+    names on any host, still pinned, once that credential's proof has
+    verified, and reads the lists `statusListIssuers` binds on any host
+    too, deciding each hop, redirects included, on its own URL. A root
+    credential whose proof fails or is not checked has its list read as
+    one the presenter named. See UPGRADING.md.
+time: 2026-11-17T00:30:00.000000-06:00

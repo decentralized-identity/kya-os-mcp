@@ -178,7 +178,9 @@ async function finalize(raw: RawResponse, maxBytes: number, deadline: ReadDeadli
  *
  * One deadline, `timeoutMs` from the call, covers the whole read: the DNS lookup of each hop, every
  * redirect hop and the body. A `signal` the caller passes ends the read when it aborts, at whatever
- * step it has reached, with the signal's reason, as `fetch` does.
+ * step it has reached, with the signal's reason, as `fetch` does. Each hop the caller's
+ * `operatorNamed` names is read on any host, as `development: true` reads one, still pinned
+ * ({@link SafeFetchInit.operatorNamed}).
  */
 export function createSafeFetch(options: SafeFetchOptions = {}): SafeFetch {
   const cfg: HopConfig = {
@@ -193,10 +195,12 @@ export function createSafeFetch(options: SafeFetchOptions = {}): SafeFetch {
 
   return async function safeFetch(initialUrl: string, init?: SafeFetchInit): Promise<SafeFetchResponse> {
     const url = assertHttpsUrl(initialUrl);
+    const operatorNamed = hopNamer(init?.operatorNamed);
     const deadline = startReadDeadline(new URL(url).hostname, cfg.timeoutMs, init?.signal ?? undefined);
     try {
       const raw = await followRedirects<RawResponse>(url, {
-        request: (hop) => requestOnce(hop.url, cfg, deadline),
+        // Decided hop by hop, as `trustedOrigins` is, so a redirect from a URL the operator named is held to the rule.
+        request: (hop) => requestOnce(hop.url, operatorNamed(hop.url) ? { ...cfg, admitPrivate: true } : cfg, deadline),
         vetTarget: vetRedirectTarget,
         maxRedirects,
         // A Location with no value names no target, so it is refused as a missing header is.
@@ -206,6 +210,21 @@ export function createSafeFetch(options: SafeFetchOptions = {}): SafeFetch {
       return await finalize(raw, cfg.maxBytes, deadline);
     } finally {
       deadline.clear();
+    }
+  };
+}
+
+/**
+ * Whether the caller's `operatorNamed` names a hop's URL: only its own `true` does, and one that is
+ * not a function, or that throws, names none.
+ */
+function hopNamer(operatorNamed: unknown): (url: string) => boolean {
+  if (typeof operatorNamed !== 'function') return () => false;
+  return (url) => {
+    try {
+      return (operatorNamed as (url: string) => unknown)(url) === true;
+    } catch {
+      return false;
     }
   };
 }

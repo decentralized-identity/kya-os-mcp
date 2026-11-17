@@ -123,7 +123,8 @@ describe('evaluateDelegationChain proofs before status', () => {
     expect(events).toEqual(['proof 0', 'proved 0', 'proof 1', 'proved 1', 'status 3', 'status 7']);
     expect(check.mock.calls.map(([, context]) => context)).toEqual([p.acme, p.agent].map(({ did }) => ({
       credentialIssuer: did,
-      ...(pinned ? { trustedRootIssuer: p.acme.did, trustedRootStatusList: STATUS_URL } : {}),
+      // The root's own URL is marked as its word once every hop proof has verified (./root-list-host.test.ts).
+      ...(pinned ? { trustedRootIssuer: p.acme.did, trustedRootStatusList: STATUS_URL, trustedRootVerified: expect.any(Object) } : {}),
     })));
   });
 

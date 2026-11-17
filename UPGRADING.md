@@ -20,6 +20,7 @@ The presenter is told only that the DID or the list could not be read, with the 
 | Serve a status list over http | Serve it over https. | A status-list read, and each of its redirects, takes https; http is read only from a private or local host that `allowPrivateNetworkHosts` or `development` admits. |
 | Stub the global `fetch` in tests that read through `RuntimeFetchProvider` | Pass `lookup` and `transport: fetchTransport`, or a `FetchProvider` of your own. | Reads no longer reach the global `fetch` unless the provider's lookup says the host is public. |
 | Run on a serverless runtime where the pinned connection fails | Pass `transport: fetchTransport`. | It connects by name after the check, as `SafeFetch`'s option does. |
+| Keep a pinned root's status list on a private host | Pass `verifyHopProof` to `evaluateDelegationChain`; `verifyRequestDelegation`, `requireDelegation` and `verifyCard` need nothing. | `createRevocationChecker` reads the list the root's own credential names on any host, pinned, once that credential's proof has verified, and reads the lists `statusListIssuers` binds on any host too. |
 
 ```ts
 import { RuntimeFetchProvider, fetchTransport } from '@kya-os/mcp';
@@ -34,6 +35,7 @@ const fetchProvider = new RuntimeFetchProvider({
 
 A custom `FetchProvider`, or a subclass of `RuntimeFetchProvider` whose `fetch` is its own, makes its own connections, so the rule still reads its URLs alone.
 So does every provider in a runtime that resolves no name, such as a Cloudflare Worker or a browser, whose egress must refuse private addresses.
+A root credential whose proof fails, or is not checked, has its list read as one the presenter named, so a chain that claims your pinned root cannot point the checker at a private host.
 
 ### Check hop proofs before reading status
 

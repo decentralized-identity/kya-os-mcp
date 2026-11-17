@@ -68,6 +68,17 @@ export interface SafeFetchInit {
    * as `fetch` does. The read's own `timeoutMs` holds as well.
    */
   signal?: AbortSignal | null;
+  /**
+   * Which URLs of this read the verifier's operator named, asked of each hop, the first and each
+   * redirect, as `allowOrigins` is: the status lists its `statusListIssuers` binds, and the one a
+   * pinned root's own credential names once that credential's proof has verified. A hop it answers
+   * `true` for is read wherever its host resolves, a private or local address included, as
+   * `development: true` reads one; the connection is still pinned to the address looked up, and the
+   * https, redirect, size and deadline rules all hold. Every other hop is held to the rule. The
+   * status-list checker passes it for those lists alone; never answer `true` for a URL whoever
+   * presented a credential could have chosen.
+   */
+  operatorNamed?: (url: string) => boolean;
 }
 
 /**

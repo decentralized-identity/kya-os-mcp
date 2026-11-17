@@ -33,6 +33,7 @@ import type { DelegationProofVerifier } from './delegation-proof.js';
 import { firstHopProofRefusal } from './hop-proofs.js';
 import { hopWindowRules } from './hop-window.js';
 import { parseDateTime } from '../utils/rfc3339.js';
+import { withVerifiedRoot } from '../utils/verified-root.js';
 
 export const DELEGATION_CONTEXT_V2 = 'https://www.w3.org/ns/credentials/v2'; // VC 2.0 base `@context`
 export const ZCAP_CONTEXT = 'https://w3id.org/security/zcap/v1'; // ZCAP-LD capability context
@@ -440,8 +441,10 @@ export async function evaluateDelegationChain(
   } else {
     warnWithoutHopProofs();
   }
+  // Once every hop proof has verified, the pinned root's own list URL is its word (utils/verified-root.ts).
+  const entries = revocationEntriesOf(chain, ctx.resourceOwner);
   const revocation = await walkRevocationChain(
-    revocationEntriesOf(chain, ctx.resourceOwner),
+    ctx.verifyHopProof === undefined ? entries : withVerifiedRoot(entries),
     check,
     { dependencyTimeoutMs: timeoutMs },
   ).catch(checkerThrew);

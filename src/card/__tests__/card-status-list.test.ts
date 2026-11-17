@@ -282,7 +282,8 @@ describe("the Card's verified responsible party", () => {
     await run(async () => ({ verified: 'true', rootStatusList: CARDS_URL }) as never);
     const root = { credentialIssuer: entity.did, trustedRootIssuer: responsibleParty.did };
     expect(check.mock.calls).toStrictEqual([
-      [card.revocation, { ...root, trustedRootStatusList: CARDS_URL }],
+      // Marked as the verified root's word (./root-list-host.test.ts).
+      [card.revocation, { ...root, trustedRootStatusList: CARDS_URL, trustedRootVerified: expect.any(Object) }],
       [card.revocation, root],
       [card.revocation, root],
       [card.revocation, { credentialIssuer: entity.did }],

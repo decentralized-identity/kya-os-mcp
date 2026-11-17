@@ -131,6 +131,9 @@ A runtime that resolves no name, such as a Cloudflare Worker or a browser, and a
   On a runtime that resolves no name, it is the only defense against a public name that points at a private address.
 - **Hosts you name:** the did:web documents of the DIDs you pin in `trustedRootIssuers` and the status lists your `statusListIssuers` binds are read wherever they are, a private host included.
   The middleware passes `delegation.trustedRootIssuers` on itself; a `RuntimeFetchProvider` or `DidWebResolver` you build takes them as options of the same names.
+  The status-list checker, `createRevocationChecker`, reads both kinds of list through its `SafeFetch` on any host, still pinned, and with them the list a pinned root's own credential names, once that credential's proof has verified: in `evaluateDelegationChain` given `verifyHopProof`, in `verifyRequestDelegation` and `requireDelegation`, and in `verifyCard` once its accountability check has verified the responsible party.
+  Only the library marks a root's list as verified, after that proof, so a chain whose root credential's proof fails, or is not checked, has its root's list read as any URL a presenter names.
+  Each request is decided on its own URL, so a redirect from one of those lists to any other URL is held to the rule.
 - **Opt out:** in local development, set `development: true` on `withKyaOs` or `createKyaOsMiddleware`, `DidWebResolverOptions`, `CheqdStatusListResolverOptions` or `RuntimeFetchProviderOptions`.
   It warns once per process, and while `NODE_ENV` is `production` building what it is set on throws, so a deployment that sets `NODE_ENV` to `production` does not start with it.
   The check reads `process.env.NODE_ENV` as written, so a bundle in which a bundler has put `"production"` in its place refuses it too; a runtime with no `process` counts as not production.

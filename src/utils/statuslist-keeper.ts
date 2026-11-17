@@ -18,6 +18,7 @@
 
 import { describeValue } from './describe-value.js';
 import { isPlainObjectOfThisRealm } from './guards.js';
+import type { VerifiedRootMark } from './verified-root.js';
 
 /**
  * The status-list URLs each status-list issuer keeps, keyed by that issuer's DID:
@@ -64,6 +65,14 @@ export interface StatusCheckContext {
    * `trustedRootIssuer`, and is ignored without it.
    */
   trustedRootStatusList?: string;
+  /**
+   * The library's mark that the proof of the credential {@link trustedRootIssuer} signed has
+   * verified, so {@link trustedRootStatusList} is that root's own word and a read of it is the
+   * operator's: its host may be private (`./verified-root`). Only the library makes one, after that
+   * proof, and a reader honours only a mark the library made for this root and this URL. Leave it as
+   * it is given; a context without it is read as one whose root list a presenter named.
+   */
+  trustedRootVerified?: VerifiedRootMark;
 }
 
 /** The one issuer whose list is read at a status-list URL, and why it is that issuer. */

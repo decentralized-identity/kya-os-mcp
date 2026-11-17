@@ -38,6 +38,7 @@ import { coded, RefusalError, refusalCodeOf, type Coded } from '../utils/refusal
 import { CHECKER_REASON_LENGTH } from '../utils/revocation-answer.js';
 import { thrownReason, unreadStatusList } from '../utils/thrown-words.js';
 import { carriedContext } from '../utils/status-check-carrier.js';
+import { operatorNamedHops } from '../utils/verified-root.js';
 import { codedVariantOf } from './coded-proof-verifier.js';
 import { withStatusListIssuersRemedy } from '../utils/statuslist-remedy.js';
 import {
@@ -296,7 +297,9 @@ export function createRevocationChecker(
       const expectation = heldTo
         ? statusListExpectationFor({ statusListCredential, statusPurpose: wantedPurpose }, heldTo, statusListIssuers)
         : undefined;
-      const credential = await fetchStatusList(statusListCredential, deps.fetch);
+      // A hop the operator named, bound by statusListIssuers or a verified pinned root's own list, is read on any host.
+      const operatorNamed = operatorNamedHops(context ?? carriedContext(entry), statusListIssuers);
+      const credential = await fetchStatusList(statusListCredential, deps.fetch, operatorNamed);
       const verdict =
         expectation === undefined
           ? acceptStatusPurpose(credential, wantedPurpose)
@@ -360,9 +363,16 @@ function boundContext(context: StatusCheckContext | undefined): StatusCheckConte
   return { ...context, credentialIssuer };
 }
 
-/** GET the status-list credential through SafeFetch (throws on non-2xx / non-object body). */
-async function fetchStatusList(url: string, fetch: SafeFetch): Promise<Record<string, unknown>> {
-  const res = await fetch(url);
+/**
+ * GET the status-list credential through SafeFetch (throws on non-2xx / non-object body), each hop
+ * `operatorNamed` names read as one the operator named (`SafeFetchInit.operatorNamed`).
+ */
+async function fetchStatusList(
+  url: string,
+  fetch: SafeFetch,
+  operatorNamed: ((hop: string) => boolean) | undefined,
+): Promise<Record<string, unknown>> {
+  const res = await (operatorNamed === undefined ? fetch(url) : fetch(url, { operatorNamed }));
   if (!res.ok) throw new Error(`revocation: status-list GET ${url} → ${res.status}`);
   const body = await res.json();
   if (!isRecord(body)) throw new Error('revocation: status-list credential is not an object');

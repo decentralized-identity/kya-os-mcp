@@ -123,6 +123,6 @@ The rule resolves no host name, so it does not refuse any other name whose addre
   Its `development: true` admits private and local addresses for a local demo, under the same production guard, and in production `allowOrigins` names the origins you own, which it fetches without the guard.
 - The raw `fetch()` escape hatch of a `FetchProvider` is intentionally unguarded: it is the caller's responsibility.
 - A refusal tells whoever presented the credential nothing the verifier's network answered, since the presenter chooses the DIDs and status-list URLs the verifier reads, and their hosts may be internal ones.
-  A refusal of a DID or a status list that could not be read says why only where the DID or the URL alone decided it, before any request or DNS lookup, as for a private or local host it names, or where the deadline passed; otherwise it reads `Could not resolve issuer DID: "<did>"` or `the status list at "<url>" could not be read`.
+  A refusal of a DID or a status list that could not be read says why only where the DID or the URL alone decided it, before any request or DNS lookup, as for a private or local host it names, or where the deadline passed; otherwise it reads `Could not resolve issuer DID: "<did>"` or `the status list at "<url>" could not be read or checked`.
   An HTTP status, a body over the byte cap or not JSON, a refused redirect, an address `SafeFetch` looked up and the words of a dependency the host supplies, unless it throws a `RefusalError`, go to the operator's log, and the refusal's code says which kind of failure it was.
 

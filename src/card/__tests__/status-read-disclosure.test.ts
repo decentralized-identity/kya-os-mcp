@@ -94,7 +94,7 @@ const UNREAD: [string, SafeFetch, RefusalCode, string][] = [
 describe('the Card revocation checker, when it could not read a status list', () => {
   it.each(UNREAD)('names the list and says only that it could not be read, logging the rest, for %s', async (_name, fetch, code, logged) => {
     const outcome = await answerFor(fetch);
-    expect(outcome.answer).toEqual({ revoked: true, fresh: false, reason: `the status list at "${LIST}" could not be read`, ...coded(code) });
+    expect(outcome.answer).toEqual({ revoked: true, fresh: false, reason: `the status list at "${LIST}" could not be read or checked`, ...coded(code) });
     expect(outcome.logged).toContain(logged);
   });
 
@@ -150,7 +150,7 @@ describe('a delegation hop whose status list could not be read', () => {
     expect(result.ok).toBe(false);
     const { reasons } = result as { reasons: string[] };
     expect(reasons).toHaveLength(1);
-    expect(reasons[0]).toContain(`the status list at "${STATUS_URL}" could not be read`);
+    expect(reasons[0]).toContain(`the status list at "${STATUS_URL}" could not be read or checked`);
     expect(reasons[0]).not.toContain('10.1.2.3');
   });
 });

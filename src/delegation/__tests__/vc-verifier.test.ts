@@ -965,10 +965,10 @@ describe("DelegationCredentialVerifier", () => {
 
       expect(result.valid).toBe(false);
       expect(result.reason).toContain(
-        'Status check error: the status list at "https://example.com/status" could not be read'
+        'Status check error: the status list at "https://example.com/status" could not be read or checked'
       );
       expect(warn).toHaveBeenCalledWith(
-        '[kya-os] the status list at "https://example.com/status" could not be read: Status list unavailable'
+        '[kya-os] the status list at "https://example.com/status" could not be read or checked: Status list unavailable'
       );
       warn.mockRestore();
     });

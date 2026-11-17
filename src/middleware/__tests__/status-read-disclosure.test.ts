@@ -92,7 +92,7 @@ describe("the gate's refusal of a delegation whose status list could not be read
     ],
   ])('names the list and says only that it could not be read, logging the rest, for %s', async (_name, resolver, detail) => {
     const { answer, logged } = await gateAnswer(resolver(), INTERNAL_LIST);
-    expect(answer).toEqual({ error: 'delegation_invalid', reason: `Delegation del-1 invalid: Status check error: the status list at "${INTERNAL_LIST}" could not be read` });
+    expect(answer).toEqual({ error: 'delegation_invalid', reason: `Delegation del-1 invalid: Status check error: the status list at "${INTERNAL_LIST}" could not be read or checked` });
     expect(logged).toContain(detail);
   });
 

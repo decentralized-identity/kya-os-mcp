@@ -261,7 +261,7 @@ describe('createRevocationChecker with verifyStatusList', () => {
     expect(await checker(list, () => { throw new Error('bad'); })(entry(5), ofIssuer)).toEqual({
       revoked: true,
       fresh: false,
-      reason: `the status list at "${STATUS_URL}" could not be read`,
+      reason: `the status list at "${STATUS_URL}" could not be read or checked`,
       ...codedAs('status_unavailable'),
     });
     expect(await checker(list, async () => 'yes' as unknown as boolean)(entry(5), ofIssuer)).toEqual(rejected);

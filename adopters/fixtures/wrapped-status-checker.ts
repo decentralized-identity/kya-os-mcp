@@ -4,7 +4,7 @@
  * was given and nothing else, which its type allows, and keeps a list it could not read apart from
  * a revoked credential by throwing a `RefusalError` with the checker's code, whose words the
  * verifier's reason carries. Any other error a resolver throws may be its transport's, so the
- * verifier logs its words and its reason says only that the list could not be read.
+ * verifier logs its words and its reason says only that the list could not be read or checked.
  *
  * The issuer is a did:key that signs its own credentials and its own status list, the simplest
  * deployment there is, so the only thing between the adopter and a verified credential is the

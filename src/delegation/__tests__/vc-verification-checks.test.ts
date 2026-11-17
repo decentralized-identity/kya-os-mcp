@@ -188,12 +188,12 @@ describe("refusal reasons quote what the credential chose as describeValue does"
     expect(await checkCredentialStatus(credentialStatus("revocation"), resolver, ISSUER)).toEqual({
       valid: false,
       outcome: "status_unresolvable",
-      reason: 'Status check error: the status list at "https://status.example/1" could not be read',
+      reason: 'Status check error: the status list at "https://status.example/1" could not be read or checked',
       code: "status_unavailable",
       transient: true,
       durationMs: expect.any(Number),
     });
-    expect(warn).toHaveBeenCalledWith('[kya-os] the status list at "https://status.example/1" could not be read: connect ECONNREFUSED 10.1.2.3:443');
+    expect(warn).toHaveBeenCalledWith('[kya-os] the status list at "https://status.example/1" could not be read or checked: connect ECONNREFUSED 10.1.2.3:443');
     warn.mockRestore();
   });
 });

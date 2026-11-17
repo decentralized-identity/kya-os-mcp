@@ -178,7 +178,7 @@ export interface VerificationMethod {
  * denial's reason goes back to whoever presented the credential: a `RefusalError` the resolver
  * throws gives it its code and its words, written for that party; any other error may be a
  * transport's words about the verifier's network, so its message is logged for the operator and
- * the reason names the list and says only that it could not be read.
+ * the reason names the list and says only that it could not be read or checked.
  * `context` names the credential's issuer and may name its delegation chain's pinned root and the
  * status-list URL that root's own credential names. A list's proof shows only who signed it, so a
  * resolver that verifies the proof also passes

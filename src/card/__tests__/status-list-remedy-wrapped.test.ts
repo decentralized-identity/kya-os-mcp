@@ -104,7 +104,7 @@ describe("the statusListIssuers remedy of a tenant's list, through a wrapper", (
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const reason = await verifierReason(wrapping(ADOPTER_WORDS, (message) => new Error(message)));
     // The list's URL is quoted as every value a credential chose is, cut at 64 code units.
-    expect(reason).toBe(`Status check error: the status list at "${LIST_URL.slice(0, 64)}"... could not be read`);
+    expect(reason).toBe(`Status check error: the status list at "${LIST_URL.slice(0, 64)}"... could not be read or checked`);
     expect(remedyIn(reason)).toBe('none');
     expect(warn.mock.calls.map(String).join('\n')).toContain(`in statusListIssuers: ${CONFIGURATION}`);
     warn.mockRestore();

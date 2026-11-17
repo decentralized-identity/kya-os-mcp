@@ -66,7 +66,11 @@ export function thrownReason(error: unknown, { withheld, shown = (words) => word
   return withheld;
 }
 
-/** What a reason says of the status list at `url` that could not be read, when it may say no more. */
+/**
+ * What a reason says of the status list at `url` when it may say no more: that it could not be read
+ * or checked, since the step that failed may have come after the list was read, as decoding it,
+ * checking its shape or a proof verifier of the host's that threw.
+ */
 export function unreadStatusList(url: unknown): string {
-  return `the status list at ${describeValue(url)} could not be read`;
+  return `the status list at ${describeValue(url)} could not be read or checked`;
 }

@@ -310,9 +310,9 @@ export function createRevocationChecker(
  * whoever presented the entry (`utils/thrown-words.ts`), as a step's own refusal, SafeFetch's
  * refusal of the URL before any request, or a deadline, may, its message without the `revocation: `
  * this module opens its own with, at most {@link CHECKER_REASON_LENGTH} UTF-16 code units and free
- * of control characters; otherwise only that the list at `url` could not be read, with what was
- * thrown logged, since a fetch, a decompressor or a proof verifier the host injected, or the network,
- * may have written it.
+ * of control characters; otherwise only that the list at `url` could not be read or checked, with
+ * what was thrown logged, since a fetch, a decompressor or a proof verifier the host injected, or
+ * the network, may have written it.
  */
 function failureReason(error: unknown, url: unknown): string {
   return thrownReason(error, { withheld: unreadStatusList(url), tag: '[revocation]', maxLength: CHECKER_REASON_LENGTH }).replace(/^revocation: /, '');

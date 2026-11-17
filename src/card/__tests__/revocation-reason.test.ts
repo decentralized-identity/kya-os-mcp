@@ -27,7 +27,7 @@ import { cast, listOf, listUrlOf, servedBy, threeHopChain, verdicts } from './st
 const owner = identity();
 const other = identity();
 const ENTRY: RevocationStatusEntry = { statusListCredential: STATUS_URL, statusListIndex: '7' };
-const UNREAD = `the status list at "${STATUS_URL}" could not be read`;
+const UNREAD = `the status list at "${STATUS_URL}" could not be read or checked`;
 const HOP = `revocation: hop 0 (list "${STATUS_URL}", index "7") is revoked or unresolvable ${String.fromCodePoint(0x2014)} fail-closed, subtree invalidated`;
 
 /** The verdict of the shipped checker, holding lists to `owner`, on `entry` when `body` is served at the list's URL. */

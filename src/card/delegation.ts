@@ -16,7 +16,7 @@
  * {@link responsiblePartyOf} = `issuer(rootVC)`, {@link leafInvokerOf} = the leaf delegate a verifier
  * asserts equals `proof.did`. Revocation reuses the injected {@link BitstringRevocationChecker} seam from
  * `./revocation` (no status-list churn reaches callers; NO `mcp-i-core` runtime dep). Per-hop
- * signature verification is a SEPARATE injected concern; this module owns the CRISP + continuity recompute.
+ * signature verification is injected into evaluateDelegationChain, after local checks and before status.
  */
 
 import { z } from 'zod';
@@ -27,6 +27,10 @@ import { walkRevocationChain } from './revocation-chain.js';
 import type { RefusalCode } from '../refusal-codes.js';
 import type { RefusalCoding } from '../delegation/vc-verifier.types.js';
 import { coded } from '../utils/refusal.js';
+import { dependencyTimeout } from '../utils/deadline.js';
+import { logger } from '../logging/index.js';
+import type { DelegationProofVerifier } from './delegation-proof.js';
+import { firstHopProofRefusal } from './hop-proofs.js';
 
 export const DELEGATION_CONTEXT_V2 = 'https://www.w3.org/ns/credentials/v2'; // VC 2.0 base `@context`
 export const ZCAP_CONTEXT = 'https://w3id.org/security/zcap/v1'; // ZCAP-LD capability context
@@ -270,6 +274,11 @@ export function attenuates(parent: DelegationCredential, child: DelegationCreden
   return reasons;
 }
 
+/**
+ * Local chain policy and the injected proof verifier for {@link evaluateDelegationChain}.
+ * Local validation runs first, then every hop proof, then status, each walk root to leaf.
+ * {@link validateDelegationChain} uses only the local policy and performs no I/O.
+ */
 export interface DelegationChainContext {
   resourceOwner?: string; // asserted issuer of the ROOT VC (accountable resource owner)
   resource?: string; // asserted `invocationTarget` of the ROOT VC (the delegated resource)
@@ -286,7 +295,14 @@ export interface DelegationChainContext {
   /** Injectable clock (epoch ms) for the wall-clock expiry gate; default `Date.now` (deterministic tests inject it). */
   now?: () => number;
   /**
-   * How long, in milliseconds, `evaluateDelegationChain` waits for each answer of its revocation checker: a number greater than 0 and at most
+   * Check each hop's proof before any status read, e.g. `createDelegationProofVerifier({ didResolver })`.
+   * A false answer or throw refuses the chain without reading status. Omission preserves the legacy
+   * status-only evaluation with one process-wide warning; required in the next major version.
+   */
+  verifyHopProof?: DelegationProofVerifier;
+  /**
+   * How long, in milliseconds, `evaluateDelegationChain` waits for each hop proof and each answer of
+   * its revocation checker: a number greater than 0 and at most
    * 2,147,483,647. Default 5,000. Any other value makes it reject with a `TypeError`.
    */
   dependencyTimeoutMs?: number;
@@ -417,13 +433,19 @@ export interface DelegationChainEvaluation extends DelegationChainResult {
   fresh: boolean; // true iff every hop's status was read from a LIVE list (drives the L2/L3 gate)
 }
 
-/** Validate structure AND revocation: run {@link validateDelegationChain}, then (only if it passes,
- *  fail-closed) cascade the injected {@link BitstringRevocationChecker} root→leaf via
- *  {@link evaluateRevocationChain}, naming each hop's issuer and, when `ctx.resourceOwner` pins it, the
- *  chain's root with the status-list URL the root hop's own entry names. A revoked ancestor
- *  invalidates the subtree. No hop proof is checked here, so those issuers, and that URL, are only
- *  as authentic as the proofs the caller verifies ({@link verifyRequestDelegation} verifies them
- *  before revocation). A chain refused for its revocation carries the code of the hop that refused it. */
+/**
+ * Validate local chain rules, then every hop's proof, then status, fail-closed.
+ * After {@link validateDelegationChain} passes, `ctx.verifyHopProof` verifies the received hops
+ * sequentially, root to leaf. The first proof refusal returns its code and `hop N: ...` reason,
+ * with `fresh: false`, without calling the status checker or verifying later hops.
+ * Only after every proof holds does the sequential revocation walk name each hop's issuer and,
+ * when `ctx.resourceOwner` pins it, the root issuer and the root hop's own status-list URL.
+ * The first revoked or unreadable hop stops that walk, carrying its refusal code.
+ * Each proof and status answer gets `ctx.dependencyTimeoutMs` (5,000 ms by default).
+ * Without `verifyHopProof`, legacy status-only evaluation continues with one process-wide warning;
+ * issuers and status URLs are then only as authentic as the proofs the caller checks separately.
+ * Pass `createDelegationProofVerifier({ didResolver })`; the next major version requires this option.
+ */
 export async function evaluateDelegationChain(
   chain: DelegationChain,
   check: BitstringRevocationChecker,
@@ -431,10 +453,19 @@ export async function evaluateDelegationChain(
 ): Promise<DelegationChainEvaluation> {
   const structural = validateDelegationChain(chain, ctx);
   if (!structural.ok) return { ...structural, fresh: false };
+  const timeoutMs = dependencyTimeout(ctx.dependencyTimeoutMs);
+  if (ctx.verifyHopProof !== undefined) {
+    const refused = await firstHopProofRefusal(chain, ctx.verifyHopProof, timeoutMs);
+    if (refused !== undefined) {
+      return { ...structural, ok: false, ...coded(refused.code), reasons: [refused.reason], fresh: false };
+    }
+  } else {
+    warnWithoutHopProofs();
+  }
   const revocation = await walkRevocationChain(
     revocationEntriesOf(chain, ctx.resourceOwner),
     check,
-    { dependencyTimeoutMs: ctx.dependencyTimeoutMs },
+    { dependencyTimeoutMs: timeoutMs },
   );
   return {
     ...structural,
@@ -443,4 +474,18 @@ export async function evaluateDelegationChain(
     fresh: revocation.fresh,
     ...(revocation.ok ? {} : coded(revocation.code)),
   };
+}
+
+/** Where every copy of this package records the legacy evaluation warning for this process. */
+const PROOFS_WARNED = Symbol.for('@kya-os/mcp/delegation-proofs-warned');
+
+/** Warn once when a chain reaches status evaluation without the injected proof verifier. */
+function warnWithoutHopProofs(): void {
+  const registry = globalThis as { [PROOFS_WARNED]?: true };
+  if (registry[PROOFS_WARNED]) return;
+  registry[PROOFS_WARNED] = true;
+  logger.warn(
+    '[kya-os] evaluateDelegationChain reads status without checking hop proofs. ' +
+      'Pass verifyHopProof: createDelegationProofVerifier({ didResolver }); required in the next major version.',
+  );
 }

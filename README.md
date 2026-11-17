@@ -273,6 +273,35 @@ Miss the proof, replay a nonce, or tamper the body and `requireProof` fails clos
 
 > Run the full 10-minute path end-to-end: [examples/entity-card](./examples/entity-card/) — `npm run example:entity-card:server` (build → emit → guard, with a valid proof accepted and a replay + tamper rejected) and `npm run example:entity-card` (the discover → resolve → verify walkthrough). See [SPEC-ENTITY-CARD.md](./SPEC-ENTITY-CARD.md) for normative detail.
 
+### Evaluate a delegation chain
+
+Pass a hop-proof verifier when evaluating a chain directly, with your resource and its trusted owner pinned.
+Local checks run first, then proofs root to leaf, then status root to leaf; a failed proof causes no status read.
+
+```ts
+import {
+  createDelegationProofVerifier,
+  createRevocationChecker,
+  createStatusListProofVerifier,
+  evaluateDelegationChain,
+} from '@kya-os/mcp/card';
+
+const checkRevocation = createRevocationChecker({
+  fetch: safeFetch,
+  verifyStatusList: createStatusListProofVerifier({ didResolver }),
+});
+const authority = await evaluateDelegationChain(chain, checkRevocation, {
+  resource: SERVER_DID,
+  resourceOwner: ACME_DID,
+  verifyHopProof: createDelegationProofVerifier({ didResolver }),
+});
+```
+
+Use your DID resolver and safe fetch provider for the issuers and status lists you accept.
+For a request, use `requireDelegation` after `requireProof` to bind the caller and check the requested action as well.
+Omitting `verifyHopProof` preserves the legacy status-only evaluation with one process-wide warning; the option becomes required in the next major version.
+See [Upgrading from 1.23.0](./UPGRADING.md#from-1230).
+
 ---
 
 ## See it in action

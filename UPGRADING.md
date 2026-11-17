@@ -4,6 +4,32 @@ This file holds the detail behind the Upgrading entries in CHANGELOG.md: the ste
 Each release has one section, newest first, and declares every change of behaviour against the release before it.
 CHANGELOG.md says what changed and names the section here that says what to do about it.
 
+## From 1.23.0
+
+### Check hop proofs before reading status
+
+| If you | Do this | Effect |
+| --- | --- | --- |
+| Call `evaluateDelegationChain` | Pass `verifyHopProof: createDelegationProofVerifier({ didResolver })` in its context. | Local checks run first, then every hop proof, then status, with both walks sequential and root to leaf. |
+
+```ts
+const verdict = await evaluateDelegationChain(chain, checkRevocation, {
+  resource,
+  resourceOwner,
+  verifyHopProof: createDelegationProofVerifier({ didResolver }),
+});
+```
+
+The first failed proof refuses the chain with its `code`, `transient`, a `hop N: ...` reason and `fresh: false`, without reading any status list or verifying later hops.
+The existing `dependencyTimeoutMs` bounds each proof-verifier answer as well as each status-checker answer; its default is 5 seconds per answer.
+A verifier that throws `RefusalError` preserves its code and presenter-safe message; an unexpected exception is `runtime_error`, with its words logged only for the operator.
+The library's proof verifier preserves DID-resolution outage codes when passed directly, as it does for `verifyRequestDelegation`.
+
+Without `verifyHopProof`, results remain as in 1.23.0 and the first call that reaches status evaluation warns through `logger.warn` that status is read without checking hop proofs and names the option to pass.
+The warning is shared across package copies in the process.
+**`verifyHopProof` becomes required in the next major version.**
+`verifyRequestDelegation` and `requireDelegation` already require this verifier, and keep their verification order and refusal precedence.
+
 ## From 1.22.0
 
 ### Do I need to change anything?

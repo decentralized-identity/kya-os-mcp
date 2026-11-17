@@ -66,4 +66,29 @@ if (!authority.ok) return { status: authority.status, error: authority.error };
 
 On the calling side, `toDelegationChainMeta(chain)` builds the `_meta` member to send beside the request proof.
 
+## Evaluate the chain on its own
+
+When checking a chain outside a request, pass the same verifier to `evaluateDelegationChain`.
+It runs local checks, then every hop proof, then status; the first failed proof prevents every status read.
+The request guard above additionally binds the leaf to the caller and checks the action.
+
+```ts
+import {
+  createDelegationProofVerifier,
+  createRevocationChecker,
+  createStatusListProofVerifier,
+  evaluateDelegationChain,
+} from '@kya-os/mcp/card';
+
+const checkRevocation = createRevocationChecker({
+  fetch: safeFetch,
+  verifyStatusList: createStatusListProofVerifier({ didResolver }),
+});
+const authority = await evaluateDelegationChain(chain, checkRevocation, {
+  resource: SERVER_DID,
+  resourceOwner: ACME_DID,
+  verifyHopProof: createDelegationProofVerifier({ didResolver }),
+});
+```
+
 The rules are in [SPEC-ENTITY-CARD.md](../../SPEC-ENTITY-CARD.md) §10.5 (carrying the chain), §11.4 (the verification order), §12.11 (substitution), and Appendix D.5 (the gate codes).

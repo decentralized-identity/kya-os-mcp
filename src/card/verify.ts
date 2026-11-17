@@ -39,6 +39,7 @@ import {
 } from './verify-revocation.js';
 import type { ProofAssurance, ProofVerifyResult } from './proof/index.js';
 import { sameDid } from './same-did.js';
+import { assertTrustedRootIssuers } from '../delegation/root-admission.js';
 import type { ToolRequest } from '../proof/generator.js';
 
 export const ENTITY_TYPES: readonly EntityType[] = EntityTypeSchema.options;
@@ -166,6 +167,18 @@ export interface VerifyCardDeps {
   /** Trusted issuer allowlist. Default: `DEFAULT_TRUSTED_ISSUERS`. */
   trustedIssuers?: readonly string[];
   /**
+   * The DIDs the verifier pins as roots, as `verifyRequestDelegation`'s `trustedRootIssuers` names
+   * them. When the accountability check has verified the Card's `responsibleParty` and it is one of
+   * these, the list URL the verdict reports as `rootStatusList` is that pinned root's own, and the
+   * checker reads it on any host, a private one included, still pinned. Otherwise that URL is read
+   * as one the presenter named, under the private-network rule, since a host that accepts any root
+   * lets the presenter be the root and choose the URL. It is not an allowlist for accountability
+   * itself, which the `accountabilityVerifier` decides. Each entry is a string that starts with
+   * `did:` and has no white space around it; any other value makes `verifyCard` reject with a
+   * `TypeError`.
+   */
+  trustedRootIssuers?: readonly string[];
+  /**
    * How long, in milliseconds, each seam `verifyCard` asks may take to answer: a number greater than 0 and at most
    * 2,147,483,647. Default 5,000. Any other value makes `verifyCard` reject with a `TypeError`.
    */
@@ -223,6 +236,7 @@ export interface VerifyCardResult extends RefusalCoding {
 export async function verifyCard(card: EntityCard, deps: VerifyCardDeps): Promise<VerifyCardResult> {
   const trustedIssuers = deps.trustedIssuers ?? DEFAULT_TRUSTED_ISSUERS;
   const timeoutMs = dependencyTimeout(deps.dependencyTimeoutMs);
+  assertTrustedRootIssuers(deps.trustedRootIssuers, 'VerifyCardDeps.');
   const check = await checkCapabilities(card, deps, trustedIssuers, timeoutMs);
   const proof = await recomputeProof(deps, timeoutMs);
   const proofDid = proof?.ok ? proof.did : undefined;
@@ -234,7 +248,7 @@ export async function verifyCard(card: EntityCard, deps: VerifyCardDeps): Promis
   const accountability = party?.reported;
   const attested = await checkAttestations(card, deps, trustedIssuers, timeoutMs);
   const attestations = attested.map((claim) => claim.reported);
-  const revocation = await checkCardRevocation(card, deps.statusListChecker, verifiedRoot(accountability), timeoutMs);
+  const revocation = await checkCardRevocation(card, deps.statusListChecker, verifiedRoot(accountability, deps.trustedRootIssuers), timeoutMs);
 
   // The Card is ok exactly when no claim it makes was refused, and each refusal carries its code.
   const refused = decidingRefusal([

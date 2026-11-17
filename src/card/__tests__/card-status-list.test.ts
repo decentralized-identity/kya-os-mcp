@@ -272,18 +272,23 @@ describe("the Card's verified responsible party", () => {
     expect(await verifyWith(cardsList(responsibleParty), reported, boundToService)).toMatchObject({ ok: false, revocation: REFUSED });
   });
 
-  it('is named with the URL accountability reports only when it is verified and the URL is a string', async () => {
+  it('is named with the URL accountability reports only when it is verified and the URL is a string, marked only when pinned', async () => {
     const check = vi.fn(createRevocationChecker({ fetch: serveAt({}), now }));
-    const run = (accountabilityVerifier: AccountabilityVerifier) => verifyCard(card, { accountabilityVerifier, statusListChecker: check });
+    const run = (accountabilityVerifier: AccountabilityVerifier, trustedRootIssuers?: readonly string[]) =>
+      verifyCard(card, { accountabilityVerifier, statusListChecker: check, ...(trustedRootIssuers === undefined ? {} : { trustedRootIssuers }) });
+    await run(reportingRootList(CARDS_URL), [responsibleParty.did]);
     await run(reportingRootList(CARDS_URL));
+    await run(reportingRootList(CARDS_URL), [anotherRoot.did]);
     await run(reportingRootList(7));
     await run(reportingRootList(''));
     await run(reportingRootList(CARDS_URL, chainFrom(anotherRoot)));
     await run(async () => ({ verified: 'true', rootStatusList: CARDS_URL }) as never);
     const root = { credentialIssuer: entity.did, trustedRootIssuer: responsibleParty.did };
     expect(check.mock.calls).toStrictEqual([
-      // Marked as the verified root's word (./root-list-host.test.ts).
+      // Marked as the pinned root's word (./root-list-host.test.ts), and only for a root trustedRootIssuers pins.
       [card.revocation, { ...root, trustedRootStatusList: CARDS_URL, trustedRootVerified: expect.any(Object) }],
+      [card.revocation, { ...root, trustedRootStatusList: CARDS_URL }],
+      [card.revocation, { ...root, trustedRootStatusList: CARDS_URL }],
       [card.revocation, root],
       [card.revocation, root],
       [card.revocation, { credentialIssuer: entity.did }],

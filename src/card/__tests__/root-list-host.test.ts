@@ -173,16 +173,30 @@ describe("a Card's responsible party", () => {
     revocation: { statusListCredential: CARDS_LIST, statusListIndex: '3' },
   });
 
-  it("has its own list read on a private host once accountability verified it, and refused before any connection otherwise", async () => {
+  it('has its own list read on a private host once accountability verified it as a root trustedRootIssuers pins, and refused before any connection otherwise', async () => {
     const p = parties();
-    for (const verified of [true, false]) {
+    for (const [verified, trustedRootIssuers, read] of [
+      [true, [p.acme.did], true],
+      [false, [p.acme.did], false],
+      // Verified, but the host pins no root, or another one: the URL is the presenter's word.
+      [true, undefined, false],
+      [true, [p.agent.did], false],
+    ] as const) {
       const net = network({ [CARDS_LIST]: listAt(p.acme, CARDS_LIST) });
       const result = await verifyCard(cardOf(p), {
         accountabilityVerifier: async () => ({ verified, rootStatusList: CARDS_LIST }),
         statusListChecker: net.checker(),
+        ...(trustedRootIssuers === undefined ? {} : { trustedRootIssuers }),
       });
-      expect(result.revocation).toMatchObject(verified ? { revoked: false, fresh: true } : { revoked: true, fresh: false });
-      expect(net.connected).toEqual(verified ? [[CARDS_LIST, PRIVATE]] : []);
+      expect(result.revocation).toMatchObject(read ? { revoked: false, fresh: true } : { revoked: true, fresh: false });
+      expect(net.connected).toEqual(read ? [[CARDS_LIST, PRIVATE]] : []);
     }
+  });
+
+  it('refuses a trustedRootIssuers that is not a list of DIDs, naming the option', async () => {
+    const p = parties();
+    await expect(verifyCard(cardOf(p), { trustedRootIssuers: p.acme.did as never })).rejects.toThrow(
+      /^\[kya-os\] VerifyCardDeps\.trustedRootIssuers must be an array of DIDs/,
+    );
   });
 });

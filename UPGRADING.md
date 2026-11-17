@@ -25,7 +25,7 @@ A refusal the URL decides by itself, such as an IP literal or a local name, keep
 | Run on a serverless runtime where the pinned connection fails | Pass `transport: fetchTransport`. | It connects by name after the check, as `SafeFetch`'s option does, which reopens the rebinding window: the connection's own lookup may answer an address the check never saw. |
 | Route the global `fetch` through a proxy, with undici's `setGlobalDispatcher(new ProxyAgent(...))` or `EnvHttpProxyAgent`, or Node's `NODE_USE_ENV_PROXY=1` and `HTTPS_PROXY` | Nothing, but have the proxy refuse private and local addresses. | Reads the proxy carries go through `fetch`, as on 1.23.0, held to the URL alone, and the provider warns once. A host `NO_PROXY` names is resolved, checked and pinned, as it would go straight to the host. |
 | Route the global `fetch` through a dispatcher of your own that proxies, or serve tests through a global `MockAgent` | Pass `transport: fetchTransport`, with a `lookup` in tests. | Any dispatcher other than undici's `ProxyAgent` and `EnvHttpProxyAgent` is taken to connect straight to the host, so reads are pinned around it unless the transport is `fetchTransport`, which makes each checked request through `fetch` by name. |
-| Keep a pinned root's status list on a private host | Pass `verifyHopProof` to `evaluateDelegationChain`; `verifyRequestDelegation`, `requireDelegation` and `verifyCard` need nothing. | `createRevocationChecker` reads the list the root's own credential names on any host, pinned, once that credential's proof has verified, and reads the lists `statusListIssuers` binds on any host too. |
+| Keep a pinned root's status list on a private host | Pass `verifyHopProof` to `evaluateDelegationChain`, and to `verifyCard` the `trustedRootIssuers` you pin; `verifyRequestDelegation` and `requireDelegation` need nothing. | `createRevocationChecker` reads the list the root's own credential names on any host, pinned, once that credential's proof has verified, and reads the lists `statusListIssuers` binds on any host too. |
 
 ```ts
 import { RuntimeFetchProvider, fetchTransport } from '@kya-os/mcp';
@@ -704,6 +704,7 @@ Its list then counts for the Card at the URL the verifier's verdict reports as `
 A verifier that returns a bare `true`, or `{ verified: true }` with no `rootStatusList`, reports no URL, so the responsible party's list counts only at a URL the configuration binds to it, and at the Card's own list URL a list it signs is refused.
 To have it count there, return `{ verified: true, rootStatusList }` with the URL read from the root credential whose proof the verifier checked, or bind the URL to the responsible party in `statusListIssuers`.
 `rootStatusList` is read only beside a literal `verified: true` and only as a non-empty string, and `verifyCard` returns it as `accountability.rootStatusList`.
+The checker reads that URL on a private host only when `verifyCard`'s `trustedRootIssuers` names the responsible party, since a verifier that accepts any root lets the presenter choose it; otherwise it is held to the private-network rule as a URL the presenter named.
 At a URL bound to it, the Entity's own list is refused.
 A responsible party's list counts for its Cards only once verified, never as the Card states it.
 

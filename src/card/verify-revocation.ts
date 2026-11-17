@@ -17,7 +17,7 @@ import { coded, refusalCodeOf, type Coded } from '../utils/refusal.js';
 import type { StatusCheckContext } from '../utils/statuslist-keeper.js';
 import type { RefusalCode } from '../refusal-codes.js';
 import { checkWithinDeadline } from './revocation-deadline.js';
-import { verifiedRootContext } from '../utils/verified-root.js';
+import { pinnedRootOf, verifiedRootContext } from '../utils/verified-root.js';
 
 /**
  * The Card's revocation as `verifyCard` reports it: whether it is revoked and fresh, why when its
@@ -46,14 +46,18 @@ interface VerifiedParty {
 /**
  * The Card's responsible party as the checker is told of it, once the accountability check has
  * verified it and never before: the root of the Card's chain, with the list URL the verdict
- * reported that root's own credential names, when it reported one, marked as that root's verified
- * word (`utils/verified-root.ts`), since reporting `verified: true` says the root's proof verified.
+ * reported that root's own credential names, when it reported one. That URL is marked as the root's
+ * verified word (`utils/verified-root.ts`), and so read on any host, only when the operator pins the
+ * party in `trustedRootIssuers` ({@link pinnedRootOf}): a verdict of `verified: true` says the
+ * root's proof verified, not that the operator chose the root, and a host that accepts any root
+ * lets the presenter be one.
  */
-export function verifiedRoot(accountability: VerifiedParty | undefined): CardRoot {
+export function verifiedRoot(accountability: VerifiedParty | undefined, trustedRootIssuers?: readonly string[]): CardRoot {
   if (!accountability?.verified || accountability.responsibleParty === undefined) return {};
   const { responsibleParty, rootStatusList } = accountability;
   if (rootStatusList === undefined) return { trustedRootIssuer: responsibleParty };
-  return verifiedRootContext({ trustedRootIssuer: responsibleParty, trustedRootStatusList: rootStatusList });
+  const root = { trustedRootIssuer: responsibleParty, trustedRootStatusList: rootStatusList };
+  return pinnedRootOf(responsibleParty, { trustedRootIssuers }) === undefined ? root : verifiedRootContext(root);
 }
 
 /** Why a Card that declares a revocation entry is refused when nothing was supplied to check it. */

@@ -9,7 +9,8 @@
  *
  * Only the library marks a context, and only after that proof: `evaluateDelegationChain` once
  * `verifyHopProof` has passed for every hop, `verifyRequestDelegation` once its hop proofs have, and
- * `verifyCard` once the accountability check has verified the Card's responsible party as that root.
+ * `verifyCard` once the accountability check has verified the Card's responsible party as that root,
+ * each only for a root the operator pins ({@link pinnedRootOf}).
  * A mark is an object this module makes and records with the root and the URL it was made for, so
  * no data a presenter sends, nor a context a caller writes, carries one a reader honours: a reader
  * asks this module whether the mark it was given is one it made, for the context's own root and
@@ -52,6 +53,24 @@ export function withVerifiedRoot<T extends RootNaming>(entries: readonly T[]): T
     }
     return { ...entry, trustedRootVerified: mark };
   });
+}
+
+/** The operator's pins of a chain's root: the `resourceOwner` and the `trustedRootIssuers` a verifier is given. */
+export interface RootPins {
+  readonly resourceOwner?: string;
+  readonly trustedRootIssuers?: readonly string[];
+}
+
+/**
+ * `issuer`, the root issuer of a chain, when the operator pins it, as the `resourceOwner` or one of
+ * the `trustedRootIssuers` it gives a verifier, and `undefined` otherwise. Only a pinned root's own
+ * list is marked as its word ({@link withVerifiedRoot}), on every path that marks one: a root the
+ * verifier accepts without naming it, under `allowAnyRootIssuer` or on a Card's accountability
+ * verdict alone, may be the presenter, and so may have chosen the URL its credential names.
+ */
+export function pinnedRootOf(issuer: string | undefined, pins: RootPins): string | undefined {
+  if (issuer === undefined) return undefined;
+  return issuer === pins.resourceOwner || pins.trustedRootIssuers?.includes(issuer) === true ? issuer : undefined;
 }
 
 /** `context` marked as {@link withVerifiedRoot} marks an entry. */

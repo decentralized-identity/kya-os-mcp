@@ -13,11 +13,15 @@ import { DID_DOCUMENT_READ } from './did-resource-policy.js';
 
 /**
  * GET `url` and parse it as a DID document's JSON, within the document's byte and shape limits and
- * `timeoutMs`, by default the policy's.
+ * `timeoutMs`, by default the policy's, each request `operatorNamed` names read wherever its host is.
  */
 export function fetchDidJson(
-  fetcher: PrivateNetworkTransport, url: string, init: RequestInit = {}, timeoutMs = DID_DOCUMENT_READ.timeoutMs,
+  fetcher: PrivateNetworkTransport,
+  url: string,
+  init: RequestInit = {},
+  timeoutMs = DID_DOCUMENT_READ.timeoutMs,
+  operatorNamed?: (url: string) => boolean,
 ): Promise<unknown> {
-  const read = underPrivateNetworkRead(fetcher, { maxBytes: DID_DOCUMENT_READ.maxBytes });
+  const read = underPrivateNetworkRead(fetcher, { maxBytes: DID_DOCUMENT_READ.maxBytes, ...(operatorNamed ? { operatorNamed } : {}) });
   return fetchBoundedJson(read, url, init, { ...DID_DOCUMENT_READ, timeoutMs });
 }

@@ -42,6 +42,12 @@ export interface PrivateNetworkRead {
    * outbound read.
    */
   readonly maxBytes?: number;
+  /**
+   * Which requests of the read the operator named, asked of each by the URL it asks for, the first
+   * and each redirect (`./operator-named`). Each it names is read through the transport's own
+   * `fetch` wherever its host is; every other is held as this module says.
+   */
+  readonly operatorNamed?: (url: string) => boolean;
 }
 
 /**
@@ -65,7 +71,7 @@ const HTTPS_REMEDY =
  * local address`, or for a redirect without naming the host, going on with what admits it.
  */
 export function underPrivateNetworkRead(transport: PrivateNetworkTransport, read: PrivateNetworkRead = {}): FetchPort {
-  return underPrivateNetworkRule(transport, heldRequest(transport, read));
+  return underPrivateNetworkRule(transport, { request: heldRequest(transport, read), operatorNamed: read.operatorNamed });
 }
 
 /** How each request of a read through `transport` is made, held as this module opens by saying. */
@@ -74,13 +80,15 @@ function heldRequest(transport: PrivateNetworkTransport, read: PrivateNetworkRea
   const maxBytes = read.maxBytes ?? OUTBOUND_READ_MAX_BYTES;
   return async (url, init, { redirected }) => {
     const { protocol, hostname } = new URL(url);
-    if (read.httpsOnly === true && protocol === 'http:' && !(admitPrivate && isPrivateHost(hostname))) {
+    // Decided request by request, so a redirect from a URL the operator named is held as any other.
+    const admitted = admitPrivate || read.operatorNamed?.(url) === true;
+    if (read.httpsOnly === true && protocol === 'http:' && !(admitted && isPrivateHost(hostname))) {
       const refused = `${redirected ? 'Redirect' : 'Request'} to a ${describeValue(protocol)} URL refused${HTTPS_REMEDY}`;
       throw new ReadFailureError('host_refused', refused, redirected ? {} : { beforeRequest: true });
     }
     // An IP literal names its own address, which the rule has checked.
     const form = hostForm(hostname);
-    if (admitPrivate || form === undefined || 'literal' in form) return transport.fetch(url, init);
+    if (admitted || form === undefined || 'literal' in form) return transport.fetch(url, init);
     const pinning = await pinningOf(transport);
     if (pinning === undefined) return transport.fetch(url, init);
     const pin = await resolveChecked(form.name, pinning.lookup, lookupRefusals(redirected));

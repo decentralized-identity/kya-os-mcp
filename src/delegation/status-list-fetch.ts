@@ -31,10 +31,21 @@ const STATUS_LIST_READ: BoundedJsonPolicy = {
   json: DID_DOCUMENT_JSON,
 };
 
-/** GET the status list at `url` and parse its JSON, within the status-list limits and `timeoutMs`, by default the policy's. */
+/**
+ * GET the status list at `url` and parse its JSON, within the status-list limits and `timeoutMs`, by
+ * default the policy's, each request `operatorNamed` names read wherever its host is.
+ */
 export function fetchStatusListJson(
-  fetcher: PrivateNetworkTransport, url: string, init: RequestInit = {}, timeoutMs = STATUS_LIST_READ.timeoutMs,
+  fetcher: PrivateNetworkTransport,
+  url: string,
+  init: RequestInit = {},
+  timeoutMs = STATUS_LIST_READ.timeoutMs,
+  operatorNamed?: (url: string) => boolean,
 ): Promise<unknown> {
-  const read = underPrivateNetworkRead(fetcher, { httpsOnly: true, maxBytes: STATUS_LIST_READ.maxBytes });
+  const read = underPrivateNetworkRead(fetcher, {
+    httpsOnly: true,
+    maxBytes: STATUS_LIST_READ.maxBytes,
+    ...(operatorNamed ? { operatorNamed } : {}),
+  });
   return fetchBoundedJson(read, url, init, { ...STATUS_LIST_READ, timeoutMs });
 }

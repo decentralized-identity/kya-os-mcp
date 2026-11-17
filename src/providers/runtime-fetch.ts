@@ -71,7 +71,7 @@ import { getDidMethod } from "../utils/did-helpers.js";
 import { ADDRESS_PINNING, type AddressPinning } from "../utils/fetch-port.js";
 import { addressPinning } from "../utils/pinned-connection.js";
 import { providerName, warnHeldToUrlAlone } from "../utils/url-only-reads.js";
-import { admittingPrivateHosts } from "../utils/private-network-rule.js";
+import { operatorNamedRequests } from "../utils/operator-named.js";
 import type { DnsLookup, SafeFetchTransport } from "../utils/safe-fetch-types.js";
 import { assertStatusListIssuers, statusListIssuersBind, type StatusListIssuers } from "../utils/statuslist-keeper.js";
 import type { DIDDocument } from "../delegation/vc-verifier.js";
@@ -243,14 +243,17 @@ export class RuntimeFetchProvider extends FetchProvider {
   /**
    * Fetch and validate a StatusList2021 credential by URL. Returns null on a
    * blocked (private-network) host, a URL that is not https, non-ok response,
-   * malformed payload, or transport error (never throws). A list at a URL
-   * `statusListIssuers` binds is read on any host. Bit decoding is the
+   * malformed payload, or transport error (never throws). A request for a URL
+   * `statusListIssuers` binds is read on any host, decided request by
+   * request, so a redirect to a URL it does not bind is held to the rule
+   * as any other. Bit decoding is the
    * verifier's job: this only retrieves the credential.
    */
   async fetchStatusList(url: string): Promise<StatusList2021Credential | null> {
     try {
-      const transport = statusListIssuersBind(url, this.statusListIssuers) ? admittingPrivateHosts(this) : this;
-      const json = await fetchStatusListJson(transport, url, {}, this.timeoutMs);
+      const issuers = this.statusListIssuers;
+      const bound = issuers === undefined ? undefined : operatorNamedRequests(url, (hop) => statusListIssuersBind(hop, issuers));
+      const json = await fetchStatusListJson(this, url, {}, this.timeoutMs, bound);
       return isStatusList2021Credential(json) ? json : null;
     } catch {
       return null;

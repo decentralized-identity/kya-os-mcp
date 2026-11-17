@@ -17,6 +17,7 @@
  * a redirect from it to any other URL is held as one a presenter named.
  */
 
+import { operatorNamedRequests } from './operator-named.js';
 import { statusListIssuersBind, type StatusCheckContext, type StatusListIssuers } from './statuslist-keeper.js';
 
 declare const VERIFIED_ROOT: unique symbol;
@@ -59,19 +60,23 @@ export function verifiedRootContext<T extends RootNaming>(context: T): T {
 }
 
 /**
- * Which URLs of a status-list read are the operator's own, hop by hop, the first and each redirect:
- * a URL `statusListIssuers` binds, and the URL a pinned root's own credential names when `context`
- * carries a mark this module made for that root and that URL. Any other hop is one a presenter
- * named. `undefined` when no hop can be the operator's, so the read is held as a presenter's whole.
+ * Which requests of the read of the status list at `url` are the operator's own, request by request,
+ * the first and each redirect (`./operator-named`): one for a URL `statusListIssuers` binds, and one
+ * for the URL a pinned root's own credential names when `context` carries a mark this module made for
+ * that root and that URL. Any other request is one a presenter named. `undefined` when no request
+ * can be the operator's, so the read is held as a presenter's whole.
  */
 export function operatorNamedHops(
+  url: string,
   context: StatusCheckContext | undefined,
   statusListIssuers?: StatusListIssuers,
-): ((url: string) => boolean) | undefined {
+): ((request: string) => boolean) | undefined {
   const rootList = verifiedRootList(context);
   if (rootList === undefined && statusListIssuers === undefined) return undefined;
-  return (url) =>
-    url === rootList || (statusListIssuers !== undefined && statusListIssuersBind(url, statusListIssuers));
+  return operatorNamedRequests(
+    url,
+    (named) => named === rootList || (statusListIssuers !== undefined && statusListIssuersBind(named, statusListIssuers)),
+  );
 }
 
 /** The URL a pinned root's own credential names, when `context` carries this module's mark for that root and that URL. */

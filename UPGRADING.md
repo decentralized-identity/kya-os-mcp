@@ -15,7 +15,7 @@ The presenter is told only that the DID or the list could not be read, with the 
 
 | If you | Do this | Effect |
 | --- | --- | --- |
-| Verify DIDs or status lists hosted on private addresses, such as an internal registry | Pin the DIDs in `trustedRootIssuers`, bind the lists in `statusListIssuers`, or set `allowPrivateNetworkHosts: true` on the provider. | Those reads go through the provider's own `fetch` wherever the host is. |
+| Verify DIDs or status lists hosted on private addresses, such as an internal registry | Pin the DIDs in `trustedRootIssuers`, bind the lists in `statusListIssuers`, or set `allowPrivateNetworkHosts: true` on the provider. | Those reads go through the provider's own `fetch` wherever the host is. A redirect from a URL you pin or bind to one you do not is held to the rule, so bind each URL a list moves to. |
 | Build `RuntimeFetchProvider` or `DidWebResolver` yourself | Give it `trustedRootIssuers`, and the provider `statusListIssuers`, as you give the verifier. | The middleware does this itself for the provider and resolver it builds. |
 | Serve a status list over http | Serve it over https. | A status-list read, and each of its redirects, takes https; http is read only from a private or local host that `allowPrivateNetworkHosts` or `development` admits. |
 | Stub the global `fetch` in tests that read through `RuntimeFetchProvider` | Pass `lookup` and `transport: fetchTransport`, or a `FetchProvider` of your own. | Reads no longer reach the global `fetch` unless the provider's lookup says the host is public. |

@@ -298,7 +298,7 @@ export function createRevocationChecker(
         ? statusListExpectationFor({ statusListCredential, statusPurpose: wantedPurpose }, heldTo, statusListIssuers)
         : undefined;
       // A hop the operator named, bound by statusListIssuers or a verified pinned root's own list, is read on any host.
-      const operatorNamed = operatorNamedHops(context ?? carriedContext(entry), statusListIssuers);
+      const operatorNamed = operatorNamedHops(statusListCredential, context ?? carriedContext(entry), statusListIssuers);
       const credential = await fetchStatusList(statusListCredential, deps.fetch, operatorNamed);
       const verdict =
         expectation === undefined

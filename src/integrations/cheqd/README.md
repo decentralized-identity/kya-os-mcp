@@ -125,6 +125,10 @@ It refuses a list that states no `id`, even one its `expectedIssuerDid` signed, 
 It refuses a list whose `id` is a DID URL for the same resource, since it fetches only `https` URLs.
 `StatusList2021Manager` states the `id` of every list it writes; give each other list its `https` URL as its `id` before you publish it.
 
+A list it refuses after reading it, such as one another DID signed or one of another `statusPurpose`, is refused with its reason, which a verifier shows whoever presented the credential.
+A list it could not read, or that is not a `StatusList2021Credential`, holds a malformed `credentialSubject` or is unsigned, is refused too, but the verifier says only that the list could not be read and logs why for the operator, since the presenter chose the URL and its host may be an internal one.
+A resolver of your own that wraps it, or replaces it, refuses in its own words by throwing a `RefusalError`; any other error it throws still refuses, and its words reach only the log.
+
 ### DID linkage
 
 For `did:web` <-> `did:cheqd` binding, publish reciprocal `alsoKnownAs` values

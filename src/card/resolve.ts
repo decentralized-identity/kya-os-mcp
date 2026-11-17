@@ -24,6 +24,8 @@
  * attacker-influenced URLs across four discovery surfaces.
  */
 
+import { didWebToUrl, parseDidWeb } from '../delegation/did-web-url.js';
+import { describeValue } from '../utils/describe-value.js';
 import { isRecord } from '../utils/guards.js';
 import type { SafeFetch } from '../utils/safe-fetch.js';
 import { EntityCardSchema, type EntityCard } from './schema.js';
@@ -100,7 +102,7 @@ async function resolveDidWeb(did: string, fetch: SafeFetch): Promise<EntityCard>
       `resolveCard: only did:web is resolvable (got "${did}"); supply a did:key card directly`,
     );
   }
-  const didDoc = await fetchJson(didWebToDidDocUrl(did), fetch);
+  const didDoc = await fetchJson(didWebToUrl(did) ?? namesNoUrl('resolveCard', did), fetch);
   return fetchCard(cardEndpointFromDidDoc(didDoc, did), fetch, did);
 }
 
@@ -138,7 +140,7 @@ async function resolveInlineSummary(entry: unknown, fetch: SafeFetch): Promise<E
   if (typeof id !== 'string') {
     throw new Error(`resolveCard: inline "${KYA_OS_CARD_META_KEY}" summary has no string id (DID)`);
   }
-  if (id.startsWith('did:web:')) return fetchCard(didWebToCardUrl(id), fetch, id);
+  if (id.startsWith('did:web:')) return fetchCard(cardUrlOf(id, 'resolveCard'), fetch, id);
   return parseCard(entry);
 }
 
@@ -206,10 +208,24 @@ async function fetchCard(url: string, fetch: SafeFetch, expectedDid?: string): P
   return card;
 }
 
-/** Decompose a `did:web` into its host + slash-joined path segments. */
-function parseDidWeb(did: string): { host: string; path: string } {
-  const parts = did.slice('did:web:'.length).split(':').map(decodeURIComponent);
-  return { host: parts[0] ?? '', path: parts.slice(1).join('/') };
+/**
+ * Throw, as `who`, for a did:web DID that names no URL as the did:web resolver reads it
+ * (`../delegation/did-web-url`): one whose decoded host is more than a host, or one of whose
+ * decoded path segments is not one segment, so that a fetch would read another resource than the
+ * DID names.
+ */
+function namesNoUrl(who: string, did: string): never {
+  throw new Error(
+    `${who}: ${describeValue(did)} names no URL: a did:web host must decode to a host and nothing more, and each path segment to one segment`,
+  );
+}
+
+/** {@link didWebToCardUrl} for a did:web `did`, throwing as `who` for one that names no URL. */
+function cardUrlOf(did: string, who: string): string {
+  const { domain, path } = parseDidWeb(did) ?? namesNoUrl(who, did);
+  return path.length > 0
+    ? `https://${domain}/${path.join('/')}/card.json`
+    : `https://${domain}/${KYA_OS_CARD_WELL_KNOWN_PATH}`;
 }
 
 /**
@@ -222,6 +238,9 @@ function parseDidWeb(did: string): { host: string; path: string } {
  * and the emit projections agree with the summary-derive resolve path on this one URL. A
  * non-`did:web` DID (e.g. `did:key`) has no web home, so this throws with actionable guidance:
  * emit it onto the inline summary + AgentFacts surfaces, or supply an explicit `serviceEndpoint`.
+ * The DID is read as the did:web resolver reads it (`../delegation/did-web-url`), so one whose
+ * host or path segments would decode to another resource, such as `did:web:host:a:..:b`, names
+ * no URL, and this throws for it too.
  */
 export function didWebToCardUrl(did: string): string {
   if (!did.startsWith('did:web:')) {
@@ -229,18 +248,19 @@ export function didWebToCardUrl(did: string): string {
       `didWebToCardUrl: only a did:web has a web card URL (got "${did}"); a did:key card has no web home — emit it onto the inline summary + AgentFacts surfaces, or supply an explicit serviceEndpoint`,
     );
   }
-  const { host, path } = parseDidWeb(did);
-  return path ? `https://${host}/${path}/card.json` : `https://${host}/${KYA_OS_CARD_WELL_KNOWN_PATH}`;
+  return cardUrlOf(did, 'didWebToCardUrl');
 }
 
 /**
  * Map a `did:web` to its DID document URL (W3C did:web):
  *   did:web:host:a:b → https://host/a/b/did.json
  *   did:web:host     → https://host/.well-known/did.json
+ *
+ * It is the did:web resolver's own mapping (`../delegation/did-web-url`), and throws for a DID that
+ * names no URL there.
  */
 export function didWebToDidDocUrl(did: string): string {
-  const { host, path } = parseDidWeb(did);
-  return path ? `https://${host}/${path}/did.json` : `https://${host}/.well-known/did.json`;
+  return didWebToUrl(did) ?? namesNoUrl('didWebToDidDocUrl', did);
 }
 
 /** Validate + parse an unknown value into an EntityCard (throws a ZodError on mismatch). */

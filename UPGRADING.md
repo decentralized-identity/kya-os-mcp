@@ -39,6 +39,15 @@ A Card whose proof another DID signed now verifies at L2, with the same `ok`.
 Its `proof` still reports the verifier's verdict and the DID that signed it, and the accountability verifier still receives that DID as `proofDid` for the leaf join.
 An Entity that signs its requests with a key of a DID other than its Card's reaches L3 by signing with a key its Card's own DID lists.
 
+### A Card's did:web DID is read as the did:web resolver reads it
+
+`resolveCard`, `didWebToCardUrl` and `didWebToDidDocUrl` now map a did:web DID through the did:web resolver's own parser.
+A DID whose host decodes to more than a host, or one of whose path segments decodes to an empty segment, a dot-segment or one that holds a separator, a query or a `%`, names no URL.
+Examples are `did:web:example.com:bob:..:alice`, `did:web:example.com:bob:%252E%252E:alice` and `did:web:example.org%40example.com:alice`.
+`resolveCard` rejects such a DID before any request, with `resolveCard: "<did>" names no URL`, and `didWebToCardUrl` and `didWebToDidDocUrl` throw for it.
+Before, the Card resolver decoded a DID with no check, so a DID under bob's path resolved the Card alice serves, and userinfo in the host fetched from another host.
+A DID that names a URL maps to the same URL as before, a port, an IP literal, an internationalized name and an encoded `:` inside a segment included.
+
 ### The cheqd resolver follows a redirect by hand
 
 `DidCheqdResolver`, `createDidCheqdResolver` and `cheqdResolver` now read the resolver endpoint as a did:web or status-list read is read.

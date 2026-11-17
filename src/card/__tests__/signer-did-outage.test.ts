@@ -6,8 +6,9 @@
  * why only where that was decided from the DID alone, before any request; what the resolver learned
  * from its network, read directly or through SafeFetch, or what a host's resolver reports, is
  * logged, and the reason says only that the DID could not be resolved. Every accept and refuse
- * decision is as before. Every test uses `@kya-os/mcp/card` as an adopter calls it, over real
- * signed hops and lists.
+ * decision is as before. The proof verifiers an adopter is given still resolve `false` on every
+ * failure when the adopter calls them, as on 1.22.0; the library asks them for the code of why.
+ * Every test uses `@kya-os/mcp/card` as an adopter calls it, over real signed hops and lists.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -237,5 +238,30 @@ describe("a delegation hop whose issuer's DID document cannot be read", () => {
 
   it('is still accepted when the document is found', async () => {
     expect((await verifyWith(keys)).ok).toBe(true);
+  });
+});
+
+describe('the proof verifiers an adopter is given, called by the adopter', () => {
+  it.each(OUTAGES)('resolve false, as on 1.22.0, when the resolver %s', async (_name, resolver) => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const failing = await resolver();
+    const verifyList = createStatusListProofVerifier({ didResolver: failingFor(p.acme.did, failing), dependencyTimeoutMs: 20 });
+    const verifyHop = createDelegationProofVerifier({ didResolver: failingFor(p.agent.did, failing), dependencyTimeoutMs: 20 });
+    expect(await verifyList(statusList(p.acme))).toBe(false);
+    expect(await verifyHop(chain[1])).toBe(false);
+  });
+
+  it('resolve false, as on 1.22.0, when the resolver does not answer in time', async () => {
+    expect(await createStatusListProofVerifier({ didResolver: failingFor(p.acme.did, stalled), dependencyTimeoutMs: 20 })(statusList(p.acme))).toBe(false);
+    expect(await createDelegationProofVerifier({ didResolver: failingFor(p.agent.did, stalled), dependencyTimeoutMs: 20 })(chain[1])).toBe(false);
+  });
+
+  it("leave an outage a verdict on the proof, as on 1.22.0, where the adopter's own function wraps them", async () => {
+    const verify = createStatusListProofVerifier({ didResolver: failingFor(p.acme.did, stalled), dependencyTimeoutMs: 20 });
+    const answer = await createRevocationChecker({ fetch: serve(statusList(p.acme)), now, verifyStatusList: (list) => verify(list) })(
+      chain[0].credentialStatus as RevocationStatusEntry,
+      { credentialIssuer: p.acme.did },
+    );
+    expect(answer).toEqual({ revoked: true, fresh: false, reason: 'status-list proof rejected', ...coded('status_signer_untrusted') });
   });
 });

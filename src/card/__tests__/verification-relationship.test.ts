@@ -77,23 +77,19 @@ describe('the verification relationship of a status list key', () => {
     expect(await verifyList(documentOf({ verificationMethod: [methodOf(key)] }), list)).toBe(false);
   });
 
-  it('refuses a key listed under assertionMethod as did_invalid when its document is over 1 MiB', async () => {
+  it('rejects a key listed under assertionMethod when its document is over 1 MiB', async () => {
     const padding = 'x'.repeat(1_048_576);
-    await expect(
-      verifyList(documentOf({ verificationMethod: [methodOf(key)], assertionMethod: [key.method], padding }), list),
-    ).rejects.toMatchObject({ code: 'did_invalid' });
+    expect(await verifyList(documentOf({ verificationMethod: [methodOf(key)], assertionMethod: [key.method], padding }), list)).toBe(false);
   });
 
-  it('verifies with a key id of 4,096 units, and refuses one over that as did_invalid, resolving nothing', async () => {
+  it('verifies with a key id of 4,096 units, and resolves nothing for a proof naming one over that', async () => {
     for (const [length, verifies] of [[4_096, true], [4_097, false]] as const) {
       const long = acmeKey('k'.repeat(length - `${ACME}#`.length));
       const document = documentOf({ verificationMethod: [methodOf(long)], assertionMethod: [long.method] });
       const asked: string[] = [];
       const resolve = resolverWith(document);
       const verify = createStatusListProofVerifier({ didResolver: { resolve: async (did) => (asked.push(did), resolve.resolve(did)) } });
-      const verified = Promise.resolve(verify(statusList(long)));
-      if (verifies) expect(await verified).toBe(true);
-      else await expect(verified).rejects.toMatchObject({ code: 'did_invalid' });
+      expect(await verify(statusList(long))).toBe(verifies);
       expect(asked).toEqual(verifies ? [ACME] : []);
     }
   });

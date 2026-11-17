@@ -270,13 +270,11 @@ describe.each(DEADLINES)('%s', (_label, option, ms, stated) => {
   });
 
   describe('the proof verifiers built for a hop and for a status list', () => {
-    it('throw the deadline, for the caller to code, when the DID resolver has not answered by it', async () => {
+    it('find a proof unverified when the DID resolver has not answered by the deadline', async () => {
       const [root] = twoHopChain(parties());
       for (const build of [createDelegationProofVerifier, createStatusListProofVerifier]) {
-        const thrown = await settledAt(ms, (never) =>
-          Promise.resolve(build({ didResolver: { resolve: never }, ...option })(root)).then(() => undefined, (error: unknown) => error),
-        );
-        expect(thrown).toEqual(new Error('DID resolution deadline exceeded'));
+        const verified = await settledAt(ms, async (never) => build({ didResolver: { resolve: never }, ...option })(root));
+        expect(verified).toBe(false);
         vi.useRealTimers();
       }
     });

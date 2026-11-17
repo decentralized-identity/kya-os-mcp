@@ -32,6 +32,7 @@ import {
   type RejectionCoded,
   type RejectionCoding,
 } from './carried-chain.js';
+import { codedVariantOf } from './coded-proof-verifier.js';
 import type { DelegationProofVerifier } from './delegation-proof.js';
 import type { BitstringRevocationChecker } from './revocation.js';
 import { walkRevocationChain, type RevocationChainWalk } from './revocation-chain.js';
@@ -307,8 +308,9 @@ async function obtainChain(
 /**
  * Run the hop-proof seam, fail-closed, under a deadline of `timeoutMs`: why the hop is
  * refused, with its code, or `undefined` when its proof verified. A proof that did not verify is
- * `invalid_proof`; a verifier that threw a {@link RefusalError}, as the library's does when the
- * issuer's DID document cannot be read, is refused with its code and message; any other throw is
+ * `invalid_proof`; a verifier that threw a {@link RefusalError}, as the coded variant of the
+ * library's (`./coded-proof-verifier`), which this asks in its place, does when the issuer's DID
+ * document cannot be read, is refused with its code and message; any other throw is
  * `runtime_error`; and a verifier, or its DID resolution, that has not answered by the deadline is
  * `deadline_exceeded`, with a reason that says so.
  */
@@ -318,7 +320,8 @@ async function hopProofRefusal(
   timeoutMs: number,
 ): Promise<(Coded & { reason: string }) | undefined> {
   try {
-    const verified = await answerWithinDeadline('the hop proof verifier', () => verifyHopProof(credential), timeoutMs);
+    const verify = codedVariantOf(verifyHopProof);
+    const verified = await answerWithinDeadline('the hop proof verifier', () => verify(credential), timeoutMs);
     return verified === true ? undefined : { reason: 'proof did not verify', ...coded('invalid_proof') };
   } catch (error) {
     if (error instanceof DeadlineExceededError) return { reason: error.message, ...coded('deadline_exceeded') };

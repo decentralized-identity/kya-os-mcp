@@ -37,6 +37,7 @@ import { coded, RefusalError, refusalCodeOf, type Coded } from '../utils/refusal
 import { CHECKER_REASON_LENGTH } from '../utils/revocation-answer.js';
 import { thrownWords, unreadStatusList } from '../utils/thrown-words.js';
 import { carriedContext } from '../utils/status-check-carrier.js';
+import { codedVariantOf } from './coded-proof-verifier.js';
 import { withStatusListIssuersRemedy } from '../utils/statuslist-remedy.js';
 import {
   acceptEntryPurpose,
@@ -282,7 +283,7 @@ export function createRevocationChecker(
           `revocation: ${refused ? withStatusListIssuersRemedy(verdict.reason, refused, CHECKER_REASON_LENGTH) : verdict.reason}`,
         );
       }
-      if (deps.verifyStatusList && (await deps.verifyStatusList(credential)) !== true) {
+      if (deps.verifyStatusList && (await codedVariantOf(deps.verifyStatusList)(credential)) !== true) {
         throw new RefusalError('status_signer_untrusted', 'revocation: status-list proof rejected');
       }
       const bits = await decodeStatusList(credential, decompress);

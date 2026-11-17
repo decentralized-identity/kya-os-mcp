@@ -10,14 +10,16 @@
  *
  * The cryptosuite itself is in ./data-integrity; a status list is an assertion by its issuer, so
  * the proof purpose is `assertionMethod`, and the issuer's DID document must list the key under
- * `assertionMethod`. A list whose proof does not verify returns `false`; one whose issuer's DID
- * document cannot be read throws a refusal coded by why, `did_unavailable` or `deadline_exceeded`
- * for an outage, which the revocation checker fails closed with, as it does with any throw.
+ * `assertionMethod`. Every failure returns `false`, as on 1.22.0. The revocation checker asks the
+ * same verifier for the code of why (`./coded-proof-verifier`), so a list whose issuer's DID
+ * document cannot be read is refused there as `did_unavailable` or `deadline_exceeded`, an outage,
+ * and never as a verdict on its proof.
  */
 
 import type { DIDResolver } from '../delegation/vc-verifier.types.js';
 import { dependencyTimeout } from '../utils/deadline.js';
 import { ASSERTION_METHOD } from '../delegation/verification-relationship.js';
+import { booleanProofVerifier } from './coded-proof-verifier.js';
 import { signEddsaJcs2022, verifyEddsaJcs2022Proof, type EddsaJcs2022Proof } from './data-integrity.js';
 import type { ProofSigner } from './proof/types.js';
 
@@ -42,13 +44,13 @@ export interface StatusListProofVerifierDeps {
 
 /**
  * Build a {@link StatusListProofVerifier} for `DataIntegrityProof` / `eddsa-jcs-2022` status lists.
- * Pass it to {@link createRevocationChecker} as `verifyStatusList`.
+ * Pass it to {@link createRevocationChecker} as `verifyStatusList`. It resolves `false` on every
+ * failure, an issuer DID document that could not be read or was not read in time included; the
+ * checker it is passed to, as it is, codes such an outage as one.
  */
 export function createStatusListProofVerifier(deps: StatusListProofVerifierDeps): StatusListProofVerifier {
   const timeoutMs = dependencyTimeout(deps.dependencyTimeoutMs);
-  return async function verifyStatusList(credential: Record<string, unknown>): Promise<boolean> {
-    return verifyEddsaJcs2022Proof(credential, deps.didResolver, ASSERTION_METHOD, timeoutMs);
-  };
+  return booleanProofVerifier((credential) => verifyEddsaJcs2022Proof(credential, deps.didResolver, ASSERTION_METHOD, timeoutMs));
 }
 
 /**

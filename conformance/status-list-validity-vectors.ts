@@ -6,11 +6,14 @@
  * `expirationDate`. Each list is the credential issuer's own, states its URL as its `id`, has the
  * credential's bit clear and is signed by the issuer, so the window alone decides: a list past its
  * end, before its start or stating a bound that is not a date is refused, and one inside its window,
- * or stating no end, is read. It runs on its own, so adding a case re-signs this file and no other.
+ * or stating no end, is read. A date is an RFC 3339 date-time with its zone (suite >= 1.10.0): a
+ * bound with no zone, or in a form `Date.parse` reads but RFC 3339 does not write, is refused, and one
+ * at an offset from UTC is read. It runs on its own, so adding a case re-signs this file and no other.
  *
  * It mints parties and signs delegations as `generate-vectors.ts` does, with fresh keys on every
  * run, so its output must never be committed over an existing suiteVersion. Every window is fixed,
- * in the past or in the year 2999, so a vector decides alike whenever it is run before then.
+ * in the past or in the year 2999, so a vector decides alike whenever it is run before then, and
+ * alike with or without the clock tolerance SPEC.md §6.6 permits.
  *
  *   run:  tsx conformance/status-list-validity-vectors.ts   (npm run conformance:generate:status-validity)
  */
@@ -39,6 +42,10 @@ const CASES: readonly WindowCase[] = [
   ['not-yet-valid-list-2021', 'fail', 'A clear StatusList2021 list before its issuanceDate is refused as a list before its validFrom is', 'statuslist2021', { issuanceDate: FAR_AHEAD }],
   ['undated-end-list', 'fail', 'A clear list whose validUntil is not a date has a window no verifier can read, so it is refused', 'bitstring', { validFrom: LONG_AGO, validUntil: 'not a date' }],
   ['current-member-decides', 'fail', 'A list that states both validUntil and expirationDate is read by its validUntil, here past, whatever its expirationDate', 'bitstring', { validFrom: LONG_AGO, validUntil: PAST, expirationDate: FAR_AHEAD }],
+  ['zoneless-start-list', 'fail', 'A list whose validFrom states no time zone names no single instant, since each verifier would read it in its own zone, so it is refused', 'bitstring', { validFrom: '2026-01-01T00:00:00', validUntil: FAR_AHEAD }],
+  ['zoneless-end-list-2021', 'fail', 'A StatusList2021 list whose expirationDate states no time zone is refused, though VC 1.1 lets a dateTime leave its zone out', 'statuslist2021', { issuanceDate: LONG_AGO, expirationDate: '2999-01-01T00:00:00' }],
+  ['http-date-end-list', 'fail', 'A list whose validUntil is an HTTP date, which is not an RFC 3339 date-time, is refused', 'bitstring', { validFrom: LONG_AGO, validUntil: 'Tue, 01 Jan 2999 00:00:00 GMT' }],
+  ['offset-window-list', 'pass', 'A clear list whose bounds are RFC 3339 date-times at offsets from UTC, one with nine digits of a second, is read', 'bitstring', { validFrom: '2026-01-01T05:30:00.123456789+05:30', validUntil: '2998-12-31T18:00:00-06:00' }],
 ];
 
 export async function statusListValidityVectors<P extends Signer>(deps: StatusListVectorDeps<P>): Promise<VectorFile> {

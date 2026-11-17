@@ -24,8 +24,9 @@
  * the same resource is another `id`. `StatusList2021Manager` states the `id`
  * of every list it writes. A list is read only inside the validity window it
  * states (`issuanceDate` and `expirationDate`, or `validFrom` and
- * `validUntil`), so an earlier version of a list the pinned DID signed is read
- * as it stands until its window ends, and indefinitely when it states no end.
+ * `validUntil`), each bound held with `maxClockSkewMs`, so an earlier version
+ * of a list the pinned DID signed is read as it stands until its window ends,
+ * and indefinitely when it states no end.
  *
  * Fail-closed matrix (all throw → verifier denies as `status_unresolvable`):
  * non-https URL, malformed index, network error / non-200, malformed VC,
@@ -74,6 +75,7 @@ import {
 } from '../../utils/statuslist-bits.js';
 import { acceptEntrySize, acceptStatusList } from '../../utils/statuslist-acceptance.js';
 import { acceptStatusListValidity, assertStatusListValidity } from '../../utils/statuslist-validity.js';
+import { clockSkewOption } from '../../utils/validity-window.js';
 import { bytesToBase64 } from '../../utils/base64.js';
 import { base64EitherBytes } from '../../utils/base64-reading.js';
 import { canonicalizeJsonBytes } from '../../utils/canonical-json.js';
@@ -116,6 +118,13 @@ export interface CheqdStatusListResolverOptions {
    */
   dependencyTimeoutMs?: number;
   /**
+   * The clock tolerance, in milliseconds, each bound of a list's validity window is held with, so a
+   * list issued a moment ago by an issuer whose clock runs ahead is read: a number from 0, which
+   * holds each bound exactly, to 600,000. Default 120,000, the proof verifier's default skew. Any
+   * other value throws a `TypeError` naming the option.
+   */
+  maxClockSkewMs?: number;
+  /**
    * Read status lists on private and local hosts, such as a `*.localhost` name in a local demo, as
    * a provider with `allowPrivateNetworkHosts: true` does, whatever the provider. Nothing else
    * changes: the https rule, checked redirects, byte caps and deadlines all hold. For development
@@ -135,12 +144,14 @@ export class CheqdStatusListResolver implements StatusListResolver {
   private cache: TtlCache<StatusList2021Credential>;
   private bustNextFetch = false;
   private readonly timeoutMs: number;
+  private readonly skewMs: number;
 
   constructor(options: CheqdStatusListResolverOptions) {
     const development = developmentMode(options.development, 'CheqdStatusListResolverOptions.development');
     this.opts = options;
     this.transport = development ? admittingPrivateHosts(options.fetchProvider) : options.fetchProvider;
     this.timeoutMs = dependencyTimeout(options.dependencyTimeoutMs);
+    this.skewMs = clockSkewOption(options.maxClockSkewMs);
     this.cacheTtlMs = cacheTtlOption(options.cacheTtlMs, 'cacheTtlMs') ?? 10_000;
     // A single issuer realistically publishes a handful of lists; 16 entries
     // is generous without being unbounded.
@@ -198,7 +209,7 @@ export class CheqdStatusListResolver implements StatusListResolver {
   ): Promise<StatusList2021Credential> {
     const nowMs = Date.now();
     const kept = this.cache.get(url);
-    const cached = kept && acceptStatusListValidity(kept, nowMs).valid ? kept : undefined;
+    const cached = kept && acceptStatusListValidity(kept, nowMs, this.skewMs).valid ? kept : undefined;
     const credential = cached ?? (await this.fetchList(url));
     const verdict = acceptStatusList(credential, {
       statusListCredential: url,
@@ -214,7 +225,7 @@ export class CheqdStatusListResolver implements StatusListResolver {
       this.bustNextFetch = false;
       this.cache.set(url, credential);
     }
-    assertStatusListValidity(credential, nowMs);
+    assertStatusListValidity(credential, nowMs, this.skewMs);
     return credential;
   }
 

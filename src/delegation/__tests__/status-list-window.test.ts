@@ -2,13 +2,16 @@
  * The delegation side's status-list readers hold a list to the validity window it states, as the
  * Card's checker does (`utils/statuslist-validity.ts`): the cheqd resolver and the
  * StatusList2021Manager each refuse a list past its `expirationDate` or before its `issuanceDate` as
- * `status_unavailable`, saying when, and read one inside its window or stating no end. Each reads a
- * real signed list, through the public `DelegationCredentialVerifier` as an adopter wires them.
+ * `status_unavailable`, saying when, and read one inside its window or stating no end. Each holds
+ * each bound with its `maxClockSkewMs`, 120 seconds unless set, and refuses a bound that is not an
+ * RFC 3339 date-time with its zone. Each reads a real signed list, through the public
+ * `DelegationCredentialVerifier` as an adopter wires them.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   DelegationCredentialVerifier,
+  StatusList2021Manager,
   type CredentialStatus,
   type StatusList2021Credential,
   type StatusListResolver,
@@ -31,6 +34,8 @@ const BASE = 'https://status.example';
 const HOUR = 60 * 60 * 1000;
 const PAST = new Date(Date.now() - HOUR).toISOString();
 const FUTURE = new Date(Date.now() + HOUR).toISOString();
+/** A time `ms` ahead of the verifier's clock, as an issuer whose clock runs ahead stamps it. */
+const ahead = (ms: number): string => new Date(Date.now() + ms).toISOString();
 
 const crypto = createRealCryptoProvider();
 let issuer: AgentIdentity;
@@ -74,8 +79,11 @@ async function listStating(dates: Record<string, string>): Promise<StatusList202
   return { ...changed, proof: { ...proof, proofValue: base64urlEncodeFromBytes(signature) } } as StatusList2021Credential;
 }
 
-/** A cheqd resolver pinned to the list's issuer, keeping a verified list for `cacheTtlMs`. */
-const cheqd = (cacheTtlMs = 0): StatusListResolver =>
+/**
+ * A cheqd resolver pinned to the list's issuer, keeping a verified list for `cacheTtlMs`, holding
+ * each bound with `maxClockSkewMs` when it is given.
+ */
+const cheqd = (cacheTtlMs = 0, maxClockSkewMs?: unknown): StatusListResolver =>
   new CheqdStatusListResolver({
     fetchProvider,
     didResolver: createDidKeyResolver(),
@@ -83,6 +91,7 @@ const cheqd = (cacheTtlMs = 0): StatusListResolver =>
     expectedIssuerDid: pinned.did,
     decompressor: statusListGzipCodec,
     cacheTtlMs,
+    ...(maxClockSkewMs === undefined ? {} : { maxClockSkewMs: maxClockSkewMs as number }),
   });
 
 /** The verifier's verdict on a credential whose status `resolver` reads. */
@@ -103,11 +112,30 @@ describe('the cheqd status list resolver holds a list to its validity window', (
   it.each([
     ['past its expirationDate', { expirationDate: PAST }, `status list expired at "${PAST}" (its expirationDate)`],
     ['before its issuanceDate', { issuanceDate: FUTURE }, `status list is not valid until "${FUTURE}" (its issuanceDate)`],
+    [
+      'whose issuanceDate states no zone',
+      { issuanceDate: '2026-01-01T00:00:00' },
+      'status list states an issuanceDate ("2026-01-01T00:00:00") that is not an RFC 3339 date-time with a time zone',
+    ],
   ])('refuses a list %s as status_unavailable, saying when', async (_label, dates, words) => {
     served = await listStating(dates);
     const result = await verdictOf(cheqd());
     expect(result).toMatchObject({ valid: false, stage: 'status', code: 'status_unavailable', transient: true });
     expect(result.reason).toContain(words);
+  });
+
+  it('reads a list issued just now by an issuer whose clock runs 2 seconds ahead', async () => {
+    served = await listStating({ issuanceDate: ahead(2_000) });
+    expect((await verdictOf(cheqd())).valid).toBe(true);
+  });
+
+  it('holds each bound with its maxClockSkewMs, exactly with none', async () => {
+    served = await listStating({ issuanceDate: ahead(2_000) });
+    expect(await verdictOf(cheqd(0, 0))).toMatchObject({ valid: false, code: 'status_unavailable' });
+  });
+
+  it.each([-1, Number.NaN, 600_001, '120000'])('throws a TypeError naming maxClockSkewMs, when built, for %s', (maxClockSkewMs) => {
+    expect(() => cheqd(0, maxClockSkewMs)).toThrow(/^\[kya-os\] maxClockSkewMs must be a number of milliseconds from 0 to 600000/);
   });
 
   it('reads again, rather than from its cache, a list whose window ended while it was kept', async () => {
@@ -137,5 +165,22 @@ describe('the StatusList2021Manager holds a list it keeps to its validity window
     } finally {
       await setup.storage.setStatusList(listUrl, current);
     }
+  });
+
+  it('reads a list it keeps that was issued 2 seconds ahead of its clock', async () => {
+    await setup.storage.setStatusList(listUrl, await listStating({ issuanceDate: ahead(2_000) }));
+    try {
+      expect((await verdictOf(setup.manager)).valid).toBe(true);
+    } finally {
+      await setup.storage.setStatusList(listUrl, current);
+    }
+  });
+
+  it.each([-1, Number.NaN, 600_001, '120000'])('throws a TypeError naming maxClockSkewMs, when built, for %s', (maxClockSkewMs) => {
+    const build = () =>
+      new StatusList2021Manager(setup.storage, { getDid: () => pinned.did, getKeyId: () => pinned.kid }, async () => ({}) as never, undefined, undefined, {
+        maxClockSkewMs: maxClockSkewMs as number,
+      });
+    expect(build).toThrow(/^\[kya-os\] maxClockSkewMs must be a number of milliseconds from 0 to 600000/);
   });
 });

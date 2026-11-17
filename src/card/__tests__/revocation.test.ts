@@ -195,7 +195,7 @@ describe('createRevocationChecker (validity window)', () => {
     ['an unparseable legacy expirationDate', { expirationDate: 'never' }, 'an expirationDate ("never")'],
   ])('%s is a list of unknown validity, refused FAIL-CLOSED whatever its bit', async (_label, dates, stated) => {
     const check = createRevocationChecker({ fetch: jsonFetch({ ...statusCredential([5]), ...dates }), now: NOW });
-    const refused = { revoked: true, fresh: false, reason: `status list states ${stated} that is not a date`, ...codedAs('status_unavailable') };
+    const refused = { revoked: true, fresh: false, reason: `status list states ${stated} that is not an RFC 3339 date-time with a time zone`, ...codedAs('status_unavailable') };
     expect(await check(entryAt(5))).toStrictEqual(refused);
     expect(await check(entryAt(6))).toStrictEqual(refused);
   });

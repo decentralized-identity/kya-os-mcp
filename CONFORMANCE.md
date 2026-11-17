@@ -2,7 +2,7 @@
 
 **Compliance levels for KYA-OS implementations**
 
-Version: 1.9.0
+Version: 1.10.0
 Status: Stable
 
 ---
@@ -467,7 +467,7 @@ so it is reproducible against any implementation without re-signing.
 | `vectors/status-list.json` | StatusList2021 and Bitstring Status List revocation | active (bit unset), issuer's list stating no `id`, Bitstring list declaring two purposes | revoked (bit set), list altered after signing, list signed by another issuer, list of another purpose, StatusList2021 list declaring its purposes in an array, list stating another URL as its `id`, list of a pinned root or a configured issuer stating no `id` |
 | `vectors/status-list-key-relationship.json` | StatusList2021 revocation: the list issuer's key (SPEC.md §6.2) | list signed with the key the issuer lists under `assertionMethod` | list signed with a key it lists only under `authentication`, list proof stating `proofPurpose: "authentication"`, issuer document whose `id` is another DID, list signed with a key it lists under `assertionMethod` whose method names another DID as its `controller`, list signed with a key whose method the document defines twice |
 | `vectors/status-list-authority.json` | Status list revocation: who may sign a credential's list (SPEC.md §6.6) | pinned root's list at the URL its own credential names, list of a service the verifier binds the exact URL or its origin to, issuer's own list stating no `id` while also named as root, with or without the URL its credential names, index with leading zeros, entry stating a `statusSize` of 1 | pinned root's list at a URL its credential does not name, service bound to no URL, to another URL or to a look-alike origin, issuer's own list at a URL bound to a service, pinned root's list at a URL the configuration binds to a service, pinned root's list stating no `id` for a delegate's credential, issuer's list stating no `id` at a pinned root's URL, index with a suffix, a fraction or a space, index given as a number, entry of two bits whose own bits are set, entry stating a `statusSize` of 0 |
-| `vectors/status-list-validity.json` | Status list revocation: the window a list states (SPEC.md §6.6) | clear Bitstring Status List or StatusList2021 list inside its `validFrom` and `validUntil`, or `issuanceDate` and `expirationDate` | clear list past its `validUntil` or `expirationDate`, before its `validFrom` or `issuanceDate`, with a `validUntil` that is not a date, or with a past `validUntil` beside a future `expirationDate` |
+| `vectors/status-list-validity.json` | Status list revocation: the window a list states (SPEC.md §6.6) | clear Bitstring Status List or StatusList2021 list inside its `validFrom` and `validUntil`, or `issuanceDate` and `expirationDate`, stated in UTC or at offsets from it | clear list past its `validUntil` or `expirationDate`, before its `validFrom` or `issuanceDate`, with a `validUntil` that is not a date, a `validFrom` or `expirationDate` that states no time zone, or an HTTP-date `validUntil`, or with a past `validUntil` beside a future `expirationDate` |
 | `vectors/did-key-resolution.json` | did:key resolution | valid Ed25519 | malformed multibase, wrong method |
 | `vectors/did-web-resolution.json` | did:web resolution | well-formed id-matched document | document id mismatch, not found |
 | `vectors/card-proof.json` | `org.kya-os/proof.v1` holder-of-key proof | valid signed proof, in-window, audience-bound | tampered body, tampered signature, wrong audience, expired, kid⇄did forgery |
@@ -626,6 +626,12 @@ Because fresh keys change the committed bytes, regenerated output MUST NOT be co
 
 ### Suite versioning and immutability
 
+Suite 1.10.0 adds four `status-list-validity.json` vectors, for 164 vectors total: a list whose `validFrom` states no time zone, a StatusList2021 list whose `expirationDate` states none, and a list whose `validUntil` is an HTTP date, each of which must be refused, and a list whose bounds are stated at offsets from UTC, one with nine digits of a second, which must be read.
+A bound is an RFC 3339 date-time with its time zone (SPEC.md §6.6); one with no zone names no single instant, so a verifier that read it in its own zone would answer by where it runs.
+Every bound is months or more from when the suite runs, so a vector decides alike with or without the clock tolerance SPEC.md §6.6 permits.
+`status-list-validity.json` is generated whole by one run, its earlier vectors signed again under that run's keys with the same cases and expected outcomes; the other vector files change only their `version`.
+The Python cross-language check reads a bound as RFC 3339 writes it, and refuses one with no zone.
+
 Suite 1.9.0 adds ten `signed-proof` key-retrieval vectors, for 160 vectors total, in `signed-proof-key-relationship.json`.
 Their input supplies `didDocuments` instead of `publicKeyJwk`; the adapter MUST resolve the signer's document and select its `assertionMethod` key before verifying the proof and its bound content.
 `keyId` supplies the retrieval argument, normally `proof.meta.kid`; its absence tests first-entry selection without removing the signed proof's required `meta.kid`.
@@ -679,6 +685,7 @@ Suite 1.6.0 adds `delegation-chain/scopeless-parent-widening`, which a verifier 
 Suite 1.7.0 adds the `status-list-validity.json` vectors, which a verifier that reads a status list outside the window it states fails.
 Suite 1.8.0 adds `entity-card/revocation-unchecked`, which a verifier that passes a card whose `revocation` entry it does not check fails.
 Suite 1.9.0 adds `signed-proof-key-relationship.json`, which a verifier that accepts a detached proof key outside the signer's own `assertionMethod` fails.
+Suite 1.10.0 adds `status-list/zoneless-start-list`, `status-list/zoneless-end-list-2021` and `status-list/http-date-end-list`, which a verifier that reads a list's bounds with `Date.parse`, or another reader that takes a time with no zone, fails.
 The SIGNED public suite manifest published by the Conformance Attestation Program is a separate artifact built on this committed one.
 
 ### Running the harness against YOUR implementation

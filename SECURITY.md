@@ -84,6 +84,7 @@ Three substitutions remain open to whoever controls what a status-list URL retur
   An issuer should state the `id` of each list.
 - An earlier version of a list, signed before a credential was revoked, can be served in place of the current one.
   Every reader refuses a version past its `validUntil` (or `expirationDate`), as `status_unavailable`, so an issuer that states a `validUntil` and republishes before it passes bounds how long an earlier version can be served; a list that states no end can be served for as long as it verifies (SPEC.md §6.6).
+  Each reader holds that bound with its clock tolerance, `maxClockSkewMs`, 120 seconds unless set, so an earlier version can be served for up to that long past its `validUntil`; set it to 0 to hold the bound exactly.
 - An Entity Card's Entity may sign its own Card's list, so with the Entity's key a list with the Card's bit clear can be served in place of the one its responsible party revoked the Card on.
   Against a compromised Entity key, the responsible party revokes the root delegation credential, which the Card's accountability check reads (SPEC-ENTITY-CARD.md §12.5).
 

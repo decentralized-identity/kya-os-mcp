@@ -927,6 +927,14 @@ A verifier MUST NOT read a list outside the window it states.
 A list past its `validUntil`, or before its `validFrom`, is unresolvable, as an unreachable list is: the credential it covers is rejected, never read as active.
 A list that states no `validUntil` is bounded by its `expirationDate`, and one that states no `validFrom` by its `issuanceDate`; the bounds are inclusive.
 A bound a list states that is not a date leaves its window unknown, so that list is unresolvable too.
+A date is an [RFC3339] §5.6 date-time, which always states its offset from UTC, as `Z` or as `+hh:mm` or `-hh:mm`, as the `xsd:dateTimeStamp` that [VC-DATA-MODEL-2.0] requires of `validFrom` and `validUntil` does.
+A bound in any other form is not a date.
+One that states no offset, such as `2026-11-17T00:00:00`, names no single instant: each verifier would read it in its own time zone, and two verifiers would give one list two answers.
+A date alone, such as `2026-11-17`, an HTTP date, and a date-time no calendar has, such as the 30th of February or a 60th second, are not dates either.
+This holds for `issuanceDate` and `expirationDate` too, though [VC-DATA-MODEL] lets an `xsd:dateTime` leave its offset out.
+A verifier MAY hold each bound with a tolerance for the difference between its clock and the issuer's, of no more than 600 seconds, the largest skew of §10.1: it then reads a list from its `validFrom` less the tolerance until its `validUntil` plus the tolerance.
+Without one, a list whose issuer stamps its `validFrom` with the moment it publishes the list is refused, for as long as the difference, by every verifier whose clock runs behind the issuer's.
+The reference implementation holds both bounds with a tolerance of 120 seconds, the default skew of §11.3, which each status-list reader's `maxClockSkewMs` option sets, from 0 to 600,000 milliseconds.
 A list that states no end is read until its issuer replaces it, so an earlier version of it can be served for as long as it verifies; an issuer that states a `validUntil`, and republishes the list before it passes, bounds that.
 In the reference implementation every status-list reader refuses a list outside its window with the transient code `status_unavailable`, since the issuer republishing the list ends it, and with a reason that names the bound and quotes the time the list states.
 An Entity Card's Entity keeps the URL its own Card names unless the verifier's configuration binds that URL to another issuer, so whoever holds the Entity's key and controls what the Card's `statusListCredential` URL returns can serve a list the Entity signed, with the Card's bit clear.
@@ -1073,7 +1081,7 @@ chain:
 - **monotone caveats** - no parent caveat may be silently dropped; for a shared caveat type, child
   `MaxAmount ≤ parent` (same currency; compared as exact decimals, never rounded or truncated) and
   child `ValidUntil ≤ parent`; an unknown caveat type MUST be replicated **verbatim**;
-- **top-level `validUntil` narrowing** - child `validUntil ≤ parent`;
+- **top-level `validUntil` narrowing** - child `validUntil ≤ parent`, each read as a date (below);
 - **continuity** - the parent's delegate (`invoker`) MUST equal the child's `issuer` (you may only
   re-delegate what was delegated to YOUR key), and child `parentCapability` MUST reference the
   parent capability `id`;
@@ -1081,6 +1089,13 @@ chain:
 - **root** - root `parentCapability` MUST equal its `invocationTarget` (the resource); when a
   resource owner / resource is asserted, root `issuer` MUST equal the resource owner and root
   `invocationTarget` MUST equal the resource.
+
+**Validity window (fail-closed).** A chain is valid only while every hop is inside the window it states: no hop past its `validUntil` or a `ValidUntil` caveat's `date`, and none before its `validFrom`.
+Each of these, and each date the narrowing invariants compare, MUST be a date as §6.6 defines one, an [RFC3339] date-time with its offset from UTC.
+A hop that states one in any other form, a date-time with no offset included, is malformed and invalidates the chain.
+A verifier MAY hold each bound with the clock tolerance §6.6 permits for a status list, of no more than 600 seconds.
+The reference implementation reads a hop's window and a status list's by one rule, with 120 seconds unless the `maxClockSkewMs` option of `validateDelegationChain`, `evaluateDelegationChain`, `verifyRequestDelegation` or `requireDelegation` sets it.
+It refuses a hop past its end as `delegation_expired`, one before its start as `delegation_not_yet_valid`, and one whose date is malformed as `delegation_malformed`.
 
 **Chain length (non-normative).** As in §6.4, this profile does not limit how many times a
 capability may be re-delegated. Earlier drafts listed a 10-hop cap among the invariants above,
@@ -2200,6 +2215,7 @@ rules, and operational requirements are specified in [`AUDITABILITY.md`](./AUDIT
 - **[RFC7515]** IETF. *JSON Web Signature (JWS)*. https://datatracker.ietf.org/doc/html/rfc7515
 - **[RFC8785]** IETF. *JSON Canonicalization Scheme (JCS)*. https://datatracker.ietf.org/doc/html/rfc8785
 - **[RFC7493]** IETF. *The I-JSON Message Format*. https://datatracker.ietf.org/doc/html/rfc7493
+- **[RFC3339]** IETF. *Date and Time on the Internet: Timestamps*. https://datatracker.ietf.org/doc/html/rfc3339
 
 ### Informative References
 

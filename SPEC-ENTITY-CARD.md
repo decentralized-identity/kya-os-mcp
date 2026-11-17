@@ -778,6 +778,10 @@ fail-closed (an unreachable or malformed list, or one outside the validity windo
 accepts a cached non-revoked verdict, L3 requires a live one (§9). The chain walk is cascading: a revoked
 ancestor invalidates the subtree. Mechanics, the `RevocationChecker` seam, and the fail-closed
 rules: SPEC.md §6.10.
+Each bound of the list's window MUST be a date as SPEC.md §6.6 defines one, an RFC 3339 date-time with its offset from UTC.
+A bound with no offset names no single instant, so a list that states one reads as revoked, with the code `status_unavailable`, on every Verifier alike, whatever time zone it runs in.
+A Verifier MAY hold each bound with a clock tolerance of no more than 600 seconds (SPEC.md §6.6), so that a list issued a moment ago by an issuer whose clock runs ahead of the Verifier's is read.
+The reference checker, `createRevocationChecker`, holds both bounds with 120 seconds unless its `maxClockSkewMs` option sets another, and reads the window of each delegation hop by the same rule (SPEC.md §6.10).
 A Card that declares `revocation` is verified only with a checker to read it: a Verifier with none cannot show the Card is not revoked, so it MUST refuse the Card, and the reference implementation reports it revoked and not fresh with the code `configuration_error`, as it reports an accountability or attestation that no verifier checks.
 A Card that declares no `revocation` is not checked.
 A checker that verifies the list's proof reads the Card's list only when the list's `issuer` is the one keeper of the URL the Card's `revocation` entry names (SPEC.md §6.6), which is the first of these that applies:
@@ -915,7 +919,7 @@ than erroring open.
 | All attested + valid live proof whose `did` is not the Card's `id` | L2 |
 | Non-revoked verdict not read live (a caching checker's) | L3 → L2 (`revocationFresh = false`; `revoked: false`, so `ok` unaffected) |
 | Unreachable / non-2xx / malformed / wrong-purpose / out-of-range status list | `{ revoked: true, fresh: false }` (fail-closed) ⇒ collapse to L1, `ok: false` |
-| Status list outside its validity window (past `validUntil`, before `validFrom`, or a bound that is not a date) | `{ revoked: true, fresh: false }`, code `status_unavailable` (fail-closed) ⇒ collapse to L1, `ok: false` |
+| Status list outside its validity window (past `validUntil` or before `validFrom` by more than the clock tolerance, or a bound that is not an RFC 3339 date-time with its offset) | `{ revoked: true, fresh: false }`, code `status_unavailable` (fail-closed) ⇒ collapse to L1, `ok: false` |
 | Card declares `revocation`, no status-list checker supplied | `{ revoked: true, fresh: false }`, code `configuration_error` (fail-closed) ⇒ collapse to L1, `ok: false` |
 | Revoked Card / delegation credential | collapse to L1, `ok: false` |
 | Proof verifier throws | proof floor `{ ok: false }` (demotion) |

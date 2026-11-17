@@ -1,0 +1,23 @@
+kind: Security
+body: |-
+    **Every verifier reads a window's dates as the same instants, and a
+    list or hop issued a moment ago is read.** The dates of a status
+    list's window and of an Entity Card delegation hop's were read with
+    `Date.parse`, which reads a time with no zone, such as
+    `2026-11-17T00:00:00`, in the zone of the machine it runs on, so one
+    list was read in windows hours apart on two verifiers, and which takes
+    forms RFC 3339 does not write. Each is now read as an RFC 3339
+    date-time with its time zone, by one parser, and anything else is
+    refused by its text alone, the same way everywhere:
+    `status_unavailable` for a list, `delegation_malformed` for a hop, and
+    expired for a VC 1.1 delegation credential's `expirationDate`. Each
+    bound of a list's or a hop's window is now held with a clock
+    tolerance, `maxClockSkewMs`, 120 seconds unless set, from 0 to
+    600,000 ms, so a list whose `validFrom` an issuer with a clock running
+    ahead stamped a moment ago is no longer refused until the verifier's
+    clock catches up. Set it on `createRevocationChecker`,
+    `CheqdStatusListResolver`, `StatusList2021Manager`, `requireDelegation`
+    or a chain's context. Conformance suite 1.10.0 adds four vectors.
+    UPGRADING.md, "Dates in a window name one instant, and each bound has
+    a clock tolerance", has the detail.
+time: 2026-11-17T00:47:00.00000-06:00

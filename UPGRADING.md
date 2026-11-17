@@ -126,13 +126,45 @@ The reason quotes the time the list states, and names the member it went by:
 | --- | --- |
 | Past its end | `status list expired at "2026-11-15T00:00:00Z" (its validUntil)` |
 | Before its start | `status list is not valid until "2026-12-01T00:00:00Z" (its validFrom)` |
-| A bound that is not a date | `status list states a validUntil ("never") that is not a date` |
+| A bound that is not a date | `status list states a validUntil ("never") that is not an RFC 3339 date-time with a time zone` |
 
 The time comes from the list itself, once its proof has verified, never from the network.
 The `fresh` of a library checker's verdict, and so of a chain walk over it, is now `true` for every list it reads; a checker of yours that answers from a cache still reports `false` for a verdict it did not read live.
 `CheqdStatusListResolver` fetches a list again, rather than reading the copy it keeps, once that copy's window has ended.
 `withStatusCache` keeps only verdicts read inside a list's window, and may serve one past that window's end for no longer than its `maxStalenessMs`.
-A verifier whose clock runs behind an issuer's refuses, for as long as the difference, a list whose `validFrom` or `issuanceDate` the issuer set to the moment it published it.
+Each bound is held with a clock tolerance, and must be an RFC 3339 date-time with its time zone, as the next section sets out.
+
+### Dates in a window name one instant, and each bound has a clock tolerance
+
+| If you | Do this | Effect |
+| --- | --- | --- |
+| Issue status lists or delegation credentials whose dates state no time zone, such as `2026-11-17T00:00:00` | Write each date with its zone, as `Z` or as an offset such as `-06:00`; `new Date().toISOString()` does. | Each verifier reads the date as one instant, wherever it runs. |
+| Issue dates in another form, such as `2026-11-17` or `Tue, 17 Nov 2026 00:00:00 GMT` | Write each as an RFC 3339 date-time with its zone. | The same. |
+| Publish a list or sign a hop whose `validFrom` is the moment you issue it | Nothing. | A verifier whose clock runs up to 120 seconds behind yours reads it at once. |
+| Need a different tolerance | Set `maxClockSkewMs`, from 0, which holds each bound exactly, to 600,000, on each reader you build. | Every bound that reader holds moves by that much. |
+| Wrote your own `StatusListResolver` or `BitstringRevocationChecker` | Nothing: `acceptStatusListValidity(list, Date.now())` now applies the default tolerance, and takes another as its third argument. | Your reader decides as the library's do. |
+
+A time with no zone names no single instant, and `Date.parse`, which every window was read with until now, reads it in the zone of the machine it runs on.
+So one list, or one delegation hop, was read in a window hours apart on two verifiers, and a list one verifier read another refused.
+`Date.parse` also took forms RFC 3339 does not write, and rolled a day no calendar has, such as the 30th of February, into the next month.
+Every date in a window is now read as an RFC 3339 date-time with its time zone, `Z` or an offset, by one parser, and anything else is refused by its text alone, the same way in every zone:
+
+| Where | Bounds | Refused as |
+| --- | --- | --- |
+| Status lists, in `createRevocationChecker`, `CheqdStatusListResolver`, `StatusList2021Manager` and `acceptStatusListValidity` | `validFrom` and `validUntil`, or `issuanceDate` and `expirationDate` | `status_unavailable`: `status list states a validFrom ("2026-11-17T00:00:00") that is not an RFC 3339 date-time with a time zone` |
+| Entity Card delegation hops, in `validateDelegationChain`, `evaluateDelegationChain`, `verifyRequestDelegation` and `requireDelegation` | `validFrom`, `validUntil` and each `ValidUntil` caveat's `date`, and the dates the narrowing check compares | `delegation_malformed`: `hop 0: validFrom "2026-11-17T00:00:00" is not an RFC 3339 date-time with a time zone` |
+| VC 1.1 delegation credentials, in `isDelegationCredentialExpired` and the chain's stated expiry | `expirationDate` | `delegation_expired`, as an `expirationDate` that cannot be read always was |
+
+VC Data Model 2.0 types `validFrom` and `validUntil` as `xsd:dateTimeStamp`, which requires a zone.
+VC Data Model 1.1 lets an `issuanceDate` or `expirationDate` leave it out, and such a date is refused all the same, since it names no single instant.
+Each date the library chooses itself, it writes with `toISOString()`, which states its zone, so no credential or list it dated is affected; a date you pass it, such as the `expirationDate` of `DelegationCredentialIssuer`, is written as you give it.
+
+A list or hop stamped the moment its issuer published it, by an issuer whose clock runs a second ahead of the verifier's, was refused until the verifier's clock caught up.
+Each bound of a status list's window and of a delegation hop's is now held with a clock tolerance, `maxClockSkewMs`, by one rule: a window is read from its start less the tolerance to its end plus the tolerance.
+It defaults to 120 seconds, the proof verifier's default skew for a request's timestamp, and takes a number of milliseconds from 0 to 600,000, the proof verifier's longest.
+Set it on `createRevocationChecker`, `CheqdStatusListResolver`, `StatusList2021Manager` (in its `options`), `requireDelegation`, `verifyRequestDelegation`, or the context of `validateDelegationChain` and `evaluateDelegationChain`.
+Any other value throws a `TypeError` naming the option where the reader is built, as `[kya-os] maxClockSkewMs must be a number of milliseconds from 0 to 600000 (got -1)`, and rejects a chain as `configuration_error` where it is passed per call.
+The tolerance does not reach a VC 1.1 delegation credential's `expirationDate` or `constraints`, nor a VC-JWT's `exp`, which are still held exactly; a VC-JWT's `nbf` keeps its 30 seconds.
 
 ### Cache TTL and size options are checked when they are set
 
@@ -271,6 +303,19 @@ The other 12 vector files change only their `version`.
 The suite adds `entity-card/revocation-unchecked`, the accountable agent card declaring a `revocation` entry with no status list supplied to check it, which must be refused, and has 150 vectors.
 In `agent-accountable` and `accountability-join-broken` the agent card no longer declares a `revocation` entry, so each holds the accountability join alone; their ids and expected outcomes are unchanged.
 `entity-card.json` is generated deterministically; the other 12 vector files change only their `version`.
+
+### Conformance suite 1.9.0
+
+The suite adds ten `signed-proof` key-retrieval vectors in a new file, `signed-proof-key-relationship.json`, and has 160 vectors.
+Each supplies the signer's DID document rather than its key, so the verifier must select the key that document lists under `assertionMethod` before it verifies the proof, and must refuse an authentication-only or unlisted key, a key defined twice, a foreign controller or document, a foreign `kid`, or, with no `kid`, an unusable first `assertionMethod` entry.
+The key-relationship generator writes this file and regenerates `delegation-chain-key-relationship.json` and `status-list-key-relationship.json` with fresh keys and the same cases and expected outcomes; the other 11 vector files change only their `version`.
+
+### Conformance suite 1.10.0
+
+The suite adds four status-list vectors to `status-list-validity.json`, and has 164 vectors.
+A list whose `validFrom` states no time zone, a StatusList2021 list whose `expirationDate` states none, and a list whose `validUntil` is an HTTP date must each be refused; a list whose bounds are stated at offsets from UTC, one with nine digits of a second, must be read.
+A verifier that reads a list's bounds with `Date.parse` fails the three refusals.
+`status-list-validity.json` is generated whole by one run, its earlier vectors signed again under that run's keys with the same cases and expected outcomes; the other 13 vector files change only their `version`.
 
 ### Detached proof and CIMD keys follow their verification relationship
 

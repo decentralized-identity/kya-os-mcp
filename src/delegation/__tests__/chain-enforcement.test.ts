@@ -548,6 +548,7 @@ describe("attenuationWarnings (SPEC.md §6.4)", () => {
     it("ignores an unreadable expirationDate, which the per-credential check refuses on its own", () => {
       expect(warn({ expirationDate: "not a date", notAfter: 1000 }, { notAfter: 1000 })).toEqual([]);
       expect(warn({ expirationDate: "not a date" }, {})).toEqual([]);
+      expect(warn({ expirationDate: "2099-01-01T00:00:00" }, {})).toEqual([]);
     });
   });
 

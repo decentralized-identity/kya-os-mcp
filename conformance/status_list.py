@@ -154,8 +154,12 @@ def graph_case(case):
                    root_list=case.get("rootList") if pinned is not None else None)
 
 
-# An RFC 3339 date-time with a time zone, the form the vectors write a list's window in.
-DATE_TIME = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})")
+# An RFC 3339 date-time with its time zone (SPEC 6.6): a time with no zone names no single instant.
+# T and Z may be small letters, as RFC 3339 allows; fromisoformat refuses a day no calendar has.
+DATE_TIME = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt]([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.[0-9]+)?"
+    r"([Zz]|[+-]([01][0-9]|2[0-3]):[0-5][0-9])"
+)
 
 
 def window_bound(document, current, legacy):
@@ -170,11 +174,15 @@ def window_bound(document, current, legacy):
     stated = document[member]
     if not isinstance(stated, str) or not DATE_TIME.fullmatch(stated):
         raise ValueError(member + " is not a date")
-    return datetime.fromisoformat(stated.replace("Z", "+00:00"))
+    return datetime.fromisoformat(stated.upper().replace("Z", "+00:00"))
 
 
 def within_window(document, now):
-    """A list is read only inside the validity window it states (SPEC 6.6), its bounds included."""
+    """A list is read only inside the validity window it states (SPEC 6.6), its bounds included.
+
+    Each bound is held exactly. SPEC 6.6 permits a clock tolerance of up to 600 seconds, which no
+    vector needs: each bound a vector states is months or more from when it is run.
+    """
     until = window_bound(document, "validUntil", "expirationDate")
     start = window_bound(document, "validFrom", "issuanceDate")
     return (until is None or now <= until) and (start is None or start <= now)

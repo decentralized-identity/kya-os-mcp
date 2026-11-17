@@ -1,63 +1,63 @@
 {
-  "suiteVersion": "1.9.0",
-  "vectorSetHash": "sha256:6d29346fc144aeef55dd4b9295fa1f974196b3cdeeba8b7e4eff2a0e2a881f83",
-  "vectorCount": 160,
+  "suiteVersion": "1.10.0",
+  "vectorSetHash": "sha256:6dd5e3dd0526b0fb7e7e3ea9e76b63a3acd0651aeb36ee03ea1f820bb15ebed0",
+  "vectorCount": 164,
   "files": [
     [
       "audit-integrity.json",
-      "b4a544cc3438159ef9d4a03f72149878ae1af3ae5739a5214bc94fe7fa1c55d6"
+      "6fe08e247cc3d93bc0baa7a091430f99e57f3142612745cd6c3c1c07a5a930e4"
     ],
     [
       "card-proof.json",
-      "cef91cb54b2536bb28a63526713b22029106c26080f1691f59cc74945026ec5b"
+      "0f50ef606e3d0bf885cd040580251802f4d40f47528d15bd7f58f5e5828ea4f1"
     ],
     [
       "delegation-chain-key-relationship.json",
-      "638c37eabe5f6d9b1ea0388fe88b2193214755290b9bb2137b5bf28a6d16df61"
+      "c94a06a71d2360d3a54442dae9436b74b066adb99f6d412a3528dc2528e24d51"
     ],
     [
       "delegation-chain.json",
-      "595c06da6bd36b84293e38cd4314203ab94737676939624642cc5bf13009e6f0"
+      "ed3cfd0dfdf1a55f9709842ea3abfbccae51799ea8c88d9bc80ab63a8e5fa7a2"
     ],
     [
       "did-key-resolution.json",
-      "72a1a903ebb3c918ea83224fe711e5b60c8930c71f833b74674768460f3e6e5a"
+      "4f7ac4992187f8f86f6c2c4e8a1af854408af7eb07030c8bd303c715cc62a3a4"
     ],
     [
       "did-web-resolution.json",
-      "59dfbea2af68ab92c0d3e6e327ad24d04b5e99845595c44ca10e11ff11bef7e6"
+      "408b413f194f3a21d9566d914cf327ac96da32250206c56a6a467a8e1809c40b"
     ],
     [
       "entity-card.json",
-      "4c170618cd97976427858f7e80c3e5a53e05c2a733e1c2c7bb6ce88a09b8b8e9"
+      "b33b9089179c80db5df48e52e9ad428a794738faf59b7e5836a11e1adfb7a25e"
     ],
     [
       "negotiation.json",
-      "364ed8679b4ddf7fb626ca667fb1a30fe56887d5db3d7a1bec08db0bdebef84c"
+      "832bd1128f1d0b0de5fd2e2a1f5578ae465f1be98d523a48f1d1b02bafe11b58"
     ],
     [
       "signed-proof-key-relationship.json",
-      "3605ca3c8eb1229576eb5f53cf16fad07206dc3cca8b5df2215c7b68cc05b05e"
+      "4d3de165e03942cfcfbbf44d76f155ff52b3c39ff9870c8c41bfb4c3fbf3f382"
     ],
     [
       "signed-proof.json",
-      "28e1cc534187eb21186820d60db6bc1cf5124b6a5e6bee6df0a3266fe368f321"
+      "bf4a4a337a27782416df6b08f863b5e2ef3a9d5a6641830788e2776947ccca25"
     ],
     [
       "status-list-authority.json",
-      "eccee40eccae51ccb3368eb80b738b8705bba2daf169e569d1800a4cdef7477c"
+      "79ab01f48d1018fa5d465a1f812d2dc12afdd2372b367c94766b3c2401f626c0"
     ],
     [
       "status-list-key-relationship.json",
-      "8df85a374810cfd5ae04ba77b364ad1b0f8e98c3aba6f05d9b5b00f54060f71f"
+      "c678e09f0f0b23f731393d1122c176d6a0e0c29e90dd0db4c3950c168bbb514e"
     ],
     [
       "status-list-validity.json",
-      "7bd86701e2f737ff10716733db769aa7a24dd423aaef9a950ca4137eb117aff5"
+      "8c3605ffa0a1156ec1492b0b18ccbe95374238d646b665a02f399e7c1c7b5c4a"
     ],
     [
       "status-list.json",
-      "553f97c696bd61468b9ab64c0bbf65913d1b647b8b5cfdb4a17f56333f66d16e"
+      "5cf1f280f341efda9302e59a74aad7f672bb7a697444fcf4cfef4bc58fda1c33"
     ]
   ],
   "pinnedAt": {

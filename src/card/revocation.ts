@@ -58,6 +58,7 @@ import {
 } from '../utils/statuslist-bits.js';
 import { statusListGzipCodec } from '../utils/statuslist-gzip.js';
 import { assertStatusListValidity } from '../utils/statuslist-validity.js';
+import { clockSkewOption } from '../utils/validity-window.js';
 import type { SafeFetch } from '../utils/safe-fetch.js';
 import type { BitstringStatusListEntry } from './schema.js';
 import type { StatusListProofVerifier } from './status-list-proof.js';
@@ -171,6 +172,13 @@ export interface RevocationCheckerDeps {
   /** Injectable clock returning epoch MILLISECONDS, which a list's validity window is read against. */
   now?: () => number;
   /**
+   * The clock tolerance, in milliseconds, each bound of a list's validity window is held with, so a
+   * list issued a moment ago by an issuer whose clock runs ahead is read: a number from 0, which
+   * holds each bound exactly, to 600,000. Default 120,000, the proof verifier's default skew. Any
+   * other value throws a `TypeError` naming the option.
+   */
+  maxClockSkewMs?: number;
+  /**
    * `statusPurpose` to honour; default {@link STATUS_PURPOSE_REVOCATION}. An entry that states
    * another purpose fails closed ({@link failedClosed}).
    */
@@ -227,10 +235,11 @@ function failedClosed(code: RefusalCode, reason?: string): RevocationStatus & Co
  * malformed, wrong purpose, out-of-range index) fails closed ({@link failedClosed}).
  *
  * A list is read only inside the validity window it states, its `validFrom` and `validUntil`, or its
- * `issuanceDate` and `expirationDate`, at the time `now` gives, once its proof has verified. A list
- * past its end, before its start or stating a bound that is not a date fails closed as
- * `status_unavailable`, whatever its bits, with a reason that names the bound and quotes the time the
- * list states. A list that states no bound is read.
+ * `issuanceDate` and `expirationDate`, at the time `now` gives, once its proof has verified, each
+ * bound held with `maxClockSkewMs`. A list past its end, before its start or stating a bound that is
+ * not an RFC 3339 date-time with its zone fails closed as `status_unavailable`, whatever its bits,
+ * with a reason that names the bound and quotes the time the list states. A list that states no
+ * bound is read.
  *
  * The checker answers for one purpose, its `statusPurpose`. An entry that states another (a
  * `suspension` entry under a revocation checker), or a value that is not a string, `null` included,
@@ -256,7 +265,8 @@ function failedClosed(code: RefusalCode, reason?: string): RevocationStatus & Co
  * is checked and the bits are read as before.
  *
  * @throws TypeError when `statusListIssuers` is malformed, or given without `verifyStatusList`, or
- *   when `dependencyTimeoutMs` is not a number of milliseconds the checker can wait.
+ *   when `dependencyTimeoutMs` is not a number of milliseconds the checker can wait, or
+ *   `maxClockSkewMs` not one it can hold a bound with.
  */
 export function createRevocationChecker(
   deps: RevocationCheckerDeps,
@@ -269,6 +279,7 @@ export function createRevocationChecker(
   const wantedPurpose = deps.statusPurpose ?? STATUS_PURPOSE_REVOCATION;
   const decompress = deps.decompress ?? statusListGzipCodec.decompress;
   const timeoutMs = dependencyTimeout(deps.dependencyTimeoutMs);
+  const skewMs = clockSkewOption(deps.maxClockSkewMs);
   const read = async function check(
     entry: RevocationStatusEntry,
     context?: StatusCheckContext,
@@ -301,7 +312,7 @@ export function createRevocationChecker(
         throw new RefusalError('status_signer_untrusted', 'revocation: status-list proof rejected');
       }
       // A list outside the window it states says nothing of now, whatever its bits say.
-      assertStatusListValidity(credential, clock());
+      assertStatusListValidity(credential, clock(), skewMs);
       const bits = await decodeStatusList(credential, decompress);
       const revoked = readStatusBit(bits, parseStatusListIndex(entry.statusListIndex));
       return revoked ? { revoked, fresh: true, ...coded('delegation_revoked') } : { revoked, fresh: true };

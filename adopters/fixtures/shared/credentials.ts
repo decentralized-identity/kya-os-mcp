@@ -122,6 +122,8 @@ export interface HopTerms {
   parentCapability: string;
   allowedAction: string[];
   credentialStatus?: RevocationEntry;
+  /** When the hop starts to be valid, as the issuer writes it; none when left out. */
+  validFrom?: string;
 }
 
 /** An Entity Card delegation hop `issuer` signs, valid until {@link EXPIRES}. */
@@ -131,6 +133,7 @@ export function signCardHop(issuer: Party, terms: HopTerms): Promise<CardDelegat
       '@context': [DELEGATION_CONTEXT_V2, ZCAP_CONTEXT, KYA_OS_DELEGATION_CONTEXT],
       type: ['VerifiableCredential', 'DelegationCredential'],
       issuer: issuer.did,
+      ...(terms.validFrom !== undefined ? { validFrom: terms.validFrom } : {}),
       validUntil: EXPIRES,
       credentialSubject: {
         id: terms.id,

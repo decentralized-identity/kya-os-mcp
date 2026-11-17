@@ -15,6 +15,9 @@ import { typeErrors } from './utils/type-errors.js';
 
 type Module = Record<string, unknown>;
 
+/** How long a test that type-checks a consumer of the whole package may take, on a slow runner too. */
+const COMPILE_MS = 60_000;
+
 describe('the exports for binding a proof to a delegation chain', () => {
   it.each([
     ['the chain digest', chainDigest as Module],
@@ -76,7 +79,7 @@ describe('the exports for binding a proof to a delegation chain', () => {
     const differLine = source.split('\n').findIndex((line) => line.includes('const differ')) + 1;
     expect(errors.match(/error TS\d+/g)).toHaveLength(1);
     expect(errors).toMatch(new RegExp(`consumer\\.ts\\(${differLine},\\d+\\): error TS2322`));
-  });
+  }, COMPILE_MS);
 
   // `Sha256` is the type of the hash every digest and reference function
   // takes, so a caller can name what it passes them. Code that binds a
@@ -99,5 +102,5 @@ describe('the exports for binding a proof to a delegation chain', () => {
     const wrongLine = source.split('\n').findIndex((line) => line.includes('const wrong')) + 1;
     expect(errors.match(/error TS\d+/g)).toHaveLength(1);
     expect(errors).toMatch(new RegExp(`consumer\\.ts\\(${wrongLine},\\d+\\): error TS2322`));
-  });
+  }, COMPILE_MS);
 });

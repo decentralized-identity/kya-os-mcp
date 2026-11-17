@@ -1,6 +1,6 @@
 /**
  * Host names for the tests of the private-network rule (`utils/private-network-rule.ts`), which
- * resolves no name and so refuses by the name alone.
+ * reads the URL alone and so refuses by the name alone.
  */
 
 /**
@@ -17,7 +17,8 @@ export const LOCAL_HOST_NAMES = [
 ] as const;
 
 /**
- * A public name whose public DNS answer is the loopback address. The rule admits it: it resolves no
- * name, so the address a public name has is known only when the runtime connects to it.
+ * A public name whose public DNS answer is the loopback address. The rule admits it, since it reads
+ * the URL alone; a read through a provider that resolves its hosts (`utils/private-network-read.ts`)
+ * refuses it once it has looked it up.
  */
 export const PUBLIC_NAME_FOR_LOOPBACK = '127.0.0.1.nip.io';

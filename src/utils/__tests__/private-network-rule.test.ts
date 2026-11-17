@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { privateNetworkRefusal, underPrivateNetworkRule } from '../private-network-rule.js';
 import { LOCAL_HOST_NAMES, PUBLIC_NAME_FOR_LOOPBACK } from '../../__tests__/utils/local-host-names.js';
 import { RuntimeFetchProvider } from '../../providers/runtime-fetch.js';
+import { OVER_STUBBED_FETCH } from '../../__tests__/utils/runtime-network.js';
 
 /** Whether the rule, without the opt-out, refuses `url`. */
 const refuses = (url: string) => privateNetworkRefusal(url) !== undefined;
@@ -60,8 +61,8 @@ describe('privateNetworkRefusal', () => {
     expect(admitted.filter(refuses)).toEqual([]);
   });
 
-  it('admits a public name whose address is a loopback address, which the runtime learns only when it connects', () => {
-    // The rule resolves no name: an egress control, not this rule, keeps such a name from a private address.
+  it('admits a public name whose address is a loopback address, which only a lookup learns', () => {
+    // The rule reads the URL alone: the read resolves the name (./private-network-read), or an egress control refuses its address.
     expect(privateNetworkRefusal(`https://${PUBLIC_NAME_FOR_LOOPBACK}/`)).toBeUndefined();
   });
 });
@@ -92,7 +93,8 @@ describe('underPrivateNetworkRule', () => {
     const fetch = answering();
     vi.stubGlobal('fetch', fetch);
     try {
-      await new RuntimeFetchProvider().fetchStatusList('https://localhost%2Epublic.example/list');
+      // Every name resolves to a public address, and the read goes out through the stubbed fetch.
+      await new RuntimeFetchProvider(OVER_STUBBED_FETCH).fetchStatusList('https://localhost%2Epublic.example/list');
     } finally {
       vi.unstubAllGlobals();
     }

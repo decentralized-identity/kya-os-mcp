@@ -13,6 +13,7 @@ import { statusListGzipCodec } from '../../utils/statuslist-gzip.js';
 import type { CryptoProvider, FetchProvider } from '../../providers/base.js';
 import type { CredentialStatus } from '../../types/protocol.js';
 import { LOCAL_HOST_NAMES } from '../../__tests__/utils/local-host-names.js';
+import { OVER_STUBBED_FETCH } from '../../__tests__/utils/runtime-network.js';
 
 /** The status-list limits SPEC §4.4.2 states. */
 const CAP = 1_048_576;
@@ -176,16 +177,17 @@ describe('CheqdStatusListResolver reads a list under the private-network rule, w
   });
 });
 
+// Its names resolve to a public address, and each request goes out through the stubbed fetch, as SafeFetch's fetchTransport sends it.
 describe('RuntimeFetchProvider.fetchStatusList reads a list through the bounded reader', () => {
   it('returns a list of exactly the cap and null for one byte more, cancelling that body', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(padded(CAP))));
-    expect(await new RuntimeFetchProvider().fetchStatusList(LIST)).toMatchObject({ id: LIST });
+    expect(await new RuntimeFetchProvider(OVER_STUBBED_FETCH).fetchStatusList(LIST)).toMatchObject({ id: LIST });
     const cancel = vi.fn();
     const over = new TextEncoder().encode(padded(CAP + 1));
     vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream<Uint8Array>({
       start(controller) { controller.enqueue(over); }, cancel,
     }))));
-    expect(await new RuntimeFetchProvider().fetchStatusList(LIST)).toBeNull();
+    expect(await new RuntimeFetchProvider(OVER_STUBBED_FETCH).fetchStatusList(LIST)).toBeNull();
     expect(cancel).toHaveBeenCalledOnce();
   });
 
@@ -194,7 +196,7 @@ describe('RuntimeFetchProvider.fetchStatusList reads a list through the bounded 
     const { cancel, response } = stalled();
     vi.stubGlobal('fetch', vi.fn(async () => response));
     let outcome: unknown = 'pending';
-    const settled = new RuntimeFetchProvider().fetchStatusList(LIST).then(value => { outcome = value; });
+    const settled = new RuntimeFetchProvider(OVER_STUBBED_FETCH).fetchStatusList(LIST).then(value => { outcome = value; });
     await vi.advanceTimersByTimeAsync(STATUS_LIST_TIMEOUT_MS - 1);
     expect(outcome).toBe('pending');
     await vi.advanceTimersByTimeAsync(1);

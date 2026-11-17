@@ -115,24 +115,30 @@ A verifier reads documents from hosts that counterparty-controlled data names: t
 Every did:web read, by the delegation gate, `DidWebResolver`, `createDidWebResolver` or `RuntimeFetchProvider.resolveDID`, and every status-list read, by `CheqdStatusListResolver` or `RuntimeFetchProvider.fetchStatusList`, goes through one private-network rule, whatever `FetchProvider` it is given (SPEC.md §4.4.2):
 
 - A URL that is not an absolute http or https URL, such as a `data:`, `file:` or `ftp:` URL, is refused before any request.
+- A status-list URL, and each redirect of one, must be https; http is read only from a private or local host the opt-out admits.
 - A URL whose host is a non-public IP literal, with or without trailing dots, is refused before any request: loopback, private, link-local (including the cloud metadata address 169.254.169.254), unique-local, shared address space and the other ranges `SafeFetch` refuses, including an IPv4-mapped, IPv4-translated or NAT64 IPv6 form of one.
 - So is a URL whose host is a local name, in any case and with any trailing dots: a single label, such as `ip6-localhost` or `metadata`, which a resolver completes through its search domains to a local host, or `localhost`, `localdomain`, `localdomain6`, `local`, `internal` or `home.arpa`, or a name under one of them, such as `localhost.localdomain` or `metadata.google.internal`.
 - Each read asks its provider not to follow redirects and follows at most 3 itself, holding each target to the same rule and refusing a step from https down to http; a redirect to another origin carries only the CORS-safelisted request headers and the request's `Cache-Control` and `Pragma`.
 - A provider that follows a redirect itself, because it does not pass `redirect: "manual"` on, has made that request before the reader sees the response; the reader refuses the response, unread, when it says it was redirected or names another URL.
   A custom provider's `fetch` must pass `redirect` on.
 
-The rule resolves no host name, so it does not refuse any other name whose address is private, such as a public name that points at a loopback address, or that changes its address (DNS rebinding).
+Where the runtime resolves names, as Node does, `RuntimeFetchProvider` also resolves each host before it connects, every redirect's included, refuses a host with any address that is not public, and connects only to the address it checked, pinned, so a second lookup cannot move it (DNS rebinding).
+It does so by `SafeFetch`'s means: its `lookup` and `transport` options are `SafeFetch`'s seams, and `transport: fetchTransport`, for a serverless runtime where the pinned connection fails, connects by name after the check, which reopens the rebinding window.
+A runtime that resolves no name, such as a Cloudflare Worker or a browser, and a custom `FetchProvider`, or a subclass whose `fetch` is its own, make their own connections, so their reads are held to the URL alone and do not refuse a public name that points at a private address.
 
 - **Real mitigation:** run verifier deployments behind an egress control that refuses private addresses, and treat every DID resolution and status-list read as an outbound request to an untrusted host.
+  On a runtime that resolves no name, it is the only defense against a public name that points at a private address.
+- **Hosts you name:** the did:web documents of the DIDs you pin in `trustedRootIssuers` and the status lists your `statusListIssuers` binds are read wherever they are, a private host included.
+  The middleware passes `delegation.trustedRootIssuers` on itself; a `RuntimeFetchProvider` or `DidWebResolver` you build takes them as options of the same names.
 - **Opt out:** in local development, set `development: true` on `withKyaOs` or `createKyaOsMiddleware`, `DidWebResolverOptions`, `CheqdStatusListResolverOptions` or `RuntimeFetchProviderOptions`.
   It warns once per process, and while `NODE_ENV` is `production` building what it is set on throws, so a deployment that sets `NODE_ENV` to `production` does not start with it.
   The check reads `process.env.NODE_ENV` as written, so a bundle in which a bundler has put `"production"` in its place refuses it too; a runtime with no `process` counts as not production.
   For trusted internal deployments in production only, give the reader `new RuntimeFetchProvider({ allowPrivateNetworkHosts: true })`, or a custom `FetchProvider` whose `allowPrivateNetworkHosts` member is `true`.
-  Each admits non-public IP literals and local names; the scheme rule and the redirect checks still hold.
+  Each admits non-public IP literals, local names and names that resolve to private addresses, through the provider's own `fetch`; the scheme rule and the redirect checks still hold.
 - The Entity Card's resolution and status-list reads go through `SafeFetch` (`createSafeFetch`) instead, which resolves each host name, refuses a private address, pins the connection to the address it checked, and follows only same-origin redirects.
   Its `development: true` admits private and local addresses for a local demo, under the same production guard, and in production `allowOrigins` names the origins you own, which it fetches without the guard.
 - The raw `fetch()` escape hatch of a `FetchProvider` is intentionally unguarded: it is the caller's responsibility.
 - A refusal tells whoever presented the credential nothing the verifier's network answered, since the presenter chooses the DIDs and status-list URLs the verifier reads, and their hosts may be internal ones.
   A refusal of a DID or a status list that could not be read says why only where the DID or the URL alone decided it, before any request or DNS lookup, as for a private or local host it names, or where the deadline passed; otherwise it reads `Could not resolve issuer DID: "<did>"` or `the status list at "<url>" could not be read or checked`.
-  An HTTP status, a body over the byte cap or not JSON, a refused redirect, an address `SafeFetch` looked up and the words of a dependency the host supplies, unless it throws a `RefusalError`, go to the operator's log, and the refusal's code says which kind of failure it was.
+  An HTTP status, a body over the byte cap or not JSON, a refused redirect, an address `SafeFetch` or `RuntimeFetchProvider` looked up and the words of a dependency the host supplies, unless it throws a `RefusalError`, go to the operator's log, and the refusal's code says which kind of failure it was.
 

@@ -15,14 +15,22 @@
  * did:web:169.254.169.254, the cloud-metadata endpoint), a local name (a single
  * label, or a special-use domain the rule lists as `LOCAL_DOMAINS`, such as
  * `localhost`, or a name under one), and a scheme other than http and https are
- * refused, and redirects are followed by hand up to the limit of
- * `utils/redirect-follower.ts`, each target held to the same rule.
- * This is best-effort defense-in-depth: the rule resolves no name, so it does NOT
- * stop any other name whose address is internal, such as a public name that
- * points at a loopback address (or DNS rebinding). Run verifiers behind an
- * egress control. Pass `{ allowPrivateNetworkHosts: true }` for trusted
- * internal use, or `{ development: true }` in local development alone. Both
- * read the response within the limits of SPEC §4.4.2.
+ * refused, a status list is read over https alone, and redirects are followed
+ * by hand up to the limit of `utils/redirect-follower.ts`, each target held to
+ * the same rule. Where the runtime resolves names, as Node does, this provider
+ * also resolves each host before it connects, every redirect's included,
+ * refuses a host with any address that is not public (so
+ * did:web:169.254.169.254.nip.io is refused too), and connects only to the
+ * address it checked, pinned so a second lookup cannot rebind it, by SafeFetch's
+ * own means: the `lookup` and `transport` options are SafeFetch's seams. A
+ * runtime that resolves no name, such as a Worker or a browser, keeps the rule
+ * on the URL alone, and its egress must refuse private addresses. So does a
+ * subclass whose `fetch` is its own: that `fetch` makes its own connections.
+ * The hosts the operator names are its own: the did:web documents of the DIDs
+ * in `trustedRootIssuers` and the status lists `statusListIssuers` binds are
+ * read wherever they are. Pass `{ allowPrivateNetworkHosts: true }` for trusted
+ * internal use, or `{ development: true }` in local development alone. Every
+ * read keeps the limits of SPEC §4.4.2.
  * The raw `fetch()` escape hatch is intentionally unguarded — it is the caller's
  * responsibility.
  *
@@ -56,9 +64,15 @@ import {
   buildDidResolverRegistry,
   type DIDResolverRegistry,
 } from "../delegation/did-resolver-registry.js";
+import { assertTrustedRootIssuers } from "../delegation/root-admission.js";
 import { dependencyTimeout } from "../utils/deadline.js";
 import { developmentMode } from "../utils/development-mode.js";
 import { getDidMethod } from "../utils/did-helpers.js";
+import { ADDRESS_PINNING, type AddressPinning } from "../utils/fetch-port.js";
+import { addressPinning } from "../utils/pinned-connection.js";
+import { admittingPrivateHosts } from "../utils/private-network-rule.js";
+import type { DnsLookup, SafeFetchTransport } from "../utils/safe-fetch-types.js";
+import { assertStatusListIssuers, statusListIssuersBind, type StatusListIssuers } from "../utils/statuslist-keeper.js";
 import type { DIDDocument } from "../delegation/vc-verifier.js";
 import type {
   StatusList2021Credential,
@@ -97,6 +111,42 @@ export interface RuntimeFetchProviderOptions {
    * 2,147,483,647. Default 5,000. Any other value throws a `TypeError` naming the option.
    */
   dependencyTimeoutMs?: number;
+  /**
+   * The DNS seam of the reads this provider makes of hosts a counterparty
+   * names, SafeFetch's `lookup`: it answers every address a host name
+   * resolves to, and the provider refuses the host when any is not public.
+   * Default: `node:dns`, where the runtime resolves names; where it does not,
+   * as in a Worker or a browser, those reads go through the runtime's `fetch`
+   * and are held to the URL alone. Inject one to resolve through a resolver
+   * of your own, such as DNS over HTTPS, or in tests.
+   */
+  lookup?: DnsLookup;
+  /**
+   * The connection seam of those reads, SafeFetch's `transport`: it makes one
+   * request connected to the address the provider checked. Default: SafeFetch's
+   * default, `nodeHttpsTransport`, which pins the connection to that address,
+   * where `node:https` loads. A serverless runtime where the pinned path is
+   * present but broken passes `fetchTransport`, which connects by name after
+   * the check, as SafeFetch's options say.
+   */
+  transport?: SafeFetchTransport;
+  /**
+   * The DIDs the verifier pins as roots, as its `trustedRootIssuers` names
+   * them. The operator names these, so `resolveDID` reads their did:web
+   * documents wherever they are, a private or local host included, through
+   * this provider's `fetch`; every other DID is held to the rule. Pass the list
+   * the verifier is given. Anything but an array of DIDs throws a `TypeError`.
+   */
+  trustedRootIssuers?: readonly string[];
+  /**
+   * The verifier's `statusListIssuers`, in the shape it takes. The operator
+   * names the URLs and `https:` origins it binds, so `fetchStatusList` reads a
+   * list at one wherever it is, a private or local host included, through this
+   * provider's `fetch`; every other list is held to the rule. Only where a list
+   * may be read is decided here: which issuer must sign it is the status-list
+   * reader's to decide. A value the verifier would refuse throws a `TypeError`.
+   */
+  statusListIssuers?: StatusListIssuers;
 }
 
 export class RuntimeFetchProvider extends FetchProvider {
@@ -110,14 +160,30 @@ export class RuntimeFetchProvider extends FetchProvider {
    */
   readonly allowPrivateNetworkHosts: boolean;
   private readonly timeoutMs: number;
+  private readonly pinning: () => Promise<AddressPinning | undefined>;
+  private readonly trustedRootIssuers: readonly string[] | undefined;
+  private readonly statusListIssuers: StatusListIssuers | undefined;
 
   constructor(options?: RuntimeFetchProviderOptions) {
     super();
     this.timeoutMs = dependencyTimeout(options?.dependencyTimeoutMs);
     const development = developmentMode(options?.development, "RuntimeFetchProviderOptions.development");
     this.allowPrivateNetworkHosts = development || options?.allowPrivateNetworkHosts === true;
+    assertTrustedRootIssuers(options?.trustedRootIssuers, "RuntimeFetchProviderOptions.");
+    assertStatusListIssuers(options?.statusListIssuers);
+    this.trustedRootIssuers = options?.trustedRootIssuers;
+    this.statusListIssuers = options?.statusListIssuers;
+    this.pinning = addressPinning({ lookup: options?.lookup, transport: options?.transport });
     this.didResolvers = buildDidResolverRegistry(options?.didResolvers, this, { dependencyTimeoutMs: this.timeoutMs });
   }
+
+  /**
+   * How the private-network rule connects this provider's reads to the
+   * addresses it checks, while its `fetch` is the runtime's own: a subclass
+   * whose `fetch` is its own makes its own connections, and offers none.
+   */
+  readonly [ADDRESS_PINNING] = (): Promise<AddressPinning | undefined> =>
+    this.fetch === RuntimeFetchProvider.prototype.fetch ? this.pinning() : Promise.resolve(undefined);
 
   /**
    * Resolve a DID to its DID Document. did:key is decoded locally (no network);
@@ -159,7 +225,10 @@ export class RuntimeFetchProvider extends FetchProvider {
       // rule, never resolveDID, so it does not recurse. Cache it to reuse its doc
       // cache. A read the deadline abandons ends at its own deadline.
       if (!this.didWebResolver) {
-        this.didWebResolver = createDidWebResolver(this, { dependencyTimeoutMs: this.timeoutMs });
+        this.didWebResolver = createDidWebResolver(this, {
+          dependencyTimeoutMs: this.timeoutMs,
+          ...(this.trustedRootIssuers === undefined ? {} : { trustedRootIssuers: this.trustedRootIssuers }),
+        });
       }
       return deadline.within(this.didWebResolver.resolve(did));
     }
@@ -168,13 +237,15 @@ export class RuntimeFetchProvider extends FetchProvider {
 
   /**
    * Fetch and validate a StatusList2021 credential by URL. Returns null on a
-   * blocked (private-network) host, non-ok response, malformed payload, or
-   * transport error (never throws). Bit decoding is the verifier's job — this
-   * only retrieves the credential.
+   * blocked (private-network) host, a URL that is not https, non-ok response,
+   * malformed payload, or transport error (never throws). A list at a URL
+   * `statusListIssuers` binds is read on any host. Bit decoding is the
+   * verifier's job: this only retrieves the credential.
    */
   async fetchStatusList(url: string): Promise<StatusList2021Credential | null> {
     try {
-      const json = await fetchStatusListJson(this, url, {}, this.timeoutMs);
+      const transport = statusListIssuersBind(url, this.statusListIssuers) ? admittingPrivateHosts(this) : this;
+      const json = await fetchStatusListJson(transport, url, {}, this.timeoutMs);
       return isStatusList2021Credential(json) ? json : null;
     } catch {
       return null;

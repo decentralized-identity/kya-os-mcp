@@ -92,7 +92,8 @@ describe.each(DEADLINES)('the delegation gate, %s', (_label, option, ms, stated)
     } } });
     const resolved = await settledAt(ms, (never) => {
       vi.stubGlobal('fetch', never);
-      return provider!.resolveDID('did:web:slow.example');
+      // The root is pinned, so its document is read through the runtime's fetch, which never answers.
+      return provider!.resolveDID(root.did);
     });
     expect(resolved).toBeNull();
   });

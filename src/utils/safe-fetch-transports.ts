@@ -68,6 +68,21 @@ export const defaultLookup: DnsLookup = async (hostname) => {
   return resolved.map((entry) => ({ address: entry.address, family: entry.family }));
 };
 
+let resolvesNamesPromise: Promise<boolean> | undefined;
+/**
+ * Whether this runtime resolves host names through {@link defaultLookup}, asked once per process of
+ * `localhost`, which every resolver answers from local configuration without a query. Node does. A
+ * runtime that cannot, as a browser has no `node:dns` and a Cloudflare Worker's `node:dns` throws
+ * "Not implemented" from `lookup`, answers `false`. The question is a fixed name, never a host a
+ * counterparty chose, so no host can make a runtime that resolves names look like one that does not.
+ */
+export function runtimeResolvesNames(): Promise<boolean> {
+  return (resolvesNamesPromise ??= defaultLookup('localhost').then(
+    (addresses) => addresses.length > 0,
+    () => false,
+  ));
+}
+
 /**
  * Fetch-based transport — for runtimes where the `node:https` pinned-connect path misbehaves
  * (the Vercel Node serverless runtime failed 100% of fetches on 2026-07-02). Select it explicitly
@@ -85,7 +100,12 @@ export const defaultLookup: DnsLookup = async (hostname) => {
  * `node:https` works; the first-party escape hatch avoids the window for a caller's own origin.
  */
 export const fetchTransport: SafeFetchTransport = async (url, init) => {
-  const response = await fetch(url, { method: 'GET', redirect: 'manual', signal: init.signal });
+  const response = await fetch(url, {
+    method: 'GET',
+    redirect: 'manual',
+    signal: init.signal,
+    ...(init.headers === undefined ? {} : { headers: { ...init.headers } }),
+  });
   return readCapped(response, init.maxBytes, init.signal);
 };
 
@@ -101,11 +121,17 @@ async function readCapped(response: Response, maxBytes: number, signal: AbortSig
         tooLarge: () => overCap(maxBytes),
       })
     : new Uint8Array(0);
+  return rawResponse(response.status, { get: (name) => response.headers.get(name) }, bytes);
+}
+
+/** A RawResponse of `status` and `headers` whose body is `bytes`, answered as they are and as UTF-8 text. */
+function rawResponse(status: number, headers: RawResponse['headers'], bytes: Uint8Array): RawResponse {
   const body = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('utf8');
   return {
-    status: response.status,
-    headers: { get: (name) => response.headers.get(name) },
+    status,
+    headers,
     text: () => Promise.resolve(body),
+    bytes: () => Promise.resolve(bytes),
   };
 }
 
@@ -143,7 +169,13 @@ export const nodeHttpsTransport: SafeFetchTransport = async (url, init) => {
     const pinnedLookup = buildPinnedLookup(init.pinnedAddress, family);
     const req = httpsRequest(
       url,
-      { method: 'GET', servername: init.hostname, signal: init.signal, lookup: pinnedLookup },
+      {
+        method: 'GET',
+        servername: init.hostname,
+        signal: init.signal,
+        lookup: pinnedLookup,
+        ...(init.headers === undefined ? {} : { headers: { ...init.headers } }),
+      },
       (res: IncomingMessage) => {
         const chunks: Buffer[] = [];
         let size = 0;
@@ -167,16 +199,13 @@ export const nodeHttpsTransport: SafeFetchTransport = async (url, init) => {
 
 /** Project a node:http IncomingMessage + buffered chunks into the RawResponse shape. */
 function toRawResponse(res: IncomingMessage, chunks: Buffer[]): RawResponse {
-  return {
-    status: res.statusCode ?? 0,
-    headers: {
-      get: (name) => {
-        const value = res.headers[name.toLowerCase()];
-        return Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
-      },
+  const headers: RawResponse['headers'] = {
+    get: (name) => {
+      const value = res.headers[name.toLowerCase()];
+      return Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
     },
-    text: () => Promise.resolve(Buffer.concat(chunks).toString('utf8')),
   };
+  return rawResponse(res.statusCode ?? 0, headers, new Uint8Array(Buffer.concat(chunks)));
 }
 
 /**

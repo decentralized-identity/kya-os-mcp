@@ -6,6 +6,7 @@ import { cheqdResolver } from '../../integrations/cheqd/index.js';
 import type { FetchProvider } from '../../providers/base.js';
 import { LOCAL_HOST_NAMES, PUBLIC_NAME_FOR_LOOPBACK } from '../utils/local-host-names.js';
 import { documentOf } from '../utils/did-documents.js';
+import { lookupOf, OVER_STUBBED_FETCH } from '../utils/runtime-network.js';
 
 const statusList = { type: ['StatusList2021Credential'], credentialSubject: { type: 'StatusList2021', encodedList: 'H4sIAAAAAAAA' } };
 
@@ -13,7 +14,8 @@ describe('RuntimeFetchProvider', () => {
   let provider: RuntimeFetchProvider;
 
   beforeEach(() => {
-    provider = new RuntimeFetchProvider();
+    // Every name resolves to a public address, and each read goes out through the stubbed fetch.
+    provider = new RuntimeFetchProvider(OVER_STUBBED_FETCH);
   });
 
   afterEach(() => {
@@ -278,10 +280,20 @@ describe('RuntimeFetchProvider', () => {
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
-    it('reads a status list from a public name whatever address it has, since the rule resolves no name', async () => {
+    it('refuses a status list on a public name whose address is a loopback address, once it resolves it, without fetching', async () => {
       const fetchSpy = vi.fn(async () => new Response(JSON.stringify(statusList)));
       vi.stubGlobal('fetch', fetchSpy);
-      const url = `https://${PUBLIC_NAME_FOR_LOOPBACK}/status`;
+      const loopback = new RuntimeFetchProvider({
+        ...OVER_STUBBED_FETCH, lookup: lookupOf({ [PUBLIC_NAME_FOR_LOOPBACK]: [{ address: '127.0.0.1', family: 4 }] }),
+      });
+      expect(await loopback.fetchStatusList(`https://${PUBLIC_NAME_FOR_LOOPBACK}/status`)).toBeNull();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('reads a status list from a public name whose addresses are all public, asking for no redirect', async () => {
+      const fetchSpy = vi.fn(async () => new Response(JSON.stringify(statusList)));
+      vi.stubGlobal('fetch', fetchSpy);
+      const url = 'https://status.example/status';
       expect(await provider.fetchStatusList(url)).toMatchObject(statusList);
       expect(fetchSpy).toHaveBeenCalledWith(url, expect.objectContaining({ redirect: 'manual' }));
     });

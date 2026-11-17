@@ -23,7 +23,7 @@ import { coded, RefusalError, refusalCodeOf, type Coded } from '../utils/refusal
 import { sanitizeForMessage } from '../utils/message-text.js';
 import { thrownReason } from '../utils/thrown-words.js';
 import type { RefusalCode } from '../refusal-codes.js';
-import { admitsRootIssuer, assertTrustedRootIssuers } from '../delegation/root-admission.js';
+import { admitsRootIssuer } from '../delegation/root-admission.js';
 import { revocationEntriesOf, validateDelegationChain, type DelegationChain } from './delegation.js';
 import {
   KYA_OS_DELEGATION_CHAIN_META_KEY,
@@ -37,6 +37,7 @@ import { codedVariantOf } from './coded-proof-verifier.js';
 import type { DelegationProofVerifier } from './delegation-proof.js';
 import type { BitstringRevocationChecker } from './revocation.js';
 import { walkRevocationChain, type RevocationChainWalk } from './revocation-chain.js';
+import { admitRootIssuers } from './request-root-issuers.js';
 
 export {
   DEFAULT_CARRIED_CHAIN_LIMIT,
@@ -90,14 +91,38 @@ export interface VerifyRequestDelegationDeps {
    * when the request carries a chain. Omit it to require every request to carry its chain.
    */
   resolveDelegationChain?: (ctx: { proofDid: string }) => Promise<DelegationChain | undefined>;
-  /** When set, the root issuer must equal it (the SPEC.md §6.10 root rule). */
+  /**
+   * When set, the root issuer must equal it (the SPEC.md §6.10 root rule). It pins the chain's root,
+   * as `trustedRootIssuers` does; with neither set, see `trustedRootIssuers`.
+   */
   resourceOwner?: string;
   /**
    * When set, the root issuer (the Responsible Party) must be one of these DIDs, each compared
-   * whole. Anything but an array of DIDs, each a string that starts with `did:` and has no white
-   * space around it, throws a `TypeError` naming the option.
+   * whole; an empty list trusts no issuer. Anything but an array of DIDs, each a string that starts
+   * with `did:` and has no white space around it, throws a `TypeError` naming the option.
+   *
+   * With neither this nor `resourceOwner` set, a chain from any root would be accepted, including
+   * one an agent signs for itself. So `requireDelegation` throws when the guard is built, and
+   * `verifyRequestDelegation` rejects the call, with an `Error` naming every fix, unless
+   * `development` or `allowAnyRootIssuer` is `true`; either of those runs with one warning.
    */
   trustedRootIssuers?: readonly string[];
+  /**
+   * Accept a chain from any root issuer, by name, with neither `trustedRootIssuers` nor
+   * `resourceOwner` set: for a verifier whose seams already decide whose authority counts, or one
+   * that accepts anyone's on purpose. It logs one warning, once for each guard `requireDelegation`
+   * builds and once for each deps object `verifyRequestDelegation` is called with. Anything but a
+   * boolean throws a `TypeError`, and so does `true` beside `trustedRootIssuers`, an empty list
+   * included, or `resourceOwner`, since they contradict each other. Default `false`.
+   */
+  allowAnyRootIssuer?: boolean;
+  /**
+   * Local development: with neither `trustedRootIssuers` nor `resourceOwner` set, accept a chain
+   * from any root issuer, with one warning, as `allowAnyRootIssuer` does. It changes nothing else.
+   * Set while `NODE_ENV` is `production`, it throws an `Error` naming every fix, and anything but a
+   * boolean throws a `TypeError`. Default `false`.
+   */
+  development?: boolean;
   /**
    * Local cost limit: the most credentials to evaluate in one chain, root to leaf inclusive. A
    * carried chain is bounded by {@link DEFAULT_CARRIED_CHAIN_LIMIT} when this is unset; a resolved
@@ -183,10 +208,12 @@ function rejection(
  * chain, `holder_binding_failed` for a leaf delegate that is not `proofDid`, `untrusted_root`,
  * `invalid_proof` for a hop's proof, `insufficient_scope` for the action, the code of the status
  * that refused a hop, and `deadline_exceeded` or `runtime_error` for a seam that did not answer in
- * time or threw. Rejects with a
- * `TypeError` for a `trustedRootIssuers` that is not an array of DIDs, each a string that starts
- * with `did:` and has no white space around it, and for a `dependencyTimeoutMs` that is not a
- * number of milliseconds it can wait.
+ * time or threw. Rejects, before it reads the chain, with an `Error` naming every fix when neither
+ * `trustedRootIssuers` nor `resourceOwner` pins the root, outside development and without
+ * `allowAnyRootIssuer: true`, and with a `TypeError` for a `trustedRootIssuers` that is not an array
+ * of DIDs, each a string that starts with `did:` and has no white space around it, for an
+ * `allowAnyRootIssuer` or a `development` that is not a boolean, for `allowAnyRootIssuer: true`
+ * beside a pin, and for a `dependencyTimeoutMs` that is not a number of milliseconds it can wait.
  */
 export async function verifyRequestDelegation(
   input: RequestDelegationInput,
@@ -197,7 +224,7 @@ export async function verifyRequestDelegation(
 
 /** {@link verifyRequestDelegation}, with a rejection that cannot be built without its code. */
 async function verifyRequest(input: RequestDelegationInput, deps: VerifyRequestDelegationDeps): Promise<RequestVerdict> {
-  assertTrustedRootIssuers(deps.trustedRootIssuers);
+  admitRootIssuers(deps, 'verifyRequestDelegation');
   const timeoutMs = dependencyTimeout(deps.dependencyTimeoutMs);
   const obtained = await obtainChain(input, deps, timeoutMs);
   if (!obtained.ok) return obtained;
@@ -375,13 +402,16 @@ const GATE_MESSAGES: Record<DelegationGateCode, string> = {
  * const authority = await delegationGuard({ meta, proofDid: proof.did, action: req.params.name });
  * ```
  *
- * Throws a `TypeError`, naming the option, for a `trustedRootIssuers` that is not an array of
- * DIDs, each a string that starts with `did:` and has no white space around it, and for a
- * `dependencyTimeoutMs` that is not a number of milliseconds it can wait, so a mistyped option
- * fails when the guard is built.
+ * Throws an `Error` naming every fix when neither `trustedRootIssuers` nor `resourceOwner` pins the
+ * chain's root, outside development and without `allowAnyRootIssuer: true`; with either of those,
+ * it builds the guard and warns once. Throws a `TypeError`, naming the option, for a
+ * `trustedRootIssuers` that is not an array of DIDs, each a string that starts with `did:` and has
+ * no white space around it, for an `allowAnyRootIssuer` or a `development` that is not a boolean,
+ * for `allowAnyRootIssuer: true` beside a pin, and for a `dependencyTimeoutMs` that is not a number
+ * of milliseconds it can wait, so a mistyped option fails when the guard is built.
  */
 export function requireDelegation(deps: VerifyRequestDelegationDeps): DelegationGuard {
-  assertTrustedRootIssuers(deps.trustedRootIssuers);
+  admitRootIssuers(deps, 'requireDelegation', true);
   dependencyTimeout(deps.dependencyTimeoutMs);
   return async (input) => {
     const result = await verifyRequest(input, deps);

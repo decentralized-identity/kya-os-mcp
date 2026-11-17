@@ -266,6 +266,9 @@ export async function loadKyaOsMiddleware() {
       // Single-key Inspector view for the demo; the library default also mirrors
       // the proof under legacy bare `proof` for pre-1.1 back-compat.
       emitLegacyProofKey: false,
+      // The consent server issues every delegation with this server's identity
+      // (one trust domain), so that DID is the one root it accepts.
+      delegation: { trustedRootIssuers: [did] },
     },
     crypto,
   );

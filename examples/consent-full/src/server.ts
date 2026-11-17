@@ -271,9 +271,17 @@ export async function loadKyaOsMiddleware() {
   }
 
   return createKyaOsMiddleware(
-    // emitLegacyProofKey: false → single-key Inspector view for the demo (the
-    // library default mirrors the proof under legacy bare `proof` for back-compat).
-    { identity, session: { sessionTtlMinutes: 60 }, autoSession: true, emitLegacyProofKey: false },
+    {
+      identity,
+      session: { sessionTtlMinutes: 60 },
+      autoSession: true,
+      // Single-key Inspector view for the demo (the library default mirrors the
+      // proof under legacy bare `proof` for back-compat).
+      emitLegacyProofKey: false,
+      // The consent server issues every delegation with this server's identity
+      // (one trust domain), so that DID is the one root it accepts.
+      delegation: { trustedRootIssuers: [identity.did] },
+    },
     crypto,
   );
 }

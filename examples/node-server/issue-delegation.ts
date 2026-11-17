@@ -1,12 +1,15 @@
 #!/usr/bin/env npx tsx
 /**
- * Run this to get a delegation VC you can pass to restricted_greet.
+ * Run this to get a delegation VC signed by a key of its own, for itself.
  *
  * Usage:
  *   npx tsx examples/node-server/issue-delegation.ts
  *
  * Then copy the printed JSON and pass it as `_kyaos_delegation` when calling
- * restricted_greet via MCP Inspector.
+ * restricted_greet via MCP Inspector. The server trusts only the DID its
+ * consent host signs with (`delegation.trustedRootIssuers`), so it refuses
+ * this credential as `delegation_invalid`: an agent cannot authorize itself.
+ * Use the Authorize link restricted_greet returns for a delegation it accepts.
  */
 
 import { NodeCryptoProvider } from './node-crypto.js';

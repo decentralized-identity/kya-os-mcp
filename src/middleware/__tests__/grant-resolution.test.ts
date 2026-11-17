@@ -14,6 +14,7 @@ import type { ProofAgentIdentity } from '../../proof/generator.js';
 import type { AuditTrailService } from '../../audit/service.js';
 import { base64urlEncodeFromBytes } from '../../utils/base64.js';
 import { served } from './helpers/received-proof.js';
+import { anyRootUnlessListed } from './helpers/root-issuers.js';
 
 /**
  * Durable-grant retry resolution (spec §A). On a no-delegation (retry) call the
@@ -51,7 +52,7 @@ async function makeServer(opts: {
     {
       identity: server,
       session: { sessionTtlMinutes: 60 },
-      delegation: { ...opts.delegation, ...(opts.holderBinding ? { holderBinding: opts.holderBinding } : {}) },
+      delegation: anyRootUnlessListed({ ...opts.delegation, ...(opts.holderBinding ? { holderBinding: opts.holderBinding } : {}) }),
       ...(opts.grantStore ? { grantStore: opts.grantStore } : {}),
       ...(opts.auditRecord ? { audit: { record: opts.auditRecord } } : {}),
     },
@@ -871,16 +872,6 @@ describe('delegation issuer anchoring and nonce admission settings', () => {
     expect(reports).toHaveLength(2);
     expect(reports.some((message) => message.includes('expires after parent'))).toBe(true);
     expect(reports.some((message) => message.includes('names an audience parent') && message.includes('did:web:elsewhere.example'))).toBe(true);
-  });
-
-  it('warns at startup when trustedRootIssuers is unset, and not when it is set', async () => {
-    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
-    await makeServer();
-    expect(warn.mock.calls.some(([message]) => String(message).includes('trustedRootIssuers is not set'))).toBe(true);
-    warn.mockClear();
-    const issuer = await makeIdentity();
-    await makeServer({ delegation: { trustedRootIssuers: [issuer.did] } });
-    expect(warn.mock.calls.some(([message]) => String(message).includes('trustedRootIssuers is not set'))).toBe(false);
   });
 
   describe('nonce caches without consume', () => {

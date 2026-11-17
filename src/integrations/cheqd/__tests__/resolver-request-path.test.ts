@@ -106,7 +106,7 @@ describe('a did:cheqd DID outside the syntax costs no request', () => {
     for (const resolverUrl of BASES) {
       const { provider, requested } = recordingProvider();
       const resolution = { fetchProvider: provider, didResolvers: { cheqd: cheqdResolver({ resolverUrl, headers: HEADERS }) } } as Resolution;
-      const gate = await delegationGate({ trustedRootIssuers: undefined as never, resolution });
+      const gate = await delegationGate({ trustedRootIssuers: undefined as never, resolution, config: { allowAnyRootIssuer: true } });
       for (const did of hostile) {
         expect(await gate.call(await signedCredential(await keyOf(did, 'key-1'))), did).toBe('delegation_invalid');
       }

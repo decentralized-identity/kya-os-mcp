@@ -132,6 +132,9 @@ const kyaos: KyaOsMiddleware = createKyaOsMiddleware(
     },
     autoSession: true,
     delegation: {
+      // The Responsible Party's did:cheqd issues every delegation this gate
+      // accepts, so it is the one root trusted.
+      trustedRootIssuers: [identity.did],
       didResolver,
       statusListResolver,
       // Subject-bound, not bearer: the caller must present a per-request

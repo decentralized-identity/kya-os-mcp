@@ -38,6 +38,7 @@ import {
   type Cast,
   type ThreeHopChain,
 } from './status-list-paths.js';
+import { anyRootUnlessPinned } from './root-issuers.js';
 
 /** The standard chain with hop 1's entry, at index 7 of the agent's list, stating `members` as well. */
 function chainWith(c: Cast, members: Record<string, unknown>): ThreeHopChain {
@@ -99,12 +100,12 @@ describe('a hop whose statusSize is not an integer greater than zero', () => {
     expect(DelegationCredentialSchema.safeParse(chain[1]).success).toBe(false);
     const request = await verifyRequestDelegation(
       { meta: toDelegationChainMeta(chain), proofDid: leafInvokerOf(chain) ?? '', action: 'orders.place' },
-      {
+      anyRootUnlessPinned({
         resource: RESOURCE,
         verifyHopProof: createDelegationProofVerifier({ didResolver: createDidKeyResolver() }),
         checkRevocation: async () => ({ revoked: false, fresh: true }),
         now,
-      },
+      }),
     );
     expect(request).toMatchObject({ ok: false, code: 'delegation_invalid' });
 

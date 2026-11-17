@@ -178,14 +178,9 @@ export function createDelegationVerification(
     isError: true,
   });
 
+  // Whether a tool may be wrapped without the list is decided as it is wrapped (./with-kya-os.root-issuers.ts).
   const trustedRootIssuers = delegationConfig?.trustedRootIssuers;
   assertTrustedRootIssuers(trustedRootIssuers, "delegation.");
-  if (trustedRootIssuers === undefined) {
-    logger.warn(
-      "[kya-os] delegation.trustedRootIssuers is not set, so a delegation from any issuer is " +
-        "accepted, including one an agent signs for itself. Set it to the DIDs allowed to grant authority.",
-    );
-  }
 
   // Refused at startup: a bad value would otherwise boot cleanly and then deny
   // every delegated call, echoing the config detail back to the caller.

@@ -17,6 +17,7 @@ import { NodeCryptoProvider } from "../../providers/node-crypto.js";
 import { base64urlEncodeFromBytes } from "../base64.js";
 import { generateDidKeyFromBase64, generateDidKeyFromBytes } from "../did-helpers.js";
 import { served } from '../../middleware/__tests__/helpers/received-proof.js';
+import { anyRootUnlessListed } from '../../middleware/__tests__/helpers/root-issuers.js';
 
 describe("Base58 Utilities", () => {
   describe("base58Encode", () => {
@@ -366,6 +367,8 @@ describe("Base58 Utilities", () => {
         {
           identity: { did: serverDid, kid: `${serverDid}#k`, privateKey: server.privateKey, publicKey: server.publicKey },
           session: { sessionTtlMinutes: 60 },
+          // The attacker's issuer must reach resolution, as it would under any issuer.
+          delegation: anyRootUnlessListed(),
         },
         crypto,
       ));

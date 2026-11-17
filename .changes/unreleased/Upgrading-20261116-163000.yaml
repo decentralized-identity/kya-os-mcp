@@ -1,0 +1,22 @@
+kind: Upgrading
+body: |-
+    **A verifier that accepts a delegation must name the issuers it
+    trusts.** With no root pinned, a delegation from any issuer is
+    accepted, including one an agent signs for itself; 1.22.0 only warned
+    at startup on the middleware, and said nothing on the Entity Card
+    guards. Outside development, `wrapWithDelegation` now throws while
+    `delegation.trustedRootIssuers` is unset, and while neither
+    `trustedRootIssuers` nor `resourceOwner` is set, `requireDelegation`
+    throws when the guard is built and `verifyRequestDelegation` rejects
+    the call. Each error names every fix: set the list to the DIDs allowed
+    to grant authority, or on the Card `resourceOwner`; in local
+    development, set `development: true`, which the Card guards now take
+    too; to accept any issuer anyway, set the new
+    `allowAnyRootIssuer: true` (`delegation.allowAnyRootIssuer` on the
+    middleware). Either of the last two runs with one warning. A server
+    that gates no tool on a delegation needs no setting and is no longer
+    warned. An `allowAnyRootIssuer` that is not a boolean, or one set to
+    `true` beside a pinned root, throws a `TypeError` when the middleware
+    or the guard is created. UPGRADING.md, "A verifier that accepts a
+    delegation must name the issuers it trusts", has each setup.
+time: 2026-11-16T16:30:00.000000-06:00

@@ -41,6 +41,7 @@ import { createDelegationVerification } from "./with-kya-os.delegation-verify.js
 import { createGrantResolution } from "./with-kya-os.grants.js";
 import { createPolicyGate } from "./with-kya-os.policy-gate.js";
 import { createDelegationGate } from "./with-kya-os.delegation-gate.js";
+import { requiringRootIssuers, rootIssuerRequirement } from "./with-kya-os.root-issuers.js";
 import { createOutcomeProver } from "./with-kya-os.outcome.js";
 import { createSessionProof } from "./with-kya-os.session.js";
 import { createProtocol } from "./with-kya-os.protocol.js";
@@ -101,6 +102,9 @@ export function createKyaOsMiddleware(
   }
   // Refused under NODE_ENV=production before anything is built, and warned of once.
   const development = developmentMode(config.development, "KyaOsConfig.development");
+  // Whose authority a delegated tool trusts: a malformed or contradictory option is refused here,
+  // and a missing one when a tool is wrapped (./with-kya-os.root-issuers.ts).
+  const rootIssuers = rootIssuerRequirement(config.delegation, development);
   if (config.audit && config.auditLog) {
     throw new TypeError('Configure either audit or legacy auditLog, not both');
   }
@@ -222,13 +226,18 @@ export function createKyaOsMiddleware(
   const { resolveExistingGrant, bindGrantOnSuccess } =
     createGrantResolution(deps, delegationVerification.verifyEncodableDelegation);
 
-  const { wrapWithDelegation } = createDelegationGate(deps, {
-    delegationVerification,
-    attachOutcomeProof: session.attachOutcomeProof,
-    requireProofLayer: session.requireProofLayer,
-    resolveExistingGrant,
-    bindGrantOnSuccess,
-  });
+  // The gate is the only way a delegation, or a grant minted from one, is accepted, so a tool is
+  // wrapped only once the server has said whose authority it trusts.
+  const { wrapWithDelegation } = requiringRootIssuers(
+    createDelegationGate(deps, {
+      delegationVerification,
+      attachOutcomeProof: session.attachOutcomeProof,
+      requireProofLayer: session.requireProofLayer,
+      resolveExistingGrant,
+      bindGrantOnSuccess,
+    }),
+    rootIssuers,
+  );
 
   const { withPolicyGate } = createPolicyGate(deps, {
     attachOutcomeProof: session.attachOutcomeProof,

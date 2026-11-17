@@ -97,7 +97,9 @@ export function createInstance(opts: {
       // agent-anchored grant via getByAgent with NO shared server session. (This
       // is what makes the "retry on either instance / after a restart, no
       // re-paste" promise actually hold over a stateless HTTP transport.)
-      delegation: { holderBinding: 'enforce' },
+      // The consent server issues with this identity (one trust domain), so its
+      // DID is the one root accepted.
+      delegation: { holderBinding: 'enforce', trustedRootIssuers: [opts.identity.did] },
       // Dev clarity: emit the proof under only the namespaced `org.kya-os/proof`
       // key. The library default mirrors it under legacy bare `proof` for
       // pre-1.1 back-compat; examples keep the Inspector view single-key.

@@ -46,7 +46,14 @@ describe('consent-full interactive retry (mcp-inspector style, no re-paste)', ()
     const identity = { did, kid, privateKey: keyPair.privateKey, publicKey: keyPair.publicKey };
 
     kyaos = createKyaOsMiddleware(
-      { identity, session: { sessionTtlMinutes: 60 }, autoSession: true, emitLegacyProofKey: false },
+      {
+        identity,
+        session: { sessionTtlMinutes: 60 },
+        autoSession: true,
+        emitLegacyProofKey: false,
+        // The consent host issues with this server's identity: the one root it trusts.
+        delegation: { trustedRootIssuers: [did] },
+      },
       crypto,
     );
 

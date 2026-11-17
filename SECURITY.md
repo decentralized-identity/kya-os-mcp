@@ -42,10 +42,20 @@ This policy covers the `@kya-os/mcp` npm package and this repository. It include
 ## Mandatory Delegation Protections
 
 `@kya-os/mcp` is secure-by-default with no opt-outs on the delegation path. Through 1.3.x, three escape hatches existed for legacy migration — `requireAudienceOnRedelegation`, `allowLegacyUnsafeDelegation`, and `allowNonDelegationSubjectFields` — each emitting a runtime warning when set unsafely. **As of 1.4.0 these flags are removed.** The protections below are unconditional and cannot be disabled.
+The one exception is `allowAnyRootIssuer`, which a verifier sets by name to accept a delegation from any root issuer (see Trusted root issuers below).
 
 ### Audience binding on re-delegation
 
 Every non-root credential in a delegation chain MUST carry an `audience` constraint binding it to the verifying server's DID. This closes the confused-deputy class where a re-delegated credential issued for server A is forwarded to server B and accepted there (`SPEC.md` §11.6; Alan Karp's transitive-access analysis). A re-delegation without `audience` is rejected.
+
+### Trusted root issuers
+
+A delegation chain's root is the issuer accountable for the authority the chain grants, so a verifier names the issuers it trusts as roots: `delegation.trustedRootIssuers` on the middleware, and `trustedRootIssuers` or `resourceOwner` on the Entity Card guards `requireDelegation` and `verifyRequestDelegation`.
+With no root named, a delegation from any issuer would be accepted, including one an agent signs for itself.
+So outside development, `wrapWithDelegation` throws when it wraps a tool, `requireDelegation` throws when it builds the guard, and `verifyRequestDelegation` rejects the call before it reads the chain, each with an error that names every fix.
+
+- **Opt out:** `development: true` in local development, under the same production guard as the readers' setting, or `allowAnyRootIssuer: true` (`delegation.allowAnyRootIssuer` on the middleware) for a verifier that accepts any issuer on purpose.
+  Either logs one warning, and `allowAnyRootIssuer: true` beside a named root throws a `TypeError`, since the two contradict each other.
 
 ### Full chain and revocation verification
 

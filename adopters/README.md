@@ -28,6 +28,8 @@ A fixture prints `PASS <fixture>: <what it showed>`, or one `FAIL <fixture>: <ca
 | `localhost-development` | did:web documents on `*.localhost` names, read with `development: true`, which production refuses. |
 | `separate-status-signer` | A status list signed by a DID other than the credential's issuer, trusted through `statusListIssuers`. |
 | `with-kya-os-defaults` | `withKyaOs` with its defaults, called in process through `serveInProcess`, under a pinned root. |
+| `trusted-root-issuers` | `withKyaOs` with a tool gated on a delegation: `delegation.trustedRootIssuers`, `development: true` and `delegation.allowAnyRootIssuer: true`, and the refusal when none is set. |
+| `card-root-issuers` | `requireDelegation` from `@kya-os/mcp/card`: `trustedRootIssuers`, `development: true` and `allowAnyRootIssuer: true`, and the refusal when nothing pins the root. |
 
 A case whose name starts with `control:` checks the setup the other cases rely on, so a failure beside a passing control is the library's, not the fixture's.
 

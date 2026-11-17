@@ -13,6 +13,7 @@ import {
   type KyaOsToolResult,
 } from '../../with-kya-os.js';
 import { createKyaOsTransport, type JSONRPCMessage, type Transport } from '../../kya-os-transport.js';
+import { anyRootUnlessListed } from './root-issuers.js';
 import { NodeCryptoProvider } from '../../../__tests__/utils/node-crypto-provider.js';
 import { generateDidKeyFromBase64, didKeyFragment } from '../../../utils/did-helpers.js';
 import { extractPublicKeyFromDidKey, publicKeyToJwk } from '../../../delegation/did-key-resolver.js';
@@ -27,6 +28,10 @@ import type { Ed25519JWK } from '../../../utils/crypto-service.js';
 
 export const crypto = new NodeCryptoProvider();
 
+/**
+ * A middleware with a fresh did:key identity and `config`. Its delegated tools accept a delegation
+ * from any issuer unless `config` lists the trusted root issuers (see `./root-issuers.ts`).
+ */
 export async function createMiddleware(
   config: Partial<Omit<KyaOsConfig, 'identity'>> = {},
 ): Promise<KyaOsMiddleware> {
@@ -37,6 +42,7 @@ export async function createMiddleware(
       identity: { did, kid: `${did}#${didKeyFragment(did)}`, ...keyPair },
       session: { sessionTtlMinutes: 60 },
       ...config,
+      delegation: anyRootUnlessListed(config.delegation),
     },
     crypto,
   );

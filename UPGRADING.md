@@ -12,7 +12,8 @@ Find your setup below; most need nothing.
 
 | If you | Do this | Details |
 | --- | --- | --- |
-| Use `withKyaOs` or `createKyaOsMiddleware` with their defaults, with your DID documents and status lists on public hosts | Nothing. | |
+| Use `withKyaOs` or `createKyaOsMiddleware` with their defaults, gating no tool with `wrapWithDelegation`, with your DID documents and status lists on public hosts | Nothing. | |
+| Gate a tool with `wrapWithDelegation`, or verify a request's chain with `requireDelegation` or `verifyRequestDelegation` | Name the issuers you trust: `delegation.trustedRootIssuers` on the middleware, `trustedRootIssuers` or `resourceOwner` on the Card guards; or set `development: true` when running locally. | [Trusted root issuers](#a-verifier-that-accepts-a-delegation-must-name-the-issuers-it-trusts) |
 | Run locally, with did:web documents or status lists on `localhost`, a `*.localhost` name or a private IP | Set `development: true` on `withKyaOs` and on any resolver or reader you build yourself, and never in production, where it throws. | [Private hosts](#a-didweb-did-or-status-list-served-from-a-private-ip-address-or-a-local-name-such-as-localhost-as-in-development) |
 | Read did:web documents or status lists from private hosts in production, such as an intranet | Give the fetch provider `allowPrivateNetworkHosts: true`. | [Private hosts](#a-didweb-did-or-status-list-served-from-a-private-ip-address-or-a-local-name-such-as-localhost-as-in-development) |
 | Have status lists signed by a DID other than the credential's issuer | Once you know that DID signs your lists, add the one `statusListIssuers` line the refusal prints, such as `{ "did:web:issuer.example:status": ["https://issuer.example"] }`. | [`statusListIssuers`](#how-to-write-statuslistissuers) |
@@ -32,6 +33,49 @@ Find your setup below; most need nothing.
 This is a minor release, made for security.
 Code that was correct on 1.22.0 keeps working, but for code that sends a guard's result whole, compares a result exactly or switches over `ProofVerificationErrorCode` exhaustively, as the table says.
 What may be refused after you upgrade is input that was unsafe to accept, such as a status list another DID signed or a key outside `assertionMethod`; a private or local host, which one setting admits in development and another in production; or a reason whose wording changed, as "Changed refusal reasons" lists, which a refusal's code does not.
+One setup no longer starts outside development: a server that gates a tool on a delegation, or a Card guard that verifies a request's chain, without naming the issuers it trusts, since it would accept a delegation an agent signs for itself; [Trusted root issuers](#a-verifier-that-accepts-a-delegation-must-name-the-issuers-it-trusts) says what to set.
+
+### A verifier that accepts a delegation must name the issuers it trusts
+
+A delegation chain's root is the issuer accountable for the authority the chain grants.
+A verifier pins it by naming the issuers it trusts: `delegation.trustedRootIssuers` on the middleware, and `trustedRootIssuers` or `resourceOwner` on the Entity Card guards.
+With no root pinned, a delegation from any issuer is accepted, including one an agent signs for itself, and 1.22.0 only logged a warning at startup on the middleware and said nothing on the Card.
+Now, outside development, each refuses to run with no root pinned, with an error that names every fix:
+
+- `wrapWithDelegation` throws when it wraps a tool.
+- `requireDelegation` throws when it builds the guard.
+- `verifyRequestDelegation` rejects the call, before it reads the chain.
+
+A server that gates no tool on a delegation and calls neither Card guard needs no setting, and logs no warning.
+
+What each setup has to do:
+
+| Setup | Action |
+| --- | --- |
+| Gates no tool with `wrapWithDelegation` and calls neither Card guard | None. |
+| Middleware accepting delegations from a known issuer, such as a consent host that signs with the server's own identity | Set `delegation.trustedRootIssuers` to that issuer's DID, as below. |
+| `requireDelegation` or `verifyRequestDelegation` accepting chains from known roots | Set `trustedRootIssuers` to their DIDs, or `resourceOwner` to the one DID that owns the resource. |
+| Runs locally | Set `development: true` on `withKyaOs` or in the guard's options, never in production, where it throws; or pin the root. |
+| Accepts a delegation from any issuer on purpose | Set `delegation.allowAnyRootIssuer: true` on the middleware, or `allowAnyRootIssuer: true` in the guard's options. |
+
+```ts
+const kyaos = await withKyaOs(server, {
+  delegation: { trustedRootIssuers: ['did:web:consent.example.com'] },
+});
+
+const delegationGuard = requireDelegation({
+  resource: 'did:web:merchant.example',
+  trustedRootIssuers: ['did:web:acme.example'],
+  verifyHopProof,
+  checkRevocation,
+});
+```
+
+With `development: true` or `allowAnyRootIssuer: true` and no root pinned, each runs and logs one warning: the middleware when it wraps its first delegated tool, `requireDelegation` for each guard it builds, and `verifyRequestDelegation` once for each options object it is called with.
+On the Card guards, `development: true` changes only this rule, and it throws while `NODE_ENV` is `production`.
+`allowAnyRootIssuer` must be `true` or `false`, and setting it to `true` beside a pinned root contradicts the pin; either throws a `TypeError` when the middleware or the guard is created.
+An empty `trustedRootIssuers` list is valid and trusts no issuer, so it refuses every delegation.
+The middleware checks when a tool is wrapped, so wrap each delegated tool when the server starts: a server that wraps tools for each connection throws on its first request instead.
 
 ### Signing keys and `assertionMethod`
 

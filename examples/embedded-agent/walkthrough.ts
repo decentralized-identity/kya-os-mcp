@@ -149,7 +149,9 @@ function createServer(server: Identity, grantStore: MemoryGrantStore): {
       identity: server,
       session: { sessionTtlMinutes: 60 },
       grantStore,
-      delegation: { holderBinding: 'enforce' }, // require a per-request holder-of-key proof
+      // Require a per-request holder-of-key proof, and accept only delegations the
+      // server's own identity issues, as approve() below does.
+      delegation: { holderBinding: 'enforce', trustedRootIssuers: [server.did] },
       emitLegacyProofKey: false,
     },
     new NodeCryptoProvider(),

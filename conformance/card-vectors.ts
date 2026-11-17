@@ -149,6 +149,8 @@ export async function cardProofVectorFile(): Promise<VectorFile> {
 
 export function entityCardVectorFile(): VectorFile {
   const accountability = { resourceOwner: OWNER, resource: RESOURCE, chain: DELEGATION_CHAIN, proofDid: ENTITY_DID, now: T0_MS };
+  // The accountability vectors hold the JOIN alone, so their card declares no revocation entry (suite >= 1.8.0).
+  const { revocation: _revocation, ...accountableAgent } = GOLDEN_CARDS.agent;
   const vectors: ConformanceVector[] = [
     passCard('mcp', GOLDEN_CARDS.mcp, 'no responsibleParty/attestations/revocation ⇒ verifies (L1 floor)'),
     passCard('client', GOLDEN_CARDS.client, 'a CIMD on-ramp client card verifies structurally'),
@@ -160,6 +162,14 @@ export function entityCardVectorFile(): VectorFile {
       description: 'An agent card whose responsibleParty === issuer(rootVC) and leaf-invoker === proof.did',
       expected: 'pass',
       reason: 'The recomputed delegation/accountability edge closes over the golden ZCAP chain',
+      input: { card: accountableAgent, accountability },
+    },
+    {
+      id: 'entity-card/revocation-unchecked',
+      category: 'entity-card',
+      description: 'The accountable agent card declaring a revocation entry, with no status list supplied to check it',
+      expected: 'fail',
+      reason: 'A verifier with nothing to check the revocation entry cannot show the card is not revoked ⇒ it refuses the card (configuration_error)',
       input: { card: GOLDEN_CARDS.agent, accountability },
     },
     {
@@ -176,7 +186,7 @@ export function entityCardVectorFile(): VectorFile {
       description: 'Agent card whose accountability proofDid does not equal the recomputed leaf invoker',
       expected: 'fail',
       reason: 'The delegation/proof JOIN (leaf-invoker === proof.did) fails ⇒ accountability fails closed',
-      input: { card: GOLDEN_CARDS.agent, accountability: { ...accountability, proofDid: 'did:web:attacker.example' } },
+      input: { card: accountableAgent, accountability: { ...accountability, proofDid: 'did:web:attacker.example' } },
     },
   ];
   return { version: SUITE_VERSION, category: 'entity-card', vectors };

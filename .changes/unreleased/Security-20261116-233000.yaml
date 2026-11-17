@@ -1,0 +1,13 @@
+kind: Security
+body: |-
+    **`verifyCard` no longer passes a Card whose revocation entry it
+    cannot check.** A Card that declares `revocation` was verified
+    `ok: true`, its entry ignored, when no `statusListChecker` was given,
+    so a revoked Card passed. Such a Card is now refused as
+    `configuration_error`, as an accountability or attestation that no
+    verifier checks is, and reported revoked and not fresh, with a reason
+    that names the missing checker. A Card that declares no `revocation`
+    needs no checker. Conformance suite 1.8.0 adds the negative vector
+    `entity-card/revocation-unchecked`. UPGRADING.md, "A Card that
+    declares a revocation entry needs a checker", has the detail.
+time: 2026-11-16T23:30:00.00000-06:00

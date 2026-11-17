@@ -2,7 +2,7 @@
 
 **Compliance levels for KYA-OS implementations**
 
-Version: 1.7.0
+Version: 1.8.0
 Status: Stable
 
 ---
@@ -471,7 +471,7 @@ so it is reproducible against any implementation without re-signing.
 | `vectors/did-key-resolution.json` | did:key resolution | valid Ed25519 | malformed multibase, wrong method |
 | `vectors/did-web-resolution.json` | did:web resolution | well-formed id-matched document | document id mismatch, not found |
 | `vectors/card-proof.json` | `org.kya-os/proof.v1` holder-of-key proof | valid signed proof, in-window, audience-bound | tampered body, tampered signature, wrong audience, expired, kid⇄did forgery |
-| `vectors/entity-card.json` | Entity Card `parseCard` + `verifyCard` | golden card per `entityType`, accountable agent | malformed (unknown field), broken accountability JOIN |
+| `vectors/entity-card.json` | Entity Card `parseCard` + `verifyCard` | golden card per `entityType`, accountable agent | malformed (unknown field), broken accountability JOIN, revocation entry with nothing to check it |
 | `vectors/audit-integrity.json` | Audit JCS + domain-separated hashing + RFC 9162 | fixed Unicode event, leaf/root, inclusion and consistency paths | mutated event/proof relationships are exercised by the audit unit suites |
 | `vectors/negotiation.json` | MCP extension admission gate (`org.kya-os/decentralized-authority`) | declared and malformed-degrades-to-core (optional server); empty-object and initialize-era declarations, `server/discover` exemption (required server) | absent against a required server (`-32021`), present-but-malformed against a required server (`-32602`, malformed_declaration) |
 
@@ -625,6 +625,9 @@ Because fresh keys change the committed bytes, regenerated output MUST NOT be co
 
 ### Suite versioning and immutability
 
+Suite 1.8.0 adds one `entity-card` vector, `entity-card/revocation-unchecked`, for 150 vectors total.
+In `agent-accountable` and `accountability-join-broken` the agent card no longer declares a `revocation` entry, with the same ids, cases and expected outcomes; the other vector files change only their `version`.
+
 Suite 1.7.0 adds eight status-list vectors, for 149 vectors total, in a new file, `status-list-validity.json`: the validity-window vectors described above.
 The other 141 vector objects of suite 1.6.0 are unchanged, and their files change only their `version`.
 
@@ -666,6 +669,7 @@ To change vectors intentionally, bump `suiteVersion` (including the in-file `ver
 A new suite version may add vectors that an implementation of an earlier one fails: suite 1.5.0 adds the `signed-proof/delegation-chain-*` and `signed-proof/delegation-ref-*` vectors, which a verifier built against suite 1.4.0 or earlier fails until it implements L3.28, and the `signed-proof/delegation-proof-*` vectors, which a verifier that reads a JWS more loosely than SPEC.md §7.4 fails, so a result is always reported with the suite version it was run against.
 Suite 1.6.0 adds `delegation-chain/scopeless-parent-widening`, which a verifier that reads a parent with no scopes as unrestricted fails.
 Suite 1.7.0 adds the `status-list-validity.json` vectors, which a verifier that reads a status list outside the window it states fails.
+Suite 1.8.0 adds `entity-card/revocation-unchecked`, which a verifier that passes a card whose `revocation` entry it does not check fails.
 The SIGNED public suite manifest published by the Conformance Attestation Program is a separate artifact built on this committed one.
 
 ### Running the harness against YOUR implementation
@@ -761,10 +765,15 @@ pinned `nowMs`/`skewSeconds` window. A conformant `verifyCardProof` MUST recompu
 `entityType` (`mcp` \| `agent` \| `client` \| `verifier` \| `human`), the accountable
 agent card (whose `responsibleParty === issuer(rootVC)` and leaf-invoker === proof
 `did` recompute over an embedded multi-hop VC 2.0 + ZCAP-LD chain), and negatives:
-a malformed card (unknown top-level property → the strict schema rejects) and a
-broken accountability JOIN (leaf-invoker ≠ the asserted proof `did`). A conformant
-`verifyEntityCard` MUST reject a malformed card and MUST NOT trust the card's
-self-declared `conformanceLevel` — it recomputes it.
+a malformed card (unknown top-level property → the strict schema rejects), a
+broken accountability JOIN (leaf-invoker ≠ the asserted proof `did`), and, from suite
+1.8.0, `entity-card/revocation-unchecked`, the accountable agent card declaring a
+`revocation` entry with no status list supplied to check it. A conformant
+`verifyEntityCard` MUST reject a malformed card, MUST reject a card that declares
+`revocation` when it has nothing to check that entry with (SPEC-ENTITY-CARD.md §10.3),
+and MUST NOT trust the card's self-declared `conformanceLevel`: it recomputes it.
+The accountable agent card of `agent-accountable` and `accountability-join-broken`
+declares no `revocation` entry, so each holds the JOIN alone.
 
 ### Card conformance ↔ the L1/L2/L3 ladder
 

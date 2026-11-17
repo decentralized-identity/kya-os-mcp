@@ -51,6 +51,21 @@ A custom `FetchProvider` given to the resolver must pass `redirect` on and retur
 A 301, 302 or 303, or a redirect to another origin, from http to https included, now makes `createDid`, `updateDid` and `createResource` reject with an error that says so, and the log names the origin; if your registrar URL redirects, set `registrarUrl` to the URL it redirects to.
 In a browser, which hides where a redirect leads, a resolver that redirects resolves no document.
 
+### A Card that declares a revocation entry needs a checker
+
+| If you | Do this | Effect |
+| --- | --- | --- |
+| Call `verifyCard` on Cards that may declare `revocation` | Pass a `statusListChecker`, such as `createRevocationChecker` with `verifyStatusList: createStatusListProofVerifier(...)`. | The Card's entry is read, as before when a checker was given. |
+| Call `verifyCard` only on Cards that declare no `revocation` | Nothing. | The Card is verified as before. |
+| Use `requireDelegation` or `verifyRequestDelegation` | Nothing: they already require `checkRevocation`, and they do not verify a Card's own entry. | None. |
+
+A Card's `revocation` entry is its kill switch: the list at the entry's URL says whether the Card was revoked.
+Until 1.23.0, `verifyCard` ignored the entry when no `statusListChecker` was given, so a revoked Card verified `ok: true`, with no `revocation` in the result.
+Now such a Card is refused, as an accountability or attestation that no verifier checks is: `ok: false`, with `code: 'configuration_error'` and `transient: false`, and the level collapses to L1.
+The result's `revocation` is `{ revoked: true, fresh: false }`, with the `reason` `the Card declares a revocation entry and no statusListChecker was supplied to check it`.
+`revocation` is now in the result whenever the Card declares an entry.
+A Card that declares no `revocation` is not checked, and needs no checker.
+
 ### A status list outside its validity window is refused
 
 | If you | Do this | Effect |
@@ -171,6 +186,12 @@ The suite adds `delegation-chain/scopeless-parent-widening`, a re-delegation tha
 The suite adds eight status-list vectors in a new file, `status-list-validity.json`, and has 149 vectors.
 Each list is its issuer's own and verifies, so the window it states decides alone: a list inside its `validFrom` and `validUntil`, or its `issuanceDate` and `expirationDate`, must be read, and one past its end, before its start, with a `validUntil` that is not a date, or with a past `validUntil` beside a future `expirationDate` must be refused.
 The other 12 vector files change only their `version`.
+
+### Conformance suite 1.8.0
+
+The suite adds `entity-card/revocation-unchecked`, the accountable agent card declaring a `revocation` entry with no status list supplied to check it, which must be refused, and has 150 vectors.
+In `agent-accountable` and `accountability-join-broken` the agent card no longer declares a `revocation` entry, so each holds the accountability join alone; their ids and expected outcomes are unchanged.
+`entity-card.json` is generated deterministically; the other 12 vector files change only their `version`.
 
 ## From 1.22.0
 

@@ -365,7 +365,7 @@ describe('RuntimeFetchProvider', () => {
     it('reads a status list on a private host when explicitly opted in', async () => {
       vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(statusList), { status: 200 })));
       const open = new RuntimeFetchProvider({ allowPrivateNetworkHosts: true });
-      expect((await open.fetchStatusList('http://169.254.169.254/status'))?.credentialSubject.encodedList).toBe('H4sIAAAAAAAA');
+      expect((await open.fetchStatusList('https://169.254.169.254/status'))?.credentialSubject.encodedList).toBe('H4sIAAAAAAAA');
     });
   });
 });

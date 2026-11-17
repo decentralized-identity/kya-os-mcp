@@ -15,7 +15,8 @@
  * did:web:169.254.169.254, the cloud-metadata endpoint), a local name (a single
  * label, or a special-use domain the rule lists as `LOCAL_DOMAINS`, such as
  * `localhost`, or a name under one), and a scheme other than http and https are
- * refused, a status list is read over https alone, and redirects are followed
+ * refused, a status list is read over https unless the operator binds its
+ * exact http URL, and redirects are followed
  * by hand up to the limit of `utils/redirect-follower.ts`, each target held to
  * the same rule. Where the runtime resolves names, as Node does, this provider
  * also resolves each host before it connects, every redirect's included,
@@ -91,8 +92,9 @@ export interface RuntimeFetchProviderOptions {
   /**
    * Read DID documents and status lists on private and local hosts, such as a
    * `*.localhost` name in a local demo, as `allowPrivateNetworkHosts: true`
-   * does. Nothing else changes: the scheme rule, checked redirects, byte caps
-   * and deadlines all hold. For development only: while `NODE_ENV` is
+   * does, and a status list over http from such a host, which that opt-out
+   * does not. Nothing else changes: checked redirects, byte caps and
+   * deadlines all hold. For development only: while `NODE_ENV` is
    * `production` it throws when the provider is built, and it warns once per
    * process. A production deployment that reads intranet hosts sets
    * `allowPrivateNetworkHosts: true` instead. Any value but a boolean throws a
@@ -143,7 +145,8 @@ export interface RuntimeFetchProviderOptions {
    * The verifier's `statusListIssuers`, in the shape it takes. The operator
    * names the URLs and `https:` origins it binds, so `fetchStatusList` reads a
    * list at one wherever it is, a private or local host included, through this
-   * provider's `fetch`; every other list is held to the rule. Only where a list
+   * provider's `fetch`, and an exact `http:` URL it binds over http; every
+   * other list, and every redirect to http, is held to the rule and to https. Only where a list
    * may be read is decided here: which issuer must sign it is the status-list
    * reader's to decide. A value the verifier would refuse throws a `TypeError`.
    */
@@ -160,6 +163,8 @@ export class RuntimeFetchProvider extends FetchProvider {
    * `allowPrivateNetworkHosts` or `development` is.
    */
   readonly allowPrivateNetworkHosts: boolean;
+  /** Whether `development` is on, of all the opt-outs the one that also reads a status list over http from a private or local host. */
+  private readonly development: boolean;
   private readonly timeoutMs: number;
   private readonly pinning: () => Promise<AddressPinning | undefined>;
   private readonly trustedRootIssuers: readonly string[] | undefined;
@@ -168,8 +173,8 @@ export class RuntimeFetchProvider extends FetchProvider {
   constructor(options?: RuntimeFetchProviderOptions) {
     super();
     this.timeoutMs = dependencyTimeout(options?.dependencyTimeoutMs);
-    const development = developmentMode(options?.development, "RuntimeFetchProviderOptions.development");
-    this.allowPrivateNetworkHosts = development || options?.allowPrivateNetworkHosts === true;
+    this.development = developmentMode(options?.development, "RuntimeFetchProviderOptions.development");
+    this.allowPrivateNetworkHosts = this.development || options?.allowPrivateNetworkHosts === true;
     assertTrustedRootIssuers(options?.trustedRootIssuers, "RuntimeFetchProviderOptions.");
     assertStatusListIssuers(options?.statusListIssuers);
     this.trustedRootIssuers = options?.trustedRootIssuers;
@@ -242,7 +247,9 @@ export class RuntimeFetchProvider extends FetchProvider {
 
   /**
    * Fetch and validate a StatusList2021 credential by URL. Returns null on a
-   * blocked (private-network) host, a URL that is not https, non-ok response,
+   * blocked (private-network) host, an http URL other than an exact one
+   * `statusListIssuers` binds, or one on a private or local host under
+   * `development`, a non-ok response,
    * malformed payload, or transport error (never throws). A request for a URL
    * `statusListIssuers` binds is read on any host, decided request by
    * request, so a redirect to a URL it does not bind is held to the rule
@@ -253,7 +260,11 @@ export class RuntimeFetchProvider extends FetchProvider {
     try {
       const issuers = this.statusListIssuers;
       const bound = issuers === undefined ? undefined : operatorNamedRequests(url, (hop) => statusListIssuersBind(hop, issuers));
-      const json = await fetchStatusListJson(this, url, {}, this.timeoutMs, bound);
+      const json = await fetchStatusListJson(this, url, {
+        timeoutMs: this.timeoutMs,
+        development: this.development,
+        ...(bound ? { operatorNamed: bound } : {}),
+      });
       return isStatusList2021Credential(json) ? json : null;
     } catch {
       return null;

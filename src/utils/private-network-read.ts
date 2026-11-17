@@ -14,8 +14,11 @@
  * is every request through a transport that offers no connections or admits private hosts.
  *
  * A read held to https ({@link PrivateNetworkRead.httpsOnly}), as a status list is (SPEC §4.4.2),
- * refuses an http URL, first or redirected, unless its host is a private or local one the opt-out
- * admits, as a local demo serves its lists.
+ * refuses an http URL, first or redirected, under `allowPrivateNetworkHosts` and on a private host
+ * too, since over http an on-path party can replay an older signed list from before a revocation. It
+ * reads http only at a first URL the operator names, which for a status list is an exact URL its
+ * `statusListIssuers` binds, and from a private or local host under `development: true`
+ * ({@link PrivateNetworkRead.httpOnPrivateHosts}), as a local demo serves its lists.
  */
 
 import { resolveChecked, type LookupRefusals } from './address-check.js';
@@ -32,10 +35,16 @@ import { providerName, warnHeldToUrlAlone } from './url-only-reads.js';
 /** How a read is held beside the rule and the opt-out of its transport. */
 export interface PrivateNetworkRead {
   /**
-   * Hold the URL and each redirect to https, and admit http only from a private or local host the
-   * opt-out admits, as a status-list read is held (SPEC §4.4.2).
+   * Hold the URL and each redirect to https, as a status-list read is held (SPEC §4.4.2), the
+   * opt-out notwithstanding. The first request alone may still be http when `operatorNamed` names
+   * its URL, and any request when {@link httpOnPrivateHosts} admits its host.
    */
   readonly httpsOnly?: boolean;
+  /**
+   * Whether a read held to https reads http from a private or local host as well, first or
+   * redirected, as `development: true` admits for a local demo.
+   */
+  readonly httpOnPrivateHosts?: boolean;
   /**
    * Bytes of body a pinned connection reads before it refuses the response: the read's own cap,
    * which the bounded reader holds the body to again. Default 1 MiB, the package's limit for one
@@ -58,10 +67,11 @@ const RESOLVED_HOST_SETTINGS =
   `${PRIVATE_HOST_SETTINGS} To read a host you name yourself, give the resolver or fetch provider that reads it ` +
   'the DIDs you pin in trustedRootIssuers, or the status-list URLs your statusListIssuers binds.';
 
-/** What the refusal of an http URL in a read held to https says after what it refused. */
-const HTTPS_REMEDY =
-  ': this read takes https, and http only from a private or local host that development: true or ' +
-  'allowPrivateNetworkHosts: true admits';
+/** What the refusal of an http URL in a read held to https says after what it refused, for the first request and for a redirect. */
+const HTTPS_REMEDY = {
+  request: ': this read takes https, and http only at a URL the operator binds exactly, or from a private or local host under development: true',
+  redirect: ': this read takes https for every redirect, and http only from a private or local host under development: true',
+} as const;
 
 /**
  * `transport`'s `fetch` under the private-network rule, each request it makes held as this module
@@ -81,11 +91,14 @@ function heldRequest(transport: PrivateNetworkTransport, read: PrivateNetworkRea
   return async (url, init, { redirected }) => {
     const { protocol, hostname } = new URL(url);
     // Decided request by request, so a redirect from a URL the operator named is held as any other.
-    const admitted = admitPrivate || read.operatorNamed?.(url) === true;
-    if (read.httpsOnly === true && protocol === 'http:' && !(admitted && isPrivateHost(hostname))) {
-      const refused = `${redirected ? 'Redirect' : 'Request'} to a ${describeValue(protocol)} URL refused${HTTPS_REMEDY}`;
+    const named = read.operatorNamed?.(url) === true;
+    if (read.httpsOnly === true && protocol === 'http:' && !takesHttp(read, hostname, { named, redirected })) {
+      const refused = redirected
+        ? `Redirect to a ${describeValue(protocol)} URL refused${HTTPS_REMEDY.redirect}`
+        : `Request to a ${describeValue(protocol)} URL refused${HTTPS_REMEDY.request}`;
       throw new ReadFailureError('host_refused', refused, redirected ? {} : { beforeRequest: true });
     }
+    const admitted = admitPrivate || named;
     // An IP literal names its own address, which the rule has checked.
     const form = hostForm(hostname);
     if (admitted || form === undefined || 'literal' in form) return transport.fetch(url, init);
@@ -95,6 +108,16 @@ function heldRequest(transport: PrivateNetworkTransport, read: PrivateNetworkRea
     init.signal?.throwIfAborted();
     return requestPinned(pinning.transport, { url, init, hostname: form.name, pin, maxBytes });
   };
+}
+
+/**
+ * Whether a read held to https takes an http request for a URL whose host is `hostname`: the first
+ * request, for a URL the operator named, or any request to a private or local host where `read`
+ * admits http there. A redirect is read over http from such a host alone, wherever it came from.
+ */
+function takesHttp(read: PrivateNetworkRead, hostname: string, request: { named: boolean; redirected: boolean }): boolean {
+  if (read.httpOnPrivateHosts === true && isPrivateHost(hostname)) return true;
+  return request.named && !request.redirected;
 }
 
 /**

@@ -2,7 +2,8 @@
  * The bounded reader against a real HTTP server on 127.0.0.1: a body that stalls after its first
  * bytes, or trickles one byte at a time, is refused at the deadline with the deadline's own reason,
  * never the runtime's `AbortError`. The provider opts out of the private-network rule, which would
- * otherwise refuse 127.0.0.1 before any request.
+ * otherwise refuse 127.0.0.1 before any request, and the list is read as development reads one over
+ * http from a local host.
  */
 
 import { createServer, type Server } from 'node:http';
@@ -64,6 +65,6 @@ describe.concurrent('a real server that stops sending', () => {
   }, 15_000);
 
   it('ends a status list whose body trickles one byte at a time', async () => {
-    atTheDeadline(await outcome(fetchStatusListJson(provider, `${base}/trickle`)), 'Status list fetch deadline exceeded');
+    atTheDeadline(await outcome(fetchStatusListJson(provider, `${base}/trickle`, { development: true })), 'Status list fetch deadline exceeded');
   }, 15_000);
 });

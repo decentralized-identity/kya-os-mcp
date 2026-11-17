@@ -142,7 +142,7 @@ export class DidWebResolver implements DIDResolver {
     try {
       // A pinned DID's own document URL is read on any host; a redirect from it is held to the rule as any other.
       const pinned = this.operatorDids.has(did) ? operatorNamedRequests(url, (hop) => hop === url) : undefined;
-      const json: unknown = await fetchDidJson(this.fetchProvider, url, {}, this.timeoutMs, pinned);
+      const json: unknown = await fetchDidJson(this.fetchProvider, url, { timeoutMs: this.timeoutMs, ...(pinned ? { operatorNamed: pinned } : {}) });
       const measure = admitParsedDidDocument(json);
       if (!measure.ok) {
         logger.warn(`[DidWebResolver] DID Document from ${url} refused: ${measure.reason}`);

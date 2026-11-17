@@ -3,8 +3,8 @@
  * `*.localhost` name, a private IP or another local name is refused by the private-network rule
  * (`./private-network-rule`), as it must be in production, and every local demo runs on such names.
  * The switch admits them for the reads of whatever it is set on, as `allowPrivateNetworkHosts: true`
- * does on a fetch provider, and changes nothing else: the scheme rule, checked redirects, byte caps
- * and deadlines all hold.
+ * does on a fetch provider, and reads a status list over http from such a host, which that opt-out
+ * does not, and changes nothing else: checked redirects, byte caps and deadlines all hold.
  *
  * It is for development alone. Set while `NODE_ENV` is `production`, it throws when what it is set
  * on is built, naming the setting, and the first time it is turned on in a process it warns that

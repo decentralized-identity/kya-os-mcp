@@ -367,7 +367,9 @@ It follows a redirect from its endpoint as a did:web read does, below, so a redi
 
 Every did:web read, by the delegation gate, `DidWebResolver`, `createDidWebResolver` or `RuntimeFetchProvider.resolveDID`, and every status-list read, by `CheqdStatusListResolver` or `RuntimeFetchProvider.fetchStatusList`, goes through one private-network rule, whatever `FetchProvider` it is given.
 Before any request, the rule refuses a URL that is not an absolute http or https URL.
-A status-list read also refuses an http URL, first or redirected, unless its host is a private or local one that `allowPrivateNetworkHosts: true` or `development: true` admits, as a local deployment serves its lists.
+A status-list read also refuses an http URL, first or redirected, on a private host and under `allowPrivateNetworkHosts: true` too, since over http an on-path party can replay an older signed list from before a revocation (§6.6).
+It reads http only at an exact URL the operator's `statusListIssuers` binds, given to `RuntimeFetchProviderOptions`, on any host but never for a redirect, and from a private or local host under `development: true`, as a local deployment serves its lists.
+`createRevocationChecker` reads through `SafeFetch`, which takes https alone, so it refuses an http URL even where its `statusListIssuers` binds it, which fails closed.
 Unless the provider's `allowPrivateNetworkHosts` is `true`, or the reader was built with `development: true`, it also refuses a URL whose host is a non-public IP literal or a local name, in any case and with any trailing dots.
 A local name is a single label, such as `ip6-localhost` or `metadata`, which a resolver completes through its search domains to a host on the local network.
 It is also `localhost` (RFC 6761 §6.3), `localdomain`, `localdomain6`, `local` (RFC 6762), `internal`, which is reserved for private use, or `home.arpa` (RFC 8375), or a name under one of them, such as `localhost.localdomain`, `localhost6.localdomain6` or the cloud metadata names `metadata.google.internal` and `instance-data.ec2.internal`.
@@ -386,7 +388,7 @@ The reference implementation's status-list checker, `createRevocationChecker`, r
 Until then the presenter of the chain wrote that URL, so a credential that names the pinned root as its issuer, but whose proof did not verify or was not checked, has its list read as any URL a presenter names is.
 It decides each request on its own URL, as `SafeFetch` decides its `allowOrigins`, so a redirect from one of those URLs to any URL that is not one of them is held as a URL a presenter named.
 `development: true` is an option of `DidWebResolverOptions`, of `CheqdStatusListResolverOptions` and of the middleware's `KyaOsConfig`, which `withKyaOs` passes on, and on the middleware it holds for every resolver and reader the middleware builds, whatever its provider.
-It admits non-public IP literals, local names and names that resolve to private addresses as `allowPrivateNetworkHosts: true` does, for a local deployment whose parties run on names such as `*.localhost`, and changes nothing else: the scheme rule, the checked redirects, the byte caps and the deadlines all hold.
+It admits non-public IP literals, local names and names that resolve to private addresses as `allowPrivateNetworkHosts: true` does, for a local deployment whose parties run on names such as `*.localhost`, and reads a status list over http from a private or local host, which `allowPrivateNetworkHosts: true` does not, and changes nothing else: the checked redirects, the byte caps and the deadlines all hold.
 It is for development alone: set while `NODE_ENV` is `production`, it throws when what it is set on is built, naming the setting, so a deployment that must read a private host in production gives its provider `allowPrivateNetworkHosts: true` instead.
 Each read asks its provider not to follow redirects (`redirect: "manual"`) and follows at most 3 itself, within the one deadline, holding each target to the same rule and refusing a step from https down to http.
 A redirect to an origin other than the first carries only the CORS-safelisted request headers `Accept`, `Accept-Language` and `Content-Language`, when the Fetch standard safelists their values, and the request's cache directives `Cache-Control` and `Pragma`, which carry no credential, and drops every other header.
@@ -930,6 +932,8 @@ A keeper signs lists for other URLs as well, and one of them, with the credentia
 Where the credential's own `issuer` may leave the `id` out, a list that states none can still be served in place of another list its own issuer signed, so an issuer SHOULD state the `id` of each list.
 Nor do these checks tell versions of one list apart.
 An earlier version of a list, signed before a credential was revoked, can be served in place of the current one.
+Over http, an on-path party can replay an older signed list from before a revocation, so a verifier reads a list over https, every redirect included, whatever host it is on.
+It MUST NOT read over http a URL a credential names, nor follow a redirect to http, unless its own configuration binds that exact URL, since then the operator chose that exposure for its own list; an origin binding is `https://` alone.
 The window a list states bounds how long it can be.
 W3C Bitstring Status List v1.0 §2.2 gives a list a `validFrom`, "The earliest point in time at which the status list is valid.", and a `validUntil`, "The latest point in time at which the status list is valid.", and a `StatusList2021Credential` states the same window as `issuanceDate` and `expirationDate`.
 A verifier MUST NOT read a list outside the window it states.

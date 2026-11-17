@@ -12,6 +12,7 @@ import io
 import json
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 if __name__ == "__main__":
@@ -153,6 +154,32 @@ def graph_case(case):
                    root_list=case.get("rootList") if pinned is not None else None)
 
 
+# An RFC 3339 date-time with a time zone, the form the vectors write a list's window in.
+DATE_TIME = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})")
+
+
+def window_bound(document, current, legacy):
+    """The time a list's bound states, by its VC 2.0 member, or its VC 1.1 one when that is absent.
+
+    None when the list states neither. A bound that is stated but is not a date raises ValueError:
+    the list's window is then unknown, and it is not read.
+    """
+    member = current if current in document else legacy if legacy in document else None
+    if member is None:
+        return None
+    stated = document[member]
+    if not isinstance(stated, str) or not DATE_TIME.fullmatch(stated):
+        raise ValueError(member + " is not a date")
+    return datetime.fromisoformat(stated.replace("Z", "+00:00"))
+
+
+def within_window(document, now):
+    """A list is read only inside the validity window it states (SPEC 6.6), its bounds included."""
+    until = window_bound(document, "validUntil", "expirationDate")
+    start = window_bound(document, "validFrom", "issuanceDate")
+    return (until is None or now <= until) and (start is None or start <= now)
+
+
 def verify_document(document, documents, canonicalize, verify_signature):
     did = issuer(document.get("issuer"))
     did_document = documents[did]
@@ -177,7 +204,7 @@ def verify_document(document, documents, canonicalize, verify_signature):
 
 
 def verify_input(value, canonicalize, verify_signature):
-    """Re-derive authority, both proofs and the indexed bit, never expected labels."""
+    """Re-derive authority, both proofs, the list's window and the indexed bit, never expected labels."""
     try:
         credential = value["credential"]
         entry = credential["credentialStatus"]
@@ -192,6 +219,8 @@ def verify_input(value, canonicalize, verify_signature):
         if not verify_document(credential, documents, canonicalize, verify_signature):
             return False
         if not verify_document(document, documents, canonicalize, verify_signature):
+            return False
+        if not within_window(document, datetime.now(timezone.utc)):
             return False
         # One bit is read per entry. An entry that states a statusSize other than 1, the size of
         # an entry that states none, keeps its status in other bits than the one at its index.

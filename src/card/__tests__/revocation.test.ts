@@ -85,16 +85,31 @@ describe('createRevocationChecker (W3C Bitstring Status List v1.0)', () => {
     expect(await check(entryAt(7))).toEqual({ revoked: true, fresh: true, ...BIT_SET });
   });
 
-  it('demotes to NOT fresh for a stale (past validUntil) list — still readable, cached-OK at L2', async () => {
-    const cred = statusCredential([5], { validUntil: '2020-01-01T00:00:00Z' });
-    const check = createRevocationChecker({ fetch: jsonFetch(cred), now: NOW });
-    expect(await check(entryAt(5))).toStrictEqual({ revoked: true, fresh: false, ...BIT_SET });
+  it('FAIL-CLOSED on a list past its validUntil, saying when it expired, whatever its bit', async () => {
+    const reason = 'status list expired at "2020-01-01T00:00:00Z" (its validUntil)';
+    for (const revoked of [[5], []]) {
+      const cred = statusCredential(revoked, { validUntil: '2020-01-01T00:00:00Z' });
+      const check = createRevocationChecker({ fetch: jsonFetch(cred), now: NOW });
+      expect(await check(entryAt(5))).toStrictEqual({ revoked: true, fresh: false, reason, ...codedAs('status_unavailable') });
+    }
   });
 
-  it('demotes to NOT fresh for a not-yet-valid (future validFrom) list', async () => {
+  it('FAIL-CLOSED on a list before its validFrom, saying when it becomes valid', async () => {
     const cred = statusCredential([], { validFrom: '2099-01-01T00:00:00Z' });
     const check = createRevocationChecker({ fetch: jsonFetch(cred), now: NOW });
-    expect(await check(entryAt(5))).toEqual({ revoked: false, fresh: false });
+    expect(await check(entryAt(5))).toStrictEqual({
+      revoked: true,
+      fresh: false,
+      reason: 'status list is not valid until "2099-01-01T00:00:00Z" (its validFrom)',
+      ...codedAs('status_unavailable'),
+    });
+  });
+
+  it('reads a list inside its window as fresh', async () => {
+    const cred = statusCredential([5], { validFrom: '2026-01-01T00:00:00Z', validUntil: '2026-12-31T00:00:00Z' });
+    const check = createRevocationChecker({ fetch: jsonFetch(cred), now: NOW });
+    expect(await check(entryAt(5))).toEqual({ revoked: true, fresh: true, ...BIT_SET });
+    expect(await check(entryAt(6))).toEqual({ revoked: false, fresh: true });
   });
 
   it('FAIL-CLOSED when the status list is unreachable (fetch throws)', async () => {
@@ -173,15 +188,21 @@ describe('createRevocationChecker (W3C Bitstring Status List v1.0)', () => {
 
 describe('createRevocationChecker (validity window)', () => {
   it.each([
-    ['an unparseable validUntil', { validUntil: 'not-a-date' }],
-    ['an unparseable validFrom', { validFrom: 'soon' }],
-    ['a non-string validUntil', { validUntil: 1_900_000_000 }],
-    ['a null validUntil', { validUntil: null }],
-    ['an unparseable legacy expirationDate', { expirationDate: 'never' }],
-  ])('%s is a list of unknown validity — readable, but NOT fresh', async (_label, dates) => {
+    ['an unparseable validUntil', { validUntil: 'not-a-date' }, 'a validUntil ("not-a-date")'],
+    ['an unparseable validFrom', { validFrom: 'soon' }, 'a validFrom ("soon")'],
+    ['a non-string validUntil', { validUntil: 1_900_000_000 }, 'a validUntil (of type number)'],
+    ['a null validUntil', { validUntil: null }, 'a validUntil (of type null)'],
+    ['an unparseable legacy expirationDate', { expirationDate: 'never' }, 'an expirationDate ("never")'],
+  ])('%s is a list of unknown validity, refused FAIL-CLOSED whatever its bit', async (_label, dates, stated) => {
     const check = createRevocationChecker({ fetch: jsonFetch({ ...statusCredential([5]), ...dates }), now: NOW });
-    expect(await check(entryAt(5))).toStrictEqual({ revoked: true, fresh: false, ...BIT_SET });
-    expect(await check(entryAt(6))).toEqual({ revoked: false, fresh: false });
+    const refused = { revoked: true, fresh: false, reason: `status list states ${stated} that is not a date`, ...codedAs('status_unavailable') };
+    expect(await check(entryAt(5))).toStrictEqual(refused);
+    expect(await check(entryAt(6))).toStrictEqual(refused);
+  });
+
+  it('a list that states no bound is read as fresh, as before', async () => {
+    const check = createRevocationChecker({ fetch: jsonFetch(statusCredential([5])), now: NOW });
+    expect(await check(entryAt(6))).toEqual({ revoked: false, fresh: true });
   });
 });
 

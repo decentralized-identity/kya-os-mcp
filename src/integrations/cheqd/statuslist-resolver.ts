@@ -22,23 +22,28 @@
  * byte for byte: the pinned DID may sign lists for many issuers' credentials,
  * and only the `id` binds a list to the URL it is served at. A DID URL naming
  * the same resource is another `id`. `StatusList2021Manager` states the `id`
- * of every list it writes. This resolver checks no validity window, so an
- * earlier version of a list the pinned DID signed is read as it stands.
+ * of every list it writes. A list is read only inside the validity window it
+ * states (`issuanceDate` and `expirationDate`, or `validFrom` and
+ * `validUntil`), so an earlier version of a list the pinned DID signed is read
+ * as it stands until its window ends, and indefinitely when it states no end.
  *
  * Fail-closed matrix (all throw → verifier denies as `status_unresolvable`):
  * non-https URL, malformed index, network error / non-200, malformed VC,
  * unsigned VC, wrong issuer, purpose mismatch, no `id` or an `id` other than
  * the fetched URL, missing proofValue, a verification method named by
  * anything but a non-empty string, unresolvable issuer DID, no usable
- * verification method, bad signature, out-of-range index. The refusal carries
+ * verification method, bad signature, a list outside its validity window,
+ * out-of-range index. The refusal carries
  * its code: `host_refused` for a URL that is not https, `delegation_malformed`
  * for an entry it does not read, one that names its list by no string included, `status_signer_untrusted` for a list that may
  * not answer or whose proof does not verify, the resolution's code for an
- * issuer DID that could not be resolved, and `status_unavailable` otherwise.
+ * issuer DID that could not be resolved, and `status_unavailable` otherwise,
+ * a list outside its window included, with a reason that says when it ends or begins.
  *
  * Freshness: an internal {@link TtlCache} holds the VERIFIED document
  * (default 10 s — one fetch amortizes across every credential on a list;
- * `cacheTtlMs: 0` disables). Compose `withStatusCache` on top for a
+ * `cacheTtlMs: 0` disables), and fetches a kept list again once its validity
+ * window has ended. Compose `withStatusCache` on top for a
  * declared per-bit staleness SLA. `invalidateCache()` drops the document and
  * defeats upstream HTTP caches on the next fetch.
  */
@@ -68,6 +73,7 @@ import {
   readStatusBit,
 } from '../../utils/statuslist-bits.js';
 import { acceptEntrySize, acceptStatusList } from '../../utils/statuslist-acceptance.js';
+import { acceptStatusListValidity, assertStatusListValidity } from '../../utils/statuslist-validity.js';
 import { bytesToBase64 } from '../../utils/base64.js';
 import { base64EitherBytes } from '../../utils/base64-reading.js';
 import { canonicalizeJsonBytes } from '../../utils/canonical-json.js';
@@ -180,13 +186,17 @@ export class CheqdStatusListResolver implements StatusListResolver {
    * from a list that never tracked revocation), and stating `url` as its `id`.
    * The rule runs before the signature check on a fetch, and again for every
    * entry read from a cached list, since entries on one list may state other
-   * purposes.
+   * purposes. Once its signature verifies, the list is held to the validity
+   * window it states (`utils/statuslist-validity.ts`). A cached list outside
+   * its window is fetched again, since its issuer may have republished it.
    */
   private async fetchAndVerifyList(
     url: string,
     statusPurpose: string,
   ): Promise<StatusList2021Credential> {
-    const cached = this.cache.get(url);
+    const nowMs = Date.now();
+    const kept = this.cache.get(url);
+    const cached = kept && acceptStatusListValidity(kept, nowMs).valid ? kept : undefined;
     const credential = cached ?? (await this.fetchList(url));
     const verdict = acceptStatusList(credential, {
       statusListCredential: url,
@@ -202,6 +212,7 @@ export class CheqdStatusListResolver implements StatusListResolver {
       this.bustNextFetch = false;
       this.cache.set(url, credential);
     }
+    assertStatusListValidity(credential, nowMs);
     return credential;
   }
 

@@ -36,7 +36,8 @@ by digest must be, in tables the TypeScript tests
 (`src/delegation/__tests__/chain-digest.test.ts` and `delegation-ref.test.ts`)
 hold their reading to as well.
 Every status-list vector is independently checked by status_list.py: authority,
-both Ed25519 proofs, bounded gzip decoding and the strict indexed bit read.
+both Ed25519 proofs, the list's validity window, bounded gzip decoding and the
+strict indexed bit read.
 
 Zero external dependencies: SHA-256 via `hashlib`, JCS via an exact RFC 8785 serializer
 (ECMAScript number formatting and UTF-16 code-unit object-key ordering, covering the full admitted
@@ -58,7 +59,7 @@ name. What it checks with is in the modules beside it, one job to each:
     chain_binding.py     how a response proof stands against what its verifier holds (7.8)
     delegation_cases.py  the cases the readings of 7.8 are held to beyond the vectors
     proof_cases.py       the cases a response proof is held to beyond the vectors
-    status_list.py       a status list's authority, its proofs and the bit an entry indexes
+    status_list.py       a status list's authority, its proofs, its window and the bit an entry indexes
 
     run:  python3 conformance/verify.py   (npm run conformance:verify:crosslang)
     exit: 0 on full parity, 1 on any mismatch.
@@ -172,7 +173,8 @@ def main() -> int:
                         consistency["auditPath"])))
 
     # Every status-list vector, positive AND negative, has an independently
-    # derived verdict: authority, credential/list signatures, gzip and bit read.
+    # derived verdict: authority, credential/list signatures, the list's
+    # validity window, gzip and bit read.
     for path in sorted((HERE / "vectors").glob("*.json")):
         vector_set = read_vector_file(path)
         if vector_set.get("category") == "status-list":

@@ -15,6 +15,7 @@ import { parseStatusListIndex } from '../utils/statuslist-bits.js';
 import type { VCSigningFunction } from './vc-issuer.js';
 import { canonicalizeJSON } from './utils.js';
 import { acceptEntrySize, acceptStatusPurpose } from '../utils/statuslist-acceptance.js';
+import { assertStatusListValidity } from '../utils/statuslist-validity.js';
 import { RefusalError } from '../utils/refusal.js';
 
 export interface StatusListStorageProvider {
@@ -192,6 +193,9 @@ export class StatusList2021Manager {
     if (!purpose.valid) {
       throw new RefusalError('status_signer_untrusted', purpose.reason);
     }
+    // A list outside the validity window it states says nothing of now, whatever its bits say. The
+    // lists this manager writes state no end.
+    assertStatusListValidity(statusList, Date.now());
 
     const manager = await BitstringManager.decode(
       statusList.credentialSubject.encodedList,

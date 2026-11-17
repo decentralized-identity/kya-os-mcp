@@ -916,7 +916,14 @@ A keeper signs lists for other URLs as well, and one of them, with the credentia
 Where the credential's own `issuer` may leave the `id` out, a list that states none can still be served in place of another list its own issuer signed, so an issuer SHOULD state the `id` of each list.
 Nor do these checks tell versions of one list apart.
 An earlier version of a list, signed before a credential was revoked, can be served in place of the current one.
-A verdict read from it is reported fresh (§6.10) until its `validUntil` (or `expirationDate`), or indefinitely when it states neither, and after that only a verifier that requires `fresh` refuses it.
+The window a list states bounds how long it can be.
+W3C Bitstring Status List v1.0 §2.2 gives a list a `validFrom`, "The earliest point in time at which the status list is valid.", and a `validUntil`, "The latest point in time at which the status list is valid.", and a `StatusList2021Credential` states the same window as `issuanceDate` and `expirationDate`.
+A verifier MUST NOT read a list outside the window it states.
+A list past its `validUntil`, or before its `validFrom`, is unresolvable, as an unreachable list is: the credential it covers is rejected, never read as active.
+A list that states no `validUntil` is bounded by its `expirationDate`, and one that states no `validFrom` by its `issuanceDate`; the bounds are inclusive.
+A bound a list states that is not a date leaves its window unknown, so that list is unresolvable too.
+A list that states no end is read until its issuer replaces it, so an earlier version of it can be served for as long as it verifies; an issuer that states a `validUntil`, and republishes the list before it passes, bounds that.
+In the reference implementation every status-list reader refuses a list outside its window with the transient code `status_unavailable`, since the issuer republishing the list ends it, and with a reason that names the bound and quotes the time the list states.
 An Entity Card's Entity keeps the URL its own Card names unless the verifier's configuration binds that URL to another issuer, so whoever holds the Entity's key and controls what the Card's `statusListCredential` URL returns can serve a list the Entity signed, with the Card's bit clear.
 Against a compromised Entity key, the responsible party revokes the root delegation credential, which the Card's accountability check reads (SPEC-ENTITY-CARD.md §12.5).
 
@@ -927,6 +934,7 @@ Even then the root's list is read only when it states its URL as its `id`.
 That comes from resolver configuration, not from the middleware discovering or authenticating a root.
 `withStatusCache` separates entries by URL, index, purpose, size, credential issuer, root and the root's list URL; an omitted purpose and an explicit `null` have distinct keys.
 Cached verdicts still obey the configured staleness window, and a cache keeps them when the trust configuration changes, so that change requires a new cache.
+A cache keeps only a verdict read inside its list's window, and may serve it past the window's end for no longer than its staleness window.
 
 L1 implementations do not require revocation support; revocation checking is available at L3 only.
 
@@ -1089,8 +1097,8 @@ The reference checker does so when given its `verifyStatusList` seam (optional u
 With that seam it also holds each hop's list to the keeper §6.6 names for the URL of the hop's entry: the issuer its `statusListIssuers` option binds the URL or its origin to, else the chain's root issuer when the verifier pins it with its trusted root issuers or the resource owner it asserts and the root hop's own entry names the same URL, else the hop's own issuer.
 A list is read without an `id` only when the hop's own issuer signed it and keeps the URL as that issuer, not by a binding, no other root is pinned and `statusListIssuers` names no other issuer; any other list is read only when it states its URL as its `id`.
 The hop's own issuer is the one the hop names, so a verifier checks every hop's proof before it reads their status (SPEC-ENTITY-CARD.md §11.4).
-It is **fail-closed**: an unreachable list, malformed credential, rejected list proof, list `issuer` that is not the keeper of the entry's URL, list `id` other than the `statusListCredential` URL, no list `id` where §6.6 requires one, a list `statusPurpose` that does not include the checker's, a `statusPurpose` array on a list §6.6 holds to one string, an entry whose `statusPurpose`, when present, is not the checker's (`null` included), an entry whose `statusSize`, when present, is not 1, or out-of-range index all resolve to `{ revoked: true }`, with a `reason` that says which.
-Each verdict also reports `fresh` - `true` only when read from a live, in-validity-window (`validFrom`/`validUntil`, or `issuanceDate`/`expirationDate`) status list.
+It is **fail-closed**: an unreachable list, malformed credential, rejected list proof, a list outside the validity window it states (§6.6), list `issuer` that is not the keeper of the entry's URL, list `id` other than the `statusListCredential` URL, no list `id` where §6.6 requires one, a list `statusPurpose` that does not include the checker's, a `statusPurpose` array on a list §6.6 holds to one string, an entry whose `statusPurpose`, when present, is not the checker's (`null` included), an entry whose `statusSize`, when present, is not 1, or out-of-range index all resolve to `{ revoked: true }`, with a `reason` that says which.
+Each verdict also reports `fresh` - `true` only when read live from a status list inside its validity window (`validFrom`/`validUntil`, or `issuanceDate`/`expirationDate`), as every list the reference checker reads is, since it refuses one outside its window; a checker that answers from a cache reports `false` for a verdict it did not read live.
 The chain walk is **cascading**: root→leaf, short-circuiting on the first revoked/unresolvable hop (a revoked ancestor invalidates the subtree), with `fresh` the AND of every checked hop.
 L2 accepts a non-revoked chain (cached / offline acceptable); L3 additionally requires `fresh` (a live check).
 

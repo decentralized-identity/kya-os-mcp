@@ -16,18 +16,18 @@
  * `encodedList` bitstring and reads the bit at `statusListIndex`.
  *
  * FAIL-CLOSED is the invariant: an unreachable status list, a malformed credential, a list whose
- * proof is rejected, a list {@link acceptStatusList} refuses for the credential, an entry or a list
- * of another `statusPurpose`, an entry whose `statusSize` is not 1, or an out-of-range index all
- * resolve to `{ revoked: true }`: the
- * absence of proof-of-liveness is treated as revoked, never as "probably fine".
+ * proof is rejected, a list {@link acceptStatusList} refuses for the credential, a list outside the
+ * validity window it states (`utils/statuslist-validity.ts`), an entry or a list of another
+ * `statusPurpose`, an entry whose `statusSize` is not 1, or an out-of-range index all resolve to
+ * `{ revoked: true }`: the absence of proof-of-liveness is treated as revoked, never as "probably fine".
  *
  * Each verdict also reports `fresh`: `true` only when read from a LIVE, in-validity-window
- * status list. A stale (past `validUntil`) or not-yet-valid list still yields a readable bit
- * but `fresh: false`. {@link evaluateRevocationChain} walks a delegation chain root→leaf and
- * fail-closes (cascading: a revoked parent invalidates the whole subtree) on the first
- * revoked/unresolvable hop, threading `fresh` through every hop. The caller decides the gate:
- * L2 accepts a non-revoked chain (cached / offline-verifiable); L3 additionally requires
- * `fresh` (a live status check). NOT wired into `verifyCard` here — a later step injects it.
+ * status list, as every list this checker reads is, since it refuses one outside its window; a
+ * caching variant reports `false` for a verdict it did not read live. {@link evaluateRevocationChain}
+ * walks a delegation chain root→leaf and fail-closes (cascading: a revoked parent invalidates the
+ * whole subtree) on the first revoked/unresolvable hop, threading `fresh` through every hop. The
+ * caller decides the gate: L2 accepts a non-revoked chain (cached / offline-verifiable); L3
+ * additionally requires `fresh` (a live status check).
  */
 
 import type { RefusalCode } from '../refusal-codes.js';
@@ -56,6 +56,7 @@ import {
   readStatusBit,
 } from '../utils/statuslist-bits.js';
 import { statusListGzipCodec } from '../utils/statuslist-gzip.js';
+import { assertStatusListValidity } from '../utils/statuslist-validity.js';
 import type { SafeFetch } from '../utils/safe-fetch.js';
 import type { BitstringStatusListEntry } from './schema.js';
 import type { StatusListProofVerifier } from './status-list-proof.js';
@@ -78,6 +79,8 @@ export {
   type StatusListKeeper,
   type StatusListVerdict,
 } from '../utils/statuslist-acceptance.js';
+
+export { acceptStatusListValidity } from '../utils/statuslist-validity.js';
 
 /** The `statusPurpose` this checker evaluates by default (revocation, not suspension). */
 export const STATUS_PURPOSE_REVOCATION = 'revocation';
@@ -162,7 +165,7 @@ export type RevocationChecker = BitstringRevocationChecker;
 export interface RevocationCheckerDeps {
   /** SSRF-hardened fetch seam used to resolve the `statusListCredential`. */
   fetch: SafeFetch;
-  /** Injectable clock returning epoch MILLISECONDS (deterministic freshness tests). */
+  /** Injectable clock returning epoch MILLISECONDS, which a list's validity window is read against. */
   now?: () => number;
   /**
    * `statusPurpose` to honour; default {@link STATUS_PURPOSE_REVOCATION}. An entry that states
@@ -219,6 +222,12 @@ function failedClosed(code: RefusalCode, reason?: string): RevocationStatus & Co
  * Build the default `RevocationChecker` over W3C Bitstring Status List v1.0. Every outbound
  * request rides the injected {@link SafeFetch}; any failure on the path (unreachable, non-2xx,
  * malformed, wrong purpose, out-of-range index) fails closed ({@link failedClosed}).
+ *
+ * A list is read only inside the validity window it states, its `validFrom` and `validUntil`, or its
+ * `issuanceDate` and `expirationDate`, at the time `now` gives, once its proof has verified. A list
+ * past its end, before its start or stating a bound that is not a date fails closed as
+ * `status_unavailable`, whatever its bits, with a reason that names the bound and quotes the time the
+ * list states. A list that states no bound is read.
  *
  * The checker answers for one purpose, its `statusPurpose`. An entry that states another (a
  * `suspension` entry under a revocation checker), or a value that is not a string, `null` included,
@@ -288,10 +297,11 @@ export function createRevocationChecker(
       if (deps.verifyStatusList && (await codedVariantOf(deps.verifyStatusList)(credential)) !== true) {
         throw new RefusalError('status_signer_untrusted', 'revocation: status-list proof rejected');
       }
+      // A list outside the window it states says nothing of now, whatever its bits say.
+      assertStatusListValidity(credential, clock());
       const bits = await decodeStatusList(credential, decompress);
       const revoked = readStatusBit(bits, parseStatusListIndex(entry.statusListIndex));
-      const fresh = isLive(credential, clock());
-      return revoked ? { revoked, fresh, ...coded('delegation_revoked') } : { revoked, fresh };
+      return revoked ? { revoked, fresh: true, ...coded('delegation_revoked') } : { revoked, fresh: true };
     } catch (error) {
       // A step that refuses throws its code, an entry that is not an object included; a read or a
       // decoder that failed in its own words left the status unread.
@@ -363,31 +373,4 @@ async function decodeStatusList(
     throw new Error('revocation: status-list has no encodedList');
   }
   return decodeStatusListPayload(encoded, decompress);
-}
-
-/**
- * True iff `nowMs` falls inside the credential's `[validFrom, validUntil]` window (if declared). A
- * bound that is PRESENT but not a parseable date is not "absent": the list's validity window is then
- * unknown, so it cannot vouch for a live read (`false`, never an open window).
- */
-function isLive(credential: Record<string, unknown>, nowMs: number): boolean {
-  const validUntil = parseDate(firstPresent(credential.validUntil, credential.expirationDate));
-  const validFrom = parseDate(firstPresent(credential.validFrom, credential.issuanceDate));
-  if (validUntil === null || validFrom === null) return false; // unknown window → not provably live
-  if (validUntil !== undefined && validUntil < nowMs) return false; // stale → cached-OK at L2 only
-  if (validFrom !== undefined && validFrom > nowMs) return false; // not yet valid
-  return true;
-}
-
-/** The VC 2.0 property when present (even as `null`), else its VC 1.1 predecessor. */
-function firstPresent(current: unknown, legacy: unknown): unknown {
-  return current !== undefined ? current : legacy;
-}
-
-/** Parse an ISO-8601 date to epoch ms: `undefined` when absent, `null` when present but unparseable. */
-function parseDate(value: unknown): number | undefined | null {
-  if (value === undefined) return undefined;
-  if (typeof value !== 'string') return null;
-  const ms = Date.parse(value);
-  return Number.isNaN(ms) ? null : ms;
 }

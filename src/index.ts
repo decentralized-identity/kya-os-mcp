@@ -127,6 +127,7 @@ export {
   type StatusListKeeper,
   type StatusListVerdict,
 } from './utils/statuslist-acceptance.js';
+export { acceptStatusListValidity } from './utils/statuslist-validity.js';
 
 export {
   DelegationGraphManager,

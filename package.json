@@ -100,6 +100,7 @@
     "conformance:generate:card": "tsx conformance/card-vectors.ts",
     "conformance:generate:key-relationship": "tsx conformance/key-relationship-vectors.ts",
     "conformance:generate:status-authority": "tsx conformance/status-list-authority-vectors.ts",
+    "conformance:generate:status-validity": "tsx conformance/status-list-validity-vectors.ts",
     "conformance:verify:crosslang": "python3 conformance/verify.py",
     "conformance:typecheck": "tsc --noEmit -p conformance/tsconfig.json",
     "lint": "eslint src adopters/run.mjs adopters/runner --ext .ts",

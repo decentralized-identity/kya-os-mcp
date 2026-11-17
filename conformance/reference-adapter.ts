@@ -36,6 +36,7 @@ import {
   type DelegationCredentialVerifierPort,
 } from '../src/delegation/chain-enforcement.js';
 import { BitstringManager } from '../src/delegation/bitstring.js';
+import { assertStatusListValidity } from '../src/utils/statuslist-validity.js';
 import { verifySignature } from '../src/delegation/vc-verification-checks.js';
 import { ClockProvider, FetchProvider } from '../src/providers/base.js';
 // The Entity Card layer (`org.kya-os/proof.v1` + the typed card) lives on the
@@ -242,8 +243,9 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
       // proof-verifying readers share, to the issuer of the credential it
       // covers, which the verifier names in `context`, and to the chain root
       // and the status-list issuers the vector configures the verifier with
-      // (suite ≥ 1.4.0). A throw here denies the credential as
-      // status_unresolvable.
+      // (suite ≥ 1.4.0). Once its proof verifies, the list is read only
+      // inside the validity window it states (suite ≥ 1.7.0). A throw here
+      // denies the credential as status_unresolvable.
       const pinnedRoot = {
         ...(input.trustedRootIssuer === undefined ? {} : { trustedRootIssuer: input.trustedRootIssuer }),
         ...(input.trustedRootStatusList === undefined ? {} : { trustedRootStatusList: input.trustedRootStatusList }),
@@ -279,6 +281,8 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
               `status list ${s.statusListCredential} proof rejected: ${listProof.reason ?? 'invalid'}`,
             );
           }
+          // A list outside the validity window it states is refused (suite >= 1.7.0).
+          assertStatusListValidity(list, Date.now());
           const manager = await BitstringManager.decode(
             list.credentialSubject.encodedList,
             statusListGzipCodec,

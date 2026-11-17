@@ -28,7 +28,8 @@
  *
  * A reader that answers for one purpose alone first holds the entry to it
  * ({@link acceptEntryPurpose}), and a reader that reads one bit per entry first holds the entry to
- * that size ({@link acceptEntrySize}).
+ * that size ({@link acceptEntrySize}). Every reader, whether or not it verifies a proof, also holds
+ * the list to the validity window it states, by the rule in `./statuslist-validity.ts`.
  *
  * The rule is pure and checks no proof. It means something only together with a proof verified under
  * a key the list's `issuer` lists under `assertionMethod`: until then, every field it reads, the

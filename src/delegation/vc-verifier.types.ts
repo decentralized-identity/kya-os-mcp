@@ -191,6 +191,9 @@ export interface VerificationMethod {
  * `acceptEntrySize(status.statusSize)`, as the library's readers do, and throws its reason, as a
  * `RefusalError`, for an entry that is not one bit wide: such an entry keeps its status in other
  * bits of the list.
+ * A list outside the validity window it states says nothing of now, so a resolver reads one only when
+ * `acceptStatusListValidity(list, Date.now())` accepts it, once its proof verifies, and otherwise
+ * throws its reason as a `RefusalError` of code `status_unavailable`, as the library's readers do.
  *
  * `DelegationCredentialVerifier`, which the delegation middleware runs for each credential of a
  * chain, names the credential's own issuer alone, never the chain's root, even when

@@ -18,8 +18,9 @@ body: |-
     resolve delegation chain: the chain resolver failed`, and its words
     reach only the log, as do a handshake delegation verifier's, whose
     challenge says `the delegation verifier failed`. To refuse in its own
-    words, it throws a `RefusalError`, now exported from `@kya-os/mcp` and
-    `@kya-os/mcp/card`, whose code and message reach the refusal. A verdict
+    words, it throws a `RefusalError`, now exported from `@kya-os/mcp`,
+    `@kya-os/mcp/delegation` and `@kya-os/mcp/card`, whose code and message
+    reach the refusal. A verdict
     on a list that was read keeps its reason, the `statusListIssuers` remedy
     included. UPGRADING.md, "Changed refusal reasons", has each wording.
 time: 2026-11-16T16:10:00.000000-06:00

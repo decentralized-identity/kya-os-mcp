@@ -1,10 +1,10 @@
 /**
- * The reasons chain enforcement gives when its chain resolver or revocation checker fails,
- * refuses or gives an answer that cannot be read. Each quotes a delegation id it names as `describeValue` quotes any value the other party
+ * The reasons chain enforcement gives when its chain resolver, credential verifier or revocation
+ * checker fails, refuses or gives an answer that cannot be read. Each quotes a delegation id it names as `describeValue` quotes any value the other party
  * chose, and text the enforcement did not write, the message of an error one of them threw or the
  * reason the checker gave, through `sanitizeForMessage`, so a reason stays bounded, well-formed
- * text with no control character, as a response proof that signs it requires. The chain resolver
- * and the revocation checker are the host's, and may throw their transport's words, so a thrown
+ * text with no control character, as a response proof that signs it requires. The chain resolver,
+ * the credential verifier and the revocation checker are the host's, and may throw their transport's words, so a thrown
  * message reaches a reason only where it may reach whoever presented the delegation
  * (`utils/thrown-words.ts`), as a `RefusalError`'s or a deadline's may; any other goes to the
  * operator's log, and the reason says only what failed.
@@ -24,6 +24,16 @@ function thrownByHost(error: unknown, opening: string, failed: string): string {
 /** Why a chain is refused when its resolver threw `error`. */
 export function chainResolutionFailure(error: unknown): string {
   return thrownByHost(error, "Failed to resolve delegation chain", "the chain resolver failed");
+}
+
+/** Why a chain is refused when its resolver answered `answer`, which is not a list. */
+export function unreadableChainAnswer(answer: unknown): string {
+  return `The chain resolver answered a value ${describeValue(answer)}, not a list of credentials`;
+}
+
+/** Why a chain is refused when the credential verifier threw `error` verifying the delegation `delegationId`. */
+export function credentialVerificationFailure(delegationId: unknown, error: unknown): string {
+  return thrownByHost(error, `Delegation ${describeValue(delegationId)} could not be verified`, "the credential verifier failed");
 }
 
 /** Why a chain is refused when the revocation checker threw `error` checking `delegationId`. */

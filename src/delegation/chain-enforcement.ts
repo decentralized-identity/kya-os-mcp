@@ -24,7 +24,13 @@ import { OPERATOR_REASON_LENGTH } from "../utils/revocation-answer.js";
 import { readVerdict } from "../utils/verdict.js";
 import { verifyDelegationAudience } from "./audience-validator.js";
 import { attenuationWarnings, checkScopeAttenuation, statedExpiry } from "./chain-attenuation.js";
-import { chainResolutionFailure, revocationCheckFailure, revocationRefusal } from "./chain-reasons.js";
+import {
+  chainResolutionFailure,
+  credentialVerificationFailure,
+  revocationCheckFailure,
+  revocationRefusal,
+  unreadableChainAnswer,
+} from "./chain-reasons.js";
 import { chainLinkageRefusal } from "./chain-linkage.js";
 import { rootAdmissionRefusal } from "./root-admission.js";
 import { hasDelegationShape, resolvedAncestors } from "./resolved-chain.js";
@@ -38,7 +44,9 @@ export { attenuationWarnings, getDelegationScopes, validateScopeAttenuation } fr
  * only on an answer whose `valid` is the literal `true`; any other answer refuses the chain. A
  * refusal takes the `code` the answer names when it is one of the catalog's, as the library's
  * `DelegationCredentialVerifier` names one, else `delegation_invalid`; an answer that is not a
- * verdict is `runtime_error`.
+ * verdict is `runtime_error`. Each call gets `dependencyTimeoutMs` to answer: one that has not
+ * answered by then refuses the chain as `deadline_exceeded`, and one that throws refuses it as
+ * `runtime_error`, or with the code of a `RefusalError` it throws.
  */
 export interface DelegationCredentialVerifierPort {
   verifyDelegationCredential(
@@ -89,7 +97,8 @@ export interface ChainEnforcementDeps extends AncestorReading {
    * Resolve ancestor credentials for a re-delegated leaf. May return ancestors
    * only (root→parent) or the full chain (root→leaf). Required when the leaf has
    * a `parentId`. It gets `dependencyTimeoutMs` to answer: a chain it has not
-   * returned by then is refused as one that could not be resolved.
+   * returned by then is refused as one that could not be resolved, and an
+   * answer that is not an array is refused as `runtime_error`.
    */
   resolveDelegationChain?: (
     leafCredential: DelegationCredential,
@@ -129,7 +138,7 @@ export interface ChainEnforcementDeps extends AncestorReading {
    */
   maxChainLength?: number;
   /**
-   * How long, in milliseconds, `resolveDelegationChain` and each `revocationChecker` call may take to answer: a number greater than 0 and at most
+   * How long, in milliseconds, `resolveDelegationChain`, each `verifier` call and each `revocationChecker` call may take to answer: a number greater than 0 and at most
    * 2,147,483,647. Default 5,000. Any other value rejects every chain.
    */
   dependencyTimeoutMs?: number;
@@ -161,8 +170,9 @@ export interface ChainValidationResult extends EvaluatedCredentials, RefusalCodi
  * signed by the `issuerDid` it names, so that DID is the chain's Responsible
  * Party, and by one of `trustedRootIssuers` when that is set.
  * Success includes the earliest applicable expiry for downstream grant storage.
- * Never throws on a malformed input; returns `{ valid, reason }`, and on a
- * refusal the `code` and `transient` of the rule or dependency that refused.
+ * Never throws on a malformed input, nor when a dependency throws or answers
+ * what it may not; returns `{ valid, reason }`, and on a refusal the `code`
+ * and `transient` of the rule or dependency that refused.
  */
 export async function validateDelegationChain(
   leafCredential: DelegationCredential,
@@ -204,13 +214,14 @@ async function enforceChain(
       );
     }
 
-    let resolvedChain: DelegationCredential[];
+    let resolvedChain: unknown;
     try {
       const resolve = deps.resolveDelegationChain;
       resolvedChain = await answerWithinDeadline("the chain resolver", () => resolve(leafCredential), timeoutMs);
     } catch (error) {
       return refusal(refusalCodeOf(error, "runtime_error"), chainResolutionFailure(error));
     }
+    if (!Array.isArray(resolvedChain)) return refusal("runtime_error", unreadableChainAnswer(resolvedChain));
 
     if (resolvedChain.length === 0) {
       return refusal(
@@ -259,7 +270,7 @@ async function enforceChain(
 
 /**
  * The per-credential and per-link checks of a chain, adding each credential reached to `evaluated`.
- * Each revocation check gets `timeoutMs` to answer.
+ * Each credential verification and each revocation check gets `timeoutMs` to answer.
  */
 async function walkChain(
   chain: readonly DelegationCredential[],
@@ -285,16 +296,18 @@ async function walkChain(
       );
     }
 
-    // The verifier is a port the host may supply: a credential passes only on the literal `true`.
-    // Its reason is kept as far as the operator reads one, so a status reason it ends with stays whole.
-    const credentialVerification = readVerdict("the credential verifier", await deps.verifier.verifyDelegationCredential(
-      credential,
-      {
-        ...(options?.skipSignature && credential === leafCredential
-          ? { skipSignature: true }
-          : {}),
-      },
-    ), "delegation_invalid", OPERATOR_REASON_LENGTH);
+    // The verifier is a port the host may supply, under the same deadline as every other: a
+    // credential passes only on the literal `true`. Its reason is kept as far as the operator reads
+    // one, so a status reason it ends with stays whole.
+    let verdict: unknown;
+    try {
+      const { verifier } = deps;
+      const skip = options?.skipSignature && credential === leafCredential ? { skipSignature: true } : {};
+      verdict = await answerWithinDeadline("the credential verifier", () => verifier.verifyDelegationCredential(credential, skip), timeoutMs);
+    } catch (error) {
+      return refusal(refusalCodeOf(error, "runtime_error"), credentialVerificationFailure(delegation.id, error));
+    }
+    const credentialVerification = readVerdict("the credential verifier", verdict, "delegation_invalid", OPERATOR_REASON_LENGTH);
     if (!credentialVerification.valid) {
       return {
         valid: false,

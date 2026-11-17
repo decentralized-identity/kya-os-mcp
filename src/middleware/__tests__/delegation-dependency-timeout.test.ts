@@ -3,7 +3,9 @@
  * it waits on: a DID resolver, a did:web read through the default fetch provider, a status list
  * resolver, a `resolveDelegationChain` and a `RevocationChecker`. Each case hangs one of them on a
  * promise that never settles and holds the gate to refusing at the deadline and no sooner, under
- * the default of 5 seconds and under a raised value. A value that is not a number of milliseconds a
+ * the default of 5 seconds and under a raised value. The verification of each credential, which
+ * resolves its issuer's DID and reads its status, is held to the same deadline as a whole, so a
+ * DID or status read that hangs is refused as the credential's verification that did not answer. A value that is not a number of milliseconds a
  * timer can hold is refused when the middleware is created.
  */
 
@@ -67,9 +69,11 @@ describe.each(DEADLINES)('the delegation gate, %s', (_label, option, ms, stated)
     return check.valid ? undefined : check.reason;
   };
 
+  /** The reason for a credential whose verification has not answered by the deadline. */
+  const unanswered = `Delegation "del-leaf" could not be verified: the credential verifier did not answer within ${stated}`;
+
   it('refuses a delegation whose issuer DID its resolver has not resolved by the deadline', async () => {
-    expect(await refusal(await credential(), (never) => ({ didResolver: { resolve: never } })))
-      .toBe('Delegation del-leaf invalid: Signature verification error: DID resolution deadline exceeded');
+    expect(await refusal(await credential(), (never) => ({ didResolver: { resolve: never } }))).toBe(unanswered);
   });
 
   it('refuses a delegation whose did:web document the default fetch provider has not read by the deadline', async () => {
@@ -77,7 +81,7 @@ describe.each(DEADLINES)('the delegation gate, %s', (_label, option, ms, stated)
       vi.stubGlobal('fetch', never);
       return { didResolver: undefined };
     });
-    expect(reason).toBe('Delegation del-leaf invalid: Signature verification error: DID resolution deadline exceeded');
+    expect(reason).toBe(unanswered);
   });
 
   it('builds the default fetch provider, which it hands a didResolvers factory, with the same deadline', async () => {
@@ -146,8 +150,7 @@ describe.each(DEADLINES)('the delegation gate, %s', (_label, option, ms, stated)
   });
 
   it('refuses a delegation whose status its resolver has not answered for by the deadline', async () => {
-    expect(await refusal(await credential({ status: STATUS }), (never) => ({ statusListResolver: { checkStatus: never } })))
-      .toBe(`Delegation del-leaf invalid: Status check error: the status list resolver did not answer within ${stated}`);
+    expect(await refusal(await credential({ status: STATUS }), (never) => ({ statusListResolver: { checkStatus: never } }))).toBe(unanswered);
   });
 
   it('refuses a delegation whose chain its resolver has not returned by the deadline', async () => {

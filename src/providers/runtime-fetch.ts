@@ -141,7 +141,8 @@ export class RuntimeFetchProvider extends FetchProvider {
 
   private async resolveWithin(did: string, deadline: ResolutionDeadline): Promise<DIDDocument | null> {
     const method = getDidMethod(did);
-    const configuredResolver = method ? this.didResolvers[method] : undefined;
+    // Only a method the registry holds as its own: `constructor` or `__proto__` names no resolver.
+    const configuredResolver = method !== null && Object.hasOwn(this.didResolvers, method) ? this.didResolvers[method] : undefined;
     if (configuredResolver) {
       const resolution = await resolveWithinLimits(configuredResolver, did, undefined, deadline);
       if (resolution.status === "found") return resolution.document;

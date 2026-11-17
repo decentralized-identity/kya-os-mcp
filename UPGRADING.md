@@ -30,6 +30,16 @@ The warning is shared across package copies in the process.
 **`verifyHopProof` becomes required in the next major version.**
 `verifyRequestDelegation` and `requireDelegation` already require this verifier, and keep their verification order and refusal precedence.
 
+### The cheqd resolver follows a redirect by hand
+
+`DidCheqdResolver`, `createDidCheqdResolver` and `cheqdResolver` now read the resolver endpoint as a did:web or status-list read is read.
+Each request asks the provider's `fetch` for `redirect: "manual"`, and the resolver follows at most 3 redirects itself, refuses a step from https down to http, and sends an origin other than the resolver's only the CORS-safelisted request headers and the request's `Cache-Control` and `Pragma`.
+On 1.23.0 the runtime followed redirects itself, up to 20 in Node, to any host, and sent every header the `headers` option sets, such as an API key, to wherever they led; Node drops only the credentials it knows, such as `Authorization`.
+The operator names the resolver, so its host, and any host a redirect leads to, may still be private or local; the resolver URL, and each redirect, must be an absolute http or https URL.
+A resolver that redirects more than 3 times, or from https to http, now resolves no document: the failure's `cause` is `unavailable` or `host_refused`, and the log says why.
+A custom `FetchProvider` given to the resolver must pass `redirect` on and return a response that names the URL asked for, or none, as "A custom `FetchProvider` whose response names a URL other than the one asked for" says below.
+In a browser, which hides where a redirect leads, a resolver that redirects resolves no document.
+
 ## From 1.22.0
 
 ### Do I need to change anything?

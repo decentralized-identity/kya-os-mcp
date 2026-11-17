@@ -7,6 +7,8 @@
  * metadata, and still accepts a Universal Resolver-style DID Resolution Result
  * (`{ didDocument: ... }`) from a resolver that sends one anyway. That envelope
  * is read within its own limits; the document inside it meets the document's.
+ * A redirect from the endpoint is followed by hand, as a did:web or status-list
+ * read follows one (`utils/checked-redirects.ts`).
  */
 
 import type { FetchProvider } from '../../providers/base.js';
@@ -24,6 +26,8 @@ import {
   admitParsedDidDocument, boundedDid, DID_RESOLUTION_ENVELOPE_READ, DidDocumentCache, type LoadedDidDocument,
 } from '../../delegation/did-resource-limits.js';
 import { fetchBoundedJson } from '../../utils/bounded-read.js';
+import type { FetchPort } from '../../utils/fetch-port.js';
+import { admittingPrivateHosts, underPrivateNetworkRule } from '../../utils/private-network-rule.js';
 
 /** The DID document alone, without resolution metadata (W3C DID Resolution). */
 const DID_DOCUMENT_MEDIA_TYPE = 'application/did+ld+json';
@@ -38,6 +42,10 @@ export interface ParsedDidCheqd {
 export interface DidCheqdResolverOptions {
   resolverUrl: string;
   cacheTtl?: number;
+  /**
+   * Headers for each request to the resolver, such as an API key. A redirect to an origin other
+   * than the resolver's carries none of them but the CORS-safelisted ones.
+   */
   headers?: Record<string, string> | (() => Promise<Record<string, string>>);
   /**
    * How long, in milliseconds, one resolution, its `headers` function, request and body together, may take: a number greater than 0 and at most
@@ -78,7 +86,15 @@ export function parseDidCheqd(did: string): ParsedDidCheqd | null {
 }
 
 export class DidCheqdResolver implements DIDResolver {
-  private readonly fetchProvider: FetchProvider;
+  /**
+   * The provider, read through the checked redirects every did:web and status-list read follows:
+   * at most 3, never from https down to http, each asked with `redirect: 'manual'`, and to an
+   * origin other than the resolver's with only the CORS-safelisted request headers, so a key in
+   * `headers` reaches the resolver alone. The operator names the resolver, which may run on a
+   * private or local host beside the verifier, so the private-network rule admits such hosts here
+   * and holds the resolver URL, and each redirect, only to being an absolute http or https URL.
+   */
+  private readonly transport: FetchPort;
   private readonly resolverUrl: string;
   private readonly cache: DidDocumentCache;
   private readonly cacheTtl: number;
@@ -87,7 +103,7 @@ export class DidCheqdResolver implements DIDResolver {
   private readonly failures = new DidResolutionFailures();
 
   constructor(fetchProvider: FetchProvider, options: DidCheqdResolverOptions) {
-    this.fetchProvider = fetchProvider;
+    this.transport = underPrivateNetworkRule(admittingPrivateHosts(fetchProvider));
     this.resolverUrl = options.resolverUrl;
     this.cacheTtl = options.cacheTtl ?? 300_000;
     this.headers = options.headers;
@@ -129,7 +145,7 @@ export class DidCheqdResolver implements DIDResolver {
     const url = didCheqdToResolverUrl(did, this.resolverUrl);
     try {
       const init = this.requestHeaders().then((headers): RequestInit => ({ method: 'GET', headers }));
-      const json = await fetchBoundedJson(this.fetchProvider, url, init, { ...DID_RESOLUTION_ENVELOPE_READ, timeoutMs: this.timeoutMs });
+      const json = await fetchBoundedJson(this.transport, url, init, { ...DID_RESOLUTION_ENVELOPE_READ, timeoutMs: this.timeoutMs });
       const document = extractDidDocument(json);
       const measure = admitParsedDidDocument(document);
       if (!measure.ok || !isValidDIDDocument(document)) {

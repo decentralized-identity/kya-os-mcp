@@ -30,6 +30,7 @@ A fixture prints `PASS <fixture>: <what it showed>`, or one `FAIL <fixture>: <ca
 | `with-kya-os-defaults` | `withKyaOs` with its defaults, called in process through `serveInProcess`, under a pinned root. |
 | `trusted-root-issuers` | `withKyaOs` with a tool gated on a delegation: `delegation.trustedRootIssuers`, `development: true` and `delegation.allowAnyRootIssuer: true`, and the refusal when none is set. |
 | `proofs-before-status` | `evaluateDelegationChain` with `verifyHopProof`: signed chains pass, while an edited hop is refused before the status checker or fetch runs. |
+| `proof-key-relationships` | A builder-generated did:web document still verifies detached proofs and projects CIMD keys; authentication-only keys cannot verify proofs, and assertion-only keys cannot authenticate clients. |
 | `card-root-issuers` | `requireDelegation` from `@kya-os/mcp/card`: `trustedRootIssuers`, `development: true` and `allowAnyRootIssuer: true`, and the refusal when nothing pins the root. |
 | `expired-status-list` | `requireDelegation` and `verifyCard` with `createRevocationChecker` and `createStatusListProofVerifier`: a signed list past its `validUntil` or before its `validFrom` is refused as `status_unavailable`, while one in its window, or stating no end, is read. |
 | `card-revocation-checker` | `verifyCard` with and without a `statusListChecker` built from `createRevocationChecker`: a Card that declares a revocation entry is refused as `configuration_error` when no checker is given, and a Card that declares none needs no checker. |

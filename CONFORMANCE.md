@@ -2,7 +2,7 @@
 
 **Compliance levels for KYA-OS implementations**
 
-Version: 1.8.0
+Version: 1.9.0
 Status: Stable
 
 ---
@@ -472,6 +472,7 @@ so it is reproducible against any implementation without re-signing.
 | `vectors/did-web-resolution.json` | did:web resolution | well-formed id-matched document | document id mismatch, not found |
 | `vectors/card-proof.json` | `org.kya-os/proof.v1` holder-of-key proof | valid signed proof, in-window, audience-bound | tampered body, tampered signature, wrong audience, expired, kid⇄did forgery |
 | `vectors/entity-card.json` | Entity Card `parseCard` + `verifyCard` | golden card per `entityType`, accountable agent | malformed (unknown field), broken accountability JOIN, revocation entry with nothing to check it |
+| `vectors/signed-proof-key-relationship.json` | Detached proof key retrieval from the signer's `assertionMethod` (SPEC.md §7.2) | referenced or embedded assertion key; no `kid` with a usable first assertion entry | authentication-only or unlisted key, duplicate definition, foreign controller or document, foreign `kid`, unusable first assertion entry |
 | `vectors/audit-integrity.json` | Audit JCS + domain-separated hashing + RFC 9162 | fixed Unicode event, leaf/root, inclusion and consistency paths | mutated event/proof relationships are exercised by the audit unit suites |
 | `vectors/negotiation.json` | MCP extension admission gate (`org.kya-os/decentralized-authority`) | declared and malformed-degrades-to-core (optional server); empty-object and initialize-era declarations, `server/discover` exemption (required server) | absent against a required server (`-32021`), present-but-malformed against a required server (`-32602`, malformed_declaration) |
 
@@ -625,6 +626,13 @@ Because fresh keys change the committed bytes, regenerated output MUST NOT be co
 
 ### Suite versioning and immutability
 
+Suite 1.9.0 adds ten `signed-proof` key-retrieval vectors, for 160 vectors total, in `signed-proof-key-relationship.json`.
+Their input supplies `didDocuments` instead of `publicKeyJwk`; the adapter MUST resolve the signer's document and select its `assertionMethod` key before verifying the proof and its bound content.
+`keyId` supplies the retrieval argument, normally `proof.meta.kid`; its absence tests first-entry selection without removing the signed proof's required `meta.kid`.
+The cases cover referenced and embedded methods, authentication-only and unlisted keys, duplicate definitions, foreign controllers and documents, a foreign `kid`, and usable or unusable first entries.
+The key-relationship generator writes this file and regenerates the delegation and status-list relationship files with fresh keys; their cases and expected outcomes are unchanged.
+The Python cross-language check independently retrieves each key and verifies the proof.
+
 Suite 1.8.0 adds one `entity-card` vector, `entity-card/revocation-unchecked`, for 150 vectors total.
 In `agent-accountable` and `accountability-join-broken` the agent card no longer declares a `revocation` entry, with the same ids, cases and expected outcomes; the other vector files change only their `version`.
 
@@ -670,6 +678,7 @@ A new suite version may add vectors that an implementation of an earlier one fai
 Suite 1.6.0 adds `delegation-chain/scopeless-parent-widening`, which a verifier that reads a parent with no scopes as unrestricted fails.
 Suite 1.7.0 adds the `status-list-validity.json` vectors, which a verifier that reads a status list outside the window it states fails.
 Suite 1.8.0 adds `entity-card/revocation-unchecked`, which a verifier that passes a card whose `revocation` entry it does not check fails.
+Suite 1.9.0 adds `signed-proof-key-relationship.json`, which a verifier that accepts a detached proof key outside the signer's own `assertionMethod` fails.
 The SIGNED public suite manifest published by the Conformance Attestation Program is a separate artifact built on this committed one.
 
 ### Running the harness against YOUR implementation
@@ -872,6 +881,7 @@ KYA-OS cross-language verifier (Python 3.x, stdlib-only)
   [PASS] kid that names a key of another DID than meta.did makes no proof
   [PASS] request with no params is bound by its method alone
   [PASS] every signed-proof vector has the verdict it expects
+  [PASS] every detached proof key-relationship vector has the verdict it expects
   [PASS] verifier that ran out of stack reports a fault, which is no verdict
   [PASS] empty delegationRef in meta names no credential, as leaving it out does
   [PASS] outcome asked for as an empty string is asked for, and no proof states it

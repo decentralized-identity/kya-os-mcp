@@ -15,6 +15,7 @@ import { documentOf, methodOf } from '../../__tests__/utils/did-documents.js';
 const did = 'did:web:proof.example';
 const jwk = { kty: 'OKP', crv: 'Ed25519', x: 'VCpo2LMLhn6iWku8MKvSLg2ZAoC-nlOyPVQaO3FxVeQ' };
 const document = (): DIDDocument => documentOf({
+  assertionMethod: [`${did}#key`],
   verificationMethod: [methodOf({ did, kid: `${did}#key`, publicKey: Buffer.from(jwk.x, 'base64url').toString('base64') })],
 }, did);
 function verifier(fetchProvider: FetchProvider) {

@@ -1,5 +1,5 @@
 {
-  "version": "1.8.0",
+  "version": "1.9.0",
   "category": "status-list",
   "vectors": [
     {
@@ -52,7 +52,7 @@
             "created": "2026-01-01T00:00:00.000Z",
             "verificationMethod": "did:web:issuer.example.com#assert-1",
             "proofPurpose": "assertionMethod",
-            "proofValue": "Mh9p_R8c33SuWEXWDjIf2ZJKOrbK3J98srLJfN1FUTaEzjlLB7LETXT059SI7xkzx3wVwBrujlkVCNRG_1B2CQ"
+            "proofValue": "7Z2EfziXHpkde9dcnpx9OE8U2MZ7fLR0aCjA8F-ymn5d07s3w5CiYHH-8rpOChHDWiw_4V84YX6A4JQB2yBzBQ"
           }
         },
         "statusLists": {
@@ -79,7 +79,7 @@
               "created": "2026-01-01T00:00:00.000Z",
               "verificationMethod": "did:web:issuer.example.com#assert-1",
               "proofPurpose": "assertionMethod",
-              "proofValue": "oG2hEbEAu2iK59RiFKpBjpgUoj-js5ffGDnuU0xl_dRuLjdlw-R_XQNhfzc58yibiN8CTHj8kYIOt1sSwEVNDA"
+              "proofValue": "pipO7FmZi5DTv9sA99n1iA9IzShQ9vgfZHlBvA0L4aBZpLodbbaDIlqUQ1jIUSU0RZ0VcCbwX5fG_vEgD6zRDQ"
             }
           }
         },
@@ -94,7 +94,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                  "x": "ZVGPlUO_n6ZGqLVfLUFs9O0Xd9yUAmiJ0Y4TJ3Wxjfc"
                 }
               },
               {
@@ -104,7 +104,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                  "x": "blNj15qb2UcN1fYRb4Iuua_rdtP8M0efU47NGfmltxY"
                 }
               }
             ],
@@ -169,7 +169,7 @@
             "created": "2026-01-01T00:00:00.000Z",
             "verificationMethod": "did:web:issuer.example.com#assert-1",
             "proofPurpose": "assertionMethod",
-            "proofValue": "Mh9p_R8c33SuWEXWDjIf2ZJKOrbK3J98srLJfN1FUTaEzjlLB7LETXT059SI7xkzx3wVwBrujlkVCNRG_1B2CQ"
+            "proofValue": "7Z2EfziXHpkde9dcnpx9OE8U2MZ7fLR0aCjA8F-ymn5d07s3w5CiYHH-8rpOChHDWiw_4V84YX6A4JQB2yBzBQ"
           }
         },
         "statusLists": {
@@ -196,7 +196,7 @@
               "created": "2026-01-01T00:00:00.000Z",
               "verificationMethod": "did:web:issuer.example.com#login-1",
               "proofPurpose": "assertionMethod",
-              "proofValue": "cCT6k50sCmW5bIfJ3k3B2cRWhqfkq7l8gduf9pHr1tK1a7cP1W2QoaZ-vSFcaQvmSgzy0sR037KgAjaNd6t7Cw"
+              "proofValue": "txJNQVwc481D-rHQHxXE8Wg8GiJsHa1_7vxNp6UGXiJdsz8BPMXXKkbG6dXwbBGFwNOG_wUgPSEK0Odb5k8-Dg"
             }
           }
         },
@@ -211,7 +211,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                  "x": "ZVGPlUO_n6ZGqLVfLUFs9O0Xd9yUAmiJ0Y4TJ3Wxjfc"
                 }
               },
               {
@@ -221,7 +221,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                  "x": "blNj15qb2UcN1fYRb4Iuua_rdtP8M0efU47NGfmltxY"
                 }
               }
             ],
@@ -286,7 +286,7 @@
             "created": "2026-01-01T00:00:00.000Z",
             "verificationMethod": "did:web:issuer.example.com#assert-1",
             "proofPurpose": "assertionMethod",
-            "proofValue": "Mh9p_R8c33SuWEXWDjIf2ZJKOrbK3J98srLJfN1FUTaEzjlLB7LETXT059SI7xkzx3wVwBrujlkVCNRG_1B2CQ"
+            "proofValue": "7Z2EfziXHpkde9dcnpx9OE8U2MZ7fLR0aCjA8F-ymn5d07s3w5CiYHH-8rpOChHDWiw_4V84YX6A4JQB2yBzBQ"
           }
         },
         "statusLists": {
@@ -313,7 +313,7 @@
               "created": "2026-01-01T00:00:00.000Z",
               "verificationMethod": "did:web:issuer.example.com#assert-1",
               "proofPurpose": "authentication",
-              "proofValue": "oG2hEbEAu2iK59RiFKpBjpgUoj-js5ffGDnuU0xl_dRuLjdlw-R_XQNhfzc58yibiN8CTHj8kYIOt1sSwEVNDA"
+              "proofValue": "pipO7FmZi5DTv9sA99n1iA9IzShQ9vgfZHlBvA0L4aBZpLodbbaDIlqUQ1jIUSU0RZ0VcCbwX5fG_vEgD6zRDQ"
             }
           }
         },
@@ -328,7 +328,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                  "x": "ZVGPlUO_n6ZGqLVfLUFs9O0Xd9yUAmiJ0Y4TJ3Wxjfc"
                 }
               },
               {
@@ -338,7 +338,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                  "x": "blNj15qb2UcN1fYRb4Iuua_rdtP8M0efU47NGfmltxY"
                 }
               }
             ],
@@ -403,7 +403,7 @@
             "created": "2026-01-01T00:00:00.000Z",
             "verificationMethod": "did:web:issuer.example.com#assert-1",
             "proofPurpose": "assertionMethod",
-            "proofValue": "Mh9p_R8c33SuWEXWDjIf2ZJKOrbK3J98srLJfN1FUTaEzjlLB7LETXT059SI7xkzx3wVwBrujlkVCNRG_1B2CQ"
+            "proofValue": "7Z2EfziXHpkde9dcnpx9OE8U2MZ7fLR0aCjA8F-ymn5d07s3w5CiYHH-8rpOChHDWiw_4V84YX6A4JQB2yBzBQ"
           }
         },
         "statusLists": {
@@ -430,7 +430,7 @@
               "created": "2026-01-01T00:00:00.000Z",
               "verificationMethod": "did:web:issuer.example.com#assert-1",
               "proofPurpose": "assertionMethod",
-              "proofValue": "oG2hEbEAu2iK59RiFKpBjpgUoj-js5ffGDnuU0xl_dRuLjdlw-R_XQNhfzc58yibiN8CTHj8kYIOt1sSwEVNDA"
+              "proofValue": "pipO7FmZi5DTv9sA99n1iA9IzShQ9vgfZHlBvA0L4aBZpLodbbaDIlqUQ1jIUSU0RZ0VcCbwX5fG_vEgD6zRDQ"
             }
           }
         },
@@ -445,7 +445,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                  "x": "ZVGPlUO_n6ZGqLVfLUFs9O0Xd9yUAmiJ0Y4TJ3Wxjfc"
                 }
               },
               {
@@ -455,7 +455,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                  "x": "blNj15qb2UcN1fYRb4Iuua_rdtP8M0efU47NGfmltxY"
                 }
               }
             ],
@@ -520,7 +520,7 @@
             "created": "2026-01-01T00:00:00.000Z",
             "verificationMethod": "did:web:issuer.example.com#assert-1",
             "proofPurpose": "assertionMethod",
-            "proofValue": "Mh9p_R8c33SuWEXWDjIf2ZJKOrbK3J98srLJfN1FUTaEzjlLB7LETXT059SI7xkzx3wVwBrujlkVCNRG_1B2CQ"
+            "proofValue": "7Z2EfziXHpkde9dcnpx9OE8U2MZ7fLR0aCjA8F-ymn5d07s3w5CiYHH-8rpOChHDWiw_4V84YX6A4JQB2yBzBQ"
           }
         },
         "statusLists": {
@@ -547,7 +547,7 @@
               "created": "2026-01-01T00:00:00.000Z",
               "verificationMethod": "did:web:issuer.example.com#login-1",
               "proofPurpose": "assertionMethod",
-              "proofValue": "cCT6k50sCmW5bIfJ3k3B2cRWhqfkq7l8gduf9pHr1tK1a7cP1W2QoaZ-vSFcaQvmSgzy0sR037KgAjaNd6t7Cw"
+              "proofValue": "txJNQVwc481D-rHQHxXE8Wg8GiJsHa1_7vxNp6UGXiJdsz8BPMXXKkbG6dXwbBGFwNOG_wUgPSEK0Odb5k8-Dg"
             }
           }
         },
@@ -562,7 +562,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                  "x": "ZVGPlUO_n6ZGqLVfLUFs9O0Xd9yUAmiJ0Y4TJ3Wxjfc"
                 }
               },
               {
@@ -572,7 +572,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                  "x": "blNj15qb2UcN1fYRb4Iuua_rdtP8M0efU47NGfmltxY"
                 }
               }
             ],
@@ -638,7 +638,7 @@
             "created": "2026-01-01T00:00:00.000Z",
             "verificationMethod": "did:web:issuer.example.com#assert-1",
             "proofPurpose": "assertionMethod",
-            "proofValue": "Mh9p_R8c33SuWEXWDjIf2ZJKOrbK3J98srLJfN1FUTaEzjlLB7LETXT059SI7xkzx3wVwBrujlkVCNRG_1B2CQ"
+            "proofValue": "7Z2EfziXHpkde9dcnpx9OE8U2MZ7fLR0aCjA8F-ymn5d07s3w5CiYHH-8rpOChHDWiw_4V84YX6A4JQB2yBzBQ"
           }
         },
         "statusLists": {
@@ -665,7 +665,7 @@
               "created": "2026-01-01T00:00:00.000Z",
               "verificationMethod": "did:web:issuer.example.com#login-1",
               "proofPurpose": "assertionMethod",
-              "proofValue": "cCT6k50sCmW5bIfJ3k3B2cRWhqfkq7l8gduf9pHr1tK1a7cP1W2QoaZ-vSFcaQvmSgzy0sR037KgAjaNd6t7Cw"
+              "proofValue": "txJNQVwc481D-rHQHxXE8Wg8GiJsHa1_7vxNp6UGXiJdsz8BPMXXKkbG6dXwbBGFwNOG_wUgPSEK0Odb5k8-Dg"
             }
           }
         },
@@ -680,7 +680,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                  "x": "ZVGPlUO_n6ZGqLVfLUFs9O0Xd9yUAmiJ0Y4TJ3Wxjfc"
                 }
               },
               {
@@ -690,7 +690,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                  "x": "blNj15qb2UcN1fYRb4Iuua_rdtP8M0efU47NGfmltxY"
                 }
               }
             ],
@@ -706,7 +706,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                  "x": "ZVGPlUO_n6ZGqLVfLUFs9O0Xd9yUAmiJ0Y4TJ3Wxjfc"
                 }
               }
             ]

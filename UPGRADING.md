@@ -272,6 +272,25 @@ The suite adds `entity-card/revocation-unchecked`, the accountable agent card de
 In `agent-accountable` and `accountability-join-broken` the agent card no longer declares a `revocation` entry, so each holds the accountability join alone; their ids and expected outcomes are unchanged.
 `entity-card.json` is generated deterministically; the other 12 vector files change only their `version`.
 
+### Detached proof and CIMD keys follow their verification relationship
+
+`ProofVerifier.fetchPublicKeyFromDID` now retrieves only a key the signer's own DID document lists under `assertionMethod`.
+`didKeyedJwks` projects only keys the document lists under `authentication`, the purpose of OAuth client authentication.
+Both accept referenced and embedded methods, require the method to be defined once, and require its id and controller to belong to the document's DID.
+
+| Who is affected | What to do |
+| --- | --- |
+| Servers with hand-written DID documents that publish a proof-signing key outside `assertionMethod` | List that key under `assertionMethod` before signing detached proofs with it. |
+| Entities whose CIMD client-authentication key is outside `authentication` | List that key under `authentication` before using it for `private_key_jwt`. |
+| Verifiers that call key retrieval without a `kid` | Pass `proof.meta.kid`; without one, retrieval uses only the first `assertionMethod` entry and refuses an unusable first entry. |
+| Operators retaining historical proofs | Keep the old signing keys listed under `assertionMethod` while those proofs are retained for verification. |
+
+did:key documents and `buildDidWebDocument` already list their signing keys under both relationships and are unaffected.
+A proof key outside `assertionMethod` is refused as `VERIFICATION_METHOD_NOT_FOUND`, with a reason naming the relationship.
+A method controlled by another DID, or a document identifying another DID, is refused as `KID_DID_MISMATCH`.
+There is no opt-out; `fetchPublicKeyFromDID` keeps its signature.
+`verifyProof` and `verifyProofArtifact` still take the caller's key and perform no DID retrieval; the caller must enforce the relationship when obtaining that key.
+
 ## From 1.22.0
 
 ### Do I need to change anything?

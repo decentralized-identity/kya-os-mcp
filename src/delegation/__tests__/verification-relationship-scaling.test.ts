@@ -44,9 +44,16 @@ describe('lookup work meter', () => {
   });
 
   it('requires a cost rule for native collection operations', () => {
-    for (const text of ['export const index = new Map();', 'export function sort(ids: string[]) { return ids.sort(); }']) {
+    for (const text of ['export const index = new WeakMap();', 'export function sort(ids: string[]) { return ids.sort(); }']) {
       expect(() => compileMeteredLookup(text, {})).toThrow(/unmetered lookup operation/i);
     }
+  });
+
+  it('charges the complete string key for each supported collection operation', () => {
+    const meter = compileMeteredLookup('export function run() { const m = new Map(); m.set("key", 7); return m.get("key"); }', {});
+    meter.reset(100);
+    expect((meter.exports.run as () => number)()).toBe(7);
+    expect(meter.work()).toBe(9);
   });
 });
 
@@ -98,6 +105,13 @@ describe('lookup work', () => {
     [16, 250, 100_000],
   ])('stays within its input budget at scale %i, DID length %i, key length %i', (scale, didUnits, keyUnits) => {
     const input = documentAt(scale, didUnits, keyUnits);
+    const enumerationLimit = budget(input, undefined);
+    meter.reset(enumerationLimit);
+    const methods = lookup.methodsUnder(counted(input.document, meter.step), input.did, 'assertionMethod');
+    const enumerationWork = meter.work();
+    meter.reset(Number.MAX_SAFE_INTEGER);
+    expect(methods).toEqual(actual.methodsUnder(input.document, input.did, 'assertionMethod'));
+    expect(enumerationWork).toBeLessThanOrEqual(enumerationLimit);
     for (const named of [`${input.did}${input.key}`, input.key, '#absent', undefined]) {
       const expected = actual.selectAssertionMethod(input.document, input.did, named);
       const limit = budget(input, named);
@@ -121,8 +135,8 @@ describe('lookup work', () => {
 
   it.each([
     ['rescanning the published methods',
-      'for (const entry of published) define(entry);',
-      'for (const entry of published) for (const again of published) { define(entry); define(again); }'],
+      'for (const entry of published) definition(entry);',
+      'for (const entry of published) for (const again of published) { definition(entry); definition(again); }'],
     ['prepending the DID to each relative id',
       "if (id.startsWith('#')) return id;",
       "if (id.startsWith('#')) return `${did}${id}`.slice(did.length);"],

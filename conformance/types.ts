@@ -120,6 +120,13 @@ export interface SignedProofInput {
   };
 }
 
+/** A signed proof whose key MUST be retrieved from the supplied signer's DID document. */
+export interface SignedProofKeyInput extends Omit<SignedProofInput, 'publicKeyJwk'> {
+  didDocuments: Record<string, unknown>;
+  /** The retrieval argument, normally proof.meta.kid; absent tests first-assertion-entry selection. */
+  keyId?: string;
+}
+
 export interface DelegationChainInput {
   /**
    * The leaf DelegationCredential: signed with an embedded proof, or, as a
@@ -328,7 +335,7 @@ export interface ConformanceAdapter {
   readonly name: string;
 
   /** Verify a signed detached proof (signature + nonce + timestamp skew). */
-  verifySignedProof(input: SignedProofInput): Promise<AdapterResult>;
+  verifySignedProof(input: SignedProofInput | SignedProofKeyInput): Promise<AdapterResult>;
 
   /** Verify a delegation credential and its full chain to the root. */
   verifyDelegationChain(input: DelegationChainInput): Promise<AdapterResult>;

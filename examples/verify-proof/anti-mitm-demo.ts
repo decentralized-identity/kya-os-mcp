@@ -68,7 +68,7 @@ async function main() {
       timestampSkewSeconds: 300,
     });
 
-  const jwk = await makeVerifier().fetchPublicKeyFromDID(did);
+  const jwk = await makeVerifier().fetchPublicKeyFromDID(did, proof.meta.kid);
   if (!jwk) throw new Error('could not resolve signer did:key');
 
   console.log('Server signed challenge authorizationUrl:');

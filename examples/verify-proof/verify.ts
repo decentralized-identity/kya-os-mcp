@@ -53,7 +53,7 @@ async function main() {
   });
 
   // Resolve the signer's public key from its DID (did:key resolved offline).
-  const jwk = await verifier.fetchPublicKeyFromDID(proof.meta.did);
+  const jwk = await verifier.fetchPublicKeyFromDID(proof.meta.did, proof.meta.kid);
   if (!jwk) {
     console.log('\nVerification result: INVALID (could not resolve signer DID)');
     process.exit(1);

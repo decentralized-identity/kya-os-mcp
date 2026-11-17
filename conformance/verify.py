@@ -86,6 +86,7 @@ from delegation_cases import id_and_reference_cases_hold, signed_form_cases_hold
 from digests import domain_digest
 from ed25519 import ed25519_verify
 from proof_cases import forgeries_hold, proof_cases_hold, signer_holds
+from proof_key import verify_input as verify_proof_key_input
 from response_proof import jws_segment_json, proof_of_its_form
 from status_list import verify_input as verify_status_input
 from strict_json import jcs, read_json
@@ -270,6 +271,11 @@ def main() -> int:
     results.append(("every signed-proof vector has the verdict it expects",
                     all((chain_binding(vector["input"]) in ("bound", "no-chain")) == (vector["expected"] == "pass")
                         for vector in proof_file["vectors"])))
+
+    relationship_file = read_vector_file(HERE / "vectors" / "signed-proof-key-relationship.json")
+    results.append(("every detached proof key-relationship vector has the verdict it expects",
+                    all(verify_proof_key_input(vector["input"]) == (vector["expected"] == "pass")
+                        for vector in relationship_file["vectors"])))
 
     # A verifier that ran out of stack says so, and gives no verdict. Nothing a credential
     # holds can bring that about, since it is counted first, so it is brought about here.

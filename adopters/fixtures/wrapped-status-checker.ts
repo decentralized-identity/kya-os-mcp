@@ -2,7 +2,9 @@
  * An adopter reads status lists with the library's `createRevocationChecker` and gives the verifier
  * its own `StatusListResolver` around it. The resolver asks the checker about the status entry it
  * was given and nothing else, which its type allows, and keeps a list it could not read apart from
- * a revoked credential by throwing.
+ * a revoked credential by throwing a `RefusalError` with the checker's code, whose words the
+ * verifier's reason carries. Any other error a resolver throws may be its transport's, so the
+ * verifier logs its words and its reason says only that the list could not be read.
  *
  * The issuer is a did:key that signs its own credentials and its own status list, the simplest
  * deployment there is, so the only thing between the adopter and a verified credential is the
@@ -13,7 +15,7 @@
  * `deadline_exceeded`, which a later call may get past.
  */
 import assert from 'node:assert/strict';
-import { DelegationCredentialVerifier, createDidKeyResolver, type StatusListResolver } from '@kya-os/mcp';
+import { DelegationCredentialVerifier, RefusalError, createDidKeyResolver, type StatusListResolver } from '@kya-os/mcp';
 import { createRevocationChecker, createStatusListProofVerifier } from '@kya-os/mcp/card';
 import { runCases } from './shared/cases.js';
 import { ed25519SignatureVerifier, issueDelegation, revocationEntry } from './shared/credentials.js';
@@ -41,7 +43,7 @@ const statusListResolver: StatusListResolver = {
   async checkStatus(status) {
     const verdict = await check(status);
     if (verdict.revoked && !verdict.fresh) {
-      throw new Error(`the status list could not be read: ${verdict.reason ?? 'no reason given'}`);
+      throw new RefusalError(verdict.code ?? 'status_unavailable', `the status list could not be read: ${verdict.reason ?? 'no reason given'}`);
     }
     return verdict.revoked;
   },

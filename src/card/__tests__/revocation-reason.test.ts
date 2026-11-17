@@ -1,16 +1,19 @@
 /**
  * A refused status entry says why. The checker `createRevocationChecker` builds answers every entry
  * it cannot prove clear with `{ revoked: true, fresh: false, reason }`, the reason naming the step
- * that refused it: the entry's purpose or size, the fetch, the list's purpose, issuer or `id`, its
- * proof, or its bits. `evaluateRevocationChain` appends the reason a checker gives to the hop's
+ * that refused it: the entry's purpose or size, or the list's purpose, issuer or `id`, or its proof.
+ * A list that could not be read, or whose bits could not be decoded, is named and said only to be
+ * unread, since whoever presented the entry chose its URL, and what the read or the decoder said
+ * goes to the operator's log. `evaluateRevocationChain` appends the reason a checker gives to the hop's
  * refusal, so it reaches `evaluateDelegationChain`, `verifyRequestDelegation` and
  * `requireDelegation`, and `verifyCard` reports it. A reason is text for people: the shipped
  * checker's own is cut at `CHECKER_REASON_LENGTH`, 512, UTF-16 code units, a custom checker's at
  * `WRAPPED_REASON_LENGTH`, 640, which leaves room for a wrapper's words before the shipped
  * checker's reason, and neither shows a control character.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDidKeyResolver } from '../../delegation/did-key-resolver.js';
+import { logger } from '../../logging/index.js';
 import { CHECKER_REASON_LENGTH, createRevocationChecker, evaluateRevocationChain, type RevocationStatusEntry } from '../revocation.js';
 import { createStatusListProofVerifier } from '../status-list-proof.js';
 import { verifyCard } from '../verify.js';
@@ -24,6 +27,7 @@ import { cast, listOf, listUrlOf, servedBy, threeHopChain, verdicts } from './st
 const owner = identity();
 const other = identity();
 const ENTRY: RevocationStatusEntry = { statusListCredential: STATUS_URL, statusListIndex: '7' };
+const UNREAD = `the status list at "${STATUS_URL}" could not be read`;
 const HOP = `revocation: hop 0 (list "${STATUS_URL}", index "7") is revoked or unresolvable ${String.fromCodePoint(0x2014)} fail-closed, subtree invalidated`;
 
 /** The verdict of the shipped checker, holding lists to `owner`, on `entry` when `body` is served at the list's URL. */
@@ -33,6 +37,17 @@ const checked = (body: Record<string, unknown> | undefined, entry: Record<string
     now,
     verifyStatusList: createStatusListProofVerifier({ didResolver: createDidKeyResolver() }),
   })(entry as RevocationStatusEntry, { credentialIssuer: owner.did });
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+/** What the operator's log was told while `run` ran. */
+async function logged<T>(run: () => Promise<T>): Promise<{ answer: T; lines: string[] }> {
+  const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+  const answer = await run();
+  return { answer, lines: warn.mock.calls.map((call) => call.map(String).join(' ')) };
+}
 
 describe('the reason the shipped checker gives', () => {
   it('gives none for an entry it reads, set or clear', async () => {
@@ -49,12 +64,19 @@ describe('the reason the shipped checker gives', () => {
   });
 
   it.each<[string, Record<string, unknown> | undefined, string, RefusalCode]>([
-    ['is not served', undefined, `status-list GET ${STATUS_URL} \u2192 503`, 'status_unavailable'],
     ['is of another purpose', statusList(owner, [], { credentialSubject: { statusPurpose: 'suspension' } }), `status list statusPurpose mismatch: the list's is "suspension" and the entry's is "revocation"`, 'status_signer_untrusted'],
     ['states another id', statusList(owner, [], { id: 'https://elsewhere.example/1' }), `status list id "https://elsewhere.example/1" is not the URL it was fetched from ("${STATUS_URL}")`, 'status_signer_untrusted'],
-    ['has no encodedList', statusList(owner, [], { credentialSubject: { encodedList: '' } }), 'status-list has no encodedList', 'status_unavailable'],
   ])('says why it refuses an entry whose list %s', async (_label, body, reason, code) => {
     expect(await checked(body)).toStrictEqual({ revoked: true, fresh: false, reason, ...codedAs(code) });
+  });
+
+  it.each<[string, Record<string, unknown> | undefined, string]>([
+    ['is not served', undefined, `status-list GET ${STATUS_URL} \u2192 503`],
+    ['has no encodedList', statusList(owner, [], { credentialSubject: { encodedList: '' } }), 'status-list has no encodedList'],
+  ])('names an entry\'s list that %s and says only that it could not be read, logging why', async (_label, body, why) => {
+    const { answer, lines } = await logged(() => checked(body));
+    expect(answer).toStrictEqual({ revoked: true, fresh: false, reason: UNREAD, ...codedAs('status_unavailable') });
+    expect(lines).toEqual([`[revocation] ${UNREAD}: revocation: ${why}`]);
   });
 
   it('says that a list altered after it was signed has a proof that does not verify', async () => {
@@ -78,19 +100,16 @@ describe('the reason the shipped checker gives', () => {
     });
   });
 
-  it('bounds the reason of a fetch that throws, and shows no control character of it', async () => {
+  it('tells no part of what a fetch that throws said, and logs it bounded, with no control character of it', async () => {
     const checker = createRevocationChecker({
       fetch: async () => {
-        throw new Error(`boom\n${'x'.repeat(1000)}`);
+        throw new Error(`boom\n${'x'.repeat(2000)}`);
       },
       now,
     });
-    expect(await checker(ENTRY)).toStrictEqual({
-      revoked: true,
-      fresh: false,
-      reason: `boom\uFFFD${'x'.repeat(CHECKER_REASON_LENGTH - 5)}\u2026`,
-      ...codedAs('status_unavailable'),
-    });
+    const { answer, lines } = await logged(() => checker(ENTRY));
+    expect(answer).toStrictEqual({ revoked: true, fresh: false, reason: UNREAD, ...codedAs('status_unavailable') });
+    expect(lines).toEqual([`[revocation] ${UNREAD}: boom\uFFFD${'x'.repeat(1024 - 5)}\u2026`]);
   });
 
   it('gives a reason when what was thrown is not an Error', async () => {
@@ -100,7 +119,9 @@ describe('the reason the shipped checker gives', () => {
       },
       now,
     });
-    expect(await checker(ENTRY)).toStrictEqual({ revoked: true, fresh: false, reason: 'the status could not be proven', ...codedAs('status_unavailable') });
+    const { answer, lines } = await logged(() => checker(ENTRY));
+    expect(answer).toStrictEqual({ revoked: true, fresh: false, reason: UNREAD, ...codedAs('status_unavailable') });
+    expect(lines).toEqual([`[revocation] ${UNREAD}: a thrown string`]);
   });
 });
 

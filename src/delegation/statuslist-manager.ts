@@ -178,7 +178,8 @@ export class StatusList2021Manager {
 
     const statusList = await this.storage.getStatusList(statusListCredential);
     if (!statusList) {
-      throw new Error(
+      throw new RefusalError(
+        'status_unavailable',
         `Status list not found: ${statusListCredential} — cannot determine revocation status`
       );
     }

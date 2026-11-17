@@ -253,6 +253,7 @@ describe('createRevocationChecker with verifyStatusList', () => {
   });
 
   it('hands the verifier the fetched credential and fails closed on false, a throw, or a non-true value', async () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const list = statusList([]);
     const seen = vi.fn(() => true);
     expect(await checker(list, seen)(entry(5), ofIssuer)).toEqual({ revoked: false, fresh: true });
@@ -263,10 +264,11 @@ describe('createRevocationChecker with verifyStatusList', () => {
     expect(await checker(list, () => { throw new Error('bad'); })(entry(5), ofIssuer)).toEqual({
       revoked: true,
       fresh: false,
-      reason: 'bad',
+      reason: `the status list at "${STATUS_URL}" could not be read`,
       ...codedAs('status_unavailable'),
     });
     expect(await checker(list, async () => 'yes' as unknown as boolean)(entry(5), ofIssuer)).toEqual(rejected);
+    vi.restoreAllMocks();
   });
 
   it('fails a chain whose list the verifier rejects', async () => {

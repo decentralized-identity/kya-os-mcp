@@ -4,11 +4,14 @@
  * own before the checker's reason. Tenant DIDs on a shared identity host are long, so the reason
  * nears the length a checker's reason may have. The configuration is the line an operator copies,
  * so wherever a reason is cut, it is printed whole or not at all, and a wrapper's words of up to
- * 128 code units still leave it whole. Every test uses the package's public exports.
+ * 128 code units still leave it whole. A resolver gives the verifier its words by throwing a
+ * `RefusalError`; any other error a resolver throws may be its transport's, so its words go to the
+ * operator's log and the reason says only that the list could not be read. Every test uses the
+ * package's public exports.
  */
 
-import { beforeAll, describe, expect, it } from 'vitest';
-import { DelegationCredentialVerifier, type CredentialStatus, type StatusListResolver } from '../../index.js';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { DelegationCredentialVerifier, RefusalError, logger, type CredentialStatus, type StatusListResolver } from '../../index.js';
 import {
   CHECKER_REASON_LENGTH,
   createRevocationChecker,
@@ -39,12 +42,18 @@ beforeAll(async () => {
   });
 });
 
-/** A resolver as an adopter writes one: the checker, asked about the entry alone, throwing `words` and its reason. */
-function wrapping(words: string): StatusListResolver {
+/**
+ * A resolver as an adopter writes one: the checker, asked about the entry alone, refusing with its
+ * code and with `words` and its reason, or, given `thrown`, throwing that error of its own instead.
+ */
+function wrapping(words: string, thrown?: (message: string) => Error): StatusListResolver {
   return {
     async checkStatus(status) {
       const verdict = await checker(status as unknown as BitstringStatusListEntry);
-      if (verdict.revoked && !verdict.fresh) throw new Error(`${words}${verdict.reason ?? 'no reason given'}`);
+      if (verdict.revoked && !verdict.fresh) {
+        const message = `${words}${verdict.reason ?? 'no reason given'}`;
+        throw thrown ? thrown(message) : new RefusalError(verdict.code ?? 'status_unavailable', message);
+      }
       return verdict.revoked;
     },
   };
@@ -87,6 +96,16 @@ describe("the statusListIssuers remedy of a tenant's list, through a wrapper", (
       statusListIssuers: configured,
     });
     expect(await accepting(ENTRY, { credentialIssuer: issuer.did })).toEqual({ revoked: false, fresh: true });
+  });
+
+  it('reaches the reason in no part from a resolver that throws an error of its own, and reaches the log whole', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const reason = await verifierReason(wrapping(ADOPTER_WORDS, (message) => new Error(message)));
+    // The list's URL is quoted as every value a credential chose is, cut at 64 code units.
+    expect(reason).toBe(`Status check error: the status list at "${LIST_URL.slice(0, 64)}"... could not be read`);
+    expect(remedyIn(reason)).toBe('none');
+    expect(warn.mock.calls.map(String).join('\n')).toContain(`in statusListIssuers: ${CONFIGURATION}`);
+    warn.mockRestore();
   });
 
   it('stays whole after a wrapper\'s words of up to 128 code units, and is never printed in part after longer ones', async () => {

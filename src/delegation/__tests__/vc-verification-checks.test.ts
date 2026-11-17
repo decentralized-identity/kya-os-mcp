@@ -11,6 +11,8 @@ import type { SignatureVerificationFunction } from "../vc-verifier.types.js";
 import type { CredentialStatus, DelegationCredential } from "../../types/protocol.js";
 import { issuerDidDocument, methodOf } from "../../__tests__/utils/did-documents.js";
 import { WRAPPED_REASON_LENGTH } from "../../utils/revocation-answer.js";
+import { RefusalError } from "../../utils/refusal.js";
+import { logger } from "../../logging/index.js";
 
 const ISSUER = "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK";
 
@@ -161,8 +163,8 @@ describe("refusal reasons quote what the credential chose as describeValue does"
     });
   });
 
-  it("passes the message of a status resolver that throws through the message sanitizer", async () => {
-    const thrower = (message: string) => ({ checkStatus: async () => { throw new Error(message); } });
+  it("passes the message of a status resolver's refusal through the message sanitizer", async () => {
+    const thrower = (message: string) => ({ checkStatus: async () => { throw new RefusalError("status_unavailable", message); } });
     expect(await checkCredentialStatus(credentialStatus("revocation"), thrower("list\nunavailable\uD800"), ISSUER)).toEqual({
       valid: false,
       outcome: "status_unresolvable",
@@ -178,6 +180,21 @@ describe("refusal reasons quote what the credential chose as describeValue does"
     const expectedMessage = `status list statusPurpose mismatch: "revocation" != "${"x\uFFFD".repeat(1000)}`;
     expect(reason).toBe(`Status check error: ${expectedMessage.slice(0, WRAPPED_REASON_LENGTH)}\u2026`);
     expect(reason).not.toMatch(/\p{Cs}/u);
+  });
+
+  it("names the list of a status resolver that throws any other error, and logs what it said", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const resolver = { checkStatus: async () => { throw new TypeError("connect ECONNREFUSED 10.1.2.3:443"); } };
+    expect(await checkCredentialStatus(credentialStatus("revocation"), resolver, ISSUER)).toEqual({
+      valid: false,
+      outcome: "status_unresolvable",
+      reason: 'Status check error: the status list at "https://status.example/1" could not be read',
+      code: "status_unavailable",
+      transient: true,
+      durationMs: expect.any(Number),
+    });
+    expect(warn).toHaveBeenCalledWith('[kya-os] the status list at "https://status.example/1" could not be read: connect ECONNREFUSED 10.1.2.3:443');
+    warn.mockRestore();
   });
 });
 

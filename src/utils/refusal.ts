@@ -6,7 +6,7 @@
  * refusal. The code is chosen where the refusal is decided, never read back out of its reason.
  */
 
-import { isTransientRefusal, type RefusalCode } from '../refusal-codes.js';
+import { isRefusalCode, isTransientRefusal, type RefusalCode } from '../refusal-codes.js';
 import { DeadlineExceededError } from './deadline.js';
 import { readFailureKind } from './read-failure.js';
 
@@ -47,6 +47,13 @@ export function refusal(code: RefusalCode, reason: string): Refusal & { readonly
  * An error a step throws in its own words when it refuses, with the {@link RefusalCode} it refuses
  * with. The code is not enumerable, so the error compares, prints and serialises as a plain `Error`
  * with the same message does, and a reason taken from its message reads as it did.
+ *
+ * A dependency the host gives the library (a status-list resolver, a revocation checker, a DID
+ * resolver, a chain resolver, a proof or signature verifier) throws one to refuse with that code and
+ * have its message reach the reason, which goes back to whoever presented the request: write it for
+ * that party. Any other error such a dependency throws is refused as that dependency's failure, its
+ * message logged for the operator and never shown, since it may be a transport's words about the
+ * verifier's network.
  */
 export class RefusalError extends Error {
   declare readonly code: RefusalCode;
@@ -64,7 +71,7 @@ export class RefusalError extends Error {
  * failed in its own words included, since what such a failure means depends on what was read.
  */
 export function refusalCodeOf(error: unknown, otherwise: RefusalCode): RefusalCode {
-  if (error instanceof RefusalError) return error.code;
+  if (error instanceof RefusalError) return isRefusalCode(error.code) ? error.code : otherwise;
   if (error instanceof DeadlineExceededError) return 'deadline_exceeded';
   const kind = readFailureKind(error);
   return kind === 'host_refused' || kind === 'deadline_exceeded' ? kind : otherwise;

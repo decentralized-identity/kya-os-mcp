@@ -30,6 +30,7 @@ export {
   isTransientRefusal,
   type RefusalCode,
 } from './refusal-codes.js';
+export { RefusalError } from './utils/refusal.js';
 
 // Encoding utilities (RFC 4648 base64url + standard base64, byte variants)
 export {

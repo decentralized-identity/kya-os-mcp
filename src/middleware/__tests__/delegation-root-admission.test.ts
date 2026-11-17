@@ -191,7 +191,7 @@ describe('root admission before DID and status resolution', () => {
       }
       expect(reasons).toEqual([
         'Delegation listed invalid: Credential revoked via "StatusList2021Entry" ("revocation")',
-        'Delegation listed invalid: Status check error: list down',
+        'Delegation listed invalid: Status check error: the status list at "https://status.example/1" could not be read',
       ]);
     });
 

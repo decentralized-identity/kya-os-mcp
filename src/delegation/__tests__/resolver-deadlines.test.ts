@@ -134,7 +134,8 @@ describe.each(DEADLINES)('%s', (_label, option, ms, stated) => {
         reasons.push((await verifier.verifyDelegationCredential(credential, { skipCache: true })).reason);
         expect(vi.getTimerCount()).toBe(0);
       }
-      expect(reasons).toEqual([undefined, 'Status check error: list unreachable', 'Status check error: thrown before any promise']);
+      const unread = `Status check error: the status list at "${STATUS.statusListCredential}" could not be read`;
+      expect(reasons).toEqual([undefined, unread, unread]);
     });
   });
 

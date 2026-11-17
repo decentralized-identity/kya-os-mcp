@@ -7,7 +7,7 @@
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { logger } from '../../logging/index.js';
-import type { CredentialStatus, StatusListResolver } from '../../index.js';
+import { RefusalError, type CredentialStatus, type StatusListResolver } from '../../index.js';
 import { createRevocationChecker, createStatusListProofVerifier, type BitstringStatusListEntry } from '../../card/index.js';
 import { documentsOf, servingFromMemory, signedStatusList, webParty, type WebParty } from '../../__tests__/utils/adopter-issuers.js';
 import { delegationRecord, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
@@ -36,7 +36,7 @@ beforeAll(async () => {
   statusListResolver = {
     async checkStatus(status) {
       const verdict = await checker(status as unknown as BitstringStatusListEntry);
-      if (verdict.revoked && !verdict.fresh) throw new Error(`the status list could not be read: ${verdict.reason ?? 'no reason given'}`);
+      if (verdict.revoked && !verdict.fresh) throw new RefusalError(verdict.code ?? 'status_unavailable', `the status list could not be read: ${verdict.reason ?? 'no reason given'}`);
       return verdict.revoked;
     },
   };

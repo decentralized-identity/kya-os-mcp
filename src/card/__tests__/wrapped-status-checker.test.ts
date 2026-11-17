@@ -9,7 +9,7 @@
  */
 
 import { beforeAll, describe, expect, it } from 'vitest';
-import { DelegationCredentialVerifier, type CredentialStatus, type StatusListResolver } from '../../index.js';
+import { DelegationCredentialVerifier, RefusalError, type CredentialStatus, type StatusListResolver } from '../../index.js';
 import { withStatusCache } from '../../delegation/index.js';
 import {
   createRevocationChecker,
@@ -50,7 +50,8 @@ const entryAt = (index: number): CredentialStatus => ({
 
 /**
  * An adopter's resolver over the library's checker, written before the checker took a context: it
- * calls the checker with the entry alone, and throws when the checker could not prove the status.
+ * calls the checker with the entry alone, and refuses with the checker's code and reason when the
+ * checker could not prove the status.
  */
 function wrapping(check: BitstringRevocationChecker): StatusListResolver & { seen: unknown[] } {
   const seen: unknown[] = [];
@@ -59,7 +60,7 @@ function wrapping(check: BitstringRevocationChecker): StatusListResolver & { see
     async checkStatus(status) {
       seen.push(status);
       const verdict = await check(status as unknown as BitstringStatusListEntry);
-      if (verdict.revoked && !verdict.fresh) throw new Error(verdict.reason ?? 'status list unavailable');
+      if (verdict.revoked && !verdict.fresh) throw new RefusalError(verdict.code ?? 'status_unavailable', verdict.reason ?? 'status list unavailable');
       return verdict.revoked;
     },
   };
@@ -103,7 +104,7 @@ describe('a StatusListResolver that wraps the library checker and forwards only 
     const contextual: StatusListResolver = {
       async checkStatus(status, context) {
         const verdict = await checker(status as unknown as BitstringStatusListEntry, context);
-        if (verdict.revoked && !verdict.fresh) throw new Error(verdict.reason ?? 'status list unavailable');
+        if (verdict.revoked && !verdict.fresh) throw new RefusalError(verdict.code ?? 'status_unavailable', verdict.reason ?? 'status list unavailable');
         return verdict.revoked;
       },
     };

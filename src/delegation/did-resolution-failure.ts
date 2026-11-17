@@ -24,7 +24,8 @@ import { describeTimeout } from '../utils/deadline.js';
 import { describeValue } from '../utils/describe-value.js';
 import { isRecord } from '../utils/guards.js';
 import { sanitizeForMessage } from '../utils/message-text.js';
-import { readFailureKind, refusedBeforeRequest } from '../utils/read-failure.js';
+import { readFailureKind } from '../utils/read-failure.js';
+import { presentable } from '../utils/thrown-words.js';
 import type { DIDDocument, DIDResolver, DidResolutionFailure, DidResolutionFailureCause } from './vc-verifier.types.js';
 import { resolveWithinLimits, type ResolutionDeadline } from './did-resource-limits.js';
 
@@ -44,22 +45,23 @@ const MAX_RECORDED_FAILURES = 256;
 const DETAIL_LENGTH = 256;
 
 /**
- * The failures the library's own resolvers decided from the DID alone, before any request or DNS
- * lookup, whose detail a refusal may show ({@link shownToPresenter}). They are kept by identity, so
- * a host's resolver cannot claim one, and each is frozen, so none changes once marked.
+ * The failures of the library's own resolvers whose detail a refusal may show ({@link shownToPresenter}):
+ * those decided from the DID alone, before any request or DNS lookup, and those of a read whose
+ * error is presentable by the rule thrown words follow (`utils/thrown-words.ts`). They are kept by
+ * identity, so a host's resolver cannot claim one, and each is frozen, so none changes once marked.
  */
-const DECIDED_FROM_DID = new WeakSet<object>();
+const SHOWN_FAILURES = new WeakSet<object>();
 
-/** A frozen copy of `failure`, marked as decided from the DID alone. */
-function decidedFromDid(failure: DidResolutionFailure): DidResolutionFailure {
+/** A frozen copy of `failure`, marked as one whose detail a refusal may show. */
+function shownFailure(failure: DidResolutionFailure): DidResolutionFailure {
   const kept = Object.freeze({ cause: failure.cause, detail: failure.detail });
-  DECIDED_FROM_DID.add(kept);
+  SHOWN_FAILURES.add(kept);
   return kept;
 }
 
-/** A frozen copy of `failure`, read from `from`, marked as decided from the DID alone when `from` was. */
+/** A frozen copy of `failure`, read from `from`, marked as one a refusal may show when `from` was. */
 function keptAs(from: object, failure: DidResolutionFailure): DidResolutionFailure {
-  return DECIDED_FROM_DID.has(from) ? decidedFromDid(failure) : Object.freeze({ cause: failure.cause, detail: failure.detail });
+  return SHOWN_FAILURES.has(from) ? shownFailure(failure) : Object.freeze({ cause: failure.cause, detail: failure.detail });
 }
 
 /** A resolver's record of the last failure for each DID, of at most {@link MAX_RECORDED_FAILURES} DIDs. */
@@ -86,9 +88,9 @@ export class DidResolutionFailures {
 
 /**
  * The failure an error thrown while reading a DID document from `url` stands for, under a deadline
- * of `timeoutMs`: the kind of read failure it carries, decided from the DID alone where the read
- * refused its URL before any request, or `unavailable` for a transport's own error, whose words are
- * left to the log.
+ * of `timeoutMs`: the kind of read failure it carries, shown where its error is presentable (a read
+ * that refused its URL before any request, or a deadline), or `unavailable` for a transport's own
+ * error, whose words are left to the log.
  */
 export function readFailureOf(error: unknown, url: string, timeoutMs: number): DidResolutionFailure {
   const kind = readFailureKind(error);
@@ -96,16 +98,15 @@ export function readFailureOf(error: unknown, url: string, timeoutMs: number): D
     return { cause: 'unavailable', detail: `The fetch provider could not fetch ${describeValue(url)}; its error is logged` };
   }
   const { message } = error as Error;
-  if (kind === 'deadline_exceeded') {
-    return { cause: kind, detail: `${message}: no document arrived within ${describeTimeout(timeoutMs)}` };
-  }
-  const failure: DidResolutionFailure = { cause: kind, detail: message };
-  return refusedBeforeRequest(error) ? decidedFromDid(failure) : failure;
+  const failure: DidResolutionFailure = kind === 'deadline_exceeded'
+    ? { cause: kind, detail: `${message}: no document arrived within ${describeTimeout(timeoutMs)}` }
+    : { cause: kind, detail: message };
+  return presentable(error) ? shownFailure(failure) : failure;
 }
 
 /** An `invalid_document` failure decided from the DID alone: `detail` says what about it no resolution can change. */
 export function invalidDid(detail: string): DidResolutionFailure {
-  return decidedFromDid({ cause: 'invalid_document', detail });
+  return shownFailure({ cause: 'invalid_document', detail });
 }
 
 /** An `invalid_document` failure decided from the DID alone: `resolver`, a resolver of some methods, resolves no DID of `did`'s method. */
@@ -166,7 +167,7 @@ export function unresolvedCode(failure: DidResolutionFailure | undefined): Refus
  * reported by a host's resolver that cannot say it was not, and is for the operator alone.
  */
 function shownToPresenter(failure: DidResolutionFailure): boolean {
-  return failure.cause === 'deadline_exceeded' || DECIDED_FROM_DID.has(failure);
+  return failure.cause === 'deadline_exceeded' || SHOWN_FAILURES.has(failure);
 }
 
 /**

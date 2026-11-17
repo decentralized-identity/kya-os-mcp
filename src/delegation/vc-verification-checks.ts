@@ -28,6 +28,7 @@ import { credentialIssuerRefusal } from "./credential-issuer.js";
 import { DID_RESOLUTION_TIMEOUT_MS } from "./did-resource-limits.js";
 import { resolveExplained, type ExplainedResolution } from "./did-resolution-failure.js";
 import { WRAPPED_REASON_LENGTH, readRevoked, unreadableStatusReason } from "../utils/revocation-answer.js";
+import { thrownWords, unreadStatusList } from "../utils/thrown-words.js";
 import type {
   DIDResolver,
   StatusListResolver,
@@ -366,7 +367,7 @@ export async function checkCredentialStatus(
   } catch (error) {
     return refused(
       refusalCodeOf(error, "status_unavailable"),
-      `Status check error: ${error instanceof Error ? sanitizeForMessage(error.message, WRAPPED_REASON_LENGTH) : "Unknown error"}`,
+      `Status check error: ${thrownWords(error, unreadStatusList(status.statusListCredential), "[kya-os]", WRAPPED_REASON_LENGTH)}`,
     );
   }
 }

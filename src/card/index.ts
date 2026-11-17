@@ -47,6 +47,7 @@ export * from './request-delegation.js';
 
 // The codes the card's refusals carry beside their reasons.
 export { REFUSAL_CODES, isRefusalCode, isTransientRefusal, type RefusalCode } from '../refusal-codes.js';
+export { RefusalError } from '../utils/refusal.js';
 export type { RefusalCoding } from '../delegation/vc-verifier.types.js';
 export type { CardRevocation } from './verify-revocation.js';
 

@@ -33,9 +33,9 @@
 import type { RefusalCode } from '../refusal-codes.js';
 import { answerWithinDeadline, dependencyTimeout } from '../utils/deadline.js';
 import { isRecord, issuerOf } from '../utils/guards.js';
-import { sanitizeForMessage } from '../utils/message-text.js';
 import { coded, RefusalError, refusalCodeOf, type Coded } from '../utils/refusal.js';
 import { CHECKER_REASON_LENGTH } from '../utils/revocation-answer.js';
+import { thrownWords, unreadStatusList } from '../utils/thrown-words.js';
 import { carriedContext } from '../utils/status-check-carrier.js';
 import { withStatusListIssuersRemedy } from '../utils/statuslist-remedy.js';
 import {
@@ -292,7 +292,10 @@ export function createRevocationChecker(
     } catch (error) {
       // A step that refuses throws its code; a read or a decoder that failed in its own words left
       // the status unread, unless what it was asked about is not an entry at all.
-      return failedClosed(refusalCodeOf(error, isRecord(entry) ? 'status_unavailable' : 'delegation_malformed'), failureReason(error));
+      return failedClosed(
+        refusalCodeOf(error, isRecord(entry) ? 'status_unavailable' : 'delegation_malformed'),
+        failureReason(error, isRecord(entry) ? entry.statusListCredential : undefined),
+      );
     }
   };
   // The list read and its proof check share one deadline, and a miss fails closed as a throw does.
@@ -303,14 +306,16 @@ export function createRevocationChecker(
 }
 
 /**
- * Why the checker failed closed, from what a step threw: the message of an `Error`, without the
- * `revocation: ` this module opens its own with, at most {@link CHECKER_REASON_LENGTH} UTF-16 code
- * units and free of control characters as `sanitizeForMessage` leaves it, since a fetch or a
- * decompressor the host injected may have thrown it. Anything else thrown is not converted.
+ * Why the checker failed closed, from what a step threw: where the words of what it threw may reach
+ * whoever presented the entry (`utils/thrown-words.ts`), as a step's own refusal, SafeFetch's
+ * refusal of the URL before any request, or a deadline, may, its message without the `revocation: `
+ * this module opens its own with, at most {@link CHECKER_REASON_LENGTH} UTF-16 code units and free
+ * of control characters; otherwise only that the list at `url` could not be read, with what was
+ * thrown logged, since a fetch, a decompressor or a proof verifier the host injected, or the network,
+ * may have written it.
  */
-function failureReason(error: unknown): string {
-  if (!(error instanceof Error)) return 'the status could not be proven';
-  return sanitizeForMessage(error.message.replace(/^revocation: /, ''), CHECKER_REASON_LENGTH);
+function failureReason(error: unknown, url: unknown): string {
+  return thrownWords(error, unreadStatusList(url), '[revocation]', CHECKER_REASON_LENGTH).replace(/^revocation: /, '');
 }
 
 /**

@@ -9,6 +9,12 @@ import {
 } from "../vc-verifier.js";
 import type { DelegationCredential } from "../../types/protocol.js";
 import { issuerDidDocument } from "../../__tests__/utils/did-documents.js";
+import { logger } from "../../logging/index.js";
+import {
+  createStatusListManager,
+  type StatusListIdentityProvider,
+  type StatusListStorageProvider,
+} from "../statuslist-manager.js";
 
 // Mock the protocol functions (preserving all other exports)
 vi.mock("../../types/protocol.js", async (importOriginal) => {
@@ -950,13 +956,18 @@ describe("DelegationCredentialVerifier", () => {
       mockStatusListResolver.checkStatus.mockRejectedValue(
         new Error("Status list unavailable")
       );
+      const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
 
       const result = await verifier.verifyDelegationCredential(vcWithStatus);
 
       expect(result.valid).toBe(false);
       expect(result.reason).toContain(
-        "Status check error: Status list unavailable"
+        'Status check error: the status list at "https://example.com/status" could not be read'
       );
+      expect(warn).toHaveBeenCalledWith(
+        '[kya-os] the status list at "https://example.com/status" could not be read: Status list unavailable'
+      );
+      warn.mockRestore();
     });
 
     it("should handle signature verifier errors gracefully", async () => {
@@ -1093,10 +1104,13 @@ describe("DelegationCredentialVerifier", () => {
       mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: true });
 
-      // Simulate StatusList2021Manager.checkStatus throwing on missing storage
-      mockStatusListResolver.checkStatus.mockRejectedValue(
-        new Error("Status list not found: https://example.com/status — cannot determine revocation status")
+      // StatusList2021Manager.checkStatus refuses an entry whose list its storage does not hold.
+      const manager = createStatusListManager(
+        { getStatusList: async () => null } as unknown as StatusListStorageProvider,
+        {} as StatusListIdentityProvider,
+        async () => { throw new Error("never signs"); },
       );
+      mockStatusListResolver.checkStatus.mockImplementation((status) => manager.checkStatus(status));
 
       const result = await verifier.verifyDelegationCredential(vcWithStatus);
 

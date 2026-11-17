@@ -7,7 +7,7 @@
  */
 
 import { beforeAll, describe, expect, it } from 'vitest';
-import { DelegationCredentialVerifier, type CredentialStatus, type StatusListResolver } from '../../index.js';
+import { DelegationCredentialVerifier, RefusalError, type CredentialStatus, type StatusListResolver } from '../../index.js';
 import {
   CHECKER_REASON_LENGTH,
   createRevocationChecker,
@@ -174,7 +174,7 @@ describe("a list signed by a DID other than the credential's issuer", () => {
     const resolver: StatusListResolver = {
       async checkStatus(status, context) {
         const verdict = await checker(status as unknown as BitstringStatusListEntry, context);
-        if (verdict.revoked && !verdict.fresh) throw new Error(verdict.reason);
+        if (verdict.revoked && !verdict.fresh) throw new RefusalError(verdict.code ?? 'status_unavailable', verdict.reason ?? 'no reason given');
         return verdict.revoked;
       },
     };

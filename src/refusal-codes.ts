@@ -105,7 +105,8 @@ export const REFUSAL_CODES = Object.freeze({
   /**
    * The verifier is not set up to decide: it has no DID resolver or signature verifier, no status list
    * resolver for a credential that has a status, no `resolveDelegationChain` for a re-delegated
-   * credential, or no verifier for an Entity Card's accountability or attestations; an option such as `trustedRootIssuers`, `maxChainLength` or `dependencyTimeoutMs` has
+   * credential, no verifier for an Entity Card's accountability or attestations, or no status list
+   * checker for an Entity Card that declares a revocation entry; an option such as `trustedRootIssuers`, `maxChainLength` or `dependencyTimeoutMs` has
    * a value it cannot use; or a checker that wraps a library checker passed on neither the context
    * nor the entry it was given.
    */

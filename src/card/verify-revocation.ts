@@ -1,9 +1,10 @@
 /**
  * KYA-OS Entity Card: the revocation check `verifyCard` runs on a Card's own status entry, and how
  * a revoked Card demotes its level. Every status that is not proven clear reads as revoked, with
- * the code of why: the code the checker gave, `delegation_revoked` when it gave none, and
+ * the code of why: the code the checker gave, `delegation_revoked` when it gave none,
  * `deadline_exceeded` or `status_unavailable` for a checker that did not answer in time, gave an
- * answer that is not a status, or threw.
+ * answer that is not a status, or threw, and `configuration_error` when no checker was supplied for
+ * a Card that declares a revocation entry.
  */
 
 import type { BitstringRevocationChecker } from './revocation.js';
@@ -25,7 +26,7 @@ export type CardRevocation = { revoked: boolean; fresh: boolean; reason?: string
 
 /** Verdict for the card's own credential status entry (`card.revocation`). */
 export type CardRevocationVerdict =
-  /** No `statusListChecker` was supplied, or the card declares no `revocation`. */
+  /** The card declares no `revocation`, so there is nothing to check. */
   | { checked: false; revoked: false; fresh: true }
   | { checked: true; revoked: false; fresh: boolean }
   /** Why the Card reads as revoked, when its checker said why or its answer could not be read, and the code of why. */
@@ -52,6 +53,9 @@ export function verifiedRoot(accountability: VerifiedParty | undefined): CardRoo
   return { trustedRootIssuer: responsibleParty, ...(rootStatusList === undefined ? {} : { trustedRootStatusList: rootStatusList }) };
 }
 
+/** Why a Card that declares a revocation entry is refused when nothing was supplied to check it. */
+const NO_CHECKER = 'the Card declares a revocation entry and no statusListChecker was supplied to check it';
+
 /** The Card read as revoked and not fresh, with `code`, and `reason` when there is one. */
 function unproven(code: RefusalCode, reason?: string): CardRevocationVerdict {
   return { checked: true, revoked: true, fresh: false, ...(reason === undefined ? {} : { reason }), ...coded(code) };
@@ -60,7 +64,9 @@ function unproven(code: RefusalCode, reason?: string): CardRevocationVerdict {
 /**
  * Live-check `card.revocation` via the injected seam; fail-closed (unreachable ⇒ revoked). The Card's
  * `id` is named as the issuer its status list is held to, and `root` names a verified
- * `responsibleParty` as the root of the Card's delegation chain ({@link verifiedRoot}).
+ * `responsibleParty` as the root of the Card's delegation chain ({@link verifiedRoot}). A Card that
+ * declares a revocation entry, with no checker to read it, is refused as `configuration_error`, as an
+ * accountability or attestation with no verifier is; one that declares none is not checked.
  */
 export async function checkCardRevocation(
   card: EntityCard,
@@ -68,7 +74,8 @@ export async function checkCardRevocation(
   root: CardRoot,
   timeoutMs: number,
 ): Promise<CardRevocationVerdict> {
-  if (!checker || !card.revocation) return { checked: false, revoked: false, fresh: true };
+  if (!card.revocation) return { checked: false, revoked: false, fresh: true };
+  if (!checker) return unproven('configuration_error', NO_CHECKER);
   try {
     const asked = await checkWithinDeadline(checker, card.revocation, { credentialIssuer: card.id, ...root }, timeoutMs);
     if ('expired' in asked) return unproven('deadline_exceeded', asked.expired);

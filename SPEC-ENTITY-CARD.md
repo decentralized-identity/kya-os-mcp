@@ -771,6 +771,8 @@ fail-closed (an unreachable or malformed list, or one outside the validity windo
 accepts a cached non-revoked verdict, L3 requires a live one (§9). The chain walk is cascading: a revoked
 ancestor invalidates the subtree. Mechanics, the `RevocationChecker` seam, and the fail-closed
 rules: SPEC.md §6.10.
+A Card that declares `revocation` is verified only with a checker to read it: a Verifier with none cannot show the Card is not revoked, so it MUST refuse the Card, and the reference implementation reports it revoked and not fresh with the code `configuration_error`, as it reports an accountability or attestation that no verifier checks.
+A Card that declares no `revocation` is not checked.
 A checker that verifies the list's proof reads the Card's list only when the list's `issuer` is the one keeper of the URL the Card's `revocation` entry names (SPEC.md §6.6), which is the first of these that applies:
 
 - the issuer the checker's configuration binds that URL, or its `https:` origin, to;
@@ -856,8 +858,10 @@ than erroring open.
 3. **Accountability** - if `card.responsibleParty` is present, run the accountability verifier with
    `{ trustedIssuers, proofDid }` (threading `proofDid` for the §10.2 leaf-invoker join).
 4. **Attestations** - recompute each `card.attestations[]` via the attestation verifier.
-5. **Card revocation** - if a status-list checker is supplied and the Card declares `revocation`,
-   live-check it; unreachable, or outside the validity window the list states ⇒ `{ revoked: true, fresh: false }` (fail-closed).
+5. **Card revocation** - if the Card declares `revocation`, live-check it with the status-list
+   checker; unreachable, or outside the validity window the list states ⇒ `{ revoked: true, fresh: false }`
+   (fail-closed), and no checker supplied ⇒ `{ revoked: true, fresh: false }` with code
+   `configuration_error` (§10.3).
 6. **`ok`** = `accountabilityOk AND attestationsOk AND NOT revocation.revoked`, where
    `accountabilityOk = (no responsibleParty) OR accountability.verified` and `attestationsOk` is the
    conjunction over present attestations. A per-request proof affects the LEVEL, not `ok`; a revoked
@@ -905,6 +909,7 @@ than erroring open.
 | Non-revoked verdict not read live (a caching checker's) | L3 → L2 (`revocationFresh = false`; `revoked: false`, so `ok` unaffected) |
 | Unreachable / non-2xx / malformed / wrong-purpose / out-of-range status list | `{ revoked: true, fresh: false }` (fail-closed) ⇒ collapse to L1, `ok: false` |
 | Status list outside its validity window (past `validUntil`, before `validFrom`, or a bound that is not a date) | `{ revoked: true, fresh: false }`, code `status_unavailable` (fail-closed) ⇒ collapse to L1, `ok: false` |
+| Card declares `revocation`, no status-list checker supplied | `{ revoked: true, fresh: false }`, code `configuration_error` (fail-closed) ⇒ collapse to L1, `ok: false` |
 | Revoked Card / delegation credential | collapse to L1, `ok: false` |
 | Proof verifier throws | proof floor `{ ok: false }` (demotion) |
 

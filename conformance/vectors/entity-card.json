@@ -1,5 +1,5 @@
 {
-  "version": "1.7.0",
+  "version": "1.8.0",
   "category": "entity-card",
   "vectors": [
     {
@@ -77,6 +77,135 @@
       "description": "An agent card whose responsibleParty === issuer(rootVC) and leaf-invoker === proof.did",
       "expected": "pass",
       "reason": "The recomputed delegation/accountability edge closes over the golden ZCAP chain",
+      "input": {
+        "card": {
+          "id": "did:web:example.com:agents:acme-pay",
+          "entityType": "agent",
+          "name": "Acme Pay Agent",
+          "kid": "did:web:example.com:agents:acme-pay#key-1",
+          "capabilities": [
+            "handshake",
+            {
+              "name": "payments.transfer",
+              "attestations": [
+                {
+                  "vc": "jwt-cap-attestation"
+                }
+              ]
+            }
+          ],
+          "responsibleParty": "did:web:api.example",
+          "principal": "did:web:example.com:users:alice",
+          "delegationRef": "urn:zcap:root>urn:zcap:del1",
+          "proofProfile": "org.kya-os/proof.v1"
+        },
+        "accountability": {
+          "resourceOwner": "did:web:api.example",
+          "resource": "did:web:api.example:payments",
+          "chain": [
+            {
+              "@context": [
+                "https://www.w3.org/ns/credentials/v2",
+                "https://w3id.org/security/zcap/v1",
+                "https://kya-os.org/ns/delegation/v1"
+              ],
+              "id": "urn:zcap:root",
+              "type": [
+                "VerifiableCredential",
+                "DelegationCredential"
+              ],
+              "issuer": "did:web:api.example",
+              "validUntil": "2027-01-01T00:00:00Z",
+              "credentialSubject": {
+                "id": "urn:zcap:root",
+                "invoker": "did:web:agent-a.example",
+                "parentCapability": "did:web:api.example:payments",
+                "invocationTarget": "did:web:api.example:payments",
+                "allowedAction": [
+                  "payments.transfer",
+                  "payments.read"
+                ],
+                "caveats": [
+                  {
+                    "type": "MaxAmount",
+                    "limit": "1000.00",
+                    "currency": "USD"
+                  },
+                  {
+                    "type": "ValidUntil",
+                    "date": "2027-01-01T00:00:00Z"
+                  }
+                ]
+              },
+              "credentialStatus": {
+                "type": "BitstringStatusListEntry",
+                "statusPurpose": "revocation",
+                "statusListIndex": "7",
+                "statusListCredential": "https://api.example/status/delegations"
+              },
+              "proof": {
+                "type": "DataIntegrityProof",
+                "cryptosuite": "eddsa-jcs-2022",
+                "proofValue": "z-root-placeholder"
+              }
+            },
+            {
+              "@context": [
+                "https://www.w3.org/ns/credentials/v2",
+                "https://w3id.org/security/zcap/v1",
+                "https://kya-os.org/ns/delegation/v1"
+              ],
+              "id": "urn:zcap:del1",
+              "type": [
+                "VerifiableCredential",
+                "DelegationCredential"
+              ],
+              "issuer": "did:web:agent-a.example",
+              "validUntil": "2026-07-01T00:00:00Z",
+              "credentialSubject": {
+                "id": "urn:zcap:del1",
+                "invoker": "did:web:example.com:agents:acme-pay",
+                "parentCapability": "urn:zcap:root",
+                "invocationTarget": "did:web:api.example:payments",
+                "allowedAction": [
+                  "payments.transfer"
+                ],
+                "caveats": [
+                  {
+                    "type": "MaxAmount",
+                    "limit": "500.00",
+                    "currency": "USD"
+                  },
+                  {
+                    "type": "ValidUntil",
+                    "date": "2026-07-01T00:00:00Z"
+                  }
+                ]
+              },
+              "credentialStatus": {
+                "type": "BitstringStatusListEntry",
+                "statusPurpose": "revocation",
+                "statusListIndex": "42",
+                "statusListCredential": "https://agent-a.example/status/delegations"
+              },
+              "proof": {
+                "type": "DataIntegrityProof",
+                "cryptosuite": "eddsa-jcs-2022",
+                "proofValue": "z-leaf-placeholder"
+              }
+            }
+          ],
+          "proofDid": "did:web:example.com:agents:acme-pay",
+          "now": 1782820800000
+        }
+      }
+    },
+    {
+      "id": "entity-card/revocation-unchecked",
+      "category": "entity-card",
+      "description": "The accountable agent card declaring a revocation entry, with no status list supplied to check it",
+      "expected": "fail",
+      "reason": "A verifier with nothing to check the revocation entry cannot show the card is not revoked ⇒ it refuses the card (configuration_error)",
       "input": {
         "card": {
           "id": "did:web:example.com:agents:acme-pay",
@@ -250,11 +379,7 @@
           "responsibleParty": "did:web:api.example",
           "principal": "did:web:example.com:users:alice",
           "delegationRef": "urn:zcap:root>urn:zcap:del1",
-          "proofProfile": "org.kya-os/proof.v1",
-          "revocation": {
-            "statusListCredential": "https://example.com/status/cards",
-            "statusListIndex": "3"
-          }
+          "proofProfile": "org.kya-os/proof.v1"
         },
         "accountability": {
           "resourceOwner": "did:web:api.example",

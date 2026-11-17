@@ -11,6 +11,7 @@
  *     === proof.did` (via `ctx.proofDid`), AND the chain `fresh` L3 gate (./delegation);
  *   - `proofVerifier` + `proof`/`request` — the live per-request holder-of-key proof (./proof);
  *   - `statusListChecker` — W3C Bitstring Status List v1.0 liveness (./revocation).
+ *     A card that declares `revocation` is refused without it.
  * Fail-closed everywhere: a missing/expired/revoked artifact DEMOTES the level (L3→L2→L1) and never
  * errors open; an unreachable/stale status list OR stale delegation chain demotes L3→L2.
  */
@@ -147,7 +148,10 @@ export interface VerifyCardDeps {
    */
   proofVerifier?: CardProofVerifier;
   /**
-   * Live W3C Bitstring Status List v1.0 check for `card.revocation` (fail-closed). It is called with
+   * Live W3C Bitstring Status List v1.0 check for `card.revocation` (fail-closed), e.g.
+   * `createRevocationChecker`. Required for a card that declares `revocation`: without it such a card
+   * is refused as `configuration_error`, since nothing shows it is not revoked. A card that declares
+   * no `revocation` is not checked, so it needs none. It is called with
    * `{ credentialIssuer: card.id }`, the Card being its Entity's own statement, and, once the
    * accountability check has verified the Card's `responsibleParty` as the root issuer of the Card's
    * delegation chain, with that party as `trustedRootIssuer` and, when the verdict reported it, the
@@ -194,13 +198,14 @@ export interface VerifyCardResult extends RefusalCoding {
   /** Present when a proof was recomputed: the live holder-of-key verdict. */
   proof?: { verified: boolean; did?: string; level?: ProofAssurance; reasons: string[] };
   /**
-   * Present when the card declares `revocation` and a `statusListChecker` was supplied. The checker's
-   * answer is read as `evaluateRevocationChain` reads one: only a literal `revoked: false` passes and
-   * only a literal `fresh: true` is fresh. An answer that could not be read is reported as revoked and
-   * not fresh, with the `reason`; a revoked Card carries the `reason` its checker gave, when it gave
-   * one, bounded as `evaluateRevocationChain` bounds it, and the `code` of why it is revoked: the
-   * checker's own, `delegation_revoked` when it gave none, `deadline_exceeded` for a checker that did
-   * not answer in time, and `status_unavailable` for one whose answer could not be read or that threw.
+   * Present when the card declares `revocation`. The checker's answer is read as
+   * `evaluateRevocationChain` reads one: only a literal `revoked: false` passes and only a literal
+   * `fresh: true` is fresh. An answer that could not be read is reported as revoked and not fresh,
+   * with the `reason`; a revoked Card carries the `reason` its checker gave, when it gave one, bounded
+   * as `evaluateRevocationChain` bounds it, and the `code` of why it is revoked: the checker's own,
+   * `delegation_revoked` when it gave none, `deadline_exceeded` for a checker that did not answer in
+   * time, `status_unavailable` for one whose answer could not be read or that threw, and
+   * `configuration_error`, with the `reason`, when no `statusListChecker` was supplied.
    */
   revocation?: CardRevocation;
   /** Echoes `deps.cimdKeyProven` — the caller's L1 CIMD key-possession evidence. */
@@ -212,7 +217,8 @@ export interface VerifyCardResult extends RefusalCoding {
  * + revocation via the injected seams, and RECOMPUTE the conformance level. The card's
  * self-declared `conformanceLevel` is ignored. `ok` is true iff every claim that is *present*
  * verified (a card with only self-declared capabilities is still `ok` — it is just L1); a per-request
- * proof affects the LEVEL, not `ok`, but a revoked card credential fails closed (`ok:false`, L1).
+ * proof affects the LEVEL, not `ok`, but a revoked card credential fails closed (`ok:false`, L1), and
+ * so does a card that declares `revocation` when no `statusListChecker` is supplied to check it.
  */
 export async function verifyCard(card: EntityCard, deps: VerifyCardDeps): Promise<VerifyCardResult> {
   const trustedIssuers = deps.trustedIssuers ?? DEFAULT_TRUSTED_ISSUERS;

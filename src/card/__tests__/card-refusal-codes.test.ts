@@ -203,6 +203,7 @@ describe('verifyCard', () => {
     ['a Card whose attestations no verifier checks', { attestationVerifier: undefined }, 'configuration_error'],
     ['a Card whose attestation verifier answers no', { attestationVerifier: async () => false }, 'claim_unverified'],
     ['a Card whose attestation verifier never answers', { attestationVerifier: never, dependencyTimeoutMs: 20 }, 'deadline_exceeded'],
+    ['a Card whose revocation entry no checker checks', { statusListChecker: undefined }, 'configuration_error'],
     ['a revoked Card', { statusListChecker: checkerOf([7]) }, 'delegation_revoked'],
     ['a Card whose status list is not served', { statusListChecker: createRevocationChecker({ fetch: serve(undefined) }) }, 'status_unavailable'],
     ['a Card whose checker never answers', { statusListChecker: never, dependencyTimeoutMs: 20 }, 'deadline_exceeded'],
@@ -222,6 +223,25 @@ describe('verifyCard', () => {
     expect((await verifyCard(card, { ...passing, statusListChecker: never, dependencyTimeoutMs: 20 })).revocation).toMatchObject(
       coded('deadline_exceeded'),
     );
+  });
+
+  it('reports a revocation entry no checker checks as unproven, saying so, and the Card at L1', async () => {
+    const result = await verifyCard(card, { ...passing, statusListChecker: undefined });
+    expect(result.revocation).toEqual({
+      revoked: true,
+      fresh: false,
+      reason: 'the Card declares a revocation entry and no statusListChecker was supplied to check it',
+      ...coded('configuration_error'),
+    });
+    expect(result.conformanceLevel).toBe('L1');
+  });
+
+  it('needs no checker for a Card that declares no revocation entry', async () => {
+    const { revocation: _entry, ...undeclared } = card;
+    const result = await verifyCard(undeclared, { ...passing, statusListChecker: undefined });
+    expect(result.ok).toBe(true);
+    expect(result).not.toHaveProperty('code');
+    expect(result.revocation).toBeUndefined();
   });
 
   it('codes a Card refused for several claims by the first that is not transient, else by the first', async () => {

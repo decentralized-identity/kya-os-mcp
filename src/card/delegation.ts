@@ -23,7 +23,7 @@ import { z } from 'zod';
 import { issuerOf } from '../utils/guards.js';
 import { Did, statusEntrySizeShape, type BitstringStatusListEntry } from './schema.js';
 import type { BitstringRevocationChecker, RevocationChainEntry } from './revocation.js';
-import { walkRevocationChain } from './revocation-chain.js';
+import { checkerThrew, walkRevocationChain } from './revocation-chain.js';
 import type { RefusalCode } from '../refusal-codes.js';
 import type { RefusalCoding } from '../delegation/vc-verifier.types.js';
 import { coded } from '../utils/refusal.js';
@@ -440,7 +440,8 @@ export interface DelegationChainEvaluation extends DelegationChainResult {
  * with `fresh: false`, without calling the status checker or verifying later hops.
  * Only after every proof holds does the sequential revocation walk name each hop's issuer and,
  * when `ctx.resourceOwner` pins it, the root issuer and the root hop's own status-list URL.
- * The first revoked or unreadable hop stops that walk, carrying its refusal code.
+ * The first revoked or unreadable hop stops that walk, carrying its refusal code, and so does a
+ * checker that throws or rejects: `status_unavailable`, or the code of a `RefusalError` it throws.
  * Each proof and status answer gets `ctx.dependencyTimeoutMs` (5,000 ms by default).
  * Without `verifyHopProof`, legacy status-only evaluation continues with one process-wide warning;
  * issuers and status URLs are then only as authentic as the proofs the caller checks separately.
@@ -466,7 +467,7 @@ export async function evaluateDelegationChain(
     revocationEntriesOf(chain, ctx.resourceOwner),
     check,
     { dependencyTimeoutMs: timeoutMs },
-  );
+  ).catch(checkerThrew);
   return {
     ...structural,
     ok: revocation.ok,

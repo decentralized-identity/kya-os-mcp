@@ -344,6 +344,7 @@ The reference implementation refuses such a DID before it asks any resolver, so 
 One deadline covers the configured resolver and the fallback; a fallback read the deadline abandons ends by its own deadline.
 
 The built-in readers count the bytes they receive after content decoding, never trusting `Content-Length`, and check JSON nesting and members before `JSON.parse`.
+The pinned connection the reference implementation makes on Node asks for gzip alone, with the `Accept` and `User-Agent` the runtime's `fetch` sends, decodes a gzip body under the same cap, and refuses a body in any other content coding.
 They refuse a non-2xx response whatever its body, and a body that is not valid UTF-8.
 A refusal names the URL by its origin and path alone, never the credentials before its host, its query or its fragment, where an operator may keep a key.
 They cancel a refused response, and refuse one that sends more than 64 empty body chunks.

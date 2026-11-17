@@ -6,15 +6,20 @@
  * misbehaves in some serverless runtimes — it failed 100% of fetches in the Vercel Node serverless
  * runtime on 2026-07-02, a failure the mocked-transport unit suite cannot catch. For those runtimes,
  * select `fetchTransport`: it connects by HOSTNAME through global `fetch` (the SSRF screen has
- * already run in the policy layer via `resolveAndPin`). All addressing policy lives in
+ * already run in the policy layer via `resolveAndPin`). The pinned transport asks and reads as that
+ * `fetch` does: it sends its `Accept` and `User-Agent`, asks for gzip, and decodes a gzip body through
+ * the package's capped decompressor, so the cap holds the decoded body. All addressing policy lives in
  * `./ip-classifier`; the seam vocabulary lives in `./safe-fetch-types`. No crypto here.
  */
 
 import type { IncomingMessage } from 'node:http';
 import type { LookupFunction } from 'node:net';
-import type { DnsLookup, RawResponse, SafeFetchTransport } from './safe-fetch-types.js';
+import type { DnsLookup, RawResponse, SafeFetchTransport, TransportInit } from './safe-fetch-types.js';
+import { logger } from '../logging/index.js';
 import { readCappedBody } from './bounded-read.js';
+import { describeValue } from './describe-value.js';
 import { ReadFailureError } from './read-failure.js';
+import { statusListGzipCodec } from './statuslist-gzip.js';
 
 /** The refusal of a body larger than `maxBytes`, as SafeFetch refuses a declared length over its cap: a read that came back too large. */
 const overCap = (maxBytes: number): ReadFailureError =>
@@ -178,7 +183,29 @@ export function buildPinnedLookup(pinnedAddress: string, family: 4 | 6): LookupF
   };
 }
 
-/** Default transport — node:https pinned to the validated IP, TLS SNI preserved, body-capped. */
+/**
+ * The request headers the pinned transport sends where the reader sets none: the `Accept` and
+ * `User-Agent` the runtime's `fetch` sends, so a host that served that `fetch` serves this.
+ */
+const FETCH_HEADERS: Readonly<Record<string, string>> = { accept: '*/*', 'user-agent': 'node' };
+
+/** The one content coding the pinned transport decodes, and so the only one its `Accept-Encoding` names. */
+const DECODED_CODING = 'gzip';
+
+/** The names a response may give {@link DECODED_CODING} by: `x-gzip` is its alias (RFC 9110 §8.4.1.3). */
+const GZIP_NAMES: ReadonlySet<string> = new Set(['gzip', 'x-gzip']);
+
+/**
+ * The headers of a request through the pinned transport: {@link FETCH_HEADERS}, then the reader's
+ * own `headers`, by any case of their names, then `Accept-Encoding` naming the one coding it decodes,
+ * whatever the reader asked.
+ */
+function requestHeaders(headers: TransportInit['headers']): Record<string, string> {
+  const own = Object.entries(headers ?? {}).map(([name, value]) => [name.toLowerCase(), value] as const);
+  return { ...FETCH_HEADERS, ...Object.fromEntries(own), 'accept-encoding': DECODED_CODING };
+}
+
+/** Default transport: node:https pinned to the validated IP, TLS SNI preserved, body-capped, gzip decoded. */
 export const nodeHttpsTransport: SafeFetchTransport = async (url, init) => {
   const https = await loadNodeHttps();
   if (!https) {
@@ -195,7 +222,7 @@ export const nodeHttpsTransport: SafeFetchTransport = async (url, init) => {
         servername: init.hostname,
         signal: init.signal,
         lookup: pinnedLookup,
-        ...(init.headers === undefined ? {} : { headers: { ...init.headers } }),
+        headers: requestHeaders(init.headers),
       },
       (res: IncomingMessage) => {
         const chunks: Buffer[] = [];
@@ -209,7 +236,7 @@ export const nodeHttpsTransport: SafeFetchTransport = async (url, init) => {
           }
           chunks.push(chunk);
         });
-        res.on('end', () => resolve(toRawResponse(res, chunks)));
+        res.on('end', () => decodedResponse(res, chunks, init).then(resolve, reject));
         res.on('error', reject);
       },
     );
@@ -218,15 +245,39 @@ export const nodeHttpsTransport: SafeFetchTransport = async (url, init) => {
   });
 };
 
-/** Project a node:http IncomingMessage + buffered chunks into the RawResponse shape. */
-function toRawResponse(res: IncomingMessage, chunks: Buffer[]): RawResponse {
-  const headers: RawResponse['headers'] = {
-    get: (name) => {
-      const value = res.headers[name.toLowerCase()];
-      return Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
-    },
+/**
+ * Project a node:http IncomingMessage and its buffered chunks into the RawResponse shape, its body
+ * decoded as the runtime's `fetch` decodes one. A gzip body is inflated through the package's one
+ * capped decompressor, so `init.maxBytes` holds the decoded body, and its response then says no
+ * `Content-Encoding` or `Content-Length`, which named the bytes sent. A body in any other coding is
+ * refused, and the log says which coding the host named.
+ */
+async function decodedResponse(res: IncomingMessage, chunks: Buffer[], init: TransportInit): Promise<RawResponse> {
+  const headerOf = (name: string): string | null => {
+    const value = res.headers[name.toLowerCase()];
+    return Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
   };
-  return rawResponse(res.statusCode ?? 0, headers, new Uint8Array(Buffer.concat(chunks)));
+  const sent = new Uint8Array(Buffer.concat(chunks));
+  const coding = headerOf('content-encoding');
+  const named = coding?.trim().toLowerCase() ?? '';
+  if (named === '' || named === 'identity') return rawResponse(res.statusCode ?? 0, { get: headerOf }, sent);
+  if (!GZIP_NAMES.has(named)) {
+    logger.warn(`[kya-os] safe-fetch: ${init.hostname} answered with Content-Encoding ${describeValue(coding)}, which is not decoded, so the response is refused`);
+    throw new ReadFailureError('unavailable', 'safe-fetch: the response is in a content coding that is not decoded');
+  }
+  const decoded = await inflated(sent, init.maxBytes);
+  const asDecoded = (name: string): string | null => (/^content-(encoding|length)$/i.test(name) ? null : headerOf(name));
+  return rawResponse(res.statusCode ?? 0, { get: asDecoded }, decoded);
+}
+
+/** `body`, gzip, inflated through the package's capped decompressor: refused as too large past `maxBytes`, or as unreadable when it is not gzip. */
+async function inflated(body: Uint8Array, maxBytes: number): Promise<Uint8Array> {
+  try {
+    return await statusListGzipCodec.decompress(body, { maxBytes });
+  } catch (error) {
+    if ((error as { code?: unknown } | null)?.code === 'ERR_BUFFER_TOO_LARGE') throw overCap(maxBytes);
+    throw new ReadFailureError('unavailable', 'safe-fetch: the response says it is gzip, and is not');
+  }
 }
 
 /**

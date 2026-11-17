@@ -1,0 +1,9 @@
+kind: Security
+body: |-
+    **The pinned connection reads a host as `fetch` did.** It sends the
+    `Accept` and `User-Agent` the runtime's `fetch` sends and
+    `Accept-Encoding: gzip`, and decodes a gzip body through the package's
+    capped decompressor, so the byte cap holds the decoded body. A host that
+    serves its JSON gzipped whatever the request asks, as an object store
+    does, is read again, and a body in another coding is refused and logged.
+time: 2026-11-17T00:55:00.000000-06:00

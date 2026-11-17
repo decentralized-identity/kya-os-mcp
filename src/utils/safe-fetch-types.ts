@@ -40,7 +40,10 @@ export interface TransportInit {
   /**
    * The request headers the reader sends, such as `Accept`. SafeFetch sends none; a did:web or
    * status-list read under the private-network rule sends the ones its reader sets. The library's
-   * transports send them; a transport that leaves them out sends a bare GET.
+   * transports send them: `fetchTransport` beside the runtime `fetch`'s own, and
+   * `nodeHttpsTransport` over the `Accept` and `User-Agent` that `fetch` sends, with
+   * `Accept-Encoding: gzip`, the one coding it decodes. A transport that leaves them out sends a bare
+   * GET.
    */
   headers?: Readonly<Record<string, string>>;
 }

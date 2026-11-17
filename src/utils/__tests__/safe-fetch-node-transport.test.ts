@@ -136,7 +136,7 @@ describe('nodeHttpsTransport, against a stand-in for node:https', () => {
     expect(raw.headers.get('x-absent')).toBeNull();
   });
 
-  it('sends the headers it is given, and hands back the body as the bytes that were sent', async () => {
+  it("sends the headers it is given over the runtime fetch's, asks for gzip alone, and hands back the body as the bytes that were sent", async () => {
     const sent = Buffer.from([0x7b, 0xff, 0x7d]);
     const { asked, transport } = await transportAnswering((respond) => {
       const res = new StandInResponse(200, {});
@@ -146,7 +146,7 @@ describe('nodeHttpsTransport, against a stand-in for node:https', () => {
     });
     const raw = await transport('https://example.com/list', init({ headers: { accept: 'application/json' } }));
 
-    expect(asked[0]!.options.headers).toEqual({ accept: 'application/json' });
+    expect(asked[0]!.options.headers).toEqual({ accept: 'application/json', 'user-agent': 'node', 'accept-encoding': 'gzip' });
     expect(Buffer.from((await raw.bytes!())).equals(sent)).toBe(true);
   });
 

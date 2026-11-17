@@ -381,6 +381,23 @@ async function delegationChainVectors(): Promise<VectorFile> {
     audience: SERVER_DID,
   });
 
+  // Negative: a parent with no scopes grants none, so a child that states one widens it.
+  const scopelessParent = await buildSignedDelegation({
+    issuer: root,
+    subjectDid: intermediary.did,
+    id: 'del-root-interm-scopeless',
+    scopes: [],
+    audience: SERVER_DID,
+  });
+  const scopeUnderScopeless = await buildSignedDelegation({
+    issuer: intermediary,
+    subjectDid: agent.did,
+    id: 'del-scopeless-widening-child',
+    parentId: 'del-root-interm-scopeless',
+    scopes: ['greeting:read'],
+    audience: SERVER_DID,
+  });
+
   // Negative: tampered leaf signature.
   const tamperedLeaf: DelegationCredential = {
     ...validSingle,
@@ -430,6 +447,14 @@ async function delegationChainVectors(): Promise<VectorFile> {
       input: { leaf: wideningChild, ancestors: [parent], serverDid: SERVER_DID, didDocuments },
     },
     {
+      id: 'delegation-chain/scopeless-parent-widening',
+      category: 'delegation-chain',
+      description: 'Child states a scope under a parent that states none',
+      expected: 'fail',
+      reason: 'A parent with no scopes grants none, so a child that states one widens it and must reject',
+      input: { leaf: scopeUnderScopeless, ancestors: [scopelessParent], serverDid: SERVER_DID, didDocuments },
+    },
+    {
       id: 'delegation-chain/tampered-signature',
       category: 'delegation-chain',
       description: 'Leaf credential whose Ed25519 proofValue was altered',
@@ -450,10 +475,15 @@ async function delegationChainVectors(): Promise<VectorFile> {
   return { version: SUITE_VERSION, category: 'delegation-chain', vectors };
 }
 
+/**
+ * Corrupt a base64url signature by changing its FIRST character, for the reason
+ * {@link flipSignatureChar} gives: the last character of a 64-byte Ed25519
+ * signature carries bits a decoder ignores, so changing it can leave the
+ * signature as it was.
+ */
 function flipB64url(value: string): string {
-  const last = value[value.length - 1];
-  const swap = last === 'A' ? 'B' : 'A';
-  return value.slice(0, -1) + swap;
+  const swap = value[0] === 'A' ? 'B' : 'A';
+  return swap + value.slice(1);
 }
 
 // ── status-list vectors ─────────────────────────────────────────────────────────

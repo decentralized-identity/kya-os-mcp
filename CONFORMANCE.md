@@ -2,7 +2,7 @@
 
 **Compliance levels for KYA-OS implementations**
 
-Version: 1.5.0
+Version: 1.6.0
 Status: Stable
 
 ---
@@ -462,7 +462,7 @@ so it is reproducible against any implementation without re-signing.
 | File | Category | Positive | Negative |
 |------|----------|----------|----------|
 | `vectors/signed-proof.json` | Detached proof verification | valid signature + in-window ts; envelope content binding (profile `org.kya-os/response-proof.envelope`); delegation chain binding on an allowed call, on a refusal held as a refusal, and against a re-serialized copy of the chain (`delegationChainDigest`); a credential whose id is too long to record, or holds a bidi override, a zero-width space or a code point that renders as nothing by default, or is the word `unknown`, named by its digest (`delegationRef`); a request with no `params`, bound by its method alone | tampered signature, tampered meta, wrong key, timestamp skew exceeded; tampered `structuredContent` under envelope coverage, `prf` stripped (downgrade), unknown profile; chain with a re-issued hop, chain digest stripped, proof that binds no chain, a refusal held against its chain with no outcome stated, a chain whose VC-JWT signature is not base64url, a proof that names another credential of its chain; a JWS segment with a character outside base64url, white space or padding, or written in the base64 alphabet, a JWS of four segments, a claim of `meta` altered after signing, a proof held against another request, a header that names another algorithm or another key, a `kid` of another DID than `meta.did` |
-| `vectors/delegation-chain.json` | Delegation chain verification | single-hop, two-hop attenuated | broken issuer↔subject linkage, scope widening, tampered signature, audience mismatch |
+| `vectors/delegation-chain.json` | Delegation chain verification | single-hop, two-hop attenuated | broken issuer↔subject linkage, scope widening, a scope under a parent that states none, tampered signature, audience mismatch |
 | `vectors/delegation-chain-key-relationship.json` | Delegation chain verification: the issuer's key (SPEC.md §6.2) | signed with the key the issuer lists under `assertionMethod`; as a VC-JWT with no `kid`, signed with the key its first `assertionMethod` entry names | signed with a key it lists only under `authentication`, proof stating `proofPurpose: "authentication"`, issuer document whose `id` is another DID, signing key whose method names another DID as its `controller`, signing key whose method the document defines twice, signing key under another DID's id, signing key under no relationship, signing key whose method has no `type` or no `controller`; as a VC-JWT, a `kid` naming the `authentication` key, an empty `kid` |
 | `vectors/status-list.json` | StatusList2021 and Bitstring Status List revocation | active (bit unset), issuer's list stating no `id`, Bitstring list declaring two purposes | revoked (bit set), list altered after signing, list signed by another issuer, list of another purpose, StatusList2021 list declaring its purposes in an array, list stating another URL as its `id`, list of a pinned root or a configured issuer stating no `id` |
 | `vectors/status-list-key-relationship.json` | StatusList2021 revocation: the list issuer's key (SPEC.md §6.2) | list signed with the key the issuer lists under `assertionMethod` | list signed with a key it lists only under `authentication`, list proof stating `proofPurpose: "authentication"`, issuer document whose `id` is another DID, list signed with a key it lists under `assertionMethod` whose method names another DID as its `controller`, list signed with a key whose method the document defines twice |
@@ -615,6 +615,10 @@ Because fresh keys change the committed bytes, regenerated output MUST NOT be co
 
 ### Suite versioning and immutability
 
+Suite 1.6.0 adds one `delegation-chain` vector, for 141 vectors total: `delegation-chain/scopeless-parent-widening`, a re-delegation that states a scope under a parent that states none, which must be refused, since a parent with no scopes grants none (SPEC.md §6.4).
+`delegation-chain.json` is regenerated in one run, so its six earlier vectors are signed again with the same ids, cases and expected outcomes; the other 134 vector objects of suite 1.5.0 are unchanged.
+`delegation-chain/tampered-signature` now changes the first character of the signature, where it changed the last, which in a 64-byte Ed25519 signature carries bits a decoder ignores.
+
 Suite 1.5.0 adds 43 `signed-proof` vectors, for 140 vectors total: the `signed-proof/delegation-*` vectors described above.
 `signed-proof.json` is regenerated in one run, so its nine earlier vectors are signed again with the same ids, cases and expected outcomes; the other 88 vector objects of suite 1.4.0 are unchanged.
 
@@ -647,6 +651,7 @@ The hash recipe: SHA-256 each vector file's raw committed bytes, sort the `[file
 CI enforces the invariant twice: a vitest guard (`conformance/__tests__/suite-immutability.test.ts`) and a dedicated step running `node conformance/suite-hash.mjs --check`.
 To change vectors intentionally, bump `suiteVersion` (including the in-file `version` fields), regenerate the manifest with `node conformance/suite-hash.mjs --json`, and keep `pinnedAt` current.
 A new suite version may add vectors that an implementation of an earlier one fails: suite 1.5.0 adds the `signed-proof/delegation-chain-*` and `signed-proof/delegation-ref-*` vectors, which a verifier built against suite 1.4.0 or earlier fails until it implements L3.28, and the `signed-proof/delegation-proof-*` vectors, which a verifier that reads a JWS more loosely than SPEC.md §7.4 fails, so a result is always reported with the suite version it was run against.
+Suite 1.6.0 adds `delegation-chain/scopeless-parent-widening`, which a verifier that reads a parent with no scopes as unrestricted fails.
 The SIGNED public suite manifest published by the Conformance Attestation Program is a separate artifact built on this committed one.
 
 ### Running the harness against YOUR implementation

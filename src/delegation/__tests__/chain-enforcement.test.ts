@@ -68,8 +68,8 @@ describe("validateScopeAttenuation across scope representations (SPEC.md §6.3, 
     expect(attenuate({ crisp: [{ resource: "notes", matcher: "path-prefix" }] }, { crisp: [{ resource: "notes", matcher: "prefix" }] }).valid).toBe(false);
   });
 
-  it("keeps a parent with no scopes of either kind unrestricted, and never lets an unscoped child attenuate a scoped parent", () => {
-    expect(attenuate({}, { scopes: ["anything"] }).valid).toBe(true);
+  it("lets a parent with no scopes of either kind grant none, and never lets an unscoped child attenuate a scoped parent", () => {
+    expect(attenuate({}, { scopes: ["anything"] }).valid).toBe(false);
     expect(attenuate({ crisp: [{ resource: "safe:", matcher: "prefix" }] }, {}).valid).toBe(false);
   });
 
@@ -107,7 +107,6 @@ describe("validateScopeAttenuation across scope representations (SPEC.md §6.3, 
     const values = ["safe:read", "safe:x", "admin:root", "notes", "notes/a", "notesx/b", "anything"];
     let accepted = 0;
     for (const parent of authorities) {
-      if (!parent.scopes && !parent.crisp) continue; // unrestricted by definition
       for (const child of authorities) {
         if (!attenuate(parent, child).valid) continue;
         accepted += 1;
@@ -687,16 +686,22 @@ describe("attenuationWarnings (SPEC.md §6.4)", () => {
       });
     });
 
-    it("still validates a chain whose scope fields it cannot read", async () => {
-      // An unrestricted parent accepts any child without reading the child's scopes,
-      // so this chain validated before the warnings existed and must not throw now.
+    it("refuses, without throwing, a chain whose scope fields it cannot read below a parent that grants none", async () => {
+      // A parent with no scopes grants none, so a child whose scope fields cannot be read, and
+      // could grant anything, is refused before the warnings are read.
       const openRoot = link("root", undefined, { audience: SERVER });
       openRoot.credentialSubject.delegation.constraints = { audience: SERVER };
       delete openRoot.credentialSubject.delegation.scopes;
       const leaf = link("leaf", "root", { audience: SERVER });
       leaf.credentialSubject.delegation.constraints = { audience: SERVER, crisp: { scopes: {} } } as never;
       delete leaf.credentialSubject.delegation.scopes;
-      expect(await validateDelegationChain(leaf, deps([openRoot]))).toEqual({ valid: true, evaluated: [openRoot, leaf] });
+      expect(await validateDelegationChain(leaf, deps([openRoot]))).toEqual({
+        valid: false,
+        code: "chain_invalid",
+        transient: false,
+        reason: "Delegation leaf widens scopes beyond parent root, which grants no scope",
+        evaluated: [openRoot, leaf],
+      });
     });
 
     it("returns no warnings with a refusal", async () => {

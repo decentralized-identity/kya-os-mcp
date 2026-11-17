@@ -30,9 +30,10 @@ export function getDelegationScopes(credential: DelegationCredential): string[] 
  * matcher the child grants must be proven inside the parent's authority
  * ({@link authorityContains}), whichever representation either side uses;
  * anything unprovable, including a malformed entry, fails closed. A credential
- * with no scopes of either kind is not scope-restricted: such a parent accepts
- * any child, and such a child never attenuates a restricted parent. A refusal is
- * `chain_invalid`, which its `code` says. Pure.
+ * with no scopes of either kind grants no scope, as `scopeSatisfies` reads it:
+ * such a parent admits only a child that grants none either, and such a child
+ * never attenuates a parent that has scopes. A refusal is `chain_invalid`,
+ * which its `code` says. Pure.
  */
 export function validateScopeAttenuation(
   parentCredential: DelegationCredential,
@@ -53,7 +54,10 @@ export function checkScopeAttenuation(
   const childId = childCredential.credentialSubject.delegation.id;
   const parentAuthority = scopeAuthority(parentCredential);
   if (parentAuthority.length === 0) {
-    return { valid: true };
+    // A child whose scope fields cannot be read may grant anything, so only one read as empty passes.
+    return authorityOf(childCredential)?.length === 0
+      ? { valid: true }
+      : refusal("chain_invalid", `Delegation ${childId} widens scopes beyond parent ${parentId}, which grants no scope`);
   }
 
   const childScopes = getDelegationScopes(childCredential);
@@ -104,13 +108,18 @@ function constraintEntries(constraints: unknown): [string, unknown][] {
     : [];
 }
 
-/** A credential's scope authority, or none when its scope fields are not lists and cannot be read. */
-function readableAuthority(credential: DelegationCredential): CrispScope[] {
+/** A credential's scope authority, or undefined when its scope fields are not lists and cannot be read. */
+function authorityOf(credential: DelegationCredential): CrispScope[] | undefined {
   try {
     return scopeAuthority(credential);
   } catch {
-    return [];
+    return undefined;
   }
+}
+
+/** A credential's scope authority, or none when its scope fields are not lists and cannot be read. */
+function readableAuthority(credential: DelegationCredential): CrispScope[] {
+  return authorityOf(credential) ?? [];
 }
 
 /** RFC 8785 equality. A value that cannot be canonicalized equals nothing. */

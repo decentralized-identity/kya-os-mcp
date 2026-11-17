@@ -1,5 +1,5 @@
 {
-  "version": "1.8.0",
+  "version": "1.9.0",
   "category": "delegation-chain",
   "vectors": [
     {
@@ -45,7 +45,7 @@
             "created": "2026-01-01T00:00:00.000Z",
             "verificationMethod": "did:web:issuer.example.com#assert-1",
             "proofPurpose": "assertionMethod",
-            "proofValue": "qUmh2S5DczSZHoWPIx_rjKnO1SG9H9g5J8H8JVOO-L_3lo6ujFUQ2LrMWykJqjPsSj_6sFchjwHGEtUBIGTJDQ"
+            "proofValue": "mwOqV9p-dSzKBQwW27FBQc2mX7HgzA_w332Y301Wa8Lt88X6OtG4DFzVOZsBQ0gAjjJIzU5wXYepC5BW6JF8Dw"
           }
         },
         "serverDid": "did:web:server.example.com",
@@ -60,7 +60,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                  "x": "ZVGPlUO_n6ZGqLVfLUFs9O0Xd9yUAmiJ0Y4TJ3Wxjfc"
                 }
               },
               {
@@ -70,7 +70,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                  "x": "blNj15qb2UcN1fYRb4Iuua_rdtP8M0efU47NGfmltxY"
                 }
               }
             ],
@@ -127,7 +127,7 @@
             "created": "2026-01-01T00:00:00.000Z",
             "verificationMethod": "did:web:issuer.example.com#login-1",
             "proofPurpose": "assertionMethod",
-            "proofValue": "yCqX100tvKPZFQyblnYMWgo73UlxFrxG4rV1LfouGFRtS75FwThqDLBjWVBaz6YBRTuXY0lKbFPGDh8iet4OCQ"
+            "proofValue": "ClwgzaLVQaVdwoxL6ZR6Mqc2vOllcfmOGRY1GaN95eVQzspiN8KMfQ2HhjuqaDj6MxnRuRyaYJYHo6J7VDf1DA"
           }
         },
         "serverDid": "did:web:server.example.com",
@@ -142,7 +142,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                  "x": "ZVGPlUO_n6ZGqLVfLUFs9O0Xd9yUAmiJ0Y4TJ3Wxjfc"
                 }
               },
               {
@@ -152,7 +152,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                  "x": "blNj15qb2UcN1fYRb4Iuua_rdtP8M0efU47NGfmltxY"
                 }
               }
             ],
@@ -209,7 +209,7 @@
             "created": "2026-01-01T00:00:00.000Z",
             "verificationMethod": "did:web:issuer.example.com#assert-1",
             "proofPurpose": "authentication",
-            "proofValue": "qUmh2S5DczSZHoWPIx_rjKnO1SG9H9g5J8H8JVOO-L_3lo6ujFUQ2LrMWykJqjPsSj_6sFchjwHGEtUBIGTJDQ"
+            "proofValue": "mwOqV9p-dSzKBQwW27FBQc2mX7HgzA_w332Y301Wa8Lt88X6OtG4DFzVOZsBQ0gAjjJIzU5wXYepC5BW6JF8Dw"
           }
         },
         "serverDid": "did:web:server.example.com",
@@ -224,7 +224,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                  "x": "ZVGPlUO_n6ZGqLVfLUFs9O0Xd9yUAmiJ0Y4TJ3Wxjfc"
                 }
               },
               {
@@ -234,7 +234,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                  "x": "blNj15qb2UcN1fYRb4Iuua_rdtP8M0efU47NGfmltxY"
                 }
               }
             ],
@@ -291,7 +291,7 @@
             "created": "2026-01-01T00:00:00.000Z",
             "verificationMethod": "did:web:issuer.example.com#assert-1",
             "proofPurpose": "assertionMethod",
-            "proofValue": "qUmh2S5DczSZHoWPIx_rjKnO1SG9H9g5J8H8JVOO-L_3lo6ujFUQ2LrMWykJqjPsSj_6sFchjwHGEtUBIGTJDQ"
+            "proofValue": "mwOqV9p-dSzKBQwW27FBQc2mX7HgzA_w332Y301Wa8Lt88X6OtG4DFzVOZsBQ0gAjjJIzU5wXYepC5BW6JF8Dw"
           }
         },
         "serverDid": "did:web:server.example.com",
@@ -306,7 +306,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                  "x": "ZVGPlUO_n6ZGqLVfLUFs9O0Xd9yUAmiJ0Y4TJ3Wxjfc"
                 }
               },
               {
@@ -316,7 +316,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                  "x": "blNj15qb2UcN1fYRb4Iuua_rdtP8M0efU47NGfmltxY"
                 }
               }
             ],
@@ -373,7 +373,7 @@
             "created": "2026-01-01T00:00:00.000Z",
             "verificationMethod": "did:web:issuer.example.com#assert-1",
             "proofPurpose": "assertionMethod",
-            "proofValue": "qUmh2S5DczSZHoWPIx_rjKnO1SG9H9g5J8H8JVOO-L_3lo6ujFUQ2LrMWykJqjPsSj_6sFchjwHGEtUBIGTJDQ"
+            "proofValue": "mwOqV9p-dSzKBQwW27FBQc2mX7HgzA_w332Y301Wa8Lt88X6OtG4DFzVOZsBQ0gAjjJIzU5wXYepC5BW6JF8Dw"
           }
         },
         "serverDid": "did:web:server.example.com",
@@ -388,7 +388,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                  "x": "ZVGPlUO_n6ZGqLVfLUFs9O0Xd9yUAmiJ0Y4TJ3Wxjfc"
                 }
               },
               {
@@ -398,7 +398,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                  "x": "blNj15qb2UcN1fYRb4Iuua_rdtP8M0efU47NGfmltxY"
                 }
               }
             ],
@@ -455,7 +455,7 @@
             "created": "2026-01-01T00:00:00.000Z",
             "verificationMethod": "did:web:issuer.example.com#assert-1",
             "proofPurpose": "assertionMethod",
-            "proofValue": "qUmh2S5DczSZHoWPIx_rjKnO1SG9H9g5J8H8JVOO-L_3lo6ujFUQ2LrMWykJqjPsSj_6sFchjwHGEtUBIGTJDQ"
+            "proofValue": "mwOqV9p-dSzKBQwW27FBQc2mX7HgzA_w332Y301Wa8Lt88X6OtG4DFzVOZsBQ0gAjjJIzU5wXYepC5BW6JF8Dw"
           }
         },
         "serverDid": "did:web:server.example.com",
@@ -470,7 +470,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                  "x": "ZVGPlUO_n6ZGqLVfLUFs9O0Xd9yUAmiJ0Y4TJ3Wxjfc"
                 }
               },
               {
@@ -480,7 +480,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                  "x": "blNj15qb2UcN1fYRb4Iuua_rdtP8M0efU47NGfmltxY"
                 }
               }
             ],
@@ -495,7 +495,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                  "x": "blNj15qb2UcN1fYRb4Iuua_rdtP8M0efU47NGfmltxY"
                 }
               }
             ]
@@ -546,7 +546,7 @@
             "created": "2026-01-01T00:00:00.000Z",
             "verificationMethod": "did:web:other.example.com#assert-1",
             "proofPurpose": "assertionMethod",
-            "proofValue": "qUmh2S5DczSZHoWPIx_rjKnO1SG9H9g5J8H8JVOO-L_3lo6ujFUQ2LrMWykJqjPsSj_6sFchjwHGEtUBIGTJDQ"
+            "proofValue": "mwOqV9p-dSzKBQwW27FBQc2mX7HgzA_w332Y301Wa8Lt88X6OtG4DFzVOZsBQ0gAjjJIzU5wXYepC5BW6JF8Dw"
           }
         },
         "serverDid": "did:web:server.example.com",
@@ -561,7 +561,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                  "x": "ZVGPlUO_n6ZGqLVfLUFs9O0Xd9yUAmiJ0Y4TJ3Wxjfc"
                 }
               },
               {
@@ -571,7 +571,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                  "x": "blNj15qb2UcN1fYRb4Iuua_rdtP8M0efU47NGfmltxY"
                 }
               }
             ],
@@ -628,7 +628,7 @@
             "created": "2026-01-01T00:00:00.000Z",
             "verificationMethod": "did:web:issuer.example.com#unlisted-1",
             "proofPurpose": "assertionMethod",
-            "proofValue": "vYvk6hYVqlQkq02cy7tQyEV_MtcX_6u7ik9SgI1pxBJ4P5-d0rj5YQOU37NI67GVcGZBaAn4lxwCWeRfX0mVBw"
+            "proofValue": "dbB8NARtMK9qzwJADGOpalGDxdCUWS-1ZFNDS3LBSA2qo3I-YCpQl6K2krvRpAE1drQrPwPw3oCVL2dhZIRxBQ"
           }
         },
         "serverDid": "did:web:server.example.com",
@@ -643,7 +643,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                  "x": "ZVGPlUO_n6ZGqLVfLUFs9O0Xd9yUAmiJ0Y4TJ3Wxjfc"
                 }
               },
               {
@@ -653,7 +653,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                  "x": "blNj15qb2UcN1fYRb4Iuua_rdtP8M0efU47NGfmltxY"
                 }
               },
               {
@@ -663,7 +663,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "z2vToSSQ_aW0ZXqZ2mJFXtDKxfo7NJH7q2J1UqpkTKg"
+                  "x": "1r4wKF2UBaZXYU9F8Mgtb_i_lff2Ir5YGAIluwjNCmg"
                 }
               }
             ],
@@ -720,7 +720,7 @@
             "created": "2026-01-01T00:00:00.000Z",
             "verificationMethod": "did:web:issuer.example.com#assert-1",
             "proofPurpose": "assertionMethod",
-            "proofValue": "qUmh2S5DczSZHoWPIx_rjKnO1SG9H9g5J8H8JVOO-L_3lo6ujFUQ2LrMWykJqjPsSj_6sFchjwHGEtUBIGTJDQ"
+            "proofValue": "mwOqV9p-dSzKBQwW27FBQc2mX7HgzA_w332Y301Wa8Lt88X6OtG4DFzVOZsBQ0gAjjJIzU5wXYepC5BW6JF8Dw"
           }
         },
         "serverDid": "did:web:server.example.com",
@@ -735,7 +735,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                  "x": "ZVGPlUO_n6ZGqLVfLUFs9O0Xd9yUAmiJ0Y4TJ3Wxjfc"
                 }
               },
               {
@@ -744,7 +744,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                  "x": "blNj15qb2UcN1fYRb4Iuua_rdtP8M0efU47NGfmltxY"
                 }
               }
             ],
@@ -801,7 +801,7 @@
             "created": "2026-01-01T00:00:00.000Z",
             "verificationMethod": "did:web:issuer.example.com#assert-1",
             "proofPurpose": "assertionMethod",
-            "proofValue": "qUmh2S5DczSZHoWPIx_rjKnO1SG9H9g5J8H8JVOO-L_3lo6ujFUQ2LrMWykJqjPsSj_6sFchjwHGEtUBIGTJDQ"
+            "proofValue": "mwOqV9p-dSzKBQwW27FBQc2mX7HgzA_w332Y301Wa8Lt88X6OtG4DFzVOZsBQ0gAjjJIzU5wXYepC5BW6JF8Dw"
           }
         },
         "serverDid": "did:web:server.example.com",
@@ -816,7 +816,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                  "x": "ZVGPlUO_n6ZGqLVfLUFs9O0Xd9yUAmiJ0Y4TJ3Wxjfc"
                 }
               },
               {
@@ -825,7 +825,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                  "x": "blNj15qb2UcN1fYRb4Iuua_rdtP8M0efU47NGfmltxY"
                 }
               }
             ],
@@ -846,7 +846,7 @@
       "expected": "pass",
       "reason": "A VC-JWT with no kid is checked with the method the first assertionMethod entry names (SPEC.md §6.2), which made its signature",
       "input": {
-        "leaf": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJkaWQ6d2ViOmlzc3Vlci5leGFtcGxlLmNvbSIsInZjIjp7IkBjb250ZXh0IjpbImh0dHBzOi8vd3d3LnczLm9yZy8yMDE4L2NyZWRlbnRpYWxzL3YxIiwiaHR0cHM6Ly9zY2hlbWEua3lhLW9zLm9yZy92MS9wcm90b2NvbC9kZWxlZ2F0aW9uL2NvbnRleHQvdjEuMC4wIl0sImlkIjoidXJuOnV1aWQ6ZGVsLWlzc3Vlci1hZ2VudCIsInR5cGUiOlsiVmVyaWZpYWJsZUNyZWRlbnRpYWwiLCJEZWxlZ2F0aW9uQ3JlZGVudGlhbCJdLCJpc3N1ZXIiOiJkaWQ6d2ViOmlzc3Vlci5leGFtcGxlLmNvbSIsImlzc3VhbmNlRGF0ZSI6IjIwMjYtMDEtMDFUMDA6MDA6MDAuMDAwWiIsImNyZWRlbnRpYWxTdWJqZWN0Ijp7ImlkIjoiZGlkOndlYjphZ2VudC5leGFtcGxlLmNvbSIsImRlbGVnYXRpb24iOnsiaWQiOiJkZWwtaXNzdWVyLWFnZW50IiwiaXNzdWVyRGlkIjoiZGlkOndlYjppc3N1ZXIuZXhhbXBsZS5jb20iLCJzdWJqZWN0RGlkIjoiZGlkOndlYjphZ2VudC5leGFtcGxlLmNvbSIsInNjb3BlcyI6WyJncmVldGluZzpyZWFkIl0sImNvbnN0cmFpbnRzIjp7InNjb3BlcyI6WyJncmVldGluZzpyZWFkIl0sImF1ZGllbmNlIjoiZGlkOndlYjpzZXJ2ZXIuZXhhbXBsZS5jb20ifSwic3RhdHVzIjoiYWN0aXZlIiwiY3JlYXRlZEF0IjoxNzUwMDAwMDAwMDAwfX19LCJzdWIiOiJkaWQ6d2ViOmFnZW50LmV4YW1wbGUuY29tIiwiaWF0IjoxNzY3MjI1NjAwLCJqdGkiOiJ1cm46dXVpZDpkZWwtaXNzdWVyLWFnZW50In0.WEeWY-nxMZhzEkfPiKppizIUeSCFtLg6dC-h4mMEkdQko_7GLOzCEUq06gZPnUbstOSkAeQiP77F5RJmx-qzBg",
+        "leaf": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJkaWQ6d2ViOmlzc3Vlci5leGFtcGxlLmNvbSIsInZjIjp7IkBjb250ZXh0IjpbImh0dHBzOi8vd3d3LnczLm9yZy8yMDE4L2NyZWRlbnRpYWxzL3YxIiwiaHR0cHM6Ly9zY2hlbWEua3lhLW9zLm9yZy92MS9wcm90b2NvbC9kZWxlZ2F0aW9uL2NvbnRleHQvdjEuMC4wIl0sImlkIjoidXJuOnV1aWQ6ZGVsLWlzc3Vlci1hZ2VudCIsInR5cGUiOlsiVmVyaWZpYWJsZUNyZWRlbnRpYWwiLCJEZWxlZ2F0aW9uQ3JlZGVudGlhbCJdLCJpc3N1ZXIiOiJkaWQ6d2ViOmlzc3Vlci5leGFtcGxlLmNvbSIsImlzc3VhbmNlRGF0ZSI6IjIwMjYtMDEtMDFUMDA6MDA6MDAuMDAwWiIsImNyZWRlbnRpYWxTdWJqZWN0Ijp7ImlkIjoiZGlkOndlYjphZ2VudC5leGFtcGxlLmNvbSIsImRlbGVnYXRpb24iOnsiaWQiOiJkZWwtaXNzdWVyLWFnZW50IiwiaXNzdWVyRGlkIjoiZGlkOndlYjppc3N1ZXIuZXhhbXBsZS5jb20iLCJzdWJqZWN0RGlkIjoiZGlkOndlYjphZ2VudC5leGFtcGxlLmNvbSIsInNjb3BlcyI6WyJncmVldGluZzpyZWFkIl0sImNvbnN0cmFpbnRzIjp7InNjb3BlcyI6WyJncmVldGluZzpyZWFkIl0sImF1ZGllbmNlIjoiZGlkOndlYjpzZXJ2ZXIuZXhhbXBsZS5jb20ifSwic3RhdHVzIjoiYWN0aXZlIiwiY3JlYXRlZEF0IjoxNzUwMDAwMDAwMDAwfX19LCJzdWIiOiJkaWQ6d2ViOmFnZW50LmV4YW1wbGUuY29tIiwiaWF0IjoxNzY3MjI1NjAwLCJqdGkiOiJ1cm46dXVpZDpkZWwtaXNzdWVyLWFnZW50In0.wfgF1Sc_hzbCD7XxHazkwLTBvKbLOxBASQdwpnQY38yQibpoKrN2JFtMYfgzjSH797Tj4GcebVPf1CotKQe7CQ",
         "serverDid": "did:web:server.example.com",
         "didDocuments": {
           "did:web:issuer.example.com": {
@@ -859,7 +859,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                  "x": "ZVGPlUO_n6ZGqLVfLUFs9O0Xd9yUAmiJ0Y4TJ3Wxjfc"
                 }
               },
               {
@@ -869,7 +869,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                  "x": "blNj15qb2UcN1fYRb4Iuua_rdtP8M0efU47NGfmltxY"
                 }
               }
             ],
@@ -890,7 +890,7 @@
       "expected": "fail",
       "reason": "A key listed only under authentication signs the issuer in and does not verify its credentials, whatever the kid names (SPEC.md §6.2)",
       "input": {
-        "leaf": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCIsImtpZCI6ImRpZDp3ZWI6aXNzdWVyLmV4YW1wbGUuY29tI2xvZ2luLTEifQ.eyJpc3MiOiJkaWQ6d2ViOmlzc3Vlci5leGFtcGxlLmNvbSIsInZjIjp7IkBjb250ZXh0IjpbImh0dHBzOi8vd3d3LnczLm9yZy8yMDE4L2NyZWRlbnRpYWxzL3YxIiwiaHR0cHM6Ly9zY2hlbWEua3lhLW9zLm9yZy92MS9wcm90b2NvbC9kZWxlZ2F0aW9uL2NvbnRleHQvdjEuMC4wIl0sImlkIjoidXJuOnV1aWQ6ZGVsLWlzc3Vlci1hZ2VudCIsInR5cGUiOlsiVmVyaWZpYWJsZUNyZWRlbnRpYWwiLCJEZWxlZ2F0aW9uQ3JlZGVudGlhbCJdLCJpc3N1ZXIiOiJkaWQ6d2ViOmlzc3Vlci5leGFtcGxlLmNvbSIsImlzc3VhbmNlRGF0ZSI6IjIwMjYtMDEtMDFUMDA6MDA6MDAuMDAwWiIsImNyZWRlbnRpYWxTdWJqZWN0Ijp7ImlkIjoiZGlkOndlYjphZ2VudC5leGFtcGxlLmNvbSIsImRlbGVnYXRpb24iOnsiaWQiOiJkZWwtaXNzdWVyLWFnZW50IiwiaXNzdWVyRGlkIjoiZGlkOndlYjppc3N1ZXIuZXhhbXBsZS5jb20iLCJzdWJqZWN0RGlkIjoiZGlkOndlYjphZ2VudC5leGFtcGxlLmNvbSIsInNjb3BlcyI6WyJncmVldGluZzpyZWFkIl0sImNvbnN0cmFpbnRzIjp7InNjb3BlcyI6WyJncmVldGluZzpyZWFkIl0sImF1ZGllbmNlIjoiZGlkOndlYjpzZXJ2ZXIuZXhhbXBsZS5jb20ifSwic3RhdHVzIjoiYWN0aXZlIiwiY3JlYXRlZEF0IjoxNzUwMDAwMDAwMDAwfX19LCJzdWIiOiJkaWQ6d2ViOmFnZW50LmV4YW1wbGUuY29tIiwiaWF0IjoxNzY3MjI1NjAwLCJqdGkiOiJ1cm46dXVpZDpkZWwtaXNzdWVyLWFnZW50In0.hC4P2F70ot3dRgH28C6ZaturF2DVFYdQGRVhMejn1TxtoZCstbxdS17S9XlhsXnKFz62oFzSXzy7hB2a57ANBg",
+        "leaf": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCIsImtpZCI6ImRpZDp3ZWI6aXNzdWVyLmV4YW1wbGUuY29tI2xvZ2luLTEifQ.eyJpc3MiOiJkaWQ6d2ViOmlzc3Vlci5leGFtcGxlLmNvbSIsInZjIjp7IkBjb250ZXh0IjpbImh0dHBzOi8vd3d3LnczLm9yZy8yMDE4L2NyZWRlbnRpYWxzL3YxIiwiaHR0cHM6Ly9zY2hlbWEua3lhLW9zLm9yZy92MS9wcm90b2NvbC9kZWxlZ2F0aW9uL2NvbnRleHQvdjEuMC4wIl0sImlkIjoidXJuOnV1aWQ6ZGVsLWlzc3Vlci1hZ2VudCIsInR5cGUiOlsiVmVyaWZpYWJsZUNyZWRlbnRpYWwiLCJEZWxlZ2F0aW9uQ3JlZGVudGlhbCJdLCJpc3N1ZXIiOiJkaWQ6d2ViOmlzc3Vlci5leGFtcGxlLmNvbSIsImlzc3VhbmNlRGF0ZSI6IjIwMjYtMDEtMDFUMDA6MDA6MDAuMDAwWiIsImNyZWRlbnRpYWxTdWJqZWN0Ijp7ImlkIjoiZGlkOndlYjphZ2VudC5leGFtcGxlLmNvbSIsImRlbGVnYXRpb24iOnsiaWQiOiJkZWwtaXNzdWVyLWFnZW50IiwiaXNzdWVyRGlkIjoiZGlkOndlYjppc3N1ZXIuZXhhbXBsZS5jb20iLCJzdWJqZWN0RGlkIjoiZGlkOndlYjphZ2VudC5leGFtcGxlLmNvbSIsInNjb3BlcyI6WyJncmVldGluZzpyZWFkIl0sImNvbnN0cmFpbnRzIjp7InNjb3BlcyI6WyJncmVldGluZzpyZWFkIl0sImF1ZGllbmNlIjoiZGlkOndlYjpzZXJ2ZXIuZXhhbXBsZS5jb20ifSwic3RhdHVzIjoiYWN0aXZlIiwiY3JlYXRlZEF0IjoxNzUwMDAwMDAwMDAwfX19LCJzdWIiOiJkaWQ6d2ViOmFnZW50LmV4YW1wbGUuY29tIiwiaWF0IjoxNzY3MjI1NjAwLCJqdGkiOiJ1cm46dXVpZDpkZWwtaXNzdWVyLWFnZW50In0.NB6bDS7vb6WU0XJsr5UwMMWUGJli2FTpW8YaKmhcNpny8QS9Zr4isgl-BpmrXJ-VlFFO8qftLO5IBKc1tfeuAg",
         "serverDid": "did:web:server.example.com",
         "didDocuments": {
           "did:web:issuer.example.com": {
@@ -903,7 +903,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                  "x": "ZVGPlUO_n6ZGqLVfLUFs9O0Xd9yUAmiJ0Y4TJ3Wxjfc"
                 }
               },
               {
@@ -913,7 +913,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                  "x": "blNj15qb2UcN1fYRb4Iuua_rdtP8M0efU47NGfmltxY"
                 }
               }
             ],
@@ -934,7 +934,7 @@
       "expected": "fail",
       "reason": "An empty kid names no key and is never read as naming none (SPEC.md §6.2), so the VC-JWT is rejected although the key it would otherwise be checked with made its signature",
       "input": {
-        "leaf": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCIsImtpZCI6IiJ9.eyJpc3MiOiJkaWQ6d2ViOmlzc3Vlci5leGFtcGxlLmNvbSIsInZjIjp7IkBjb250ZXh0IjpbImh0dHBzOi8vd3d3LnczLm9yZy8yMDE4L2NyZWRlbnRpYWxzL3YxIiwiaHR0cHM6Ly9zY2hlbWEua3lhLW9zLm9yZy92MS9wcm90b2NvbC9kZWxlZ2F0aW9uL2NvbnRleHQvdjEuMC4wIl0sImlkIjoidXJuOnV1aWQ6ZGVsLWlzc3Vlci1hZ2VudCIsInR5cGUiOlsiVmVyaWZpYWJsZUNyZWRlbnRpYWwiLCJEZWxlZ2F0aW9uQ3JlZGVudGlhbCJdLCJpc3N1ZXIiOiJkaWQ6d2ViOmlzc3Vlci5leGFtcGxlLmNvbSIsImlzc3VhbmNlRGF0ZSI6IjIwMjYtMDEtMDFUMDA6MDA6MDAuMDAwWiIsImNyZWRlbnRpYWxTdWJqZWN0Ijp7ImlkIjoiZGlkOndlYjphZ2VudC5leGFtcGxlLmNvbSIsImRlbGVnYXRpb24iOnsiaWQiOiJkZWwtaXNzdWVyLWFnZW50IiwiaXNzdWVyRGlkIjoiZGlkOndlYjppc3N1ZXIuZXhhbXBsZS5jb20iLCJzdWJqZWN0RGlkIjoiZGlkOndlYjphZ2VudC5leGFtcGxlLmNvbSIsInNjb3BlcyI6WyJncmVldGluZzpyZWFkIl0sImNvbnN0cmFpbnRzIjp7InNjb3BlcyI6WyJncmVldGluZzpyZWFkIl0sImF1ZGllbmNlIjoiZGlkOndlYjpzZXJ2ZXIuZXhhbXBsZS5jb20ifSwic3RhdHVzIjoiYWN0aXZlIiwiY3JlYXRlZEF0IjoxNzUwMDAwMDAwMDAwfX19LCJzdWIiOiJkaWQ6d2ViOmFnZW50LmV4YW1wbGUuY29tIiwiaWF0IjoxNzY3MjI1NjAwLCJqdGkiOiJ1cm46dXVpZDpkZWwtaXNzdWVyLWFnZW50In0.rysQpxqieLXVviXPN2Z7bfjYOHevCqbZgl6UJNsB-PlD-PbGqm9kFM9o-25thtwTLfjGsB_VtJEEuLq5MNwfBA",
+        "leaf": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCIsImtpZCI6IiJ9.eyJpc3MiOiJkaWQ6d2ViOmlzc3Vlci5leGFtcGxlLmNvbSIsInZjIjp7IkBjb250ZXh0IjpbImh0dHBzOi8vd3d3LnczLm9yZy8yMDE4L2NyZWRlbnRpYWxzL3YxIiwiaHR0cHM6Ly9zY2hlbWEua3lhLW9zLm9yZy92MS9wcm90b2NvbC9kZWxlZ2F0aW9uL2NvbnRleHQvdjEuMC4wIl0sImlkIjoidXJuOnV1aWQ6ZGVsLWlzc3Vlci1hZ2VudCIsInR5cGUiOlsiVmVyaWZpYWJsZUNyZWRlbnRpYWwiLCJEZWxlZ2F0aW9uQ3JlZGVudGlhbCJdLCJpc3N1ZXIiOiJkaWQ6d2ViOmlzc3Vlci5leGFtcGxlLmNvbSIsImlzc3VhbmNlRGF0ZSI6IjIwMjYtMDEtMDFUMDA6MDA6MDAuMDAwWiIsImNyZWRlbnRpYWxTdWJqZWN0Ijp7ImlkIjoiZGlkOndlYjphZ2VudC5leGFtcGxlLmNvbSIsImRlbGVnYXRpb24iOnsiaWQiOiJkZWwtaXNzdWVyLWFnZW50IiwiaXNzdWVyRGlkIjoiZGlkOndlYjppc3N1ZXIuZXhhbXBsZS5jb20iLCJzdWJqZWN0RGlkIjoiZGlkOndlYjphZ2VudC5leGFtcGxlLmNvbSIsInNjb3BlcyI6WyJncmVldGluZzpyZWFkIl0sImNvbnN0cmFpbnRzIjp7InNjb3BlcyI6WyJncmVldGluZzpyZWFkIl0sImF1ZGllbmNlIjoiZGlkOndlYjpzZXJ2ZXIuZXhhbXBsZS5jb20ifSwic3RhdHVzIjoiYWN0aXZlIiwiY3JlYXRlZEF0IjoxNzUwMDAwMDAwMDAwfX19LCJzdWIiOiJkaWQ6d2ViOmFnZW50LmV4YW1wbGUuY29tIiwiaWF0IjoxNzY3MjI1NjAwLCJqdGkiOiJ1cm46dXVpZDpkZWwtaXNzdWVyLWFnZW50In0.3vmyLlWqarWX-typpbiAwd0LctwDftI43w5XUnmiuJaTp-MZqHFUPsLDKre4hRcRjKuPHTA2nEVRmHK-rPjnAw",
         "serverDid": "did:web:server.example.com",
         "didDocuments": {
           "did:web:issuer.example.com": {
@@ -947,7 +947,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "cMmZkUn_eMp5LZvJTG13lNiGto3yFAu89BiJsUz2Byg"
+                  "x": "ZVGPlUO_n6ZGqLVfLUFs9O0Xd9yUAmiJ0Y4TJ3Wxjfc"
                 }
               },
               {
@@ -957,7 +957,7 @@
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "tOQ0eOEV3WbJCyKAzt1cqKLx8XuU9-aYKbpQsJvDf7o"
+                  "x": "blNj15qb2UcN1fYRb4Iuua_rdtP8M0efU47NGfmltxY"
                 }
               }
             ],

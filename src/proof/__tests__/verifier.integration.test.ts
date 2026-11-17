@@ -558,6 +558,7 @@ describe('ProofVerifier (real crypto)', () => {
           JSON.stringify({
             didDocument: {
               id: did,
+              assertionMethod: [kid],
               verificationMethod: [
                 {
                   id: kid,

@@ -9,7 +9,7 @@ import { CryptoService, type Ed25519JWK } from "../utils/crypto-service.js";
 import { ClockProvider, CryptoProvider, FetchProvider, NonceCacheProvider } from "../providers/base.js";
 import { nonceRetentionSeconds } from "../providers/nonce-retention.js";
 import { admitNonce, checkNonceStore } from "../providers/nonce-admission.js";
-import { checkProofIdentifiers, resolveProofDid } from "./proof-did.js";
+import { fetchProofKey } from "./proof-key.js";
 import {
   validateDetachedProof,
   type DetachedProof,
@@ -18,13 +18,9 @@ import {
 import { canonicalizeJson } from "../utils/canonical-json.js";
 import { dependencyTimeout } from "../utils/deadline.js";
 import {
-  ProofVerificationError,
   PROOF_VERIFICATION_ERROR_CODES,
 } from "./errors.js";
 import type { ProofVerificationOptions, ProofVerificationResult, ProofVerifierConfig } from "./verifier-types.js";
-import { logger } from "../logging/index.js";
-import { verificationMethodJwk } from "../delegation/verification-method-key.js";
-import type { VerificationMethod } from "../delegation/vc-verifier.types.js";
 import {
   buildProofJwsPayload,
   KYA_OS_PROOF_META_KEY,
@@ -107,6 +103,9 @@ export class ProofVerifier {
   /**
    * Verify a DetachedProof.
    *
+   * This path uses the caller-supplied key. The caller must retrieve it from the
+   * signer's assertionMethod; fetchPublicKeyFromDID enforces that relationship.
+   *
    * Reconstructs the canonical payload from proof.meta and checks the JWS
    * signature, nonce replay, and timestamp skew — proving the proof is AUTHENTIC
    * (signed by the holder of `kid`). On its own this does NOT confirm that the
@@ -171,6 +170,9 @@ export class ProofVerifier {
 
   /**
    * Verify a retained proof as historical evidence.
+   *
+   * This path uses the caller-supplied key. The caller must retrieve it from the
+   * signer's assertionMethod; fetchPublicKeyFromDID enforces that relationship.
    *
    * Unlike live verification, this pure path never reads or mutates replay
    * state and never compares an old timestamp to the current clock. It verifies
@@ -520,9 +522,9 @@ export class ProofVerifier {
   }
 
   /**
-   * Fetch public key from DID document
+   * Fetch an assertionMethod public key from the signer's own DID document
    * @param did - DID to resolve
-   * @param kid - Key ID (optional, defaults to first verification method)
+   * @param kid - Key ID (optional, defaults to the first assertionMethod entry)
    * @returns Ed25519 JWK or null if not found
    * @throws {ProofVerificationError} If DID resolution fails with specific error code
    */
@@ -530,103 +532,7 @@ export class ProofVerifier {
     did: string,
     kid?: string
   ): Promise<Ed25519JWK | null> {
-    try {
-      checkProofIdentifiers(did, kid);
-      // Built before resolving, so a kid naming another DID fails without a fetch.
-      const matchesKid = kid ? verificationMethodMatcher(did, kid) : undefined;
-      const didDoc = await resolveProofDid(this.fetch, did, kid, this.timeoutMs);
-
-      if (!didDoc) {
-        throw new ProofVerificationError(
-          PROOF_VERIFICATION_ERROR_CODES.DID_DOCUMENT_NOT_FOUND,
-          `DID document not found: ${did}`,
-          { did }
-        );
-      }
-
-      if (
-        !didDoc.verificationMethod ||
-        didDoc.verificationMethod.length === 0
-      ) {
-        throw new ProofVerificationError(
-          PROOF_VERIFICATION_ERROR_CODES.VERIFICATION_METHOD_NOT_FOUND,
-          `No verification methods found in DID document: ${did}`,
-          { did }
-        );
-      }
-
-      // Find verification method by kid or use first one
-      let verificationMethod: VerificationMethod | undefined;
-      if (matchesKid) {
-        verificationMethod = didDoc.verificationMethod.find(matchesKid);
-
-        if (!verificationMethod) {
-          throw new ProofVerificationError(
-            PROOF_VERIFICATION_ERROR_CODES.VERIFICATION_METHOD_NOT_FOUND,
-            `Verification method not found for kid: ${kid}`,
-            {
-              did,
-              kid,
-              availableKids: didDoc.verificationMethod.map(
-                (vm: { id: string }) => vm.id
-              ),
-            }
-          );
-        }
-      } else {
-        verificationMethod = didDoc.verificationMethod[0];
-      }
-
-      // The key may be published as publicKeyJwk, publicKeyMultibase, or
-      // publicKeyBase58; verificationMethodJwk reads whichever is present.
-      const methodJwk = verificationMethod
-        ? verificationMethodJwk(verificationMethod)
-        : undefined;
-      if (!verificationMethod || !methodJwk) {
-        throw new ProofVerificationError(
-          PROOF_VERIFICATION_ERROR_CODES.PUBLIC_KEY_NOT_FOUND,
-          "Verification method has no usable public key (publicKeyJwk / publicKeyMultibase / publicKeyBase58)",
-          { did, kid, verificationMethodId: verificationMethod?.id }
-        );
-      }
-
-      const jwk = methodJwk as {
-        kty?: string;
-        crv?: string;
-        x?: string;
-        [key: string]: unknown;
-      };
-
-      // Validate it's an Ed25519 key
-      if (jwk.kty !== "OKP" || jwk.crv !== "Ed25519" || !jwk.x) {
-        throw new ProofVerificationError(
-          PROOF_VERIFICATION_ERROR_CODES.INVALID_JWK_FORMAT,
-          `Unsupported key type or curve: kty=${jwk.kty}, crv=${jwk.crv}`,
-          { did, kid, jwk: { kty: jwk.kty, crv: jwk.crv } }
-        );
-      }
-
-      // Set kid from verification method ID so downstream kid-matching works,
-      // on a copy: a document a built-in resolver returns is frozen.
-      if (!jwk.kid && verificationMethod.id) {
-        return { ...jwk, kid: verificationMethod.id } as Ed25519JWK;
-      }
-      return jwk as Ed25519JWK;
-    } catch (error) {
-      if (error instanceof ProofVerificationError) {
-        throw error;
-      }
-      logger.error("[ProofVerifier] Failed to fetch public key from DID", { error });
-      throw new ProofVerificationError(
-        PROOF_VERIFICATION_ERROR_CODES.DID_RESOLUTION_FAILED,
-        `DID resolution failed: ${error instanceof Error ? error.message : String(error)}`,
-        {
-          did,
-          kid,
-          originalError: error instanceof Error ? error.message : String(error),
-        }
-      );
-    }
+    return fetchProofKey(this.fetch, did, kid, this.timeoutMs);
   }
 
   /**
@@ -660,32 +566,6 @@ export class ProofVerifier {
  */
 function didOfKid(kid: string): string | undefined {
   return kid.startsWith("did:") ? kid.split("#")[0] : undefined;
-}
-
-/**
- * Match a verification method of `did`'s document against `kid`. An absolute
- * DID URL must name `did` itself and match the method id exactly; a document
- * may list that id relative to the DID. A relative `kid` is resolved against
- * `did`.
- */
-function verificationMethodMatcher(
-  did: string,
-  kid: string,
-): (vm: { id: string }) => boolean {
-  const kidOwner = didOfKid(kid);
-  if (kidOwner !== undefined) {
-    if (kidOwner !== did) {
-      throw new ProofVerificationError(
-        PROOF_VERIFICATION_ERROR_CODES.KID_DID_MISMATCH,
-        `kid ${kid} names a key of a different DID than ${did}`,
-        { did, kid },
-      );
-    }
-    const fragment = kid.slice(kidOwner.length);
-    return (vm) => vm.id === kid || (fragment !== "" && vm.id === fragment);
-  }
-  const kidWithHash = kid.startsWith("#") ? kid : `#${kid}`;
-  return (vm) => vm.id === kidWithHash || vm.id === `${did}${kidWithHash}`;
 }
 
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {

@@ -1165,6 +1165,13 @@ interface ProofMeta {
 }
 ```
 
+A detached proof is an assertion by its signer.
+A verifier MUST retrieve its key by `meta.kid` from the signer's own DID document, whose `id` MUST equal `meta.did`, and MUST use only a method listed under `assertionMethod`, by reference or embedded (W3C Controlled Identifiers v1.0 [CID] §3.3).
+The method MUST be defined exactly once among `verificationMethod` and embedded `assertionMethod` entries, have a non-empty `id`, `type` and `controller`, have an id under the signer's DID, and name that DID as its `controller`.
+A key listed only under another relationship, such as `authentication`, MUST NOT verify a detached proof.
+Although a proof MUST carry `meta.kid`, a key-retrieval API called without a `kid` MUST select only the first `assertionMethod` entry under these rules and MUST refuse an unusable first entry without trying later entries.
+A verifier given a key by its caller relies on that caller to enforce this retrieval rule.
+
 ### 7.3 Hash Generation
 
 1. **Canonicalize**: Convert request/response to RFC 8785 (JCS) canonical JSON
@@ -1901,9 +1908,9 @@ and the residual risk an operator carries.
 - did:key: Generate new DID (no rotation mechanism)
 - did:web: Update `did.json` with new verification method
 - Old keys SHOULD remain in `did.json` for proof verification
-- An old key SHOULD stay listed under `assertionMethod` while any delegation credential or status list it signed is still outstanding, since verifiers take a proof's key only from that relationship (§6.2, §6.6)
-- A new key verifies the issuer's delegation credentials and status lists only once the issuer's DID document lists it under `assertionMethod`, defined once, with an id under the issuer's DID and the issuer's DID as its `controller` (§6.2); list it there before signing with it
-- An issuer SHOULD name its key in every VC-JWT `kid` and proof `verificationMethod` it writes; a verifier may check a VC-JWT with no `kid`, or a status list whose proof names no key, with the first `assertionMethod` entry alone (§6.2), so while one is outstanding the key that signed it SHOULD stay that first entry
+- An old key SHOULD stay listed under `assertionMethod` while any delegation credential or status list it signed is still outstanding, or any detached proof it signed is retained for verification (§12.4), since verifiers retrieve those keys only from that relationship (§6.2, §6.6, §7.2)
+- A new key verifies the issuer's delegation credentials, status lists and detached proofs only once the issuer's DID document lists it under `assertionMethod`, defined once, with an id under the issuer's DID and the issuer's DID as its `controller` (§6.2, §7.2); list it there before signing with it
+- An issuer SHOULD name its key in every VC-JWT `kid` and proof `verificationMethod` it writes, and MUST name it in a detached proof's `meta.kid` (§7.2); a verifier may check a VC-JWT with no `kid`, or a status list whose proof names no key, with the first `assertionMethod` entry alone (§6.2), so while one is outstanding the key that signed it SHOULD stay that first entry
 - Delegation credentials reference specific key IDs; reissue after rotation
 - Key custody options include software-only (default), proxy-managed, and hardware-attested (TEE). See §11.0.
 

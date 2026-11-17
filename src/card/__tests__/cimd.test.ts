@@ -22,6 +22,7 @@ const card: EntityCard = { id: did, entityType: 'client', name: 'Acme Client' };
 const didDoc = {
   id: did,
   alsoKnownAs: [clientId],
+  authentication: [`${did}#key-1`, `${did}#key-ec`],
   verificationMethod: [
     {
       id: `${did}#key-1`,
@@ -69,7 +70,7 @@ describe('bindClientId ⇄ didFromClientId (the W3C did:web ⇄ HTTPS bijection)
   });
 });
 
-describe('didKeyedJwks (verificationMethod → OKP JWK, kid preserved, d stripped)', () => {
+describe('didKeyedJwks (authentication → OKP JWK, kid preserved, d stripped)', () => {
   it('projects only Ed25519 keys and strips the private d', () => {
     const jwks = didKeyedJwks(didDoc);
     expect(jwks.keys).toHaveLength(1);
@@ -79,8 +80,10 @@ describe('didKeyedJwks (verificationMethod → OKP JWK, kid preserved, d strippe
 
   it('preserves an explicit JWK kid over the verification-method id', () => {
     const jwks = didKeyedJwks({
+      id: did,
+      authentication: [`${did}#vm`],
       verificationMethod: [
-        { id: `${did}#vm`, publicKeyJwk: { kty: 'OKP', crv: 'Ed25519', x: 'X', kid: 'custom-kid' } },
+        { id: `${did}#vm`, type: 'JsonWebKey2020', controller: did, publicKeyJwk: { kty: 'OKP', crv: 'Ed25519', x: 'X', kid: 'custom-kid' } },
       ],
     });
     expect(jwks.keys[0]?.kid).toBe('custom-kid');
@@ -92,6 +95,7 @@ describe('didKeyedJwks (verificationMethod → OKP JWK, kid preserved, d strippe
     const vmId = `${keyDid}#${multibase}`;
     const jwks = didKeyedJwks({
       id: keyDid,
+      authentication: [vmId, `${keyDid}#z6LSbysY2xFMRpGMhb7tFTLMpeuPRaqaWM1yECx2AtzE3KCc`],
       verificationMethod: [
         { id: vmId, type: 'Ed25519VerificationKey2020', controller: keyDid, publicKeyMultibase: multibase },
         {

@@ -10,7 +10,7 @@
  *
  *   - `bindClientId` / `didFromClientId` — the W3C `did:web` ⇄ HTTPS bijection
  *     (`did:web:host:a:b` ⇄ `https://host/a/b`, the authority colon percent-encoded for ports).
- *   - `didKeyedJwks`        — DID-document `verificationMethod[]` Ed25519 → an OKP JWK set
+ *   - `didKeyedJwks`        - DID-document `authentication` Ed25519 methods to an OKP JWK set
  *     (`kid` preserved), stripping any private `d` and skipping non-Ed25519 methods.
  *   - `toClientMetadata`    — PROJECT the card into the CIMD doc served at the `client_id` URL
  *     (`token_endpoint_auth_method: private_key_jwt`, `_meta['org.kya-os/did']` = the DID).
@@ -29,6 +29,8 @@
 
 import { isRecord } from '../utils/guards.js';
 import { verificationMethodJwk } from '../delegation/verification-method-key.js';
+import { methodsUnder } from '../delegation/verification-relationship.js';
+import type { DIDDocument } from '../delegation/vc-verifier.types.js';
 import { parseCard } from './resolve.js';
 import type { CimdBinding, Ed25519PublicJwk, EntityCard } from './schema.js';
 
@@ -104,13 +106,14 @@ export function didFromClientId(clientId: string): string {
 // ── DID-keyed JWKS ─────────────────────────────────────────────────────────────
 
 /**
- * Project a DID document's `verificationMethod[]` into the JWKS the AS validates
+ * Project a DID document's `authentication` methods into the JWKS the AS validates
  * `private_key_jwt` against. Only Ed25519 (`OKP`) keys are projected; `kid` is preserved
  * (the JWK's own `kid`, else the verification method `id`); any private `d` is stripped.
  */
 export function didKeyedJwks(didDoc: unknown): Jwks {
   const vms =
-    isRecord(didDoc) && Array.isArray(didDoc.verificationMethod) ? didDoc.verificationMethod : [];
+    isRecord(didDoc) && typeof didDoc.id === 'string'
+      ? methodsUnder(didDoc as unknown as DIDDocument, didDoc.id, 'authentication') : [];
   const keys: Ed25519PublicJwk[] = [];
   for (const vm of vms) {
     const jwk = vmToOkpJwk(vm);

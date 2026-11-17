@@ -1,0 +1,628 @@
+{
+  "version": "1.9.0",
+  "category": "signed-proof",
+  "vectors": [
+    {
+      "id": "signed-proof/key-relationship-reference",
+      "category": "signed-proof",
+      "description": "The signer lists its proof key by reference under assertionMethod.",
+      "expected": "pass",
+      "reason": "The signer lists its proof key by reference under assertionMethod.",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6cHJvb2YuZXhhbXBsZSNhc3NlcnQifQ.eyJhdWQiOiJ2ZXJpZmllci5leGFtcGxlIiwiaXNzIjoiZGlkOndlYjpwcm9vZi5leGFtcGxlIiwibm9uY2UiOiJOc3FrUmdvamRib0tIYlJvSTNTazZnIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6ZDkwMjQzZDRmYmVjNjAzMWIxYTZlMWZjN2Y0MTNhYmY1MDAwMjI3YTcwMjFmZmUzYWFhOTNkYzg1NzU5ZjcyNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1NjpjOGJlNmUwYTE5OTMwMTVmNDM5MWIzOTRhMjI4MTFiMGQ0ZTdmMTdiODUzMDk5MWE5ZjkxMTFjYmMxOTczMjM5Iiwic2Vzc2lvbklkIjoicHJvb2Yta2V5LXJlbGF0aW9uc2hpcCIsInN1YiI6ImRpZDp3ZWI6cHJvb2YuZXhhbXBsZSIsInRzIjoxNzUwMDAwMDAwfQ.8iERcY8JdVyYzZquks2reDULYUwJ-QbvHgvJnxlPyj17qO-qwDhB403bruljfShvERKPZE_oYqY0zONUVukOCw",
+          "meta": {
+            "did": "did:web:proof.example",
+            "kid": "did:web:proof.example#assert",
+            "ts": 1750000000,
+            "nonce": "NsqkRgojdboKHbRoI3Sk6g",
+            "audience": "verifier.example",
+            "sessionId": "proof-key-relationship",
+            "requestHash": "sha256:d90243d4fbec6031b1a6e1fc7f413abf5000227a7021ffe3aaa93dc85759f727",
+            "responseHash": "sha256:c8be6e0a1993015f4391b394a22811b0d4e7f17b8530991a9f9111cbc1973239"
+          }
+        },
+        "didDocuments": {
+          "did:web:proof.example": {
+            "id": "did:web:proof.example",
+            "verificationMethod": [
+              {
+                "id": "did:web:proof.example#assert",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:proof.example",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "rZVLBRxKjqaZTpPgYgiNxghsGw3K_eIRg0GAAdJRSUs"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:web:proof.example#assert"
+            ]
+          }
+        },
+        "keyId": "did:web:proof.example#assert",
+        "now": 1750000000,
+        "skewSeconds": 120,
+        "expected": {
+          "request": {
+            "method": "records.read",
+            "params": {
+              "id": "one"
+            }
+          },
+          "response": {
+            "data": [
+              {
+                "type": "text",
+                "text": "one"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "signed-proof/key-relationship-embedded",
+      "category": "signed-proof",
+      "description": "An embedded assertion method is sufficient.",
+      "expected": "pass",
+      "reason": "An embedded assertion method is sufficient.",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6cHJvb2YuZXhhbXBsZSNhc3NlcnQifQ.eyJhdWQiOiJ2ZXJpZmllci5leGFtcGxlIiwiaXNzIjoiZGlkOndlYjpwcm9vZi5leGFtcGxlIiwibm9uY2UiOiJOc3FrUmdvamRib0tIYlJvSTNTazZnIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6ZDkwMjQzZDRmYmVjNjAzMWIxYTZlMWZjN2Y0MTNhYmY1MDAwMjI3YTcwMjFmZmUzYWFhOTNkYzg1NzU5ZjcyNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1NjpjOGJlNmUwYTE5OTMwMTVmNDM5MWIzOTRhMjI4MTFiMGQ0ZTdmMTdiODUzMDk5MWE5ZjkxMTFjYmMxOTczMjM5Iiwic2Vzc2lvbklkIjoicHJvb2Yta2V5LXJlbGF0aW9uc2hpcCIsInN1YiI6ImRpZDp3ZWI6cHJvb2YuZXhhbXBsZSIsInRzIjoxNzUwMDAwMDAwfQ.8iERcY8JdVyYzZquks2reDULYUwJ-QbvHgvJnxlPyj17qO-qwDhB403bruljfShvERKPZE_oYqY0zONUVukOCw",
+          "meta": {
+            "did": "did:web:proof.example",
+            "kid": "did:web:proof.example#assert",
+            "ts": 1750000000,
+            "nonce": "NsqkRgojdboKHbRoI3Sk6g",
+            "audience": "verifier.example",
+            "sessionId": "proof-key-relationship",
+            "requestHash": "sha256:d90243d4fbec6031b1a6e1fc7f413abf5000227a7021ffe3aaa93dc85759f727",
+            "responseHash": "sha256:c8be6e0a1993015f4391b394a22811b0d4e7f17b8530991a9f9111cbc1973239"
+          }
+        },
+        "didDocuments": {
+          "did:web:proof.example": {
+            "id": "did:web:proof.example",
+            "assertionMethod": [
+              {
+                "id": "did:web:proof.example#assert",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:proof.example",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "rZVLBRxKjqaZTpPgYgiNxghsGw3K_eIRg0GAAdJRSUs"
+                }
+              }
+            ]
+          }
+        },
+        "keyId": "did:web:proof.example#assert",
+        "now": 1750000000,
+        "skewSeconds": 120,
+        "expected": {
+          "request": {
+            "method": "records.read",
+            "params": {
+              "id": "one"
+            }
+          },
+          "response": {
+            "data": [
+              {
+                "type": "text",
+                "text": "one"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "signed-proof/key-relationship-authentication-only",
+      "category": "signed-proof",
+      "description": "An authentication key is not an assertion key.",
+      "expected": "fail",
+      "reason": "An authentication key is not an assertion key.",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6cHJvb2YuZXhhbXBsZSNhc3NlcnQifQ.eyJhdWQiOiJ2ZXJpZmllci5leGFtcGxlIiwiaXNzIjoiZGlkOndlYjpwcm9vZi5leGFtcGxlIiwibm9uY2UiOiJOc3FrUmdvamRib0tIYlJvSTNTazZnIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6ZDkwMjQzZDRmYmVjNjAzMWIxYTZlMWZjN2Y0MTNhYmY1MDAwMjI3YTcwMjFmZmUzYWFhOTNkYzg1NzU5ZjcyNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1NjpjOGJlNmUwYTE5OTMwMTVmNDM5MWIzOTRhMjI4MTFiMGQ0ZTdmMTdiODUzMDk5MWE5ZjkxMTFjYmMxOTczMjM5Iiwic2Vzc2lvbklkIjoicHJvb2Yta2V5LXJlbGF0aW9uc2hpcCIsInN1YiI6ImRpZDp3ZWI6cHJvb2YuZXhhbXBsZSIsInRzIjoxNzUwMDAwMDAwfQ.8iERcY8JdVyYzZquks2reDULYUwJ-QbvHgvJnxlPyj17qO-qwDhB403bruljfShvERKPZE_oYqY0zONUVukOCw",
+          "meta": {
+            "did": "did:web:proof.example",
+            "kid": "did:web:proof.example#assert",
+            "ts": 1750000000,
+            "nonce": "NsqkRgojdboKHbRoI3Sk6g",
+            "audience": "verifier.example",
+            "sessionId": "proof-key-relationship",
+            "requestHash": "sha256:d90243d4fbec6031b1a6e1fc7f413abf5000227a7021ffe3aaa93dc85759f727",
+            "responseHash": "sha256:c8be6e0a1993015f4391b394a22811b0d4e7f17b8530991a9f9111cbc1973239"
+          }
+        },
+        "didDocuments": {
+          "did:web:proof.example": {
+            "id": "did:web:proof.example",
+            "verificationMethod": [
+              {
+                "id": "did:web:proof.example#assert",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:proof.example",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "rZVLBRxKjqaZTpPgYgiNxghsGw3K_eIRg0GAAdJRSUs"
+                }
+              }
+            ],
+            "authentication": [
+              "did:web:proof.example#assert"
+            ]
+          }
+        },
+        "keyId": "did:web:proof.example#assert",
+        "now": 1750000000,
+        "skewSeconds": 120,
+        "expected": {
+          "request": {
+            "method": "records.read",
+            "params": {
+              "id": "one"
+            }
+          },
+          "response": {
+            "data": [
+              {
+                "type": "text",
+                "text": "one"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "signed-proof/key-relationship-unlisted",
+      "category": "signed-proof",
+      "description": "A published key needs an assertion relationship.",
+      "expected": "fail",
+      "reason": "A published key needs an assertion relationship.",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6cHJvb2YuZXhhbXBsZSNhc3NlcnQifQ.eyJhdWQiOiJ2ZXJpZmllci5leGFtcGxlIiwiaXNzIjoiZGlkOndlYjpwcm9vZi5leGFtcGxlIiwibm9uY2UiOiJOc3FrUmdvamRib0tIYlJvSTNTazZnIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6ZDkwMjQzZDRmYmVjNjAzMWIxYTZlMWZjN2Y0MTNhYmY1MDAwMjI3YTcwMjFmZmUzYWFhOTNkYzg1NzU5ZjcyNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1NjpjOGJlNmUwYTE5OTMwMTVmNDM5MWIzOTRhMjI4MTFiMGQ0ZTdmMTdiODUzMDk5MWE5ZjkxMTFjYmMxOTczMjM5Iiwic2Vzc2lvbklkIjoicHJvb2Yta2V5LXJlbGF0aW9uc2hpcCIsInN1YiI6ImRpZDp3ZWI6cHJvb2YuZXhhbXBsZSIsInRzIjoxNzUwMDAwMDAwfQ.8iERcY8JdVyYzZquks2reDULYUwJ-QbvHgvJnxlPyj17qO-qwDhB403bruljfShvERKPZE_oYqY0zONUVukOCw",
+          "meta": {
+            "did": "did:web:proof.example",
+            "kid": "did:web:proof.example#assert",
+            "ts": 1750000000,
+            "nonce": "NsqkRgojdboKHbRoI3Sk6g",
+            "audience": "verifier.example",
+            "sessionId": "proof-key-relationship",
+            "requestHash": "sha256:d90243d4fbec6031b1a6e1fc7f413abf5000227a7021ffe3aaa93dc85759f727",
+            "responseHash": "sha256:c8be6e0a1993015f4391b394a22811b0d4e7f17b8530991a9f9111cbc1973239"
+          }
+        },
+        "didDocuments": {
+          "did:web:proof.example": {
+            "id": "did:web:proof.example",
+            "verificationMethod": [
+              {
+                "id": "did:web:proof.example#assert",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:proof.example",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "rZVLBRxKjqaZTpPgYgiNxghsGw3K_eIRg0GAAdJRSUs"
+                }
+              }
+            ]
+          }
+        },
+        "keyId": "did:web:proof.example#assert",
+        "now": 1750000000,
+        "skewSeconds": 120,
+        "expected": {
+          "request": {
+            "method": "records.read",
+            "params": {
+              "id": "one"
+            }
+          },
+          "response": {
+            "data": [
+              {
+                "type": "text",
+                "text": "one"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "signed-proof/key-relationship-duplicate",
+      "category": "signed-proof",
+      "description": "Two definitions of the same method are ambiguous.",
+      "expected": "fail",
+      "reason": "Two definitions of the same method are ambiguous.",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6cHJvb2YuZXhhbXBsZSNhc3NlcnQifQ.eyJhdWQiOiJ2ZXJpZmllci5leGFtcGxlIiwiaXNzIjoiZGlkOndlYjpwcm9vZi5leGFtcGxlIiwibm9uY2UiOiJOc3FrUmdvamRib0tIYlJvSTNTazZnIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6ZDkwMjQzZDRmYmVjNjAzMWIxYTZlMWZjN2Y0MTNhYmY1MDAwMjI3YTcwMjFmZmUzYWFhOTNkYzg1NzU5ZjcyNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1NjpjOGJlNmUwYTE5OTMwMTVmNDM5MWIzOTRhMjI4MTFiMGQ0ZTdmMTdiODUzMDk5MWE5ZjkxMTFjYmMxOTczMjM5Iiwic2Vzc2lvbklkIjoicHJvb2Yta2V5LXJlbGF0aW9uc2hpcCIsInN1YiI6ImRpZDp3ZWI6cHJvb2YuZXhhbXBsZSIsInRzIjoxNzUwMDAwMDAwfQ.8iERcY8JdVyYzZquks2reDULYUwJ-QbvHgvJnxlPyj17qO-qwDhB403bruljfShvERKPZE_oYqY0zONUVukOCw",
+          "meta": {
+            "did": "did:web:proof.example",
+            "kid": "did:web:proof.example#assert",
+            "ts": 1750000000,
+            "nonce": "NsqkRgojdboKHbRoI3Sk6g",
+            "audience": "verifier.example",
+            "sessionId": "proof-key-relationship",
+            "requestHash": "sha256:d90243d4fbec6031b1a6e1fc7f413abf5000227a7021ffe3aaa93dc85759f727",
+            "responseHash": "sha256:c8be6e0a1993015f4391b394a22811b0d4e7f17b8530991a9f9111cbc1973239"
+          }
+        },
+        "didDocuments": {
+          "did:web:proof.example": {
+            "id": "did:web:proof.example",
+            "verificationMethod": [
+              {
+                "id": "did:web:proof.example#assert",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:proof.example",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "rZVLBRxKjqaZTpPgYgiNxghsGw3K_eIRg0GAAdJRSUs"
+                }
+              }
+            ],
+            "assertionMethod": [
+              {
+                "id": "did:web:proof.example#assert",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:proof.example",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "rZVLBRxKjqaZTpPgYgiNxghsGw3K_eIRg0GAAdJRSUs"
+                }
+              }
+            ]
+          }
+        },
+        "keyId": "did:web:proof.example#assert",
+        "now": 1750000000,
+        "skewSeconds": 120,
+        "expected": {
+          "request": {
+            "method": "records.read",
+            "params": {
+              "id": "one"
+            }
+          },
+          "response": {
+            "data": [
+              {
+                "type": "text",
+                "text": "one"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "signed-proof/key-relationship-foreign-controller",
+      "category": "signed-proof",
+      "description": "The method must be controlled by the signer.",
+      "expected": "fail",
+      "reason": "The method must be controlled by the signer.",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6cHJvb2YuZXhhbXBsZSNhc3NlcnQifQ.eyJhdWQiOiJ2ZXJpZmllci5leGFtcGxlIiwiaXNzIjoiZGlkOndlYjpwcm9vZi5leGFtcGxlIiwibm9uY2UiOiJOc3FrUmdvamRib0tIYlJvSTNTazZnIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6ZDkwMjQzZDRmYmVjNjAzMWIxYTZlMWZjN2Y0MTNhYmY1MDAwMjI3YTcwMjFmZmUzYWFhOTNkYzg1NzU5ZjcyNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1NjpjOGJlNmUwYTE5OTMwMTVmNDM5MWIzOTRhMjI4MTFiMGQ0ZTdmMTdiODUzMDk5MWE5ZjkxMTFjYmMxOTczMjM5Iiwic2Vzc2lvbklkIjoicHJvb2Yta2V5LXJlbGF0aW9uc2hpcCIsInN1YiI6ImRpZDp3ZWI6cHJvb2YuZXhhbXBsZSIsInRzIjoxNzUwMDAwMDAwfQ.8iERcY8JdVyYzZquks2reDULYUwJ-QbvHgvJnxlPyj17qO-qwDhB403bruljfShvERKPZE_oYqY0zONUVukOCw",
+          "meta": {
+            "did": "did:web:proof.example",
+            "kid": "did:web:proof.example#assert",
+            "ts": 1750000000,
+            "nonce": "NsqkRgojdboKHbRoI3Sk6g",
+            "audience": "verifier.example",
+            "sessionId": "proof-key-relationship",
+            "requestHash": "sha256:d90243d4fbec6031b1a6e1fc7f413abf5000227a7021ffe3aaa93dc85759f727",
+            "responseHash": "sha256:c8be6e0a1993015f4391b394a22811b0d4e7f17b8530991a9f9111cbc1973239"
+          }
+        },
+        "didDocuments": {
+          "did:web:proof.example": {
+            "id": "did:web:proof.example",
+            "verificationMethod": [
+              {
+                "id": "did:web:proof.example#assert",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:other.example",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "rZVLBRxKjqaZTpPgYgiNxghsGw3K_eIRg0GAAdJRSUs"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:web:proof.example#assert"
+            ]
+          }
+        },
+        "keyId": "did:web:proof.example#assert",
+        "now": 1750000000,
+        "skewSeconds": 120,
+        "expected": {
+          "request": {
+            "method": "records.read",
+            "params": {
+              "id": "one"
+            }
+          },
+          "response": {
+            "data": [
+              {
+                "type": "text",
+                "text": "one"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "signed-proof/key-relationship-foreign-document",
+      "category": "signed-proof",
+      "description": "The document must identify the signer.",
+      "expected": "fail",
+      "reason": "The document must identify the signer.",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6cHJvb2YuZXhhbXBsZSNhc3NlcnQifQ.eyJhdWQiOiJ2ZXJpZmllci5leGFtcGxlIiwiaXNzIjoiZGlkOndlYjpwcm9vZi5leGFtcGxlIiwibm9uY2UiOiJOc3FrUmdvamRib0tIYlJvSTNTazZnIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6ZDkwMjQzZDRmYmVjNjAzMWIxYTZlMWZjN2Y0MTNhYmY1MDAwMjI3YTcwMjFmZmUzYWFhOTNkYzg1NzU5ZjcyNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1NjpjOGJlNmUwYTE5OTMwMTVmNDM5MWIzOTRhMjI4MTFiMGQ0ZTdmMTdiODUzMDk5MWE5ZjkxMTFjYmMxOTczMjM5Iiwic2Vzc2lvbklkIjoicHJvb2Yta2V5LXJlbGF0aW9uc2hpcCIsInN1YiI6ImRpZDp3ZWI6cHJvb2YuZXhhbXBsZSIsInRzIjoxNzUwMDAwMDAwfQ.8iERcY8JdVyYzZquks2reDULYUwJ-QbvHgvJnxlPyj17qO-qwDhB403bruljfShvERKPZE_oYqY0zONUVukOCw",
+          "meta": {
+            "did": "did:web:proof.example",
+            "kid": "did:web:proof.example#assert",
+            "ts": 1750000000,
+            "nonce": "NsqkRgojdboKHbRoI3Sk6g",
+            "audience": "verifier.example",
+            "sessionId": "proof-key-relationship",
+            "requestHash": "sha256:d90243d4fbec6031b1a6e1fc7f413abf5000227a7021ffe3aaa93dc85759f727",
+            "responseHash": "sha256:c8be6e0a1993015f4391b394a22811b0d4e7f17b8530991a9f9111cbc1973239"
+          }
+        },
+        "didDocuments": {
+          "did:web:proof.example": {
+            "id": "did:web:other.example",
+            "verificationMethod": [
+              {
+                "id": "did:web:proof.example#assert",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:proof.example",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "rZVLBRxKjqaZTpPgYgiNxghsGw3K_eIRg0GAAdJRSUs"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:web:proof.example#assert"
+            ]
+          }
+        },
+        "keyId": "did:web:proof.example#assert",
+        "now": 1750000000,
+        "skewSeconds": 120,
+        "expected": {
+          "request": {
+            "method": "records.read",
+            "params": {
+              "id": "one"
+            }
+          },
+          "response": {
+            "data": [
+              {
+                "type": "text",
+                "text": "one"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "signed-proof/key-relationship-foreign-kid",
+      "category": "signed-proof",
+      "description": "A kid of another DID cannot select the signer key.",
+      "expected": "fail",
+      "reason": "A kid of another DID cannot select the signer key.",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6cHJvb2YuZXhhbXBsZSNhc3NlcnQifQ.eyJhdWQiOiJ2ZXJpZmllci5leGFtcGxlIiwiaXNzIjoiZGlkOndlYjpwcm9vZi5leGFtcGxlIiwibm9uY2UiOiJOc3FrUmdvamRib0tIYlJvSTNTazZnIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6ZDkwMjQzZDRmYmVjNjAzMWIxYTZlMWZjN2Y0MTNhYmY1MDAwMjI3YTcwMjFmZmUzYWFhOTNkYzg1NzU5ZjcyNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1NjpjOGJlNmUwYTE5OTMwMTVmNDM5MWIzOTRhMjI4MTFiMGQ0ZTdmMTdiODUzMDk5MWE5ZjkxMTFjYmMxOTczMjM5Iiwic2Vzc2lvbklkIjoicHJvb2Yta2V5LXJlbGF0aW9uc2hpcCIsInN1YiI6ImRpZDp3ZWI6cHJvb2YuZXhhbXBsZSIsInRzIjoxNzUwMDAwMDAwfQ.8iERcY8JdVyYzZquks2reDULYUwJ-QbvHgvJnxlPyj17qO-qwDhB403bruljfShvERKPZE_oYqY0zONUVukOCw",
+          "meta": {
+            "did": "did:web:proof.example",
+            "kid": "did:web:proof.example#assert",
+            "ts": 1750000000,
+            "nonce": "NsqkRgojdboKHbRoI3Sk6g",
+            "audience": "verifier.example",
+            "sessionId": "proof-key-relationship",
+            "requestHash": "sha256:d90243d4fbec6031b1a6e1fc7f413abf5000227a7021ffe3aaa93dc85759f727",
+            "responseHash": "sha256:c8be6e0a1993015f4391b394a22811b0d4e7f17b8530991a9f9111cbc1973239"
+          }
+        },
+        "didDocuments": {
+          "did:web:proof.example": {
+            "id": "did:web:proof.example",
+            "verificationMethod": [
+              {
+                "id": "did:web:proof.example#assert",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:proof.example",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "rZVLBRxKjqaZTpPgYgiNxghsGw3K_eIRg0GAAdJRSUs"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:web:proof.example#assert"
+            ]
+          }
+        },
+        "keyId": "did:web:other.example#assert",
+        "now": 1750000000,
+        "skewSeconds": 120,
+        "expected": {
+          "request": {
+            "method": "records.read",
+            "params": {
+              "id": "one"
+            }
+          },
+          "response": {
+            "data": [
+              {
+                "type": "text",
+                "text": "one"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "signed-proof/key-relationship-first-usable",
+      "category": "signed-proof",
+      "description": "Without a kid, use the first assertion entry rather than the first published method.",
+      "expected": "pass",
+      "reason": "Without a kid, use the first assertion entry rather than the first published method.",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6cHJvb2YuZXhhbXBsZSNhc3NlcnQifQ.eyJhdWQiOiJ2ZXJpZmllci5leGFtcGxlIiwiaXNzIjoiZGlkOndlYjpwcm9vZi5leGFtcGxlIiwibm9uY2UiOiJOc3FrUmdvamRib0tIYlJvSTNTazZnIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6ZDkwMjQzZDRmYmVjNjAzMWIxYTZlMWZjN2Y0MTNhYmY1MDAwMjI3YTcwMjFmZmUzYWFhOTNkYzg1NzU5ZjcyNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1NjpjOGJlNmUwYTE5OTMwMTVmNDM5MWIzOTRhMjI4MTFiMGQ0ZTdmMTdiODUzMDk5MWE5ZjkxMTFjYmMxOTczMjM5Iiwic2Vzc2lvbklkIjoicHJvb2Yta2V5LXJlbGF0aW9uc2hpcCIsInN1YiI6ImRpZDp3ZWI6cHJvb2YuZXhhbXBsZSIsInRzIjoxNzUwMDAwMDAwfQ.8iERcY8JdVyYzZquks2reDULYUwJ-QbvHgvJnxlPyj17qO-qwDhB403bruljfShvERKPZE_oYqY0zONUVukOCw",
+          "meta": {
+            "did": "did:web:proof.example",
+            "kid": "did:web:proof.example#assert",
+            "ts": 1750000000,
+            "nonce": "NsqkRgojdboKHbRoI3Sk6g",
+            "audience": "verifier.example",
+            "sessionId": "proof-key-relationship",
+            "requestHash": "sha256:d90243d4fbec6031b1a6e1fc7f413abf5000227a7021ffe3aaa93dc85759f727",
+            "responseHash": "sha256:c8be6e0a1993015f4391b394a22811b0d4e7f17b8530991a9f9111cbc1973239"
+          }
+        },
+        "didDocuments": {
+          "did:web:proof.example": {
+            "id": "did:web:proof.example",
+            "verificationMethod": [
+              {
+                "id": "did:web:proof.example#unlisted",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:proof.example",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "rZVLBRxKjqaZTpPgYgiNxghsGw3K_eIRg0GAAdJRSUs"
+                }
+              },
+              {
+                "id": "did:web:proof.example#assert",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:proof.example",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "rZVLBRxKjqaZTpPgYgiNxghsGw3K_eIRg0GAAdJRSUs"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:web:proof.example#assert"
+            ]
+          }
+        },
+        "now": 1750000000,
+        "skewSeconds": 120,
+        "expected": {
+          "request": {
+            "method": "records.read",
+            "params": {
+              "id": "one"
+            }
+          },
+          "response": {
+            "data": [
+              {
+                "type": "text",
+                "text": "one"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "signed-proof/key-relationship-first-unusable",
+      "category": "signed-proof",
+      "description": "Without a kid, an unusable first assertion entry is not skipped.",
+      "expected": "fail",
+      "reason": "Without a kid, an unusable first assertion entry is not skipped.",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6cHJvb2YuZXhhbXBsZSNhc3NlcnQifQ.eyJhdWQiOiJ2ZXJpZmllci5leGFtcGxlIiwiaXNzIjoiZGlkOndlYjpwcm9vZi5leGFtcGxlIiwibm9uY2UiOiJOc3FrUmdvamRib0tIYlJvSTNTazZnIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6ZDkwMjQzZDRmYmVjNjAzMWIxYTZlMWZjN2Y0MTNhYmY1MDAwMjI3YTcwMjFmZmUzYWFhOTNkYzg1NzU5ZjcyNyIsInJlc3BvbnNlSGFzaCI6InNoYTI1NjpjOGJlNmUwYTE5OTMwMTVmNDM5MWIzOTRhMjI4MTFiMGQ0ZTdmMTdiODUzMDk5MWE5ZjkxMTFjYmMxOTczMjM5Iiwic2Vzc2lvbklkIjoicHJvb2Yta2V5LXJlbGF0aW9uc2hpcCIsInN1YiI6ImRpZDp3ZWI6cHJvb2YuZXhhbXBsZSIsInRzIjoxNzUwMDAwMDAwfQ.8iERcY8JdVyYzZquks2reDULYUwJ-QbvHgvJnxlPyj17qO-qwDhB403bruljfShvERKPZE_oYqY0zONUVukOCw",
+          "meta": {
+            "did": "did:web:proof.example",
+            "kid": "did:web:proof.example#assert",
+            "ts": 1750000000,
+            "nonce": "NsqkRgojdboKHbRoI3Sk6g",
+            "audience": "verifier.example",
+            "sessionId": "proof-key-relationship",
+            "requestHash": "sha256:d90243d4fbec6031b1a6e1fc7f413abf5000227a7021ffe3aaa93dc85759f727",
+            "responseHash": "sha256:c8be6e0a1993015f4391b394a22811b0d4e7f17b8530991a9f9111cbc1973239"
+          }
+        },
+        "didDocuments": {
+          "did:web:proof.example": {
+            "id": "did:web:proof.example",
+            "verificationMethod": [
+              {
+                "id": "did:web:proof.example#assert",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:web:proof.example",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "rZVLBRxKjqaZTpPgYgiNxghsGw3K_eIRg0GAAdJRSUs"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "#missing",
+              "did:web:proof.example#assert"
+            ]
+          }
+        },
+        "now": 1750000000,
+        "skewSeconds": 120,
+        "expected": {
+          "request": {
+            "method": "records.read",
+            "params": {
+              "id": "one"
+            }
+          },
+          "response": {
+            "data": [
+              {
+                "type": "text",
+                "text": "one"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

@@ -4,9 +4,9 @@
  * relationship. Every verifier of a delegation credential, a status list or a delegation hop takes
  * its key from a DID document this way: the delegation credential's Data Integrity proof and VC-JWT
  * envelope, the status lists `CheqdStatusListResolver` reads, and the Entity Card's
- * `eddsa-jcs-2022` proofs on status lists and delegation hops. `ProofVerifier`, for a detached
- * request proof, and `didKeyedJwks` still read every key a document publishes: SPEC.md does not yet
- * say which relationship lists those keys.
+ * `eddsa-jcs-2022` proofs on status lists and delegation hops. `ProofVerifier` retrieves a detached
+ * proof's key from `assertionMethod` too; `didKeyedJwks` projects only `authentication` methods
+ * for OAuth client authentication. Callers that supply a proof key themselves enforce its purpose.
  *
  * A DID document publishes keys, and its verification relationships say what each key is for:
  * `assertionMethod` for the subject's credentials and other claims, `authentication` for signing
@@ -72,6 +72,29 @@ export function retrieveVerificationMethod(
 ): VerificationMethod | undefined {
   const found = lookUp(didDocument, did, vmIdentifier, relationship);
   return found !== undefined && 'method' in found ? found.method : undefined;
+}
+
+/**
+ * Every usable method of `did` listed under `relationship`, in relationship order, once per id.
+ * Shares the lookup's definition, ambiguity and ownership rules. Indexes the document once, so
+ * enumeration costs O(S + D) expected time and O(S) space, rather than one full scan per method.
+ */
+export function methodsUnder(
+  didDocument: DIDDocument, did: string, relationship: VerificationRelationship,
+): VerificationMethod[] {
+  if (didDocument.id !== did || !did || did.includes('#')) return [];
+  const definitions = new Map<string, VerificationMethod | null>();
+  const listed = new Set<string>();
+  visitMethods(didDocument, did, relationship, (id, method) => {
+    definitions.set(id, definitions.has(id) ? null : method);
+  }, (id) => listed.add(id));
+  const methods: VerificationMethod[] = [];
+  for (const id of listed) {
+    const method = definitions.get(id);
+    const found = method ? ownedMethod(did, method) : undefined;
+    if (found && 'method' in found) methods.push(found.method);
+  }
+  return methods;
 }
 
 /**
@@ -157,34 +180,51 @@ function lookUp(
   relationship: VerificationRelationship,
 ): Lookup {
   if (did.includes('#')) return undefined;
-  const entries: unknown = didDocument[relationship];
-  if (!Array.isArray(entries)) return undefined;
   const target = relativeId(vmIdentifier, did);
   if (target === undefined) return undefined;
 
   let candidate: VerificationMethod | undefined;
   let duplicate = false;
   let listed = false;
-  const define = (entry: unknown): boolean => {
-    if (!isMethod(entry) || relativeId(entry.id, did) !== target) return false;
+  visitMethods(didDocument, did, relationship, (id, entry) => {
+    if (id !== target) return;
     if (candidate !== undefined) duplicate = true;
     candidate = entry;
-    return true;
-  };
-  const published: unknown = didDocument.verificationMethod;
-  if (Array.isArray(published)) for (const entry of published) define(entry);
-  for (const entry of entries as unknown[]) {
-    if (typeof entry === 'string') {
-      if (relativeId(entry, did) === target) listed = true;
-    } else {
-      if (define(entry)) listed = true;
-    }
-  }
-  if (!listed || duplicate || candidate === undefined || !hasIdTypeAndController(candidate)) return undefined;
+  }, (id) => { if (id === target) listed = true; });
+  if (!listed || duplicate || candidate === undefined) return undefined;
+  const found = ownedMethod(did, candidate);
+  if (found === undefined) return undefined;
   const documentId: unknown = didDocument.id;
   if (documentId !== did) {
     return typeof documentId === 'string' ? { otherDid: documentId, member: "document's id" } : undefined;
   }
+  return found;
+}
+
+/** Visit definitions and listings once; repeated references do not define a method again. */
+function visitMethods(
+  didDocument: DIDDocument, did: string, relationship: VerificationRelationship,
+  define: (id: string, method: VerificationMethod) => void, list: (id: string) => void,
+): void {
+  const entries: unknown = didDocument[relationship];
+  if (!Array.isArray(entries)) return;
+  const definition = (entry: unknown): string | undefined => {
+    if (!isMethod(entry)) return undefined;
+    const id = relativeId(entry.id, did);
+    if (id !== undefined) define(id, entry);
+    return id;
+  };
+  const published: unknown = didDocument.verificationMethod;
+  if (Array.isArray(published)) for (const entry of published) definition(entry);
+  for (const entry of entries as unknown[]) {
+    const id = typeof entry === 'string' ? relativeId(entry, did) : definition(entry);
+    if (id !== undefined) list(id);
+  }
+}
+
+/** The ownership and required members shared by selection and enumeration. */
+function ownedMethod(did: string, candidate: VerificationMethod): Lookup {
+  if (!hasIdTypeAndController(candidate)) return undefined;
   if (candidate.controller !== did) return { otherDid: candidate.controller, member: 'controller' };
   return { method: candidate };
 }

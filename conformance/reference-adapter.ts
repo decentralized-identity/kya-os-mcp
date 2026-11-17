@@ -60,6 +60,7 @@ import type {
   EntityCardInput,
   NegotiationInput,
   SignedProofInput,
+  SignedProofKeyInput,
   StatusListInput,
 } from './types.js';
 import { isRecord } from '../src/utils/guards.js';
@@ -153,7 +154,7 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
   readonly name = '@kya-os/mcp (reference)';
   private readonly crypto = new NodeCryptoProvider();
 
-  async verifySignedProof(input: SignedProofInput): Promise<AdapterResult> {
+  async verifySignedProof(input: SignedProofInput | SignedProofKeyInput): Promise<AdapterResult> {
     try {
       // The verifier's clock and skew, as numbers. A vector that gives either
       // otherwise is refused, as conformance/verify.py refuses it, not coerced.
@@ -164,12 +165,17 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
         cryptoProvider: this.crypto,
         clockProvider: new PinnedClock(input.now * 1000),
         nonceCacheProvider: new MemoryNonceCacheProvider(),
-        fetchProvider: new StaticFetchProvider(),
+        fetchProvider: new StaticFetchProvider('didDocuments' in input ? input.didDocuments : {}),
         timestampSkewSeconds: input.skewSeconds,
       });
+      const proof = input.proof as Parameters<ProofVerifier['verifyProof']>[0];
+      const key = 'didDocuments' in input
+        ? await verifier.fetchPublicKeyFromDID(proof.meta.did, input.keyId)
+        : input.publicKeyJwk as Ed25519JWK;
+      if (!key) return fail('no assertionMethod key');
       const result = await verifier.verifyProof(
         input.proof as Parameters<ProofVerifier['verifyProof']>[0],
-        input.publicKeyJwk as Ed25519JWK,
+        key,
         // Content binding (suite ≥ 1.1.0): when the vector says what the
         // verifier "received", re-hash it under the proof's own `prf` profile
         // and compare to the bound hashes.

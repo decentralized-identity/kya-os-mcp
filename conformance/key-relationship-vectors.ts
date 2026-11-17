@@ -46,6 +46,7 @@ import {
 } from '../src/index.js';
 import { ed25519VerificationMethod, signVC } from './crypto-kit.js';
 import { SUITE_VERSION, writeVectorFile } from './vector-files.js';
+import { proofKeyRelationshipVectors } from './proof-key-relationship-vectors.js';
 import type { ConformanceVector, VectorFile } from './types.js';
 
 const crypto = new NodeCryptoProvider();
@@ -356,6 +357,7 @@ export async function generateKeyRelationshipVectors(): Promise<void> {
   const keys = await mintIssuerKeys();
   writeVectorFile(await delegationChainKeyRelationshipFile(keys), 'delegation-chain-key-relationship.json');
   writeVectorFile(await statusListKeyRelationshipFile(keys), 'status-list-key-relationship.json');
+  writeVectorFile(await proofKeyRelationshipVectors(), 'signed-proof-key-relationship.json');
   console.log('Key-relationship conformance vectors generated.');
 }
 

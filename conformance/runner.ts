@@ -25,6 +25,7 @@ import type {
   ExpectedOutcome,
   NegotiationInput,
   SignedProofInput,
+  SignedProofKeyInput,
   StatusListInput,
 } from './types.js';
 
@@ -55,7 +56,7 @@ async function dispatch(
 ): Promise<AdapterResult> {
   switch (vector.category) {
     case 'signed-proof':
-      return adapter.verifySignedProof(vector.input as SignedProofInput);
+      return adapter.verifySignedProof(vector.input as SignedProofInput | SignedProofKeyInput);
     case 'delegation-chain':
       return adapter.verifyDelegationChain(vector.input as DelegationChainInput);
     case 'status-list':

@@ -25,6 +25,25 @@ export function compileMeteredLookup(source: string, imports: Record<string, unk
   }
   const meter = {
     step: charge,
+    collection(kind: string): Map<string, unknown> | Set<string> {
+      charge();
+      return kind === 'Map' ? new Map() : new Set();
+    },
+    collectionCall(receiver: unknown, method: string, ...args: unknown[]): unknown {
+      if (Array.isArray(receiver) && method === 'push' && args.length === 1) {
+        charge();
+        return receiver.push(args[0]);
+      }
+      const key = args[0];
+      if (typeof key !== 'string') unsupported('collection key is not a string');
+      // Expected hash-table work, including hashing the complete key; no worst-case hash claim.
+      charge(1 + key.length);
+      if (receiver instanceof Map && method === 'set' && args.length === 2) return receiver.set(key, args[1]);
+      if (receiver instanceof Map && method === 'get' && args.length === 1) return receiver.get(key);
+      if (receiver instanceof Map && method === 'has' && args.length === 1) return receiver.has(key);
+      if (receiver instanceof Set && method === 'add' && args.length === 1) return receiver.add(key);
+      return unsupported(`collection operation ${method}`);
+    },
     equal(left: unknown, right: unknown): boolean {
       charge(1 + (typeof left === 'string' && typeof right === 'string' && left.length === right.length ? left.length : 0));
       return left === right;
@@ -96,6 +115,7 @@ export function compileMeteredLookup(source: string, imports: Record<string, unk
     const callable = new Set<string>();
     const collect = (node: ts.Node): void => {
       if (ts.isFunctionDeclaration(node) && node.name) callable.add(node.name.text);
+      if (ts.isParameter(node) && ts.isIdentifier(node.name) && node.type && ts.isFunctionTypeNode(node.type)) callable.add(node.name.text);
       if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer &&
           (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))) callable.add(node.name.text);
       if (ts.isImportDeclaration(node) && !node.importClause?.isTypeOnly) {
@@ -114,6 +134,10 @@ export function compileMeteredLookup(source: string, imports: Record<string, unk
       ...(ts.isBlock(body) ? body.statements : [body]),
     ], true);
     const visit: ts.Visitor = (original) => {
+      if (ts.isNewExpression(original) && ts.isIdentifier(original.expression) &&
+          ['Map', 'Set'].includes(original.expression.text) && !original.arguments?.length) {
+        return invoke('collection', [factory.createStringLiteral(original.expression.text)]);
+      }
       if (ts.isNewExpression(original) || ts.isTaggedTemplateExpression(original) || ts.isSpreadElement(original) ||
           ts.isSpreadAssignment(original) || ts.isRegularExpressionLiteral(original) || ts.isComputedPropertyName(original) ||
           ts.isDeleteExpression(original)) unsupported(original.getText(file));
@@ -152,6 +176,9 @@ export function compileMeteredLookup(source: string, imports: Record<string, unk
           }
           if (['includes', 'startsWith', 'slice'].includes(callee.name.text)) {
             return invoke('string', [callee.expression, factory.createStringLiteral(callee.name.text), ...node.arguments]);
+          }
+          if (['get', 'set', 'has', 'add', 'push'].includes(callee.name.text)) {
+            return invoke('collectionCall', [callee.expression, factory.createStringLiteral(callee.name.text), ...node.arguments]);
           }
         }
         unsupported(original.getText(file));

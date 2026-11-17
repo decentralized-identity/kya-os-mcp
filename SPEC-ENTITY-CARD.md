@@ -427,10 +427,11 @@ https-only and fails closed on a non-https or malformed `client_id`.
 ### 7.2 `jwks_uri ⇄ DID keys`
 
 `jwks_uri` MUST serve a JWKS that is a mechanical projection of the DID document's
-`verificationMethod[]`: each Ed25519 (`OKP`) method becomes an `OKP` public JWK with its `kid`
-preserved (the JWK's own `kid`, else the verification-method `id`) and any private `d` stripped;
-non-Ed25519 methods are skipped. Because the AS validates `private_key_jwt` against this JWKS,
-validating the client assertion verifies a **DID-key signature**.
+methods listed under `authentication`, by reference or embedded (W3C Controlled Identifiers v1.0 [CID] §3.3).
+Each method MUST be defined exactly once among `verificationMethod` and embedded `authentication` entries, have a non-empty `id`, `type` and `controller`, have an id under the document's DID, and name that DID as its `controller`.
+Each qualifying Ed25519 (`OKP`) method becomes an `OKP` public JWK with its `kid` preserved (the JWK's own `kid`, else the verification-method `id`) and any private `d` stripped.
+Non-Ed25519 methods and methods not authorized under `authentication` are skipped; repeated references project a method only once.
+Because the AS validates `private_key_jwt` against this JWKS, validating the client assertion verifies a **DID-key signature authorized for client authentication**.
 
 ### 7.3 The CIMD document
 

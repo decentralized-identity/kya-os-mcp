@@ -15,6 +15,12 @@ export type PythonSearch = { readonly found: Interpreter } | { readonly reason: 
 
 export const PYTHON_CANDIDATES: readonly Interpreter[] = [['python3'], ['python'], ['py', '-3']];
 
+/**
+ * How long a test that runs Python may take. Python has taken over 6 seconds to start on a cold
+ * Windows runner, past the 5-second default, so each test that runs it states this instead.
+ */
+export const PYTHON_TEST_TIMEOUT_MS = 30_000;
+
 const MINIMUM_MINOR = 9;
 const VERSION_PROBE = 'import sys; print("%d.%d" % sys.version_info[:2])';
 

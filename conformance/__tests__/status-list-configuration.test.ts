@@ -19,7 +19,7 @@ import { describe, expect, it } from 'vitest';
 import { assertStatusListConfiguration, loadVectors } from '../loader.js';
 import { ReferenceConformanceAdapter } from '../reference-adapter.js';
 import { ENDS_IN_SLASH, LOOK_ALIKE_BINDINGS, MISTAKEN_BINDINGS, ORIGIN_NOT_LOWER_CASE, ORIGIN_WITH_SLASH } from './helpers/status-list-bindings.js';
-import { requirePython, type Interpreter } from './python.js';
+import { PYTHON_TEST_TIMEOUT_MS, requirePython, type Interpreter } from './python.js';
 import type { ConformanceVector } from '../types.js';
 
 const HERE = fileURLToPath(new URL('..', import.meta.url));
@@ -145,7 +145,7 @@ async function verdicts(interpreter: readonly string[], variants: readonly Varia
 }
 
 describe('a status-list vector that states its verifier configuration', () => {
-  it('is refused by the loader, the reference adapter and the Python reader alike when the configuration is malformed', async (context) => {
+  it('is refused by the loader, the reference adapter and the Python reader alike when the configuration is malformed', { timeout: PYTHON_TEST_TIMEOUT_MS }, async (context) => {
     const read = await verdicts(requirePython(context), MALFORMED);
     expect(read).toEqual(read.map(({ name, expected }) => ({ name, expected, loader: 'refused', adapter: 'fail', python: false })));
   });
@@ -166,14 +166,14 @@ describe('a status-list vector that states its verifier configuration', () => {
     }
   });
 
-  it('keeps the verdict the vector states when the configuration is well formed', async (context) => {
+  it('keeps the verdict the vector states when the configuration is well formed', { timeout: PYTHON_TEST_TIMEOUT_MS }, async (context) => {
     const read = await verdicts(requirePython(context), WELL_FORMED);
     expect(read).toEqual(read.map(({ name, expected }) => ({ name, expected, loader: 'read', adapter: expected, python: expected === 'pass' })));
   });
 });
 
 describe('a statusListIssuers the suite reads', () => {
-  it('is refused in the same words, or read, by the loader and the Python reader, whichever refusal comes first', (context) => {
+  it('is refused in the same words, or read, by the loader and the Python reader, whichever refusal comes first', { timeout: PYTHON_TEST_TIMEOUT_MS }, (context) => {
     const maps: unknown[] = [
       ...MISTAKEN_BINDINGS.map(([binding]) => ({ 'did:x': [binding] })),
       ...LOOK_ALIKE_BINDINGS.map((binding) => ({ 'did:x': [binding] })),
@@ -217,7 +217,7 @@ const REWRITES: Rewrite[] = [
 ];
 
 describe('a status-list vector whose proofs or keys are written another way', () => {
-  it('has the same verdict from the reference adapter and the Python reader', async (context) => {
+  it('has the same verdict from the reference adapter and the Python reader', { timeout: PYTHON_TEST_TIMEOUT_MS }, async (context) => {
     const interpreter = requirePython(context);
     const cases = REWRITES.map(([name, edit, verdict]) => {
       const vector = structuredClone(vectors.find((item) => item.id === 'status-list/active-credential')!);

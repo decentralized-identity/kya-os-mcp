@@ -291,7 +291,7 @@ describe('withKyaOs()', () => {
       { name: 'delegation-test', version: '1.0.0' },
     );
 
-    const kyaos = await withKyaOs(server, { crypto, autoSession: true });
+    const kyaos = await withKyaOs(server, { crypto, autoSession: true, delegation: { allowAnyRootIssuer: true } });
 
     // Use wrapWithDelegation for a restricted tool
     const restrictedHandler = kyaos.wrapWithDelegation(

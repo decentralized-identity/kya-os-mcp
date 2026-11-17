@@ -53,6 +53,7 @@ import {
   type AuditLogProvider,
 } from '../../providers/audit-log.js';
 import { served } from '../../middleware/__tests__/helpers/received-proof.js';
+import { anyRootUnlessListed } from '../../middleware/__tests__/helpers/root-issuers.js';
 
 // ---------------------------------------------------------------------------
 // Shared identity helpers
@@ -153,7 +154,7 @@ async function createServer(opts?: {
         publicKey: keyPair.publicKey,
       },
       session: { sessionTtlMinutes: 60 },
-      delegation,
+      delegation: anyRootUnlessListed(delegation),
       autoSession: opts?.autoSession,
       auditLog: opts?.auditLog,
     },

@@ -24,6 +24,7 @@ import { AuditLogProvider, MemoryAuditLogProvider } from '../../providers/audit-
 import { cheqdResolver } from '../../integrations/cheqd/index.js';
 import { KYA_OS_PROOF_META_KEY, LEGACY_PROOF_META_KEY } from '../../proof/index.js';
 import { served } from './helpers/received-proof.js';
+import { anyRootUnlessListed } from './helpers/root-issuers.js';
 
 async function createTestMiddleware(options?: {
   autoSession?: boolean;
@@ -42,7 +43,7 @@ async function createTestMiddleware(options?: {
     {
       identity: { did, kid, privateKey: keyPair.privateKey, publicKey: keyPair.publicKey },
       session: { sessionTtlMinutes: 60 },
-      delegation: options?.delegation,
+      delegation: anyRootUnlessListed(options?.delegation),
       audit: options?.audit,
       autoSession: options?.autoSession,
       auditLog: options?.auditLog,

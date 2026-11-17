@@ -19,11 +19,15 @@
  * Full demo flow:
  *   1. Start server:
  *        npx tsx examples/node-server/server.ts
- *   2. Issue a delegation VC:
- *        npx tsx examples/node-server/issue-delegation.ts > delegation.json
- *   3. Connect MCP Inspector to http://localhost:3001/sse
- *   4. Call `restricted_greet` with `_kyaos_delegation` = contents of delegation.json
+ *   2. Connect MCP Inspector to http://localhost:3001/sse
+ *   3. Call `restricted_greet`, and open the Authorize link it returns
+ *   4. Approve on the consent page, then call `restricted_greet` again
  *   5. Watch it verify the VC and return the greeting with a signed proof
+ *
+ * The server trusts only the DID its consent host signs with
+ * (`delegation.trustedRootIssuers`), so a delegation from
+ * issue-delegation.ts, which signs with a key of its own, is refused as
+ * `delegation_invalid`: that is how a server refuses an issuer it does not trust.
  */
 
 import http from 'node:http';
@@ -275,6 +279,9 @@ async function main() {
       // Single-key Inspector view for the demo; the library default also mirrors
       // the proof under legacy bare `proof` for pre-1.1 back-compat.
       emitLegacyProofKey: false,
+      // The consent host below issues every delegation with this identity, so
+      // this DID is the one root restricted_greet accepts.
+      delegation: { trustedRootIssuers: [did] },
     },
     crypto
   );

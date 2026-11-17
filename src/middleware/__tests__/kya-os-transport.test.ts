@@ -19,6 +19,7 @@ import { base64urlEncodeFromBytes } from "../../utils/base64.js";
 import type { AuditTrailService } from "../../audit/service.js";
 import type { DelegationCredential, Proof } from "../../types/protocol.js";
 import { typeErrors } from "../../__tests__/utils/type-errors.js";
+import { anyRootUnlessListed } from "./helpers/root-issuers.js";
 
 function createMockTransport(): Transport & { sentMessages: JSONRPCMessage[] } {
   const sent: JSONRPCMessage[] = [];
@@ -258,6 +259,7 @@ describe("createKyaOsTransport with the KYA-OS middleware", () => {
         publicKey: keyPair.publicKey,
       },
       autoSession: true,
+      delegation: anyRootUnlessListed(),
       ...(record === undefined ? {} : { audit: { record } }),
     }, crypto);
   }

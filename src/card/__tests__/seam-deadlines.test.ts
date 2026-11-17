@@ -29,6 +29,7 @@ import { AUD, NONCE, PROOF_KEY, REQ, clock, deps as proofDeps, keypair } from '.
 import { issuerOf } from '../../utils/guards.js';
 import { NOW_MS, RESOURCE, STATUS_URL, parties, serve, statusList, twoHopChain, type ChainParties } from './signed-chain-helpers.js';
 import { codedAs } from '../../__tests__/utils/refusal-coding.js';
+import { anyRootUnlessPinned } from './root-issuers.js';
 
 /** What a status, or a chain, refused because a dependency had not answered in time carries. */
 const LATE = codedAs('deadline_exceeded');
@@ -283,7 +284,7 @@ describe.each(DEADLINES)('%s', (_label, option, ms, stated) => {
 
 describe('a dependencyTimeoutMs that is not a number of milliseconds a timer can hold', () => {
   const p = parties();
-  const delegationDeps = (dependencyTimeoutMs: unknown) => ({
+  const delegationDeps = (dependencyTimeoutMs: unknown) => anyRootUnlessPinned({
     resource: RESOURCE, verifyHopProof: async () => true, checkRevocation: clear, dependencyTimeoutMs,
   } as VerifyRequestDelegationDeps);
   const input: RequestDelegationInput = { meta: {}, proofDid: p.subAgent.did, action: 'orders.place' };

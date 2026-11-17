@@ -19,6 +19,7 @@ import { verifyCard } from '../verify.js';
 import { now, RESOURCE } from './signed-chain-helpers.js';
 import { cast, threeHopChain } from './status-list-paths.js';
 import { BIT_SET, codedAs } from '../../__tests__/utils/refusal-coding.js';
+import { anyRootUnlessPinned } from './root-issuers.js';
 
 const ENTRY: RevocationStatusEntry = { statusListCredential: 'https://status.example/1', statusListIndex: '7' };
 /** A checker whose every answer is `answer`, typed as the status it claims to be. */
@@ -89,12 +90,13 @@ describe('the paths that walk a delegation chain', () => {
   const chain = threeHopChain(c, [c.acme, c.agent, c.subAgent]);
   const list = (chain[0].credentialStatus as { statusListCredential: string }).statusListCredential;
   const input = { meta: toDelegationChainMeta(chain), proofDid: leafInvokerOf(chain) ?? '', action: 'orders.place' };
-  const deps = (checkRevocation: BitstringRevocationChecker) => ({
-    resource: RESOURCE,
-    verifyHopProof: createDelegationProofVerifier({ didResolver: createDidKeyResolver() }),
-    checkRevocation,
-    now,
-  });
+  const deps = (checkRevocation: BitstringRevocationChecker) =>
+    anyRootUnlessPinned({
+      resource: RESOURCE,
+      verifyHopProof: createDelegationProofVerifier({ didResolver: createDidKeyResolver() }),
+      checkRevocation,
+      now,
+    });
 
   it('accept the chain on answers whose revoked is the literal false', async () => {
     const checker = answering({ revoked: false, fresh: true });

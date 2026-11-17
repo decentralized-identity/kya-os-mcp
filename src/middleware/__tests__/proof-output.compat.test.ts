@@ -20,6 +20,7 @@ import {
 } from '../../proof/generator.js';
 import type { PolicyEngine } from '../../policy/engine.js';
 import { connectTransport } from './helpers/received-proof.js';
+import { anyRootUnlessListed } from './helpers/root-issuers.js';
 
 /** Random bytes from a counter-seeded SHA-256 stream: reproducible across runs. */
 class SeededCryptoProvider extends NodeCryptoProvider {
@@ -75,6 +76,7 @@ async function setup(responseProofProfile?: ResponseProofProfile): Promise<{
     {
       identity,
       session: { sessionTtlMinutes: 60 },
+      delegation: anyRootUnlessListed(),
       ...(responseProofProfile === undefined ? {} : { responseProofProfile }),
     },
     new SeededCryptoProvider(),

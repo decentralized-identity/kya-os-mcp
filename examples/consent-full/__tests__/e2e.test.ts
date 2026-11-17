@@ -33,6 +33,8 @@ describe('E2E: consent -> delegation -> execution', () => {
         identity: { did, kid, privateKey: keyPair.privateKey, publicKey: keyPair.publicKey },
         session: { sessionTtlMinutes: 60 },
         autoSession: true,
+        // The consent host issues with this server's identity: the one root it trusts.
+        delegation: { trustedRootIssuers: [did] },
       },
       crypto,
     );

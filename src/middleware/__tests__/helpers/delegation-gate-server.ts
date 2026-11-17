@@ -16,6 +16,7 @@ import type { AuthorizationEvidence, PartyRef } from '../../../audit/types.js';
 import type { DelegationCredential } from '../../../types/protocol.js';
 import { party } from './delegating-party.js';
 import { connectTransport, served } from './received-proof.js';
+import { anyRootUnlessListed } from './root-issuers.js';
 
 /**
  * The server's crypto provider. It is not the one `./received-proof.js`
@@ -45,7 +46,9 @@ export type OtherConfig = Partial<Omit<KyaOsConfig, 'identity' | 'delegation' | 
  * A middleware whose resolver hands back whatever `ancestors` holds when it
  * is asked, with the audit events it records, summarised in `recorded` and
  * whole in `events`. It keeps an audit trail unless told to keep none, and
- * fails to record an event `refuse` picks.
+ * fails to record an event `refuse` picks. It accepts a delegation from any
+ * issuer unless `delegation` lists the trusted root issuers (see
+ * `./root-issuers.ts`).
  */
 async function makeMiddleware(
   delegation: KyaOsDelegationConfig = {},
@@ -76,7 +79,7 @@ async function makeMiddleware(
       session: { sessionTtlMinutes: 60 },
       autoSession: true,
       ...(audit ? { audit: { record, includeToolNames: true } } : {}),
-      delegation: { resolveDelegationChain: async () => [...ancestors], ...delegation },
+      delegation: anyRootUnlessListed({ resolveDelegationChain: async () => [...ancestors], ...delegation }),
       ...config,
     },
     crypto,

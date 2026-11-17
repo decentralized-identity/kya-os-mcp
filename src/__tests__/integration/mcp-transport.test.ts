@@ -48,6 +48,8 @@ async function setupMcpPair(options?: { autoSession?: boolean }) {
       identity: { did, kid, privateKey: keyPair.privateKey, publicKey: keyPair.publicKey },
       session: { sessionTtlMinutes: 60 },
       autoSession: options?.autoSession,
+      // The delegation these tests present is signed by a fresh key for itself.
+      delegation: { allowAnyRootIssuer: true },
     },
     crypto,
   );

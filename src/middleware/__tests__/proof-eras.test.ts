@@ -40,6 +40,7 @@ import type { PolicyEngine } from '../../policy/engine.js';
 import type { AuditTrailService } from '../../audit/service.js';
 import { createKyaOsTransport, type JSONRPCMessage } from '../kya-os-transport.js';
 import { logger } from '../../logging/index.js';
+import { anyRootUnlessListed } from './helpers/root-issuers.js';
 import {
   auditEvents,
   connectTransport,
@@ -158,6 +159,7 @@ const options = (identity: KyaOsIdentityConfig, profile: ProfileName) => ({
     ? {}
     : { responseProofProfile: PROFILES[profile].responseProofProfile }),
   handshakeExposure: 'none' as const,
+  delegation: anyRootUnlessListed(),
 });
 
 /** JSON-RPC messages in a Streamable HTTP response body, JSON or SSE. */

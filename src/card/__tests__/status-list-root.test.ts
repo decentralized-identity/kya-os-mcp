@@ -30,6 +30,7 @@ import {
 } from './signed-chain-helpers.js';
 import { cast, expectAccepted, expectRevokedAt, listOf, listUrlOf, nameSigner, servedBy, threeHopChain } from './status-list-paths.js';
 import { BIT_SET, codedAs } from '../../__tests__/utils/refusal-coding.js';
+import { anyRootUnlessPinned } from './root-issuers.js';
 
 const didResolver = createDidKeyResolver();
 const ctx = { resource: RESOURCE, now };
@@ -275,7 +276,7 @@ describe("each path names a hop's issuer, and the chain's root only as the verif
       (check: BitstringRevocationChecker) =>
         verifyRequestDelegation(
           { meta: toDelegationChainMeta(chain), proofDid: c.worker.did, action: 'orders.place' },
-          { resource: RESOURCE, verifyHopProof: createDelegationProofVerifier({ didResolver }), checkRevocation: check, now, ...deps },
+          anyRootUnlessPinned({ resource: RESOURCE, verifyHopProof: createDelegationProofVerifier({ didResolver }), checkRevocation: check, now, ...deps }),
         );
     const unpinned = issuers.map((credentialIssuer) => ({ credentialIssuer }));
     const pinned = issuers.map((credentialIssuer) => ({

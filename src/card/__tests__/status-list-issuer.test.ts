@@ -39,6 +39,7 @@ import {
 } from './signed-chain-helpers.js';
 import { moveBinding } from './status-list-paths.js';
 import { ANY_CODE, BIT_SET, codedAs } from '../../__tests__/utils/refusal-coding.js';
+import { anyRootUnlessPinned } from './root-issuers.js';
 
 const didResolver = createDidKeyResolver();
 const ctx = { resource: RESOURCE, now };
@@ -84,12 +85,12 @@ describe('a status list signed by another DID does not clear a revocation', () =
     const mallory = identity();
     const result = await verifyRequestDelegation(
       { meta: toDelegationChainMeta(twoHopChain(p)), proofDid: p.subAgent.did, action: 'orders.place' },
-      {
+      anyRootUnlessPinned({
         resource: RESOURCE,
         verifyHopProof: createDelegationProofVerifier({ didResolver }),
         checkRevocation: checkerServing(statusList(mallory)),
         now,
-      },
+      }),
     );
     expect(result).toMatchObject({ ok: false, code: 'delegation_revoked' });
   });

@@ -1,0 +1,14 @@
+kind: Security
+body: |-
+    **The cheqd resolver no longer sends its configured headers to any host
+    its endpoint redirects to.** `DidCheqdResolver`, `createDidCheqdResolver`
+    and `cheqdResolver` let the runtime follow redirects itself, in Node up
+    to 20 and to any host, carrying every header the `headers` option sets,
+    such as an API key, to wherever they led. The resolver now follows a
+    redirect by hand, as did:web and status-list reads do: at most 3, never
+    from https down to http, and to an origin other than the resolver's
+    with only the CORS-safelisted request headers. The resolver's own host
+    may still be private or local, since the operator names it.
+    UPGRADING.md, "The cheqd resolver follows a redirect by hand", has the
+    detail.
+time: 2026-11-16T22:45:35.987724-06:00

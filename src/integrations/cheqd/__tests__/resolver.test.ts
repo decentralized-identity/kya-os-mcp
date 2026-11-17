@@ -97,7 +97,7 @@ describe('DidCheqdResolver', () => {
     expect(resolved?.id).toBe(did);
     expect(requests(provider)).toEqual([[
       `https://resolver.cheqd.net/1.0/identifiers/${did}`,
-      { method: 'GET', headers: { accept: 'application/did+ld+json' }, signal: expect.any(AbortSignal) },
+      { method: 'GET', headers: { accept: 'application/did+ld+json' }, signal: expect.any(AbortSignal), redirect: 'manual' },
     ]]);
   });
 
@@ -126,6 +126,7 @@ describe('DidCheqdResolver', () => {
         method: 'GET',
         headers: { accept: 'application/did+ld+json', authorization: 'Bearer token' },
         signal: expect.any(AbortSignal),
+        redirect: 'manual',
       },
     ]]);
   });

@@ -332,7 +332,7 @@ The reference implementation refuses DID resolution and status-list inputs over 
 | Entries of `verificationMethod` and the five verification relationships | 8,192 in all |
 | Status-list response | 1,048,576 decompressed UTF-8 bytes, under the same JSON nesting, member name and member limits as a DID document |
 | Fetch and body consumption | One deadline for each DID resolution and each status-list read: 5 seconds, unless the host sets another as `dependencyTimeoutMs` |
-| Redirects a did:web or status-list read follows | 3 |
+| Redirects a did:web, status-list or cheqd resolver read follows | 3 |
 | Each built-in network resolver's cache | 128 documents and 8 MiB of compact JSON, plus its TTL, evicting the least recently used |
 
 In a document, the identifier limits apply to its `id` and to each entry of `verificationMethod` and the five verification relationships: an embedded method's `id` and `controller`, and a reference to a method.
@@ -363,6 +363,7 @@ A credential's status list is read only after the credential's own signature has
 The cheqd resolver asks for the DID document alone, with `Accept: application/did+ld+json` in place of any `Accept` header the application configures, which the cheqd DID resolver answers without resolution metadata.
 It still accepts a DID Resolution Result, whose `didDocumentMetadata` lists every resource the DID has published, within the larger response limits above, and the document inside it meets every document limit.
 It resolves the application's `headers` within the read's one deadline, so a headers function that never answers ends that resolution at the deadline.
+It follows a redirect from its endpoint as a did:web read does, below, so a redirect to another origin carries none of those `headers` but the CORS-safelisted ones; since the operator names the resolver, a private or local host is admitted for it and for each redirect.
 
 Every did:web read, by the delegation gate, `DidWebResolver`, `createDidWebResolver` or `RuntimeFetchProvider.resolveDID`, and every status-list read, by `CheqdStatusListResolver` or `RuntimeFetchProvider.fetchStatusList`, goes through one private-network rule, whatever `FetchProvider` it is given.
 Before any request, the rule refuses a URL that is not an absolute http or https URL.

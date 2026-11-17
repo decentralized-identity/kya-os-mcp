@@ -18,9 +18,9 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const TENANT = 'did:web:identity.platform.example.com:tenants:northwind-traders-emea';
-const LIST_URL = 'https://identity.platform.example.com/tenants/northwind-traders-emea/status/revocation/1';
-const CONFIGURATION = `{ "${TENANT}:status": ["https://identity.platform.example.com"] }`;
+const TENANT = 'did:web:identity.platform.example.com:tenants:northwind';
+const LIST_URL = 'https://identity.platform.example.com/tenants/northwind/status/revocation/1';
+const CONFIGURATION = `{ "${TENANT}:status": ["${LIST_URL}"] }`;
 const LOG_OPENING = `[kya-os] Delegation verification failed for "${TOOL}": `;
 
 let issuer: WebParty;

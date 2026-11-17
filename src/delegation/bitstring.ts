@@ -18,6 +18,7 @@ import {
   decodeStatusListPayload,
   encodeStatusListPayload,
   readStatusBit,
+  type DecompressLimits,
 } from '../utils/statuslist-bits.js';
 import { statusListGzipCodec } from '../utils/statuslist-gzip.js';
 
@@ -33,11 +34,15 @@ export interface CompressionFunction {
 
 /**
  * Inflates a GZIP status-list payload. MUST reject input that is not GZIP;
- * a decoder throws when it returns its input unchanged. {@link statusListGzipCodec}
- * is the shipped implementation and the default.
+ * a decoder throws when it returns its input unchanged. A reader passes
+ * `limits`, the most bytes the bitstring may inflate to, and an
+ * implementation SHOULD stop inflating and reject once its output would pass
+ * `limits.maxBytes` ({@link DecompressLimits}); the reader also checks the
+ * output after. {@link statusListGzipCodec} is the shipped implementation and
+ * the default.
  */
 export interface DecompressionFunction {
-  decompress(data: Uint8Array): Promise<Uint8Array>;
+  decompress(data: Uint8Array, limits?: DecompressLimits): Promise<Uint8Array>;
 }
 
 /** Inflate an `encodedList` to its raw bitstring, with the shipped GZIP codec by default. */
@@ -45,7 +50,7 @@ function inflate(
   encodedList: string,
   decompressor: DecompressionFunction = statusListGzipCodec
 ): Promise<Uint8Array> {
-  return decodeStatusListPayload(encodedList, (bytes) => decompressor.decompress(bytes));
+  return decodeStatusListPayload(encodedList, (bytes, limits) => decompressor.decompress(bytes, limits));
 }
 
 export class BitstringManager {

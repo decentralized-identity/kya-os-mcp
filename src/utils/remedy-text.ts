@@ -14,9 +14,10 @@ const DID_OPENING = `${OPENING}"did:`;
 /** How a remedy that does not name the list's issuer opens. */
 const ISSUER_OPENING = `${OPENING}the list's issuer `;
 
-/** The condition of a remedy when no binding names the URL's keeper. */
-const SIGNS_ISSUER_LISTS = "signs this issuer's lists";
-/** The condition of a remedy when a binding names the URL's keeper. */
+/**
+ * The condition of every remedy. A remedy binds the list's own URL, never its origin, which would
+ * let the signer keep every list there, so it asks only whether the signer signs this one.
+ */
 const SIGNS_LIST_AT_URL = 'signs the list at this URL';
 /** What a remedy that prints the configuration asks, when no binding names the signer and when one names another. */
 const NAME_IT = 'name it';
@@ -32,24 +33,20 @@ export const PRINTABLE_DID = new RegExp(`^${DID}$`);
 /** A URL a remedy can print whole and exactly. */
 export const PRINTABLE_URL = new RegExp(`^${URL_TEXT}$`);
 
-/** The remedy that names no value, for a keeper no binding names. */
-export const UNBOUND_GENERAL_REMEDY =
-  `${ISSUER_OPENING}${SIGNS_ISSUER_LISTS}, ${NAME_IT} in statusListIssuers with this list's https origin or URL`;
-/** The remedy that names no value, for a keeper a binding names. */
-export const BOUND_GENERAL_REMEDY = `${ISSUER_OPENING}${SIGNS_LIST_AT_URL}, bind the URL to it in statusListIssuers`;
+/** The remedy that names no value, for a refusal that cannot print the configuration whole. */
+export const GENERAL_REMEDY = `${ISSUER_OPENING}${SIGNS_LIST_AT_URL}, bind the URL to it in statusListIssuers`;
 
-/** What an exact remedy asks of the operator: where no binding names the keeper, where one names it, and where one names the URL itself. */
-export type ExactRemedyKind = 'unbound' | 'bound' | 'moved';
+/** What an exact remedy asks of the operator: to name the signer, or to move the URL's binding to it from another issuer. */
+export type ExactRemedyKind = 'name' | 'move';
 
 /**
- * The remedy that prints the configuration binding `binding` to `signer`, a DID and a URL that
- * {@link PRINTABLE_DID} and {@link PRINTABLE_URL} take, as a condition the operator judges.
+ * The remedy that prints the configuration binding the list's URL, `url`, to `signer`, a DID and a
+ * URL that {@link PRINTABLE_DID} and {@link PRINTABLE_URL} take, as a condition the operator judges.
  */
-export function exactRemedy(signer: string, binding: string, kind: ExactRemedyKind): string {
-  const condition = kind === 'unbound' ? SIGNS_ISSUER_LISTS : SIGNS_LIST_AT_URL;
-  const action = kind === 'moved' ? MOVE_BINDING : NAME_IT;
+export function exactRemedy(signer: string, url: string, kind: ExactRemedyKind): string {
+  const action = kind === 'move' ? MOVE_BINDING : NAME_IT;
   const did = JSON.stringify(signer);
-  return `${OPENING}${did} ${condition}, ${action} in statusListIssuers: { ${did}: [${JSON.stringify(binding)}] }`;
+  return `${OPENING}${did} ${SIGNS_LIST_AT_URL}, ${action} in statusListIssuers: { ${did}: [${JSON.stringify(url)}] }`;
 }
 
 /** `text` with every character a pattern reads specially escaped. */
@@ -58,10 +55,9 @@ const literal = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\
 /** A whole remedy, at the position it is asked about: an exact one, or either general one. */
 const WHOLE_REMEDY = new RegExp(
   [
-    `${literal(OPENING)}"${DID}" (?:${literal(SIGNS_ISSUER_LISTS)}|${literal(SIGNS_LIST_AT_URL)}), ` +
+    `${literal(OPENING)}"${DID}" ${literal(SIGNS_LIST_AT_URL)}, ` +
       `(?:${literal(NAME_IT)}|${literal(MOVE_BINDING)}) in statusListIssuers: \\{ "${DID}": \\["${URL_TEXT}"\\] \\}`,
-    literal(UNBOUND_GENERAL_REMEDY),
-    literal(BOUND_GENERAL_REMEDY),
+    literal(GENERAL_REMEDY),
   ].join('|'),
   'y',
 );

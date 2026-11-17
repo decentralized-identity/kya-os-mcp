@@ -72,7 +72,9 @@ export interface WithKyaOsOptions {
    * such as a `*.localhost` name, and let a tool be gated on a delegation
    * while `delegation.trustedRootIssuers` is unset, with a warning. Never
    * set it in production: while `NODE_ENV` is `production` this function
-   * throws. Passed through to the middleware (see `KyaOsConfig.development`).
+   * throws, though on a runtime with no `process`, such as Workers, it can
+   * tell only if the bundler defines `process.env.NODE_ENV`. Passed through
+   * to the middleware (see `KyaOsConfig.development`).
    */
   development?: boolean;
   /** Auto-create sessions for non-KYA-OS clients (default: true) */

@@ -10,6 +10,10 @@
  * on is built, naming the setting, and the first time it is turned on in a process it warns that
  * private and local hosts are read. A production deployment that must read an intranet host keeps
  * the production opt-in, `allowPrivateNetworkHosts: true` on its fetch provider.
+ *
+ * A runtime with no `process`, such as Workers, has no `NODE_ENV` to read unless its bundler defines
+ * `process.env.NODE_ENV`, so there the guard cannot see production and the switch does not throw:
+ * a deployment there keeps `development: true` out of its production configuration itself.
  */
 
 import { logger } from '../logging/index.js';

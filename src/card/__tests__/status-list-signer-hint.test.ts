@@ -54,9 +54,10 @@ function hintedConfiguration(reason: string | undefined): StatusListIssuers {
 }
 
 const KEEPER_REFUSAL = `status list issuer "did:web:issuer.example:status" does not keep this list's URL: "did:web:issuer.example" does`;
-const ORIGIN_HINT =
-  '; if "did:web:issuer.example:status" signs this issuer\'s lists, name it in statusListIssuers: ' +
-  '{ "did:web:issuer.example:status": ["https://issuer.example"] }';
+/** The remedy binds the list's own URL, never its origin, which would hand the signer every list there. */
+const URL_HINT =
+  '; if "did:web:issuer.example:status" signs the list at this URL, name it in statusListIssuers: ' +
+  '{ "did:web:issuer.example:status": ["https://issuer.example/lists/1"] }';
 
 describe("a list signed by a DID other than the credential's issuer", () => {
   it('is refused with the configuration that would accept it, which then accepts it', async () => {
@@ -64,11 +65,11 @@ describe("a list signed by a DID other than the credential's issuer", () => {
     expect(refused).toEqual({
       revoked: true,
       fresh: false,
-      reason: `${KEEPER_REFUSAL}, as the issuer of the credential${ORIGIN_HINT}`,
+      reason: `${KEEPER_REFUSAL}, as the issuer of the credential${URL_HINT}`,
       ...codedAs('status_signer_untrusted'),
     });
     const configured = hintedConfiguration(refused.reason);
-    expect(configured).toEqual({ [signer.did]: ['https://issuer.example'] });
+    expect(configured).toEqual({ [signer.did]: [LIST_URL] });
     expect(await checkerWith(configured)(ENTRY, { credentialIssuer: issuer.did })).toEqual({ revoked: false, fresh: true });
   });
 
@@ -77,7 +78,7 @@ describe("a list signed by a DID other than the credential's issuer", () => {
     const refused = await checkerWith()(ENTRY, context);
     expect(refused.reason).toBe(
       `status list issuer "${signer.did}" does not keep this list's URL: "${root.did}" does, as the pinned root whose own credential names it` +
-        ORIGIN_HINT,
+        URL_HINT,
     );
     expect(await checkerWith(hintedConfiguration(refused.reason))(ENTRY, context)).toEqual({ revoked: false, fresh: true });
   });
@@ -122,7 +123,7 @@ describe("a list signed by a DID other than the credential's issuer", () => {
     const longList = await signedStatusList(longSigner, LIST_URL);
     const refused = await checkerWith(undefined, longList)(ENTRY, { credentialIssuer: issuer.did });
     expect(refused.reason).toMatch(
-      /, as the issuer of the credential; if the list's issuer signs this issuer's lists, name it in statusListIssuers with this list's https origin or URL$/,
+      /, as the issuer of the credential; if the list's issuer signs the list at this URL, bind the URL to it in statusListIssuers$/,
     );
     expect(refused.reason!.length).toBeLessThanOrEqual(CHECKER_REASON_LENGTH);
   });
@@ -134,7 +135,7 @@ describe("a list signed by a DID other than the credential's issuer", () => {
     const entry = { ...ENTRY, statusListCredential: url };
     const refused = await createRevocationChecker({ ...served, verifyStatusList })(entry, { credentialIssuer: issuer.did });
     expect(refused.reason).toBe(
-      `${KEEPER_REFUSAL}, as the issuer of the credential; if "${signer.did}" signs this issuer's lists, ` +
+      `${KEEPER_REFUSAL}, as the issuer of the credential; if "${signer.did}" signs the list at this URL, ` +
         `name it in statusListIssuers: { "${signer.did}": ["${url}"] }`,
     );
     const statusListIssuers = hintedConfiguration(refused.reason);
@@ -166,7 +167,7 @@ describe("a list signed by a DID other than the credential's issuer", () => {
   it('carries the whole remedy through the chain walk, after the hop it names', async () => {
     const walked = await evaluateRevocationChain([{ entry: ENTRY, credentialIssuer: issuer.did }], checkerWith());
     expect(walked.ok).toBe(false);
-    expect(walked.reasons[0]).toMatch(new RegExp(`${ORIGIN_HINT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
+    expect(walked.reasons[0]).toMatch(new RegExp(`${URL_HINT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
   });
 
   it("carries the whole remedy through the delegation verifier, from an adopter's resolver that throws it", async () => {
@@ -187,7 +188,7 @@ describe("a list signed by a DID other than the credential's issuer", () => {
     expect(result).toMatchObject({
       valid: false,
       statusOutcome: 'status_unresolvable',
-      reason: `Status check error: ${KEEPER_REFUSAL}, as the issuer of the credential${ORIGIN_HINT}`,
+      reason: `Status check error: ${KEEPER_REFUSAL}, as the issuer of the credential${URL_HINT}`,
     });
   });
 });

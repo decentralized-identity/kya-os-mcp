@@ -96,7 +96,9 @@ export interface SafeFetchOptions {
    * changes: https alone, the origin rule for redirects, the size cap and the timeout all hold. For
    * development only: while `NODE_ENV` is `production` it throws when the fetcher is built, and it
    * warns once per process. A production deployment lists the origins it owns in `allowOrigins`
-   * instead. Any value but a boolean throws a `TypeError`.
+   * instead. Any value but a boolean throws a `TypeError`. A runtime with no `process`, such as
+   * Workers, has no `NODE_ENV` to read unless its bundler defines `process.env.NODE_ENV`, so there it
+   * does not throw: keep it out of production configuration.
    */
   development?: boolean;
 }

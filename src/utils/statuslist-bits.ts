@@ -29,6 +29,16 @@ import { RefusalError } from './refusal.js';
 export const MAX_STATUS_LIST_BYTES = 16 * 1024 * 1024;
 
 /**
+ * What a reader tells the decompressor it hands a status list's GZIP payload: the most bytes the
+ * bitstring may inflate to. A decompressor stops inflating, and throws or rejects, once its output
+ * would pass `maxBytes`, so a decompression bomb is refused while it inflates rather than allocated
+ * whole. One that takes no second argument still works, and the reader checks its output after.
+ */
+export interface DecompressLimits {
+  readonly maxBytes: number;
+}
+
+/**
  * The W3C Bitstring Status List `encodedList` multibase prefix (base64url,
  * no padding). A gzip stream's fixed magic byte (0x1f) makes its base64url
  * start with `H`, never `u`, so a leading `u` is unambiguously the multibase
@@ -108,9 +118,10 @@ export async function encodeStatusListPayload(
 
 /**
  * Decode a status-list `encodedList` to the raw bitstring: strip the optional
- * multibase `u` prefix, base64url-decode, run the injected decompressor, and
- * re-check the {@link MAX_STATUS_LIST_BYTES} cap POST-inflation as a backstop
- * (a production decompressor SHOULD also bound output during inflation).
+ * multibase `u` prefix, base64url-decode, run the injected decompressor with
+ * the {@link MAX_STATUS_LIST_BYTES} cap as its {@link DecompressLimits}, which
+ * it bounds its output to while it inflates, and re-check the cap
+ * POST-inflation as a backstop for one that does not.
  * The decompressor is the bare-function common denominator — an
  * object-shaped `DecompressionFunction` adapts inline:
  * `(b) => decompressor.decompress(b)`.
@@ -124,7 +135,7 @@ export async function encodeStatusListPayload(
  */
 export async function decodeStatusListPayload(
   encodedList: string,
-  decompress: (bytes: Uint8Array) => Uint8Array | Promise<Uint8Array>,
+  decompress: (bytes: Uint8Array, limits: DecompressLimits) => Uint8Array | Promise<Uint8Array>,
 ): Promise<Uint8Array> {
   const payload =
     encodedList[0] === MULTIBASE_BASE64URL ? encodedList.slice(1) : encodedList;
@@ -132,7 +143,7 @@ export async function decodeStatusListPayload(
   if (!isGzip(compressed)) {
     throw new Error('Status list encodedList is not GZIP');
   }
-  const inflated = await decompress(compressed);
+  const inflated = await decompress(compressed, { maxBytes: MAX_STATUS_LIST_BYTES });
   if (sameBytes(inflated, compressed)) {
     throw new Error(
       'Status list decompressor returned its GZIP input unchanged: it must inflate GZIP',

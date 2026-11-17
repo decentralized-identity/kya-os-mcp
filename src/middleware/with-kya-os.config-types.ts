@@ -311,6 +311,9 @@ export interface KyaOsConfig {
    * while `delegation.trustedRootIssuers` is unset, accepting any issuer,
    * with one warning. While `NODE_ENV` is `production`, creating the
    * middleware throws; the first time it is on in a process, it warns once.
+   * A runtime with no `process`, such as Workers, has no `NODE_ENV` to read
+   * unless its bundler defines `process.env.NODE_ENV`, so there it does not
+   * throw: keep it out of production configuration.
    * To read intranet hosts in production, give the fetch provider
    * `allowPrivateNetworkHosts: true`. Any value but a boolean throws a
    * `TypeError`.

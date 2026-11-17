@@ -26,10 +26,10 @@ import { documentsOf, servingFromMemory, signedStatusList, webParty, type WebPar
 import { credentialJwt, delegationRecord, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 import { validateDelegationChain } from '../../delegation/chain-enforcement.js';
 
-const TENANT = 'did:web:identity.platform.example.com:tenants:northwind-traders-emea';
-const LIST_URL = 'https://identity.platform.example.com/tenants/northwind-traders-emea/status/revocation/1';
+const TENANT = 'did:web:identity.platform.example.com:tenants:northwind';
+const LIST_URL = 'https://identity.platform.example.com/tenants/northwind/status/revocation/1';
 const ENTRY = { statusListCredential: LIST_URL, statusListIndex: '3', statusPurpose: 'revocation' as const };
-const CONFIGURATION = `{ "${TENANT}:status": ["https://identity.platform.example.com"] }`;
+const CONFIGURATION = `{ "${TENANT}:status": ["${LIST_URL}"] }`;
 /** The words the adopter fixture's resolver puts before the checker's reason. */
 const ADOPTER_WORDS = 'the status list could not be read: ';
 

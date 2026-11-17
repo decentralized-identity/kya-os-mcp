@@ -159,6 +159,7 @@ export {
 } from './delegation/bitstring.js';
 
 export { statusListGzipCodec } from './utils/statuslist-gzip.js';
+export type { DecompressLimits } from './utils/statuslist-bits.js';
 
 export {
   verifyDelegationAudience,

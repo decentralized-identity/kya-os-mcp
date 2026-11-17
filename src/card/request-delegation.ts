@@ -113,7 +113,9 @@ export interface VerifyRequestDelegationDeps {
    * Local development: with neither `trustedRootIssuers` nor `resourceOwner` set, accept a chain
    * from any root issuer, with one warning, as `allowAnyRootIssuer` does. It changes nothing else.
    * Set while `NODE_ENV` is `production`, it throws an `Error` naming every fix, and anything but a
-   * boolean throws a `TypeError`. Default `false`.
+   * boolean throws a `TypeError`. A runtime with no `process`, such as Workers, has no `NODE_ENV` to
+   * read unless its bundler defines `process.env.NODE_ENV`, so there it does not throw: keep it out
+   * of production configuration. Default `false`.
    */
   development?: boolean;
   /**

@@ -2,10 +2,12 @@
  * An adopter's issuer, `did:web:issuer.example`, signs its delegations with its own key and its
  * status lists with a separate identity, `did:web:issuer.example:status`, as a deployment that keeps
  * the list-signing key apart does. A verifier holds a list to the one keeper of its URL, so it
- * refuses that list until it is told, in `statusListIssuers`, that the status identity keeps the
- * issuer's lists. The refusal has to say so, printing the origin to bind as SPEC.md §6.6 reads one,
- * `https://issuer.example`. Written with a `/` after it, the origin would bind only itself, as an
- * exact URL, so the configuration is refused when it is given, naming the form to write.
+ * refuses that list until it is told, in `statusListIssuers`, that the status identity keeps it.
+ * The refusal has to say so, printing the list's own URL to bind, never its origin, which would
+ * hand the status identity every list there. An operator who means the whole origin binds it as
+ * SPEC.md §6.6 reads one, `https://issuer.example`; written with a `/` after it, the origin would
+ * bind only itself, as an exact URL, so the configuration is refused when it is given, naming the
+ * form to write.
  *
  * The chain is verified as the Entity Card gate verifies a request, `verifyRequestDelegation`, with
  * `createRevocationChecker` as its revocation check, so the checker's reason reaches the adopter.
@@ -81,12 +83,16 @@ await runCases('separate-status-signer', 'a list signed by a separate status DID
       assert.equal(result.code, 'delegation_revoked');
       const reasons = result.reasons.join('; ');
       assert.ok(reasons.includes('statusListIssuers'), `the reason does not name statusListIssuers: ${reasons}`);
-      const hint = `{ "${statusSigner.did}": ["https://issuer.example"] }`;
+      const hint = `{ "${statusSigner.did}": ["${LIST_URL}"] }`;
       assert.ok(reasons.includes(hint), `the reason does not give the configuration ${hint}: ${reasons}`);
     },
   },
   {
-    name: 'with statusListIssuers binding https://issuer.example, the form the refusal prints, to the status DID, it is accepted',
+    name: "with statusListIssuers binding the list's URL, the form the refusal prints, to the status DID, it is accepted",
+    run: async () => assertAccepted(await verifyChain({ [statusSigner.did]: [LIST_URL] })),
+  },
+  {
+    name: 'with statusListIssuers binding the origin https://issuer.example to the status DID, it is accepted',
     run: async () => assertAccepted(await verifyChain({ [statusSigner.did]: ['https://issuer.example'] })),
   },
   {

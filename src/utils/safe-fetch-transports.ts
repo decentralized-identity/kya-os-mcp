@@ -68,19 +68,40 @@ export const defaultLookup: DnsLookup = async (hostname) => {
   return resolved.map((entry) => ({ address: entry.address, family: entry.family }));
 };
 
-let resolvesNamesPromise: Promise<boolean> | undefined;
+let resolvesNames: boolean | undefined;
 /**
- * Whether this runtime resolves host names through {@link defaultLookup}, asked once per process of
- * `localhost`, which every resolver answers from local configuration without a query. Node does. A
- * runtime that cannot, as a browser has no `node:dns` and a Cloudflare Worker's `node:dns` throws
- * "Not implemented" from `lookup`, answers `false`. The question is a fixed name, never a host a
- * counterparty chose, so no host can make a runtime that resolves names look like one that does not.
+ * Whether this runtime resolves host names through {@link defaultLookup}, asked of `localhost`,
+ * which every resolver answers from local configuration without a query. Node does. Only a runtime
+ * that has no resolver answers `false`: one where `node:dns` does not load, as in a browser, or whose
+ * `lookup` says it is not implemented, as a Cloudflare Worker's does. That answer, and a lookup that
+ * answers, are kept for the life of the process. Any other failure, such as a resolver that is busy
+ * for a moment (`EAI_AGAIN`), answers `true` and is not kept: the read then resolves its own host,
+ * and fails if that fails too, rather than going on unchecked. The question is a fixed name, never a
+ * host a counterparty chose, so no host can make a runtime that resolves names look like one that
+ * does not.
  */
-export function runtimeResolvesNames(): Promise<boolean> {
-  return (resolvesNamesPromise ??= defaultLookup('localhost').then(
-    (addresses) => addresses.length > 0,
-    () => false,
-  ));
+export async function runtimeResolvesNames(): Promise<boolean> {
+  if (resolvesNames !== undefined) return resolvesNames;
+  let nodeDnsLookup: NodeDnsLookup;
+  try {
+    nodeDnsLookup = await loadNodeDnsLookup();
+  } catch {
+    return (resolvesNames = false);
+  }
+  try {
+    await nodeDnsLookup('localhost', { all: true, verbatim: true });
+    return (resolvesNames = true);
+  } catch (error) {
+    if (isNotImplemented(error)) return (resolvesNames = false);
+    return true;
+  }
+}
+
+/** Whether `error` says the runtime does not implement the call, as workerd's and unenv's `node:dns` do. */
+function isNotImplemented(error: unknown): boolean {
+  const { code, message } = (typeof error === 'object' && error !== null ? error : {}) as { code?: unknown; message?: unknown };
+  if (code === 'ERR_METHOD_NOT_IMPLEMENTED' || code === 'ERR_NOT_IMPLEMENTED') return true;
+  return typeof message === 'string' && /\bnot implemented\b/i.test(message);
 }
 
 /**

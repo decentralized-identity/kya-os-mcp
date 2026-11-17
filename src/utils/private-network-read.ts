@@ -27,6 +27,7 @@ import { OUTBOUND_READ_MAX_BYTES } from './outbound-read-limits.js';
 import { requestPinned } from './pinned-connection.js';
 import { isPrivateHost, PRIVATE_HOST_SETTINGS, underPrivateNetworkRule } from './private-network-rule.js';
 import { ReadFailureError } from './read-failure.js';
+import { providerName, warnHeldToUrlAlone } from './url-only-reads.js';
 
 /** How a read is held beside the rule and the opt-out of its transport. */
 export interface PrivateNetworkRead {
@@ -86,12 +87,25 @@ function heldRequests(transport: PrivateNetworkTransport, read: PrivateNetworkRe
         const refused = `${redirected ? 'Redirect' : 'Request'} to a ${describeValue(protocol)} URL refused${HTTPS_REMEDY}`;
         throw new ReadFailureError('host_refused', refused, redirected ? {} : { beforeRequest: true });
       }
-      const pinning = admitPrivate ? undefined : await transport[ADDRESS_PINNING]?.();
+      // An IP literal names its own address, which the rule has checked.
       const form = hostForm(hostname);
-      if (pinning === undefined || form === undefined || 'literal' in form) return transport.fetch(url, init);
+      if (admitPrivate || form === undefined || 'literal' in form) return transport.fetch(url, init);
+      const pinning = await pinningOf(transport);
+      if (pinning === undefined) return transport.fetch(url, init);
       return pinnedRequest(pinning, { url, init, name: form.name, redirected, maxBytes });
     },
   };
+}
+
+/**
+ * How `transport` connects a request to an address the read checks, or `undefined` where it does not,
+ * as for a `FetchProvider` that offers none, which is said once.
+ */
+async function pinningOf(transport: PrivateNetworkTransport): Promise<AddressPinning | undefined> {
+  const offered = transport[ADDRESS_PINNING];
+  if (offered !== undefined) return offered();
+  warnHeldToUrlAlone(`${providerName(transport, 'A FetchProvider')} has a fetch of its own, which makes its own connections`);
+  return undefined;
 }
 
 /** One request through a pinned connection, to the host `name` the URL names. */

@@ -8,6 +8,7 @@
 
 import type { AddressPinning } from './fetch-port.js';
 import { fetchRoutedThrough } from './routed-fetch.js';
+import { warnHeldToUrlAlone } from './url-only-reads.js';
 import { defaultLookup, runtimeResolvesNames, selectDefaultTransport } from './safe-fetch-transports.js';
 import type { DnsAddress, DnsLookup, RawResponse, SafeFetchTransport } from './safe-fetch-types.js';
 
@@ -32,7 +33,13 @@ export function addressPinning(seams: PinningSeams = {}): () => Promise<AddressP
     return () => Promise.resolve(given);
   }
   const runtime: AddressPinning = { lookup: defaultLookup, transport };
-  return async () => ((await runtimeResolvesNames()) && fetchRoutedThrough() === undefined ? runtime : undefined);
+  return async () => {
+    if (!(await runtimeResolvesNames())) {
+      warnHeldToUrlAlone('this runtime resolves no host name, as its node:dns is missing or not implemented');
+      return undefined;
+    }
+    return fetchRoutedThrough() === undefined ? runtime : undefined;
+  };
 }
 
 /** One request through a pinned transport. */

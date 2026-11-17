@@ -12,13 +12,10 @@
  * addresses itself.
  */
 
-import { logger } from '../logging/index.js';
+import { warnHeldToUrlAlone } from './url-only-reads.js';
 
 /** Where Node's `fetch`, and undici's, find the dispatcher every request goes through. */
 const GLOBAL_DISPATCHER = Symbol.for('undici.globalDispatcher.1');
-
-/** Whether this package copy has said that `fetch` is routed. */
-let told = false;
 
 /**
  * The name of the dispatcher the application routes the runtime's `fetch` through, or `undefined`
@@ -28,12 +25,10 @@ let told = false;
  */
 export function fetchRoutedThrough(): string | undefined {
   const name = routingDispatcherName();
-  if (name !== undefined && !told) {
-    told = true;
-    logger.warn(
-      `[kya-os] fetch goes through the global ${name} dispatcher, not straight to each host, so a host a presenter names ` +
-        'is held to the private-network rule by its URL alone and is not resolved or pinned here: the proxy, or ' +
-        'whatever that dispatcher connects through, must refuse private and local addresses itself.',
+  if (name !== undefined) {
+    warnHeldToUrlAlone(
+      `fetch goes through the global ${name} dispatcher, not straight to each host`,
+      'the proxy, or whatever that dispatcher connects through,',
     );
   }
   return name;

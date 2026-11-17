@@ -70,6 +70,7 @@ import { developmentMode } from "../utils/development-mode.js";
 import { getDidMethod } from "../utils/did-helpers.js";
 import { ADDRESS_PINNING, type AddressPinning } from "../utils/fetch-port.js";
 import { addressPinning } from "../utils/pinned-connection.js";
+import { providerName, warnHeldToUrlAlone } from "../utils/url-only-reads.js";
 import { admittingPrivateHosts } from "../utils/private-network-rule.js";
 import type { DnsLookup, SafeFetchTransport } from "../utils/safe-fetch-types.js";
 import { assertStatusListIssuers, statusListIssuersBind, type StatusListIssuers } from "../utils/statuslist-keeper.js";
@@ -180,10 +181,14 @@ export class RuntimeFetchProvider extends FetchProvider {
   /**
    * How the private-network rule connects this provider's reads to the
    * addresses it checks, while its `fetch` is the runtime's own: a subclass
-   * whose `fetch` is its own makes its own connections, and offers none.
+   * whose `fetch` is its own makes its own connections, offers none, and
+   * says once that its reads are held to the URL alone.
    */
-  readonly [ADDRESS_PINNING] = (): Promise<AddressPinning | undefined> =>
-    this.fetch === RuntimeFetchProvider.prototype.fetch ? this.pinning() : Promise.resolve(undefined);
+  readonly [ADDRESS_PINNING] = (): Promise<AddressPinning | undefined> => {
+    if (this.fetch === RuntimeFetchProvider.prototype.fetch) return this.pinning();
+    warnHeldToUrlAlone(`${providerName(this, "A subclass of RuntimeFetchProvider")} has a fetch of its own, which makes its own connections`);
+    return Promise.resolve(undefined);
+  };
 
   /**
    * Resolve a DID to its DID Document. did:key is decoded locally (no network);

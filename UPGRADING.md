@@ -36,6 +36,7 @@ const fetchProvider = new RuntimeFetchProvider({
 
 A custom `FetchProvider`, or a subclass of `RuntimeFetchProvider` whose `fetch` is its own, makes its own connections, so the rule still reads its URLs alone.
 So does every provider in a runtime that resolves no name, such as a Cloudflare Worker or a browser, whose egress must refuse private addresses.
+Each logs once, with its reason, that its reads are held to the URL alone.
 A root credential whose proof fails, or is not checked, has its list read as one the presenter named, so a chain that claims your pinned root cannot point the checker at a private host.
 
 ### Check hop proofs before reading status

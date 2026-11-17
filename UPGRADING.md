@@ -215,11 +215,12 @@ The redirect cap is unchanged.
 
 ### Each Card DID is a DID as DID Core writes it
 
-| If you | Do this |
-| --- | --- |
-| Build, publish or validate Cards whose DID members are DID URLs, such as a key id ending in `#key-1`, or hold characters DID Core does not allow | Give each member the bare DID, with any other character percent-encoded. |
+| If you | Do this | Effect |
+| --- | --- | --- |
+| Build, publish or validate Cards whose DID members are DID URLs, such as a key id ending in `#key-1`, or hold characters DID Core does not allow | Give each member the bare DID, with any other character percent-encoded. | The Card is accepted under `identity/card/v1.2.0`, and still under `v1.1.0`. |
 
 A Card's DID members, `id`, `responsibleParty`, `principal`, and an attestation's `subject` and `issuer`, now take only a DID as W3C DID Core §3.1 writes one, of did:key or did:web (SPEC-ENTITY-CARD.md §4.1.1).
+`CARD_DID_METHODS`, exported from `@kya-os/mcp/card`, lists the methods a Card's DID members take.
 In 1.23.0 they took anything after `did:key:` or `did:web:`, so a DID URL passed validation and failed later, where the reason was harder to see: a key id such as `did:web:acme.example#key-1` given as `responsibleParty` never equals the root issuer of a delegation chain, and a DID with a path names another document.
 `Did`, `EntityCardSchema`, `parseCard`, `resolveCard` and the published schema now refuse such a value.
 The rule is DID syntax alone: whether a DID is a usable one of its method is still for its resolver to say.
@@ -243,7 +244,7 @@ The rule is DID syntax alone: whether a DID is a usable one of its method is sti
 
 A refusal said `must be a did:key or did:web DID`, and now says what is wrong, as the table shows.
 It is decided by the value alone and quotes at most 64 characters of it, so it may be shown to whoever presented the Card.
-To comply, give each member the bare DID: drop a fragment, query or path, since a key id belongs in `kid`, and percent-encode any character other than a letter, a digit, `.`, `-`, `_` and `:`, as a port is in `did:web:localhost%3A8443`.
+To comply, give each member the bare DID: drop a fragment, query or path, since a key id belongs in `kid`, and percent-encode any character other than an ASCII letter, a digit, `.`, `-`, `_` and `:`, as a port is in `did:web:localhost%3A8443`.
 Every DID the library itself mints already complies.
 
 `schemas/kya-os-card.schema.json` moves to `https://schema.kya-os.org/v1/protocol/identity/card/v1.2.0`, since its five DID members refuse values the schema published at `identity/card/v1.1.0` accepts.

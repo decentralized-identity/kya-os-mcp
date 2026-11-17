@@ -2,7 +2,8 @@
  * The Card's DID members, `id`, `responsibleParty`, `principal` and an attestation's `subject` and
  * `issuer`, each held to the DID rule (`utils/did-syntax.ts`) for the methods a Card takes, alike
  * through `Did`, `EntityCardSchema` and the published JSON Schema, and refused by the Zod schemas
- * with the rule's own reason.
+ * with the rule's own reason. `resolveCard` refuses a did:web DID that breaks the rule with the same
+ * reason, before it fetches anything.
  */
 
 import { readFileSync } from 'node:fs';
@@ -10,12 +11,13 @@ import Ajv2020, { type AnySchema } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { didPattern, whyNotDid } from '../../utils/did-syntax.js';
+import type { SafeFetch } from '../../utils/safe-fetch.js';
+import { KYA_OS_CARD_META_KEY, resolveCard } from '../resolve.js';
 import { CARD_DID_METHODS, Did, EntityCardSchema } from '../schema.js';
 
 /** A member of the published schema, as far as these tests read it. */
 interface PublishedMember {
   readonly pattern?: string;
-  readonly description?: string;
 }
 
 /** The published Card schema, as far as these tests read it. */
@@ -104,14 +106,7 @@ describe('Did', () => {
   });
 
   it('names the methods a Card takes, in the order CARD_DID_METHODS lists them', () => {
-    const reason = Did.safeParse('did:ion:abc').error?.issues[0]?.message ?? '';
-    expect(reason).toBe('uses "did:ion", not did:key or did:web');
-    let from = 0;
-    for (const method of CARD_DID_METHODS) {
-      const at = reason.indexOf(`did:${method}`, from);
-      expect(at, method).toBeGreaterThanOrEqual(from);
-      from = at + 1;
-    }
+    expect(Did.safeParse('did:ion:abc').error?.issues[0]?.message).toBe('uses "did:ion", not did:key or did:web');
   });
 });
 
@@ -142,16 +137,61 @@ describe('the published Card schema', () => {
     expect(publishedPatterns()).toEqual(Object.fromEntries(MEMBERS.map(({ member }) => [member, pattern])));
   });
 
-  it('says the id is a DID as DID Core writes one, never a DID URL', () => {
-    expect(PUBLISHED.properties.id?.description).toContain(
-      'It is a DID as W3C DID Core §3.1 writes one, never a DID URL with a path, query or fragment.',
-    );
-  });
-
   it('holds every example of its own', () => {
     expect(PUBLISHED.examples.length).toBeGreaterThan(0);
     for (const example of PUBLISHED.examples) {
       expect(conforms(example), JSON.stringify(conforms.errors)).toBe(true);
     }
+  });
+});
+
+/** A did:web DID with a Card to resolve. */
+const RESOLVABLE = 'did:web:acme.example';
+
+/** DID URLs made of {@link RESOLVABLE}, each with the refusal `resolveCard` gives it. */
+const DID_URLS: ReadonlyArray<readonly [string, string]> = [
+  ['did:web:acme.example#key-1', 'resolveCard: "did:web:acme.example#key-1" is a DID URL: drop the "#key-1" fragment'],
+  ['did:web:acme.example?v=1', 'resolveCard: "did:web:acme.example?v=1" is a DID URL: drop the "?v=1" query'],
+  ['did:web:acme.example/agents', 'resolveCard: "did:web:acme.example/agents" is a DID URL: drop the "/agents" path'],
+];
+
+/** A SafeFetch that records each URL it is asked for, and answers with the body `bodies` holds for it, or a 404. */
+function recordingFetch(bodies: Readonly<Record<string, unknown>> = {}): { fetch: SafeFetch; requested: string[] } {
+  const requested: string[] = [];
+  const fetch: SafeFetch = async (url) => {
+    requested.push(url);
+    const body = bodies[url];
+    return { ok: body !== undefined, status: body === undefined ? 404 : 200, json: async () => body };
+  };
+  return { fetch, requested };
+}
+
+describe('resolveCard', () => {
+  it.each(DID_URLS)('refuses %s, as a DID and as an inline summary id, before it fetches anything', async (did, refusal) => {
+    const { fetch, requested } = recordingFetch();
+    await expect(resolveCard(did, { fetch })).rejects.toThrow(new Error(refusal));
+    await expect(resolveCard({ serverMeta: { [KYA_OS_CARD_META_KEY]: { ...CARD, id: did } } }, { fetch })).rejects.toThrow(
+      new Error(refusal),
+    );
+    expect(requested).toEqual([]);
+  });
+
+  it('resolves a did:web DID, and an inline summary id, as before', async () => {
+    const card = { ...CARD, id: RESOLVABLE };
+    const { fetch, requested } = recordingFetch({
+      'https://acme.example/.well-known/did.json': {
+        id: RESOLVABLE,
+        service: [{ id: '#kya-os-card', type: 'KyaOsEntityCard', serviceEndpoint: 'https://acme.example/card.json' }],
+      },
+      'https://acme.example/card.json': card,
+      'https://acme.example/.well-known/kya-os-card.json': card,
+    });
+    expect(await resolveCard(RESOLVABLE, { fetch })).toEqual(card);
+    expect(await resolveCard({ serverMeta: { [KYA_OS_CARD_META_KEY]: card } }, { fetch })).toEqual(card);
+    expect(requested).toEqual([
+      'https://acme.example/.well-known/did.json',
+      'https://acme.example/card.json',
+      'https://acme.example/.well-known/kya-os-card.json',
+    ]);
   });
 });

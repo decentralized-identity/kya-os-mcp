@@ -133,7 +133,7 @@ describe('whyNotDid', () => {
     );
     expect(whyNotDid('did:w_b:example.com')).toBe('has the method name "w_b", which may hold only lower-case letters and digits');
     expect(whyNotDid('did:we b:example.com')).toBe('has the method name "we b", which may hold only lower-case letters and digits');
-    expect(whyNotDid('did:w​b:x')).toBe('has the method name "w\\u200bb", which may hold only lower-case letters and digits');
+    expect(whyNotDid('did:w\u200bb:x')).toBe('has the method name "w\\u200bb", which may hold only lower-case letters and digits');
   });
 
   it('lists the methods it takes, in the order given, when a DID uses another', () => {
@@ -162,6 +162,20 @@ describe('whyNotDid', () => {
     expect(whyNotDid('did:web:example.com#', KEY_WEB)).toBe('is a DID URL: drop the "#" fragment');
   });
 
+  it('calls a value a DID URL only when a DID comes before its path, query or fragment', () => {
+    for (const value of ['did:web:#key-1', 'did:web:?v=1', 'did:web:/agents', 'did:key:#']) {
+      expect(whyNotDid(value, KEY_WEB), value).toBe('has no method-specific id');
+    }
+    expect(whyNotDid('did:web:example.com:#key-1', KEY_WEB)).toBe('has an empty part before "#key-1"');
+    expect(whyNotDid('did:web:example.com:?v=1#f', KEY_WEB)).toBe('has an empty part before "?v=1"');
+    expect(whyNotDid('did:web:example.com:/a/b?q#f', KEY_WEB)).toBe('has an empty part before "/a/b"');
+    expect(whyNotDid('did:web::#f', KEY_WEB)).toBe('has an empty part before "#f"');
+    expect(whyNotDid('did:web:%41:/', KEY_WEB)).toBe('has an empty part before "/"');
+    expect(whyNotDid(`did:web:example.com:#${'f'.repeat(100)}`, KEY_WEB)).toBe(
+      `has an empty part before "#${'f'.repeat(63)}"...`,
+    );
+  });
+
   it('takes a percent-encoded octet with hex digits of either case, and refuses a "%" without two', () => {
     for (const value of ['did:web:example.com%3a8443', 'did:web:%2F', 'did:web:a%41%4a%4A']) {
       expect(whyNotDid(value, KEY_WEB), value).toBeUndefined();
@@ -171,10 +185,27 @@ describe('whyNotDid', () => {
     }
   });
 
+  it('names white space other than a space by its code point, since a quote of it reads as a space', () => {
+    const named: ReadonlyArray<readonly [string, string]> = [
+      ['\u00a0', 'U+00A0'],
+      ['\u2003', 'U+2003'],
+      ['\u3000', 'U+3000'],
+      ['\t', 'U+0009'],
+      ['\n', 'U+000A'],
+      ['\u2028', 'U+2028'],
+      ['\ufeff', 'U+FEFF'],
+    ];
+    for (const [character, codePoint] of named) {
+      expect(whyNotDid(`did:web:a${character}b`, KEY_WEB), codePoint).toBe(
+        `contains the white-space character ${codePoint}, which a DID writes percent-encoded`,
+      );
+    }
+    expect(whyNotDid('did:web:example.com\n')).toBe('contains the white-space character U+000A, which a DID writes percent-encoded');
+    expect(whyNotDid('did:web:a b')).toBe('contains a space');
+  });
+
   it('quotes any other character escaped, a character outside the Basic Multilingual Plane whole', () => {
-    expect(whyNotDid('did:web:a\tb')).toBe('contains "\\t", which a DID writes percent-encoded');
-    expect(whyNotDid('did:web:example.com\n')).toBe('contains "\\n", which a DID writes percent-encoded');
-    expect(whyNotDid('did:web:a​b')).toBe('contains "\\u200b", which a DID writes percent-encoded');
+    expect(whyNotDid('did:web:a\u200bb')).toBe('contains "\\u200b", which a DID writes percent-encoded');
     expect(whyNotDid('did:web:a\u{1F600}')).toBe('contains "\u{1F600}", which a DID writes percent-encoded');
     expect(whyNotDid('did:web:a\uD800b')).toBe('contains "\\ud800", which a DID writes percent-encoded');
     expect(whyNotDid('did:web:a"b')).toBe('contains "\\"", which a DID writes percent-encoded');
@@ -265,18 +296,18 @@ function fuzzed(rand: () => number): string {
   return value;
 }
 
-/** A reason with each value it quotes taken out, so the reasons of one check read the same. */
+/** A reason with each value it quotes, or names by code point, taken out, so the reasons of one check read the same. */
 function kindOf(reason: string): string {
-  return reason.replace(/"(?:[^"\\]|\\.)*"(?:\.\.\.)?/g, 'Q');
+  return reason.replace(/"(?:[^"\\]|\\.)*"(?:\.\.\.)?|U\+[0-9A-F]{4,6}/g, 'Q');
 }
 
 describe('didPattern and whyNotDid agree', () => {
   const VALUES = 20_000;
 
   it.each([
-    ['did:key and did:web', KEY_WEB, 14],
-    ['did:key, did:web and did:webvh', KEY_WEB_WEBVH, 14],
-    ['any method', undefined, 13],
+    ['did:key and did:web', KEY_WEB, 16],
+    ['did:key, did:web and did:webvh', KEY_WEB_WEBVH, 16],
+    ['any method', undefined, 15],
   ] as const)('on every fuzzed value, for %s, reaching every reason a string can have', (_name, methods, reasons) => {
     const rand = prng(311);
     const pattern = didPattern(methods);
@@ -293,5 +324,52 @@ describe('didPattern and whyNotDid agree', () => {
     expect([...kinds].sort()).toHaveLength(reasons);
     expect(accepted).toBeGreaterThan(VALUES / 10);
     expect(accepted).toBeLessThan(VALUES / 2);
+  });
+});
+
+/**
+ * One character of each class the rule tells apart: a lower-case letter, an upper-case letter and a
+ * digit, each a hex digit too, and the hex digits `2` and `F`, so a value can hold `%2F`; `.`, `-` and
+ * `_`; the `:` between parts and the `%` of an octet; the `#`, `?` and `/` that start a part of a DID
+ * URL; a space; a no-break space, which is other white space; and a letter a DID writes
+ * percent-encoded.
+ */
+const ONE_OF_EACH_CLASS = [...'aA0.-_:%#?/ ä2F', '\u00a0'];
+
+/** The starts each short value follows: none, the scheme, a DID of each method a Card takes, and the scheme in upper case. */
+const SHORT_STARTS = ['', 'did:', 'did:web:', 'did:key:', 'DID:'];
+
+/** Every string of at most `length` characters from `alphabet`, the empty string first. */
+function everyString(alphabet: readonly string[], length: number): string[] {
+  let all = [''];
+  let longest = [''];
+  for (let size = 1; size <= length; size += 1) {
+    longest = longest.flatMap((start) => alphabet.map((character) => start + character));
+    all = all.concat(longest);
+  }
+  return all;
+}
+
+describe('didPattern and whyNotDid agree on every short value', () => {
+  const SHORT = everyString(ONE_OF_EACH_CLASS, 4);
+
+  it.each([
+    ['did:key and did:web', KEY_WEB],
+    ['no methods', []],
+  ] as const)('for %s, on every value of up to four characters after each start', (_name, methods) => {
+    const pattern = didPattern(methods);
+    const disagreements: string[] = [];
+    let accepted = 0;
+    for (const start of SHORT_STARTS) {
+      for (const rest of SHORT) {
+        const value = start + rest;
+        const matches = pattern.test(value);
+        if (matches !== (whyNotDid(value, methods) === undefined)) disagreements.push(value);
+        if (matches) accepted += 1;
+      }
+    }
+    expect(disagreements).toEqual([]);
+    expect(SHORT).toHaveLength(1 + 16 + 16 ** 2 + 16 ** 3 + 16 ** 4);
+    expect(accepted).toBeGreaterThan(0);
   });
 });

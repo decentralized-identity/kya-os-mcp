@@ -380,7 +380,9 @@ The list must be an array of DIDs, each a string that starts with `did:` and has
 Before it resolves any DID, reads any status list or checks any signature, the gate checks every link of the chain and then that the root's `issuer` is on the list, for object credentials and VC-JWTs alike.
 It then verifies each credential root first, with a key from its issuer's DID document, and reads a credential's status list only after that signature verifies, so a listed issuer still needs a valid signature.
 For a re-delegation, the chain comes from `resolveDelegationChain`, which runs before these checks and must bound its own I/O.
-Without it, any issuer is accepted, including an agent signing a delegation for itself, and the middleware logs a warning at startup.
+Without it, any issuer would be accepted, including an agent signing a delegation for itself, so outside development `wrapWithDelegation` throws when it wraps a tool, with an error that names every fix.
+In local development, set `development: true`; to accept any issuer on purpose, set `delegation.allowAnyRootIssuer: true`.
+Either runs with one warning.
 A root whose `issuerDid` is not the `issuer` of its credential is refused, with or without the list and before any DID is resolved, so the `issuerDid` of an accepted root is the DID that signed it.
 
 **Nonce providers:** give your `NonceCacheProvider` an atomic `consume(nonce, ttlSeconds, agentDid?)`.

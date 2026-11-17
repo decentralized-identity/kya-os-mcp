@@ -34,43 +34,48 @@ const LIST = {
   credentialSubject: { type: 'StatusList2021', encodedList: 'H4sIAAAAAAAA' },
 };
 
+/** A route's body and the encoding it is served in, and its status and any other header when it is not a plain 200. */
+type Route = readonly [encoding: string, body: Buffer, status?: number, more?: Record<string, string>];
+
 /**
- * Each path's body and the encoding it is served in, whatever the request asked for, with its status
- * and any other header when it is not a plain 200. A `Map`, so a request's path names one of these
- * routes or none, never a property every object has.
+ * Each path's route, whatever the request asked for, made once the server's port is known. A `Map`
+ * of data, so a request's path names one of these routes or none, never a property every object
+ * has, and nothing a request names is called.
  */
-const ROUTES: ReadonlyMap<string, () => [string, Buffer, number?, Record<string, string>?]> = new Map<
-  string,
-  () => [string, Buffer, number?, Record<string, string>?]
->([
-  ['/.well-known/did.json', () => ['gzip', gzipSync(JSON.stringify({ '@context': 'https://www.w3.org/ns/did/v1', id: didOf(port) }))]],
-  ['/list', () => ['gzip', gzipSync(JSON.stringify(LIST))]],
-  ['/x-gzip', () => ['x-gzip', gzipSync('{"ok":true}')]],
-  ['/plain', () => ['identity', Buffer.from('{"ok":true}')]],
-  ['/bomb', () => ['gzip', gzipSync(' '.repeat(2 * 1024 * 1024))]],
-  ['/brotli', () => ['br', brotliCompressSync('{"ok":true}')]],
-  ['/twice', () => ['gzip, gzip', gzipSync(gzipSync('{"ok":true}'))]],
-  ['/not-gzip', () => ['gzip', Buffer.from('{"ok":true}')]],
-  ['/moved', () => ['gzip', Buffer.alloc(0), 301, { location: '/list' }]],
-  ['/moved-with-a-body', () => ['br', Buffer.from('not brotli'), 302, { location: '/list' }]],
-  ['/empty', () => ['gzip', Buffer.alloc(0)]],
-]);
+let routes: ReadonlyMap<string, Route> = new Map();
+
+/** The routes of a server on `at`. */
+const routesOn = (at: number): ReadonlyMap<string, Route> =>
+  new Map<string, Route>([
+    ['/.well-known/did.json', ['gzip', gzipSync(JSON.stringify({ '@context': 'https://www.w3.org/ns/did/v1', id: didOf(at) }))]],
+    ['/list', ['gzip', gzipSync(JSON.stringify(LIST))]],
+    ['/x-gzip', ['x-gzip', gzipSync('{"ok":true}')]],
+    ['/plain', ['identity', Buffer.from('{"ok":true}')]],
+    ['/bomb', ['gzip', gzipSync(' '.repeat(2 * 1024 * 1024))]],
+    ['/brotli', ['br', brotliCompressSync('{"ok":true}')]],
+    ['/twice', ['gzip, gzip', gzipSync(gzipSync('{"ok":true}'))]],
+    ['/not-gzip', ['gzip', Buffer.from('{"ok":true}')]],
+    ['/moved', ['gzip', Buffer.alloc(0), 301, { location: '/list' }]],
+    ['/moved-with-a-body', ['br', Buffer.from('not brotli'), 302, { location: '/list' }]],
+    ['/empty', ['gzip', Buffer.alloc(0)]],
+  ]);
 
 const didOf = (at: number) => `did:web:${HOST}%3A${at}`;
 
 beforeAll(async () => {
   server = https.createServer(tls, (request: IncomingMessage, response: ServerResponse) => {
     seen.push(request.headers);
-    const route = ROUTES.get(request.url ?? '');
+    const route = routes.get(request.url ?? '');
     if (route === undefined) {
       response.writeHead(404).end();
       return;
     }
-    const [encoding, body, status = 200, more = {}] = route();
+    const [encoding, body, status = 200, more = {}] = route;
     response.writeHead(status, { 'content-type': 'application/json', 'content-encoding': encoding, 'content-length': body.length, ...more }).end(body);
   });
   https.globalAgent.options.ca = [tls.cert];
   port = await listenOnLoopback(server as unknown as Server);
+  routes = routesOn(port);
 });
 
 afterAll(async () => {

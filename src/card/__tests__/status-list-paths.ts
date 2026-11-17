@@ -177,11 +177,11 @@ export function listAt(signer: TestIdentity, url: string, revoked: number[] = []
 export const notKeeper = (signer: TestIdentity, keeper: TestIdentity, as: string): string =>
   `status list issuer "${signer.did}" does not keep this list's URL: "${keeper.did}" does, as ${as}`;
 /**
- * The remedy that ends the refusal of a list `signer` signed where no binding names the keeper: the
- * condition, and the configuration that binds `origin` to `signer`.
+ * The remedy that ends the refusal of a list `signer` signed at `url`, where no binding names the URL
+ * itself: the condition, and the configuration that binds `url`, never its origin, to `signer`.
  */
-export const nameSigner = (signer: string, origin: string): string =>
-  `; if "${signer}" signs this issuer's lists, name it in statusListIssuers: { "${signer}": ["${origin}"] }`;
+export const nameSigner = (signer: string, url: string): string =>
+  `; if "${signer}" signs the list at this URL, name it in statusListIssuers: { "${signer}": ["${url}"] }`;
 /**
  * The remedy that ends the refusal of a list `signer` signed at `url`, a URL the configuration binds
  * to another issuer: the condition, and the binding of `url` to `signer`.

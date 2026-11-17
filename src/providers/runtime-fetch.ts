@@ -81,7 +81,9 @@ export interface RuntimeFetchProviderOptions {
    * `production` it throws when the provider is built, and it warns once per
    * process. A production deployment that reads intranet hosts sets
    * `allowPrivateNetworkHosts: true` instead. Any value but a boolean throws a
-   * `TypeError`.
+   * `TypeError`. A runtime with no `process`, such as Workers, has no
+   * `NODE_ENV` to read unless its bundler defines `process.env.NODE_ENV`, so
+   * there it does not throw: keep it out of production configuration.
    */
   development?: boolean;
   /**

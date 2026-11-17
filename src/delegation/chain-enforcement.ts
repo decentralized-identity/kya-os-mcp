@@ -169,6 +169,10 @@ export interface ChainValidationResult extends EvaluatedCredentials, RefusalCodi
  * `issuerDid` alone is not signed evidence of who issued it. The root must be
  * signed by the `issuerDid` it names, so that DID is the chain's Responsible
  * Party, and by one of `trustedRootIssuers` when that is set.
+ * With `trustedRootIssuers` unset it admits a root from any issuer, one an
+ * agent signs for itself included, and neither throws nor warns: unlike the
+ * `withKyaOs` gate, which refuses to run with no root pinned, it leaves
+ * pinning the root to its caller.
  * Success includes the earliest applicable expiry for downstream grant storage.
  * Never throws on a malformed input, nor when a dependency throws or answers
  * what it may not; returns `{ valid, reason }`, and on a refusal the `code`

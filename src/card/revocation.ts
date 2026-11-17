@@ -54,6 +54,7 @@ import {
   decodeStatusListPayload,
   parseStatusListIndex,
   readStatusBit,
+  type DecompressLimits,
 } from '../utils/statuslist-bits.js';
 import { statusListGzipCodec } from '../utils/statuslist-gzip.js';
 import type { SafeFetch } from '../utils/safe-fetch.js';
@@ -86,9 +87,11 @@ export const STATUS_PURPOSE_REVOCATION = 'revocation';
  * Inflate a GZIP `encodedList` payload to the raw status bitstring. The seam that keeps this
  * verifier ISOMORPHIC: the default is Node-only (`node:zlib`), but a Workers / Deno / browser
  * deployment injects a `DecompressionStream`-based impl so the bundle never pulls `node:zlib`.
- * MAY be sync or async; MUST reject (throw / reject) on non-inflatable input (fail-closed).
+ * MAY be sync or async; MUST reject (throw / reject) on non-inflatable input (fail-closed). The
+ * checker passes `limits`, the 16 MiB cap, and an impl SHOULD stop inflating and reject once its
+ * output would pass `limits.maxBytes` ({@link DecompressLimits}).
  */
-export type Decompress = (bytes: Uint8Array) => Uint8Array | Promise<Uint8Array>;
+export type Decompress = (bytes: Uint8Array, limits?: DecompressLimits) => Uint8Array | Promise<Uint8Array>;
 
 // The 16 MiB inflation cap and the multibase/base64url/bit-read mechanics live in
 // `utils/statuslist-bits` — ONE implementation shared with the delegation readers, so the two
@@ -194,8 +197,8 @@ export interface RevocationCheckerDeps {
    * which loads `node:zlib` on first use and bounds inflation to the 16 MiB cap (so a decompression
    * bomb THROWS mid-inflation ⇒ fail-closed, never allocating the whole payload). Non-Node
    * runtimes inject a `DecompressionStream`-based impl; when they do, `node:zlib` is never loaded.
-   * An injected impl SHOULD bound its own output — {@link decodeStatusList} still applies the cap
-   * as a post-inflation backstop regardless.
+   * An injected impl is passed the cap as its second argument and SHOULD stop inflating there;
+   * {@link decodeStatusList} still applies the cap as a post-inflation backstop regardless.
    */
   decompress?: Decompress;
   /**

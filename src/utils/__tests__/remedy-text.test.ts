@@ -5,15 +5,13 @@
 
 import { describe, expect, it } from 'vitest';
 import { sanitizeForMessage } from '../message-text.js';
-import { BOUND_GENERAL_REMEDY, exactRemedy, UNBOUND_GENERAL_REMEDY, withoutPartialRemedy } from '../remedy-text.js';
+import { exactRemedy, GENERAL_REMEDY, withoutPartialRemedy } from '../remedy-text.js';
 
 const HEAD = 'status list issuer "did:web:signer.example" does not keep this list\'s URL: "did:web:issuer.example" does';
 const REMEDIES = [
-  ['an exact remedy where no binding names the keeper', exactRemedy('did:web:signer.example', 'https://issuer.example', 'unbound')],
-  ['an exact remedy where a binding names the keeper', exactRemedy('did:web:signer.example', 'https://issuer.example/lists/1', 'bound')],
-  ["an exact remedy that moves the URL's binding", exactRemedy('did:web:signer.example', 'https://issuer.example/lists/1', 'moved')],
-  ['the general remedy where no binding names the keeper', UNBOUND_GENERAL_REMEDY],
-  ['the general remedy where a binding names the keeper', BOUND_GENERAL_REMEDY],
+  ['an exact remedy that names the signer', exactRemedy('did:web:signer.example', 'https://issuer.example/lists/1', 'name')],
+  ["an exact remedy that moves the URL's binding", exactRemedy('did:web:signer.example', 'https://issuer.example/lists/1', 'move')],
+  ['the general remedy', GENERAL_REMEDY],
 ] as const;
 
 describe('a reason that ends with a statusListIssuers remedy, cut for length', () => {
@@ -34,7 +32,7 @@ describe('a reason that ends with a statusListIssuers remedy, cut for length', (
   });
 
   it('keeps a whole remedy that words after it are cut from', () => {
-    const reason = `${HEAD}${UNBOUND_GENERAL_REMEDY} (seen by the wrapper)`;
+    const reason = `${HEAD}${GENERAL_REMEDY} (seen by the wrapper)`;
     expect(sanitizeForMessage(reason, reason.length - 5)).toBe(`${reason.slice(0, -5)}…`);
   });
 
@@ -47,7 +45,7 @@ describe('a reason that ends with a statusListIssuers remedy, cut for length', (
   });
 
   it('takes away a remedy whose configuration names a value cut short', () => {
-    const remedy = exactRemedy('did:web:signer.example', 'https://issuer.example', 'unbound');
+    const remedy = exactRemedy('did:web:signer.example', 'https://issuer.example/lists/1', 'name');
     expect(withoutPartialRemedy(`${HEAD}${remedy.slice(0, -4)}`)).toBe(HEAD);
     expect(withoutPartialRemedy(`${HEAD}${remedy}`)).toBe(`${HEAD}${remedy}`);
   });

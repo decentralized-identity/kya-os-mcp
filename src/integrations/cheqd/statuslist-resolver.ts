@@ -114,7 +114,9 @@ export interface CheqdStatusListResolverOptions {
    * a provider with `allowPrivateNetworkHosts: true` does, whatever the provider. Nothing else
    * changes: the https rule, checked redirects, byte caps and deadlines all hold. For development
    * only: while `NODE_ENV` is `production` it throws when the resolver is built, and it warns once
-   * per process. Any value but a boolean throws a `TypeError`.
+   * per process. Any value but a boolean throws a `TypeError`. A runtime with no `process`, such as
+   * Workers, has no `NODE_ENV` to read unless its bundler defines `process.env.NODE_ENV`, so there it
+   * does not throw: keep it out of production configuration.
    */
   development?: boolean;
 }
@@ -168,7 +170,7 @@ export class CheqdStatusListResolver implements StatusListResolver {
 
     const bits = await decodeStatusListPayload(
       credential.credentialSubject.encodedList,
-      (bytes) => this.opts.decompressor.decompress(bytes),
+      (bytes, limits) => this.opts.decompressor.decompress(bytes, limits),
     );
     return readStatusBit(bits, index);
   }

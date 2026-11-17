@@ -4,8 +4,9 @@
  *
  * The construction is the cryptosuite's, step for step: the proof options without `proofValue`,
  * carrying the document's `@context`, and the document without `proof`, each RFC 8785-canonicalized
- * and SHA-256 hashed; the signature is Ed25519 over the two hashes concatenated, `proofValue` is
- * base58btc multibase. The key is the issuer's verification method `proof.verificationMethod`
+ * (../utils/canonical-json, which reads a member named `toJSON` as data and refuses a value with no
+ * JSON form, such as an `undefined` member) and SHA-256 hashed; the signature is Ed25519 over the
+ * two hashes concatenated, `proofValue` is base58btc multibase. The key is the issuer's verification method `proof.verificationMethod`
  * names, and that method must belong to the document's `issuer`, whose DID document must list it
  * under the verification relationship the proof purpose names
  * (../delegation/verification-relationship). A proof that does not verify returns `false`; an
@@ -13,11 +14,11 @@
  * verifier codes it, since that says nothing about the proof.
  */
 
-import { canonicalize } from 'json-canonicalize';
 import { resolveExplained, unresolvedIssuer, type ExplainedResolution } from '../delegation/did-resolution-failure.js';
 import { logger } from '../logging/index.js';
 import { DeadlineExceededError } from '../utils/deadline.js';
 import { RefusalError, refusalCodeOf } from '../utils/refusal.js';
+import { canonicalizeJson, canonicalizeJsonBytes } from '../utils/canonical-json.js';
 import { isRecord, issuerOf } from '../utils/guards.js';
 import { base58Decode, base58Encode } from '../utils/base58.js';
 import { base64urlDecodeToBytes } from '../utils/base64.js';
@@ -153,7 +154,8 @@ export interface EddsaJcs2022SignOptions {
  * non-extractable key works as well as an in-process one. The signer's `kid` becomes
  * `proof.verificationMethod`, so it must be a DID URL under the document's `issuer`: a proof a
  * verifier would reject is refused here instead. Throws when the signer is not Ed25519, has no
- * `signRaw`, or the document already carries a proof.
+ * `signRaw`, or the document already carries a proof, and with a `TypeError` when the
+ * document holds a value with no JSON form, such as an `undefined` member, which is not dropped.
  */
 export async function signEddsaJcs2022<T extends Record<string, unknown>>(
   document: T,
@@ -186,9 +188,8 @@ export async function signEddsaJcs2022<T extends Record<string, unknown>>(
 
 /** The cryptosuite's hash data: SHA-256 of the canonical proof options, then of the canonical document. */
 async function hashData(options: Record<string, unknown>, unsecured: Record<string, unknown>): Promise<Uint8Array> {
-  const encoder = new TextEncoder();
-  const proofHash = await sha256(encoder.encode(canonicalize(options)));
-  const documentHash = await sha256(encoder.encode(canonicalize(unsecured)));
+  const proofHash = await sha256(canonicalizeJsonBytes(options));
+  const documentHash = await sha256(canonicalizeJsonBytes(unsecured));
   const data = new Uint8Array(proofHash.length + documentHash.length);
   data.set(proofHash, 0);
   data.set(documentHash, proofHash.length);
@@ -200,5 +201,5 @@ function contexts(value: unknown): unknown[] {
 }
 
 function startsWith(whole: unknown[], prefix: unknown[]): boolean {
-  return prefix.length <= whole.length && prefix.every((entry, i) => canonicalize(entry) === canonicalize(whole[i]));
+  return prefix.length <= whole.length && prefix.every((entry, i) => canonicalizeJson(entry) === canonicalizeJson(whole[i]));
 }

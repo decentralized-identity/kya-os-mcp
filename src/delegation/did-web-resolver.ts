@@ -61,7 +61,9 @@ export interface DidWebResolverOptions {
    * changes: the scheme rule, checked redirects, byte caps and deadlines all hold. For development
    * only: while `NODE_ENV` is `production` it throws when the resolver is built, and it warns once
    * per process. A production deployment that reads intranet hosts gives its fetch provider
-   * `allowPrivateNetworkHosts: true` instead. Any value but a boolean throws a `TypeError`.
+   * `allowPrivateNetworkHosts: true` instead. Any value but a boolean throws a `TypeError`. A runtime
+   * with no `process`, such as Workers, has no `NODE_ENV` to read unless its bundler defines
+   * `process.env.NODE_ENV`, so there it does not throw: keep it out of production configuration.
    */
   development?: boolean;
 }

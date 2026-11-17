@@ -12,7 +12,7 @@
  * Inflation is bounded to {@link MAX_STATUS_LIST_BYTES} while it runs, so a
  * decompression bomb is refused mid-stream rather than allocated whole.
  */
-import { MAX_STATUS_LIST_BYTES } from './statuslist-bits.js';
+import { MAX_STATUS_LIST_BYTES, type DecompressLimits } from './statuslist-bits.js';
 
 type ZlibCallback = (error: Error | null, result: Uint8Array) => void;
 
@@ -31,11 +31,13 @@ async function gzip(bits: Uint8Array): Promise<Uint8Array> {
 
 /**
  * Inflate a GZIP status-list payload, refusing (rejecting) one that is not
- * GZIP or that inflates past {@link MAX_STATUS_LIST_BYTES}.
+ * GZIP or that inflates past the reader's `limits.maxBytes`, or past
+ * {@link MAX_STATUS_LIST_BYTES} when it is called with none.
  */
-async function gunzip(payload: Uint8Array): Promise<Uint8Array> {
+async function gunzip(payload: Uint8Array, limits?: DecompressLimits): Promise<Uint8Array> {
   const zlib = await import('node:zlib');
-  return settle((done) => zlib.gunzip(payload, { maxOutputLength: MAX_STATUS_LIST_BYTES }, done));
+  const maxOutputLength = limits?.maxBytes ?? MAX_STATUS_LIST_BYTES;
+  return settle((done) => zlib.gunzip(payload, { maxOutputLength }, done));
 }
 
 /**

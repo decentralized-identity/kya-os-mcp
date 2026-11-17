@@ -66,6 +66,24 @@ An option left out keeps its default, and `withStatusCache` still requires `maxS
 Two values that used to turn a cache off now throw: a negative TTL, and a capacity of 0; set the TTL to `0` instead.
 A string or `null` is refused, not converted, so read an environment variable with a default, as `Number(process.env.STATUS_TTL_MS ?? 60_000)`.
 
+### Status-list remedies, proof canonicalization and the inflation cap
+
+A checker that refuses a list another DID signed ends its reason with a `statusListIssuers` line that now binds the list's own URL, never its origin, which would let that DID keep every list at the origin on the word of one list it signed.
+A reason that ended `; if "<signer>" signs this issuer's lists, name it in statusListIssuers: { "<signer>": ["<origin>"] }` now ends `; if "<signer>" signs the list at this URL, name it in statusListIssuers: { "<signer>": ["<url>"] }`.
+Where the line cannot be printed whole, the reason ends `; if the list's issuer signs the list at this URL, bind the URL to it in statusListIssuers` in every case.
+An operator who means the DID to keep every list at the origin still binds the origin, as "How to write `statusListIssuers`" says.
+
+Status-list and delegation-hop proofs (`eddsa-jcs-2022`) hash the document in its RFC 8785 form with the package's own canonicalizer, which sorts the members of an object with a member named `toJSON` as it sorts any other.
+The previous one wrote such an object's members in the order they arrived, so a proof another implementation made over it did not verify, and one this package made did not verify once its members were reordered.
+A proof over plain JSON is unchanged, byte for byte.
+`signStatusListCredential` and `signDelegationCredential` now throw a `TypeError` for a document holding a value with no JSON form, such as a member set to `undefined`, where they dropped it; leave such a member out instead.
+The verifiers read such a document as not verified.
+
+Every status-list reader now passes its decompressor a second argument, `{ maxBytes }`, typed `DecompressLimits`: the most bytes the bitstring may inflate to, 16 MiB, so that it can stop inflating there and reject rather than hand back a decompression bomb whole.
+That is the `decompress` option of `createRevocationChecker`, and a `DecompressionFunction` given to `BitstringManager`, `isIndexSet`, `StatusList2021Manager` or `CheqdStatusListResolver`.
+The shipped `statusListGzipCodec` stops at the cap it is given.
+A decompressor that takes one argument still works, and the reader still checks its output after; one built on `DecompressionStream`, as in Workers, should stop reading once its output passes `maxBytes`.
+
 ### A chain's credential verifier answers within the deadline
 
 `validateDelegationChain` now gives each call of its `verifier` `dependencyTimeoutMs` to answer, as it gives `resolveDelegationChain` and the `revocationChecker`.
@@ -171,6 +189,8 @@ With `development: true` or `allowAnyRootIssuer: true` and no root pinned, each 
 On the Card guards, `development: true` changes only this rule, and it throws while `NODE_ENV` is `production`.
 `allowAnyRootIssuer` must be `true` or `false`, and setting it to `true` beside a pinned root contradicts the pin; either throws a `TypeError` when the middleware or the guard is created.
 An empty `trustedRootIssuers` list is valid and trusts no issuer, so it refuses every delegation.
+The lower-level `validateDelegationChain` that `@kya-os/mcp/delegation` exports enforces none of this: with no `trustedRootIssuers` it admits a root from any issuer, and it neither throws nor warns.
+Code that calls it directly pins the root itself.
 The middleware checks when a tool is wrapped, so wrap each delegated tool when the server starts: a server that wraps tools for each connection throws on its first request instead.
 
 ### Signing keys and `assertionMethod`
@@ -612,8 +632,8 @@ A verifier reads its own copy of a custom resolver's document, made as the docum
 So nothing else of the returned object reaches a verifier: a member that is not enumerable, which 1.22.0 read, an array's own or inherited `Symbol.iterator` or a method such as `find`, a `Proxy` trap's second answer, or a change made after the document was measured.
 `DelegationCredentialVerifier`, `validateDelegationChain`, `verifyRequestDelegation`, `requireDelegation`, `evaluateDelegationChain`, `verifyCard` and `verifyCardProof` give the same 5 seconds to each other dependency the host supplies that they wait on, such as a `StatusListResolver`, a `resolveDelegationChain` or a `RevocationChecker`.
 "A dependency that can take longer than 5 seconds to answer", below, lists each and how it is refused.
-One dependency of theirs has no deadline from the library: the `verifier` that `validateDelegationChain` is given to verify each credential, since the library's own, `DelegationCredentialVerifier`, bounds each of its steps, and one limit on the whole would refuse a verification whose steps each kept theirs.
-A custom one must set its own, and so must a provider no function above calls, such as the nonce cache and the session store of `ProofVerifier` and the middleware.
+The `verifier` that `validateDelegationChain` is given to verify each credential gets the same deadline for each credential, as "A chain's credential verifier answers within the deadline" says.
+A provider no function above calls, such as the nonce cache and the session store of `ProofVerifier` and the middleware, must set its own.
 Anything over a limit is refused, never cut to fit, so check that your DID documents and status lists are within these limits before you upgrade.
 SPEC.md §4.4.2 explains each limit.
 Every did:web and status-list read also holds its host, and each redirect, to one private-network rule, whatever `FetchProvider` it reads through, which admits a private or local host only under `development: true` or a provider's `allowPrivateNetworkHosts: true`.

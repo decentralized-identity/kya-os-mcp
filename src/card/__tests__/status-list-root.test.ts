@@ -306,7 +306,7 @@ describe("each path names a hop's issuer, and the chain's root only as the verif
     const refusedFor = (did: string, as: string) => ({
       revoked: true,
       fresh: false,
-      reason: `status list issuer "${c.acme.did}" does not keep this list's URL: "${did}" does, as ${as}${nameSigner(c.acme.did, 'https://status.example')}`,
+      reason: `status list issuer "${c.acme.did}" does not keep this list's URL: "${did}" does, as ${as}${nameSigner(c.acme.did, listUrlOf(c.acme))}`,
       ...codedAs('status_signer_untrusted'),
     });
     // A root named with no URL, or with another, keeps nothing here, and a URL with no root is ignored.

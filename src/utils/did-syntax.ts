@@ -1,19 +1,36 @@
 /**
  * The DID rule: a DID as W3C DID Core 1.0 §3.1 writes one. A DID is `did:`, a method name of
- * lower-case letters and digits, `:`, and a method-specific id: parts joined by `:`, each a run of
- * letters, digits, `.`, `-`, `_` and percent-encoded octets (`%` and two hex digits), of which only
- * the last may not be empty. A DID URL, which adds a path, a query or a fragment, is not a DID, and
- * neither is a value holding any other character, which a DID writes percent-encoded. The rule is
- * syntax alone: whether a DID is a usable one of its method, such as a did:web DID naming a host, is
- * for the method's resolver to decide.
+ * lower-case ASCII letters and digits, `:`, and a method-specific id: parts joined by `:`, each a run
+ * of ASCII letters, digits, `.`, `-`, `_` and percent-encoded octets (`%` and two hex digits), of
+ * which only the last may not be empty. A DID URL, which adds a path, a query or a fragment, is not a
+ * DID, and neither is a value holding any other character, which a DID writes percent-encoded. The
+ * rule is syntax alone: whether a DID is a usable one of its method, such as a did:web DID naming a
+ * host, is for the method's resolver to decide. A value longer than {@link DID_MAX_LENGTH} UTF-16
+ * code units is refused for its length alone, before any of it is read.
  *
- * {@link didPattern} is the rule as the regular expression a JSON Schema publishes for a DID member,
- * held to the methods the member takes. {@link whyNotDid} says why a value breaks it, in one short
- * reason decided by the value alone, so the reason may be shown to whoever presented the value; the
- * two agree on every string. {@link isDid} tests a value against the rule for any method.
+ * {@link didPattern} is the rule but for its bound on length, as the regular expression a JSON Schema
+ * publishes for a DID member, held to the methods the member takes; a caller checks the length before
+ * it tests the pattern. {@link whyNotDid} says why a value breaks the rule, in one short reason
+ * decided by the value alone, so the reason may be shown to whoever presented the value; it and the
+ * pattern agree on every string of at most DID_MAX_LENGTH UTF-16 code units. {@link isDid} tests a
+ * value against the rule for any method.
  */
 
 import { describeValue } from './describe-value.js';
+import { OUTBOUND_READ_MAX_BYTES } from './outbound-read-limits.js';
+
+/**
+ * The most UTF-16 code units a DID may hold by the rule: 1,048,576, the most bytes any document the
+ * library reads may hold ({@link OUTBOUND_READ_MAX_BYTES}). Each code unit of a DID takes at least a
+ * byte of the document it is read from, so no DID read from one is longer. A longer value is refused
+ * before any pattern is tested against it, since testing {@link didPattern}'s pattern can take stack
+ * in proportion to the length of the value, and V8 runs out of it past about 8.4 million characters
+ * and throws a `RangeError`.
+ */
+export const DID_MAX_LENGTH = OUTBOUND_READ_MAX_BYTES;
+
+/** The reason a string longer than {@link DID_MAX_LENGTH} is refused for, whatever it holds. */
+const TOO_LONG = `is longer than ${DID_MAX_LENGTH} UTF-16 code units`;
 
 /** One character of a DID method name, as a regular expression class: a lower-case ASCII letter or a digit (DID Core `method-char`). */
 const METHOD_CHAR = '[a-z0-9]';
@@ -27,7 +44,7 @@ const HEX_DIGIT = '[0-9A-Fa-f]';
 /** One character of a method-specific id, as a pattern: one that stands for itself, or a percent-encoded octet (DID Core `idchar`). */
 const ID_CHAR = `(?:${PLAIN_ID_CHAR}|%${HEX_DIGIT}{2})`;
 
-/** A DID method name: one or more lower-case letters and digits (DID Core `method-name`). */
+/** A DID method name: one or more lower-case ASCII letters and digits (DID Core `method-name`). */
 const METHOD_NAME = new RegExp(`^${METHOD_CHAR}+$`);
 
 /** A character a method-specific id holds as it stands: one of DID Core's `idchar` other than `%`, or the `:` between parts. */
@@ -58,39 +75,54 @@ const ANY_DID = didPattern();
  * Schema publishes for a DID member, with the method names in the order given: for `['key', 'web']`,
  * `^did:(?:key|web):(?:(?:[A-Za-z0-9._-]|%[0-9A-Fa-f]{2})*:)*(?:[A-Za-z0-9._-]|%[0-9A-Fa-f]{2})+$`.
  * It matches in time linear in the length of the value, since it reads each character in one way
- * only. Throws a `TypeError` when a name in `methods` is not a DID method name.
+ * only. It does not hold the rule's bound on length, so a caller tests it only against a value of at
+ * most {@link DID_MAX_LENGTH} UTF-16 code units, as {@link isDid} does; testing it against a value of
+ * millions of characters can throw a `RangeError`. Throws a `TypeError` when a name in `methods` is
+ * not a DID method name.
  */
 export function didPattern(methods: readonly string[] = []): RegExp {
   const method = methodNames(methods).length === 0 ? `${METHOD_CHAR}+` : `(?:${methods.join('|')})`;
   return new RegExp(`^did:${method}:(?:${ID_CHAR}*:)*${ID_CHAR}+$`);
 }
 
+declare const didString: unique symbol;
 /**
- * Whether `value` is a DID of any method, by the DID rule. It narrows `value` to
- * `did:${string}:${string}`, the type of every DID and of many strings that are not DIDs, so a string
- * it refuses keeps the type `string`.
+ * A string {@link isDid} has found to be a DID of some method. The brand sets it apart from every
+ * other type of string, a template literal type such as `did:web:${string}` among them, which strings
+ * that are not DIDs have too.
  */
-export function isDid(value: unknown): value is `did:${string}:${string}` {
-  return typeof value === 'string' && ANY_DID.test(value);
+export type DidString = string & { readonly [didString]: true };
+
+/**
+ * Whether `value` is a DID of any method, by the DID rule. A string longer than
+ * {@link DID_MAX_LENGTH} UTF-16 code units is refused before the pattern is tested. It narrows
+ * `value` to {@link DidString}, a type no other type of string is assignable to, so a value it
+ * refuses keeps its own type, a template literal type such as `did:web:${string}` among them.
+ */
+export function isDid(value: unknown): value is DidString {
+  return typeof value === 'string' && value.length <= DID_MAX_LENGTH && ANY_DID.test(value);
 }
 
 /**
  * Why `value` is not a DID of one of `methods` (of any method when `methods` is empty or absent), or
- * `undefined` exactly when `didPattern(methods)` matches it. The reason is the first that applies, in
- * the order a DID is read: that the value is not a string, is empty, or does not start with `did:`;
- * that it has no method-specific id, no method name, or a method name of other characters; that its
- * method is not one of `methods`; then the first character of the method-specific id, read left to
- * right, that a DID does not hold as it stands; and last, an empty last part. That character is the
- * start of a path, query or fragment, which makes the value a DID URL when a DID comes before it and
- * otherwise follows an empty method-specific id or an empty last part; a `%` without two hex digits;
- * a space; other white space, named by its code point, as `U+00A0`, since a quote of it reads as a
- * space; or any other character. A reason quotes what it names as {@link describeValue} does, so it
- * stays short and one line however long the value, and it says nothing a resolution could change.
- * Throws a `TypeError` when a name in `methods` is not a DID method name, as {@link didPattern} does.
+ * `undefined` exactly when it is a string of at most {@link DID_MAX_LENGTH} UTF-16 code units that
+ * `didPattern(methods)` matches. The reason is the first that applies: that the value is not a
+ * string, or is longer than DID_MAX_LENGTH UTF-16 code units, which is decided before any of it is
+ * read; then, in the order a DID is read, that it is empty or does not start with `did:`; that it has
+ * no method-specific id, no method name, or a method name of other characters; that its method is not
+ * one of `methods`; then the first character of the method-specific id, read left to right, that a
+ * DID does not hold as it stands; and last, an empty last part. That character is the start of a
+ * path, query or fragment, which makes the value a DID URL when a DID comes before it and otherwise
+ * follows an empty method-specific id or an empty last part; a `%` without two hex digits; a space;
+ * other white space, named by its code point, as `U+00A0`, since a quote of it reads as a space; or
+ * any other character. A reason quotes what it names as {@link describeValue} does, so it stays short
+ * and one line however long the value, and it says nothing a resolution could change. Throws a
+ * `TypeError` when a name in `methods` is not a DID method name, as {@link didPattern} does.
  */
 export function whyNotDid(value: unknown, methods: readonly string[] = []): string | undefined {
   const named = methodNames(methods);
   if (typeof value !== 'string') return `is ${describeValue(value)}, not a string`;
+  if (value.length > DID_MAX_LENGTH) return TOO_LONG;
   if (value === '') return 'is empty';
   if (!value.startsWith('did:')) {
     return SCHEME_IN_ANY_CASE.test(value)
@@ -102,7 +134,7 @@ export function whyNotDid(value: unknown, methods: readonly string[] = []): stri
   const method = value.slice(4, methodEnd);
   if (method === '') return 'has no method name';
   if (!METHOD_NAME.test(method)) {
-    return `has the method name ${describeValue(method)}, which may hold only lower-case letters and digits`;
+    return `has the method name ${describeValue(method)}, which may hold only lower-case ASCII letters and digits`;
   }
   if (named.length > 0 && !named.includes(method)) return `uses ${describeValue(`did:${method}`)}, not ${listed(named)}`;
   return whyNotMethodSpecificId(value.slice(methodEnd + 1));
@@ -159,7 +191,7 @@ function methodNames(methods: readonly string[]): readonly string[] {
   for (const method of methods) {
     if (typeof method !== 'string' || !METHOD_NAME.test(method)) {
       throw new TypeError(
-        `A DID method name holds only lower-case letters and digits, and the method ${describeValue(method)} does not`,
+        `A DID method name holds only lower-case ASCII letters and digits, and the method ${describeValue(method)} does not`,
       );
     }
   }

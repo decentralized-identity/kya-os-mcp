@@ -5,7 +5,9 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { didPattern, isDid, whyNotDid } from '../did-syntax.js';
+import { typeErrors } from '../../__tests__/utils/type-errors.js';
+import { DID_MAX_LENGTH, didPattern, isDid, whyNotDid } from '../did-syntax.js';
+import { OUTBOUND_READ_MAX_BYTES } from '../outbound-read-limits.js';
 
 /** The methods a Card takes, and the same with did:webvh beside them. */
 const KEY_WEB = ['key', 'web'] as const;
@@ -76,6 +78,9 @@ describe('didPattern', () => {
       expect(() => whyNotDid('did:web:example.com', [method]), method).toThrow(TypeError);
     }
     expect(() => didPattern(['key', 42 as unknown as string])).toThrow(TypeError);
+    expect(() => didPattern(['wéb'])).toThrow(
+      new TypeError('A DID method name holds only lower-case ASCII letters and digits, and the method "wéb" does not'),
+    );
   });
 });
 
@@ -94,6 +99,31 @@ describe('isDid', () => {
       expect(isDid(value)).toBe(false);
     }
   });
+
+  // A value typed `did:web:${string}` may be a DID URL, which isDid refuses, so the false branch must
+  // keep that type. The consumer below must fail where it treats a refused value as never or as the
+  // other member of a union, and where it takes a plain string for a DidString, and nowhere else.
+  it('narrows to DidString, so a value it refuses keeps its own type, a template literal type among them', () => {
+    const source = `
+      import { isDid, type DidString } from '../did-syntax.js';
+      declare const kid: \`did:web:\${string}\`;
+      declare const either: 'did:web:example.com#key-1' | 42;
+      declare const value: unknown;
+      export const taken = (): DidString | undefined => (isDid(value) ? value : undefined);
+      export const text = (): string => (isDid(value) ? value : '');
+      export const kept = (): \`did:web:\${string}\` | undefined => (isDid(kid) ? undefined : kid);
+      export const keptNever = (): never => { if (isDid(kid)) throw new Error('a DID'); return kid; };
+      export const keptEither = (): 42 => (isDid(either) ? 42 : either);
+      export const plain: DidString = 'did:web:example.com';
+    `;
+    const errors = typeErrors(source, new URL('./did-consumer.ts', import.meta.url));
+
+    const lineOf = (name: string) => source.split('\n').findIndex((line) => new RegExp(`\\bconst ${name}\\b`).test(line)) + 1;
+    expect(errors.match(/error TS\d+/g)).toHaveLength(3);
+    for (const name of ['keptNever', 'keptEither', 'plain']) {
+      expect(errors).toMatch(new RegExp(`did-consumer\\.ts\\(${lineOf(name)},\\d+\\): error TS2322`));
+    }
+  }, 60_000);
 });
 
 describe('whyNotDid', () => {
@@ -126,14 +156,18 @@ describe('whyNotDid', () => {
     }
   });
 
-  it('says a DID has no method name, or one of other characters than lower-case letters and digits', () => {
+  it('says a DID has no method name, or one of other characters than lower-case ASCII letters and digits', () => {
     expect(whyNotDid('did::example.com')).toBe('has no method name');
     expect(whyNotDid('did:WEB:example.com', KEY_WEB)).toBe(
-      'has the method name "WEB", which may hold only lower-case letters and digits',
+      'has the method name "WEB", which may hold only lower-case ASCII letters and digits',
     );
-    expect(whyNotDid('did:w_b:example.com')).toBe('has the method name "w_b", which may hold only lower-case letters and digits');
-    expect(whyNotDid('did:we b:example.com')).toBe('has the method name "we b", which may hold only lower-case letters and digits');
-    expect(whyNotDid('did:w\u200bb:x')).toBe('has the method name "w\\u200bb", which may hold only lower-case letters and digits');
+    expect(whyNotDid('did:w_b:example.com')).toBe('has the method name "w_b", which may hold only lower-case ASCII letters and digits');
+    expect(whyNotDid('did:we b:example.com')).toBe('has the method name "we b", which may hold only lower-case ASCII letters and digits');
+    expect(whyNotDid('did:w\u200bb:x')).toBe('has the method name "w\\u200bb", which may hold only lower-case ASCII letters and digits');
+    expect(whyNotDid('did:wéb:example.com', KEY_WEB)).toBe(
+      'has the method name "wéb", which may hold only lower-case ASCII letters and digits',
+    );
+    expect(whyNotDid('did:web\u0663:example.com')).toBe('has the method name "web\u0663", which may hold only lower-case ASCII letters and digits');
   });
 
   it('lists the methods it takes, in the order given, when a DID uses another', () => {
@@ -256,6 +290,43 @@ describe('a value of a million characters', () => {
   });
 });
 
+/** The reason the rule gives a string longer than DID_MAX_LENGTH, whatever else it holds. */
+const TOO_LONG = 'is longer than 1048576 UTF-16 code units';
+
+describe('a value longer than DID_MAX_LENGTH', () => {
+  it('is one of more than 1048576 UTF-16 code units, the most bytes any document the library reads may hold', () => {
+    expect(DID_MAX_LENGTH).toBe(1_048_576);
+    expect(DID_MAX_LENGTH).toBe(OUTBOUND_READ_MAX_BYTES);
+  });
+
+  it('is refused by its length alone, though the pattern takes it, and a DID of the limit exactly is taken', () => {
+    const atLimit = `did:web:${'a'.repeat(DID_MAX_LENGTH - 'did:web:'.length)}`;
+    expect(atLimit.length).toBe(DID_MAX_LENGTH);
+    expect([didPattern(KEY_WEB).test(atLimit), isDid(atLimit), whyNotDid(atLimit, KEY_WEB)]).toEqual([true, true, undefined]);
+    const over = `${atLimit}a`;
+    expect([didPattern(KEY_WEB).test(over), isDid(over), whyNotDid(over, KEY_WEB)]).toEqual([true, false, TOO_LONG]);
+  });
+
+  it('is refused for its length before anything else the rule would name', () => {
+    const values = [' '.repeat(DID_MAX_LENGTH + 1), `DID:web:${'a'.repeat(DID_MAX_LENGTH)}`, `did:web:a#${'f'.repeat(DID_MAX_LENGTH)}`];
+    for (const value of values) {
+      expect(whyNotDid(value, KEY_WEB)).toBe(TOO_LONG);
+      expect(whyNotDid(value)).toBe(TOO_LONG);
+      expect(isDid(value)).toBe(false);
+    }
+  });
+
+  // The pattern itself throws a RangeError on these, as V8 does on every runtime CI uses, so a rule
+  // that tested it first would throw too.
+  it.each([9_000_000, 10_000_000])('of %i characters is refused before the pattern, which throws on it, is tested', (length) => {
+    const value = `did:web:${'a'.repeat(length - 'did:web:'.length)}`;
+    expect(() => didPattern(KEY_WEB).test(value)).toThrow(RangeError);
+    expect(whyNotDid(value, KEY_WEB)).toBe(TOO_LONG);
+    expect(whyNotDid(value)).toBe(TOO_LONG);
+    expect(isDid(value)).toBe(false);
+  });
+});
+
 /** Deterministic PRNG (mulberry32), as `canonical-json.test.ts` uses, so a failing case reproduces. */
 function prng(seed: number): () => number {
   let a = seed;
@@ -308,7 +379,7 @@ describe('didPattern and whyNotDid agree', () => {
     ['did:key and did:web', KEY_WEB, 16],
     ['did:key, did:web and did:webvh', KEY_WEB_WEBVH, 16],
     ['any method', undefined, 15],
-  ] as const)('on every fuzzed value, for %s, reaching every reason a string can have', (_name, methods, reasons) => {
+  ] as const)('on every fuzzed value, for %s, reaching every reason a string can have but its length', (_name, methods, reasons) => {
     const rand = prng(311);
     const pattern = didPattern(methods);
     const kinds = new Set<string>();

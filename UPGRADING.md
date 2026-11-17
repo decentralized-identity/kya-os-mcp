@@ -267,15 +267,19 @@ The rule is DID syntax alone: whether a DID is a usable one of its method is sti
 | `did:web:acme.example?v=1` | Refused: `is a DID URL: drop the "?v=1" query` |
 | `did:web:acme.example/agents` | Refused: `is a DID URL: drop the "/agents" path` |
 | `did:web:has space` | Refused: `contains a space` |
+| `did:web:acme.example` with a no-break space, U+00A0, at its end | Refused: `contains the white-space character U+00A0, which a DID writes percent-encoded` |
 | `did:web:exämple.com` | Refused: `contains "ä", which a DID writes percent-encoded` |
 | `did:web:acme.example:` | Refused: `ends with ":", so its last part is empty` |
+| `did:web:acme.example:#key-1` | Refused: `has an empty part before "#key-1"` |
 | `did:web:` | Refused: `has no method-specific id` |
 | `did:web:ex%2` | Refused: `has a "%" not followed by two hex digits` |
 | `DID:web:acme.example` | Refused: `starts with "DID:"; the scheme is written in lower case: "did:"` |
 | `did:ion:abc` | Refused: `uses "did:ion", not did:key or did:web` |
+| A string longer than 1,048,576 UTF-16 code units | Refused: `is longer than 1048576 UTF-16 code units` |
 
 A refusal said `must be a did:key or did:web DID`, and now says what is wrong, as the table shows.
 It is decided by the value alone and quotes at most 64 characters of it, so it may be shown to whoever presented the Card.
+The library refuses a value longer than 1,048,576 UTF-16 code units for its length alone, before it reads the value's syntax, as no document it reads may hold more than 1,048,576 bytes; the published schema states no such bound.
 To comply, give each member the bare DID: drop a fragment, query or path, since a key id belongs in `kid`, and percent-encode any character other than an ASCII letter, a digit, `.`, `-`, `_` and `:`, as a port is in `did:web:localhost%3A8443`.
 Every DID the library itself mints already complies.
 

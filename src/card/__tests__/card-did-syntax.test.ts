@@ -2,22 +2,28 @@
  * The Card's DID members, `id`, `responsibleParty`, `principal` and an attestation's `subject` and
  * `issuer`, each held to the DID rule (`utils/did-syntax.ts`) for the methods a Card takes, alike
  * through `Did`, `EntityCardSchema` and the published JSON Schema, and refused by the Zod schemas
- * with the rule's own reason. `resolveCard` refuses a did:web DID that breaks the rule with the same
- * reason, before it fetches anything.
+ * with the rule's own reason. A value too long for the rule is refused for its length alone, there
+ * and where a request proof and a carried delegation credential read a DID. `resolveCard` refuses a
+ * did:web DID that breaks the rule with the same reason, before it fetches anything.
  */
 
 import { readFileSync } from 'node:fs';
 import Ajv2020, { type AnySchema } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { didPattern, whyNotDid } from '../../utils/did-syntax.js';
+import { DID_MAX_LENGTH, didPattern, whyNotDid } from '../../utils/did-syntax.js';
 import type { SafeFetch } from '../../utils/safe-fetch.js';
+import { parseCredentials } from '../carried-chain.js';
+import { DELEGATION_CONTEXT_V2, KYA_OS_DELEGATION_CONTEXT, ZCAP_CONTEXT } from '../delegation.js';
+import { buildCardProof, verifyCardProof } from '../index.js';
 import { KYA_OS_CARD_META_KEY, resolveCard } from '../resolve.js';
 import { CARD_DID_METHODS, Did, EntityCardSchema } from '../schema.js';
+import { AUD, NONCE, PROOF_KEY, REQ, clock, deps, keypair } from './proof-helpers.js';
 
 /** A member of the published schema, as far as these tests read it. */
 interface PublishedMember {
   readonly pattern?: string;
+  readonly maxLength?: number;
 }
 
 /** The published Card schema, as far as these tests read it. */
@@ -85,15 +91,15 @@ const MEMBERS = [
   },
 ] as const;
 
-/** The published `pattern` of each Card member that holds a DID. */
-function publishedPatterns(): Record<string, string | undefined> {
+/** The published value of `keyword` for each Card member that holds a DID. */
+function published(keyword: keyof PublishedMember): Record<string, string | number | undefined> {
   const attestation = PUBLISHED.$defs.Attestation.properties;
   return {
-    id: PUBLISHED.properties.id?.pattern,
-    responsibleParty: PUBLISHED.properties.responsibleParty?.pattern,
-    principal: PUBLISHED.properties.principal?.pattern,
-    'attestations[0].subject': attestation.subject?.pattern,
-    'attestations[0].issuer': attestation.issuer?.pattern,
+    id: PUBLISHED.properties.id?.[keyword],
+    responsibleParty: PUBLISHED.properties.responsibleParty?.[keyword],
+    principal: PUBLISHED.properties.principal?.[keyword],
+    'attestations[0].subject': attestation.subject?.[keyword],
+    'attestations[0].issuer': attestation.issuer?.[keyword],
   };
 }
 
@@ -103,10 +109,6 @@ describe('Did', () => {
     expect(parsed.success).toBe(reason === undefined);
     expect(parsed.error?.issues.map((issue) => issue.message)).toEqual(reason === undefined ? undefined : [reason]);
     expect(whyNotDid(value, CARD_DID_METHODS)).toBe(reason);
-  });
-
-  it('names the methods a Card takes, in the order CARD_DID_METHODS lists them', () => {
-    expect(Did.safeParse('did:ion:abc').error?.issues[0]?.message).toBe('uses "did:ion", not did:key or did:web');
   });
 });
 
@@ -134,13 +136,78 @@ describe('the published Card schema', () => {
   it('publishes for each DID member the pattern of Did', () => {
     const pattern = z.toJSONSchema(Did).pattern;
     expect(pattern).toBe(didPattern(CARD_DID_METHODS).source);
-    expect(publishedPatterns()).toEqual(Object.fromEntries(MEMBERS.map(({ member }) => [member, pattern])));
+    expect(published('pattern')).toEqual(Object.fromEntries(MEMBERS.map(({ member }) => [member, pattern])));
+  });
+
+  it('states no bound on the length of a DID member, which Did alone holds', () => {
+    expect(z.toJSONSchema(Did).maxLength).toBe(DID_MAX_LENGTH);
+    expect(published('maxLength')).toEqual(Object.fromEntries(MEMBERS.map(({ member }) => [member, undefined])));
   });
 
   it('holds every example of its own', () => {
     expect(PUBLISHED.examples.length).toBeGreaterThan(0);
     for (const example of PUBLISHED.examples) {
       expect(conforms(example), JSON.stringify(conforms.errors)).toBe(true);
+    }
+  });
+});
+
+/** A value of `length` characters that is a did:web DID but for its length. */
+const tooLong = (length: number): string => `did:web:${'a'.repeat(length - 'did:web:'.length)}`;
+
+/** The reason the DID rule gives a value longer than DID_MAX_LENGTH. */
+const TOO_LONG = `is longer than ${DID_MAX_LENGTH} UTF-16 code units`;
+
+/** A carried delegation credential that parses, for a test to give a DID too long. */
+const CREDENTIAL = {
+  '@context': [DELEGATION_CONTEXT_V2, ZCAP_CONTEXT, KYA_OS_DELEGATION_CONTEXT],
+  type: ['VerifiableCredential', 'DelegationCredential'],
+  issuer: 'did:web:acme.example',
+  credentialSubject: {
+    id: 'urn:zcap:acme-root',
+    invoker: 'did:web:acme.example:agents:pay-1',
+    parentCapability: 'https://acme.example/orders',
+    invocationTarget: 'https://acme.example/orders',
+    allowedAction: ['orders.place'],
+  },
+} as const;
+
+// The pattern throws a RangeError on a value of these lengths (`utils/__tests__/did-syntax.test.ts`),
+// so each case below would throw, or reject, had the pattern been tested.
+describe.each([9_000_000, 10_000_000])('a DID of %i characters', (length) => {
+  it('is refused by Did, and in each Card member, for its length', () => {
+    const value = tooLong(length);
+    expect(Did.safeParse(value).error?.issues.map((issue) => issue.message)).toEqual([TOO_LONG]);
+    for (const { card, path } of MEMBERS) {
+      const parsed = EntityCardSchema.safeParse(card(value));
+      expect(parsed.error?.issues.map(({ path: at, message }) => ({ at, message }))).toEqual([{ at: path, message: TOO_LONG }]);
+    }
+  });
+
+  it('makes a request proof malformed, as its did or its audience', async () => {
+    const { signer, publicJwk } = await keypair();
+    const proof = (await buildCardProof(REQ, signer, { audience: AUD, nonce: NONCE, now: clock }))[PROOF_KEY];
+    expect((await verifyCardProof(proof, REQ, deps(publicJwk))).ok).toBe(true);
+    const value = tooLong(length);
+    for (const malformed of [{ ...proof, did: value }, { ...proof, audience: value }]) {
+      expect(await verifyCardProof(malformed, REQ, deps(publicJwk))).toEqual({ ok: false, reasons: ['malformed_proof'] });
+    }
+  });
+
+  it('makes a carried delegation credential malformed, as its issuer or its invoker', () => {
+    expect(parseCredentials([CREDENTIAL]).ok).toBe(true);
+    const value = tooLong(length);
+    const malformed: ReadonlyArray<readonly [Record<string, unknown>, string]> = [
+      [{ ...CREDENTIAL, issuer: value }, 'issuer'],
+      [{ ...CREDENTIAL, credentialSubject: { ...CREDENTIAL.credentialSubject, invoker: value } }, 'credentialSubject.invoker'],
+    ];
+    for (const [credential, at] of malformed) {
+      expect(parseCredentials([credential])).toEqual({
+        ok: false,
+        reasons: [expect.stringContaining(`hop 0: not a DelegationCredential at ${at}: `)],
+        refusalCode: 'delegation_malformed',
+        transient: false,
+      });
     }
   });
 });
@@ -155,6 +222,16 @@ const DID_URLS: ReadonlyArray<readonly [string, string]> = [
   ['did:web:acme.example/agents', 'resolveCard: "did:web:acme.example/agents" is a DID URL: drop the "/agents" path'],
 ];
 
+/**
+ * did:web values made of {@link RESOLVABLE} that are not DID URLs but break the DID rule, each with
+ * the refusal `resolveCard` gives it. The did:web parser reads the first as naming a URL, so the rule
+ * alone keeps it from being fetched.
+ */
+const MALFORMED_DIDS: ReadonlyArray<readonly [string, string]> = [
+  ['did:web:acme.example:a+b', 'resolveCard: "did:web:acme.example:a+b" contains "+", which a DID writes percent-encoded'],
+  ['did:web:acme.example:a%2', 'resolveCard: "did:web:acme.example:a%2" has a "%" not followed by two hex digits'],
+];
+
 /** A SafeFetch that records each URL it is asked for, and answers with the body `bodies` holds for it, or a 404. */
 function recordingFetch(bodies: Readonly<Record<string, unknown>> = {}): { fetch: SafeFetch; requested: string[] } {
   const requested: string[] = [];
@@ -167,7 +244,7 @@ function recordingFetch(bodies: Readonly<Record<string, unknown>> = {}): { fetch
 }
 
 describe('resolveCard', () => {
-  it.each(DID_URLS)('refuses %s, as a DID and as an inline summary id, before it fetches anything', async (did, refusal) => {
+  it.each([...DID_URLS, ...MALFORMED_DIDS])('refuses %s, as a DID and as an inline summary id, before it fetches anything', async (did, refusal) => {
     const { fetch, requested } = recordingFetch();
     await expect(resolveCard(did, { fetch })).rejects.toThrow(new Error(refusal));
     await expect(resolveCard({ serverMeta: { [KYA_OS_CARD_META_KEY]: { ...CARD, id: did } } }, { fetch })).rejects.toThrow(

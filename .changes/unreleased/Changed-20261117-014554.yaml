@@ -1,0 +1,13 @@
+kind: Changed
+body: |-
+    **A Card's DID members take only a DID as W3C DID Core writes one, so
+    the Card's schema moves to `identity/card/v1.2.0`.** `id`,
+    `responsibleParty`, `principal` and an attestation's `subject` and
+    `issuer` no longer take a DID URL, such as a key id ending in `#key-1`,
+    a character DID Core writes percent-encoded, or an empty last part.
+    `v1.1.0` stays published. `EntityCardSchema`, `parseCard` and
+    `resolveCard` refuse such a value with a reason that says what is
+    wrong; `resolveCard` does so before any request, where it fetched the
+    DID document of one such as `did:web:acme.example:a+b`. UPGRADING.md,
+    "Each Card DID is a DID as DID Core writes it", has each case.
+time: 2026-11-17T01:45:54.000000-06:00

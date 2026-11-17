@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { didPattern, whyNotDid } from '../utils/did-syntax.js';
+import { DID_MAX_LENGTH, didPattern, whyNotDid } from '../utils/did-syntax.js';
 
 /**
  * Zod schema for the KYA-OS Entity Card — the runtime source of truth, mirroring
@@ -10,19 +10,28 @@ import { didPattern, whyNotDid } from '../utils/did-syntax.js';
 /** The DID methods a Card's DID members take (SPEC-ENTITY-CARD.md §5.1), in the order a refusal lists them. */
 export const CARD_DID_METHODS = ['key', 'web'] as const;
 
-/** What a refusal of {@link Did} says should the DID rule name no reason, which it names for every value the pattern refuses. */
+/** What a refusal of {@link Did} says should the DID rule name no reason, which it names for every value either check of `Did` refuses. */
 const NOT_A_DID = 'is not a DID';
+
+/** The reason {@link Did} refuses the value of `issue` for: the one `whyNotDid` gives it. */
+function refusalOf(issue: { readonly input: unknown }): string {
+  return whyNotDid(issue.input, CARD_DID_METHODS) ?? NOT_A_DID;
+}
 
 /**
  * A DID of a method a Card takes ({@link CARD_DID_METHODS}), as W3C DID Core §3.1 writes one, so never
  * a DID URL, which adds a path, query or fragment: the one source of the DID shape, imported and never
- * declared again. It is a `regex` check, so `z.toJSONSchema` emits the `pattern` the published schema
- * gives each DID member, and it refuses a value with the reason `whyNotDid` gives, which is decided by
- * the value alone and so may be shown to whoever presented it.
+ * declared again. Its `regex` check makes `z.toJSONSchema` emit the `pattern` the published schema
+ * gives each DID member. A `max` check comes first and ends the parse of a value longer than
+ * `DID_MAX_LENGTH`, so the pattern is never tested against one; it is the library's own bound, which
+ * the published schema does not state, and `z.toJSONSchema` emits it as `maxLength`. Each check refuses
+ * a value with the reason `whyNotDid` gives, which is decided by the value alone and so may be shown to
+ * whoever presented it.
  */
-export const Did = z.string().regex(didPattern(CARD_DID_METHODS), {
-  error: (issue) => whyNotDid(issue.input, CARD_DID_METHODS) ?? NOT_A_DID,
-});
+export const Did = z
+  .string()
+  .max(DID_MAX_LENGTH, { abort: true, error: refusalOf })
+  .regex(didPattern(CARD_DID_METHODS), { error: refusalOf });
 
 export const EntityTypeSchema = z.enum(['mcp', 'agent', 'client', 'verifier', 'human']);
 

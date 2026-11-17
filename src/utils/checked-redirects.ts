@@ -9,12 +9,19 @@
  * its runtime follow a redirect itself, making the request before the response comes back; the
  * response then says so, by `redirected` or by a `url` other than the one asked for, and is refused
  * unread. Only a provider that passes the option on keeps every request to hosts the rule admits.
+ *
+ * A request other than GET or HEAD, such as a POST to a registrar, follows only a 307 or 308, the
+ * redirects that keep its method and body, and only to its own origin, so its body and headers
+ * reach no host but the one it was sent to. A 301, 302 or 303 is refused: to follow one by the
+ * standard turns the request into a GET without its body, which the server cannot act on, and to
+ * send the request again as it was may repeat what it does.
  */
 
+import { logger } from '../logging/index.js';
 import { cancelQuietly } from './bounded-read.js';
 import { crossOriginRequestHeaders } from './cors-safelisted-headers.js';
 import { ReadFailureError } from './read-failure.js';
-import { followRedirects, type RedirectRefusals } from './redirect-follower.js';
+import { followRedirects, REDIRECT_STATUSES, type RedirectRefusals } from './redirect-follower.js';
 
 /** Fetch one URL as given, without following a redirect. */
 export type SingleFetch = (url: string, init: RequestInit) => Promise<Response>;
@@ -38,10 +45,14 @@ const REFUSALS: RedirectRefusals = {
   httpsToHttp: () => new ReadFailureError('host_refused', 'Redirect from https to http refused'),
 };
 
+/** The redirects that keep a request's method and body (RFC 9110 §15.4.8 and §15.4.9). */
+const METHOD_KEEPING_REDIRECTS: ReadonlySet<number> = new Set([307, 308]);
+
 /**
- * GET `url`, following redirects by the one rule and up to its limit (`./redirect-follower`), and
- * refuse any target `refusal` names, any step down from https to http, and any response the
- * provider reached by a redirect.
+ * Request `url`, following redirects by the one rule and up to its limit (`./redirect-follower`),
+ * and refuse any target `refusal` names, any step down from https to http, and any response the
+ * provider reached by a redirect. A request other than GET or HEAD is refused a 301, 302 or 303,
+ * and a redirect to another origin.
  */
 export function fetchWithCheckedRedirects(
   fetch: SingleFetch,
@@ -49,6 +60,8 @@ export function fetchWithCheckedRedirects(
   init: RequestInit,
   refusal: TargetRefusal,
 ): Promise<Response> {
+  const method = (init.method ?? 'GET').toUpperCase();
+  const keptToOrigin = method !== 'GET' && method !== 'HEAD';
   return followRedirects<Response>(url, {
     async request(hop) {
       const sent = hop.crossOrigin ? { ...init, headers: crossOriginRequestHeaders(init.headers) } : init;
@@ -57,9 +70,17 @@ export function fetchWithCheckedRedirects(
         cancelQuietly(() => response.body?.cancel());
         throw new ReadFailureError('host_refused', 'Redirect followed by the fetch provider refused');
       }
+      if (keptToOrigin && REDIRECT_STATUSES.has(response.status) && !METHOD_KEEPING_REDIRECTS.has(response.status)) {
+        cancelQuietly(() => response.body?.cancel());
+        throw new ReadFailureError('unavailable', `Redirect of a ${method} by HTTP ${response.status} refused: only a 307 or 308 keeps its method and body`);
+      }
       return response;
     },
-    vetTarget({ target }) {
+    vetTarget({ target, crossOrigin }) {
+      if (keptToOrigin && crossOrigin) {
+        logger.warn(`[kya-os] Redirect of a ${method} to ${target.origin} refused: another origin`);
+        throw new ReadFailureError('host_refused', `Redirect of a ${method} to another origin refused`);
+      }
       const refused = refusal(target.href);
       if (refused !== undefined) throw new ReadFailureError('host_refused', `Redirect to ${refused}`);
     },

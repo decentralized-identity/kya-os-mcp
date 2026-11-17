@@ -2,12 +2,18 @@ import type { CryptoProvider, FetchProvider } from '../../providers/base.js';
 import type { DIDDocument } from '../../delegation/vc-verifier.js';
 import { base64ToBytes, base64urlEncodeFromBytes, bytesToBase64 } from '../../utils/base64.js';
 import { isRecord, stripTrailingSlashes } from '../../utils/index.js';
+import type { FetchPort } from '../../utils/fetch-port.js';
+import { admittingPrivateHosts, underPrivateNetworkRule } from '../../utils/private-network-rule.js';
 
 export type CheqdRegistrarOperation = 'create' | 'update' | 'create-resource';
 
 export interface CheqdRegistrarClientOptions {
   registrarUrl: string;
   fetchProvider: FetchProvider;
+  /**
+   * Headers for each request to the registrar, such as an API key. A request follows a redirect only
+   * by a 307 or 308 on the registrar's own origin, so they and the body reach no other host.
+   */
   headers?: Record<string, string> | (() => Promise<Record<string, string>>);
 }
 
@@ -98,12 +104,16 @@ interface SigningRequestCandidate {
 
 export class CheqdDidRegistrarClient {
   private readonly registrarUrl: string;
-  private readonly fetchProvider: FetchProvider;
+  /**
+   * The registrar's transport: the provider's fetch, following redirects by hand
+   * (`../../utils/checked-redirects`). The operator names the registrar, so a private host is admitted.
+   */
+  private readonly transport: FetchPort;
   private readonly headers?: Record<string, string> | (() => Promise<Record<string, string>>);
 
   constructor(options: CheqdRegistrarClientOptions) {
     this.registrarUrl = stripTrailingSlashes(options.registrarUrl);
-    this.fetchProvider = options.fetchProvider;
+    this.transport = underPrivateNetworkRule(admittingPrivateHosts(options.fetchProvider));
     this.headers = options.headers;
   }
 
@@ -274,7 +284,7 @@ export class CheqdDidRegistrarClient {
     path: string,
     body: unknown,
   ): Promise<{ ok: boolean; status: number; body: unknown }> {
-    const response = await this.fetchProvider.fetch(`${this.registrarUrl}${path}`, {
+    const response = await this.transport.fetch(`${this.registrarUrl}${path}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

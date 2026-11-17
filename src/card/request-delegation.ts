@@ -311,7 +311,8 @@ async function obtainChain(
  * refused, with its code, or `undefined` when its proof verified. A proof that did not verify is
  * `invalid_proof`; a verifier that threw a {@link RefusalError}, as the coded variant of the
  * library's (`./coded-proof-verifier`), which this asks in its place, does when the issuer's DID
- * document cannot be read, is refused with its code and message; any other throw is
+ * document cannot be read, is refused with its message and its code, or `invalid_proof` where that
+ * code is none of the catalog's; any other throw is
  * `runtime_error`; and a verifier, or its DID resolution, that has not answered by the deadline is
  * `deadline_exceeded`, with a reason that says so.
  */
@@ -326,7 +327,9 @@ async function hopProofRefusal(
     return verified === true ? undefined : { reason: 'proof did not verify', ...coded('invalid_proof') };
   } catch (error) {
     if (error instanceof DeadlineExceededError) return { reason: error.message, ...coded('deadline_exceeded') };
-    if (error instanceof RefusalError) return { reason: sanitizeForMessage(error.message, HOP_REFUSAL_LENGTH), ...coded(error.code) };
+    if (error instanceof RefusalError) {
+      return { reason: sanitizeForMessage(error.message, HOP_REFUSAL_LENGTH), ...coded(refusalCodeOf(error, 'invalid_proof')) };
+    }
     return { reason: 'proof did not verify', ...coded(refusalCodeOf(error, 'runtime_error')) };
   }
 }

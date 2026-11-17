@@ -47,6 +47,8 @@ On 1.23.0 the runtime followed redirects itself, up to 20 in Node, to any host, 
 The operator names the resolver, so its host, and any host a redirect leads to, may still be private or local; the resolver URL, and each redirect, must be an absolute http or https URL.
 A resolver that redirects more than 3 times, or from https to http, now resolves no document: the failure's `cause` is `unavailable` or `host_refused`, and the log says why.
 A custom `FetchProvider` given to the resolver must pass `redirect` on and return a response that names the URL asked for, or none, as "A custom `FetchProvider` whose response names a URL other than the one asked for" says below.
+`CheqdDidRegistrarClient` now posts to the registrar through the same checked redirects, but a POST follows only a 307 or 308 on the registrar's own origin, sending the same headers and body again; on 1.23.0 the runtime followed the registrar's redirects too, to any host, with the request body and `headers`, and took that host's answer as the registrar's.
+A 301, 302 or 303, or a redirect to another origin, from http to https included, now makes `createDid`, `updateDid` and `createResource` reject with an error that says so, and the log names the origin; if your registrar URL redirects, set `registrarUrl` to the URL it redirects to.
 In a browser, which hides where a redirect leads, a resolver that redirects resolves no document.
 
 ### A status list outside its validity window is refused

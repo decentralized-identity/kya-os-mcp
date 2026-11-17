@@ -690,7 +690,8 @@ implementation MUST derive the level per §9.4 / §11.1 step 7, not from this pr
 
 ### 9.3 L3 - live per-request proof-of-possession
 
-Evidence: L2 **plus** a valid sender-constrained `org.kya-os/proof.v1` (§8) - `audience` === self,
+Evidence: L2 **plus** a valid sender-constrained `org.kya-os/proof.v1` (§8) signed by the Card's own
+DID (`proof.did` is `card.id`, §11.1 step 2) - `audience` === self,
 nonce fresh, `requestHash` recomputes, and the `cnf.jkt` fusion when the AS supplies a token `cnf`
 (this is the proof floor that lifts the level to L3) - **plus** a LIVE Bitstring Status List
 freshness check on the leaf delegation/capability credentials. The leaf-invoker === `proof.did`
@@ -845,6 +846,11 @@ than erroring open.
 2. **Live proof** - if a proof + request + proof-verifier are supplied, RECOMPUTE the proof (§11.2);
    a throwing verifier yields `{ ok: false, reasons: ["proof_verifier_threw"] }` (a demotion, not an
    escape). Let `proofDid = proof.ok ? proof.did : undefined`.
+   The proof floor of step 7 holds only when `proofDid` is the Card's own `id`, compared as Card
+   resolution compares a fetched Card's `id` with the DID it was resolved for: a `did:web` DID's host
+   in any case and each segment in one percent-encoding, any other DID as written. A valid proof by
+   another DID proves possession of that DID's key, not the Card's, so it leaves the level at L2;
+   step 3 still receives its `proofDid`.
 3. **Accountability** - if `card.responsibleParty` is present, run the accountability verifier with
    `{ trustedIssuers, proofDid }` (threading `proofDid` for the §10.2 leaf-invoker join).
 4. **Attestations** - recompute each `card.attestations[]` via the attestation verifier.
@@ -893,6 +899,7 @@ than erroring open.
 | No capability verifier / any unverified capability | floor L1 |
 | All capabilities attested, no valid live proof | L2 |
 | All attested + valid live proof + fresh revocation | L3 (or L3-minus without AS `cnf`) |
+| All attested + valid live proof whose `did` is not the Card's `id` | L2 |
 | Stale (readable, past validity window) status list | L3 → L2 (`revocationFresh = false`; `revoked: false`, so `ok` unaffected) |
 | Unreachable / non-2xx / malformed / wrong-purpose / out-of-range status list | `{ revoked: true, fresh: false }` (fail-closed) ⇒ collapse to L1, `ok: false` |
 | Revoked Card / delegation credential | collapse to L1, `ok: false` |

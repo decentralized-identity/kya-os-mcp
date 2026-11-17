@@ -37,6 +37,7 @@ import {
   type CardRevocation,
 } from './verify-revocation.js';
 import type { ProofAssurance, ProofVerifyResult } from './proof/index.js';
+import { sameDid } from './same-did.js';
 import type { ToolRequest } from '../proof/generator.js';
 
 export const ENTITY_TYPES: readonly EntityType[] = EntityTypeSchema.options;
@@ -140,7 +141,10 @@ export interface VerifyCardDeps {
   proof?: unknown;
   /** The request the proof must bind (`method` + `params`); required alongside `proof`. */
   request?: ToolRequest;
-  /** Recomputes `proof` against `request` (pre-bound ./proof `verifyCardProof`). Lifts L2 → L3. */
+  /**
+   * Recomputes `proof` against `request` (pre-bound ./proof `verifyCardProof`). Lifts L2 → L3 only
+   * when the proof's DID is the Card's own `id`.
+   */
   proofVerifier?: CardProofVerifier;
   /**
    * Live W3C Bitstring Status List v1.0 check for `card.revocation` (fail-closed). It is called with
@@ -216,6 +220,9 @@ export async function verifyCard(card: EntityCard, deps: VerifyCardDeps): Promis
   const check = await checkCapabilities(card, deps, trustedIssuers, timeoutMs);
   const proof = await recomputeProof(deps, timeoutMs);
   const proofDid = proof?.ok ? proof.did : undefined;
+  // A proof lifts the level only when the Card's own DID signed it: a valid proof by any other DID
+  // shows possession of that DID's key, not the Card's. The join still gets the signer's DID.
+  const holderProven = proofDid !== undefined && sameDid(proofDid, card.id);
 
   const party = await checkAccountability(card, deps, trustedIssuers, proofDid, timeoutMs);
   const accountability = party?.reported;
@@ -236,7 +243,7 @@ export async function verifyCard(card: EntityCard, deps: VerifyCardDeps): Promis
     entityType: card.entityType,
     conformanceLevel: deriveConformanceLevel(
       demoteOnRevocation(check, revocation.revoked),
-      proof?.ok ?? false,
+      holderProven,
       (!revocation.checked || revocation.fresh) && (accountability?.fresh ?? true) && (check.fresh ?? true),
     ),
     verifiedCapabilities: check.verified,

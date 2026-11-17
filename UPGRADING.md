@@ -30,6 +30,15 @@ The warning is shared across package copies in the process.
 **`verifyHopProof` becomes required in the next major version.**
 `verifyRequestDelegation` and `requireDelegation` already require this verifier, and keep their verification order and refusal precedence.
 
+### A Card reaches L3 only on a proof its own DID signed
+
+`verifyCard` now lifts a Card to L3 only when the live proof's `did` is the Card's own `id`.
+It compares the two as `resolveCard` compares a fetched Card's `id` with the DID it was resolved for: a did:web host in any case and each segment in one percent-encoding, and any other DID as written.
+On 1.23.0 a valid proof by any DID lifted the Card, so a caller holding any key could present another Entity's Card at L3.
+A Card whose proof another DID signed now verifies at L2, with the same `ok`.
+Its `proof` still reports the verifier's verdict and the DID that signed it, and the accountability verifier still receives that DID as `proofDid` for the leaf join.
+An Entity that signs its requests with a key of a DID other than its Card's reaches L3 by signing with a key its Card's own DID lists.
+
 ### The cheqd resolver follows a redirect by hand
 
 `DidCheqdResolver`, `createDidCheqdResolver` and `cheqdResolver` now read the resolver endpoint as a did:web or status-list read is read.

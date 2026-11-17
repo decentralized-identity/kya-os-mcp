@@ -27,6 +27,7 @@
 import { isRecord } from '../utils/guards.js';
 import type { SafeFetch } from '../utils/safe-fetch.js';
 import { EntityCardSchema, type EntityCard } from './schema.js';
+import { normalizeDid } from './same-did.js';
 
 // ── Canonical discovery constants (co-located in the lowest module so `emit.ts`, which
 //    builds these surfaces, can depend on `resolve.ts` one-way without an import cycle) ──
@@ -209,21 +210,6 @@ async function fetchCard(url: string, fetch: SafeFetch, expectedDid?: string): P
 function parseDidWeb(did: string): { host: string; path: string } {
   const parts = did.slice('did:web:'.length).split(':').map(decodeURIComponent);
   return { host: parts[0] ?? '', path: parts.slice(1).join('/') };
-}
-
-/**
- * Canonicalize a DID for identity comparison. For `did:web` the DNS host is case-INsensitive, so it
- * is lowercased, and every `:`-separated segment is percent-decoded and RE-encoded, so two spellings
- * of one DID (`%3a` vs `%3A`, a needlessly escaped letter) compare equal. The re-encode is what keeps
- * distinct DIDs distinct: a decoded `:` inside a segment (the port of `did:web:host%3A8443`, or a
- * user named `alice:agent`) goes back to `%3A`, so it never collapses into a segment separator and
- * `did:web:host:users:alice%3Aagent` stays a different DID from `did:web:host:users:alice:agent`.
- * Other DID methods (e.g. `did:key`, case-sensitive base58) compare verbatim.
- */
-function normalizeDid(did: string): string {
-  if (!did.startsWith('did:web:')) return did;
-  const [host = '', ...path] = did.slice('did:web:'.length).split(':').map(decodeURIComponent);
-  return `did:web:${[host.toLowerCase(), ...path].map(encodeURIComponent).join(':')}`;
 }
 
 /**

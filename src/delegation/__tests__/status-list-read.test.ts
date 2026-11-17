@@ -120,6 +120,14 @@ describe('CheqdStatusListResolver reads a list through the bounded reader', () =
   });
 });
 
+/**
+ * Node 24 and later follow the URL Standard and reject a Punycode label that does not decode, such
+ * as `xn--localhost-`, so a URL naming one does not parse there and is refused as such; earlier
+ * runtimes read it, and the private-network rule refuses it as a local name. Either way it is
+ * refused before any request.
+ */
+const parses = (url: string): boolean => URL.canParse(url);
+
 describe('CheqdStatusListResolver reads a list under the private-network rule, whatever its provider', () => {
   const at = (statusListCredential: string): CredentialStatus => ({ ...entry, statusListCredential });
 
@@ -127,7 +135,8 @@ describe('CheqdStatusListResolver reads a list under the private-network rule, w
     const local = LOCAL_HOST_NAMES.map(name => `https://${name}/list`);
     for (const url of ['https://10.0.0.1/list', 'https://[::ffff:a9fe:a9fe]/latest', 'https://localhost/list', 'https://status.localhost./list', ...local]) {
       const fetch = vi.fn(async () => new Response(list));
-      await expect(cheqd(fetch).checkStatus(at(url))).rejects.toThrow(`Request to "${new URL(url).host}" refused`);
+      const refusal = parses(url) ? `Request to "${new URL(url).host}" refused` : 'Request to a URL that does not parse refused';
+      await expect(cheqd(fetch).checkStatus(at(url))).rejects.toThrow(refusal);
       expect(fetch).not.toHaveBeenCalled();
     }
     const fetch = vi.fn(async () => new Response(list));
@@ -142,9 +151,13 @@ describe('CheqdStatusListResolver reads a list under the private-network rule, w
     for (const [location, host] of [['https://169.254.169.254/latest', '169.254.169.254'], ['https://localhost:8443/list', 'localhost:8443'], ...local]) {
       const fetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response(null, { status: 302, headers: { location } }));
       const refused = cheqd(fetch).checkStatus(entry);
-      await expect(refused).rejects.toThrow('Redirect to a private or local host refused');
+      if (parses(location)) {
+        await expect(refused).rejects.toThrow('Redirect to a private or local host refused');
+        expect(warn).toHaveBeenLastCalledWith(`[kya-os] Redirect to "${host}" refused: a private or local host`);
+      } else {
+        await expect(refused).rejects.toThrow('Redirect to an invalid URL');
+      }
       await expect(refused).rejects.not.toThrow(host);
-      expect(warn).toHaveBeenLastCalledWith(`[kya-os] Redirect to "${host}" refused: a private or local host`);
       expect(fetch.mock.calls.map(([url, init]) => [url, init?.redirect])).toEqual([[LIST, 'manual']]);
     }
   });

@@ -55,7 +55,10 @@ export interface TransportInit {
   headers?: Readonly<Record<string, string>>;
 }
 
-/** Transport seam — performs ONE request (no redirect following) to the pinned address. */
+/**
+ * Transport seam: performs ONE request (no redirect following) to the pinned address. Its URL is
+ * https, or http at a URL the caller's `operatorNamed` named as the read's first request.
+ */
 export type SafeFetchTransport = (url: string, init: TransportInit) => Promise<RawResponse>;
 
 /** The fetcher safe-fetch returns — structurally compatible with the card's `FetchLike`. */
@@ -84,9 +87,11 @@ export interface SafeFetchInit {
    * pinned root's own credential names once that credential's proof has verified. A hop it answers
    * `true` for is read wherever its host resolves, a private or local address included, as
    * `development: true` reads one; the connection is still pinned to the address looked up, and the
-   * https, redirect, size and deadline rules all hold. Every other hop is held to the rule. The
-   * status-list checker passes it for those lists alone; never answer `true` for a URL whoever
-   * presented a credential could have chosen.
+   * redirect, size and deadline rules all hold. The first request may be http when it answers `true`
+   * for that URL, as an operator binds a list's exact http URL; a redirect is https alone. Every
+   * other hop is held to the rule. The status-list checker passes it for those lists alone, and for
+   * a pinned root's own list only over https; never answer `true` for a URL whoever presented a
+   * credential could have chosen.
    */
   operatorNamed?: (url: string) => boolean;
 }

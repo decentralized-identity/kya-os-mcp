@@ -67,6 +67,28 @@ function loadNodeHttps(): Promise<NodeHttps | null> {
   ));
 }
 
+type NodeHttp = typeof import('node:http');
+let nodeHttpPromise: Promise<NodeHttp | null> | undefined;
+/** Lazily load (and cache) `node:http`, for an http URL a caller named; resolves to `null` where it's absent. */
+function loadNodeHttp(): Promise<NodeHttp | null> {
+  return (nodeHttpPromise ??= import('node:http').then(
+    (m) => m,
+    () => null,
+  ));
+}
+
+/**
+ * The `request` of the module that reads a URL: `node:http` for an http one, which SafeFetch hands a
+ * transport only where the caller's `operatorNamed` named it, and `node:https` for any other.
+ */
+async function requestFor(http: boolean): Promise<NodeHttps['request']> {
+  const module = http ? await loadNodeHttp() : await loadNodeHttps();
+  if (!module) {
+    throw new Error(`safe-fetch: node:${http ? 'http' : 'https'} is unavailable in this runtime; pass transport: fetchTransport`);
+  }
+  return module.request;
+}
+
 /** Default DNS seam — resolve every address (`all: true`) for full SSRF screening. */
 export const defaultLookup: DnsLookup = async (hostname) => {
   const nodeDnsLookup = await loadNodeDnsLookup();
@@ -211,26 +233,28 @@ function requestHeaders(headers: TransportInit['headers']): Record<string, strin
   return { ...FETCH_HEADERS, ...Object.fromEntries(own), 'accept-encoding': DECODED_CODING };
 }
 
-/** Default transport: node:https pinned to the validated IP, TLS SNI preserved, body-capped, gzip decoded. */
+/**
+ * Default transport: node:https pinned to the validated IP, TLS SNI preserved, body-capped, gzip
+ * decoded. An http URL, which SafeFetch hands it only where the caller's `operatorNamed` named it,
+ * is read over node:http, pinned the same way.
+ */
 export const nodeHttpsTransport: SafeFetchTransport = async (url, init) => {
-  const https = await loadNodeHttps();
-  if (!https) {
-    throw new Error('safe-fetch: node:https is unavailable in this runtime; pass transport: fetchTransport');
-  }
-  const httpsRequest = https.request;
+  const http = new URL(url).protocol === 'http:';
+  const request = await requestFor(http);
   return new Promise<RawResponse>((resolve, reject) => {
     const family = init.family === 6 ? 6 : 4;
     const pinnedLookup = buildPinnedLookup(init.pinnedAddress, family, init.fallbackAddresses);
     const options: PinnedRequestOptions = {
       method: 'GET',
-      servername: init.hostname,
+      // The name TLS presents (SNI); a connection over http has none.
+      ...(http ? {} : { servername: init.hostname }),
       signal: init.signal,
       lookup: pinnedLookup,
       // Every address the lookup answers is tried in turn, and never another.
       autoSelectFamily: true,
       headers: requestHeaders(init.headers),
     };
-    const req = httpsRequest(
+    const req = request(
       url,
       options,
       (res: IncomingMessage) => {

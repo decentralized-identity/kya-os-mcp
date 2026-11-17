@@ -62,21 +62,35 @@ export function verifiedRootContext<T extends RootNaming>(context: T): T {
 /**
  * Which requests of the read of the status list at `url` are the operator's own, request by request,
  * the first and each redirect (`./operator-named`): one for a URL `statusListIssuers` binds, and one
- * for the URL a pinned root's own credential names when `context` carries a mark this module made for
- * that root and that URL. Any other request is one a presenter named. `undefined` when no request
- * can be the operator's, so the read is held as a presenter's whole.
+ * for the URL a pinned root's own credential names, when that URL is https and `context` carries a
+ * mark this module made for that root and that URL. Any other request is one a presenter named.
+ * `undefined` when no request can be the operator's, so the read is held as a presenter's whole.
+ *
+ * A read takes http only at a URL its operator named as written, and the operator writes only what
+ * `statusListIssuers` binds: the root's credential, not the operator, names the root's own list, so
+ * that list is read over https alone, as a list a presenter names is.
  */
 export function operatorNamedHops(
   url: string,
   context: StatusCheckContext | undefined,
   statusListIssuers?: StatusListIssuers,
 ): ((request: string) => boolean) | undefined {
-  const rootList = verifiedRootList(context);
+  const rootList = httpsOnly(verifiedRootList(context));
   if (rootList === undefined && statusListIssuers === undefined) return undefined;
   return operatorNamedRequests(
     url,
     (named) => named === rootList || (statusListIssuers !== undefined && statusListIssuersBind(named, statusListIssuers)),
   );
+}
+
+/** `url` when it is an https URL, and `undefined` otherwise. */
+function httpsOnly(url: string | undefined): string | undefined {
+  if (url === undefined) return undefined;
+  try {
+    return new URL(url).protocol === 'https:' ? url : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The URL a pinned root's own credential names, when `context` carries this module's mark for that root and that URL. */

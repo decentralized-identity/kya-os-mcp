@@ -72,15 +72,19 @@ const DEFAULT_TIMEOUT_MS = OUTBOUND_READ_TIMEOUT_MS;
 /** Bytes of response body read before the response is refused. */
 const DEFAULT_MAX_RESPONSE_BYTES = OUTBOUND_READ_MAX_BYTES;
 
-/** Parse + require https; returns the normalized href. */
-function assertHttpsUrl(raw: string): string {
+/**
+ * Parse the URL a read starts at and return its normalized href: https, or http where `named`, the
+ * caller's `operatorNamed`, names it, since the operator then chose that URL as written. A redirect
+ * target is https alone ({@link vetRedirectTarget}).
+ */
+function assertReadableUrl(raw: string, named: (url: string) => boolean): string {
   let url: URL;
   try {
     url = new URL(raw);
   } catch {
     throw new Error(`safe-fetch: invalid URL "${raw}"`);
   }
-  if (url.protocol !== 'https:') {
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && named(url.href))) {
     throw new ReadFailureError('host_refused', `safe-fetch: only https is allowed (got "${url.protocol}")`, { beforeRequest: true });
   }
   return url.href;
@@ -178,8 +182,8 @@ async function finalize(raw: RawResponse, maxBytes: number, deadline: ReadDeadli
  * One deadline, `timeoutMs` from the call, covers the whole read: the DNS lookup of each hop, every
  * redirect hop and the body. A `signal` the caller passes ends the read when it aborts, at whatever
  * step it has reached, with the signal's reason, as `fetch` does. Each hop the caller's
- * `operatorNamed` names is read on any host, as `development: true` reads one, still pinned
- * ({@link SafeFetchInit.operatorNamed}).
+ * `operatorNamed` names is read on any host, as `development: true` reads one, still pinned, and the
+ * first request may be http when it names that URL ({@link SafeFetchInit.operatorNamed}).
  */
 export function createSafeFetch(options: SafeFetchOptions = {}): SafeFetch {
   const cfg: HopConfig = {
@@ -193,8 +197,8 @@ export function createSafeFetch(options: SafeFetchOptions = {}): SafeFetch {
   const maxRedirects = options.maxRedirects ?? MAX_REDIRECTS;
 
   return async function safeFetch(initialUrl: string, init?: SafeFetchInit): Promise<SafeFetchResponse> {
-    const url = assertHttpsUrl(initialUrl);
     const operatorNamed = hopNamer(init?.operatorNamed);
+    const url = assertReadableUrl(initialUrl, operatorNamed);
     const deadline = startReadDeadline(new URL(url).hostname, cfg.timeoutMs, init?.signal ?? undefined);
     try {
       const raw = await followRedirects<RawResponse>(url, {

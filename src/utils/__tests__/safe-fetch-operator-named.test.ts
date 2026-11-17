@@ -2,9 +2,10 @@
  * SafeFetch's `operatorNamed`: the caller says, hop by hop, which URLs of a read its operator named,
  * as the status-list checker does for the lists `statusListIssuers` binds and a verified pinned
  * root's own list. A hop it names is read on any host, still pinned to the address looked up; every
- * other hop, a redirect from a named URL included, is held to the rule. Only the caller's own `true`
- * names a hop, so an answer of any other kind, a predicate that throws and an init member that is not
- * a function all name none.
+ * other hop, a redirect from a named URL included, is held to the rule. The first request may be
+ * http when it names that URL, as the operator binds a list's exact http URL; a redirect is https
+ * alone. Only the caller's own `true` names a hop, so an answer of any other kind, a predicate that
+ * throws and an init member that is not a function all name none.
  */
 
 import { describe, expect, it, vi } from 'vitest';
@@ -47,5 +48,40 @@ describe("SafeFetch's operatorNamed", () => {
     const net = overPrivateHosts();
     await expect(net.fetch(NAMED, { operatorNamed } as never)).rejects.toThrow(/non-public address/);
     expect(net.connected()).toEqual([]);
+  });
+});
+
+describe('an http URL', () => {
+  const HTTP = 'http://lists.corp.example/named';
+
+  /** A SafeFetch over private hosts that answers `HTTP` with the list, and `NAMED` with a redirect to `HTTP`. */
+  function overHttp() {
+    const looked: string[] = [];
+    const transport = vi.fn(async (url: string, _init: TransportInit): Promise<RawResponse> =>
+      url === NAMED
+        ? { status: 302, headers: { get: (name) => (name === 'location' ? HTTP : null) }, text: async () => '' }
+        : { status: 200, headers: { get: () => null }, text: async () => '{"ok":true}' });
+    const fetch = createSafeFetch({ lookup: async (name) => (looked.push(name), lookup(name)), transport });
+    const connected = () => transport.mock.calls.map(([url, init]) => [url, init.pinnedAddress]);
+    return { fetch, looked, connected };
+  }
+
+  it('is read as the first request when operatorNamed names it, on any host, pinned', async () => {
+    const net = overHttp();
+    expect(await (await net.fetch(HTTP, { operatorNamed: (url) => url === HTTP })).json()).toEqual({ ok: true });
+    expect(net.connected()).toEqual([[HTTP, PRIVATE]]);
+  });
+
+  it('is refused before any lookup when operatorNamed does not name it', async () => {
+    const net = overHttp();
+    await expect(net.fetch(HTTP, { operatorNamed: (url) => url === NAMED })).rejects.toMatchObject({ kind: 'host_refused' });
+    await expect(net.fetch(HTTP)).rejects.toThrow(/only https/);
+    expect({ looked: net.looked, connected: net.connected() }).toEqual({ looked: [], connected: [] });
+  });
+
+  it('is no redirect target, even one operatorNamed names', async () => {
+    const net = overHttp();
+    await expect(net.fetch(NAMED, { operatorNamed: () => true })).rejects.toMatchObject({ kind: 'host_refused' });
+    expect(net.connected()).toEqual([[NAMED, PRIVATE]]);
   });
 });

@@ -83,7 +83,7 @@ Three substitutions remain open to whoever controls what a status-list URL retur
 - A list that states no `id` is bound to no URL, so it can be served in place of another list its own issuer signed, only where that issuer is the credential's own, the verifier pins no other root and its configuration names no other status-list issuer.
   An issuer should state the `id` of each list.
 - An earlier version of a list, signed before a credential was revoked, can be served in place of the current one.
-  Its verdict is reported fresh until the version's `validUntil`, or indefinitely when it states none, and after that only a verifier that requires a fresh verdict refuses it.
+  Every reader refuses a version past its `validUntil` (or `expirationDate`), as `status_unavailable`, so an issuer that states a `validUntil` and republishes before it passes bounds how long an earlier version can be served; a list that states no end can be served for as long as it verifies (SPEC.md §6.6).
 - An Entity Card's Entity may sign its own Card's list, so with the Entity's key a list with the Card's bit clear can be served in place of the one its responsible party revoked the Card on.
   Against a compromised Entity key, the responsible party revokes the root delegation credential, which the Card's accountability check reads (SPEC-ENTITY-CARD.md §12.5).
 

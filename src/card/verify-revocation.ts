@@ -93,8 +93,8 @@ export function reportedRevocation(verdict: CardRevocationVerdict): CardRevocati
 
 /**
  * A REVOKED card credential voids its attested trust: every otherwise-verified capability drops to
- * unverified so the floor collapses to L1 (revocation demotes L3→L2→L1). A clean-but-stale list
- * leaves `check` untouched: it only trims `revocationFresh` (L3→L2). No-op when not revoked.
+ * unverified so the floor collapses to L1 (revocation demotes L3→L2→L1). A clean verdict that was
+ * not read live leaves `check` untouched: it only trims `revocationFresh` (L3→L2). No-op when not revoked.
  */
 export function demoteOnRevocation(check: CapabilityCheckResult, revoked: boolean): CapabilityCheckResult {
   if (!revoked) return check;

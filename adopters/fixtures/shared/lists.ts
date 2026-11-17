@@ -10,11 +10,21 @@ import type { Party } from './keys.js';
 /** Entries per list: 16 KiB of bits, the smallest list W3C Bitstring Status List v1.0 allows. */
 export const LIST_ENTRIES = 16 * 1024 * 8;
 
-/** The revocation list at `url`, signed by `signer`, with the bits at `revoked` set. */
+/** The validity window a list states: its `validFrom` and its `validUntil`, each when it states one. */
+export interface ListWindow {
+  validFrom?: string;
+  validUntil?: string;
+}
+
+/**
+ * The revocation list at `url`, signed by `signer`, with the bits at `revoked` set, stating `window`:
+ * by default, valid from a minute before it is made, with no end.
+ */
 export async function signedStatusList(
   signer: Party,
   url: string,
   revoked: readonly number[] = [],
+  window: ListWindow = { validFrom: new Date(Date.now() - 60 * 1000).toISOString() },
 ): Promise<Record<string, unknown>> {
   const bits = new BitstringManager(LIST_ENTRIES);
   for (const index of revoked) bits.setBit(index, true);
@@ -24,7 +34,7 @@ export async function signedStatusList(
       id: url,
       type: ['VerifiableCredential', 'BitstringStatusListCredential'],
       issuer: signer.did,
-      validFrom: new Date(Date.now() - 60 * 1000).toISOString(),
+      ...window,
       credentialSubject: {
         id: `${url}#list`,
         type: 'BitstringStatusList',

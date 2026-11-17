@@ -37,6 +37,10 @@ const NOT_CODED: Record<string, { literals: number; why: string }> = {
     literals: 1,
     why: "a status list rule's verdict; every reader of it throws it as a RefusalError with the code of the rule",
   },
+  'src/utils/statuslist-validity.ts': {
+    literals: 1,
+    why: "a status list's validity window verdict; every reader of it throws it as a RefusalError of code status_unavailable, through assertStatusListValidity",
+  },
   'src/delegation/did-document-walk.ts': {
     literals: 2,
     why: 'the measure of a DID document; the resolver reports a document it refuses with the cause invalid_document, coded did_invalid',

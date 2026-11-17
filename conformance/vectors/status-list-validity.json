@@ -1,0 +1,864 @@
+{
+  "version": "1.7.0",
+  "category": "status-list",
+  "vectors": [
+    {
+      "id": "status-list/in-window-list",
+      "category": "status-list",
+      "description": "A clear list inside the window it states is read",
+      "reason": "A clear list inside the window it states is read",
+      "expected": "pass",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:validity-in-window-list",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkjjiuAANjbHdx3yhtbdssizgPaUw5CxvJmy9NVUQeB1Nu",
+            "delegation": {
+              "id": "validity-in-window-list",
+              "issuerDid": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+              "subjectDid": "did:key:z6MkjjiuAANjbHdx3yhtbdssizgPaUw5CxvJmy9NVUQeB1Nu",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://status.example.com/validity/in-window-list#7",
+            "type": "BitstringStatusListEntry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "7",
+            "statusListCredential": "https://status.example.com/validity/in-window-list"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "HfCmj2scyJ5cyPoV15bZ5p48BaVS-xPPogyZsUj-152yxBATe87NF9oywATQd2wv6QLahmmHDF_yFOaoWiEGDg"
+          }
+        },
+        "statusLists": {
+          "https://status.example.com/validity/in-window-list": {
+            "@context": [
+              "https://www.w3.org/ns/credentials/v2"
+            ],
+            "id": "https://status.example.com/validity/in-window-list",
+            "type": [
+              "VerifiableCredential",
+              "BitstringStatusListCredential"
+            ],
+            "issuer": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "validFrom": "2026-01-01T00:00:00.000Z",
+            "validUntil": "2999-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://status.example.com/validity/in-window-list#list",
+              "type": "BitstringStatusList",
+              "statusPurpose": "revocation",
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA"
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "FOiwO8HxNibnaO8pPDEyt8Q9FRL0CCDhgtcmQqegRWr1jIgkLT2w8TQuUmUkxOtVzoc3sulaJQB0g1XXAhstAQ"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA": {
+            "id": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "b8ylvP9v0EW6B0QKFjdm50uB4qPHgRNFrW987fdZB18"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA"
+            ],
+            "authentication": [
+              "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com"
+      }
+    },
+    {
+      "id": "status-list/in-window-list-2021",
+      "category": "status-list",
+      "description": "A clear StatusList2021 list inside its issuanceDate and expirationDate is read",
+      "reason": "A clear StatusList2021 list inside its issuanceDate and expirationDate is read",
+      "expected": "pass",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:validity-in-window-list-2021",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkjjiuAANjbHdx3yhtbdssizgPaUw5CxvJmy9NVUQeB1Nu",
+            "delegation": {
+              "id": "validity-in-window-list-2021",
+              "issuerDid": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+              "subjectDid": "did:key:z6MkjjiuAANjbHdx3yhtbdssizgPaUw5CxvJmy9NVUQeB1Nu",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://status.example.com/validity/in-window-list-2021#7",
+            "type": "StatusList2021Entry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "7",
+            "statusListCredential": "https://status.example.com/validity/in-window-list-2021"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "twJkehE9EmlkD2WvKV5e_KKHgaTMRjZho92wdi0NPhniqB-9aHoQeFPdSUVLTonWrpdL_uXlEEmrw-IdCnXaCg"
+          }
+        },
+        "statusLists": {
+          "https://status.example.com/validity/in-window-list-2021": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://w3id.org/vc/status-list/2021/v1"
+            ],
+            "id": "https://status.example.com/validity/in-window-list-2021",
+            "type": [
+              "VerifiableCredential",
+              "StatusList2021Credential"
+            ],
+            "issuer": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "expirationDate": "2999-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://status.example.com/validity/in-window-list-2021#list",
+              "type": "StatusList2021",
+              "statusPurpose": "revocation",
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA"
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "qDgf64El6psYwN0PElRbUfpiFRNi3-37LRpbMiX2B0gLno8mHxwyAzszoC_vsFVYktM-WwLwbbXUnujRHRLvAA"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA": {
+            "id": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "b8ylvP9v0EW6B0QKFjdm50uB4qPHgRNFrW987fdZB18"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA"
+            ],
+            "authentication": [
+              "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com"
+      }
+    },
+    {
+      "id": "status-list/expired-list",
+      "category": "status-list",
+      "description": "A clear list past its validUntil says nothing of now: it may be an earlier version, signed before the credential was revoked",
+      "reason": "A clear list past its validUntil says nothing of now: it may be an earlier version, signed before the credential was revoked",
+      "expected": "fail",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:validity-expired-list",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkjjiuAANjbHdx3yhtbdssizgPaUw5CxvJmy9NVUQeB1Nu",
+            "delegation": {
+              "id": "validity-expired-list",
+              "issuerDid": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+              "subjectDid": "did:key:z6MkjjiuAANjbHdx3yhtbdssizgPaUw5CxvJmy9NVUQeB1Nu",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://status.example.com/validity/expired-list#7",
+            "type": "BitstringStatusListEntry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "7",
+            "statusListCredential": "https://status.example.com/validity/expired-list"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "vGs174iVbH1lplFcUuNC0d2hhcvxtl_9VkAjPXqInEU80DGRE7GTGRZT0Doq1rJ_wXrMCCaciM31oVIG--Z_AA"
+          }
+        },
+        "statusLists": {
+          "https://status.example.com/validity/expired-list": {
+            "@context": [
+              "https://www.w3.org/ns/credentials/v2"
+            ],
+            "id": "https://status.example.com/validity/expired-list",
+            "type": [
+              "VerifiableCredential",
+              "BitstringStatusListCredential"
+            ],
+            "issuer": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "validFrom": "2026-01-01T00:00:00.000Z",
+            "validUntil": "2026-02-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://status.example.com/validity/expired-list#list",
+              "type": "BitstringStatusList",
+              "statusPurpose": "revocation",
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA"
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "B8tQVyMIT5B8zMqWAhOcd5BncwR4nfFySFkkpAYJVWVSepB2d0Asl-wjZXDxBHs0vglE1gMWEYqMGEtUgEw2BQ"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA": {
+            "id": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "b8ylvP9v0EW6B0QKFjdm50uB4qPHgRNFrW987fdZB18"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA"
+            ],
+            "authentication": [
+              "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com"
+      }
+    },
+    {
+      "id": "status-list/expired-list-2021",
+      "category": "status-list",
+      "description": "A clear StatusList2021 list past its expirationDate is refused as a list past its validUntil is",
+      "reason": "A clear StatusList2021 list past its expirationDate is refused as a list past its validUntil is",
+      "expected": "fail",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:validity-expired-list-2021",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkjjiuAANjbHdx3yhtbdssizgPaUw5CxvJmy9NVUQeB1Nu",
+            "delegation": {
+              "id": "validity-expired-list-2021",
+              "issuerDid": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+              "subjectDid": "did:key:z6MkjjiuAANjbHdx3yhtbdssizgPaUw5CxvJmy9NVUQeB1Nu",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://status.example.com/validity/expired-list-2021#7",
+            "type": "StatusList2021Entry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "7",
+            "statusListCredential": "https://status.example.com/validity/expired-list-2021"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "-K5yYnOHK2NK-IUCmHO2orvvZWDK8gNPDu41TgYj9NC-ZfD_PvWTbLm22WgueruA1K9eqMfB11Z-UJL0RXVNDg"
+          }
+        },
+        "statusLists": {
+          "https://status.example.com/validity/expired-list-2021": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://w3id.org/vc/status-list/2021/v1"
+            ],
+            "id": "https://status.example.com/validity/expired-list-2021",
+            "type": [
+              "VerifiableCredential",
+              "StatusList2021Credential"
+            ],
+            "issuer": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "expirationDate": "2026-02-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://status.example.com/validity/expired-list-2021#list",
+              "type": "StatusList2021",
+              "statusPurpose": "revocation",
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA"
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "v75JaIxHBgR4jgMPeihZvUyc_b642xiFKeUs5EfFIiB9i6uaez8_LSQTez075jlbgj8KDQ26SkcIxvbMBNJfCA"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA": {
+            "id": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "b8ylvP9v0EW6B0QKFjdm50uB4qPHgRNFrW987fdZB18"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA"
+            ],
+            "authentication": [
+              "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com"
+      }
+    },
+    {
+      "id": "status-list/not-yet-valid-list",
+      "category": "status-list",
+      "description": "A clear list before its validFrom does not yet speak for the credential",
+      "reason": "A clear list before its validFrom does not yet speak for the credential",
+      "expected": "fail",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:validity-not-yet-valid-list",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkjjiuAANjbHdx3yhtbdssizgPaUw5CxvJmy9NVUQeB1Nu",
+            "delegation": {
+              "id": "validity-not-yet-valid-list",
+              "issuerDid": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+              "subjectDid": "did:key:z6MkjjiuAANjbHdx3yhtbdssizgPaUw5CxvJmy9NVUQeB1Nu",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://status.example.com/validity/not-yet-valid-list#7",
+            "type": "BitstringStatusListEntry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "7",
+            "statusListCredential": "https://status.example.com/validity/not-yet-valid-list"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "cP9HUb05hxyGJ69iNamh6aIDJxDmHJiw_9B4HXP7Y2XOssruWlpTlC31gRxJteQf6GIqhDX1gUugQUVTcKjJDw"
+          }
+        },
+        "statusLists": {
+          "https://status.example.com/validity/not-yet-valid-list": {
+            "@context": [
+              "https://www.w3.org/ns/credentials/v2"
+            ],
+            "id": "https://status.example.com/validity/not-yet-valid-list",
+            "type": [
+              "VerifiableCredential",
+              "BitstringStatusListCredential"
+            ],
+            "issuer": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "validFrom": "2999-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://status.example.com/validity/not-yet-valid-list#list",
+              "type": "BitstringStatusList",
+              "statusPurpose": "revocation",
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA"
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "mYBR0hjSYTvly9oFYZUi0sHf3K19xUZwxYpDEPaP2QLCcZII56Oo181ow6lc1hB4MouaQfE86VnT4aX8u7kZAg"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA": {
+            "id": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "b8ylvP9v0EW6B0QKFjdm50uB4qPHgRNFrW987fdZB18"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA"
+            ],
+            "authentication": [
+              "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com"
+      }
+    },
+    {
+      "id": "status-list/not-yet-valid-list-2021",
+      "category": "status-list",
+      "description": "A clear StatusList2021 list before its issuanceDate is refused as a list before its validFrom is",
+      "reason": "A clear StatusList2021 list before its issuanceDate is refused as a list before its validFrom is",
+      "expected": "fail",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:validity-not-yet-valid-list-2021",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkjjiuAANjbHdx3yhtbdssizgPaUw5CxvJmy9NVUQeB1Nu",
+            "delegation": {
+              "id": "validity-not-yet-valid-list-2021",
+              "issuerDid": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+              "subjectDid": "did:key:z6MkjjiuAANjbHdx3yhtbdssizgPaUw5CxvJmy9NVUQeB1Nu",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://status.example.com/validity/not-yet-valid-list-2021#7",
+            "type": "StatusList2021Entry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "7",
+            "statusListCredential": "https://status.example.com/validity/not-yet-valid-list-2021"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "QxkeEiHGGhDBarmbThnzWFBZu3NcdsqdqWRCApImY1PS-ZT7dC2GLQ09S_TzwpjPKhIHtbRmpcn8tJ9ZgT0kDg"
+          }
+        },
+        "statusLists": {
+          "https://status.example.com/validity/not-yet-valid-list-2021": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://w3id.org/vc/status-list/2021/v1"
+            ],
+            "id": "https://status.example.com/validity/not-yet-valid-list-2021",
+            "type": [
+              "VerifiableCredential",
+              "StatusList2021Credential"
+            ],
+            "issuer": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "issuanceDate": "2999-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://status.example.com/validity/not-yet-valid-list-2021#list",
+              "type": "StatusList2021",
+              "statusPurpose": "revocation",
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA"
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "em-YbYG31qsgErmwnQjR65D3NzHIUSskrETBUHah-yMickGXFSjP_sQORLZzzHc2-9zgjHqjNaY6eLvasKssAA"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA": {
+            "id": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "b8ylvP9v0EW6B0QKFjdm50uB4qPHgRNFrW987fdZB18"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA"
+            ],
+            "authentication": [
+              "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com"
+      }
+    },
+    {
+      "id": "status-list/undated-end-list",
+      "category": "status-list",
+      "description": "A clear list whose validUntil is not a date has a window no verifier can read, so it is refused",
+      "reason": "A clear list whose validUntil is not a date has a window no verifier can read, so it is refused",
+      "expected": "fail",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:validity-undated-end-list",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkjjiuAANjbHdx3yhtbdssizgPaUw5CxvJmy9NVUQeB1Nu",
+            "delegation": {
+              "id": "validity-undated-end-list",
+              "issuerDid": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+              "subjectDid": "did:key:z6MkjjiuAANjbHdx3yhtbdssizgPaUw5CxvJmy9NVUQeB1Nu",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://status.example.com/validity/undated-end-list#7",
+            "type": "BitstringStatusListEntry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "7",
+            "statusListCredential": "https://status.example.com/validity/undated-end-list"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "ubPmPjZc6wx6N9C1dfuy5hZSnhINijh7p5XqrryEWw-pIzwiao0a6f5_l2mO0cnb-9HI9jOIrAreF8TnwhqoDg"
+          }
+        },
+        "statusLists": {
+          "https://status.example.com/validity/undated-end-list": {
+            "@context": [
+              "https://www.w3.org/ns/credentials/v2"
+            ],
+            "id": "https://status.example.com/validity/undated-end-list",
+            "type": [
+              "VerifiableCredential",
+              "BitstringStatusListCredential"
+            ],
+            "issuer": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "validFrom": "2026-01-01T00:00:00.000Z",
+            "validUntil": "not a date",
+            "credentialSubject": {
+              "id": "https://status.example.com/validity/undated-end-list#list",
+              "type": "BitstringStatusList",
+              "statusPurpose": "revocation",
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA"
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "GACu5z5KXSyl91QQg3yERZNHrw_iTT5O0SyFMnKO4uRjRXe6isXnd3E3bjut_Hj21S8tJlsqmLsvjLjuJTvnCA"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA": {
+            "id": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "b8ylvP9v0EW6B0QKFjdm50uB4qPHgRNFrW987fdZB18"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA"
+            ],
+            "authentication": [
+              "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com"
+      }
+    },
+    {
+      "id": "status-list/current-member-decides",
+      "category": "status-list",
+      "description": "A list that states both validUntil and expirationDate is read by its validUntil, here past, whatever its expirationDate",
+      "reason": "A list that states both validUntil and expirationDate is read by its validUntil, here past, whatever its expirationDate",
+      "expected": "fail",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:validity-current-member-decides",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkjjiuAANjbHdx3yhtbdssizgPaUw5CxvJmy9NVUQeB1Nu",
+            "delegation": {
+              "id": "validity-current-member-decides",
+              "issuerDid": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+              "subjectDid": "did:key:z6MkjjiuAANjbHdx3yhtbdssizgPaUw5CxvJmy9NVUQeB1Nu",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://status.example.com/validity/current-member-decides#7",
+            "type": "BitstringStatusListEntry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "7",
+            "statusListCredential": "https://status.example.com/validity/current-member-decides"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "RRIIadjmhx00i6mPeTREK_rC6jyel2_PbMa_bXim22bpR0hdsuPQlCBMmlIwrYjqQO4OyWf2NMOVuTwqQTxXCA"
+          }
+        },
+        "statusLists": {
+          "https://status.example.com/validity/current-member-decides": {
+            "@context": [
+              "https://www.w3.org/ns/credentials/v2"
+            ],
+            "id": "https://status.example.com/validity/current-member-decides",
+            "type": [
+              "VerifiableCredential",
+              "BitstringStatusListCredential"
+            ],
+            "issuer": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "validFrom": "2026-01-01T00:00:00.000Z",
+            "validUntil": "2026-02-01T00:00:00.000Z",
+            "expirationDate": "2999-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://status.example.com/validity/current-member-decides#list",
+              "type": "BitstringStatusList",
+              "statusPurpose": "revocation",
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA"
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "Zi2lRI62UNtKp1tCaf5S9xbs2OT_Wc0ucrAFRyNgaVIGa3D7_g63BCYprOIwwnu64KrKo0OhnsIEPwuBb_VtDg"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA": {
+            "id": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "b8ylvP9v0EW6B0QKFjdm50uB4qPHgRNFrW987fdZB18"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA"
+            ],
+            "authentication": [
+              "did:key:z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA#z6MkmygHqf2Maq9fx96xWxmxHr2cwB21heMS7yHTMgEHMuYA"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com"
+      }
+    }
+  ]
+}

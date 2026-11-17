@@ -2,7 +2,7 @@
 
 **Compliance levels for KYA-OS implementations**
 
-Version: 1.6.0
+Version: 1.7.0
 Status: Stable
 
 ---
@@ -467,6 +467,7 @@ so it is reproducible against any implementation without re-signing.
 | `vectors/status-list.json` | StatusList2021 and Bitstring Status List revocation | active (bit unset), issuer's list stating no `id`, Bitstring list declaring two purposes | revoked (bit set), list altered after signing, list signed by another issuer, list of another purpose, StatusList2021 list declaring its purposes in an array, list stating another URL as its `id`, list of a pinned root or a configured issuer stating no `id` |
 | `vectors/status-list-key-relationship.json` | StatusList2021 revocation: the list issuer's key (SPEC.md §6.2) | list signed with the key the issuer lists under `assertionMethod` | list signed with a key it lists only under `authentication`, list proof stating `proofPurpose: "authentication"`, issuer document whose `id` is another DID, list signed with a key it lists under `assertionMethod` whose method names another DID as its `controller`, list signed with a key whose method the document defines twice |
 | `vectors/status-list-authority.json` | Status list revocation: who may sign a credential's list (SPEC.md §6.6) | pinned root's list at the URL its own credential names, list of a service the verifier binds the exact URL or its origin to, issuer's own list stating no `id` while also named as root, with or without the URL its credential names, index with leading zeros, entry stating a `statusSize` of 1 | pinned root's list at a URL its credential does not name, service bound to no URL, to another URL or to a look-alike origin, issuer's own list at a URL bound to a service, pinned root's list at a URL the configuration binds to a service, pinned root's list stating no `id` for a delegate's credential, issuer's list stating no `id` at a pinned root's URL, index with a suffix, a fraction or a space, index given as a number, entry of two bits whose own bits are set, entry stating a `statusSize` of 0 |
+| `vectors/status-list-validity.json` | Status list revocation: the window a list states (SPEC.md §6.6) | clear Bitstring Status List or StatusList2021 list inside its `validFrom` and `validUntil`, or `issuanceDate` and `expirationDate` | clear list past its `validUntil` or `expirationDate`, before its `validFrom` or `issuanceDate`, with a `validUntil` that is not a date, or with a past `validUntil` beside a future `expirationDate` |
 | `vectors/did-key-resolution.json` | did:key resolution | valid Ed25519 | malformed multibase, wrong method |
 | `vectors/did-web-resolution.json` | did:web resolution | well-formed id-matched document | document id mismatch, not found |
 | `vectors/card-proof.json` | `org.kya-os/proof.v1` holder-of-key proof | valid signed proof, in-window, audience-bound | tampered body, tampered signature, wrong audience, expired, kid⇄did forgery |
@@ -588,6 +589,14 @@ In `no-id-list` the issuer's list is re-issued without an `id`, which a list the
 In `purpose-array-list` the credential's `credentialStatus` is a `BitstringStatusListEntry`, and its list a `BitstringStatusListCredential` whose `statusPurpose` is the array `["suspension", "revocation"]`.
 The credential's bit is unset and the list's proof verifies, so a verifier that refuses either form denies an active credential and fails a vector it must pass (L3.11).
 
+**On the validity-window vectors (`status-list/in-window-list`, `expired-list`, `not-yet-valid-list`, `undated-end-list`, `current-member-decides` and the `-2021` forms; suite ≥ 1.7.0).**
+Each carries an active credential and, at its `statusListCredential` URL, its issuer's list, which states that URL as its `id`, has the credential's bit unset and verifies, so the window the list states decides alone.
+A list is read only inside that window (SPEC.md §6.6): its `validFrom` and `validUntil`, or, where a list states neither, its `issuanceDate` and `expirationDate`, bounds included.
+A list's proof does not tell its versions apart, so a verifier that reads a list past its end reads an earlier version as readily as the current one, and passes `expired-list` and `expired-list-2021`, which it must reject (L3.11).
+A verifier that reads a list before its start, or one whose `validUntil` is not a date, passes `not-yet-valid-list`, `not-yet-valid-list-2021` or `undated-end-list`, which it must reject too.
+`current-member-decides` states a past `validUntil` beside a future `expirationDate`, so a verifier that reads the VC 1.1 member where the VC 2.0 member is present passes it.
+Every window is fixed, its past bounds in 2026 and its future ones in the year 2999, so each vector decides alike whenever it is run before then.
+
 ### Running the reference implementation
 
 ```bash
@@ -611,9 +620,13 @@ Re-running mints fresh keys but preserves every positive/negative relationship b
 construction.
 The key-relationship files have their own generator, `pnpm run conformance:generate:key-relationship`, which also mints fresh keys.
 `status-list-authority.json` has its own generator too, `pnpm run conformance:generate:status-authority`, which also mints fresh keys and writes no other file.
+`status-list-validity.json` has its own as well, `pnpm run conformance:generate:status-validity`, which mints fresh keys and writes no other file.
 Because fresh keys change the committed bytes, regenerated output MUST NOT be committed over an existing `suiteVersion` (see [Suite versioning and immutability](#suite-versioning-and-immutability)).
 
 ### Suite versioning and immutability
+
+Suite 1.7.0 adds eight status-list vectors, for 149 vectors total, in a new file, `status-list-validity.json`: the validity-window vectors described above.
+The other 141 vector objects of suite 1.6.0 are unchanged, and their files change only their `version`.
 
 Suite 1.6.0 adds one `delegation-chain` vector, for 141 vectors total: `delegation-chain/scopeless-parent-widening`, a re-delegation that states a scope under a parent that states none, which must be refused, since a parent with no scopes grants none (SPEC.md §6.4).
 `delegation-chain.json` is regenerated in one run, so its six earlier vectors are signed again with the same ids, cases and expected outcomes; the other 134 vector objects of suite 1.5.0 are unchanged.
@@ -652,6 +665,7 @@ CI enforces the invariant twice: a vitest guard (`conformance/__tests__/suite-im
 To change vectors intentionally, bump `suiteVersion` (including the in-file `version` fields), regenerate the manifest with `node conformance/suite-hash.mjs --json`, and keep `pinnedAt` current.
 A new suite version may add vectors that an implementation of an earlier one fails: suite 1.5.0 adds the `signed-proof/delegation-chain-*` and `signed-proof/delegation-ref-*` vectors, which a verifier built against suite 1.4.0 or earlier fails until it implements L3.28, and the `signed-proof/delegation-proof-*` vectors, which a verifier that reads a JWS more loosely than SPEC.md §7.4 fails, so a result is always reported with the suite version it was run against.
 Suite 1.6.0 adds `delegation-chain/scopeless-parent-widening`, which a verifier that reads a parent with no scopes as unrestricted fails.
+Suite 1.7.0 adds the `status-list-validity.json` vectors, which a verifier that reads a status list outside the window it states fails.
 The SIGNED public suite manifest published by the Conformance Attestation Program is a separate artifact built on this committed one.
 
 ### Running the harness against YOUR implementation

@@ -49,6 +49,36 @@ A resolver that redirects more than 3 times, or from https to http, now resolves
 A custom `FetchProvider` given to the resolver must pass `redirect` on and return a response that names the URL asked for, or none, as "A custom `FetchProvider` whose response names a URL other than the one asked for" says below.
 In a browser, which hides where a redirect leads, a resolver that redirects resolves no document.
 
+### A status list outside its validity window is refused
+
+| If you | Do this | Effect |
+| --- | --- | --- |
+| Publish status lists that state a `validUntil` or an `expirationDate` | Republish each list before that time passes, with a new window, by more than the longest cache your verifiers keep a list for. | A list past its end no longer clears a credential anywhere. |
+| Verify with a status list that has passed its `validUntil`, or has not reached its `validFrom` | Have its issuer republish it; nothing to change in your code. | The credential is refused as `status_unavailable`, which is transient, until the list is republished. |
+| Require `fresh`, or L3, from a verdict | Nothing. | An out-of-window list is refused before the freshness gate, rather than demoted by it. |
+| Wrote your own `StatusListResolver` or `BitstringRevocationChecker` | Read a list only when `acceptStatusListValidity(list, Date.now())` accepts it, once its proof verifies, and otherwise throw its reason as a `RefusalError` of code `status_unavailable`. | Your reader decides as the library's do. |
+
+A status list's proof does not tell its versions apart, so an earlier version of a list, signed before a credential was revoked, still verifies.
+Until 1.23.0, a list past its own `validUntil` (or `expirationDate`) still cleared a credential: the verdict read `fresh: false`, which only a verifier that required `fresh` refused, so `requireDelegation`, `verifyRequestDelegation`, `evaluateDelegationChain` and `verifyCard` passed.
+Now every status-list reader in the library reads a list only inside the window it states: the Card's revocation checker, `createRevocationChecker`, with or without `verifyStatusList`; `CheqdStatusListResolver`; `StatusList2021Manager`; and the conformance reference adapter.
+A list past its `validUntil`, before its `validFrom`, or stating either bound as something that is not a date is refused as `status_unavailable`, with `transient: true`, whatever its bits say.
+A list that states neither `validUntil` nor `validFrom` reads the VC 1.1 `expirationDate` and `issuanceDate` in their place, and a list that states no end is read as before.
+The bounds are inclusive.
+
+The reason quotes the time the list states, and names the member it went by:
+
+| List | Reason |
+| --- | --- |
+| Past its end | `status list expired at "2026-11-15T00:00:00Z" (its validUntil)` |
+| Before its start | `status list is not valid until "2026-12-01T00:00:00Z" (its validFrom)` |
+| A bound that is not a date | `status list states a validUntil ("never") that is not a date` |
+
+The time comes from the list itself, once its proof has verified, never from the network.
+The `fresh` of a library checker's verdict, and so of a chain walk over it, is now `true` for every list it reads; a checker of yours that answers from a cache still reports `false` for a verdict it did not read live.
+`CheqdStatusListResolver` fetches a list again, rather than reading the copy it keeps, once that copy's window has ended.
+`withStatusCache` keeps only verdicts read inside a list's window, and may serve one past that window's end for no longer than its `maxStalenessMs`.
+A verifier whose clock runs behind an issuer's refuses, for as long as the difference, a list whose `validFrom` or `issuanceDate` the issuer set to the moment it published it.
+
 ### Cache TTL and size options are checked when they are set
 
 Each option that bounds a cache a verifier or resolver keeps is now checked where that verifier or resolver is built, as `dependencyTimeoutMs` is, and a value it cannot keep entries by throws a `TypeError` naming the option.
@@ -99,6 +129,12 @@ If a chain relied on the old reading, have the root issuer grant the scopes its 
 The suite adds `delegation-chain/scopeless-parent-widening`, a re-delegation that states a scope under a parent that states none, which must be refused, and has 141 vectors.
 `delegation-chain.json` is generated whole by one run, its earlier vectors signed again under that run's keys; the other 11 vector files change only their `version`.
 `delegation-chain/tampered-signature` now changes the first character of the signature, since a change to the last can decode to the same signature.
+
+### Conformance suite 1.7.0
+
+The suite adds eight status-list vectors in a new file, `status-list-validity.json`, and has 149 vectors.
+Each list is its issuer's own and verifies, so the window it states decides alone: a list inside its `validFrom` and `validUntil`, or its `issuanceDate` and `expirationDate`, must be read, and one past its end, before its start, with a `validUntil` that is not a date, or with a past `validUntil` beside a future `expirationDate` must be refused.
+The other 12 vector files change only their `version`.
 
 ## From 1.22.0
 

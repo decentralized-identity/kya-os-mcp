@@ -711,8 +711,9 @@ if proofFloor.ok AND revocationFresh: return L3
 
 `revocationFresh` defaults to `true` (so an unchecked card is not spuriously demoted and legacy
 2-argument calls still compile). Fail-closed demotion is the invariant: a missing/expired/revoked
-artifact DEMOTES the level (L3→L2→L1) and never errors open; an unreachable or stale status list
-demotes L3→L2; a *revoked* Card credential collapses every attested capability to unverified so the
+artifact DEMOTES the level (L3→L2→L1) and never errors open; a status verdict not read live, such
+as a cached one, demotes L3→L2, while an unreachable status list, or one outside the validity window
+it states (SPEC.md §6.6), reads as revoked; a *revoked* Card credential collapses every attested capability to unverified so the
 floor becomes L1 (§11.3). L3-minus (§8.6) satisfies the proof floor for the L3 rung; a caller policy
 decides whether L3-minus vs L3 gates a given action.
 
@@ -765,8 +766,9 @@ leaf delegate.
 
 The Card's `revocation` field is a W3C Bitstring Status List v1.0 [BITSTRING-STATUS-LIST] entry
 (`statusListCredential`, `statusListIndex`) for the Card's backing credential. Checks are
-fail-closed (an unreachable or malformed list reads as revoked) and report freshness; L2 accepts a
-cached non-revoked verdict, L3 requires a live one (§9). The chain walk is cascading: a revoked
+fail-closed (an unreachable or malformed list, or one outside the validity window it states, past its
+`validUntil` or before its `validFrom` (SPEC.md §6.6), reads as revoked) and report freshness; L2
+accepts a cached non-revoked verdict, L3 requires a live one (§9). The chain walk is cascading: a revoked
 ancestor invalidates the subtree. Mechanics, the `RevocationChecker` seam, and the fail-closed
 rules: SPEC.md §6.10.
 A checker that verifies the list's proof reads the Card's list only when the list's `issuer` is the one keeper of the URL the Card's `revocation` entry names (SPEC.md §6.6), which is the first of these that applies:
@@ -855,7 +857,7 @@ than erroring open.
    `{ trustedIssuers, proofDid }` (threading `proofDid` for the §10.2 leaf-invoker join).
 4. **Attestations** - recompute each `card.attestations[]` via the attestation verifier.
 5. **Card revocation** - if a status-list checker is supplied and the Card declares `revocation`,
-   live-check it; unreachable ⇒ `{ revoked: true, fresh: false }` (fail-closed).
+   live-check it; unreachable, or outside the validity window the list states ⇒ `{ revoked: true, fresh: false }` (fail-closed).
 6. **`ok`** = `accountabilityOk AND attestationsOk AND NOT revocation.revoked`, where
    `accountabilityOk = (no responsibleParty) OR accountability.verified` and `attestationsOk` is the
    conjunction over present attestations. A per-request proof affects the LEVEL, not `ok`; a revoked
@@ -900,8 +902,9 @@ than erroring open.
 | All capabilities attested, no valid live proof | L2 |
 | All attested + valid live proof + fresh revocation | L3 (or L3-minus without AS `cnf`) |
 | All attested + valid live proof whose `did` is not the Card's `id` | L2 |
-| Stale (readable, past validity window) status list | L3 → L2 (`revocationFresh = false`; `revoked: false`, so `ok` unaffected) |
+| Non-revoked verdict not read live (a caching checker's) | L3 → L2 (`revocationFresh = false`; `revoked: false`, so `ok` unaffected) |
 | Unreachable / non-2xx / malformed / wrong-purpose / out-of-range status list | `{ revoked: true, fresh: false }` (fail-closed) ⇒ collapse to L1, `ok: false` |
+| Status list outside its validity window (past `validUntil`, before `validFrom`, or a bound that is not a date) | `{ revoked: true, fresh: false }`, code `status_unavailable` (fail-closed) ⇒ collapse to L1, `ok: false` |
 | Revoked Card / delegation credential | collapse to L1, `ok: false` |
 | Proof verifier throws | proof floor `{ ok: false }` (demotion) |
 
@@ -986,7 +989,8 @@ Against a compromised Entity key the responsible party therefore revokes the roo
 ### 12.6 Revocation freshness
 
 An invocation arrives while a revocation propagates (a Lamport-concurrent race). Mitigations: L3
-requires a LIVE, in-window status check (§10.3); status-list cache TTL SHOULD be short (≤60 s) for
+requires a LIVE, in-window status check (§10.3), and a list outside its window is refused at every
+level (SPEC.md §6.6); status-list cache TTL SHOULD be short (≤60 s) for
 high-privilege scopes; cascading revocation is atomic over the subtree; expiry is the primary
 revocation mechanism. Residual: the unavoidable race window operators bound but cannot eliminate.
 

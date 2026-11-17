@@ -25,6 +25,7 @@ export {
   type StatusListKeeper,
   type StatusListVerdict,
 } from '../utils/statuslist-acceptance.js';
+export { acceptStatusListValidity } from '../utils/statuslist-validity.js';
 export * from './statuslist-manager.js';
 export * from './delegation-graph.js';
 export * from './cascading-revocation.js';

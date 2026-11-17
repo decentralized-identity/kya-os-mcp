@@ -1,0 +1,20 @@
+kind: Security
+body: |-
+    **A status list past its own `validUntil` no longer clears a
+    revocation.** A list's proof does not tell its versions apart, so an
+    earlier version, signed before a credential was revoked, still
+    verifies; until now one past its `validUntil` (or `expirationDate`)
+    read `fresh: false` and passed every verifier that did not require
+    `fresh`, `requireDelegation` and `verifyCard` among them. Every
+    status-list reader in the library, the Card revocation checker,
+    `CheqdStatusListResolver`, `StatusList2021Manager` and the conformance
+    reference adapter, now reads a list only inside the window it states,
+    and refuses one past its end, before its `validFrom` (or
+    `issuanceDate`), or with a bound that is not a date as
+    `status_unavailable`, which is transient, with a reason that quotes the
+    time the list states. A list that states no window is read as before.
+    Issuers must republish a list before its `validUntil`. The rule is
+    exported as `acceptStatusListValidity` for readers of your own, and
+    conformance suite 1.7.0 adds eight vectors for it. UPGRADING.md, "A
+    status list outside its validity window is refused", has the detail.
+time: 2026-11-16T23:05:00.00000-06:00

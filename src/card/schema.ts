@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { didPattern, whyNotDid } from '../utils/did-syntax.js';
 
 /**
  * Zod schema for the KYA-OS Entity Card — the runtime source of truth, mirroring
@@ -6,8 +7,22 @@ import { z } from 'zod';
  * via `z.infer`, matching the package convention (see `src/authz/requirement.ts`).
  */
 
-/** A `did:key` or `did:web` DID — the single source of truth for the DID shape (imported, never re-declared). */
-export const Did = z.string().regex(/^did:(key|web):.+$/, 'must be a did:key or did:web DID');
+/** The DID methods a Card's DID members take (SPEC-ENTITY-CARD.md §5.1), in the order a refusal lists them. */
+export const CARD_DID_METHODS = ['key', 'web'] as const;
+
+/** What a refusal of {@link Did} says should the DID rule name no reason, which it names for every value the pattern refuses. */
+const NOT_A_CARD_DID = `is not a DID of a method a Card takes: ${CARD_DID_METHODS.map((method) => `did:${method}`).join(', ')}`;
+
+/**
+ * A DID of a method a Card takes ({@link CARD_DID_METHODS}), as W3C DID Core §3.1 writes one, so never
+ * a DID URL, which adds a path, query or fragment: the one source of the DID shape, imported and never
+ * declared again. It is a `regex` check, so `z.toJSONSchema` emits the `pattern` the published schema
+ * gives each DID member, and it refuses a value with the reason `whyNotDid` gives, which is decided by
+ * the value alone and so may be shown to whoever presented it.
+ */
+export const Did = z.string().regex(didPattern(CARD_DID_METHODS), {
+  error: (issue) => whyNotDid(issue.input, CARD_DID_METHODS) ?? NOT_A_CARD_DID,
+});
 
 export const EntityTypeSchema = z.enum(['mcp', 'agent', 'client', 'verifier', 'human']);
 

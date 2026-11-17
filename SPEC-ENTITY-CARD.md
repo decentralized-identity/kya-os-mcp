@@ -212,7 +212,7 @@ version bump.
 The runtime source of truth is the Zod schema `EntityCardSchema`
 (`@kya-os/mcp/card`, `src/card/schema.ts`), which mirrors the published JSON Schema
 `schemas/kya-os-card.schema.json` (`$id`
-`https://schema.kya-os.org/v1/protocol/identity/card/v1.1.0`, Appendix A). The JSON Schema declares
+`https://schema.kya-os.org/v1/protocol/identity/card/v1.2.0`, Appendix A). The JSON Schema declares
 `additionalProperties: false` on the Card object; a conformant Card MUST NOT carry unknown
 top-level properties.
 
@@ -220,7 +220,7 @@ top-level properties.
 
 | Field | Type | Req. | Meaning |
 |-------|------|------|---------|
-| `id` | DID (`^did:(key\|web):.+$`) | **MUST** | The Entity's DID and anchor (§5). |
+| `id` | DID (§4.1.1) | **MUST** | The Entity's DID and anchor (§5). |
 | `entityType` | enum (§3.1) | **MUST** | The typed principal. |
 | `name` | string (≥1) | **MUST** | Human-readable display name. |
 | `kid` | string | MAY | Key identifier; matches a DID-document verification method and the JWS header `kid` of the Entity's proofs. |
@@ -236,6 +236,12 @@ top-level properties.
 | `proofProfile` | literal `"org.kya-os/proof.v1"` | MAY | Names the per-request proof profile the Entity's requests carry (§8). The proof itself is NEVER on the Card. |
 | `cimd` | `{clientId, jwksUri}` | MAY | CIMD on-ramp coordinates (§7). |
 | `revocation` | `{statusListCredential, statusListIndex}` | MAY | W3C Bitstring Status List v1.0 entry for the Card's backing credential, on a list the Entity signs, or the issuer the Verifier's configuration binds the list's URL to (§10.3). |
+
+### 4.1.1 DID members
+
+Each DID member of a Card, `id`, `responsibleParty`, `principal`, and an attestation's `subject` and `issuer`, MUST be a DID as [DID-CORE] §3.1 writes one, of a method §5.1 lists.
+A DID URL, which adds a path, a query or a fragment to a DID, is not one: a key id such as `did:web:example.com#key-1` names a verification method, not an Entity.
+The schema checks DID syntax alone; whether a DID is a usable one of its method, such as a `did:web` DID that names a host, is for the method's resolver to check.
 
 ### 4.2 Claim-minimalism
 
@@ -1200,7 +1206,7 @@ mechanisms are implied by `proofProfile`, `cimd`, and the delegation locators ra
 ## Appendix A: JSON Schema
 
 The normative Card schema is published at `schemas/kya-os-card.schema.json`
-(`$id: https://schema.kya-os.org/v1/protocol/identity/card/v1.1.0`), `additionalProperties: false`,
+(`$id: https://schema.kya-os.org/v1/protocol/identity/card/v1.2.0`), `additionalProperties: false`,
 `required: ["id", "entityType", "name"]`, mirrored by the Zod `EntityCardSchema` in
 `@kya-os/mcp/card`. It defines `$defs` for `Ed25519PublicJwk`, `Capability` (L1 string | L2 object),
 `CapabilityAttestation`, `Attestation`, `CimdBinding`, and `BitstringStatusListEntry`. The

@@ -707,6 +707,15 @@ A verifier that returns a bare `true`, or `{ verified: true }` with no `rootStat
 To have it count there, return `{ verified: true, rootStatusList }` with the URL read from the root credential whose proof the verifier checked, or bind the URL to the responsible party in `statusListIssuers`.
 `rootStatusList` is read only beside a literal `verified: true` and only as a non-empty string, and `verifyCard` returns it as `accountability.rootStatusList`.
 The checker reads that URL on a private host only when `verifyCard`'s `trustedRootIssuers` names the responsible party, since a verifier that accepts any root lets the presenter choose it; otherwise it is held to the private-network rule as a URL the presenter named.
+A host that pins roots inside its `accountabilityVerifier`, with a root allowlist or a Card-to-root registry as SPEC-ENTITY-CARD.md §10.3 describes, must also pass those roots to `verifyCard` as `trustedRootIssuers`.
+`verifyCard` cannot see a pin inside the seam, so without them a responsible party's list on a private host is refused before any connection, and the Card with it, as `status_unavailable`.
+Each entry is compared with the responsible party as an exact string, so a pin spelled another way than the Card spells its `responsibleParty`, in another case or with a percent-encoded port, matches nothing and fails closed in the same way.
+
+```ts
+const pinnedRoots = ['did:web:registry.corp.example']; // the roots your accountabilityVerifier admits
+const result = await verifyCard(card, { accountabilityVerifier, statusListChecker, trustedRootIssuers: pinnedRoots });
+```
+
 At a URL bound to it, the Entity's own list is refused.
 A responsible party's list counts for its Cards only once verified, never as the Card states it.
 

@@ -37,6 +37,7 @@ import type { DelegationProofVerifier } from './delegation-proof.js';
 import type { BitstringRevocationChecker } from './revocation.js';
 import { walkRevocationChain, type RevocationChainWalk } from './revocation-chain.js';
 import { admitRootIssuers } from './request-root-issuers.js';
+import { clockSkewOption } from '../utils/validity-window.js';
 
 export {
   DEFAULT_CARRIED_CHAIN_LIMIT,
@@ -126,6 +127,12 @@ export interface VerifyRequestDelegationDeps {
   maxChainLength?: number;
   /** Injectable clock (epoch ms) for the expiry gate; default `Date.now`. */
   now?: () => number;
+  /**
+   * The clock tolerance, in milliseconds, each hop's `validFrom`, `validUntil` and `ValidUntil`
+   * caveat is held with, as `validateDelegationChain` holds them: a number from 0 to 600,000.
+   * Default 120,000. Any other value throws a `TypeError` naming the option where the guard is built.
+   */
+  maxClockSkewMs?: number;
   /**
    * How long, in milliseconds, `resolveDelegationChain`, `verifyHopProof` and `checkRevocation` may each take to answer: a number greater than 0 and at most
    * 2,147,483,647. Default 5,000. Any other value throws a `TypeError` naming the option.
@@ -232,6 +239,7 @@ async function verifyRequest(input: RequestDelegationInput, deps: VerifyRequestD
     ...(deps.resourceOwner !== undefined ? { resourceOwner: deps.resourceOwner } : {}),
     ...(deps.maxChainLength !== undefined ? { maxChainLength: deps.maxChainLength } : {}),
     ...(deps.now !== undefined ? { now: deps.now } : {}),
+    ...(deps.maxClockSkewMs !== undefined ? { maxClockSkewMs: deps.maxClockSkewMs } : {}),
   });
   // validateDelegationChain codes every chain it refuses.
   if (!structural.ok) return reject('delegation_invalid', structural.code ?? 'chain_invalid', structural.reasons);
@@ -378,6 +386,7 @@ const GATE_MESSAGES: Record<DelegationGateCode, string> = {
 export function requireDelegation(deps: VerifyRequestDelegationDeps): DelegationGuard {
   admitRootIssuers(deps, 'requireDelegation', true);
   dependencyTimeout(deps.dependencyTimeoutMs);
+  clockSkewOption(deps.maxClockSkewMs);
   return async (input) => {
     const result = await verifyRequest(input, deps);
     if (result.ok) return result;

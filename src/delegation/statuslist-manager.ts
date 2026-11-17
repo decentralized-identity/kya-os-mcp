@@ -16,6 +16,7 @@ import type { VCSigningFunction } from './vc-issuer.js';
 import { canonicalizeJSON } from './utils.js';
 import { acceptEntrySize, acceptStatusPurpose } from '../utils/statuslist-acceptance.js';
 import { assertStatusListValidity } from '../utils/statuslist-validity.js';
+import { clockSkewOption } from '../utils/validity-window.js';
 import { RefusalError } from '../utils/refusal.js';
 
 export interface StatusListStorageProvider {
@@ -41,6 +42,8 @@ export interface StatusListIdentityProvider {
 export class StatusList2021Manager {
   private statusListBaseUrl: string;
   private defaultListSize: number;
+  /** The clock tolerance each bound of a list's validity window is held with, in milliseconds. */
+  private skewMs: number;
   /**
    * Per-status-list mutex. Every read-modify-write of a list (status updates
    * and first creation) runs inside it, so no writer can overwrite another's
@@ -58,6 +61,10 @@ export class StatusList2021Manager {
    *   to `statusListGzipCodec` (through {@link BitstringManager}). Reading
    *   throws on a list that is not GZIP and on a decompressor that returns its
    *   input unchanged.
+   * @param options.maxClockSkewMs - The clock tolerance, in milliseconds, each
+   *   bound of a kept list's validity window is held with when the list is
+   *   read: a number from 0 to 600,000. Default 120,000, the proof verifier's
+   *   default skew. Any other value throws a `TypeError` naming the option.
    */
   constructor(
     private storage: StatusListStorageProvider,
@@ -68,10 +75,12 @@ export class StatusList2021Manager {
     options?: {
       statusListBaseUrl?: string;
       defaultListSize?: number;
+      maxClockSkewMs?: number;
     }
   ) {
     this.statusListBaseUrl = options?.statusListBaseUrl || 'https://status.example.com';
     this.defaultListSize = options?.defaultListSize || 131072;
+    this.skewMs = clockSkewOption(options?.maxClockSkewMs);
   }
 
   async allocateStatusEntry(purpose: 'revocation' | 'suspension'): Promise<CredentialStatus> {
@@ -195,7 +204,7 @@ export class StatusList2021Manager {
     }
     // A list outside the validity window it states says nothing of now, whatever its bits say. The
     // lists this manager writes state no end.
-    assertStatusListValidity(statusList, Date.now());
+    assertStatusListValidity(statusList, Date.now(), this.skewMs);
 
     const manager = await BitstringManager.decode(
       statusList.credentialSubject.encodedList,
@@ -330,6 +339,7 @@ export function createStatusListManager(
   options?: {
     statusListBaseUrl?: string;
     defaultListSize?: number;
+    maxClockSkewMs?: number;
   }
 ): StatusList2021Manager {
   return new StatusList2021Manager(

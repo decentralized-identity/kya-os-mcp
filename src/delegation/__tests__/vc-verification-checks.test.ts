@@ -65,11 +65,20 @@ const EXPIRED = { code: "delegation_expired", transient: false } as const;
 
 describe("validateBasicProperties: validity bounds and status fail closed", () => {
   it("treats an unparseable expirationDate as expired, not as no expiry", () => {
-    for (const expirationDate of ["2020-02-30T25:00:00Z", "not a date", "", 4102444800 as unknown as string]) {
+    for (const expirationDate of ["2020-02-30T25:00:00Z", "not a date", "", 4102444800 as unknown as string, "2099-02-30T00:00:00Z"]) {
       const result = validateBasicProperties(credential({ expirationDate }));
       expect(result, String(expirationDate)).toEqual({ valid: false, reason: "Delegation credential expired", ...EXPIRED });
     }
     expect(validateBasicProperties(credential({ expirationDate: "2099-01-01T00:00:00Z" }))).toEqual({ valid: true });
+  });
+
+  it("treats an expirationDate that is not an RFC 3339 date-time with its zone as expired, in every zone", () => {
+    // Date.parse reads each of these as a time in 2099, a time with no zone in the zone it runs in.
+    for (const expirationDate of ["2099-01-01T00:00:00", "2099-01-01T00:00:00.000", "2099-01-01", "Thu, 01 Jan 2099 00:00:00 GMT"]) {
+      const result = validateBasicProperties(credential({ expirationDate }));
+      expect(result, expirationDate).toEqual({ valid: false, reason: "Delegation credential expired", ...EXPIRED });
+    }
+    expect(validateBasicProperties(credential({ expirationDate: "2098-12-31T18:00:00-06:00" }))).toEqual({ valid: true });
   });
 
   it("treats a non-numeric constraints.notAfter as expired, and still honours a numeric one", () => {

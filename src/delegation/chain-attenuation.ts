@@ -6,6 +6,7 @@
  */
 import type { CrispScope, DelegationCredential } from "../types/protocol.js";
 import { canonicalizeJson } from "../utils/canonical-json.js";
+import { parseDateTime } from "../utils/rfc3339.js";
 import { refusal, type Checked } from "../utils/refusal.js";
 import type { RefusalCoding } from "./vc-verifier.types.js";
 import { authorityContains, crispScopes, matcherContains, scopeAuthority } from "./scope-matcher.js";
@@ -84,11 +85,14 @@ export function checkScopeAttenuation(
   return { valid: true };
 }
 
-/** The earliest finite expiry a credential states (ms epoch), from `expirationDate` and `constraints.notAfter`. */
+/**
+ * The earliest finite expiry a credential states (ms epoch), from `expirationDate`, read as an RFC
+ * 3339 date-time with its zone, and `constraints.notAfter`.
+ */
 export function statedExpiry(credential: DelegationCredential): number | undefined {
   const notAfter = credential?.credentialSubject?.delegation?.constraints?.notAfter;
   const deadlines = [
-    credential?.expirationDate ? Date.parse(credential.expirationDate) : undefined,
+    credential?.expirationDate ? parseDateTime(credential.expirationDate) : undefined,
     notAfter !== undefined ? notAfter * 1000 : undefined,
   ].filter((deadline): deadline is number => deadline !== undefined && Number.isFinite(deadline));
   return deadlines.length > 0 ? Math.min(...deadlines) : undefined;

@@ -7,6 +7,8 @@
  * Related Spec: KYA-OS §3, §4, §5, §6
  */
 
+import { parseDateTime } from '../utils/rfc3339.js';
+
 // ============================================================================
 // CRISP Delegation Constraints (KYA-OS §4.2)
 // ============================================================================
@@ -293,13 +295,16 @@ function isEpochSeconds(value: unknown): value is number {
  * Check if a DelegationCredential is expired. A present `expirationDate` or
  * `constraints.notAfter` that cannot be read (an impossible date, a
  * non-numeric bound) counts as expired: it is a bound, just an unreadable
- * one, and must not read as "no expiry".
+ * one, and must not read as "no expiry". An `expirationDate` is read as an
+ * RFC 3339 date-time with its zone (`utils/rfc3339.ts`), so it names one
+ * instant on every verifier; one with no zone, which `Date.parse` would read
+ * in the zone of the machine it runs on, cannot be read. It is held exactly,
+ * with no clock tolerance, as a VC-JWT's `exp` is.
  */
 export function isDelegationCredentialExpired(vc: DelegationCredential): boolean {
   if (vc.expirationDate !== undefined) {
-    const expiresAt =
-      typeof vc.expirationDate === 'string' ? Date.parse(vc.expirationDate) : Number.NaN;
-    if (!Number.isFinite(expiresAt) || expiresAt < Date.now()) {
+    const expiresAt = parseDateTime(vc.expirationDate);
+    if (expiresAt === undefined || expiresAt < Date.now()) {
       return true;
     }
   }

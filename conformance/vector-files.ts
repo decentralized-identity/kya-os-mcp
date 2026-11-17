@@ -12,7 +12,7 @@ import { vectorFileText, type NumberAsWritten } from './numbers-as-written.js';
 import type { VectorFile } from './types.js';
 
 /** The suite version of every vector file the generators write. */
-export const SUITE_VERSION = '1.9.0';
+export const SUITE_VERSION = '1.10.0';
 
 /** Write `file` to the vectors directory as `name`, with each of `numbersAsWritten` as its text, and say so. */
 export function writeVectorFile(file: VectorFile, name: string, numbersAsWritten: readonly NumberAsWritten[] = []): void {

@@ -31,6 +31,8 @@ import { dependencyTimeout } from '../utils/deadline.js';
 import { logger } from '../logging/index.js';
 import type { DelegationProofVerifier } from './delegation-proof.js';
 import { firstHopProofRefusal } from './hop-proofs.js';
+import { hopWindowRules } from './hop-window.js';
+import { parseDateTime } from '../utils/rfc3339.js';
 
 export const DELEGATION_CONTEXT_V2 = 'https://www.w3.org/ns/credentials/v2'; // VC 2.0 base `@context`
 export const ZCAP_CONTEXT = 'https://w3id.org/security/zcap/v1'; // ZCAP-LD capability context
@@ -198,10 +200,11 @@ function decimalLte(child: string, parent: string): boolean {
     BigInt(whole + fraction.padEnd(scale, '0'));
   return scaled(c) <= scaled(p);
 }
+// `child ≤ parent`, each read as an RFC 3339 date-time with its zone, fail-closed (any other value ⇒ false).
 function dateLte(child: string, parent: string): boolean {
-  const c = Date.parse(child);
-  const p = Date.parse(parent);
-  return !Number.isNaN(c) && !Number.isNaN(p) && c <= p;
+  const c = parseDateTime(child);
+  const p = parseDateTime(parent);
+  return c !== undefined && p !== undefined && c <= p;
 }
 
 // Stable structural equality (sorted-key JSON) for verbatim unknown-caveat comparison.
@@ -295,6 +298,12 @@ export interface DelegationChainContext {
   /** Injectable clock (epoch ms) for the wall-clock expiry gate; default `Date.now` (deterministic tests inject it). */
   now?: () => number;
   /**
+   * The clock tolerance, in milliseconds, each hop's `validFrom`, `validUntil` and `ValidUntil`
+   * caveat is held with, as a status list's window is: a number from 0 to 600,000. Default 120,000,
+   * the proof verifier's default skew. Any other value rejects every chain as `configuration_error`.
+   */
+  maxClockSkewMs?: number;
+  /**
    * Check each hop's proof before any status read, e.g. `createDelegationProofVerifier({ didResolver })`.
    * A false answer or throw refuses the chain without reading status. Omission preserves the legacy
    * status-only evaluation with one process-wide warning; required in the next major version.
@@ -316,39 +325,6 @@ interface BrokenRule {
 
 /** The rules `reasons` name broken, each with `code`. */
 const brokenAs = (code: RefusalCode, reasons: readonly string[]): BrokenRule[] => reasons.map((reason) => ({ code, reason }));
-
-/**
- * Reasons any hop is temporally INVALID at `nowMs`: an expired top-level `validUntil` or `ValidUntil`
- * caveat, or a not-yet-valid `validFrom`. Fail-closed on a present-but-unparseable timestamp. Empty ⇒
- * every hop is inside its validity window. This is the wall-clock gate: CRISP narrowing only proves a
- * child expires no later than its parent, which a FULLY-expired-but-well-attenuated chain still satisfies.
- */
-function expiryReasons(chain: DelegationChain, nowMs: number): BrokenRule[] {
-  const broken: BrokenRule[] = [];
-  const unparseable = (reason: string): number => broken.push({ code: 'delegation_malformed', reason });
-  chain.forEach((vc, i) => {
-    if (vc.validUntil !== undefined) {
-      const t = Date.parse(vc.validUntil);
-      if (Number.isNaN(t)) unparseable(`hop ${i}: unparseable validUntil "${vc.validUntil}"`);
-      else if (t < nowMs) broken.push({ code: 'delegation_expired', reason: `hop ${i}: expired (validUntil ${vc.validUntil} is in the past)` });
-    }
-    if (vc.validFrom !== undefined) {
-      const t = Date.parse(vc.validFrom);
-      if (Number.isNaN(t)) unparseable(`hop ${i}: unparseable validFrom "${vc.validFrom}"`);
-      else if (t > nowMs) {
-        broken.push({ code: 'delegation_not_yet_valid', reason: `hop ${i}: not yet valid (validFrom ${vc.validFrom} is in the future)` });
-      }
-    }
-    for (const caveat of vc.credentialSubject.caveats ?? []) {
-      if (caveat.type === 'ValidUntil' && typeof caveat.date === 'string') {
-        const t = Date.parse(caveat.date);
-        if (Number.isNaN(t)) unparseable(`hop ${i}: unparseable ValidUntil caveat "${caveat.date}"`);
-        else if (t < nowMs) broken.push({ code: 'delegation_expired', reason: `hop ${i}: expired caveat (ValidUntil ${caveat.date} is in the past)` });
-      }
-    }
-  });
-  return broken;
-}
 
 /**
  * What {@link validateDelegationChain} finds. A refused chain carries, beside its `reasons`, the
@@ -387,8 +363,9 @@ function rootReasons(root: DelegationCredential, ctx: DelegationChainContext): B
  * than `maxChainLength`, a root that does not name the resource and a hop that does not attenuate
  * its parent; `configuration_error` for a `maxChainLength` that is not a positive integer;
  * `untrusted_root` for a root not issued by `resourceOwner`; and `delegation_expired`,
- * `delegation_not_yet_valid` or `delegation_malformed` for a hop outside its validity window or one
- * whose time is not a date.
+ * `delegation_not_yet_valid` or `delegation_malformed` for a hop outside its validity window, held
+ * with `maxClockSkewMs`, or one whose time is not an RFC 3339 date-time with its zone
+ * (`./hop-window.ts`); `configuration_error` too for a `maxClockSkewMs` it cannot use.
  */
 export function validateDelegationChain(
   chain: DelegationChain,
@@ -415,7 +392,7 @@ export function validateDelegationChain(
   }
   // Wall-clock gate: a chain can attenuate perfectly and still be fully EXPIRED. Default to real
   // time so the gate is never silently skipped; deterministic callers inject `ctx.now`.
-  broken.push(...expiryReasons(chain, (ctx.now ?? Date.now)()));
+  broken.push(...hopWindowRules(chain, (ctx.now ?? Date.now)(), ctx.maxClockSkewMs));
   const first = broken[0];
   return {
     ok: first === undefined,

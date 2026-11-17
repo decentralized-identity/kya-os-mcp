@@ -34,6 +34,7 @@ A fixture prints `PASS <fixture>: <what it showed>`, or one `FAIL <fixture>: <ca
 | `card-root-issuers` | `requireDelegation` from `@kya-os/mcp/card`: `trustedRootIssuers`, `development: true` and `allowAnyRootIssuer: true`, and the refusal when nothing pins the root. |
 | `expired-status-list` | `requireDelegation` and `verifyCard` with `createRevocationChecker` and `createStatusListProofVerifier`: a signed list past its `validUntil` or before its `validFrom` is refused as `status_unavailable`, while one in its window, or stating no end, is read. |
 | `card-revocation-checker` | `verifyCard` with and without a `statusListChecker` built from `createRevocationChecker`: a Card that declares a revocation entry is refused as `configuration_error` when no checker is given, and a Card that declares none needs no checker. |
+| `window-dates` | `createRevocationChecker`, `CheqdStatusListResolver` and `requireDelegation` over `RuntimeFetchProvider` and SafeFetch: a list or hop bound with no time zone, or not RFC 3339, is refused alike under `TZ=UTC` and `TZ=America/Chicago`, and one a few seconds outside its window is read within the clock tolerance. |
 
 A case whose name starts with `control:` checks the setup the other cases rely on, so a failure beside a passing control is the library's, not the fixture's.
 

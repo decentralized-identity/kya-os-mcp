@@ -92,7 +92,8 @@ function refusalLiterals(): RefusalLiteral[] {
 
   const found: RefusalLiteral[] = [];
   for (const source of program.getSourceFiles()) {
-    const file = relative(ROOT, source.fileName);
+    // `relative` writes `\` between segments on Windows; the table below names files with `/`.
+    const file = relative(ROOT, source.fileName).split('\\').join('/');
     if (source.isDeclarationFile || !file.startsWith('src/')) continue;
     const visit = (node: ts.Node): void => {
       if (ts.isObjectLiteralExpression(node)) {

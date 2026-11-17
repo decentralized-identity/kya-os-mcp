@@ -1,9 +1,0 @@
-kind: Spec
-body: |-
-    **SPEC.md §6.3: a `path-prefix` scope matches no path with a dot
-    segment or an encoded separator.** A verifier MUST NOT match a
-    `path-prefix` value or pattern that has a `.` or `..` segment, written
-    literally or as `%2e`, or that holds `%2f` or `%5c`, and MUST NOT take a
-    `prefix` scope as contained in a `path-prefix` scope. The reference
-    implementation already refused each; the specification did not say so.
-time: 2026-11-15T10:30:00.000000-06:00

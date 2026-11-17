@@ -332,8 +332,11 @@ export const nodeHttpsTransport: SafeFetchTransport = async (url, init) => {
  * Project a node:http IncomingMessage and its buffered chunks into the RawResponse shape, its body
  * decoded as the runtime's `fetch` decodes one. A gzip body is inflated through the package's one
  * capped decompressor, so `init.maxBytes` holds the decoded body, and its response then says no
- * `Content-Encoding` or `Content-Length`, which named the bytes sent. A body in any other coding is
- * refused, and the log says which coding the host named.
+ * `Content-Encoding` or `Content-Length`, which named the bytes sent. A redirect, whose body is not
+ * read, and an empty body are handed back as sent, whatever coding they name, as `fetch` follows
+ * the one and reads the other. A body in any other coding is refused, and so is one in more than
+ * one, `gzip, gzip` included, which no host a reader names is known to send: the log says which
+ * codings the host named.
  */
 async function decodedResponse(res: IncomingMessage, chunks: Buffer[], init: TransportInit): Promise<RawResponse> {
   const headerOf = (name: string): string | null => {
@@ -341,16 +344,23 @@ async function decodedResponse(res: IncomingMessage, chunks: Buffer[], init: Tra
     return Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
   };
   const sent = new Uint8Array(Buffer.concat(chunks));
+  const status = res.statusCode ?? 0;
   const coding = headerOf('content-encoding');
   const named = coding?.trim().toLowerCase() ?? '';
-  if (named === '' || named === 'identity') return rawResponse(res.statusCode ?? 0, { get: headerOf }, sent);
+  const undecoded = named === '' || named === 'identity' || isRedirect(status) || sent.byteLength === 0;
+  if (undecoded) return rawResponse(status, { get: headerOf }, sent);
   if (!GZIP_NAMES.has(named)) {
     logger.warn(`[kya-os] safe-fetch: ${init.hostname} answered with Content-Encoding ${describeValue(coding)}, which is not decoded, so the response is refused`);
     throw new ReadFailureError('unavailable', 'safe-fetch: the response is in a content coding that is not decoded');
   }
   const decoded = await inflated(sent, init.maxBytes);
   const asDecoded = (name: string): string | null => (/^content-(encoding|length)$/i.test(name) ? null : headerOf(name));
-  return rawResponse(res.statusCode ?? 0, { get: asDecoded }, decoded);
+  return rawResponse(status, { get: asDecoded }, decoded);
+}
+
+/** Whether `status` is a redirect's, whose body the reader does not read. */
+function isRedirect(status: number): boolean {
+  return status >= 300 && status < 400;
 }
 
 /** `body`, gzip, inflated through the package's capped decompressor: refused as too large past `maxBytes`, or as unreadable when it is not gzip. */

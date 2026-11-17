@@ -35,10 +35,14 @@ const LIST = {
 };
 
 /**
- * Each path's body and the encoding it is served in, whatever the request asked for. A `Map`, so a
- * request's path names one of these routes or none, never a property every object has.
+ * Each path's body and the encoding it is served in, whatever the request asked for, with its status
+ * and any other header when it is not a plain 200. A `Map`, so a request's path names one of these
+ * routes or none, never a property every object has.
  */
-const ROUTES: ReadonlyMap<string, () => [string, Buffer]> = new Map([
+const ROUTES: ReadonlyMap<string, () => [string, Buffer, number?, Record<string, string>?]> = new Map<
+  string,
+  () => [string, Buffer, number?, Record<string, string>?]
+>([
   ['/.well-known/did.json', () => ['gzip', gzipSync(JSON.stringify({ '@context': 'https://www.w3.org/ns/did/v1', id: didOf(port) }))]],
   ['/list', () => ['gzip', gzipSync(JSON.stringify(LIST))]],
   ['/x-gzip', () => ['x-gzip', gzipSync('{"ok":true}')]],
@@ -47,6 +51,9 @@ const ROUTES: ReadonlyMap<string, () => [string, Buffer]> = new Map([
   ['/brotli', () => ['br', brotliCompressSync('{"ok":true}')]],
   ['/twice', () => ['gzip, gzip', gzipSync(gzipSync('{"ok":true}'))]],
   ['/not-gzip', () => ['gzip', Buffer.from('{"ok":true}')]],
+  ['/moved', () => ['gzip', Buffer.alloc(0), 301, { location: '/list' }]],
+  ['/moved-with-a-body', () => ['br', Buffer.from('not brotli'), 302, { location: '/list' }]],
+  ['/empty', () => ['gzip', Buffer.alloc(0)]],
 ]);
 
 const didOf = (at: number) => `did:web:${HOST}%3A${at}`;
@@ -59,8 +66,8 @@ beforeAll(async () => {
       response.writeHead(404).end();
       return;
     }
-    const [encoding, body] = route();
-    response.writeHead(200, { 'content-type': 'application/json', 'content-encoding': encoding, 'content-length': body.length }).end(body);
+    const [encoding, body, status = 200, more = {}] = route();
+    response.writeHead(status, { 'content-type': 'application/json', 'content-encoding': encoding, 'content-length': body.length, ...more }).end(body);
   });
   https.globalAgent.options.ca = [tls.cert];
   port = await listenOnLoopback(server as unknown as Server);
@@ -100,6 +107,22 @@ describe('a host that serves gzip whatever the request asks', () => {
     expect([await decoded.text(), decoded.headers.get('content-encoding'), decoded.headers.get('content-length')]).toEqual(['{"ok":true}', null, null]);
     const plain = await read('/plain');
     expect([await plain.text(), plain.headers.get('content-encoding'), plain.headers.get('content-length')]).toEqual(['{"ok":true}', 'identity', '11']);
+  });
+});
+
+describe('a response with no body to decode, whatever coding it names', () => {
+  it('is a redirect, which is followed as fetch follows it, its body not decoded', async () => {
+    const fetch = createSafeFetch({ lookup: publicLookup, transport });
+    for (const path of ['/moved', '/moved-with-a-body']) {
+      const moved = await read(path);
+      expect([moved.status, moved.headers.get('location')]).toEqual([path === '/moved' ? 301 : 302, '/list']);
+      expect(await (await fetch(url(path))).json()).toEqual(LIST);
+    }
+  });
+
+  it('is an empty body, read as empty', async () => {
+    const empty = await read('/empty');
+    expect([empty.status, await empty.text()]).toEqual([200, '']);
   });
 });
 

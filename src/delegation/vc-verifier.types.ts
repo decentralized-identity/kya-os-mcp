@@ -174,7 +174,11 @@ export interface VerificationMethod {
 
 /**
  * Resolves a credential's status: `checkStatus` returns `true` when its status bit is set, and
- * throws when the status cannot be proven, which the verifier denies as `status_unresolvable`.
+ * throws when the status cannot be proven, which the verifier denies as `status_unresolvable`. The
+ * denial's reason goes back to whoever presented the credential: a `RefusalError` the resolver
+ * throws gives it its code and its words, written for that party; any other error may be a
+ * transport's words about the verifier's network, so its message is logged for the operator and
+ * the reason names the list and says only that it could not be read.
  * `context` names the credential's issuer and may name its delegation chain's pinned root and the
  * status-list URL that root's own credential names. A list's proof shows only who signed it, so a
  * resolver that verifies the proof also passes
@@ -184,8 +188,9 @@ export interface VerificationMethod {
  * URL, else the credential's issuer.
  * `CheqdStatusListResolver` holds every list to the one DID it is configured to trust.
  * A resolver that reads the one bit at an entry's `statusListIndex` first passes
- * `acceptEntrySize(status.statusSize)`, as the library's readers do, and throws its reason for an
- * entry that is not one bit wide: such an entry keeps its status in other bits of the list.
+ * `acceptEntrySize(status.statusSize)`, as the library's readers do, and throws its reason, as a
+ * `RefusalError`, for an entry that is not one bit wide: such an entry keeps its status in other
+ * bits of the list.
  *
  * `DelegationCredentialVerifier`, which the delegation middleware runs for each credential of a
  * chain, names the credential's own issuer alone, never the chain's root, even when

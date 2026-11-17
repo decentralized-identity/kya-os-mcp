@@ -368,7 +368,7 @@ describe("validateDelegationChain", () => {
       const r = await validateDelegationChain(root, { ...baseDeps, revocationChecker: checker });
       expect(r).toEqual({
         valid: false,
-        reason: 'Revocation check failed for delegation "root": status list unavailable',
+        reason: 'Revocation check failed for delegation "root": the revocation checker failed',
         code: "status_unavailable",
         transient: true,
         evaluated: [root],
@@ -381,7 +381,7 @@ describe("validateDelegationChain", () => {
       };
       expect(await validateDelegationChain(root, { ...baseDeps, revocationChecker: throwsNonError })).toEqual({
         valid: false,
-        reason: 'Revocation check failed for delegation "root": Unknown error',
+        reason: 'Revocation check failed for delegation "root": the revocation checker failed',
         code: "status_unavailable",
         transient: true,
         evaluated: [root],

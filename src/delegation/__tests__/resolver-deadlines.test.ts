@@ -167,7 +167,7 @@ describe.each(DEADLINES)('%s', (_label, option, ms, stated) => {
       expect(vi.getTimerCount()).toBe(0);
       expect(await validate(leaf, { resolveDelegationChain: () => { throw new Error('store offline'); } })).toEqual({
         valid: false,
-        reason: 'Failed to resolve delegation chain: store offline',
+        reason: 'Failed to resolve delegation chain: the chain resolver failed',
         code: 'runtime_error',
         transient: true,
       });

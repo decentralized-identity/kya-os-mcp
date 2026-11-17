@@ -14,10 +14,9 @@
  */
 
 import { canonicalize } from 'json-canonicalize';
-import { resolveExplained, type ExplainedResolution } from '../delegation/did-resolution-failure.js';
+import { resolveExplained, unresolvedIssuer, type ExplainedResolution } from '../delegation/did-resolution-failure.js';
 import { logger } from '../logging/index.js';
 import { DeadlineExceededError } from '../utils/deadline.js';
-import { describeValue } from '../utils/describe-value.js';
 import { RefusalError, refusalCodeOf } from '../utils/refusal.js';
 import { isRecord, issuerOf } from '../utils/guards.js';
 import { base58Decode, base58Encode } from '../utils/base58.js';
@@ -116,7 +115,7 @@ export async function verifyEddsaJcs2022Proof(
 async function issuerDocument(
   didResolver: DIDResolver, did: string, key: string, timeoutMs: number | undefined,
 ): Promise<DIDDocument> {
-  const unresolved = (why: string): string => `Could not resolve issuer DID: ${describeValue(did)}${why}`;
+  const unresolved = (why: string): string => `${unresolvedIssuer(did)}${why}`;
   let resolved: ExplainedResolution;
   try {
     resolved = await resolveExplained(didResolver, did, key, timeoutMs);

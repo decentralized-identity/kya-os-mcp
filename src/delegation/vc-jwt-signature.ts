@@ -8,7 +8,7 @@
 import { compactVerify, importJWK } from "jose";
 import type { JWK } from "jose";
 import { DID_RESOLUTION_TIMEOUT_MS } from "./did-resource-limits.js";
-import { resolveExplained, type ExplainedResolution } from "./did-resolution-failure.js";
+import { resolveExplained, unresolvedIssuer, type ExplainedResolution } from "./did-resolution-failure.js";
 import type { DIDResolver } from "./vc-verifier.types.js";
 import type { SignatureCheck } from "./vc-verification-checks.js";
 import { verificationMethodJwk } from "./verification-method-key.js";
@@ -17,6 +17,7 @@ import { isSmallOrderEd25519CryptoKey } from "../utils/ed25519-public-key.js";
 import { describeValue } from "../utils/describe-value.js";
 import { sanitizeForMessage } from "../utils/message-text.js";
 import { refusal, refusalCodeOf } from "../utils/refusal.js";
+import { thrownReason } from "../utils/thrown-words.js";
 import type { RefusalCode } from "../refusal-codes.js";
 
 /** The text of an error the verifier did not write, as a reason holds it: bounded and well-formed. */
@@ -52,10 +53,16 @@ export async function checkVcJwtSignature(
   try {
     resolved = await resolveExplained(didResolver, issuerDid, kid, timeoutMs);
   } catch (err) {
-    return refused(refusalCodeOf(err, "did_unavailable"), `Could not resolve issuer DID ${issuer}: ${errMsg(err)}`);
+    // A resolver the host gave may throw its transport's words, which only the operator's log is told.
+    const reason = thrownReason(err, {
+      withheld: unresolvedIssuer(issuerDid),
+      shown: (words) => `Could not resolve issuer DID ${issuer}: ${words}`,
+      tag: "[kya-os]",
+    });
+    return refused(refusalCodeOf(err, "did_unavailable"), reason);
   }
   if (resolved.document === null) {
-    return refused(resolved.code, `Could not resolve issuer DID: ${issuer}${resolved.why}`);
+    return refused(resolved.code, `${unresolvedIssuer(issuerDid)}${resolved.why}`);
   }
   const didDoc = resolved.document;
 

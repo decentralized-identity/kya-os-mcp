@@ -232,7 +232,9 @@ describe("verifySignature: fail-closed paths", () => {
     const signatureVerifier: SignatureVerificationFunction = async () => {
       throw "verifier crashed";
     };
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
     const result = await verifySignature(credential(), resolver, signatureVerifier);
-    expect(result).toMatchObject({ valid: false, reason: "Signature verification error: Unknown error" });
+    expect(result).toMatchObject({ valid: false, reason: "Signature verification error: the signature could not be checked", code: "runtime_error" });
+    warn.mockRestore();
   });
 });

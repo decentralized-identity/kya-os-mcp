@@ -929,13 +929,16 @@ describe("DelegationCredentialVerifier", () => {
     it("should handle DID resolver errors gracefully", async () => {
       await setupDefaultContractsMocks();
       mockDidResolver.resolve.mockRejectedValue(new Error("Network timeout"));
+      const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
 
       const result = await verifier.verifyDelegationCredential(mockValidVC);
 
       expect(result.valid).toBe(false);
-      expect(result.reason).toContain(
-        "Signature verification error: Network timeout"
-      );
+      expect(result.code).toBe("did_unavailable");
+      expect(result.reason).toContain("Could not resolve issuer DID: ");
+      expect(result.reason).not.toContain("Network timeout");
+      expect(warn.mock.calls.map(String).join("\n")).toContain("Network timeout");
+      warn.mockRestore();
     });
 
     it("should handle status list resolver errors gracefully", async () => {
@@ -978,13 +981,15 @@ describe("DelegationCredentialVerifier", () => {
         new Error("Signature algorithm unsupported")
       );
       mockStatusListResolver.checkStatus.mockResolvedValue(false);
+      const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
 
       const result = await verifier.verifyDelegationCredential(mockValidVC);
 
       expect(result.valid).toBe(false);
-      expect(result.reason).toContain(
-        "Signature verification error: Signature algorithm unsupported"
-      );
+      expect(result.code).toBe("runtime_error");
+      expect(result.reason).toBe("Signature verification error: the signature could not be checked");
+      expect(warn.mock.calls.map(String).join("\n")).toContain("Signature algorithm unsupported");
+      warn.mockRestore();
     });
   });
 

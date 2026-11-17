@@ -19,16 +19,15 @@ import {
 import { answerWithinDeadline } from "../utils/deadline.js";
 import { describeValue } from "../utils/describe-value.js";
 import { issuerOf } from "../utils/guards.js";
-import { sanitizeForMessage } from "../utils/message-text.js";
 import { carryingContext } from "../utils/status-check-carrier.js";
 import { readVerdict } from "../utils/verdict.js";
 import { coded, refusal, refusalCodeOf, type Checked, type Refusal } from "../utils/refusal.js";
 import type { RefusalCode } from "../refusal-codes.js";
 import { credentialIssuerRefusal } from "./credential-issuer.js";
 import { DID_RESOLUTION_TIMEOUT_MS } from "./did-resource-limits.js";
-import { resolveExplained, type ExplainedResolution } from "./did-resolution-failure.js";
+import { resolveExplained, unresolvedIssuer, type ExplainedResolution } from "./did-resolution-failure.js";
 import { WRAPPED_REASON_LENGTH, readRevoked, unreadableStatusReason } from "../utils/revocation-answer.js";
-import { thrownWords, unreadStatusList } from "../utils/thrown-words.js";
+import { thrownReason, unreadStatusList } from "../utils/thrown-words.js";
 import type {
   DIDResolver,
   StatusListResolver,
@@ -249,10 +248,10 @@ export async function verifySignature(
       resolved = await resolveExplained(didResolver, issuerDid, keyId, timeoutMs);
     } catch (error) {
       // A resolver that throws, or does not answer in time, leaves the document unread.
-      return refused(refusalCodeOf(error, "did_unavailable"), signatureErrorReason(error));
+      return refused(refusalCodeOf(error, "did_unavailable"), signatureErrorReason(error, unresolvedIssuer(issuerDid)));
     }
     if (resolved.document === null) {
-      return refused(resolved.code, `Could not resolve issuer DID: ${describeValue(issuerDid)}${resolved.why}`);
+      return refused(resolved.code, `${unresolvedIssuer(issuerDid)}${resolved.why}`);
     }
     const didDoc = resolved.document;
 
@@ -289,13 +288,21 @@ export async function verifySignature(
 
     return timed(readVerdict("the signature verifier", answer, "invalid_proof"));
   } catch (error) {
-    return refused(refusalCodeOf(error, "runtime_error"), signatureErrorReason(error));
+    return refused(refusalCodeOf(error, "runtime_error"), signatureErrorReason(error, UNCHECKED_SIGNATURE));
   }
 }
 
-/** The reason a signature check that threw `error` is refused with. */
-function signatureErrorReason(error: unknown): string {
-  return `Signature verification error: ${error instanceof Error ? sanitizeForMessage(error.message) : "Unknown error"}`;
+/** What a refusal of a signature check says where a step threw words that may not reach it. */
+const UNCHECKED_SIGNATURE = "Signature verification error: the signature could not be checked";
+
+/**
+ * The reason a signature check that threw `error` is refused with: `Signature verification error:`
+ * and its words, where they may reach whoever presented the credential (`utils/thrown-words.ts`),
+ * as a `RefusalError`'s or a deadline's may; otherwise `withheld`, with the words logged, since a
+ * DID resolver or a signature verifier the host gave may have thrown its transport's words.
+ */
+function signatureErrorReason(error: unknown, withheld: string): string {
+  return thrownReason(error, { withheld, shown: (words) => `Signature verification error: ${words}`, tag: "[kya-os]" });
 }
 
 /**
@@ -310,9 +317,11 @@ function signatureErrorReason(error: unknown): string {
  * status list to it; a credential that names none cannot be held to anyone, so
  * it DENIES as `status_unresolvable` without a read. The context is passed as
  * the second argument and carried by the copy of the entry passed as the first
- * (`carryingContext`). A resolver that throws is refused with its message, at
- * most `WRAPPED_REASON_LENGTH` UTF-16 code units of it, so a library checker's
- * reason it wrapped in words of its own still ends whole.
+ * (`carryingContext`). A resolver that throws a `RefusalError` is refused with
+ * its code and its message, at most `WRAPPED_REASON_LENGTH` UTF-16 code units
+ * of it, so a library checker's reason it wrapped in words of its own still
+ * ends whole; any other throw is refused naming the list and saying only that
+ * it could not be read, its message logged (`utils/thrown-words.ts`).
  */
 export async function checkCredentialStatus(
   status: CredentialStatus,
@@ -367,7 +376,7 @@ export async function checkCredentialStatus(
   } catch (error) {
     return refused(
       refusalCodeOf(error, "status_unavailable"),
-      `Status check error: ${thrownWords(error, unreadStatusList(status.statusListCredential), "[kya-os]", WRAPPED_REASON_LENGTH)}`,
+      `Status check error: ${thrownReason(error, { withheld: unreadStatusList(status.statusListCredential), tag: "[kya-os]", maxLength: WRAPPED_REASON_LENGTH })}`,
     );
   }
 }

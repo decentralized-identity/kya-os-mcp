@@ -21,6 +21,7 @@
 import { answerWithinDeadline, DeadlineExceededError, dependencyTimeout } from '../utils/deadline.js';
 import { coded, RefusalError, refusalCodeOf, type Coded } from '../utils/refusal.js';
 import { sanitizeForMessage } from '../utils/message-text.js';
+import { thrownReason } from '../utils/thrown-words.js';
 import type { RefusalCode } from '../refusal-codes.js';
 import { admitsRootIssuer, assertTrustedRootIssuers } from '../delegation/root-admission.js';
 import { revocationEntriesOf, validateDelegationChain, type DelegationChain } from './delegation.js';
@@ -287,13 +288,13 @@ async function obtainChain(
     const resolve = deps.resolveDelegationChain;
     resolved = await answerWithinDeadline('the chain resolver', () => resolve({ proofDid: input.proofDid }), timeoutMs);
   } catch (error) {
-    const detail = error instanceof Error ? error.message : 'unknown error';
-    return rejection(
-      'delegation_unresolvable',
-      refusalCodeOf(error, 'runtime_error'),
-      [`delegation chain could not be resolved: ${detail}`],
-      'resolved',
-    );
+    // The resolver is the host's, and may throw its transport's words, which only the operator's log is told.
+    const reason = thrownReason(error, {
+      withheld: 'delegation chain could not be resolved: the chain resolver failed',
+      shown: (words) => `delegation chain could not be resolved: ${words}`,
+      tag: '[kya-os]',
+    });
+    return rejection('delegation_unresolvable', refusalCodeOf(error, 'runtime_error'), [reason], 'resolved');
   }
   if (!Array.isArray(resolved) || resolved.length === 0) {
     return rejection('delegation_missing', 'needs_authorization', [`no delegation chain found for ${input.proofDid}`], 'resolved');

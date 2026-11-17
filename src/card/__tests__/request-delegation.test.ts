@@ -317,7 +317,7 @@ describe('verifyRequestDelegation: by reference', () => {
     expect(result).toEqual({
       ok: false,
       code: 'delegation_unresolvable',
-      reasons: ['delegation chain could not be resolved: registry.acme.example unreachable'],
+      reasons: ['delegation chain could not be resolved: the chain resolver failed'],
       source: 'resolved',
       refusalCode: 'runtime_error',
       transient: true,

@@ -206,3 +206,12 @@ export async function resolveExplained(
   const failure = reportedFailure(resolver, did);
   return { document: null, why: failureSuffix(failure), code: unresolvedCode(failure) };
 }
+
+/**
+ * What a refusal of the issuer DID `did` as unresolvable opens with, `Could not resolve issuer DID:`
+ * and the DID as `describeValue` quotes it, before the {@link ExplainedResolution} `why` it may end
+ * with; alone, it is the whole reason where nothing more may be shown, as for a resolver that threw.
+ */
+export function unresolvedIssuer(did: string): string {
+  return `Could not resolve issuer DID: ${describeValue(did)}`;
+}

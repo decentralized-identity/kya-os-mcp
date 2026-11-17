@@ -33,13 +33,25 @@ export function presentable(error: unknown): boolean {
   );
 }
 
+/** How a reason is written for a thrown error, by {@link thrownReason}. */
+export interface ThrownReason {
+  /** The whole reason where the error's words may not reach it. */
+  readonly withheld: string;
+  /** The reason around the error's words where they may; by default the words alone. */
+  readonly shown?: (words: string) => string;
+  /** What the operator's log line for a withheld error opens with, such as `[kya-os]`. */
+  readonly tag: string;
+  /** The most UTF-16 code units of the error's words a reason keeps. Default 256. */
+  readonly maxLength?: number;
+}
+
 /**
- * What a reason says for `error`: its message, free of control characters and at most `maxLength`
- * UTF-16 code units as `sanitizeForMessage` leaves it, where it is {@link presentable}; otherwise
- * `withheld`, with the message logged for the operator as `<tag> <withheld>: <message>`.
+ * The reason for `error`: where it is {@link presentable}, `shown` around its message, free of
+ * control characters and at most `maxLength` UTF-16 code units as `sanitizeForMessage` leaves it;
+ * otherwise `withheld`, with the message logged for the operator as `<tag> <withheld>: <message>`.
  */
-export function thrownWords(error: unknown, withheld: string, tag: string, maxLength = 256): string {
-  if (presentable(error)) return sanitizeForMessage((error as Error).message, maxLength);
+export function thrownReason(error: unknown, { withheld, shown = (words) => words, tag, maxLength = 256 }: ThrownReason): string {
+  if (presentable(error)) return shown(sanitizeForMessage((error as Error).message, maxLength));
   const words = error instanceof Error ? error.message : `a thrown ${typeof error}`;
   logger.warn(`${tag} ${withheld}: ${sanitizeForMessage(words, LOGGED_LENGTH)}`);
   return withheld;

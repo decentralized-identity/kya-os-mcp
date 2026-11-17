@@ -1,7 +1,8 @@
 /**
  * Every refusal reason of the delegation verifier that interpolates text it did not write, the
- * message of an error a resolver, a chain resolver, a revocation checker or `jose` throws, or the
- * reason a revocation checker gives, writes that text through `sanitizeForMessage`: cut after 256
+ * words of a `RefusalError` a resolver, a chain resolver or a revocation checker throws, the message
+ * of an error `jose` throws, or the reason a revocation checker gives, writes that text through
+ * `sanitizeForMessage`: cut after 256
  * UTF-16 code units, with control characters and lone surrogates read as U+FFFD, so the reason is
  * bounded, well-formed text on either proof path.
  */
@@ -28,6 +29,7 @@ import {
 } from '../../__tests__/audit/helpers/crypto-helpers.js';
 import { delegationRecord, keyOf, signedCredential, signedJwt } from '../../__tests__/utils/delegation-credentials.js';
 import { createDidKeyResolver } from '../did-key-resolver.js';
+import { RefusalError } from '../../utils/refusal.js';
 
 const crypto = createRealCryptoProvider();
 /** Text no verifier wrote: a line break, a control, a lone surrogate, and far more than 256 units. */
@@ -61,7 +63,7 @@ describe('a refusal reason that quotes an error the verifier did not write', () 
   it('is bounded, well-formed text when the issuer DID resolver throws, on either proof path', async () => {
     const { issuer, credential, jwt } = await signedBothWays();
     const verifier = new DelegationCredentialVerifier({
-      didResolver: { resolve: async () => { throw new Error(HOSTILE); } },
+      didResolver: { resolve: async () => { throw new RefusalError('did_unavailable', HOSTILE); } },
       signatureVerifier: createRealSignatureVerifier(crypto),
     });
     const embedded = await verifier.verifyDelegationCredential(credential, { skipCache: true });
@@ -95,14 +97,14 @@ describe('a refusal reason that quotes an error the verifier did not write', () 
 
     it('is bounded, well-formed text when the chain resolver throws', async () => {
       const result = await validateDelegationChain(await leaf('del-0'), {
-        ...deps, resolveDelegationChain: async () => { throw new Error(HOSTILE); },
+        ...deps, resolveDelegationChain: async () => { throw new RefusalError('runtime_error', HOSTILE); },
       });
       expectSanitized(result.reason, 'Failed to resolve delegation chain: no document\uFFFD');
     });
 
     it('is bounded, well-formed text when the revocation checker throws, or names its reason', async () => {
       const thrown = await validateDelegationChain(await leaf(), {
-        ...deps, revocationChecker: { isRevoked: async () => { throw new Error(HOSTILE); } },
+        ...deps, revocationChecker: { isRevoked: async () => { throw new RefusalError('status_unavailable', HOSTILE); } },
       });
       expectSanitized(thrown.reason, 'Revocation check failed for delegation "del-1": no document\uFFFD');
       const revoked = await validateDelegationChain(await leaf(), {

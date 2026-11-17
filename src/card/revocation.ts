@@ -35,7 +35,7 @@ import { answerWithinDeadline, dependencyTimeout } from '../utils/deadline.js';
 import { isRecord, issuerOf } from '../utils/guards.js';
 import { coded, RefusalError, refusalCodeOf, type Coded } from '../utils/refusal.js';
 import { CHECKER_REASON_LENGTH } from '../utils/revocation-answer.js';
-import { thrownWords, unreadStatusList } from '../utils/thrown-words.js';
+import { thrownReason, unreadStatusList } from '../utils/thrown-words.js';
 import { carriedContext } from '../utils/status-check-carrier.js';
 import { codedVariantOf } from './coded-proof-verifier.js';
 import { withStatusListIssuersRemedy } from '../utils/statuslist-remedy.js';
@@ -316,7 +316,7 @@ export function createRevocationChecker(
  * may have written it.
  */
 function failureReason(error: unknown, url: unknown): string {
-  return thrownWords(error, unreadStatusList(url), '[revocation]', CHECKER_REASON_LENGTH).replace(/^revocation: /, '');
+  return thrownReason(error, { withheld: unreadStatusList(url), tag: '[revocation]', maxLength: CHECKER_REASON_LENGTH }).replace(/^revocation: /, '');
 }
 
 /**

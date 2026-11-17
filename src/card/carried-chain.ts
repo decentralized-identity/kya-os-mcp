@@ -41,7 +41,9 @@ export function toDelegationChainMeta(chain: DelegationChain): DelegationChainMe
 /**
  * The refusal code of a rejection, and whether it is transient, under names that leave `code` to the
  * {@link DelegationGateCode} the rejection already carries. The library sets both on every
- * rejection it returns.
+ * rejection it returns. Both are for the operator's logs and retry logic, not for whoever presented
+ * the request: the code can tell an outage from a host that answered, which the reasons keep from
+ * that party.
  */
 export interface RejectionCoding {
   /** Why the chain was rejected, as a stable code (`REFUSAL_CODES`), finer than the gate's `code`. */

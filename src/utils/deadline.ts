@@ -7,7 +7,7 @@
  * validates once where that verifier is built; it is {@link OUTBOUND_READ_TIMEOUT_MS} by default.
  */
 
-import { describeValue } from './describe-value.js';
+import { describeOptionValue } from './describe-value.js';
 import { OUTBOUND_READ_TIMEOUT_MS } from './outbound-read-limits.js';
 
 /**
@@ -23,8 +23,7 @@ export const MAX_DEPENDENCY_TIMEOUT_MS = 2_147_483_647;
  */
 export function dependencyTimeoutRefusal(value: unknown): string | undefined {
   if (typeof value === 'number' && value > 0 && value <= MAX_DEPENDENCY_TIMEOUT_MS) return undefined;
-  const got = typeof value === 'number' ? String(value) : `a value ${describeValue(value)}`;
-  return `dependencyTimeoutMs must be a number of milliseconds greater than 0 and at most ${MAX_DEPENDENCY_TIMEOUT_MS} (got ${got})`;
+  return `dependencyTimeoutMs must be a number of milliseconds greater than 0 and at most ${MAX_DEPENDENCY_TIMEOUT_MS} (got ${describeOptionValue(value)})`;
 }
 
 /**

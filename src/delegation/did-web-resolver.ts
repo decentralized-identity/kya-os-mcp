@@ -18,6 +18,7 @@ import { hasIdTypeAndController } from './verification-method-shape.js';
 
 import { admitParsedDidDocument, boundedDid, DidDocumentCache, type LoadedDidDocument } from './did-resource-limits.js';
 import { dependencyTimeout } from '../utils/deadline.js';
+import { cacheTtlOption } from '../utils/cache-options.js';
 import { developmentMode } from '../utils/development-mode.js';
 import { admittingPrivateHosts, type PrivateNetworkTransport } from '../utils/private-network-rule.js';
 import { fetchDidJson } from './read-did-json.js';
@@ -44,7 +45,10 @@ const UNADDRESSABLE_DID_WEB = 'the DID is not a did:web DID whose host and path 
 
 /** Options of {@link DidWebResolver} and {@link createDidWebResolver}. */
 export interface DidWebResolverOptions {
-  /** How long a resolved document is cached, in milliseconds. Default 300,000. */
+  /**
+   * How long a resolved document is cached, in milliseconds: a finite number, 0 or more. Default
+   * 300,000. Any other value throws a `TypeError` naming the option.
+   */
   cacheTtl?: number;
   /**
    * How long, in milliseconds, one read of a did:web document, headers and body, may take: a number greater than 0 and at most
@@ -77,7 +81,7 @@ export class DidWebResolver implements DIDResolver {
     this.fetchProvider = development ? admittingPrivateHosts(fetchProvider) : fetchProvider;
     this.timeoutMs = dependencyTimeout(options?.dependencyTimeoutMs);
     this.cache = new DidDocumentCache(this.timeoutMs);
-    this.cacheTtl = options?.cacheTtl ?? 300_000; // 5 minutes default
+    this.cacheTtl = cacheTtlOption(options?.cacheTtl, 'cacheTtl') ?? 300_000; // 5 minutes default
   }
 
   /**

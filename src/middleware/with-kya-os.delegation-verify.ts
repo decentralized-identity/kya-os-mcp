@@ -40,6 +40,7 @@ import {
 } from "../types/protocol.js";
 import { logger } from "../logging/index.js";
 import { TtlCache } from "../utils/ttl-cache.js";
+import { cacheCapacityOption, cacheTtlOption } from "../utils/cache-options.js";
 import { isRecord } from "../utils/guards.js";
 import { coded } from "../utils/refusal.js";
 import type {
@@ -160,8 +161,9 @@ export function createDelegationVerification(
     didResolver,
     signatureVerifier: embeddedSignatureVerifier(cryptoProvider),
     statusListResolver: delegationConfig?.statusListResolver,
-    cacheTtl: delegationConfig?.verificationCache?.ttlMs,
-    maxCacheSize: delegationConfig?.verificationCache?.maxEntries,
+    // Checked here, so a refusal names the option as the middleware takes it.
+    cacheTtl: cacheTtlOption(delegationConfig?.verificationCache?.ttlMs, "delegation.verificationCache.ttlMs"),
+    maxCacheSize: cacheCapacityOption(delegationConfig?.verificationCache?.maxEntries, "delegation.verificationCache.maxEntries"),
     dependencyTimeoutMs,
   });
 

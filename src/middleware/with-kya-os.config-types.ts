@@ -184,9 +184,16 @@ export interface KyaOsDelegationConfig {
    * entirely (e.g. when issuer key rotation must take effect immediately).
    */
   verificationCache?: {
-    /** Signature-result TTL in milliseconds. Default 60_000. `0` disables caching. */
+    /**
+     * Signature-result TTL in milliseconds: a finite number, 0 or more, where `0` disables caching.
+     * Default 60_000. Any other value throws a `TypeError` naming the option when the middleware is
+     * created.
+     */
     ttlMs?: number;
-    /** Maximum cached signature results (FIFO eviction). Default 1000. */
+    /**
+     * Maximum cached signature results (FIFO eviction): a whole number greater than 0. Default 1000.
+     * Any other value throws a `TypeError` naming the option when the middleware is created.
+     */
     maxEntries?: number;
   };
 }

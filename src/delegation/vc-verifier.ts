@@ -38,6 +38,7 @@ import { canonicalizeJson } from "../utils/canonical-json.js";
 import { coded } from "../utils/refusal.js";
 import { dependencyTimeout } from "../utils/deadline.js";
 import { TtlCache } from "../utils/ttl-cache.js";
+import { cacheCapacityOption, cacheTtlOption } from "../utils/cache-options.js";
 
 // Re-export the shared type surface so existing imports of DIDResolver /
 // SignatureVerificationFunction / StatusListResolver / … are unchanged.
@@ -48,9 +49,12 @@ export interface DelegationCredentialVerifierOptions {
   didResolver?: DIDResolver;
   statusListResolver?: StatusListResolver;
   signatureVerifier?: SignatureVerificationFunction;
-  /** Signature-result TTL in ms. `0` disables signature caching. Default 60_000. */
+  /**
+   * Signature-result TTL in ms: a finite number, 0 or more, where `0` disables signature caching.
+   * Default 60_000. Any other value throws a `TypeError` naming the option.
+   */
   cacheTtl?: number;
-  /** Maximum cache entries. Default: 1000 */
+  /** Maximum cache entries: a whole number greater than 0. Default 1000. Any other value throws a `TypeError` naming the option. */
   maxCacheSize?: number;
   /**
    * How long, in milliseconds, the DID resolver, the signature verifier and the status list resolver may each take to answer: a number greater than 0 and at most
@@ -71,7 +75,10 @@ export class DelegationCredentialVerifier {
    */
   private cache: TtlCache<SignatureCheck>;
 
-  /** @throws TypeError when `dependencyTimeoutMs` is not a number of milliseconds it can wait. */
+  /**
+   * @throws TypeError when `dependencyTimeoutMs` is not a number of milliseconds it can wait, or
+   * `cacheTtl` or `maxCacheSize` is not one it can cache for.
+   */
   constructor(options?: DelegationCredentialVerifierOptions) {
     this.timeoutMs = dependencyTimeout(options?.dependencyTimeoutMs);
     this.didResolver = options?.didResolver;
@@ -79,8 +86,8 @@ export class DelegationCredentialVerifier {
     this.signatureVerifier = options?.signatureVerifier;
     this.cache = new TtlCache<SignatureCheck>({
       // `??`, not `||`: cacheTtl 0 means "no signature caching", not "the default".
-      ttlMs: options?.cacheTtl ?? 60_000,
-      maxEntries: options?.maxCacheSize ?? 1000,
+      ttlMs: cacheTtlOption(options?.cacheTtl, "cacheTtl") ?? 60_000,
+      maxEntries: cacheCapacityOption(options?.maxCacheSize, "maxCacheSize") ?? 1000,
     });
   }
 

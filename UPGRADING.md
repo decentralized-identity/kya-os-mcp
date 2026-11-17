@@ -57,6 +57,24 @@ An option left out keeps its default, and `withStatusCache` still requires `maxS
 Two values that used to turn a cache off now throw: a negative TTL, and a capacity of 0; set the TTL to `0` instead.
 A string or `null` is refused, not converted, so read an environment variable with a default, as `Number(process.env.STATUS_TTL_MS ?? 60_000)`.
 
+### A chain's credential verifier answers within the deadline
+
+`validateDelegationChain` now gives each call of its `verifier` `dependencyTimeoutMs` to answer, as it gives `resolveDelegationChain` and the `revocationChecker`.
+In `wrapWithDelegation` that verifier resolves each credential's issuer DID and reads its status, so the two together now get `delegation.dependencyTimeoutMs`, 5 seconds by default.
+A credential whose DID resolution and status read take longer than that between them is refused as `deadline_exceeded`, with the reason `Delegation "<id>" could not be verified: the credential verifier did not answer within 5 seconds`.
+Where a DID or status host is that slow, raise `delegation.dependencyTimeoutMs`.
+
+`validateDelegationChain` no longer throws for an answer it did not expect:
+
+| What the chain walk gets | Refused as |
+| --- | --- |
+| A `resolveDelegationChain` answer that is not an array, such as `undefined` | `runtime_error` |
+| A `verifier` that throws | `runtime_error`, or the code of the `RefusalError` it throws |
+| A credential whose `constraints.audience` is neither a string nor an array, such as `42` | `chain_invalid` |
+
+`wrapWithDelegation` refused each of these as `runtime_error` before, with the reason `Delegation credential could not be verified`.
+It refuses a credential whose issuer DID is of a method only an object's prototype holds, such as `did:constructor:x`, as `did_invalid`, as any method it does not serve, where it refused it as `did_unavailable`.
+
 ### A scope under a delegation that grants none
 
 A delegation that states no scopes, neither flat nor as CRISP matchers, grants no scope: `wrapWithDelegation` runs no tool for it.

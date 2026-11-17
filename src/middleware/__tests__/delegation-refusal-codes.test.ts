@@ -136,6 +136,10 @@ describe('a delegation the gate refuses', () => {
     ["whose issuer's key has an x that is no Ed25519 key", { didResolver: paddedKeys }, granted, 'did_invalid'],
     ['whose issuer is a did:key that does not decode', {}, grantedBy('did:key:zNotAKey'), 'did_invalid'],
     ['whose issuer is a DID of a method no resolver serves', {}, grantedBy('did:ion:EiAbc'), 'did_invalid'],
+    // Method names an object's prototype holds name no resolver either.
+    ['whose issuer is a did:constructor DID', {}, grantedBy('did:constructor:x'), 'did_invalid'],
+    ['whose issuer is a did:__proto__ DID', {}, grantedBy('did:__proto__:x'), 'did_invalid'],
+    ['whose audience is neither a DID nor a list', {}, (user, agent) => delegate(user, agent.did, { audience: 42 as unknown as string }), 'chain_invalid'],
     ['whose issuer is a did:web DID that names no URL', {}, grantedBy('did:web:issuer.example%40elsewhere.example'), 'did_invalid'],
     [
       'whose chain is not resolved in time',
@@ -155,6 +159,17 @@ describe('a delegation the gate refuses', () => {
     const stored = await built(rejected!);
     expect(validEvent(stored), JSON.stringify(validEvent.errors)).toBe(true);
     expect(logged?.[1]).toEqual({ code, transient: isTransientRefusal(code) });
+  });
+
+  it('is refused in the walk as runtime_error, transient, when its chain resolver answers undefined', async () => {
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const { body, rejected } = await presentedTo(
+      { resolveDelegationChain: async () => undefined as never },
+      async (user, agent) => delegate(agent, user.did, { parent: await granted(user, agent) }),
+    );
+    expect(body.reason).toBe('The chain resolver answered a value of type undefined, not a list of credentials');
+    expect(rejected?.authorization?.verificationCode).toBe('runtime_error');
+    expect(error.mock.calls.filter(([line]) => String(line).includes('Unexpected error'))).toEqual([]);
   });
 
   it('is refused as runtime_error, transient, when what it verified could not be described', async () => {

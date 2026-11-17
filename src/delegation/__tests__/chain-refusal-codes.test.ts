@@ -15,6 +15,7 @@ import {
   type DelegationCredential,
   type RefusalCode,
 } from '../index.js';
+import { RefusalError } from '../../utils/refusal.js';
 import { SERVER, baseDeps, chainOfThree, cred, resolving } from './helpers/chain-fixtures.js';
 
 /** A dependency that never answers. */
@@ -66,6 +67,18 @@ describe('a chain refused before any credential of it is verified', () => {
       true,
     ],
     ['whose resolver returns no credential', () => validateDelegationChain(leaf, resolving([])), 'chain_invalid', false],
+    [
+      'whose resolver answers undefined',
+      () => validateDelegationChain(leaf, chainDeps({ resolveDelegationChain: async () => undefined as never })),
+      'runtime_error',
+      true,
+    ],
+    [
+      'whose resolver answers what is not a list',
+      () => validateDelegationChain(leaf, chainDeps({ resolveDelegationChain: async () => ({ length: 1 }) as never })),
+      'runtime_error',
+      true,
+    ],
     [
       'whose resolver returns more values than maxChainLength',
       () => validateDelegationChain(leaf, chainDeps({ resolveDelegationChain: async () => [root, middle, leaf], maxChainLength: 2 })),
@@ -130,6 +143,20 @@ describe('a chain refused as its credentials are verified', () => {
     ['whose credential the verifier could not decide on', { verifier: refusingAt('root', { valid: false, reason: 'no DID', code: 'did_unavailable' }) }, 'did_unavailable', true],
     ['whose credential the verifier refuses with no code', { verifier: refusingAt('root', { valid: false, reason: 'no' }) }, 'delegation_invalid', false],
     ['whose credential the verifier answers what is not a verdict', { verifier: refusingAt('root', { valid: 'no' }) }, 'runtime_error', true],
+    ['whose credential verifier throws', { verifier: { verifyDelegationCredential: async () => { throw new Error('verifier down'); } } }, 'runtime_error', true],
+    [
+      'whose credential verifier throws a refusal of its own',
+      { verifier: { verifyDelegationCredential: async () => { throw new RefusalError('did_unavailable', 'issuer DID not resolved'); } } },
+      'did_unavailable',
+      true,
+    ],
+    ['whose credential verifier never answers', { verifier: { verifyDelegationCredential: never }, dependencyTimeoutMs: 20 }, 'deadline_exceeded', true],
+    ...([42, true, {}, { includes: 1 }] as const).map((audience): [string, Partial<ChainEnforcementDeps>, RefusalCode, boolean] => [
+      `whose credential states an audience of ${JSON.stringify(audience)}, neither a DID nor a list`,
+      { resolveDelegationChain: async () => [root, cred({ id: 'middle', issuerDid: 'did:agent', subjectDid: 'did:sub', parentId: 'root', scopes: ['read'], audience: audience as never })] },
+      'chain_invalid',
+      false,
+    ]),
     ['whose server is not in the audience of a credential', { serverDid: 'did:web:other.example' }, 'chain_invalid', false],
     [
       'whose re-delegation names no audience',

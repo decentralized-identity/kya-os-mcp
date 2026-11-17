@@ -1,0 +1,18 @@
+kind: Fixed
+body: |-
+    **`validateDelegationChain` refuses, rather than throws, on answers it
+    did not expect.** A `resolveDelegationChain` answer that is not an
+    array, such as `undefined`, is refused as `runtime_error`. A credential
+    verifier that throws is refused as `runtime_error`, or with the code of
+    the `RefusalError` it throws, and each verifier call now gets
+    `dependencyTimeoutMs` to answer, as the resolver and the revocation
+    checker do. A credential whose `constraints.audience` is neither a
+    string nor an array is refused as `chain_invalid`, where
+    `wrapWithDelegation` refused it as `runtime_error`. A DID whose method only an
+    object's prototype holds, such as `did:constructor:x`, no longer reaches
+    `Object.prototype` in the delegation gate's resolver or in
+    `RuntimeFetchProvider.resolveDID`, and the gate refuses it as
+    `did_invalid` where it refused it as `did_unavailable`. In
+    `wrapWithDelegation` a credential's DID resolution and status read now
+    share one `dependencyTimeoutMs`. See UPGRADING.md.
+time: 2026-11-16T22:54:39.402875-06:00

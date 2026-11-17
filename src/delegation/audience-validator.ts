@@ -7,18 +7,23 @@
 
 import type { DelegationRecord } from '../types/protocol.js';
 
+/**
+ * Whether `delegation`'s audience admits `serverDid`: it names none, it is that DID, or it is a list
+ * that holds it. An audience of any other kind, such as a number or an object, admits no server,
+ * and is never read as a list, so this does not throw for one.
+ */
 export function verifyDelegationAudience(
   delegation: DelegationRecord,
   serverDid: string
 ): boolean {
-  if (!delegation.constraints.audience) {
+  const audience: unknown = delegation.constraints.audience;
+  if (!audience) {
     return true;
   }
 
-  const audience = delegation.constraints.audience;
   if (typeof audience === 'string') {
     return audience === serverDid;
   }
 
-  return audience.includes(serverDid);
+  return Array.isArray(audience) && audience.includes(serverDid);
 }

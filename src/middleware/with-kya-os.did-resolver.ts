@@ -30,9 +30,16 @@ export function createGateDidResolver(resolvers: GateDidResolvers): DIDResolver 
   const { custom, configured, didKey, didWeb, dependencyTimeoutMs } = resolvers;
   const failures = new DidResolutionFailures();
 
+  /**
+   * The resolver `delegation.didResolvers` configures for `method`, when the registry holds one as
+   * its own: a name only an object's prototype holds, such as `constructor`, names none.
+   */
+  const configuredFor = (method: string | null): DIDResolver | undefined =>
+    method !== null && Object.hasOwn(configured, method) ? configured[method] : undefined;
+
   /** Whether a resolver other than the host's own serves `did`'s method, `method`, deadline or not. */
   const serves = (did: string, method: string | null): boolean =>
-    (method !== null && Object.hasOwn(configured, method)) ||
+    configuredFor(method) !== undefined ||
     did.startsWith("did:key:") ||
     (didWeb !== undefined && did.startsWith("did:web:"));
 
@@ -56,7 +63,7 @@ export function createGateDidResolver(resolvers: GateDidResolvers): DIDResolver 
       }
 
       const method = getDidMethod(did);
-      const configuredResolver = method && Date.now() < deadline ? configured[method] : undefined;
+      const configuredResolver = Date.now() < deadline ? configuredFor(method) : undefined;
       if (configuredResolver) {
         try {
           asked = configuredResolver;

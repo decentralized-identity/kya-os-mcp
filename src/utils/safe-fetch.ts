@@ -7,6 +7,8 @@
  * `FetchLike` ({ ok, status, json }) that enforces, fail-closed:
  *
  *   - https-only (no http:, file:, data:, …);
+ *   - no URL, first or redirected to, that includes credentials, which `fetch` refuses as well and
+ *     a request would send to the host it names;
  *   - the connection IP is a PUBLIC UNICAST address (RFC1918, loopback, link-local incl. the
  *     169.254.169.254 cloud-metadata endpoint, IPv6 ULA/link-local, NAT64/6to4/Teredo transition
  *     ranges are denied — see `./ip-classifier`). Each HOP is resolved ONCE and its connection is
@@ -38,6 +40,7 @@ import { pinnedTo, resolveChecked, UNTOLD, type CheckedAddresses, type LookupRef
 import { guardedNamer } from './operator-named.js';
 import { ReadFailureError } from './read-failure.js';
 import { followRedirects, MAX_REDIRECTS, type RedirectRefusals, type RedirectTarget } from './redirect-follower.js';
+import { includesCredentials } from './url.js';
 import {
   defaultLookup,
   fetchTransport,
@@ -75,7 +78,8 @@ const DEFAULT_MAX_RESPONSE_BYTES = OUTBOUND_READ_MAX_BYTES;
 
 /**
  * Parse the URL a read starts at and return its normalized href: https, or http where `named`, the
- * caller's `operatorNamed`, names it, since the operator then chose that URL as written. A redirect
+ * caller's `operatorNamed`, names it, since the operator then chose that URL as written, and with no
+ * credentials, which the runtime's `fetch` refuses and a request would send to the host. A redirect
  * target is https alone ({@link vetRedirectTarget}).
  */
 function assertReadableUrl(raw: string, named: (url: string) => boolean): string {
@@ -88,8 +92,12 @@ function assertReadableUrl(raw: string, named: (url: string) => boolean): string
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && named(url.href))) {
     throw new ReadFailureError('host_refused', `safe-fetch: only https is allowed (got "${url.protocol}")`, { beforeRequest: true });
   }
+  if (includesCredentials(url)) throw new ReadFailureError('host_refused', CREDENTIALS_REFUSED, { beforeRequest: true });
   return url.href;
 }
+
+/** SafeFetch's refusal of a URL that includes credentials, which never echoes them. */
+const CREDENTIALS_REFUSED = 'safe-fetch: refusing a URL that includes credentials';
 
 /** The production opt-in SafeFetch's refusals and its production guard name beside `development: true`. */
 const OWNED_ORIGINS = "list each origin you own in SafeFetch's allowOrigins";
@@ -136,12 +144,13 @@ const REDIRECT_REFUSALS: RedirectRefusals = {
 };
 
 /**
- * Refuse a redirect target the shared rule admits: any scheme but https, and any other origin. A
- * refusal names the origin redirected from, never the one the server chose to redirect to, which
- * goes to the log.
+ * Refuse a redirect target the shared rule admits: any scheme but https, a URL that includes
+ * credentials, and any other origin. A refusal names the origin redirected from, never the one the
+ * server chose to redirect to, which goes to the log.
  */
 function vetRedirectTarget({ target, from, crossOrigin }: RedirectTarget): void {
   if (target.protocol !== 'https:') throw nonHttpsTarget(target);
+  if (includesCredentials(target)) throw new ReadFailureError('host_refused', 'safe-fetch: redirect to a URL that includes credentials blocked');
   if (crossOrigin) {
     logger.warn(`[kya-os] safe-fetch: redirect from ${from.origin} to ${target.origin} blocked, as cross-origin`);
     throw new ReadFailureError('host_refused', `safe-fetch: cross-origin redirect from ${from.origin} blocked`);

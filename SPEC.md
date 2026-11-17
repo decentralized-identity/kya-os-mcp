@@ -368,6 +368,7 @@ It follows a redirect from its endpoint as a did:web read does, below, so a redi
 
 Every did:web read, by the delegation gate, `DidWebResolver`, `createDidWebResolver` or `RuntimeFetchProvider.resolveDID`, and every status-list read, by `CheqdStatusListResolver` or `RuntimeFetchProvider.fetchStatusList`, goes through one private-network rule, whatever `FetchProvider` it is given.
 Before any request, the rule refuses a URL that is not an absolute http or https URL.
+It refuses a URL that includes credentials, a user name or a password before its host, first or redirected, operator-named or not, as the runtime's `fetch` refuses one; `SafeFetch` refuses it too, and neither refusal echoes them.
 A status-list read also refuses an http URL, first or redirected, on a private host and under `allowPrivateNetworkHosts: true` too, since over http an on-path party can replay an older signed list from before a revocation (§6.6).
 It reads http only at an exact URL the operator's `statusListIssuers` binds, given to `RuntimeFetchProviderOptions`, on any host but never for a redirect, and from a private or local host under `development: true`, as a local deployment serves its lists.
 `createRevocationChecker`, which reads through `SafeFetch`, holds a list to the same rule: it reads http only at an exact URL its own `statusListIssuers` binds, on any host but never for a redirect.

@@ -1,8 +1,9 @@
 /**
  * The private-network rule for a read whose URL a counterparty named, such as a did:web DID or a
  * credential's status list. A URL that is not an absolute http or https URL is refused, and so is
- * one whose host is a non-public IP literal or a local name, with or without trailing dots, which a
- * resolver ignores, all before any request. An IP literal is classified as SafeFetch classifies a
+ * one that includes credentials, as the runtime's `fetch` refuses it, and one whose host is a
+ * non-public IP literal or a local name, with or without trailing dots, which a resolver ignores, all
+ * before any request. An IP literal is classified as SafeFetch classifies a
  * resolved address (`./ip-classifier`), so an IPv4-mapped, IPv4-translated or NAT64 form of a
  * private address is refused as that address is. Every redirect is followed by hand
  * (`./checked-redirects`), its target held to the same rule, so a runtime never carries the read on
@@ -34,6 +35,7 @@ import { PRODUCTION_PRIVATE_HOSTS } from './development-mode.js';
 import { hostForm } from './host-form.js';
 import { isBlockedAddress } from './ip-classifier.js';
 import { ReadFailureError } from './read-failure.js';
+import { includesCredentials } from './url.js';
 
 export type { PrivateNetworkTransport } from './fetch-port.js';
 
@@ -102,6 +104,7 @@ function ruleVerdict(url: string, admitsPrivate: AdmitsPrivate): { readonly admi
   if (target.protocol !== 'https:' && target.protocol !== 'http:') {
     return { named: `a ${describeValue(target.protocol)} URL`, privateHost: false };
   }
+  if (includesCredentials(target)) return { named: 'a URL that includes credentials', privateHost: false };
   if (isPrivateHost(target.hostname) && !admitsPrivate(target.href)) return { named: describeValue(target.host), privateHost: true };
   return { admitted: target.href };
 }
@@ -115,7 +118,8 @@ function ruleRefusal(url: string, admitsPrivate: AdmitsPrivate): RuleRefusal | u
 /**
  * How the rule names `url` when it refuses it, or `undefined` when it admits it: a URL that does
  * not parse as an absolute URL, which a runtime might resolve against a base of its own choosing; a
- * scheme other than http and https; and, unless `allowPrivateNetworkHosts` is true, a private host.
+ * scheme other than http and https; a URL that includes credentials; and, unless
+ * `allowPrivateNetworkHosts` is true, a private host.
  */
 export function privateNetworkRefusal(url: string, allowPrivateNetworkHosts = false): string | undefined {
   return ruleRefusal(url, () => allowPrivateNetworkHosts)?.named;

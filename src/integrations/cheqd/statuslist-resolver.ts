@@ -77,6 +77,7 @@ import { admittingPrivateHosts, type PrivateNetworkTransport } from '../../utils
 import { ed25519KeyBytes } from '../../utils/ed25519-public-key.js';
 import { RefusalError } from '../../utils/refusal.js';
 import { TtlCache } from '../../utils/ttl-cache.js';
+import { cacheTtlOption } from '../../utils/cache-options.js';
 
 export interface CheqdStatusListResolverOptions {
   /**
@@ -98,7 +99,10 @@ export interface CheqdStatusListResolverOptions {
   expectedIssuerDid: string;
   /** Inflates the gzip `encodedList` (same seam as `BitstringManager`). */
   decompressor: DecompressionFunction;
-  /** In-memory TTL for the fetched VERIFIED list; 0 disables. Default 10s. */
+  /**
+   * In-memory TTL, in ms, for the fetched VERIFIED list: a finite number, 0 or more, where 0
+   * disables. Default 10s. Any other value throws a `TypeError` naming the option.
+   */
   cacheTtlMs?: number;
   /**
    * How long, in milliseconds, the list read may take, and the resolution of the issuer DID after it: a number greater than 0 and at most
@@ -129,7 +133,7 @@ export class CheqdStatusListResolver implements StatusListResolver {
     this.opts = options;
     this.transport = development ? admittingPrivateHosts(options.fetchProvider) : options.fetchProvider;
     this.timeoutMs = dependencyTimeout(options.dependencyTimeoutMs);
-    this.cacheTtlMs = options.cacheTtlMs ?? 10_000;
+    this.cacheTtlMs = cacheTtlOption(options.cacheTtlMs, 'cacheTtlMs') ?? 10_000;
     // A single issuer realistically publishes a handful of lists; 16 entries
     // is generous without being unbounded.
     this.cache = new TtlCache<StatusList2021Credential>({

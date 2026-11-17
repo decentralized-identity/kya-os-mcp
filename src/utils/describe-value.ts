@@ -58,6 +58,15 @@ export function describeValue(value: unknown): string {
 }
 
 /**
+ * How the refusal of an option, such as `dependencyTimeoutMs` or a cache TTL, names the value it
+ * was given: a number as `String` writes it, and anything else as {@link describeValue} names it,
+ * after `a value`, as `a value "5000"` or `a value of type null`.
+ */
+export function describeOptionValue(value: unknown): string {
+  return typeof value === 'number' ? String(value) : `a value ${describeValue(value)}`;
+}
+
+/**
  * `text` as a JSON string. `JSON.stringify` escapes the C0 controls, a quote mark, a backslash and
  * a lone surrogate; the other characters a quote escapes ({@link isEscapedCharacter}) are escaped
  * here the same way, as `\uXXXX` for each UTF-16 code unit, so one outside the Basic Multilingual

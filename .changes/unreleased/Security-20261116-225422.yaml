@@ -1,0 +1,18 @@
+kind: Security
+body: |-
+    **A cache TTL that is not a finite number no longer keeps an answer for
+    ever.** `withStatusCache`, `DelegationCredentialVerifier`,
+    `CheqdStatusListResolver` and the middleware's
+    `delegation.verificationCache` read a TTL of `NaN`, as
+    `Number(process.env.UNSET)` gives, or `Infinity`, as never expiring, so
+    a "not revoked" verdict, a verified status list or a signature result
+    was served long after it changed, and a capacity of `NaN` never evicted.
+    The did:web and cheqd DID resolvers kept a document for ever under
+    `Infinity`. Each TTL must now be a finite number of milliseconds, 0 or
+    more, and each capacity a whole number greater than 0, or building the
+    verifier or resolver throws a `TypeError` naming the option, as
+    `dependencyTimeoutMs` does. An option left out keeps its default. A
+    negative TTL and a capacity of 0, which turned a cache off, now throw
+    too; set the TTL to 0. UPGRADING.md, "Cache TTL and size options are
+    checked when they are set", lists each option.
+time: 2026-11-16T22:54:22.124901-06:00

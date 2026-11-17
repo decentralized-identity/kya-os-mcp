@@ -10,7 +10,7 @@
  * silently, now scoped to status data only and signed off by name.
  *
  * Fail-closed is preserved: a resolver THROW is never cached (the next call
- * retries), nor is an answer that is not a boolean, and `maxStalenessMs <= 0` makes the wrapper a pass-through. The
+ * retries), nor is an answer that is not a boolean, and `maxStalenessMs: 0` makes the wrapper a pass-through. The
  * `context` naming the credential's issuer, and its chain's pinned root,
  * reaches the wrapped resolver unchanged and is part of the cache key. A call
  * that passes no context, as a wrapper written before the context existed
@@ -25,23 +25,32 @@ import { readRevoked } from '../utils/revocation-answer.js';
 import { carriedContext, carryingContext } from '../utils/status-check-carrier.js';
 import type { StatusListResolver } from './vc-verifier.types.js';
 import { TtlCache } from '../utils/ttl-cache.js';
+import { cacheCapacityOption, requiredCacheTtlOption } from '../utils/cache-options.js';
 import { describeValue } from '../utils/describe-value.js';
 import { RefusalError } from '../utils/refusal.js';
 
 export interface StatusCacheOptions {
-  /** Upper bound on served staleness, in ms — your declared revocation SLA. `<= 0` disables caching. */
+  /**
+   * Upper bound on served staleness, in ms, your declared revocation SLA: a finite number, 0 or
+   * more, where `0` disables caching. It has no default. Any other value throws a `TypeError` naming
+   * the option.
+   */
   maxStalenessMs: number;
-  /** Maximum cached entries (FIFO eviction). Default 1000. */
+  /**
+   * Maximum cached entries (FIFO eviction): a whole number greater than 0. Default 1000. Any other
+   * value throws a `TypeError` naming the option.
+   */
   maxEntries?: number;
 }
 
+/** @throws TypeError when `maxStalenessMs` or `maxEntries` is not one it can keep verdicts for. */
 export function withStatusCache(
   resolver: StatusListResolver,
   options: StatusCacheOptions,
 ): StatusListResolver {
   const cache = new TtlCache<boolean>({
-    ttlMs: options.maxStalenessMs,
-    maxEntries: options.maxEntries ?? 1000,
+    ttlMs: requiredCacheTtlOption(options.maxStalenessMs, 'maxStalenessMs'),
+    maxEntries: cacheCapacityOption(options.maxEntries, 'maxEntries') ?? 1000,
   });
 
   return {

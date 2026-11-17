@@ -26,6 +26,7 @@ import {
   admitParsedDidDocument, boundedDid, DID_RESOLUTION_ENVELOPE_READ, DidDocumentCache, type LoadedDidDocument,
 } from '../../delegation/did-resource-limits.js';
 import { fetchBoundedJson } from '../../utils/bounded-read.js';
+import { cacheTtlOption } from '../../utils/cache-options.js';
 import type { FetchPort } from '../../utils/fetch-port.js';
 import { admittingPrivateHosts, underPrivateNetworkRule } from '../../utils/private-network-rule.js';
 
@@ -41,6 +42,10 @@ export interface ParsedDidCheqd {
 
 export interface DidCheqdResolverOptions {
   resolverUrl: string;
+  /**
+   * How long a resolved document is cached, in milliseconds: a finite number, 0 or more. Default
+   * 300,000. Any other value throws a `TypeError` naming the option.
+   */
   cacheTtl?: number;
   /**
    * Headers for each request to the resolver, such as an API key. A redirect to an origin other
@@ -105,7 +110,7 @@ export class DidCheqdResolver implements DIDResolver {
   constructor(fetchProvider: FetchProvider, options: DidCheqdResolverOptions) {
     this.transport = underPrivateNetworkRule(admittingPrivateHosts(fetchProvider));
     this.resolverUrl = options.resolverUrl;
-    this.cacheTtl = options.cacheTtl ?? 300_000;
+    this.cacheTtl = cacheTtlOption(options.cacheTtl, 'cacheTtl') ?? 300_000;
     this.headers = options.headers;
     this.timeoutMs = dependencyTimeout(options.dependencyTimeoutMs);
     this.cache = new DidDocumentCache(this.timeoutMs);

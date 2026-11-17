@@ -40,6 +40,23 @@ A resolver that redirects more than 3 times, or from https to http, now resolves
 A custom `FetchProvider` given to the resolver must pass `redirect` on and return a response that names the URL asked for, or none, as "A custom `FetchProvider` whose response names a URL other than the one asked for" says below.
 In a browser, which hides where a redirect leads, a resolver that redirects resolves no document.
 
+### Cache TTL and size options are checked when they are set
+
+Each option that bounds a cache a verifier or resolver keeps is now checked where that verifier or resolver is built, as `dependencyTimeoutMs` is, and a value it cannot keep entries by throws a `TypeError` naming the option.
+
+| Option | Must be |
+| --- | --- |
+| `maxStalenessMs` of `withStatusCache`, `cacheTtl` of `DelegationCredentialVerifier`, `createDelegationVerifier`, `DidWebResolver`, `createDidWebResolver`, `DidCheqdResolver`, `createDidCheqdResolver` and `cheqdResolver`, `cacheTtlMs` of `CheqdStatusListResolver`, and `delegation.verificationCache.ttlMs` of `withKyaOs` and `createKyaOsMiddleware` | A finite number of milliseconds, 0 or more, where 0 keeps nothing. |
+| `maxEntries` of `withStatusCache`, `maxCacheSize` of `DelegationCredentialVerifier` and `createDelegationVerifier`, and `delegation.verificationCache.maxEntries` of `withKyaOs` and `createKyaOsMiddleware` | A whole number greater than 0. |
+
+On 1.23.0 a TTL that was not a finite number, such as the `NaN` that `Number(process.env.UNSET)` gives, or `Infinity`, never expired.
+A "not revoked" verdict in `withStatusCache`, a verified list in `CheqdStatusListResolver` and a signature result in `DelegationCredentialVerifier` were then served for as long as the process ran, and a capacity of `NaN` never evicted.
+The did:web and cheqd DID resolvers kept a document for ever under `Infinity`, and cached nothing under `NaN`.
+The error reads, for example, `[kya-os] maxStalenessMs must be a finite number of milliseconds, 0 or more (got NaN)`.
+An option left out keeps its default, and `withStatusCache` still requires `maxStalenessMs`, which has none.
+Two values that used to turn a cache off now throw: a negative TTL, and a capacity of 0; set the TTL to `0` instead.
+A string or `null` is refused, not converted, so read an environment variable with a default, as `Number(process.env.STATUS_TTL_MS ?? 60_000)`.
+
 ## From 1.22.0
 
 ### Do I need to change anything?

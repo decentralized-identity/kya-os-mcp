@@ -11,7 +11,7 @@ import { didPattern, whyNotDid } from '../utils/did-syntax.js';
 export const CARD_DID_METHODS = ['key', 'web'] as const;
 
 /** What a refusal of {@link Did} says should the DID rule name no reason, which it names for every value the pattern refuses. */
-const NOT_A_CARD_DID = `is not a DID of a method a Card takes: ${CARD_DID_METHODS.map((method) => `did:${method}`).join(', ')}`;
+const NOT_A_DID = 'is not a DID';
 
 /**
  * A DID of a method a Card takes ({@link CARD_DID_METHODS}), as W3C DID Core §3.1 writes one, so never
@@ -21,7 +21,7 @@ const NOT_A_CARD_DID = `is not a DID of a method a Card takes: ${CARD_DID_METHOD
  * the value alone and so may be shown to whoever presented it.
  */
 export const Did = z.string().regex(didPattern(CARD_DID_METHODS), {
-  error: (issue) => whyNotDid(issue.input, CARD_DID_METHODS) ?? NOT_A_CARD_DID,
+  error: (issue) => whyNotDid(issue.input, CARD_DID_METHODS) ?? NOT_A_DID,
 });
 
 export const EntityTypeSchema = z.enum(['mcp', 'agent', 'client', 'verifier', 'human']);

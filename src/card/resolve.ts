@@ -26,6 +26,7 @@
 
 import { didWebToUrl, parseDidWeb } from '../delegation/did-web-url.js';
 import { describeValue } from '../utils/describe-value.js';
+import { whyNotDid } from '../utils/did-syntax.js';
 import { isRecord } from '../utils/guards.js';
 import type { SafeFetch } from '../utils/safe-fetch.js';
 import { EntityCardSchema, type EntityCard } from './schema.js';
@@ -71,6 +72,8 @@ export interface ResolveCardDeps {
  * steps (`did.json` → `KyaOsEntityCard` service → `card.json`); the reference forms short-cut
  * to the `card.json` URL (or an inline summary). `did:key` has no domain anchor, so a
  * `did:key` card must be supplied directly (e.g. via `parseCard`), never resolved.
+ * A `did:web` that is not a DID as DID Core writes one, such as a key id with a `#` fragment, is
+ * refused with the reason `whyNotDid` gives, before anything is fetched for it.
  *
  * THROW CONTRACT (fail-closed — deliberately UNLIKE the DID-METHOD resolvers, which return
  * null so a failed method can be retried): every failure path REJECTS with a reasoned `Error`
@@ -102,8 +105,18 @@ async function resolveDidWeb(did: string, fetch: SafeFetch): Promise<EntityCard>
       `resolveCard: only did:web is resolvable (got "${did}"); supply a did:key card directly`,
     );
   }
+  refuseMalformedDidWeb(did);
   const didDoc = await fetchJson(didWebToUrl(did) ?? namesNoUrl('resolveCard', did), fetch);
   return fetchCard(cardEndpointFromDidDoc(didDoc, did), fetch, did);
+}
+
+/**
+ * Refuses `did`, a value that starts `did:web:`, when it is not a DID as DID Core writes one, such
+ * as a DID URL, with the reason {@link whyNotDid} gives, so nothing is fetched for it.
+ */
+function refuseMalformedDidWeb(did: string): void {
+  const reason = whyNotDid(did, ['web']);
+  if (reason !== undefined) throw new Error(`resolveCard: ${describeValue(did)} ${reason}`);
 }
 
 /**
@@ -140,7 +153,10 @@ async function resolveInlineSummary(entry: unknown, fetch: SafeFetch): Promise<E
   if (typeof id !== 'string') {
     throw new Error(`resolveCard: inline "${KYA_OS_CARD_META_KEY}" summary has no string id (DID)`);
   }
-  if (id.startsWith('did:web:')) return fetchCard(cardUrlOf(id, 'resolveCard'), fetch, id);
+  if (id.startsWith('did:web:')) {
+    refuseMalformedDidWeb(id);
+    return fetchCard(cardUrlOf(id, 'resolveCard'), fetch, id);
+  }
   return parseCard(entry);
 }
 

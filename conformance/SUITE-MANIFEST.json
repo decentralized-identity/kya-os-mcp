@@ -1,23 +1,23 @@
 {
-  "suiteVersion": "1.5.0",
-  "vectorSetHash": "sha256:7f5316a36df057546639b15e141289b0d11f1ffcb6522b7de6567a9aa6ad06fa",
-  "vectorCount": 140,
+  "suiteVersion": "1.6.0",
+  "vectorSetHash": "sha256:d1674e2b666452fd0fd1bb70f6f9024927e5feebcfc72e4ce50e0af6be17a0e6",
+  "vectorCount": 141,
   "files": [
-    ["audit-integrity.json", "6cf2bad45de4cfb9c64a49d1285a95a8babf14a2242fa72273ec71ee3e0257a2"],
-    ["card-proof.json", "f0d4e9e7949890d86dc1f38db512dc0808fe19233ac455dcafe925c510b8291a"],
-    ["delegation-chain-key-relationship.json", "f07743db2530c4a2f857b931ec5e3b60d631c12bc98f8ee6b71423e213758a8b"],
-    ["delegation-chain.json", "9c8a36f0cef853cc4783197d7b27fa6aaafd93ce94c5fde50f7d153dabc4c898"],
-    ["did-key-resolution.json", "fc36ab17fc1562d6ae3865bf613463d43ffb010e4cf6345f2ba0e5dd841f4984"],
-    ["did-web-resolution.json", "1d48b0f38399b587879051c51b5930429b971341f694ba62b574edea7663487a"],
-    ["entity-card.json", "00a8a3235cf2997831f043c2385f8577ead776e9fc2b8ce369d20731496a79eb"],
-    ["negotiation.json", "dbc001b704968520d374ac87a9e33c36daa9dba48d1123825c4bca05bfade485"],
-    ["signed-proof.json", "9eb99aba5708243f59164244959f39035832e94cfa1c3edfd2cb3986e43eb45b"],
-    ["status-list-authority.json", "3213ed4d78dbbec8fdd0c4b3352f0bb48176cb9ba65d5f935789243096d370f8"],
-    ["status-list-key-relationship.json", "8d630e2c3f471bed484e9296f887801d5683c41efd4a3aae4938d5897c91afa9"],
-    ["status-list.json", "c1c3f13079ac9250088ab94cdaab716c6376bed0d63c452e16d2a26031e3c39a"]
+    ["audit-integrity.json", "a37ef60a8ea4d1651becec04f05837ef24ae0a20707f981ef9bee54aef5d4433"],
+    ["card-proof.json", "a69d22d688c0cbdbcdfa4d7b4916ed04869113ea87dbf9838a4075e249043a66"],
+    ["delegation-chain-key-relationship.json", "ac9a5d787105648d19b6f102ff3f4b3b583a78bb54665c03f062e7dca5cea0b8"],
+    ["delegation-chain.json", "636d85b5eec805285e195d072d3e0ed304ac0f595daa043cc6cce09b0cd9bb44"],
+    ["did-key-resolution.json", "618dc34dd2253db60df57a3578c4887f40f05e74c2d7a886f94eec7d33c8d694"],
+    ["did-web-resolution.json", "c03949d3642770e15828ce3506ca186286f7cd4178349799494041812ac0a6f9"],
+    ["entity-card.json", "7e51012b2d90f4aeb62553ad44c6d981d2512a957b22fe44f5f4d66308ea0bb6"],
+    ["negotiation.json", "df6d3e8406740c7bb1c82a05879d8848973c49c8c95cca566dc99d37910e9429"],
+    ["signed-proof.json", "0da21499e51d0d1e2e73c82002fb8da6191b8b1562d3be70815ea673f45caf01"],
+    ["status-list-authority.json", "d67e81a77b120206101914afce3953963fbff9e3713e974709dce8da756e9248"],
+    ["status-list-key-relationship.json", "31073cbea5d09590f104d8cb7890212749f0c6c0e0d62e9dfde168c99b879d29"],
+    ["status-list.json", "e868f653e86651912b31d6313acb26b618bab9e04d054818c272544ff5ccb8f7"]
   ],
   "pinnedAt": {
     "package": "@kya-os/mcp",
-    "packageVersion": "1.22.0"
+    "packageVersion": "1.23.0"
   }
 }

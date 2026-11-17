@@ -57,6 +57,22 @@ An option left out keeps its default, and `withStatusCache` still requires `maxS
 Two values that used to turn a cache off now throw: a negative TTL, and a capacity of 0; set the TTL to `0` instead.
 A string or `null` is refused, not converted, so read an environment variable with a default, as `Number(process.env.STATUS_TTL_MS ?? 60_000)`.
 
+### A scope under a delegation that grants none
+
+A delegation that states no scopes, neither flat nor as CRISP matchers, grants no scope: `wrapWithDelegation` runs no tool for it.
+A re-delegation under it was still accepted with any scope, so a delegate holding an identity-only or audience-only grant from a trusted root could sign itself any scope, and the gate ran the tool.
+Such a re-delegation is now refused as `chain_invalid`, at any hop of a chain, with the reason `Delegation <child> widens scopes beyond parent <parent>, which grants no scope`.
+`wrapWithDelegation` answers it as `delegation_invalid`, and `validateDelegationChain` and `validateScopeAttenuation` refuse it the same way.
+A re-delegation that states no scope either is still accepted, so a chain used only for identity or audience keeps validating, and a tool still needs a scope to run.
+One whose scope fields are not lists is refused, since it cannot be shown to grant nothing.
+If a chain relied on the old reading, have the root issuer grant the scopes its re-delegations need.
+
+### Conformance suite 1.6.0
+
+The suite adds `delegation-chain/scopeless-parent-widening`, a re-delegation that states a scope under a parent that states none, which must be refused, and has 141 vectors.
+`delegation-chain.json` is generated whole by one run, its earlier vectors signed again under that run's keys; the other 11 vector files change only their `version`.
+`delegation-chain/tampered-signature` now changes the first character of the signature, since a change to the last can decode to the same signature.
+
 ## From 1.22.0
 
 ### Do I need to change anything?

@@ -11,25 +11,20 @@
  * @see https://w3c-ccg.github.io/did-method-web/
  */
 
-import type { FetchProvider, Identity } from '../providers/base.js';
-import type { DIDResolver, DIDDocument, VerificationMethod } from './vc-verifier.js';
+import type { FetchProvider } from '../providers/base.js';
+import type { DIDResolver, DIDDocument, DidResolutionFailure } from './vc-verifier.js';
 import { logger } from '../logging/index.js';
-import { base58Encode } from '../utils/base58.js';
-import { base64ToBytes } from '../utils/base64.js';
-import { publicKeyToJwk } from './did-key-resolver.js';
 import { hasIdTypeAndController } from './verification-method-shape.js';
 
 import { admitParsedDidDocument, boundedDid, DidDocumentCache, type LoadedDidDocument } from './did-resource-limits.js';
 import { dependencyTimeout } from '../utils/deadline.js';
+import { developmentMode } from '../utils/development-mode.js';
+import { admittingPrivateHosts, type PrivateNetworkTransport } from '../utils/private-network-rule.js';
 import { fetchDidJson } from './read-did-json.js';
+import { didWebToUrl, isDidWeb } from './did-web-url.js';
+import { DidResolutionFailures, invalidDid, invalidDocument, readFailureOf } from './did-resolution-failure.js';
 
-/**
- * Parsed components of a did:web DID
- */
-interface ParsedDidWeb {
-  domain: string;
-  path: string[];
-}
+export { didWebToUrl, isDidWeb, parseDidWeb } from './did-web-url.js';
 
 /**
  * Whether a document the walk admitted, an object whose `id` is a DID, states its
@@ -44,116 +39,8 @@ function hasWellFormedMethods(document: DIDDocument): boolean {
   );
 }
 
-/**
- * Check if a DID is a did:web DID
- *
- * @param did - The DID to check
- * @returns true if it's a did:web DID
- */
-export function isDidWeb(did: string): boolean {
-  return did.startsWith('did:web:');
-}
-
-/**
- * Decode and validate the host component of a did:web DID. It is
- * percent-decoded whole, as before, so a port (`%3A`), a bracketed IPv6
- * literal and an internationalized name still resolve. What it decodes to
- * must still be a host and nothing more: `@`, `/`, `\`, `?` or `#` would let
- * it supply userinfo, a path, a query or a fragment and fetch from a host or
- * resource other than the one the DID names, and so would whitespace, a
- * control character, or a `:` beyond one port separator (a bracketed IPv6
- * literal keeps its own colons). Returns the host with its optional `:port`,
- * or `null`.
- */
-function parseDidWebHost(label: string): string | null {
-  let host: string;
-  try {
-    host = decodeURIComponent(label);
-  } catch {
-    return null;
-  }
-  if (host.length === 0 || /[@/\\?#\s\p{Cc}]/u.test(host)) {
-    return null;
-  }
-  const afterLiteral = host.startsWith('[') ? host.slice(host.indexOf(']') + 1) : host;
-  return afterLiteral.split(':').length <= 2 ? host : null;
-}
-
-/**
- * Parse a did:web DID into its components
- *
- * @param did - The did:web DID to parse
- * @returns Parsed components or null if invalid
- */
-export function parseDidWeb(did: string): ParsedDidWeb | null {
-  if (!isDidWeb(did)) {
-    return null;
-  }
-
-  // Remove the 'did:web:' prefix
-  const remainder = did.slice(8);
-
-  if (remainder.length === 0) {
-    return null;
-  }
-
-  // Split by ':' to get domain and path components
-  const parts = remainder.split(':');
-
-  const domain = parseDidWebHost(parts[0]!);
-  if (domain === null) {
-    return null;
-  }
-
-  // Remaining parts form the path. Each is one segment: a decoded separator
-  // or dot-segment would move the fetch to a different resource.
-  let path: string[];
-  try {
-    path = parts.slice(1).map((p) => decodeURIComponent(p));
-  } catch {
-    return null;
-  }
-  const isSegment = (segment: string): boolean =>
-    segment !== '' && segment !== '.' && segment !== '..' && !/[/\\?#]/.test(segment);
-  if (!path.every(isSegment)) {
-    return null;
-  }
-
-  return { domain, path };
-}
-
-/**
- * Convert a did:web DID to its resolution URL
- *
- * did:web:example.com → https://example.com/.well-known/did.json
- * did:web:example.com:path:to:doc → https://example.com/path/to/doc/did.json
- *
- * @param did - The did:web DID
- * @returns The resolution URL or null if invalid
- */
-export function didWebToUrl(did: string): string | null {
-  const parsed = parseDidWeb(did);
-
-  if (!parsed) {
-    return null;
-  }
-
-  const { domain, path } = parsed;
-
-  // Build the URL
-  // Note: did:web specification requires HTTPS
-  let url = `https://${domain}`;
-
-  if (path.length === 0) {
-    // Root domain: use /.well-known/did.json
-    url += '/.well-known/did.json';
-  } else {
-    // Path-based: use /path/to/resource/did.json
-    url += '/' + path.join('/') + '/did.json';
-  }
-
-  return url;
-}
+/** Why the did:web resolver finds no document for a did:web DID whose host and path make no URL. */
+const UNADDRESSABLE_DID_WEB = 'the DID is not a did:web DID whose host and path make a URL';
 
 /** Options of {@link DidWebResolver} and {@link createDidWebResolver}. */
 export interface DidWebResolverOptions {
@@ -164,19 +51,30 @@ export interface DidWebResolverOptions {
    * 2,147,483,647. Default 5,000. Any other value throws a `TypeError` naming the option.
    */
   dependencyTimeoutMs?: number;
+  /**
+   * Read documents on private and local hosts, such as a `*.localhost` name in a local demo, as a
+   * provider with `allowPrivateNetworkHosts: true` does, whatever the provider. Nothing else
+   * changes: the scheme rule, checked redirects, byte caps and deadlines all hold. For development
+   * only: while `NODE_ENV` is `production` it throws when the resolver is built, and it warns once
+   * per process. A production deployment that reads intranet hosts gives its fetch provider
+   * `allowPrivateNetworkHosts: true` instead. Any value but a boolean throws a `TypeError`.
+   */
+  development?: boolean;
 }
 
 /**
  * DID:web resolver implementation
  */
 export class DidWebResolver implements DIDResolver {
-  private fetchProvider: Pick<FetchProvider, 'fetch' | 'allowPrivateNetworkHosts'>;
+  private fetchProvider: PrivateNetworkTransport;
   private cache: DidDocumentCache;
   private cacheTtl: number;
   private readonly timeoutMs: number;
+  private readonly failures = new DidResolutionFailures();
 
   constructor(fetchProvider: Pick<FetchProvider, 'fetch' | 'allowPrivateNetworkHosts'>, options?: DidWebResolverOptions) {
-    this.fetchProvider = fetchProvider;
+    const development = developmentMode(options?.development, 'DidWebResolverOptions.development');
+    this.fetchProvider = development ? admittingPrivateHosts(fetchProvider) : fetchProvider;
     this.timeoutMs = dependencyTimeout(options?.dependencyTimeoutMs);
     this.cache = new DidDocumentCache(this.timeoutMs);
     this.cacheTtl = options?.cacheTtl ?? 300_000; // 5 minutes default
@@ -194,16 +92,27 @@ export class DidWebResolver implements DIDResolver {
       return null;
     }
 
-    // Convert to URL
+    // Convert to URL. A DID that names none can never be resolved, so it is a verdict, never a retry.
     const url = didWebToUrl(did);
     if (!url) {
       logger.warn(`[DidWebResolver] Invalid did:web format: ${did}`);
-      return null;
+      return this.failed(did, invalidDid(UNADDRESSABLE_DID_WEB));
     }
 
     // A cached document is frozen and was walked when it was fetched; concurrent
     // resolutions of one DID share one fetch.
     return this.cache.resolve(did, this.cacheTtl, () => this.fetchDocument(did, url));
+  }
+
+  /**
+   * Why the last read of `did`'s document found none: its host refused, its deadline passed, its
+   * host unavailable, its document over the byte cap, or its document invalid; or the DID names no
+   * URL, which is `invalid_document` too. A DID of another method records nothing, so a resolver
+   * that composes this one with others reports the failure of the one that serves the DID. `undefined` once a read of it has found one, and for
+   * a DID this resolver never read.
+   */
+  lastFailure(did: string): DidResolutionFailure | undefined {
+    return this.failures.get(did);
   }
 
   /** Fetch, measure, freeze and check the document `did` names at `url`, or `null`. */
@@ -213,28 +122,35 @@ export class DidWebResolver implements DIDResolver {
       const measure = admitParsedDidDocument(json);
       if (!measure.ok) {
         logger.warn(`[DidWebResolver] DID Document from ${url} refused: ${measure.reason}`);
-        return null;
+        return this.failed(did, invalidDocument(url, `is refused: ${measure.reason}`));
       }
 
       const { document } = measure;
       if (!hasWellFormedMethods(document)) {
         logger.warn(`[DidWebResolver] Invalid DID Document structure from ${url}`);
-        return null;
+        return this.failed(did, invalidDocument(url, 'has a verification method without an id, a type and a controller'));
       }
 
       // Verify the id matches the DID
       if (document.id !== did) {
         logger.warn(`[DidWebResolver] DID Document id mismatch: expected ${did}, got ${document.id}`);
-        return null;
+        return this.failed(did, invalidDocument(url, 'names another DID as its id'));
       }
 
+      this.failures.clear(did);
       return { document, bytes: measure.bytes };
     } catch (error) {
       logger.warn(
         `[DidWebResolver] Error resolving ${did}: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
-      return null;
+      return this.failed(did, readFailureOf(error, url, this.timeoutMs));
     }
+  }
+
+  /** Record `failure` as the last for `did`, and find no document. */
+  private failed(did: string, failure: DidResolutionFailure): null {
+    this.failures.record(did, failure);
+    return null;
   }
 
   /**
@@ -256,7 +172,7 @@ export class DidWebResolver implements DIDResolver {
  * Create a did:web resolver with the given fetch provider
  *
  * @param fetchProvider - Provider for making HTTP requests, read through the private-network rule
- *   unless it has `allowPrivateNetworkHosts: true`
+ *   unless it has `allowPrivateNetworkHosts: true` or `options.development` is true
  * @param options - Optional configuration
  * @returns DIDResolver implementation for did:web
  */
@@ -267,188 +183,4 @@ export function createDidWebResolver(
   return new DidWebResolver(fetchProvider, options);
 }
 
-/** Ed25519 multicodec prefix (0xed 0x01) used for `publicKeyMultibase`. */
-const ED25519_MULTICODEC_PREFIX = new Uint8Array([0xed, 0x01]);
-
-/**
- * Default JSON-LD contexts for an Ed25519-keyed did:web Document.
- * `did/v1` is required by DID Core; `ed25519-2020/v1` defines the
- * `Ed25519VerificationKey2020` type emitted below.
- */
-const DEFAULT_DID_WEB_CONTEXTS: readonly string[] = [
-  'https://www.w3.org/ns/did/v1',
-  'https://w3id.org/security/suites/ed25519-2020/v1',
-];
-
-/**
- * Options for {@link buildDidWebDocument}.
- */
-export interface BuildDidWebDocumentOptions {
-  /**
-   * Additional JSON-LD contexts appended after the defaults
-   * (`did/v1`, `ed25519-2020/v1`). Use to declare credential or
-   * service contexts the controller publishes alongside its keys.
-   */
-  additionalContexts?: readonly string[];
-  /**
-   * Related DIDs intentionally associated with this `did:web` subject.
-   * For `did:cheqd` linkage, publish the cheqd DID here and verify the
-   * reciprocal reference on the cheqd DID Document.
-   */
-  alsoKnownAs?: readonly string[];
-}
-
-/**
- * Build the DID Document a did:web controller serves at its
- * resolution URL (see {@link didWebToUrl}).
- *
- * Accepts one identity, or an array of them — one per key the subject
- * controls (e.g. a key per device). Each becomes an Ed25519 verification
- * method derived from its `publicKey` (base64-encoded raw bytes — the
- * {@link Identity} convention), emitting both `publicKeyJwk` and
- * `publicKeyMultibase` for cross-format interop. All keys share the one
- * controller DID and each carries its own `kid` fragment, so a verifier can
- * select the signing key by `kid` — the basis for multi-device identity: a
- * new device adds a method, a lost one is dropped, and every other key is
- * untouched.
- *
- * Every method is published in both `authentication` and `assertionMethod`,
- * matching the {@link createDidKeyResolver} output and the most common
- * verifier expectations.
- *
- * The function is purely synchronous and performs no I/O. Hosts publish the
- * returned object verbatim (e.g. as the body of a `/.well-known/did.json`
- * route).
- *
- * @param identity - Subject identity, or an array of identities that all
- *   share one `did:web:` DID. Each `kid` must reference that DID
- *   (`<did>#<fragment>`) and be unique across the set.
- * @param options - Optional context extensions.
- * @returns DID Document satisfying the W3C DID Core data model.
- * @throws Error when the set is empty, when the DID is not a `did:web:` DID,
- *   when identities disagree on the DID, when a `kid` does not reference the
- *   DID or collides with another, or when a `publicKey` is not a valid base64
- *   string of the expected length.
- *
- * @example
- * ```typescript
- * const document = buildDidWebDocument({
- *   did: 'did:web:example.com:agents:bot1',
- *   kid: 'did:web:example.com:agents:bot1#keys-1',
- *   publicKey: agent.publicKey, // base64-encoded Ed25519
- *   createdAt: new Date().toISOString(),
- * });
- * // Serve `document` at https://example.com/agents/bot1/did.json
- * ```
- */
-export function buildDidWebDocument(
-  identity: Identity | Identity[],
-  options?: BuildDidWebDocumentOptions
-): DIDDocument {
-  const identities = Array.isArray(identity) ? identity : [identity];
-
-  const first = identities[0];
-  if (!first) {
-    throw new Error('buildDidWebDocument: at least one identity is required');
-  }
-
-  const did = first.did;
-  if (!isDidWeb(did)) {
-    throw new Error(
-      `buildDidWebDocument: identity.did must be a did:web DID (got "${did}")`
-    );
-  }
-
-  const verificationMethod = identities.map((id) =>
-    toVerificationMethod(id, did)
-  );
-
-  // Every device key needs a distinct fragment; duplicate kids would produce
-  // two verification methods with the same id — an ambiguous, malformed doc.
-  const kids = verificationMethod.map((vm) => vm.id);
-  if (new Set(kids).size !== kids.length) {
-    throw new Error(
-      'buildDidWebDocument: every key needs a unique verification-method id (kid); got a duplicate'
-    );
-  }
-
-  const contexts = options?.additionalContexts?.length
-    ? [...DEFAULT_DID_WEB_CONTEXTS, ...options.additionalContexts]
-    : [...DEFAULT_DID_WEB_CONTEXTS];
-
-  return {
-    '@context': contexts,
-    id: did,
-    ...(options?.alsoKnownAs?.length ? { alsoKnownAs: [...options.alsoKnownAs] } : {}),
-    verificationMethod,
-    authentication: kids,
-    assertionMethod: kids,
-  };
-}
-
-/**
- * Build one Ed25519 verification method from a single device key, emitting
- * both `publicKeyJwk` and `publicKeyMultibase` for cross-format interop.
- *
- * Enforces the two invariants a multi-key document depends on: the key must
- * belong to `expectedDid` (a document must never mix keys from different DIDs),
- * and its `kid` must be a fragment of that one controller DID.
- */
-function toVerificationMethod(
-  identity: Identity,
-  expectedDid: string
-): VerificationMethod {
-  if (identity.did !== expectedDid) {
-    throw new Error(
-      `buildDidWebDocument: all identities must share one DID; got "${identity.did}" alongside "${expectedDid}"`
-    );
-  }
-  if (!identity.kid.startsWith(`${expectedDid}#`)) {
-    throw new Error(
-      `buildDidWebDocument: identity.kid "${identity.kid}" does not reference identity.did "${expectedDid}"`
-    );
-  }
-
-  const publicKeyBytes = decodePublicKey(identity.publicKey);
-  return {
-    id: identity.kid,
-    type: 'Ed25519VerificationKey2020',
-    controller: expectedDid,
-    publicKeyJwk: publicKeyToJwk(publicKeyBytes),
-    publicKeyMultibase: encodeEd25519Multibase(publicKeyBytes),
-  };
-}
-
-/**
- * Decode a base64-encoded Ed25519 public key to raw bytes.
- *
- * The {@link Identity} contract documents `publicKey` as base64 of the
- * 32-byte Ed25519 public key. We accept that length only — anything
- * else is a programming error and surfaces as a thrown construction
- * exception (per the repository error contract: construction throws,
- * verification/resolution returns).
- */
-function decodePublicKey(publicKeyBase64: string): Uint8Array {
-  const bytes = base64ToBytes(publicKeyBase64);
-  if (bytes.length !== 32) {
-    throw new Error(
-      `buildDidWebDocument: expected 32-byte Ed25519 public key, got ${bytes.length} bytes after base64 decode`
-    );
-  }
-  return bytes;
-}
-
-/**
- * Encode raw Ed25519 public key bytes as `publicKeyMultibase`
- * (multicodec-tagged, base58btc-encoded, `z`-prefixed). Matches the
- * encoding used by {@link createDidKeyResolver} for the equivalent
- * field on did:key documents.
- */
-function encodeEd25519Multibase(publicKeyBytes: Uint8Array): string {
-  const multicodec = new Uint8Array(
-    ED25519_MULTICODEC_PREFIX.length + publicKeyBytes.length
-  );
-  multicodec.set(ED25519_MULTICODEC_PREFIX);
-  multicodec.set(publicKeyBytes, ED25519_MULTICODEC_PREFIX.length);
-  return `z${base58Encode(multicodec)}`;
-}
+export { buildDidWebDocument, type BuildDidWebDocumentOptions } from './did-web-document.js';

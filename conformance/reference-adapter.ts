@@ -23,6 +23,7 @@ import {
   type CredentialStatus,
   acceptEntrySize,
   acceptStatusList,
+  RefusalError,
   statusListExpectationFor,
   type DelegationCredential,
   type StatusCheckContext,
@@ -253,19 +254,19 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
             | StatusList2021Credential
             | undefined;
           if (!list) {
-            throw new Error(`status list not found: ${s.statusListCredential}`);
+            throw new RefusalError('status_unavailable', `status list not found: ${s.statusListCredential}`);
           }
           // One bit is read per entry, so the shared rule refuses an entry of any other size.
           const size = acceptEntrySize(s.statusSize);
           if (!size.valid) {
-            throw new Error(size.reason);
+            throw new RefusalError('delegation_malformed', size.reason);
           }
           const verdict = acceptStatusList(
             list,
             statusListExpectationFor(s, { ...context, ...pinnedRoot }, input.statusListIssuers),
           );
           if (!verdict.valid) {
-            throw new Error(verdict.reason);
+            throw new RefusalError('status_signer_untrusted', verdict.reason);
           }
           const listProof = await verifySignature(
             list as unknown as DelegationCredential,
@@ -273,7 +274,8 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
             signatureVerifier,
           );
           if (!listProof.valid) {
-            throw new Error(
+            throw new RefusalError(
+              'status_signer_untrusted',
               `status list ${s.statusListCredential} proof rejected: ${listProof.reason ?? 'invalid'}`,
             );
           }

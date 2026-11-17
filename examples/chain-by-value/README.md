@@ -57,9 +57,10 @@ const delegationGuard = requireDelegation({
 });
 
 const proof = await proofGuard(request, meta);
-if (!proof.ok) return proof;
+if (!proof.ok) return { status: proof.status, error: proof.error };
 const authority = await delegationGuard({ meta, proofDid: proof.did, action: request.params.name });
-if (!authority.ok) return authority;
+// refusalCode and transient say why, for your logs; the client needs only the status and the error.
+if (!authority.ok) return { status: authority.status, error: authority.error };
 // authority.responsibleParty is the root issuer, recomputed from the chain.
 ```
 

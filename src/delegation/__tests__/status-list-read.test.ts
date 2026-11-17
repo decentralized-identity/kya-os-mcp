@@ -7,6 +7,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CheqdStatusListResolver } from '../../integrations/cheqd/statuslist-resolver.js';
+import { logger } from '../../logging/index.js';
 import { RuntimeFetchProvider } from '../../providers/runtime-fetch.js';
 import { statusListGzipCodec } from '../../utils/statuslist-gzip.js';
 import type { CryptoProvider, FetchProvider } from '../../providers/base.js';
@@ -108,8 +109,8 @@ describe('CheqdStatusListResolver reads a list through the bounded reader', () =
     expect(signals.map(signal => signal.aborted)).toEqual([true, true]);
   });
 
-  it('refuses a 2xx response that has no body, with its own reason', async () => {
-    await expect(cheqd(async () => new Response(null)).checkStatus(entry)).rejects.toThrow('Status list fetch has no response body');
+  it('reads a 2xx response that has no body as the empty text its text() answers, which is not JSON', async () => {
+    await expect(cheqd(async () => new Response(null)).checkStatus(entry)).rejects.toThrow('Status list fetch response is not JSON');
   });
 
   it('refuses invalid UTF-8 inside a JSON string', async () => {
@@ -135,11 +136,15 @@ describe('CheqdStatusListResolver reads a list under the private-network rule, w
     expect(fetch).toHaveBeenCalledOnce();
   });
 
-  it('follows a redirect by hand, and refuses one to a private host or a local name without requesting it', async () => {
+  it('follows a redirect by hand, and refuses one to a private host or a local name without requesting it, naming it only in the log', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const local = LOCAL_HOST_NAMES.map((name): [string, string] => [`https://${name}:8443/list`, `${name}:8443`]);
     for (const [location, host] of [['https://169.254.169.254/latest', '169.254.169.254'], ['https://localhost:8443/list', 'localhost:8443'], ...local]) {
       const fetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response(null, { status: 302, headers: { location } }));
-      await expect(cheqd(fetch).checkStatus(entry)).rejects.toThrow(`Redirect to "${host}" refused`);
+      const refused = cheqd(fetch).checkStatus(entry);
+      await expect(refused).rejects.toThrow('Redirect to a private or local host refused');
+      await expect(refused).rejects.not.toThrow(host);
+      expect(warn).toHaveBeenLastCalledWith(`[kya-os] Redirect to "${host}" refused: a private or local host`);
       expect(fetch.mock.calls.map(([url, init]) => [url, init?.redirect])).toEqual([[LIST, 'manual']]);
     }
   });

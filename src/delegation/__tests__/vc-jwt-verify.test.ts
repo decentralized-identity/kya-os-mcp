@@ -200,8 +200,9 @@ describe("verifyDelegationJwt (VC-JWT / compact JWS wire format)", () => {
     });
     const jwt = await mintVcJwt(privateKey);
     const result = await isolated.verifyDelegationJwt(jwt, { skipCache: true });
-    expect(result).toMatchObject({ valid: false, stage: "signature" });
-    expect(result.reason).toBe(`Could not resolve issuer DID "${ISSUER_DID}": resolver down`);
+    expect(result).toMatchObject({ valid: false, stage: "signature", code: "did_unavailable" });
+    // The resolver's words go to the operator's log, never to whoever presented the credential.
+    expect(result.reason).toBe(`Could not resolve issuer DID: "${ISSUER_DID}"`);
   });
 
   it("refuses an issuer DID over the length limit without asking its resolver", async () => {
@@ -217,12 +218,12 @@ describe("verifyDelegationJwt (VC-JWT / compact JWS wire format)", () => {
     });
     const mint = async (issuer: string) => signedJwt(await keyOf(issuer, "0"), { kid: `${issuer}#0` });
     const refused = await isolated.verifyDelegationJwt(await mint(long), { skipCache: true });
-    expect(refused.reason).toBe(`Could not resolve issuer DID: "${long.slice(0, 64)}"...`);
+    expect(refused).toMatchObject({ reason: `Could not resolve issuer DID: "${long.slice(0, 64)}"...`, code: "did_invalid" });
     expect(asked).toEqual([]);
     // One code unit shorter, the DID is at the limit, and the resolver is asked.
     const atLimit = long.slice(0, -1);
     const resolved = await isolated.verifyDelegationJwt(await mint(atLimit), { skipCache: true });
-    expect(resolved.reason).toBe(`Could not resolve issuer DID "${atLimit.slice(0, 64)}"...: resolver down`);
+    expect(resolved).toMatchObject({ reason: `Could not resolve issuer DID: "${atLimit.slice(0, 64)}"...`, code: "did_unavailable" });
     expect(asked).toEqual([atLimit]);
   });
 

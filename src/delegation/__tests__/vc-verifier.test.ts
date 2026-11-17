@@ -9,6 +9,12 @@ import {
 } from "../vc-verifier.js";
 import type { DelegationCredential } from "../../types/protocol.js";
 import { issuerDidDocument } from "../../__tests__/utils/did-documents.js";
+import { logger } from "../../logging/index.js";
+import {
+  createStatusListManager,
+  type StatusListIdentityProvider,
+  type StatusListStorageProvider,
+} from "../statuslist-manager.js";
 
 // Mock the protocol functions (preserving all other exports)
 vi.mock("../../types/protocol.js", async (importOriginal) => {
@@ -923,13 +929,16 @@ describe("DelegationCredentialVerifier", () => {
     it("should handle DID resolver errors gracefully", async () => {
       await setupDefaultContractsMocks();
       mockDidResolver.resolve.mockRejectedValue(new Error("Network timeout"));
+      const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
 
       const result = await verifier.verifyDelegationCredential(mockValidVC);
 
       expect(result.valid).toBe(false);
-      expect(result.reason).toContain(
-        "Signature verification error: Network timeout"
-      );
+      expect(result.code).toBe("did_unavailable");
+      expect(result.reason).toContain("Could not resolve issuer DID: ");
+      expect(result.reason).not.toContain("Network timeout");
+      expect(warn.mock.calls.map(String).join("\n")).toContain("Network timeout");
+      warn.mockRestore();
     });
 
     it("should handle status list resolver errors gracefully", async () => {
@@ -950,13 +959,18 @@ describe("DelegationCredentialVerifier", () => {
       mockStatusListResolver.checkStatus.mockRejectedValue(
         new Error("Status list unavailable")
       );
+      const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
 
       const result = await verifier.verifyDelegationCredential(vcWithStatus);
 
       expect(result.valid).toBe(false);
       expect(result.reason).toContain(
-        "Status check error: Status list unavailable"
+        'Status check error: the status list at "https://example.com/status" could not be read or checked'
       );
+      expect(warn).toHaveBeenCalledWith(
+        '[kya-os] the status list at "https://example.com/status" could not be read or checked: Status list unavailable'
+      );
+      warn.mockRestore();
     });
 
     it("should handle signature verifier errors gracefully", async () => {
@@ -967,13 +981,15 @@ describe("DelegationCredentialVerifier", () => {
         new Error("Signature algorithm unsupported")
       );
       mockStatusListResolver.checkStatus.mockResolvedValue(false);
+      const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
 
       const result = await verifier.verifyDelegationCredential(mockValidVC);
 
       expect(result.valid).toBe(false);
-      expect(result.reason).toContain(
-        "Signature verification error: Signature algorithm unsupported"
-      );
+      expect(result.code).toBe("runtime_error");
+      expect(result.reason).toBe("Signature verification error: the signature could not be checked");
+      expect(warn.mock.calls.map(String).join("\n")).toContain("Signature algorithm unsupported");
+      warn.mockRestore();
     });
   });
 
@@ -1093,10 +1109,13 @@ describe("DelegationCredentialVerifier", () => {
       mockDidResolver.resolve.mockResolvedValue(issuerDidDocument(ISSUER_KEY));
       mockSignatureVerifier.mockResolvedValue({ valid: true });
 
-      // Simulate StatusList2021Manager.checkStatus throwing on missing storage
-      mockStatusListResolver.checkStatus.mockRejectedValue(
-        new Error("Status list not found: https://example.com/status — cannot determine revocation status")
+      // StatusList2021Manager.checkStatus refuses an entry whose list its storage does not hold.
+      const manager = createStatusListManager(
+        { getStatusList: async () => null } as unknown as StatusListStorageProvider,
+        {} as StatusListIdentityProvider,
+        async () => { throw new Error("never signs"); },
       );
+      mockStatusListResolver.checkStatus.mockImplementation((status) => manager.checkStatus(status));
 
       const result = await verifier.verifyDelegationCredential(vcWithStatus);
 

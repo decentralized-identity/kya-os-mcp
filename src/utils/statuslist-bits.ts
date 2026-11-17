@@ -19,6 +19,7 @@
 import { base64urlDecodeToBytes, base64urlEncodeFromBytes } from './base64.js';
 import { describeValue } from './describe-value.js';
 import { isRecord } from './guards.js';
+import { RefusalError } from './refusal.js';
 
 /**
  * Hard ceiling on an INFLATED status bitstring (16 MiB ≈ 134M entries — far
@@ -57,7 +58,8 @@ export interface StatusListIndexOptions {
  * A signed entry is JSON, so its index may be a number or an array such as `["7"]` rather than a
  * string: either is refused, never converted, unless `options.acceptNumber` admits a number.
  * Whoever signed the entry chose the index, so a refusal quotes it as `describeValue` quotes any
- * such value: bounded, and well-formed text.
+ * such value: bounded, and well-formed text. A refusal is an entry no reader reads, so it throws a
+ * `delegation_malformed` refusal (`./refusal.ts`).
  */
 export function parseStatusListIndex(raw: unknown, options: StatusListIndexOptions = {}): number {
   if (options.acceptNumber === true && typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0) {
@@ -65,11 +67,11 @@ export function parseStatusListIndex(raw: unknown, options: StatusListIndexOptio
   }
   if (typeof raw !== 'string' || !/^[0-9]+$/.test(raw)) {
     const form = options.acceptNumber === true ? 'a non-negative safe integer or a' : 'a';
-    throw new Error(`Invalid statusListIndex ${describeValue(raw)}: must be ${form} non-negative decimal string`);
+    throw new RefusalError('delegation_malformed', `Invalid statusListIndex ${describeValue(raw)}: must be ${form} non-negative decimal string`);
   }
   const index = Number(raw);
   if (!Number.isSafeInteger(index)) {
-    throw new Error(`statusListIndex ${describeValue(raw)} exceeds the safe integer range`);
+    throw new RefusalError('delegation_malformed', `statusListIndex ${describeValue(raw)} exceeds the safe integer range`);
   }
   return index;
 }
@@ -150,16 +152,17 @@ export async function decodeStatusListPayload(
  * than 32-bit bitwise ops, which coerce to uint32 first: an index ≥ 2^32
  * would silently wrap onto a low byte and read the WRONG — often clear — bit,
  * turning an out-of-range index that MUST fail-closed into a fail-OPEN "not
- * revoked". NaN/negative/fractional/out-of-buffer indexes throw.
+ * revoked". NaN/negative/fractional/out-of-buffer indexes throw a
+ * `delegation_malformed` {@link RefusalError}: the entry names a bit the list
+ * does not have, which no later read of the list changes.
  */
 export function readStatusBit(bits: Uint8Array, index: number): boolean {
   const byte = Number.isInteger(index) && index >= 0
     ? bits[Math.floor(index / 8)]
     : undefined;
   if (byte === undefined) {
-    throw new Error(
-      `Bit index ${index} out of range for the status list`,
-    );
+    // The entry names a bit the list does not have: no later read of the list changes that.
+    throw new RefusalError('delegation_malformed', `Bit index ${index} out of range for the status list`);
   }
   return (byte & (0x80 >> index % 8)) !== 0;
 }

@@ -148,11 +148,13 @@ describe('embeddedSignatureVerifier', () => {
         expect(await verify(credential, { ...jwk, x }), x).toEqual({
           valid: false,
           reason: 'Unreadable x in publicKeyJwk: An Ed25519 JWK carries its key in x, base64url as RFC 7515 §2 writes it',
+          code: 'did_invalid',
         });
       }
       expect(await verify(credential, { ...jwk, x: key.subarray(0, 31).toString('base64url') })).toEqual({
         valid: false,
         reason: 'Unreadable x in publicKeyJwk: An Ed25519 key is 32 bytes, not 31',
+        code: 'did_invalid',
       });
       return;
     }
@@ -164,6 +166,6 @@ describe('embeddedSignatureVerifier', () => {
 
     expect(await verify(unproved as DelegationCredential, jwk)).toEqual({ valid: false, reason: 'Missing proof' });
     expect(await verify(withProofValue(''), jwk)).toEqual({ valid: false, reason: 'Missing proofValue in proof' });
-    expect(await verify(credential, { kty: 'OKP' })).toEqual({ valid: false, reason: 'No x field in publicKeyJwk' });
+    expect(await verify(credential, { kty: 'OKP' })).toEqual({ valid: false, reason: 'No x field in publicKeyJwk', code: 'did_invalid' });
   });
 });

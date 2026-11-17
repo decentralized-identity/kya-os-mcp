@@ -12,6 +12,7 @@ import { validateDelegationChain } from '../chain-enforcement.js';
 import { checkCredentialStatus } from '../vc-verification-checks.js';
 import { withStatusCache } from '../status-cache.js';
 import { acceptStatusList, statusListExpectationFor, type StatusListIssuers } from '../../utils/statuslist-acceptance.js';
+import { RefusalError } from '../../utils/refusal.js';
 import {
   credentialJwt, delegationRecord, keyOf, resignedCredential, signedCredential,
 } from '../../__tests__/utils/delegation-credentials.js';
@@ -53,15 +54,15 @@ const clearStatus = () => ({ checkStatus: vi.fn<StatusListResolver['checkStatus'
 /**
  * A resolver that serves `list`, with no bit set, and holds it to the credential as the docs tell a
  * custom resolver to,
- * `acceptStatusList(list, statusListExpectationFor(status, context, statusListIssuers))`. It checks no
- * proof here.
+ * `acceptStatusList(list, statusListExpectationFor(status, context, statusListIssuers))`, refusing
+ * with a `RefusalError` so its reason reaches the verifier's. It checks no proof here.
  */
 function ruleResolver(list: Record<string, unknown>, statusListIssuers?: StatusListIssuers) {
   return {
     checkStatus: vi.fn<StatusListResolver['checkStatus']>(async (status, context) => {
-      if (!context) throw new Error('no credential named');
+      if (!context) throw new RefusalError('configuration_error', 'no credential named');
       const verdict = acceptStatusList(list, statusListExpectationFor(status, context, statusListIssuers));
-      if (!verdict.valid) throw new Error(verdict.reason);
+      if (!verdict.valid) throw new RefusalError('status_signer_untrusted', verdict.reason);
       return false;
     }),
   };

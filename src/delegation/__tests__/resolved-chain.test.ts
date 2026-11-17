@@ -21,7 +21,10 @@ describe('resolvedAncestors', () => {
     const root = credential(delegation('del-root'));
     expect(resolvedAncestors([root, credential(delegation(LEAF_ID))], LEAF_ID, {})).toEqual({ ancestors: [root] });
     expect(resolvedAncestors([credential(delegation(LEAF_ID)), root], LEAF_ID, {})).toEqual({
+      valid: false,
       reason: `Resolved delegation chain for ${LEAF_ID} must end with the leaf credential`,
+      code: 'chain_invalid',
+      transient: false,
     });
   });
 

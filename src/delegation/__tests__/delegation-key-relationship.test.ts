@@ -328,7 +328,7 @@ describe('the VC-JWT path', () => {
       const jwt = await signedJwt(assert, { kid: assert.kid, record: delegationRecord(issuer) });
       expect(await verify(acmeDocument(login, assert), jwt)).toMatchObject({ valid: false, stage: 'signature', reason: `Could not resolve issuer DID: ${quoted}` });
       expect(await throwing.verifyDelegationJwt(jwt, { skipCache: true }))
-        .toMatchObject({ valid: false, stage: 'signature', reason: `Could not resolve issuer DID ${quoted}: offline` });
+        .toMatchObject({ valid: false, stage: 'signature', reason: `Could not resolve issuer DID: ${quoted}`, code: 'did_unavailable' });
     }
   });
 

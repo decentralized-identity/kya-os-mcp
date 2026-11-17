@@ -123,6 +123,8 @@ describe("validateDelegationChain: snapshotAncestor", () => {
     expect(result).toEqual({
       valid: false,
       reason: `Resolved delegation chain for leaf holds a value that ${unread}`,
+      code: "delegation_malformed",
+      transient: false,
     });
     // A value that could not be copied ends the reading there.
     expect(passed).toHaveLength(passedOn);

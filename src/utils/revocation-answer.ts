@@ -8,8 +8,31 @@
  * answer is read once, where a getter that throws is caught.
  */
 
+import { isRefusalCode, type RefusalCode } from "../refusal-codes.js";
 import { describeValue } from "./describe-value.js";
 import { isRecord } from "./guards.js";
+
+/**
+ * How much of the reason a status check gives a refusal carries, in UTF-16 code units: a custom
+ * checker's or resolver's reason is as long as its author likes, and a refusal is shown to people
+ * and written to logs. It is long enough for the library's own keeper refusal to end with the whole
+ * `statusListIssuers` configuration that would accept the list.
+ */
+export const CHECKER_REASON_LENGTH = 512;
+
+/**
+ * How much of a status reason a reader carries when a host's resolver or checker gave it, in UTF-16
+ * code units: a resolver or checker that wraps a library checker may put up to 128 code units of its
+ * own words before that checker's reason, which then still ends whole.
+ */
+export const WRAPPED_REASON_LENGTH = CHECKER_REASON_LENGTH + 128;
+
+/**
+ * How much of a refused delegation's reason is carried where the operator reads it, in UTF-16 code
+ * units: the reason a credential verifier gives the chain walk, and the gate's log line. Either may
+ * end with a wrapped status reason, after the verifier's words and the chain walk's.
+ */
+export const OPERATOR_REASON_LENGTH = 1024;
 
 /**
  * Whether `answer` says revoked: `true` or `false` when it is that literal, and `undefined` for
@@ -24,18 +47,28 @@ export function unreadableStatusReason(answer: unknown): string {
   return `Credential status could not be read: the status list resolver's answer (${describeValue(answer)}) is neither true nor false`;
 }
 
-/** The members a reader takes from a revocation checker's answer, in the order they are read. */
+/**
+ * The members a reader takes from every revocation checker's answer, in the order they are read;
+ * `code` is read after them, and only from an answer that revokes.
+ */
 const ANSWER_MEMBERS = ["revoked", "fresh", "reason", "revokedAncestor"] as const;
 
 /**
  * A revocation checker's answer as {@link readRevocationAnswer} read it. `revoked` is the literal
  * the answer stated. `fresh` is `true` only when the answer's is the literal `true`. `reason` and
- * `revokedAncestor` are the answer's when they are strings. An answer that could not be read has
+ * `revokedAncestor` are the answer's when they are strings, and `code`, read only from an answer
+ * that revokes, when it is one of the catalog's refusal codes, as the library's checkers give one. An answer that could not be read has
  * `revoked: undefined` and says why in `unreadable`, a bounded line of well-formed text that
  * completes "could not be read: ".
  */
 export type RevocationAnswer =
-  | { revoked: boolean; fresh: boolean; reason: string | undefined; revokedAncestor: string | undefined }
+  | {
+      revoked: boolean;
+      fresh: boolean;
+      reason: string | undefined;
+      revokedAncestor: string | undefined;
+      code: RefusalCode | undefined;
+    }
   | { revoked: undefined; unreadable: string };
 
 /**
@@ -43,8 +76,9 @@ export type RevocationAnswer =
  * `revoked` is the literal `false` lets a credential pass and only the literal `true` revokes it;
  * a caller refuses any other answer as a status that could not be read. Each member is read exactly
  * once and inside the `try`, so an answer that is a proxy, or has a getter that throws, is an
- * unreadable answer whose reason names the member, and this never throws. A value the answer
- * holds is named as `describeValue` names it and never converted.
+ * unreadable answer whose reason names the member, and this never throws. `code` is read only from
+ * an answer that revokes, so an answer that passes is read as it was before codes were. A value
+ * the answer holds is named as `describeValue` names it and never converted.
  */
 export function readRevocationAnswer(answer: unknown): RevocationAnswer {
   let reading: string | undefined;
@@ -65,11 +99,14 @@ export function readRevocationAnswer(answer: unknown): RevocationAnswer {
         unreadable: `the revoked member of the revocation checker's answer (${describeValue(read.revoked)}) is neither true nor false`,
       };
     }
+    reading = "code";
+    const code: unknown = revoked ? answer.code : undefined;
     return {
       revoked,
       fresh: read.fresh === true,
       reason: typeof read.reason === "string" ? read.reason : undefined,
       revokedAncestor: typeof read.revokedAncestor === "string" ? read.revokedAncestor : undefined,
+      code: isRefusalCode(code) ? code : undefined,
     };
   } catch {
     return {

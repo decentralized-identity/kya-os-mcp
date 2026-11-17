@@ -18,6 +18,8 @@ import { NO_DELEGATION_ID } from "../delegation/delegation-id.js";
 import { type DetachedProof } from "../types/protocol.js";
 import { logger } from "../logging/index.js";
 import { KYA_OS_ERROR_CODES } from "../errors.js";
+import { CHECKER_REASON_LENGTH, OPERATOR_REASON_LENGTH } from "../utils/revocation-answer.js";
+import { coded } from "../utils/refusal.js";
 import type {
   KyaOsCallContext,
   KyaOsToolHandler,
@@ -72,6 +74,20 @@ export function createDelegationGate(
   const { identity, holderBindingMode, holderBindingVerifier, audit } = deps;
   const { attachOutcomeProof, requireProofLayer, resolveExistingGrant, bindGrantOnSuccess } =
     wiring;
+
+  /**
+   * Log a call whose holder-of-key proof is missing or does not bind, as `what` says, with the
+   * proof's `reason` when there is one. Under `enforce` the call is refused, so the line carries
+   * the refusal's code; under `warn` it is let through, so the line says so and carries none.
+   */
+  const logUnboundHolder = (what: string, reason?: string): void => {
+    const why = reason === undefined ? "" : `: ${sanitizeForMessage(reason, CHECKER_REASON_LENGTH)}`;
+    if (holderBindingMode === "enforce") {
+      logger.warn(`[kya-os] Holder binding${what}${why}`, coded("holder_binding_failed"));
+    } else {
+      logger.warn(`[kya-os] Holder binding${what}; the call was allowed, as holderBinding is "warn"${why}`);
+    }
+  };
   const {
     verifyEncodableDelegation,
     buildDelegationErrorResponse,
@@ -166,9 +182,18 @@ export function createDelegationGate(
             delegationRef: check.evidence.delegationRef ?? NO_DELEGATION_ID,
             outcome: 'failed',
             reasonCode: 'DELEGATION_VERIFICATION_FAILED',
-            // What was refused, by reference and digest.
+            // What was refused, by reference and digest, and what its verification came to, as
+            // DELEGATION_CHAIN_VALID records it for one that passed: the refusal code. The event
+            // carries no reason text.
             context: withChainEvidence(
-              { authorization: { source: 'delegation', decision: 'denied', ...check.evidence } },
+              {
+                authorization: {
+                  source: 'delegation',
+                  decision: 'denied',
+                  ...check.evidence,
+                  verificationCode: check.code,
+                },
+              },
               check,
             ),
           });
@@ -178,8 +203,11 @@ export function createDelegationGate(
             error: error instanceof Error ? error.message : String(error),
           });
         }
+        // The operator's log line carries the code and the full reason, up to the length an operator
+        // reads, so a statusListIssuers remedy it ends with is whole; the client's reason stays cut at 256.
         logger.warn(
-          `[kya-os] Delegation verification failed for "${toolName}": ${sanitizeForMessage(check.reason)}`,
+          `[kya-os] Delegation verification failed for "${toolName}": ${sanitizeForMessage(check.reason, OPERATOR_REASON_LENGTH)}`,
+          { code: check.code, transient: check.transient },
         );
         return attachOutcomeProof(
           buildDelegationErrorResponse(KYA_OS_ERROR_CODES.delegation_invalid, check.reason),
@@ -203,9 +231,7 @@ export function createDelegationGate(
           if (proofArg === undefined) {
             const reason =
               "Holder-of-key proof (_kyaos_proof) is required for this delegation subject";
-            logger.warn(
-              `[kya-os] Holder binding: "${toolName}" called without _kyaos_proof`,
-            );
+            logUnboundHolder(`: "${toolName}" called without _kyaos_proof`);
             if (holderBindingMode === "enforce") {
               return attachOutcomeProof(
                 buildDelegationErrorResponse(
@@ -238,9 +264,7 @@ export function createDelegationGate(
               const reason =
                 binding.reason ??
                 "Holder-of-key proof did not bind the delegation subject";
-              logger.warn(
-                `[kya-os] Holder binding ${binding.status} for "${toolName}": ${sanitizeForMessage(reason)}`,
-              );
+              logUnboundHolder(` ${binding.status} for "${toolName}"`, reason);
               if (holderBindingMode === "enforce") {
                 return attachOutcomeProof(
                   buildDelegationErrorResponse(
@@ -278,6 +302,7 @@ export function createDelegationGate(
         const reason = `Required scope "${config.scopeId}" not in delegation scopes`;
         logger.warn(
           `[kya-os] Delegation missing required scope "${config.scopeId}" for "${toolName}"`,
+          coded("insufficient_scope"),
         );
         return attachOutcomeProof(
           buildDelegationErrorResponse(KYA_OS_ERROR_CODES.insufficient_scope, reason),

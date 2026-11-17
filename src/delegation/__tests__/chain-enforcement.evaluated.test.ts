@@ -102,6 +102,8 @@ describe("validateDelegationChain: the credentials it reports", () => {
       expect(result).toEqual({
         valid: false,
         reason: "Resolved delegation chain for leaf holds a value that is not a delegation credential",
+        code: "delegation_malformed",
+        transient: false,
       });
     }
     expect(verify).not.toHaveBeenCalled();
@@ -119,6 +121,8 @@ describe("validateDelegationChain: the credentials it reports", () => {
     expect(result).toEqual({
       valid: false,
       reason: "Delegation chain of 3 credentials exceeds the maximum of 2",
+      code: "chain_invalid",
+      transient: false,
     });
     expect(verify).not.toHaveBeenCalled();
     // Each value was read, and only the presented leaf made the chain too long.
@@ -134,6 +138,8 @@ describe("validateDelegationChain: the credentials it reports", () => {
     expect(beyond).toEqual({
       valid: false,
       reason: "Delegation chain of at least 3 credentials exceeds the maximum of 2",
+      code: "chain_invalid",
+      transient: false,
     });
     expect(verify).not.toHaveBeenCalled();
     expect(snapshotAncestor).toHaveBeenCalledTimes(2);

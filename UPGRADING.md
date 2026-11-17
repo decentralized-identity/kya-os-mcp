@@ -6,6 +6,33 @@ CHANGELOG.md says what changed and names the section here that says what to do a
 
 ## From 1.22.0
 
+### Do I need to change anything?
+
+Find your setup below; most need nothing.
+
+| If you | Do this | Details |
+| --- | --- | --- |
+| Use `withKyaOs` or `createKyaOsMiddleware` with their defaults, with your DID documents and status lists on public hosts | Nothing. | |
+| Run locally, with did:web documents or status lists on `localhost`, a `*.localhost` name or a private IP | Set `development: true` on `withKyaOs` and on any resolver or reader you build yourself, and never in production, where it throws. | [Private hosts](#a-didweb-did-or-status-list-served-from-a-private-ip-address-or-a-local-name-such-as-localhost-as-in-development) |
+| Read did:web documents or status lists from private hosts in production, such as an intranet | Give the fetch provider `allowPrivateNetworkHosts: true`. | [Private hosts](#a-didweb-did-or-status-list-served-from-a-private-ip-address-or-a-local-name-such-as-localhost-as-in-development) |
+| Have status lists signed by a DID other than the credential's issuer | Once you know that DID signs your lists, add the one `statusListIssuers` line the refusal prints, such as `{ "did:web:issuer.example:status": ["https://issuer.example"] }`. | [`statusListIssuers`](#how-to-write-statuslistissuers) |
+| Publish status lists with your own code | State each list's URL as its `id`, as `StatusList2021Manager` does. | [Status lists](#status-lists-held-to-their-credential) |
+| Wrote your own `FetchProvider` | Pass `redirect` on and return a response that names the URL asked for, or none; a response read through `text()` or `json()`, such as what `createSafeFetch` or node-fetch v2 returns, works unchanged. | [`FetchProvider`](#a-custom-fetchprovider-given-to-the-didweb-or-cheqd-resolver-or-to-cheqdstatuslistresolver) |
+| Wrote your own `StatusListResolver` | Answer `true` or `false` within 5 seconds and hold each list to its credential with `acceptStatusList`; one that wraps `createRevocationChecker` and passes on only the entry works unchanged. | [`StatusListResolver`](#a-custom-statuslistresolver-given-to-withkyaos-or-delegationcredentialverifier) |
+| Wrote your own `DIDResolver` | Return a document whose `id` is the DID, within the limits and within 5 seconds; add `lastFailure` if you want a refusal coded by why a DID did not resolve. | [`DIDResolver`](#a-custom-did-resolver-delegationdidresolver-a-resolver-in-didresolvers-the-didresolver-of-delegationcredentialverifier-cheqdstatuslistresolver-createstatuslistproofverifier-or-createdelegationproofverifier-or-a-fetchproviderresolvedid-that-proofverifier-uses) |
+| Sign with a key your DID document lists outside `assertionMethod` | List each signing key under `assertionMethod`, and update issuers before verifiers. | [`assertionMethod`](#signing-keys-and-assertionmethod) |
+| Have a dependency that can take longer than 5 seconds to answer | Set `dependencyTimeoutMs` on whatever waits for it. | [Deadlines](#a-dependency-that-can-take-longer-than-5-seconds-to-answer) |
+| Match on the text of a refusal's reason, in code or tests | Match on its `code` instead, and on `transient` to tell a failing dependency from a refusal, since many reasons were reworded. | [Refusal codes](#refusal-codes) |
+| Send a `requireDelegation` or `verifyRequestDelegation` rejection to your client as it is | Send its `status` and `error` alone, since it now also carries `refusalCode` and `transient`, which are for your logs. | [Where the code is](#where-the-code-is) |
+| Compare a verifier's result or a revocation checker's answer exactly, in tests | Allow for the new `code` and `transient` members, and for `reason` on a status that is not clear. | [Where the code is](#where-the-code-is) |
+| Wrote a resolver, checker or verifier that throws to refuse in its own words | Throw a `RefusalError` with a code of the catalog; any other error still refuses, but its words now reach only your log. | [Your own](#a-verifier-or-checker-of-your-own) |
+| Show your client the `reasons` of a `requireDelegation` rejection | Allow for a status checker's reason of up to 640 UTF-16 code units and a hop's of up to 512, where each was a short fixed text. | [Where the code is](#where-the-code-is) |
+| Switch over `ProofVerificationErrorCode` with a check for exhaustiveness | Add a case for `OUTCOME_MISMATCH` and one for `DELEGATION_BINDING_MISMATCH`. | [Proof binding](#checking-a-proof-against-a-delegation-chain) |
+
+This is a minor release, made for security.
+Code that was correct on 1.22.0 keeps working, but for code that sends a guard's result whole, compares a result exactly or switches over `ProofVerificationErrorCode` exhaustively, as the table says.
+What may be refused after you upgrade is input that was unsafe to accept, such as a status list another DID signed or a key outside `assertionMethod`; a private or local host, which one setting admits in development and another in production; or a reason whose wording changed, as "Changed refusal reasons" lists, which a refusal's code does not.
+
 ### Signing keys and `assertionMethod`
 
 A delegation credential, a status list and a delegation hop verify only under a key their issuer's own DID document lists under `assertionMethod` (SPEC.md §6.2, §6.10, §11.5).
@@ -43,14 +70,110 @@ The characters are a fixed list, `conformance/unseen-code-points.json`, the same
 
 The delegation gate refuses, as `delegation_invalid`, a delegation holding a value RFC 8785 cannot encode.
 In 1.22.0 such a call threw a `TypeError` or ran the tool.
+Its refusal code, in the operator's log line and the audit event, is `delegation_malformed`.
 Issue no delegation that holds one.
+
+### Refusal codes
+
+Every refusal of a delegation credential, a delegation chain, an Entity Card, the delegation a request carries, a credential's status or the handshake's delegation verifier now carries a `code` from a fixed catalog, and `transient`, which says whether the same request may pass later.
+A reason is text for people, and its wording changed in this release and may change in another; a code does not.
+Branch on the code, and show or log the reason.
+What the delegation gate of `withKyaOs` sends its client is unchanged: the same `error`, the same reason, and no new member.
+A server of your own that sends its client a whole result, rather than the members the client needs, now sends the code too, as "Where the code is" says.
+
+`REFUSAL_CODES`, its type `RefusalCode`, `isRefusalCode(value)` and `isTransientRefusal(code)` are exported from `@kya-os/mcp`, `@kya-os/mcp/delegation` and `@kya-os/mcp/card`.
+A code has the name of a `KYA_OS_ERROR_CODES` value where the two mean the same.
+
+```ts
+import { isTransientRefusal } from "@kya-os/mcp";
+
+const result = await verifier.verifyDelegationCredential(credential);
+if (!result.valid) {
+  if (isTransientRefusal(result.code)) {
+    // A DID host, a status list or a dependency failed: refuse this call, and retry later or alert.
+  } else if (result.code === "delegation_expired") {
+    // Ask the user to delegate again.
+  } else {
+    // A verdict: refuse, and log result.reason for the operator.
+  }
+}
+```
+
+#### What each code means
+
+| Code | The verifier refused because |
+| --- | --- |
+| `delegation_malformed` | The credential is not a well-formed delegation credential: it fails the schema, does not parse, is not plain data, nests too deep or holds a value that cannot be encoded, or its status entry is one no checker reads, such as one of another `statusPurpose`, one whose index is past the end of its list, or one that names its list by no string. |
+| `delegation_expired` | The credential, or one in its chain, is past its expiry. |
+| `delegation_not_yet_valid` | The credential, or one in its chain, is not yet valid. |
+| `delegation_revoked` | The credential, one in its chain, or an Entity Card is revoked. |
+| `delegation_invalid` | A credential verifier you gave a chain walk refused a credential and gave no code. |
+| `invalid_proof` | A signature does not verify. |
+| `key_not_authorized` | The proof's key is not listed under `assertionMethod` of the issuer's own DID document, or its `proofPurpose` is not `assertionMethod`. |
+| `did_invalid` | The DID of the issuer, or of a status list's signer, can never be resolved, such as a did:key whose key does not decode, a did:web DID that names no URL, or a DID of a method none of the delegation gate's resolvers serves; its document is over a limit, the byte cap included, or is not a valid document of that DID; or the key it lists for the proof is not a usable Ed25519 key. |
+| `host_refused` | The reader's own rules refused the host of a DID document or a status list, such as a private or local host without `development: true`. |
+| `untrusted_root` | The chain's root issuer is not in `trustedRootIssuers`, or is not the `resourceOwner` the verifier pins. |
+| `chain_invalid` | The credentials do not make one line of authority valid here, such as a broken link, a re-delegation wider than its parent, an audience that does not name this server, or a chain longer than `maxChainLength`. |
+| `insufficient_scope` | The chain is valid, but does not grant the action. |
+| `needs_authorization` | No delegation was presented for a call that needs one. |
+| `holder_binding_failed` | The chain's leaf delegate is not the DID the request proof verified for. |
+| `status_signer_untrusted` | A status list was read but may not answer for the credential: its issuer does not keep its URL, its proof does not verify, its `id` is another URL, or its `statusPurpose` does not include the entry's. |
+| `claim_unverified` | An Entity Card's accountability or one of its attestations did not verify. |
+| `configuration_error` | The verifier is not set up to decide, such as one missing a resolver or verifier, or with an option it cannot use. |
+| `did_unavailable` | Transient: the DID document of the issuer, or of a status list's signer, could not be read just now: its host could not be reached or answered with an error, or the resolver found none and gave no cause, or threw. |
+| `status_unavailable` | Transient: the credential's status could not be read. |
+| `deadline_exceeded` | Transient: a dependency did not answer within `dependencyTimeoutMs`, 5 seconds by default. |
+| `runtime_error` | Transient: a dependency you supply threw or gave an answer it may not give, or the verification faulted. |
+
+#### Transient codes
+
+`did_unavailable`, `status_unavailable`, `deadline_exceeded` and `runtime_error` are transient: the verifier could not decide, because a DID host, a status list or a dependency failed or did not answer in time.
+The request is still refused, since the library fails closed, but the credential may be sound, so retry later, or alert whoever runs what failed.
+Every other code is a verdict on the credential, its chain or your configuration, which asking again does not change: refuse the request.
+Whether a code is transient is fixed by the code, so `transient` and `isTransientRefusal(code)` always agree.
+A refusal that asking again cannot lift is a verdict, so a DID that can never be resolved, such as a did:key whose key does not decode, a did:web DID that names no URL, a DID of a method the delegation gate does not serve, or one whose document is over the byte cap, is `did_invalid`, and a status entry whose index is past the end of its list is `delegation_malformed`.
+When `verifyCard` refuses several claims of a Card, it reports the code of the first that is not transient, so a failing dependency does not hide a verdict.
+
+#### Where the code is
+
+- `code` and `transient` are on a refusal from `DelegationCredentialVerifier` (`DelegationVCVerificationResult`, with its `StatusCheckResult` and `SignatureVerificationResult`), the delegation `validateDelegationChain` (`ChainValidationResult`), the Card's `validateDelegationChain` and `evaluateDelegationChain` (`DelegationChainResult`), `evaluateRevocationChain` (`RevocationChainResult`), the checker `createRevocationChecker` builds (`RevocationStatus`), and `verifyCard` (`VerifyCardResult`) and its `revocation` (`CardRevocation`).
+- `refusalCode` and `transient` are on a rejection from `verifyRequestDelegation` (`RequestDelegationResult`) and from the `requireDelegation` guard (`DelegationGateResult`), since there `code`, or the guard's `error.code`, already holds the gate's code, such as `delegation_invalid`, and on a refused `readDelegationChain` (`CarriedChainRead`).
+  The guard's `status` and `error` are unchanged, but a server that sends its client a rejection as it is, as `if (!authority.ok) return authority;` does, now sends `refusalCode` and `transient` as well.
+  Send only what the client needs, such as `{ status: authority.status, error: authority.error }`, and log the code.
+  The guard's `error.reasons`, which the client receives, now hold the reason a status checker gives, up to 640 UTF-16 code units, and the refusal a hop proof verifier throws as a `RefusalError`, up to 512, where each was a short fixed text, as "Changed refusal reasons" shows.
+- `code` and `transient` are on the result of the handshake's `verifyOrHints` (`VerifyOrHintsResult`) when its delegation verifier refused or threw: the code the verifier's answer stated, `delegation_invalid` when it stated none, `runtime_error` when its answer could not be read or it threw, or the code of a `RefusalError` it threw.
+  An answer that names no delegation gives no code.
+  Its `authError`, which the client receives, carries no code, and for a verifier that threw says `Delegation verification error: the delegation verifier failed`, unless it threw a `RefusalError` or a deadline passed, which give words of their own.
+- The delegation gate of `withKyaOs` records the code of a delegation it refuses as `authorization.verificationCode` of the `delegation.rejected` audit event, as `delegation.verified` records `DELEGATION_CHAIN_VALID`.
+  The event's `reasonCode` stays `DELEGATION_VERIFICATION_FAILED`, and it carries no reason text and no other new member.
+- The gate's warning for a refused delegation, `[kya-os] Delegation verification failed for "<tool>": <reason>`, has a second argument, `{ code, transient }`, and so have its missing-scope warning, with `insufficient_scope`, and its holder-binding warnings under `holderBinding: "enforce"`, with `holder_binding_failed`.
+  Under `holderBinding: "warn"`, which lets the call through, a holder-binding warning carries no code and says `; the call was allowed, as holderBinding is "warn"`.
+  The warning for a refused delegation keeps up to 1,024 UTF-16 code units of the reason, and a holder-binding warning up to 512, while the reason sent to the client is still cut after 256.
+
+So under `withKyaOs` and its defaults, a root the server does not trust is still `delegation_invalid` to the client, while the warning and the audit event say `untrusted_root`.
+`RefusalCoding`, the `code` and `transient` pair, is exported from `@kya-os/mcp`, `@kya-os/mcp/delegation` and `@kya-os/mcp/card`, and `RejectionCoding`, the `refusalCode` and `transient` pair, and `CardRevocation` from `@kya-os/mcp/card`.
+
+#### A verifier or checker of your own
+
+A `signatureVerifier` given to `DelegationCredentialVerifier`, the `verifier` and the `revocationChecker` given to the delegation `validateDelegationChain`, a `BitstringRevocationChecker`, and the `DelegationVerifier` of the handshake may name a code of the catalog as `code` in an answer that refuses, such as `{ valid: false, reason, code: "key_not_authorized" }` or `{ revoked: true, fresh: false, code: "status_unavailable" }`, and the refusal carries it, with the `transient` that code fixes.
+`code` is typed `string` on the answer of a `RevocationChecker`, a `SignatureVerificationFunction` and a `DelegationVerifier`, so a code read from a variable or from JSON compiles, and `RefusalCode` on the others; a `transient` an answer states is not read.
+An answer that refuses with no `code`, or with a value not in the catalog, is coded as the library codes that refusal: `invalid_proof` for a signature, `delegation_invalid` for a credential of a chain and for the handshake, and `delegation_revoked` for a status.
+A revocation answer's `code` is read only from an answer that revokes, so one that does not revoke passes, even when reading its `code` throws.
+A dependency that answers only `true` or `false`, such as a `StatusListResolver` or a `verifyHopProof`, refuses with a code by throwing a `RefusalError`, exported from `@kya-os/mcp`, `@kya-os/mcp/delegation` and `@kya-os/mcp/card`, such as `throw new RefusalError("status_unavailable", "the registry holds no list for this credential")`.
+Any dependency may throw one, a DID resolver, a signature verifier, a chain resolver, a revocation checker, a status-list resolver or a proof verifier: its code, and its words, cut as the reason that holds them is, reach the refusal, and so whoever presented the request, so write them for that party.
+Any other error a dependency throws still refuses, as on 1.22.0, but its words, which may be a transport's words about your network, now reach only the operator's log, and the reason says only what could not be done, as "Changed refusal reasons" shows.
+A `RefusalError`'s `code` does not enumerate, so the error prints and compares as a plain `Error`; one whose code is not in the catalog is coded as any other throw.
+An answer the library cannot read is coded `runtime_error`, or `status_unavailable` for a status, as is a throw the library turns into a refusal, and a dependency that does not answer in time `deadline_exceeded`.
 
 ### Changed refusal reasons
 
 A refusal reason is text for people, and its wording changed where it quotes a value the other party chose.
 `"<v>"` quotes a value as a JSON string of at most its first 64 characters, with `...` after it when cut, and with control and hidden characters, quote marks, backslashes and lone surrogates escaped.
 A value that is not a string reads `of type <type>`.
-Code that matches on reason text needs the new wording.
+A reason goes back to whoever presented the request, who chose the DIDs and status-list URLs the verifier reads, so it says why a DID or a status list could not be read only where the DID or the URL alone decided it, before any request or DNS lookup, or where the deadline passed.
+Whatever the network answered, and whatever a dependency of yours threw other than a `RefusalError`, goes only to the operator's log, and the refusal's code says which kind of failure it was.
+On 1.22.0 a reason quoted it, such as an HTTP status, the text of a body that is not JSON, a byte cap, a redirect target or a transport's error.
+Code that matches on reason text needs the new wording; match on the refusal's code instead, as "Refusal codes" says, and the next change of wording will not touch it.
 
 | 1.22.0 | Now |
 | --- | --- |
@@ -70,8 +193,12 @@ Code that matches on reason text needs the new wording.
 | none: the chain passed, a revoked reason, or a `TypeError`, for an `isRevoked` answer that is not an object with a boolean `revoked` | `Revocation status of delegation "<id>" could not be read: the revocation checker's answer (<v>) is not an object`, or ending `the revoked member of the revocation checker's answer (<v>) is neither true nor false` |
 | `Invalid statusListIndex "<index>"`, an em dash and `must be a canonical non-negative decimal`; for an index that is not a string, such as `7` or `["7"]`, none: it was converted and read | `Invalid statusListIndex "<index>": must be a non-negative decimal string`, ending `must be a non-negative safe integer or a non-negative decimal string` from `StatusList2021Manager.updateStatus` and `CascadingRevocationManager`, which read their own records |
 | `statusListIndex "<index>" exceeds the safe integer range`, the index as written | the same with the index quoted |
-| `revocation: hop <n> (<url>#<index>) is revoked or unresolvable` and the rest, `<n>` counting only the hops with a status entry | `revocation: hop <n> (list "<url>", index "<index>") is revoked or unresolvable` and the same rest, `<n>` the hop's position in its chain, the root being 0, then `: <reason>` when the checker said why, as the checker `createRevocationChecker` builds does for every entry it fails closed on; a reason is cut after 256 UTF-16 code units and marked with U+2026, with control and hidden characters read as U+FFFD |
-| the `<error>` or `<reason>` in `Status check error`, `Signature verification error`, `Could not resolve issuer DID`, `JWT envelope signature is not valid`, `Failed to resolve delegation chain`, `Revocation check failed` and `Delegation <id> is revoked`, as written | cut after 256 UTF-16 code units and marked with U+2026, with control and hidden characters and lone surrogates read as U+FFFD |
+| `revocation: hop <n> (<url>#<index>) is revoked or unresolvable` and the rest, `<n>` counting only the hops with a status entry | `revocation: hop <n> (list "<url>", index "<index>") is revoked or unresolvable` and the same rest, `<n>` the hop's position in its chain, the root being 0, then `: <reason>` when the checker said why, as the checker `createRevocationChecker` builds does for every entry it fails closed on, saying only `the status list at "<url>" could not be read or checked` for a list it could not read or check; a reason is cut after 640 UTF-16 code units, never inside a `statusListIssuers` remedy, and marked with U+2026, with control and hidden characters read as U+FFFD |
+| `Signature verification error: <error>`, `Could not resolve issuer DID <issuer>: <error>` for a VC-JWT, `Status check error: <error>`, `Failed to resolve delegation chain: <error>`, `Revocation check failed for delegation <id>: <error>`, and `delegation chain could not be resolved: <error>` from `verifyRequestDelegation` and `requireDelegation`, each quoting what a dependency or the network threw, such as an HTTP status, a body that is not JSON, a byte cap, a redirect or a transport's error | the same with the error's words only where it is a `RefusalError`, a read's refusal of the URL as given, before any request or DNS lookup, or a deadline that passed; otherwise `Signature verification error: the signature could not be checked`, or `Could not resolve issuer DID: "<did>"` where the DID resolver threw, `Status check error: the status list at "<url>" could not be read or checked`, `Failed to resolve delegation chain: the chain resolver failed`, `Revocation check failed for delegation "<id>": the revocation checker failed` and `delegation chain could not be resolved: the chain resolver failed`, with what was thrown logged |
+| `Delegation verification error: <error>` in the challenge `verifyOrHints` returns, for a delegation verifier that threw | `Delegation verification error: the delegation verifier failed`, unless it threw a `RefusalError` or a deadline passed, with what was thrown logged |
+| the `<error>` or `<reason>` in `Signature verification error`, `Could not resolve issuer DID`, `JWT envelope signature is not valid`, `Failed to resolve delegation chain` and `Revocation check failed`, as written | cut after 256 UTF-16 code units and marked with U+2026, with control and hidden characters and lone surrogates read as U+FFFD |
+| the `<error>` in `Status check error`, and the `<reason>` a `RevocationChecker` gives in `Delegation <id> is revoked: <reason>`, as written | cut after 640 UTF-16 code units, never inside a `statusListIssuers` remedy, and marked with U+2026, with control and hidden characters and lone surrogates read as U+FFFD |
+| the `<reason>` a credential verifier gives the chain walk, in `Delegation <id> invalid: <reason>`, as written | cut after 1,024 UTF-16 code units, never inside a `statusListIssuers` remedy, and marked with U+2026, with control and hidden characters and lone surrogates read as U+FFFD |
 | the gate threw, for a value with no JSON form, such as `undefined`, among what a presented credential's issuer signed | `Unreadable credential content: <why>`, given before the reason above |
 | the gate threw for a presented credential holding a value that is not plain data, such as an accessor or a class instance, and an ancestor holding one at its top level or in its `proof`, or a Proxy that passes every read through, verified | `Malformed delegation credential: it is not plain data`, or for an ancestor `Resolved delegation chain for <id> holds a value that could not be copied` |
 | none: a credential nested deeper than 64 levels, and within the runtime's call stack, verified | `Malformed delegation credential: it nests more than 64 levels deep`, for an ancestor `Resolved delegation chain for <id> holds a value that could not be copied`, and for a VC-JWT `Invalid VC-JWT format` |
@@ -82,6 +209,17 @@ Code that matches on reason text needs the new wording.
 | none: the signature verified, for an Ed25519 `x` padded with `=` or holding white space, and, but for a response proof, one in the base64 alphabet | `Unreadable x in publicKeyJwk: <why>` for a delegation credential's embedded signature, `Status list signature verification FAILED against the issuer DID document` for a status list `CheqdStatusListResolver` reads, and `errorCode` `INVALID_JWS_SIGNATURE` for a response proof |
 | none: the response proof verified, for a JWS segment padded to complete its last group or holding two spaces or a line break | `errorCode` `INVALID_JWS_SIGNATURE` |
 | `Proof binds a response (responseHash present) but no response was supplied to verify against`, an em dash and `pass expected.response`; `A response was supplied but the proof binds none`, an em dash and `content/proof mismatch` | the same with a colon for the em dash |
+| none: a checker `createRevocationChecker` builds with `verifyStatusList` read a list whoever signed it | for a list another DID signed, the `does not keep this list's URL` reason above, ending with the `statusListIssuers` configuration that would accept the list, such as `; if "did:web:issuer.example:status" signs this issuer's lists, name it in statusListIssuers: { "did:web:issuer.example:status": ["https://issuer.example"] }`, or where to name the signer when that cannot be printed whole, as "How to write `statusListIssuers`" lists |
+| `Could not resolve issuer DID: <issuer>`, and `Could not resolve issuer DID <issuer>` from `CheqdStatusListResolver` | the same, the first with the issuer quoted, then ` (<detail>)` only where one of the library's resolvers decided why from the DID alone, before any request or DNS lookup, or the deadline passed, such as `Could not resolve issuer DID: "did:web:issuer.localhost%3A4101" (Request to "issuer.localhost:4101" refused: a private or local host. ...)`, `(the DID is not an Ed25519 did:key whose public key decodes)` or `(DID resolution deadline exceeded: no document arrived within 5 seconds)`; the detail is cut after 256 UTF-16 code units; whatever the network answered adds nothing, and the resolver logs it: a host that could not be reached or answered with an error, a document over the byte cap, not JSON or not the DID's, a refused redirect, or a name SafeFetch refused once it looked up its address; the detail of a resolver of your own is shown only for `deadline_exceeded` |
+| none: the host was read, or `RuntimeFetchProvider` found nothing at an IP literal it refused | `Request to "<host>" refused: a private or local host. In local development, set development: true; to read private hosts in production, give the fetch provider allowPrivateNetworkHosts: true.`, or for a redirect `Redirect to a private or local host refused. In local development, ...`, which names no host and logs it; the first reaches a reason as the detail above or after `Status check error: `, and the second, which the network answered, only the log |
+| `safe-fetch: refusing non-public address <address> for host "<host>"` after a lookup, for a non-public IP literal or `localhost`, or the lookup's own error, for a blocked IPv6 literal or a `*.localhost` name the system does not resolve | `safe-fetch: refusing host "<host>", a private or local host: in local development, set development: true; to read a host you own in production, list each origin you own in SafeFetch's allowOrigins`, before any lookup, which a verifier shows, coded `host_refused` |
+| `safe-fetch: refusing non-public address <address> for host "<host>"`, for any other name | `safe-fetch: refusing host "<host>", which resolves to a non-public address: in local development, set development: true; to read a host you own in production, list each origin you own in SafeFetch's allowOrigins`, the address going to the log |
+| `safe-fetch: cross-origin redirect blocked (<origin> → <origin>)` | `safe-fetch: cross-origin redirect from <origin> blocked`, naming the origin it left, the target going to the log |
+| `hop <n>: proof did not verify` from `verifyRequestDelegation` and `requireDelegation`, for a hop whose issuer's DID document could not be read through the verifier `createDelegationProofVerifier` builds, or whose `verifyHopProof` threw | `hop <n>: Could not resolve issuer DID: "<did>"`, with a detail as above, or `hop <n>: DID resolution deadline exceeded`; for a `verifyHopProof` that throws a `RefusalError`, `hop <n>: <its words>`, cut after 512 UTF-16 code units; for any other throw, `hop <n>: proof did not verify` as before |
+| none: the status was read, with no issuer to hold its list to | `Credential names no issuer DID to hold its status list to, so its revocation status cannot be verified`, the outcome `status_unresolvable` |
+| none: a checker `createRevocationChecker` builds with `verifyStatusList` read a list for a call that named no credential issuer | `no credential issuer named to hold the status list to: a resolver or checker that wraps a library checker must pass its second argument on, or else the very entry it was given`, the checker's reason |
+| the runtime's own error for a body that is not JSON, which quotes the text the server sent | `DID resolution response is not JSON` or `Status list fetch response is not JSON` |
+| none: what the response's `json()` answered was read, or, for a response without `json()`, a `TypeError`, in the log or after `Status check error: ` | `<read> response has no body to read: a FetchProvider must return a Response whose body is a ReadableStream, or a response with a text() or json() method`, `<read> response text() did not answer a string` or `<read> response json() answered a value with no JSON text`, where `<read>` is `DID resolution` or `Status list fetch` |
 
 ### Status lists held to their credential
 
@@ -100,6 +238,7 @@ A reader given `verifyStatusList` decides the keeper before it fetches, from its
 4. the credential's own issuer.
 
 A list any other issuer signed is refused, with a reason that names the keeper and why it keeps the URL, such as `status list issuer "did:web:a.example" does not keep this list's URL: "did:web:b.example" does, as the pinned root whose own credential names it`.
+The checker `createRevocationChecker` builds ends that reason with the `statusListIssuers` configuration that would accept the list, when one would, as "How to write `statusListIssuers`" shows.
 The configuration decides before a root's credential does, and at a URL a configured issuer or the root keeps, a list the credential's own issuer signed is refused as any other is.
 On 1.22.0 a list was read whoever signed it, so the DID that signed a list could differ from every one of these.
 
@@ -120,8 +259,37 @@ An origin whose host is an IPv6 literal is not offered; bind exact URLs.
 The map is not scoped by credential issuer: a credential opts in to a keeper by naming, in the status entry its issuer signed, a URL the map binds to that keeper.
 One URL or origin has one keeper, so the same value under two issuers throws.
 An exact URL of one issuer may lie at an origin of another, and the exact URL decides.
-The checker throws a `TypeError` when it is built if the map is not a plain object, a key is empty, a value is not an array, an array holds anything but a string that starts with `https://` or `http://`, or one value is under two issuers, or if the map is given without `verifyStatusList`.
+
+Three kinds of value are almost always an origin or a prefix written in another form, so they are refused, as SPEC.md §6.6 says a verifier should, with a `TypeError` that names the fix:
+
+| Value | Example | The fix the error names |
+| --- | --- | --- |
+| An origin followed by `/` | `https://status.example/` | `write it as "https://status.example"` |
+| An origin whose host has an upper-case letter | `https://Status.example` | `write the host in lower case, as "https://status.example"` |
+| Any other value that ends in `/`, which reads as a path prefix | `https://lists.acme.example/herd/` | `bind the origin, "https://lists.acme.example", which keeps every list at it, one whose own URL ends in "/" included, or bind each list URL that does not end in "/"`; where the configuration binds that origin to another issuer, `bind each list URL that does not end in "/"; no binding can accept a list whose own URL ends in "/" there, since the origin, "<origin>", is bound to "<did>": change that list's URL`; and where no origin can hold it, as for an `http:` value, the same ending `and is at no https origin a binding can name: change that list's URL` |
+
+Read as written, each would bind only itself, as an exact URL, and no list at that origin or under that path.
+Any other exact URL is taken as written, upper-case letters included.
+The standalone conformance harness, `conformance/loader.ts` and `conformance/status_list.py`, refuses the same values.
+
+The checker throws a `TypeError` when it is built if the map is not a plain object, a key is empty, a value is not an array, an array holds anything but a string that starts with `https://` or `http://`, a value is one of the three above, or one value is under two issuers, or if the map is given without `verifyStatusList`.
 A map from a credential issuer to the issuers accepted for it holds DIDs where URLs belong, so it throws as well, with a message that says each value names the URLs an issuer keeps.
+
+You need not work the line out yourself.
+When the checker refuses a list another DID signed, its reason ends with the configuration that would accept the list, written as a condition, since only you know whether that DID signs for the URL:
+
+- `; if "<signer>" signs this issuer's lists, name it in statusListIssuers: { "<signer>": ["<origin>"] }` where the URL's keeper is the credential's issuer or the pinned root, `<origin>` being the list URL's origin as above, or the list's own URL where no origin can hold it, as for an `http:` URL or a host with an upper-case letter.
+- `; if "<signer>" signs the list at this URL, name it in statusListIssuers: { "<signer>": ["<url>"] }` where the configuration binds the URL's origin to another issuer.
+- `; if "<signer>" signs the list at this URL, move the URL's binding to it in statusListIssuers: { "<signer>": ["<url>"] }` where it binds the URL itself to another issuer.
+
+Where the configuration cannot be printed whole and exactly within the reason's 512 UTF-16 code units, `CHECKER_REASON_LENGTH`, the reason ends `; if the list's issuer signs this issuer's lists, name it in statusListIssuers with this list's https origin or URL`, or `; if the list's issuer signs the list at this URL, bind the URL to it in statusListIssuers`, and where that does not fit either, with neither.
+Nothing is added for a list whose `issuer` is no DID, for one at a URL no binding could give to its signer, such as one that ends in `/` at no https origin, or for a refusal by `CheqdStatusListResolver`, which holds every list to the one issuer it is configured with.
+Wherever a reason is cut for length, the cut falls before a remedy it would split, so a reason carries the remedy whole or not at all.
+`evaluateRevocationChain`, `verifyCard` and the `Status check error` of `DelegationCredentialVerifier` keep up to 640 UTF-16 code units of a reason a resolver or checker gives, so a wrapper may put up to 128 of its own before a library checker's reason and it still ends whole.
+The chain walk keeps a credential verifier's reason up to 1,024, and the delegation gate of `withKyaOs` logs up to 1,024, so the operator's log line ends with the remedy.
+The reason the gate sends its client is cut after 256, as every refusal it sends is, and so carries no remedy.
+Each configuration is checked before it is offered: written into yours, with the URL's binding moved where it says so, it makes the list's signer the keeper of its URL.
+The list must still meet the rest of the rule, such as stating its URL as its `id`.
 
 #### A hop whose status entry is on a list its own issuer did not issue
 
@@ -176,7 +344,11 @@ A DID URL naming the same resource is another `id`, so `CheqdStatusListResolver`
 
 Name the credential's issuer, `check(entry, { credentialIssuer })`, and, for a hop of a chain whose root you pin, the root as `trustedRootIssuer` with the URL the root's own credential names as `trustedRootStatusList`.
 A `trustedRootStatusList` given without `trustedRootIssuer` is ignored.
-A call that names no issuer resolves to revoked and not fresh, before any fetch.
+Every call the library makes with that context, from `DelegationCredentialVerifier`, `withStatusCache`, `evaluateRevocationChain` and `verifyCard`, also passes the entry as a fresh copy that carries the context under the non-enumerable key `Symbol.for('@kya-os/mcp/status-check-context')`.
+The checker reads the context there when it is given no second argument, and so does `withStatusCache`.
+So a `StatusListResolver` or checker of yours that wraps the checker and passes on only the very entry it was given keeps working, as it did on 1.22.0.
+A copy of the entry made by spreading it or through JSON does not carry the context, so a wrapper that rebuilds the entry must pass the second argument on.
+A call with neither, such as your own call with a bare entry, resolves to revoked and not fresh, before any fetch, with the reason `no credential issuer named to hold the status list to: a resolver or checker that wraps a library checker must pass its second argument on, or else the very entry it was given`.
 Pass `evaluateRevocationChain` the hops `revocationEntriesOf(chain, trustedRootIssuer)` builds.
 
 #### A hop whose `credentialStatus` states a `statusPurpose` other than the checker's, or one that is not a string, `null` included
@@ -232,6 +404,8 @@ Give it `createStatusListProofVerifier`, or a check that resolves `true` only fo
 The library reads a list only through it, so a list is held to the credential only as the resolver holds it.
 `checkStatus` is now told the credential's issuer; once a list's proof verifies, pass `acceptStatusList(list, statusListExpectationFor(status, context, statusListIssuers))`, with a `statusListIssuers` of your own in the shape above, as `CheqdStatusListResolver` applies the rule to its pin.
 `CheqdStatusListResolver` names its `expectedIssuerDid` as the keeper of every URL it reads.
+A resolver that wraps `createRevocationChecker` and calls it with only the entry it was given, as one written for 1.22.0 does, keeps working: the entry the verifier passes carries the context, as "A direct call to a checker built with `verifyStatusList`" says.
+Pass the second argument on all the same, and always when the resolver rebuilds the entry before it calls the checker.
 
 #### A `StatusListResolver` or `RevocationChecker` whose answer is not a boolean
 
@@ -244,6 +418,7 @@ Each member of a `RevocationChecker`'s answer is read once, and an answer with a
 `withStatusCache` does not keep an answer that is not a boolean, so the next check asks its resolver again.
 `CascadingRevocationManager` reads what its status list's `checkStatus` answers the same way: `isRevoked` reports a delegation as revoked, itself or through the ancestor concerned, when the answer is neither `true` nor `false`, with the reason `Credential status could not be read: the status list resolver's answer (<v>) is neither true nor false`, and does not throw on it; on 1.22.0 it read the answer by its truthiness, so `undefined`, `null`, `0` or `""` left the delegation reading as live.
 A resolver or checker written in TypeScript against the library's types already answers a boolean and needs no change; make any other return `true` or `false`, or throw when it cannot tell.
+Throw a `RefusalError` to refuse with its code and words, which reach whoever presented the credential; any other error still refuses, with the reason `Status check error: the status list at "<url>" could not be read or checked` or `Revocation check failed for delegation "<id>": the revocation checker failed`, and its words reach only the log.
 
 #### A `BitstringRevocationChecker` whose answer is not `{ revoked, fresh }` with literal booleans
 
@@ -251,14 +426,16 @@ This is the checker given to `evaluateRevocationChain` and `evaluateDelegationCh
 Its answer is read by the reader the delegation side uses, so the rule is the same on both sides.
 A hop or a Card passes only on an answer whose `revoked` is the literal `false`, is revoked only when it is the literal `true`, and is fresh only when `fresh` is the literal `true`.
 Any other answer, such as `undefined`, `null`, `0`, `{}`, `{ revoked: 0 }`, `{ revoked: "false" }` or one with a member whose getter throws, refuses the hop with a reason that says what was wrong, such as `revocation: hop 0 (list "https://status.example/1", index "7") has a status that could not be read: the revoked member of the revocation checker's answer (of type number) is neither true nor false`.
-`verifyRequestDelegation` and `requireDelegation` refuse the call as `delegation_revoked` with that reason.
-`verifyCard` reports such a Card as `revocation: { revoked: true, fresh: false, reason }`, where `reason`, a new optional member, says what could not be read; it is `ok: false` at L1, as any revoked Card is.
+`verifyRequestDelegation` and `requireDelegation` refuse the call as `delegation_revoked` with that reason, and the `refusalCode` `status_unavailable`.
+`verifyCard` reports such a Card as `revocation: { revoked: true, fresh: false, reason, code: "status_unavailable", transient: true }`, where `reason`, a new optional member, says what could not be read; it is `ok: false` at L1, as any revoked Card is.
 On 1.22.0 each member was read by its truthiness: a hop or a Card passed on `{}` or `{ revoked: 0 }`, was revoked on `{ revoked: "false" }`, was fresh on any truthy `fresh`, such as `1` or `"false"`, and `evaluateRevocationChain` threw a `TypeError` on `undefined` or `null`.
 `RevocationStatus` has a new optional member, `reason`: why the status could not be proven clear.
 The checker `createRevocationChecker` builds gives one whenever it fails closed, such as `status-list proof rejected` or the reason `acceptStatusList` gave, and a custom checker may give its own.
-`evaluateRevocationChain` appends it to the refusal of a revoked hop, and `verifyCard` reports it as `revocation.reason`, each cut after 256 UTF-16 code units.
-Code that compares a verdict of that checker with `{ revoked: true, fresh: false }` exactly must allow for the member.
-A checker that `createRevocationChecker` builds, or one written in TypeScript against `RevocationStatus`, already answers two booleans and needs no change; make any other return `{ revoked: true, fresh: false }` when it cannot tell.
+For a list it could not read or check, its reason says only `the status list at "<url>" could not be read or checked`, and the log has why, unless the read refused the URL before any request or DNS lookup or the deadline passed; a verdict on a list it read keeps its reason, the `statusListIssuers` remedy included.
+`evaluateRevocationChain` appends it to the refusal of a revoked hop, and `verifyCard` reports it as `revocation.reason`, each cut after 640 UTF-16 code units, so that the configuration a keeper refusal ends with is not cut, even after 128 code units of a wrapper's own words; the checker's own reason is at most 512, `CHECKER_REASON_LENGTH`.
+Every revoked verdict of that checker also carries `code` and `transient`, a set bit included, as `{ revoked: true, fresh: true, code: "delegation_revoked", transient: false }`, as "Refusal codes" says.
+So code or a test that compares a verdict of that checker exactly, with `{ revoked: true, fresh: false }` or with a set bit's `{ revoked: true, fresh: true }`, must allow for these members, and one that compares a refused `verifyCard` result or its `revocation` exactly must allow for `code` and `transient` too.
+A checker that `createRevocationChecker` builds, or one written in TypeScript against `RevocationStatus`, already answers two booleans and needs no change; make any other return `{ revoked: true, fresh: false }` when it cannot tell, with a `reason` written for whoever presented the credential, who receives it as it is.
 
 ### Status-list exports for a custom reader
 
@@ -276,7 +453,9 @@ So a custom `StatusListResolver` passes `acceptStatusList(list, statusListExpect
 All four, with their types, are exported from `@kya-os/mcp`, `@kya-os/mcp/delegation` and `@kya-os/mcp/card`.
 `StatusListResolver.checkStatus` and `BitstringRevocationChecker` take a `StatusCheckContext` as an optional second argument: `credentialIssuer`, and for a chain whose root the verifier pins, `trustedRootIssuer` and `trustedRootStatusList`, the URL the root's own credential names.
 `withStatusCache` passes it on and caches per context, and `revocationEntriesOf(chain, trustedRootIssuer)` builds it for every hop of a delegation chain, as a `RevocationChainEntry` that carries the hop's `statusPurpose` and its `position` in the chain.
+The library also passes the entry as a copy that carries the context under `Symbol.for('@kya-os/mcp/status-check-context')`, which the checker `createRevocationChecker` builds and `withStatusCache` read when they are given no second argument, as "A direct call to a checker built with `verifyStatusList`" says.
 `createRevocationChecker` takes `statusListIssuers`, described under "How to write `statusListIssuers`".
+`CHECKER_REASON_LENGTH`, exported from `@kya-os/mcp/card`, is how long the reason of the checker `createRevocationChecker` builds may be: 512 UTF-16 code units, and a reader keeps 128 more of a reason a resolver or checker of yours gives.
 The delegation middleware names only the credential's own issuer to its resolver, even when `trustedRootIssuers` pins the chain's root, so on that path a list the root signed for a re-delegated credential is refused unless the resolver's own configuration binds the list's URL, or its origin, to the root and the list states its `id`.
 
 ### Limits on DID resolution and status-list reads
@@ -297,14 +476,21 @@ One dependency of theirs has no deadline from the library: the `verifier` that `
 A custom one must set its own, and so must a provider no function above calls, such as the nonce cache and the session store of `ProofVerifier` and the middleware.
 Anything over a limit is refused, never cut to fit, so check that your DID documents and status lists are within these limits before you upgrade.
 SPEC.md §4.4.2 explains each limit.
-Every did:web and status-list read also holds its host, and each redirect, to one private-network rule, whatever `FetchProvider` it reads through.
+Every did:web and status-list read also holds its host, and each redirect, to one private-network rule, whatever `FetchProvider` it reads through, which admits a private or local host only under `development: true` or a provider's `allowPrivateNetworkHosts: true`.
 Find your setup below.
 
 #### A custom `FetchProvider` given to the did:web or cheqd resolver, or to `CheqdStatusListResolver`
 
-Its `fetch` must return a `Response` whose `body` is a WHATWG `ReadableStream`.
-The readers read the body as a stream and no longer call `json()`, so an adapter or mock that implements only `json()` resolves nothing, and neither does node-fetch v2, whose body is a Node stream.
-A body that is not valid UTF-8 is refused, where `json()` replaced the invalid bytes.
+Its `fetch` may return a `Response` whose `body` is a WHATWG `ReadableStream`, which the readers read as it streams, counting each byte against the cap.
+It may also return a response whose body is not one, such as the `{ ok, status, json, text }` that `createSafeFetch` answers, or a node-fetch v2 response, whose body is a Node stream.
+The readers read such a response through its `text()`, which must answer a string, or, when it has none, through its `json()`, which 1.22.0 called for every response.
+They wait for that answer within the read's one deadline, hold the UTF-8 bytes of the text to the same byte cap, and hold the text to the same JSON limits before they parse it.
+`text()` and `json()` hold the whole body before the reader can count it, so only the provider bounds what that costs; `createSafeFetch` holds a body to its own `maxBytes`, 1 MiB by default.
+A response with none of the three is refused, saying what a provider must return, as "Changed refusal reasons" lists.
+A stream body that is not valid UTF-8 is refused, as `DID resolution response is not valid UTF-8` or `Status list fetch response is not valid UTF-8`, where `json()` replaced the invalid bytes.
+A response read through its `text()` is read as the string it answers, so the provider's own decoding decides, and a `Response`'s `text()` replaces invalid bytes with U+FFFD.
+Text that is not JSON is refused as `DID resolution response is not JSON` or `Status list fetch response is not JSON`.
+`SafeFetchResponse` has a new optional member, `text()`, which `createSafeFetch` answers, so a provider over it is read from the exact text the server sent.
 
 #### A `DidCheqdResolver` given `headers`
 
@@ -319,11 +505,28 @@ Its document is checked on every resolution, and the object it returned is neith
 The verifier copies it as it checks it and reads only the copy, so the resolver need not return a new object each time, and a change it makes to a returned object is seen at the next resolution, not during a verification.
 A key the document must publish has to be an own enumerable member, and an array's entries its elements by index, as `JSON.stringify` would write them.
 
+`DIDResolver` has a new optional member, `lastFailure(did)`, which answers why the resolver's last resolution of `did` found no document, as a `DidResolutionFailure`, `{ cause, detail }`.
+The `cause` is `host_refused`, `deadline_exceeded`, `unavailable`, `too_large` or `invalid_document`, and the `detail` says what failed, and how to fix it where the library knows, in the library's own words, never quoting a transport's error, which stays in the log.
+`too_large` is a document over the byte cap, which no document of the DID may be, and `invalid_document` is also the cause for a DID the resolver can never resolve, such as a did:key whose key does not decode or a did:web DID that names no URL.
+A resolver of some methods records nothing for a DID of another, so a resolver that composes several reports the failure of the one that serves the DID; the delegation gate's own resolver records `invalid_document` for a DID of a method none of its resolvers serves.
+`DidWebResolver`, `createDidWebResolver`, `createDidKeyResolver`, `DidCheqdResolver`, `createDidCheqdResolver`, `cheqdResolver` and the delegation gate's own resolver have it; `RuntimeFetchProvider.resolveDID` reports none.
+A verifier that refuses a credential as `Could not resolve issuer DID` codes the refusal by the `cause`: `host_refused` and `deadline_exceeded` keep their names, `unavailable` is `did_unavailable`, and `too_large` and `invalid_document` are `did_invalid`.
+Whoever presents a credential chooses its issuer's DID, so the reason adds the detail in parentheses only where it tells the presenter nothing the verifier's network answered: where one of the library's resolvers decided the failure from the DID alone, before any request or DNS lookup, such as a did:web DID that names a private IP or a local name or no URL, a did:key that does not decode, a did:cheqd DID of no network the resolver asks, or a DID of a method no resolver serves; and where the deadline passed.
+Whatever the network answered is for the operator alone, such as an HTTP status, a document over the byte cap, not JSON or not the DID's, a refused redirect, or a host SafeFetch refused once it looked up its address: the reason then reads only `Could not resolve issuer DID: "<did>"`, and the library's resolvers log the detail.
+The operator finds why in that log line and in the refusal's code; a presenter sees it only where it runs the server too, as in local development.
+The delegation gate of `withKyaOs` sends that reason to its client, within its 256 UTF-16 code units, so the client sees a detail only where the reason shows one, such as the private-host refusal, which names the host the DID names.
+The detail a resolver of your own reports is shown only for `deadline_exceeded`, since the library cannot tell what it learned from the network; its `cause` still sets the code.
+A resolver without it is refused as before; one that wraps a library resolver may pass its failure on as it is, as `lastFailure: (did) => inner.lastFailure?.(did)`, and the refusal shows what the library resolver's would.
+A resolver that throws is refused as `did_unavailable` with the reason `Could not resolve issuer DID: "<did>"`, its words logged, or with the code and words of a `RefusalError` it throws.
+It reports the last failure for the DID, so a resolution that ends in between may answer for it: read it as a diagnosis, never as a security decision.
+`DidResolutionFailure` and `DidResolutionFailureCause` are exported from `@kya-os/mcp` and `@kya-os/mcp/delegation`.
+
 #### A custom `FetchProvider` that reads did:web documents or status lists, such as `delegation.fetchProvider`
 
 Each read now calls its `fetch` with `redirect: "manual"` and follows a redirect itself, refusing a target the private-network rule refuses and a step from https down to http, and sending another origin only the CORS-safelisted request headers and the request's `Cache-Control` and `Pragma`; in a browser, which hides where a redirect leads, it refuses every redirect.
 The provider's `fetch` must pass `redirect` on to the request.
 One that drops it lets the runtime follow a redirect before the read sees the response: the read then refuses a response that says it was redirected, or names a URL other than the one asked for, but the request has been made.
+A provider over `createSafeFetch`, whose `fetch` takes only a URL, passes nothing on, and needs no change: SafeFetch follows only a redirect to the same https origin, under the same address screen as the first request, and its answer names no URL.
 
 #### A custom `FetchProvider` whose response names a URL other than the one asked for, such as a gateway, a proxy or a test double that rewrites URLs
 
@@ -336,17 +539,46 @@ Rebuilding a response after following a redirect itself would hide that redirect
 Every did:web read, by the delegation gate, `DidWebResolver`, `createDidWebResolver` or `RuntimeFetchProvider.resolveDID`, and every status-list read, by `CheqdStatusListResolver` or `RuntimeFetchProvider.fetchStatusList`, now refuses a URL whose host is a non-public IP literal or a local name, in any case and with any trailing dots, through any provider.
 A local name is a single label, such as `ip6-localhost`, `metadata` or an intranet host's short name, or `localhost`, `localdomain`, `localdomain6`, `local`, `internal` or `home.arpa`, or a name under one of them, such as `localhost.localdomain`, `localhost6.localdomain6`, `printer.local`, `router.home.arpa` or `metadata.google.internal`.
 It classifies an address as `SafeFetch` does, so it refuses more than `RuntimeFetchProvider` did, such as an IPv4-mapped, IPv4-translated or NAT64 IPv6 form of a private address, shared address space (100.64.0.0/10), the documentation ranges and multicast.
-To read from such a host, give the reader `new RuntimeFetchProvider({ allowPrivateNetworkHosts: true })`, as `delegation.fetchProvider` for the gate, or a custom provider whose `allowPrivateNetworkHosts` member, now declared on `FetchProvider`, is `true`; `RuntimeFetchProvider` now exposes its option as that read-only member.
+The refusal names both ways to admit the host: `Request to "<host>" refused: a private or local host. In local development, set development: true; to read private hosts in production, give the fetch provider allowPrivateNetworkHosts: true.`
+A redirect to such a host is refused as `Redirect to a private or local host refused. In local development, ...`, which does not name the host; the log does.
+For did:web, the refusal of the host the DID names reaches a verifier's reason inside `Could not resolve issuer DID: "<did>" (...)`, while a refused redirect, which the network answered, reaches only the log, the reason reading `Could not resolve issuer DID: "<did>"`.
+Either way the refusal's code is `host_refused`, which is not transient: asking again does not change it.
+
+In local development, set `development: true`:
+
+- On `withKyaOs` or `createKyaOsMiddleware` (`KyaOsConfig.development`), for every resolver and reader the middleware builds.
+  Its did:web resolver admits private and local hosts whatever provider it reads through, `delegation.fetchProvider` included, the `RuntimeFetchProvider` it builds when it is given no `delegation.fetchProvider` has `allowPrivateNetworkHosts: true`, and each factory in `delegation.didResolvers` gets `development: true` in its context.
+  An object you build and hand it, such as a `CheqdStatusListResolver` as `statusListResolver` or a `delegation.didResolver`, takes its own setting.
+- On `DidWebResolverOptions`, for `DidWebResolver` and `createDidWebResolver`, and on `CheqdStatusListResolverOptions`, for a resolver you build yourself.
+- On `RuntimeFetchProviderOptions`, for a `RuntimeFetchProvider` you build yourself, such as one you give as `delegation.fetchProvider` or to `ProofVerifier`; its `allowPrivateNetworkHosts` member then reads `true`.
+- On `SafeFetchOptions`, as "Code that calls `isBlockedAddress` or `createSafeFetch`" says.
+
+It admits private and local hosts as `allowPrivateNetworkHosts: true` does, and changes nothing else: the scheme rule, checked redirects, byte caps and deadlines all hold.
+It is for development alone.
+The first time it is on in a process it logs one warning, and while `NODE_ENV` is `production` building what it is set on throws an error that names the setting, so `withKyaOs` rejects and `createKyaOsMiddleware` throws at startup.
+It reads `process.env.NODE_ENV` as written, so a bundle in which a bundler has put `"production"` in its place, as for a Worker, refuses it too, and a runtime with no `process`, or one that refuses to read the environment, counts as not production.
+Any value but `true` or `false` throws a `TypeError`, such as `KyaOsConfig.development must be true or false`.
+A `didResolvers` factory of your own that builds a did:web resolver passes it on, as `createDidWebResolver(fetchProvider, { development: context?.development })`.
+
+To read private hosts in production, such as an intranet, give the reader `new RuntimeFetchProvider({ allowPrivateNetworkHosts: true })`, as `delegation.fetchProvider` for the gate, or a custom provider whose `allowPrivateNetworkHosts` member, now declared on `FetchProvider`, is `true`; `RuntimeFetchProvider` now exposes its option as that read-only member.
 Only `true` opts in: `RuntimeFetchProvider` no longer reads another truthy value, such as `1` or `'true'`, as `true`.
 The rule resolves no name, so it does not refuse any other name whose address is private, such as a public name that points at a loopback address: a verifier needs an egress control that refuses private addresses for that.
 
 #### Code that calls `isBlockedAddress` or `createSafeFetch`
 
 An IPv4-translated IPv6 address (`::ffff:0:0:0/96`) is now classified by the IPv4 address it embeds, as an IPv4-mapped one is, so one that embeds a private address is refused.
+`createSafeFetch` now refuses a non-public IP literal, IPv4 or IPv6, and `localhost` or a name under it, by the URL alone, before any lookup, as `safe-fetch: refusing host "<host>", a private or local host: in local development, set development: true; to read a host you own in production, list each origin you own in SafeFetch's allowOrigins`.
+That refusal is `host_refused`, and a verifier shows it to whoever named the URL, since the URL alone decides it; a blocked IPv6 literal, whose lookup failed, and a `*.localhost` name the system does not resolve are refused so too, where they failed as a lookup error.
+Its refusal of any other name that resolves to a non-public address now names the host, not the address, which goes to the log, and ends with the two ways to admit it: `safe-fetch: refusing host "<host>", which resolves to a non-public address: in local development, set development: true; to read a host you own in production, list each origin you own in SafeFetch's allowOrigins`; a verifier tells only the operator why, since the lookup decided it.
+A body over its `maxBytes` is refused as too large whether or not the server declared its length, so a did:web document over the cap read through it is `did_invalid`.
+Its refusal of a redirect to another origin names the origin it left, `safe-fetch: cross-origin redirect from <origin> blocked`, and logs the target.
+`SafeFetchOptions` takes `development: true`, which admits private and local addresses for a local demo: SafeFetch still resolves and pins the host, reads only https, refuses a redirect to another origin, and holds the size cap and the timeout.
+It warns once, throws a `TypeError` for any value but a boolean, and makes `createSafeFetch` throw while `NODE_ENV` is `production`, saying to list in `allowOrigins` the origins you own instead.
+`SafeFetchResponse` has a new optional member, `text()`, which `createSafeFetch` answers, so a `FetchProvider` whose `fetch` returns SafeFetch's answer is read by the did:web and status-list readers, as "A custom `FetchProvider` given to the did:web or cheqd resolver, or to `CheqdStatusListResolver`" says.
 
 #### A did:web or status-list URL whose scheme is not http or https
 
-Every did:web and status-list read now refuses a URL that is not an absolute http or https URL, such as a `data:` or `file:` URL, before any request, whatever `allowPrivateNetworkHosts` says.
+Every did:web and status-list read now refuses a URL that is not an absolute http or https URL, such as a `data:` or `file:` URL, before any request, whatever `allowPrivateNetworkHosts` or `development` says.
 `RuntimeFetchProvider.fetchStatusList` read such a URL through the runtime's `fetch`.
 
 #### A DID longer than 2,048 UTF-16 code units, such as a did:key for an ML-DSA-65 or ML-DSA-87 post-quantum key, or a did:peer:2 that lists many keys or services
@@ -380,6 +612,7 @@ It now has 5 seconds to return, so a resolver that walks `parentId` one read at 
 #### A dependency that can take longer than 5 seconds to answer
 
 Each call a verifier makes to a dependency the host supplies now has 5 seconds, and one that has not answered by then is refused as below, never thrown, where on 1.22.0 the verification waited without end.
+The refusal's code is `deadline_exceeded`, which is transient, so the same request may pass once the dependency answers in time.
 The dependency's own work is not cancelled, so one that reads over a network should bound each read itself, and a later verification asks it again.
 
 | Dependency | Refused as |
@@ -397,7 +630,7 @@ The dependency's own work is not cancelled, so one that reads over a network sho
 | `resolveKey`, `resolveDidKeys` and `consumeNonceIfFresh` of `verifyCardProof` and `requireProof` | the reasons `key_unresolvable`, `did_keys_unresolvable` and `nonce_cache_unavailable`, as when each throws |
 
 The 5 seconds cover the whole call, so a checker built with `createRevocationChecker` has them for its list read and its `verifyStatusList` together, and `CheqdStatusListResolver` for its list read and its DID resolution together.
-A dependency that throws is handled as on 1.22.0.
+A dependency that throws refuses as on 1.22.0, but its words reach the reason only when it throws a `RefusalError`, as "A verifier or checker of your own" says; any other error's go to the log.
 
 To give a dependency longer, set `dependencyTimeoutMs`, in milliseconds, on the verifier, resolver or provider that waits for it.
 It is one option with one name on every entry point below, and its default is 5,000.
@@ -426,7 +659,7 @@ For example, a `verifyCard` given 30,000 still fails a status check after 5 seco
 The middleware passes `delegation.dependencyTimeoutMs` to the verifier, the did:web resolver and the fetch provider it builds itself, and to each factory in `didResolvers`, so a resolver that `cheqdResolver(options)` builds waits as long unless its own options set another time.
 It does not pass it to an object the host built: a `fetchProvider`, a `didResolver`, a resolver instance in `didResolvers` or a `statusListResolver`, such as a `CheqdStatusListResolver`, each of which takes its own.
 A `RuntimeFetchProvider` passes its `dependencyTimeoutMs` to the factories in its `didResolvers` the same way.
-A `didResolvers` factory of your own receives it as the `dependencyTimeoutMs` of a new second argument.
+A `didResolvers` factory of your own receives it as the `dependencyTimeoutMs` of a new second argument, `DIDResolverFactoryContext`, which from the middleware also carries `development: true` under `KyaOsConfig.development`.
 A reason states the time that was configured: `did not answer within 30 seconds` for 30,000, and in milliseconds when it is not a whole number of seconds, as in `did not answer within 7500 ms`.
 A checker built with `createRevocationChecker` now also has this deadline when it is called directly, where on 1.22.0 it waited without end, and resolves revoked and not fresh when it is missed.
 `verifyVcJwtSignature` takes the time for its DID resolver as an optional fifth argument.
@@ -437,8 +670,9 @@ A checker built with `createRevocationChecker` now also has this deadline when i
 `DelegationCredentialVerifier` takes the answer of a custom `signatureVerifier` as a verified signature only when it is an object whose `valid` is the literal `true`.
 On 1.22.0 `valid` was read by its truthiness, so a credential whose signature did not hold verified on `{ valid: "false" }`, `{ valid: 1 }` or `{ valid: {} }`.
 An answer whose `valid` is the literal `false` refuses the credential with the answer's `reason`, when that is a string, as text of at most 256 UTF-16 code units with no control character.
+It may also name a code of the catalog as `code`, which the refusal then carries, as "Refusal codes" says.
 Any other answer refuses it with a reason that starts `The verdict of the signature verifier could not be read`: one that is not an object, one whose `valid` is not a boolean, and one whose `valid` or `reason` throws when read.
-`validateDelegationChain` reads the answer of the `verifier` it is given the same way, with a reason that names `the credential verifier`, where on 1.22.0 it passed a credential on any truthy `valid` and threw a `TypeError` on an answer of `undefined` or `null`.
+`validateDelegationChain` reads the answer of the `verifier` it is given the same way, keeping its `reason` up to 1,024 UTF-16 code units, with a reason that names `the credential verifier`, where on 1.22.0 it passed a credential on any truthy `valid` and threw a `TypeError` on an answer of `undefined` or `null`.
 A verifier written in TypeScript against the library's types already answers a boolean and needs no change; make any other return `{ valid: true }` or `{ valid: false, reason }`.
 `verifyCard` reads its other seams as it already read `accountabilityVerifier`.
 An `accountabilityVerifier` answer that is neither a boolean nor an object, whose `verified` is not a boolean, or that throws when read leaves the Card not accountable with `accountability.reason` saying why, where a member that threw made `verifyCard` throw.
@@ -467,16 +701,24 @@ For a VC-JWT whose envelope does not verify, it now has the `proof: { type: "Jwt
 
 #### Code that matches on a failure `reason`
 
+Match on the refusal's `code` instead, as "Refusal codes" says: the wording of a reason changed in each of the ways below and may change again, and a code does not.
+What follows is for code that must still read the text.
 A chain's links, and then its root's `issuer` against `trustedRootIssuers`, are checked before any credential is verified, so a broken link or an untrusted root now gives that reason even when a signature would also fail, and for a VC-JWT the reasons for a malformed chain, a missing `resolveDelegationChain`, `maxChainLength` and root admission come before the envelope's.
 An untrusted root reads `Root delegation <id> is issued by "<issuer>", which is not a trusted root issuer`, the issuer quoted as other reasons quote a value.
-`Could not resolve issuer DID` is the reason for an issuer DID over its limit, for a VC-JWT as for a credential with an embedded proof, without asking the resolver.
-A resolution that misses its deadline fails with a reason that ends `DID resolution deadline exceeded`, and a status-list read with one that ends `Status list fetch deadline exceeded`, or names the limit it exceeded.
+`Could not resolve issuer DID` is the reason for an issuer DID over its limit, for a VC-JWT as for a credential with an embedded proof, without asking the resolver, and with nothing after the DID.
+When a resolver finds no document and says why through `lastFailure`, as the library's own do, the reason ends with that detail in parentheses only where one of the library's resolvers decided it from the DID alone, before any request or DNS lookup, or the deadline passed, so match on its start, or branch on the refusal's code, which follows the `cause`: `host_refused`, `deadline_exceeded`, `did_unavailable` for `unavailable` and `did_invalid` for `too_large` and `invalid_document`.
+A resolution that misses the verifier's deadline fails with a reason that ends `DID resolution deadline exceeded`, or, when the resolver's own deadline is the shorter, one that ends `(DID resolution deadline exceeded: no document arrived within <time>)`, and a status-list read with one that ends `Status list fetch deadline exceeded`, or names the limit it exceeded.
 Any other dependency that misses it gives a reason that ends `did not answer within 5 seconds`, or within the time `dependencyTimeoutMs` sets, listed under "A dependency that can take longer than 5 seconds to answer".
+A reason that quoted what a dependency or the network threw, such as `Status check error: <error>`, now holds those words only where they are a `RefusalError`'s, a read's refusal of its URL before any request, or a deadline's, and otherwise says what could not be done, as "Changed refusal reasons" lists.
+The refusal of a private or local host, and `createSafeFetch`'s of a private IP literal, a `localhost` name or a host that resolves to a non-public address, now end by naming the settings that admit the host.
+A reason a resolver or checker gives a status check, in `Status check error`, the chain walk and `verifyCard`, and a `RevocationChecker`'s in `Delegation <id> is revoked`, is cut after 640 UTF-16 code units, a credential verifier's reason in the chain walk after 1,024, and the other texts a reason quotes after 256, as "Changed refusal reasons" says, and no cut falls inside a `statusListIssuers` remedy.
+The delegation gate of `withKyaOs` logs up to 1,024 UTF-16 code units of a reason, where it logged 256, and still sends its client at most 256.
 `ProofVerifier` refuses a DID or key id over its limit with `DID or key identifier exceeds resource limit`, and an empty DID with `DID is empty`.
 
 #### A did:cheqd DID whose unique id is not a UUID or letters and digits
 
 `parseDidCheqd` reads only the unique id cheqd's DID method defines, a UUID or letters and digits, and `DidCheqdResolver` refuses any other DID before a request.
+Its refusal of such a DID is `did_invalid`, a verdict that asking again does not change, and a verifier shows why, since the DID alone decides it; for a DID of another method it records no failure, so a resolver that composes it reports the failure of the one that serves that DID.
 On 1.22.0 it read any unique id without `/`, `?` or `#`, and asked the resolver for it.
 `didCheqdToResolverUrl` writes the DID as one path segment, percent-encoded except for its colons, so a DID of the method is written as before.
 
@@ -505,7 +747,7 @@ Exported beside them, from the root and from `@kya-os/mcp/delegation`, are the c
 ### Delegation audit events, and how the gate reads a credential
 
 The audit events of the delegation gate's decision say which delegation it decided on, by the reference and the digests of SPEC.md §7.8.
-`delegation.rejected` now carries `delegationRef` and `delegationCredentialDigest` in its authorization evidence, where it carried none, and a retry allowed under a stored grant carries those of the delegation the grant was minted from, on `grant.used` and in the context handed to the handler.
+`delegation.rejected` now carries `delegationRef` and `delegationCredentialDigest` in its authorization evidence, where it carried none, and the refusal's code as `verificationCode`, as "Refusal codes" says, and a retry allowed under a stored grant carries those of the delegation the grant was minted from, on `grant.used` and in the context handed to the handler.
 `delegation.verified`, `delegation.rejected` and `grant.used` also list `delegationChainDigests`, one digest per credential evaluated.
 On a refusal that is what the server had examined when it refused: the ancestors up to the one it stopped at, then the presented credential.
 A refusal in which a value a resolver returned could not be read lists none.

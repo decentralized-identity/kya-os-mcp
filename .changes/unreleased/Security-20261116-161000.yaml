@@ -1,0 +1,26 @@
+kind: Security
+body: |-
+    **A refusal no longer tells whoever presented a credential what the
+    verifier's network answered, or what a dependency of the host's threw.**
+    The presenter chooses the DIDs and status-list URLs a verifier reads,
+    and their hosts may be internal ones. A reason now says why a DID or a
+    status list could not be read only where the DID or the URL alone
+    decided it, before any request or DNS lookup, as for a private or local
+    host it names, or where the deadline passed. Otherwise it reads `Could
+    not resolve issuer DID: "<did>"` or `the status list at "<url>" could
+    not be read or checked`, and an HTTP status, the text of a body that is
+    not JSON, a byte cap, a redirect target or a transport's error, which
+    1.22.0 quoted, goes to the operator's log; the refusal's code still says
+    which kind of failure it was. A DID resolver, signature verifier, chain
+    resolver, revocation checker, status-list resolver or proof verifier the
+    host supplies that throws still refuses, with a reason such as
+    `Signature verification error: the signature could not be checked` or
+    `Failed to resolve delegation chain: the chain resolver failed`, and its
+    words reach only the log, as do a handshake delegation verifier's, whose
+    challenge says `the delegation verifier failed`. To refuse in its own
+    words, it throws a `RefusalError`, now exported from `@kya-os/mcp`,
+    `@kya-os/mcp/delegation` and `@kya-os/mcp/card`, whose code and message
+    reach the refusal. A verdict on a list that was read keeps its reason,
+    the `statusListIssuers` remedy included. UPGRADING.md, "Changed refusal
+    reasons", has each wording.
+time: 2026-11-16T16:10:00.000000-06:00

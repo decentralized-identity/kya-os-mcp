@@ -63,6 +63,8 @@ describe('a refused call', () => {
       delegationRef: widened.leaf.id,
       delegationCredentialDigest: perHop.at(-1),
       delegationChainDigests: perHop,
+      // What the verification came to: a re-delegation wider than its parent.
+      verificationCode: 'chain_invalid',
     });
     // The gate's event is the one that says what was presented: the
     // refusal's other events are recorded as in 1.22.0, with none.

@@ -160,8 +160,11 @@ describe("validateDelegationChain's credential verifier", () => {
       verifier: { verifyDelegationCredential: (async () => answer) as never },
       statusListConfigured: false,
     });
-  /** A refusal at the credential's verification, which the walk reaches the credential to make. */
-  const refused = (reason: string) => ({ valid: false, reason, evaluated: [leaf] });
+  /**
+   * A refusal at the credential's verification, which the walk reaches the credential to make: by
+   * default of an answer that is not a verdict, so no verdict was reached.
+   */
+  const refused = (reason: string, code = 'runtime_error', transient = true) => ({ valid: false, reason, code, transient, evaluated: [leaf] });
   const unreadable = 'Delegation del-leaf invalid: The verdict of the credential verifier could not be read: ';
 
   it('passes a credential only on the literal true', async () => {
@@ -180,6 +183,9 @@ describe("validateDelegationChain's credential verifier", () => {
   });
 
   it('refuses on the literal false with the reason the verifier gave', async () => {
-    expect(await validate({ valid: false, reason: 'expired' })).toEqual(refused('Delegation del-leaf invalid: expired'));
+    expect(await validate({ valid: false, reason: 'expired' })).toEqual(refused('Delegation del-leaf invalid: expired', 'delegation_invalid', false));
+    expect(await validate({ valid: false, reason: 'expired', code: 'delegation_expired' })).toEqual(
+      refused('Delegation del-leaf invalid: expired', 'delegation_expired', false),
+    );
   });
 });

@@ -8,7 +8,7 @@
  * `evaluateDelegationChain`, `verifyRequestDelegation`, `requireDelegation` and `verifyCard`.
  */
 import { describe, expect, it } from 'vitest';
-import { countingAnswer, UNREADABLE_ANSWERS } from '../../__tests__/utils/revocation-answers.js';
+import { countingAnswer, PASSING_WITH_THROWING_CODE, UNREADABLE_ANSWERS } from '../../__tests__/utils/revocation-answers.js';
 import { evaluateDelegationChain, leafInvokerOf } from '../delegation.js';
 import { createDelegationProofVerifier } from '../delegation-proof.js';
 import { createDidKeyResolver } from '../../delegation/did-key-resolver.js';
@@ -18,6 +18,7 @@ import type { EntityCard } from '../schema.js';
 import { verifyCard } from '../verify.js';
 import { now, RESOURCE } from './signed-chain-helpers.js';
 import { cast, threeHopChain } from './status-list-paths.js';
+import { BIT_SET, codedAs } from '../../__tests__/utils/refusal-coding.js';
 
 const ENTRY: RevocationStatusEntry = { statusListCredential: 'https://status.example/1', statusListIndex: '7' };
 /** A checker whose every answer is `answer`, typed as the status it claims to be. */
@@ -50,6 +51,7 @@ describe('evaluateRevocationChain', () => {
       reasons: [
         `revocation: hop 0 (list "https://status.example/1", index "7") is revoked or unresolvable ${String.fromCodePoint(0x2014)} fail-closed, subtree invalidated`,
       ],
+      ...BIT_SET,
     });
   });
 
@@ -58,6 +60,7 @@ describe('evaluateRevocationChain', () => {
       ok: false,
       fresh: false,
       reasons: [unreadableHop(0, ENTRY.statusListCredential, ENTRY.statusListIndex, why)],
+      ...codedAs('status_unavailable'),
     });
   });
 
@@ -68,6 +71,10 @@ describe('evaluateRevocationChain', () => {
     expect(result).toMatchObject({ ok: false, fresh: false });
     expect(result.reasons).toEqual([expect.stringMatching(/^revocation: hop 1 .* has a status that could not be read: /)]);
     expect(asked).toBe(2);
+  });
+
+  it('passes a hop on an answer that does not revoke, whatever its code getter would do', async () => {
+    expect(await evaluateRevocationChain([ENTRY], answering(PASSING_WITH_THROWING_CODE))).toMatchObject({ ok: true, fresh: true });
   });
 
   it('reads each member of an answer once', async () => {
@@ -105,11 +112,14 @@ describe('the paths that walk a delegation chain', () => {
       code: 'delegation_revoked',
       reasons,
       source: 'carried',
+      refusalCode: 'status_unavailable',
+      transient: true,
     });
     expect(await requireDelegation(deps(checker))(input)).toMatchObject({
       ok: false,
       status: 403,
       error: { code: 'delegation_revoked', reasons },
+      refusalCode: 'status_unavailable',
     });
   });
 });
@@ -152,7 +162,7 @@ describe("verifyCard's revocation check", () => {
   it('reads the literal true as revoked', async () => {
     const result = await verify({ revoked: true, fresh: true });
     expect(result).toMatchObject({ ok: false, conformanceLevel: 'L1' });
-    expect(result.revocation).toEqual({ revoked: true, fresh: true });
+    expect(result.revocation).toEqual({ revoked: true, fresh: true, ...BIT_SET });
   });
 
   it.each(UNREADABLE_ANSWERS)('refuses a Card, and does not throw, when its checker answers %s', async (_label, answer, why) => {
@@ -162,6 +172,7 @@ describe("verifyCard's revocation check", () => {
       revoked: true,
       fresh: false,
       reason: `the Card's revocation status could not be read: ${why}`,
+      ...codedAs('status_unavailable'),
     });
   });
 });

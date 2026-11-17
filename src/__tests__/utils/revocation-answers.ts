@@ -61,8 +61,15 @@ export const THROWING_ANSWERS: readonly (readonly [string, unknown, string])[] =
   throwingMember('revoked'),
   throwingMember('reason', { revoked: true }),
   throwingMember('revokedAncestor', { revoked: true }),
+  throwingMember('code', { revoked: true }),
   throwingMember('fresh', { revoked: false }),
 ];
+
+/**
+ * An answer that passes, with a `code` getter that throws: a code is read only from an answer that
+ * revokes, so a passing answer's is never read, as it was not before codes were read.
+ */
+export const PASSING_WITH_THROWING_CODE = throwingMember('code', { revoked: false, fresh: true })[1];
 
 /** Every answer above: none passes a credential, and none is read as revoked. */
 export const UNREADABLE_ANSWERS = [...NOT_OBJECT_ANSWERS, ...NOT_BOOLEAN_ANSWERS, ...THROWING_ANSWERS];

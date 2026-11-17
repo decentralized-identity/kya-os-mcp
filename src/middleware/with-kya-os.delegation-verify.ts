@@ -13,11 +13,7 @@ import { dependencyTimeout } from "../utils/deadline.js";
 import {
   buildDidResolverRegistry,
 } from "../delegation/did-resolver-registry.js";
-import { getDidMethod } from "../utils/did-helpers.js";
-import {
-  DelegationCredentialVerifier,
-  type DIDResolver,
-} from "../delegation/vc-verifier.js";
+import { DelegationCredentialVerifier } from "../delegation/vc-verifier.js";
 import {
   validateDelegationChain as validateDelegationChainCore,
   type ChainValidationResult,
@@ -29,6 +25,7 @@ import { assertTrustedRootIssuers } from "../delegation/root-admission.js";
 import { parseVCJWT } from "../delegation/utils.js";
 import { embeddedSignatureVerifier } from "../delegation/embedded-signature.js";
 import { createDelegationDescriber, type DelegationRecords } from "./with-kya-os.delegation-records.js";
+import { createGateDidResolver } from "./with-kya-os.did-resolver.js";
 import {
   checkPresentation,
   readOnce,
@@ -44,6 +41,7 @@ import {
 import { logger } from "../logging/index.js";
 import { TtlCache } from "../utils/ttl-cache.js";
 import { isRecord } from "../utils/guards.js";
+import { coded } from "../utils/refusal.js";
 import type {
   KyaOsChallengeFormatter,
   KyaOsToolHandler,
@@ -130,7 +128,7 @@ export interface DelegationVerification {
 export function createDelegationVerification(
   deps: MiddlewareDeps,
 ): DelegationVerification {
-  const { identity, cryptoProvider, delegationConfig } = deps;
+  const { identity, cryptoProvider, delegationConfig, development } = deps;
 
   // Refused at startup, before anything that waits is built.
   const dependencyTimeoutMs = dependencyTimeout(delegationConfig?.dependencyTimeoutMs, "delegation.");
@@ -138,52 +136,25 @@ export function createDelegationVerification(
   const fetchProvider =
     delegationConfig?.fetchProvider ??
     (typeof globalThis.fetch === "function"
-      ? new RuntimeFetchProvider({ dependencyTimeoutMs })
+      ? new RuntimeFetchProvider({ dependencyTimeoutMs, allowPrivateNetworkHosts: development })
       : undefined);
+  // In development every resolver built here admits private and local hosts, whatever provider it reads through.
+  const developing = development ? { development } : {};
   const didWebResolver = fetchProvider
-    ? createDidWebResolver(fetchProvider, { dependencyTimeoutMs })
+    ? createDidWebResolver(fetchProvider, { dependencyTimeoutMs, ...developing })
     : undefined;
   const configuredDidResolvers = buildDidResolverRegistry(
     delegationConfig?.didResolvers,
     fetchProvider,
-    { dependencyTimeoutMs },
+    { dependencyTimeoutMs, ...developing },
   );
-  const didResolver: DIDResolver = {
-    async resolve(did: string) {
-      // The verifier stops waiting at its deadline, so no further resolver is asked once it has passed.
-      const deadline = Date.now() + dependencyTimeoutMs;
-      const customResolver = delegationConfig?.didResolver;
-      if (customResolver) {
-        const resolved = await customResolver.resolve(did);
-        if (resolved) {
-          return resolved;
-        }
-      }
-
-      const method = getDidMethod(did);
-      const configuredResolver = method && Date.now() < deadline ? configuredDidResolvers[method] : undefined;
-      if (configuredResolver) {
-        try {
-          const resolved = await configuredResolver.resolve(did);
-          if (resolved) {
-            return resolved;
-          }
-        } catch {
-          return null;
-        }
-      }
-
-      if (did.startsWith("did:key:")) {
-        return didKeyResolver.resolve(did);
-      }
-
-      if (did.startsWith("did:web:") && Date.now() < deadline) {
-        return didWebResolver?.resolve(did) ?? null;
-      }
-
-      return null;
-    },
-  };
+  const didResolver = createGateDidResolver({
+    custom: delegationConfig?.didResolver,
+    configured: configuredDidResolvers,
+    didKey: didKeyResolver,
+    didWeb: didWebResolver,
+    dependencyTimeoutMs,
+  });
 
   const verifier = new DelegationCredentialVerifier({
     didResolver,
@@ -315,7 +286,7 @@ export function createDelegationVerification(
       // parseVCJWT repairs a payload that is not well-formed UTF-8, and SPEC §7.8 does not read
       // one: a VC-JWT acted on here must also show the id it is recorded by.
       if (!parsed?.payload?.vc || !readsVcJwtClaims(delegationArg)) {
-        return { verdict: { valid: false, reason: "Invalid VC-JWT format" }, ancestors: [] };
+        return { verdict: { valid: false, reason: "Invalid VC-JWT format", ...coded("delegation_malformed") }, ancestors: [] };
       }
       // Parse only here. The chain must admit the claimed root before any
       // issuer document is resolved, including the JWT leaf's. The verifier
@@ -325,7 +296,7 @@ export function createDelegationVerification(
       // Admission reads this claim before the envelope verifier. Preserve the
       // JWT basic-stage diagnostic when it cannot name an issuer at all.
       const issuerFailure = credentialIssuerRefusal(vc);
-      if (issuerFailure) return { verdict: { valid: false, reason: issuerFailure, vc }, ancestors: [] };
+      if (issuerFailure) return { verdict: { valid: false, reason: issuerFailure, vc, ...coded("delegation_malformed") }, ancestors: [] };
       // Preserve the normalized credential's proof marker. It is never used as
       // evidence: the leaf verifier receives the original compact JWT below.
       if (!vc.proof) {
@@ -355,6 +326,7 @@ export function createDelegationVerification(
       chain = {
         valid: false,
         reason: UNVERIFIABLE_DELEGATION,
+        ...coded("runtime_error"),
       };
     }
 
@@ -367,6 +339,8 @@ export function createDelegationVerification(
           valid: false,
           reason: chain.reason ?? "Unknown delegation validation error",
           vc,
+          // The chain walk codes every chain it refuses.
+          ...coded(chain.code ?? "delegation_invalid"),
         },
         ancestors,
         ...(unreadAncestor ? { unreadAncestor } : {}),
@@ -384,7 +358,7 @@ export function createDelegationVerification(
     // that named no issuer did not validate, so this refusal is never reached and only keeps the type.
     const rootIssuer = credentialIssuerDid(chain.evaluated?.[0] ?? vc);
     if (rootIssuer === undefined) {
-      return { verdict: { valid: false, reason: UNVERIFIABLE_DELEGATION, vc }, ancestors };
+      return { verdict: { valid: false, reason: UNVERIFIABLE_DELEGATION, vc, ...coded("runtime_error") }, ancestors };
     }
     return {
       verdict: { valid: true, vc, isJwt, rootIssuer, ...(expiresAt !== undefined ? { expiresAt } : {}) },
@@ -398,7 +372,14 @@ export function createDelegationVerification(
     // holding a value that later throws while being encoded. Never repair signed credential data.
     if (!check.valid || isEncodableDelegation(check.vc, arrivedAsJwt(check, delegationArg))) return check;
     const { evidence, chainEvidence } = check;
-    return { valid: false, reason: UNENCODABLE_DELEGATION_REASON, vc: check.vc, evidence, chainEvidence };
+    return {
+      valid: false,
+      reason: UNENCODABLE_DELEGATION_REASON,
+      vc: check.vc,
+      evidence,
+      chainEvidence,
+      ...coded("delegation_malformed"),
+    };
   }
 
   async function buildNeedsAuthorizationChallenge(

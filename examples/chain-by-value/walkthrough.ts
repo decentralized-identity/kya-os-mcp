@@ -42,6 +42,7 @@ import {
   InMemoryNonceCache,
   KYA_OS_DELEGATION_CONTEXT,
   requireDelegation,
+  RefusalError,
   requireProof,
   signDelegationCredential,
   signStatusListCredential,
@@ -188,9 +189,14 @@ export function merchant(opts: { trustedCustomers: string[]; fetch: SafeFetch })
       verifyStatusList: createStatusListProofVerifier({ didResolver }),
     }),
     // By reference: ask the Responsible Party's registry. Used only when the request carries no chain.
+    // A RefusalError's words reach the caller's reason; any other error's go only to the log. So
+    // the caller is told only that the registry is unavailable, and what it answered is logged.
     resolveDelegationChain: async ({ proofDid }) => {
       const response = await opts.fetch(`${ACME_REGISTRY_URL}?invoker=${encodeURIComponent(proofDid)}`);
-      if (!response.ok) throw new Error(`registry.acme.example answered ${response.status}`);
+      if (!response.ok) {
+        console.warn(`[merchant] registry.acme.example answered ${response.status}`);
+        throw new RefusalError('runtime_error', 'the delegation registry is unavailable');
+      }
       return (await response.json()) as DelegationChain;
     },
   });

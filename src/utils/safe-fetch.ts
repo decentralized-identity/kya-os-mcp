@@ -24,12 +24,17 @@
  * First-party escape hatch: `allowOrigins` / `firstPartyOrigin` list origins a caller owns. A
  * request whose origin equals a configured one is fetched plain (origin-equality is not
  * attacker-routable); every other origin still takes the guarded path, fail-closed.
+ * `development: true` admits private and local addresses on that path, for a local demo only.
  *
  * All I/O is injected via pluggable seams (`lookup`, `transport`) so the policy is unit tested
  * with mocked DNS + transport. No crypto here — no mcp-i-core dependency leaks in.
  */
 
+import { logger } from '../logging/index.js';
+import { developmentMode } from './development-mode.js';
+import { isNonPublicByForm } from './host-form.js';
 import { isBlockedAddress } from './ip-classifier.js';
+import { ReadFailureError } from './read-failure.js';
 import { followRedirects, MAX_REDIRECTS, type RedirectRefusals, type RedirectTarget } from './redirect-follower.js';
 import {
   defaultLookup,
@@ -76,28 +81,50 @@ function assertHttpsUrl(raw: string): string {
     throw new Error(`safe-fetch: invalid URL "${raw}"`);
   }
   if (url.protocol !== 'https:') {
-    throw new Error(`safe-fetch: only https is allowed (got "${url.protocol}")`);
+    throw new ReadFailureError('host_refused', `safe-fetch: only https is allowed (got "${url.protocol}")`, { beforeRequest: true });
   }
   return url.href;
 }
 
-/** Resolve the host ONCE, reject if ANY resolved address is non-public, and pin the first. */
-async function resolveAndPin(hostname: string, lookup: DnsLookup): Promise<DnsAddress> {
+/** The production opt-in SafeFetch's refusals and its production guard name beside `development: true`. */
+const OWNED_ORIGINS = "list each origin you own in SafeFetch's allowOrigins";
+
+/** The two settings that admit a host SafeFetch refuses as private or local. */
+const PRIVATE_HOST_SETTINGS = `in local development, set development: true; to read a host you own in production, ${OWNED_ORIGINS}`;
+
+/**
+ * Resolve the host ONCE, reject if ANY resolved address is non-public, unless `admitPrivate`, and
+ * pin the first. A host that is non-public whatever any resolver answers (a non-public IP literal,
+ * or `localhost` or a name under it, `./host-form`) is refused by the URL alone, before any lookup,
+ * and the refusal says so. The refusal of a name that resolves to a non-public address names the
+ * host and what admits it, never the address, since whoever named the host may not know what it
+ * resolves to; the address goes to the log.
+ */
+async function resolveAndPin(hostname: string, lookup: DnsLookup, admitPrivate: boolean): Promise<DnsAddress> {
+  if (!admitPrivate && isNonPublicByForm(hostname)) {
+    throw new ReadFailureError('host_refused', `safe-fetch: refusing host "${hostname}", a private or local host: ${PRIVATE_HOST_SETTINGS}`, {
+      beforeRequest: true,
+    });
+  }
   const addresses = await lookup(hostname);
   const [first] = addresses;
   if (!first) {
     throw new Error(`safe-fetch: DNS lookup for "${hostname}" returned no addresses`);
   }
-  for (const candidate of addresses) {
+  for (const candidate of admitPrivate ? [] : addresses) {
     if (isBlockedAddress(candidate.address)) {
-      throw new Error(`safe-fetch: refusing non-public address ${candidate.address} for host "${hostname}"`);
+      logger.warn(`[kya-os] safe-fetch: host "${hostname}" resolves to the non-public address ${candidate.address}, so it is refused`);
+      throw new ReadFailureError(
+        'host_refused',
+        `safe-fetch: refusing host "${hostname}", which resolves to a non-public address: ${PRIVATE_HOST_SETTINGS}`,
+      );
     }
   }
   return first;
 }
 
 const nonHttpsTarget = (target: URL): Error =>
-  new Error(`safe-fetch: redirect to non-https target "${target.protocol}" blocked`);
+  new ReadFailureError('host_refused', `safe-fetch: redirect to non-https target "${target.protocol}" blocked`);
 
 const REDIRECT_REFUSALS: RedirectRefusals = {
   limitExceeded: (maxRedirects) => new Error(`safe-fetch: too many redirects (> ${maxRedirects})`),
@@ -108,34 +135,45 @@ const REDIRECT_REFUSALS: RedirectRefusals = {
   httpsToHttp: nonHttpsTarget,
 };
 
-/** Refuse a redirect target the shared rule admits: any scheme but https, and any other origin. */
+/**
+ * Refuse a redirect target the shared rule admits: any scheme but https, and any other origin. A
+ * refusal names the origin redirected from, never the one the server chose to redirect to, which
+ * goes to the log.
+ */
 function vetRedirectTarget({ target, from, crossOrigin }: RedirectTarget): void {
   if (target.protocol !== 'https:') throw nonHttpsTarget(target);
   if (crossOrigin) {
-    throw new Error(`safe-fetch: cross-origin redirect blocked (${from.origin} → ${target.origin})`);
+    logger.warn(`[kya-os] safe-fetch: redirect from ${from.origin} to ${target.origin} blocked, as cross-origin`);
+    throw new ReadFailureError('host_refused', `safe-fetch: cross-origin redirect from ${from.origin} blocked`);
   }
 }
 
-/** Enforce the size cap and project a RawResponse into the FetchLike-compatible shape. */
+/** Enforce the size cap, refusing a larger body as `too_large`, and project a RawResponse into the FetchLike-compatible shape. */
 async function finalize(raw: RawResponse, maxBytes: number): Promise<SafeFetchResponse> {
   const declared = Number(raw.headers.get('content-length'));
   if (Number.isFinite(declared) && declared > maxBytes) {
-    throw new Error(`safe-fetch: declared content-length ${declared} exceeds cap ${maxBytes}`);
+    throw new ReadFailureError('too_large', `safe-fetch: declared content-length ${declared} exceeds cap ${maxBytes}`);
   }
   const body = await raw.text();
   if (Buffer.byteLength(body, 'utf8') > maxBytes) {
-    throw new Error(`safe-fetch: response body exceeds size cap ${maxBytes}`);
+    throw new ReadFailureError('too_large', `safe-fetch: response body exceeds size cap ${maxBytes}`);
   }
   return {
     ok: raw.status >= 200 && raw.status < 300,
     status: raw.status,
     json: () => Promise.resolve(JSON.parse(body) as unknown),
+    text: () => Promise.resolve(body),
   };
 }
 
 /**
  * Build an SSRF-hardened fetcher. The returned function is structurally compatible with the
- * card's `FetchLike`: `(url) => Promise<{ ok, status, json }>`.
+ * card's `FetchLike`: `(url) => Promise<{ ok, status, json }>`. A URL or redirect its own rules
+ * refuse (a scheme other than https, a non-public address, a cross-origin redirect) rejects with
+ * an error that carries the `host_refused` read-failure kind, and a hop that runs out of time with
+ * one of `deadline_exceeded`, so a verifier codes the refusal without reading its message. A
+ * refusal decided from the URL alone, before any DNS lookup or request (its scheme, a non-public IP
+ * literal, a localhost name), also says so, so a verifier may tell whoever named the URL why.
  */
 export function createSafeFetch(options: SafeFetchOptions = {}): SafeFetch {
   const cfg: HopConfig = {
@@ -144,6 +182,7 @@ export function createSafeFetch(options: SafeFetchOptions = {}): SafeFetch {
     timeoutMs: options.timeoutMs ?? DEFAULT_HOP_TIMEOUT_MS,
     maxBytes: options.maxBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
     trustedOrigins: normalizeTrustedOrigins(options),
+    admitPrivate: developmentMode(options.development, 'SafeFetchOptions.development', OWNED_ORIGINS),
   };
   const maxRedirects = options.maxRedirects ?? MAX_REDIRECTS;
 
@@ -167,6 +206,8 @@ interface HopConfig {
   timeoutMs: number;
   maxBytes: number;
   trustedOrigins: ReadonlySet<string>;
+  /** Whether `development: true` admits private and local addresses. */
+  admitPrivate: boolean;
 }
 
 /**
@@ -181,7 +222,7 @@ async function requestOnce(url: string, cfg: HopConfig): Promise<RawResponse> {
       fetchTransport(url, { signal, hostname, pinnedAddress: '', family: 4, maxBytes: cfg.maxBytes }),
     );
   }
-  const pinned = await resolveAndPin(hostname, cfg.lookup);
+  const pinned = await resolveAndPin(hostname, cfg.lookup, cfg.admitPrivate);
   return withTimeout(hostname, cfg.timeoutMs, (signal) =>
     cfg.transport(url, {
       signal,
@@ -201,7 +242,7 @@ async function withTimeout(
 ): Promise<RawResponse> {
   const controller = new AbortController();
   const timer = setTimeout(
-    () => controller.abort(new Error(`safe-fetch: request to ${hostname} timed out after ${timeoutMs}ms`)),
+    () => controller.abort(new ReadFailureError('deadline_exceeded', `safe-fetch: request to ${hostname} timed out after ${timeoutMs}ms`)),
     timeoutMs,
   );
   try {

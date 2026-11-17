@@ -120,6 +120,34 @@ jobs:
       - name: Cross-language proof verification
         run: pnpm run conformance:verify:crosslang
 
+  # Installs the packed library into a new project and runs the apps in
+  # adopters/ against it, as an adopter's app runs: through the package's
+  # public exports, not src/. It reads the npm registry and nothing else.
+  adopters:
+    name: Adopter apps
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['20.x', '22.x']
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Run the adopter apps against the packed library
+        run: pnpm test:adopters
+
   codeql:
     name: CodeQL Security Scan
     runs-on: ubuntu-latest

@@ -10,8 +10,15 @@ import { createRealSignatureVerifier } from '../../__tests__/audit/helpers/crypt
 import { delegationRecord, keyOf, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
-import { countingAnswer, NOT_BOOLEANS, THROWING_ANSWERS, throwingMember } from '../../__tests__/utils/revocation-answers.js';
+import {
+  countingAnswer,
+  NOT_BOOLEANS,
+  PASSING_WITH_THROWING_CODE,
+  THROWING_ANSWERS,
+  throwingMember,
+} from '../../__tests__/utils/revocation-answers.js';
 import type { AgentIdentity } from '../../providers/base.js';
+import { isTransientRefusal, type RefusalCode } from '../../refusal-codes.js';
 import type { CredentialStatus, DelegationCredential } from '../../types/protocol.js';
 import { validateDelegationChain, type RevocationChecker } from '../chain-enforcement.js';
 import { withStatusCache } from '../status-cache.js';
@@ -102,6 +109,7 @@ describe('the delegation status check', () => {
 
 describe("validateDelegationChain's revocation check", () => {
   const ID = 'del-leaf';
+  const REVOKED: RefusalCode = 'delegation_revoked';
   let leaf: DelegationCredential;
   beforeAll(async () => {
     leaf = await signedCredential(issuer, {
@@ -118,8 +126,9 @@ describe("validateDelegationChain's revocation check", () => {
       statusListConfigured: false,
       revocationChecker: { isRevoked: async () => answer } as RevocationChecker,
     });
-  /** A refusal at the revocation check, which comes after the chain was evaluated. */
-  const refused = (reason: string) => ({ valid: false, reason, evaluated: [leaf] });
+  /** A refusal at the revocation check, which comes after the chain was evaluated: by default, of a status not read. */
+  const refused = (reason: string, code: RefusalCode = 'status_unavailable') =>
+    ({ valid: false, reason, code, transient: isTransientRefusal(code), evaluated: [leaf] });
 
   /** Why the chain is refused when the checker's answer is not an object. */
   const notAnObject = (named: string) =>
@@ -134,13 +143,13 @@ describe("validateDelegationChain's revocation check", () => {
   });
 
   it('refuses a chain as revoked only on an answer whose revoked is a literal true', async () => {
-    expect(await validate({ revoked: true })).toEqual(refused(`Delegation "${ID}" is revoked`));
-    expect(await validate({ revoked: true, reason: 'key compromise' })).toEqual(refused(`Delegation "${ID}" is revoked: key compromise`));
-    expect(await validate({ revoked: true, revokedAncestor: 'del-root' })).toEqual(refused(`Delegation "${ID}" is revoked via ancestor "del-root"`));
+    expect(await validate({ revoked: true })).toEqual(refused(`Delegation "${ID}" is revoked`, REVOKED));
+    expect(await validate({ revoked: true, reason: 'key compromise' })).toEqual(refused(`Delegation "${ID}" is revoked: key compromise`, REVOKED));
+    expect(await validate({ revoked: true, revokedAncestor: 'del-root' })).toEqual(refused(`Delegation "${ID}" is revoked via ancestor "del-root"`, REVOKED));
   });
 
   it('names a revoked chain without a reason or an ancestor that is not a string', async () => {
-    expect(await validate({ revoked: true, reason: 5, revokedAncestor: { id: 'del-root' } })).toEqual(refused(`Delegation "${ID}" is revoked`));
+    expect(await validate({ revoked: true, reason: 5, revokedAncestor: { id: 'del-root' } })).toEqual(refused(`Delegation "${ID}" is revoked`, REVOKED));
   });
 
   it.each(NOT_BOOLEANS)('refuses a chain when the answer has %s as its revoked member', async (_label, revoked, named) => {
@@ -167,6 +176,10 @@ describe("validateDelegationChain's revocation check", () => {
 
   it.each(THROWING_ANSWERS)('refuses a chain, and does not reject, on an answer with %s', async (_label, answer, why) => {
     expect(await validate(answer)).toEqual(refused(`Revocation status of delegation "${ID}" could not be read: ${why}`));
+  });
+
+  it('passes a chain on an answer that does not revoke, whatever its code getter would do', async () => {
+    expect((await validate(PASSING_WITH_THROWING_CODE)).valid).toBe(true);
   });
 
   it('reads each member of an answer once', async () => {

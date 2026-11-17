@@ -1,0 +1,40 @@
+kind: Added
+body: |-
+    **Every refusal of a delegation, its chain, its status or an Entity Card
+    carries a stable code, and says whether it is transient.** A reason is
+    text for people, and its wording changed in this release; branch on the
+    code instead. `REFUSAL_CODES` lists 21 codes, exported with
+    `RefusalCode`, `isRefusalCode` and `isTransientRefusal` from
+    `@kya-os/mcp`, `@kya-os/mcp/delegation` and `@kya-os/mcp/card`. The
+    refusals of the delegation and Entity Card verifiers carry `code` and
+    `transient`, and a rejection from `verifyRequestDelegation`,
+    `requireDelegation` or `readDelegationChain` carries `refusalCode` and
+    `transient`, and so does the result of the handshake's `verifyOrHints`,
+    as `code` and `transient`, when its delegation verifier refused, or
+    threw, which is `runtime_error` unless it threw a `RefusalError`. Four
+    codes are transient, `did_unavailable`, `status_unavailable`,
+    `deadline_exceeded` and `runtime_error`: the verifier could not decide,
+    and the same request may pass later. A refusal that asking again cannot
+    lift is not: a DID that can never be resolved, such as a did:key whose
+    key does not decode, a did:web DID that names no URL, a did:cheqd DID
+    the resolver cannot ask for or a DID of a method none of the delegation
+    gate's resolvers serves, a document over the byte cap and an issuer key
+    that is not a usable Ed25519 key are `did_invalid`, and a status entry
+    whose index is past the end of its list, or that names its list by no
+    string, is `delegation_malformed`. A custom signature verifier, chain
+    verifier, `revocationChecker`, `BitstringRevocationChecker` or handshake
+    `DelegationVerifier` may name a code in its answer, typed `string` where
+    a code may come from a variable or JSON, and any dependency may throw a
+    `RefusalError` to refuse with a code and words of its own. Every revoked
+    answer of the checker `createRevocationChecker` builds, a set bit
+    included, now carries `code` and `transient`, so a test that compares
+    one exactly must allow for them, and a server that returns a
+    `requireDelegation` rejection to its client as it is now sends
+    `refusalCode` and `transient` too. The delegation gate of `withKyaOs`
+    records the code as `authorization.verificationCode` on
+    `delegation.rejected`, and logs it as `{ code, transient }` beside a
+    reason it now keeps up to 1,024 UTF-16 code units; under `holderBinding:
+    "warn"` its holder-binding warning carries no code and says the call was
+    allowed. The gate sends its client no code. UPGRADING.md, "Refusal
+    codes", has the catalog.
+time: 2026-11-16T16:00:00.000000-06:00

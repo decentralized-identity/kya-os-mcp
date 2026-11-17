@@ -43,8 +43,9 @@ export type OtherConfig = Partial<Omit<KyaOsConfig, 'identity' | 'delegation' | 
 
 /**
  * A middleware whose resolver hands back whatever `ancestors` holds when it
- * is asked, with the audit events it records. It keeps an audit trail unless
- * told to keep none, and fails to record an event `refuse` picks.
+ * is asked, with the audit events it records, summarised in `recorded` and
+ * whole in `events`. It keeps an audit trail unless told to keep none, and
+ * fails to record an event `refuse` picks.
  */
 async function makeMiddleware(
   delegation: KyaOsDelegationConfig = {},
@@ -54,8 +55,10 @@ async function makeMiddleware(
   const server = await party();
   const ancestors: DelegationCredential[] = [];
   const recorded: Recorded[] = [];
+  const events: Parameters<AuditTrailService['record']>[0][] = [];
   const record: AuditTrailService['record'] = async (event) => {
     if (refuse?.(event.eventType) === true) throw new Error('audit sink unavailable');
+    events.push(event);
     recorded.push({
       eventType: event.eventType,
       ...(event.action.name === undefined ? {} : { tool: event.action.name }),
@@ -78,7 +81,7 @@ async function makeMiddleware(
     },
     crypto,
   );
-  return { kyaos, server, ancestors, recorded };
+  return { kyaos, server, ancestors, recorded, events };
 }
 
 /** That middleware as a server runs it: what a handler the test calls returns is what the client receives. */

@@ -40,6 +40,12 @@ export interface SafeFetchResponse {
   ok: boolean;
   status: number;
   json: () => Promise<unknown>;
+  /**
+   * The body as the text that was sent. `createSafeFetch` answers it, so a did:web or status-list
+   * read through a `FetchProvider` whose `fetch` returns this response measures and parses that exact
+   * text. Optional, so a `SafeFetch` written without it still type-checks: such a read takes `json()`.
+   */
+  text?: () => Promise<string>;
 }
 
 export type SafeFetch = (url: string) => Promise<SafeFetchResponse>;
@@ -68,4 +74,13 @@ export interface SafeFetchOptions {
   maxBytes?: number;
   /** Maximum same-origin redirects to follow (default 3). */
   maxRedirects?: number;
+  /**
+   * Read hosts whose addresses are private or local, such as a `*.localhost` name in a local demo:
+   * the host is still resolved once and pinned, but its address is not screened. Nothing else
+   * changes: https alone, the origin rule for redirects, the size cap and the timeout all hold. For
+   * development only: while `NODE_ENV` is `production` it throws when the fetcher is built, and it
+   * warns once per process. A production deployment lists the origins it owns in `allowOrigins`
+   * instead. Any value but a boolean throws a `TypeError`.
+   */
+  development?: boolean;
 }

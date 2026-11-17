@@ -1,0 +1,24 @@
+kind: Changed
+body: |-
+    **The refusal of a private or local host names the settings that admit
+    it, and no refusal names an address or a redirect target the network
+    gave.** A did:web or status-list read refused for its host now says
+    `Request to "<host>" refused: a private or local host. In local
+    development, set development: true; to read private hosts in production,
+    give the fetch provider allowPrivateNetworkHosts: true.`, and a redirect
+    to such a host `Redirect to a private or local host refused. In local
+    development, ...`, naming no host. `createSafeFetch` refuses a
+    non-public IP literal, IPv4 or IPv6, and `localhost` or a name under it,
+    before any lookup, as `safe-fetch: refusing host "<host>", a private or
+    local host: ...`, coded `host_refused`, where such a host failed as a
+    lookup error or was refused once looked up, and a body over its cap as
+    too large whether or not its length was declared. It refuses any other
+    host that resolves to a non-public address as `safe-fetch: refusing host
+    "<host>", which resolves to a non-public address: in local development,
+    set development: true; to read a host you own in production, list each
+    origin you own in SafeFetch's allowOrigins`, where it named the address,
+    and a redirect to another origin as `safe-fetch: cross-origin redirect
+    from <origin> blocked`, where it named the target; the log keeps both.
+    Code that matches on these texts needs the new wording. UPGRADING.md,
+    "Changed refusal reasons", has each.
+time: 2026-11-16T16:02:00.000000-06:00

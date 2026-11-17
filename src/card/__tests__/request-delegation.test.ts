@@ -97,6 +97,8 @@ describe('readDelegationChain', () => {
       carried: true,
       ok: false,
       reasons: [`carried delegation chain of 11 credentials exceeds the limit of ${DEFAULT_CARRIED_CHAIN_LIMIT}`],
+      refusalCode: 'chain_invalid',
+      transient: false,
     });
   });
 
@@ -157,7 +159,14 @@ describe('verifyRequestDelegation: a carried chain', () => {
     const [root, leaf] = twoHopChain(p);
     const swapped = { ...leaf, credentialSubject: { ...leaf.credentialSubject, allowedAction: ['orders.read'] } };
     const result = await verifyRequestDelegation(carried([root, swapped], p, 'orders.read'), deps(p));
-    expect(result).toEqual({ ok: false, code: 'delegation_invalid', reasons: ['hop 1: proof did not verify'], source: 'carried' });
+    expect(result).toEqual({
+      ok: false,
+      code: 'delegation_invalid',
+      reasons: ['hop 1: proof did not verify'],
+      source: 'carried',
+      refusalCode: 'invalid_proof',
+      transient: false,
+    });
   });
 
   it('rejects a hop signed by someone other than its issuer', async () => {
@@ -308,8 +317,10 @@ describe('verifyRequestDelegation: by reference', () => {
     expect(result).toEqual({
       ok: false,
       code: 'delegation_unresolvable',
-      reasons: ['delegation chain could not be resolved: registry.acme.example unreachable'],
+      reasons: ['delegation chain could not be resolved: the chain resolver failed'],
       source: 'resolved',
+      refusalCode: 'runtime_error',
+      transient: true,
     });
   });
 

@@ -13,209 +13,38 @@
  */
 import {
   extractDelegationFromVC,
-  type CrispScope,
   type DelegationCredential,
   type DelegationRecord,
 } from "../types/protocol.js";
-import { canonicalizeJson } from "../utils/canonical-json.js";
+import type { RefusalCode } from "../refusal-codes.js";
 import { answerWithinDeadline, dependencyTimeoutRefusal } from "../utils/deadline.js";
 import { OUTBOUND_READ_TIMEOUT_MS } from "../utils/outbound-read-limits.js";
+import { coded, refusal, refusalCodeOf, type Passed, type Refusal } from "../utils/refusal.js";
+import { OPERATOR_REASON_LENGTH } from "../utils/revocation-answer.js";
 import { readVerdict } from "../utils/verdict.js";
 import { verifyDelegationAudience } from "./audience-validator.js";
+import { attenuationWarnings, checkScopeAttenuation, statedExpiry } from "./chain-attenuation.js";
 import { chainResolutionFailure, revocationCheckFailure, revocationRefusal } from "./chain-reasons.js";
-import { authorityContains, crispScopes, matcherContains, scopeAuthority } from "./scope-matcher.js";
 import { chainLinkageRefusal } from "./chain-linkage.js";
 import { rootAdmissionRefusal } from "./root-admission.js";
 import { hasDelegationShape, resolvedAncestors } from "./resolved-chain.js";
 import type { AncestorReading, EvaluatedCredentials } from "./resolved-chain.js";
+import type { RefusalCoding } from "./vc-verifier.types.js";
 
-/** Union of a credential's delegation scopes and its constraint scopes. */
-export function getDelegationScopes(credential: DelegationCredential): string[] {
-  const scopes = new Set<string>();
-  for (const scope of credential.credentialSubject.delegation.scopes ?? []) {
-    scopes.add(scope);
-  }
-  for (const scope of credential.credentialSubject.delegation.constraints?.scopes ?? []) {
-    scopes.add(scope);
-  }
-  return Array.from(scopes);
-}
-
-/**
- * A child re-delegation may only narrow (attenuate) its parent's authority
- * (SPEC.md §6.4). Scope authority comes in two representations (SPEC.md §6.3):
- * flat scopes, matched exactly, and CRISP scope matchers. Both credentials are
- * read as one typed authority ({@link scopeAuthority}), and every flat scope and
- * matcher the child grants must be proven inside the parent's authority
- * ({@link authorityContains}), whichever representation either side uses;
- * anything unprovable, including a malformed entry, fails closed. A credential
- * with no scopes of either kind is not scope-restricted: such a parent accepts
- * any child, and such a child never attenuates a restricted parent. Pure.
- */
-export function validateScopeAttenuation(
-  parentCredential: DelegationCredential,
-  childCredential: DelegationCredential,
-): { valid: boolean; reason?: string } {
-  const parentId = parentCredential.credentialSubject.delegation.id;
-  const childId = childCredential.credentialSubject.delegation.id;
-  const parentAuthority = scopeAuthority(parentCredential);
-  if (parentAuthority.length === 0) {
-    return { valid: true };
-  }
-
-  const childScopes = getDelegationScopes(childCredential);
-  const childMatchers = crispScopes(childCredential);
-  if (childScopes.length === 0 && childMatchers.length === 0) {
-    return {
-      valid: false,
-      reason: `Delegation ${childId} omits scopes required to prove attenuation from parent ${parentId}`,
-    };
-  }
-
-  const withinParent = authorityContains(parentAuthority);
-  const widenedMatchers = childMatchers.filter((scope) => !withinParent(scope));
-  if (widenedMatchers.length > 0) {
-    return {
-      valid: false,
-      reason: `Delegation ${childId} introduces crisp scope matcher(s) outside parent ${parentId}: ${widenedMatchers
-        .map((s) => `${s?.matcher}:${s?.resource}`)
-        .join(", ")}`,
-    };
-  }
-  const widenedScopes = childScopes.filter((scope) => !withinParent({ resource: scope, matcher: "exact" }));
-  if (widenedScopes.length > 0) {
-    return {
-      valid: false,
-      reason: `Delegation ${childId} widens scopes beyond parent ${parentId}: ${widenedScopes.join(", ")}`,
-    };
-  }
-
-  return { valid: true };
-}
-
-/** The earliest finite expiry a credential states (ms epoch), from `expirationDate` and `constraints.notAfter`. */
-function statedExpiry(credential: DelegationCredential): number | undefined {
-  const notAfter = credential?.credentialSubject?.delegation?.constraints?.notAfter;
-  const deadlines = [
-    credential?.expirationDate ? Date.parse(credential.expirationDate) : undefined,
-    notAfter !== undefined ? notAfter * 1000 : undefined,
-  ].filter((deadline): deadline is number => deadline !== undefined && Number.isFinite(deadline));
-  return deadlines.length > 0 ? Math.min(...deadlines) : undefined;
-}
-
-/** The DIDs a credential's `constraints.audience` names, or undefined when it names none. */
-function statedAudience(credential: DelegationCredential): string[] | undefined {
-  const audience = credential?.credentialSubject?.delegation?.constraints?.audience;
-  if (typeof audience === "string") return [audience];
-  return Array.isArray(audience) ? audience.filter((did) => typeof did === "string") : undefined;
-}
-
-/** A scope's `constraints` record as entries; anything but a plain object constrains nothing. */
-function constraintEntries(constraints: unknown): [string, unknown][] {
-  return constraints !== null && typeof constraints === "object" && !Array.isArray(constraints)
-    ? Object.entries(constraints)
-    : [];
-}
-
-/** A credential's scope authority, or none when its scope fields are not lists and cannot be read. */
-function readableAuthority(credential: DelegationCredential): CrispScope[] {
-  try {
-    return scopeAuthority(credential);
-  } catch {
-    return [];
-  }
-}
-
-/** RFC 8785 equality. A value that cannot be canonicalized equals nothing. */
-function sameJson(a: unknown, b: unknown): boolean {
-  try {
-    return canonicalizeJson(a) === canonicalizeJson(b);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * SPEC.md §6.4: "Scope constraints MUST be equal to or narrower than parent's
- * constraints." Ways a re-delegation is wider than its parent, or cannot be
- * shown not to be, that chain validation accepts today:
- *
- * - it expires after its parent, or states no expiry when its parent does.
- *   Each credential's own expiry is still checked on every use, so the child
- *   is honored only as long as its parent;
- * - it names an audience its parent does not, or none when its parent names
- *   one. Each credential's own audience is still checked, so the extra
- *   audience grants nothing;
- * - one of its scopes lies inside parent scopes that all carry per-scope
- *   `constraints`, and repeats none of those records. Constraint keys are
- *   opaque to the verifier, so only a key repeated with an equal value (RFC
- *   8785) is provably no wider. A parent's flat scope, or a CRISP scope with
- *   no `constraints`, covers a child scope without conditions.
- *
- * These are reported, not refused: `validateDelegationChain` returns them as
- * `warnings` on a chain that validates. Issuers can call this before minting
- * to see what a strict verifier would refuse. Pure. Never throws: a field it
- * cannot read yields no warning, so it cannot turn a chain that validates
- * into an error.
- */
-export function attenuationWarnings(
-  parentCredential: DelegationCredential,
-  childCredential: DelegationCredential,
-): string[] {
-  const parentId = parentCredential?.credentialSubject?.delegation?.id;
-  const childId = childCredential?.credentialSubject?.delegation?.id;
-  const warnings = new Set<string>();
-
-  const parentExpiry = statedExpiry(parentCredential);
-  const childExpiry = statedExpiry(childCredential);
-  if (parentExpiry !== undefined && childExpiry === undefined) {
-    warnings.add(`Delegation ${childId} states no expiry but parent ${parentId} does`);
-  } else if (parentExpiry !== undefined && childExpiry !== undefined && childExpiry > parentExpiry) {
-    warnings.add(`Delegation ${childId} expires after parent ${parentId}`);
-  }
-
-  const parentAudience = statedAudience(parentCredential);
-  const childAudience = statedAudience(childCredential);
-  if (parentAudience !== undefined && childAudience === undefined) {
-    warnings.add(`Delegation ${childId} names no audience but parent ${parentId} does`);
-  } else if (parentAudience !== undefined && childAudience !== undefined) {
-    const added = childAudience.filter((did) => !parentAudience.includes(did));
-    if (added.length > 0) {
-      warnings.add(`Delegation ${childId} names an audience parent ${parentId} does not: ${added.join(", ")}`);
-    }
-  }
-
-  const parentAuthority = readableAuthority(parentCredential);
-  for (const scope of readableAuthority(childCredential)) {
-    const required = parentAuthority
-      .filter((entry) => matcherContains(entry, scope))
-      .map((entry) => constraintEntries(entry.constraints));
-    // No covering parent scope is scope attenuation's to refuse, not this function's.
-    if (required.length === 0) continue;
-    const carried = new Map(constraintEntries(scope.constraints));
-    // An unconstrained covering scope has no entries, so it is repeated vacuously.
-    const repeatsOne = required.some((entries) =>
-      entries.every(([key, value]) => carried.has(key) && sameJson(carried.get(key), value)),
-    );
-    if (!repeatsOne) {
-      warnings.add(
-        `Delegation ${childId} scope ${scope.matcher}:${scope.resource} does not repeat the constraints parent ${parentId} places on it`,
-      );
-    }
-  }
-
-  return Array.from(warnings);
-}
+export { attenuationWarnings, getDelegationScopes, validateScopeAttenuation } from "./chain-attenuation.js";
 
 /**
  * Per-credential verifier port (signature / schema / expiry / own status). A credential passes
- * only on an answer whose `valid` is the literal `true`; any other answer refuses the chain.
+ * only on an answer whose `valid` is the literal `true`; any other answer refuses the chain. A
+ * refusal takes the `code` the answer names when it is one of the catalog's, as the library's
+ * `DelegationCredentialVerifier` names one, else `delegation_invalid`; an answer that is not a
+ * verdict is `runtime_error`.
  */
 export interface DelegationCredentialVerifierPort {
   verifyDelegationCredential(
     credential: DelegationCredential,
     options?: { skipSignature?: boolean },
-  ): Promise<{ valid: boolean; reason?: string }>;
+  ): Promise<{ valid: boolean; reason?: string; code?: RefusalCode }>;
 }
 
 /**
@@ -237,6 +66,17 @@ export interface RevocationChecker {
     revoked: boolean;
     reason?: string;
     revokedAncestor?: string;
+    /**
+     * The code the chain is refused with when `revoked` is `true`: a code of `REFUSAL_CODES`, else
+     * `delegation_revoked`, as it is when the answer states none. Not read when `revoked` is `false`.
+     * Typed `string`, so a code read from a variable or from JSON compiles; only the catalog's is read.
+     */
+    code?: string;
+    /**
+     * Whether `code` is transient. Optional, so an answer built as any refusal is fits: the verifier
+     * takes it from `code`, as every refusal's is, and does not read this.
+     */
+    transient?: boolean;
   }>;
 }
 
@@ -295,7 +135,8 @@ export interface ChainEnforcementDeps extends AncestorReading {
   dependencyTimeoutMs?: number;
 }
 
-export interface ChainValidationResult extends EvaluatedCredentials {
+/** The verdict on a delegation chain, with its code and whether it is transient when it is refused. */
+export interface ChainValidationResult extends EvaluatedCredentials, RefusalCoding {
   valid: boolean;
   reason?: string;
   /** Earliest verified credential/constraint expiry across the chain (ms epoch). */
@@ -320,35 +161,47 @@ export interface ChainValidationResult extends EvaluatedCredentials {
  * signed by the `issuerDid` it names, so that DID is the chain's Responsible
  * Party, and by one of `trustedRootIssuers` when that is set.
  * Success includes the earliest applicable expiry for downstream grant storage.
- * Never throws on a malformed input; returns `{ valid, reason }`.
+ * Never throws on a malformed input; returns `{ valid, reason }`, and on a
+ * refusal the `code` and `transient` of the rule or dependency that refused.
  */
 export async function validateDelegationChain(
   leafCredential: DelegationCredential,
   deps: ChainEnforcementDeps,
   options?: { skipSignature?: boolean },
 ): Promise<ChainValidationResult> {
+  return enforceChain(leafCredential, deps, options);
+}
+
+/** What the walk of a chain comes to: a chain that validated, with what it found, or a coded refusal. */
+type ChainVerdict = (Passed & { readonly expiresAt?: number; readonly warnings?: string[] }) | Refusal;
+
+/** {@link validateDelegationChain}, with a refusal that cannot be built without its code. */
+async function enforceChain(
+  leafCredential: DelegationCredential,
+  deps: ChainEnforcementDeps,
+  options?: { skipSignature?: boolean },
+): Promise<ChainVerdict & EvaluatedCredentials> {
   // Shape guard (validate* never-throw contract): a structurally malformed leaf
   // returns a { valid, reason } result rather than letting extractDelegationFromVC
   // or the downstream scope check throw.
   if (!hasDelegationShape(leafCredential)) {
-    return {
-      valid: false,
-      reason:
-        "Malformed delegation credential: missing credentialSubject.delegation or its constraints",
-    };
+    return refusal(
+      "delegation_malformed",
+      "Malformed delegation credential: missing credentialSubject.delegation or its constraints",
+    );
   }
   const { dependencyTimeoutMs: timeoutMs = OUTBOUND_READ_TIMEOUT_MS } = deps;
   const timeoutRefusal = dependencyTimeoutRefusal(timeoutMs);
-  if (timeoutRefusal !== undefined) return { valid: false, reason: timeoutRefusal };
+  if (timeoutRefusal !== undefined) return refusal("configuration_error", timeoutRefusal);
   const leafDelegation = extractDelegationFromVC(leafCredential);
   let chain: DelegationCredential[] = [leafCredential];
 
   if (leafDelegation.parentId) {
     if (!deps.resolveDelegationChain) {
-      return {
-        valid: false,
-        reason: `Delegation ${leafDelegation.id} references parent ${leafDelegation.parentId} but no resolveDelegationChain handler is configured`,
-      };
+      return refusal(
+        "configuration_error",
+        `Delegation ${leafDelegation.id} references parent ${leafDelegation.parentId} but no resolveDelegationChain handler is configured`,
+      );
     }
 
     let resolvedChain: DelegationCredential[];
@@ -356,22 +209,19 @@ export async function validateDelegationChain(
       const resolve = deps.resolveDelegationChain;
       resolvedChain = await answerWithinDeadline("the chain resolver", () => resolve(leafCredential), timeoutMs);
     } catch (error) {
-      return {
-        valid: false,
-        reason: chainResolutionFailure(error),
-      };
+      return refusal(refusalCodeOf(error, "runtime_error"), chainResolutionFailure(error));
     }
 
     if (resolvedChain.length === 0) {
-      return {
-        valid: false,
-        reason: `Delegation ${leafDelegation.id} references parent ${leafDelegation.parentId} but the resolved chain is empty`,
-      };
+      return refusal(
+        "chain_invalid",
+        `Delegation ${leafDelegation.id} references parent ${leafDelegation.parentId} but the resolved chain is empty`,
+      );
     }
 
     const resolved = resolvedAncestors(resolvedChain, leafDelegation.id, deps);
-    if ("reason" in resolved) {
-      return { valid: false, reason: resolved.reason };
+    if ("valid" in resolved) {
+      return resolved;
     }
 
     // Always validate the presented leaf. A resolver may return a copy, but it
@@ -384,16 +234,10 @@ export async function validateDelegationChain(
   const { maxChainLength } = deps;
   if (maxChainLength !== undefined) {
     if (!Number.isInteger(maxChainLength) || maxChainLength < 1) {
-      return {
-        valid: false,
-        reason: `maxChainLength must be a positive integer (got ${String(maxChainLength)})`,
-      };
+      return refusal("configuration_error", `maxChainLength must be a positive integer (got ${String(maxChainLength)})`);
     }
     if (chain.length > maxChainLength) {
-      return {
-        valid: false,
-        reason: `Delegation chain of ${chain.length} credentials exceeds the maximum of ${maxChainLength}`,
-      };
+      return refusal("chain_invalid", `Delegation chain of ${chain.length} credentials exceeds the maximum of ${maxChainLength}`);
     }
   }
 
@@ -404,9 +248,9 @@ export async function validateDelegationChain(
   // not be a trusted root issuer. The application's `resolveDelegationChain` above runs first and
   // bounds its own I/O.
   const linkageRefusal = chainLinkageRefusal(chain);
-  if (linkageRefusal !== undefined) return { valid: false, reason: linkageRefusal };
+  if (linkageRefusal !== undefined) return refusal("chain_invalid", linkageRefusal);
   const rootRefusal = rootAdmissionRefusal(chain[0]!, deps.trustedRootIssuers);
-  if (rootRefusal !== undefined) return { valid: false, reason: rootRefusal };
+  if (rootRefusal !== undefined) return rootRefusal;
 
   // Every result of the walk carries the credentials it reached.
   const evaluated: DelegationCredential[] = [];
@@ -425,7 +269,7 @@ async function walkChain(
   deps: ChainEnforcementDeps,
   timeoutMs: number,
   options?: { skipSignature?: boolean },
-): Promise<Omit<ChainValidationResult, "evaluated">> {
+): Promise<ChainVerdict> {
   let expiresAt: number | undefined;
   const warnings: string[] = [];
   let previousCredential: DelegationCredential | undefined;
@@ -435,13 +279,14 @@ async function walkChain(
     const delegation = extractDelegationFromVC(credential);
 
     if (credential.credentialStatus && !deps.statusListConfigured) {
-      return {
-        valid: false,
-        reason: `Delegation ${delegation.id} has credentialStatus but no statusListResolver is configured`,
-      };
+      return refusal(
+        "configuration_error",
+        `Delegation ${delegation.id} has credentialStatus but no statusListResolver is configured`,
+      );
     }
 
     // The verifier is a port the host may supply: a credential passes only on the literal `true`.
+    // Its reason is kept as far as the operator reads one, so a status reason it ends with stays whole.
     const credentialVerification = readVerdict("the credential verifier", await deps.verifier.verifyDelegationCredential(
       credential,
       {
@@ -449,11 +294,12 @@ async function walkChain(
           ? { skipSignature: true }
           : {}),
       },
-    ));
+    ), "delegation_invalid", OPERATOR_REASON_LENGTH);
     if (!credentialVerification.valid) {
       return {
         valid: false,
         reason: `Delegation ${delegation.id} invalid: ${credentialVerification.reason}`,
+        ...coded(credentialVerification.code),
       };
     }
 
@@ -465,10 +311,7 @@ async function walkChain(
     }
 
     if (!verifyDelegationAudience(delegation, deps.serverDid)) {
-      return {
-        valid: false,
-        reason: `Delegation ${delegation.id} audience does not include server DID ${deps.serverDid}`,
-      };
+      return refusal("chain_invalid", `Delegation ${delegation.id} audience does not include server DID ${deps.serverDid}`);
     }
 
     // Every non-root credential in the chain MUST carry an `audience` constraint
@@ -476,10 +319,10 @@ async function walkChain(
     // where a re-delegated credential is forwarded to an unintended server
     // (KYA-OS §11.6). Unconditional as of 1.4.0.
     if (delegation.parentId && !delegation.constraints.audience) {
-      return {
-        valid: false,
-        reason: `Delegation ${delegation.id} is a re-delegation (parentId: ${delegation.parentId}) but has no audience constraint. Re-delegations MUST include an audience constraint (KYA-OS §11.6)`,
-      };
+      return refusal(
+        "chain_invalid",
+        `Delegation ${delegation.id} is a re-delegation (parentId: ${delegation.parentId}) but has no audience constraint. Re-delegations MUST include an audience constraint (KYA-OS §11.6)`,
+      );
     }
 
     // The chain's linkage was checked before any verification
@@ -490,7 +333,7 @@ async function walkChain(
       continue;
     }
 
-    const scopeValidation = validateScopeAttenuation(previousCredential, credential);
+    const scopeValidation = checkScopeAttenuation(previousCredential, credential);
     if (!scopeValidation.valid) {
       return scopeValidation;
     }
@@ -501,10 +344,10 @@ async function walkChain(
 
   const finalDelegation = extractDelegationFromVC(chain[chain.length - 1]!);
   if (finalDelegation.id !== leafDelegation.id) {
-    return {
-      valid: false,
-      reason: `Resolved delegation chain ended at ${finalDelegation.id} instead of leaf ${leafDelegation.id}`,
-    };
+    return refusal(
+      "chain_invalid",
+      `Resolved delegation chain ended at ${finalDelegation.id} instead of leaf ${leafDelegation.id}`,
+    );
   }
 
   // E3.1: graph-backed ancestor revocation. Independent of how the chain above
@@ -522,14 +365,11 @@ async function walkChain(
         const checker = deps.revocationChecker;
         answer = await answerWithinDeadline("the revocation checker", () => checker.isRevoked(delegationId), timeoutMs);
       } catch (error) {
-        return {
-          valid: false,
-          reason: revocationCheckFailure(delegationId, error),
-        };
+        return refusal(refusalCodeOf(error, "status_unavailable"), revocationCheckFailure(delegationId, error));
       }
       // Only an answer whose `revoked` is the literal `false` lets the chain go on.
-      const reason = revocationRefusal(leafDelegation.id, delegationId, answer);
-      if (reason !== undefined) return { valid: false, reason };
+      const revoked = revocationRefusal(leafDelegation.id, delegationId, answer);
+      if (revoked !== undefined) return revoked;
     }
   }
 

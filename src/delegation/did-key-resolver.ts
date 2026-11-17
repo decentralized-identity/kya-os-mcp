@@ -17,8 +17,9 @@
 import { base58Decode } from '../utils/base58.js';
 import { didKeyFragment } from '../utils/did-helpers.js';
 import { base64urlEncodeFromBytes } from '../utils/base64.js';
-import type { DIDResolver, DIDDocument, VerificationMethod } from './vc-verifier.js';
+import type { DIDResolver, DIDDocument, DidResolutionFailure, VerificationMethod } from './vc-verifier.js';
 import { logger } from '../logging/index.js';
+import { DidResolutionFailures, invalidDid } from './did-resolution-failure.js';
 
 /** Ed25519 multicodec prefix (0xed 0x01) */
 export const ED25519_MULTICODEC_PREFIX = new Uint8Array([0xed, 0x01]);
@@ -108,53 +109,39 @@ export function publicKeyToJwk(publicKeyBytes: Uint8Array): {
   };
 }
 
+/** Why the did:key resolver finds no document for a did:key that does not decode. */
+const UNDECODABLE_DID_KEY = 'the DID is not an Ed25519 did:key whose public key decodes';
+
 /**
  * Create a DID:key resolver
  *
  * Returns a DIDResolver that can resolve did:key DIDs to DID Documents.
- * Currently supports only Ed25519 keys.
+ * Currently supports only Ed25519 keys. Its `lastFailure` says why it found
+ * no document for a did:key: one that does not decode is `invalid_document`,
+ * since asking again cannot change that. A DID of another method records
+ * nothing, so a resolver that composes this one with others reports the
+ * failure of the one that serves the DID.
  *
  * @returns DIDResolver implementation for did:key
  */
 export function createDidKeyResolver(): DIDResolver {
+  const failures = new DidResolutionFailures();
+  /** Record `failure` as the last for `did`, and find no document. */
+  const failed = (did: string, failure: DidResolutionFailure): null => {
+    failures.record(did, failure);
+    return null;
+  };
   return {
     resolve: async (did: string): Promise<DIDDocument | null> => {
-      // Check if it's a did:key with Ed25519
-      if (!isEd25519DidKey(did)) {
-        return null;
+      if (!did.startsWith('did:key:')) return null;
+      const document = resolveDidKeySync(did);
+      if (document === null) {
+        return failed(did, invalidDid(UNDECODABLE_DID_KEY));
       }
-
-      // Extract the public key
-      const publicKeyBytes = extractPublicKeyFromDidKey(did);
-      if (!publicKeyBytes) {
-        return null;
-      }
-
-      // Convert to JWK
-      const publicKeyJwk = publicKeyToJwk(publicKeyBytes);
-
-      // Get the multibase-encoded key for publicKeyMultibase
-      const multibaseKey = did.replace('did:key:', '');
-
-      // Construct the verification method
-      const fragment = didKeyFragment(did);
-
-      const verificationMethod: VerificationMethod = {
-        id: `${did}#${fragment}`,
-        type: 'Ed25519VerificationKey2020',
-        controller: did,
-        publicKeyJwk,
-        publicKeyMultibase: multibaseKey,
-      };
-
-      // Construct and return the DID Document
-      return {
-        id: did,
-        verificationMethod: [verificationMethod],
-        authentication: [`${did}#${fragment}`],
-        assertionMethod: [`${did}#${fragment}`],
-      };
+      failures.clear(did);
+      return document;
     },
+    lastFailure: (did: string) => failures.get(did),
   };
 }
 

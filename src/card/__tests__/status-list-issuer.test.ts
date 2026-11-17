@@ -37,6 +37,8 @@ import {
   type TestIdentity,
   now,
 } from './signed-chain-helpers.js';
+import { moveBinding } from './status-list-paths.js';
+import { ANY_CODE, BIT_SET, codedAs } from '../../__tests__/utils/refusal-coding.js';
 
 const didResolver = createDidKeyResolver();
 const ctx = { resource: RESOURCE, now };
@@ -54,7 +56,10 @@ function checkerServing(list: Record<string, unknown>, deps: Partial<RevocationC
 const entry = (index: number) => ({ statusListCredential: STATUS_URL, statusListIndex: String(index) });
 const issuedBy = (party: TestIdentity) => ({ credentialIssuer: party.did });
 
-const REVOKED_UNPROVEN: RevocationStatus = { revoked: true, fresh: false, reason: expect.any(String) as string };
+/** What the checker answers, and a Card's revocation reads as, for a status not proven clear, whatever the code of why. */
+const REVOKED_UNPROVEN: RevocationStatus = { revoked: true, fresh: false, reason: expect.any(String) as string, ...ANY_CODE };
+/** What the checker answers for a set bit on a list it read. */
+const REVOKED: RevocationStatus = { revoked: true, fresh: true, ...BIT_SET };
 
 function cardOf(entity: TestIdentity): EntityCard {
   return {
@@ -101,7 +106,7 @@ describe('a status list signed by another DID does not clear a revocation', () =
     const acme = identity();
     const check = vi.fn(checkerServing(statusList(acme, [3])));
     const revoked = await verifyCard(cardOf(acme), { statusListChecker: check });
-    expect(revoked.revocation).toEqual({ revoked: true, fresh: true });
+    expect(revoked.revocation).toEqual(REVOKED);
     expect(check.mock.calls).toEqual([[cardOf(acme).revocation, issuedBy(acme)]]);
     const clear = await verifyCard(cardOf(acme), { statusListChecker: checkerServing(statusList(acme)) });
     expect(clear.revocation).toEqual({ revoked: false, fresh: true });
@@ -113,7 +118,7 @@ describe('createRevocationChecker holds a verified list to the credential', () =
     const acme = identity();
     for (const list of [statusList(acme, [3]), statusList(acme, [3], { issuer: { id: acme.did, name: 'Acme' } })]) {
       const check = checkerServing(list);
-      expect(await check(entry(3), issuedBy(acme))).toEqual({ revoked: true, fresh: true });
+      expect(await check(entry(3), issuedBy(acme))).toEqual(REVOKED);
       expect(await check(entry(4), issuedBy(acme))).toEqual({ revoked: false, fresh: true });
     }
   });
@@ -133,14 +138,17 @@ describe('createRevocationChecker holds a verified list to the credential', () =
     const statusService = identity();
     const statusListIssuers = { [statusService.did]: [STATUS_URL] };
     const check = checkerServing(statusList(statusService, [3]), { statusListIssuers });
-    expect(await check(entry(3), issuedBy(acme))).toEqual({ revoked: true, fresh: true });
+    expect(await check(entry(3), issuedBy(acme))).toEqual(REVOKED);
     expect(await check(entry(4), issuedBy(acme))).toEqual({ revoked: false, fresh: true });
     expect(await check(entry(4), issuedBy(identity()))).toEqual({ revoked: false, fresh: true });
     // The credential's own issuer's list is refused at a URL the configuration binds to another.
     expect(await checkerServing(statusList(acme), { statusListIssuers })(entry(4), issuedBy(acme))).toEqual({
       revoked: true,
       fresh: false,
-      reason: `status list issuer "${acme.did}" does not keep this list's URL: "${statusService.did}" does, as the issuer statusListIssuers binds this URL to`,
+      reason:
+        `status list issuer "${acme.did}" does not keep this list's URL: "${statusService.did}" does, as the issuer statusListIssuers binds this URL to` +
+        moveBinding(acme.did, STATUS_URL),
+      ...codedAs('status_signer_untrusted'),
     });
     // Bound to another URL, the service keeps nothing here.
     const elsewhere = checkerServing(statusList(statusService), { statusListIssuers: { [statusService.did]: [`${STATUS_URL}/2`] } });
@@ -154,7 +162,7 @@ describe('createRevocationChecker holds a verified list to the credential', () =
 
     const { id: _id, proof: _proof, ...withoutId } = statusList(acme, [3]);
     const check = checkerServing(signEddsaJcs2022(withoutId, acme));
-    expect(await check(entry(3), issuedBy(acme))).toEqual({ revoked: true, fresh: true });
+    expect(await check(entry(3), issuedBy(acme))).toEqual(REVOKED);
     expect(await check(entry(4), issuedBy(acme))).toEqual({ revoked: false, fresh: true });
   });
 
@@ -190,7 +198,7 @@ describe('createRevocationChecker holds a verified list to the credential', () =
     expect(await checkerServing(suspension)(entry(4), issuedBy(acme))).toEqual(REVOKED_UNPROVEN);
 
     const both = statusList(acme, [3], { credentialSubject: { statusPurpose: ['suspension', 'revocation'] } });
-    expect(await checkerServing(both)(entry(3), issuedBy(acme))).toEqual({ revoked: true, fresh: true });
+    expect(await checkerServing(both)(entry(3), issuedBy(acme))).toEqual(REVOKED);
     expect(await checkerServing(both)(entry(4), issuedBy(acme))).toEqual({ revoked: false, fresh: true });
     expect(await checkerServing(both, { statusPurpose: 'suspension' })(entry(4), issuedBy(acme))).toEqual({
       revoked: false,
@@ -202,16 +210,13 @@ describe('createRevocationChecker holds a verified list to the credential', () =
     const acme = identity();
     const suspension = statusList(acme, [3], { credentialSubject: { statusPurpose: 'suspension' } });
     const revocation = statusList(acme, [3]);
-    expect(await checkerServing(suspension, { statusPurpose: 'suspension' })(entry(3), issuedBy(acme))).toEqual({
-      revoked: true,
-      fresh: true,
-    });
+    expect(await checkerServing(suspension, { statusPurpose: 'suspension' })(entry(3), issuedBy(acme))).toEqual(REVOKED);
     expect(await checkerServing(revocation, { statusPurpose: 'suspension' })(entry(3), issuedBy(acme))).toEqual(
       REVOKED_UNPROVEN,
     );
     const unverified = (list: Record<string, unknown>) =>
       createRevocationChecker({ fetch: serve(list), now, statusPurpose: 'suspension' });
-    expect(await unverified(suspension)(entry(3))).toEqual({ revoked: true, fresh: true });
+    expect(await unverified(suspension)(entry(3))).toEqual(REVOKED);
     expect(await unverified(revocation)(entry(3))).toEqual(REVOKED_UNPROVEN);
   });
 });
@@ -235,9 +240,9 @@ describe("a list's statusPurpose takes the form its type allows", () => {
   it('reads a purpose array on a list typed as a Bitstring Status List in both places, verified or not', async () => {
     const acme = identity();
     const both = statusList(acme, [3], { credentialSubject: { statusPurpose: BOTH } });
-    expect(await checkerServing(both)(entry(3), issuedBy(acme))).toEqual({ revoked: true, fresh: true });
+    expect(await checkerServing(both)(entry(3), issuedBy(acme))).toEqual(REVOKED);
     expect(await checkerServing(both)(entry(4), issuedBy(acme))).toEqual({ revoked: false, fresh: true });
-    expect(await unverified(both)(entry(3))).toEqual({ revoked: true, fresh: true });
+    expect(await unverified(both)(entry(3))).toEqual(REVOKED);
     expect(await unverified(both)(entry(4))).toEqual({ revoked: false, fresh: true });
   });
 
@@ -272,12 +277,12 @@ describe("an entry's own statusPurpose", () => {
   it("reads an entry that states the checker's purpose like one that states none", async () => {
     const acme = identity();
     const check = checkerServing(statusList(acme, [3]));
-    expect(await check(stating(3, 'revocation'), issuedBy(acme))).toEqual({ revoked: true, fresh: true });
+    expect(await check(stating(3, 'revocation'), issuedBy(acme))).toEqual(REVOKED);
     expect(await check(stating(4, 'revocation'), issuedBy(acme))).toEqual({ revoked: false, fresh: true });
     const suspensions = checkerServing(statusList(acme, [3], { credentialSubject: { statusPurpose: 'suspension' } }), {
       statusPurpose: 'suspension',
     });
-    expect(await suspensions(stating(3, 'suspension'), issuedBy(acme))).toEqual({ revoked: true, fresh: true });
+    expect(await suspensions(stating(3, 'suspension'), issuedBy(acme))).toEqual(REVOKED);
   });
 
   it('fails closed before any fetch on an entry that states another purpose, verified or not, whatever it states', async () => {
@@ -387,7 +392,7 @@ describe('a call that names no credential issuer', () => {
   it('reads the list as before when the checker verifies no proof, since nothing about it is authenticated', async () => {
     const mallory = identity();
     const check = createRevocationChecker({ fetch: serve(statusList(mallory, [3])), now });
-    expect(await check(entry(3))).toEqual({ revoked: true, fresh: true });
+    expect(await check(entry(3))).toEqual(REVOKED);
     expect(await check(entry(4))).toEqual({ revoked: false, fresh: true });
     expect(await check(entry(4), issuedBy(identity()))).toEqual({ revoked: false, fresh: true });
   });

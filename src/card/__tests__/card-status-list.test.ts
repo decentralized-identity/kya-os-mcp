@@ -35,6 +35,8 @@ import {
   type TestIdentity,
   now,
 } from './signed-chain-helpers.js';
+import { moveBinding, nameSigner } from './status-list-paths.js';
+import { ANY_CODE, BIT_SET, codedAs } from '../../__tests__/utils/refusal-coding.js';
 
 const CARDS_URL = 'https://example.com/status/cards';
 
@@ -130,8 +132,8 @@ function reportingRootList(rootStatusList: unknown, chain = chainFrom(responsibl
 }
 
 const READ_CLEAR = { revoked: false, fresh: true };
-const READ_REVOKED = { revoked: true, fresh: true };
-const REFUSED = { revoked: true, fresh: false, reason: expect.any(String) as string };
+const READ_REVOKED = { revoked: true, fresh: true, ...BIT_SET };
+const REFUSED = { revoked: true, fresh: false, reason: expect.any(String) as string, ...ANY_CODE };
 
 describe("the Card's verified responsible party", () => {
   it.each(['false', 1, {}, null])('does not grant authority for a malformed seam verdict: %j', async (verified) => {
@@ -201,7 +203,10 @@ describe("the Card's verified responsible party", () => {
     expect(result.revocation).toStrictEqual({
       revoked: true,
       fresh: false,
-      reason: `status list issuer "${responsibleParty.did}" does not keep this list's URL: "${entity.did}" does, as the issuer of the credential`,
+      reason:
+        `status list issuer "${responsibleParty.did}" does not keep this list's URL: "${entity.did}" does, as the issuer of the credential` +
+        nameSigner(responsibleParty.did, 'https://example.com'),
+      ...codedAs('status_signer_untrusted'),
     });
   });
 
@@ -210,7 +215,10 @@ describe("the Card's verified responsible party", () => {
     expect(result.revocation).toStrictEqual({
       revoked: true,
       fresh: false,
-      reason: `status list issuer "${entity.did}" does not keep this list's URL: "${responsibleParty.did}" does, as the issuer statusListIssuers binds this URL to`,
+      reason:
+        `status list issuer "${entity.did}" does not keep this list's URL: "${responsibleParty.did}" does, as the issuer statusListIssuers binds this URL to` +
+        moveBinding(entity.did, CARDS_URL),
+      ...codedAs('status_signer_untrusted'),
     });
   });
 
@@ -228,7 +236,10 @@ describe("the Card's verified responsible party", () => {
     expect((await verifyWith(cardsList(entity), reported)).revocation).toStrictEqual({
       revoked: true,
       fresh: false,
-      reason: `status list issuer "${entity.did}" does not keep this list's URL: "${responsibleParty.did}" does, as the pinned root whose own credential names it`,
+      reason:
+        `status list issuer "${entity.did}" does not keep this list's URL: "${responsibleParty.did}" does, as the pinned root whose own credential names it` +
+        nameSigner(entity.did, 'https://example.com'),
+      ...codedAs('status_signer_untrusted'),
     });
     expect(await verifyWith(cardsList(responsibleParty, [], { statesId: false }), reported)).toMatchObject({ ok: false, revocation: REFUSED });
   });
@@ -247,7 +258,10 @@ describe("the Card's verified responsible party", () => {
     expect(result.revocation).toStrictEqual({
       revoked: true,
       fresh: false,
-      reason: `status list issuer "${responsibleParty.did}" does not keep this list's URL: "${entity.did}" does, as the issuer of the credential`,
+      reason:
+        `status list issuer "${responsibleParty.did}" does not keep this list's URL: "${entity.did}" does, as the issuer of the credential` +
+        nameSigner(responsibleParty.did, 'https://example.com'),
+      ...codedAs('status_signer_untrusted'),
     });
   });
 

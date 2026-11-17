@@ -7,11 +7,12 @@ body: |-
     5-second deadline and follows at most 3 redirects. Anything over a
     limit is refused, never cut to fit, so check your DID documents and
     status lists before you upgrade. A did:web DID or status list on a
-    private address or a local name is refused unless the `FetchProvider`
-    sets `allowPrivateNetworkHosts: true`. A custom `FetchProvider` must
-    return a streaming body and pass `redirect` on, a custom resolver's
-    document must be plain JSON data with a DID as its `id`, and each
-    `trustedRootIssuers` entry must be a DID with no white space around
-    it. Some failure reasons changed. UPGRADING.md, "Limits on DID
-    resolution and status-list reads", has every limit and each setup.
+    private address or a local name is refused unless `development: true`
+    admits it in local development, or the `FetchProvider` sets
+    `allowPrivateNetworkHosts: true`. A custom `FetchProvider` must pass
+    `redirect` on, a custom resolver's document must be plain JSON data
+    with a DID as its `id`, and each `trustedRootIssuers` entry must be a
+    DID with no white space around it. Some failure reasons changed.
+    UPGRADING.md, "Limits on DID resolution and status-list reads", has
+    every limit and each setup.
 time: 2026-11-13T02:00:00.000000-06:00

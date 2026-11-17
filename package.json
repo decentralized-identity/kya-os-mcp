@@ -90,6 +90,7 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
+    "test:adopters": "node adopters/run.mjs",
     "test:e2e:cheqd:testnet": "vitest run src/integrations/cheqd/__tests__/registrar.live.test.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -101,7 +102,7 @@
     "conformance:generate:status-authority": "tsx conformance/status-list-authority-vectors.ts",
     "conformance:verify:crosslang": "python3 conformance/verify.py",
     "conformance:typecheck": "tsc --noEmit -p conformance/tsconfig.json",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src adopters/run.mjs adopters/runner --ext .ts",
     "clean": "rm -rf dist",
     "changie": "npx --yes changie@1.26.0",
     "prepublishOnly": "npm run clean && npm run build && npm run test",

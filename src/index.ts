@@ -23,6 +23,15 @@ export {
   type KyaOsErrorResponse,
 } from './errors.js';
 
+// Refusal codes: why a verifier refused, beside each refusal's reason
+export {
+  REFUSAL_CODES,
+  isRefusalCode,
+  isTransientRefusal,
+  type RefusalCode,
+} from './refusal-codes.js';
+export { RefusalError } from './utils/refusal.js';
+
 // Encoding utilities (RFC 4648 base64url + standard base64, byte variants)
 export {
   base64urlEncodeFromBytes,
@@ -95,9 +104,12 @@ export {
   DelegationCredentialVerifier,
   createDelegationVerifier,
   type DelegationVCVerificationResult,
+  type RefusalCoding,
   type StatusOutcome,
   type VerifyDelegationVCOptions,
   type DIDResolver,
+  type DidResolutionFailure,
+  type DidResolutionFailureCause,
   type DIDDocument,
   type VerificationMethod,
   type StatusListResolver,

@@ -67,6 +67,13 @@ export interface WithKyaOsOptions {
    * the middleware (see `KyaOsConfig.responseProofProfile`).
    */
   responseProofProfile?: ResponseProofProfile;
+  /**
+   * Local development: read did:web documents on private and local hosts,
+   * such as a `*.localhost` name. Never set it in production: while
+   * `NODE_ENV` is `production` this function throws. Passed through to the
+   * middleware (see `KyaOsConfig.development`).
+   */
+  development?: boolean;
   /** Auto-create sessions for non-KYA-OS clients (default: true) */
   autoSession?: boolean;
   /**
@@ -201,6 +208,7 @@ export async function withKyaOs(
       ...(options.responseProofProfile !== undefined
         ? { responseProofProfile: options.responseProofProfile }
         : {}),
+      ...(options.development !== undefined ? { development: options.development } : {}),
     },
     options.crypto,
   );

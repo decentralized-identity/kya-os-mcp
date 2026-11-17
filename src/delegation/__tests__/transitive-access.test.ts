@@ -1287,8 +1287,8 @@ describe('Transitive Access — Karp Use Cases', () => {
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toBe('delegation_invalid');
-      expect(parsed.reason).toContain('Failed to resolve delegation chain');
-      expect(parsed.reason).toContain('registry unreachable');
+      expect(parsed.reason).toContain('Failed to resolve delegation chain: the chain resolver failed');
+      expect(parsed.reason).not.toContain('registry unreachable');
     });
 
     it('rejects when the resolved chain does not end with the leaf credential', async () => {

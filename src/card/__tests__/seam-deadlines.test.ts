@@ -28,6 +28,10 @@ import { buildCardProof, requireProof, verifyCard, verifyCardProof, type EntityC
 import { AUD, NONCE, PROOF_KEY, REQ, clock, deps as proofDeps, keypair } from './proof-helpers.js';
 import { issuerOf } from '../../utils/guards.js';
 import { NOW_MS, RESOURCE, STATUS_URL, parties, serve, statusList, twoHopChain, type ChainParties } from './signed-chain-helpers.js';
+import { codedAs } from '../../__tests__/utils/refusal-coding.js';
+
+/** What a status, or a chain, refused because a dependency had not answered in time carries. */
+const LATE = codedAs('deadline_exceeded');
 
 /** A status entry a checker is asked about. */
 const ENTRY = { statusListIndex: '7', statusListCredential: STATUS_URL };
@@ -67,6 +71,8 @@ describe.each(DEADLINES)('%s', (_label, option, ms, stated) => {
         code: 'delegation_unresolvable',
         reasons: [`delegation chain could not be resolved: the chain resolver did not answer within ${stated}`],
         source: 'resolved',
+        refusalCode: 'deadline_exceeded',
+        transient: true,
       });
     });
 
@@ -77,6 +83,8 @@ describe.each(DEADLINES)('%s', (_label, option, ms, stated) => {
         code: 'delegation_invalid',
         reasons: [`hop 0: the hop proof verifier did not answer within ${stated}`],
         source: 'carried',
+        refusalCode: 'deadline_exceeded',
+        transient: true,
       });
     });
 
@@ -164,7 +172,7 @@ describe.each(DEADLINES)('%s', (_label, option, ms, stated) => {
     it('finds the Card revoked when the status list checker has not answered by the deadline', async () => {
       const result = await settledAt(ms, (never) => verifyCard(card, { ...answering, statusListChecker: never }));
       expect(result).toMatchObject({ ok: false, conformanceLevel: 'L1' });
-      expect(result.revocation).toEqual({ revoked: true, fresh: false, reason: `the revocation checker did not answer within ${stated}` });
+      expect(result.revocation).toEqual({ revoked: true, fresh: false, reason: `the revocation checker did not answer within ${stated}`, ...LATE });
     });
 
     it.each(['capabilityVerifier', 'accountabilityVerifier', 'attestationVerifier'] as const)(
@@ -185,6 +193,7 @@ describe.each(DEADLINES)('%s', (_label, option, ms, stated) => {
         revoked: true,
         fresh: false,
         reason: `the Card's revocation status could not be read: the revocation checker's answer ("${text}") is not an object`,
+        ...codedAs('status_unavailable'),
       });
     });
   });
@@ -231,6 +240,7 @@ describe.each(DEADLINES)('%s', (_label, option, ms, stated) => {
         ok: false,
         fresh: false,
         reasons: [`revocation: hop 0 (list "${STATUS_URL}", index "7") is unresolvable: the revocation checker did not answer within ${stated}`],
+        ...LATE,
       });
     });
 
@@ -246,7 +256,7 @@ describe.each(DEADLINES)('%s', (_label, option, ms, stated) => {
   describe('a checker built with createRevocationChecker, called directly', () => {
     it('fails closed when its list read has not answered by the deadline', async () => {
       const result = await settledAt(ms, (never) => createRevocationChecker({ fetch: never, ...option })(ENTRY));
-      expect(result).toEqual({ revoked: true, fresh: false });
+      expect(result).toEqual({ revoked: true, fresh: false, ...LATE });
     });
 
     it('fails closed when its verifyStatusList has not answered by the deadline', async () => {
@@ -255,7 +265,7 @@ describe.each(DEADLINES)('%s', (_label, option, ms, stated) => {
         createRevocationChecker({ fetch: serve(list), verifyStatusList: never, now: () => NOW_MS, ...option })(
           ENTRY, { credentialIssuer: issuerOf(list.issuer)! },
         ));
-      expect(result).toEqual({ revoked: true, fresh: false });
+      expect(result).toEqual({ revoked: true, fresh: false, ...LATE });
     });
   });
 

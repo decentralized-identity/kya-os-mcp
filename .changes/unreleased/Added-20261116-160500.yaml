@@ -1,0 +1,12 @@
+kind: Added
+body: |-
+    **A status resolver that wraps a library checker and passes on only the
+    entry keeps the check's context.** Each status read hands its resolver a
+    fresh copy of the entry that carries the credential's issuer and the
+    pinned root under `Symbol.for('@kya-os/mcp/status-check-context')`, and
+    the checker `createRevocationChecker` builds and `withStatusCache` read
+    it when they are given no second argument. A checker that gets neither
+    refuses the entry with a reason that says a wrapping resolver must pass
+    its second argument on. UPGRADING.md, "A custom `StatusListResolver`
+    given to `withKyaOs` or `DelegationCredentialVerifier`", has the detail.
+time: 2026-11-16T16:05:00.000000-06:00

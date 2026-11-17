@@ -31,6 +31,7 @@ import { ProofVerifier } from "../proof/verifier.js";
 import { SystemClockProvider } from "../providers/system-clock.js";
 import { MemoryNonceCacheProvider } from "../providers/memory.js";
 import { logger } from "../logging/index.js";
+import { developmentMode } from "../utils/development-mode.js";
 import {
   type KyaOsConfig,
   type KyaOsMiddleware,
@@ -98,6 +99,8 @@ export function createKyaOsMiddleware(
       `pendingProofTtlMs must be a positive number of milliseconds, at most ${MAX_PENDING_PROOF_TTL_MS}`,
     );
   }
+  // Refused under NODE_ENV=production before anything is built, and warned of once.
+  const development = developmentMode(config.development, "KyaOsConfig.development");
   if (config.audit && config.auditLog) {
     throw new TypeError('Configure either audit or legacy auditLog, not both');
   }
@@ -181,7 +184,7 @@ export function createKyaOsMiddleware(
           fetchProvider:
             delegationConfig?.fetchProvider ??
             (typeof globalThis.fetch === "function"
-              ? new RuntimeFetchProvider()
+              ? new RuntimeFetchProvider({ allowPrivateNetworkHosts: development })
               : new NoopFetchProvider()),
         });
 
@@ -200,6 +203,7 @@ export function createKyaOsMiddleware(
     holderBindingVerifier,
     emitLegacyProofKey,
     responseProofProfile,
+    development,
   };
 
   // Session establishment + proof attachment (owns the activeSessionId fallback);

@@ -14,6 +14,7 @@ import { createStatusListProofVerifier } from '../status-list-proof.js';
 import { ACME, acmeDocument, issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
 import { identity, NOW_MS, published, serve, STATUS_URL, statusList, type TestIdentity } from './signed-chain-helpers.js';
 import type { DIDDocument } from '../../delegation/vc-verifier.types.js';
+import { codedAs } from '../../__tests__/utils/refusal-coding.js';
 
 const SERVICE = 'did:web:status-service.example';
 /** A fresh key of `did`, published as `#<fragment>`, as the shared DID document helpers take one. */
@@ -28,7 +29,7 @@ const documents: Record<string, DIDDocument> = {
 };
 
 const READ = { revoked: false, fresh: true };
-const REFUSED = { revoked: true, fresh: false, reason: expect.any(String) as string };
+const REFUSED = { revoked: true, fresh: false, reason: expect.any(String) as string, ...codedAs('status_signer_untrusted') };
 
 /** Check Acme's credential's clear entry against the list `signer` signed, recording the proof verdicts. */
 async function check(signer: TestIdentity, statusListIssuers?: StatusListIssuers) {

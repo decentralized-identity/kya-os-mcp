@@ -10,6 +10,9 @@ import { checkCredentialStatus, validateBasicProperties, verifySignature } from 
 import type { SignatureVerificationFunction } from "../vc-verifier.types.js";
 import type { CredentialStatus, DelegationCredential } from "../../types/protocol.js";
 import { issuerDidDocument, methodOf } from "../../__tests__/utils/did-documents.js";
+import { WRAPPED_REASON_LENGTH } from "../../utils/revocation-answer.js";
+import { RefusalError } from "../../utils/refusal.js";
+import { logger } from "../../logging/index.js";
 
 const ISSUER = "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK";
 
@@ -57,11 +60,14 @@ function withConstraints(constraints: Record<string, unknown>): DelegationCreden
   return vc;
 }
 
+/** The code an expired credential is refused with. */
+const EXPIRED = { code: "delegation_expired", transient: false } as const;
+
 describe("validateBasicProperties: validity bounds and status fail closed", () => {
   it("treats an unparseable expirationDate as expired, not as no expiry", () => {
     for (const expirationDate of ["2020-02-30T25:00:00Z", "not a date", "", 4102444800 as unknown as string]) {
       const result = validateBasicProperties(credential({ expirationDate }));
-      expect(result, String(expirationDate)).toEqual({ valid: false, reason: "Delegation credential expired" });
+      expect(result, String(expirationDate)).toEqual({ valid: false, reason: "Delegation credential expired", ...EXPIRED });
     }
     expect(validateBasicProperties(credential({ expirationDate: "2099-01-01T00:00:00Z" }))).toEqual({ valid: true });
   });
@@ -69,7 +75,7 @@ describe("validateBasicProperties: validity bounds and status fail closed", () =
   it("treats a non-numeric constraints.notAfter as expired, and still honours a numeric one", () => {
     for (const notAfter of ["2020-01-01", "4102444800", null, Number.NaN, Number.POSITIVE_INFINITY]) {
       const result = validateBasicProperties(withConstraints({ notAfter }));
-      expect(result, String(notAfter)).toEqual({ valid: false, reason: "Delegation credential expired" });
+      expect(result, String(notAfter)).toEqual({ valid: false, reason: "Delegation credential expired", ...EXPIRED });
     }
     const nowSec = Math.floor(Date.now() / 1000);
     expect(validateBasicProperties(withConstraints({ notAfter: nowSec + 60 })).valid).toBe(true);
@@ -80,13 +86,19 @@ describe("validateBasicProperties: validity bounds and status fail closed", () =
     expect(validateBasicProperties(withConstraints({ notAfter: 0 }))).toEqual({
       valid: false,
       reason: "Delegation credential expired",
+      ...EXPIRED,
     });
   });
 
   it("treats a non-numeric constraints.notBefore as not yet valid, and still honours a numeric one", () => {
     for (const notBefore of ["2020-01-01", null, Number.NaN]) {
       const result = validateBasicProperties(withConstraints({ notBefore }));
-      expect(result, String(notBefore)).toEqual({ valid: false, reason: "Delegation credential not yet valid" });
+      expect(result, String(notBefore)).toEqual({
+        valid: false,
+        reason: "Delegation credential not yet valid",
+        code: "delegation_not_yet_valid",
+        transient: false,
+      });
     }
     const nowSec = Math.floor(Date.now() / 1000);
     expect(validateBasicProperties(withConstraints({ notBefore: nowSec - 60 })).valid).toBe(true);
@@ -95,15 +107,15 @@ describe("validateBasicProperties: validity bounds and status fail closed", () =
 
   it("passes only an active delegation", () => {
     expect(validateBasicProperties(credential())).toEqual({ valid: true });
-    for (const [status, reason] of [
-      ["revoked", 'Delegation status is "revoked"'],
-      ["expired", 'Delegation status is "expired"'],
-      ["suspended", 'Delegation status is "suspended"'],
-      [undefined, "Delegation status is missing"],
+    for (const [status, reason, code] of [
+      ["revoked", 'Delegation status is "revoked"', "delegation_revoked"],
+      ["expired", 'Delegation status is "expired"', "delegation_expired"],
+      ["suspended", 'Delegation status is "suspended"', "delegation_malformed"],
+      [undefined, "Delegation status is missing", "delegation_malformed"],
     ] as const) {
       const vc = credential();
       (vc.credentialSubject.delegation as { status?: string }).status = status;
-      expect(validateBasicProperties(vc)).toEqual({ valid: false, reason });
+      expect(validateBasicProperties(vc)).toEqual({ valid: false, reason, code, transient: false });
     }
   });
 });
@@ -121,7 +133,12 @@ describe("refusal reasons quote what the credential chose as describeValue does"
     for (const [status, named] of statuses) {
       const vc = credential();
       (vc.credentialSubject.delegation as { status?: unknown }).status = status;
-      expect(validateBasicProperties(vc)).toEqual({ valid: false, reason: `Delegation status is ${named}` });
+      expect(validateBasicProperties(vc)).toEqual({
+        valid: false,
+        reason: `Delegation status is ${named}`,
+        code: "delegation_malformed",
+        transient: false,
+      });
     }
   });
 
@@ -146,12 +163,14 @@ describe("refusal reasons quote what the credential chose as describeValue does"
     });
   });
 
-  it("passes the message of a status resolver that throws through the message sanitizer", async () => {
-    const thrower = (message: string) => ({ checkStatus: async () => { throw new Error(message); } });
+  it("passes the message of a status resolver's refusal through the message sanitizer", async () => {
+    const thrower = (message: string) => ({ checkStatus: async () => { throw new RefusalError("status_unavailable", message); } });
     expect(await checkCredentialStatus(credentialStatus("revocation"), thrower("list\nunavailable\uD800"), ISSUER)).toEqual({
       valid: false,
       outcome: "status_unresolvable",
       reason: "Status check error: list\uFFFDunavailable\uFFFD",
+      code: "status_unavailable",
+      transient: true,
       durationMs: expect.any(Number),
     });
     // A resolver that quotes a purpose the credential chose, raw: 2,074 UTF-16 units, not well-formed.
@@ -159,8 +178,23 @@ describe("refusal reasons quote what the credential chose as describeValue does"
     const raw = `status list statusPurpose mismatch: "revocation" != "${purpose}"`;
     const { reason } = await checkCredentialStatus(credentialStatus(purpose), thrower(raw), ISSUER);
     const expectedMessage = `status list statusPurpose mismatch: "revocation" != "${"x\uFFFD".repeat(1000)}`;
-    expect(reason).toBe(`Status check error: ${expectedMessage.slice(0, 256)}\u2026`);
+    expect(reason).toBe(`Status check error: ${expectedMessage.slice(0, WRAPPED_REASON_LENGTH)}\u2026`);
     expect(reason).not.toMatch(/\p{Cs}/u);
+  });
+
+  it("names the list of a status resolver that throws any other error, and logs what it said", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const resolver = { checkStatus: async () => { throw new TypeError("connect ECONNREFUSED 10.1.2.3:443"); } };
+    expect(await checkCredentialStatus(credentialStatus("revocation"), resolver, ISSUER)).toEqual({
+      valid: false,
+      outcome: "status_unresolvable",
+      reason: 'Status check error: the status list at "https://status.example/1" could not be read or checked',
+      code: "status_unavailable",
+      transient: true,
+      durationMs: expect.any(Number),
+    });
+    expect(warn).toHaveBeenCalledWith('[kya-os] the status list at "https://status.example/1" could not be read or checked: connect ECONNREFUSED 10.1.2.3:443');
+    warn.mockRestore();
   });
 });
 
@@ -198,7 +232,9 @@ describe("verifySignature: fail-closed paths", () => {
     const signatureVerifier: SignatureVerificationFunction = async () => {
       throw "verifier crashed";
     };
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
     const result = await verifySignature(credential(), resolver, signatureVerifier);
-    expect(result).toMatchObject({ valid: false, reason: "Signature verification error: Unknown error" });
+    expect(result).toMatchObject({ valid: false, reason: "Signature verification error: the signature could not be checked", code: "runtime_error" });
+    warn.mockRestore();
   });
 });

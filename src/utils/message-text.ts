@@ -5,6 +5,7 @@
  */
 
 import { isEscapedCharacter } from "./describe-value.js";
+import { withoutPartialRemedy } from "./remedy-text.js";
 
 declare const messageText: unique symbol;
 /** Internal evidence that human-facing text is bounded and contains no lone surrogate. */
@@ -25,7 +26,9 @@ export type MessageText = string & { readonly [messageText]: true };
  * The result is well-formed text, as the RFC 8785 form a response proof signs a
  * reason in requires: a lone surrogate becomes U+FFFD, and the cap of `maxLen`
  * UTF-16 code units falls before a surrogate pair it would split. A longer value
- * is read only as far as the cap.
+ * is read only as far as the cap, and the cut also falls before the
+ * `statusListIssuers` remedy of a keeper refusal it would split
+ * (`./remedy-text`), so a reason carries that remedy whole or not at all.
  */
 export function sanitizeForMessage(value: unknown, maxLen = 256): MessageText {
   const s = typeof value === "string" ? value : String(value);
@@ -39,7 +42,7 @@ export function sanitizeForMessage(value: unknown, maxLen = 256): MessageText {
   for (let i = 0; i < s.length; ) {
     const code = s.codePointAt(i) ?? 0;
     const width = code > 0xffff ? 2 : 1;
-    if (out.length + width > maxLen) return `${out}\u2026` as MessageText;
+    if (out.length + width > maxLen) return `${withoutPartialRemedy(out)}\u2026` as MessageText;
     const character = s.slice(i, i + width);
     const replaced = code <= 0x1f || (code >= 0xd800 && code <= 0xdfff) || isEscapedCharacter(character);
     out += replaced ? "\uFFFD" : character;

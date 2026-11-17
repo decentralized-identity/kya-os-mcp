@@ -14,6 +14,11 @@ import type { IncomingMessage } from 'node:http';
 import type { LookupFunction } from 'node:net';
 import type { DnsLookup, RawResponse, SafeFetchTransport } from './safe-fetch-types.js';
 import { readCappedBody } from './bounded-read.js';
+import { ReadFailureError } from './read-failure.js';
+
+/** The refusal of a body larger than `maxBytes`, as SafeFetch refuses a declared length over its cap: a read that came back too large. */
+const overCap = (maxBytes: number): ReadFailureError =>
+  new ReadFailureError('too_large', `safe-fetch: response body exceeds size cap ${maxBytes}`);
 
 /*
  * Node built-ins are loaded LAZILY (never at the module top level), so this
@@ -86,14 +91,14 @@ export const fetchTransport: SafeFetchTransport = async (url, init) => {
 
 /**
  * Read a fetch Response body into a RawResponse through the one bounded body reader, enforcing the
- * byte cap mid-stream and ending the read when `signal` aborts.
+ * byte cap mid-stream, a larger body refused as `too_large`, and ending the read when `signal` aborts.
  */
 async function readCapped(response: Response, maxBytes: number, signal: AbortSignal): Promise<RawResponse> {
   const bytes = response.body
     ? await readCappedBody(response.body, {
         maxBytes,
         signal,
-        tooLarge: () => new Error(`safe-fetch: response body exceeds size cap ${maxBytes}`),
+        tooLarge: () => overCap(maxBytes),
       })
     : new Uint8Array(0);
   const body = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('utf8');
@@ -146,7 +151,7 @@ export const nodeHttpsTransport: SafeFetchTransport = async (url, init) => {
           size += chunk.length;
           if (size > init.maxBytes) {
             req.destroy();
-            reject(new Error(`safe-fetch: response body exceeds size cap ${init.maxBytes}`));
+            reject(overCap(init.maxBytes));
             return;
           }
           chunks.push(chunk);

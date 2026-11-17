@@ -9,6 +9,8 @@ import { ed25519SignerFromJwk } from '../proof/signer.js';
 import { base58Encode } from '../../utils/base58.js';
 import type { DIDDocument, DIDResolver } from '../../delegation/vc-verifier.types.js';
 import type { SafeFetch } from '../../utils/safe-fetch.js';
+import { logger } from '../../logging/index.js';
+import { BIT_SET, codedAs } from '../../__tests__/utils/refusal-coding.js';
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -167,10 +169,13 @@ describe('createStatusListProofVerifier (eddsa-jcs-2022)', () => {
     expect(await verify(foreign)).toBe(false);
   });
 
-  it('returns false rather than throwing when the resolver throws', async () => {
+  it('returns false rather than throwing when the resolver throws, and logs what it said', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const didResolver: DIDResolver = { resolve: async () => { throw new Error('offline'); } };
     const verifyList = createStatusListProofVerifier({ didResolver });
     expect(await verifyList(signEddsaJcs2022(statusList([5])))).toBe(false);
+    expect(warn).toHaveBeenCalledWith(`[eddsa-jcs-2022] Resolving ${ISSUER} failed: offline`);
+    warn.mockRestore();
   });
 });
 
@@ -217,12 +222,17 @@ describe('createRevocationChecker with verifyStatusList', () => {
     const signed = signEddsaJcs2022(statusList([5], { id: ISSUER, name: 'Status issuer' }));
     const check = checker(signed, (credential) => verify(credential));
     expect(await check(entry(6), ofIssuer)).toEqual({ revoked: false, fresh: true });
-    expect(await check(entry(6), { credentialIssuer: 'did:web:other.example' })).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
+    expect(await check(entry(6), { credentialIssuer: 'did:web:other.example' })).toEqual({
+      revoked: true,
+      fresh: false,
+      reason: expect.any(String),
+      ...codedAs('status_signer_untrusted'),
+    });
   });
 
   it('reads the bits of a list whose proof verifies', async () => {
     const check = checker(signEddsaJcs2022(statusList([5])), createStatusListProofVerifier({ didResolver: resolverFor(didDocument()) }));
-    expect(await check(entry(5), ofIssuer)).toEqual({ revoked: true, fresh: true });
+    expect(await check(entry(5), ofIssuer)).toEqual({ revoked: true, fresh: true, ...BIT_SET });
     expect(await check(entry(6), ofIssuer)).toEqual({ revoked: false, fresh: true });
   });
 
@@ -231,18 +241,31 @@ describe('createRevocationChecker with verifyStatusList', () => {
     const cleared = { ...signed, credentialSubject: statusList([]).credentialSubject };
     const verifyStatusList = createStatusListProofVerifier({ didResolver: resolverFor(didDocument()) });
     expect(await checker(cleared, undefined)(entry(5))).toEqual({ revoked: false, fresh: true });
-    expect(await checker(cleared, verifyStatusList)(entry(5), ofIssuer)).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
+    expect(await checker(cleared, verifyStatusList)(entry(5), ofIssuer)).toEqual({
+      revoked: true,
+      fresh: false,
+      reason: 'status-list proof rejected',
+      ...codedAs('status_signer_untrusted'),
+    });
   });
 
   it('hands the verifier the fetched credential and fails closed on false, a throw, or a non-true value', async () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const list = statusList([]);
     const seen = vi.fn(() => true);
     expect(await checker(list, seen)(entry(5), ofIssuer)).toEqual({ revoked: false, fresh: true });
     expect(seen).toHaveBeenCalledWith(list);
 
-    expect(await checker(list, () => false)(entry(5), ofIssuer)).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
-    expect(await checker(list, () => { throw new Error('bad'); })(entry(5), ofIssuer)).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
-    expect(await checker(list, async () => 'yes' as unknown as boolean)(entry(5), ofIssuer)).toEqual({ revoked: true, fresh: false, reason: expect.any(String) });
+    const rejected = { revoked: true, fresh: false, reason: 'status-list proof rejected', ...codedAs('status_signer_untrusted') };
+    expect(await checker(list, () => false)(entry(5), ofIssuer)).toEqual(rejected);
+    expect(await checker(list, () => { throw new Error('bad'); })(entry(5), ofIssuer)).toEqual({
+      revoked: true,
+      fresh: false,
+      reason: `the status list at "${STATUS_URL}" could not be read or checked`,
+      ...codedAs('status_unavailable'),
+    });
+    expect(await checker(list, async () => 'yes' as unknown as boolean)(entry(5), ofIssuer)).toEqual(rejected);
+    vi.restoreAllMocks();
   });
 
   it('fails a chain whose list the verifier rejects', async () => {

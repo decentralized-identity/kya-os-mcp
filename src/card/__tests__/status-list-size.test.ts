@@ -221,9 +221,15 @@ describe('a Card whose revocation entry is two bits wide', () => {
       const result = await verifyCard({ ...card, revocation }, { statusListChecker });
       return { revocation: result.revocation, fetches };
     };
-    expect(await run(card.revocation)).toEqual({ revocation: { revoked: true, fresh: false, reason: wideSizeReason(2) }, fetches: 0 });
+    expect(await run(card.revocation)).toEqual({
+      revocation: { revoked: true, fresh: false, reason: wideSizeReason(2), code: 'delegation_malformed', transient: false },
+      fetches: 0,
+    });
     // The same entry of one bit is read from the list, which shows the size alone refused it.
     const { statusSize: _size, statusMessage: _message, ...oneBit } = card.revocation!;
-    expect(await run(oneBit)).toEqual({ revocation: { revoked: bits.includes(7), fresh: true }, fetches: 1 });
+    expect(await run(oneBit)).toEqual({
+      revocation: { revoked: bits.includes(7), fresh: true, ...(bits.includes(7) ? { code: 'delegation_revoked', transient: false } : {}) },
+      fetches: 1,
+    });
   });
 });

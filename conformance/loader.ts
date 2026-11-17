@@ -42,11 +42,34 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * A binding written as an origin with a host in any case, and perhaps a `/` after it: the `/` is its
+ * one group. SPEC.md §6.6 reads only `https://`, a lower-case host and an optional port, with nothing
+ * after, as an origin.
+ */
+const ORIGIN_IN_ANY_FORM = /^https:\/\/[A-Za-z0-9.-]+(?::[0-9]{1,5})?(\/?)$/;
+
+/**
+ * The words a binding SPEC.md §6.6 says a verifier should refuse is refused in, or `undefined` for
+ * any other: an origin followed by `/`, an origin whose host has an upper-case letter `A` to `Z`, and
+ * any other binding that ends in `/`. Read as written, each is an exact URL, but it is almost always
+ * an origin or a prefix written in a form §6.6 does not read as one. The rule is on the string as
+ * written, with no URL parsing, as the library's `assertStatusListIssuers` applies it.
+ */
+function mistakenBinding(binding: string): string | undefined {
+  const written = ORIGIN_IN_ANY_FORM.exec(binding);
+  if (written !== null && written[1] === '/') return 'statusListIssuers binds an origin followed by "/"';
+  if (written !== null && /[A-Z]/.test(binding)) return 'statusListIssuers binds an origin whose host is not in lower case';
+  if (binding.endsWith('/')) return 'statusListIssuers binds a URL that ends in "/"';
+  return undefined;
+}
+
+/**
  * Throw a `TypeError` unless the verifier configuration a status-list input states (SPEC.md §6.6)
  * is well formed: a `trustedRootIssuer` and a `trustedRootStatusList`, when present, are non-empty
  * strings, and a `statusListIssuers`, when present, is a plain object that maps each status-list
  * issuer, a non-empty key, to an array of the status-list URLs and `https:` origins it keeps, each
- * a string that starts with `https://` or `http://`, none of them under two issuers.
+ * a string that starts with `https://` or `http://`, none of them one {@link mistakenBinding}
+ * refuses, and none under two issuers, checked binding by binding in that order.
  * `conformance/status_list.py` refuses the same inputs in the same words, so the suite's two
  * readers refuse the same malformed vector, and the reference adapter calls this too.
  */
@@ -72,6 +95,8 @@ export function assertStatusListConfiguration(input: unknown): void {
       if (typeof binding !== 'string' || !/^https?:\/\//.test(binding)) {
         throw new TypeError('statusListIssuers does not map issuers to lists of URLs');
       }
+      const mistaken = mistakenBinding(binding);
+      if (mistaken !== undefined) throw new TypeError(mistaken);
       if ((keeperOf.get(binding) ?? keeper) !== keeper) {
         throw new TypeError('statusListIssuers binds one URL to two issuers');
       }

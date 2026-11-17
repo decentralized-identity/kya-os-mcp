@@ -6,8 +6,22 @@
  * `DIDResolver` / `SignatureVerificationFunction` / … are unchanged.
  */
 
+import type { RefusalCode } from "../refusal-codes.js";
 import type { CredentialStatus } from "../types/protocol.js";
 import type { StatusCheckContext } from "../utils/statuslist-acceptance.js";
+
+/**
+ * The code a refusal carries beside its `reason`, and whether it is transient. Both are set on every
+ * refusal the library returns and absent from a result that verified. They are optional in the types
+ * so that a result built by other code, such as a test double or a verifier the host supplies, still
+ * fits.
+ */
+export interface RefusalCoding {
+  /** Why the verifier refused, as a stable value to branch on (see `REFUSAL_CODES`). */
+  code?: RefusalCode;
+  /** Whether the verifier could not decide because a dependency failed, so the same request may succeed later. */
+  transient?: boolean;
+}
 
 /**
  * Machine-readable outcome of the credential-status check. Both values still
@@ -26,13 +40,14 @@ export type StatusOutcome = "revoked" | "status_unresolvable";
  * path (`verifySignature`) and the VC-JWT path (`verifyVcJwtSignature`,
  * whose `VcJwtSignatureResult` is structurally identical).
  */
-export interface SignatureVerificationResult {
+export interface SignatureVerificationResult extends RefusalCoding {
   valid: boolean;
   reason?: string;
   durationMs?: number;
 }
 
-export interface DelegationVCVerificationResult {
+/** The verdict on a delegation credential, with its code and whether it is transient when it is refused. */
+export interface DelegationVCVerificationResult extends RefusalCoding {
   valid: boolean;
   reason?: string;
   /**
@@ -78,6 +93,58 @@ export interface VerifyDelegationVCOptions {
 
 export interface DIDResolver {
   resolve(did: string): Promise<DIDDocument | null>;
+  /**
+   * Why this resolver's last resolution of `did` found no document, or `undefined` when it found
+   * one, was never asked, or cannot say. Optional: the verifier reads a resolver without it as
+   * before. These resolvers of the library have it: `DidWebResolver` and `createDidWebResolver`,
+   * `createDidKeyResolver`, `DidCheqdResolver`, `createDidCheqdResolver` and `cheqdResolver`, and
+   * the resolver the delegation middleware builds. `RuntimeFetchProvider.resolveDID` is not a
+   * resolver of this kind and reports none. When the verifier refuses a credential as `Could not
+   * resolve issuer DID: "<did>"` over a resolver that has it, it codes the refusal by the
+   * failure's `cause`, and appends its `detail` in parentheses only where that tells the party that
+   * presented the credential nothing the verifier's network answered: where the cause is
+   * `deadline_exceeded`, whose timing the presenter observes anyway, or where one of the library's
+   * resolvers decided the failure from the DID alone, before any request or DNS lookup (the
+   * private-network rule refusing an IP literal or a local name the DID names, a DID of a method no
+   * resolver serves, a did:key that does not decode, a did:cheqd DID of no network the resolver
+   * asks). Any other detail was learned from the network, or comes from a resolver the library
+   * cannot vouch for, and is not shown: the library's resolvers log it for the operator. A resolver
+   * that wraps one of them may pass its failure on as it is, as
+   * `lastFailure: (did) => inner.lastFailure?.(did)`, and the refusal shows what it would have.
+   * It reports the last failure for the DID, so a resolution of the same DID that ends in between
+   * may answer for it: read it as a diagnosis, never as a security decision.
+   */
+  lastFailure?(did: string): DidResolutionFailure | undefined;
+}
+
+/**
+ * Why a resolver found no document for a DID:
+ *
+ * - `host_refused`: the read's own rules refused the host, the private-network rule or the scheme
+ *   rule, on the document's URL or on a redirect.
+ * - `deadline_exceeded`: no document arrived within the resolver's deadline.
+ * - `unavailable`: the host could not be reached, or answered with something other than a document:
+ *   an HTTP error, no body, or text that is not JSON.
+ * - `too_large`: the host answered with more bytes than any DID document may hold.
+ * - `invalid_document`: what was read is not a valid document of this DID; or the DID is one the
+ *   resolver can never resolve: a did:key whose public key does not decode, a did:web DID that names
+ *   no URL, or, for a resolver that composes others, as the delegation middleware's does, a DID of a
+ *   method none of them serves. A resolver of some methods records nothing for a DID of another.
+ */
+export type DidResolutionFailureCause = 'host_refused' | 'deadline_exceeded' | 'unavailable' | 'too_large' | 'invalid_document';
+
+/** The cause of a resolver's failure to find a DID's document, and what to tell a person about it. */
+export interface DidResolutionFailure {
+  /** The class of the failure, for a caller to branch on. */
+  readonly cause: DidResolutionFailureCause;
+  /**
+   * What failed, and how to fix it where the library knows how, in one sentence or two in the
+   * library's own words. It quotes no error of the transport's, which the log records instead. A
+   * verifier shows it to the party that presented the credential only for `deadline_exceeded`, and
+   * for a failure one of the library's resolvers decided from the DID alone, before any request or
+   * DNS lookup ({@link DIDResolver.lastFailure}); anything else is for the operator alone.
+   */
+  readonly detail: string;
 }
 
 /**
@@ -107,7 +174,11 @@ export interface VerificationMethod {
 
 /**
  * Resolves a credential's status: `checkStatus` returns `true` when its status bit is set, and
- * throws when the status cannot be proven, which the verifier denies as `status_unresolvable`.
+ * throws when the status cannot be proven, which the verifier denies as `status_unresolvable`. The
+ * denial's reason goes back to whoever presented the credential: a `RefusalError` the resolver
+ * throws gives it its code and its words, written for that party; any other error may be a
+ * transport's words about the verifier's network, so its message is logged for the operator and
+ * the reason names the list and says only that it could not be read or checked.
  * `context` names the credential's issuer and may name its delegation chain's pinned root and the
  * status-list URL that root's own credential names. A list's proof shows only who signed it, so a
  * resolver that verifies the proof also passes
@@ -117,8 +188,9 @@ export interface VerificationMethod {
  * URL, else the credential's issuer.
  * `CheqdStatusListResolver` holds every list to the one DID it is configured to trust.
  * A resolver that reads the one bit at an entry's `statusListIndex` first passes
- * `acceptEntrySize(status.statusSize)`, as the library's readers do, and throws its reason for an
- * entry that is not one bit wide: such an entry keeps its status in other bits of the list.
+ * `acceptEntrySize(status.statusSize)`, as the library's readers do, and throws its reason, as a
+ * `RefusalError`, for an entry that is not one bit wide: such an entry keeps its status in other
+ * bits of the list.
  *
  * `DelegationCredentialVerifier`, which the delegation middleware runs for each credential of a
  * chain, names the credential's own issuer alone, never the chain's root, even when
@@ -129,6 +201,13 @@ export interface VerificationMethod {
  *
  * Whether a list may be read depends on the context, so a caching wrapper must key on it as well as
  * on the entry's URL, index and purpose, as `withStatusCache` does.
+ *
+ * The verifier also passes `status` as a fresh copy of the credential's entry that carries the
+ * context, under the non-enumerable key `Symbol.for('@kya-os/mcp/status-check-context')`, and the
+ * library's own checkers and `withStatusCache` read it there when they are given no `context`. So a
+ * resolver that wraps a library checker and passes on only the very `status` it was given still
+ * holds the list to the credential. The copy has the entry's own enumerable members and no others,
+ * so it serializes as the entry does; a copy made of it by spreading or by JSON does not carry it.
  *
  * The answer is read strictly: `true` is revoked, `false` is not, and any other value, which only
  * untyped code can give, denies the credential as `status_unresolvable`. So does a `checkStatus`
@@ -143,7 +222,7 @@ export interface StatusListResolver {
  * deny (see {@link StatusOutcome}); it is surfaced as
  * `DelegationVCVerificationResult.statusOutcome`.
  */
-export interface StatusCheckResult {
+export interface StatusCheckResult extends RefusalCoding {
   valid: boolean;
   reason?: string;
   outcome?: StatusOutcome;
@@ -153,8 +232,11 @@ export interface StatusCheckResult {
 /**
  * Verifies a credential's embedded proof under `publicKeyJwk`. The answer is read strictly: the
  * signature verifies only on an object whose `valid` is the literal `true`, and any other answer,
- * which only untyped code can give, leaves it unverified. So does a verifier that has not answered
- * within the verifier's `dependencyTimeoutMs`, 5,000 ms by default.
+ * which only untyped code can give, leaves it unverified as `runtime_error`. So does a verifier that
+ * has not answered within the verifier's `dependencyTimeoutMs`, 5,000 ms by default, as
+ * `deadline_exceeded`. A refusal is `invalid_proof` unless it names another code of the catalog as
+ * its `code`, which is typed `string`, so a code read from a variable or from JSON compiles; any
+ * other string is read as no code.
  */
 export interface SignatureVerificationFunction {
   (
@@ -163,5 +245,6 @@ export interface SignatureVerificationFunction {
   ): Promise<{
     valid: boolean;
     reason?: string;
+    code?: string;
   }>;
 }

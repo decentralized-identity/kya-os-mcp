@@ -4,7 +4,7 @@
  * once; and no answer, a proxy or a throwing getter included, makes the reader throw.
  */
 import { describe, expect, it } from 'vitest';
-import { countingAnswer, UNREADABLE_ANSWERS } from '../../__tests__/utils/revocation-answers.js';
+import { countingAnswer, PASSING_WITH_THROWING_CODE, UNREADABLE_ANSWERS } from '../../__tests__/utils/revocation-answers.js';
 import { readRevocationAnswer, readRevoked, unreadableStatusReason } from '../revocation-answer.js';
 
 describe('readRevoked', () => {
@@ -52,17 +52,36 @@ describe('readRevocationAnswer', () => {
     });
   });
 
+  it('reads a code only when it is one of the catalog\'s refusal codes', () => {
+    expect(readRevocationAnswer({ revoked: true, code: 'status_signer_untrusted' })).toMatchObject({ code: 'status_signer_untrusted' });
+    for (const code of ['revoked', 5, { code: 'delegation_revoked' }, undefined]) {
+      expect(readRevocationAnswer({ revoked: true, code })).toMatchObject({ revoked: true, code: undefined });
+    }
+  });
+
   it.each(UNREADABLE_ANSWERS)('reads %s as an answer that could not be read, and says why', (_label, answer, why) => {
     expect(readRevocationAnswer(answer)).toEqual({ revoked: undefined, unreadable: why });
   });
 
-  it('reads each member exactly once, in a fixed order', () => {
-    for (const members of [{ revoked: false, fresh: true }, { revoked: true, reason: 'r', revokedAncestor: 'a' }, {}]) {
+  it('reads each member exactly once, in a fixed order, and the code only of an answer that revokes', () => {
+    for (const members of [{ revoked: false, fresh: true }, {}]) {
       const { answer, reads } = countingAnswer(members);
       readRevocationAnswer(answer);
-      expect(reads).toEqual({ revoked: 1, fresh: 1, reason: 1, revokedAncestor: 1 });
-      expect(Object.keys(reads)).toEqual(['revoked', 'fresh', 'reason', 'revokedAncestor']);
+      expect(Object.entries(reads)).toEqual([['revoked', 1], ['fresh', 1], ['reason', 1], ['revokedAncestor', 1]]);
     }
+    const { answer, reads } = countingAnswer({ revoked: true, reason: 'r', revokedAncestor: 'a' });
+    readRevocationAnswer(answer);
+    expect(Object.entries(reads)).toEqual([['revoked', 1], ['fresh', 1], ['reason', 1], ['revokedAncestor', 1], ['code', 1]]);
+  });
+
+  it('passes an answer whose code getter throws, since it does not revoke', () => {
+    expect(readRevocationAnswer(PASSING_WITH_THROWING_CODE)).toEqual({
+      revoked: false,
+      fresh: true,
+      reason: undefined,
+      revokedAncestor: undefined,
+      code: undefined,
+    });
   });
 
   it('does not throw on a proxy that cannot be examined, or on a member that cannot be', () => {

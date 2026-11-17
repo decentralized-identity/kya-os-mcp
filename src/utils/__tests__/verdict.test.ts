@@ -13,13 +13,14 @@ const UNREADABLE = 'could not be read: reading its answer threw';
 describe('a verdict that throws when it is looked at', () => {
   it('is refused as unreadable by readVerdict, which does not throw', () => {
     const reason = `The verdict of the signature verifier ${UNREADABLE}`;
-    expect(readVerdict('the signature verifier', revokedProxy())).toEqual({ valid: false, reason });
-    expect(readVerdict('the signature verifier', { valid: revokedProxy() })).toEqual({ valid: false, reason });
+    const unreadable = { valid: false, reason, code: 'runtime_error', transient: true };
+    expect(readVerdict('the signature verifier', revokedProxy(), 'invalid_proof')).toEqual(unreadable);
+    expect(readVerdict('the signature verifier', { valid: revokedProxy() }, 'invalid_proof')).toEqual(unreadable);
   });
 
   it('is refused as unreadable by readDelegationVerdict, which does not throw', () => {
     const reason = `The verdict of the delegation verifier ${UNREADABLE}`;
-    expect(readDelegationVerdict(revokedProxy())).toEqual({ valid: false, reason });
-    expect(readDelegationVerdict({ valid: revokedProxy() })).toEqual({ valid: false, reason });
+    expect(readDelegationVerdict(revokedProxy())).toEqual({ valid: false, reason, code: 'runtime_error', transient: true });
+    expect(readDelegationVerdict({ valid: revokedProxy() })).toEqual({ valid: false, reason, code: 'runtime_error', transient: true });
   });
 });

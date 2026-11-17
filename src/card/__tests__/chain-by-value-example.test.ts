@@ -1,22 +1,31 @@
 /**
  * `examples/chain-by-value/walkthrough.ts` runs end to end: the merchant cannot resolve the chain
  * by reference, accepts it carried by value, and rejects a hop edited after signing, the chain
- * presented by another key, and the chain once its Responsible Party revokes the root.
+ * presented by another key, and the chain once its Responsible Party revokes the root. What the
+ * registry answered goes to the merchant's log, not to the caller.
  */
 
-import { describe, it, expect } from 'vitest';
+import { afterAll, beforeAll, describe, it, expect, vi, type MockInstance } from 'vitest';
 import { demoScenario, type DemoResult } from '../../../examples/chain-by-value/walkthrough.js';
 
 describe('examples/chain-by-value: carrying the delegation chain with the request', () => {
   let run: Promise<DemoResult> | undefined;
   const result = () => (run ??= demoScenario());
+  let warn: MockInstance<typeof console.warn>;
+  beforeAll(() => {
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+  afterAll(() => {
+    warn.mockRestore();
+  });
 
   it('fails by reference when the Responsible Party registry will not answer the merchant', async () => {
     expect((await result()).byReference).toEqual({
       status: 403,
       code: 'delegation_unresolvable',
-      reason: 'delegation chain could not be resolved: registry.acme.example answered 403',
+      reason: 'delegation chain could not be resolved: the delegation registry is unavailable',
     });
+    expect(warn).toHaveBeenCalledWith('[merchant] registry.acme.example answered 403');
   });
 
   it('accepts the same call with the chain carried, and recomputes Acme as the Responsible Party', async () => {

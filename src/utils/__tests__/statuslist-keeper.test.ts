@@ -2,8 +2,10 @@
  * Every status-list URL has one keeper, decided from the verifier's configuration and the signed
  * credentials: the issuer the configuration binds the exact URL to, else the one it binds the URL's
  * origin to, else the pinned root when the root's own credential names the URL, else the
- * credential's own issuer. The rules are tried in that order, an origin is matched on the bytes as
- * written, and a configuration that could not be applied is refused when it is given.
+ * credential's own issuer. The rules are tried in that order, a binding is read only as SPEC.md
+ * §6.6 reads it, an exact URL or an origin with nothing after it, matched on the bytes as written,
+ * and a configuration that could not be applied, or that writes an origin or a prefix in a form
+ * §6.6 does not read as one, is refused when it is given, naming the fix.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -94,13 +96,32 @@ describe('statusListKeeperFor', () => {
   });
 
   it('rule 2 takes only an origin binding for an origin: a URL with a path binds itself alone', () => {
-    const statusListIssuers = { [SERVICE]: ['https://status.example/lists', 'https://Status.example', 'https://status.example/'] };
+    const statusListIssuers = { [SERVICE]: ['https://status.example/lists'] };
     for (const url of ['https://status.example/lists/1', 'https://status.example/lists?x', 'https://Status.example/1', 'https://status.example//1']) {
       expect(statusListKeeperFor(url, { credentialIssuer: ISSUER }, statusListIssuers), url).toEqual({ did: ISSUER, why: 'credential-issuer' });
     }
     expect(statusListKeeperFor('https://status.example/lists', { credentialIssuer: ISSUER }, statusListIssuers)).toEqual({
       did: SERVICE,
       why: 'configured-url',
+    });
+  });
+
+  it('rule 2 reads no other form of an origin: one followed by "/", or with an upper-case host, is refused, never read as it', () => {
+    for (const binding of ['https://status.example/', 'https://status.example:8443/', 'https://Status.example']) {
+      expect(() => statusListKeeperFor('https://status.example/lists/1', { credentialIssuer: ISSUER }, { [SERVICE]: [binding] }), binding)
+        .toThrow(TypeError);
+    }
+  });
+
+  it('rule 1 matches an exact URL with an upper-case host byte for byte, as an entry that writes it so names it', () => {
+    const statusListIssuers = { [SERVICE]: ['https://Status.example/lists/1'] };
+    expect(statusListKeeperFor('https://Status.example/lists/1', { credentialIssuer: ISSUER }, statusListIssuers)).toEqual({
+      did: SERVICE,
+      why: 'configured-url',
+    });
+    expect(statusListKeeperFor('https://status.example/lists/1', { credentialIssuer: ISSUER }, statusListIssuers)).toEqual({
+      did: ISSUER,
+      why: 'credential-issuer',
     });
   });
 
@@ -193,6 +214,87 @@ describe('assertStatusListIssuers', () => {
     const long = `https://status.example/${'x'.repeat(200)}`;
     expect(() => assertStatusListIssuers({ [SERVICE]: [long], [HERD]: [long] })).toThrow(
       new TypeError(`statusListIssuers binds "${long.slice(0, 64)}"... to both "${SERVICE}" and "${HERD}", and a URL has one keeper`),
+    );
+  });
+
+  it.each([
+    ['https://status.example/', 'https://status.example'],
+    ['https://status.example:8443/', 'https://status.example:8443'],
+    ['https://Status.example/', 'https://status.example'],
+  ])('refuses %s, an origin followed by "/", naming the origin to write', (binding, origin) => {
+    expect(() => assertStatusListIssuers({ [SERVICE]: [binding] })).toThrow(
+      new TypeError(
+        `statusListIssuers["${SERVICE}"] holds "${binding}", an origin followed by "/", which binds only itself, as an exact URL, ` +
+          `and no other URL at that origin: write it as "${origin}"`,
+      ),
+    );
+  });
+
+  it.each([
+    ['https://Status.example', 'https://status.example'],
+    ['https://STATUS.EXAMPLE:8443', 'https://status.example:8443'],
+  ])('refuses %s, an origin whose host is not in lower case, naming the origin to write', (binding, origin) => {
+    expect(() => assertStatusListIssuers({ [SERVICE]: [binding] })).toThrow(
+      new TypeError(
+        `statusListIssuers["${SERVICE}"] holds "${binding}", an origin whose host is not in lower case, which binds only itself, ` +
+          `as an exact URL, and no URL at that origin: write the host in lower case, as "${origin}"`,
+      ),
+    );
+  });
+
+  it.each([
+    ['a path prefix', 'https://status.example/lists/', 'bind the origin, "https://status.example", which keeps every list at it, one whose own URL ends in "/" included, or bind each list URL that does not end in "/"'],
+    ['a prefix at a port', 'https://status.example:8443/lists/', 'bind the origin, "https://status.example:8443", which keeps every list at it, one whose own URL ends in "/" included, or bind each list URL that does not end in "/"'],
+    ['a URL whose query ends in "/"', 'https://status.example/lists?after=/', 'bind the origin, "https://status.example", which keeps every list at it, one whose own URL ends in "/" included, or bind each list URL that does not end in "/"'],
+    ['a prefix whose host is not in lower case', 'https://Status.example/lists/', `bind each list URL that does not end in "/"; no binding can accept a list whose own URL ends in "/" and is at no https origin a binding can name: change that list's URL`],
+    ['an http: origin', 'http://status.example/', `bind each list URL that does not end in "/"; no binding can accept a list whose own URL ends in "/" and is at no https origin a binding can name: change that list's URL`],
+    ['an origin whose host is an IPv6 literal', 'https://[::1]/', `bind each list URL that does not end in "/"; no binding can accept a list whose own URL ends in "/" and is at no https origin a binding can name: change that list's URL`],
+    ['a scheme alone', 'https://', `bind each list URL that does not end in "/"; no binding can accept a list whose own URL ends in "/" and is at no https origin a binding can name: change that list's URL`],
+  ])('refuses %s, any other binding that ends in "/", naming what to bind instead', (_label, binding, fix) => {
+    expect(() => assertStatusListIssuers({ [SERVICE]: [binding] })).toThrow(
+      new TypeError(
+        `statusListIssuers["${SERVICE}"] holds "${binding}", which ends in "/" as a path prefix would, ` +
+          `but a binding is an https origin or a list's exact URL, never a prefix: ${fix}`,
+      ),
+    );
+  });
+
+  it.each([[[SERVICE, HERD]], [[HERD, SERVICE]]])(
+    'says no binding can accept a list whose own URL ends in "/" where its origin is bound to another issuer, whichever is named first (%j)',
+    (order) => {
+      const configured: Record<string, string[]> = { [SERVICE]: ['https://status.example/lists/'], [HERD]: ['https://status.example'] };
+      const statusListIssuers = Object.fromEntries(order.map((did) => [did, configured[did]!]));
+      expect(() => assertStatusListIssuers(statusListIssuers)).toThrow(
+        new TypeError(
+          `statusListIssuers["${SERVICE}"] holds "https://status.example/lists/", which ends in "/" as a path prefix would, ` +
+            "but a binding is an https origin or a list's exact URL, never a prefix: bind each list URL that does not end in " +
+            `"/"; no binding can accept a list whose own URL ends in "/" there, since the origin, "https://status.example", ` +
+            `is bound to "${HERD}": change that list's URL`,
+        ),
+      );
+    },
+  );
+
+  it('names the origin to bind where it is already bound to the same issuer', () => {
+    expect(() => assertStatusListIssuers({ [SERVICE]: ['https://status.example', 'https://status.example/lists/'] })).toThrow(
+      'bind the origin, "https://status.example", which keeps every list at it, one whose own URL ends in "/" included, or bind each list URL that does not end in "/"',
+    );
+  });
+
+  it('leaves alone an exact URL that ends in no "/", whatever the case of its host, and whether or not a URL parser takes it', () => {
+    for (const binding of ['https://Status.example/lists/1', 'https://status.EXAMPLE/lists/1', 'https://user@Status.example/lists/1',
+      'https://[::FFFF:7f00:1]/lists/1', 'http://Status.example', 'https://status.example/lists', 'https://status.example?list=1',
+      'https://status.example#list', 'https://status example/1', 'https://status.example:99999', 'http://[::1/1', 'https://B\u00fccher.example']) {
+      expect(() => assertStatusListIssuers({ [SERVICE]: [binding] }), binding).not.toThrow();
+    }
+  });
+
+  it('refuses an origin followed by "/" as itself, not as the origin another issuer binds', () => {
+    expect(() => assertStatusListIssuers({ [SERVICE]: ['https://status.example'], [HERD]: ['https://status.example/'] })).toThrow(
+      new TypeError(
+        `statusListIssuers["${HERD}"] holds "https://status.example/", an origin followed by "/", which binds only itself, ` +
+          'as an exact URL, and no other URL at that origin: write it as "https://status.example"',
+      ),
     );
   });
 

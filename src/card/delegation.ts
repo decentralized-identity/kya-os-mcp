@@ -22,12 +22,11 @@
 import { z } from 'zod';
 import { issuerOf } from '../utils/guards.js';
 import { Did, statusEntrySizeShape, type BitstringStatusListEntry } from './schema.js';
-import {
-  evaluateRevocationChain,
-  type BitstringRevocationChecker,
-  type RevocationChainEntry,
-  type RevocationChainResult,
-} from './revocation.js';
+import type { BitstringRevocationChecker, RevocationChainEntry } from './revocation.js';
+import { walkRevocationChain } from './revocation-chain.js';
+import type { RefusalCode } from '../refusal-codes.js';
+import type { RefusalCoding } from '../delegation/vc-verifier.types.js';
+import { coded } from '../utils/refusal.js';
 
 export const DELEGATION_CONTEXT_V2 = 'https://www.w3.org/ns/credentials/v2'; // VC 2.0 base `@context`
 export const ZCAP_CONTEXT = 'https://w3id.org/security/zcap/v1'; // ZCAP-LD capability context
@@ -293,37 +292,54 @@ export interface DelegationChainContext {
   dependencyTimeoutMs?: number;
 }
 
+/** A rule a chain breaks: why, and the code of that rule. */
+interface BrokenRule {
+  code: RefusalCode;
+  reason: string;
+}
+
+/** The rules `reasons` name broken, each with `code`. */
+const brokenAs = (code: RefusalCode, reasons: readonly string[]): BrokenRule[] => reasons.map((reason) => ({ code, reason }));
+
 /**
  * Reasons any hop is temporally INVALID at `nowMs`: an expired top-level `validUntil` or `ValidUntil`
  * caveat, or a not-yet-valid `validFrom`. Fail-closed on a present-but-unparseable timestamp. Empty ⇒
- * every hop is inside its validity window. This is the wall-clock gate — CRISP narrowing only proves a
+ * every hop is inside its validity window. This is the wall-clock gate: CRISP narrowing only proves a
  * child expires no later than its parent, which a FULLY-expired-but-well-attenuated chain still satisfies.
  */
-function expiryReasons(chain: DelegationChain, nowMs: number): string[] {
-  const reasons: string[] = [];
+function expiryReasons(chain: DelegationChain, nowMs: number): BrokenRule[] {
+  const broken: BrokenRule[] = [];
+  const unparseable = (reason: string): number => broken.push({ code: 'delegation_malformed', reason });
   chain.forEach((vc, i) => {
     if (vc.validUntil !== undefined) {
       const t = Date.parse(vc.validUntil);
-      if (Number.isNaN(t)) reasons.push(`hop ${i}: unparseable validUntil "${vc.validUntil}"`);
-      else if (t < nowMs) reasons.push(`hop ${i}: expired (validUntil ${vc.validUntil} is in the past)`);
+      if (Number.isNaN(t)) unparseable(`hop ${i}: unparseable validUntil "${vc.validUntil}"`);
+      else if (t < nowMs) broken.push({ code: 'delegation_expired', reason: `hop ${i}: expired (validUntil ${vc.validUntil} is in the past)` });
     }
     if (vc.validFrom !== undefined) {
       const t = Date.parse(vc.validFrom);
-      if (Number.isNaN(t)) reasons.push(`hop ${i}: unparseable validFrom "${vc.validFrom}"`);
-      else if (t > nowMs) reasons.push(`hop ${i}: not yet valid (validFrom ${vc.validFrom} is in the future)`);
+      if (Number.isNaN(t)) unparseable(`hop ${i}: unparseable validFrom "${vc.validFrom}"`);
+      else if (t > nowMs) {
+        broken.push({ code: 'delegation_not_yet_valid', reason: `hop ${i}: not yet valid (validFrom ${vc.validFrom} is in the future)` });
+      }
     }
     for (const caveat of vc.credentialSubject.caveats ?? []) {
       if (caveat.type === 'ValidUntil' && typeof caveat.date === 'string') {
         const t = Date.parse(caveat.date);
-        if (Number.isNaN(t)) reasons.push(`hop ${i}: unparseable ValidUntil caveat "${caveat.date}"`);
-        else if (t < nowMs) reasons.push(`hop ${i}: expired caveat (ValidUntil ${caveat.date} is in the past)`);
+        if (Number.isNaN(t)) unparseable(`hop ${i}: unparseable ValidUntil caveat "${caveat.date}"`);
+        else if (t < nowMs) broken.push({ code: 'delegation_expired', reason: `hop ${i}: expired caveat (ValidUntil ${caveat.date} is in the past)` });
       }
     }
   });
-  return reasons;
+  return broken;
 }
 
-export interface DelegationChainResult {
+/**
+ * What {@link validateDelegationChain} finds. A refused chain carries, beside its `reasons`, the
+ * `code` of the first rule it breaks and whether that code is `transient`; a chain that passes
+ * carries neither.
+ */
+export interface DelegationChainResult extends RefusalCoding {
   ok: boolean; // true iff the chain attenuates correctly at every hop (fail-closed)
   reasons: string[]; // fail-closed reasons (empty ⇒ ok)
   responsibleParty?: string; // recomputed `issuer(rootVC)` — the accountable party
@@ -333,23 +349,31 @@ export interface DelegationChainResult {
   depth: number; // number of credentials, root to leaf
 }
 
-function rootReasons(root: DelegationCredential, ctx: DelegationChainContext): string[] {
+function rootReasons(root: DelegationCredential, ctx: DelegationChainContext): BrokenRule[] {
   const subject = root.credentialSubject;
-  const reasons: string[] = [];
+  const broken: BrokenRule[] = [];
   if (subject.parentCapability !== subject.invocationTarget) {
-    reasons.push('root delegation: parentCapability MUST equal invocationTarget (the resource)');
+    broken.push({ code: 'chain_invalid', reason: 'root delegation: parentCapability MUST equal invocationTarget (the resource)' });
   }
   if (ctx.resource !== undefined && subject.invocationTarget !== ctx.resource) {
-    reasons.push('root invocationTarget ≠ the expected resource');
+    broken.push({ code: 'chain_invalid', reason: 'root invocationTarget ≠ the expected resource' });
   }
   if (ctx.resourceOwner !== undefined && issuerDid(root) !== ctx.resourceOwner) {
-    reasons.push('root issuer ≠ the resource owner (responsibleParty mismatch)');
+    broken.push({ code: 'untrusted_root', reason: 'root issuer ≠ the resource owner (responsibleParty mismatch)' });
   }
-  return reasons;
+  return broken;
 }
 
-/** Structurally validate a chain (CRISP + continuity), fail-closed. Signature + revocation
- *  are separate injected concerns (see {@link evaluateDelegationChain}). */
+/**
+ * Structurally validate a chain (CRISP + continuity), fail-closed. Signature + revocation
+ * are separate injected concerns (see {@link evaluateDelegationChain}). A refused chain gives every
+ * reason it breaks a rule, and the code of the first: `chain_invalid` for an empty chain, one longer
+ * than `maxChainLength`, a root that does not name the resource and a hop that does not attenuate
+ * its parent; `configuration_error` for a `maxChainLength` that is not a positive integer;
+ * `untrusted_root` for a root not issued by `resourceOwner`; and `delegation_expired`,
+ * `delegation_not_yet_valid` or `delegation_malformed` for a hop outside its validity window or one
+ * whose time is not a date.
+ */
 export function validateDelegationChain(
   chain: DelegationChain,
   ctx: DelegationChainContext = {},
@@ -357,28 +381,30 @@ export function validateDelegationChain(
   const depth = chain.length;
   const maxChainLength = ctx.maxChainLength ?? ctx.maxDepth;
   if (depth === 0) {
-    return { ok: false, reasons: ['empty delegation chain'], allowedAction: [], depth };
+    return { ok: false, reasons: ['empty delegation chain'], allowedAction: [], depth, ...coded('chain_invalid') };
   }
   const root = chain[0]!;
   const leaf = chain[depth - 1]!;
-  const reasons: string[] = [];
+  const broken: BrokenRule[] = [];
   if (maxChainLength !== undefined) {
     if (!Number.isInteger(maxChainLength) || maxChainLength < 1) {
-      reasons.push(`maxChainLength must be a positive integer (got ${String(maxChainLength)})`);
+      broken.push({ code: 'configuration_error', reason: `maxChainLength must be a positive integer (got ${String(maxChainLength)})` });
     } else if (depth > maxChainLength) {
-      reasons.push(`delegation chain depth ${depth} exceeds the maximum of ${maxChainLength}`);
+      broken.push({ code: 'chain_invalid', reason: `delegation chain depth ${depth} exceeds the maximum of ${maxChainLength}` });
     }
   }
-  reasons.push(...rootReasons(root, ctx));
+  broken.push(...rootReasons(root, ctx));
   for (let i = 1; i < depth; i += 1) {
-    reasons.push(...attenuates(chain[i - 1]!, chain[i]!));
+    broken.push(...brokenAs('chain_invalid', attenuates(chain[i - 1]!, chain[i]!)));
   }
   // Wall-clock gate: a chain can attenuate perfectly and still be fully EXPIRED. Default to real
   // time so the gate is never silently skipped; deterministic callers inject `ctx.now`.
-  reasons.push(...expiryReasons(chain, (ctx.now ?? Date.now)()));
+  broken.push(...expiryReasons(chain, (ctx.now ?? Date.now)()));
+  const first = broken[0];
   return {
-    ok: reasons.length === 0,
-    reasons,
+    ok: first === undefined,
+    reasons: broken.map((rule) => rule.reason),
+    ...(first === undefined ? {} : coded(first.code)),
     responsibleParty: responsiblePartyOf(chain),
     leafInvoker: leafInvokerOf(chain),
     invocationTarget: leaf.credentialSubject.invocationTarget,
@@ -391,13 +417,13 @@ export interface DelegationChainEvaluation extends DelegationChainResult {
   fresh: boolean; // true iff every hop's status was read from a LIVE list (drives the L2/L3 gate)
 }
 
-/** Validate structure AND revocation: run {@link validateDelegationChain}, then (only if it passes —
+/** Validate structure AND revocation: run {@link validateDelegationChain}, then (only if it passes,
  *  fail-closed) cascade the injected {@link BitstringRevocationChecker} root→leaf via
  *  {@link evaluateRevocationChain}, naming each hop's issuer and, when `ctx.resourceOwner` pins it, the
  *  chain's root with the status-list URL the root hop's own entry names. A revoked ancestor
  *  invalidates the subtree. No hop proof is checked here, so those issuers, and that URL, are only
  *  as authentic as the proofs the caller verifies ({@link verifyRequestDelegation} verifies them
- *  before revocation). */
+ *  before revocation). A chain refused for its revocation carries the code of the hop that refused it. */
 export async function evaluateDelegationChain(
   chain: DelegationChain,
   check: BitstringRevocationChecker,
@@ -405,15 +431,16 @@ export async function evaluateDelegationChain(
 ): Promise<DelegationChainEvaluation> {
   const structural = validateDelegationChain(chain, ctx);
   if (!structural.ok) return { ...structural, fresh: false };
-  const revocation: RevocationChainResult = await evaluateRevocationChain(
+  const revocation = await walkRevocationChain(
     revocationEntriesOf(chain, ctx.resourceOwner),
     check,
     { dependencyTimeoutMs: ctx.dependencyTimeoutMs },
   );
   return {
     ...structural,
-    ok: structural.ok && revocation.ok,
+    ok: revocation.ok,
     reasons: [...structural.reasons, ...revocation.reasons],
     fresh: revocation.fresh,
+    ...(revocation.ok ? {} : coded(revocation.code)),
   };
 }

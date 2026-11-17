@@ -22,23 +22,20 @@ import type {
   VerifyDelegationVCOptions,
   DIDResolver,
   StatusListResolver,
-  StatusCheckResult,
   SignatureVerificationFunction,
-  SignatureVerificationResult,
 } from "./vc-verifier.types.js";
 import {
   validateBasicProperties,
   verifySignature,
   checkCredentialStatus,
   combineVerificationResult,
+  type SignatureCheck,
+  type StatusCheck,
 } from "./vc-verification-checks.js";
-import {
-  credentialIssuerDid,
-  verifyVcJwtSignature,
-  prepareVcJwtCredential,
-} from "./vc-jwt-verify.js";
-import type { VcJwtSignatureResult } from "./vc-jwt-verify.js";
+import { credentialIssuerDid, prepareVcJwtCredential } from "./vc-jwt-verify.js";
+import { checkVcJwtSignature } from "./vc-jwt-signature.js";
 import { canonicalizeJson } from "../utils/canonical-json.js";
+import { coded } from "../utils/refusal.js";
 import { dependencyTimeout } from "../utils/deadline.js";
 import { TtlCache } from "../utils/ttl-cache.js";
 
@@ -72,7 +69,7 @@ export class DelegationCredentialVerifier {
    * signature verifications; size `maxCacheSize` to the expected number of
    * DISTINCT live credentials — the default of 1000 suits most deployments.
    */
-  private cache: TtlCache<SignatureVerificationResult>;
+  private cache: TtlCache<SignatureCheck>;
 
   /** @throws TypeError when `dependencyTimeoutMs` is not a number of milliseconds it can wait. */
   constructor(options?: DelegationCredentialVerifierOptions) {
@@ -80,7 +77,7 @@ export class DelegationCredentialVerifier {
     this.didResolver = options?.didResolver;
     this.statusListResolver = options?.statusListResolver;
     this.signatureVerifier = options?.signatureVerifier;
-    this.cache = new TtlCache<SignatureVerificationResult>({
+    this.cache = new TtlCache<SignatureCheck>({
       // `??`, not `||`: cacheTtl 0 means "no signature caching", not "the default".
       ttlMs: options?.cacheTtl ?? 60_000,
       maxEntries: options?.maxCacheSize ?? 1000,
@@ -114,6 +111,7 @@ export class DelegationCredentialVerifier {
       const result: DelegationVCVerificationResult = {
         valid: false,
         reason: basicValidation.reason,
+        ...coded(basicValidation.code),
         stage: "basic",
         metrics: {
           basicCheckMs,
@@ -135,7 +133,7 @@ export class DelegationCredentialVerifier {
     // cache hit still leaves the status read live.
     const signaturePromise = this.cachedSignature(cacheKey, () =>
       options.skipSignature
-        ? Promise.resolve<SignatureVerificationResult>({
+        ? Promise.resolve<SignatureCheck>({
             valid: true,
             durationMs: 0,
           })
@@ -183,8 +181,8 @@ export class DelegationCredentialVerifier {
     // signature has verified, and live even on a signature cache hit.
     const signaturePromise = this.cachedSignature(cacheKey, () =>
       options.skipSignature
-        ? Promise.resolve<VcJwtSignatureResult>({ valid: true, durationMs: 0 })
-        : verifyVcJwtSignature(
+        ? Promise.resolve<SignatureCheck>({ valid: true, durationMs: 0 })
+        : checkVcJwtSignature(
             jwt,
             issuerDid,
             kid,
@@ -211,7 +209,7 @@ export class DelegationCredentialVerifier {
   private statusReader(
     vc: DelegationCredential,
     options: VerifyDelegationVCOptions,
-  ): () => Promise<StatusCheckResult> {
+  ): () => Promise<StatusCheck> {
     return () =>
       !options.skipStatus && vc.credentialStatus
         ? checkCredentialStatus(
@@ -220,7 +218,7 @@ export class DelegationCredentialVerifier {
             credentialIssuerDid(vc),
             this.timeoutMs,
           )
-        : Promise.resolve<StatusCheckResult>({
+        : Promise.resolve<StatusCheck>({
             valid: true,
             durationMs: 0,
           });
@@ -234,8 +232,8 @@ export class DelegationCredentialVerifier {
    */
   private async cachedSignature(
     cacheKey: string | null,
-    run: () => Promise<SignatureVerificationResult>,
-  ): Promise<{ result: SignatureVerificationResult; cached: boolean }> {
+    run: () => Promise<SignatureCheck>,
+  ): Promise<{ result: SignatureCheck; cached: boolean }> {
     if (cacheKey !== null) {
       const hit = this.cache.get(cacheKey);
       if (hit) {
@@ -261,10 +259,10 @@ export class DelegationCredentialVerifier {
    */
   private async finalizeVerification(
     signaturePromise: Promise<{
-      result: SignatureVerificationResult;
+      result: SignatureCheck;
       cached: boolean;
     }>,
-    readStatus: () => Promise<StatusCheckResult>,
+    readStatus: () => Promise<StatusCheck>,
     basicCheckMs: number,
     startTime: number,
   ): Promise<DelegationVCVerificationResult> {

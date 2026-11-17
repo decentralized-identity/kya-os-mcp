@@ -159,9 +159,9 @@ describe('verifyEddsaJcs2022 and the proof purpose it checks for', () => {
     expect(await verifyEddsaJcs2022(invocation, listedUnder('assertionMethod'), 'capabilityInvocation')).toBe(false);
   });
 
-  it('resolves false, without throwing, when the DID resolves to no document', async () => {
+  it('throws did_unavailable, not a verdict on the proof, when the DID resolves to no document', async () => {
     const nothing: DIDResolver = { resolve: async () => null };
-    expect(await verifyEddsaJcs2022(invocation, nothing, 'capabilityInvocation')).toBe(false);
+    await expect(verifyEddsaJcs2022(invocation, nothing, 'capabilityInvocation')).rejects.toMatchObject({ code: 'did_unavailable' });
   });
 
   it('finds no key for an empty issuer, whatever document a resolver returns for it', async () => {
@@ -266,6 +266,8 @@ describe('a merchant verifying a carried chain against Acme', () => {
       code: 'delegation_invalid',
       reasons: ['hop 0: proof did not verify'],
       source: 'carried',
+      refusalCode: 'invalid_proof',
+      transient: false,
     });
   });
 

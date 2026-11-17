@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createDidKeyResolver } from '../../delegation/did-key-resolver.js';
+import { logger } from '../../logging/index.js';
 import type { DIDResolver } from '../../delegation/vc-verifier.types.js';
 import { createDelegationProofVerifier, signDelegationCredential } from '../delegation-proof.js';
 import { ed25519SignerFromJwk } from '../proof/signer.js';
@@ -58,14 +59,17 @@ describe('createDelegationProofVerifier (eddsa-jcs-2022 hops)', () => {
     expect(await verify(otherPurpose)).toBe(false);
   });
 
-  it('returns false, not a throw, when the issuer DID cannot be resolved', async () => {
+  it('returns false, not a throw, when the issuer DID cannot be resolved, and logs what the resolver said', async () => {
     const [root] = twoHopChain(parties());
     const throwing: DIDResolver = {
       resolve: async () => {
         throw new Error('resolver down');
       },
     };
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     expect(await verify(root, throwing)).toBe(false);
+    expect(warn).toHaveBeenCalledWith(`[eddsa-jcs-2022] Resolving ${root.issuer as string} failed: resolver down`);
+    warn.mockRestore();
   });
 });
 

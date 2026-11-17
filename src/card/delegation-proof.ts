@@ -9,13 +9,17 @@
  * signature. {@link signDelegationCredential} is the issuing side, for a Responsible Party minting
  * the root and for a delegate re-delegating below it. The proof purpose is `assertionMethod`, the
  * purpose the profile's credentials carry today (SPEC.md §6.2), so the issuer's DID document must
- * list the key under `assertionMethod`. Every verification failure returns `false`.
+ * list the key under `assertionMethod`. Every verification failure returns `false`, as on 1.22.0.
+ * The request verifier asks the same verifier for the code of why (`./coded-proof-verifier`), so a
+ * hop whose issuer's DID document cannot be read is refused there as `did_unavailable` or
+ * `deadline_exceeded`, an outage, and never as `invalid_proof`.
  */
 
 import type { DIDResolver } from '../delegation/vc-verifier.types.js';
 import { dependencyTimeout } from '../utils/deadline.js';
 import { ASSERTION_METHOD } from '../delegation/verification-relationship.js';
-import { signEddsaJcs2022, verifyEddsaJcs2022 } from './data-integrity.js';
+import { booleanProofVerifier } from './coded-proof-verifier.js';
+import { signEddsaJcs2022, verifyEddsaJcs2022Proof } from './data-integrity.js';
 import { DelegationCredentialSchema, type DelegationCredential } from './delegation.js';
 import type { ProofSigner } from './proof/types.js';
 
@@ -39,17 +43,13 @@ export interface DelegationProofVerifierDeps {
 
 /**
  * Build a {@link DelegationProofVerifier} for `DataIntegrityProof` / `eddsa-jcs-2022` hops. Pass it
- * to {@link verifyRequestDelegation} (or {@link requireDelegation}) as `verifyHopProof`.
+ * to {@link verifyRequestDelegation} (or {@link requireDelegation}) as `verifyHopProof`. It resolves
+ * `false` on every failure, an issuer DID document that could not be read or was not read in time
+ * included; the request verifier it is passed to, as it is, codes such an outage as one.
  */
 export function createDelegationProofVerifier(deps: DelegationProofVerifierDeps): DelegationProofVerifier {
   const timeoutMs = dependencyTimeout(deps.dependencyTimeoutMs);
-  return async function verifyHopProof(credential: Record<string, unknown>): Promise<boolean> {
-    try {
-      return await verifyEddsaJcs2022(credential, deps.didResolver, ASSERTION_METHOD, timeoutMs);
-    } catch {
-      return false;
-    }
-  };
+  return booleanProofVerifier((credential) => verifyEddsaJcs2022Proof(credential, deps.didResolver, ASSERTION_METHOD, timeoutMs));
 }
 
 /**

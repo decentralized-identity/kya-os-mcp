@@ -141,7 +141,8 @@ export async function expectAccepted(
 
 /**
  * That every path refuses the chain at hop `hopIndex`, and, when `because` is given, that each
- * refusal ends with it: the reason the checker gave for the hop.
+ * refusal ends with it: the reason the checker gave for the hop, followed by nothing or by the
+ * remedy a keeper refusal ends with, which `status-list-signer-hint.test.ts` pins.
  */
 export async function expectRevokedAt(
   hopIndex: number,
@@ -158,7 +159,11 @@ export async function expectRevokedAt(
   expect(guarded).toMatchObject({ ok: false, status: 403, error: { code: 'delegation_revoked', reasons } });
   if (because !== undefined) {
     const refused = [evaluated.reasons, request.ok ? [] : request.reasons, guarded.ok ? [] : guarded.error.reasons];
-    for (const [reason] of refused) expect(reason?.endsWith(`, subtree invalidated: ${because}`), reason).toBe(true);
+    for (const [reason] of refused) {
+      const said = `, subtree invalidated: ${because}`;
+      const rest = reason?.includes(said) ? reason.slice(reason.indexOf(said) + said.length) : undefined;
+      expect(rest === '' || rest?.startsWith('; if '), reason).toBe(true);
+    }
   }
 }
 
@@ -170,6 +175,18 @@ export function listAt(signer: TestIdentity, url: string, revoked: number[] = []
 /** Why a list `signer` signed is refused at a URL `keeper` keeps, `as` saying why it keeps it. */
 export const notKeeper = (signer: TestIdentity, keeper: TestIdentity, as: string): string =>
   `status list issuer "${signer.did}" does not keep this list's URL: "${keeper.did}" does, as ${as}`;
+/**
+ * The remedy that ends the refusal of a list `signer` signed where no binding names the keeper: the
+ * condition, and the configuration that binds `origin` to `signer`.
+ */
+export const nameSigner = (signer: string, origin: string): string =>
+  `; if "${signer}" signs this issuer's lists, name it in statusListIssuers: { "${signer}": ["${origin}"] }`;
+/**
+ * The remedy that ends the refusal of a list `signer` signed at `url`, a URL the configuration binds
+ * to another issuer: the condition, and the binding of `url` to `signer`.
+ */
+export const moveBinding = (signer: string, url: string): string =>
+  `; if "${signer}" signs the list at this URL, move the URL's binding to it in statusListIssuers: { "${signer}": ["${url}"] }`;
 /** The phrases a refusal says a keeper keeps a URL by. */
 export const AS_ISSUER = 'the issuer of the credential';
 export const AS_ROOT = 'the pinned root whose own credential names it';

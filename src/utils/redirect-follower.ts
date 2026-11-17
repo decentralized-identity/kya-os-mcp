@@ -26,6 +26,8 @@ export interface RedirectHop {
   readonly url: string;
   /** Whether `url`'s origin is other than the origin of the URL first asked for. */
   readonly crossOrigin: boolean;
+  /** Whether a redirect named `url`, so it is not the URL first asked for. */
+  readonly redirected: boolean;
 }
 
 /** A redirect target, parsed, and the hop that led to it. */
@@ -79,7 +81,7 @@ export async function followRedirects<R extends RedirectableResponse>(url: strin
   let current = url;
   for (let followed = 0; ; followed++) {
     const from = new URL(current);
-    const response = await policy.request({ url: current, crossOrigin: from.origin !== origin });
+    const response = await policy.request({ url: current, crossOrigin: from.origin !== origin, redirected: followed > 0 });
     if (!REDIRECT_STATUSES.has(response.status)) return response;
     policy.discard?.(response);
     if (followed >= maxRedirects) throw policy.refusals.limitExceeded(maxRedirects);

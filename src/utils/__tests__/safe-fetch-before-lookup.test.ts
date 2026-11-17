@@ -66,10 +66,10 @@ describe('SafeFetch, before any DNS lookup', () => {
     expect(lookup).toHaveBeenCalledOnce();
   });
 
-  it('refuses a name that resolves to a private address only after the lookup, and does not say it refused it before any request', async () => {
+  it('refuses a name that resolves to a private address only after the lookup, as one that does not resolve, and does not say it refused it before any request', async () => {
     const lookup = vi.fn<DnsLookup>(async () => [{ address: '10.1.2.3', family: 4 }]);
     const outcome = await refusalOf(createSafeFetch({ lookup, transport: answering() }), 'https://jenkins.corp.example/status/1');
-    expect(outcome).toMatchObject({ kind: 'host_refused', beforeRequest: false });
+    expect(outcome).toMatchObject({ kind: 'unavailable', beforeRequest: false });
     expect(outcome.message).not.toContain('10.1.2.3');
     expect(lookup).toHaveBeenCalledOnce();
   });

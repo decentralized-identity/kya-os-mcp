@@ -222,7 +222,7 @@ describe('a provider of the host\'s own, against a real plain-http server', () =
     const rewrite = (url: string) => url.replace(`//${PUBLIC}:`, '//127.0.0.1:').replace(`//${LOCAL}:`, '//127.0.0.1:');
     const rewriting = { fetch: (url: string, init?: RequestInit) => realFetch(rewrite(url), init) };
     await expect(fetchDidJson(rewriting, `http://${PUBLIC}:${port}/list`)).rejects.toThrow('Redirect followed by the fetch provider refused');
-    await expect(fetchStatusListJson({ ...rewriting, allowPrivateNetworkHosts: true }, `http://${LOCAL}:${port}/list`)).rejects.toThrow(
+    await expect(fetchStatusListJson({ ...rewriting, allowPrivateNetworkHosts: true }, `http://${LOCAL}:${port}/list`, { development: true })).rejects.toThrow(
       'Redirect followed by the fetch provider refused',
     );
     // A response built from the one it received names no URL, so the read takes it, and follows its redirects by hand.
@@ -231,7 +231,8 @@ describe('a provider of the host\'s own, against a real plain-http server', () =
       return new Response(response.body, response);
     } };
     expect(await fetchDidJson(rebuilding, `http://${PUBLIC}:${port}/moved`)).toMatchObject({ id: 'list' });
-    expect(await fetchStatusListJson({ ...rebuilding, allowPrivateNetworkHosts: true }, `http://${LOCAL}:${port}/moved`)).toMatchObject({ id: 'list' });
+    expect(await fetchStatusListJson({ ...rebuilding, allowPrivateNetworkHosts: true }, `http://${LOCAL}:${port}/moved`, { development: true }))
+      .toMatchObject({ id: 'list' });
     expect(served).toEqual(['/list', '/list', '/moved', '/list', '/moved', '/list']);
   });
 

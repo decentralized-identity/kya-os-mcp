@@ -36,16 +36,29 @@ export interface TransportInit {
   hostname: string;
   pinnedAddress: string;
   family: number;
+  /**
+   * The other addresses the host name resolved to, each checked as `pinnedAddress` was, in the order
+   * the lookup answered. A transport that pins its connection tries them in turn when it cannot
+   * reach `pinnedAddress`, as `nodeHttpsTransport` does, and never an address not given here. A
+   * transport that connects by name ignores them. Absent when the name resolved to one address.
+   */
+  fallbackAddresses?: readonly DnsAddress[];
   maxBytes: number;
   /**
    * The request headers the reader sends, such as `Accept`. SafeFetch sends none; a did:web or
    * status-list read under the private-network rule sends the ones its reader sets. The library's
-   * transports send them; a transport that leaves them out sends a bare GET.
+   * transports send them: `fetchTransport` beside the runtime `fetch`'s own, and
+   * `nodeHttpsTransport` over the `Accept` and `User-Agent` that `fetch` sends, with
+   * `Accept-Encoding: gzip`, the one coding it decodes. A transport that leaves them out sends a bare
+   * GET.
    */
   headers?: Readonly<Record<string, string>>;
 }
 
-/** Transport seam — performs ONE request (no redirect following) to the pinned address. */
+/**
+ * Transport seam: performs ONE request (no redirect following) to the pinned address. Its URL is
+ * https, or http at a URL the caller's `operatorNamed` named as the read's first request.
+ */
 export type SafeFetchTransport = (url: string, init: TransportInit) => Promise<RawResponse>;
 
 /** The fetcher safe-fetch returns — structurally compatible with the card's `FetchLike`. */
@@ -68,6 +81,21 @@ export interface SafeFetchInit {
    * as `fetch` does. The read's own `timeoutMs` holds as well.
    */
   signal?: AbortSignal | null;
+  /**
+   * Which URLs of this read the verifier's operator named, asked of each hop, the first and each
+   * redirect, as `allowOrigins` is: the status lists its `statusListIssuers` binds, and the one a
+   * pinned root's own credential names once that credential's proof has verified. A hop it answers
+   * `true` for is read wherever its host resolves, a private or local address included, as
+   * `development: true` reads one; the connection is still pinned to the address looked up, and the
+   * redirect, size and deadline rules all hold. The first request may be http when it answers `true`
+   * for that URL, as an operator binds a list's exact http URL; a redirect is https alone. Every
+   * other hop is held to the rule. The status-list checker passes it for those lists alone, and for
+   * a pinned root's own list only over https; never answer `true` for a URL whoever presented a
+   * credential could have chosen. Each hop is asked by its URL as the URL parser writes it; only a
+   * `true` names it, and a function that throws names none. A provider's reads of the hosts its
+   * operator names go through its own `fetch` instead (`./operator-named` says why).
+   */
+  operatorNamed?: (url: string) => boolean;
 }
 
 /**

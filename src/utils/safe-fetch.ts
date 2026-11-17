@@ -34,7 +34,8 @@
 import { logger } from '../logging/index.js';
 import { developmentMode } from './development-mode.js';
 import { isNonPublicByForm } from './host-form.js';
-import { checkResolvedAddresses } from './address-check.js';
+import { pinnedTo, resolveChecked, UNTOLD, type CheckedAddresses, type LookupRefusals } from './address-check.js';
+import { guardedNamer } from './operator-named.js';
 import { ReadFailureError } from './read-failure.js';
 import { followRedirects, MAX_REDIRECTS, type RedirectRefusals, type RedirectTarget } from './redirect-follower.js';
 import {
@@ -44,7 +45,6 @@ import {
 } from './safe-fetch-transports.js';
 import { OUTBOUND_READ_MAX_BYTES, OUTBOUND_READ_TIMEOUT_MS } from './outbound-read-limits.js';
 import type {
-  DnsAddress,
   DnsLookup,
   RawResponse,
   SafeFetch,
@@ -73,15 +73,19 @@ const DEFAULT_TIMEOUT_MS = OUTBOUND_READ_TIMEOUT_MS;
 /** Bytes of response body read before the response is refused. */
 const DEFAULT_MAX_RESPONSE_BYTES = OUTBOUND_READ_MAX_BYTES;
 
-/** Parse + require https; returns the normalized href. */
-function assertHttpsUrl(raw: string): string {
+/**
+ * Parse the URL a read starts at and return its normalized href: https, or http where `named`, the
+ * caller's `operatorNamed`, names it, since the operator then chose that URL as written. A redirect
+ * target is https alone ({@link vetRedirectTarget}).
+ */
+function assertReadableUrl(raw: string, named: (url: string) => boolean): string {
   let url: URL;
   try {
     url = new URL(raw);
   } catch {
     throw new Error(`safe-fetch: invalid URL "${raw}"`);
   }
-  if (url.protocol !== 'https:') {
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && named(url.href))) {
     throw new ReadFailureError('host_refused', `safe-fetch: only https is allowed (got "${url.protocol}")`, { beforeRequest: true });
   }
   return url.href;
@@ -101,25 +105,23 @@ const PRIVATE_HOST_SETTINGS = `in local development, set development: true; to r
  * host and what admits it, never the address, since whoever named the host may not know what it
  * resolves to; the address goes to the log.
  */
-async function resolveAndPin(hostname: string, lookup: DnsLookup, admitPrivate: boolean): Promise<DnsAddress> {
+async function resolveAndPin(hostname: string, lookup: DnsLookup, admitPrivate: boolean): Promise<CheckedAddresses> {
   if (!admitPrivate && isNonPublicByForm(hostname)) {
     throw new ReadFailureError('host_refused', `safe-fetch: refusing host "${hostname}", a private or local host: ${PRIVATE_HOST_SETTINGS}`, {
       beforeRequest: true,
     });
   }
-  const checked = checkResolvedAddresses(await lookup(hostname), admitPrivate);
-  if ('unresolved' in checked) {
-    throw new Error(`safe-fetch: DNS lookup for "${hostname}" returned no addresses`);
-  }
-  if ('nonPublic' in checked) {
-    logger.warn(`[kya-os] safe-fetch: host "${hostname}" resolves to the non-public address ${checked.nonPublic}, so it is refused`);
-    throw new ReadFailureError(
-      'host_refused',
-      `safe-fetch: refusing host "${hostname}", which resolves to a non-public address: ${PRIVATE_HOST_SETTINGS}`,
-    );
-  }
-  return checked.pinned;
+  return resolveChecked(hostname, lookup, LOOKUP_REFUSALS, admitPrivate);
 }
+
+/** SafeFetch's words for a host its lookup refuses. */
+const LOOKUP_REFUSALS: LookupRefusals = {
+  unresolved: (hostname) => new Error(`safe-fetch: DNS lookup for "${hostname}" returned no addresses`),
+  // Learned from DNS, so coded as a name that does not resolve is; the log says host_refused.
+  nonPublic: (hostname) =>
+    new ReadFailureError('unavailable', `safe-fetch: refusing host "${hostname}", which resolves to a non-public address: ${PRIVATE_HOST_SETTINGS}`),
+  logged: (hostname, address) => `[kya-os] safe-fetch: host "${hostname}" refused (host_refused): ${UNTOLD(address)}`,
+};
 
 const nonHttpsTarget = (target: URL): Error =>
   new ReadFailureError('host_refused', `safe-fetch: redirect to non-https target "${target.protocol}" blocked`);
@@ -170,15 +172,19 @@ async function finalize(raw: RawResponse, maxBytes: number, deadline: ReadDeadli
 /**
  * Build an SSRF-hardened fetcher. The returned function is structurally compatible with the
  * card's `FetchLike`: `(url) => Promise<{ ok, status, json }>`. A URL or redirect its own rules
- * refuse (a scheme other than https, a non-public address, a cross-origin redirect) rejects with
- * an error that carries the `host_refused` read-failure kind, and a hop that runs out of time with
- * one of `deadline_exceeded`, so a verifier codes the refusal without reading its message. A
+ * refuse (a scheme other than https, a non-public IP literal or local name, a cross-origin redirect)
+ * rejects with an error that carries the `host_refused` read-failure kind. A name its lookup finds
+ * private carries `unavailable`, as a name that does not resolve does, since the lookup decided it,
+ * and the log says `host_refused`. A hop that runs out of time carries
+ * `deadline_exceeded`, so a verifier codes the refusal without reading its message. A
  * refusal decided from the URL alone, before any DNS lookup or request (its scheme, a non-public IP
  * literal, a localhost name), also says so, so a verifier may tell whoever named the URL why.
  *
  * One deadline, `timeoutMs` from the call, covers the whole read: the DNS lookup of each hop, every
  * redirect hop and the body. A `signal` the caller passes ends the read when it aborts, at whatever
- * step it has reached, with the signal's reason, as `fetch` does.
+ * step it has reached, with the signal's reason, as `fetch` does. Each hop the caller's
+ * `operatorNamed` names is read on any host, as `development: true` reads one, still pinned, and the
+ * first request may be http when it names that URL ({@link SafeFetchInit.operatorNamed}).
  */
 export function createSafeFetch(options: SafeFetchOptions = {}): SafeFetch {
   const cfg: HopConfig = {
@@ -192,11 +198,13 @@ export function createSafeFetch(options: SafeFetchOptions = {}): SafeFetch {
   const maxRedirects = options.maxRedirects ?? MAX_REDIRECTS;
 
   return async function safeFetch(initialUrl: string, init?: SafeFetchInit): Promise<SafeFetchResponse> {
-    const url = assertHttpsUrl(initialUrl);
+    const operatorNamed = guardedNamer(init?.operatorNamed);
+    const url = assertReadableUrl(initialUrl, operatorNamed);
     const deadline = startReadDeadline(new URL(url).hostname, cfg.timeoutMs, init?.signal ?? undefined);
     try {
       const raw = await followRedirects<RawResponse>(url, {
-        request: (hop) => requestOnce(hop.url, cfg, deadline),
+        // Decided hop by hop, as `trustedOrigins` is, so a redirect from a URL the operator named is held to the rule.
+        request: (hop) => requestOnce(hop.url, operatorNamed(hop.url) ? { ...cfg, admitPrivate: true } : cfg, deadline),
         vetTarget: vetRedirectTarget,
         maxRedirects,
         // A Location with no value names no target, so it is refused as a missing header is.
@@ -234,7 +242,7 @@ async function requestOnce(url: string, cfg: HopConfig, deadline: ReadDeadline):
   }
   const pinned = await deadline.within(() => resolveAndPin(hostname, cfg.lookup, cfg.admitPrivate));
   return deadline.within(() =>
-    cfg.transport(url, { signal, hostname, pinnedAddress: pinned.address, family: pinned.family, maxBytes: cfg.maxBytes }),
+    cfg.transport(url, { signal, hostname, ...pinnedTo(pinned), maxBytes: cfg.maxBytes }),
   );
 }
 

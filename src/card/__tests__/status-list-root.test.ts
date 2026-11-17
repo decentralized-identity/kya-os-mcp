@@ -284,12 +284,14 @@ describe("each path names a hop's issuer, and the chain's root only as the verif
       trustedRootIssuer: c.acme.did,
       trustedRootStatusList: listUrlOf(c.acme),
     }));
+    // Once every hop proof has verified, the root's own URL is marked as its word (./root-list-host.test.ts).
+    const verified = pinned.map((context) => ({ ...context, trustedRootVerified: expect.any(Object) as object }));
 
     expect(await contexts((check) => evaluateDelegationChain(chain, check, ctx))).toEqual(unpinned);
     expect(await contexts((check) => evaluateDelegationChain(chain, check, { ...ctx, resourceOwner: c.acme.did }))).toEqual(pinned);
     expect(await contexts(request({}))).toEqual(unpinned);
-    expect(await contexts(request({ trustedRootIssuers: [c.mallory.did, c.acme.did] }))).toEqual(pinned);
-    expect(await contexts(request({ resourceOwner: c.acme.did }))).toEqual(pinned);
+    expect(await contexts(request({ trustedRootIssuers: [c.mallory.did, c.acme.did] }))).toEqual(verified);
+    expect(await contexts(request({ resourceOwner: c.acme.did }))).toEqual(verified);
   });
 
   it("the checker reads the root's list for a direct call only at the URL the call says the root's credential names", async () => {

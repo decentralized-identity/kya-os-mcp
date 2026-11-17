@@ -6,7 +6,7 @@ import { revocationEntriesOf, type DelegationChain } from '../../src/card/delega
 import { acceptEntrySize, acceptStatusList, statusListExpectationFor, type StatusListIssuers } from '../../src/utils/statuslist-acceptance.js';
 import { parseStatusListIndex } from '../../src/utils/statuslist-bits.js';
 import { loadVectors } from '../loader.js';
-import { requirePython } from './python.js';
+import { PYTHON_TEST_TIMEOUT_MS, requirePython } from './python.js';
 import type { StatusListInput } from '../types.js';
 
 const url = 'https://status.example/list?version=1#bits';
@@ -56,7 +56,7 @@ function cases(issuers: readonly string[], rootList: string) {
 }
 
 describe('independent status authority derivation', () => {
-  it('reads UTF-8 JSONL even when Python stdin uses a Windows code page', (test) => {
+  it('reads UTF-8 JSONL even when Python stdin uses a Windows code page', { timeout: PYTHON_TEST_TIMEOUT_MS }, (test) => {
     const [python, ...args] = requirePython(test);
     const script = fileURLToPath(new URL('../status_list.py', import.meta.url));
     // U+0141 contains a UTF-8 byte undefined in cp1252, so a locale-decoded read fails.
@@ -74,7 +74,7 @@ describe('independent status authority derivation', () => {
 
   // One chain and one root URL per test, 9,072 cases each, keeps each run of the Python port well inside a test's time.
   const ROOTED = CHAINS.flatMap((chain) => [url, ROOT_OWN].map((rootList) => ({ ...chain, rootList })));
-  it.for(ROOTED)('agrees with Python on the raw chain $issuers, its root on $rootList: the keeper of the URL, role aliases, bindings and hostile lists', ({ issuers, rootList }, test) => {
+  it.for(ROOTED)('agrees with Python on the raw chain $issuers, its root on $rootList: the keeper of the URL, role aliases, bindings and hostile lists', { timeout: PYTHON_TEST_TIMEOUT_MS }, ({ issuers, rootList }, test) => {
     const [python, ...args] = requirePython(test);
     const rows = cases(issuers, rootList);
     const script = fileURLToPath(new URL('../status_list.py', import.meta.url));
@@ -130,7 +130,7 @@ async function readByPython(python: readonly string[], changes: readonly Record<
 }
 
 describe('independent statusListIndex reading', () => {
-  it('reads every index form, string or not, as the TypeScript parser does', async (context) => {
+  it('reads every index form, string or not, as the TypeScript parser does', { timeout: PYTHON_TEST_TIMEOUT_MS }, async (context) => {
     const python = requirePython(context);
     const forms = ['7', '0', '007', '131071', '131072', '', ' 7', '7 ', '7\n', '+7', '-7', '-0', '7junk', '7.5', '1e1',
       '0x7', '7_0', '\u0667', '\uff17', '\u{1D7D5}', '\u096D', '9007199254740991', '9007199254740992', 7, 0, ['7'], null,
@@ -149,7 +149,7 @@ describe('independent statusListIndex reading', () => {
 });
 
 describe('independent statusSize reading', () => {
-  it('reads an entry of every stated size, or of none, as the shared TypeScript rule does', async (context) => {
+  it('reads an entry of every stated size, or of none, as the shared TypeScript rule does', { timeout: PYTHON_TEST_TIMEOUT_MS }, async (context) => {
     const python = requirePython(context);
     const sizes = [1, 2, 3, 0, -1, 1.5, '1', '2', '', null, true, false, [1], [], { size: 1 }, 2 ** 53];
     const read = await readByPython(python, [{}, ...sizes.map((statusSize) => ({ statusSize }))]);

@@ -1,0 +1,12 @@
+kind: Security
+body: |-
+    **A proxy that carries the global fetch carries did:web and status-list
+    reads again.** Where the global `fetch` sends a request through a
+    proxy, under undici's `ProxyAgent`, or its `EnvHttpProxyAgent` such as
+    the one Node installs under `NODE_USE_ENV_PROXY`, for a host `NO_PROXY`
+    does not name, `RuntimeFetchProvider` reads through it as 1.23.0 did,
+    held to the URL alone, and warns once that the proxy must refuse
+    private addresses, instead of resolving the host itself and going
+    around the proxy. Under any other dispatcher, and for a host `NO_PROXY`
+    names, the read is still resolved, checked and pinned. See UPGRADING.md.
+time: 2026-11-17T00:35:00.000000-06:00

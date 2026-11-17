@@ -55,10 +55,11 @@ afterEach(() => {
 });
 
 describe('checkResolvedAddresses', () => {
-  it('pins the first address when every one is public, and names the first that is not otherwise', () => {
-    expect(checkResolvedAddresses([PUBLIC, { address: '2606:2800:220:1::', family: 6 }])).toEqual({ pinned: PUBLIC });
+  it('pins every address, in order, when every one is public, and names the first that is not otherwise', () => {
+    const v6 = { address: '2606:2800:220:1::', family: 6 };
+    expect(checkResolvedAddresses([PUBLIC, v6])).toEqual({ pinned: [PUBLIC, v6] });
     expect(checkResolvedAddresses([PUBLIC, PRIVATE, { address: '::1', family: 6 }])).toEqual({ nonPublic: '10.0.0.7' });
-    expect(checkResolvedAddresses([PUBLIC, PRIVATE], true)).toEqual({ pinned: PUBLIC });
+    expect(checkResolvedAddresses([PUBLIC, PRIVATE], true)).toEqual({ pinned: [PUBLIC, PRIVATE] });
     expect(checkResolvedAddresses([])).toEqual({ unresolved: true });
   });
 });
@@ -93,16 +94,20 @@ describe('a read through a transport that offers its connections', () => {
     });
   });
 
-  it('refuses a name that resolves to no address, or to any address that is not public, without connecting, and says only what the URL says', async () => {
+  it('refuses a name that resolves to no address, or to any address that is not public, alike, without connecting, and says only what the URL says', async () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const { transport, connections } = offering({ 'none.example': [], 'split.example': [PUBLIC, PRIVATE] });
     const read = underPrivateNetworkRead(transport);
     await expect(read.fetch('https://none.example/a')).rejects.toThrow('DNS lookup for "none.example" returned no addresses');
     const refused = await refusalOf(read.fetch('https://split.example/a'));
-    expect({ kind: refused.kind, beforeRequest: refused.beforeRequest }).toEqual({ kind: 'host_refused', beforeRequest: false });
+    // Coded as a name that does not resolve is: the code says nothing the lookup answered.
+    expect({ kind: refused.kind, beforeRequest: refused.beforeRequest }).toEqual({ kind: 'unavailable', beforeRequest: false });
     expect(refused.message).toMatch(/^Request to "split\.example" refused: it resolves to a private or local address\. /);
     expect(refused.message).not.toContain(PRIVATE.address);
-    expect(warn).toHaveBeenCalledWith('[kya-os] Request to "split.example" refused: it resolves to the non-public address 10.0.0.7');
+    expect(warn).toHaveBeenCalledWith(
+      '[kya-os] Request to "split.example" refused (host_refused): it resolves to the non-public address 10.0.0.7, and whoever named it ' +
+        'is told only that it could not be read',
+    );
     expect(connections).toEqual([]);
   });
 
@@ -112,7 +117,11 @@ describe('a read through a transport that offers its connections', () => {
     const refused = await refusalOf(underPrivateNetworkRead(transport).fetch('https://public.example/doc'));
     expect(refused.message).toMatch(/^Redirect to a host that resolves to a private or local address refused\. /);
     expect(refused.message).not.toContain('intranet');
-    expect(warn).toHaveBeenCalledWith('[kya-os] Redirect to "intranet.example" refused: it resolves to the non-public address 10.0.0.7');
+    expect(refused.kind).toBe('unavailable');
+    expect(warn).toHaveBeenCalledWith(
+      '[kya-os] Redirect to "intranet.example" refused (host_refused): it resolves to the non-public address 10.0.0.7, and whoever named it ' +
+        'is told only that it could not be read',
+    );
     expect(connections.map(({ url }) => url)).toEqual(['https://public.example/doc']);
   });
 
@@ -134,28 +143,49 @@ describe('a read through a transport that offers its connections', () => {
 describe('a read held to https', () => {
   const held = { httpsOnly: true } as const;
 
-  it('refuses an http URL on a public name before any lookup, as decided from the URL alone', async () => {
+  it('refuses an http URL before any lookup, as decided from the URL alone, on a private host and under the opt-out too', async () => {
     const { transport, asked, own } = offering({});
-    for (const opened of [transport, { ...transport, allowPrivateNetworkHosts: true }]) {
-      const refused = await refusalOf(underPrivateNetworkRead(opened, held).fetch('http://status.example/list'));
+    const opened = { ...transport, allowPrivateNetworkHosts: true };
+    // Without the opt-out, the rule refuses a private host first, from its URL.
+    const cases: [PrivateNetworkTransport, string][] = [
+      [transport, 'http://status.example/list'],
+      [opened, 'http://status.example/list'],
+      [opened, 'http://status.localhost/list'],
+      [opened, 'http://10.0.0.7/list'],
+    ];
+    for (const [reader, url] of cases) {
+      const refused = await refusalOf(underPrivateNetworkRead(reader, held).fetch(url));
       expect({ message: refused.message, beforeRequest: refused.beforeRequest }).toEqual({
-        message: 'Request to a "http:" URL refused: this read takes https, and http only from a private or local host that ' +
-          'development: true or allowPrivateNetworkHosts: true admits',
+        message: 'Request to a "http:" URL refused: this read takes https, and http only at a URL the operator binds exactly, ' +
+          'or from a private or local host under development: true',
         beforeRequest: true,
       });
     }
     expect({ asked, own: own.mock.calls.length }).toEqual({ asked: [], own: 0 });
   });
 
-  it('reads http from a local host the opt-out admits, and refuses its redirect to http on a public name', async () => {
+  it('reads http from a local host where it takes http there, and refuses its redirect to http on a public name', async () => {
     const own = vi.fn(async (url: string) =>
       url.startsWith('http://status.localhost/') ? new Response(null, { status: 302, headers: { location: 'http://status.example/list' } }) : Response.json({}));
     const opened: PrivateNetworkTransport = { fetch: own, allowPrivateNetworkHosts: true };
-    const refused = await refusalOf(underPrivateNetworkRead(opened, held).fetch('http://status.localhost/moved', { redirect: 'manual' }));
-    expect({ message: refused.message.split(':')[0], beforeRequest: refused.beforeRequest }).toEqual({
-      message: 'Redirect to a "http', beforeRequest: false,
+    const read = underPrivateNetworkRead(opened, { ...held, httpOnPrivateHosts: true });
+    const refused = await refusalOf(read.fetch('http://status.localhost/moved', { redirect: 'manual' }));
+    expect({ message: refused.message, beforeRequest: refused.beforeRequest }).toEqual({
+      message: 'Redirect to a "http:" URL refused: this read takes https for every redirect, and http only from a private or local ' +
+        'host under development: true',
+      beforeRequest: false,
     });
     expect(own.mock.calls.map(([url]) => url)).toEqual(['http://status.localhost/moved']);
+  });
+
+  it('reads the first request over http when the operator names its URL, on any host, and never a redirect it did not choose', async () => {
+    const own = vi.fn(async (url: string) =>
+      url === 'http://status.example/old' ? new Response(null, { status: 302, headers: { location: 'http://status.example/new' } }) : Response.json({}));
+    const read = underPrivateNetworkRead({ fetch: own }, { ...held, operatorNamed: (url) => url.startsWith('http://status.example/') });
+    expect(await (await read.fetch('http://status.example/list')).json()).toEqual({});
+    const refused = await refusalOf(read.fetch('http://status.example/old', { redirect: 'manual' }));
+    expect(refused.message.split(' URL refused')[0]).toBe('Redirect to a "http:"');
+    expect(own.mock.calls.map(([url]) => url)).toEqual(['http://status.example/list', 'http://status.example/old']);
   });
 });
 

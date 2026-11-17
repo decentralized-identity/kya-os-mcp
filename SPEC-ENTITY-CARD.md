@@ -402,6 +402,12 @@ denied; **resolve-once-and-pin** the connection IP (closing the DNS-rebinding TO
 **timeout**. The reference implementation (`src/utils/safe-fetch.ts`) defaults to a 1 MiB cap, a
 5 s timeout, and ≤3 same-origin redirects.
 
+A status list the Verifier's own configuration names is the exception, since no attacker chose it, and so is the list a root the Verifier pins names in its own credential once that credential's proof has verified (SPEC.md §4.4.2).
+A responsible party is such a root only when the Verifier's configuration pins it, not on an accountability verdict alone, since a Verifier that accepts any root lets the presenter be one.
+A Verifier MAY read such a list on any host, still pinned: one at a URL or https origin its `statusListIssuers` binds, or the pinned root's own.
+It reads http only at an exact http URL its `statusListIssuers` binds, since over http an on-path party can replay an older signed list from before a revocation, and a redirect from any of them is held to every rule above.
+A redirect from such a URL is held to every rule above.
+
 ---
 
 ## 7. CIMD On-Ramp (NORMATIVE) [TAAWG-NORMATIVE]

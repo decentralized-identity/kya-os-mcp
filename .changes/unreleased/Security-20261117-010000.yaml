@@ -1,0 +1,10 @@
+kind: Security
+body: |-
+    **A name that resolves to a private address is coded as one that does not
+    resolve.** It was refused as `host_refused`, a verdict, where a name that
+    does not resolve is `did_unavailable` or `status_unavailable`, transient,
+    so the code told whoever chose the name what the verifier's DNS answered.
+    Both are now coded alike, through `RuntimeFetchProvider` and `SafeFetch`,
+    and the log says `host_refused` with the name and the address. A refusal
+    the URL decides by itself keeps `host_refused`.
+time: 2026-11-17T01:00:00.000000-06:00

@@ -126,8 +126,9 @@ export interface CheqdStatusListResolverOptions {
   maxClockSkewMs?: number;
   /**
    * Read status lists on private and local hosts, such as a `*.localhost` name in a local demo, as
-   * a provider with `allowPrivateNetworkHosts: true` does, whatever the provider. Nothing else
-   * changes: the https rule, checked redirects, byte caps and deadlines all hold. For development
+   * a provider with `allowPrivateNetworkHosts: true` does, whatever the provider, and over http from
+   * such a host, which that opt-out does not. Nothing else changes: checked redirects, byte caps and
+   * deadlines all hold. For development
    * only: while `NODE_ENV` is `production` it throws when the resolver is built, and it warns once
    * per process. Any value but a boolean throws a `TypeError`. A runtime with no `process`, such as
    * Workers, has no `NODE_ENV` to read unless its bundler defines `process.env.NODE_ENV`, so there it
@@ -140,6 +141,8 @@ export class CheqdStatusListResolver implements StatusListResolver {
   private readonly opts: CheqdStatusListResolverOptions;
   /** What the list is read through: the provider, admitting private hosts under `development`. */
   private readonly transport: PrivateNetworkTransport;
+  /** Whether `development` is on, which also reads a list over http from a private or local host. */
+  private readonly development: boolean;
   private readonly cacheTtlMs: number;
   private cache: TtlCache<StatusList2021Credential>;
   private bustNextFetch = false;
@@ -147,9 +150,9 @@ export class CheqdStatusListResolver implements StatusListResolver {
   private readonly skewMs: number;
 
   constructor(options: CheqdStatusListResolverOptions) {
-    const development = developmentMode(options.development, 'CheqdStatusListResolverOptions.development');
+    this.development = developmentMode(options.development, 'CheqdStatusListResolverOptions.development');
     this.opts = options;
-    this.transport = development ? admittingPrivateHosts(options.fetchProvider) : options.fetchProvider;
+    this.transport = this.development ? admittingPrivateHosts(options.fetchProvider) : options.fetchProvider;
     this.timeoutMs = dependencyTimeout(options.dependencyTimeoutMs);
     this.skewMs = clockSkewOption(options.maxClockSkewMs);
     this.cacheTtlMs = cacheTtlOption(options.cacheTtlMs, 'cacheTtlMs') ?? 10_000;
@@ -234,7 +237,7 @@ export class CheqdStatusListResolver implements StatusListResolver {
     // DID URL dereferencing input and 400s (invalidDidUrl) on unknown params
     // (verified live). The endpoint is served cf-cache-status DYNAMIC, so
     // post-revocation freshness only needs a no-cache header.
-    const body = (await fetchStatusListJson(this.transport, url, {
+    const init: RequestInit = {
       method: 'GET',
       headers: {
         Accept: 'application/json',
@@ -242,7 +245,9 @@ export class CheqdStatusListResolver implements StatusListResolver {
           ? { 'Cache-Control': 'no-cache', Pragma: 'no-cache' }
           : {}),
       },
-    }, this.timeoutMs)) as StatusList2021Credential;
+    };
+    const read = { init, timeoutMs: this.timeoutMs, development: this.development };
+    const body = (await fetchStatusListJson(this.transport, url, read)) as StatusList2021Credential;
     this.assertShape(body);
     return body;
   }

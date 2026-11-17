@@ -139,13 +139,13 @@ export function createDelegationVerification(
   // The operator names the roots it pins, so their did:web documents are read wherever they are.
   const pinnedRoots = trustedRootIssuers !== undefined ? { trustedRootIssuers } : {};
   const didKeyResolver = createDidKeyResolver();
+  // In development every resolver built here admits private and local hosts, whatever provider it reads through.
+  const developing = development ? { development } : {};
   const fetchProvider =
     delegationConfig?.fetchProvider ??
     (typeof globalThis.fetch === "function"
-      ? new RuntimeFetchProvider({ dependencyTimeoutMs, allowPrivateNetworkHosts: development, ...pinnedRoots })
+      ? new RuntimeFetchProvider({ dependencyTimeoutMs, ...developing, ...pinnedRoots })
       : undefined);
-  // In development every resolver built here admits private and local hosts, whatever provider it reads through.
-  const developing = development ? { development } : {};
   const didWebResolver = fetchProvider
     ? createDidWebResolver(fetchProvider, { dependencyTimeoutMs, ...developing, ...pinnedRoots })
     : undefined;

@@ -21,6 +21,7 @@ import { dependencyTimeout } from '../utils/deadline.js';
 import { cacheTtlOption } from '../utils/cache-options.js';
 import { developmentMode } from '../utils/development-mode.js';
 import { admittingPrivateHosts, type PrivateNetworkTransport } from '../utils/private-network-rule.js';
+import { operatorNamedRequests } from '../utils/operator-named.js';
 import { fetchDidJson } from './read-did-json.js';
 import { didWebToUrl, isDidWeb } from './did-web-url.js';
 import { DidResolutionFailures, invalidDid, invalidDocument, readFailureOf } from './did-resolution-failure.js';
@@ -83,9 +84,8 @@ export interface DidWebResolverOptions {
  * DID:web resolver implementation
  */
 export class DidWebResolver implements DIDResolver {
+  /** What every document is read through: the provider, admitting private hosts under `development: true`. */
   private fetchProvider: PrivateNetworkTransport;
-  /** What a document of a DID the operator pins is read through: the provider, admitting private hosts. */
-  private readonly operatorTransport: PrivateNetworkTransport;
   private readonly operatorDids: ReadonlySet<string>;
   private cache: DidDocumentCache;
   private cacheTtl: number;
@@ -95,8 +95,7 @@ export class DidWebResolver implements DIDResolver {
   constructor(fetchProvider: Pick<FetchProvider, 'fetch' | 'allowPrivateNetworkHosts'>, options?: DidWebResolverOptions) {
     const development = developmentMode(options?.development, 'DidWebResolverOptions.development');
     assertTrustedRootIssuers(options?.trustedRootIssuers, 'DidWebResolverOptions.');
-    this.operatorTransport = admittingPrivateHosts(fetchProvider);
-    this.fetchProvider = development ? this.operatorTransport : fetchProvider;
+    this.fetchProvider = development ? admittingPrivateHosts(fetchProvider) : fetchProvider;
     this.operatorDids = new Set(options?.trustedRootIssuers ?? []);
     this.timeoutMs = dependencyTimeout(options?.dependencyTimeoutMs);
     this.cache = new DidDocumentCache(this.timeoutMs);
@@ -141,8 +140,9 @@ export class DidWebResolver implements DIDResolver {
   /** Fetch, measure, freeze and check the document `did` names at `url`, or `null`. */
   private async fetchDocument(did: string, url: string): Promise<LoadedDidDocument | null> {
     try {
-      const transport = this.operatorDids.has(did) ? this.operatorTransport : this.fetchProvider;
-      const json: unknown = await fetchDidJson(transport, url, {}, this.timeoutMs);
+      // A pinned DID's own document URL is read on any host; a redirect from it is held to the rule as any other.
+      const pinned = this.operatorDids.has(did) ? operatorNamedRequests(url, (hop) => hop === url) : undefined;
+      const json: unknown = await fetchDidJson(this.fetchProvider, url, { timeoutMs: this.timeoutMs, ...(pinned ? { operatorNamed: pinned } : {}) });
       const measure = admitParsedDidDocument(json);
       if (!measure.ok) {
         logger.warn(`[DidWebResolver] DID Document from ${url} refused: ${measure.reason}`);

@@ -110,11 +110,15 @@ describe('the opt-outs', () => {
     expect(fetched).toHaveLength(5);
   });
 
-  it('read a status list over http from a private or local host alone, and never from a public name', async () => {
+  it('read a status list over http under development alone, from a private or local host, and never from a public name', async () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const developing = new RuntimeFetchProvider({ ...seams, development: true });
+    expect(await developing.fetchStatusList('http://status.localhost/list')).toMatchObject({ id: 'list' });
+    expect(await developing.fetchStatusList('http://10.0.0.5/list')).toMatchObject({ id: 'list' });
+    expect(await developing.fetchStatusList('http://status.example/list')).toBeNull();
     const open = new RuntimeFetchProvider({ ...seams, allowPrivateNetworkHosts: true });
-    expect(await open.fetchStatusList('http://status.localhost/list')).toMatchObject({ id: 'list' });
-    expect(await open.fetchStatusList('http://10.0.0.5/list')).toMatchObject({ id: 'list' });
-    expect(await open.fetchStatusList('http://status.example/list')).toBeNull();
+    expect(await open.fetchStatusList('http://status.localhost/list')).toBeNull();
+    expect(await open.fetchStatusList('http://10.0.0.5/list')).toBeNull();
     expect(await new RuntimeFetchProvider(seams).fetchStatusList('http://status.example/list')).toBeNull();
     expect({ fetched, asked, connected }).toEqual({ fetched: ['http://status.localhost/list', 'http://10.0.0.5/list'], asked: [], connected: [] });
   });

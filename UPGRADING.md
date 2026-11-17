@@ -9,17 +9,24 @@ CHANGELOG.md says what changed and names the section here that says what to do a
 ### Hosts a presenter names are resolved and pinned
 
 `RuntimeFetchProvider` now resolves the host of every did:web and status-list read before it connects, every redirect included, where the runtime resolves names, as Node does.
-It refuses a host with any address that is not public, and connects only to the address it checked, so a public-looking name such as `did:web:169.254.169.254.nip.io` no longer reaches the cloud metadata address, and a second lookup cannot rebind the connection.
+It refuses a host with any address that is not public, and connects only to the addresses it checked, trying each in turn as `fetch` did, so a public-looking name such as `did:web:169.254.169.254.nip.io` no longer reaches the cloud metadata address, and a second lookup cannot rebind the connection.
 On 1.23.0 the rule read the URL alone.
-The presenter is told only that the DID or the list could not be read, with the code `host_refused`; the name and the address go to the log.
+The presenter is told only that the DID or the list could not be read, with the code a name that does not resolve gets, `did_unavailable` or `status_unavailable`, both transient, so the code tells nobody what your DNS answered; the log says `host_refused` and names the host and the address.
+A refusal the URL decides by itself, such as an IP literal or a local name, keeps `host_refused`.
+`SafeFetch`, and so `createRevocationChecker` and the Card readers, codes a name its lookup finds private the same way, where 1.23.0 coded it `host_refused`.
 
 | If you | Do this | Effect |
 | --- | --- | --- |
-| Verify DIDs or status lists hosted on private addresses, such as an internal registry | Pin the DIDs in `trustedRootIssuers`, bind the lists in `statusListIssuers`, or set `allowPrivateNetworkHosts: true` on the provider. | Those reads go through the provider's own `fetch` wherever the host is. |
+| Verify DIDs or status lists hosted on private addresses, such as an internal registry | Pin the DIDs in `trustedRootIssuers`, bind the lists in `statusListIssuers`, or set `allowPrivateNetworkHosts: true` on the provider. | Those reads go through the provider's own `fetch` wherever the host is. A redirect from a URL you pin or bind to one you do not is held to the rule, so bind each URL a list moves to. |
 | Build `RuntimeFetchProvider` or `DidWebResolver` yourself | Give it `trustedRootIssuers`, and the provider `statusListIssuers`, as you give the verifier. | The middleware does this itself for the provider and resolver it builds. |
-| Serve a status list over http | Serve it over https. | A status-list read, and each of its redirects, takes https; http is read only from a private or local host that `allowPrivateNetworkHosts` or `development` admits. |
+| Serve a status list over http, on any host | Serve it over https, or bind its exact URL in `statusListIssuers`, the provider's or `createRevocationChecker`'s. | A list a presenter names, and every redirect, is read over https alone, under `allowPrivateNetworkHosts` and on a private host too: over http, an on-path party can replay an older signed list from before a revocation. On 1.23.0 http was read from any host the rule admitted. An exact URL you bind is read over http on any host; an origin binding is `https://` alone, and `development: true` still reads http from a private or local host. `createRevocationChecker`, which read https alone on 1.23.0, now reads an exact http URL its `statusListIssuers` binds too, through `SafeFetch`'s `operatorNamed`, and a pinned root's own list over https alone. |
+| Serve DID documents or status lists compressed | Serve them gzipped, or not compressed. | The pinned connection sends `Accept: */*`, `User-Agent: node` and `Accept-Encoding: gzip`, as the runtime's `fetch` did, and decodes gzip under the byte cap, which holds the decoded body. A body in another coding, such as `br`, is refused, and the log names the coding. |
 | Stub the global `fetch` in tests that read through `RuntimeFetchProvider` | Pass `lookup` and `transport: fetchTransport`, or a `FetchProvider` of your own. | Reads no longer reach the global `fetch` unless the provider's lookup says the host is public. |
-| Run on a serverless runtime where the pinned connection fails | Pass `transport: fetchTransport`. | It connects by name after the check, as `SafeFetch`'s option does. |
+| Route `node:https` through a proxy, with a package such as global-agent, or set options on `https.globalAgent` | Have the global `fetch` take the same proxy and pass `transport: fetchTransport`, or pass a `transport` of your own. | A pinned read, `SafeFetch`'s included, connects to the address it checked over a connection of its own. On 1.23.0 `SafeFetch`'s went through `https.globalAgent`, so it could reuse a socket pooled for another request, or go through a proxy installed there. It keeps that agent's TLS settings, such as a `ca`, and nothing else. |
+| Run on a serverless runtime where the pinned connection fails | Pass `transport: fetchTransport`. | It connects by name after the check, as `SafeFetch`'s option does, which reopens the rebinding window: the connection's own lookup may answer an address the check never saw. |
+| Route the global `fetch` through a proxy, with undici's `setGlobalDispatcher(new ProxyAgent(...))` or `EnvHttpProxyAgent`, or Node's `NODE_USE_ENV_PROXY=1` and `HTTPS_PROXY` | Nothing, but have the proxy refuse private and local addresses. | Reads the proxy carries go through `fetch`, as on 1.23.0, held to the URL alone, and the provider warns once. A host `NO_PROXY` names is resolved, checked and pinned, as it would go straight to the host. |
+| Route the global `fetch` through a dispatcher of your own that proxies, or serve tests through a global `MockAgent` | Pass `transport: fetchTransport`, with a `lookup` in tests. | Any dispatcher other than undici's `ProxyAgent` and `EnvHttpProxyAgent` is taken to connect straight to the host, so reads are pinned around it unless the transport is `fetchTransport`, which makes each checked request through `fetch` by name. |
+| Keep a pinned root's status list on a private host | Pass `verifyHopProof` to `evaluateDelegationChain`, and to `verifyCard` the `trustedRootIssuers` you pin; `verifyRequestDelegation` and `requireDelegation` need nothing. | `createRevocationChecker` reads the list the root's own credential names on any host, pinned, once that credential's proof has verified, and reads the lists `statusListIssuers` binds on any host too. |
 
 ```ts
 import { RuntimeFetchProvider, fetchTransport } from '@kya-os/mcp';
@@ -34,6 +41,8 @@ const fetchProvider = new RuntimeFetchProvider({
 
 A custom `FetchProvider`, or a subclass of `RuntimeFetchProvider` whose `fetch` is its own, makes its own connections, so the rule still reads its URLs alone.
 So does every provider in a runtime that resolves no name, such as a Cloudflare Worker or a browser, whose egress must refuse private addresses.
+Each logs once, with its reason, that its reads are held to the URL alone.
+A root credential whose proof fails, or is not checked, has its list read as one the presenter named, so a chain that claims your pinned root cannot point the checker at a private host.
 
 ### Check hop proofs before reading status
 
@@ -696,6 +705,7 @@ Its list then counts for the Card at the URL the verifier's verdict reports as `
 A verifier that returns a bare `true`, or `{ verified: true }` with no `rootStatusList`, reports no URL, so the responsible party's list counts only at a URL the configuration binds to it, and at the Card's own list URL a list it signs is refused.
 To have it count there, return `{ verified: true, rootStatusList }` with the URL read from the root credential whose proof the verifier checked, or bind the URL to the responsible party in `statusListIssuers`.
 `rootStatusList` is read only beside a literal `verified: true` and only as a non-empty string, and `verifyCard` returns it as `accountability.rootStatusList`.
+The checker reads that URL on a private host only when `verifyCard`'s `trustedRootIssuers` names the responsible party, since a verifier that accepts any root lets the presenter choose it; otherwise it is held to the private-network rule as a URL the presenter named.
 At a URL bound to it, the Entity's own list is refused.
 A responsible party's list counts for its Cards only once verified, never as the Card states it.
 

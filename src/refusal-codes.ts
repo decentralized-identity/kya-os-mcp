@@ -67,7 +67,9 @@ export const REFUSAL_CODES = Object.freeze({
   /**
    * The reader's own rules refused the host of a DID document or a status list, on its URL or on a
    * redirect: a private or local host, a scheme the reader does not read, or a redirect it does not
-   * follow. In local development, `development: true` admits private and local hosts.
+   * follow. In local development, `development: true` admits private and local hosts. A name that
+   * resolves to a private address is not refused with this code: the lookup decided that, so it is
+   * refused as a name that does not resolve is, and the log says `host_refused`.
    */
   host_refused: 'host_refused',
   /** The chain's root is issued by a DID that `trustedRootIssuers` does not list, or that is not the `resourceOwner` the verifier pins. */

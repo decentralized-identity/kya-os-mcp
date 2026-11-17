@@ -1,0 +1,10 @@
+kind: Security
+body: |-
+    **A redirect from a host the operator names is held to the rule.** The
+    exemption for a status-list URL `statusListIssuers` binds and for the
+    did:web document of a pinned DID covered every redirect of the read, so
+    an open redirect on a bound origin reached a private address with no
+    lookup. Each request is now decided on its own URL, as SafeFetch decides
+    `allowOrigins`, and a redirect to a URL the operator did not name is
+    resolved, checked and pinned.
+time: 2026-11-17T00:45:00.000000-06:00

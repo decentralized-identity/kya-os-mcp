@@ -192,9 +192,10 @@ describe("a Card's responsible party", () => {
     for (const [verified, trustedRootIssuers, read] of [
       [true, [p.acme.did], true],
       [false, [p.acme.did], false],
-      // Verified, but the host pins no root, or another one: the URL is the presenter's word.
+      // Verified, but the host pins no root, or another one, or this one spelled another way: the URL is the presenter's word.
       [true, undefined, false],
       [true, [p.agent.did], false],
+      [true, [`${p.acme.did.slice(0, 8)}${p.acme.did.slice(8).toUpperCase()}`], false],
     ] as const) {
       const net = network({ [CARDS_LIST]: listAt(p.acme, CARDS_LIST) });
       const result = await verifyCard(cardOf(p), {
@@ -203,6 +204,7 @@ describe("a Card's responsible party", () => {
         ...(trustedRootIssuers === undefined ? {} : { trustedRootIssuers }),
       });
       expect(result.revocation).toMatchObject(read ? { revoked: false, fresh: true } : { revoked: true, fresh: false });
+      if (verified) expect(result).toMatchObject(read ? { ok: true } : { ok: false, code: 'status_unavailable' });
       expect(net.connected).toEqual(read ? [[CARDS_LIST, PRIVATE]] : []);
     }
   });

@@ -3,8 +3,9 @@
  * application's `headers` under the read's one deadline, so a headers function that never answers
  * costs a resolution at most 5,000 ms and wedges nothing: the next resolution starts afresh and
  * finds the document once the function answers again, called directly or through
- * `RuntimeFetchProvider`. A failed read is logged with the resolver URL's origin and path, never
- * the credentials before its host, its query or its fragment, where an operator may keep a key.
+ * `RuntimeFetchProvider`. A resolver URL that includes credentials is refused before any request,
+ * as every reader refuses one, and a failed read is logged with the resolver URL's origin and path,
+ * never its query or its fragment, where an operator may keep a key.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -68,15 +69,25 @@ describe('the cheqd resolver and a headers function that never answers', () => {
 });
 
 describe('the cheqd resolver logs a failed read', () => {
-  it("with the resolver URL's origin and path, never its credentials, query or fragment", async () => {
+  it("with the resolver URL's origin and path, never its query or fragment", async () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const short = 'did:cheqd:testnet:a';
     const { provider } = answering(() => new Response('{}', { status: 500 }));
-    const resolverUrl = 'https://user:pass@r.example/{did}?key=secret#top';
+    const resolverUrl = 'https://r.example/{did}?key=secret#top';
     expect(await new DidCheqdResolver(provider, { resolverUrl }).resolve(short)).toBeNull();
     expect(warn.mock.calls).toEqual([
       [`[DidCheqdResolver] Error resolving ${short}: DID resolution failed: HTTP 500 for "https://r.example/${short}"`],
     ]);
+  });
+
+  it('refusing, before any request, a resolver URL that includes credentials, and never echoing them', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const short = 'did:cheqd:testnet:a';
+    const { fetch, provider } = answering(() => new Response('{}', { status: 500 }));
+    const resolverUrl = 'https://user:pass@r.example/{did}';
+    expect(await new DidCheqdResolver(provider, { resolverUrl }).resolve(short)).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(warn.mock.calls).toEqual([[`[DidCheqdResolver] Error resolving ${short}: Request to a URL that includes credentials refused`]]);
   });
 });
 

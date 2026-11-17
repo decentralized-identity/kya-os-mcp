@@ -55,7 +55,7 @@ const NOT_CODED: Record<string, { literals: number; why: string }> = {
   },
   'src/proof/verifier.ts': { literals: 10, why: 'a request proof refusal carries an errorCode from the proof error codes' },
   'src/card/proof/verify.ts': { literals: 1, why: "a card request proof's reasons are its codes" },
-  'src/card/verify.ts': { literals: 2, why: "a card request proof's reasons are its codes" },
+  'src/card/verify-claims.ts': { literals: 2, why: "a card request proof's reasons are its codes" },
   'src/card/middleware.ts': { literals: 2, why: "requireProof answers a request proof, whose reasons are its codes, in an error with a code" },
   'src/delegation/did-linkage.ts': { literals: 5, why: 'the linkage of two DID documents, reported with the checks it ran' },
   'src/integrations/cheqd/dlr.ts': { literals: 7, why: 'the shape of a DID-linked resource artifact, not a verdict on a credential' },

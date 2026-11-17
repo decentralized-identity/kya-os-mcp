@@ -48,6 +48,12 @@ describe('privateNetworkRefusal', () => {
     expect(refused.filter(url => !refuses(url))).toEqual([]);
   });
 
+  it('refuses a URL that includes credentials, as fetch does, under the opt-out too', () => {
+    for (const url of ['https://user:secret@example.com/', 'https://user@example.com/', 'http://:secret@10.0.0.5/']) {
+      expect(privateNetworkRefusal(url, true)).toBe('a URL that includes credentials');
+    }
+  });
+
   it('refuses a URL that does not parse, which a runtime might resolve against a base of its own', () => {
     for (const url of ['//127.0.0.1/did.json', '/did.json', 'not a url']) expect(privateNetworkRefusal(url, true)).toBe('a URL that does not parse');
   });

@@ -136,6 +136,20 @@ describe('nodeHttpsTransport, against a stand-in for node:https', () => {
     expect(raw.headers.get('x-absent')).toBeNull();
   });
 
+  it('sends the headers it is given, and hands back the body as the bytes that were sent', async () => {
+    const sent = Buffer.from([0x7b, 0xff, 0x7d]);
+    const { asked, transport } = await transportAnswering((respond) => {
+      const res = new StandInResponse(200, {});
+      respond(res);
+      res.emit('data', sent);
+      res.emit('end');
+    });
+    const raw = await transport('https://example.com/list', init({ headers: { accept: 'application/json' } }));
+
+    expect(asked[0]!.options.headers).toEqual({ accept: 'application/json' });
+    expect(Buffer.from((await raw.bytes!())).equals(sent)).toBe(true);
+  });
+
   it('reads a response without a status code as status 0', async () => {
     const { transport } = await transportAnswering(replying(undefined, {}, ['ok']));
     expect((await transport('https://example.com/card.json', init())).status).toBe(0);

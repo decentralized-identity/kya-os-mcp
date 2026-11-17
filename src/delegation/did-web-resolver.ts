@@ -24,6 +24,7 @@ import { admittingPrivateHosts, type PrivateNetworkTransport } from '../utils/pr
 import { fetchDidJson } from './read-did-json.js';
 import { didWebToUrl, isDidWeb } from './did-web-url.js';
 import { DidResolutionFailures, invalidDid, invalidDocument, readFailureOf } from './did-resolution-failure.js';
+import { assertTrustedRootIssuers } from './root-admission.js';
 
 export { didWebToUrl, isDidWeb, parseDidWeb } from './did-web-url.js';
 
@@ -66,6 +67,16 @@ export interface DidWebResolverOptions {
    * `process.env.NODE_ENV`, so there it does not throw: keep it out of production configuration.
    */
   development?: boolean;
+  /**
+   * The DIDs the verifier pins as roots, as its `trustedRootIssuers` names them. The operator names
+   * these, so their documents are read wherever they are, a private or local host included, as a
+   * provider with `allowPrivateNetworkHosts: true` reads them, through the provider's own `fetch`;
+   * every other DID is held to the private-network rule. The scheme rule, checked redirects, byte
+   * caps and deadlines still hold. Pass the list the verifier is given; the delegation middleware
+   * passes its `delegation.trustedRootIssuers` itself. Anything but an array of DIDs throws a
+   * `TypeError`.
+   */
+  trustedRootIssuers?: readonly string[];
 }
 
 /**
@@ -73,6 +84,9 @@ export interface DidWebResolverOptions {
  */
 export class DidWebResolver implements DIDResolver {
   private fetchProvider: PrivateNetworkTransport;
+  /** What a document of a DID the operator pins is read through: the provider, admitting private hosts. */
+  private readonly operatorTransport: PrivateNetworkTransport;
+  private readonly operatorDids: ReadonlySet<string>;
   private cache: DidDocumentCache;
   private cacheTtl: number;
   private readonly timeoutMs: number;
@@ -80,7 +94,10 @@ export class DidWebResolver implements DIDResolver {
 
   constructor(fetchProvider: Pick<FetchProvider, 'fetch' | 'allowPrivateNetworkHosts'>, options?: DidWebResolverOptions) {
     const development = developmentMode(options?.development, 'DidWebResolverOptions.development');
-    this.fetchProvider = development ? admittingPrivateHosts(fetchProvider) : fetchProvider;
+    assertTrustedRootIssuers(options?.trustedRootIssuers, 'DidWebResolverOptions.');
+    this.operatorTransport = admittingPrivateHosts(fetchProvider);
+    this.fetchProvider = development ? this.operatorTransport : fetchProvider;
+    this.operatorDids = new Set(options?.trustedRootIssuers ?? []);
     this.timeoutMs = dependencyTimeout(options?.dependencyTimeoutMs);
     this.cache = new DidDocumentCache(this.timeoutMs);
     this.cacheTtl = cacheTtlOption(options?.cacheTtl, 'cacheTtl') ?? 300_000; // 5 minutes default
@@ -124,7 +141,8 @@ export class DidWebResolver implements DIDResolver {
   /** Fetch, measure, freeze and check the document `did` names at `url`, or `null`. */
   private async fetchDocument(did: string, url: string): Promise<LoadedDidDocument | null> {
     try {
-      const json: unknown = await fetchDidJson(this.fetchProvider, url, {}, this.timeoutMs);
+      const transport = this.operatorDids.has(did) ? this.operatorTransport : this.fetchProvider;
+      const json: unknown = await fetchDidJson(transport, url, {}, this.timeoutMs);
       const measure = admitParsedDidDocument(json);
       if (!measure.ok) {
         logger.warn(`[DidWebResolver] DID Document from ${url} refused: ${measure.reason}`);

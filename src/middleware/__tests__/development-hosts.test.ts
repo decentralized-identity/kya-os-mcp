@@ -1,7 +1,8 @@
 /**
  * A developer runs a server with `withKyaOs`, and the root it trusts on a `*.localhost` did:web name,
- * as every local demo does. The gate reads that root's DID document under the private-network rule,
- * which refuses the name, as it must in production. `development: true` on `withKyaOs`, or on
+ * as every local demo does. The operator names that root in `trustedRootIssuers`, so the gate reads
+ * its DID document wherever it is. Every other DID is read under the private-network rule, which
+ * refuses a local name, as it must in production. `development: true` on `withKyaOs`, or on
  * `KyaOsConfig`, admits private and local hosts for every resolver the middleware builds, through
  * the provider the developer gives it or the one it builds itself, and tells each resolver factory so.
  * It refuses to start while `NODE_ENV` is `production`. Every test uses the package's public exports,
@@ -98,10 +99,24 @@ describe('withKyaOs with a root on a *.localhost did:web name', () => {
     );
   });
 
-  it('refuses the call without it, before any request, saying what admits the host', async () => {
+  it('allows the call without it, reading the root it pins, since the operator named it', async () => {
     for (const development of [undefined, false]) {
       const provider = servingRoot();
-      const outcome = await callUnderRoot(await serverWith({ fetchProvider: provider }, development));
+      expect(await callUnderRoot(await serverWith({ fetchProvider: provider }, development))).toEqual({ allowed: true });
+      expect(provider.requested).toEqual([DOCUMENT_URL]);
+    }
+  });
+
+  it('refuses the call from a root it does not pin, before any request, saying what admits the host', async () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    for (const development of [undefined, false]) {
+      const provider = servingRoot();
+      const server = await withKyaOs(new McpServer({ name: 'notes', version: '1.0.0' }), {
+        crypto,
+        delegation: { allowAnyRootIssuer: true, fetchProvider: provider },
+        ...(development === undefined ? {} : { development }),
+      });
+      const outcome = await callUnderRoot(server);
       expect(outcome).toMatchObject({ allowed: false, refusal: { error: 'delegation_invalid' } });
       // The client's reason is cut at 256 code units, as every delegation refusal is; the log has the rest.
       expect(outcome.refusal?.reason).toContain(
@@ -137,7 +152,8 @@ describe('withKyaOs with a root on a *.localhost did:web name', () => {
         },
       };
       const outcome = await callUnderRoot(await serverWith({ fetchProvider: servingRoot(), didResolvers }, development));
-      expect(outcome.allowed).toBe(development === true);
+      // Without development the factory's resolver refuses the local name, and the gate's own did:web read, which knows the pinned root, reads it.
+      expect(outcome.allowed).toBe(true);
       expect(contexts).toEqual([{ dependencyTimeoutMs: 5000, ...(development ? { development: true } : {}) }]);
     }
   });

@@ -241,21 +241,42 @@ export function statusListKeeperFor(
   context: StatusCheckContext,
   statusListIssuers?: StatusListIssuers,
 ): StatusListKeeper {
-  assertStatusListIssuers(statusListIssuers);
-  const bound = Object.entries(statusListIssuers ?? {});
-  for (const [did, bindings] of bound) {
-    if (bindings.includes(statusListCredential)) return { did, why: 'configured-url' };
-  }
-  for (const [did, bindings] of bound) {
-    if (bindings.some((binding) => ORIGIN.test(binding) && isAtOrigin(statusListCredential, binding))) {
-      return { did, why: 'configured-origin' };
-    }
-  }
+  const configured = configuredKeeper(statusListCredential, statusListIssuers);
+  if (configured !== undefined) return configured;
   const { credentialIssuer, trustedRootIssuer, trustedRootStatusList } = context;
   if (trustedRootIssuer !== undefined && trustedRootStatusList === statusListCredential) {
     return { did: trustedRootIssuer, why: 'root-credential' };
   }
   return { did: credentialIssuer, why: 'credential-issuer' };
+}
+
+/**
+ * The keeper `statusListIssuers` binds `url` to, by the first two rules this module opens with, or
+ * `undefined` when it binds it to none.
+ *
+ * @throws TypeError when `statusListIssuers` is malformed, as {@link assertStatusListIssuers} words it.
+ */
+function configuredKeeper(url: string, statusListIssuers: StatusListIssuers | undefined): StatusListKeeper | undefined {
+  assertStatusListIssuers(statusListIssuers);
+  const bound = Object.entries(statusListIssuers ?? {});
+  for (const [did, bindings] of bound) {
+    if (bindings.includes(url)) return { did, why: 'configured-url' };
+  }
+  for (const [did, bindings] of bound) {
+    if (bindings.some((binding) => ORIGIN.test(binding) && isAtOrigin(url, binding))) return { did, why: 'configured-origin' };
+  }
+  return undefined;
+}
+
+/**
+ * Whether `statusListIssuers` binds the status-list URL `url`, as its exact string or by its
+ * `https:` origin, to any issuer: whether the verifier's operator named the URL, as a reader that
+ * reads such a URL on a private host asks.
+ *
+ * @throws TypeError when `statusListIssuers` is malformed, as {@link assertStatusListIssuers} words it.
+ */
+export function statusListIssuersBind(url: string, statusListIssuers: StatusListIssuers | undefined): boolean {
+  return configuredKeeper(url, statusListIssuers) !== undefined;
 }
 
 /**

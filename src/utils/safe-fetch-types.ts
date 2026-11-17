@@ -21,6 +21,13 @@ export interface RawResponse {
   status: number;
   headers: { get(name: string): string | null };
   text: () => Promise<string>;
+  /**
+   * The body as the bytes that were sent. The library's transports answer it, so a reader that
+   * refuses a body that is not UTF-8, as a did:web or status-list read does, reads these rather
+   * than the text, which a transport decodes as it can. Optional: a transport without it is read
+   * through `text()`.
+   */
+  bytes?: () => Promise<Uint8Array>;
 }
 
 /** Per-request context handed to the transport (connection already validated + pinned). */
@@ -30,6 +37,12 @@ export interface TransportInit {
   pinnedAddress: string;
   family: number;
   maxBytes: number;
+  /**
+   * The request headers the reader sends, such as `Accept`. SafeFetch sends none; a did:web or
+   * status-list read under the private-network rule sends the ones its reader sets. The library's
+   * transports send them; a transport that leaves them out sends a bare GET.
+   */
+  headers?: Readonly<Record<string, string>>;
 }
 
 /** Transport seam — performs ONE request (no redirect following) to the pinned address. */

@@ -2,21 +2,28 @@
  * The private-network rule for a read whose URL a counterparty named, such as a did:web DID or a
  * credential's status list. A URL that is not an absolute http or https URL is refused, and so is
  * one whose host is a non-public IP literal or a local name, with or without trailing dots, which a
- * resolver ignores, all before any request. Every redirect
- * is followed by hand (`./checked-redirects`), its target held to the same rule, so a runtime never
- * carries the read on to a host the rule refuses. An IP literal is classified as SafeFetch
- * classifies a resolved address (`./ip-classifier`), so an IPv4-mapped, IPv4-translated or NAT64
- * form of a private address is refused as that address is. The rule resolves no name: it refuses a
- * local name by the name alone, and admits any other name whatever its address, so a public name
- * whose address is private is not refused here. Run verifiers behind an egress control for that.
+ * resolver ignores, all before any request. An IP literal is classified as SafeFetch classifies a
+ * resolved address (`./ip-classifier`), so an IPv4-mapped, IPv4-translated or NAT64 form of a
+ * private address is refused as that address is. Every redirect is followed by hand
+ * (`./checked-redirects`), its target held to the same rule, so a runtime never carries the read on
+ * to a host the rule refuses.
+ *
+ * The rule reads the URL alone. A name that looks public may still resolve to a private address, so
+ * a did:web or status-list read goes through `./private-network-read` as well, which resolves each
+ * host, refuses one that resolves to a private address and pins the connection to the address it
+ * checked, through a transport that offers it the connections, as `RuntimeFetchProvider` does where
+ * the runtime resolves names. A transport that offers none, as a `FetchProvider` whose `fetch` is its
+ * own, or a runtime that resolves no name, such as a Worker or a browser, is held to the URL alone,
+ * and its egress must refuse private addresses.
  *
  * The one opt-out is `allowPrivateNetworkHosts: true` on the transport, an option of
  * `RuntimeFetchProvider` and a member any `FetchProvider` may declare. It admits non-public IP
- * literals and local names; the scheme rule holds, and redirects are still followed by hand.
- * `development: true` on a reader turns it on for that reader's transport ({@link admittingPrivateHosts}),
- * and the refusal of a private host names both settings. The refusal of a request names the host
- * the URL names; the refusal of a redirect to a private host does not name it, since the server
- * chose it and whoever named the URL may not know it, and the target goes to the log.
+ * literals, local names and names that resolve to private addresses; the scheme rule holds, and
+ * redirects are still followed by hand. `development: true` on a reader turns it on for that reader's
+ * transport ({@link admittingPrivateHosts}), as a reader does for a URL the operator names, and the
+ * refusal of a private host names both settings. The refusal of a request names the host the URL
+ * names; the refusal of a redirect to a private host does not name it, since the server chose it and
+ * whoever named the URL may not know it, and the target goes to the log.
  */
 
 import { logger } from '../logging/index.js';
@@ -63,14 +70,14 @@ function isLocalName(name: string): boolean {
  * Whether the rule refuses `hostname`: a non-public IP literal, or a local name, with any trailing
  * dots, read as `./host-form` reads a host; a host that does not parse without them is refused too.
  */
-function isPrivateHost(hostname: string): boolean {
+export function isPrivateHost(hostname: string): boolean {
   const form = hostForm(hostname);
   if (form === undefined) return true;
   return 'literal' in form ? isBlockedAddress(form.literal) : isLocalName(form.name);
 }
 
 /** The two settings that admit a private or local host. */
-const PRIVATE_HOST_SETTINGS =
+export const PRIVATE_HOST_SETTINGS =
   `In local development, set development: true; to read private hosts in production, ${PRODUCTION_PRIVATE_HOSTS}.`;
 
 /** What the refusal of a private or local host says after `refused`: what it is, and the two settings that admit it. */
@@ -155,8 +162,10 @@ function redirectRefusal(target: string, allowPrivateNetworkHosts: boolean): str
 }
 
 /**
- * `transport` with the rule's opt-out turned on, for a reader given `development: true`: the same
- * `fetch`, called on `transport`, and `allowPrivateNetworkHosts: true`.
+ * `transport` with the rule's opt-out turned on, for a reader given `development: true` or a read of
+ * a URL the operator named: the same `fetch`, called on `transport`, and
+ * `allowPrivateNetworkHosts: true`. It offers no connections to pin, so the read goes through that
+ * `fetch`.
  */
 export function admittingPrivateHosts(transport: PrivateNetworkTransport): PrivateNetworkTransport {
   return { fetch: (url, options) => transport.fetch(url, options), allowPrivateNetworkHosts: true };

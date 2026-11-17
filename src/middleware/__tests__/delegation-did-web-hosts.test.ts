@@ -6,11 +6,14 @@
  * itself has made that request before the gate sees the response, so the gate refuses the document
  * it returns. The one opt-out, `allowPrivateNetworkHosts`, is honoured on the provider the host
  * supplies. `RuntimeFetchProvider.resolveDID`, and `ProofVerifier` through it, apply the same rule.
+ * The document of a root the operator pins in `trustedRootIssuers` is read wherever it is, so each
+ * other case lets the gate admit any root instead, as the rule binds every DID the operator did not name.
  *
- * A real server on 127.0.0.1 stands in for every host. The runtime's `fetch` is wrapped only so that
- * it speaks plain HTTP to that server: it keeps the host, port, path and redirect mode it is given,
- * sends the one public name below and the local names to 127.0.0.1, and reports the URL it was asked
- * for unless the runtime followed a redirect.
+ * A real server on 127.0.0.1 stands in for every host. The gate reads through a `RuntimeFetchProvider`
+ * as it builds one, its every name resolved to a public address and each request sent through the
+ * runtime's `fetch`. That `fetch` is wrapped only so that it speaks plain HTTP to that server: it
+ * keeps the host, port, path and redirect mode it is given, sends the one public name below and the
+ * local names to 127.0.0.1, and reports the URL it was asked for unless the runtime followed a redirect.
  */
 
 import { createServer, type Server } from 'node:http';
@@ -29,6 +32,7 @@ import { delegationRecord, keyOf, signedCredential } from '../../__tests__/utils
 import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
 import { LOCAL_HOST_NAMES } from '../../__tests__/utils/local-host-names.js';
 import { closeLoopback, listenOnLoopback } from '../../__tests__/utils/loopback-server.js';
+import { OVER_STUBBED_FETCH } from '../../__tests__/utils/runtime-network.js';
 
 const crypto = new NodeCryptoProvider();
 const SERVER = 'did:web:server.example';
@@ -103,15 +107,23 @@ function credential(did: string): Promise<DelegationCredential> {
   });
 }
 
-/** Whether the gate, with `config`, accepts a delegation `did` issues. */
+/** Whether the gate, admitting any root and reading through the provider it builds unless `config` says otherwise, accepts a delegation `did` issues. */
 async function accepts(did: string, config: KyaOsDelegationConfig = {}): Promise<boolean> {
   const { verifyDelegation } = createDelegationVerification({
-    identity: { did: SERVER }, cryptoProvider: crypto, delegationConfig: { trustedRootIssuers: [did], ...config },
+    identity: { did: SERVER }, cryptoProvider: crypto,
+    delegationConfig: { allowAnyRootIssuer: true, fetchProvider: new RuntimeFetchProvider(OVER_STUBBED_FETCH), ...config },
   } as unknown as MiddlewareDeps);
   return (await verifyDelegation(await credential(did))).valid;
 }
 
 describe("the gate's did:web read", () => {
+  it('reads the document of a root the operator pins wherever it is, and holds the same DID to the rule unpinned', async () => {
+    const did = didOf(`127.0.0.1:${port}`);
+    const pinned = { allowAnyRootIssuer: undefined, trustedRootIssuers: [did] };
+    const accepted = [await accepts(did, pinned), await accepts(did)];
+    expect({ accepted, served }).toEqual({ accepted: [true, false], served: ['/.well-known/did.json'] });
+  });
+
   it('refuses a DID whose host is a private IP literal, IPv4 or IPv4-mapped IPv6, without a request', async () => {
     const accepted = [await accepts(didOf(`127.0.0.1:${port}`)), await accepts(didOf(`[::ffff:7f00:1]:${port}`))];
     expect({ accepted, served }).toEqual({ accepted: [false, false], served: [] });

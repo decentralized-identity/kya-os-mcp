@@ -17,7 +17,10 @@ export {
 export { NodeCryptoProvider } from './node-crypto.js';
 export { WebCryptoProvider } from './web-crypto.js';
 export { SystemClockProvider } from './system-clock.js';
-export { RuntimeFetchProvider } from './runtime-fetch.js';
+export { RuntimeFetchProvider, type RuntimeFetchProviderOptions } from './runtime-fetch.js';
+// The DNS and connection seams of RuntimeFetchProvider's reads, as SafeFetch takes them.
+export { fetchTransport } from '../utils/safe-fetch-transports.js';
+export type { DnsAddress, DnsLookup, SafeFetchTransport, TransportInit, RawResponse } from '../utils/safe-fetch-types.js';
 
 export {
   AuditLogProvider,

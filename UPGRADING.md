@@ -6,6 +6,35 @@ CHANGELOG.md says what changed and names the section here that says what to do a
 
 ## From 1.23.0
 
+### Hosts a presenter names are resolved and pinned
+
+`RuntimeFetchProvider` now resolves the host of every did:web and status-list read before it connects, every redirect included, where the runtime resolves names, as Node does.
+It refuses a host with any address that is not public, and connects only to the address it checked, so a public-looking name such as `did:web:169.254.169.254.nip.io` no longer reaches the cloud metadata address, and a second lookup cannot rebind the connection.
+On 1.23.0 the rule read the URL alone.
+The presenter is told only that the DID or the list could not be read, with the code `host_refused`; the name and the address go to the log.
+
+| If you | Do this | Effect |
+| --- | --- | --- |
+| Verify DIDs or status lists hosted on private addresses, such as an internal registry | Pin the DIDs in `trustedRootIssuers`, bind the lists in `statusListIssuers`, or set `allowPrivateNetworkHosts: true` on the provider. | Those reads go through the provider's own `fetch` wherever the host is. |
+| Build `RuntimeFetchProvider` or `DidWebResolver` yourself | Give it `trustedRootIssuers`, and the provider `statusListIssuers`, as you give the verifier. | The middleware does this itself for the provider and resolver it builds. |
+| Serve a status list over http | Serve it over https. | A status-list read, and each of its redirects, takes https; http is read only from a private or local host that `allowPrivateNetworkHosts` or `development` admits. |
+| Stub the global `fetch` in tests that read through `RuntimeFetchProvider` | Pass `lookup` and `transport: fetchTransport`, or a `FetchProvider` of your own. | Reads no longer reach the global `fetch` unless the provider's lookup says the host is public. |
+| Run on a serverless runtime where the pinned connection fails | Pass `transport: fetchTransport`. | It connects by name after the check, as `SafeFetch`'s option does. |
+
+```ts
+import { RuntimeFetchProvider, fetchTransport } from '@kya-os/mcp';
+
+const fetchProvider = new RuntimeFetchProvider({
+  trustedRootIssuers: ['did:web:registry.corp.example'],
+  statusListIssuers: { 'did:web:registry.corp.example': ['https://status.corp.example'] },
+  // Only where the pinned node:https connection fails, as on some serverless runtimes:
+  // transport: fetchTransport,
+});
+```
+
+A custom `FetchProvider`, or a subclass of `RuntimeFetchProvider` whose `fetch` is its own, makes its own connections, so the rule still reads its URLs alone.
+So does every provider in a runtime that resolves no name, such as a Cloudflare Worker or a browser, whose egress must refuse private addresses.
+
 ### Check hop proofs before reading status
 
 | If you | Do this | Effect |

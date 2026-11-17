@@ -3,7 +3,9 @@
  * most 1 MiB of response body and one deadline for the headers and the body together, 5,000 ms
  * unless the reader's `dependencyTimeoutMs` sets another,
  * through the private-network rule (`utils/private-network-rule.ts`), since the credential names
- * the host.
+ * the host, each request's host resolved and checked and its connection pinned where the transport
+ * offers it (`utils/private-network-read.ts`). The read takes https, every redirect included, and
+ * http only from a private or local host the opt-out admits, as a local demo serves its lists.
  *
  * A list holds at least 131,072 entries (16 KiB) under both StatusList2021 and Bitstring Status
  * List 1.0, gzip-compressed and base64url-encoded. Even an incompressible list of that minimum
@@ -12,7 +14,8 @@
  */
 
 import { fetchBoundedJson, type BoundedJsonPolicy } from '../utils/bounded-read.js';
-import { underPrivateNetworkRule, type PrivateNetworkTransport } from '../utils/private-network-rule.js';
+import { underPrivateNetworkRead } from '../utils/private-network-read.js';
+import type { PrivateNetworkTransport } from '../utils/private-network-rule.js';
 import { DID_DOCUMENT_JSON, DID_RESOLUTION_TIMEOUT_MS, MAX_DID_DOCUMENT_BYTES } from './did-resource-policy.js';
 
 /** Bytes of status-list response body read before the read is refused: the DID document's limit. */
@@ -32,5 +35,6 @@ const STATUS_LIST_READ: BoundedJsonPolicy = {
 export function fetchStatusListJson(
   fetcher: PrivateNetworkTransport, url: string, init: RequestInit = {}, timeoutMs = STATUS_LIST_READ.timeoutMs,
 ): Promise<unknown> {
-  return fetchBoundedJson(underPrivateNetworkRule(fetcher), url, init, { ...STATUS_LIST_READ, timeoutMs });
+  const read = underPrivateNetworkRead(fetcher, { httpsOnly: true, maxBytes: STATUS_LIST_READ.maxBytes });
+  return fetchBoundedJson(read, url, init, { ...STATUS_LIST_READ, timeoutMs });
 }

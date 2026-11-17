@@ -133,16 +133,21 @@ export function createDelegationVerification(
 
   // Refused at startup, before anything that waits is built.
   const dependencyTimeoutMs = dependencyTimeout(delegationConfig?.dependencyTimeoutMs, "delegation.");
+  // Whether a tool may be wrapped without the list is decided as it is wrapped (./with-kya-os.root-issuers.ts).
+  const trustedRootIssuers = delegationConfig?.trustedRootIssuers;
+  assertTrustedRootIssuers(trustedRootIssuers, "delegation.");
+  // The operator names the roots it pins, so their did:web documents are read wherever they are.
+  const pinnedRoots = trustedRootIssuers !== undefined ? { trustedRootIssuers } : {};
   const didKeyResolver = createDidKeyResolver();
   const fetchProvider =
     delegationConfig?.fetchProvider ??
     (typeof globalThis.fetch === "function"
-      ? new RuntimeFetchProvider({ dependencyTimeoutMs, allowPrivateNetworkHosts: development })
+      ? new RuntimeFetchProvider({ dependencyTimeoutMs, allowPrivateNetworkHosts: development, ...pinnedRoots })
       : undefined);
   // In development every resolver built here admits private and local hosts, whatever provider it reads through.
   const developing = development ? { development } : {};
   const didWebResolver = fetchProvider
-    ? createDidWebResolver(fetchProvider, { dependencyTimeoutMs, ...developing })
+    ? createDidWebResolver(fetchProvider, { dependencyTimeoutMs, ...developing, ...pinnedRoots })
     : undefined;
   const configuredDidResolvers = buildDidResolverRegistry(
     delegationConfig?.didResolvers,
@@ -179,10 +184,6 @@ export function createDelegationVerification(
     ],
     isError: true,
   });
-
-  // Whether a tool may be wrapped without the list is decided as it is wrapped (./with-kya-os.root-issuers.ts).
-  const trustedRootIssuers = delegationConfig?.trustedRootIssuers;
-  assertTrustedRootIssuers(trustedRootIssuers, "delegation.");
 
   // Refused at startup: a bad value would otherwise boot cleanly and then deny
   // every delegated call, echoing the config detail back to the caller.

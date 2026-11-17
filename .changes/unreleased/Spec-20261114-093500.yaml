@@ -1,7 +1,0 @@
-kind: Spec
-body: |-
-    **SPEC.md §6.4: a root delegation's `issuerDid` MUST equal the `issuer`
-    of its credential**, and a verifier MUST reject a chain whose root names
-    any other DID. §2 names the root's `issuerDid` as the Responsible Party,
-    and nothing said it had to be the DID that signed.
-time: 2026-11-14T09:35:00.000000-06:00

@@ -5,6 +5,886 @@ All notable changes to @kya-os/mcp will be documented here.
 Format: https://keepachangelog.com/en/1.0.0/
 Versioning: https://semver.org/spec/v2.0.0.html
 
+## [1.23.0] - 2026-11-16
+
+### Upgrading
+
+- **Two things to check: one if your server uses `wrapWithDelegation`,
+  and one if you hand the verifier keys of your own.** A consumer that
+  recomputes `authorization.delegationCredentialDigest` must compute the
+  credential digest of SPEC.md §7.8 in place of a SHA-256 of the bytes
+  presented, and a digest recorded before the upgrade does not equal one
+  recorded after it for the same credential. A custom DID resolver or
+  key provider that hands the verifier an Ed25519 JWK must write its `x`
+  as RFC 8037 has it: base64url of the URL-safe alphabet, with no `=`
+  and no white space, of 32 bytes. UPGRADING.md, "Digests and keys to
+  recheck", has both in full.
+- **A status list is now held to the credential it covers, so a status
+  check that passed on 1.22.0 can deny.** A reader that verifies a
+  list's proof reads the list only from the one keeper of its URL: the
+  issuer `statusListIssuers` binds the URL or its origin to, else the
+  chain's pinned root when its own credential names the URL, else the
+  credential's issuer, and only when the list states its URL as its
+  `id`. Bind each list URL another issuer signs in
+  `statusListIssuers`, or put the root credential on the root's list
+  and pin the root, and re-issue each list with its URL as its `id`. A
+  `statusListIndex` must be a string of decimal digits, an entry of
+  another `statusPurpose` or of a `statusSize` other than 1 reads as
+  revoked, and `verifyCard` takes only a literal `true` from an
+  `accountabilityVerifier`. UPGRADING.md, "Status lists held to their
+  credential", takes each setup in turn.
+- **A delegation credential, status list or delegation hop must be signed
+  with a key its issuer's DID document lists under `assertionMethod`.**
+  did:key documents, did:web documents built with `buildDidWebDocument`
+  and every signer in this package already comply. Before verifiers
+  upgrade, any other issuer lists each signing key under
+  `assertionMethod`, with its own DID as the method's `controller`,
+  states `proofPurpose: assertionMethod`, names its key, and names
+  itself by a URL as written. Some did:cheqd documents need a DID
+  update. Refusal reasons now quote the values they name, so code that
+  matches on their text needs the new wording. UPGRADING.md, "From
+  1.22.0", has the steps for each setup and a table of every changed
+  reason.
+- **DID resolution and status-list reads refuse inputs over fixed limits,
+  and give up after 5 seconds.** A DID may have at most 2,048 UTF-16 code
+  units, and a DID document, did:web response or status list at most
+  1 MiB, within limits on nesting, members and entries; each read has one
+  5-second deadline and follows at most 3 redirects. Anything over a
+  limit is refused, never cut to fit, so check your DID documents and
+  status lists before you upgrade. A did:web DID or status list on a
+  private address or a local name is refused unless `development: true`
+  admits it in local development, or the `FetchProvider` sets
+  `allowPrivateNetworkHosts: true`. A custom `FetchProvider` must pass
+  `redirect` on, a custom resolver's document must be plain JSON data
+  with a DID as its `id`, and each `trustedRootIssuers` entry must be a
+  DID with no white space around it. Some failure reasons changed.
+  UPGRADING.md, "Limits on DID resolution and status-list reads", has
+  every limit and each setup.
+- **A verifier that accepts a delegation must name the issuers it
+  trusts.** With no root pinned, a delegation from any issuer is
+  accepted, including one an agent signs for itself; 1.22.0 only warned
+  at startup on the middleware, and said nothing on the Entity Card
+  guards. Outside development, `wrapWithDelegation` now throws while
+  `delegation.trustedRootIssuers` is unset, and while neither
+  `trustedRootIssuers` nor `resourceOwner` is set, `requireDelegation`
+  throws when the guard is built and `verifyRequestDelegation` rejects
+  the call. Each error names every fix: set the list to the DIDs allowed
+  to grant authority, or on the Card `resourceOwner`; in local
+  development, set `development: true`, which the Card guards now take
+  too; to accept any issuer anyway, set the new
+  `allowAnyRootIssuer: true` (`delegation.allowAnyRootIssuer` on the
+  middleware). Either of the last two runs with one warning. A server
+  that gates no tool on a delegation needs no setting and is no longer
+  warned. An `allowAnyRootIssuer` that is not a boolean, or one set to
+  `true` beside a pinned root, throws a `TypeError` when the middleware
+  or the guard is created. UPGRADING.md, "A verifier that accepts a
+  delegation must name the issuers it trusts", has each setup.
+
+### Added
+
+- **A response proof can bind the delegation chain a call was decided
+  under, and a verifier that holds the chain checks it.** SPEC.md §7.8
+  defines the two claims a proof may carry, both covered by its
+  signature: `delegationRef`, the reference of the credential the call
+  presented, and `delegationChainDigest`, one digest over every
+  credential of the chain, root to leaf. Whoever holds the chain passes
+  `delegationChain` to `ProofVerifier.verifyProof` or
+  `verifyProofArtifact`, and `outcome` when checking a refusal. A proof
+  that binds another chain or none, or names another credential, fails
+  with `DELEGATION_BINDING_MISMATCH`, and one that records another
+  outcome with `OUTCOME_MISMATCH`. Signing either claim from the server
+  is not part of this release: `withKyaOs` sets neither. UPGRADING.md,
+  "Checking a proof against a delegation chain", has the exports and
+  each rule.
+- **`acceptStatusList` is the status-list acceptance rule the readers that
+  verify a list's proof apply, and `statusListKeeperFor` names the one
+  issuer whose list is read at a status-list URL.** A custom
+  `StatusListResolver` applies the rule, once a list's proof verifies, as
+  `acceptStatusList(list, statusListExpectationFor(status, context,
+  statusListIssuers))`. `StatusListResolver.checkStatus` and
+  `BitstringRevocationChecker` take that `StatusCheckContext` as an
+  optional second argument, `withStatusCache` caches per context, and
+  `revocationEntriesOf(chain, trustedRootIssuer)` builds it for every hop
+  of a chain, with the list URL a pinned root's own credential names.
+  `createRevocationChecker` takes `statusListIssuers`, keyed by the DID
+  of a status-list issuer, with the URLs and `https:` origins it keeps.
+  All are exported from `@kya-os/mcp`, `@kya-os/mcp/delegation` and
+  `@kya-os/mcp/card`. The delegation middleware names only the
+  credential's own issuer to its resolver, never the pinned root.
+  UPGRADING.md, "Status-list exports for a custom reader", has each
+  signature and rule.
+- **Conformance suite 1.3.0: key-relationship vectors.** Two new vector
+  files, `delegation-chain-key-relationship.json` and
+  `status-list-key-relationship.json`, put the SPEC.md §6.2 key rule in
+  executable form: 3 vectors that verify and 16 that must be rejected,
+  among them a key listed only under `authentication` or under no
+  relationship, a stated `authentication` purpose, a document or key id
+  under another DID, a method naming another `controller`, with no `type`
+  or `controller`, or defined twice, and a VC-JWT whose `kid` names the
+  `authentication` key or is empty. A `delegation-chain` vector's `leaf`
+  may now be a VC-JWT string. CONFORMANCE.md maps L3.9a to them, and
+  `npm run conformance:generate:key-relationship` regenerates them. The
+  other vector files change only their `version`; the suite has 68 vectors.
+- **`dependencyTimeoutMs` sets how long a verifier waits for each
+  dependency.** Every wait the DID resource policy bounds used one fixed
+  5 seconds: a DID resolution, a status-list read, a chain resolver, a
+  revocation checker, a custom signature verifier and each Entity Card
+  seam. The delegation middleware (`delegation.dependencyTimeoutMs`),
+  `DelegationCredentialVerifier`, `validateDelegationChain`, `verifyCard`,
+  `verifyCardProof`, `requireProof`, `verifyRequestDelegation`,
+  `requireDelegation`, `createRevocationChecker`, the did:web and cheqd
+  resolvers, `CheqdStatusListResolver`, `RuntimeFetchProvider` and
+  `ProofVerifier` now take that one option, in milliseconds. It defaults
+  to 5,000 and must be a number greater than 0 and at most 2,147,483,647;
+  any other value throws a `TypeError` where the verifier is built. A
+  reason states the configured time. See UPGRADING.md, "A dependency that
+  can take longer than 5 seconds to answer", for each entry point.
+- **An accountability verifier can report the status-list URL the root
+  credential of a Card's chain names.** `AccountabilityResult` gains an
+  optional `rootStatusList`. `verifyCard` passes it to the status checker
+  as `trustedRootStatusList`, so a verified responsible party keeps the
+  list at that URL for the Card, as a pinned root keeps the list its own
+  credential names, and returns it as `accountability.rootStatusList`. It
+  is read only beside a literal `verified: true` and only as a non-empty
+  string. A verifier that reports none leaves the responsible party only
+  the URLs `statusListIssuers` binds to it. SPEC-ENTITY-CARD.md §10.3
+  states the rule, and UPGRADING.md, "A Card whose `revocation` list
+  another DID issues", says what a verifier returns.
+- **Every refusal of a delegation, its chain, its status or an Entity Card
+  carries a stable code, and says whether it is transient.** A reason is
+  text for people, and its wording changed in this release; branch on the
+  code instead. `REFUSAL_CODES` lists 21 codes, exported with
+  `RefusalCode`, `isRefusalCode` and `isTransientRefusal` from
+  `@kya-os/mcp`, `@kya-os/mcp/delegation` and `@kya-os/mcp/card`. The
+  refusals of the delegation and Entity Card verifiers carry `code` and
+  `transient`, and a rejection from `verifyRequestDelegation`,
+  `requireDelegation` or `readDelegationChain` carries `refusalCode` and
+  `transient`, and so does the result of the handshake's `verifyOrHints`,
+  as `code` and `transient`, when its delegation verifier refused, or
+  threw, which is `runtime_error` unless it threw a `RefusalError`. Four
+  codes are transient, `did_unavailable`, `status_unavailable`,
+  `deadline_exceeded` and `runtime_error`: the verifier could not decide,
+  and the same request may pass later. A refusal that asking again cannot
+  lift is not: a DID that can never be resolved, such as a did:key whose
+  key does not decode, a did:web DID that names no URL, a did:cheqd DID
+  the resolver cannot ask for or a DID of a method none of the delegation
+  gate's resolvers serves, a document over the byte cap and an issuer key
+  that is not a usable Ed25519 key are `did_invalid`, and a status entry
+  whose index is past the end of its list, or that names its list by no
+  string, is `delegation_malformed`. A custom signature verifier, chain
+  verifier, `revocationChecker`, `BitstringRevocationChecker` or handshake
+  `DelegationVerifier` may name a code in its answer, typed `string` where
+  a code may come from a variable or JSON, and any dependency may throw a
+  `RefusalError` to refuse with a code and words of its own. Every revoked
+  answer of the checker `createRevocationChecker` builds, a set bit
+  included, now carries `code` and `transient`, so a test that compares
+  one exactly must allow for them, and a server that returns a
+  `requireDelegation` rejection to its client as it is now sends
+  `refusalCode` and `transient` too. The delegation gate of `withKyaOs`
+  records the code as `authorization.verificationCode` on
+  `delegation.rejected`, and logs it as `{ code, transient }` beside a
+  reason it now keeps up to 1,024 UTF-16 code units; under `holderBinding:
+  "warn"` its holder-binding warning carries no code and says the call was
+  allowed. The gate sends its client no code. UPGRADING.md, "Refusal
+  codes", has the catalog.
+- **`development: true` reads did:web documents and status lists on
+  `localhost`, `*.localhost` names and private IPs, for local
+  development.** Set it on `withKyaOs` or `createKyaOsMiddleware`, where
+  it holds for every resolver and reader the middleware builds and reaches
+  each `didResolvers` factory in its context, or on
+  `DidWebResolverOptions`, `CheqdStatusListResolverOptions`,
+  `RuntimeFetchProviderOptions` or `SafeFetchOptions`. It admits private
+  and local hosts and changes nothing else. It warns once per process,
+  throws when what it is set on is built while `NODE_ENV` is `production`,
+  and throws a `TypeError` for any value but a boolean. It reads
+  `process.env.NODE_ENV` as written, so a bundle in which a bundler has
+  put `"production"` in its place refuses it too. To read private hosts in
+  production, give the fetch provider `allowPrivateNetworkHosts: true` as
+  before. UPGRADING.md, "A did:web DID or status list served from a
+  private IP address or a local name, such as `localhost`, as in
+  development", says where to set it.
+- **A resolver may say why a DID did not resolve, and a refusal is coded
+  by it.** `DIDResolver` has a new optional `lastFailure(did)`, which the
+  library's did:web, did:key and did:cheqd resolvers and the delegation
+  gate's resolver answer, with a `DidResolutionFailure`: a `cause`, one of
+  `host_refused`, `deadline_exceeded`, `unavailable`, `too_large` and
+  `invalid_document`, and a `detail`. Both types are exported. A verifier
+  codes its refusal by the cause. Whoever presents a credential chooses
+  its issuer's DID, so `Could not resolve issuer DID: "<did>"`, for a
+  VC-JWT as for a credential with an embedded proof, and
+  `CheqdStatusListResolver`'s `Could not resolve issuer DID <did>` end
+  with the detail in parentheses only where one of the library's resolvers
+  decided it from the DID alone, before any request or DNS lookup, such as
+  a did:web DID that names a private or local host, or where the deadline
+  passed; a host resolver's detail is shown only for a passed deadline.
+  Whatever the network answered, such as an HTTP status, a document over
+  the byte cap or not JSON, a refused redirect or an address `SafeFetch`
+  looked up, goes only to the operator's log, and the refusal's code says
+  which kind of failure it was. The delegation gate of `withKyaOs` sends
+  the reason to its client. UPGRADING.md, "Changed refusal reasons", has
+  the wording.
+- **A status resolver that wraps a library checker and passes on only the
+  entry keeps the check's context.** Each status read hands its resolver a
+  fresh copy of the entry that carries the credential's issuer and the
+  pinned root under `Symbol.for('@kya-os/mcp/status-check-context')`, and
+  the checker `createRevocationChecker` builds and `withStatusCache` read
+  it when they are given no second argument. A checker that gets neither
+  refuses the entry with a reason that says a wrapping resolver must pass
+  its second argument on. UPGRADING.md, "A custom `StatusListResolver`
+  given to `withKyaOs` or `DelegationCredentialVerifier`", has the detail.
+
+### Changed
+
+- **The audit events of the delegation gate's decision say which
+  delegation it decided on, by the reference and the digests of SPEC.md
+  §7.8.** `delegation.rejected` and a retry under a stored grant now
+  carry `delegationRef` and `delegationCredentialDigest`, and
+  `delegation.verified`, `delegation.rejected` and `grant.used` list
+  `delegationChainDigests`, one per credential evaluated.
+  `delegationCredentialDigest` is the §7.8 digest, no longer a hash of
+  the bytes presented. The gate reads a presented credential, and each
+  value a resolver returns, once, as plain data, and a credential may
+  nest at most 64 levels. `ProofVerifier`, the gate and
+  `CheqdStatusListResolver` read a JWS segment and a key's `x` as
+  RFC 7515 section 2 writes base64url, with no padding and no white
+  space. Some refusal reasons changed. UPGRADING.md, "Delegation audit
+  events, and how the gate reads a credential", lists every change.
+- **A Bitstring Status List may state its `statusPurpose` as an array.**
+  Bitstring Status List v1.0 §2.2 lets a `BitstringStatusListCredential`
+  whose subject's `type` is `BitstringStatusList` declare one or more
+  purposes. `createRevocationChecker` and
+  `StatusList2021Manager.checkStatus` now read such a list when its
+  purpose array includes the purpose being checked, where they rejected
+  any array before. Every other list, a StatusList2021 list included,
+  states one string, as Verifiable Credentials Status List v2021 §2.2
+  requires, and is still rejected when it states an array, now with a
+  reason that says so. `CheqdStatusListResolver` reads StatusList2021
+  lists alone, so it still rejects every array. A list with no purpose,
+  an empty array, or a purpose that is not a string is still rejected.
+  `CheqdStatusListResolver` applies the shared rule before it checks a
+  list's signature, and refuses a list's issuer and purpose with the
+  rule's reasons.
+- **A status-list refusal quotes at most 64 characters of a value the
+  list, the entry or the credential states.** The messages
+  `acceptStatusList` gives, the refusals of an entry's `statusPurpose`
+  and of a `statusListIndex`, and the message
+  `evaluateRevocationChain` gives for a refused hop quote such a value
+  as the delegation verifier's reasons do, so each is one line of
+  well-formed text. On 1.22.0 they quoted the value whole, and two of
+  them threw a `TypeError` on a parsed object whose `toString` member
+  is a string, where `evaluateRevocationChain` and
+  `evaluateDelegationChain` now return their verdict. A refusal of a
+  list's issuer names the keeper of the list's URL and why it keeps
+  it, and a refused hop is named by its position in its chain, the
+  root being 0. UPGRADING.md, "Changed refusal reasons", has each
+  message before and after.
+- **The `DIDDocument` type lists all five verification relationships.**
+  It had `authentication` and `assertionMethod` only, and now also has
+  `keyAgreement`, `capabilityInvocation` and `capabilityDelegation`, each
+  optional and of the same shape: methods listed by id or embedded
+  (Controlled Identifiers v1.0 §2.3). Nothing changes at run time.
+- **A delegation credential's issuer must be a URL as it is written.** The
+  `basic` stage of `DelegationCredentialVerifier`, which
+  `prepareVcJwtCredential` runs for a VC-JWT, refuses an `issuer`, an
+  issuer object's `id` or a VC-JWT's `iss` that the WHATWG URL parser does
+  not parse, such as `acme` or `#key-1`, or that has white space at
+  either end or holds a control or format character, U+2028, U+2029, a
+  character that renders as nothing by default or a lone surrogate
+  anywhere (SPEC.md §6.2), by one fixed list of code points that every
+  runtime shares. Such a credential was refused
+  later, when its issuer did not resolve, unless a custom `DIDResolver`
+  resolved it. `credentialIssuerDid`, and every reader of a credential's
+  issuer in `DelegationCredentialVerifier` and `CheqdStatusListResolver`,
+  takes the `id` of an object only, never of an array.
+- **`CheqdStatusListResolver` refuses a status list whose proof names its
+  key by anything but a non-empty string.** Such a proof was read as
+  naming no key, and the list was checked with each of the issuer's keys;
+  it now fails as the delegation verifier fails such a proof.
+- **A refused status entry says why.** The checker
+  `createRevocationChecker` builds answered every entry it could not
+  prove clear with `{ revoked: true, fresh: false }` and kept the cause
+  to itself, so a refused hop read only `is revoked or unresolvable`.
+  `RevocationStatus` has a new optional `reason`, which that checker
+  fills whenever it fails closed: the entry's purpose or size, the
+  fetch, the list's issuer, purpose or `id`, its proof, or its bits.
+  `evaluateRevocationChain` appends a checker's reason to the hop's
+  refusal after a colon, so `evaluateDelegationChain`,
+  `verifyRequestDelegation` and `requireDelegation` carry it, and
+  `verifyCard` reports it as `revocation.reason`. The checker's reason
+  is at most 512 UTF-16 code units, `CHECKER_REASON_LENGTH`, and those
+  readers keep up to 640 of a reason, with control characters replaced.
+  Code that compares that checker's verdict with `{ revoked: true,
+  fresh: false }` exactly, or matches a refused hop's whole text, must
+  allow for the reason. UPGRADING.md, "Changed refusal reasons", has
+  the wording.
+- **The two delegation credential schemas move to new `$id`s.**
+  `schemas/card-delegation-credential.json` is now
+  `delegation/credential/v1.2.0` and `schemas/delegation-credential.json`
+  is now `delegation/credential/v1.0.1`, since each rejects a `statusSize`
+  or `statusMessage` that the schema published at its old `$id` accepts,
+  and `v1.2.0` also requires `DelegationCredential` in `type`. A
+  published `$id` keeps its bytes unless a change only widens it, so
+  schema.kya-os.org serves the new versions beside the old ones, which
+  do not change. The Card's schema only gains the two members and keeps
+  `identity/card/v1.1.0`. A test now fails when a schema changes under
+  an `$id` that is published with other bytes.
+- **The refusal of a private or local host names the settings that admit
+  it, and no refusal names an address or a redirect target the network
+  gave.** A did:web or status-list read refused for its host now says
+  `Request to "<host>" refused: a private or local host. In local
+  development, set development: true; to read private hosts in production,
+  give the fetch provider allowPrivateNetworkHosts: true.`, and a redirect
+  to such a host `Redirect to a private or local host refused. In local
+  development, ...`, naming no host. `createSafeFetch` refuses a
+  non-public IP literal, IPv4 or IPv6, and `localhost` or a name under it,
+  before any lookup, as `safe-fetch: refusing host "<host>", a private or
+  local host: ...`, coded `host_refused`, where such a host failed as a
+  lookup error or was refused once looked up, and a body over its cap as
+  too large whether or not its length was declared. It refuses any other
+  host that resolves to a non-public address as `safe-fetch: refusing host
+  "<host>", which resolves to a non-public address: in local development,
+  set development: true; to read a host you own in production, list each
+  origin you own in SafeFetch's allowOrigins`, where it named the address,
+  and a redirect to another origin as `safe-fetch: cross-origin redirect
+  from <origin> blocked`, where it named the target; the log keeps both.
+  Code that matches on these texts needs the new wording. UPGRADING.md,
+  "Changed refusal reasons", has each.
+- **A custom `FetchProvider` need not return a stream body.** The did:web
+  and status-list readers read a body that is a WHATWG `ReadableStream` as
+  it streams, and any other response, such as one from node-fetch v2 or
+  from `createSafeFetch`, through its `text()`, else its `json()`, under
+  the same deadline, byte cap and JSON limits. Only a response with none
+  of these is refused, with a reason that says what a provider must
+  return. `SafeFetchResponse` has a new optional `text()`, which
+  `createSafeFetch` answers. UPGRADING.md, "A custom `FetchProvider` given
+  to the did:web or cheqd resolver, or to `CheqdStatusListResolver`", has
+  the detail.
+- **A status list refused for its signer says which `statusListIssuers`
+  line would accept it.** When the checker refuses a list another DID
+  signed, its reason ends with that configuration as a condition only the
+  operator can judge, such as `; if "<signer>" signs this issuer's lists,
+  name it in statusListIssuers: { "<signer>": ["<origin>"] }`, or says
+  where to name the signer when the line cannot be printed whole within
+  the checker's 512 UTF-16 code units, `CHECKER_REASON_LENGTH`, exported
+  from `@kya-os/mcp/card`, and says neither when that does not fit. No cut
+  of a reason falls inside such a remedy, so a reason carries it whole or
+  not at all. The chain walk, `verifyCard` and the `Status check error` of
+  `DelegationCredentialVerifier` keep up to 640 UTF-16 code units of a
+  resolver's or checker's reason, and so does the chain walk of a
+  `RevocationChecker`'s, so a wrapper may add 128 of its own; the chain
+  walk keeps a credential verifier's reason up to 1,024, and the
+  delegation gate of `withKyaOs` logs up to 1,024. The reason the gate
+  sends its client is cut after 256 and so carries no remedy.
+  `requireDelegation` sends its client a status checker's reason in
+  `error.reasons`, now up to 640 UTF-16 code units, and a hop proof
+  verifier's `RefusalError` up to 512, where each was a short fixed text.
+  UPGRADING.md, "How to write `statusListIssuers`", has each form.
+- **`statusListIssuers` refuses a binding it would not read as meant.** A
+  binding is an exact URL, compared byte for byte, or an `https:` origin
+  with nothing after it, as SPEC.md §6.6 says. `createRevocationChecker`,
+  `statusListKeeperFor` and `statusListExpectationFor` now throw a
+  `TypeError` that names the fix for an origin followed by `/`, an origin
+  whose host has an upper-case letter, and any other binding that ends in
+  `/`, each of which would be read as an exact URL that no list names.
+  Each fix names the origin to bind, or, where no binding can hold a list
+  whose own URL ends in `/`, says to change that list's URL. UPGRADING.md,
+  "How to write `statusListIssuers`", has each fix.
+
+### Security
+
+- **A `__proto__` member with a primitive or `null` value is now part of
+  what a credential's signature is checked against.**
+  `wrapWithDelegation` checked an embedded-proof credential's signature
+  over a copy of it built by assignment. Assigning a string, a number, a
+  boolean or `null` to `__proto__` adds no member, so a member of that
+  name with such a value was left out of what was checked: a holder
+  could add one to a credential an issuer had signed and it still
+  verified. A `__proto__` member holding an object or an array was
+  already refused. Nothing in this library reads the member, so what
+  was exposed is code that is handed the verified credential and does.
+  The signature is now checked over every member but `proof`, read the
+  same way the chain digest of SPEC.md §7.8 reads them, so such a
+  credential is refused, and one whose issuer did sign a `__proto__`
+  member verifies where it used to fail.
+- **`createRevocationChecker` no longer accepts a status list from whoever
+  signed it.** Given `verifyStatusList`, it checked a list's proof against
+  the DID the list named as its issuer, and never compared that DID with
+  the credential the entry belongs to, so whoever could serve the list
+  could sign one of their own with the bit cleared, and a revoked
+  credential read as active. The list's `issuer` must now be the one
+  keeper of the URL the entry names, which the checker decides before
+  it fetches: the issuer its configuration binds the URL to, else the
+  chain's pinned root when its own credential names the URL, else the
+  credential's issuer. This affected `evaluateDelegationChain` and
+  `verifyCard` from 1.20.0, and `verifyRequestDelegation` and
+  `requireDelegation` from 1.22.0. `CheqdStatusListResolver` was not
+  affected. A deployment whose lists are served only by their issuer,
+  from a host and over a transport no one else controls, was not
+  exposed; others should upgrade.
+- **A status list a trusted issuer signed is no longer read at another
+  of that issuer's list URLs.** `CheqdStatusListResolver` from 1.14.0,
+  and `createRevocationChecker` given `verifyStatusList` from 1.20.0,
+  never compared a list's `id` with the URL it was fetched from, so
+  whoever could serve a list could serve, in its place, another list
+  the same issuer signed with the credential's bit clear. Both now
+  require a list's `id` to be, byte for byte, that URL, except that
+  the checker still reads a list with no `id` from the credential's
+  own issuer where the verifier pins no other root and its
+  configuration names no other issuer. A deployment whose lists are
+  served only by their issuer, from a host and over a transport no one
+  else controls, was not exposed; others should upgrade.
+- **A delegation credential, status list or delegation hop no longer
+  verifies with a key its issuer's DID document does not list under
+  `assertionMethod`.** `DelegationCredentialVerifier`,
+  `CheqdStatusListResolver`, `createStatusListProofVerifier` and
+  `createDelegationProofVerifier` took any key the document published, so
+  the holder of a key listed for another purpose or none, such as an
+  `authentication` key on a less protected device, or of a third party's
+  key the document defines, could sign a delegation the gate ran a tool
+  for, a status list that cleared a revocation, or a hop
+  `verifyRequestDelegation` accepted. The first was affected in every
+  release, from 1.9.0 for VC-JWTs, and the others from 1.14.0, 1.20.0 and
+  1.22.0. A verifier is unaffected when every issuer it trusts lists each
+  key it publishes under `assertionMethod`, as did:key documents do;
+  others should upgrade.
+- **A delegation or a request proof can no longer make its verifier fetch
+  and parse a DID document or status list of any size, or wait for one
+  without end.** The did:web and cheqd DID resolvers,
+  `CheqdStatusListResolver` and `RuntimeFetchProvider.fetchStatusList`
+  read a whole response with no size limit or deadline, and the resolvers'
+  caches had no limit, so a caller of a gated tool or of `ProofVerifier`
+  could name a DID or a status list served without end.
+  `trustedRootIssuers` did not stop this: the gate resolved an issuer
+  before it refused the root, and read a status list whether or not its
+  signature verified. These reads are now bounded (see Upgrading); the
+  gate admits a root before any resolution, and reads a status list only
+  after the signature verifies. Affected: the gate from 1.2.0;
+  `RuntimeFetchProvider`, and so `ProofVerifier`, from 1.4.0;
+  `DidCheqdResolver` from 1.9.0; `CheqdStatusListResolver` from 1.14.0.
+  Every verifier that resolves a DID or a status list a counterparty names
+  should upgrade.
+- **Through a provider that passes `redirect` on, a delegation or a
+  request proof can no longer make its verifier send a request to a
+  non-public IP literal or a local name; names are not resolved.** The
+  delegation gate, `DidWebResolver` and `createDidWebResolver` read a
+  did:web document from any host and let the runtime follow its redirects,
+  `CheqdStatusListResolver` left the check to its provider, and
+  `RuntimeFetchProvider` missed some private IP forms and every name, so a
+  DID or status list could have a request sent to the cloud metadata
+  address, `localhost`, or a host that redirects there. Every such read
+  now holds its host, and each redirect it follows by hand, to one
+  private-network rule; a public name whose address is private is still
+  admitted. Affected: the gate, `DidWebResolver` and
+  `createDidWebResolver` from 1.2.0; `RuntimeFetchProvider` from 1.4.0;
+  `CheqdStatusListResolver` from 1.14.0. A verifier whose every request
+  passes an egress control that refuses private addresses, loopback
+  included, is not exposed; others should upgrade.
+- **`SafeFetch` no longer admits an IPv4-translated IPv6 form of a private
+  address.** `createSafeFetch` and `isBlockedAddress`, which the Entity
+  Card's reads go through, classified an address in `::ffff:0:0:0/96` (RFC
+  2765) as public, so a host that resolved to the translated form of a
+  private address, such as `::ffff:0:7f00:1` for 127.0.0.1, was connected
+  to. They now classify it by the IPv4 address it embeds, as they do an
+  IPv4-mapped address. This affected 1.9.0 through 1.22.0. Such an address
+  reaches the private host only through a stateless IP/ICMP translator on
+  the verifier's network: a deployment with one should upgrade, and others
+  are not exposed.
+- **A did:cheqd DID no longer chooses the path the cheqd resolver is
+  asked for.** `parseDidCheqd` read any unique id without `/`, `?` or
+  `#`, and `didCheqdToResolverUrl` wrote the DID into the URL as it
+  stood. A URL parser reads `\` as `/`, so a DID such as
+  `did:cheqd:mainnet:x\..\..\admin`, named by a delegation or a request
+  proof, made the resolver send the operator's headers to another path
+  of the configured resolver's host. This affected 1.9.0 through
+  1.22.0. A unique id is now a UUID or letters and digits, as cheqd's
+  DID method defines it, any other DID is refused before a request, and
+  the URL holds the DID as one encoded path segment, in a `{did}`
+  template too.
+- **A revocation answer that is not a boolean no longer passes a
+  credential.** `DelegationCredentialVerifier` read what a
+  `StatusListResolver` answered by its truthiness, and
+  `validateDelegationChain` read a `RevocationChecker` the same way, so a
+  custom resolver or checker that answered `undefined`, `null`, `0` or
+  `""`, as untyped code or a fault can, let a revoked credential through,
+  and `validateDelegationChain` threw on `undefined` or `null`. Only a
+  literal `false` now passes and only a literal `true` revokes; any other
+  answer denies the credential, as `status_unresolvable` from the status
+  check, with a reason that says the status could not be read. 1.22.0
+  read both this way. The shipped resolvers and
+  `CascadingRevocationManager` answer booleans and were not affected.
+  UPGRADING.md, "A `StatusListResolver` or `RevocationChecker` whose
+  answer is not a boolean", has the reasons and what to change.
+- **A root delegation must name the DID that signed it as its
+  `issuerDid`.** SPEC.md §2 defines the Responsible Party as the
+  `issuerDid` of the root credential, while the gate attributes a call to
+  the root's verified signer, the credential's `issuer`. A root in which
+  the two differed was accepted with a logged warning, so the code and
+  the specification could name different DIDs for one call.
+  `validateDelegationChain` and the delegation gate now refuse such a
+  root before resolving any DID, with a reason that quotes both, so the
+  two are one DID in every accepted chain. The warning is removed.
+  Credentials from `DelegationCredentialIssuer` or `wrapDelegationAsVC`
+  are unaffected: both write the two from one value. UPGRADING.md, "The
+  Responsible Party of a delegated call", has the reason text and what
+  an issuer that set them apart must do.
+- **A dependency that never answers can no longer hold a delegation
+  verification open.** `DelegationCredentialVerifier` waited without a
+  deadline on a `StatusListResolver` and on a custom signature verifier,
+  and `validateDelegationChain`, which the delegation gate runs, on
+  `resolveDelegationChain` and a `RevocationChecker`, so a stalled status
+  service, chain store or revocation graph kept a gated call waiting
+  without end, where a DID resolver was given 5 seconds. Each call now
+  has the same 5 seconds, and one that has not answered by then is
+  refused: the credential as `status_unresolvable`, the signature as
+  unverified, the chain as unresolved, the revocation check as failed. A
+  dependency that can take longer, such as one that makes several reads
+  in a row, now fails where it was slow. UPGRADING.md, "A dependency that
+  can take longer than 5 seconds to answer", has each reason.
+- **A tool argument named `__proto__` stays an argument, and no longer
+  becomes the prototype of the arguments a handler receives.** The gates
+  copied a call's arguments, without its `_kyaos*` control arguments, by
+  assigning each member to a new object, which turns an own `__proto__`
+  member into the copy's prototype. A handler behind `withPolicyGate`
+  used on its own then read members the approved call never stated, and
+  the approval's request hash did not cover them; the delegation gate
+  with holder binding off or in `warn` did the same. A host that passes
+  `JSON.parse` output to a wrapper was exposed; the MCP SDK's request
+  schema drops the member first. Every such copy is now one function,
+  `withoutControlArgs`, exported from `@kya-os/mcp`, which keeps
+  the member a member. UPGRADING.md, "Arguments named `__proto__`",
+  says what a handler sees.
+- **A seam that never answers can no longer hold an Entity Card
+  verification open.** `verifyRequestDelegation` and `requireDelegation`
+  waited without a deadline on `resolveDelegationChain`, `verifyHopProof`
+  and `checkRevocation`, `evaluateDelegationChain` on its revocation
+  checker, `verifyCard` on its capability, accountability, attestation
+  and proof verifiers and its `statusListChecker`, and `verifyCardProof`
+  on `resolveKey`, `resolveDidKeys` and `consumeNonceIfFresh`. Each call
+  now has 5 seconds, and one that has not answered by then is refused as
+  that verifier refuses a seam that fails: `delegation_unresolvable`,
+  `delegation_invalid` or `delegation_revoked`, a claim left unverified,
+  the Card revoked, or the proof reason the seam has when it throws. A
+  seam that can take longer now fails where it was slow. UPGRADING.md, "A
+  dependency that can take longer than 5 seconds to answer", lists each.
+- **The delegation gate names the verified root issuer as the
+  Responsible Party, never a `controller` a credential states.** SPEC.md
+  §2 defines the Responsible Party as the root issuer of the chain. The
+  gate took it from the presented credential's `controller`, which that
+  credential's own issuer writes, so a delegate that re-delegated could
+  have a call attributed to any DID in the handler's context, the
+  `delegation.verified`, `authorization.approved` and `grant.used` audit
+  events, and the stored grant. This affected every release with
+  `wrapWithDelegation`. The context's `responsibleParty` and
+  `principal.responsibleParty` are now the root issuer the chain walk
+  verified, and are always present. A grant stores it as
+  `responsibleParty` and no longer sets `userDid`. A `withPolicyGate`
+  that no `wrapWithDelegation` precedes verifies no delegation, and no
+  longer gives its engine a Responsible Party at all. UPGRADING.md, "The
+  Responsible Party of a delegated call", says what a handler, engine or
+  audit consumer that read the old value must change.
+- **A custom signature verifier's verdict counts only as a literal
+  `true`.** `DelegationCredentialVerifier` read the `valid` of a custom
+  `signatureVerifier`'s answer by its truthiness, so a credential whose
+  signature did not hold verified when the verifier answered
+  `{ valid: "false" }`, `{ valid: 1 }` or `{ valid: {} }`. Only an object
+  whose `valid` is the literal `true` now verifies. Any other answer, one
+  that is not an object or whose `valid` or `reason` throws when read
+  included, leaves the signature unverified with a reason that says the
+  verdict could not be read, and nothing throws. `validateDelegationChain`
+  reads the `verifier` it is given by the same rule, where it threw a
+  `TypeError` on `undefined` or `null`. A verifier typed against the
+  library already answers a boolean. See UPGRADING.md, "A custom
+  `signatureVerifier`, or another dependency, whose verdict is not the
+  boolean its type promises".
+- **`verifyCard` reads each seam's verdict as the literal its type
+  promises.** Only the accountability verdict was read strictly. An
+  `attestationVerifier` that answered a truthy value such as `"false"`
+  verified the attestation, a `proofVerifier` whose `ok` was truthy
+  lifted the Card to L3, a `capabilityVerifier` whose `fresh` was truthy
+  kept L3, and one that answered no `verified` array made `verifyCard`
+  throw. An attestation now verifies only on the literal `true`, a proof
+  only on an object whose `ok` is `true` and whose `did` is a string,
+  and a capability check counts only when `verified` and `unverified`
+  are arrays of strings, with a `fresh` other than `true` read as
+  `false`. Any other answer leaves the claim unverified, the proof with
+  the reason `proof_verdict_unreadable` and the accountability check with
+  an `accountability.reason`, and nothing throws. A seam typed
+  against the library needs no change. See UPGRADING.md, "A custom
+  `signatureVerifier`, or another dependency, whose verdict is not the
+  boolean its type promises".
+- **A Card or chain revocation checker whose answer is not a literal
+  boolean no longer passes a credential.** `evaluateRevocationChain`,
+  `evaluateDelegationChain`, `verifyRequestDelegation`,
+  `requireDelegation` and `verifyCard` read a
+  `BitstringRevocationChecker`'s `revoked` and `fresh` by their
+  truthiness, so a custom checker that answered `{}` or `{ revoked: 0 }`
+  let a revoked hop or Card through, and `"false"` revoked one. They now
+  share one reader with the delegation side: only a literal `revoked:
+  false` passes, only a literal `true` revokes, only a literal `fresh:
+  true` is fresh, and any other answer, one whose getter throws
+  included, refuses the hop with a reason that says what could not be
+  read. `validateDelegationChain` returns that refusal where it rejected
+  on a throwing getter. 1.22.0 read the Card side this way. The checker
+  `createRevocationChecker` builds answers booleans and was not
+  affected. `CascadingRevocationManager` reads its status list's answer
+  the same way. UPGRADING.md, "A `BitstringRevocationChecker` whose
+  answer is not `{ revoked, fresh }` with literal booleans", has the
+  detail.
+- **A crypto provider's and a nonce cache's answers count only as the
+  literal they promise.** `CheqdStatusListResolver` read the answer of
+  its `cryptoProvider.verify` by its truthiness, so a provider that
+  answered `"false"` or `1` verified a status list's signature; it now
+  verifies only on the literal `true`, as `ProofVerifier` already read
+  its own. A nonce cache without `consume()` is asked `has()` and then
+  `add()`, and a `has()` that answered `undefined`, `null`, `0` or `""`
+  admitted the nonce; only the literal `false` now does, and any other
+  answer denies the request as a replay and adds nothing. A provider or
+  cache typed against the library already answers a boolean and needs no
+  change. See UPGRADING.md, "A custom `signatureVerifier`, or another
+  dependency, whose verdict is not the boolean its type promises".
+- **A resolved DID document can no longer hand a verifier a member it
+  inherits.** The walk that holds a custom resolver's document to the
+  DID limits measures each object's own members, and admitted an object
+  whose prototype was built by hand to pass for another realm's
+  `Object.prototype`: one with a `constructor` named `Object`. A getter
+  for `verificationMethod` or `assertionMethod` on that prototype was
+  never measured, and the key lookup then read it. The walk now also
+  refuses a prototype that has any member name `Object.prototype` lacks,
+  so the document is refused before a getter on it runs, and a verifier
+  reads only what was measured. A document that is a plain object, of
+  this realm or another, is read as before. See UPGRADING.md, "Limits on
+  DID resolution and status-list reads".
+- **A verifier reads its own copy of a custom resolver's DID document.**
+  The walk that holds such a document to the DID limits read each array
+  by index, and the key lookup and `ProofVerifier` then iterated the same
+  arrays, so an array with its own or an inherited `Symbol.iterator`, a
+  replaced `find`, a getter on an index or a `Proxy` could hand a
+  verifier a verification method that was never measured, as could a
+  member that is not enumerable or a change made after the walk. The
+  walk now copies what it measures, each own enumerable data member and
+  each element by index, read once, into frozen plain objects and
+  arrays, and every verifier reads that copy. The resolver's own object
+  is left as it was. `RuntimeFetchProvider.resolveDID` returns the frozen
+  copy for a resolver set in `didResolvers`. See UPGRADING.md, "Limits on
+  DID resolution and status-list reads".
+- **Every boolean a host's dependency answers is read as a literal.** The
+  audit verifiers read `signatures.verify`, `verifySupportingAnchor`,
+  `verifyCheckpoint`, `verifyConsistency`, `authorizer.authorize`,
+  `epochTransitionGuard.verifyAndSeal` and `authorizeAccess` by their
+  truthiness, and so did `verifyApprovalQuorum` its signature check, so
+  an answer such as `"false"`, `1` or `{}` verified a signature, admitted
+  a submission or released evidence. Each now passes only on the literal
+  `true`. `verifyOrHints` authorizes only on a `delegationVerifier`
+  answer whose `valid` is the literal `true` and whose `delegation` is an
+  object, and does not throw on `undefined` or `null`. The delegation
+  gate reads its `CryptoProvider.verify` the same way, and
+  `AuthorizationServerRegistry.resolve` skips an adapter only when
+  `isRequired` answers the literal `false`. Dependencies typed against
+  the library need no change. See UPGRADING.md, "A custom
+  `signatureVerifier`, or another dependency, whose verdict is not the
+  boolean its type promises".
+- **A status entry of more than one bit is no longer read from another
+  entry's bit.** W3C Bitstring Status List v1.0 §2.1 lets an entry
+  state `statusSize`, and §3.2 reads its status at `statusListIndex`
+  times `statusSize`. Every reader read the one bit at
+  the index, and the hop schema dropped the member, so an entry of two
+  bits at index 7 was read from bit 7, which is entry 3's: a revoked
+  credential could pass, and a live one be refused. The checker
+  `createRevocationChecker` builds, `CheqdStatusListResolver` and
+  `StatusList2021Manager` now refuse, before any fetch, every entry
+  whose `statusSize` is not 1, through one exported rule,
+  `acceptEntrySize`; an entry that states none is read as before. The
+  hop and Card entry schemas keep `statusSize` and `statusMessage` and
+  reject a malformed one. Conformance suite 1.4.0 gains three vectors
+  for it. 1.22.0 has the defect. UPGRADING.md, "A `credentialStatus`,
+  or a Card's `revocation` entry, that states a `statusSize`", has the
+  detail.
+- **A refusal no longer tells whoever presented a credential what the
+  verifier's network answered, or what a dependency of the host's threw.**
+  The presenter chooses the DIDs and status-list URLs a verifier reads,
+  and their hosts may be internal ones. A reason now says why a DID or a
+  status list could not be read only where the DID or the URL alone
+  decided it, before any request or DNS lookup, as for a private or local
+  host it names, or where the deadline passed. Otherwise it reads `Could
+  not resolve issuer DID: "<did>"` or `the status list at "<url>" could
+  not be read or checked`, and an HTTP status, the text of a body that is
+  not JSON, a byte cap, a redirect target or a transport's error, which
+  1.22.0 quoted, goes to the operator's log; the refusal's code still says
+  which kind of failure it was. A DID resolver, signature verifier, chain
+  resolver, revocation checker, status-list resolver or proof verifier the
+  host supplies that throws still refuses, with a reason such as
+  `Signature verification error: the signature could not be checked` or
+  `Failed to resolve delegation chain: the chain resolver failed`, and its
+  words reach only the log, as do a handshake delegation verifier's, whose
+  challenge says `the delegation verifier failed`. To refuse in its own
+  words, it throws a `RefusalError`, now exported from `@kya-os/mcp`,
+  `@kya-os/mcp/delegation` and `@kya-os/mcp/card`, whose code and message
+  reach the refusal. A verdict on a list that was read keeps its reason,
+  the `statusListIssuers` remedy included. UPGRADING.md, "Changed refusal
+  reasons", has each wording.
+
+### Fixed
+
+- **The delegation gate signs a refusal whose reason quotes text that is
+  not well-formed.** `wrapWithDelegation` writes a refusal's reason with
+  `sanitizeForMessage`, which cut it after 256 UTF-16 code units, possibly
+  inside a surrogate pair, and kept a lone surrogate that a caller wrote
+  in a VC-JWT's `kid` or a delegation id. A response proof signs the
+  reason in RFC 8785 form, which refuses both, so such a refusal was sent
+  without its proof. `sanitizeForMessage` now writes well-formed text, for
+  that reason and every other: the cut falls before a pair it would split,
+  and a lone surrogate reads as U+FFFD, as do DEL, the C1 controls,
+  U+2028, U+2029, format characters such as bidirectional controls, and
+  characters that render as nothing, which could make a reason or log
+  line read otherwise than it is written.
+- **The delegation gate sends a signed refusal for a delegation holding a
+  value RFC 8785 cannot encode**: a lone surrogate, an integer of
+  magnitude 2^53 or more, or a number beyond the double range. A
+  credential's Data Integrity `proof` is outside its signature, so anyone
+  holding a validly signed credential could put one there, and the gate
+  threw a `TypeError` and ran nothing. A VC-JWT holding one in a value the
+  gate hands on, its credential's, subject's or delegation's `id`, its
+  delegation's `controller`, `parentId` or `scopes`, or the `scopes` of
+  its `constraints`, could run the tool, or in some cases with an audit
+  store make the gate throw. The gate now checks all of a credential with
+  a Data Integrity proof, and those values of a VC-JWT, before holder
+  binding and scope, and refuses as `delegation_invalid`, with a response
+  proof in a session; a session grant whose credential holds one
+  authorizes no call.
+  The credential is never altered to make it encode.
+- **A `statusListIndex` must be a non-negative decimal string.** The
+  conformance reference adapter read the index with
+  `parseInt`, so an entry stating `7junk`, `7.5` or `7` after a space read
+  bit 7, where the library's status-list readers refuse each. Those
+  readers converted an index that is not a string, so the number `7` or
+  the array `["7"]` read bit 7, where `conformance/verify.py` refuses
+  both; they now refuse it too. Conformance suite 1.4.0 adds a negative
+  vector for each, `status-list/index-suffix`,
+  `status-list/index-fraction`, `status-list/index-space` and
+  `status-list/index-number`, and a positive one,
+  `status-list/index-leading-zeros`, whose index opens with 4,300 zeros
+  and names the bit its value names.
+- **The delegation gate refuses a VC-JWT whose payload is not base64url
+  of well-formed UTF-8.** The gate read a VC-JWT's claims with a decoder
+  that repairs a byte that is not UTF-8, and SPEC.md §7.8 reads the id a
+  credential is recorded by from the payload as it stands, so such a
+  VC-JWT, signed by its issuer, ran the tool and was recorded in the
+  audit trail and the handler's context under no `delegationRef`. It is
+  now refused with `Invalid VC-JWT format`, as §7.8 says of a payload
+  that is not read, and every VC-JWT the gate acts on is recorded by
+  the id it acted on. `readsVcJwtClaims` is exported for a verifier of
+  its own that wants the same check.
+- **A tool result with a member named `__proto__` is proven under the
+  envelope profile.** The envelope profile hashes a result without its
+  top-level `_meta`, and made that copy by assigning each member to a
+  new object, which turns an own `__proto__` member into the copy's
+  prototype. Canonicalization then refused the copy, so the result was
+  returned with no proof and `_meta.proofError` set: a tool, or whatever
+  supplied its data, could make any of its answers unprovable. The copy
+  is now made by the function that copies a request's params without
+  `_meta`, which keeps the member a member, so the result is proven and
+  `responseHash` covers the member. The body profile is unchanged.
+  UPGRADING.md, "Arguments named `__proto__`", says what a verifier on
+  1.22.0 does with such a proof.
+- **A re-delegation's `prefix` scope is no longer accepted as narrower
+  than its parent's `path-prefix` scope.** Chain validation proved a
+  child `prefix` scope such as `notes/` to be inside a parent
+  `path-prefix` scope `notes`. A `path-prefix` matches no value with a
+  dot segment, and a `prefix` matches any value that starts with its
+  base, so the child granted `notes/../admin`, which its parent did
+  not. Only a tool registered with such a `scopeId` was reachable this
+  way. `matcherContains` now proves no `prefix` inside a `path-prefix`,
+  so such a re-delegation is refused. Write the child's scope as a
+  `path-prefix`, which is still proven inside its parent. A `path-prefix`
+  also refuses a percent-encoded dot segment (`%2e`, in either case) as
+  the `.` or `..` it encodes, in a value and in a pattern, so
+  `notes/%2e%2e/x` no longer matches `notes`. UPGRADING.md, "A `prefix`
+  scope under a `path-prefix` parent", has both changes.
+- **A `path-prefix` scope refuses a percent-encoded separator.** A
+  `path-prefix` refuses a `.` or `..` segment, written as itself or as
+  `%2e`, because a consumer that decodes and normalizes the path would
+  resolve it outside the grant. It split the path on a literal `/` or
+  `\` only, so `notes/..%2fsecrets/x.md` and `notes/..%5csecrets/x.md`
+  matched a scope `notes`, and such a consumer would read
+  `secrets/x.md`. A value or a pattern that holds `%2f` or `%5c`, in
+  either case and anywhere in it, now matches nothing, and
+  `matcherContains` proves no re-delegation inside or through such a
+  pattern. Nothing else is decoded: `notes/a%20b.md` and a doubly
+  encoded `%252f` still match, and the `exact`, `prefix` and `regex`
+  matchers compare the text as written. A resource whose name holds an
+  encoded separator needs an `exact` scope. UPGRADING.md, "A `prefix`
+  scope under a `path-prefix` parent", has the detail.
+
+### Spec
+
+- **SPEC.md §7.8: a response proof binds the delegation chain by
+  digest.** The new optional `ProofMeta` member `delegationChainDigest`
+  is a domain-separated SHA-256 over the digests of every credential the
+  server evaluated, root to leaf, each taken over the credential's signed
+  form: what its issuer's signature covers, and that signature. §7.8
+  defines both digests, gives `delegationRef` its one definition, bounds
+  a credential's nesting at 64 levels, and says how a credential's JSON
+  is read. §7.4 says how a verifier reads a proof's JWS: base64url as
+  RFC 7515 section 2 writes it. CONFORMANCE.md adds L3.28, suite 1.5.0
+  has 140 vectors, and `conformance/verify.py` re-derives them in Python.
+  UPGRADING.md, "SPEC.md §7.8 and conformance suite 1.5.0", has the full
+  text of the change and the vectors.
+- **SPEC.md §6.6: every status-list URL has one keeper, and conformance
+  suite 1.4.0 tests it.** A list's proof shows only who signed it, and
+  its `id` binds it to a URL but not the URL to a signer. A verifier
+  MUST decide, before any fetch, the one issuer whose list it reads at
+  the URL a status entry names: the issuer its configuration binds that
+  URL or its `https:` origin to, else the pinned root of the chain when
+  the root's own credential names the URL, else the credential's
+  issuer. The list's `statusPurpose` must include the entry's, and its
+  `id` must be its URL, byte for byte, unless the credential's issuer
+  alone keeps any URL. An entry whose `statusSize` is not 1 MUST be
+  rejected under the `revocation` or `suspension` purpose. SPEC.md
+  §6.10, SPEC-ENTITY-CARD.md §4.1, §10.3 and Appendix B, and
+  CONFORMANCE.md L3.11 say the same. The suite gains 29 vectors, 97 in
+  all. UPGRADING.md, "Conformance suite 1.4.0", lists them.
+- **SPEC.md §6.2 and §6.10 and SPEC-ENTITY-CARD.md §10.5: a proof
+  verifies only with a key its issuer's DID document lists under
+  `assertionMethod`**, by reference or embedded, in a conforming method
+  defined once, with an id under the issuer's DID and the issuer as its
+  `controller` (Controlled Identifiers v1.0 §3.3). §6.2 also rejects a
+  stated `proofPurpose` other than `assertionMethod`, an empty or
+  non-string `kid` or `verificationMethod`, and an issuer or VC-JWT `iss`
+  that is not a URL as written, and lets a VC-JWT with no `kid` be checked
+  with the first `assertionMethod` entry alone. §11.5 says how to rotate
+  keys under these rules. SPEC.md adds the CID, VC Data Model 2.0 and URL
+  Standard references and cites VC-JOSE-COSE; SPEC-ENTITY-CARD.md adds CID.
+- **SPEC.md §6.4: a root delegation's `issuerDid` MUST equal the `issuer`
+  of its credential**, and a verifier MUST reject a chain whose root names
+  any other DID. §2 names the root's `issuerDid` as the Responsible Party,
+  and nothing said it had to be the DID that signed.
+- **SPEC.md §6.3: a `path-prefix` scope matches no path with a dot
+  segment or an encoded separator.** A verifier MUST NOT match a
+  `path-prefix` value or pattern that has a `.` or `..` segment, written
+  literally or as `%2e`, or that holds `%2f` or `%5c`, and MUST NOT take a
+  `prefix` scope as contained in a `path-prefix` scope. The reference
+  implementation already refused each; the specification did not say so.
+- **SPEC.md §6.6: a verifier SHOULD refuse a `statusListIssuers` binding
+  that is almost always a mistake.** That is an origin followed by `/`, an
+  origin with an upper-case letter in its host, and any other binding that
+  ends in `/`; how a binding is read is unchanged. The standalone
+  conformance harness refuses the same bindings. §4.4.2 now says a reader
+  reads a response with no WHATWG stream body through its `text()` or
+  `json()` under the same limits, and that `development: true` admits
+  private and local hosts and throws while `NODE_ENV` is `production`.
+
+### Documentation
+
+- **`adopters/` holds small apps that use the packed package as adopters
+  do.** Each installs the tarball `npm pack` builds, imports only the
+  public entry points, and shows one integration: `createSafeFetch` as a
+  `FetchProvider`, a `StatusListResolver` around
+  `createRevocationChecker`, did:web on `*.localhost` with `development:
+  true`, a status list another DID signs under `statusListIssuers`, and
+  `withKyaOs` with its defaults. Three also check the refusal codes an
+  adopter branches on. `pnpm test:adopters` runs them, and CI runs them on
+  every pull request.
+
 ## [1.22.0] - 2026-11-10
 
 ### Added

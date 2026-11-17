@@ -55,10 +55,11 @@ afterEach(() => {
 });
 
 describe('checkResolvedAddresses', () => {
-  it('pins the first address when every one is public, and names the first that is not otherwise', () => {
-    expect(checkResolvedAddresses([PUBLIC, { address: '2606:2800:220:1::', family: 6 }])).toEqual({ pinned: PUBLIC });
+  it('pins every address, in order, when every one is public, and names the first that is not otherwise', () => {
+    const v6 = { address: '2606:2800:220:1::', family: 6 };
+    expect(checkResolvedAddresses([PUBLIC, v6])).toEqual({ pinned: [PUBLIC, v6] });
     expect(checkResolvedAddresses([PUBLIC, PRIVATE, { address: '::1', family: 6 }])).toEqual({ nonPublic: '10.0.0.7' });
-    expect(checkResolvedAddresses([PUBLIC, PRIVATE], true)).toEqual({ pinned: PUBLIC });
+    expect(checkResolvedAddresses([PUBLIC, PRIVATE], true)).toEqual({ pinned: [PUBLIC, PRIVATE] });
     expect(checkResolvedAddresses([])).toEqual({ unresolved: true });
   });
 });

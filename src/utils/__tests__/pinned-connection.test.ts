@@ -27,7 +27,7 @@ const pinned = (transport: SafeFetchTransport) =>
     url: 'https://lists.example/l',
     init: { headers: { accept: 'application/json' } },
     hostname: 'lists.example',
-    pin: PIN,
+    pins: [PIN],
     maxBytes: 1024,
   });
 

@@ -6,13 +6,14 @@
  * `./private-network-rule` and `./private-network-read` do.
  */
 
+import { pinnedTo, type CheckedAddresses } from './address-check.js';
 import { describeValue } from './describe-value.js';
 import type { AddressPinning } from './fetch-port.js';
 import { ReadFailureError } from './read-failure.js';
 import { fetchRoutedThrough } from './routed-fetch.js';
 import { warnHeldToUrlAlone } from './url-only-reads.js';
 import { defaultLookup, runtimeResolvesNames, selectDefaultTransport } from './safe-fetch-transports.js';
-import type { DnsAddress, DnsLookup, RawResponse, SafeFetchTransport } from './safe-fetch-types.js';
+import type { DnsLookup, RawResponse, SafeFetchTransport } from './safe-fetch-types.js';
 
 /** The seams of an {@link AddressPinning}, each optional, as SafeFetch's options take them. */
 export interface PinningSeams {
@@ -52,8 +53,8 @@ export interface PinnedRequest {
   readonly init: RequestInit;
   /** The host name the URL names, without trailing dots: the TLS server name. */
   readonly hostname: string;
-  /** The checked address to connect to. */
-  readonly pin: DnsAddress;
+  /** The checked addresses to connect to, the first tried first. */
+  readonly pins: CheckedAddresses;
   /** Bytes of body the transport reads before it refuses the response. */
   readonly maxBytes: number;
 }
@@ -65,12 +66,11 @@ export interface PinnedRequest {
  * keeps them, so the bounded reader refuses a body that is not UTF-8, or else as its text.
  */
 export async function requestPinned(transport: SafeFetchTransport, request: PinnedRequest): Promise<Response> {
-  const { url, init, hostname, pin, maxBytes } = request;
+  const { url, init, hostname, pins, maxBytes } = request;
   const raw = await transport(url, {
     signal: init.signal ?? new AbortController().signal,
     hostname,
-    pinnedAddress: pin.address,
-    family: pin.family,
+    ...pinnedTo(pins),
     maxBytes,
     headers: Object.fromEntries(new Headers(init.headers ?? {})),
   });

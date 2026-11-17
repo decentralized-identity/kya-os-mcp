@@ -36,6 +36,13 @@ export interface TransportInit {
   hostname: string;
   pinnedAddress: string;
   family: number;
+  /**
+   * The other addresses the host name resolved to, each checked as `pinnedAddress` was, in the order
+   * the lookup answered. A transport that pins its connection tries them in turn when it cannot
+   * reach `pinnedAddress`, as `nodeHttpsTransport` does, and never an address not given here. A
+   * transport that connects by name ignores them. Absent when the name resolved to one address.
+   */
+  fallbackAddresses?: readonly DnsAddress[];
   maxBytes: number;
   /**
    * The request headers the reader sends, such as `Accept`. SafeFetch sends none; a did:web or

@@ -13,8 +13,9 @@
  */
 
 import type { IncomingMessage } from 'node:http';
-import type { LookupFunction } from 'node:net';
-import type { DnsLookup, RawResponse, SafeFetchTransport, TransportInit } from './safe-fetch-types.js';
+import type { RequestOptions } from 'node:https';
+import type { LookupFunction, TcpNetConnectOpts } from 'node:net';
+import type { DnsAddress, DnsLookup, RawResponse, SafeFetchTransport, TransportInit } from './safe-fetch-types.js';
 import { logger } from '../logging/index.js';
 import { readCappedBody } from './bounded-read.js';
 import { describeValue } from './describe-value.js';
@@ -162,26 +163,31 @@ function rawResponse(status: number, headers: RawResponse['headers'], bytes: Uin
 }
 
 /**
- * Build the custom `node:https` lookup that pins the connection to the pre-validated IP for BOTH
- * call-shapes (closing the DNS-rebinding TOCTOU window). Node ≥20 defaults to
- * `autoSelectFamily=true`, which invokes a custom lookup with `{ all: true }` and expects an ARRAY
- * of `{ address, family }`; a scalar 3-arg callback yields "Invalid IP address: undefined" and
- * breaks every real request. Honour the array form when `all` is asked, the scalar form otherwise.
- * Exported for direct unit testing; the request wiring around it is tested against a stand-in for
- * `node:https`, since the unit suite makes no TLS connection. Not re-exported from the package
- * barrels; the public surface is unchanged.
+ * Build the custom `node:https` lookup that pins the connection to the pre-validated IPs for BOTH
+ * call-shapes (closing the DNS-rebinding TOCTOU window). With `autoSelectFamily`, which the pinned
+ * transport sets and Node ≥20 defaults to, Node invokes a custom lookup with `{ all: true }` and
+ * expects an ARRAY of `{ address, family }`, every one of which it tries in turn until one connects;
+ * a scalar 3-arg callback yields "Invalid IP address: undefined" and breaks every real request. So
+ * the array form answers `pinnedAddress` and then each of `fallbacks`, every one checked, and the
+ * scalar form `pinnedAddress` alone. Exported for direct unit testing; the request wiring around it
+ * is tested against a stand-in for `node:https`, since the unit suite makes no TLS connection. Not
+ * re-exported from the package barrels; the public surface is unchanged.
  */
-export function buildPinnedLookup(pinnedAddress: string, family: 4 | 6): LookupFunction {
+export function buildPinnedLookup(pinnedAddress: string, family: 4 | 6, fallbacks: readonly DnsAddress[] = []): LookupFunction {
   return (_hostname, options, cb) => {
     if (typeof options === 'object' && options?.all) {
       (cb as unknown as (e: null, a: Array<{ address: string; family: number }>) => void)(null, [
         { address: pinnedAddress, family },
+        ...fallbacks.map(({ address, family: other }) => ({ address, family: other })),
       ]);
     } else {
       cb(null, pinnedAddress, family);
     }
   };
 }
+
+/** A pinned request's options: `node:https`'s, and the socket's `autoSelectFamily`, which its types leave out but it passes on. */
+type PinnedRequestOptions = RequestOptions & Pick<TcpNetConnectOpts, 'autoSelectFamily'>;
 
 /**
  * The request headers the pinned transport sends where the reader sets none: the `Accept` and
@@ -214,16 +220,19 @@ export const nodeHttpsTransport: SafeFetchTransport = async (url, init) => {
   const httpsRequest = https.request;
   return new Promise<RawResponse>((resolve, reject) => {
     const family = init.family === 6 ? 6 : 4;
-    const pinnedLookup = buildPinnedLookup(init.pinnedAddress, family);
+    const pinnedLookup = buildPinnedLookup(init.pinnedAddress, family, init.fallbackAddresses);
+    const options: PinnedRequestOptions = {
+      method: 'GET',
+      servername: init.hostname,
+      signal: init.signal,
+      lookup: pinnedLookup,
+      // Every address the lookup answers is tried in turn, and never another.
+      autoSelectFamily: true,
+      headers: requestHeaders(init.headers),
+    };
     const req = httpsRequest(
       url,
-      {
-        method: 'GET',
-        servername: init.hostname,
-        signal: init.signal,
-        lookup: pinnedLookup,
-        headers: requestHeaders(init.headers),
-      },
+      options,
       (res: IncomingMessage) => {
         const chunks: Buffer[] = [];
         let size = 0;

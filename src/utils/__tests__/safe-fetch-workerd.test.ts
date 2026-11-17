@@ -140,6 +140,21 @@ describe("buildPinnedLookup — pins both node:https lookup call-shapes to the v
     expect(result).toEqual([{ address: "93.184.216.34", family: 4 }]);
   });
 
+  it("answers every checked address for the { all: true } shape, the pinned one first, so Node tries each in turn", async () => {
+    const { buildPinnedLookup } = await import("../safe-fetch-transports.js");
+    const lookup = buildPinnedLookup("2606:2800:220:1::", 6, [{ address: "93.184.216.34", family: 4 }]);
+    const all = await new Promise<unknown>((resolve) => {
+      // @ts-expect-error exercising the { all: true } overload the runtime uses
+      lookup("example.com", { all: true }, (_e: unknown, addrs: unknown) => resolve(addrs));
+    });
+    expect(all).toEqual([{ address: "2606:2800:220:1::", family: 6 }, { address: "93.184.216.34", family: 4 }]);
+    const one = await new Promise<unknown>((resolve) => {
+      // @ts-expect-error exercising the scalar overload
+      lookup("example.com", {}, (_e: unknown, address: unknown) => resolve(address));
+    });
+    expect(one).toBe("2606:2800:220:1::");
+  });
+
   it("returns the SCALAR 3-arg form otherwise", async () => {
     const { buildPinnedLookup } = await import("../safe-fetch-transports.js");
     const lookup = buildPinnedLookup("2606:2800:220:1::", 6);

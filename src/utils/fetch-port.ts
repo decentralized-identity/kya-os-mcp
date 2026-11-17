@@ -35,7 +35,7 @@ export interface PrivateNetworkTransport extends FetchPort {
   /** The private-network rule's opt-out (`./private-network-rule`): only `true` admits private hosts. */
   readonly allowPrivateNetworkHosts?: boolean;
   /**
-   * How a read through this transport is connected to an address it checked
+   * How a read through this transport is connected to the addresses it checked
    * ({@link ADDRESS_PINNING}). A transport without it is read through its own `fetch`, and the
    * private-network rule refuses its hosts by the URL alone.
    */

@@ -22,7 +22,8 @@
  * also resolves each host before it connects, every redirect's included,
  * refuses a host with any address that is not public (so
  * did:web:169.254.169.254.nip.io is refused too), and connects only to the
- * address it checked, pinned so a second lookup cannot rebind it, by SafeFetch's
+ * addresses it checked, trying each in turn, pinned so a second lookup cannot
+ * rebind it, by SafeFetch's
  * own means: the `lookup` and `transport` options are SafeFetch's seams. A
  * runtime that resolves no name, such as a Worker or a browser, keeps the rule
  * on the URL alone, and its egress must refuse private addresses. So does a

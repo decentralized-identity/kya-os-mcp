@@ -7,7 +7,8 @@
  * connections ({@link ADDRESS_PINNING}), as `RuntimeFetchProvider` does on a runtime that resolves
  * names, such as Node, is read by SafeFetch's own means: each request resolves its host once, is
  * refused when any address the host resolves to is not public (`./address-check`), and is connected
- * to the first address, pinned, so a second lookup cannot rebind it (`./pinned-connection`). That
+ * to those addresses alone, the first tried first and each other in turn, pinned, so a second lookup
+ * cannot rebind it (`./pinned-connection`). That
  * refusal was learned from a lookup, not from the URL, so a verifier tells whoever named the URL only
  * that it could not be read, and the address goes to the log. A host written as an IP literal names
  * its own address, which the rule has checked, and is read through the transport's own `fetch`, as
@@ -105,9 +106,9 @@ function heldRequest(transport: PrivateNetworkTransport, read: PrivateNetworkRea
     if (admitted || form === undefined || 'literal' in form) return transport.fetch(url, init);
     const pinning = await pinningOf(transport);
     if (pinning === undefined) return transport.fetch(url, init);
-    const pin = await resolveChecked(form.name, pinning.lookup, lookupRefusals(redirected));
+    const pins = await resolveChecked(form.name, pinning.lookup, lookupRefusals(redirected));
     init.signal?.throwIfAborted();
-    return requestPinned(pinning.transport, { url, init, hostname: form.name, pin, maxBytes });
+    return requestPinned(pinning.transport, { url, init, hostname: form.name, pins, maxBytes });
   };
 }
 

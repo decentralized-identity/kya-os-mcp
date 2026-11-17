@@ -124,7 +124,7 @@ Every did:web read, by the delegation gate, `DidWebResolver`, `createDidWebResol
 - A provider that follows a redirect itself, because it does not pass `redirect: "manual"` on, has made that request before the reader sees the response; the reader refuses the response, unread, when it says it was redirected or names another URL.
   A custom provider's `fetch` must pass `redirect` on.
 
-Where the runtime resolves names, as Node does, `RuntimeFetchProvider` also resolves each host before it connects, every redirect's included, refuses a host with any address that is not public, and connects only to the address it checked, pinned, so a second lookup cannot move it (DNS rebinding).
+Where the runtime resolves names, as Node does, `RuntimeFetchProvider` also resolves each host before it connects, every redirect's included, refuses a host with any address that is not public, and connects only to the addresses it checked, trying each in turn as the runtime's own fallback does, pinned, so a second lookup cannot move it (DNS rebinding).
 It does so by `SafeFetch`'s means: its `lookup` and `transport` options are `SafeFetch`'s seams, and `transport: fetchTransport`, for a serverless runtime where the pinned connection fails, connects by name after the check, which reopens the rebinding window.
 A runtime that resolves no name, such as a Cloudflare Worker or a browser, and a custom `FetchProvider`, or a subclass whose `fetch` is its own, make their own connections, so their reads are held to the URL alone and do not refuse a public name that points at a private address.
 A runtime counts as one that resolves no name only when `node:dns` does not load or says its `lookup` is not implemented, so a lookup that fails for a moment never turns the check off, and each fall back to the URL alone is logged once, with its reason.
@@ -143,7 +143,7 @@ So does a provider whose runtime `fetch` the application routes through a proxy 
   The check reads `process.env.NODE_ENV` as written, so a bundle in which a bundler has put `"production"` in its place refuses it too; a runtime with no `process` counts as not production.
   For trusted internal deployments in production only, give the reader `new RuntimeFetchProvider({ allowPrivateNetworkHosts: true })`, or a custom `FetchProvider` whose `allowPrivateNetworkHosts` member is `true`.
   Each admits non-public IP literals, local names and names that resolve to private addresses, through the provider's own `fetch`; the scheme rule and the redirect checks still hold.
-- The Entity Card's resolution and status-list reads go through `SafeFetch` (`createSafeFetch`) instead, which resolves each host name, refuses a private address, pins the connection to the address it checked, and follows only same-origin redirects.
+- The Entity Card's resolution and status-list reads go through `SafeFetch` (`createSafeFetch`) instead, which resolves each host name, refuses a private address, pins the connection to the addresses it checked, and follows only same-origin redirects.
   Its `development: true` admits private and local addresses for a local demo, under the same production guard, and in production `allowOrigins` names the origins you own, which it fetches without the guard.
 - The raw `fetch()` escape hatch of a `FetchProvider` is intentionally unguarded: it is the caller's responsibility.
 - A refusal tells whoever presented the credential nothing the verifier's network answered, since the presenter chooses the DIDs and status-list URLs the verifier reads, and their hosts may be internal ones.

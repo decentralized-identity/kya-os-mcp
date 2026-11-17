@@ -34,7 +34,7 @@
 import { logger } from '../logging/index.js';
 import { developmentMode } from './development-mode.js';
 import { isNonPublicByForm } from './host-form.js';
-import { resolveChecked, UNTOLD, type LookupRefusals } from './address-check.js';
+import { pinnedTo, resolveChecked, UNTOLD, type CheckedAddresses, type LookupRefusals } from './address-check.js';
 import { ReadFailureError } from './read-failure.js';
 import { followRedirects, MAX_REDIRECTS, type RedirectRefusals, type RedirectTarget } from './redirect-follower.js';
 import {
@@ -44,7 +44,6 @@ import {
 } from './safe-fetch-transports.js';
 import { OUTBOUND_READ_MAX_BYTES, OUTBOUND_READ_TIMEOUT_MS } from './outbound-read-limits.js';
 import type {
-  DnsAddress,
   DnsLookup,
   RawResponse,
   SafeFetch,
@@ -101,7 +100,7 @@ const PRIVATE_HOST_SETTINGS = `in local development, set development: true; to r
  * host and what admits it, never the address, since whoever named the host may not know what it
  * resolves to; the address goes to the log.
  */
-async function resolveAndPin(hostname: string, lookup: DnsLookup, admitPrivate: boolean): Promise<DnsAddress> {
+async function resolveAndPin(hostname: string, lookup: DnsLookup, admitPrivate: boolean): Promise<CheckedAddresses> {
   if (!admitPrivate && isNonPublicByForm(hostname)) {
     throw new ReadFailureError('host_refused', `safe-fetch: refusing host "${hostname}", a private or local host: ${PRIVATE_HOST_SETTINGS}`, {
       beforeRequest: true,
@@ -253,7 +252,7 @@ async function requestOnce(url: string, cfg: HopConfig, deadline: ReadDeadline):
   }
   const pinned = await deadline.within(() => resolveAndPin(hostname, cfg.lookup, cfg.admitPrivate));
   return deadline.within(() =>
-    cfg.transport(url, { signal, hostname, pinnedAddress: pinned.address, family: pinned.family, maxBytes: cfg.maxBytes }),
+    cfg.transport(url, { signal, hostname, ...pinnedTo(pinned), maxBytes: cfg.maxBytes }),
   );
 }
 

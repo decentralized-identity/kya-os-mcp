@@ -4,7 +4,8 @@
  * own before the checker's reason. Tenant DIDs on a shared identity host are long, so the reason
  * nears the length a checker's reason may have. The configuration is the line an operator copies,
  * so wherever a reason is cut, it is printed whole or not at all, and a wrapper's words of up to
- * 128 code units still leave it whole. A resolver gives the verifier its words by throwing a
+ * 128 code units still leave it whole, on the delegation verifier's status check, in chain
+ * enforcement's refusal on a `RevocationChecker`'s reason, and in the Card revocation walk. A resolver gives the verifier its words by throwing a
  * `RefusalError`; any other error a resolver throws may be its transport's, so its words go to the
  * operator's log and the reason says only that the list could not be read. Every test uses the
  * package's public exports.
@@ -23,6 +24,7 @@ import {
 } from '../index.js';
 import { documentsOf, servingFromMemory, signedStatusList, webParty, type WebParty } from '../../__tests__/utils/adopter-issuers.js';
 import { credentialJwt, delegationRecord, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
+import { validateDelegationChain } from '../../delegation/chain-enforcement.js';
 
 const TENANT = 'did:web:identity.platform.example.com:tenants:northwind-traders-emea';
 const LIST_URL = 'https://identity.platform.example.com/tenants/northwind-traders-emea/status/revocation/1';
@@ -115,6 +117,23 @@ describe("the statusListIssuers remedy of a tenant's list, through a wrapper", (
       expect(found, `${length} code units of words: ${reason}`).not.toBe('part');
       if (length + 2 <= 128) expect(found, `${length} code units of words`).toBe('whole');
     }
+  });
+
+  it("reaches chain enforcement's refusal whole through a RevocationChecker whose reason wraps the library checker's", async () => {
+    const credential = await signedCredential(issuer.key, { record: delegationRecord(issuer.did, { id: 'del-1' }) });
+    const result = await validateDelegationChain(credential, {
+      serverDid: 'did:web:server.example',
+      verifier: { verifyDelegationCredential: async () => ({ valid: true }) },
+      statusListConfigured: true,
+      revocationChecker: {
+        isRevoked: async () => {
+          const verdict = await checker(ENTRY, { credentialIssuer: issuer.did });
+          return { revoked: true, reason: `${ADOPTER_WORDS}${verdict.reason ?? ''}` };
+        },
+      },
+    });
+    expect(result.valid).toBe(false);
+    expect(remedyIn(result.reason ?? '')).toBe('whole');
   });
 
   it('reaches the Card revocation walk whole through a checker that wraps the library\'s', async () => {

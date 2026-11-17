@@ -14,7 +14,7 @@ import Ajv2020, { type AnySchema } from 'ajv/dist/2020.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isTransientRefusal, type RefusalCode } from '../../refusal-codes.js';
 import { logger } from '../../logging/index.js';
-import { CHECKER_REASON_LENGTH } from '../../utils/revocation-answer.js';
+import { WRAPPED_REASON_LENGTH } from '../../utils/revocation-answer.js';
 import type { DelegationCredential } from '../../types/protocol.js';
 import type { KyaOsDelegationConfig } from '../with-kya-os.js';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
@@ -198,14 +198,13 @@ describe('a delegation the gate refuses', () => {
   });
 
   it('logs the full reason, up to the length a checker reason may have, and tells the client the reason cut as before', async () => {
-    const said = 'r'.repeat(CHECKER_REASON_LENGTH);
+    const said = 'r'.repeat(WRAPPED_REASON_LENGTH + 8);
     const { body, logged } = await presentedTo({ revocationChecker: { isRevoked: async () => ({ revoked: true, reason: said }) } }, granted);
     const line = String(logged?.[0]);
     const reason = line.slice(`[kya-os] Delegation verification failed for "${TOOL}": `.length);
-    expect(reason.length).toBeGreaterThan(256);
-    expect(reason.length).toBeLessThanOrEqual(CHECKER_REASON_LENGTH + 1);
-    // The chain bounds the checker's reason as it did; the gate's log line no longer cuts the whole.
-    expect(reason).toMatch(/^Delegation "del-\d+" is revoked: r{256}\u2026$/);
+    // The chain keeps as much of the checker's reason as a status check keeps of a resolver's, and
+    // the gate's log line does not cut the whole.
+    expect(reason).toMatch(new RegExp(`^Delegation "del-\\d+" is revoked: r{${WRAPPED_REASON_LENGTH}}\u2026$`));
     expect(body.reason).toBe(`${reason.slice(0, 256)}…`);
   });
 });

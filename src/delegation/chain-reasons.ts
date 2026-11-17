@@ -13,7 +13,7 @@
 import { describeValue } from "../utils/describe-value.js";
 import { sanitizeForMessage } from "../utils/message-text.js";
 import { refusal, type Refusal } from "../utils/refusal.js";
-import { readRevocationAnswer } from "../utils/revocation-answer.js";
+import { readRevocationAnswer, WRAPPED_REASON_LENGTH } from "../utils/revocation-answer.js";
 import { thrownReason } from "../utils/thrown-words.js";
 
 /** `opening`, then the words of `error` where they may be shown, or else `failed`, with the words logged. */
@@ -55,7 +55,10 @@ export function revocationRefusal(leafId: string, delegationId: string, answer: 
 
 /**
  * Why the delegation `leafId` is refused as revoked: through `revokedAncestor` when one is, or
- * itself, with the reason the revocation checker gave when it gave one.
+ * itself, with the reason the revocation checker gave when it gave one, at most
+ * `WRAPPED_REASON_LENGTH` UTF-16 code units of it, as a status check keeps a resolver's, so a
+ * library checker's reason a checker wrapped in words of its own still ends whole, and a
+ * `statusListIssuers` remedy is printed whole or not at all.
  */
 export function revokedReason(
   leafId: string,
@@ -64,6 +67,6 @@ export function revokedReason(
 ): string {
   const leaf = describeValue(leafId);
   if (revokedAncestor) return `Delegation ${leaf} is revoked via ancestor ${describeValue(revokedAncestor)}`;
-  const given = checkerReason ? `: ${sanitizeForMessage(checkerReason)}` : "";
+  const given = checkerReason ? `: ${sanitizeForMessage(checkerReason, WRAPPED_REASON_LENGTH)}` : "";
   return `Delegation ${leaf} is revoked${given}`;
 }

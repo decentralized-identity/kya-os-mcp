@@ -11,6 +11,7 @@ import { afterEach, describe, it, expect, vi } from 'vitest';
 import { chainResolutionFailure, revocationCheckFailure, revokedReason } from '../chain-reasons.js';
 import { logger } from '../../logging/index.js';
 import { RefusalError } from '../../utils/refusal.js';
+import { WRAPPED_REASON_LENGTH } from '../../utils/revocation-answer.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -75,8 +76,14 @@ describe('chain enforcement reasons', () => {
   });
 
   it('says a delegation is revoked, with the reason the revocation checker gave, sanitized', () => {
-    expect(revokedReason('leaf', undefined, HOSTILE)).toBe(`Delegation "leaf" is revoked: ${SANITIZED}`);
+    expect(revokedReason('leaf', undefined, HOSTILE)).toBe(`Delegation "leaf" is revoked: gone\uFFFD\uFFFD[31m\uFFFD${'x'.repeat(300)}`);
     expect(revokedReason('leaf', undefined, 'by its issuer')).toBe('Delegation "leaf" is revoked: by its issuer');
+  });
+
+  it("keeps up to WRAPPED_REASON_LENGTH code units of the checker's reason, as a status check keeps a resolver's", () => {
+    const whole = 'r'.repeat(WRAPPED_REASON_LENGTH);
+    expect(revokedReason('leaf', undefined, whole)).toBe(`Delegation "leaf" is revoked: ${whole}`);
+    expect(revokedReason('leaf', undefined, `${whole}s`)).toBe(`Delegation "leaf" is revoked: ${whole}\u2026`);
   });
 
   it('says a delegation is revoked, and nothing more, when the checker gave no reason', () => {

@@ -109,6 +109,23 @@ describe('a DID of a method a resolver does not serve', () => {
     expect(asked.lastFailure?.('did:ion:EiAbc')).toBeUndefined();
   });
 
+  it.each<[string, () => DIDResolver, string, string]>([
+    ['the did:key resolver given a did:web DID', () => createDidKeyResolver(), 'did:web:issuer.example', 'did:web'],
+    [
+      'the did:web resolver given a did:key DID',
+      () => createDidWebResolver(new AnsweringFetchProvider(() => { throw new Error('no request expected'); })),
+      'did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK',
+      'did:key',
+    ],
+  ])('is did_unavailable where %s alone, and tells the operator it may not serve the method', async (_name, resolver, did, method) => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    expect(await refusalOf(did, resolver())).toEqual({ valid: false, reason: `Could not resolve issuer DID: "${did}"`, ...codedAs('did_unavailable') });
+    expect(warn).toHaveBeenCalledWith(
+      `[kya-os] the DID resolver found no document for "${did}" and gave no cause: it may not serve the ${method} method; ` +
+        'if it does not, give the verifier a resolver that does',
+    );
+  });
+
   it("leaves a resolver that composes several to report the failure of the one that serves the DID, so a did:web outage stays transient", async () => {
     vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const key = createDidKeyResolver();

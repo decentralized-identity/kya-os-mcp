@@ -19,9 +19,11 @@
  * library's resolvers log the detail for the operator.
  */
 
+import { logger } from '../logging/index.js';
 import type { RefusalCode } from '../refusal-codes.js';
 import { describeTimeout } from '../utils/deadline.js';
 import { describeValue } from '../utils/describe-value.js';
+import { getDidMethod } from '../utils/did-helpers.js';
 import { isRecord } from '../utils/guards.js';
 import { sanitizeForMessage } from '../utils/message-text.js';
 import { readFailureKind } from '../utils/read-failure.js';
@@ -195,7 +197,8 @@ export type ExplainedResolution =
  * cause ({@link unresolvedCode}). When the limits refused the DID, its key or what the resolver
  * returned, it is nothing, since the resolver's last failure is then not this one, with
  * `did_invalid`. A resolver that throws, or a deadline that passes,
- * rejects, as `resolveWithinLimits` does.
+ * rejects, as `resolveWithinLimits` does. Where the resolver found nothing and gave no cause, the
+ * operator's log is told so ({@link warnUncaused}).
  */
 export async function resolveExplained(
   resolver: DIDResolver, did: string, key?: unknown, within?: ResolutionDeadline | number,
@@ -204,7 +207,23 @@ export async function resolveExplained(
   if (resolution.status === 'found') return { document: resolution.document };
   if (resolution.status === 'refused') return { document: null, why: '', code: 'did_invalid' };
   const failure = reportedFailure(resolver, did);
+  if (failure === undefined) warnUncaused(did);
   return { document: null, why: failureSuffix(failure), code: unresolvedCode(failure) };
+}
+
+/**
+ * Tell the operator that the resolver found no document for `did` and gave no cause, as a resolver
+ * of the library's does for a DID of a method it does not serve. The refusal is then
+ * `did_unavailable`, transient, and says no more to the presenter, so only this line says the
+ * verifier may lack a resolver for the DID's method.
+ */
+function warnUncaused(did: string): void {
+  const method = getDidMethod(did);
+  const named = method === null ? "the DID's method" : `the ${sanitizeForMessage(`did:${method}`, DETAIL_LENGTH)} method`;
+  logger.warn(
+    `[kya-os] the DID resolver found no document for ${describeValue(did)} and gave no cause: it may not serve ${named}; ` +
+      'if it does not, give the verifier a resolver that does',
+  );
 }
 
 /**

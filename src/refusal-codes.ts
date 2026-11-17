@@ -56,11 +56,12 @@ export const REFUSAL_CODES = Object.freeze({
    */
   key_not_authorized: 'key_not_authorized',
   /**
-   * The issuer's DID, or the document resolved for it, is not valid: the DID or the key id is over
-   * its length limit, the DID is a did:key whose public key does not decode or a DID of a method no
-   * resolver of the verifier serves, the document is over a limit, its byte limit included, is not
-   * plain JSON data or is not a document of that DID, or the key it lists for the proof is not a
-   * usable Ed25519 public key.
+   * The DID of a credential's issuer or of a status list's signer, or the document resolved for it,
+   * is not valid: the DID or the key id is over its length limit, the DID is a did:key whose public
+   * key does not decode, a did:web DID that names no URL or a DID of a method no resolver of the
+   * verifier serves, the document is over a limit, its byte limit included, is not plain JSON data or
+   * is not a document of that DID, or the key it lists for the proof is not a usable Ed25519 public
+   * key.
    */
   did_invalid: 'did_invalid',
   /**
@@ -110,8 +111,9 @@ export const REFUSAL_CODES = Object.freeze({
    */
   configuration_error: 'configuration_error',
   /**
-   * Transient. The issuer's DID document could not be read: its host could not be reached or answered
-   * with something other than a document, the resolver found none and gave no cause, or it threw.
+   * Transient. The DID document of a credential's issuer or of a status list's signer could not be
+   * read: its host could not be reached or answered with something other than a document, the
+   * resolver found none and gave no cause, or it threw.
    */
   did_unavailable: 'did_unavailable',
   /**

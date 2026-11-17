@@ -10,12 +10,23 @@
  * sends every request through its proxy, and its `EnvHttpProxyAgent`, which an application installs
  * or Node installs itself under `NODE_USE_ENV_PROXY=1` or `--use-env-proxy`, for a URL it sends
  * through the proxy set for the URL's scheme. It sends a URL straight to its host where no proxy is
- * set for that scheme or `NO_PROXY` names the host, and such a URL is read pinned. Any other
- * dispatcher, undici's `Agent` or a subclass of it, a `RetryAgent`, a `MockAgent`, one composed with
- * interceptors, or one of the application's own, is taken to connect to the host itself, and the read
- * pins its own connection: a dispatcher this module cannot read never turns the check off. An
- * application whose own dispatcher sends requests through a proxy gives the provider
- * `transport: fetchTransport`, which makes each checked request through `fetch` by the host's name.
+ * set for that scheme or `NO_PROXY` names the host, and such a URL is read pinned. Either counts only
+ * where it dispatches as its class does. One composed with interceptors, which undici 6 builds as a
+ * `ComposedDispatcher` and undici 7 as a proxy of the dispatcher that keeps its class, dispatches
+ * through them first, and they may resolve the host and connect on their own, as
+ * `interceptors.dns()` does. Any other dispatcher, undici's `Agent` or a subclass of it, a
+ * `RetryAgent`, a `MockAgent`, a composed one, or one of the application's own, is taken to connect
+ * to the host itself, and the read pins its own connection: a dispatcher this module cannot read
+ * never turns the check off. An application whose own dispatcher sends requests through a proxy gives
+ * the provider `transport: fetchTransport`, which makes each checked request through `fetch` by the
+ * host's name.
+ *
+ * Deciding makes no request and opens no connection. An `EnvHttpProxyAgent` keeps a `noProxy` option
+ * private to itself, so no copy of its rule can read the setting it applies; it is asked instead, in
+ * one synchronous dispatch that each agent it picks between answers by noting it was picked. Only a
+ * dispatcher that dispatches as its class does is asked, so nothing stands between that dispatch and
+ * those answers. The request it is asked for has a method that is not an HTTP token, which undici
+ * refuses before it connects, should any part of that dispatch reach an agent unanswered.
  */
 
 import { warnHeldToUrlAlone } from './url-only-reads.js';
@@ -29,14 +40,24 @@ const GLOBAL_DISPATCHER = Symbol.for('undici.globalDispatcher.1');
  */
 const PICKED_AGENTS: ReadonlySet<string> = new Set(['no proxy agent', 'http proxy agent', 'https proxy agent']);
 
-/** A handler for a dispatch that is never made: one that ends whatever reaches it. */
+/** A request no client sends: its method is not an HTTP token, which undici refuses before it connects. */
+const NOT_A_METHOD = 'NOT SENT';
+
+/**
+ * A handler for a dispatch that is never made, in undici 6's form and undici 7's: one that ends
+ * whatever reaches it and takes whatever error it is given, so nothing it is handed is thrown.
+ */
 const NO_REQUEST = {
   onConnect: (abort: (error?: Error) => void) => abort(new Error('not sent')),
   onRequestStart: (controller: { abort(error: Error): void }) => controller.abort(new Error('not sent')),
   onError: () => undefined,
+  onResponseError: () => undefined,
   onHeaders: () => false,
+  onResponseStart: () => undefined,
   onData: () => false,
+  onResponseData: () => undefined,
   onComplete: () => undefined,
+  onResponseEnd: () => undefined,
 };
 
 /**
@@ -56,7 +77,7 @@ export function fetchRoutedThrough(url: string): string | undefined {
 /** The name of the global dispatcher when it sends a request for `url` through a proxy, as this module opens by saying. */
 function proxyingDispatcher(url: string): string | undefined {
   const dispatcher: unknown = (globalThis as Record<symbol, unknown>)[GLOBAL_DISPATCHER];
-  if (typeof dispatcher !== 'object' || dispatcher === null) return undefined;
+  if (typeof dispatcher !== 'object' || dispatcher === null || !dispatchesAsItsClass(dispatcher)) return undefined;
   const name = classNameOf(dispatcher);
   if (name === 'ProxyAgent') return name;
   if (name === 'EnvHttpProxyAgent' && classNameOf(agentPickedFor(dispatcher, url)) === 'ProxyAgent') return name;
@@ -64,11 +85,25 @@ function proxyingDispatcher(url: string): string | undefined {
 }
 
 /**
+ * Whether `dispatcher` dispatches as its class does: it has no `dispatch` of its own, and is not
+ * composed with interceptors, which undici 7 builds as a proxy of the dispatcher whose `dispatch`
+ * alone is theirs.
+ */
+function dispatchesAsItsClass(dispatcher: object): boolean {
+  try {
+    const own = (Object.getPrototypeOf(dispatcher) as { dispatch?: unknown } | null)?.dispatch;
+    return typeof own === 'function' && !Object.hasOwn(dispatcher, 'dispatch') && (dispatcher as { dispatch?: unknown }).dispatch === own;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The agent an `EnvHttpProxyAgent` picks for a request to `url`, asked of the dispatcher itself, so
  * its own reading of its proxy settings and `NO_PROXY`, from its options or the environment,
- * decides. For one synchronous dispatch, of no request, each agent it picks between answers its
- * `dispatch` by noting it was picked, and is then restored. `undefined` where those agents are not
- * all found, or the dispatch fails.
+ * decides. For one synchronous dispatch, of a request no client sends, each agent it picks between
+ * answers its `dispatch` by noting it was picked, and is then restored. `undefined` where those
+ * agents are not all found, none is picked before the dispatch returns, or the dispatch fails.
  */
 function agentPickedFor(dispatcher: object, url: string): object | undefined {
   const keys = Object.getOwnPropertySymbols(dispatcher).filter((key) => PICKED_AGENTS.has(key.description ?? ''));
@@ -87,7 +122,7 @@ function agentPickedFor(dispatcher: object, url: string): object | undefined {
       });
     }
     (dispatcher as { dispatch(options: object, handler: object): unknown }).dispatch(
-      { origin: new URL(url).origin, path: '/', method: 'GET' },
+      { origin: new URL(url).origin, path: '/', method: NOT_A_METHOD },
       NO_REQUEST,
     );
   } catch {

@@ -76,6 +76,7 @@ import { providerName, warnHeldToUrlAlone } from "../utils/url-only-reads.js";
 import { operatorNamedRequests } from "../utils/operator-named.js";
 import type { DnsLookup, SafeFetchTransport } from "../utils/safe-fetch-types.js";
 import { assertStatusListIssuers, statusListIssuersBind, type StatusListIssuers } from "../utils/statuslist-keeper.js";
+import { sayBindingsNoRedirectReaches } from "../utils/statuslist-binding-reach.js";
 import type { DIDDocument } from "../delegation/vc-verifier.js";
 import type {
   StatusList2021Credential,
@@ -180,6 +181,7 @@ export class RuntimeFetchProvider extends FetchProvider {
     this.allowPrivateNetworkHosts = this.development || options?.allowPrivateNetworkHosts === true;
     assertTrustedRootIssuers(options?.trustedRootIssuers, "RuntimeFetchProviderOptions.");
     assertStatusListIssuers(options?.statusListIssuers);
+    sayBindingsNoRedirectReaches(options?.statusListIssuers);
     this.trustedRootIssuers = options?.trustedRootIssuers;
     this.statusListIssuers = options?.statusListIssuers;
     this.pinning = addressPinning({ lookup: options?.lookup, transport: options?.transport });

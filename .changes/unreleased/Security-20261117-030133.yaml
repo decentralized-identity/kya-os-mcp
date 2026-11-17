@@ -1,0 +1,10 @@
+kind: Security
+body: |-
+    **No reader sends the credentials in a URL.** A URL that includes a
+    user name or a password before its host, such as
+    `https://user:secret@host/`, is refused before any request, first or
+    as a redirect target, by `RuntimeFetchProvider`'s did:web and status-list
+    reads and by `SafeFetch`, as the runtime's `fetch` refuses it. The
+    pinned connection sent them to the host as Basic credentials. See
+    UPGRADING.md.
+time: 2026-11-17T03:01:33.980309-06:00

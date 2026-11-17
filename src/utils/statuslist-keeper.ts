@@ -101,6 +101,11 @@ const URL_SCHEME = /^https?:\/\//;
 /** The characters that end the authority of an `https:` URL, so one of them follows an origin in a URL at it. */
 const AFTER_ORIGIN = ['/', '?', '#'];
 
+/** Whether `binding` is an origin binding, in SPEC.md §6.6's form, rather than an exact URL. */
+export function isOriginBinding(binding: string): boolean {
+  return ORIGIN.test(binding);
+}
+
 /**
  * The origin binding that holds `url`, in SPEC.md §6.6's form, `https://`, the host and its port if
  * written, or `undefined` when no origin binding holds it, as for an `http:` URL, a host with an

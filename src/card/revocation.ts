@@ -41,6 +41,7 @@ import { carriedContext } from '../utils/status-check-carrier.js';
 import { operatorNamedHops } from '../utils/verified-root.js';
 import { codedVariantOf } from './coded-proof-verifier.js';
 import { withStatusListIssuersRemedy } from '../utils/statuslist-remedy.js';
+import { sayBindingsNoRedirectReaches } from '../utils/statuslist-binding-reach.js';
 import {
   acceptEntryPurpose,
   acceptEntrySize,
@@ -276,6 +277,7 @@ export function createRevocationChecker(
   if (deps.statusListIssuers !== undefined && deps.verifyStatusList === undefined) {
     throw new TypeError('statusListIssuers is set but verifyStatusList is not, so no status list is held to an issuer');
   }
+  sayBindingsNoRedirectReaches(deps.statusListIssuers);
   const clock = deps.now ?? (() => Date.now());
   const wantedPurpose = deps.statusPurpose ?? STATUS_PURPOSE_REVOCATION;
   const decompress = deps.decompress ?? statusListGzipCodec.decompress;

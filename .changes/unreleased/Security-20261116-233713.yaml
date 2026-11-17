@@ -1,3 +1,0 @@
-kind: Security
-body: Detached proof key retrieval now requires the signer to list the key under assertionMethod, and CIMD projects only authentication keys for client authentication. Both use the shared method ownership and uniqueness rules. Hand-written DID documents must list each key for its purpose; did:key and buildDidWebDocument are unaffected. See UPGRADING.md, Detached proof and CIMD keys follow their verification relationship.
-time: 2026-11-16T23:37:13.055029-06:00

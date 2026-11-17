@@ -1,9 +1,0 @@
-kind: Security
-body: |-
-    **One failed lookup no longer turns the host check off.** The probe of
-    whether the runtime resolves names answers no only where `node:dns` does
-    not load or says its `lookup` is not implemented. Any other failure, such
-    as a resolver busy for a moment, leaves each read to resolve and check
-    its own host, and is asked again. Every fall back to the URL-only rule,
-    a provider whose `fetch` is its own included, is logged once.
-time: 2026-11-17T00:40:00.000000-06:00

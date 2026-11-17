@@ -123,7 +123,8 @@ describe('verifyRequestDelegation and requireDelegation', () => {
     ['a chain that does not grant the action', carrying(toDelegationChainMeta(chain), 'orders.refund'), {}, 'action_not_delegated', 'insufficient_scope'],
     ['a chain with a revoked credential', carried, { checkRevocation: checkerOf([7]) }, 'delegation_revoked', 'delegation_revoked'],
     ['a chain whose status list is not served', carried, { checkRevocation: createRevocationChecker({ fetch: serve(undefined) }) }, 'delegation_revoked', 'status_unavailable'],
-    ['a chain whose revocation checker never answers', carried, { checkRevocation: never, dependencyTimeoutMs: 20 }, 'delegation_revoked', 'deadline_exceeded'],
+    // Its hop proofs pass at once, so only the checker can run out the short deadline.
+    ['a chain whose revocation checker never answers', carried, { verifyHopProof: () => true, checkRevocation: never, dependencyTimeoutMs: 20 }, 'delegation_revoked', 'deadline_exceeded'],
     ['a chain whose revocation checker throws', carried, { checkRevocation: async () => { throw new Error('boom'); } }, 'delegation_revoked', 'status_unavailable'],
   ])('codes %s', async (_name, input, overrides, gateCode, code) => {
     const result = await verifyRequestDelegation(input, deps(overrides));

@@ -124,7 +124,7 @@ const OUTAGES: [string, () => Promise<DIDResolver>, RefusalCode, string, string]
       });
       return readingAs(INTERNAL, createDidWebResolver(safeFetchProvider(safeFetch)));
     },
-    'host_refused',
+    'did_unavailable',
     '',
     `resolves to the non-public address ${ADDRESS}`,
   ],

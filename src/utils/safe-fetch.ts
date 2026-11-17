@@ -34,7 +34,7 @@
 import { logger } from '../logging/index.js';
 import { developmentMode } from './development-mode.js';
 import { isNonPublicByForm } from './host-form.js';
-import { resolveChecked, type LookupRefusals } from './address-check.js';
+import { resolveChecked, UNTOLD, type LookupRefusals } from './address-check.js';
 import { ReadFailureError } from './read-failure.js';
 import { followRedirects, MAX_REDIRECTS, type RedirectRefusals, type RedirectTarget } from './redirect-follower.js';
 import {
@@ -113,9 +113,10 @@ async function resolveAndPin(hostname: string, lookup: DnsLookup, admitPrivate: 
 /** SafeFetch's words for a host its lookup refuses. */
 const LOOKUP_REFUSALS: LookupRefusals = {
   unresolved: (hostname) => new Error(`safe-fetch: DNS lookup for "${hostname}" returned no addresses`),
+  // Learned from DNS, so coded as a name that does not resolve is; the log says host_refused.
   nonPublic: (hostname) =>
-    new ReadFailureError('host_refused', `safe-fetch: refusing host "${hostname}", which resolves to a non-public address: ${PRIVATE_HOST_SETTINGS}`),
-  logged: (hostname, address) => `[kya-os] safe-fetch: host "${hostname}" resolves to the non-public address ${address}, so it is refused`,
+    new ReadFailureError('unavailable', `safe-fetch: refusing host "${hostname}", which resolves to a non-public address: ${PRIVATE_HOST_SETTINGS}`),
+  logged: (hostname, address) => `[kya-os] safe-fetch: host "${hostname}" refused (host_refused): ${UNTOLD(address)}`,
 };
 
 const nonHttpsTarget = (target: URL): Error =>
@@ -167,9 +168,11 @@ async function finalize(raw: RawResponse, maxBytes: number, deadline: ReadDeadli
 /**
  * Build an SSRF-hardened fetcher. The returned function is structurally compatible with the
  * card's `FetchLike`: `(url) => Promise<{ ok, status, json }>`. A URL or redirect its own rules
- * refuse (a scheme other than https, a non-public address, a cross-origin redirect) rejects with
- * an error that carries the `host_refused` read-failure kind, and a hop that runs out of time with
- * one of `deadline_exceeded`, so a verifier codes the refusal without reading its message. A
+ * refuse (a scheme other than https, a non-public IP literal or local name, a cross-origin redirect)
+ * rejects with an error that carries the `host_refused` read-failure kind. A name its lookup finds
+ * private carries `unavailable`, as a name that does not resolve does, since the lookup decided it,
+ * and the log says `host_refused`. A hop that runs out of time carries
+ * `deadline_exceeded`, so a verifier codes the refusal without reading its message. A
  * refusal decided from the URL alone, before any DNS lookup or request (its scheme, a non-public IP
  * literal, a localhost name), also says so, so a verifier may tell whoever named the URL why.
  *

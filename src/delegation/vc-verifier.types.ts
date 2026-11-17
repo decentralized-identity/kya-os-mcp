@@ -121,7 +121,9 @@ export interface DIDResolver {
  * Why a resolver found no document for a DID:
  *
  * - `host_refused`: the read's own rules refused the host, the private-network rule or the scheme
- *   rule, on the document's URL or on a redirect.
+ *   rule, on the document's URL or on a redirect. A name that resolves to a private address is
+ *   `unavailable`, as a name that does not resolve is, since the lookup decided it; the log says
+ *   `host_refused`.
  * - `deadline_exceeded`: no document arrived within the resolver's deadline.
  * - `unavailable`: the host could not be reached, or answered with something other than a document:
  *   an HTTP error, no body, or text that is not JSON.

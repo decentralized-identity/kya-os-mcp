@@ -90,11 +90,12 @@ describe('a verifier on the default runtime transport, given a did:web whose nam
     expect({ runtimeFetched, connections }).toEqual({ runtimeFetched: [], connections: [] });
     expect(asked).toEqual(['169.254.169.254.nip.io']);
     expect(result.valid).toBe(false);
-    expect(result.code).toBe('host_refused');
+    // Coded as a name that does not resolve is, so the code says nothing the lookup answered.
+    expect(result.code).toBe('did_unavailable');
     // The DID's own name is what the presenter sent; what the name resolved to is not said.
     expect(result.reason).toBe(`Could not resolve issuer DID: "${ISSUER}"`);
     const logged = warn.mock.calls.map((call) => call.map(String).join(' ')).join('\n');
-    expect(logged).toContain(`resolves to the non-public address ${METADATA}`);
+    expect(logged).toContain(`refused (host_refused): it resolves to the non-public address ${METADATA}`);
   });
 
   it('refuses a name with any address that is not public, whatever the others are', async () => {
@@ -102,7 +103,7 @@ describe('a verifier on the default runtime transport, given a did:web whose nam
     const { transport, connections } = recordingTransport();
     const resolver = createDidWebResolver(new RuntimeFetchProvider({ lookup, transport }));
     expect(await resolver.resolve('did:web:split.example')).toBeNull();
-    expect(resolver.lastFailure?.('did:web:split.example')?.cause).toBe('host_refused');
+    expect(resolver.lastFailure?.('did:web:split.example')?.cause).toBe('unavailable');
     expect({ runtimeFetched, connections }).toEqual({ runtimeFetched: [], connections: [] });
   });
 
@@ -125,7 +126,7 @@ describe('a verifier on the default runtime transport, given a did:web whose nam
     // The next read resolves the name again, and refuses the address it now answers.
     resolver.clearCache();
     expect(await resolver.resolve(did)).toBeNull();
-    expect(resolver.lastFailure?.(did)?.cause).toBe('host_refused');
+    expect(resolver.lastFailure?.(did)?.cause).toBe('unavailable');
     expect(connections).toHaveLength(1);
   });
 });

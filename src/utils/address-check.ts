@@ -32,11 +32,21 @@ export function checkResolvedAddresses(addresses: readonly DnsAddress[], admitPr
   return blocked === undefined ? { pinned: first } : { nonPublic: blocked.address };
 }
 
+/**
+ * What a reader's log line says of a host that resolves to the non-public `address`, after naming
+ * the host and `host_refused`: the refusal itself is coded as a name that does not resolve is.
+ */
+export const UNTOLD = (address: string): string =>
+  `it resolves to the non-public address ${address}, and whoever named it is told only that it could not be read`;
+
 /** How a reader words what {@link resolveChecked} refuses, each in its own voice. */
 export interface LookupRefusals {
   /** The error for `name`, whose lookup answered no address. */
   unresolved(name: string): Error;
-  /** The error for `name`, which resolves to an address that is not public; it does not say the address. */
+  /**
+   * The error for `name`, which resolves to an address that is not public; it does not say the
+   * address, and is of the kind a name that does not resolve is, as the lookup alone decided it.
+   */
   nonPublic(name: string): Error;
   /** The operator's log line for `name`, which resolves to the address `address`, which is not public. */
   logged(name: string, address: string): string;

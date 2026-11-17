@@ -11,7 +11,9 @@ CHANGELOG.md says what changed and names the section here that says what to do a
 `RuntimeFetchProvider` now resolves the host of every did:web and status-list read before it connects, every redirect included, where the runtime resolves names, as Node does.
 It refuses a host with any address that is not public, and connects only to the address it checked, so a public-looking name such as `did:web:169.254.169.254.nip.io` no longer reaches the cloud metadata address, and a second lookup cannot rebind the connection.
 On 1.23.0 the rule read the URL alone.
-The presenter is told only that the DID or the list could not be read, with the code `host_refused`; the name and the address go to the log.
+The presenter is told only that the DID or the list could not be read, with the code a name that does not resolve gets, `did_unavailable` or `status_unavailable`, both transient, so the code tells nobody what your DNS answered; the log says `host_refused` and names the host and the address.
+A refusal the URL decides by itself, such as an IP literal or a local name, keeps `host_refused`.
+`SafeFetch`, and so `createRevocationChecker` and the Card readers, codes a name its lookup finds private the same way, where 1.23.0 coded it `host_refused`.
 
 | If you | Do this | Effect |
 | --- | --- | --- |

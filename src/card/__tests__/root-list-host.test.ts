@@ -110,7 +110,7 @@ describe("a pinned root's own list on a private host", () => {
     const verdict = await evaluateDelegationChain(chainOn(p, ROOT_LIST, ROOT_LIST), net.checker(), {
       resource: RESOURCE, now, resourceOwner: p.acme.did,
     });
-    expect(verdict).toMatchObject({ ok: false, code: 'host_refused' });
+    expect(verdict).toMatchObject({ ok: false, code: 'status_unavailable' });
     expect(net.connected).toEqual([]);
   });
 
@@ -135,7 +135,7 @@ describe("a pinned root's own list on a private host", () => {
     const verdict = await evaluateDelegationChain(chainOn(p, ROOT_LIST, AGENT_LIST), net.checker(), {
       resource: RESOURCE, now, resourceOwner: p.acme.did, verifyHopProof,
     });
-    expect(verdict).toMatchObject({ ok: false, code: 'host_refused', reasons: [expect.stringMatching(/^revocation: hop 1 /)] });
+    expect(verdict).toMatchObject({ ok: false, code: 'status_unavailable', reasons: [expect.stringMatching(/^revocation: hop 1 /)] });
     expect(net.connected).toEqual([[ROOT_LIST, PRIVATE]]);
   });
 
@@ -146,7 +146,7 @@ describe("a pinned root's own list on a private host", () => {
     const pinned = { credentialIssuer: p.acme.did, trustedRootIssuer: p.acme.did, trustedRootStatusList: ROOT_LIST };
     for (const trustedRootVerified of [{}, Object.freeze(Object.create(null) as object), JSON.parse('{"verified":true}') as object]) {
       const context = { ...pinned, trustedRootVerified } as unknown as StatusCheckContext;
-      expect(await net.checker()(entry, context)).toMatchObject({ revoked: true, fresh: false, code: 'host_refused' });
+      expect(await net.checker()(entry, context)).toMatchObject({ revoked: true, fresh: false, code: 'status_unavailable' });
     }
     expect(net.connected).toEqual([]);
   });

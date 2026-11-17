@@ -105,7 +105,7 @@ const NETWORK_ANSWERS: [string, () => Promise<DIDResolver>, RefusalCode, string]
   [
     'through SafeFetch, a name that resolves to a private address',
     async () => reading(safeFetchAt(PRIVATE_ADDRESS, async () => { throw new Error('never reached'); })),
-    'host_refused',
+    'did_unavailable',
     `resolves to the non-public address ${PRIVATE_ADDRESS}`,
   ],
   [

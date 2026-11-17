@@ -21,7 +21,7 @@
  * ({@link PrivateNetworkRead.httpOnPrivateHosts}), as a local demo serves its lists.
  */
 
-import { resolveChecked, type LookupRefusals } from './address-check.js';
+import { resolveChecked, UNTOLD, type LookupRefusals } from './address-check.js';
 import type { SingleFetch } from './checked-redirects.js';
 import { describeValue } from './describe-value.js';
 import { ADDRESS_PINNING, type AddressPinning, type FetchPort, type PrivateNetworkTransport } from './fetch-port.js';
@@ -75,10 +75,11 @@ const HTTPS_REMEDY = {
 
 /**
  * `transport`'s `fetch` under the private-network rule, each request it makes held as this module
- * opens by saying. A refused request throws a `host_refused` {@link ReadFailureError}: an http URL
- * is refused before any lookup, as `Request to a "http:" URL refused` or `Redirect to ...`; a name
- * that resolves to a private address as `Request to <name> refused: it resolves to a private or
- * local address`, or for a redirect without naming the host, going on with what admits it.
+ * opens by saying. A refused request throws a {@link ReadFailureError}: an http URL is refused
+ * before any lookup, `host_refused`, as `Request to a "http:" URL refused` or `Redirect to ...`; a
+ * name that resolves to a private address `unavailable`, as a name that does not resolve is, as
+ * `Request to <name> refused: it resolves to a private or local address`, or for a redirect without
+ * naming the host, going on with what admits it.
  */
 export function underPrivateNetworkRead(transport: PrivateNetworkTransport, read: PrivateNetworkRead = {}): FetchPort {
   return underPrivateNetworkRule(transport, { request: heldRequest(transport, read), operatorNamed: read.operatorNamed });
@@ -133,8 +134,11 @@ async function pinningOf(transport: PrivateNetworkTransport): Promise<AddressPin
 
 /**
  * How a request's lookup is refused. A name that resolves to a private address was learned from a
- * lookup, not from the URL, so its refusal does not say it was decided before the request. The
- * address goes to the log; the refusal of a redirect names neither, since the server chose the host.
+ * lookup, not from the URL, so it is refused as a name that does not resolve is, `unavailable`, and
+ * its refusal does not say it was decided before the request: a code that told the two apart would
+ * tell whoever named the host what the verifier's DNS answered. The log says `host_refused` and
+ * names the host and the address; the refusal of a redirect names neither, since the server chose
+ * the host.
  */
 function lookupRefusals(redirected: boolean): LookupRefusals {
   const request = redirected ? 'Redirect' : 'Request';
@@ -142,11 +146,11 @@ function lookupRefusals(redirected: boolean): LookupRefusals {
     unresolved: (name) => new Error(`DNS lookup for ${describeValue(name)} returned no addresses`),
     nonPublic: (name) =>
       new ReadFailureError(
-        'host_refused',
+        'unavailable',
         redirected
           ? `Redirect to a host that resolves to a private or local address refused. ${RESOLVED_HOST_SETTINGS}`
           : `Request to ${describeValue(name)} refused: it resolves to a private or local address. ${RESOLVED_HOST_SETTINGS}`,
       ),
-    logged: (name, address) => `[kya-os] ${request} to ${describeValue(name)} refused: it resolves to the non-public address ${address}`,
+    logged: (name, address) => `[kya-os] ${request} to ${describeValue(name)} refused (host_refused): ${UNTOLD(address)}`,
   };
 }

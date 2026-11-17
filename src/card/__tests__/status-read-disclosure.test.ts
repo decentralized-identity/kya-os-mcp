@@ -70,7 +70,7 @@ const UNREAD: [string, SafeFetch, RefusalCode, string][] = [
     safeFetchAt('10.1.2.3', async () => {
       throw new Error('never reached');
     }),
-    'host_refused',
+    'status_unavailable',
     'resolves to the non-public address 10.1.2.3',
   ],
   [

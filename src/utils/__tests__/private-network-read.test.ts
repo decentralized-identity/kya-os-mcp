@@ -93,16 +93,20 @@ describe('a read through a transport that offers its connections', () => {
     });
   });
 
-  it('refuses a name that resolves to no address, or to any address that is not public, without connecting, and says only what the URL says', async () => {
+  it('refuses a name that resolves to no address, or to any address that is not public, alike, without connecting, and says only what the URL says', async () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const { transport, connections } = offering({ 'none.example': [], 'split.example': [PUBLIC, PRIVATE] });
     const read = underPrivateNetworkRead(transport);
     await expect(read.fetch('https://none.example/a')).rejects.toThrow('DNS lookup for "none.example" returned no addresses');
     const refused = await refusalOf(read.fetch('https://split.example/a'));
-    expect({ kind: refused.kind, beforeRequest: refused.beforeRequest }).toEqual({ kind: 'host_refused', beforeRequest: false });
+    // Coded as a name that does not resolve is: the code says nothing the lookup answered.
+    expect({ kind: refused.kind, beforeRequest: refused.beforeRequest }).toEqual({ kind: 'unavailable', beforeRequest: false });
     expect(refused.message).toMatch(/^Request to "split\.example" refused: it resolves to a private or local address\. /);
     expect(refused.message).not.toContain(PRIVATE.address);
-    expect(warn).toHaveBeenCalledWith('[kya-os] Request to "split.example" refused: it resolves to the non-public address 10.0.0.7');
+    expect(warn).toHaveBeenCalledWith(
+      '[kya-os] Request to "split.example" refused (host_refused): it resolves to the non-public address 10.0.0.7, and whoever named it ' +
+        'is told only that it could not be read',
+    );
     expect(connections).toEqual([]);
   });
 
@@ -112,7 +116,11 @@ describe('a read through a transport that offers its connections', () => {
     const refused = await refusalOf(underPrivateNetworkRead(transport).fetch('https://public.example/doc'));
     expect(refused.message).toMatch(/^Redirect to a host that resolves to a private or local address refused\. /);
     expect(refused.message).not.toContain('intranet');
-    expect(warn).toHaveBeenCalledWith('[kya-os] Redirect to "intranet.example" refused: it resolves to the non-public address 10.0.0.7');
+    expect(refused.kind).toBe('unavailable');
+    expect(warn).toHaveBeenCalledWith(
+      '[kya-os] Redirect to "intranet.example" refused (host_refused): it resolves to the non-public address 10.0.0.7, and whoever named it ' +
+        'is told only that it could not be read',
+    );
     expect(connections.map(({ url }) => url)).toEqual(['https://public.example/doc']);
   });
 

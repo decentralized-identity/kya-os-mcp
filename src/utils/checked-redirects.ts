@@ -21,10 +21,10 @@ import { logger } from '../logging/index.js';
 import { cancelQuietly } from './bounded-read.js';
 import { crossOriginRequestHeaders } from './cors-safelisted-headers.js';
 import { ReadFailureError } from './read-failure.js';
-import { followRedirects, REDIRECT_STATUSES, type RedirectRefusals } from './redirect-follower.js';
+import { followRedirects, REDIRECT_STATUSES, type RedirectHop, type RedirectRefusals } from './redirect-follower.js';
 
-/** Fetch one URL as given, without following a redirect. */
-export type SingleFetch = (url: string, init: RequestInit) => Promise<Response>;
+/** Fetch one URL as given, without following a redirect, told which request of the read it is. */
+export type SingleFetch = (url: string, init: RequestInit, hop: RedirectHop) => Promise<Response>;
 
 /**
  * How the caller's rule refuses a URL, as the text that follows `Redirect to `: how it names the
@@ -65,7 +65,7 @@ export function fetchWithCheckedRedirects(
   return followRedirects<Response>(url, {
     async request(hop) {
       const sent = hop.crossOrigin ? { ...init, headers: crossOriginRequestHeaders(init.headers) } : init;
-      const response = await fetch(hop.url, { ...sent, redirect: 'manual' });
+      const response = await fetch(hop.url, { ...sent, redirect: 'manual' }, hop);
       if (followedByProvider(response, hop.url)) {
         cancelQuietly(() => response.body?.cancel());
         throw new ReadFailureError('host_refused', 'Redirect followed by the fetch provider refused');

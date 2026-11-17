@@ -34,7 +34,7 @@
 import { logger } from '../logging/index.js';
 import { developmentMode } from './development-mode.js';
 import { isNonPublicByForm } from './host-form.js';
-import { checkResolvedAddresses } from './address-check.js';
+import { resolveChecked, type LookupRefusals } from './address-check.js';
 import { ReadFailureError } from './read-failure.js';
 import { followRedirects, MAX_REDIRECTS, type RedirectRefusals, type RedirectTarget } from './redirect-follower.js';
 import {
@@ -107,19 +107,16 @@ async function resolveAndPin(hostname: string, lookup: DnsLookup, admitPrivate: 
       beforeRequest: true,
     });
   }
-  const checked = checkResolvedAddresses(await lookup(hostname), admitPrivate);
-  if ('unresolved' in checked) {
-    throw new Error(`safe-fetch: DNS lookup for "${hostname}" returned no addresses`);
-  }
-  if ('nonPublic' in checked) {
-    logger.warn(`[kya-os] safe-fetch: host "${hostname}" resolves to the non-public address ${checked.nonPublic}, so it is refused`);
-    throw new ReadFailureError(
-      'host_refused',
-      `safe-fetch: refusing host "${hostname}", which resolves to a non-public address: ${PRIVATE_HOST_SETTINGS}`,
-    );
-  }
-  return checked.pinned;
+  return resolveChecked(hostname, lookup, LOOKUP_REFUSALS, admitPrivate);
 }
+
+/** SafeFetch's words for a host its lookup refuses. */
+const LOOKUP_REFUSALS: LookupRefusals = {
+  unresolved: (hostname) => new Error(`safe-fetch: DNS lookup for "${hostname}" returned no addresses`),
+  nonPublic: (hostname) =>
+    new ReadFailureError('host_refused', `safe-fetch: refusing host "${hostname}", which resolves to a non-public address: ${PRIVATE_HOST_SETTINGS}`),
+  logged: (hostname, address) => `[kya-os] safe-fetch: host "${hostname}" resolves to the non-public address ${address}, so it is refused`,
+};
 
 const nonHttpsTarget = (target: URL): Error =>
   new ReadFailureError('host_refused', `safe-fetch: redirect to non-https target "${target.protocol}" blocked`);

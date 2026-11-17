@@ -140,12 +140,12 @@ describe('a step between schemes', () => {
 describe('what the policy is told', () => {
   const route = { 'https://a.example/a': '/b', 'https://a.example/b': 'https://b.example/c', 'https://b.example/c': 'https://a.example/d' };
 
-  it('is whether each hop, and each target, is at an origin other than the first', async () => {
+  it('is whether each hop, and each target, is at an origin other than the first, and whether a redirect named the hop', async () => {
     const { policy, hops, targets } = recording(route);
     await followRedirects('https://a.example/a', policy);
     expect(hops).toEqual([
-      { url: 'https://a.example/a', crossOrigin: false }, { url: 'https://a.example/b', crossOrigin: false },
-      { url: 'https://b.example/c', crossOrigin: true }, { url: 'https://a.example/d', crossOrigin: false },
+      { url: 'https://a.example/a', crossOrigin: false, redirected: false }, { url: 'https://a.example/b', crossOrigin: false, redirected: true },
+      { url: 'https://b.example/c', crossOrigin: true, redirected: true }, { url: 'https://a.example/d', crossOrigin: false, redirected: true },
     ]);
     expect(targets.map(({ target, from, crossOrigin }) => [from.href, target.href, crossOrigin])).toEqual([
       ['https://a.example/a', 'https://a.example/b', false],
@@ -172,7 +172,7 @@ describe('what the policy is told', () => {
   it('asks the first URL as given, and refuses one that does not parse before any request', async () => {
     const { policy, hops } = recording({});
     await followRedirects('https://A.example:443/x#top', policy);
-    expect(hops).toEqual([{ url: 'https://A.example:443/x#top', crossOrigin: false }]);
+    expect(hops).toEqual([{ url: 'https://A.example:443/x#top', crossOrigin: false, redirected: false }]);
     const none = recording({});
     await expect(followRedirects('not a url', none.policy)).rejects.toThrow(TypeError);
     expect(none.hops).toEqual([]);

@@ -7,8 +7,9 @@
  * connection to an address that was not checked.
  */
 
+import { logger } from '../logging/index.js';
 import { isBlockedAddress } from './ip-classifier.js';
-import type { DnsAddress } from './safe-fetch-types.js';
+import type { DnsAddress, DnsLookup } from './safe-fetch-types.js';
 
 /** What the check makes of the addresses one host name resolved to. */
 export type AddressCheck =
@@ -29,4 +30,36 @@ export function checkResolvedAddresses(addresses: readonly DnsAddress[], admitPr
   if (first === undefined) return { unresolved: true };
   const blocked = admitPrivate ? undefined : addresses.find((candidate) => isBlockedAddress(candidate.address));
   return blocked === undefined ? { pinned: first } : { nonPublic: blocked.address };
+}
+
+/** How a reader words what {@link resolveChecked} refuses, each in its own voice. */
+export interface LookupRefusals {
+  /** The error for `name`, whose lookup answered no address. */
+  unresolved(name: string): Error;
+  /** The error for `name`, which resolves to an address that is not public; it does not say the address. */
+  nonPublic(name: string): Error;
+  /** The operator's log line for `name`, which resolves to the address `address`, which is not public. */
+  logged(name: string, address: string): string;
+}
+
+/**
+ * Resolve the host `name` once through `lookup`, check every address it answers, and answer the one
+ * to pin the connection to, as SafeFetch and a read under the private-network rule both do before
+ * they connect. A name with no address, or with any address that is not public unless
+ * `admitPrivate`, is refused in the reader's own words (`refusals`), and the address that is not
+ * public goes to the log alone.
+ */
+export async function resolveChecked(
+  name: string,
+  lookup: DnsLookup,
+  refusals: LookupRefusals,
+  admitPrivate = false,
+): Promise<DnsAddress> {
+  const checked = checkResolvedAddresses(await lookup(name), admitPrivate);
+  if ('unresolved' in checked) throw refusals.unresolved(name);
+  if ('nonPublic' in checked) {
+    logger.warn(refusals.logged(name, checked.nonPublic));
+    throw refusals.nonPublic(name);
+  }
+  return checked.pinned;
 }

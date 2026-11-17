@@ -18,8 +18,8 @@
  * admits, as a local demo serves its lists.
  */
 
-import { logger } from '../logging/index.js';
-import { checkResolvedAddresses } from './address-check.js';
+import { resolveChecked, type LookupRefusals } from './address-check.js';
+import type { SingleFetch } from './checked-redirects.js';
 import { describeValue } from './describe-value.js';
 import { ADDRESS_PINNING, type AddressPinning, type FetchPort, type PrivateNetworkTransport } from './fetch-port.js';
 import { hostForm } from './host-form.js';
@@ -65,35 +65,27 @@ const HTTPS_REMEDY =
  * local address`, or for a redirect without naming the host, going on with what admits it.
  */
 export function underPrivateNetworkRead(transport: PrivateNetworkTransport, read: PrivateNetworkRead = {}): FetchPort {
-  return {
-    // Each read has its own requests, the first and then its redirects.
-    fetch: (url, init) => underPrivateNetworkRule(heldRequests(transport, read)).fetch(url, init),
-  };
+  return underPrivateNetworkRule(transport, heldRequest(transport, read));
 }
 
-/** `transport` as one read's requests are made through it, each held as this module opens by saying. */
-function heldRequests(transport: PrivateNetworkTransport, read: PrivateNetworkRead): PrivateNetworkTransport {
+/** How each request of a read through `transport` is made, held as this module opens by saying. */
+function heldRequest(transport: PrivateNetworkTransport, read: PrivateNetworkRead): SingleFetch {
   const admitPrivate = transport.allowPrivateNetworkHosts === true;
   const maxBytes = read.maxBytes ?? OUTBOUND_READ_MAX_BYTES;
-  let made = 0;
-  return {
-    allowPrivateNetworkHosts: admitPrivate,
-    async fetch(url, options) {
-      // The rule hands every request the read's own init.
-      const init = (options ?? {}) as RequestInit;
-      const redirected = made++ > 0;
-      const { protocol, hostname } = new URL(url);
-      if (read.httpsOnly === true && protocol === 'http:' && !(admitPrivate && isPrivateHost(hostname))) {
-        const refused = `${redirected ? 'Redirect' : 'Request'} to a ${describeValue(protocol)} URL refused${HTTPS_REMEDY}`;
-        throw new ReadFailureError('host_refused', refused, redirected ? {} : { beforeRequest: true });
-      }
-      // An IP literal names its own address, which the rule has checked.
-      const form = hostForm(hostname);
-      if (admitPrivate || form === undefined || 'literal' in form) return transport.fetch(url, init);
-      const pinning = await pinningOf(transport);
-      if (pinning === undefined) return transport.fetch(url, init);
-      return pinnedRequest(pinning, { url, init, name: form.name, redirected, maxBytes });
-    },
+  return async (url, init, { redirected }) => {
+    const { protocol, hostname } = new URL(url);
+    if (read.httpsOnly === true && protocol === 'http:' && !(admitPrivate && isPrivateHost(hostname))) {
+      const refused = `${redirected ? 'Redirect' : 'Request'} to a ${describeValue(protocol)} URL refused${HTTPS_REMEDY}`;
+      throw new ReadFailureError('host_refused', refused, redirected ? {} : { beforeRequest: true });
+    }
+    // An IP literal names its own address, which the rule has checked.
+    const form = hostForm(hostname);
+    if (admitPrivate || form === undefined || 'literal' in form) return transport.fetch(url, init);
+    const pinning = await pinningOf(transport);
+    if (pinning === undefined) return transport.fetch(url, init);
+    const pin = await resolveChecked(form.name, pinning.lookup, lookupRefusals(redirected));
+    init.signal?.throwIfAborted();
+    return requestPinned(pinning.transport, { url, init, hostname: form.name, pin, maxBytes });
   };
 }
 
@@ -108,37 +100,22 @@ async function pinningOf(transport: PrivateNetworkTransport): Promise<AddressPin
   return undefined;
 }
 
-/** One request through a pinned connection, to the host `name` the URL names. */
-interface HeldRequest {
-  readonly url: string;
-  readonly init: RequestInit;
-  readonly name: string;
-  readonly redirected: boolean;
-  readonly maxBytes: number;
-}
-
-/** `request` connected to the first address its name resolves to, once every address is shown public. */
-async function pinnedRequest(pinning: AddressPinning, request: HeldRequest): Promise<Response> {
-  const { url, init, name, redirected, maxBytes } = request;
-  const checked = checkResolvedAddresses(await pinning.lookup(name));
-  if ('unresolved' in checked) throw new Error(`DNS lookup for ${describeValue(name)} returned no addresses`);
-  if ('nonPublic' in checked) throw resolvedToPrivate(name, checked.nonPublic, redirected);
-  init.signal?.throwIfAborted();
-  return requestPinned(pinning.transport, { url, init, hostname: name, pin: checked.pinned, maxBytes });
-}
-
 /**
- * The refusal of `name`, which resolved to the private `address`. It was learned from a lookup, not
- * from the URL, so it does not say it was decided before the request. The address goes to the log;
- * the refusal of a redirect names neither, since the server chose the host.
+ * How a request's lookup is refused. A name that resolves to a private address was learned from a
+ * lookup, not from the URL, so its refusal does not say it was decided before the request. The
+ * address goes to the log; the refusal of a redirect names neither, since the server chose the host.
  */
-function resolvedToPrivate(name: string, address: string, redirected: boolean): ReadFailureError {
-  const host = describeValue(name);
-  logger.warn(`[kya-os] ${redirected ? 'Redirect' : 'Request'} to ${host} refused: it resolves to the non-public address ${address}`);
-  return new ReadFailureError(
-    'host_refused',
-    redirected
-      ? `Redirect to a host that resolves to a private or local address refused. ${RESOLVED_HOST_SETTINGS}`
-      : `Request to ${host} refused: it resolves to a private or local address. ${RESOLVED_HOST_SETTINGS}`,
-  );
+function lookupRefusals(redirected: boolean): LookupRefusals {
+  const request = redirected ? 'Redirect' : 'Request';
+  return {
+    unresolved: (name) => new Error(`DNS lookup for ${describeValue(name)} returned no addresses`),
+    nonPublic: (name) =>
+      new ReadFailureError(
+        'host_refused',
+        redirected
+          ? `Redirect to a host that resolves to a private or local address refused. ${RESOLVED_HOST_SETTINGS}`
+          : `Request to ${describeValue(name)} refused: it resolves to a private or local address. ${RESOLVED_HOST_SETTINGS}`,
+      ),
+    logged: (name, address) => `[kya-os] ${request} to ${describeValue(name)} refused: it resolves to the non-public address ${address}`,
+  };
 }

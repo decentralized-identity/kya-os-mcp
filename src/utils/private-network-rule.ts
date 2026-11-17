@@ -27,7 +27,7 @@
  */
 
 import { logger } from '../logging/index.js';
-import { fetchWithCheckedRedirects } from './checked-redirects.js';
+import { fetchWithCheckedRedirects, type SingleFetch } from './checked-redirects.js';
 import { describeValue } from './describe-value.js';
 import type { FetchPort, PrivateNetworkTransport } from './fetch-port.js';
 import { PRODUCTION_PRIVATE_HOSTS } from './development-mode.js';
@@ -120,14 +120,19 @@ export function privateNetworkRefusal(url: string, allowPrivateNetworkHosts = fa
 
 /**
  * `transport`'s `fetch` under the rule; a transport whose `allowPrivateNetworkHosts` is true admits
- * private hosts. The transport is asked for the URL as the parser writes the one the rule checked,
- * never the string as given, which a transport could parse otherwise and so reach another host. A
+ * private hosts. Each request the rule admits is made by `request`, by default `transport.fetch`,
+ * told which request of the read it is. The transport is asked for the URL as the parser writes the
+ * one the rule checked, never the string as given, which a transport could parse otherwise and so
+ * reach another host. A
  * refused request throws `Request to <host> refused`, going on for a private host
  * with {@link PRIVATE_HOST_REMEDY}, before any request. A refused redirect throws `Redirect to
  * <what> refused`, where a private host is named only as one, followed by the settings that admit
  * it, and is logged. Either is a `host_refused` {@link ReadFailureError}.
  */
-export function underPrivateNetworkRule(transport: PrivateNetworkTransport): FetchPort {
+export function underPrivateNetworkRule(
+  transport: PrivateNetworkTransport,
+  request: SingleFetch = (url, init) => transport.fetch(url, init),
+): FetchPort {
   const allowPrivateNetworkHosts = transport.allowPrivateNetworkHosts === true;
   return {
     async fetch(url, init) {
@@ -140,7 +145,7 @@ export function underPrivateNetworkRule(transport: PrivateNetworkTransport): Fet
         );
       }
       return fetchWithCheckedRedirects(
-        (target, options) => transport.fetch(target, options),
+        request,
         verdict.admitted,
         (init ?? {}) as RequestInit,
         target => redirectRefusal(target, allowPrivateNetworkHosts),

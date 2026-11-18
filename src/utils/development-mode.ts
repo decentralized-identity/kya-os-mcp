@@ -16,7 +16,7 @@
  * a deployment there keeps `development: true` out of its production configuration itself.
  */
 
-import { logger } from '../logging/index.js';
+import { warnOncePerProcess } from './warn-once.js';
 
 /** Where the process records that the warning was given, shared by every copy of the package it loads. */
 const WARNED = Symbol.for('@kya-os/mcp/development-warned');
@@ -76,10 +76,8 @@ function runsInProduction(): boolean {
 
 /** Warn that private and local hosts are read, the first time any setting turns development on. */
 function warnOnce(setting: string): void {
-  const registry = globalThis as { [WARNED]?: true };
-  if (registry[WARNED]) return;
-  registry[WARNED] = true;
-  logger.warn(
+  warnOncePerProcess(
+    WARNED,
     `[kya-os] development: true is on (${setting}), so private and local hosts such as *.localhost are read. ` +
       'Never use it in production.',
   );

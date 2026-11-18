@@ -5,7 +5,9 @@
  * document for an issuer's DID, the gate still asks its own did:web resolver, and a document that
  * one finds is used. When neither finds one, the refusal shows the failure the host's resolver
  * reported, never the one the gate's own read reported after it, whichever of the two reads local
- * hosts in development.
+ * hosts in development. A resolver of the host's that throws is answered alike in either place:
+ * its words are logged for the operator and never shown, and the refusal is `did_unavailable`,
+ * unless it throws a `RefusalError`, whose code and words the refusal takes.
  *
  * A client connected over MCP presents a two-hop chain: a did:key root the server trusts delegates
  * to an agent on a `*.localhost` did:web name, and the agent delegates on to the client. The host's
@@ -25,6 +27,7 @@ import {
   generateIdentity,
   logger,
   NodeCryptoProvider,
+  RefusalError,
   toMcpToolCallback,
   withKyaOs,
   type AgentIdentity,
@@ -178,4 +181,44 @@ it("keeps the failure the host's own resolver reports when the resolver configur
   });
 
   expect(outcome).toEqual({ allowed: false, reason: UNRESOLVED, code: 'did_invalid' });
+});
+
+/** Words a transport might throw, naming a host on the verifier's network. */
+const TRANSPORT_WORDS = 'connect ECONNREFUSED 10.0.0.7:8443';
+
+/** A resolver that throws `error` for a did:web DID, and finds no document for any other. */
+const throwingForDidWeb = (error: Error): DIDResolver => ({
+  resolve: (did) => (did.startsWith('did:web:') ? Promise.reject(error) : Promise.resolve(null)),
+});
+
+/** Each line the operator's log was warned with during the last call. */
+const warnings = (): string[] => vi.mocked(logger.warn).mock.calls.map(([line]) => String(line));
+
+describe.each(SLOTS)('a withKyaOs server with %s, which throws', (_label, slot) => {
+  it('refuses with did_unavailable, showing the presenter none of its words, and logs them once', async () => {
+    const outcome = await callUnder({ ...slot(throwingForDidWeb(new Error(TRANSPORT_WORDS))), fetchProvider: serving() });
+
+    expect(outcome).toEqual({ allowed: false, reason: UNRESOLVED, code: 'did_unavailable' });
+    expect(warnings().filter((line) => line.includes(TRANSPORT_WORDS))).toHaveLength(1);
+    expect(warnings().filter((line) => line.includes('gave no cause'))).toEqual([]);
+  });
+
+  it('refuses with the code and words of a RefusalError it throws', async () => {
+    const refusal = new RefusalError('did_invalid', 'the registry lists no such agent');
+    const outcome = await callUnder({ ...slot(throwingForDidWeb(refusal)), fetchProvider: serving() });
+
+    expect(outcome).toEqual({
+      allowed: false,
+      reason: 'Delegation leaf invalid: Signature verification error: the registry lists no such agent',
+      code: 'did_invalid',
+    });
+  });
+});
+
+it('names the method of a didResolvers entry that throws, and its words, in one warning', async () => {
+  await callUnder({ didResolvers: { web: throwingForDidWeb(new Error(TRANSPORT_WORDS)) }, fetchProvider: serving() });
+
+  expect(warnings()).toContain(
+    `[kya-os] The DID resolver delegation.didResolvers configures for "web" threw resolving "${AGENT}": ${TRANSPORT_WORDS}`,
+  );
 });

@@ -80,8 +80,11 @@ export interface KyaOsDelegationConfig {
    * Optional DID method resolver registry. Entries are keyed by DID method
    * (for example, "cheqd") and are checked before the built-in did:key and
    * did:web fallback, whose failure never replaces one an entry reports
-   * through `DIDResolver.lastFailure`. Factory entries receive the active
-   * fetch provider.
+   * through `DIDResolver.lastFailure`. An entry that throws ends the
+   * resolution, as `didResolver` does: the DID is refused with the code and
+   * words of a `RefusalError` it throws, or as `did_unavailable`, its error
+   * logged with the entry's method and never shown. Factory entries receive
+   * the active fetch provider.
    */
   didResolvers?: DIDResolverRegistry;
   /**

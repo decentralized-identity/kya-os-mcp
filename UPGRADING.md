@@ -52,6 +52,24 @@ A checkpoint stored over another tree is now a `fork`, with the message `A check
 | Match the message `A different checkpoint already exists at this tree size` | Call `isLostCheckpointRace(error)` instead. | The match still finds every lost race, and no longer takes a checkpoint stored over another tree for one. |
 | Alarm on every `AUDIT_CHECKPOINT_CONFLICT` | Nothing, or leave out the conflicts `isLostCheckpointRace` accepts. | Every fork keeps the code. |
 
+### Send the delegation credential downstream
+
+`buildOutboundDelegationHeaders` takes the delegation credential as `credentialJwt`, the compact VC-JWT its issuer signed, and sends it unchanged as `KYA-OS-Delegation-Credential`.
+SPEC.md §8.1 makes that header authoritative: a downstream service that follows it derives the granted scopes and the chain from the credential, and never from `KYA-OS-Delegation-Chain`.
+On 1.24.0 the helper had no way to send it, so such a service could authorize nothing the helper sent.
+
+| If you | Do this | Effect |
+| --- | --- | --- |
+| Call `buildOutboundDelegationHeaders` | Pass `credentialJwt`: the VC-JWT the agent presented, or a grant's `credentialJwt`. | The headers carry `KYA-OS-Delegation-Credential`. |
+| Call it without `credentialJwt` | Nothing breaks; look for the warning below in your log, and pass the credential. | The headers are as on 1.24.0, with no credential header. |
+| Pass the credential object, or its JSON text | Pass its VC-JWT instead. | The call throws a `TypeError` that names `credentialJwt` and does not repeat the value. |
+| Verify these headers downstream | Verify the credential with `DelegationCredentialVerifier.verifyDelegationJwt`, as `examples/outbound-delegation` does. | Authorization follows the credential's signature, expiry, status and scopes. |
+
+The first call in a process without `credentialJwt` warns once through `logger.warn`, in fixed words that hold nothing the caller or the agent passed: `[kya-os] buildOutboundDelegationHeaders was given no credentialJwt, ...`.
+The warning is shared across package copies in the process.
+A credential that arrived as a JSON object with an embedded proof has no VC-JWT form until its issuer signs one, so it cannot be sent in this header.
+A future major version may require `credentialJwt`.
+
 ## From 1.23.0
 
 ### Hosts a presenter names are resolved and pinned

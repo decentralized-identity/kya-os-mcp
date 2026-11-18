@@ -4,19 +4,25 @@
  * Builds the full set of outbound delegation headers for forwarding
  * delegation context to downstream services.
  *
- * Headers (KYA-OS §7):
+ * Headers (KYA-OS §8.1):
+ * - KYA-OS-Delegation-Credential: the delegation credential as a VC-JWT, which
+ *   a verifier derives authorization from; sent when the caller passes `credentialJwt`
  * - KYA-OS-Agent-DID: the original agent's DID
- * - KYA-OS-Delegation-Chain: the delegation chain ID (vcId of the root delegation)
+ * - KYA-OS-Delegation-Chain: the delegation chain ID (vcId of the root delegation), advisory only
  * - KYA-OS-Session-Id: the current session ID
  * - KYA-OS-Delegation-Proof: a signed JWT proving the delegation is being forwarded
  *
- * Related Spec: KYA-OS §7 — Outbound Delegation Propagation
+ * Related Spec: KYA-OS §8, Outbound Delegation Propagation
  */
 
 import type { SessionContext, DelegationRecord } from '../types/protocol.js';
 import { buildDelegationProofJWT, type Ed25519PrivateJWK } from './outbound-proof.js';
 import { extractPublicKeyFromDidKey, isEd25519DidKey } from './did-key-resolver.js';
+import { parseVCJWT } from './utils.js';
 import { base64ToBytes, base64urlEncodeFromBytes } from '../utils/base64.js';
+import { strictBase64urlBytes } from '../utils/base64-reading.js';
+import { isRecord } from '../utils/guards.js';
+import { warnOncePerProcess } from '../utils/warn-once.js';
 import { logger } from '../logging/index.js';
 
 /**
@@ -27,6 +33,7 @@ export const OUTBOUND_HEADER_NAMES = {
   DELEGATION_CHAIN: 'KYA-OS-Delegation-Chain',
   SESSION_ID: 'KYA-OS-Session-Id',
   DELEGATION_PROOF: 'KYA-OS-Delegation-Proof',
+  DELEGATION_CREDENTIAL: 'KYA-OS-Delegation-Credential',
 } as const;
 
 /**
@@ -45,6 +52,14 @@ export interface OutboundDelegationContext {
   };
   /** The downstream URL being called */
   targetUrl: string;
+  /**
+   * The credential of `delegation`, as the compact VC-JWT its issuer signed (SPEC §6.2, "The
+   * VC-JWT form"), such as the one the agent presented or a grant's `credentialJwt`. It is sent
+   * unchanged as `KYA-OS-Delegation-Credential`, the header a verifier that follows SPEC §8.1
+   * derives authorization from. Without it that header is not sent, so such a verifier can
+   * authorize nothing, and the first call in a process that omits it warns through `logger.warn`.
+   */
+  credentialJwt?: string;
 }
 
 /**
@@ -55,6 +70,51 @@ export interface OutboundDelegationHeaders {
   'KYA-OS-Delegation-Chain': string;
   'KYA-OS-Session-Id': string;
   'KYA-OS-Delegation-Proof': string;
+  /** The delegation credential as a VC-JWT (SPEC §8.1); present only when `credentialJwt` was given. */
+  'KYA-OS-Delegation-Credential'?: string;
+}
+
+/** Where every copy of this package records that the missing-credential warning was given. */
+const CREDENTIAL_WARNED = Symbol.for('@kya-os/mcp/outbound-credential-warned');
+
+/** Fixed words, so nothing a caller or an agent passed is ever written into the log line. */
+const NO_CREDENTIAL_WARNING =
+  '[kya-os] buildOutboundDelegationHeaders was given no credentialJwt, so the request carries no ' +
+  'KYA-OS-Delegation-Credential header, the credential a service that follows SPEC §8.1 derives authorization ' +
+  'from. Pass the delegation credential, as the VC-JWT its issuer signed, in credentialJwt.';
+
+/** Fixed words, so a refusal never repeats the value it refuses. */
+const NOT_A_VC_JWT =
+  'OutboundDelegationContext.credentialJwt must be the delegation credential as a compact VC-JWT: ' +
+  'three base64url segments whose payload carries a vc claim';
+
+/**
+ * Whether `value` is a compact VC-JWT as `parseVCJWT`, which the verifier reads one with, reads it,
+ * written in base64url alone (RFC 7515 §2), so no white space or line break reaches a header.
+ */
+function isCompactVcJwt(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const segments = value.split('.');
+  if (segments.length !== 3 || segments.some((segment) => segment === '' || strictBase64urlBytes(segment) === undefined)) {
+    return false;
+  }
+  const parsed = parseVCJWT(value);
+  return parsed !== null && isRecord(parsed.header) && isRecord(parsed.payload) && isRecord(parsed.payload.vc);
+}
+
+/**
+ * The `KYA-OS-Delegation-Credential` member for `credentialJwt`: none when it is absent, with one
+ * warning per process, and the value unchanged when it is a compact VC-JWT.
+ *
+ * @throws {TypeError} for any other value, in words that do not repeat it
+ */
+function credentialHeader(credentialJwt: unknown): Pick<OutboundDelegationHeaders, 'KYA-OS-Delegation-Credential'> {
+  if (credentialJwt === undefined) {
+    warnOncePerProcess(CREDENTIAL_WARNED, NO_CREDENTIAL_WARNING);
+    return {};
+  }
+  if (!isCompactVcJwt(credentialJwt)) throw new TypeError(NOT_A_VC_JWT);
+  return { [OUTBOUND_HEADER_NAMES.DELEGATION_CREDENTIAL]: credentialJwt };
 }
 
 /**
@@ -109,12 +169,15 @@ function buildPrivateKeyJwk(
  * When an MCP server calls a downstream service on behalf of an agent,
  * it MUST forward the delegation context using these headers so the
  * downstream service can independently verify the delegation chain.
+ * A verifier that follows SPEC §8.1 derives authorization from the
+ * delegation credential, so pass it as `credentialJwt`.
  *
- * @param context - The delegation context including session, delegation, and server identity
+ * @param context - The delegation context including session, delegation, credential, and server identity
  * @returns Headers object to attach to the outbound request
  *
  * @throws {Error} If session is missing agentDid or sessionId
  * @throws {Error} If delegation is missing vcId
+ * @throws {TypeError} If credentialJwt is given and is not a compact VC-JWT
  * @throws {Error} If serverIdentity.did is not a valid Ed25519 did:key
  *
  * @example
@@ -122,6 +185,7 @@ function buildPrivateKeyJwk(
  * const headers = await buildOutboundDelegationHeaders({
  *   session,
  *   delegation,
+ *   credentialJwt, // the delegation credential as a VC-JWT
  *   serverIdentity: { did: serverDid, kid: serverKid, privateKey },
  *   targetUrl: 'https://downstream-api.example.com/resource',
  * });
@@ -133,7 +197,7 @@ function buildPrivateKeyJwk(
 export async function buildOutboundDelegationHeaders(
   context: OutboundDelegationContext,
 ): Promise<OutboundDelegationHeaders> {
-  const { session, delegation, serverIdentity, targetUrl } = context;
+  const { session, delegation, serverIdentity, targetUrl, credentialJwt } = context;
 
   // Validate required fields
   if (!session.agentDid) {
@@ -147,6 +211,8 @@ export async function buildOutboundDelegationHeaders(
   if (!delegation.vcId) {
     throw new Error('Delegation must have vcId for outbound delegation');
   }
+
+  const credential = credentialHeader(credentialJwt);
 
   // Extract hostname for JWT audience
   const targetHostname = extractHostname(targetUrl);
@@ -186,5 +252,6 @@ export async function buildOutboundDelegationHeaders(
     'KYA-OS-Delegation-Chain': delegation.vcId,
     'KYA-OS-Session-Id': session.sessionId,
     'KYA-OS-Delegation-Proof': jwt,
+    ...credential,
   };
 }

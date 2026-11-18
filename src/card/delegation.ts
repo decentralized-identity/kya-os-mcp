@@ -28,7 +28,7 @@ import type { RefusalCode } from '../refusal-codes.js';
 import type { RefusalCoding } from '../delegation/vc-verifier.types.js';
 import { coded } from '../utils/refusal.js';
 import { dependencyTimeout } from '../utils/deadline.js';
-import { logger } from '../logging/index.js';
+import { warnOncePerProcess } from '../utils/warn-once.js';
 import type { DelegationProofVerifier } from './delegation-proof.js';
 import { firstHopProofRefusal } from './hop-proofs.js';
 import { hopWindowRules } from './hop-window.js';
@@ -462,10 +462,8 @@ const PROOFS_WARNED = Symbol.for('@kya-os/mcp/delegation-proofs-warned');
 
 /** Warn once when a chain reaches status evaluation without the injected proof verifier. */
 function warnWithoutHopProofs(): void {
-  const registry = globalThis as { [PROOFS_WARNED]?: true };
-  if (registry[PROOFS_WARNED]) return;
-  registry[PROOFS_WARNED] = true;
-  logger.warn(
+  warnOncePerProcess(
+    PROOFS_WARNED,
     '[kya-os] evaluateDelegationChain reads status without checking hop proofs. ' +
       'Pass verifyHopProof: createDelegationProofVerifier({ didResolver }); required in the next major version.',
   );

@@ -818,7 +818,8 @@ It also checks every positive and negative status-list vector via `status_list.p
 This reader is restricted to the vectors' Ed25519Signature2020/JCS, one-bit profile; it is not a general VC engine and does not authenticate a chain from `trustedRootIssuer`.
 The raw-chain differential test, `conformance/__tests__/status-list-independent.test.ts`, compares 13,608 cases against that Python authority predicate, including root-pin mismatch, role collisions, mapping direction, malformed values and exact URL binding.
 This finite partition complements the 56,700-case decision table; neither is an exhaustive proof.
-That test, `status-list-configuration.test.ts`, and `crosslang-verifier.test.ts`, which runs this script in isolated mode (`-I`), use the first of `python3`, `python` and `py -3` that runs Python 3.9 or later.
+That test, `status-list-configuration.test.ts`, `status-list-window-dates.test.ts`, and `crosslang-verifier.test.ts`, which runs this script in isolated mode (`-I`), use the first of `python3`, `python` and `py -3` that runs Python 3.9 or later.
+CI runs this script and those tests on Python 3.9 and on the newest Python, so the floor stays tested.
 Without one, they fail when the `CI` environment variable is set, and are skipped with the reason otherwise.
 The published runtime gains no dependency.
 It also runs the `signed-proof/delegation-*` vectors, and holds every `signed-proof` vector to the verdict it expects.

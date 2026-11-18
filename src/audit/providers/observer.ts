@@ -1,7 +1,11 @@
 import { canonicalizeJsonBytes } from '../../utils/canonical-json.js';
 import { hashAuditValue, type AuditHasher, type AuditSigner } from '../crypto.js';
 import { AUDIT_DIGEST_DOMAINS } from '../integrity.js';
-import { AUDIT_ERROR_CODES, AuditProtocolError } from '../errors.js';
+import {
+  AUDIT_CHECKPOINT_CONFLICT_REASONS,
+  AUDIT_ERROR_CODES,
+  AuditProtocolError,
+} from '../errors.js';
 import type {
   AuditLedgerRef,
   AuditObservationReceiptCoreV1,
@@ -93,6 +97,7 @@ export class MemoryAuditCheckpointObserver implements AuditCheckpointObserverPro
           throw new AuditProtocolError(
             AUDIT_ERROR_CODES.CHECKPOINT_CONFLICT,
             'Conflicting checkpoint roots were observed at the same tree size',
+            { reason: AUDIT_CHECKPOINT_CONFLICT_REASONS.FORK },
           );
         }
         return existing.receipt;
@@ -106,6 +111,7 @@ export class MemoryAuditCheckpointObserver implements AuditCheckpointObserverPro
         throw new AuditProtocolError(
           AUDIT_ERROR_CODES.CHECKPOINT_CONFLICT,
           'Checkpoint does not consistently extend the previously observed tree',
+          { reason: AUDIT_CHECKPOINT_CONFLICT_REASONS.FORK },
         );
       }
     }

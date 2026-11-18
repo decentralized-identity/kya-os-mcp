@@ -363,6 +363,18 @@ stored, the builder's next `createCheckpoint` call runs the hook again for that
 checkpoint, before any newer one, even when the ledger has grown in between;
 the hook must therefore be idempotent on the checkpoint digest.
 
+Every `AUDIT_CHECKPOINT_CONFLICT` the builder and `MemoryAuditCheckpointObserver` raise names why in `details.reason`, one of `AUDIT_CHECKPOINT_CONFLICT_REASONS`:
+
+| `details.reason` | Raised when | What it means |
+| --- | --- | --- |
+| `lost-race` | The store already holds a checkpoint at this tree size over the same tree the builder signed: another signer checkpointed the same journal first. | Nothing is wrong. The stored checkpoint stands, and calling `createCheckpoint` again returns it. |
+| `fork` | The journal no longer holds the latest checkpoint's tree as its prefix, the store holds a checkpoint over another tree at this tree size, or an observer holds a view the checkpoint does not consistently extend. | Two signed views of the ledger disagree. Treat it as a security event and record it. A retry signs nothing until the history is reconciled, which for a restored journal is an epoch transition. |
+
+Branch with `isLostCheckpointRace(error)`, which is true only for a `lost-race` conflict.
+Any other `AUDIT_CHECKPOINT_CONFLICT` is a fork, including one with a reason this release does not list and one with no reason, such as an observer of your own may throw.
+Do not tell the two apart by the message, or by `details.treeSize`, which both carry.
+The reason belongs to this library's API, not to the wire protocol: no schema or conformance vector carries it.
+
 `AuditCheckpointCoordinator` publishes a committed checkpoint to independent
 observers and supporting anchors. Publication is retryable and may enforce a
 minimum observer count and required anchor kinds. Failure does not roll back the

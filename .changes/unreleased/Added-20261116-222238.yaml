@@ -1,9 +1,0 @@
-kind: Added
-body: |-
-    **Check delegation hop proofs before reading status.** Pass
-    `verifyHopProof` to `evaluateDelegationChain` to verify every hop root to
-    leaf after local checks and before any status read. The first proof
-    refusal stops the walk, preserving its code and the existing per-answer
-    deadline. Omitting the verifier keeps legacy results with one warning per
-    process; it becomes required in the next major version. See UPGRADING.md.
-time: 2026-11-16T22:22:38.28138-06:00

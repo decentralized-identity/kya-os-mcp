@@ -5,6 +5,291 @@ All notable changes to @kya-os/mcp will be documented here.
 Format: https://keepachangelog.com/en/1.0.0/
 Versioning: https://semver.org/spec/v2.0.0.html
 
+## [1.24.0] - 2026-11-17
+
+### Added
+
+- **Check delegation hop proofs before reading status.** Pass
+  `verifyHopProof` to `evaluateDelegationChain` to verify every hop root to
+  leaf after local checks and before any status read. The first proof
+  refusal stops the walk, preserving its code and the existing per-answer
+  deadline. Omitting the verifier keeps legacy results with one warning per
+  process; it becomes required in the next major version. See UPGRADING.md.
+
+### Changed
+
+- **A Card's DID members take only a DID as W3C DID Core writes one, so
+  the Card's schema moves to `identity/card/v1.2.0`.** `id`,
+  `responsibleParty`, `principal` and an attestation's `subject` and
+  `issuer` no longer take a DID URL, such as a key id ending in `#key-1`,
+  a character DID Core writes percent-encoded, or an empty last part.
+  `v1.1.0` stays published. `EntityCardSchema`, `parseCard` and
+  `resolveCard` refuse such a value with a reason that says what is
+  wrong; `resolveCard` does so before any request, where it fetched the
+  DID document of one such as `did:web:acme.example:a+b`. UPGRADING.md,
+  "Each Card DID is a DID as DID Core writes it", has each case.
+- **A status-list binding no redirect reaches is said once.** A
+  `statusListIssuers` binding written in another form than the URL parser
+  writes, such as `https://lists.example:443/list` or a host in upper
+  case, still binds a status entry that names it as written, as SPEC.md
+  §6.6 reads it, but a redirect is matched as the parser writes the URL it
+  resolves to and never reaches it. `RuntimeFetchProvider` and
+  `createRevocationChecker` now say so once through `logger.warn` when
+  configured, naming the form a redirect reaches, and say once as well of
+  a binding no read reaches, one that includes credentials or does not
+  parse. See UPGRADING.md.
+
+### Security
+
+- **The cheqd resolver no longer sends its configured headers to any host
+  its endpoint redirects to.** `DidCheqdResolver`, `createDidCheqdResolver`
+  and `cheqdResolver` let the runtime follow redirects itself, in Node up
+  to 20 and to any host, carrying every header the `headers` option sets,
+  such as an API key, to wherever they led. The resolver now follows a
+  redirect by hand, as did:web and status-list reads do: at most 3, never
+  from https down to http, and to an origin other than the resolver's
+  with only the CORS-safelisted request headers. The resolver's own host
+  may still be private or local, since the operator names it.
+  UPGRADING.md, "The cheqd resolver follows a redirect by hand", has the
+  detail.
+- **A re-delegation under a delegation that grants no scope can no longer
+  grant one.** `wrapWithDelegation` runs a tool only for a scope the
+  presented delegation states, so a delegation with no scopes, such as an
+  identity-only or audience-only grant, runs none. Chain validation read
+  such a parent as unrestricted and accepted a re-delegation under it with
+  any scope, so a delegate holding that grant from a trusted root could
+  sign itself any scope, and the gate ran the tool. `wrapWithDelegation`,
+  `validateDelegationChain` and `validateScopeAttenuation` now refuse such
+  a re-delegation as `chain_invalid`, at any hop; one that states no scope
+  either is still accepted. Every release from 1.2.0 read a parent with no
+  scopes this way. It mattered from 1.17.0, on a server that names its
+  trusted root issuers, since before then the gate took a root from any
+  issuer. Conformance suite 1.6.0 adds a vector for it. UPGRADING.md, "A
+  scope under a delegation that grants none", has the detail.
+- **A cache TTL that is not a finite number no longer keeps an answer for
+  ever.** `withStatusCache`, `DelegationCredentialVerifier`,
+  `CheqdStatusListResolver` and the middleware's
+  `delegation.verificationCache` read a TTL of `NaN`, as
+  `Number(process.env.UNSET)` gives, or `Infinity`, as never expiring, so
+  a "not revoked" verdict, a verified status list or a signature result
+  was served long after it changed, and a capacity of `NaN` never evicted.
+  The did:web and cheqd DID resolvers kept a document for ever under
+  `Infinity`. Each TTL must now be a finite number of milliseconds, 0 or
+  more, and each capacity a whole number greater than 0, or building the
+  verifier or resolver throws a `TypeError` naming the option, as
+  `dependencyTimeoutMs` does. An option left out keeps its default. A
+  negative TTL and a capacity of 0, which turned a cache off, now throw
+  too; set the TTL to 0. UPGRADING.md, "Cache TTL and size options are
+  checked when they are set", lists each option.
+- **A Card reaches L3 only on a live proof its own DID signed.**
+  `verifyCard` lifted a Card to L3 on any valid proof, whatever DID signed
+  it, so a caller holding any key could present another Entity's Card at
+  L3. It now lifts the level only when the proof's `did` is the Card's
+  `id`, compared as `resolveCard` compares a fetched Card's `id` with the
+  DID it was resolved for. A Card whose proof another DID signed verifies
+  at L2 with the same `ok`, its `proof` still reports that DID, and the
+  accountability verifier still receives it as `proofDid`.
+  SPEC-ENTITY-CARD.md §9.3, §11.1 and §11.3 state the rule.
+- **A status list past its own `validUntil` no longer clears a
+  revocation.** A list's proof does not tell its versions apart, so an
+  earlier version, signed before a credential was revoked, still
+  verifies; until now one past its `validUntil` (or `expirationDate`)
+  read `fresh: false` and passed every verifier that did not require
+  `fresh`, `requireDelegation` and `verifyCard` among them. Every
+  status-list reader in the library, the Card revocation checker,
+  `CheqdStatusListResolver`, `StatusList2021Manager` and the conformance
+  reference adapter, now reads a list only inside the window it states,
+  and refuses one past its end, before its `validFrom` (or
+  `issuanceDate`), or with a bound that is not a date as
+  `status_unavailable`, which is transient, with a reason that quotes the
+  time the list states. A list that states no window is read as before.
+  Issuers must republish a list before its `validUntil`. The rule is
+  exported as `acceptStatusListValidity` for readers of your own, and
+  conformance suite 1.7.0 adds eight vectors for it. UPGRADING.md, "A
+  status list outside its validity window is refused", has the detail.
+- **Outbound reads fetch what they check, and SafeFetch has one
+  deadline.** A did:web DID whose host or path segment still holds a `%`
+  after its one percent-decode, such as
+  `did:web:example.com:bob:%252E%252E:alice`, now names no URL: the URL
+  parser decoded it again, so two DIDs could name one document. The
+  private-network rule hands the transport the URL the parser wrote, which
+  is the URL it checked, rather than the string it was given, which a
+  transport could parse to another host. `createSafeFetch`'s `timeoutMs`
+  now covers a whole read, its DNS lookups, every redirect hop and the
+  body, and the fetcher takes an optional `{ signal }` that ends the read.
+  See UPGRADING.md.
+- **The cheqd registrar client no longer sends its headers or a request
+  body to any host its registrar redirects to.** `CheqdDidRegistrarClient`
+  let the runtime follow redirects itself, in Node up to 20 and to any
+  host, carrying the request body and every header the `headers` option
+  sets, such as an API key, to wherever they led, and took that host's
+  answer as the registrar's. A request now follows only a 307 or 308,
+  which keep its method and body, only on the registrar's own origin and
+  at most 3 times; a 301, 302 or 303 and a redirect to another origin are
+  refused. The registrar's own host may still be private or local, since
+  the operator names it. UPGRADING.md, "The cheqd resolver follows a
+  redirect by hand", has the detail.
+- **`verifyCard` no longer passes a Card whose revocation entry it
+  cannot check.** A Card that declares `revocation` was verified
+  `ok: true`, its entry ignored, when no `statusListChecker` was given,
+  so a revoked Card passed. Such a Card is now refused as
+  `configuration_error`, as an accountability or attestation that no
+  verifier checks is, and reported revoked and not fresh, with a reason
+  that names the missing checker. A Card that declares no `revocation`
+  needs no checker. Conformance suite 1.8.0 adds the negative vector
+  `entity-card/revocation-unchecked`. UPGRADING.md, "A Card that
+  declares a revocation entry needs a checker", has the detail.
+- **Status-list remedies bind the list's URL, proofs are canonicalized
+  strictly, and decompressors are told the inflation cap.** A keeper
+  refusal's `statusListIssuers` line now binds the list's own URL, never
+  its origin, which would hand the signer every list there. `eddsa-jcs-2022`
+  proofs hash with the package's RFC 8785 canonicalizer, which sorts an
+  object with a member named `toJSON` as any other; signatures over plain
+  JSON are unchanged, and signing a document with an `undefined` member
+  throws. Every status-list reader passes its decompressor
+  `{ maxBytes }` so it can stop a decompression bomb while inflating. See
+  UPGRADING.md.
+- Detached proof key retrieval now requires the signer to list the key under assertionMethod, and CIMD projects only authentication keys for client authentication. Both use the shared method ownership and uniqueness rules. Hand-written DID documents must list each key for its purpose; did:key and buildDidWebDocument are unaffected. See UPGRADING.md, Detached proof and CIMD keys follow their verification relationship.
+- **The Card resolver reads a did:web DID as the did:web resolver
+  does.** `resolveCard`, `didWebToCardUrl` and `didWebToDidDocUrl` decoded
+  a DID's host and path segments with no check, so a dot-segment, an
+  encoded separator, a double-encoded `%2E%2E` or userinfo in the host
+  could read the DID document and Card another home serves. They now map
+  the DID through the did:web resolver's own parser, and a DID that names
+  no URL there is refused before any request. See UPGRADING.md.
+- **did:web and status-list reads resolve and pin the hosts a presenter
+  names.** `RuntimeFetchProvider` now resolves each host before it
+  connects, every redirect included, refuses a host with any address that
+  is not public, and connects only to the address it checked, so a
+  public-looking name such as `did:web:169.254.169.254.nip.io` no longer
+  reaches an internal endpoint and a second lookup cannot rebind it. The
+  DIDs pinned in `trustedRootIssuers` and the lists `statusListIssuers`
+  binds are read wherever they are. A status list, and each of its
+  redirects, takes https. See UPGRADING.md.
+- **A verified pinned root's status list may be on a private host.**
+  `createRevocationChecker` reads the list a pinned root's own credential
+  names on any host, still pinned, once that credential's proof has
+  verified, and reads the lists `statusListIssuers` binds on any host
+  too, deciding each hop, redirects included, on its own URL. A root
+  credential whose proof fails or is not checked has its list read as
+  one the presenter named, and so does a root no pin names: `verifyCard`
+  takes `trustedRootIssuers` for the responsible party it may read so.
+  See UPGRADING.md.
+- **A proxy that carries the global fetch carries did:web and status-list
+  reads again.** Where the global `fetch` sends a request through a
+  proxy, under undici's `ProxyAgent`, or its `EnvHttpProxyAgent` such as
+  the one Node installs under `NODE_USE_ENV_PROXY`, for a host `NO_PROXY`
+  does not name, `RuntimeFetchProvider` reads through it as 1.23.0 did,
+  held to the URL alone, and warns once that the proxy must refuse
+  private addresses, instead of resolving the host itself and going
+  around the proxy. Under any other dispatcher, and for a host `NO_PROXY`
+  names, the read is still resolved, checked and pinned. See UPGRADING.md.
+- **One failed lookup no longer turns the host check off.** The probe of
+  whether the runtime resolves names answers no only where `node:dns` does
+  not load or says its `lookup` is not implemented. Any other failure, such
+  as a resolver busy for a moment, leaves each read to resolve and check
+  its own host, and is asked again. Every fall back to the URL-only rule,
+  a provider whose `fetch` is its own included, is logged once.
+- **A redirect from a host the operator names is held to the rule.** The
+  exemption for a status-list URL `statusListIssuers` binds and for the
+  did:web document of a pinned DID covered every redirect of the read, so
+  an open redirect on a bound origin reached a private address with no
+  lookup. Each request is now decided on its own URL, as SafeFetch decides
+  `allowOrigins`, and a redirect to a URL the operator did not name is
+  resolved, checked and pinned.
+- **Every verifier reads a window's dates as the same instants, and a
+  list or hop issued a moment ago is read.** The dates of a status
+  list's window and of an Entity Card delegation hop's were read with
+  `Date.parse`, which reads a time with no zone, such as
+  `2026-11-17T00:00:00`, in the zone of the machine it runs on, so one
+  list was read in windows hours apart on two verifiers, and which takes
+  forms RFC 3339 does not write. Each is now read as an RFC 3339
+  date-time with its time zone, by one parser, and anything else is
+  refused by its text alone, the same way everywhere:
+  `status_unavailable` for a list, `delegation_malformed` for a hop, and
+  expired for a VC 1.1 delegation credential's `expirationDate`. Each
+  bound of a list's or a hop's window is now held with a clock
+  tolerance, `maxClockSkewMs`, 120 seconds unless set, from 0 to
+  600,000 ms, so a list whose `validFrom` an issuer with a clock running
+  ahead stamped a moment ago is no longer refused until the verifier's
+  clock catches up. Set it on `createRevocationChecker`,
+  `CheqdStatusListResolver`, `StatusList2021Manager`, `requireDelegation`
+  or a chain's context. Conformance suite 1.10.0 adds four vectors.
+  UPGRADING.md, "Dates in a window name one instant, and each bound has
+  a clock tolerance", has the detail.
+- **Status lists are read over https.** Over http, an on-path party can
+  replay an older signed list from before a revocation. A list a presenter
+  names, and every redirect, is now read over https alone, under
+  `allowPrivateNetworkHosts` and on a private host too. An exact http URL
+  the operator binds in `statusListIssuers` is read on any host, by
+  `RuntimeFetchProvider` and `createRevocationChecker` alike, and
+  `development: true` still reads http from a private or local host. See
+  UPGRADING.md, "Hosts a presenter names are resolved and pinned".
+- **The pinned connection reads a host as `fetch` did.** It sends the
+  `Accept` and `User-Agent` the runtime's `fetch` sends and
+  `Accept-Encoding: gzip`, and decodes a gzip body through the package's
+  capped decompressor, so the byte cap holds the decoded body. A host that
+  serves its JSON gzipped whatever the request asks, as an object store
+  does, is read again, and a body in another coding is refused and logged.
+  Each pinned request, `SafeFetch`'s included, now has a connection of
+  its own: it never reuses a socket `https.globalAgent` keeps alive for
+  another request, which may have reached another address, nor goes
+  through an agent or `https.request` installed in their place, such as
+  a proxy that would resolve the host again. It keeps only the TLS
+  settings of `https.globalAgent`, such as a `ca`. See UPGRADING.md.
+- **A name that resolves to a private address is coded as one that does not
+  resolve.** It was refused as `host_refused`, a verdict, where a name that
+  does not resolve is `did_unavailable` or `status_unavailable`, transient,
+  so the code told whoever chose the name what the verifier's DNS answered.
+  Both are now coded alike, through `RuntimeFetchProvider` and `SafeFetch`,
+  and the log says `host_refused` with the name and the address. A refusal
+  the URL decides by itself keeps `host_refused`.
+- **A proxy agent composed with interceptors is read as any other
+  dispatcher.** Where the global dispatcher is undici's `ProxyAgent` or
+  `EnvHttpProxyAgent` composed with interceptors, such as
+  `interceptors.dns()`, which may resolve the host and connect on their
+  own, `RuntimeFetchProvider` resolves, checks and pins the read. Deciding
+  whether a proxy carries a read makes no request and opens no
+  connection. See UPGRADING.md.
+- **No reader sends the credentials in a URL.** A URL that includes a
+  user name or a password before its host, such as
+  `https://user:secret@host/`, is refused before any request, first or
+  as a redirect target, by `RuntimeFetchProvider`'s did:web and status-list
+  reads and by `SafeFetch`, as the runtime's `fetch` refuses it. The
+  pinned connection sent them to the host as Basic credentials. See
+  UPGRADING.md.
+
+### Fixed
+
+- **`validateDelegationChain` refuses, rather than throws, on answers it
+  did not expect.** A `resolveDelegationChain` answer that is not an
+  array, such as `undefined`, is refused as `runtime_error`. A credential
+  verifier that throws is refused as `runtime_error`, or with the code of
+  the `RefusalError` it throws, and each verifier call now gets
+  `dependencyTimeoutMs` to answer, as the resolver and the revocation
+  checker do. A credential whose `constraints.audience` is neither a
+  string nor an array is refused as `chain_invalid`, where
+  `wrapWithDelegation` refused it as `runtime_error`. A DID whose method only an
+  object's prototype holds, such as `did:constructor:x`, no longer reaches
+  `Object.prototype` in the delegation gate's resolver or in
+  `RuntimeFetchProvider.resolveDID`, and the gate refuses it as
+  `did_invalid` where it refused it as `did_unavailable`. In
+  `wrapWithDelegation` a credential's DID resolution and status read now
+  share one `dependencyTimeoutMs`. See UPGRADING.md.
+- **`evaluateDelegationChain` refuses a chain whose revocation checker
+  throws or rejects, rather than rejecting itself.** The chain is refused
+  with `fresh: false` and the reason `revocation checker threw: status
+  unprovable, fail-closed`, coded `status_unavailable`, or with the code
+  of a `RefusalError` the checker throws, as `verifyCard` codes it. The
+  checker's own words reach the reason only for a `RefusalError`; any
+  other error's message goes to the operator's log.
+- **A pinned connection tries every address it checked.** It was pinned to
+  the first address a host resolved to, so a host with an unreachable
+  address first, a dead CDN node or an AAAA record on a host whose IPv6
+  egress is broken, was not read, where `fetch` tried the next. Every
+  checked address is now handed to the connection, which tries each in
+  turn and never one that was not checked.
+
 ## [1.23.0] - 2026-11-16
 
 ### Upgrading

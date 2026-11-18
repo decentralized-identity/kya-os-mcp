@@ -1,9 +1,0 @@
-kind: Fixed
-body: |-
-    **A pinned connection tries every address it checked.** It was pinned to
-    the first address a host resolved to, so a host with an unreachable
-    address first, a dead CDN node or an AAAA record on a host whose IPv6
-    egress is broken, was not read, where `fetch` tried the next. Every
-    checked address is now handed to the connection, which tries each in
-    turn and never one that was not checked.
-time: 2026-11-17T01:05:00.000000-06:00

@@ -51,7 +51,10 @@ export interface KyaOsDelegationConfig {
   /**
    * Optional custom DID resolver, asked first. If it returns null, middleware
    * falls back to `didResolvers`, then built-in did:key resolution and
-   * fetch-backed did:web resolution. One deadline, `dependencyTimeoutMs`, covers the whole
+   * fetch-backed did:web resolution. When none of them finds a document, the
+   * refusal shows the failure of the first that reported one through
+   * `DIDResolver.lastFailure`, so this resolver's before any the middleware
+   * asks after it. One deadline, `dependencyTimeoutMs`, covers the whole
    * resolution, and the document it returns is held to the limits of SPEC
    * §4.4.2 on every call, with an `id` that is a DID: a document they refuse
    * ends the resolution, with no fallback. The gate reads its own copy of the
@@ -76,7 +79,9 @@ export interface KyaOsDelegationConfig {
   /**
    * Optional DID method resolver registry. Entries are keyed by DID method
    * (for example, "cheqd") and are checked before the built-in did:key and
-   * did:web fallback. Factory entries receive the active fetch provider.
+   * did:web fallback, whose failure never replaces one an entry reports
+   * through `DIDResolver.lastFailure`. Factory entries receive the active
+   * fetch provider.
    */
   didResolvers?: DIDResolverRegistry;
   /**

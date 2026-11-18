@@ -1,8 +1,9 @@
 /**
  * Outbound Delegation Propagation Demo
  *
- * Demonstrates KYA-OS §7 — how an MCP server forwards delegation context
- * to downstream services using HTTP headers.
+ * Demonstrates KYA-OS §8: how an MCP server forwards delegation context
+ * to downstream services using HTTP headers, and how the downstream service
+ * derives authorization from the delegation credential (§8.1).
  *
  * Run with: npx tsx examples/outbound-delegation/demo.ts
  */
@@ -12,8 +13,16 @@ import { decodeJwt, decodeProtectedHeader } from 'jose';
 import {
   CryptoProvider,
   DelegationCredentialIssuer,
+  DelegationCredentialVerifier,
+  base64urlEncodeFromBytes,
   buildOutboundDelegationHeaders,
+  completeVCJWT,
+  createDidKeyResolver,
+  createUnsignedVCJWT,
   generateDidKeyFromBase64,
+  parseVCJWT,
+  scopeSatisfies,
+  type DelegationCredential,
   type DelegationRecord,
   type SessionContext,
   type VCSigningFunction,
@@ -170,9 +179,18 @@ async function main() {
     createdAt: Date.now(),
   };
 
+  // The same credential as a VC-JWT, the form KYA-OS-Delegation-Credential
+  // carries (§8.1): Server A, its issuer, signs the JWT envelope.
+  const vcWithoutProof = { ...delegationVC } as Record<string, unknown>;
+  delete vcWithoutProof['proof'];
+  const { signingInput } = createUnsignedVCJWT(vcWithoutProof, { keyId: serverAKid });
+  const envelope = await cryptoProvider.sign(new TextEncoder().encode(signingInput), serverAKeys.privateKey);
+  const credentialJwt = completeVCJWT(signingInput, base64urlEncodeFromBytes(envelope));
+
   console.log(`Delegation ID: ${delegation.id}`);
   console.log(`VC ID:         ${delegation.vcId}`);
   console.log(`Scopes:        ${delegation.constraints.scopes?.join(', ')}`);
+  console.log(`VC-JWT:        ${credentialJwt.slice(0, 40)}...`);
   console.log();
 
   // -------------------------------------------------------------------------
@@ -213,6 +231,7 @@ async function main() {
   const headers = await buildOutboundDelegationHeaders({
     session,
     delegation,
+    credentialJwt,
     serverIdentity: {
       did: serverADid,
       kid: serverAKid,
@@ -222,10 +241,12 @@ async function main() {
   });
 
   console.log('Outbound Headers:');
-  console.log(`  KYA-OS-Agent-DID:        ${headers['KYA-OS-Agent-DID'].slice(0, 40)}...`);
-  console.log(`  KYA-OS-Delegation-Chain: ${headers['KYA-OS-Delegation-Chain']}`);
-  console.log(`  KYA-OS-Session-Id:       ${headers['KYA-OS-Session-Id']}`);
-  console.log(`  KYA-OS-Delegation-Proof: ${headers['KYA-OS-Delegation-Proof'].slice(0, 40)}...`);
+  const sentCredential = headers['KYA-OS-Delegation-Credential'];
+  console.log(`  KYA-OS-Delegation-Credential: ${sentCredential ? `${sentCredential.slice(0, 40)}...` : '(not sent)'}`);
+  console.log(`  KYA-OS-Agent-DID:             ${headers['KYA-OS-Agent-DID'].slice(0, 40)}...`);
+  console.log(`  KYA-OS-Delegation-Chain:      ${headers['KYA-OS-Delegation-Chain']} (advisory)`);
+  console.log(`  KYA-OS-Session-Id:            ${headers['KYA-OS-Session-Id']}`);
+  console.log(`  KYA-OS-Delegation-Proof:      ${headers['KYA-OS-Delegation-Proof'].slice(0, 40)}...`);
   console.log();
 
   // -------------------------------------------------------------------------
@@ -254,34 +275,52 @@ async function main() {
   console.log();
 
   // -------------------------------------------------------------------------
-  // Step 6: Show what Server B would verify
+  // Step 6: Server B derives authority from the delegation credential
   // -------------------------------------------------------------------------
-  console.log('Step 6: What Server B (downstream) would verify...');
+  console.log('Step 6: Server B (downstream) derives authorization from the credential...');
   console.log('-'.repeat(70));
 
-  console.log('Server B receives the request with these headers and should:');
-  console.log();
-  console.log('  1. Extract KYA-OS-Delegation-Proof JWT');
-  console.log('  2. Verify JWT signature using iss DID public key');
-  console.log(`     - iss (${(jwtPayload.iss as string).slice(0, 30)}...) resolves to public key`);
-  console.log('  3. Check timing:');
-  console.log(`     - iat (${jwtPayload.iat}) should be recent`);
-  console.log(`     - exp (${jwtPayload.exp}) should not have passed`);
-  console.log('  4. Check audience:');
-  console.log(`     - aud (${jwtPayload.aud}) matches Server B hostname`);
-  console.log('  5. Check scope:');
-  console.log(`     - scope is "delegation:propagate"`);
-  console.log('  6. Match DIDs:');
-  console.log(`     - sub (${(jwtPayload.sub as string).slice(0, 30)}...) matches KYA-OS-Agent-DID header`);
+  // §8.1: granted scopes and the chain come from KYA-OS-Delegation-Credential.
+  // The advisory KYA-OS-Delegation-Chain header is never read for the decision.
+  const presented = headers['KYA-OS-Delegation-Credential'];
+  if (presented === undefined) {
+    throw new Error('No KYA-OS-Delegation-Credential header: Server B can authorize nothing');
+  }
+  const verifier = new DelegationCredentialVerifier({ didResolver: createDidKeyResolver() });
+  const verified = await verifier.verifyDelegationJwt(presented);
+  const vc = parseVCJWT(presented)?.payload.vc as unknown as DelegationCredential;
+  const namesAgent = vc.credentialSubject.id === headers['KYA-OS-Agent-DID'];
+  const requiredScope = 'tool:execute';
+  const granted = scopeSatisfies(requiredScope, vc).satisfied;
+
+  const checks: [string, boolean, string?][] = [
+    ['Credential signature, expiry and status verify?', verified.valid, verified.reason],
+    ['Credential subject is KYA-OS-Agent-DID?', namesAgent],
+    [`Credential grants "${requiredScope}"?`, granted],
+  ];
+  checks.forEach(([label, ok, why], index) => {
+    console.log(`  ${index + 1}. ${label.padEnd(47)} ${ok ? 'YES' : `NO${why ? ` (${why})` : ''}`}`);
+  });
   console.log();
 
-  const subMatchesHeader = jwtPayload.sub === headers['KYA-OS-Agent-DID'];
-  console.log(`  Verification: sub matches KYA-OS-Agent-DID? ${subMatchesHeader ? 'YES' : 'NO'}`);
+  console.log('Server B also checks the KYA-OS-Delegation-Proof JWT:');
+  console.log(`  - its signature, under the key of iss (${(jwtPayload.iss as string).slice(0, 30)}...)`);
+  console.log(`  - its timing: iat (${jwtPayload.iat}) is recent and exp (${jwtPayload.exp}) has not passed`);
+  console.log(`  - its audience: aud (${jwtPayload.aud}) is Server B's hostname`);
+  console.log(`  - its scope is "delegation:propagate"? ${jwtPayload.scope === 'delegation:propagate' ? 'YES' : 'NO'}`);
+  console.log(`  - its sub is KYA-OS-Agent-DID?        ${jwtPayload.sub === headers['KYA-OS-Agent-DID'] ? 'YES' : 'NO'}`);
   console.log();
 
+  const authorized = verified.valid && namesAgent && granted;
   console.log('='.repeat(70));
-  console.log('Demo complete! Server B can now trust the delegation context.');
+  console.log(authorized
+    ? `Demo complete! Server B authorized "${requiredScope}" from the delegation credential.`
+    : 'Demo failed: Server B could not authorize the call from the delegation credential.');
   console.log('='.repeat(70));
+  if (!authorized) process.exitCode = 1;
 }
 
-main().catch(console.error);
+main().catch((error: unknown) => {
+  console.error(error);
+  process.exitCode = 1;
+});

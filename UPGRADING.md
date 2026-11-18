@@ -4,6 +4,22 @@ This file holds the detail behind the Upgrading entries in CHANGELOG.md: the ste
 Each release has one section, newest first, and declares every change of behaviour against the release before it.
 CHANGELOG.md says what changed and names the section here that says what to do about it.
 
+## From 1.24.0
+
+### The delegation gate shows the failure your DID resolver reports
+
+The delegation gate asks `delegation.didResolver` first, then the resolver `delegation.didResolvers` configures for the DID's method, then its own did:key and did:web resolvers, and goes on to the next whenever one finds no document.
+On 1.24.0, when none found one, the refusal showed the failure the last of them reported, so the gate's own did:web read replaced the failure your resolver reported through `lastFailure`.
+The refusal now shows the failure of the first resolver that reported one, yours before the gate's, as `lastFailure` has documented since 1.23.0.
+The gate still asks its own resolvers after yours, and uses a document one of them finds.
+The rule for what the presenter sees of a failure is unchanged: its detail only where one of the library's resolvers decided it from the DID alone, or where the deadline passed.
+
+| If you | Do this | Effect |
+| --- | --- | --- |
+| Give the gate a resolver that wraps one of the library's | Pass its failure on, as `lastFailure: (did) => inner.lastFailure?.(did)`. | The refusal is coded by your resolver's failure. A resolver that reports none leaves the refusal to the next one that does, as before. |
+| Set `development: true` on the middleware only so that the gate's own did:web read would not refuse a local name your resolver reads in development | Nothing; once your resolver passes its failure on, the setting is no longer needed for that. | The gate's refusal of the local name no longer replaces your resolver's failure. |
+| Match the reason or code of a refusal where your resolver and the gate's own both found no document | Expect your resolver's: a document of another DID is `did_invalid` with no detail, where 1.24.0 gave the gate's `host_refused` and its detail. | The reason and code follow the resolver you chose. |
+
 ## From 1.23.0
 
 ### Hosts a presenter names are resolved and pinned

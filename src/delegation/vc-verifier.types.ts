@@ -111,8 +111,10 @@ export interface DIDResolver {
    * cannot vouch for, and is not shown: the library's resolvers log it for the operator. A resolver
    * that wraps one of them may pass its failure on as it is, as
    * `lastFailure: (did) => inner.lastFailure?.(did)`, and the refusal shows what it would have.
-   * It reports the last failure for the DID, so a resolution of the same DID that ends in between
-   * may answer for it: read it as a diagnosis, never as a security decision.
+   * The delegation middleware's resolver, which asks the host's resolvers before its own, reports
+   * the failure of the first resolver it asked that reported one, so the host's is the one shown.
+   * `lastFailure` reports the last failure for the DID, so a resolution of the same DID that ends
+   * in between may answer for it: read it as a diagnosis, never as a security decision.
    */
   lastFailure?(did: string): DidResolutionFailure | undefined;
 }

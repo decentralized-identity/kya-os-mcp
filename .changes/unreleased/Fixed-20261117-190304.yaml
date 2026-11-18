@@ -1,0 +1,15 @@
+kind: Fixed
+body: |-
+    **A refusal of an issuer's DID shows the failure the host's own DID
+    resolver reports.** When `delegation.didResolver`, or the resolver
+    `delegation.didResolvers` configures for the DID's method, found no
+    document and said why through `lastFailure`, the gate went on to its own
+    did:web resolver, whose failure replaced the host's: a server whose
+    resolver read a local name in development, and found the document
+    there invalid, refused the DID for a private host the gate's own read
+    would not reach. The refusal now shows the failure of the first resolver
+    that reported one, as `DIDResolver.lastFailure` documents. The gate
+    still asks its own resolvers after the host's, and the presenter sees no
+    more than before. UPGRADING.md, "The delegation gate shows the failure
+    your DID resolver reports", has the detail.
+time: 2026-11-17T19:03:04.000000-06:00

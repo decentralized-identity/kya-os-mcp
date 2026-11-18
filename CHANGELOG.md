@@ -5,6 +5,78 @@ All notable changes to @kya-os/mcp will be documented here.
 Format: https://keepachangelog.com/en/1.0.0/
 Versioning: https://semver.org/spec/v2.0.0.html
 
+## [1.25.0] - 2026-11-18
+
+### Added
+
+- **`isLostCheckpointRace` tells a benign checkpoint conflict from a
+  fork.** It is true only for an `AUDIT_CHECKPOINT_CONFLICT` whose
+  `details.reason` is `lost-race`, one of the reasons
+  `AUDIT_CHECKPOINT_CONFLICT_REASONS` lists, so a fork, a reason added
+  later and a conflict with no reason all read as not benign.
+  AUDITABILITY.md, "Checkpoints, observations, and anchors", lists the
+  reasons.
+- **`buildOutboundDelegationHeaders` sends the delegation credential.**
+  Pass the credential, as the VC-JWT its issuer signed, in the new
+  `credentialJwt` input, and the helper sends it unchanged as
+  `KYA-OS-Delegation-Credential`, the header SPEC.md §8.1 makes
+  authoritative. Before, it had no way to send one, so a downstream
+  service that follows §8.1 and derives authorization from that header
+  could authorize nothing the helper sent. `credentialJwt` is optional,
+  so existing calls still type-check: one that omits it warns once per
+  process, and one that passes anything but a compact VC-JWT throws a
+  `TypeError`. UPGRADING.md, "Send the delegation credential downstream",
+  has the detail.
+
+### Security
+
+- **A checkpoint conflict says whether the audit journal forked or another
+  signer won the race.** `AuditCheckpointBuilder.createCheckpoint`
+  refused a lost race, where another signer stored a checkpoint over the
+  same tree first, and a fork, where the journal no longer holds the tree
+  of a checkpoint already signed, with the same `AUDIT_CHECKPOINT_CONFLICT`
+  and, from 1.17.0, the same `details`, so code that took a conflict with
+  a tree size for a lost race took a fork for one. A checkpoint the store
+  already held at that size over another tree even had the lost race's
+  message. Every `AUDIT_CHECKPOINT_CONFLICT` the builder and
+  `MemoryAuditCheckpointObserver` raise now names why in
+  `details.reason`, `lost-race` or `fork`, and a checkpoint stored over
+  another tree is a `fork` with a message of its own. UPGRADING.md, "A
+  checkpoint conflict says whether the journal forked", has the detail.
+
+### Fixed
+
+- **A refusal of an issuer's DID shows the failure the host's own DID
+  resolver reports.** When `delegation.didResolver`, or the resolver
+  `delegation.didResolvers` configures for the DID's method, found no
+  document and said why through `lastFailure`, the gate went on to its own
+  did:web resolver, whose failure replaced the host's: a server whose
+  resolver read a local name in development, and found the document
+  there invalid, refused the DID for a private host the gate's own read
+  would not reach. The refusal now shows the failure of the first resolver
+  that reported one, as `DIDResolver.lastFailure` documents. The gate
+  still asks its own resolvers after the host's, and the presenter sees no
+  more than before. UPGRADING.md, "The delegation gate shows the failure
+  your DID resolver reports", has the detail.
+- **The suite's Python verifier passes on Python 3.9 and 3.10, the oldest
+  it supports.** `conformance/verify.py` read a status list's window bound
+  with `datetime.fromisoformat`, which before Python 3.11 reads a fraction
+  of a second of three or six digits only, so it refused the
+  `status-list/offset-window-list` vector, whose bound has nine, and
+  reported the run as failed. It now reads a fraction of any length, cut to
+  the microsecond, as the TypeScript reference reads it to the
+  millisecond. CI runs the verifier on Python 3.9 and on the newest Python.
+- **A `delegation.didResolvers` entry that throws is no longer swallowed.**
+  The delegation gate caught its error and dropped it: nothing was logged,
+  and the DID was refused as `did_unavailable` with no cause, so the log
+  said only that the resolver might not serve the DID's method. A
+  `RefusalError` it threw lost its code and words. A throw is now answered
+  as one of `delegation.didResolver` is: a `RefusalError` is the refusal's
+  code and words, and any other error is logged once, naming the entry's
+  method, and the DID is refused as `did_unavailable` with none of its
+  words. UPGRADING.md, "A `didResolvers` entry that throws is answered as
+  `didResolver` is", has the detail.
+
 ## [1.24.0] - 2026-11-17
 
 ### Added

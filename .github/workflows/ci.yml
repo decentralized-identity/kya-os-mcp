@@ -120,6 +120,40 @@ jobs:
       - name: Cross-language proof verification
         run: pnpm run conformance:verify:crosslang
 
+  # The Python verifier, and the conformance tests that run it, on the oldest Python the suite
+  # supports (conformance/__tests__/python.ts) and on the newest, so the floor it states stays true.
+  python-verifier:
+    name: Python verifier (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.9', '3.x']
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.x'
+          cache: 'pnpm'
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Cross-language proof verification
+        run: pnpm run conformance:verify:crosslang
+
+      - name: Conformance tests that run the Python verifier
+        run: pnpm exec vitest run conformance
+
   # Installs the packed library into a new project and runs the apps in
   # adopters/ against it, as an adopter's app runs: through the package's
   # public exports, not src/. It reads the npm registry and nothing else.

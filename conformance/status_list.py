@@ -174,7 +174,17 @@ def window_bound(document, current, legacy):
     stated = document[member]
     if not isinstance(stated, str) or not DATE_TIME.fullmatch(stated):
         raise ValueError(member + " is not a date")
-    return datetime.fromisoformat(stated.upper().replace("Z", "+00:00"))
+    return datetime.fromisoformat(iso_format(stated))
+
+
+def iso_format(stated):
+    """A date-time DATE_TIME matches, written as datetime.fromisoformat reads it on Python 3.9 and later.
+
+    Z is +00:00, and a fraction of a second is cut or filled to six digits: before 3.11 fromisoformat
+    reads a fraction of three or six digits only, and from 3.11 it cuts a longer one to six.
+    """
+    text = stated.upper().replace("Z", "+00:00")
+    return re.sub(r"\.([0-9]+)", lambda fraction: "." + fraction.group(1)[:6].ljust(6, "0"), text, count=1)
 
 
 def within_window(document, now):

@@ -124,11 +124,16 @@ jobs:
   # supports (conformance/__tests__/python.ts) and on the newest, so the floor it states stays true.
   python-verifier:
     name: Python verifier (${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.9', '3.x']
+        include:
+          # setup-python builds Python 3.9 for no Ubuntu after 24.04.
+          - python-version: '3.9'
+            os: ubuntu-24.04
+          - python-version: '3.x'
+            os: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 

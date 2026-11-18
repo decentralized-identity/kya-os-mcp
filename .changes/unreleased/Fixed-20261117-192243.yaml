@@ -1,0 +1,13 @@
+kind: Fixed
+body: |-
+    **A `delegation.didResolvers` entry that throws is no longer swallowed.**
+    The delegation gate caught its error and dropped it: nothing was logged,
+    and the DID was refused as `did_unavailable` with no cause, so the log
+    said only that the resolver might not serve the DID's method. A
+    `RefusalError` it threw lost its code and words. A throw is now answered
+    as one of `delegation.didResolver` is: a `RefusalError` is the refusal's
+    code and words, and any other error is logged once, naming the entry's
+    method, and the DID is refused as `did_unavailable` with none of its
+    words. UPGRADING.md, "A `didResolvers` entry that throws is answered as
+    `didResolver` is", has the detail.
+time: 2026-11-17T19:22:43.000000-06:00

@@ -20,6 +20,19 @@ The rule for what the presenter sees of a failure is unchanged: its detail only 
 | Set `development: true` on the middleware only so that the gate's own did:web read would not refuse a local name your resolver reads in development | Nothing; once your resolver passes its failure on, the setting is no longer needed for that. | The gate's refusal of the local name no longer replaces your resolver's failure. |
 | Match the reason or code of a refusal where your resolver and the gate's own both found no document | Expect your resolver's: a document of another DID is `did_invalid` with no detail, where 1.24.0 gave the gate's `host_refused` and its detail. | The reason and code follow the resolver you chose. |
 
+### A `didResolvers` entry that throws is answered as `didResolver` is
+
+On 1.24.0 the delegation gate swallowed an error a resolver in `delegation.didResolvers` threw: it logged nothing, and refused the DID as `did_unavailable` with no cause, so its log said only that the resolver might not serve the DID's method.
+A throw now ends the resolution as one of `delegation.didResolver` does.
+A `RefusalError` it throws is the refusal's code and words, as documented for any resolver of yours.
+Any other error is logged once, as `[kya-os] The DID resolver delegation.didResolvers configures for "<method>" threw resolving "<did>": <message>`, and the DID is refused as `did_unavailable`, transient, with the reason `Could not resolve issuer DID: "<did>"` and none of the error's words.
+Where `delegation.didResolver` was asked first and reported why it found no document, the refusal shows that failure, as above.
+
+| If you | Do this | Effect |
+| --- | --- | --- |
+| Throw a `RefusalError` from a `didResolvers` entry to refuse a DID | Nothing. | The refusal takes its code and words, where 1.24.0 gave `did_unavailable` and none. |
+| Let a `didResolvers` entry throw on a failure | Nothing; look for the warning above in your log. | The refusal is `did_unavailable` as before, and the error is no longer lost. |
+
 ## From 1.23.0
 
 ### Hosts a presenter names are resolved and pinned

@@ -8,11 +8,21 @@
  * `DIDResolver.lastFailure` documents. A reported failure is a diagnosis: it never stops the
  * resolvers after it from being asked. A DID of a method none of them serves, with no resolver of
  * the host's to ask, is `invalid_document`: asking again cannot change that.
+ *
+ * A resolver of the host's that throws ends the resolution, and is answered as the verifier answers
+ * the host's own resolver that throws: a `RefusalError` is passed on, for the refusal to take its
+ * code and words, and any other error is logged for the operator and never shown, the DID refused as
+ * unavailable. The host's own resolver's throw reaches the verifier as it is; the gate catches one of
+ * a resolver `delegation.didResolvers` configures, to name its method in the log.
  */
 
 import { DidResolutionFailures, reportedFailure, unservedMethod } from "../delegation/did-resolution-failure.js";
 import type { DIDDocument, DIDResolver, DidResolutionFailure } from "../delegation/vc-verifier.js";
+import { logger } from "../logging/index.js";
+import { describeValue } from "../utils/describe-value.js";
 import { getDidMethod } from "../utils/did-helpers.js";
+import { RefusalError } from "../utils/refusal.js";
+import { loggedWords } from "../utils/thrown-words.js";
 
 /** The resolvers the gate's resolver asks, in the order it asks them, and the verifier's deadline. */
 export interface GateDidResolvers {
@@ -79,7 +89,9 @@ export function createGateDidResolver(resolvers: GateDidResolvers): DIDResolver 
         try {
           const resolved = await ask(configuredResolver);
           if (resolved) return settle(resolved);
-        } catch {
+        } catch (error) {
+          if (error instanceof RefusalError) throw error;
+          failure ??= configuredResolverThrew(method, did, error);
           return settle(null);
         }
       }
@@ -99,4 +111,17 @@ export function createGateDidResolver(resolvers: GateDidResolvers): DIDResolver 
     },
     lastFailure: (did: string) => failures.get(did),
   };
+}
+
+/**
+ * The failure the resolver `delegation.didResolvers` configures for `method` stands for when it threw
+ * `error`, not a `RefusalError`, resolving `did`, once the operator's log is told its words:
+ * `unavailable`, as a library resolver's failed read is, so the DID is refused as `did_unavailable`,
+ * transient, as for the host's own resolver that throws, with a detail that shows the presenter none
+ * of the error's words.
+ */
+function configuredResolverThrew(method: string | null, did: string, error: unknown): DidResolutionFailure {
+  const resolver = `DID resolver delegation.didResolvers configures for ${describeValue(method)}`;
+  logger.warn(`[kya-os] The ${resolver} threw resolving ${describeValue(did)}: ${loggedWords(error)}`);
+  return { cause: "unavailable", detail: `The ${resolver} threw; its error is logged` };
 }

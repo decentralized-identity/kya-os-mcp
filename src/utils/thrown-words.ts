@@ -61,9 +61,16 @@ export interface ThrownReason {
 export function thrownReason(error: unknown, { withheld, shown = (words) => words, tag, maxLength = 256 }: ThrownReason): string {
   const words = shownWords(error, maxLength);
   if (words !== undefined) return shown(words);
-  const thrown = error instanceof Error ? error.message : `a thrown ${typeof error}`;
-  logger.warn(`${tag} ${withheld}: ${sanitizeForMessage(thrown, LOGGED_LENGTH)}`);
+  logger.warn(`${tag} ${withheld}: ${loggedWords(error)}`);
   return withheld;
+}
+
+/**
+ * The words of `error` the operator's log is told: its message, free of control characters and at
+ * most {@link LOGGED_LENGTH} UTF-16 code units, or what kind of value was thrown, where it is no `Error`.
+ */
+export function loggedWords(error: unknown): string {
+  return sanitizeForMessage(error instanceof Error ? error.message : `a thrown ${typeof error}`, LOGGED_LENGTH);
 }
 
 /**

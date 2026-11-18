@@ -91,6 +91,7 @@ describe('checkpoint observation and supporting anchors', () => {
     await expect(monitor.publish(checkpoint(10, 'f'))).rejects
       .toMatchObject<Partial<AuditProtocolError>>({
         code: 'AUDIT_CHECKPOINT_CONFLICT',
+        details: { reason: 'fork' },
       });
   });
 
@@ -124,7 +125,9 @@ describe('checkpoint observation and supporting anchors', () => {
     const rejected = left.status === 'rejected' ? left.reason : right.status === 'rejected'
       ? right.reason
       : undefined;
-    expect(rejected).toMatchObject({ code: 'AUDIT_CHECKPOINT_CONFLICT' });
+    expect(rejected).toMatchObject({
+      code: 'AUDIT_CHECKPOINT_CONFLICT', details: { reason: 'fork' },
+    });
   });
 
   it('keeps WORM/time/SCITT adapters typed as supporting anchors, not observers', async () => {
@@ -163,7 +166,9 @@ describe('checkpoint observation and supporting anchors', () => {
     await expect(rejectingConsistency.publish({
       ...checkpoint(20, 'd'),
       core: { ...checkpoint(20, 'd').core, previousCheckpointDigest: first.checkpointDigest },
-    })).rejects.toMatchObject({ code: 'AUDIT_CHECKPOINT_CONFLICT' });
+    })).rejects.toMatchObject({
+      code: 'AUDIT_CHECKPOINT_CONFLICT', details: { reason: 'fork' },
+    });
   });
 
   it('makes repeated publication idempotent and verifies only the retained observation', async () => {

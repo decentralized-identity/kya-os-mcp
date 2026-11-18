@@ -34,3 +34,38 @@ export class AuditProtocolError extends Error {
     this.name = 'AuditProtocolError';
   }
 }
+
+/**
+ * Why a checkpoint was refused with `AUDIT_CHECKPOINT_CONFLICT`, in its
+ * `details.reason`. Every such error this library raises names one.
+ *
+ * - `lost-race`: the store already held a checkpoint at this tree size over
+ *   the same tree. Another signer checkpointed the same journal first; the
+ *   stored checkpoint stands, and calling `createCheckpoint` again returns it.
+ * - `fork`: two signed views of the ledger disagree. The journal no longer
+ *   holds the tree of a checkpoint already signed, the store holds one over
+ *   another tree at this size, or an observer holds a view the checkpoint
+ *   does not consistently extend. This is a security event.
+ *
+ * Read a conflict as a lost race only when its reason is `lost-race`, as
+ * `isLostCheckpointRace` does: any other, or none, is a fork.
+ */
+export const AUDIT_CHECKPOINT_CONFLICT_REASONS = {
+  LOST_RACE: 'lost-race',
+  FORK: 'fork',
+} as const;
+
+export type AuditCheckpointConflictReason =
+  (typeof AUDIT_CHECKPOINT_CONFLICT_REASONS)[keyof typeof AUDIT_CHECKPOINT_CONFLICT_REASONS];
+
+/**
+ * True only for an `AUDIT_CHECKPOINT_CONFLICT` this library raised for a lost
+ * race, which is benign. False for every other error, so a fork, a conflict
+ * that names no reason (such as one an observer of your own throws), and a
+ * reason added later all read as not benign.
+ */
+export function isLostCheckpointRace(error: unknown): boolean {
+  return error instanceof AuditProtocolError &&
+    error.code === AUDIT_ERROR_CODES.CHECKPOINT_CONFLICT &&
+    error.details?.reason === AUDIT_CHECKPOINT_CONFLICT_REASONS.LOST_RACE;
+}

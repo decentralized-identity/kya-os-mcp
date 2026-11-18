@@ -33,6 +33,25 @@ Where `delegation.didResolver` was asked first and reported why it found no docu
 | Throw a `RefusalError` from a `didResolvers` entry to refuse a DID | Nothing. | The refusal takes its code and words, where 1.24.0 gave `did_unavailable` and none. |
 | Let a `didResolvers` entry throw on a failure | Nothing; look for the warning above in your log. | The refusal is `did_unavailable` as before, and the error is no longer lost. |
 
+### A checkpoint conflict says whether the journal forked
+
+`AuditCheckpointBuilder.createCheckpoint` refused two different events with the same `AUDIT_CHECKPOINT_CONFLICT` and, from 1.17.0, the same `details`, `{ treeSize }`.
+One is a lost race: another signer stored a checkpoint over the same tree first, and the stored checkpoint stands.
+The other is a fork: the journal no longer holds the tree of a checkpoint already signed, because it was rewritten or restored.
+Only the message told them apart, so code that took a conflict with a tree size for a lost race took a fork for one too.
+A third event read as a lost race, message and all: a checkpoint the store already held at the tree size over another tree, as two diverged copies of a journal produce.
+
+Every `AUDIT_CHECKPOINT_CONFLICT` the builder and `MemoryAuditCheckpointObserver` raise now names why in `details.reason`, `lost-race` or `fork`, as AUDITABILITY.md, "Checkpoints, observations, and anchors", has it.
+`isLostCheckpointRace(error)` is true for a lost race alone.
+The code, `details.treeSize`, and the messages of a lost race and of a rewritten journal are unchanged.
+A checkpoint stored over another tree is now a `fork`, with the message `A checkpoint over a different tree already exists at this tree size`.
+
+| If you | Do this | Effect |
+| --- | --- | --- |
+| Take an `AUDIT_CHECKPOINT_CONFLICT` that carries a `details.treeSize` for a lost race | Call `isLostCheckpointRace(error)`, and treat every other conflict as a fork. | A fork is no longer taken for a lost race. |
+| Match the message `A different checkpoint already exists at this tree size` | Call `isLostCheckpointRace(error)` instead. | The match still finds every lost race, and no longer takes a checkpoint stored over another tree for one. |
+| Alarm on every `AUDIT_CHECKPOINT_CONFLICT` | Nothing, or leave out the conflicts `isLostCheckpointRace` accepts. | Every fork keeps the code. |
+
 ## From 1.23.0
 
 ### Hosts a presenter names are resolved and pinned

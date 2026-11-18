@@ -1,0 +1,16 @@
+kind: Security
+body: |-
+    **A checkpoint conflict says whether the audit journal forked or another
+    signer won the race.** `AuditCheckpointBuilder.createCheckpoint`
+    refused a lost race, where another signer stored a checkpoint over the
+    same tree first, and a fork, where the journal no longer holds the tree
+    of a checkpoint already signed, with the same `AUDIT_CHECKPOINT_CONFLICT`
+    and, from 1.17.0, the same `details`, so code that took a conflict with
+    a tree size for a lost race took a fork for one. A checkpoint the store
+    already held at that size over another tree even had the lost race's
+    message. Every `AUDIT_CHECKPOINT_CONFLICT` the builder and
+    `MemoryAuditCheckpointObserver` raise now names why in
+    `details.reason`, `lost-race` or `fork`, and a checkpoint stored over
+    another tree is a `fork` with a message of its own. UPGRADING.md, "A
+    checkpoint conflict says whether the journal forked", has the detail.
+time: 2026-11-18T13:50:28.000000-06:00

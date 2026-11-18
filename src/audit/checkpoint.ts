@@ -2,7 +2,11 @@ import { canonicalizeJsonBytes } from '../utils/canonical-json.js';
 import type { AuditHasher, AuditSigner } from './crypto.js';
 import { hashAuditValue } from './crypto.js';
 import { AUDIT_DIGEST_DOMAINS } from './integrity.js';
-import { AUDIT_ERROR_CODES, AuditProtocolError } from './errors.js';
+import {
+  AUDIT_CHECKPOINT_CONFLICT_REASONS,
+  AUDIT_ERROR_CODES,
+  AuditProtocolError,
+} from './errors.js';
 import { Rfc9162MerkleTree } from './merkle.js';
 import { parseAuditCheckpointCore } from './schemas.js';
 import type { AuditJournalProvider } from './providers/journal.js';
@@ -52,6 +56,38 @@ function deepFreeze<T>(value: T): T {
   if (typeof value !== 'object' || value === null || Object.isFrozen(value)) return value;
   for (const child of Object.values(value)) deepFreeze(child);
   return Object.freeze(value);
+}
+
+/** Whether two checkpoints commit the same tree of one ledger epoch, whoever signed them and when. */
+function sameTree(left: SignedAuditCheckpointV1, right: SignedAuditCheckpointV1): boolean {
+  return left.core.ledgerId === right.core.ledgerId &&
+    left.core.ledgerEpochId === right.core.ledgerEpochId &&
+    left.core.treeSize === right.core.treeSize &&
+    left.core.rootDigest === right.core.rootDigest &&
+    left.core.headEntryDigest === right.core.headEntryDigest;
+}
+
+/**
+ * The refusal of `signed` when the store already holds `stored` at its tree
+ * size. Only a stored checkpoint over the same tree is a lost race: one over
+ * another tree is a second signed view of the ledger at that size.
+ */
+function storedConflict(
+  signed: SignedAuditCheckpointV1,
+  stored: SignedAuditCheckpointV1,
+): AuditProtocolError {
+  const treeSize = signed.core.treeSize;
+  return sameTree(signed, stored)
+    ? new AuditProtocolError(
+      AUDIT_ERROR_CODES.CHECKPOINT_CONFLICT,
+      'A different checkpoint already exists at this tree size',
+      { treeSize, reason: AUDIT_CHECKPOINT_CONFLICT_REASONS.LOST_RACE },
+    )
+    : new AuditProtocolError(
+      AUDIT_ERROR_CODES.CHECKPOINT_CONFLICT,
+      'A checkpoint over a different tree already exists at this tree size',
+      { treeSize, reason: AUDIT_CHECKPOINT_CONFLICT_REASONS.FORK },
+    );
 }
 
 export type AuditCheckpointPutResult =
@@ -194,16 +230,9 @@ export class AuditCheckpointBuilder {
       if (previous.core.treeSize === treeSize) return { checkpoint: previous, inserted: false };
     }
 
-    const result = await this.options.store.putIfAbsent(
-      await this.signCheckpoint(ledger, entries, previous),
-    );
-    if (result.kind === 'conflict') {
-      throw new AuditProtocolError(
-        AUDIT_ERROR_CODES.CHECKPOINT_CONFLICT,
-        'A different checkpoint already exists at this tree size',
-        { treeSize },
-      );
-    }
+    const signed = await this.signCheckpoint(ledger, entries, previous);
+    const result = await this.options.store.putIfAbsent(signed);
+    if (result.kind === 'conflict') throw storedConflict(signed, result.checkpoint);
     return { checkpoint: result.checkpoint, inserted: result.kind === 'inserted' };
   }
 
@@ -230,7 +259,7 @@ export class AuditCheckpointBuilder {
       throw new AuditProtocolError(
         AUDIT_ERROR_CODES.CHECKPOINT_CONFLICT,
         'Journal content forked at or below the latest checkpointed tree size',
-        { treeSize: previous.core.treeSize },
+        { treeSize: previous.core.treeSize, reason: AUDIT_CHECKPOINT_CONFLICT_REASONS.FORK },
       );
     }
   }

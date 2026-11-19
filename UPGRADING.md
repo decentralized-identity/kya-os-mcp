@@ -298,6 +298,7 @@ The recorder and the checkpoint builder now verify the journal entries they read
 The checkpoint builder holds every leaf of an epoch to the recorder key the epoch's genesis entry names, and refuses a leaf under any other with `AUDIT_JOURNAL_FAILURE`.
 A builder that signs with the recorder's own key verifies every leaf.
 A builder that signs with a key of its own keeps working: when the genesis names another key, it trusts the epoch's leaves as written, and warns once per process for that key.
+It still recomputes the digest of each leaf it trusts, and of the genesis on every run, and refuses one whose core is not the one its digest was made from.
 Pass `signatures`, resolving the recorder's key, to verify them.
 With a non-extractable `CryptoKey`, or a signer of your own without `verifier()`, pass `signatures` to either; otherwise the journal is trusted as written.
 

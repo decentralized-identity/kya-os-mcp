@@ -92,6 +92,10 @@ export async function requireStoredAuditEntry(
  * another key, the epoch's leaves are trusted as written, as before such a
  * verifier, and {@link warnUnverifiedRecorderKey} names that key. Only
  * `signatures` given explicitly verifies them.
+ * The genesis digest is recomputed from its core on every call, whatever
+ * `from` is, so the key it names is the one the latest checkpoint's root
+ * covers, and so is the digest of each leaf trusted as written: a journal
+ * writer cannot choose the key, nor change a trusted leaf under its digest.
  */
 export async function requireStoredAuditLeaves(
   entries: readonly SignedAuditEntryV1[],
@@ -99,9 +103,11 @@ export async function requireStoredAuditLeaves(
   ledger: AuditLedgerRef,
   verification: StoredAuditEntryVerification,
 ): Promise<void> {
-  const recorder = entries[0]?.core.recorder;
-  if (recorder === undefined || from >= entries.length) return;
-  const { ownKey } = verification;
+  const genesis = entries[0];
+  if (genesis === undefined || from >= entries.length) return;
+  const { hasher, ownKey } = verification;
+  await requireStoredAuditEntry(genesis.core.sequence, () => digestRecomputes(genesis, hasher));
+  const recorder = genesis.core.recorder;
   const trusted = ownKey !== undefined && !sameSigner(recorder, ownKey);
   if (trusted) warnUnverifiedRecorderKey(recorder);
   for (let index = from; index < entries.length; index += 1) {
@@ -109,8 +115,13 @@ export async function requireStoredAuditLeaves(
     const chained = entry.core.previousEntryDigest === (entries[index - 1]?.entryDigest ?? null);
     await requireStoredAuditEntry(entry.core.sequence, async () =>
       chained && sameSigner(entry.core.recorder, recorder) &&
-      (trusted || verifyStoredAuditEntry(entry, ledger, verification)));
+      (trusted ? digestRecomputes(entry, hasher) : verifyStoredAuditEntry(entry, ledger, verification)));
   }
+}
+
+/** Whether `entry`'s digest recomputes from its core, so its core is the one a tree over that digest covers. */
+async function digestRecomputes(entry: SignedAuditEntryV1, hasher: AuditHasher): Promise<boolean> {
+  return await digestAuditEntry(hasher, entry.core) === entry.entryDigest;
 }
 
 /** What the recorder or a checkpoint builder signs with, and any verifier it was given. */

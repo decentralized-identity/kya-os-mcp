@@ -115,7 +115,8 @@ describe('evaluateDelegationChain proofs before status', () => {
     const result = evaluateDelegationChain(chain, check, {
       ...ctx, resourceOwner: pinned ? p.acme.did : undefined, verifyHopProof: verify,
     });
-    expect(events).toEqual(['proof 0']);
+    // The parent commitments are checked first (./parent-credential-digest.test.ts), then the root's proof starts.
+    await vi.waitFor(() => expect(events).toEqual(['proof 0']));
     finishRoot();
     await vi.waitFor(() => expect(events).toEqual(['proof 0', 'proved 0', 'proof 1', 'proved 1', 'status 3']));
     finishStatus();

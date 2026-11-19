@@ -39,6 +39,7 @@ import type { DelegationProofVerifier } from './delegation-proof.js';
 import type { BitstringRevocationChecker } from './revocation.js';
 import { walkRevocationChain, type RevocationChainWalk } from './revocation-chain.js';
 import { admitRootIssuers } from './request-root-issuers.js';
+import { firstParentDigestRefusal } from './parent-digest.js';
 import { clockSkewOption } from '../utils/validity-window.js';
 
 export {
@@ -259,6 +260,9 @@ async function verifyRequest(input: RequestDelegationInput, deps: VerifyRequestD
   }
   // validateDelegationChain codes every chain it refuses.
   if (!structural.ok) return reject('delegation_invalid', structural.code ?? 'chain_invalid', structural.reasons);
+  // Each hop's parent commitment, over the hops as received, as their signatures cover them.
+  const uncommitted = await firstParentDigestRefusal(credentials);
+  if (uncommitted !== undefined) return reject('delegation_invalid', uncommitted.code, [uncommitted.reason]);
   // validateDelegationChain sets `caveats` and `unknownCaveats` on every result, so the grant carries both.
   const { responsibleParty, leafInvoker, invocationTarget, allowedAction, caveats, unknownCaveats, depth } = structural;
   if (responsibleParty === undefined || leafInvoker === undefined || invocationTarget === undefined) {

@@ -128,6 +128,8 @@ export interface HopOptions {
   validUntil?: string;
   /** Sign with this identity instead of the issuer (to forge a hop). */
   signer?: TestIdentity;
+  /** The `parentCredentialDigest` the hop states; omitted means it states none. */
+  parentCredentialDigest?: unknown;
 }
 
 /** One signed §6.10 hop. */
@@ -144,6 +146,7 @@ export function hop(opts: HopOptions): DelegationCredential {
       invocationTarget: opts.invocationTarget ?? RESOURCE,
       allowedAction: opts.allowedAction,
       ...(opts.caveats ? { caveats: opts.caveats } : {}),
+      ...(opts.parentCredentialDigest === undefined ? {} : { parentCredentialDigest: opts.parentCredentialDigest }),
     },
     ...(opts.statusIndex !== undefined
       ? {

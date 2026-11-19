@@ -288,7 +288,8 @@ export async function demoScenario(): Promise<DemoResult> {
   const other = await party('another agent');
 
   // Acme delegates to its agent. The agent re-delegates on its own: it signs the leaf with its
-  // key and asks no one, because the root already names it as the delegate.
+  // key and asks no one, because the root already names it as the delegate. Handed the root, the
+  // SDK commits the leaf to it by its digest, so the leaf holds under that one credential.
   const root = await signDelegationCredential(
     unsignedHop({
       issuer: acme,
@@ -312,6 +313,7 @@ export async function demoScenario(): Promise<DemoResult> {
       statusIndex: LEAF_STATUS_INDEX,
     }),
     agent.signer,
+    { parent: root },
   );
   const chain: [DelegationCredential, DelegationCredential] = [root, leaf];
 

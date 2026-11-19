@@ -947,7 +947,8 @@ A root that keeps other lists for its delegates, the shards of one herd list for
 A deployment whose root credential carries no status entry does the same, since rule 3 then gives the root no URL.
 A verifier that pins no root reads the root's list only for the root's own credential, whose `issuer` the root is, and at the URLs its configuration binds to the root.
 The issuers between the root and the credential keep no URL but those of their own credentials' entries.
-A credential commits to its parent only by an `id` the parent's issuer chose, so whoever presents a chain decides who stands between the root and the credential, while the root is held to the verifier's own configuration.
+A credential that states no `parentCredentialDigest` (§6.10) commits to its parent only by an `id` the parent's issuer chose, so whoever presents a chain decides who stands between the root and the credential, while the root is held to the verifier's own configuration.
+One that states it commits to the one parent credential it was signed under, and a chain each of whose hops but the root states it is fixed from the root to the credential.
 An issuer between them still revokes what it delegated, as §6.5.1 allows, by revoking its own credential on its own list, which the cascading chain walk (§6.10) carries to every credential below it.
 The credential's own `issuer` is the one the credential names, so that issuer is trusted only once the credential's proof verifies.
 The reference implementation's `DelegationCredentialVerifier` reads the credential's status only once that proof verifies (§4.4.2), and accepts the credential only when both checks pass.
@@ -1110,6 +1111,7 @@ marks a credential of this profile.
     "id": "urn:zcap:del_123",
     "invoker": "<delegate DID>",           // or "controller" (§2.3)
     "parentCapability": "<parent id | root invocationTarget>",
+    "parentCredentialDigest": "sha256:<64 hex>", // OPTIONAL; never on the root (below)
     "invocationTarget": "<resource DID>",
     "allowedAction": [ "payments.transfer" ],
     "caveats": [ { "type": "ValidUntil", "date": "…" },
@@ -1149,10 +1151,25 @@ chain:
 - **continuity** - the parent's delegate (`invoker`) MUST equal the child's `issuer` (you may only
   re-delegate what was delegated to YOUR key), and child `parentCapability` MUST reference the
   parent capability `id`;
+- **parent commitment** - a hop other than the root MAY state `parentCredentialDigest`, and when it
+  does it MUST be the digest of its parent credential (below); the root MUST NOT state one;
 - **constant `invocationTarget`** along the chain;
 - **root** - root `parentCapability` MUST equal its `invocationTarget` (the resource); when a
   resource owner / resource is asserted, root `issuer` MUST equal the resource owner and root
   `invocationTarget` MUST equal the resource.
+
+**The parent commitment.**
+Continuity ties a hop to its parent by two names, the parent's delegate and the parent's capability `id`, and both are the parent issuer's to choose.
+A parent issued again under the `id` of one that was revoked would therefore carry every hop signed under the first.
+A hop commits to the one parent credential it was signed under by stating, in its `credentialSubject`, `parentCredentialDigest`: the digest §7.8 gives that credential, `SHA-256(UTF8("org.kya-os.delegation.credential.v1") || 0x00 || JCS(signed form))`, written as `sha256:` and 64 lowercase hex digits.
+The signed form is every member of the parent but `proof`, and the signature its `proof.proofValue` carries, which §7.8 reads as it reads any signature string: six bits for each base64 or base64url character, the bits short of a byte dropped.
+A `proofValue` of this profile is multibase base58btc, each character of which is a base64 character, so §7.8 reads every one, and it MUST be read so and not decoded from base58, or two implementations would digest one parent differently.
+An `eddsa-jcs-2022` signature also covers the proof's configuration, so the digest fixes the parent and its whole proof, while a copy of the parent stored or serialized another way keeps its digest.
+It is the digest §7.8 gives each credential of a chain, so a party that holds those digests matches a hop's commitment against them.
+A verifier MUST check the digest of every hop that states one against the hop before it in the chain, as received, and MUST refuse the chain, as `chain_invalid`, when the two differ, when that hop has no signed form, or when the root states one, since the root has no parent credential.
+The reference implementation checks it after the local chain rules and before any hop proof, since it reads nothing from the network.
+A hop that states none is accepted as before, its parent named by its `id` alone; version 2.0.0 requires it of every hop but the root.
+An issuer that holds the parent when it signs a hop SHOULD state it, and the reference implementation's `signDelegationCredential` writes it when given the parent as `options.parent`.
 
 **Caveats (fail-closed).** Every caveat of every hop applies to every call the chain authorizes.
 A `MaxAmount` states `limit`, one or more decimal digits optionally followed by `.` and one or more digits, and MAY state `currency`, a string.

@@ -21,6 +21,7 @@ import { ASSERTION_METHOD } from '../delegation/verification-relationship.js';
 import { booleanProofVerifier } from './coded-proof-verifier.js';
 import { signEddsaJcs2022, verifyEddsaJcs2022Proof } from './data-integrity.js';
 import { DelegationCredentialSchema, type DelegationCredential } from './delegation.js';
+import { PARENT_CREDENTIAL_DIGEST, parentCredentialDigestOf } from './parent-digest.js';
 import type { ProofSigner } from './proof/types.js';
 
 /**
@@ -62,22 +63,56 @@ export type UnsignedDelegationCredential = {
   [K in keyof DelegationCredential as K extends 'proof' ? never : K]: DelegationCredential[K];
 };
 
+/** Options for {@link signDelegationCredential}. */
+export interface SignDelegationCredentialOptions {
+  /** The proof's `created`; default the current time. */
+  created?: string;
+  /**
+   * The parent credential the hop is delegated under, signed, as its issuer holds it. When given,
+   * the hop states the parent's digest as `credentialSubject.parentCredentialDigest` (SPEC.md
+   * §6.10), which commits it to that one parent: a verifier refuses it under any other, a parent
+   * issued again under the same id included. Pass it whenever the parent is in hand; 2.0.0
+   * requires the digest of every hop but the root.
+   */
+  parent?: DelegationCredential;
+}
+
 /**
  * Sign one delegation hop as its issuer. `signer` is the issuer's Ed25519 key (`signer.kid` a
  * verification method `credential.issuer` lists under `assertionMethod`), e.g. from
  * `ed25519SignerFromJwk`; any {@link ProofSigner} with `signRaw` works, a KMS or non-extractable
- * key included. Throws when the credential is not a §6.10 `DelegationCredential` or the signer
- * cannot sign for its issuer.
+ * key included. With `options.parent`, it writes the parent's digest into the hop before signing.
+ * Throws when the credential is not a §6.10 `DelegationCredential` or the signer cannot sign for its
+ * issuer, and a `TypeError` when `options.parent` is not the parent the hop names by its
+ * `parentCapability`, has no signed form (SPEC.md §7.8), or is not the parent whose digest the hop
+ * already states.
  */
 export async function signDelegationCredential(
   credential: UnsignedDelegationCredential,
   signer: ProofSigner,
-  options: { created?: string } = {},
+  options: SignDelegationCredentialOptions = {},
 ): Promise<DelegationCredential> {
   const parsed = DelegationCredentialSchema.safeParse(credential);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     throw new Error(`not a DelegationCredential at ${issue?.path.join('.') ?? '(root)'}: ${issue?.message ?? 'invalid'}`);
   }
-  return signEddsaJcs2022(credential, signer, { proofPurpose: ASSERTION_METHOD, created: options.created });
+  const committed = options.parent === undefined ? credential : await committedTo(credential, options.parent);
+  return signEddsaJcs2022(committed, signer, { proofPurpose: ASSERTION_METHOD, created: options.created });
+}
+
+/** `credential` stating the digest of `parent`, the parent it names by its `parentCapability`. */
+async function committedTo(credential: UnsignedDelegationCredential, parent: DelegationCredential): Promise<UnsignedDelegationCredential> {
+  const subject = credential.credentialSubject;
+  if (parent.credentialSubject?.id !== subject.parentCapability) {
+    throw new TypeError(
+      'signDelegationCredential: options.parent is not the parent this credential names: its credentialSubject.id is not credentialSubject.parentCapability',
+    );
+  }
+  const digest = await parentCredentialDigestOf(parent);
+  const stated = subject[PARENT_CREDENTIAL_DIGEST];
+  if (stated !== undefined && stated !== digest) {
+    throw new TypeError(`signDelegationCredential: the credential states a ${PARENT_CREDENTIAL_DIGEST} that is not the digest of options.parent`);
+  }
+  return { ...credential, credentialSubject: { ...subject, [PARENT_CREDENTIAL_DIGEST]: digest } };
 }

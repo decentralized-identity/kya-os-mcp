@@ -36,6 +36,8 @@ import type { DelegationProofVerifier } from './delegation-proof.js';
 import { firstHopProofRefusal } from './hop-proofs.js';
 import { hopWindowRules } from './hop-window.js';
 import { withVerifiedRoot } from '../utils/verified-root.js';
+import { isDigest } from '../delegation/digest-form.js';
+import { firstParentDigestRefusal } from './parent-digest.js';
 import { describeValue } from '../utils/describe-value.js';
 import { dateLte } from '../utils/rfc3339.js';
 import {
@@ -75,6 +77,11 @@ export const ZcapCapabilitySchema = z
     invocationTarget: z.string().min(1),
     allowedAction: z.array(z.string().min(1)),
     caveats: z.array(CaveatSchema).optional(),
+    /** The digest SPEC §7.8 gives the parent credential (`./parent-digest.ts`); a root states none. */
+    parentCredentialDigest: z
+      .string()
+      .refine((value): boolean => isDigest(value), { message: 'parentCredentialDigest is "sha256:" followed by 64 lowercase hex digits' })
+      .optional(),
   })
   .passthrough()
   .refine((s) => Boolean(s.controller ?? s.invoker), {
@@ -322,6 +329,9 @@ function rootReasons(root: DelegationCredential, ctx: DelegationChainContext): B
   if (subject.parentCapability !== subject.invocationTarget) {
     broken.push({ code: 'chain_invalid', reason: 'root delegation: parentCapability MUST equal invocationTarget (the resource)' });
   }
+  if (subject.parentCredentialDigest !== undefined) {
+    broken.push({ code: 'chain_invalid', reason: 'root delegation: it has no parent credential, so it states no parentCredentialDigest' });
+  }
   if (ctx.resource !== undefined && subject.invocationTarget !== ctx.resource) {
     broken.push({ code: 'chain_invalid', reason: 'root invocationTarget ≠ the expected resource' });
   }
@@ -401,8 +411,10 @@ export interface DelegationChainEvaluation extends DelegationChainResult {
 }
 
 /**
- * Validate local chain rules, then every hop's proof, then status, fail-closed.
- * After {@link validateDelegationChain} passes, `ctx.verifyHopProof` verifies the received hops
+ * Validate local chain rules, then each hop's parent commitment, then every hop's proof, then
+ * status, fail-closed. A hop that states `parentCredentialDigest` is refused as `chain_invalid`
+ * unless it is the digest of the hop before it (`./parent-digest.ts`); one that states none is not
+ * held to it. After both pass, `ctx.verifyHopProof` verifies the received hops
  * sequentially, root to leaf. The first proof refusal returns its code and `hop N: ...` reason,
  * with `fresh: false`, without calling the status checker or verifying later hops.
  * Only after every proof holds does the sequential revocation walk name each hop's issuer and,
@@ -423,6 +435,10 @@ export async function evaluateDelegationChain(
   const structural = validateDelegationChain(chain, ctx);
   if (!structural.ok) return { ...structural, fresh: false };
   const timeoutMs = dependencyTimeout(ctx.dependencyTimeoutMs);
+  const uncommitted = await firstParentDigestRefusal(chain);
+  if (uncommitted !== undefined) {
+    return { ...structural, ok: false, ...coded(uncommitted.code), reasons: [uncommitted.reason], fresh: false };
+  }
   if (ctx.verifyHopProof !== undefined) {
     const refused = await firstHopProofRefusal(chain, ctx.verifyHopProof, timeoutMs);
     if (refused !== undefined) {

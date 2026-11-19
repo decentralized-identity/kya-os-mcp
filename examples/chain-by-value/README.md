@@ -13,6 +13,7 @@ npm run example:chain-by-value
   It delegates `orders.place` and `orders.read`, up to 500 USD, to its procurement agent.
 - The **procurement agent** re-delegates `orders.place`, up to 100 USD, to a checkout worker.
   It signs that hop with its own key and asks no one, because Acme's hop already names it as the delegate.
+  It hands the SDK Acme's hop as the parent, so the hop states that credential's digest and holds under it alone.
 - The **merchant** (`did:web:merchant.example`) runs `requireProof` and then `requireDelegation` on every call to `orders.place`.
   It prices each order from its own price list, 30 USD an item, and holds that price to the limits the grant carries.
   It knows Acme's DID and trusts it as a customer.

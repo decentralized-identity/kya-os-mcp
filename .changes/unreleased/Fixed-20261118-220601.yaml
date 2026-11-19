@@ -1,0 +1,17 @@
+kind: Fixed
+body: |-
+    **A revocation the graph reported done is no longer lost to a
+    re-delegation registered under the revoked delegation at the same time.**
+    Over a graph store without `registerNodeAtomic`, registering a child read
+    the parent and wrote it back whole, so a revocation of the parent stored
+    in between, the only record of it for a delegation with no status list
+    entry, was overwritten, and both the parent and its new child read as not
+    revoked. Every change `DelegationGraphManager` makes to a stored node,
+    linking a child, marking a revocation and removing a delegation, now
+    takes its turn at that node, shared by every manager over the same
+    storage provider object, so a revocation waits for a link under way and
+    cascades to the new child. Across processes only the store can keep the
+    turn: the first link a process makes through a store without
+    `registerNodeAtomic` warns once, and `registerNodeAtomic` must change
+    nothing of the parent but its `children`.
+time: 2026-11-18T22:06:00.000000-06:00

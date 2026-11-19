@@ -38,6 +38,12 @@ export interface DelegationNode {
   revoked?: boolean;
 }
 
+/**
+ * Where a `DelegationGraphManager` keeps its nodes. Each change the manager makes to a stored node
+ * reads it and writes it back whole; every manager over one provider object takes its turn at a
+ * node, so none loses another's change. A provider written to from more than one process should
+ * implement {@link AtomicDelegationGraphStorageProvider} too.
+ */
 export interface DelegationGraphStorageProvider {
   getNode(delegationId: string): Promise<DelegationNode | null>;
   setNode(node: DelegationNode): Promise<void>;
@@ -47,10 +53,16 @@ export interface DelegationGraphStorageProvider {
   deleteNode(delegationId: string): Promise<void>;
 }
 
-/** Optional transaction seam for providers that can link parent and child atomically. */
+/**
+ * Optional transaction seam for providers that can link parent and child atomically. Without it the
+ * manager links a child by writing back the whole parent it read, so a revocation of the parent
+ * stored meanwhile by another process is lost; the first such link in a process warns once.
+ */
 export interface AtomicDelegationGraphStorageProvider extends DelegationGraphStorageProvider {
   /**
-   * Insert `node` and link it under its parent in one step. When the id is
+   * Insert `node` and link it under its parent in one step, changing nothing of the parent but
+   * adding `node.id` to its `children`: writing back the rest of the parent as it was read would
+   * lose a revocation of the parent stored in between. When the id is
    * already stored, a node identical in every registered field is a no-op,
    * and any other SHOULD be rejected: overwriting would drop the stored node's
    * revocation state and children. `DelegationGraphManager` checks first, but

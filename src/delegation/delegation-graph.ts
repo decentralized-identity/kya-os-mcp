@@ -17,7 +17,8 @@ import {
   type StatusEntrySources,
 } from './status-entry-claim.js';
 import { readsStatusEntryOwners, type StatusEntryOwners } from './status-entry-owner.js';
-import { KeyedLock } from '../utils/keyed-lock.js';
+import { KeyedLock, keyedLockOf } from '../utils/keyed-lock.js';
+import { warnOncePerProcess } from '../utils/warn-once.js';
 import { graphChainBreak } from './graph-chain.js';
 import {
   supportsAtomicRegistration,
@@ -34,6 +35,17 @@ export type {
   DelegationNode,
   StatusEntryIndexedGraphStorageProvider,
 } from './delegation-graph-storage.js';
+
+/** Where every copy of this package records that the warning about linking without `registerNodeAtomic` was given. */
+const UNLINKED_STORE_WARNED = Symbol.for('@kya-os/mcp/delegation-graph-unlinked-store-warned');
+
+/** Fixed words, so nothing a store or a caller holds is ever written into the log line. */
+const UNLINKED_STORE_WARNING =
+  '[kya-os] DelegationGraphManager linked a delegation under its parent through a graph storage provider ' +
+  'without registerNodeAtomic, writing the whole parent back as it read it, so a revocation of the parent ' +
+  'made meanwhile through another process is lost. Managers over one storage provider object in one ' +
+  'process take turns; across processes, implement AtomicDelegationGraphStorageProvider ' +
+  "(registerNodeAtomic) on the store, changing only the parent's children, as MemoryDelegationGraphStorage does.";
 
 /** Options of {@link DelegationGraphManager}. */
 export interface DelegationGraphOptions {
@@ -57,6 +69,13 @@ export class DelegationGraphManager {
    * no two check and store that entry at once. Registrations with other entries run alongside.
    */
   private readonly registrations = new KeyedLock();
+  /**
+   * Runs the changes to one stored node one at a time, by the node's id: each reads the node and
+   * writes it back whole, so two at once would lose one. Shared by every manager over the same
+   * storage provider object (see {@link keyedLockOf}). A change to a node and then to its parent
+   * takes the node's turn first, never the other way round.
+   */
+  private readonly nodeTurns: KeyedLock;
 
   /**
    * @param options.statusEntryOwners - The `StatusList2021Manager` that
@@ -68,6 +87,7 @@ export class DelegationGraphManager {
     private storage: DelegationGraphStorageProvider,
     options: DelegationGraphOptions = {},
   ) {
+    this.nodeTurns = keyedLockOf(storage);
     const owners = options.statusEntryOwners;
     if (owners !== undefined && !readsStatusEntryOwners(owners)) {
       throw new TypeError(
@@ -190,8 +210,21 @@ export class DelegationGraphManager {
     return this.entrySources.owners;
   }
 
-  /** Store a new node and link it under its parent: atomically when the provider can. */
+  /**
+   * Store a new node and link it under its parent: atomically when the provider can, and in the
+   * parent's turn, so no other change to the parent through a manager of this store is lost.
+   */
   private async storeNode(node: DelegationNode): Promise<void> {
+    const parentId = node.parentId;
+    if (!parentId) {
+      await this.linkNode(node);
+      return;
+    }
+    await this.nodeTurns.run(parentId, () => this.linkNode(node));
+  }
+
+  /** Store `node` and link it under its parent, which the caller holds the turn of. */
+  private async linkNode(node: DelegationNode): Promise<void> {
     if (supportsAtomicRegistration(this.storage)) {
       await this.storage.registerNodeAtomic(node);
       return;
@@ -222,6 +255,7 @@ export class DelegationGraphManager {
     }
 
     if (!parent.children.includes(childId)) {
+      warnOncePerProcess(UNLINKED_STORE_WARNED, UNLINKED_STORE_WARNING);
       parent.children.push(childId);
       await this.storage.setNode(parent);
     }
@@ -251,13 +285,15 @@ export class DelegationGraphManager {
    * the subtree itself.
    */
   async setRevoked(delegationId: string, revoked: boolean): Promise<boolean> {
-    const node = await this.storage.getNode(delegationId);
-    if (!node) {
-      throw new Error(`Delegation not found: ${delegationId}`);
-    }
-    await this.storage.setNode({ ...node, revoked });
-    const stored = await this.storage.getNode(delegationId);
-    return (stored?.revoked ?? false) === revoked;
+    return this.nodeTurns.run(delegationId, async () => {
+      const node = await this.storage.getNode(delegationId);
+      if (!node) {
+        throw new Error(`Delegation not found: ${delegationId}`);
+      }
+      await this.storage.setNode({ ...node, revoked });
+      const stored = await this.storage.getNode(delegationId);
+      return (stored?.revoked ?? false) === revoked;
+    });
   }
 
   async getChildren(delegationId: string): Promise<DelegationNode[]> {
@@ -328,23 +364,28 @@ export class DelegationGraphManager {
    * not hold reads as not revoked: restore it first to remove it.
    */
   async removeDelegation(delegationId: string): Promise<void> {
-    const node = await this.storage.getNode(delegationId);
-    if (!node) return;
-    const refused = await this.removalRefusal(node);
-    if (refused !== undefined) {
-      throw new Error(`Delegation ${delegationId} is not removed: ${refused}`);
-    }
-    await this.retireOwnedEntry(node);
-
-    if (node.parentId) {
-      const parent = await this.storage.getNode(node.parentId);
-      if (parent) {
-        parent.children = parent.children.filter((id) => id !== delegationId);
-        await this.storage.setNode(parent);
+    await this.nodeTurns.run(delegationId, async () => {
+      const node = await this.storage.getNode(delegationId);
+      if (!node) return;
+      const refused = await this.removalRefusal(node);
+      if (refused !== undefined) {
+        throw new Error(`Delegation ${delegationId} is not removed: ${refused}`);
       }
-    }
+      await this.retireOwnedEntry(node);
 
-    await this.storage.deleteNode(delegationId);
+      const parentId = node.parentId;
+      if (parentId) {
+        await this.nodeTurns.run(parentId, async () => {
+          const parent = await this.storage.getNode(parentId);
+          if (parent) {
+            parent.children = parent.children.filter((id) => id !== delegationId);
+            await this.storage.setNode(parent);
+          }
+        });
+      }
+
+      await this.storage.deleteNode(delegationId);
+    });
   }
 
   /** Why `node` may not be removed, or `undefined` when it may. */

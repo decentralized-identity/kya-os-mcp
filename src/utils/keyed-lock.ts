@@ -33,3 +33,20 @@ export class KeyedLock {
     }
   }
 }
+
+/** The lock of each object {@link keyedLockOf} was asked about. */
+const LOCKS = new WeakMap<object, KeyedLock>();
+
+/**
+ * The one {@link KeyedLock} of `owner`, made the first time it is asked for, so every caller that
+ * holds the same object, as every manager built over one store does, takes its turns in one lock.
+ * Callers over two objects, two copies of this package among them, share nothing.
+ */
+export function keyedLockOf(owner: object): KeyedLock {
+  let lock = LOCKS.get(owner);
+  if (lock === undefined) {
+    lock = new KeyedLock();
+    LOCKS.set(owner, lock);
+  }
+  return lock;
+}

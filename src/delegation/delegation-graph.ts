@@ -21,7 +21,7 @@ import { describeValue } from '../utils/describe-value.js';
 import { KeyedLock } from '../utils/keyed-lock.js';
 import { warnOncePerProcess } from '../utils/warn-once.js';
 import { graphChainBreak } from './graph-chain.js';
-import { removeDelegationNode } from './delegation-removal.js';
+import { removeDelegationNode, removeDelegationSubtree } from './delegation-removal.js';
 import { nodeTurnsOf, type NodeTurns } from './graph-node-turns.js';
 import {
   supportsAtomicRegistration,
@@ -31,6 +31,7 @@ import {
 } from './delegation-graph-storage.js';
 
 export { statusEntryKey } from './delegation-status-entry.js';
+export { SubtreeRemovalError } from './delegation-removal.js';
 export type { StatusEntryClaim } from './status-entry-claim.js';
 export type {
   AtomicDelegationGraphStorageProvider,
@@ -49,6 +50,16 @@ const UNLINKED_STORE_WARNING =
   'made meanwhile through another process is lost. Managers over one storage provider object in one ' +
   'process take turns; across processes, implement AtomicDelegationGraphStorageProvider ' +
   "(registerNodeAtomic) on the store, changing only the parent's children, as MemoryDelegationGraphStorage does.";
+
+/** Options of `DelegationGraphManager.removeDelegation`. */
+export interface RemoveDelegationOptions {
+  /**
+   * Remove every delegation under the delegation too, children first, each as one is removed.
+   * When any cannot be removed, every delegation above it is kept, the rest are removed, and a
+   * `SubtreeRemovalError` says which. Without it, a delegation with any under it is refused.
+   */
+  subtree?: boolean;
+}
 
 /** Options of {@link DelegationGraphManager}. */
 export interface DelegationGraphOptions {
@@ -372,7 +383,8 @@ export class DelegationGraphManager {
    *
    * Throws, removing nothing, for a delegation with delegations registered
    * under it, which would be left under a parent the graph does not hold, so
-   * that none could be read to a root: remove them first.
+   * that none could be read to a root: pass `{ subtree: true }` to remove them
+   * with it, children first, or remove them first.
    *
    * A delegation that has no status list entry, and that reads as revoked in
    * the graph, through its own mark, an ancestor's, or a chain that does not
@@ -383,11 +395,11 @@ export class DelegationGraphManager {
    * children. A delegation with an entry is removed whole: its entry records
    * its revocation, and a verifier reads it from the credential.
    */
-  async removeDelegation(delegationId: string): Promise<void> {
-    await removeDelegationNode(
-      { storage: this.storage, turns: this.nodeTurns, owners: this.entrySources.owners },
-      delegationId,
-    );
+  async removeDelegation(delegationId: string, options: RemoveDelegationOptions = {}): Promise<void> {
+    const context = { storage: this.storage, turns: this.nodeTurns, owners: this.entrySources.owners };
+    await (options.subtree === true
+      ? removeDelegationSubtree(context, delegationId)
+      : removeDelegationNode(context, delegationId));
   }
 }
 

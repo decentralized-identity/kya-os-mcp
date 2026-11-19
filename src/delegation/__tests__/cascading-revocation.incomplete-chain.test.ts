@@ -91,8 +91,9 @@ describe('DelegationGraphManager.removeDelegation: no gap, and no revocation era
     const { graph } = await graphOfThree();
     const error = await thrown(graph.removeDelegation('middle'));
     expect(error.message).toBe(
-      'Delegation middle is not removed: delegations are registered under it (leaf). Remove them first, ' +
-        'since a delegation whose parent the graph does not hold cannot be read to a root',
+      'Delegation middle is not removed: delegations are registered under it (leaf). Remove it with ' +
+        '{ subtree: true }, which removes them first, or remove them first, since a delegation whose parent ' +
+        'the graph does not hold cannot be read to a root',
     );
     expect((await graph.getNode('root'))?.children).toEqual(['middle']);
     expect(await graph.getNode('middle')).not.toBeNull();

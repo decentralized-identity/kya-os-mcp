@@ -131,10 +131,12 @@ export { acceptStatusListValidity } from './utils/statuslist-validity.js';
 
 export {
   DelegationGraphManager,
+  SubtreeRemovalError,
   createDelegationGraph,
   statusEntryKey,
   type DelegationNode,
   type DelegationGraphOptions,
+  type RemoveDelegationOptions,
   type DelegationGraphStorageProvider,
   type StatusEntryClaim,
   type StatusEntryIndexedGraphStorageProvider,

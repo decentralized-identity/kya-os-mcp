@@ -41,17 +41,87 @@ export async function removeDelegationNode(context: RemovalContext, delegationId
       await drop();
       return;
     }
-    // In the parent's turn too, so the removal changes nothing unless it can unlink the node.
+    // In the parent's turn too, so the removal changes nothing unless it can unlink the node. The
+    // node goes before its link: a parent that still names a child the store does not hold has
+    // none, and a node whose deletion failed is still under its parent.
     await turns.take(parentId, `unlinked from ${describeValue(delegationId)}, which is so not removed`, async () => {
       await retireOwnedEntry(context.owners, node);
+      await drop();
       const parent = await storage.getNode(parentId);
       if (parent) {
         parent.children = parent.children.filter((id) => id !== delegationId);
         await storage.setNode(parent);
       }
-      await drop();
     });
   });
+}
+
+/**
+ * Remove `delegationId` and every delegation under it, as `removeDelegation` with
+ * `{ subtree: true }` says: children first, each as {@link removeDelegationNode} removes one.
+ * Throws a {@link SubtreeRemovalError} once every other delegation of the subtree is removed when
+ * any could not be.
+ */
+export async function removeDelegationSubtree(context: RemovalContext, delegationId: string): Promise<void> {
+  const top = await context.storage.getNode(delegationId);
+  if (!top) return;
+  // Breadth first lists each delegation before those under it, so read backwards it lists them after.
+  const nodes = [...(await context.storage.getDescendants(delegationId))].reverse();
+  nodes.push(top);
+  const outcome: SubtreeRemoval = { removed: [], notRemoved: [], kept: [] };
+  const left = new Set<string>();
+  for (const node of nodes) {
+    if (node.children.some((child) => left.has(child))) {
+      outcome.kept.push(node.id);
+      left.add(node.id);
+      continue;
+    }
+    try {
+      await removeDelegationNode(context, node.id);
+      outcome.removed.push(node.id);
+    } catch (cause) {
+      outcome.notRemoved.push({ delegationId: node.id, cause });
+      left.add(node.id);
+    }
+  }
+  if (outcome.notRemoved.length > 0) throw new SubtreeRemovalError(delegationId, outcome);
+}
+
+/** What a removal of a subtree did: what it removed, what it could not, and what it kept above those. */
+interface SubtreeRemoval {
+  readonly removed: string[];
+  readonly notRemoved: { readonly delegationId: string; readonly cause: unknown }[];
+  readonly kept: string[];
+}
+
+/**
+ * Thrown by `removeDelegation` with `{ subtree: true }` when it could not remove every delegation
+ * of the subtree. Each other delegation was removed, but none above one that was not, so every
+ * delegation left still reads to a root: remove the subtree again.
+ */
+export class SubtreeRemovalError extends Error {
+  /** The delegations removed, children first. */
+  readonly removed: readonly string[];
+  /** Each delegation whose removal threw, with what it threw. */
+  readonly notRemoved: readonly { readonly delegationId: string; readonly cause: unknown }[];
+  /** The delegations kept, not tried, since one under them was not removed. */
+  readonly kept: readonly string[];
+
+  constructor(delegationId: string, outcome: SubtreeRemoval) {
+    const [first, ...more] = outcome.notRemoved;
+    const others = more.length === 0 ? '' : more.length === 1 ? ', and one more was not' : `, and ${more.length} more were not`;
+    super(
+      `Delegation ${describeValue(delegationId)} and the delegations under it were not all removed: delegation ` +
+        `${describeValue(first!.delegationId)} was not${others}, for the ${more.length === 0 ? 'reason' : 'reasons'} ` +
+        'in notRemoved. Every delegation above one not removed is kept, so each one left reads to a root ' +
+        `(${outcome.kept.length} kept, ${outcome.removed.length} removed). Remove delegation ` +
+        `${describeValue(delegationId)} with { subtree: true } again`,
+    );
+    this.name = 'SubtreeRemovalError';
+    this.removed = outcome.removed;
+    this.notRemoved = outcome.notRemoved;
+    this.kept = outcome.kept;
+  }
 }
 
 /** Why `node` may not be removed, or `undefined` when it may. */
@@ -59,8 +129,9 @@ async function removalRefusal(storage: DelegationGraphStorageProvider, node: Del
   const children = await storage.getChildren(node.id);
   if (children.length > 0) {
     return (
-      `delegations are registered under it (${children.map((child) => child.id).join(', ')}). Remove them first, ` +
-      'since a delegation whose parent the graph does not hold cannot be read to a root'
+      `delegations are registered under it (${children.map((child) => child.id).join(', ')}). Remove it with ` +
+      '{ subtree: true }, which removes them first, or remove them first, since a delegation whose parent the ' +
+      'graph does not hold cannot be read to a root'
     );
   }
   return undefined;

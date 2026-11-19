@@ -13,7 +13,10 @@ body: |-
     breaks. A delegation the graph does not hold at all still reads as not
     revoked. `removeDelegation` now throws, removing nothing, for a
     delegation others are registered under, which it left under a parent the
-    graph did not hold. A removed delegation with no status list entry that
+    graph did not hold; the new `removeDelegation(id, { subtree: true })`
+    removes it and every delegation under it, children first, retiring each
+    one's entry, and when one cannot be removed keeps every delegation above
+    it, removes the rest and throws a `SubtreeRemovalError` that says which. A removed delegation with no status list entry that
     reads as revoked, whose revocation removal erased, now leaves a revoked
     record of its id (`DelegationNode.removed`), which is never restored,
     registered again, nor given children.

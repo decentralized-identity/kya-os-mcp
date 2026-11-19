@@ -191,7 +191,9 @@ def within_window(document, now):
     """A list is read only inside the validity window it states (SPEC 6.6), its bounds included.
 
     Each bound is held exactly. SPEC 6.6 permits a clock tolerance of up to 600 seconds, which no
-    vector needs: each bound a vector states is months or more from when it is run.
+    vector needs: each bound a vector states is months or more from when it is run. The window is
+    those two bounds alone: a list's ttl says when to fetch it again, "does not override or replace
+    the validity period" (Bitstring Status List v1.0, 2.2), and is not read here.
     """
     until = window_bound(document, "validUntil", "expirationDate")
     start = window_bound(document, "validFrom", "issuanceDate")

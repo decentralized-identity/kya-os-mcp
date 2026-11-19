@@ -1,7 +1,7 @@
 {
   "suiteVersion": "1.13.0",
-  "vectorSetHash": "sha256:387ee8da39c2bbe1fe5557e1bab09169a26434f452ded00554ec46a67360f063",
-  "vectorCount": 205,
+  "vectorSetHash": "sha256:e43d1dda1b429c4d08f5f376d6a0ee3952fed53af855978d6dd278145f571633",
+  "vectorCount": 208,
   "files": [
     [
       "audit-integrity.json",
@@ -61,7 +61,7 @@
     ],
     [
       "status-list-validity.json",
-      "a2f7c3b9225590c246eb47d165efb69fc3ad3053fd76ac24a03ad26efcd79ba0"
+      "a463e795b9a049d9add93052622cff69f6c40f428745c1a9db2833b371bd4ebc"
     ],
     [
       "status-list.json",

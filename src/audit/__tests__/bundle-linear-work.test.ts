@@ -13,6 +13,7 @@ import type {
   AuditAnchorReceipt,
   AuditBundleSelectionV1,
   AuditVerificationPolicyV1,
+  Digest,
   SignedAuditCheckpointV1,
   SignedAuditEntryV1,
 } from '../types.js';
@@ -21,7 +22,7 @@ import { hasher, ledger } from './observer-fixtures.js';
 /** A bundle twice as large may cost a little more than twice the work, never four times. */
 const MOST_GROWTH = 2.5;
 
-const digest = (n: number, tag: string): string =>
+const digest = (n: number, tag: string): Digest =>
   `sha256:${(tag + n.toString(16)).padStart(64, '0').slice(-64)}`;
 
 /** `value` with `member` read through a getter that counts each read in `reads`. */

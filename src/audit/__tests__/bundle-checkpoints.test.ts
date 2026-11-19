@@ -15,7 +15,7 @@ import { AUDIT_REASON_CODES } from '../verifier.js';
 import { recordedHistory, TestSigner } from './audit-fixtures.js';
 
 const hasher = new CryptoProviderAuditHasher(new NodeCryptoProvider());
-const leaves: Digest[] = Array.from({ length: 33 }, (_, index) =>
+const leaves: Digest[] = Array.from({ length: 33 }, (_, index): Digest =>
   `sha256:${index.toString(16).padStart(64, '0')}`);
 
 describe('prefix roots', () => {

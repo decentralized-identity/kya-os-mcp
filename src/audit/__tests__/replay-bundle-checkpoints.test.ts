@@ -75,7 +75,7 @@ describe('signed replay bundles: checkpoints and Merkle proofs', () => {
   });
 
   it('detects a signed checkpoint whose predecessor link forks the checkpoint history', async () => {
-    const { entries, hasher, signer, policy, journal } = await fixture();
+    const { hasher, signer, policy, journal } = await fixture();
     const store = new MemoryAuditCheckpointStore();
     const builder = new AuditCheckpointBuilder({
       journal, store, signer, hasher, clock: { now: () => 1_750_000_003_000 },

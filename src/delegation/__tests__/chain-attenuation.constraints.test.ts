@@ -23,6 +23,8 @@ function constrained(credential: DelegationCredential, extra: Record<string, unk
 }
 
 const budgeted = (budget: unknown, crisp: Record<string, unknown> = {}) => ({ crisp: { scopes: [], budget, ...crisp } });
+/** A case of a child the walk refuses: what it does, its parent's constraints, its own, and the reason. */
+type Refused = [name: string, parent: Record<string, unknown>, child: Record<string, unknown>, reason: string];
 const parentOf = (extra: Record<string, unknown>) =>
   constrained(cred({ id: "parent", issuerDid: "did:user", subjectDid: "did:agent", scopes: ["orders:place"] }), extra);
 const childOf = (extra: Record<string, unknown>) =>
@@ -55,7 +57,7 @@ describe("checkConstraintAttenuation: the budget", () => {
     expect(check(parent, child)).toEqual({ valid: true });
   });
 
-  it.each([
+  it.each<Refused>([
     ["drops the budget", budgeted(USD_100), {}, "Delegation child drops the budget parent parent states"],
     ["raises the cap", budgeted(USD_100), budgeted({ unit: "USD", cap: 1_000_000 }), "Delegation child states a budget cap above parent parent's"],
     ["changes the unit", budgeted(USD_100), budgeted({ unit: "points", cap: 1 }), "Delegation child states a budget in another unit than parent parent"],
@@ -83,7 +85,7 @@ describe("checkConstraintAttenuation: the budget", () => {
       ["longer than", 129_600],
       ["shorter than", 43_200],
       ["a whole number of times as long as", 172_800],
-    ].map(([what, durationSec]) => [
+    ].map(([what, durationSec]): Refused => [
       `resets a fixed window ${String(what)} the parent's fixed one`,
       budgeted(FIXED_DAY_100),
       budgeted({ ...FIXED_DAY_100, window: { kind: "fixed", durationSec } }),
@@ -123,7 +125,7 @@ describe("checkConstraintAttenuation: the budget", () => {
       ["named in words", "daily"],
       ["of a kind the walk does not know", { kind: "sliding", durationSec: 86_400 }],
       ["with a member the walk does not interpret", { kind: "rolling", durationSec: 86_400, anchor: "midnight" }],
-    ].map(([what, window]) => [
+    ].map(([what, window]): Refused => [
       `states a window ${String(what)}`,
       budgeted(DAILY_100),
       budgeted({ ...DAILY_100, window }),

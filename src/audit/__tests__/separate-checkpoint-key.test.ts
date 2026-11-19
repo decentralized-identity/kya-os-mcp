@@ -3,7 +3,7 @@ import { logger } from '../../logging/index.js';
 import type { AuditSignatureVerifier } from '../crypto.js';
 import { AUDIT_ERROR_CODES } from '../errors.js';
 import { MemoryAuditJournal } from '../providers/memory-journal.js';
-import type { SignedAuditEntryV1, SignerRef } from '../types.js';
+import type { SignerRef } from '../types.js';
 import { MAX_WARNED_RECORDER_KEYS } from '../unverified-recorder-keys.js';
 import { ledger } from './observer-fixtures.js';
 import {
@@ -34,15 +34,6 @@ afterEach(() => {
 });
 
 const forgedMessage = 'Audit journal entry is not one its recorder signed';
-
-/** Appends `entry` at the journal head under an idempotency key numbered `n`. */
-async function append(journal: MemoryAuditJournal, entry: SignedAuditEntryV1, n: number): Promise<void> {
-  const result = await journal.compareAndAppend({
-    ledger, expectedHead: await journal.getHead(ledger), entry,
-    idempotencyKey: `sha256:${n.toString(16).padStart(64, '0')}`,
-  });
-  expect(result.kind).toBe('appended');
-}
 
 describe('a checkpoint builder that signs with another key than the recorder', () => {
   it('builds checkpoints over honest entries with no signatures, and warns once for the recorder key', async () => {

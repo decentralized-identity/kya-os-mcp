@@ -42,7 +42,7 @@ describe('signed replay bundles: observations, anchors, profiles and key status'
   });
 
   it('verifies observation chains and evaluates supporting-anchor trust separately', async () => {
-    const { entries, hasher, signer, policy, policyDigest, journal } = await fixture();
+    const { entries, hasher, signer, policy, journal } = await fixture();
     const ledger = { ledgerId: 'kya:tenant:prod:primary', ledgerEpochId: 'epoch_1' };
     const checkpoint = await new AuditCheckpointBuilder({
       journal, store: new MemoryAuditCheckpointStore(), signer, hasher,

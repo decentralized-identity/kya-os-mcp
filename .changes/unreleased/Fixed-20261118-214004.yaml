@@ -1,16 +1,21 @@
 kind: Fixed
 body: |-
-    **A recorder and a checkpoint builder given `signatures` no longer sign
-    over an entry the recorder never made.** A party that can write the
-    journal store, and holds no key, could insert a well-formed entry with
-    correct digests and an unsigned receipt: `AuditRecorderService` chained
-    the next entry to it, `AuditCheckpointBuilder` signed a tree that held
-    it, and the read service proved it included in that tree. Both now take
-    an optional `signatures` verifier. With it, the recorder chains to a
-    journal head it did not append in this process only once the stored
-    entry verifies as one it signed for its ledger epoch, and the builder
-    signs a checkpoint only over leaves that verify and chain; each refuses
-    with `AUDIT_JOURNAL_FAILURE` naming the entry's `sequence` otherwise.
-    `createInMemoryReferenceRecorder` passes it. Without it the journal is
-    trusted as written, as before.
+    **A recorder and a checkpoint builder no longer sign over an entry the
+    recorder never made, when they can verify the journal.** A party that
+    can write the journal store, and holds no key, could insert a
+    well-formed entry with correct digests and an unsigned receipt:
+    `AuditRecorderService` chained the next entry to it,
+    `AuditCheckpointBuilder` signed a tree that held it, and the read
+    service proved it included in that tree. Both now check such an entry
+    with a new optional `signatures` verifier or, given none, with the
+    verifier their signer derives from its own key through a new optional
+    `AuditSigner.verifier()`, which `CompactJwsAuditSigner` implements for a
+    private JWK, a Node.js `KeyObject` (both now accepted) or an extractable
+    `CryptoKey`. The recorder chains to a journal head it did not append in
+    this process only once the stored entry verifies as one it signed for
+    its ledger epoch, and the builder signs a checkpoint only over leaves
+    that verify and chain; each refuses with `AUDIT_JOURNAL_FAILURE` naming
+    the entry's `sequence` otherwise. `createInMemoryReferenceRecorder`
+    passes `signatures`. With neither, as for a signer over a non-extractable
+    `CryptoKey`, the journal is trusted as written, as before.
 time: 2026-11-18T21:40:04.000000-06:00

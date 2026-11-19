@@ -186,7 +186,14 @@ rewind.
 
 A head the recorder did not append in this process, and every leaf a checkpoint covers, is otherwise whatever the journal store holds.
 A party that can write that store, and holds no key, can insert a well-formed entry with correct digests and a receipt the recorder never signed: the recorder would then sign a successor that commits to it, and the checkpoint builder a tree that holds it.
-Give `AuditRecorderService` and `AuditCheckpointBuilder` the `signatures` verifier you give `AuditArtifactVerifier`, resolving the recorder's key:
+The recorder and the checkpoint builder therefore check each such entry before they build on it.
+The recorder chains to such a head only once the stored entry at that head verifies as one it signed for its ledger epoch, and the builder signs a checkpoint only over leaves that verify as their recorder's and chain to the leaf before them; each refuses with `AUDIT_JOURNAL_FAILURE`, naming the entry's `sequence`, otherwise.
+The builder verifies the leaves after the last checkpoint it verified in full, and every leaf after a restart.
+
+They check with the `signatures` verifier when you give one.
+Otherwise they ask their signer: a `CompactJwsAuditSigner` over a private JWK, a Node.js `KeyObject` or an extractable `CryptoKey` derives, from the public half of its key, a verifier of signatures under its own `ref`, and they use that.
+A `CompactJwsAuditSigner` over a `CryptoKey` created non-extractable, from which WebCrypto reads no public key, derives none, and nor does a signer of your own unless it implements `verifier()`, as a signer backed by a remote key service can when it reads the public key from that service.
+Give such a recorder and builder the `signatures` verifier you give `AuditArtifactVerifier`, resolving the recorder's key; without either, the journal is trusted as written, as in earlier releases.
 
 ```ts
 // recorderKeys is an AuditVerificationKeyResolver that resolves the recorder's public key.
@@ -195,10 +202,10 @@ const recorder = new AuditRecorderService({ ...config, journal, signer, hasher, 
 const checkpoints = new AuditCheckpointBuilder({ journal, store, signer, hasher, signatures });
 ```
 
-With it, the recorder chains to such a head only once the stored entry at that head verifies as one it signed for its ledger epoch, and the builder signs a checkpoint only over leaves that verify as their recorder's and chain to the leaf before them; each refuses with `AUDIT_JOURNAL_FAILURE`, naming the entry's `sequence`, otherwise.
-The builder verifies the leaves after the last checkpoint it verified in full, and every leaf after a restart.
-`createInMemoryReferenceRecorder` wires it.
-Without `signatures` the journal is trusted as written, as in earlier releases.
+A derived verifier checks only entries recorded under the signer's own key.
+A builder that signs checkpoints with another key than the recorder signs entries with therefore refuses to sign a checkpoint, with `AUDIT_JOURNAL_FAILURE` saying the entry was recorded under a key the signer cannot verify, until it is given a `signatures` verifier that resolves the recorder's key.
+When the signer fails to derive its verifier, the recorder or builder refuses the call with `AUDIT_INVALID_CONFIGURATION` and asks the signer again on the next one.
+`createInMemoryReferenceRecorder` passes `signatures`.
 
 Run the provider contract kit for every adapter:
 

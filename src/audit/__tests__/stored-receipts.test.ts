@@ -2,26 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { AuditCheckpointBuilder, MemoryAuditCheckpointStore } from '../checkpoint.js';
 import type { AuditSignatureVerifier } from '../crypto.js';
 import { AUDIT_ERROR_CODES } from '../errors.js';
-import {
-  buildAuditRecorderReceiptCore,
-  digestAuditEntry,
-  digestAuditEvent,
-  digestAuditEvidenceManifest,
-} from '../integrity.js';
 import { MemoryAuditJournal } from '../providers/memory-journal.js';
 import { LocalAuditReadService } from '../read-service.js';
 import { AuditRecorderService } from '../recorder-service.js';
 import { createInMemoryReferenceRecorder, sampleAuditEvent } from '../reference-recorder.js';
-import type {
-  AuditEntryCoreV1,
-  AuditHead,
-  AuditLedgerRef,
-  SignedAuditEntryV1,
-  SignerRef,
-} from '../types.js';
 import { verifyStoredAuditEntry } from '../stored-entry.js';
+import type { AuditHead, SignedAuditEntryV1, SignerRef } from '../types.js';
 import { producerEvent, tenantRef, TestSignatureVerifier, TestSigner } from './audit-fixtures.js';
 import { hasher, ledger } from './observer-fixtures.js';
+import { insert, unsignedEntryAfter } from './stored-entry-fixtures.js';
 
 const submitter = { producerAuthority: 'did:key:zProducer', tenantAuthority: 'tenant-1', tenantRef };
 const signatures = new TestSignatureVerifier();
@@ -49,49 +38,6 @@ async function record(recorder: AuditRecorderService, id: string, sequence: numb
     { ledgerId: ledger.ledgerId, producerEvent: producerEvent(id, sequence), encryptedEvidence: [] },
     submitter,
   );
-}
-
-/** A well-formed entry with correct digests after `head`, as a writer of the journal store with no key could write. */
-async function unsignedEntryAfter(
-  head: AuditHead,
-  options: {
-    jws?: string;
-    recorder?: SignerRef;
-    ledgerRef?: AuditLedgerRef;
-    previousEntryDigest?: AuditHead['entryDigest'];
-  } = {},
-): Promise<SignedAuditEntryV1> {
-  const event = producerEvent('evt_never_happened', 99);
-  const eventDigest = await digestAuditEvent(hasher, event);
-  const core: AuditEntryCoreV1 = {
-    schema: 'https://schema.kya-os.org/v1/protocol/audit/entry/v1.0.0',
-    ...(options.ledgerRef ?? ledger),
-    sequence: String(BigInt(head.sequence) + 1n),
-    previousEntryDigest: options.previousEntryDigest ?? head.entryDigest,
-    recordedAt: 1_750_000_001_000,
-    recorder: options.recorder ?? new TestSigner().ref,
-    eventDigest,
-    event,
-    evidenceManifestDigest: await digestAuditEvidenceManifest(hasher, event),
-    integritySuite: 'KYA-AUDIT-JCS-SHA256-JWS-2026',
-  };
-  const entryDigest = await digestAuditEntry(hasher, core);
-  const receiptCore = buildAuditRecorderReceiptCore(core, entryDigest);
-  return {
-    core, eventDigest, entryDigest,
-    recorderReceipt: {
-      core: receiptCore,
-      jws: options.jws ?? 'no.recorder.signature',
-    },
-  };
-}
-
-async function insert(journal: MemoryAuditJournal, entry: SignedAuditEntryV1, key: string): Promise<void> {
-  const head = await journal.getHead(ledger);
-  const result = await journal.compareAndAppend({
-    ledger, expectedHead: head, entry, idempotencyKey: `sha256:${key.repeat(64)}`,
-  });
-  expect(result.kind).toBe('appended');
 }
 
 describe('a stored entry the recorder did not sign', () => {

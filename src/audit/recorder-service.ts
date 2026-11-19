@@ -26,7 +26,11 @@ import {
   parseAuditEntryCore,
   parseAuditProducerEvent,
 } from './schemas.js';
-import { requireStoredAuditEntry, verifyStoredAuditEntry } from './stored-entry.js';
+import {
+  checkStoredAuditEntry,
+  requireStoredAuditEntry,
+  StoredAuditEntryVerifier,
+} from './stored-entry.js';
 import type {
   AuditHead,
   AuditLedgerRef,
@@ -68,10 +72,12 @@ export class AuditRecorderService {
   private committedHead: AuditHead | null = null;
   /** Highest head the journal has reported in a compare-and-append result. */
   private reportedHead: AuditHead | null = null;
-  /** The last journal head whose stored entry verified as one this recorder signed. */
+  /** The last journal head whose stored entry verified as one its recorder signed. */
   private receiptedHead: AuditHead | null = null;
   /** Write-ahead evidence held, persisted and disposed for submissions in flight. */
   private readonly writeAhead: RecorderWriteAheadEvidence;
+  /** How a head this recorder did not append is checked before it chains to it. */
+  private readonly storedEntries: StoredAuditEntryVerifier;
 
   constructor(private readonly config: AuditRecorderServiceConfig) {
     if ((config.previousEpochId === undefined) !==
@@ -89,6 +95,7 @@ export class AuditRecorderService {
     }
     this.maxAppendConflicts = config.maxAppendConflicts ?? 256;
     this.writeAhead = new RecorderWriteAheadEvidence(config);
+    this.storedEntries = new StoredAuditEntryVerifier(config);
   }
 
   async submitAuthenticated(
@@ -306,16 +313,18 @@ export class AuditRecorderService {
    * of the journal store put there, and the next receipt would commit to it.
    */
   private async assertHeadReceipted(head: AuditHead | null): Promise<void> {
-    const signatures = this.config.signatures;
-    if (signatures === undefined || head === null ||
-      sameHead(head, this.committedHead) || sameHead(head, this.receiptedHead)) return;
+    if (head === null || sameHead(head, this.committedHead) || sameHead(head, this.receiptedHead)) return;
+    const verification = await this.storedEntries.verification();
+    if (verification === undefined) return;
     const ledger = this.ledgerRef();
+    // The recorder of an epoch signs every entry in it, its genesis included,
+    // so an entry under another key is not one it can chain to.
     await requireStoredAuditEntry(head.sequence, async () => {
       const entry = await this.entryAt(ledger, head.sequence);
-      return entry !== undefined &&
-        entry.entryDigest === head.entryDigest &&
-        sameSigner(entry.core.recorder, this.config.signer.ref) &&
-        verifyStoredAuditEntry(entry, ledger, { hasher: this.config.hasher, signatures });
+      return entry === undefined || entry.entryDigest !== head.entryDigest ||
+        !sameSigner(entry.core.recorder, this.config.signer.ref)
+        ? 'not-signed'
+        : checkStoredAuditEntry(entry, ledger, verification);
     });
     this.receiptedHead = head;
   }

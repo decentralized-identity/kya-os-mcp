@@ -55,13 +55,18 @@ export interface AuditRecorderServiceConfig {
   epochTransitionGuard?: AuditEpochTransitionGuard;
   maxAppendConflicts?: number;
   /**
-   * Verifies the recorder's own receipt signatures. Given it, the recorder
-   * chains to a journal head it did not append in this process only once the
-   * stored entry at that head verifies as one it signed for this ledger epoch,
-   * and refuses with `AUDIT_JOURNAL_FAILURE` otherwise, so a party that can
-   * write the journal store but holds no key cannot have the recorder sign a
-   * successor to an entry it never made. Without it the journal is trusted as
-   * written.
+   * Verifies recorder receipt signatures. The recorder chains to a journal
+   * head it did not append in this process only once the stored entry at that
+   * head verifies as one its recorder signed for this ledger epoch, and
+   * refuses with `AUDIT_JOURNAL_FAILURE` otherwise, so a party that can write
+   * the journal store but holds no key cannot have the recorder sign a
+   * successor to an entry it never made. Without it the recorder uses the
+   * verifier `signer.verifier()` derives from its own key, which checks only
+   * entries recorded under that key; when the signer derives none, as a
+   * signer over a non-extractable CryptoKey or a remote key service does not,
+   * the journal is trusted as written. Pass it when the signer derives no
+   * verifier.
+   * @since 1.26.0
    */
   signatures?: AuditSignatureVerifier;
 }

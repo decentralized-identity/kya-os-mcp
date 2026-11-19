@@ -11,7 +11,11 @@ import {
 import { Rfc9162MerkleTree } from './merkle.js';
 import { parseAuditCheckpointCore } from './schemas.js';
 import type { AuditJournalProvider } from './providers/journal.js';
-import { requireStoredAuditEntry, verifyStoredAuditEntry } from './stored-entry.js';
+import {
+  requireStoredAuditLeaves,
+  StoredAuditEntryVerifier,
+  type StoredAuditEntryVerification,
+} from './stored-entry.js';
 import type {
   AuditLedgerRef,
   AuditMerkleConsistencyProofV1,
@@ -156,11 +160,12 @@ export interface AuditCheckpointBuilderOptions {
    */
   onCheckpointCreated?: (checkpoint: SignedAuditCheckpointV1) => Promise<void> | void;
   /**
-   * Verifies the recorder receipts in the journal. Given it, the builder signs
-   * a checkpoint only over leaves whose stored entries verify as their
-   * recorder's for this ledger epoch and chain to the leaf before them, and
-   * refuses with `AUDIT_JOURNAL_FAILURE` otherwise. Without it the journal is
-   * trusted as written.
+   * Verifies the recorder receipts in the journal: the builder signs only over
+   * leaves that verify as their recorder's for this ledger epoch and chain,
+   * and refuses with `AUDIT_JOURNAL_FAILURE` otherwise. Without it the builder
+   * uses `signer.verifier()`, which checks only entries under the signer's own
+   * key, and trusts the journal as written when the signer derives none.
+   * @since 1.26.0
    */
   signatures?: AuditSignatureVerifier;
 }
@@ -174,10 +179,13 @@ export class AuditCheckpointBuilder {
   private readonly failedHooks = new Map<string, SignedAuditCheckpointV1[]>();
   /** Per ledger, the latest checkpoint whose every leaf this builder verified. */
   private readonly verifiedCheckpoints = new Map<string, Digest>();
+  /** How the leaves a checkpoint will cover are checked before it is signed. */
+  private readonly storedEntries: StoredAuditEntryVerifier;
 
   constructor(private readonly options: AuditCheckpointBuilderOptions) {
     this.tree = new Rfc9162MerkleTree(options.hasher);
     this.clock = options.clock ?? Date;
+    this.storedEntries = new StoredAuditEntryVerifier(options);
   }
 
   async createCheckpoint(ledger: AuditLedgerRef): Promise<SignedAuditCheckpointV1> {
@@ -230,19 +238,21 @@ export class AuditCheckpointBuilder {
       if (previous.core.treeSize === treeSize) return { checkpoint: previous, inserted: false };
     }
 
-    await this.assertLeavesReceipted(ledger, entries, previous);
+    const verification = await this.storedEntries.verification();
+    if (verification !== undefined) await this.assertLeavesReceipted(ledger, entries, previous, verification);
     const signed = await this.signCheckpoint(ledger, entries, previous);
     const result = await this.options.store.putIfAbsent(signed);
     if (result.kind === 'conflict') throw storedConflict(signed, result.checkpoint);
-    if (this.options.signatures !== undefined) {
+    if (verification !== undefined) {
       this.verifiedCheckpoints.set(ledgerKey(ledger), result.checkpoint.checkpointDigest);
     }
     return { checkpoint: result.checkpoint, inserted: result.kind === 'inserted' };
   }
 
   /**
-   * With `signatures`, every leaf the checkpoint will cover is a stored entry
-   * its recorder signed for this ledger epoch, chained to the leaf before it.
+   * Every leaf the checkpoint will cover is a stored entry its recorder
+   * signed for this ledger epoch, as `verification` checks, chained to the leaf
+   * before it.
    * `assertExtends` has shown the journal still holds `previous`'s tree, so
    * when this builder verified every leaf of that tree, only later ones are new.
    */
@@ -250,19 +260,13 @@ export class AuditCheckpointBuilder {
     ledger: AuditLedgerRef,
     entries: readonly SignedAuditEntryV1[],
     previous: SignedAuditCheckpointV1 | null,
+    verification: StoredAuditEntryVerification,
   ): Promise<void> {
-    const signatures = this.options.signatures;
-    if (signatures === undefined) return;
     const from = previous !== null &&
       this.verifiedCheckpoints.get(ledgerKey(ledger)) === previous.checkpointDigest
       ? Number(previous.core.treeSize)
       : 0;
-    for (let index = from; index < entries.length; index += 1) {
-      const entry = entries[index]!;
-      await requireStoredAuditEntry(entry.core.sequence, async () =>
-        entry.core.previousEntryDigest === (entries[index - 1]?.entryDigest ?? null) &&
-        verifyStoredAuditEntry(entry, ledger, { hasher: this.options.hasher, signatures }));
-    }
+    await requireStoredAuditLeaves(entries, from, ledger, verification);
   }
 
   /**

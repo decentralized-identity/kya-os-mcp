@@ -1,9 +1,13 @@
 kind: Upgrading
 body: |-
-    **Give `AuditRecorderService` and `AuditCheckpointBuilder` the
-    `signatures` verifier that resolves your recorder's key.** Without it
-    both trust the journal store as written, and a writer of that store
-    with no key can have the recorder key sign over an entry the recorder
-    never made. UPGRADING.md, "The recorder and the checkpoint builder can
-    verify what the journal holds", has the steps.
+    **Check that the recorder and the checkpoint builder can verify what
+    the journal holds.** A `CompactJwsAuditSigner` over a private JWK, a
+    `KeyObject` or an extractable `CryptoKey` now verifies the stored
+    entries they build on by default, and a builder that signs with another
+    key than the recorder's then refuses until it is given a `signatures`
+    verifier that resolves the recorder's key. A signer over a
+    non-extractable `CryptoKey`, or one of your own without `verifier()`,
+    still trusts the journal as written: give both `signatures`. UPGRADING.md,
+    "The recorder and the checkpoint builder can verify what the journal
+    holds", has the steps.
 time: 2026-11-18T21:40:06.000000-06:00

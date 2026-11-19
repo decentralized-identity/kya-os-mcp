@@ -143,6 +143,17 @@ export function applyRequiredAuditProfile(
 export function mergeAuditDimensions(
   ...values: readonly AuditVerificationDimension[]
 ): AuditVerificationDimension {
+  return mergeDimensionList(values);
+}
+
+/**
+ * {@link mergeAuditDimensions} over a list. Use it for a list whose length a bundle decides, one
+ * dimension per item the bundle carries: spread into a call, such a list can exceed the engine's
+ * argument limit.
+ */
+export function mergeDimensionList(
+  values: readonly AuditVerificationDimension[],
+): AuditVerificationDimension {
   if (values.length === 0) {
     // An empty merge must never inherit a passing verdict by vacuous truth.
     return dimension('indeterminate', [AUDIT_REASON_CODES.NOT_EVALUATED]);

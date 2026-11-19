@@ -20,11 +20,17 @@ import type {
   SignedAuditCheckpointV1,
   SignedAuditEntryV1,
 } from './types.js';
-import { AUDIT_REASON_CODES, dimension, mergeAuditDimensions } from './verdicts.js';
+import { AUDIT_REASON_CODES, dimension, mergeDimensionList } from './verdicts.js';
 import type { AuditArtifactVerifier } from './verifier.js';
 import type { AuditVerificationContext } from './verifier-types.js';
 
 /** Verifies a supporting anchor's receipt for a checkpoint, as `verifyAuditBundle` is given one. */
+/** The members of a verification report that are dimensions. */
+type AuditReportDimensionName = {
+  [Name in keyof AuditVerificationReportV1]-?:
+    AuditVerificationReportV1[Name] extends AuditVerificationDimension ? Name : never;
+}[keyof AuditVerificationReportV1];
+
 export type SupportingAnchorVerifier = (
   checkpoint: SignedAuditCheckpointV1,
   receipt: AuditAnchorReceipt,
@@ -54,26 +60,17 @@ export async function verifyEntryGroups(
     ...(malformed.length === 0 ? [] : [artifacts.verifyEntries(malformed, policy, context)]),
   ]);
   if (reports.length === 0) return artifacts.verifyEntries([], policy, context);
-  const first = reports[0]!;
+  const merged = (name: AuditReportDimensionName): AuditVerificationDimension =>
+    mergeDimensionList(reports.map((report) => report[name]));
   return {
-    ...first,
-    cryptographicIntegrity: mergeAuditDimensions(
-      ...reports.map((report) => report.cryptographicIntegrity),
-    ),
-    chainIntegrity: mergeAuditDimensions(...reports.map((report) => report.chainIntegrity)),
-    checkpointIntegrity: mergeAuditDimensions(
-      ...reports.map((report) => report.checkpointIntegrity),
-    ),
-    anchorIntegrity: mergeAuditDimensions(...reports.map((report) => report.anchorIntegrity)),
-    scopeEvidenceCompleteness: mergeAuditDimensions(
-      ...reports.map((report) => report.scopeEvidenceCompleteness),
-    ),
-    authorizedAsObserved: mergeAuditDimensions(
-      ...reports.map((report) => report.authorizedAsObserved),
-    ),
-    currentAuthorization: mergeAuditDimensions(
-      ...reports.map((report) => report.currentAuthorization),
-    ),
+    ...reports[0]!,
+    cryptographicIntegrity: merged('cryptographicIntegrity'),
+    chainIntegrity: merged('chainIntegrity'),
+    checkpointIntegrity: merged('checkpointIntegrity'),
+    anchorIntegrity: merged('anchorIntegrity'),
+    scopeEvidenceCompleteness: merged('scopeEvidenceCompleteness'),
+    authorizedAsObserved: merged('authorizedAsObserved'),
+    currentAuthorization: merged('currentAuthorization'),
   };
 }
 

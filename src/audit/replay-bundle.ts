@@ -44,7 +44,7 @@ import type {
   SignedAuditCheckpointV1,
   SignedAuditEntryV1,
 } from './types.js';
-import { dimension } from './verdicts.js';
+import { dimension, mergeDimensionList } from './verdicts.js';
 import {
   AUDIT_REASON_CODES,
   AuditArtifactVerifier,
@@ -374,11 +374,11 @@ export async function verifyAuditBundle(
             verifyInclusionBinding(checkpoint, covered, proofs.inclusions),
           ));
     }
-    checkpointDimension = mergeAuditDimensions(
-      ...checkpointResults,
+    checkpointResults.push(
       verifyCheckpointHistory(checkpoints, entries, core.selections, proofs.consistencies),
       proofs.dimension,
     );
+    checkpointDimension = mergeDimensionList(checkpointResults);
   } else if (core.selections.some((selection) => selection.checkpointTreeSizes.length > 0)) {
     checkpointDimension = dimension('invalid', [AUDIT_REASON_CODES.CHECKPOINT_MISSING]);
   }
@@ -397,10 +397,8 @@ export async function verifyAuditBundle(
         ? dimension('invalid', [AUDIT_REASON_CODES.OBSERVATION_SCOPE_MISMATCH])
         : await artifacts.verifyObservation(checkpoint, receipt, policy, context));
     }
-    anchorDimension = mergeAuditDimensions(
-      ...observationResults,
-      verifyObservationHistory(observations),
-    );
+    observationResults.push(verifyObservationHistory(observations));
+    anchorDimension = mergeDimensionList(observationResults);
   }
   if (anchorCandidates.length > 0) {
     anchorDimension = mergeAuditDimensions(

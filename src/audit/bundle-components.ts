@@ -34,6 +34,11 @@ export function componentMetadata(component: AuditBundleComponentV1): Omit<Audit
   };
 }
 
+/**
+ * The items of every included component of `mediaType`, in bundle order. Appended one by one: a
+ * component's array is the sender's to size, and spread into one call it would exceed the
+ * engine's argument limit.
+ */
 export function includedArrays<T>(
   bundle: AuditReplayBundleV1,
   mediaType: string,
@@ -42,7 +47,7 @@ export function includedArrays<T>(
   for (const component of bundle.components) {
     if (component.disposition !== 'included' || component.mediaType !== mediaType ||
       !Array.isArray(component.content)) continue;
-    result.push(...component.content as T[]);
+    for (const item of component.content as T[]) result.push(item);
   }
   return result;
 }

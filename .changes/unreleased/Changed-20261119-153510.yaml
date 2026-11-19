@@ -1,7 +1,0 @@
-kind: Changed
-body: |-
-    **The package no longer ships source maps.** Each map pointed at a
-    TypeScript source the package does not include, so no debugger could
-    show it, and the 262 maps were 0.9 MB of the 4.16 MB 1.25.0 unpacked
-    to. The package now unpacks to 3.86 MB in 658 files.
-time: 2026-11-19T15:35:10.000000-06:00

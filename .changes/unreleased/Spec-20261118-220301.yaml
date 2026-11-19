@@ -1,8 +1,0 @@
-kind: Spec
-body: |-
-    **SPEC.md §7.8: a presented credential the server refuses on its own is
-    refused before any ancestor is examined.** The digest of such a refusal,
-    one whose signature, a VC-JWT envelope's among them, does not verify,
-    covers the presented credential alone, where it covered the ancestors
-    before it too.
-time: 2026-11-18T22:03:01.000000-06:00

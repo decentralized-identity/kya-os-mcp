@@ -1,7 +1,0 @@
-kind: Deprecated
-body: |-
-    **`DEFAULT_CARRIED_CHAIN_LIMIT` is deprecated** and is removed in
-    2.0.0. It is applied to nothing now that a carried chain has no default
-    limit; pass `maxChainLength: MAX_DELEGATION_DEPTH` for the limit it
-    was. DEPRECATIONS.md has the row.
-time: 2026-11-19T18:00:20.000000-06:00

@@ -14,26 +14,14 @@ import { buildCardProof, verifyCardProof, verifyHttpSignature, type ProofSigner 
 import { verifyVcJwtSignature } from '../delegation/vc-jwt-verify.js';
 import type { DIDResolver } from '../delegation/vc-verifier.js';
 import { issuerDidDocument, methodOf } from './utils/did-documents.js';
-import { base64urlEncodeFromBytes } from '../utils/base64.js';
+import { base64url } from './utils/encodings.js';
+import { forgedJws, IDENTITY, IDENTITY_SIGNED, UNIVERSAL_SIGNATURE } from './utils/small-order.js';
 import { generateDidKeyFromBytes } from '../utils/did-helpers.js';
 import { AUD, NONCE, PROOF_KEY, REQ, clock, deps, keypair } from '../card/__tests__/proof-helpers.js';
 
 const encoder = new TextEncoder();
 
-/** The identity point, and the same point with the sign bit set (a second encoding of it). */
-const IDENTITY = Uint8Array.from({ length: 32 }, (_, i) => (i === 0 ? 1 : 0));
-const IDENTITY_SIGNED = Uint8Array.from(IDENTITY, (byte, i) => (i === 31 ? byte | 0x80 : byte));
-/** R = identity, S = 0: valid for every message under a small-order key. */
-const UNIVERSAL_SIGNATURE = Uint8Array.from({ length: 64 }, (_, i) => (i === 0 ? 1 : 0));
-
-const b64url = (value: string | Uint8Array) =>
-  base64urlEncodeFromBytes(typeof value === 'string' ? encoder.encode(value) : value);
-const okp = (key: Uint8Array) => ({ kty: 'OKP', crv: 'Ed25519', x: b64url(key) });
-
-/** A compact JWS over `payload` carrying the universal signature. */
-function forgedJws(header: Record<string, unknown>, payload: string): string {
-  return `${b64url(JSON.stringify(header))}.${b64url(payload)}.${b64url(UNIVERSAL_SIGNATURE)}`;
-}
+const okp = (key: Uint8Array) => ({ kty: 'OKP', crv: 'Ed25519', x: base64url(key) });
 
 describe.each([
   ['the identity point', IDENTITY],
@@ -73,7 +61,7 @@ describe.each([
     const env = await buildCardProof(REQ, noCnf, { audience: AUD, nonce: NONCE, now: clock });
     const proof = env[PROOF_KEY];
     const [protectedHeader] = proof.jws.split('.');
-    const forged = { ...proof, jws: `${protectedHeader}..${b64url(UNIVERSAL_SIGNATURE)}` };
+    const forged = { ...proof, jws: `${protectedHeader}..${base64url(UNIVERSAL_SIGNATURE)}` };
     const key = { ...okp(smallOrderKey), kid: signer.kid } as Parameters<typeof deps>[0];
 
     const result = await verifyCardProof(forged, REQ, deps(key));
@@ -84,7 +72,7 @@ describe.each([
   it('card proof: an RFC 9421 HTTP signature under it does not verify', async () => {
     const { signer } = await keypair();
     const env = await buildCardProof(REQ, signer, { audience: AUD, nonce: NONCE, now: clock });
-    const forged = { ...env[PROOF_KEY], httpSig: b64url(UNIVERSAL_SIGNATURE) };
+    const forged = { ...env[PROOF_KEY], httpSig: base64url(UNIVERSAL_SIGNATURE) };
     const key = { ...okp(smallOrderKey), kid: signer.kid } as Parameters<typeof verifyHttpSignature>[1];
     expect(await verifyHttpSignature(forged, key)).toBe(false);
   });

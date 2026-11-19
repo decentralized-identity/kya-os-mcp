@@ -1,7 +1,8 @@
 import { exportJWK, generateKeyPair } from 'jose';
 import { describe, expect, it } from 'vitest';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
-import { base64urlEncodeFromBytes } from '../../utils/base64.js';
+import { base64url } from '../../__tests__/utils/encodings.js';
+import { forgedJws, IDENTITY } from '../../__tests__/utils/small-order.js';
 import {
   CompactJwsAuditSignatureVerifier,
   CompactJwsAuditSigner,
@@ -48,21 +49,14 @@ describe('audit cryptography adapters', () => {
 
   describe('a key handed over as a JWK', () => {
     const encoder = new TextEncoder();
-    const b64url = (value: string | Uint8Array): string =>
-      base64urlEncodeFromBytes(typeof value === 'string' ? encoder.encode(value) : value);
-    /** The identity point: a public key of order one. */
-    const identity = Uint8Array.from({ length: 32 }, (_, index) => (index === 0 ? 1 : 0));
-    /** R = identity, S = 0: fits every message under such a key. */
-    const anySignature = Uint8Array.from({ length: 64 }, (_, index) => (index === 0 ? 1 : 0));
-    const forged = (payload: string): string =>
-      `${b64url(JSON.stringify({ alg: 'EdDSA', kid: signerRef.kid }))}.${b64url(payload)}.${b64url(anySignature)}`;
+    const forged = (payload: string): string => forgedJws({ alg: 'EdDSA', kid: signerRef.kid }, payload);
 
     it.each([
       ['says nothing of extractability', {}],
       ['says it is extractable', { ext: true }],
       ['says it is not extractable', { ext: false }],
     ])('refuses a small-order key whose JWK %s', async (_case, extractability) => {
-      const jwk = { kty: 'OKP', crv: 'Ed25519', x: b64url(identity), ...extractability };
+      const jwk = { kty: 'OKP', crv: 'Ed25519', x: base64url(IDENTITY), ...extractability };
       const verifier = new CompactJwsAuditSignatureVerifier({ resolve: async () => jwk });
       const payload = '{"sequence":"7"}';
 

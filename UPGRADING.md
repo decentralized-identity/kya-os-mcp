@@ -205,6 +205,93 @@ Choose `delegationId` as the operator, the id you register the delegation under;
 | Hold delegations registered on 1.25.0 that share an entry | Find them with `graph.getStatusEntryClaim(entry)`, remove the one the entry was not allocated for with `removeDelegation`, and issue it again with an entry of its own. | Until then a revocation of either sets the entry, revoking both on the status list, and a restore of either is refused. |
 | Catch the error the status list manager throws for an entry, through `revokeDelegation` or `restoreDelegation` | Catch `StatusEntryUnchangedError`: the manager's error is the `cause` of the entry in `unchanged`. For a `StatusListWriteConflictError` there, call the method again. | A revocation no longer stops at the first such entry: it revokes the rest of the subtree first. |
 
+### A request proof names the delegation it is made for
+
+A holder's request proof covers the tool name and the business arguments.
+The delegation credential travels beside it, outside the request hash, so the proof was good beside any delegation of its subject.
+A party on the path that held another delegation of the same agent, and no key, could put it in place of the one the agent chose, or take the delegation away so that a grant the server retained under another one answered, and the call ran and was recorded under that one.
+
+A request proof now states the delegation its call presents in its JWS protected header, under `org.kya-os/delegation`: the SPEC.md §7.8 digest of the credential, in the form it is sent, or `none` for a call that presents none.
+The header is part of what the proof signs, so the statement cannot be changed or removed without the holder's key.
+A verifier holds the proof to it, and refuses a proof that names one credential beside another.
+
+#### A client
+
+A client that calls `generateRequestProof` with the arguments it sends changes nothing.
+The generator reads `_kyaos_delegation` from `args` and names it, or states `none` when the arguments hold none.
+Three clients have something to do:
+
+- A client that makes the proof from its business arguments and attaches `_kyaos_delegation` afterwards makes a proof that states `none` beside a delegation.
+  Make the proof from the arguments as they are sent, or pass the credential as the new `delegation` input.
+- A client that sends no delegation, and whose agent the server retains grants for under more than one delegation, passes the credential it means as `delegation`.
+  The server then resolves only that delegation's grant.
+- A client that signs card proofs with a `ProofSigner` of its own writes the parameters `sign` now receives as its second argument into the protected header, beside `alg` and `kid`.
+  `ed25519SignerFromJwk` and the other signers the library builds already do.
+  `buildCardProof` names the last credential of the chain in the request's `params._meta`, or the credential passed as `delegation` when the chain is added to `_meta` after the proof is made.
+
+A proof that names a delegation needs nothing from the client about the delegation's ancestors.
+A client that signs proofs without the library states the parameter as SPEC.md §7.8 and its Appendix C.5 give it.
+
+#### A server
+
+`withKyaOs` holds every request proof that `delegation.holderBinding` checks to the delegation presented, with no new setting.
+Under `'enforce'`, a proof that names another credential is refused as `holder_binding_failed`; under `'warn'` the mismatch is logged, as every failed binding is.
+For a call that presents no delegation, only a grant retained under the credential its proof names is resolved, under either.
+The new `delegation.requestBinding` decides how a proof that names no credential is taken:
+
+| `requestBinding` | A proof that states nothing, as a client before 1.26.0 makes it, or states `none` beside a delegation |
+| --- | --- |
+| `'prefer'`, the default | Binds as before, with one warning per process. Such a proof is still good beside any delegation of its subject. |
+| `'require'` | Refused as `holder_binding_failed`. |
+
+Set `'require'` once every client that calls the server signs with 1.26.0 or later.
+Version 2.0.0 makes it the default, and `DEPRECATIONS.md` lists the acceptance it ends.
+
+An enforcement point that calls `assertHolderBinding` itself moves to the new `verifyDelegatedCallProof`.
+It takes the same input and `presented`, the credential the call presented as it was received, or `null`, which it requires, so the check cannot be left out.
+On `bound` it reports `named`, whether the proof named the delegation, `ancestorsPinned`, and the proof's `claims`; authorize a call that presented none only under authority `admitsRetainedDelegation` admits for those claims.
+`assertHolderBinding` still answers whether the caller holds the subject's key, and compares nothing with the delegation.
+
+The causes a refused proof carries, for the server's log:
+
+| `cause` | The proof |
+| --- | --- |
+| `delegation_mismatch` | names another credential than the one presented, or signs the `delegationRef` or `delegationChainDigest` of another |
+| `delegation_statement_malformed` | states a value that is neither a credential digest nor `none` |
+| `delegation_stated_none` | states `none` beside a presented delegation, under `'require'` |
+| `delegation_unnamed` | states nothing, under `'require'` |
+
+On the card path, `requireProof` returns the statement it verified as `statedDelegation`.
+Hand it to the delegation guard, `delegationGuard({ meta, proofDid: proof.did, statedDelegation: proof.statedDelegation, action })`; a guard that is not handed it reads it from the proof in `meta`.
+`requireDelegation` and `verifyRequestDelegation` refuse a chain whose last credential is not the one the proof names as `delegation_invalid`, with the refusal code `holder_binding_failed`, take the same `requestBinding`, and report `delegationNamed` and `ancestorsPinned` on the grant.
+
+#### An issuer
+
+A re-delegation of the base profile may now state `credentialSubject.delegation.parentCredentialDigest`, the SPEC.md §7.8 digest of its parent credential, as a card hop already may.
+Pass the parent credential as `parent` in the options of `DelegationCredentialIssuer.createAndIssueDelegation` to write it.
+A verifier checks the digest whenever a credential states it, and refuses one that is not its parent's, or that a credential with no parent states, as `chain_invalid`.
+With every hop committed, a proof that names the presented credential fixes the whole chain, and a parent issued again under the same id is refused.
+A credential that states none is verified as before.
+
+#### Servers that have not upgraded
+
+A verifier that does not know a header parameter ignores it (RFC 7515 §4), so a proof that states its delegation verifies wherever the same proof without the statement does.
+`pnpm test:released-verifiers` measures this against the released packages: it installs each from the registry, and has it verify proofs this version signs.
+Run on Node 22 for this release:
+
+| Verifier | Request proof, as signed | Request proof, statement swapped or stripped | Card proof, as signed | Card proof, statement swapped or stripped |
+| --- | --- | --- | --- | --- |
+| 1.11.0 | `bound` | `INVALID_JWS_SIGNATURE` | no verdict on the statement | no verdict on the statement |
+| 1.16.0 | `bound` | `INVALID_JWS_SIGNATURE` | `ok` | `invalid_signature` |
+| 1.22.0 | `bound` | `INVALID_JWS_SIGNATURE` | `ok` | `invalid_signature` |
+| 1.25.0 | `bound` | `INVALID_JWS_SIGNATURE` | `ok` | `invalid_signature` |
+| 1.26.0 | `bound` | `INVALID_JWS_SIGNATURE` | `ok` | `invalid_signature` |
+
+Each verifier gives the proof that states its delegation the verdict it gives the same proof made without the statement.
+1.11.0 verifies card proofs of an earlier profile, `org.kya-os/proof@1`, and refuses this version's as `malformed_proof` with and without the statement.
+A server before 1.26.0 accepts the proof and compares the statement with nothing, so the protection starts when the server upgrades.
+`adopters/README.md` says how to run the measurement against other versions.
+
 ### Delegation gate
 
 Under `holderBinding: 'enforce'`, the gate refuses a delegation whose subject is a did:key that does not encode an Ed25519 key, with the cause `unsupported_subject_key`, since a request proof is checked only with an Ed25519 key.
@@ -222,9 +309,6 @@ A downstream service that read the session id from it reads it as an opaque valu
 
 `buildOutboundDelegationHeaders` throws for a delegation record that is not in force: one that is not active, is before its `notBefore` or past its `notAfter`, or names an audience that does not admit the server.
 Check the record before forwarding the call, or catch the error and refuse the call.
-
-To bind a request proof to the delegation it is made under, pass `delegationChain`, root first, to `generateRequestProof`.
-The proof then names the presented credential's `delegationRef` and the chain's `delegationChainDigest`, and the gate refuses it beside any other delegation.
 
 ### Card
 

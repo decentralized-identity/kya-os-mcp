@@ -1,0 +1,22 @@
+kind: Upgrading
+body: |-
+    **A request proof states its delegation, and three kinds of client have
+    something to change.** A client that calls `generateRequestProof` with
+    the arguments it sends, or `buildCardProof` with a request that holds
+    its chain, changes nothing. One that makes the proof first and attaches
+    the delegation afterwards makes a proof that states `none` beside a
+    delegation: make the proof from what is sent, or pass the credential as
+    the new `delegation` input. One that sends no delegation while the
+    server retains grants for its agent under more than one passes the one
+    it means as `delegation`. One that signs card proofs with a
+    `ProofSigner` of its own writes the parameters `sign` now receives as
+    its second argument into the protected header. A server sets
+    `delegation.requestBinding: 'require'`, or `requestBinding` on the card
+    guards, once every client signs with 1.26.0 or later; the default,
+    `'prefer'`, accepts a proof that names no credential with one warning
+    per process, and 2.0.0 makes `'require'` the default. An enforcement
+    point that calls `assertHolderBinding` itself moves to
+    `verifyDelegatedCallProof`. UPGRADING.md, "A request proof names the
+    delegation it is made for", has the steps, the causes, and what each
+    released verifier makes of the new proofs.
+time: 2026-11-19T11:01:00.000000-06:00

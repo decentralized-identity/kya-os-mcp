@@ -14,7 +14,6 @@
  */
 
 import type { StatusList2021Credential } from '../types/protocol.js';
-import { warnOncePerProcess } from '../utils/warn-once.js';
 
 /**
  * Where a `StatusList2021Manager` keeps its status lists.
@@ -50,7 +49,11 @@ export interface StoredStatusList {
    * of this `statusListId` has had or will have, even after the list is deleted and stored again.
    * Otherwise a writer that read an old list could match a new one and replace it. Draw it from a
    * sequence that never resets, or make it a random UUID; a version column that starts again when
-   * its row is created again repeats.
+   * its row is created again repeats. A strong hash of the stored bytes, such as their SHA-256, is
+   * safe too: it repeats only where the bytes do, and a write over a list identical to the one read
+   * replaces nothing another writer stored. An object store's own ETag, which S3 and R2 compare
+   * with `If-Match`, qualifies on the same ground, as does a GCS object's generation number, which
+   * `ifGenerationMatch` compares.
    */
   readonly etag: string;
 }
@@ -66,7 +69,8 @@ export interface StoredStatusList {
  * implements it.
  *
  * Over a store without it a manager reads and writes each list as before, and the last write wins,
- * so use such a store with one manager only. Building a manager over one warns once per process.
+ * so use such a store with one manager only. The first write a manager makes to one warns once per
+ * process.
  */
 export interface ConditionalStatusListStorageProvider extends StatusListStorageProvider {
   /**
@@ -102,23 +106,4 @@ export function supportsConditionalWrite(
     typeof storage.getStatusListWithEtag === 'function' &&
     'setStatusListIfMatch' in storage &&
     typeof storage.setStatusListIfMatch === 'function';
-}
-
-/** Where every copy of this package records that the warning about a store with no conditional write was given. */
-const UNCONDITIONAL_STORE_WARNED = Symbol.for('@kya-os/mcp/statuslist-unconditional-store-warned');
-
-/** Fixed words, so nothing a store or a caller holds is ever written into the log line. */
-const UNCONDITIONAL_STORE_WARNING =
-  '[kya-os] StatusList2021Manager was built over a status-list store with no conditional write, so ' +
-  'when two managers write one list, as two replicas or a manager built per request do, the last ' +
-  "write replaces the other's and a revocation can be lost. Implement ConditionalStatusListStorageProvider " +
-  '(getStatusListWithEtag and setStatusListIfMatch) on the store, as MemoryStatusListStorage does, or ' +
-  'write through one manager per store. UPGRADING.md, "Status-list stores take a conditional write", ' +
-  'has the detail.';
-
-/** Warn once per process when `storage` has no conditional write. */
-export function warnUnlessConditional(storage: StatusListStorageProvider): void {
-  if (!supportsConditionalWrite(storage)) {
-    warnOncePerProcess(UNCONDITIONAL_STORE_WARNED, UNCONDITIONAL_STORE_WARNING);
-  }
 }

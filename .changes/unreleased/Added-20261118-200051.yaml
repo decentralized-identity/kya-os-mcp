@@ -1,0 +1,14 @@
+kind: Added
+body: |-
+    **Status-list stores can take a conditional write.** The new
+    `ConditionalStatusListStorageProvider` adds `getStatusListWithEtag`,
+    which answers a `StoredStatusList`, the list with the etag of the
+    write that stored it, and `setStatusListIfMatch`, which stores a list
+    only over the one that etag names. `StatusList2021Manager` and
+    `createStatusListManager` take the new `maxWriteConflicts` option, how
+    many refused writes one change outlasts, 32 by default, and then throw
+    `StatusListWriteConflictError`, whose `code` is
+    `STATUS_LIST_WRITE_CONFLICT` and which `isStatusListWriteConflict`
+    knows from any copy of the package. UPGRADING.md, "Status-list stores
+    take a conditional write", has the detail.
+time: 2026-11-18T20:00:51.000000-06:00

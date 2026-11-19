@@ -1,8 +1,8 @@
 /**
  * What `StatusList2021Manager` asks of the store it is built over. A store with only the three
  * methods every store had before the conditional write is read and written as before, and the
- * first manager built over one in a process warns, once, that it is safe with one manager only
- * and what to do about it. A store with the conditional write gets no warning, and one that
+ * first write a manager makes to one in a process warns, once, that it is safe with one manager
+ * only and what to do about it. A store with the conditional write gets no warning, and one that
  * answers a conditional write with anything but a boolean is refused before it is trusted.
  */
 
@@ -16,14 +16,14 @@ import {
 import { MemoryStatusListStorage } from '../storage/memory-statuslist-storage.js';
 import type { VCSigningFunction } from '../vc-issuer.js';
 import type { StatusList2021Credential } from '../../types/protocol.js';
+import { OwnMapStore, replica } from './helpers/status-list-writers.js';
 
 const identity = { getDid: () => 'did:web:issuer.example', getKeyId: () => 'did:web:issuer.example#key-1' };
 const sign: VCSigningFunction = async () => ({ type: 'Ed25519Signature2020', proofValue: 'x' });
 const options = { statusListBaseUrl: 'https://status.example', defaultListSize: 1024 };
 
-/** A store with only the three methods every store had to implement, over memory, counting its writes. */
-function plainStore(): StatusListStorageProvider & { writes: number } {
-  const memory = new MemoryStatusListStorage();
+/** A store with only the three methods every store had to implement, over `memory`, counting its writes. */
+function plainStore(memory = new MemoryStatusListStorage()): StatusListStorageProvider & { writes: number } {
   const store = {
     writes: 0,
     getStatusList: (statusListId: string) => memory.getStatusList(statusListId),
@@ -64,16 +64,20 @@ describe('StatusList2021Manager over a store with no conditional write', () => {
     expect(store.writes).toBe(2);
   });
 
-  it('warns once per process, across copies of the package, in fixed words that say what to do', async () => {
+  it('warns on the first write, once per process, across copies of the package, in fixed words that say what to do', async () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
-    new StatusList2021Manager(plainStore(), identity, sign);
-    createStatusListManager(plainStore(), identity, sign);
+    const first = new StatusList2021Manager(plainStore(), identity, sign, undefined, undefined, options);
+    const second = createStatusListManager(plainStore(), identity, sign, undefined, undefined, options);
+    expect(warn).not.toHaveBeenCalled();
+
+    await first.allocateStatusEntry('revocation');
+    await second.allocateStatusEntry('suspension');
 
     expect(warn).toHaveBeenCalledTimes(1);
     const [args] = warn.mock.calls;
     expect(args).toHaveLength(1);
     const [message] = args as [string];
-    expect(message).toMatch(/^\[kya-os\] StatusList2021Manager was built over a status-list store with no conditional write/);
+    expect(message).toMatch(/^\[kya-os\] StatusList2021Manager wrote to a status-list store with no conditional write/);
     expect(message).toMatch(/a revocation can be lost/);
     expect(message).toMatch(
       /Implement ConditionalStatusListStorageProvider \(getStatusListWithEtag and setStatusListIfMatch\) on the store/,
@@ -85,29 +89,58 @@ describe('StatusList2021Manager over a store with no conditional write', () => {
     const reloaded = await import('../statuslist-manager.js');
     const logging = await import('../../logging/index.js');
     const reloadedWarn = vi.spyOn(logging.logger, 'warn').mockImplementation(() => {});
-    new reloaded.StatusList2021Manager(plainStore(), identity, sign);
+    await new reloaded.StatusList2021Manager(plainStore(), identity, sign, undefined, undefined, options)
+      .allocateStatusEntry('revocation');
     expect(reloadedWarn).not.toHaveBeenCalled();
   });
 
-  it('warns over a store that implements only half of the conditional write', () => {
+  it('does not warn for a manager that only reads, since only writes can be lost', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const memory = new MemoryStatusListStorage();
+    const entry = await createStatusListManager(memory, identity, sign, undefined, undefined, options)
+      .allocateStatusEntry('revocation');
+    const reader = createStatusListManager(plainStore(memory), identity, sign, undefined, undefined, options);
+
+    expect(await reader.checkStatus(entry)).toBe(false);
+    expect(await reader.getRevokedIndices(entry.statusListCredential)).toEqual([]);
+    await reader.allocateStatusEntry('revocation');
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('warns over a store that implements only half of the conditional write', async () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
     const memory = new MemoryStatusListStorage();
     const half = Object.assign(plainStore(), {
       getStatusListWithEtag: (statusListId: string) => memory.getStatusListWithEtag(statusListId),
     });
 
-    new StatusList2021Manager(half, identity, sign);
+    await new StatusList2021Manager(half, identity, sign, undefined, undefined, options).allocateStatusEntry('revocation');
 
     expect(warn).toHaveBeenCalledTimes(1);
   });
 });
 
 describe('StatusList2021Manager over a store with the conditional write', () => {
-  it('does not warn', () => {
+  it('does not warn when it writes', async () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
-    new StatusList2021Manager(new MemoryStatusListStorage(), identity, sign);
-    createStatusListManager(new MemoryStatusListStorage(), identity, sign);
+    const manager = createStatusListManager(new MemoryStatusListStorage(), identity, sign, undefined, undefined, options);
+
+    const entry = await manager.allocateStatusEntry('revocation');
+    await manager.updateStatus(entry, true);
+
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('reads and writes through a Proxy around MemoryStatusListStorage', async () => {
+    const store = new Proxy(new MemoryStatusListStorage(), {});
+    const manager = createStatusListManager(store, identity, sign, undefined, undefined, options);
+
+    const entry = await manager.allocateStatusEntry('revocation');
+    await manager.updateStatus(entry, true);
+
+    expect(await manager.checkStatus(entry)).toBe(true);
+    expect(store.getAllStatusListIds()).toEqual([entry.statusListCredential]);
   });
 
   it('throws a TypeError when the store answers a conditional write with anything but a boolean', async () => {
@@ -195,8 +228,26 @@ describe('StatusList2021Manager over a subclass of MemoryStatusListStorage', () 
     await manager.updateStatus(entry, true);
 
     expect(store.writes).toBe(2);
-    expect(store.reads).toBe(2);
+    // The manager reads the list once for each change, and the store once more to see that no list
+    // is stored before it creates one.
+    expect(store.reads).toBe(3);
     expect(await manager.checkStatus(entry)).toBe(true);
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('keeps every change over a subclass that keeps its lists in a map of its own, with no super', async () => {
+    const store = new OwnMapStore();
+    const first = replica(store);
+    const second = replica(store);
+
+    const revokedFirst = await first.allocateStatusEntry('revocation');
+    await first.updateStatus(revokedFirst, true);
+    // The list is stored, so allocating again must not store an empty one over it.
+    const revokedSecond = await second.allocateStatusEntry('revocation');
+    const revokedThird = await first.allocateStatusEntry('revocation');
+    await Promise.all([first.updateStatus(revokedSecond, true), second.updateStatus(revokedThird, true)]);
+
+    expect(await first.getRevokedIndices(revokedFirst.statusListCredential)).toEqual([0, 1, 2]);
+    expect(await second.checkStatus(revokedFirst)).toBe(true);
   });
 });

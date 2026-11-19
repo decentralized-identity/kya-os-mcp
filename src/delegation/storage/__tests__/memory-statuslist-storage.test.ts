@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { MemoryStatusListStorage } from "../memory-statuslist-storage.js";
+import { OwnMapStore } from "../../__tests__/helpers/status-list-writers.js";
 import type { StatusList2021Credential } from "../../../types/protocol.js";
 
 describe("MemoryStatusListStorage", () => {
@@ -190,8 +191,62 @@ describe("MemoryStatusListStorage", () => {
       expect(await recording.setStatusListIfMatch(statusListId, updated, read!.etag)).toBe(true);
       expect(await recording.setStatusListIfMatch(statusListId, updated, read!.etag)).toBe(false);
 
-      expect(calls).toEqual(["set", "get", "set"]);
+      // A creation first reads that no list is stored, through the subclass, since one that keeps
+      // its lists elsewhere may hold one this class has no etag for.
+      expect(calls).toEqual(["get", "set", "get", "set"]);
       expect(read?.credential).toEqual(mockStatusListCredential);
+    });
+
+    describe("of a subclass that keeps its lists elsewhere, with no super", () => {
+      it("reads a stored list with an etag, and never creates a list over it", async () => {
+        const own = new OwnMapStore();
+        await own.setStatusList(statusListId, mockStatusListCredential);
+
+        const read = await own.getStatusListWithEtag(statusListId);
+
+        expect(read?.credential).toEqual(mockStatusListCredential);
+        expect(typeof read?.etag).toBe("string");
+        expect(read?.etag).not.toBe("");
+        expect(await own.setStatusListIfMatch(statusListId, updated, null)).toBe(false);
+        expect(await own.getStatusList(statusListId)).toEqual(mockStatusListCredential);
+      });
+
+      it("stores over the etag a list was read with, and refuses it once the list changed", async () => {
+        const own = new OwnMapStore();
+        await own.setStatusList(statusListId, mockStatusListCredential);
+        const read = await own.getStatusListWithEtag(statusListId);
+        const other = await own.getStatusListWithEtag(statusListId);
+
+        expect(await own.setStatusListIfMatch(statusListId, updated, read!.etag)).toBe(true);
+        expect(await own.setStatusListIfMatch(statusListId, mockStatusListCredential, other!.etag)).toBe(false);
+        expect(await own.getStatusList(statusListId)).toEqual(updated);
+      });
+
+      it("names a list by what it holds, so an etag matches only the same list", async () => {
+        const own = new OwnMapStore();
+        await own.setStatusList(statusListId, mockStatusListCredential);
+        const first = await own.getStatusListWithEtag(statusListId);
+        await own.setStatusList(statusListId, updated);
+        const changed = await own.getStatusListWithEtag(statusListId);
+        await own.setStatusList(statusListId, mockStatusListCredential);
+        const again = await own.getStatusListWithEtag(statusListId);
+
+        expect(changed!.etag).not.toBe(first!.etag);
+        expect(again!.etag).toBe(first!.etag);
+      });
+    });
+
+    it("works through a Proxy, as a wrapper that logs or measures it makes one", async () => {
+      const proxied = new Proxy(new MemoryStatusListStorage(), {});
+
+      expect(await proxied.setStatusListIfMatch(statusListId, mockStatusListCredential, null)).toBe(true);
+      const read = await proxied.getStatusListWithEtag(statusListId);
+      expect(await proxied.setStatusListIfMatch(statusListId, updated, read!.etag)).toBe(true);
+      expect(await proxied.setStatusListIfMatch(statusListId, mockStatusListCredential, read!.etag)).toBe(false);
+      await proxied.setStatusList(statusListId, mockStatusListCredential);
+      proxied.clear();
+
+      expect(proxied.getAllStatusListIds()).toEqual([]);
     });
 
     it("keeps a conditional write atomic when a subclass's setStatusList waits before it stores", async () => {

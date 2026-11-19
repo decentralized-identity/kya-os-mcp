@@ -18,7 +18,8 @@ import { acceptEntrySize, acceptStatusPurpose } from '../utils/statuslist-accept
 import { assertStatusListValidity } from '../utils/statuslist-validity.js';
 import { clockSkewOption } from '../utils/validity-window.js';
 import { RefusalError } from '../utils/refusal.js';
-import { warnUnlessConditional, type StatusListStorageProvider } from './statuslist-storage.js';
+import { KeyedLock } from '../utils/keyed-lock.js';
+import type { StatusListStorageProvider } from './statuslist-storage.js';
 import {
   commitStatusListChange,
   writeRetryOf,
@@ -65,7 +66,7 @@ export class StatusList2021Manager {
    * see another manager's writes: those are kept only by a store with the
    * conditional write, as the constructor's `storage` says.
    */
-  private updateLocks = new Map<string, Promise<void>>();
+  private updateLocks = new KeyedLock();
 
   /**
    * @param storage - Where the manager keeps its lists. More than one manager
@@ -75,8 +76,8 @@ export class StatusList2021Manager {
    *   does: a write another writer got in before is then made again over the
    *   list now stored, after a short random wait, up to
    *   `options.maxWriteConflicts` times. Over any other store the last write
-   *   wins, so write through one manager only; building a manager over one
-   *   warns once per process.
+   *   wins, so write through one manager only; the first write a manager
+   *   makes to one warns once per process.
    * @param compressor - GZIP-compresses the bitstring of every list this
    *   manager publishes. Defaults to `statusListGzipCodec` (through
    *   {@link BitstringManager}). Status-list readers accept only GZIP, so a
@@ -94,9 +95,9 @@ export class StatusList2021Manager {
    *   refuse the write of one change before it throws
    *   `StatusListWriteConflictError`: a whole number, 0 or more. Default 32.
    *   Between tries the manager waits a random part of a delay that doubles
-   *   from 2 ms up to 100 ms. Any other value throws a `TypeError` naming the
-   *   option. `options.sleep` and `options.random` replace the timer and
-   *   `Math.random` the wait is made with, for tests.
+   *   from 2 ms, under a ceiling of 100 ms or, where it is longer, the length
+   *   of the try just refused doubled every four refusals. Any other value
+   *   throws a `TypeError` naming the option.
    */
   constructor(
     private storage: StatusListStorageProvider,
@@ -110,7 +111,6 @@ export class StatusList2021Manager {
     this.defaultListSize = options?.defaultListSize || 131072;
     this.skewMs = clockSkewOption(options?.maxClockSkewMs);
     this.retry = writeRetryOf(options);
-    warnUnlessConditional(storage);
   }
 
   /**
@@ -157,7 +157,7 @@ export class StatusList2021Manager {
   async updateStatus(credentialStatus: CredentialStatus, revoked: boolean): Promise<void> {
     assertOneBitEntry(credentialStatus);
     const { statusListCredential } = credentialStatus;
-    await this.withListLock(statusListCredential, () =>
+    await this.updateLocks.run(statusListCredential, () =>
       commitStatusListChange(
         this.storage,
         statusListCredential,
@@ -165,24 +165,6 @@ export class StatusList2021Manager {
         this.retry
       )
     );
-  }
-
-  /**
-   * Run `task` once every earlier task on the same status list has settled,
-   * serializing read-modify-write per list. The task's own error reaches the
-   * caller; the chain stores a non-rejecting copy so later tasks still run.
-   */
-  private withListLock<T>(statusListId: string, task: () => Promise<T>): Promise<T> {
-    const previous = this.updateLocks.get(statusListId) ?? Promise.resolve();
-    const operation = previous.then(task);
-    this.updateLocks.set(
-      statusListId,
-      operation.then(
-        () => undefined,
-        () => undefined
-      )
-    );
-    return operation;
   }
 
   /**
@@ -305,7 +287,7 @@ export class StatusList2021Manager {
     statusListId: string,
     purpose: 'revocation' | 'suspension'
   ): Promise<number> {
-    return this.withListLock(statusListId, () =>
+    return this.updateLocks.run(statusListId, () =>
       commitStatusListChange(
         this.storage,
         statusListId,
@@ -389,7 +371,7 @@ function assertOneBitEntry(credentialStatus: CredentialStatus): void {
  * inflate GZIP, as the manager's constructor documents. More than one manager
  * may write to `storage` only when it implements
  * `ConditionalStatusListStorageProvider`; over any other store, write
- * through one manager only, and building one warns once per process.
+ * through one manager only, and its first write warns once per process.
  */
 export function createStatusListManager(
   storage: StatusListStorageProvider,

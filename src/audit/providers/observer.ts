@@ -1,4 +1,5 @@
 import { canonicalizeJsonBytes } from '../../utils/canonical-json.js';
+import { KeyedLock } from '../../utils/keyed-lock.js';
 import { hashAuditValue, type AuditHasher, type AuditSigner } from '../crypto.js';
 import { AUDIT_DIGEST_DOMAINS } from '../integrity.js';
 import {
@@ -43,7 +44,7 @@ function key(ledger: AuditLedgerRef): string {
 export class MemoryAuditCheckpointObserver implements AuditCheckpointObserverProvider {
   readonly capability = 'independent-observer' as const;
   private readonly observations = new Map<string, ObservedAuditCheckpoint>();
-  private readonly publicationTails = new Map<string, Promise<void>>();
+  private readonly publicationTurns = new KeyedLock();
 
   constructor(private readonly config: MemoryAuditCheckpointObserverConfig) {}
 
@@ -52,20 +53,7 @@ export class MemoryAuditCheckpointObserver implements AuditCheckpointObserverPro
       ledgerId: checkpoint.core.ledgerId,
       ledgerEpochId: checkpoint.core.ledgerEpochId,
     });
-    const previous = this.publicationTails.get(publicationKey) ?? Promise.resolve();
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
-    const tail = previous.then(() => gate);
-    this.publicationTails.set(publicationKey, tail);
-    await previous;
-    try {
-      return await this.publishSerialized(checkpoint);
-    } finally {
-      release();
-      if (this.publicationTails.get(publicationKey) === tail) {
-        this.publicationTails.delete(publicationKey);
-      }
-    }
+    return this.publicationTurns.run(publicationKey, () => this.publishSerialized(checkpoint));
   }
 
   private async publishSerialized(

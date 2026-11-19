@@ -7,10 +7,11 @@ import { createHash } from 'node:crypto';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import type { CompressionFunction, DecompressionFunction } from '../../bitstring.js';
 import { StatusList2021Manager, type StatusList2021ManagerOptions } from '../../statuslist-manager.js';
-import type { MemoryStatusListStorage } from '../../storage/memory-statuslist-storage.js';
+import type { StatusListWriteTiming } from '../../statuslist-write.js';
+import { MemoryStatusListStorage } from '../../storage/memory-statuslist-storage.js';
 import { canonicalizeJSON } from '../../utils.js';
 import type { VCSigningFunction } from '../../vc-issuer.js';
-import type { CredentialStatus, Proof } from '../../../types/protocol.js';
+import type { CredentialStatus, Proof, StatusList2021Credential } from '../../../types/protocol.js';
 import { statusListGzipCodec } from '../../../utils/statuslist-gzip.js';
 
 export const identity = { getDid: () => 'did:web:issuer.example', getKeyId: () => 'did:web:issuer.example#key-1' };
@@ -30,11 +31,11 @@ export const synchronousGzip: CompressionFunction & DecompressionFunction = {
   decompress: async (data) => new Uint8Array(gunzipSync(data)),
 };
 
-/** What a replica is built with beside its store: its signer, its codec and its options. */
+/** What a replica is built with beside its store: its signer, its codec, and its options with any timing a test injects. */
 export interface ReplicaSetup {
   sign?: VCSigningFunction;
   codec?: CompressionFunction & DecompressionFunction;
-  options?: StatusList2021ManagerOptions;
+  options?: StatusList2021ManagerOptions & StatusListWriteTiming;
 }
 
 /** A manager over `storage`, as one replica of the issuing service builds it. */
@@ -44,6 +45,23 @@ export function replica(storage: MemoryStatusListStorage, setup: ReplicaSetup = 
     ...LIST_OPTIONS,
     ...setup.options,
   });
+}
+
+/**
+ * A subclass of `MemoryStatusListStorage` that keeps its lists in a map of its own, as JSON, and
+ * never calls `super`, as one that keeps them in a file or a key-value store would.
+ */
+export class OwnMapStore extends MemoryStatusListStorage {
+  readonly rows = new Map<string, string>();
+
+  override async getStatusList(statusListId: string): Promise<StatusList2021Credential | null> {
+    const row = this.rows.get(statusListId);
+    return row === undefined ? null : (JSON.parse(row) as StatusList2021Credential);
+  }
+
+  override async setStatusList(statusListId: string, credential: StatusList2021Credential): Promise<void> {
+    this.rows.set(statusListId, JSON.stringify(credential));
+  }
 }
 
 /** `count` entries on one revocation list in `storage`, allocated by the issuing service. */
@@ -79,13 +97,16 @@ export function seededRandom(seed: number): () => number {
  * the same course on every run.
  */
 export class VirtualClock {
-  private now = 0;
+  private time = 0;
   private begun = 0;
   private timers: { at: number; order: number; wake: () => void }[] = [];
 
+  /** The time on this clock, in milliseconds since it started. */
+  readonly now = (): number => this.time;
+
   readonly sleep = (ms: number): Promise<void> =>
     new Promise((wake) => {
-      this.timers.push({ at: this.now + ms, order: this.begun++, wake });
+      this.timers.push({ at: this.time + ms, order: this.begun++, wake });
     });
 
   /** Run the clock until `work` settles, and settle as it did. */
@@ -101,7 +122,7 @@ export class VirtualClock {
       this.timers.sort((a, b) => a.at - b.at || a.order - b.order);
       const timer = this.timers.shift();
       if (timer === undefined) throw new Error('the work waits on something other than this clock');
-      this.now = timer.at;
+      this.time = timer.at;
       timer.wake();
     }
     if ('error' in outcome) throw outcome.error;

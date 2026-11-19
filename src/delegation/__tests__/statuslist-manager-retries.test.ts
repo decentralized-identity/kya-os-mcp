@@ -1,8 +1,10 @@
 /**
  * How a `StatusList2021Manager` retries a write a conditional store refused. Between tries it waits
- * a random part of a delay that doubles from 2 ms up to 100 ms, so a manager that lost a race does
- * not meet the winner's next write head on, and it gives up after `maxWriteConflicts` refusals with
- * a coded error and nothing stored. Time and chance are injected, so each run takes one course.
+ * a random part of a delay that doubles from 2 ms, under a ceiling of 100 ms or, where it is
+ * longer, the length of the try just refused doubled every four refusals, so a manager that lost a
+ * race does not meet the winner's next write head on and many managers with slow tries still each
+ * get a turn. It gives up after `maxWriteConflicts` refusals with a coded error and nothing
+ * stored. Time and chance are injected, so each run takes one course.
  */
 
 import { describe, expect, it, vi } from 'vitest';
@@ -76,7 +78,11 @@ describe('StatusList2021Manager retries under sustained load', () => {
     const outcomes = await clock.run(
       Promise.allSettled(
         Array.from({ length: managers }, async (_, m) => {
-          const manager = replica(storage, { sign: slowSign, codec: synchronousGzip, options: { sleep, random } });
+          const manager = replica(storage, {
+            sign: slowSign,
+            codec: synchronousGzip,
+            options: { sleep, random, now: clock.now },
+          });
           for (const entry of entries.filter((_, i) => i % managers === m)) await manager.updateStatus(entry, true);
         }),
       ),
@@ -87,6 +93,35 @@ describe('StatusList2021Manager retries under sustained load', () => {
     expect(backoffs.length).toBeGreaterThan(0);
     expect(backoffs.every((ms) => ms >= 0 && ms < 100)).toBe(true);
   });
+
+  it.each([48, 200])('lands every revocation when %i managers each make one at once, and signing takes 150 ms', async (managers) => {
+    const storage = new MemoryStatusListStorage();
+    const entries = await allocated(storage, managers);
+    const clock = new VirtualClock();
+    const random = seededRandom(20261118);
+    let longestWait = 0;
+    const slowSign = async (canonical: string) => {
+      await clock.sleep(150);
+      return proofOver(canonical);
+    };
+    const sleep = (ms: number) => {
+      longestWait = Math.max(longestWait, ms);
+      return clock.sleep(ms);
+    };
+
+    const outcomes = await clock.run(
+      Promise.allSettled(
+        entries.map((entry) =>
+          replica(storage, { sign: slowSign, codec: synchronousGzip, options: { sleep, random, now: clock.now } })
+            .updateStatus(entry, true),
+        ),
+      ),
+    );
+
+    expect(outcomes.filter((outcome) => outcome.status === 'rejected')).toEqual([]);
+    expect(await replica(storage).getRevokedIndices(entries[0]!.statusListCredential)).toHaveLength(managers);
+    expect(longestWait).toBeGreaterThan(100);
+  });
 });
 
 describe('StatusList2021Manager retry budget', () => {
@@ -96,7 +131,7 @@ describe('StatusList2021Manager retry budget', () => {
     const before = storage.conditionalWrites;
     const waits: number[] = [];
     const manager = replica(storage, {
-      options: { maxWriteConflicts: 9, sleep: recordedSleep(waits), random: () => 0.5 },
+      options: { maxWriteConflicts: 9, sleep: recordedSleep(waits), random: () => 0.5, now: () => 0 },
     });
 
     const error = await manager.updateStatus(entry!, true).catch((thrown: unknown) => thrown);
@@ -104,6 +139,28 @@ describe('StatusList2021Manager retry budget', () => {
     expect(error).toMatchObject({ code: 'STATUS_LIST_WRITE_CONFLICT', attempts: 10 });
     expect(storage.conditionalWrites - before).toBe(10);
     expect(waits).toEqual([1, 2, 4, 8, 16, 32, 50, 50, 50]);
+  });
+
+  it('raises the ceiling past 100 ms to the length of the try just refused, doubled every four refusals', async () => {
+    const storage = new ContendedStore();
+    const [entry] = await allocated(storage, 1);
+    const waits: number[] = [];
+    let time = 0;
+    // Each try takes 50 ms, all of it signing.
+    const slowSign = async (canonical: string) => {
+      time += 50;
+      return proofOver(canonical);
+    };
+    const manager = replica(storage, {
+      sign: slowSign,
+      options: { maxWriteConflicts: 16, sleep: recordedSleep(waits), random: () => 0.5, now: () => time },
+    });
+
+    await expect(manager.updateStatus(entry!, true)).rejects.toMatchObject({ attempts: 17 });
+    expect(waits).toHaveLength(16);
+    expect(waits.slice(0, 7)).toEqual([1, 2, 4, 8, 16, 32, 64]);
+    // Half the ceiling from the eighth refusal: 50 ms doubled for each four refusals, 200, 400, 800.
+    expect([waits[7], waits[11], waits[15]]).toEqual([100, 200, 400]);
   });
 
   it('throws a coded error after 33 tries by default, and never stores a stale list', async () => {

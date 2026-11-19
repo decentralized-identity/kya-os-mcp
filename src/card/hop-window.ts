@@ -10,7 +10,8 @@
  * it leaves out, is held with every caveat's (`./caveats.ts`); this gate reads the date of each
  * caveat whose form holds. Each bound is held with the clock tolerance `maxClockSkewMs`
  * (`../utils/validity-window.ts`), the rule a status list's window is read by, so a hop stamped a
- * moment ago by an issuer whose clock runs ahead is read.
+ * moment ago by an issuer whose clock runs ahead is read. A reason quotes at most 64 characters of a
+ * time a hop states (`../utils/describe-value.ts`).
  */
 
 import type { RefusalCode } from '../refusal-codes.js';
@@ -48,16 +49,16 @@ export function hopWindowRules(chain: DelegationChain, nowMs: number, maxClockSk
     const breachOf = (fromMs: number | undefined, untilMs: number | undefined): WindowBreach | undefined =>
       windowBreach(fromMs, untilMs, nowMs, skewMs);
     if (vc.validUntil !== undefined && breachOf(undefined, dateOf('validUntil', vc.validUntil)) === 'expired') {
-      broken.push({ code: 'delegation_expired', reason: `hop ${i}: expired (validUntil ${vc.validUntil} is in the past)` });
+      broken.push({ code: 'delegation_expired', reason: `hop ${i}: expired (validUntil ${describeValue(vc.validUntil)} is in the past)` });
     }
     if (vc.validFrom !== undefined && breachOf(dateOf('validFrom', vc.validFrom), undefined) === 'not_yet_valid') {
-      broken.push({ code: 'delegation_not_yet_valid', reason: `hop ${i}: not yet valid (validFrom ${vc.validFrom} is in the future)` });
+      broken.push({ code: 'delegation_not_yet_valid', reason: `hop ${i}: not yet valid (validFrom ${describeValue(vc.validFrom)} is in the future)` });
     }
     for (const caveat of vc.credentialSubject.caveats ?? []) {
       // A ValidUntil caveat that states no date, or one that is not a date, is refused for its form (`./caveats.ts`).
       const untilMs = caveat.type === 'ValidUntil' ? parseDateTime(caveat.date) : undefined;
       if (untilMs !== undefined && breachOf(undefined, untilMs) === 'expired') {
-        broken.push({ code: 'delegation_expired', reason: `hop ${i}: expired caveat (ValidUntil ${String(caveat.date)} is in the past)` });
+        broken.push({ code: 'delegation_expired', reason: `hop ${i}: expired caveat (ValidUntil ${describeValue(caveat.date)} is in the past)` });
       }
     }
   });

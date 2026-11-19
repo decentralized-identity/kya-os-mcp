@@ -23,13 +23,19 @@ export const REFUSAL_CODES = Object.freeze({
    * status the verifier knows, its subject carries other members, it has no proof, a VC-JWT does not
    * parse, has claims that are not well formed or names another issuer than its `iss`, a time it
    * states is not a date, or it is not plain data, nests too deep or holds a value that cannot be
-   * encoded. Also a status entry no
+   * encoded. Also a caveat of a known type in a form its rule cannot read, such as a `MaxAmount`
+   * whose `limit` is not a plain non-negative decimal, or a caveat of any type that nests deeper than
+   * a credential may. Also a status entry no
    * checker of the verifier reads: one that states another `statusPurpose` than the checker's, a
    * `statusSize` other than 1, an index that is not a non-negative decimal string, or an index past
    * the end of its status list.
    */
   delegation_malformed: 'delegation_malformed',
-  /** The credential, a VC-JWT's `exp`, or a credential of the chain is past its expiry, or its delegation's `status` is `expired`. */
+  /**
+   * The credential, a VC-JWT's `exp`, or a credential of the chain is past its expiry, or its
+   * delegation's `status` is `expired`; or a `ValidUntil` a passing verdict carries has passed when
+   * `caveatRefusal` holds a call to it.
+   */
   delegation_expired: 'delegation_expired',
   /** The credential, a VC-JWT's `nbf`, or a credential of the chain is not yet valid. */
   delegation_not_yet_valid: 'delegation_not_yet_valid',
@@ -82,7 +88,11 @@ export const REFUSAL_CODES = Object.freeze({
    * chain is longer than `maxChainLength`.
    */
   chain_invalid: 'chain_invalid',
-  /** The chain is valid, but does not grant the action the call exercises. */
+  /**
+   * The chain is valid, but does not grant the action the call exercises, or, as `caveatRefusal`
+   * finds it, a call outside a caveat the chain grants under, such as an amount over a `MaxAmount`
+   * or in another currency than the one it names.
+   */
   insufficient_scope: 'insufficient_scope',
   /**
    * No delegation was presented for a call that needs one: the request carries no chain and the
@@ -110,7 +120,9 @@ export const REFUSAL_CODES = Object.freeze({
    * credential, no verifier for an Entity Card's accountability or attestations, or no status list
    * checker for an Entity Card that declares a revocation entry; an option such as `trustedRootIssuers`, `maxChainLength` or `dependencyTimeoutMs` has
    * a value it cannot use; or a checker that wraps a library checker passed on neither the context
-   * nor the entry it was given.
+   * nor the entry it was given. For `caveatRefusal`, also a verdict that carries no `caveats` and
+   * `unknownCaveats` to hold the call to, or a caveat the library does not interpret that the host
+   * does not enforce.
    */
   configuration_error: 'configuration_error',
   /**

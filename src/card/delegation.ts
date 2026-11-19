@@ -36,6 +36,7 @@ import type { DelegationProofVerifier } from './delegation-proof.js';
 import { firstHopProofRefusal } from './hop-proofs.js';
 import { hopWindowRules } from './hop-window.js';
 import { withVerifiedRoot } from '../utils/verified-root.js';
+import { describeValue } from '../utils/describe-value.js';
 import { dateLte } from '../utils/rfc3339.js';
 import {
   effectiveCaveatsOf,
@@ -202,7 +203,7 @@ function actionReasons(parent: readonly string[], child: readonly string[]): str
 }
 // Each hop read at its tightest, so a looser duplicate of a caveat in one hop neither excuses nor fails it.
 function caveatReasons(parent: HopCaveats, child: HopCaveats): string[] {
-  return unnarrowedCaveats(parent, child).map((pc) => `caveat "${pc.type}" broadened or dropped by child (monotone-narrowing violated)`);
+  return unnarrowedCaveats(parent, child).map((pc) => `caveat ${describeValue(pc.type)} broadened or dropped by child (monotone-narrowing violated)`);
 }
 
 /** The caveats `vc` states, read at their tightest (`./caveats.ts`). */
@@ -375,7 +376,7 @@ export function validateDelegationChain(
     leafInvoker: leafInvokerOf(chain),
     invocationTarget: leaf.credentialSubject.invocationTarget,
     allowedAction: leaf.credentialSubject.allowedAction,
-    ...effectiveCaveatsOf(hopCaveats),
+    ...effectiveCaveatsOf(chain, hopCaveats),
     depth,
   };
 }

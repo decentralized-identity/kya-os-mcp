@@ -4,19 +4,24 @@
  * non-negative decimal, compared exactly, and a `currency`, when it names one, as a string. A caveat
  * of either type in any other form can never be narrowed or held to, so it is malformed wherever it
  * sits in the chain, and the chain is refused as `delegation_malformed` before any other rule is
- * named. A type written in another case is a type the library does not know, not a malformed one.
- * Every case goes through `@kya-os/mcp/card`.
+ * named. A caveat of any type that nests its arrays and objects deeper than a credential may is
+ * malformed too, refused before anything reads it whole, so no depth makes the guard throw. A type
+ * written in another case is a type the library does not know, not a malformed one. A reason
+ * quotes at most 64 characters of a date. Every case goes through `@kya-os/mcp/card`.
  */
 
 import { describe, expect, it } from 'vitest';
 import { createDidKeyResolver } from '../../delegation/did-key-resolver.js';
+import { MAX_CREDENTIAL_NESTING_DEPTH } from '../../delegation/signed-form.js';
 import {
+  attenuates,
   createDelegationProofVerifier,
   createRevocationChecker,
   createStatusListProofVerifier,
   requireDelegation,
   toDelegationChainMeta,
   validateDelegationChain,
+  verifyRequestDelegation,
   type Caveat,
   type DelegationChain,
 } from '../index.js';
@@ -31,14 +36,14 @@ const twoHops = (p: ChainParties, rootCaveats: Caveat[], leafCaveats: Caveat[]):
   hop({ issuer: p.agent, invoker: p.subAgent.did, id: 'urn:zcap:leaf', parentCapability: 'urn:zcap:root', allowedAction: ['orders.place'], caveats: leafCaveats, statusIndex: 7 }),
 ];
 
-const guardFor = (p: ChainParties) =>
-  requireDelegation({
-    resource: RESOURCE,
-    trustedRootIssuers: [p.acme.did],
-    verifyHopProof: createDelegationProofVerifier({ didResolver }),
-    checkRevocation: createRevocationChecker({ fetch: serve(statusList(p.acme)), now, verifyStatusList: createStatusListProofVerifier({ didResolver }) }),
-    now,
-  });
+const depsFor = (p: ChainParties) => ({
+  resource: RESOURCE,
+  trustedRootIssuers: [p.acme.did],
+  verifyHopProof: createDelegationProofVerifier({ didResolver }),
+  checkRevocation: createRevocationChecker({ fetch: serve(statusList(p.acme)), now, verifyStatusList: createStatusListProofVerifier({ didResolver }) }),
+  now,
+});
+const guardFor = (p: ChainParties) => requireDelegation(depsFor(p));
 
 const NOT_A_DECIMAL = 'is not a non-negative decimal';
 
@@ -105,7 +110,65 @@ describe('a malformed ValidUntil caveat', () => {
   it('with a member the library does not know is still read for its date, and refused once it has passed', () => {
     const p = parties();
     const result = validateDelegationChain(twoHops(p, [], [{ type: 'ValidUntil', date: '2026-01-01T00:00:00Z', note: 'quarter end' }]), { now });
-    expect(result).toMatchObject({ ok: false, code: 'delegation_expired', reasons: ['hop 1: expired caveat (ValidUntil 2026-01-01T00:00:00Z is in the past)'] });
+    expect(result).toMatchObject({ ok: false, code: 'delegation_expired', reasons: ['hop 1: expired caveat (ValidUntil "2026-01-01T00:00:00Z" is in the past)'] });
+  });
+
+  it('is named by at most 64 characters of its date, however long its fraction of a second', () => {
+    const p = parties();
+    const date = `2026-01-01T00:00:00.${'0'.repeat(1_000_000)}Z`;
+    const result = validateDelegationChain(twoHops(p, [], [{ type: 'ValidUntil', date }]), { now });
+    expect(result).toMatchObject({ ok: false, code: 'delegation_expired', reasons: [`hop 1: expired caveat (ValidUntil "${date.slice(0, 64)}"... is in the past)`] });
+  });
+});
+
+describe('a caveat nested deeper than a credential may nest', () => {
+  /** A caveat of `type` whose `value` nests arrays `levels` deep, so the caveat nests one level more. */
+  const nestedCaveat = (type: string, levels: number): Caveat => {
+    let value: unknown = 'x';
+    for (let i = 0; i < levels; i += 1) value = [value];
+    return { type, value };
+  };
+  const tooDeep = (type: string) => `caveat ${JSON.stringify(type)} nests more than ${MAX_CREDENTIAL_NESTING_DEPTH} levels deep`;
+  /** Each hop of `chain` with `caveats` set after it was signed, as no signer reads a value that deep. */
+  const under = (chain: DelegationChain, caveats: Caveat[]): DelegationChain =>
+    chain.map((vc) => ({ ...vc, credentialSubject: { ...vc.credentialSubject, caveats } }));
+
+  it('is read as written up to that depth, and refused as malformed one level deeper', () => {
+    const p = parties();
+    const deepest = nestedCaveat('Custom', MAX_CREDENTIAL_NESTING_DEPTH - 1);
+    expect(validateDelegationChain(twoHops(p, [deepest], [deepest]), { now })).toMatchObject({ ok: true, unknownCaveats: [deepest] });
+    const over = nestedCaveat('Custom', MAX_CREDENTIAL_NESTING_DEPTH);
+    expect(validateDelegationChain(twoHops(p, [over], [over]), { now })).toMatchObject({
+      ok: false,
+      code: 'delegation_malformed',
+      // A malformed caveat narrows nothing and nothing narrows it, so the hop below breaks that rule too.
+      reasons: [`hop 0: ${tooDeep('Custom')}`, `hop 1: ${tooDeep('Custom')}`, 'caveat "Custom" broadened or dropped by child (monotone-narrowing violated)'],
+    });
+  });
+
+  it('is refused, never thrown, however deep, on one hop, on every hop, and by the hop rules', () => {
+    const p = parties();
+    const deep = nestedCaveat('Custom', 20_000);
+    const oneHop = under(twoHops(p, [], []).slice(0, 1), [deep]);
+    expect(validateDelegationChain(oneHop, { now })).toMatchObject({ ok: false, code: 'delegation_malformed', reasons: [`hop 0: ${tooDeep('Custom')}`] });
+    const known = { ...nestedCaveat('MaxAmount', 20_000), limit: '100' };
+    expect(validateDelegationChain(under(twoHops(p, [], []), [known]), { now })).toMatchObject({
+      ok: false,
+      code: 'delegation_malformed',
+      reasons: [`hop 0: ${tooDeep('MaxAmount')}`, `hop 1: ${tooDeep('MaxAmount')}`, expect.any(String)],
+    });
+    const [root, leaf] = under(twoHops(p, [], []), [deep]);
+    expect(attenuates(root!, leaf!)).toEqual(['caveat "Custom" broadened or dropped by child (monotone-narrowing violated)']);
+  });
+
+  it('is refused by verifyRequestDelegation and requireDelegation before any proof is read, which resolve rather than reject', async () => {
+    const p = parties();
+    // Set after signing: the chain rules run before any proof, so the proof is never read.
+    const chain = under(twoHops(p, [], []).slice(0, 1), [nestedCaveat('Custom', 20_000)]);
+    const input = { meta: toDelegationChainMeta(chain), proofDid: p.agent.did, action: 'orders.place' };
+    const reasons = [`hop 0: ${tooDeep('Custom')}`];
+    expect(await verifyRequestDelegation(input, depsFor(p))).toMatchObject({ ok: false, code: 'delegation_invalid', refusalCode: 'delegation_malformed', reasons });
+    expect(await guardFor(p)(input)).toMatchObject({ ok: false, status: 403, refusalCode: 'delegation_malformed', error: { reasons } });
   });
 });
 
@@ -114,6 +177,6 @@ describe('a caveat type written in another case', () => {
     const p = parties();
     const odd: Caveat = { type: 'maxAmount', limit: 'abc' };
     const result = validateDelegationChain(twoHops(p, [odd], [odd]), { now });
-    expect(result).toMatchObject({ ok: true, caveats: [odd], unknownCaveats: [odd] });
+    expect(result).toMatchObject({ ok: true, caveats: [odd, { type: 'ValidUntil', date: '2027-01-01T00:00:00Z' }], unknownCaveats: [odd] });
   });
 });

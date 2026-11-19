@@ -2,8 +2,8 @@
  * The caveats a verified delegation chain grants under (SPEC.md §6.10). The chain rules check that
  * each hop's caveats narrow its parent's, and the verdict then carries the tightest caveat of each
  * kind the chain states, so a host holds the call to the limit from the verdict alone: the lowest
- * `MaxAmount` that names one currency, or none, the earliest `ValidUntil`, and every caveat the
- * library does not interpret, as written, listed apart. A caveat of a known type with a member the
+ * `MaxAmount` that names one currency, or none, the earliest `ValidUntil`, each hop's own
+ * `validUntil` among them, and every caveat the library does not interpret, as written, listed apart. A caveat of a known type with a member the
  * library does not know is one it does not interpret. Every caveat applies to every call, so a
  * `MaxAmount` that names a currency never stands in for one that names none. A duplicate within one
  * hop never loosens what the verdict says. A passing verdict warns once per process of a caveat
@@ -26,6 +26,7 @@ import {
   type Caveat,
   type DelegationChain,
 } from '../index.js';
+import { unsignedChain } from './random-caveats.js';
 import { NOW_MS, RESOURCE, hop, identity, parties, serve, statusList, twoHopChain, type ChainParties } from './signed-chain-helpers.js';
 
 const didResolver = createDidKeyResolver();
@@ -33,6 +34,8 @@ const now = (): number => NOW_MS;
 
 const maxAmount = (limit: string, currency = 'USD'): Caveat => ({ type: 'MaxAmount', limit, currency });
 const validUntil = (date: string): Caveat => ({ type: 'ValidUntil', date });
+/** Every hop here is valid until 2027, which each verdict carries as a ValidUntil, after the caveats the hops state. */
+const WINDOW = validUntil('2027-01-01T00:00:00Z');
 
 /** The shipped status checker, reading Acme's signed list, which speaks for every hop of its chains. */
 const checkerFor = (p: ChainParties): BitstringRevocationChecker =>
@@ -82,7 +85,7 @@ describe('the verdict on a verified chain carries its effective caveats', () => 
       leafInvoker: p.subAgent.did,
       invocationTarget: RESOURCE,
       allowedAction: ['orders.place'],
-      caveats: [maxAmount('100.00')],
+      caveats: [maxAmount('100.00'), WINDOW],
       unknownCaveats: [],
       depth: 2,
       fresh: true,
@@ -117,10 +120,27 @@ describe('the verdict on a verified chain carries its effective caveats', () => 
     expect(validateDelegationChain(chain, ctx)).toMatchObject({ ok: true, ...effective });
   });
 
-  it('carries no caveat for a chain that states none', async () => {
+  it('carries only the expiry of the hops for a chain that states no caveat', async () => {
     const p = parties();
-    expect(await verdictOn(p, chainUnder(p, [[], []]))).toMatchObject({ ok: true, caveats: [], unknownCaveats: [] });
+    expect(await verdictOn(p, chainUnder(p, [[], []]))).toMatchObject({ ok: true, caveats: [WINDOW], unknownCaveats: [] });
     expect(validateDelegationChain([], { now })).toMatchObject({ ok: false, caveats: [], unknownCaveats: [] });
+  });
+
+  it('reads the earliest validUntil of the hops as a ValidUntil, so a verdict kept for later is held to the chain expiry', () => {
+    const vu = (day: number) => validUntil(`2026-12-${String(day).padStart(2, '0')}T00:00:00Z`);
+    const verdictUnder = (caveats: Caveat[][], windows: string[]) => validateDelegationChain(unsignedChain(caveats, windows), { now });
+    // An earlier hop expiry stands in for a later ValidUntil caveat, where that caveat first appears.
+    expect(verdictUnder([[maxAmount('500'), vu(20)], [maxAmount('100'), vu(20)]], [vu(30).date!, vu(5).date!])).toMatchObject({
+      ok: true,
+      caveats: [maxAmount('100'), vu(5)],
+    });
+    // A chain that states no ValidUntil carries its earliest hop expiry after its caveats.
+    expect(verdictUnder([[maxAmount('500')], [maxAmount('100')]], [vu(30).date!, vu(10).date!])).toMatchObject({
+      ok: true,
+      caveats: [maxAmount('100'), vu(10)],
+    });
+    // An earlier ValidUntil caveat stays as written.
+    expect(verdictUnder([[vu(2)]], [vu(30).date!])).toMatchObject({ ok: true, caveats: [vu(2)] });
   });
 });
 
@@ -128,9 +148,9 @@ describe('two caveats of one type in one hop', () => {
   it('reads the lower of two MaxAmount caveats, whichever comes first', async () => {
     const p = parties();
     const loose = chainUnder(p, [[maxAmount('500.00')], [maxAmount('1000000.00'), maxAmount('100.00')]]);
-    expect(await verdictOn(p, loose)).toMatchObject({ ok: true, caveats: [maxAmount('100.00')] });
+    expect(await verdictOn(p, loose)).toMatchObject({ ok: true, caveats: [maxAmount('100.00'), WINDOW] });
     const root = chainUnder(p, [[maxAmount('100.00'), maxAmount('1000000.00')]]);
-    expect(await verdictOn(p, root)).toMatchObject({ ok: true, caveats: [maxAmount('100.00')] });
+    expect(await verdictOn(p, root)).toMatchObject({ ok: true, caveats: [maxAmount('100.00'), WINDOW] });
   });
 
   it('reads the earlier of two ValidUntil caveats', async () => {
@@ -142,16 +162,16 @@ describe('two caveats of one type in one hop', () => {
   it('keeps both MaxAmount caveats of different currencies, which together permit no call', async () => {
     const p = parties();
     const chain = chainUnder(p, [[maxAmount('100.00', 'USD'), maxAmount('90.00', 'EUR')]]);
-    expect(await verdictOn(p, chain)).toMatchObject({ ok: true, caveats: [maxAmount('100.00', 'USD'), maxAmount('90.00', 'EUR')] });
+    expect(await verdictOn(p, chain)).toMatchObject({ ok: true, caveats: [maxAmount('100.00', 'USD'), maxAmount('90.00', 'EUR'), WINDOW] });
   });
 
   it('keeps a MaxAmount that names no currency beside a lower one that names one', async () => {
     const p = parties();
     const anyCurrency: Caveat = { type: 'MaxAmount', limit: '100' };
     const oneHop = chainUnder(p, [[maxAmount('50'), anyCurrency]]);
-    expect(await verdictOn(p, oneHop)).toMatchObject({ ok: true, caveats: [maxAmount('50'), anyCurrency] });
+    expect(await verdictOn(p, oneHop)).toMatchObject({ ok: true, caveats: [maxAmount('50'), anyCurrency, WINDOW] });
     const narrowed = chainUnder(p, [[anyCurrency], [maxAmount('50')]]);
-    expect(await verdictOn(p, narrowed)).toMatchObject({ ok: true, caveats: [anyCurrency, maxAmount('50')] });
+    expect(await verdictOn(p, narrowed)).toMatchObject({ ok: true, caveats: [anyCurrency, maxAmount('50'), WINDOW] });
   });
 
   it('still refuses a hop none of whose duplicates narrows its parent', async () => {
@@ -184,7 +204,7 @@ describe('a caveat the library does not interpret', () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
     const chain = chainUnder(p, [[approval, maxAmount('500.00')], [approval, maxAmount('100.00'), region]]);
     const verdict = await verdictOn(p, chain);
-    expect(verdict).toMatchObject({ ok: true, caveats: [approval, maxAmount('100.00'), region], unknownCaveats: [approval, region] });
+    expect(verdict).toMatchObject({ ok: true, caveats: [approval, maxAmount('100.00'), region, WINDOW], unknownCaveats: [approval, region] });
     expect(await verdictOn(p, chain)).toMatchObject({ ok: true, unknownCaveats: [approval, region] });
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith(expect.stringMatching(/^\[kya-os\] .*unknownCaveats.*enforce.*or refuse/));
@@ -228,7 +248,7 @@ describe('a caveat the library does not interpret', () => {
     const p = parties();
     const odd: Caveat = { type: 'maxAmount', limit: '1', currency: 'USD' };
     vi.spyOn(logger, 'warn').mockImplementation(() => {});
-    expect(await verdictOn(p, chainUnder(p, [[odd], [odd]]))).toMatchObject({ ok: true, caveats: [odd], unknownCaveats: [odd] });
+    expect(await verdictOn(p, chainUnder(p, [[odd], [odd]]))).toMatchObject({ ok: true, caveats: [odd, WINDOW], unknownCaveats: [odd] });
   });
 
   it('treats a known type with a member it does not know as one it does not interpret, kept as written', async () => {
@@ -237,9 +257,9 @@ describe('a caveat the library does not interpret', () => {
     vi.spyOn(logger, 'warn').mockImplementation(() => {});
     // Neither stands in for the other: the tighter plain limit does not absorb the daily one, nor it the plain one.
     const both = chainUnder(p, [[daily], [daily, maxAmount('50')]]);
-    expect(await verdictOn(p, both)).toMatchObject({ ok: true, caveats: [daily, maxAmount('50')], unknownCaveats: [daily] });
+    expect(await verdictOn(p, both)).toMatchObject({ ok: true, caveats: [daily, maxAmount('50'), WINDOW], unknownCaveats: [daily] });
     const looser = chainUnder(p, [[daily, maxAmount('500')]]);
-    expect(await verdictOn(p, looser)).toMatchObject({ ok: true, caveats: [daily, maxAmount('500')], unknownCaveats: [daily] });
+    expect(await verdictOn(p, looser)).toMatchObject({ ok: true, caveats: [daily, maxAmount('500'), WINDOW], unknownCaveats: [daily] });
   });
 
   it('holds a hop to replicate such a caveat verbatim, as one of a type it does not know', async () => {

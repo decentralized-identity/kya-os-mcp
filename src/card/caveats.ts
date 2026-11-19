@@ -19,10 +19,16 @@
  * nor another for it, and only the host can enforce it, so the verdict lists it apart.
  *
  * A hop's caveats are read at their tightest once, in time linear in their number, and that reading
- * serves both the rule against its parent and the caveats the chain grants under.
+ * serves both the rule against its parent and the caveats the chain grants under. A caveat whose
+ * arrays and objects nest deeper than a credential may ({@link MAX_CREDENTIAL_NESTING_DEPTH}) is
+ * malformed, whatever its type, and is never read whole, so no depth runs a reader out of stack.
+ * A reason quotes at most 64 characters of any value a caveat or a call states (`describeValue`).
  */
 
+import type { RefusalCode } from '../refusal-codes.js';
+import { MAX_CREDENTIAL_NESTING_DEPTH } from '../delegation/signed-form.js';
 import { describeValue } from '../utils/describe-value.js';
+import { nestsDeeperThan } from '../utils/plain-data.js';
 import { DATE_TIME_FORM, dateLte, parseDateTime } from '../utils/rfc3339.js';
 import { windowBreach } from '../utils/validity-window.js';
 import { warnOncePerProcess } from '../utils/warn-once.js';
@@ -34,6 +40,12 @@ export interface HeldCall {
   currency: unknown;
   atMs: number;
   skewMs: number;
+}
+
+/** Why a call breaks a caveat, with the code of the rule it breaks. */
+export interface CaveatBreach {
+  code: RefusalCode;
+  reason: string;
 }
 
 /** How the library reads one caveat type it knows. */
@@ -49,7 +61,7 @@ interface CaveatRule {
   /** Whether a caveat in another group of the type may narrow well-formed `parent`. */
   narrowedAcrossGroups(parent: Caveat): boolean;
   /** Why `call` breaks well-formed `caveat`, or `undefined` when it keeps to it. */
-  breach(caveat: Caveat, call: HeldCall): string | undefined;
+  breach(caveat: Caveat, call: HeldCall): CaveatBreach | undefined;
 }
 
 /** A plain non-negative decimal, compared exactly: digits, then a point and digits or nothing. */
@@ -84,7 +96,7 @@ const VALID_UNTIL: CaveatRule = {
   narrowedAcrossGroups: () => false,
   breach: (caveat, call) =>
     windowBreach(undefined, parseDateTime(caveat.date), call.atMs, call.skewMs) === 'expired'
-      ? `the delegation's ValidUntil ${String(caveat.date)} has passed`
+      ? { code: 'delegation_expired', reason: `the delegation's ValidUntil ${describeValue(caveat.date)} has passed` }
       : undefined,
 };
 
@@ -105,14 +117,16 @@ const MAX_AMOUNT: CaveatRule = {
   // A child narrows a parent that names a currency only in that currency; one that names none, in any.
   narrows: (parent, child) => (parent.currency === undefined || parent.currency === child.currency) && decimalLte(child.limit, parent.limit),
   narrowedAcrossGroups: (parent) => parent.currency === undefined,
+  // A call that breaks a limit is one the chain does not grant.
   breach: (caveat, call) => {
-    const limit = `the delegated MaxAmount of ${String(caveat.limit)}${caveat.currency === undefined ? '' : ` in ${describeValue(caveat.currency)}`}`;
-    if (call.amount === undefined) return 'the call states no amount, which a delegated MaxAmount limits';
-    if (decimalParts(call.amount) === undefined) return `the call's amount ${describeValue(call.amount)} is not a non-negative decimal`;
+    const outside = (reason: string): CaveatBreach => ({ code: 'insufficient_scope', reason });
+    const limit = `the delegated MaxAmount of ${describeValue(caveat.limit)}${caveat.currency === undefined ? '' : ` in ${describeValue(caveat.currency)}`}`;
+    if (call.amount === undefined) return outside('the call states no amount, which a delegated MaxAmount limits');
+    if (decimalParts(call.amount) === undefined) return outside(`the call's amount ${describeValue(call.amount)} is not a non-negative decimal`);
     if (caveat.currency !== undefined && call.currency !== caveat.currency) {
-      return `${limit} permits no call ${call.currency === undefined ? 'that names no currency' : `in ${describeValue(call.currency)}`}`;
+      return outside(`${limit} permits no call ${call.currency === undefined ? 'that names no currency' : `in ${describeValue(call.currency)}`}`);
     }
-    return decimalLte(call.amount, caveat.limit) ? undefined : `the call's amount ${String(call.amount)} is over ${limit}`;
+    return decimalLte(call.amount, caveat.limit) ? undefined : outside(`the call's amount ${describeValue(call.amount)} is over ${limit}`);
   },
 };
 
@@ -122,29 +136,59 @@ const RULES: ReadonlyMap<string, CaveatRule> = new Map([
   ['MaxAmount', MAX_AMOUNT],
 ]);
 
-/** Why `caveat` is malformed, when it is of a type the library knows, whatever else it states; else `undefined`. */
+/** Whether `type` is one the library reads by a rule of its own. */
+export function isKnownCaveatType(type: string): boolean {
+  return RULES.has(type);
+}
+
+/**
+ * Why `caveat` is malformed, or `undefined`: of any type, when its arrays and objects nest deeper
+ * than {@link MAX_CREDENTIAL_NESTING_DEPTH}, counted with no call stack before anything reads it
+ * whole; and of a type the library knows, whatever else it states, when its rule cannot read it.
+ */
 export function caveatMalformation(caveat: Caveat): string | undefined {
+  if (nestsDeeperThan(caveat, MAX_CREDENTIAL_NESTING_DEPTH)) {
+    return `caveat ${describeValue(caveat.type)} nests more than ${MAX_CREDENTIAL_NESTING_DEPTH} levels deep`;
+  }
   return RULES.get(caveat.type)?.malformed(caveat);
+}
+
+/** A member `caveat` states beside those its type's rule reads, when it is of a known type; else `undefined`. */
+function memberBeyondRule(caveat: Caveat): string | undefined {
+  const rule = RULES.get(caveat.type);
+  return rule === undefined ? undefined : Object.keys(caveat).find((member) => member !== 'type' && !rule.members.includes(member));
 }
 
 /** Whether the library interprets `caveat`: it knows its type and every member it states. */
 export function interprets(caveat: Caveat): boolean {
-  const rule = RULES.get(caveat.type);
-  return rule !== undefined && Object.keys(caveat).every((member) => member === 'type' || rule.members.includes(member));
+  return RULES.has(caveat.type) && memberBeyondRule(caveat) === undefined;
 }
 
 /**
- * Why `call` breaks `caveat`, or `undefined` when it keeps to it: a malformed caveat, the rule of a
- * known type, which holds even a caveat with a member the library does not know to what it reads,
- * and a caveat the library does not interpret, unless its type is one `enforcedTypes` names.
+ * Why `call` breaks `caveat`, or `undefined` when it keeps to it: a malformed caveat
+ * (`delegation_malformed`); the rule of a known type, which holds even a caveat with a member the
+ * library does not know to what it reads; then such a member, which the host cannot name as one it
+ * enforces (`configuration_error`); and a caveat of an unknown type, unless `enforcedTypes` names
+ * it (`configuration_error`).
  */
-export function caveatBreach(caveat: Caveat, call: HeldCall, enforcedTypes: ReadonlySet<string>): string | undefined {
+export function caveatBreach(caveat: Caveat, call: HeldCall, enforcedTypes: ReadonlySet<string>): CaveatBreach | undefined {
   const malformed = caveatMalformation(caveat);
-  if (malformed !== undefined) return `the delegation carries a malformed caveat: ${malformed}`;
-  const breach = RULES.get(caveat.type)?.breach(caveat, call);
-  if (breach !== undefined) return breach;
-  if (interprets(caveat) || enforcedTypes.has(caveat.type)) return undefined;
-  return `the delegation carries a caveat of type ${describeValue(caveat.type)} that the host does not enforce`;
+  if (malformed !== undefined) return { code: 'delegation_malformed', reason: `the delegation carries a malformed caveat: ${malformed}` };
+  const rule = RULES.get(caveat.type);
+  if (rule !== undefined) {
+    const member = memberBeyondRule(caveat);
+    return (
+      rule.breach(caveat, call) ??
+      (member === undefined
+        ? undefined
+        : {
+            code: 'configuration_error',
+            reason: `the delegation carries a ${caveat.type} caveat that states ${describeValue(member)}, a member the library does not interpret`,
+          })
+    );
+  }
+  if (enforcedTypes.has(caveat.type)) return undefined;
+  return { code: 'configuration_error', reason: `the delegation carries a caveat of type ${describeValue(caveat.type)} that the host does not enforce` };
 }
 
 /** A caveat as a hop's reading keeps it: with its type's rule when the library reads it by one. */
@@ -156,8 +200,11 @@ interface Read {
   malformed?: true;
 }
 
+/** The group a caveat is read within: its type and group, its verbatim form, or, for a malformed caveat, its own. */
+type GroupKey = string | symbol;
+
 /** One hop's caveats at their tightest: the group each is read within, and the caveat it keeps. */
-export type HopCaveats = ReadonlyMap<string, Read>;
+export type HopCaveats = ReadonlyMap<GroupKey, Read>;
 
 /** Stable structural form (sorted-key JSON): two caveats read verbatim are the same iff their forms are equal. */
 function canonical(value: unknown): string {
@@ -172,16 +219,19 @@ function sortKeys(value: unknown): unknown {
   return value;
 }
 
-/** `caveat` as a reading keeps it, and the group it is read within: its type and group, or its verbatim form. */
-function readOf(caveat: Caveat): [string, Read] {
-  if (caveatMalformation(caveat) !== undefined) return [`verbatim:${canonical(caveat)}`, { caveat, malformed: true }];
+/**
+ * `caveat` as a reading keeps it, and the group it is read within: its type and group, or its
+ * verbatim form. A malformed caveat, which may nest too deep to write out, is in a group of its own.
+ */
+function readOf(caveat: Caveat): [GroupKey, Read] {
+  if (caveatMalformation(caveat) !== undefined) return [Symbol('malformed caveat'), { caveat, malformed: true }];
   const rule = interprets(caveat) ? RULES.get(caveat.type) : undefined;
   if (rule === undefined) return [`verbatim:${canonical(caveat)}`, { caveat }];
   return [JSON.stringify([caveat.type, rule.group(caveat) ?? null]), { caveat, rule }];
 }
 
 /** Keep `read` in `groups` unless the caveat kept in its group is at least as narrow: of two equal, the first stays. */
-function keepTighter(groups: Map<string, Read>, [group, read]: [string, Read]): void {
+function keepTighter(groups: Map<GroupKey, Read>, [group, read]: [GroupKey, Read]): void {
   const kept = groups.get(group);
   if (kept === undefined || (read.rule !== undefined && !read.rule.narrows(read.caveat, kept.caveat))) groups.set(group, read);
 }
@@ -193,13 +243,13 @@ function keepTighter(groups: Map<string, Read>, [group, read]: [string, Read]): 
  * first of two equal ones; or two read verbatim and written the same, of which one is kept.
  */
 export function tightestOf(caveats: readonly Caveat[]): HopCaveats {
-  const groups = new Map<string, Read>();
+  const groups = new Map<GroupKey, Read>();
   for (const caveat of caveats) keepTighter(groups, readOf(caveat));
   return groups;
 }
 
 /** Whether a caveat of `child` narrows `parent`, kept in `group` of its own hop. */
-function narrowedIn(group: string, parent: Read, child: HopCaveats): boolean {
+function narrowedIn(group: GroupKey, parent: Read, child: HopCaveats): boolean {
   if (parent.malformed) return false;
   const same = child.get(group);
   if (parent.rule === undefined) return same !== undefined; // read verbatim: only its equal narrows it
@@ -215,7 +265,7 @@ export function unnarrowedCaveats(parent: HopCaveats, child: HopCaveats): Caveat
   return [...parent].filter(([group, read]) => !narrowedIn(group, read, child)).map(([, read]) => read.caveat);
 }
 
-/** The rules the caveats of `chain` break by their form: each malformed caveat of a known type, on any hop. */
+/** The rules the caveats of `chain` break by their form: each malformed caveat ({@link caveatMalformation}), on any hop. */
 export function malformedCaveatRules(chain: DelegationChain): { code: 'delegation_malformed'; reason: string }[] {
   return chain.flatMap((vc, i) =>
     (vc.credentialSubject.caveats ?? []).flatMap((caveat) => {
@@ -237,12 +287,16 @@ export interface EffectiveCaveats {
   /**
    * Every limit the chain states, at its tightest: the lowest `MaxAmount` of each currency it names
    * and the lowest of those that name none, the earliest `ValidUntil`, and each caveat the library
-   * does not interpret, once, as written, in the order each first appears, root to leaf. Every one
-   * applies to every call. A `MaxAmount` that names a currency also requires the call to be in that
-   * currency, so two in different currencies permit no call, and one that names none limits the
-   * amount whatever its currency. A looser duplicate in one hop never shows here. The library has
-   * held the call to each `ValidUntil`; the host holds it to every other caveat here, each
-   * `MaxAmount` included, or refuses it: `caveatRefusal` does both. Empty when no hop states one.
+   * does not interpret, once, as written, in the order each first appears, root to leaf. The hops'
+   * own `validUntil` count as `ValidUntil` caveats read after every caveat the hops state, so the
+   * earliest of them stands in for a later `ValidUntil`, or is added when no hop states one, and a
+   * verdict kept for later is still held to the chain's expiry. Every one applies to every call. A
+   * `MaxAmount` that names a currency also requires the call to be in that currency, so two in
+   * different currencies permit no call, and one that names none limits the amount whatever its
+   * currency. A looser duplicate in one hop never shows here. The library has held the call to each
+   * `ValidUntil` when it read the chain; the host holds it to every caveat here, each `MaxAmount`
+   * included, or refuses it: `caveatRefusal` does that. Empty when no hop states a caveat or a
+   * `validUntil`.
    */
   caveats?: Caveat[];
   /**
@@ -255,12 +309,16 @@ export interface EffectiveCaveats {
 }
 
 /**
- * The caveats a chain whose hops' caveats read `hops`, root to leaf, grants under: the tightest of
- * them by group ({@link tightestOf}), each in the order its group first appears.
+ * The caveats `chain` grants under, its hops' caveats read as `hops`, root to leaf: the tightest of
+ * them by group ({@link tightestOf}), each in the order its group first appears, then the `validUntil`
+ * of each hop that states a date, read as a `ValidUntil` caveat.
  */
-export function effectiveCaveatsOf(hops: readonly HopCaveats[]): Required<EffectiveCaveats> {
-  const groups = new Map<string, Read>();
+export function effectiveCaveatsOf(chain: DelegationChain, hops: readonly HopCaveats[]): Required<EffectiveCaveats> {
+  const groups = new Map<GroupKey, Read>();
   for (const hop of hops) for (const entry of hop) keepTighter(groups, entry);
+  for (const { validUntil } of chain) {
+    if (parseDateTime(validUntil) !== undefined) keepTighter(groups, readOf({ type: 'ValidUntil', date: validUntil }));
+  }
   const caveats = [...groups.values()].map((read) => read.caveat);
   return { caveats, unknownCaveats: caveats.filter((caveat) => !interprets(caveat)) };
 }

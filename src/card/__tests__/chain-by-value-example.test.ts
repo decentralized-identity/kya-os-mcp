@@ -1,13 +1,14 @@
 /**
  * `examples/chain-by-value/walkthrough.ts` runs end to end: the merchant cannot resolve the chain
- * by reference, accepts it carried by value, holds the order to the limit the grant carries, and
- * rejects a hop edited after signing, the chain presented by another key, and the chain once its
+ * by reference, accepts it carried by value, prices each order from its own list and holds that
+ * price to the limit the grant carries, whatever amount the caller states, and rejects a hop edited
+ * after signing, the chain presented by another key, and the chain once its
  * Responsible Party revokes the root. What the registry answered goes to the merchant's log, not to
  * the caller.
  */
 
 import { afterAll, beforeAll, describe, it, expect, vi, type MockInstance } from 'vitest';
-import { demoScenario, type DemoResult } from '../../../examples/chain-by-value/walkthrough.js';
+import { demoScenario, priceOf, type DemoResult } from '../../../examples/chain-by-value/walkthrough.js';
 
 describe('examples/chain-by-value: carrying the delegation chain with the request', () => {
   let run: Promise<DemoResult> | undefined;
@@ -44,9 +45,21 @@ describe('examples/chain-by-value: carrying the delegation chain with the reques
   it("refuses an order over the worker's own limit, though inside Acme's, from the limit the grant carries", async () => {
     expect((await result()).overLimit).toEqual({
       status: 403,
-      code: 'limit_exceeded',
-      reason: 'the call\'s amount 240.00 is over the delegated MaxAmount of 100.00 in "USD"',
+      code: 'insufficient_scope',
+      reason: 'the call\'s amount "240.00" is over the delegated MaxAmount of "100.00" in "USD"',
     });
+  });
+
+  it('prices an order from its own list, so an amount the caller states never reaches the limit', async () => {
+    expect((await result()).understated).toEqual({
+      status: 403,
+      code: 'insufficient_scope',
+      reason: 'the call\'s amount "30000.00" is over the delegated MaxAmount of "100.00" in "USD"',
+    });
+    expect(priceOf({ sku: 'A-100', qty: 2, amount: '0.01', currency: 'EUR' })).toEqual({ amount: '60.00', currency: 'USD' });
+    for (const order of [undefined, null, 'A-100', {}, { sku: 'Z-999', qty: 1 }, { sku: 'A-100', qty: 0 }, { sku: 'A-100', qty: 1.5 }, { sku: 'A-100', qty: '2' }, { sku: 'toString', qty: 1 }]) {
+      expect(priceOf(order), JSON.stringify(order)).toBeUndefined();
+    }
   });
 
   it('rejects a hop edited after signing, though the edit still attenuates', async () => {

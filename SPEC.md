@@ -1721,6 +1721,13 @@ A verifier that holds a chain, and is to take a proof as evidence that the serve
 
 A verifier that holds only part of the chain, such as a caller that knows its own credential and not the ancestors the server resolved, cannot recompute the digest and leaves the comparison to a party that can.
 
+**A holder's request proof.**
+A holder-of-key request proof (§7) names the delegation it is made under with the same two members, derived by the holder from the chain it presents, root first, its own credential last.
+A verifier that checks the proof against the delegation a call presents MUST refuse a proof that names another: one whose `delegationRef` is not the reference of the presented credential, or is stated where that credential shows no id, or whose `delegationChainDigest` is not the digest of the chain the verifier evaluated for the call.
+Without this rule a party on the path that holds another delegation of the same subject could present it beside the holder's proof, and the call would be decided under a grant the holder did not choose.
+A holder SHOULD name the delegation in every request proof about a call that presents one.
+A proof that names none is bound to its subject alone, and a verifier of this release accepts it.
+
 **Compatibility.**
 `delegationChainDigest` is a new signed claim.
 A verifier that predates it rebuilds the payload of §7.4 without it and rejects the proof, so a producer SHOULD make the claim an explicit opt-in until the verifiers of its proofs know it.

@@ -37,6 +37,7 @@ export * from './verify.js';
 export * from './cimd.js';
 export * from './proof/index.js';
 export * from './delegation.js';
+export type { EffectiveCaveats } from './caveats.js';
 export * from './builder.js';
 export * from './middleware.js';
 export * from './revocation.js';

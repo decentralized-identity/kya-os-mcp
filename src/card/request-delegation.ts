@@ -24,6 +24,7 @@ import { thrownReason } from '../utils/thrown-words.js';
 import type { RefusalCode } from '../refusal-codes.js';
 import { admitsRootIssuer } from '../delegation/root-admission.js';
 import { revocationEntriesOf, validateDelegationChain, type DelegationChain } from './delegation.js';
+import type { EffectiveCaveats } from './caveats.js';
 import {
   KYA_OS_DELEGATION_CHAIN_META_KEY,
   parseCredentials,
@@ -151,8 +152,13 @@ export interface RequestDelegationInput {
   action: string;
 }
 
-/** The authority a verified chain grants, recomputed from the chain. */
-export interface RequestDelegationGrant {
+/**
+ * The authority a verified chain grants, recomputed from the chain, with the limits it grants it
+ * under: `caveats`, at their tightest, of which the host enforces each but `ValidUntil`, which the
+ * library has held the call to, and `unknownCaveats`, which the host must enforce or refuse
+ * ({@link EffectiveCaveats}).
+ */
+export interface RequestDelegationGrant extends EffectiveCaveats {
   source: DelegationChainSource;
   /** The root issuer: the party accountable for the call (§10.2). */
   responsibleParty: string;
@@ -244,7 +250,8 @@ async function verifyRequest(input: RequestDelegationInput, deps: VerifyRequestD
   });
   // validateDelegationChain codes every chain it refuses.
   if (!structural.ok) return reject('delegation_invalid', structural.code ?? 'chain_invalid', structural.reasons);
-  const { responsibleParty, leafInvoker, invocationTarget, allowedAction, depth } = structural;
+  // validateDelegationChain sets `caveats` and `unknownCaveats` on every result, so the grant carries both.
+  const { responsibleParty, leafInvoker, invocationTarget, allowedAction, caveats, unknownCaveats, depth } = structural;
   if (responsibleParty === undefined || leafInvoker === undefined || invocationTarget === undefined) {
     return reject('delegation_invalid', 'delegation_malformed', ['delegation chain has no root issuer or leaf delegate']);
   }
@@ -284,6 +291,8 @@ async function verifyRequest(input: RequestDelegationInput, deps: VerifyRequestD
     leafInvoker,
     invocationTarget,
     allowedAction,
+    caveats,
+    unknownCaveats,
     depth,
     fresh: revocation.fresh,
   };

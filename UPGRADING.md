@@ -4,6 +4,31 @@ This file holds the detail behind the Upgrading entries in CHANGELOG.md: the ste
 Each release has one section, newest first, and declares every change of behaviour against the release before it.
 CHANGELOG.md says what changed and names the section here that says what to do about it.
 
+## From 1.25.0
+
+### A delegation verdict carries the caveats it grants under
+
+`requireDelegation`, `verifyRequestDelegation`, `evaluateDelegationChain` and `validateDelegationChain` checked that each hop's caveats narrow its parent's, and then returned a verdict without them.
+A host that trusted the verdict alone never learned that the call was limited, for example by a `MaxAmount` of 100, and the library never sees the amount a call spends, so nothing held the call to the limit.
+Each verdict now carries `caveats`: every limit the chain states, at its tightest, by the rule a hop's caveats are held to against its parent's.
+That is the lowest `MaxAmount`, one for each currency where the others do not narrow it, the earliest `ValidUntil`, and each caveat of a type the library does not know, once, as written.
+Those of a type the library does not know are listed again, apart, in `unknownCaveats`.
+The library still passes a call under such a caveat, as on 1.25.0, and now warns once per process, in fixed words: `[kya-os] A delegation chain carries a caveat of a type this library does not know, so it does not enforce it. ...`.
+Two caveats of one type in one hop are read at the tightest, so a looser duplicate never shows in `caveats`.
+The narrowing check reads them the same way, and passes and refuses the same chains as before.
+A `ValidUntil` caveat that states no date is now refused as `delegation_malformed`, with the reason `hop N: ValidUntil caveat states no date`, as SPEC.md §6.10 requires of every date a hop states.
+One whose date is not an RFC 3339 date-time with its offset was already refused.
+Both members are optional in the types, so a result your own code builds still compiles, and the library sets both on every verdict it returns.
+
+| If you | Do this | Effect |
+| --- | --- | --- |
+| Act on a call that `requireDelegation` or `verifyRequestDelegation` passes | Hold it to each caveat in `caveats` but `ValidUntil`, which the library has held it to: each `MaxAmount` against the amount the call spends, in its currency, compared as an exact decimal. `examples/chain-by-value` shows how. | The call keeps to the limits every hop delegated. |
+| Pass a call whose verdict lists a caveat in `unknownCaveats` | Enforce it in your application, or refuse the call. | Nothing in the library enforces it, and the warning above says so once. |
+| Read caveats from the chain yourself, with `readDelegationChain(meta)` or from `credentialSubject.caveats` | Read `caveats` from the verdict instead. | A hop may state two caveats of one type, and the first one written may be the looser; the verdict holds the tightest of the whole chain. |
+| Issue a `ValidUntil` caveat with no `date` | State its `date`, an RFC 3339 date-time with its offset from UTC. | The chain was read as if the caveat set no end; it is now refused. |
+| Compare a whole verdict in a test, as with `toEqual` | Add `caveats` and `unknownCaveats` to what you expect. | The verdict has these two members more. |
+| Build a `DelegationChainResult` or a grant in your own code, as a double | Nothing. | It compiles as before. |
+
 ## From 1.24.0
 
 ### The delegation gate shows the failure your DID resolver reports

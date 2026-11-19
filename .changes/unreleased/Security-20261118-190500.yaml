@@ -1,0 +1,17 @@
+kind: Security
+body: |-
+    **A delegation verdict carries the caveats its chain grants under.**
+    `requireDelegation`, `verifyRequestDelegation`, `evaluateDelegationChain`
+    and `validateDelegationChain` checked that each hop's caveats narrow its
+    parent's, then returned a verdict without them, so a host that trusted the
+    verdict never learned that the call was limited, for example by a
+    `MaxAmount` of 100, and nothing held the call to the limit. Each verdict
+    now carries `caveats`, every limit the chain states at its tightest, so a
+    looser duplicate in one hop never shows, and lists those of a type the
+    library does not know apart in `unknownCaveats`, warning once per process
+    when a chain carries one: hold the call to each caveat, or refuse it. A
+    `ValidUntil` caveat that states no date is now refused as
+    `delegation_malformed`, as SPEC.md §6.10 requires, and
+    `examples/chain-by-value` holds each order to its limit. UPGRADING.md, "A
+    delegation verdict carries the caveats it grants under", has the detail.
+time: 2026-11-18T19:05:00.000000-06:00

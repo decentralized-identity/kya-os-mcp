@@ -32,6 +32,7 @@ describe('legacy evaluateDelegationChain', () => {
     const expected = {
       ok: true, reasons: [], fresh: true, responsibleParty: p.acme.did, leafInvoker: p.subAgent.did,
       invocationTarget: RESOURCE, allowedAction: ['orders.place'], depth: 2,
+      caveats: [{ type: 'MaxAmount', limit: '100.00', currency: 'USD' }], unknownCaveats: [],
     };
     expect(await evaluateDelegationChain(chain, check, ctx)).toEqual(expected);
     expect(await evaluateDelegationChain(chain, check, { ...ctx })).toEqual(expected);

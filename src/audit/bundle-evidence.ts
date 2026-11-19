@@ -14,6 +14,7 @@ import type {
   AuditBundleComponentV1,
   AuditBundleDisposition,
   AuditBundleSelectionV1,
+  AuditLedgerRef,
   AuditObservationReceiptV1,
   AuditVerificationDimension,
   AuditVerificationPolicyV1,
@@ -141,12 +142,45 @@ export async function verifySupportingAnchors(
   return dimension(invalid ? 'invalid' : notEvaluated ? 'indeterminate' : 'valid', reasons);
 }
 
+/**
+ * Whether the bundle carries an artifact outside every selection its signed manifest declares.
+ * The exporter's grant is checked against those selections, so what lies outside them would reach
+ * the reader with no grant behind it: an entry must sit in a selected range, and a checkpoint, an
+ * observation or a Merkle proof in a selected ledger epoch.
+ */
+function carriesUnselected(
+  selections: readonly AuditBundleSelectionV1[],
+  entries: readonly SignedAuditEntryV1[],
+  scoped: readonly AuditLedgerRef[],
+): boolean {
+  const selected = new Map<string, AuditBundleSelectionV1[]>();
+  for (const selection of selections) {
+    const key = ledgerEpochKey(selection);
+    selected.set(key, [...(selected.get(key) ?? []), selection]);
+  }
+  if (scoped.some((artifact) => !selected.has(ledgerEpochKey(artifact)))) return true;
+  return entries.some((entry) => {
+    const sequence = BigInt(entry.core.sequence);
+    return !(selected.get(ledgerEpochKey(entry.core)) ?? []).some((selection) =>
+      BigInt(selection.firstSequence) <= sequence && sequence <= BigInt(selection.lastSequence));
+  });
+}
+
+/**
+ * Whether the bundle's entries complete every range it selects, carries nothing outside them, and
+ * says what it left out. `scoped` holds the ledger epoch of every checkpoint, observation and
+ * Merkle proof the bundle carries.
+ */
 export function selectionCompleteness(
   selections: readonly AuditBundleSelectionV1[],
   entries: readonly SignedAuditEntryV1[],
+  scoped: readonly AuditLedgerRef[],
   components: readonly AuditBundleComponentV1[],
 ): AuditVerificationDimension {
   const reasons = new Set<string>();
+  if (carriesUnselected(selections, entries, scoped)) {
+    reasons.add(AUDIT_REASON_CODES.BUNDLE_CONTENT_OUTSIDE_SELECTION);
+  }
   for (const selection of selections) {
     const selected = entries.filter((entry) =>
       entry.core.ledgerId === selection.ledgerId &&
@@ -188,6 +222,9 @@ export function selectionCompleteness(
   for (const { disposition } of components) {
     if (disposition !== 'included') reasons.add(OMISSION_REASONS[disposition]);
   }
-  if (reasons.has(AUDIT_REASON_CODES.BUNDLE_SELECTION_INCOMPLETE)) return dimension('invalid', reasons);
+  if (reasons.has(AUDIT_REASON_CODES.BUNDLE_SELECTION_INCOMPLETE) ||
+    reasons.has(AUDIT_REASON_CODES.BUNDLE_CONTENT_OUTSIDE_SELECTION)) {
+    return dimension('invalid', reasons);
+  }
   return reasons.size === 0 ? dimension('valid') : dimension('indeterminate', reasons);
 }

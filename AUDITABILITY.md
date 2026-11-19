@@ -465,6 +465,9 @@ nonce caches. It verifies:
 - supporting-anchor trust and an injected adapter verifier;
 - declared range completeness and explicit omission dispositions.
 
+Everything a bundle carries must sit inside a selection its signed manifest declares, because the exporter's grant is checked against those selections.
+An entry outside every selected range, or a checkpoint, observation, or Merkle proof of a ledger epoch no selection names, makes committed-scope completeness `invalid` (`AUDIT_BUNDLE_CONTENT_OUTSIDE_SELECTION`).
+
 A subset export need not carry every leaf. A checkpoint whose complete prefix is
 present has its root recomputed; otherwise its signature, digest, issuer trust,
 and declared range are verified (`AuditArtifactVerifier.verifySignedCheckpoint`),

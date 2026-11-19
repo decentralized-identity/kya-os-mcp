@@ -23,6 +23,8 @@ import { hashAuditValue } from './crypto.js';
 import { AUDIT_DIGEST_DOMAINS } from './integrity.js';
 import { sameSigner, validAt } from './key-trust.js';
 import {
+  auditBundleConsistencyProofSchema,
+  auditBundleInclusionProofSchema,
   auditObservationReceiptSchema,
   auditReplayBundleSchema,
   auditVerificationPolicySchema,
@@ -34,6 +36,7 @@ import type {
   AuditBundleComponentV1,
   AuditBundleDisposition,
   AuditBundleManifestCoreV1,
+  AuditLedgerRef,
   AuditObservationReceiptV1,
   AuditBundleSelectionV1,
   AuditAnchorReceipt,
@@ -343,6 +346,12 @@ export async function verifyAuditBundle(
     (candidate): candidate is AuditObservationReceiptV1 =>
       auditObservationReceiptSchema.safeParse(candidate).success,
   );
+  const proofScopes = [
+    ...includedArrays<unknown>(replayBundle, AUDIT_BUNDLE_MEDIA_TYPES.inclusionProofs)
+      .filter((candidate) => auditBundleInclusionProofSchema.safeParse(candidate).success),
+    ...includedArrays<unknown>(replayBundle, AUDIT_BUNDLE_MEDIA_TYPES.consistencyProofs)
+      .filter((candidate) => auditBundleConsistencyProofSchema.safeParse(candidate).success),
+  ] as AuditLedgerRef[];
   // The bundle's own checkpoints are what checkpoint-bounded key policies name.
   const context: AuditVerificationContext = { checkpoints };
   const artifacts = dependencies.artifacts ?? new AuditArtifactVerifier(dependencies);
@@ -437,8 +446,13 @@ export async function verifyAuditBundle(
     checkpointIntegrity: checkpointDimension,
     anchorIntegrity: anchorDimension,
     scopeEvidenceCompleteness: selectionCompleteness(
-      core?.selections ?? [],
+      core.selections,
       entries,
+      [
+        ...checkpoints.map((checkpoint) => checkpoint.core),
+        ...observations.map((receipt) => receipt.core),
+        ...proofScopes,
+      ],
       replayBundle.components,
     ),
     currentAuthorization: currentKeys === undefined

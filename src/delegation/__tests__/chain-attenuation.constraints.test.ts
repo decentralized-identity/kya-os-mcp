@@ -95,6 +95,16 @@ describe("checkConstraintAttenuation: the budget", () => {
       budgeted({ ...DAILY_100, window: { kind: "rolling", durationSec: 0 } }),
       "Delegation child states a budget that cannot be compared with parent parent's",
     ],
+    ...[
+      ["named in words", "daily"],
+      ["of a kind the walk does not know", { kind: "sliding", durationSec: 86_400 }],
+      ["with a member the walk does not interpret", { kind: "rolling", durationSec: 86_400, anchor: "midnight" }],
+    ].map(([what, window]) => [
+      `states a window ${String(what)}`,
+      budgeted(DAILY_100),
+      budgeted({ ...DAILY_100, window }),
+      "Delegation child states a budget that cannot be compared with parent parent's",
+    ]),
   ])("refuses a child that %s", (_name, parent, child, reason) => {
     expect(check(parent, child)).toEqual({ valid: false, reason, code: "chain_invalid", transient: false });
   });
@@ -123,6 +133,21 @@ describe("checkConstraintAttenuation: members the walk does not interpret", () =
 
   it("reads no member of a parent's CRISP envelope that is not an object", () => {
     expect(check({ crisp: "opaque" }, {})).toEqual({ valid: true });
+  });
+
+  it("reads constraints that are not an object as none", () => {
+    const stating = (credential: DelegationCredential, constraints: unknown): DelegationCredential => ({
+      ...credential,
+      credentialSubject: {
+        ...credential.credentialSubject,
+        delegation: { ...credential.credentialSubject.delegation, constraints: constraints as never },
+      },
+    });
+    expect(checkConstraintAttenuation(stating(parentOf({}), "opaque"), childOf({}))).toEqual({ valid: true });
+    expect(checkConstraintAttenuation(parentOf(budgeted(USD_100)), stating(childOf({}), null))).toMatchObject({
+      valid: false,
+      reason: "Delegation child drops the budget parent parent states",
+    });
   });
 });
 

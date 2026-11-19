@@ -46,6 +46,12 @@ describe("validateDelegationChain: a refusal of how the presented credential lin
       "parent subject is did:sub",
     ],
     [
+      "is in a credential that names no issuer",
+      { ...presented("did:sub"), issuer: { name: "no id" } as unknown as string },
+      "Delegation forged is signed by an unidentified issuer, not by the subject of parent middle",
+      "is signed by an unidentified issuer but parent subject is did:sub",
+    ],
+    [
       "names a parent the resolved chain does not end with",
       presented("did:sub", "elsewhere"),
       "Delegation forged references parent elsewhere, which its resolved chain does not end with",

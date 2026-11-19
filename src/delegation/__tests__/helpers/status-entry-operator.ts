@@ -58,7 +58,7 @@ export async function leftUnchanged(promise: Promise<unknown>): Promise<StatusEn
 
 /** The refusal to register again the id of a delegation removed while it read as revoked. */
 export const REMOVED_WHILE_REVOKED = (id: string): string =>
-  `Delegation ${id} was removed while revoked, and its id stays revoked: register the delegation under another id`;
+  `Delegation "${id}" was removed while revoked, and its id stays revoked: register the delegation under another id`;
 
 /** The message of the error that `promise` rejects with. */
 export async function rejectionMessage(promise: Promise<unknown>): Promise<string> {

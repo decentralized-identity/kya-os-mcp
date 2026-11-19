@@ -278,6 +278,7 @@ An issuer that sets it calls `renewStatusList` for each list before the list end
 `removeDelegation` throws, removing nothing, for a delegation with others registered under it.
 To remove a whole subtree, call `removeDelegation(id, { subtree: true })`, and when it throws a `SubtreeRemovalError`, call it again.
 A removed delegation that reads as revoked stays as a revoked record, and its id cannot be registered again, whether or not it has a status list entry.
+Registering a delegation again under that id, or under that record as its parent, is refused with a `RefusalError` of code `delegation_revoked`.
 One with an entry was deleted whole in 1.25.0, and a delegation registered again under its id read as not revoked, even when the entry had not recorded the revocation.
 Register a new delegation under a new id; a removed delegation that never read as revoked is still deleted whole, and its id registers again.
 

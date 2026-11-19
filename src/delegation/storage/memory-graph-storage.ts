@@ -69,7 +69,7 @@ export class MemoryDelegationGraphStorage
     }
     const parent = node.parentId === null ? null : this.nodes.get(node.parentId);
     const refused = node.parentId === null ? undefined : parentRegistrationRefusal(node.parentId, parent);
-    if (refused !== undefined) throw new Error(refused);
+    if (refused !== undefined) throw refused;
     const storedNode = { ...node, children: [...node.children] };
     if (parent !== null && parent !== undefined) {
       const storedParent = {

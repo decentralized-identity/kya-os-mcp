@@ -8,7 +8,7 @@
  */
 
 import type { CredentialStatus } from '../types/protocol.js';
-import { parentRegistrationRefusal, registrationConflict } from './delegation-registration.js';
+import { parentRegistrationRefusal, registrationConflict, removedIdRefusal } from './delegation-registration.js';
 import { canonicalStatusEntry, entryKey, nodeStatusEntry } from './delegation-status-entry.js';
 import {
   assertRegistrable,
@@ -184,7 +184,7 @@ export class DelegationGraphManager {
 
     if (params.parentId) {
       const refused = parentRegistrationRefusal(params.parentId, await this.storage.getNode(params.parentId));
-      if (refused !== undefined) throw new Error(refused);
+      if (refused !== undefined) throw refused;
     }
 
     // Registering an id again is a no-op when nothing registered changes, so
@@ -192,11 +192,7 @@ export class DelegationGraphManager {
     // revocation state and children or relinking it under its own descendant,
     // so it is refused.
     const existing = await this.storage.getNode(params.id);
-    if (existing?.removed === true) {
-      throw new Error(
-        `Delegation ${params.id} was removed while revoked, and its id stays revoked: register the delegation under another id`,
-      );
-    }
+    if (existing?.removed === true) throw removedIdRefusal(params.id);
     if (existing) {
       const conflict = registrationConflict(existing, node);
       if (conflict === undefined) {
@@ -248,7 +244,7 @@ export class DelegationGraphManager {
   private async linkNode(node: DelegationNode): Promise<void> {
     if (node.parentId) {
       const refused = parentRegistrationRefusal(node.parentId, await this.storage.getNode(node.parentId));
-      if (refused !== undefined) throw new Error(refused);
+      if (refused !== undefined) throw refused;
     }
     if (supportsAtomicRegistration(this.storage)) {
       await this.storage.registerNodeAtomic(node);

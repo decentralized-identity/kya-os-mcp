@@ -9,6 +9,8 @@
 
 import type { CredentialStatus } from '../types/protocol.js';
 import type { DelegationNode } from './delegation-graph.js';
+import { describeValue } from '../utils/describe-value.js';
+import { RefusalError } from '../utils/refusal.js';
 
 /**
  * The first caller-supplied field on which `incoming` differs from the stored
@@ -40,19 +42,35 @@ export function registrationConflict(
 }
 
 /**
- * Why a delegation may not be registered under the parent `parentId`, stored
- * as `parent`, or `undefined` when it may: the parent is not stored, or was
- * removed while revoked, which leaves a record that holds no children.
+ * The error that refuses to register a delegation under the parent `parentId`,
+ * stored as `parent`, or `undefined` when it may be registered: an `Error`
+ * when the parent is not stored, and a `RefusalError` of code
+ * `delegation_revoked` when it was removed while revoked, which leaves a
+ * record that holds no children.
  */
 export function parentRegistrationRefusal(
   parentId: string,
   parent: DelegationNode | null | undefined,
-): string | undefined {
-  if (!parent) return `Parent delegation not found: ${parentId}`;
+): Error | undefined {
+  if (!parent) return new Error(`Parent delegation not found: ${parentId}`);
   if (parent.removed === true) {
-    return `Parent delegation ${parentId} was removed while revoked: register the delegation under one that stands`;
+    return new RefusalError(
+      'delegation_revoked',
+      `Parent delegation ${describeValue(parentId)} was removed while revoked: register the delegation under one that stands`,
+    );
   }
   return undefined;
+}
+
+/**
+ * The refusal to register a delegation again under `id`, the id of one
+ * removed while revoked, whose record keeps the id revoked.
+ */
+export function removedIdRefusal(id: string): RefusalError {
+  return new RefusalError(
+    'delegation_revoked',
+    `Delegation ${describeValue(id)} was removed while revoked, and its id stays revoked: register the delegation under another id`,
+  );
 }
 
 /**

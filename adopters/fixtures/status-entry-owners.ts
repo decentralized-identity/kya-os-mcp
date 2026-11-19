@@ -152,8 +152,9 @@ await runCases('status-entry-owners', "each delegation's status entry is registe
           credentialStatus: { ...agentEntry },
         })
         .then(() => undefined, (error: unknown) => error);
-      assert.ok(refused instanceof Error, `expected an Error, got ${String(refused)}`);
-      assert.match(refused.message, /^Delegation agent was removed while revoked, and its id stays revoked/);
+      assert.ok(refused instanceof RefusalError, `expected a RefusalError, got ${String(refused)}`);
+      assert.equal(refused.code, 'delegation_revoked');
+      assert.match(refused.message, /^Delegation "agent" was removed while revoked, and its id stays revoked/);
       assert.equal((await revocation.isRevoked('agent')).revoked, true);
     },
   },

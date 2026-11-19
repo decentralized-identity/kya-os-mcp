@@ -161,7 +161,7 @@ describe('DelegationGraphManager.removeDelegation: no gap, and no revocation era
 
     await removal;
     expect((await thrown(under)).message).toBe(
-      'Parent delegation leaf was removed while revoked: register the delegation under one that stands',
+      'Parent delegation "leaf" was removed while revoked: register the delegation under one that stands',
     );
     expect(await storage.getNode('under')).toBeNull();
     expect(await storage.getNode('leaf')).toMatchObject({ removed: true, revoked: true, children: [] });
@@ -173,13 +173,19 @@ describe('DelegationGraphManager.removeDelegation: no gap, and no revocation era
     await graph.removeDelegation('leaf');
 
     const again = { id: 'leaf', parentId: 'middle', issuerDid: 'did:web:b.example', subjectDid: 'did:web:c.example' };
-    expect((await thrown(graph.registerDelegation(again))).message).toBe(
-      'Delegation leaf was removed while revoked, and its id stays revoked: register the delegation under another id',
-    );
+    const refusedAgain = await thrown(graph.registerDelegation(again));
+    expect(refusedAgain).toBeInstanceOf(RefusalError);
+    expect(refusedAgain).toMatchObject({
+      code: 'delegation_revoked',
+      message: 'Delegation "leaf" was removed while revoked, and its id stays revoked: register the delegation under another id',
+    });
     const under = { id: 'under', parentId: 'leaf', issuerDid: 'did:web:c.example', subjectDid: 'did:web:d.example' };
-    expect((await thrown(graph.registerDelegation(under))).message).toBe(
-      'Parent delegation leaf was removed while revoked: register the delegation under one that stands',
-    );
+    const refusedUnder = await thrown(graph.registerDelegation(under));
+    expect(refusedUnder).toBeInstanceOf(RefusalError);
+    expect(refusedUnder).toMatchObject({
+      code: 'delegation_revoked',
+      message: 'Parent delegation "leaf" was removed while revoked: register the delegation under one that stands',
+    });
     expect((await thrown(revocation.restoreDelegation('leaf'))).message).toBe(
       'Delegation leaf was removed while revoked, and its id stays revoked: it is not restored',
     );

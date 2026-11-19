@@ -5,7 +5,10 @@
  * Each part is percent-decoded once and written into the URL as decoded. The URL parser and the
  * server percent-decode that URL again, so a part that still holds a `%` after the one decode is
  * refused: `%252E%252E` would become a dot-segment there, `%252F` a separator, and
- * `example%252Ecom` the host `example.com`, so that two DIDs would name one document.
+ * `example%252Ecom` the host `example.com`, so that two DIDs would name one document. A part that
+ * holds white space or a control character is refused too: the URL parser removes every tab, line
+ * feed and carriage return from a URL before it reads it, so `.%09.` would become a dot-segment there
+ * and `%09` alone an empty segment.
  *
  * @see https://w3c-ccg.github.io/did-method-web/
  */
@@ -17,6 +20,15 @@ export interface ParsedDidWeb {
   domain: string;
   path: string[];
 }
+
+/**
+ * What a decoded host may not hold: `@`, `/`, `\`, `?` or `#`, which end a host; a `%` the URL
+ * parser would decode again; and white space or a control character, which it removes or encodes.
+ */
+const NOT_IN_A_HOST = /[@/\\?#%\s\p{Cc}]/u;
+
+/** What a decoded path segment may not hold: a separator, and what a host may not, but for `@`. */
+const NOT_IN_A_SEGMENT = /[/\\?#%\s\p{Cc}]/u;
 
 /**
  * Check if a DID is a did:web DID
@@ -46,7 +58,7 @@ function parseDidWebHost(label: string): string | null {
   } catch {
     return null;
   }
-  if (host.length === 0 || /[@/\\?#%\s\p{Cc}]/u.test(host)) {
+  if (host.length === 0 || NOT_IN_A_HOST.test(host)) {
     return null;
   }
   const afterLiteral = host.startsWith('[') ? host.slice(host.indexOf(']') + 1) : host;
@@ -81,7 +93,8 @@ export function parseDidWeb(did: string): ParsedDidWeb | null {
 
   // Remaining parts form the path. Each is one segment: a decoded separator
   // or dot-segment would move the fetch to a different resource, and so would
-  // one the URL parser or the server decodes from a `%` left after this decode.
+  // one the URL parser or the server decodes from a `%` left after this decode,
+  // or reads once it has removed a tab, line feed or carriage return.
   let path: string[];
   try {
     path = parts.slice(1).map((p) => decodeURIComponent(p));
@@ -89,7 +102,7 @@ export function parseDidWeb(did: string): ParsedDidWeb | null {
     return null;
   }
   const isSegment = (segment: string): boolean =>
-    segment !== '' && segment !== '.' && segment !== '..' && !/[/\\?#%]/.test(segment);
+    segment !== '' && segment !== '.' && segment !== '..' && !NOT_IN_A_SEGMENT.test(segment);
   if (!path.every(isSegment)) {
     return null;
   }

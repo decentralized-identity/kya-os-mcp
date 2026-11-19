@@ -1,0 +1,14 @@
+kind: Spec
+body: |-
+    **SPEC.md §6.6: a status list's `encodedList` is the multibase prefix `u`
+    and base64url without padding of the GZIP-compressed bitstring, index 0
+    in the most significant bit of the first byte, for StatusList2021 and
+    Bitstring Status List lists alike, and a publisher MUST write that
+    form.** For the 1.x line a reader MUST also accept the legacy forms the
+    reference reads: no `u`, characters of the base64 alphabet, and `=`
+    padding. A publisher MUST write at least 131,072 entries, and for the
+    1.x line a reader MUST NOT refuse a shorter list. §6.7 bounds an index
+    by its list's length rather than by 131,071. 2.0.0 removes the legacy
+    forms and refuses a shorter list. Conformance suite 1.12.0 adds four
+    vectors, and the Python cross-check now reads the legacy forms.
+time: 2026-11-18T20:12:52.000000-06:00

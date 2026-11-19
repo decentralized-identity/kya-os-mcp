@@ -4,8 +4,9 @@ Every decoder here is a named reading over one table (`_six_bits`). SPEC.md 7.4 
 proof's JWS segments, and the `x` of its key, exactly as RFC 7515 section 2 writes base64url
 (`strict_base64url_bytes`). SPEC.md 7.8 reads a credential's `proofValue` and a segment of a
 VC-JWT by rules of its own, `signature_bytes` and `jws_segment_bytes`. A card proof's key and
-signatures, and a status list's `encodedList`, are base64url with or without its padding
-(`padded_base64url_bytes`).
+signatures are base64url with or without its padding (`padded_base64url_bytes`). SPEC.md 6.6 reads a
+status list's `encodedList` in the form a publisher writes it and in the forms 1.x readers also
+take (`encoded_list_bytes`).
 """
 
 import base64
@@ -25,6 +26,7 @@ _BASE64URL = {character: value for value, character in enumerate(
 _BASE64_EITHER = {**_BASE64URL, "+": 62, "/": 63}
 _BASE64URL_ONLY = re.compile("[A-Za-z0-9_-]*")
 _BASE64URL_PADDED = re.compile("[A-Za-z0-9_-]*={0,2}")
+_BASE64_EITHER_PADDED = re.compile("[A-Za-z0-9+/_-]*=*")
 
 
 def _six_bits(encoded: str, alphabet: dict):
@@ -92,9 +94,30 @@ def jws_segment_bytes(encoded: str) -> bytes:
     return decoded
 
 
+def encoded_list_bytes(encoded: str) -> bytes:
+    """SPEC.md 6.6, a status list's `encodedList`: the bytes of its GZIP stream.
+
+    A publisher writes the multibase prefix `u` and base64url without padding. During 1.x a reader
+    also takes the legacy forms: with no `u`; with characters of the base64 alphabet, `+` and `/`
+    reading as `-` and `_` do; and with `=` after the last character, no more of them than complete
+    its last group of four. A last group of one character starts a byte and gives none of it, and
+    is refused. Bits short of a byte are dropped. White space, another multibase prefix and any other
+    character are refused, as 6.6 lets a reader refuse them.
+    """
+    if not isinstance(encoded, str):
+        raise ValueError("an encodedList is a string")
+    written = encoded[1:] if encoded.startswith("u") else encoded
+    if not _BASE64_EITHER_PADDED.fullmatch(written):
+        raise ValueError("an encodedList is base64url or base64, padded or not")
+    decoded, characters, padding = _six_bits(written, _BASE64_EITHER)
+    last_group = characters % 4
+    if last_group == 1 or padding > (4 - last_group) % 4:
+        raise ValueError("an encodedList is base64url or base64, padded or not")
+    return decoded
+
+
 def padded_base64url_bytes(encoded: str) -> bytes:
-    """A card proof's key and signatures, and a status list's `encodedList`: base64url, with or
-    without its padding.
+    """A card proof's key and signatures: base64url, with or without its padding.
 
     The base64url alphabet alone, with no whitespace, and at most two `=` after the last
     character. A last group of one character starts a byte and gives none of it, and is refused.

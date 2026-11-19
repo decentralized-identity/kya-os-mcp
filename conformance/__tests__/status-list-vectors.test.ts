@@ -455,15 +455,19 @@ describe('the status-list category', () => {
 
   // Bitstring Status List v1.0 §2.2 requires at least 16KB of uncompressed bitstring, and its §3.2
   // validation refuses a list of fewer than 131,072 entries, so a shorter list fails a verifier
-  // that follows it.
-  it("carries lists of at least 131,072 entries, each with the context, types and date of its credential entry's data model", async () => {
-    for (const input of inputs) {
+  // that follows it. SPEC.md §6.6 has a 1.x reader read one all the same, which
+  // `status-list/short-list` alone holds it to.
+  it("carries lists of at least 131,072 entries but in short-list, each with the context, types and date of its credential entry's data model", async () => {
+    const statusVectors = vectors.filter((v) => v.category === 'status-list');
+    expect(statusVectors.map((v) => v.id)).toContain('status-list/short-list');
+    for (const { id, input } of statusVectors as { id: string; input: StatusListInput }[]) {
       const { list: model, absent } = DATA_MODELS[(input.credential as Credential).credentialStatus.type]!;
       for (const list of Object.values(input.statusLists) as List[]) {
         expect(list).toMatchObject(model);
         for (const member of absent) expect(list).not.toHaveProperty(member);
         const bits = await BitstringManager.decode(list.credentialSubject.encodedList, statusListGzipCodec, statusListGzipCodec);
-        expect(bits.getSize()).toBeGreaterThanOrEqual(131_072);
+        if (id === 'status-list/short-list') expect(bits.getSize(), id).toBeLessThan(131_072);
+        else expect(bits.getSize(), id).toBeGreaterThanOrEqual(131_072);
       }
     }
   });

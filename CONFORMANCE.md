@@ -2,7 +2,7 @@
 
 **Compliance levels for KYA-OS implementations**
 
-Version: 1.11.0
+Version: 1.12.0
 Status: Stable
 
 ---
@@ -257,8 +257,9 @@ Implementation MUST:
 - Reject the credential when the list's `statusPurpose` does not include `credentialStatus.statusPurpose`, or is an array on any list, a `StatusList2021Credential` included, but a `BitstringStatusListCredential` whose subject's `type` is `BitstringStatusList`; read such a list when its array of strings includes `credentialStatus.statusPurpose` (W3C Bitstring Status List v1.0 §2.2)
 - Reject the credential when the list's `id` is not, byte for byte, `credentialStatus.statusListCredential`; only a list the credential's own issuer signed, where the verifier pins no other root and its configuration names no other issuer, may state no `id`, and an implementation at this level reads such a list (`status-list/no-id-list`), though SPEC.md §6.6 lets a reader refuse it, as the reference `CheqdStatusListResolver` does
 - Reject the credential when `credentialStatus.statusSize` is stated and is not an integer greater than zero (`status-list/status-size-zero`), and never read an entry of more than one bit from the bit at its `statusListIndex`, which is another entry's (`status-list/status-size-two-bits`); the reference readers reject every entry whose `statusSize` is not 1, and read one that states 1 as one that states none (`status-list/status-size-one`)
-- Decompress and decode the bitstring
-- Check bit at `statusListIndex`
+- Decode the list's `encodedList` in the form SPEC.md §6.6 has a publisher write and, for the 1.x line, in each legacy form it lists (`status-list/legacy-encoding-2021`), and decompress the bitstring
+- Read a list of fewer than 131,072 entries for the 1.x line (`status-list/short-list`)
+- Check bit at `statusListIndex`, which may be past 131,071 on a longer list (`status-list/index-past-minimum`), and reject the credential when the index is at or past the list's end (`status-list/index-past-end`)
 - Return revoked status if bit is 1
 
 #### L3.22 — Cascading Revocation
@@ -466,7 +467,7 @@ so it is reproducible against any implementation without re-signing.
 | `vectors/delegation-chain-key-relationship.json` | Delegation chain verification: the issuer's key (SPEC.md §6.2) | signed with the key the issuer lists under `assertionMethod`; as a VC-JWT with no `kid`, signed with the key its first `assertionMethod` entry names | signed with a key it lists only under `authentication`, proof stating `proofPurpose: "authentication"`, issuer document whose `id` is another DID, signing key whose method names another DID as its `controller`, signing key whose method the document defines twice, signing key under another DID's id, signing key under no relationship, signing key whose method has no `type` or no `controller`; as a VC-JWT, a `kid` naming the `authentication` key, an empty `kid` |
 | `vectors/status-list.json` | StatusList2021 and Bitstring Status List revocation | active (bit unset), issuer's list stating no `id`, Bitstring list declaring two purposes | revoked (bit set), list altered after signing, list signed by another issuer, list of another purpose, StatusList2021 list declaring its purposes in an array, list stating another URL as its `id`, list of a pinned root or a configured issuer stating no `id` |
 | `vectors/status-list-key-relationship.json` | StatusList2021 revocation: the list issuer's key (SPEC.md §6.2) | list signed with the key the issuer lists under `assertionMethod` | list signed with a key it lists only under `authentication`, list proof stating `proofPurpose: "authentication"`, issuer document whose `id` is another DID, list signed with a key it lists under `assertionMethod` whose method names another DID as its `controller`, list signed with a key whose method the document defines twice |
-| `vectors/status-list-authority.json` | Status list revocation: who may sign a credential's list (SPEC.md §6.6) | pinned root's list at the URL its own credential names, list of a service the verifier binds the exact URL or its origin to, issuer's own list stating no `id` while also named as root, with or without the URL its credential names, index with leading zeros, entry stating a `statusSize` of 1 | pinned root's list at a URL its credential does not name, service bound to no URL, to another URL or to a look-alike origin, issuer's own list at a URL bound to a service, pinned root's list at a URL the configuration binds to a service, pinned root's list stating no `id` for a delegate's credential, issuer's list stating no `id` at a pinned root's URL, index with a suffix, a fraction or a space, index given as a number, entry of two bits whose own bits are set, entry stating a `statusSize` of 0 |
+| `vectors/status-list-authority.json` | Status list revocation: who may sign a credential's list, how the list is encoded and how many entries it holds (SPEC.md §6.6, §6.7) | pinned root's list at the URL its own credential names, list of a service the verifier binds the exact URL or its origin to, issuer's own list stating no `id` while also named as root, with or without the URL its credential names, index with leading zeros, entry stating a `statusSize` of 1; StatusList2021 list in padded base64 with no multibase prefix, index past 131,071 on a longer list, list of 16 entries | pinned root's list at a URL its credential does not name, service bound to no URL, to another URL or to a look-alike origin, issuer's own list at a URL bound to a service, pinned root's list at a URL the configuration binds to a service, pinned root's list stating no `id` for a delegate's credential, issuer's list stating no `id` at a pinned root's URL, index with a suffix, a fraction or a space, index given as a number, entry of two bits whose own bits are set, entry stating a `statusSize` of 0, index past the list's end |
 | `vectors/status-list-validity.json` | Status list revocation: the window a list states (SPEC.md §6.6) | clear Bitstring Status List or StatusList2021 list inside its `validFrom` and `validUntil`, or `issuanceDate` and `expirationDate`, stated in UTC or at offsets from it | clear list past its `validUntil` or `expirationDate`, before its `validFrom` or `issuanceDate`, with a `validUntil` that is not a date, a `validFrom` or `expirationDate` that states no time zone, or an HTTP-date `validUntil`, or with a past `validUntil` beside a future `expirationDate` |
 | `vectors/did-key-resolution.json` | did:key resolution | valid Ed25519 | malformed multibase, wrong method |
 | `vectors/did-web-resolution.json` | did:web resolution | well-formed id-matched document | document id mismatch, not found |
@@ -626,6 +627,13 @@ Because fresh keys change the committed bytes, regenerated output MUST NOT be co
 
 ### Suite versioning and immutability
 
+Suite 1.12.0 adds four `status-list-authority.json` vectors, for 171 vectors total (SPEC.md §6.6 and §6.7).
+`legacy-encoding-2021` requires reading a StatusList2021 list whose `encodedList` is written in the base64 alphabet, padded and with no multibase prefix, as a 1.x reader must.
+`index-past-minimum` requires reading entry 131,072 of a list of 262,144 entries, which is clear while bit 0 is set, and `index-past-end` requires refusing the same index on a list of 131,072 entries, past its end.
+`short-list` requires reading a list of 16 entries, which a 1.x reader must not refuse for its length.
+`status-list-authority.json` is generated whole by one run, its earlier vectors signed again under that run's keys with the same cases and expected outcomes; the other vector files change only their `version`.
+The Python cross-language check reads an `encodedList` in exactly the forms SPEC.md §6.6 has a reader accept.
+
 Suite 1.11.0 adds three `signed-proof` vectors, for 167 vectors total: proofs whose `requestHash` is over the 1.x legacy shape of a `tools/call` request that carries `_kyaos_delegation`, with the arguments as received or with the control arguments removed, which must pass, and over the legacy shape of a call to another tool, which must fail (SPEC.md §7.3).
 `signed-proof.json` is generated whole by one run, its earlier vectors signed again under that run's keys with the same cases and expected outcomes; the other vector files change only their `version`.
 
@@ -690,6 +698,7 @@ Suite 1.8.0 adds `entity-card/revocation-unchecked`, which a verifier that passe
 Suite 1.9.0 adds `signed-proof-key-relationship.json`, which a verifier that accepts a detached proof key outside the signer's own `assertionMethod` fails.
 Suite 1.10.0 adds `status-list/zoneless-start-list`, `status-list/zoneless-end-list-2021` and `status-list/http-date-end-list`, which a verifier that reads a list's bounds with `Date.parse`, or another reader that takes a time with no zone, fails.
 Suite 1.11.0 adds `signed-proof/legacy-request-shape` and `signed-proof/legacy-request-shape-without-control-args`, which a verifier that recomputes `requestHash` only over the covered request fails.
+Suite 1.12.0 adds `status-list/legacy-encoding-2021`, which a verifier that reads an `encodedList` only in the form a publisher writes fails, `status-list/short-list`, which a verifier that refuses a list of fewer than 131,072 entries fails, `status-list/index-past-minimum`, which a verifier that bounds an index by 131,071, or wraps it, fails, and `status-list/index-past-end`, which a verifier that reads a bit past a list's end as clear fails.
 The SIGNED public suite manifest published by the Conformance Attestation Program is a separate artifact built on this committed one.
 
 ### Running the harness against YOUR implementation

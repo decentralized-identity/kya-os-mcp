@@ -18,7 +18,7 @@
  *   - {@link requireDelegation}: the same check pre-bound to its seams, with 401/403-shaped results.
  */
 
-import { answerWithinDeadline, dependencyTimeout } from '../utils/deadline.js';
+import { askWithin, delegationCheckBudget, dependencyTimeout, totalTimeout, type Ask } from '../utils/deadline.js';
 import { refusalCodeOf } from '../utils/refusal.js';
 import { thrownReason } from '../utils/thrown-words.js';
 import type { RefusalCode } from '../refusal-codes.js';
@@ -125,9 +125,11 @@ export interface VerifyRequestDelegationDeps {
    */
   development?: boolean;
   /**
-   * Local cost limit: the most credentials to evaluate in one chain, root to leaf inclusive. A
-   * carried chain is bounded by {@link DEFAULT_CARRIED_CHAIN_LIMIT} when this is unset; a resolved
-   * chain comes from the verifier's own resolver and is bounded only when this is set.
+   * The most credentials to accept in one chain, root to leaf inclusive, carried or resolved: a
+   * positive integer. Unset, a chain may be any length, since how far authority is delegated is
+   * not the verifier's to cap (SPEC.md §6.10). What a long chain can make the verifier do is held
+   * without it: nothing a hop names is read before the hops above it verify under a trusted root,
+   * the first failure ends the check, and `totalTimeoutMs` bounds its time.
    */
   maxChainLength?: number;
   /**
@@ -150,6 +152,15 @@ export interface VerifyRequestDelegationDeps {
    * 2,147,483,647. Default 5,000. Any other value throws a `TypeError` naming the option.
    */
   dependencyTimeoutMs?: number;
+  /**
+   * How long, in milliseconds, the whole check may take, every answer it waits on together: a
+   * number greater than 0 and at most 2,147,483,647. Default 30,000. A chain may be any length and
+   * each hop may wait on a DID document and a status list, so this, and no count of hops, is what
+   * keeps hosts that each answer inside `dependencyTimeoutMs` from holding a check open. A check
+   * out of time is refused as `deadline_exceeded`, which is transient, and asks nothing more. Any
+   * other value throws a `TypeError` naming the option.
+   */
+  totalTimeoutMs?: number;
 }
 
 /** What one call presents for {@link verifyRequestDelegation}. */
@@ -239,13 +250,13 @@ function rejection(
  * also for a chain the request proof does not state,
  * `invalid_proof` for a hop's proof, `insufficient_scope` for the action, the code of the status
  * that refused a hop, and `deadline_exceeded` or `runtime_error` for a seam that did not answer in
- * time or threw. Rejects, before it reads the chain, with an `Error` naming every fix when neither
+ * time or threw, or for a check that did not finish within `totalTimeoutMs`. Rejects, before it reads the chain, with an `Error` naming every fix when neither
  * `trustedRootIssuers` nor `resourceOwner` pins the root, outside development and without
  * `allowAnyRootIssuer: true`, and with a `TypeError` for a `trustedRootIssuers` that is not an array
  * of DIDs, each a string that starts with `did:` and has no white space around it, for an
  * `allowAnyRootIssuer` or a `development` that is not a boolean, for `allowAnyRootIssuer: true`
  * beside a pin, for a `requestBinding` that is neither `prefer` nor `require`, and for a
- * `dependencyTimeoutMs` that is not a number of milliseconds it can wait.
+ * `dependencyTimeoutMs` or a `totalTimeoutMs` that is not a number of milliseconds it can wait.
  */
 export async function verifyRequestDelegation(
   input: RequestDelegationInput,
@@ -259,7 +270,10 @@ async function verifyRequest(input: RequestDelegationInput, deps: VerifyRequestD
   admitRootIssuers(deps, 'verifyRequestDelegation');
   const bindingMode = requestBindingMode(deps.requestBinding, 'requestBinding');
   const timeoutMs = dependencyTimeout(deps.dependencyTimeoutMs);
-  const obtained = await obtainChain(input, deps, timeoutMs);
+  // One budget for the whole check, from here: the chain's length is not bounded, so its time is.
+  const budget = delegationCheckBudget(deps.totalTimeoutMs);
+  const ask = askWithin(timeoutMs, budget);
+  const obtained = await obtainChain(input, deps, ask);
   if (!obtained.ok) return obtained;
   const { chain, credentials, source } = obtained;
   const reject = (code: DelegationGateCode, refusalCode: RefusalCode, reasons: string[]): Rejection =>
@@ -308,7 +322,7 @@ async function verifyRequest(input: RequestDelegationInput, deps: VerifyRequestD
     return reject('delegation_invalid', 'untrusted_root', [`root issuer ${responsibleParty} is not a trusted root issuer`]);
   }
 
-  const proofRefusal = await firstHopProofRefusal(credentials, deps.verifyHopProof, timeoutMs);
+  const proofRefusal = await firstHopProofRefusal(credentials, deps.verifyHopProof, ask);
   if (proofRefusal !== undefined) return reject('delegation_invalid', proofRefusal.code, [proofRefusal.reason]);
 
   if (!allowedAction.includes(input.action)) {
@@ -319,9 +333,12 @@ async function verifyRequest(input: RequestDelegationInput, deps: VerifyRequestD
   let revocation: RevocationChainWalk;
   try {
     // Every hop proof has verified, so the pinned root's own list URL is its word (utils/verified-root.ts).
-    revocation = await walkRevocationChain(withVerifiedRoot(revocationEntriesOf(chain, pinnedRoot)), deps.checkRevocation, {
-      dependencyTimeoutMs: timeoutMs,
-    });
+    revocation = await walkRevocationChain(
+      withVerifiedRoot(revocationEntriesOf(chain, pinnedRoot)),
+      deps.checkRevocation,
+      { dependencyTimeoutMs: timeoutMs },
+      budget,
+    );
   } catch {
     return reject('delegation_revoked', 'status_unavailable', ['revocation checker threw: status unprovable, fail-closed']);
   }
@@ -347,7 +364,7 @@ async function verifyRequest(input: RequestDelegationInput, deps: VerifyRequestD
 async function obtainChain(
   input: RequestDelegationInput,
   deps: VerifyRequestDelegationDeps,
-  timeoutMs: number,
+  ask: Ask,
 ): Promise<
   | { ok: true; chain: DelegationChain; credentials: readonly Record<string, unknown>[]; source: DelegationChainSource }
   | Rejection
@@ -369,7 +386,7 @@ async function obtainChain(
   let resolved: DelegationChain | undefined;
   try {
     const resolve = deps.resolveDelegationChain;
-    resolved = await answerWithinDeadline('the chain resolver', () => resolve({ proofDid: input.proofDid }), timeoutMs);
+    resolved = await ask('the chain resolver', () => resolve({ proofDid: input.proofDid }));
   } catch (error) {
     // The resolver is the host's, and may throw its transport's words, which only the operator's log is told.
     const reason = thrownReason(error, {
@@ -441,13 +458,14 @@ const GATE_MESSAGES: Record<DelegationGateCode, string> = {
  * `trustedRootIssuers` that is not an array of DIDs, each a string that starts with `did:` and has
  * no white space around it, for an `allowAnyRootIssuer` or a `development` that is not a boolean,
  * for `allowAnyRootIssuer: true` beside a pin, for a `requestBinding` that is neither `prefer` nor
- * `require`, and for a `dependencyTimeoutMs` that is not a number of milliseconds it can wait, so a
- * mistyped option fails when the guard is built.
+ * `require`, and for a `dependencyTimeoutMs` or a `totalTimeoutMs` that is not a number of
+ * milliseconds it can wait, so a mistyped option fails when the guard is built.
  */
 export function requireDelegation(deps: VerifyRequestDelegationDeps): DelegationGuard {
   admitRootIssuers(deps, 'requireDelegation', true);
   requestBindingMode(deps.requestBinding, 'requestBinding');
   dependencyTimeout(deps.dependencyTimeoutMs);
+  totalTimeout(deps.totalTimeoutMs);
   clockSkewOption(deps.maxClockSkewMs);
   return async (input) => {
     const result = await verifyRequest(input, deps);

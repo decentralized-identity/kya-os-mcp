@@ -6,7 +6,8 @@
  * the default of 5 seconds and under a raised value. The verification of each credential, which
  * resolves its issuer's DID and reads its status, is held to the same deadline as a whole, so a
  * DID or status read that hangs is refused as the credential's verification that did not answer. A value that is not a number of milliseconds a
- * timer can hold is refused when the middleware is created.
+ * timer can hold is refused when the middleware is created. `delegation.totalTimeoutMs` is the time
+ * one whole check may take, every dependency together, and is read and refused the same way.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -162,6 +163,29 @@ describe.each(DEADLINES)('the delegation gate, %s', (_label, option, ms, stated)
   it('refuses a delegation whose revocation checker has not answered by the deadline', async () => {
     expect(await refusal(await credential(), (never) => ({ revocationChecker: { isRevoked: never } })))
       .toBe(`Revocation check failed for delegation "del-leaf": the revocation checker did not answer within ${stated}`);
+  });
+});
+
+describe('delegation.totalTimeoutMs', () => {
+  it('ends a check that is out of time, though the dependency it waits on has time of its own left', async () => {
+    const vc = await credential();
+    const check = await settledAt(3_000, (never) => gate({ totalTimeoutMs: 3_000, revocationChecker: { isRevoked: never } })(vc));
+    expect(check).toMatchObject({
+      valid: false,
+      reason: 'Revocation check failed for delegation "del-leaf": the delegation check did not finish within 3 seconds',
+    });
+  });
+
+  it.each(REFUSED_TIMEOUTS)('is refused with a TypeError when the middleware is created, for %s', async (_label, value, got) => {
+    const config = { totalTimeoutMs: value } as KyaOsDelegationConfig;
+    const mistyped = timeoutTypeError(got, 'delegation.', 'totalTimeoutMs');
+    expect(() => gate(config)).toThrow(mistyped);
+    await expect(delegationGate({ trustedRootIssuers: [root.did], config })).rejects.toThrow(mistyped);
+  });
+
+  it('is not refused when it is a number of milliseconds, or left out', async () => {
+    await expect(delegationGate({ trustedRootIssuers: [root.did], config: { totalTimeoutMs: 120_000 } })).resolves.toBeDefined();
+    await expect(delegationGate({ trustedRootIssuers: [root.did] })).resolves.toBeDefined();
   });
 });
 

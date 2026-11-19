@@ -18,7 +18,7 @@ import { MemoryDelegationGraphStorage } from "../storage/memory-graph-storage.js
 import { MemoryStatusListStorage } from "../storage/memory-statuslist-storage.js";
 import { StatusList2021Manager } from "../statuslist-manager.js";
 import { CascadingRevocationManager } from "../cascading-revocation.js";
-import { SERVER, baseDeps, cred, okVerifier } from "./helpers/chain-fixtures.js";
+import { SERVER, baseDeps, cred, linkedChain, okVerifier } from "./helpers/chain-fixtures.js";
 import { WITHHELD_SUFFIX } from "../../utils/thrown-words.js";
 
 describe("validateScopeAttenuation (pure)", () => {
@@ -209,18 +209,6 @@ describe("validateDelegationChain", () => {
   });
 
   describe("maxChainLength", () => {
-    /** A linked, audience-bound chain of `length` credentials, root first. */
-    const linkedChain = (length: number): DelegationCredential[] =>
-      Array.from({ length }, (_, i) =>
-        cred({
-          id: `c${i}`,
-          issuerDid: i === 0 ? "did:a" : `did:h${i}`,
-          subjectDid: `did:h${i + 1}`,
-          ...(i > 0 ? { parentId: `c${i - 1}` } : {}),
-          audience: SERVER,
-          scopes: ["read"],
-        }),
-      );
     const depsFor = (chain: DelegationCredential[], verifier = okVerifier): ChainEnforcementDeps => ({
       ...baseDeps,
       verifier,

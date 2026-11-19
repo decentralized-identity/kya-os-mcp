@@ -1,0 +1,6 @@
+kind: Deprecated
+body: |-
+    **`CascadingRevocationOptions.maxDepth` is deprecated** and is removed
+    in 2.0.0: a limit on how deep a revocation reaches can only leave a
+    delegation live. DEPRECATIONS.md has the row.
+time: 2026-11-19T17:00:10.000000-06:00

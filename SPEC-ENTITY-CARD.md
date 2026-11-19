@@ -843,9 +843,12 @@ This is the cross-organizational case: a resource server can verify an agent act
 
 1. **Precedence.** When the member is present, the Verifier MUST verify the carried chain and MUST NOT fall back to by-reference resolution, including when the carried chain is malformed or fails verification.
    A request carries one chain or none.
-2. **Shape and bound.** The member MUST be a non-empty array.
-   The caller controls its length, and each hop can cost a DID resolution and a status-list fetch, so a Verifier MUST bound the length before it parses any entry.
-   The bound is local policy, as in SPEC.md §6.10; the reference implementation defaults it to `MAX_DELEGATION_DEPTH` (10) for a carried chain.
+2. **Shape and cost.** The member MUST be a non-empty array, of any length: SPEC.md §6.10 does not limit how many times a capability may be re-delegated.
+   The caller controls its length, and each hop can cost a DID resolution and a status-list fetch, so a Verifier MUST hold what a chain can make it read, and for how long, by two rules.
+   It MUST keep the order of §11.4: it resolves no hop's issuer before the chain's root is admitted and every hop above that hop has verified, reads no status list before every hop has verified, and stops at the first failure.
+   Each DID it resolves is then one a verified hop delegated to, and of the hosts of other parties that a chain's hops name, one is read, not each.
+   It MUST bound the time it spends on one chain, since hosts the chain's own signers serve can each answer slowly; the reference implementation gives the whole check 30 seconds, unless the host sets another as `totalTimeoutMs`.
+   A Verifier MAY also bound the length as local policy, as in SPEC.md §6.10, and one that does MUST apply the bound before it parses any entry; the reference implementation takes it as `maxChainLength`, unset by default.
    Every DID and status-list URL in a carried chain is caller-chosen, so each fetch it triggers goes through SafeFetch (§6.6).
 3. **Hop signatures.** Every hop MUST carry a `DataIntegrityProof` with the `eddsa-jcs-2022` cryptosuite, made for the `assertionMethod` purpose by a verification method of that hop's own `issuer`.
    The issuer's DID document MUST list that method under `assertionMethod`, by reference or embedded (W3C Controlled Identifiers v1.0 [CID] §3.3); a key it lists only under another relationship, such as `authentication`, does not verify a hop.
@@ -951,7 +954,7 @@ credential digest, `none`, or nothing.
 
 A Verifier that authorizes a call by delegation runs these steps after §11.2 succeeds, with the verified `proof.did` and the invoked action, and rejects on the first failure.
 
-1. **Obtain the chain.** If `_meta["org.kya-os/delegation-chain"]` is present, read it under §10.5 rules 1-2: a member that is not a non-empty array, exceeds the length bound, or holds an entry that is not a `DelegationCredential` ⇒ `delegation_invalid`.
+1. **Obtain the chain.** If `_meta["org.kya-os/delegation-chain"]` is present, read it under §10.5 rules 1-2: a member that is not a non-empty array, exceeds a length bound the Verifier sets, or holds an entry that is not a `DelegationCredential` ⇒ `delegation_invalid`.
    If the member is absent, resolve by reference: no resolver, or a resolver that finds nothing ⇒ `delegation_missing`; a resolver that fails ⇒ `delegation_unresolvable`.
    A resolved chain is schema-checked like a carried one.
 2. **Chain rules.** The chain satisfies SPEC.md §6.10 against the Verifier's own identity as the expected resource (and the resource owner, when one is configured), else `delegation_invalid`.
@@ -968,6 +971,8 @@ A Verifier that authorizes a call by delegation runs these steps after §11.2 su
 
 Steps 2-4 are local; step 5 may resolve DIDs; step 7 fetches status lists.
 The order keeps a Verifier from spending network work on a chain a local check already rejects.
+It is also what holds a chain of any length (§10.5 rule 2): step 5 resolves a hop's issuer only once the hops above it have verified, step 7 reads a status list only once every hop has, and the first failure ends each.
+A Verifier out of the time it gives one chain rejects it as it rejects a check that did not answer: `delegation_unresolvable` at step 1, `delegation_invalid` at step 5, `delegation_revoked` at step 7.
 On success the Verifier holds the recomputed `responsibleParty`, the leaf invoker, the leaf's granted actions, the chain depth, whether every status read was live, and the caveats every call under the chain must be held to (SPEC.md §6.10).
 It also holds whether the proof named the chain's last credential, and whether every hop but the root states its parent's digest, which together say whether the caller's signature fixes the whole chain.
 The reference implementation takes a proof that names no credential under `requestBinding: 'prefer'`, its default through 1.x, with one warning, and refuses it under `'require'`.

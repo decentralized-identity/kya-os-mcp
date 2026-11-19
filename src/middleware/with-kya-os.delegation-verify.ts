@@ -9,7 +9,7 @@
 
 import { createDidKeyResolver } from "../delegation/did-key-resolver.js";
 import { createDidWebResolver } from "../delegation/did-web-resolver.js";
-import { dependencyTimeout } from "../utils/deadline.js";
+import { dependencyTimeout, totalTimeout } from "../utils/deadline.js";
 import {
   buildDidResolverRegistry,
 } from "../delegation/did-resolver-registry.js";
@@ -133,6 +133,7 @@ export function createDelegationVerification(
 
   // Refused at startup, before anything that waits is built.
   const dependencyTimeoutMs = dependencyTimeout(delegationConfig?.dependencyTimeoutMs, "delegation.");
+  const totalTimeoutMs = totalTimeout(delegationConfig?.totalTimeoutMs, "delegation.");
   // Whether a tool may be wrapped without the list is decided as it is wrapped (./with-kya-os.root-issuers.ts).
   const trustedRootIssuers = delegationConfig?.trustedRootIssuers;
   assertTrustedRootIssuers(trustedRootIssuers, "delegation.");
@@ -259,6 +260,7 @@ export function createDelegationVerification(
         ...(trustedRootIssuers !== undefined ? { trustedRootIssuers } : {}),
         ...(maxChainLength !== undefined ? { maxChainLength } : {}),
         dependencyTimeoutMs,
+        totalTimeoutMs,
       },
     );
     const chain = !walked.valid && envelopeFailure !== undefined ? { ...walked, reason: envelopeFailure } : walked;

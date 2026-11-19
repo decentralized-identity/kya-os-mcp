@@ -143,7 +143,8 @@ export const REFUSAL_CODES = Object.freeze({
   /**
    * Transient. A dependency did not answer within its deadline, `dependencyTimeoutMs`, 5 seconds by
    * default: a DID resolver, a status list read, resolver or checker, a chain resolver, a revocation
-   * checker, or a verifier the host supplies.
+   * checker, or a verifier the host supplies. Or a check of a delegation chain did not finish
+   * within the time it has in all, `totalTimeoutMs`, 30 seconds by default.
    */
   deadline_exceeded: 'deadline_exceeded',
   /**

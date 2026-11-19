@@ -7,7 +7,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { createDidKeyResolver } from '../../delegation/did-key-resolver.js';
-import type { DelegationChain } from '../delegation.js';
+import { MAX_DELEGATION_DEPTH, type DelegationChain } from '../delegation.js';
 import { createDelegationProofVerifier } from '../delegation-proof.js';
 import { buildCardProof, ed25519SignerFromJwk, InMemoryNonceCache } from '../proof/index.js';
 import { requireProof } from '../middleware.js';
@@ -91,16 +91,25 @@ describe('readDelegationChain', () => {
     }
   });
 
-  it('bounds the length before parsing any entry', () => {
-    const tooLong = Array.from({ length: DEFAULT_CARRIED_CHAIN_LIMIT + 1 }, () => 'not a credential');
-    const read = readDelegationChain({ [KYA_OS_DELEGATION_CHAIN_META_KEY]: tooLong });
+  it('bounds the length before parsing any entry, when the caller sets maxChainLength', () => {
+    const tooLong = Array.from({ length: MAX_DELEGATION_DEPTH + 1 }, () => 'not a credential');
+    const read = readDelegationChain({ [KYA_OS_DELEGATION_CHAIN_META_KEY]: tooLong }, { maxChainLength: MAX_DELEGATION_DEPTH });
     expect(read).toEqual({
       carried: true,
       ok: false,
-      reasons: [`carried delegation chain of 11 credentials exceeds the limit of ${DEFAULT_CARRIED_CHAIN_LIMIT}`],
+      reasons: [`carried delegation chain of 11 credentials exceeds the limit of ${MAX_DELEGATION_DEPTH}`],
       refusalCode: 'chain_invalid',
       transient: false,
     });
+  });
+
+  it('puts no limit on the length by default: the entries are read, and refused for what they are', () => {
+    const long = Array.from({ length: MAX_DELEGATION_DEPTH + 1 }, () => 'not a credential');
+    const read = readDelegationChain({ [KYA_OS_DELEGATION_CHAIN_META_KEY]: long });
+    expect(read).toMatchObject({ carried: true, ok: false, refusalCode: 'delegation_malformed' });
+    expect((read as { reasons: string[] }).reasons[0]).toContain('hop 0');
+    // The constant the default once was is still exported, deprecated, with the value a host may pass.
+    expect(DEFAULT_CARRIED_CHAIN_LIMIT).toBe(MAX_DELEGATION_DEPTH);
   });
 
   it('names the hop and the field when an entry is not a DelegationCredential', () => {

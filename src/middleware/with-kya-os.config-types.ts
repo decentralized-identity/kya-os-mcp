@@ -169,6 +169,18 @@ export interface KyaOsDelegationConfig {
    */
   dependencyTimeoutMs?: number;
   /**
+   * How long, in milliseconds, the delegation gate's check of one call's
+   * delegation may take in all: the chain's resolution, every credential's
+   * verification and every revocation answer together. A number greater than 0
+   * and at most 2,147,483,647. Default 30,000. A chain may be any length unless
+   * `maxChainLength` is set, so this, and no count of credentials, keeps
+   * dependencies that each answer inside `dependencyTimeoutMs` from holding a
+   * call open. A check out of time is refused as `deadline_exceeded`, which is
+   * transient, and asks nothing more. Any other value is refused at startup
+   * with a `TypeError`.
+   */
+  totalTimeoutMs?: number;
+  /**
    * Holder-of-key enforcement for inbound calls (spec §11.8). A valid delegation
    * is a *bearer* credential; holder binding additionally requires the caller to
    * present a per-request proof (`_kyaos_proof`) signed by the delegation

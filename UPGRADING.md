@@ -22,6 +22,7 @@ Check these too, where they apply to you:
 - You sign card proofs with a `ProofSigner` of your own, or attach `_kyaos_delegation` after making a request proof: [A client](#a-client).
 - You run the audit provider contracts against an adapter of your own: [Audit ledger](#audit-ledger).
 - You compare a refusal's words, not its `code`: [A refusal says when the operator's log has why](#a-refusal-says-when-the-operators-log-has-why).
+- You counted on a carried chain of more than 10 credentials being refused, or one check of a delegation takes your dependencies more than 30 seconds: [A chain may be any length, and a check has 30 seconds](#a-chain-may-be-any-length-and-a-check-has-30-seconds).
 - Every client of your server signs with 1.26.0 or later: set `delegation.requestBinding: 'require'`, as [A server](#a-server) says.
 
 ### A delegation verdict carries the caveats it grants under
@@ -352,6 +353,30 @@ Each now ends with `; the verifier's log says why`:
 The ending names no cause, so it tells the presenter only what the fixed words already did, and the log has a line for each such refusal.
 A resolver of your own whose `lastFailure` reports a detail the refusal does not show has it logged, as `[kya-os] the DID resolver could not resolve "<did>": <detail>`; on 1.25.0 the library logged no such detail.
 A check that compares a whole reason, or its end, with one of these compares it with the ending added, so compare `code` instead.
+
+### A chain may be any length, and a check has 30 seconds
+
+A delegation may be re-delegated any number of times (SPEC.md §6.10), and a limit on that is the verifier's own policy, set as `maxChainLength`.
+Through 1.25.0 one path applied a limit nobody had set: `verifyRequestDelegation`, `requireDelegation` and `readDelegationChain` refused a chain a request carried once it held more than 10 credentials.
+They now read a carried chain of any length, as they always read a resolved one, and as `validateDelegationChain` and the delegation gate read every chain.
+To keep the old limit, set `maxChainLength: 10`; the exported `MAX_DELEGATION_DEPTH` is that number.
+`DEFAULT_CARRIED_CHAIN_LIMIT` is still exported, deprecated, and applied to nothing.
+
+Length was never what a hostile presenter could spend, because of the order a chain is checked in.
+The root must be one you trust before anything is read, each hop's issuer is the party a verified hop delegated to, status lists are read only once every hop's proof holds, and the first failure ends the check.
+A delegate that adds 200 hops, each naming another party's host, has one of those hosts asked, not 200; SPEC-ENTITY-CARD.md §10.5 now requires that order of every verifier.
+
+What a chain's own signers can spend is time: hosts they run can each answer just inside `dependencyTimeoutMs`.
+So every check of a chain now has a time for all of it, `totalTimeoutMs`, 30 seconds by default: the chain's resolution, every hop proof or credential verification, and every status or revocation answer together.
+`verifyRequestDelegation`, `requireDelegation`, `evaluateDelegationChain`, `evaluateRevocationChain`, `validateDelegationChain` and the middleware's `delegation` configuration each take it.
+A check out of time is refused as `deadline_exceeded`, which is transient, and asks no dependency anything more.
+Its reason ends `the delegation check did not finish within 30 seconds`, or `the revocation check did not finish within 30 seconds` from `evaluateRevocationChain`.
+Under 1.25.0 a check of 10 credentials could wait 5 seconds on each DID document and each status list in turn, about 100 seconds in all.
+If your dependencies honestly need more than 30 seconds for one check, raise `totalTimeoutMs`; a value that is not a number of milliseconds from above 0 to 2,147,483,647 is refused where `dependencyTimeoutMs` is.
+
+`CascadingRevocationManager.revokeDelegation` refused to revoke a delegation more than 100 levels below its root unless you passed a larger `maxDepth`.
+It now revokes one at any depth.
+`maxDepth` is deprecated and still honoured when set, and one that is not a positive integer throws a `TypeError`, where 0 meant 100.
 
 ### Delegation gate
 

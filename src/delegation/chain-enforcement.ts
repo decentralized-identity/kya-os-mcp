@@ -17,7 +17,9 @@ import {
   type DelegationRecord,
 } from "../types/protocol.js";
 import type { RefusalCode } from "../refusal-codes.js";
-import { answerWithinDeadline, dependencyTimeoutRefusal } from "../utils/deadline.js";
+import {
+  askWithin, DEFAULT_TOTAL_TIMEOUT_MS, delegationCheckBudget, dependencyTimeoutRefusal, totalTimeoutRefusal, type Ask,
+} from "../utils/deadline.js";
 import { describeValue } from "../utils/describe-value.js";
 import { OUTBOUND_READ_TIMEOUT_MS } from "../utils/outbound-read-limits.js";
 import { coded, refusal, refusalCodeOf, type Passed, type Refusal } from "../utils/refusal.js";
@@ -145,6 +147,14 @@ export interface ChainEnforcementDeps extends AncestorReading {
    * 2,147,483,647. Default 5,000. Any other value rejects every chain.
    */
   dependencyTimeoutMs?: number;
+  /**
+   * How long, in milliseconds, the whole check may take, every one of those answers together: a
+   * number greater than 0 and at most 2,147,483,647. Default 30,000. A chain may be any length, so
+   * this, and no count of credentials, keeps dependencies that each answer inside
+   * `dependencyTimeoutMs` from holding a check open. A check out of time is refused as
+   * `deadline_exceeded` and asks nothing more. Any other value rejects every chain.
+   */
+  totalTimeoutMs?: number;
 }
 
 /** The verdict on a delegation chain, with its code and whether it is transient when it is refused. */
@@ -212,9 +222,11 @@ async function enforceChain(
       "Malformed delegation credential: missing credentialSubject.delegation or its constraints",
     );
   }
-  const { dependencyTimeoutMs: timeoutMs = OUTBOUND_READ_TIMEOUT_MS } = deps;
-  const timeoutRefusal = dependencyTimeoutRefusal(timeoutMs);
+  const { dependencyTimeoutMs: timeoutMs = OUTBOUND_READ_TIMEOUT_MS, totalTimeoutMs = DEFAULT_TOTAL_TIMEOUT_MS } = deps;
+  const timeoutRefusal = dependencyTimeoutRefusal(timeoutMs) ?? totalTimeoutRefusal(totalTimeoutMs);
   if (timeoutRefusal !== undefined) return refusal("configuration_error", timeoutRefusal);
+  // One budget for the whole check, from here: the chain's length is not bounded, so its time is.
+  const ask = askWithin(timeoutMs, delegationCheckBudget(totalTimeoutMs));
   const leafDelegation = extractDelegationFromVC(leafCredential);
   let chain: DelegationCredential[] = [leafCredential];
 
@@ -229,7 +241,7 @@ async function enforceChain(
     let resolvedChain: unknown;
     try {
       const resolve = deps.resolveDelegationChain;
-      resolvedChain = await answerWithinDeadline("the chain resolver", () => resolve(leafCredential), timeoutMs);
+      resolvedChain = await ask("the chain resolver", () => resolve(leafCredential));
     } catch (error) {
       return refusal(refusalCodeOf(error, "runtime_error"), chainResolutionFailure(error));
     }
@@ -287,7 +299,7 @@ async function enforceChain(
 
   // Every result of the walk carries the credentials it reached, root first.
   const reached: Reached = { ancestors: 0 };
-  const verdict = await walkChain(chain, reached, leafDelegation, deps, timeoutMs, options);
+  const verdict = await walkChain(chain, reached, leafDelegation, deps, ask, options);
   // The walk examines the presented credential first, so every verdict covers it.
   const evaluated = [...chain.slice(0, reached.ancestors), leafCredential];
   return { ...verdict, evaluated };
@@ -320,27 +332,28 @@ interface Reached {
  * sign as its parent's subject costs no ancestor's verification and learns nothing of an
  * ancestor's standing; then each ancestor, root first, with the link from the one before it; then
  * the presented credential's link from its parent. Each credential verification and each
- * revocation check gets `timeoutMs` to answer.
+ * revocation check is asked through `ask`, so under its own deadline and within the time the whole
+ * check has.
  */
 async function walkChain(
   chain: readonly DelegationCredential[],
   reached: Reached,
   leafDelegation: DelegationRecord,
   deps: ChainEnforcementDeps,
-  timeoutMs: number,
+  ask: Ask,
   options?: { skipSignature?: boolean },
 ): Promise<ChainVerdict> {
   const leafCredential = chain[chain.length - 1]!;
   const expiry: { at?: number } = {};
   const warnings: string[] = [];
 
-  const presentedRefusal = await credentialRefusal(leafCredential, expiry, deps, timeoutMs, options?.skipSignature === true);
+  const presentedRefusal = await credentialRefusal(leafCredential, expiry, deps, ask, options?.skipSignature === true);
   if (presentedRefusal !== undefined) return presentedRefusal;
 
   let previousCredential: DelegationCredential | undefined;
   for (const credential of chain.slice(0, -1)) {
     reached.ancestors += 1;
-    const ancestorRefusal = await credentialRefusal(credential, expiry, deps, timeoutMs, false);
+    const ancestorRefusal = await credentialRefusal(credential, expiry, deps, ask, false);
     if (ancestorRefusal !== undefined) return ancestorRefusal;
     if (previousCredential !== undefined) {
       const linkRefusal = attenuationRefusal(previousCredential, credential, warnings);
@@ -376,7 +389,7 @@ async function walkChain(
       let answer: unknown;
       try {
         const checker = deps.revocationChecker;
-        answer = await answerWithinDeadline("the revocation checker", () => checker.isRevoked(delegationId), timeoutMs);
+        answer = await ask("the revocation checker", () => checker.isRevoked(delegationId));
       } catch (error) {
         return refusal(refusalCodeOf(error, "status_unavailable"), revocationCheckFailure(delegationId, error));
       }
@@ -403,7 +416,7 @@ async function credentialRefusal(
   credential: DelegationCredential,
   expiry: { at?: number },
   deps: ChainEnforcementDeps,
-  timeoutMs: number,
+  ask: Ask,
   skipSignature: boolean,
 ): Promise<Refusal | undefined> {
   const delegation = extractDelegationFromVC(credential);
@@ -422,7 +435,7 @@ async function credentialRefusal(
   try {
     const { verifier } = deps;
     const skip = skipSignature ? { skipSignature: true } : {};
-    verdict = await answerWithinDeadline("the credential verifier", () => verifier.verifyDelegationCredential(credential, skip), timeoutMs);
+    verdict = await ask("the credential verifier", () => verifier.verifyDelegationCredential(credential, skip));
   } catch (error) {
     return refusal(refusalCodeOf(error, "runtime_error"), credentialVerificationFailure(delegation.id, error));
   }

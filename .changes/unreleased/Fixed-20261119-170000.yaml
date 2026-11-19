@@ -1,0 +1,10 @@
+kind: Fixed
+body: |-
+    **`CascadingRevocationManager.revokeDelegation` revokes a delegation
+    however deep it sits.** It refused, with an `Error`, to revoke one more
+    than 100 levels below its root unless the caller passed a larger
+    `maxDepth`, so a chain re-delegated that many times left its deepest
+    delegations live. A depth limit now applies only when `maxDepth` is set,
+    and a `maxDepth` that is not a positive integer throws a `TypeError`
+    where 0 meant 100.
+time: 2026-11-19T17:00:00.000000-06:00

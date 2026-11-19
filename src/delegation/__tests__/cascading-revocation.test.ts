@@ -264,30 +264,48 @@ describe("CascadingRevocationManager", () => {
       ).rejects.toThrow("Delegation not found");
     });
 
-    it("should respect maxDepth option", async () => {
-      // Create a deep chain (depth 0, 1, 2, 3, 4 = 5 levels)
+    /** Register a chain of `levels` delegations, each issued by its parent's subject, and return their ids, root first. */
+    const registerChain = async (levels: number): Promise<string[]> => {
+      const ids: string[] = [];
       let parentId: string | null = null;
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < levels; i++) {
         const id = `del-${i}`;
         await mockGraph.registerDelegation({
           id,
           parentId,
-          issuerDid: `did:web:example.com:issuer${i}`,
-          subjectDid: `did:web:example.com:subject${i + 1}`,
+          issuerDid: `did:web:example.com:agent${i}`,
+          subjectDid: `did:web:example.com:agent${i + 1}`,
           credentialStatusId: `https://example.com/status#${i}`,
         });
+        ids.push(id);
         parentId = id;
       }
+      return ids;
+    };
 
-      // Should work with default maxDepth (100)
-      await expect(
-        revocationManager.revokeDelegation("del-0")
-      ).resolves.toBeDefined();
+    it("revokes a delegation however deep it sits: no depth limit applies by default", async () => {
+      const ids = await registerChain(102);
+      const leaf = ids[ids.length - 1]!;
+      expect(await mockGraph.getDepth(leaf)).toBe(101);
 
-      // Check depth of deepest node (del-4 has depth 4, which exceeds maxDepth 2)
-      await expect(
-        revocationManager.revokeDelegation("del-4", { maxDepth: 2 })
-      ).rejects.toThrow("exceeds maximum");
+      const events = await revocationManager.revokeDelegation(leaf);
+
+      expect(events.map((event) => event.delegationId)).toEqual([leaf]);
+      expect(mockStatusList.updateStatus).toHaveBeenCalledTimes(1);
+    });
+
+    it("still honors the deprecated maxDepth when it is set", async () => {
+      await registerChain(5);
+      // del-4 sits at depth 4, deeper than the 2 the caller set.
+      await expect(revocationManager.revokeDelegation("del-4", { maxDepth: 2 })).rejects.toThrow("exceeds maximum");
+      expect(mockStatusList.updateStatus).not.toHaveBeenCalled();
+      await expect(revocationManager.revokeDelegation("del-4", { maxDepth: 4 })).resolves.toHaveLength(1);
+    });
+
+    it.each([0, -1, 1.5, Number.NaN])("refuses a maxDepth of %s, which is not a positive integer, before revoking anything", async (maxDepth) => {
+      await registerChain(2);
+      await expect(revocationManager.revokeDelegation("del-1", { maxDepth })).rejects.toThrow(TypeError);
+      expect(mockStatusList.updateStatus).not.toHaveBeenCalled();
     });
 
     it("should skip actual revocation in dry run mode", async () => {

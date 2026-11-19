@@ -240,6 +240,8 @@ Only a reason given once the proof has verified may be thrown as a `RefusalError
 
 A delegation hop past its `expirationDate`, or past its proof's `expires`, is refused whatever its `validUntil` says.
 An issuer that set `validUntil` later than either sets them to agree.
+A hop before its `issuanceDate`, held with the same clock tolerance, is refused as `delegation_not_yet_valid` whether or not it states a `validFrom`.
+An issuer stamps `issuanceDate` with the moment it signs, or leaves it out.
 
 A pinned root's own status list on a private or local host is read only at the root's own did:web origin, host and port.
 Bind any other list on a private host, and every list of a did:key root, to its signer in `statusListIssuers`.

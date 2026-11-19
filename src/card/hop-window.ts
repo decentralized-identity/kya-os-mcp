@@ -1,6 +1,7 @@
 /**
  * The wall-clock gate of an Entity Card delegation chain: each hop is read only inside the window it
- * states, its `validFrom`, every end it states ({@link hopEnds}) and any `ValidUntil` caveat.
+ * states, every start it states ({@link hopStarts}), every end it states ({@link hopEnds}) and any
+ * `ValidUntil` caveat.
  * Attenuation only proves a child expires no later than its parent, which a fully expired but well
  * attenuated chain still does, so this gate is what refuses it.
  *
@@ -8,7 +9,9 @@
  * reads elsewhere: as `expirationDate`, the Verifiable Credentials Data Model 1.1 member a status
  * list's end is read from, or as its proof's `expires`, the instant W3C Data Integrity says the proof
  * expires. The proof covers each, so each is the issuer's word, and authority never outlives an end
- * its issuer signed: the gate holds a hop to every one it states, the earliest deciding.
+ * its issuer signed: the gate holds a hop to every one it states, the earliest deciding. A hop states
+ * its start as `validFrom` (VC 2.0), or as `issuanceDate`, the VC 1.1 member a delegation credential
+ * of the VC-JWT path is held to as its start, and the gate holds it to each, the latest deciding.
  *
  * Each time a hop states is a date as `../utils/rfc3339.ts` reads one, an RFC 3339 date-time with
  * its zone, so a hop names one window wherever it is read, and one that states another form, a time
@@ -39,6 +42,21 @@ export interface HopEnd {
   stated: unknown;
 }
 
+/** One start a hop states: the member that states it, as a reason names it, and what it states. */
+export interface HopStart {
+  member: 'validFrom' | 'issuanceDate';
+  stated: unknown;
+}
+
+/** Every start `vc` states, in this order: its `validFrom` and its `issuanceDate`, each that it states. */
+export function hopStarts(vc: DelegationChain[number]): HopStart[] {
+  const starts: [HopStart['member'], unknown][] = [
+    ['validFrom', vc.validFrom],
+    ['issuanceDate', vc.issuanceDate],
+  ];
+  return starts.filter(([, stated]) => stated !== undefined).map(([member, stated]) => ({ member, stated }));
+}
+
 /**
  * Every end `vc` states beside its caveats, in this order: its `validUntil`, its `expirationDate` and
  * its proof's `expires`, each that it states. Empty when it states none.
@@ -55,9 +73,9 @@ export function hopEnds(vc: DelegationChain[number]): HopEnd[] {
 
 /**
  * The rules any hop of `chain` breaks at `nowMs`, each bound held with `maxClockSkewMs`: an end it
- * states ({@link hopEnds}) or a `ValidUntil` caveat that has passed (`delegation_expired`), a
- * `validFrom` not yet reached (`delegation_not_yet_valid`), or a `validFrom` or an end that is not an
- * RFC 3339 date-time with its zone (`delegation_malformed`), which fails closed. A
+ * states ({@link hopEnds}) or a `ValidUntil` caveat that has passed (`delegation_expired`), a start
+ * it states ({@link hopStarts}) not yet reached (`delegation_not_yet_valid`), or a start or an end
+ * that is not an RFC 3339 date-time with its zone (`delegation_malformed`), which fails closed. A
  * `maxClockSkewMs` that is not a number of milliseconds from 0 to 600,000 breaks a rule of its own
  * (`configuration_error`), so no hop is read with it. Empty when every hop is inside its window.
  */
@@ -80,8 +98,10 @@ export function hopWindowRules(chain: DelegationChain, nowMs: number, maxClockSk
         broken.push({ code: 'delegation_expired', reason: `hop ${i}: expired (${member} ${describeValue(stated)} is in the past)` });
       }
     }
-    if (vc.validFrom !== undefined && breachOf(dateOf('validFrom', vc.validFrom), undefined) === 'not_yet_valid') {
-      broken.push({ code: 'delegation_not_yet_valid', reason: `hop ${i}: not yet valid (validFrom ${describeValue(vc.validFrom)} is in the future)` });
+    for (const { member, stated } of hopStarts(vc)) {
+      if (breachOf(dateOf(member, stated), undefined) === 'not_yet_valid') {
+        broken.push({ code: 'delegation_not_yet_valid', reason: `hop ${i}: not yet valid (${member} ${describeValue(stated)} is in the future)` });
+      }
     }
     for (const caveat of vc.credentialSubject.caveats ?? []) {
       // A ValidUntil caveat that states no date, or one that is not a date, is refused for its form (`./caveats.ts`).

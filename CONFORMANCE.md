@@ -628,11 +628,12 @@ Because fresh keys change the committed bytes, regenerated output MUST NOT be co
 
 ### Suite versioning and immutability
 
-Suite 1.13.0 adds twelve vectors, for 183 vectors total.
+Suite 1.13.0 adds thirteen vectors, for 184 vectors total.
 Two are `delegation-chain` vectors, which must be refused: `subject-id-control-character`, a credential whose `credentialSubject.id` holds a line feed, and `issued-in-future`, a credential whose `issuanceDate` is a century ahead (SPEC.md §6.2).
 Two are `signed-proof` vectors (SPEC.md §7.8): `delegation-chain-other-delegation`, a proof that names its chain held against another delegation of the same agent, which must fail, and `delegation-chain-refused-leaf-alone`, a refusal of a presented credential whose signature fails under ancestors that verify, which binds that credential alone and must pass held against it.
-Eight are `entity-card` vectors that turn on a hop of the accountable agent's chain (SPEC.md §6.10).
+Nine are `entity-card` vectors that turn on a hop of the accountable agent's chain (SPEC.md §6.10).
 `hop-expiration-date-past` and `hop-proof-expired` require refusing a hop past its `expirationDate`, or past its proof's `expires`, whatever its later `validUntil`.
+`hop-issuance-date-future` requires refusing a hop before its `issuanceDate`, though it states no `validFrom`.
 `hop-parent-digest`, `hop-parent-digest-reissued-root`, `root-states-parent-digest` and `hop-parent-digest-absent` sign the chain, and require accepting a leaf that states its root's `parentCredentialDigest`, refusing it under a root issued again under the same id, refusing a root that states one, and accepting a leaf that states none.
 The root's `proofValue` is 89 characters of multibase base58btc, which SPEC.md §7.8 reads as base64 characters, so an implementation that decodes it as base58 digests other bytes and refuses `hop-parent-digest`.
 `root-states-parent-digest-null` and `hop-parent-digest-null` sign a root, and a leaf, that state `parentCredentialDigest` as `null`, and require refusing both: a member stated as `null` is stated, so an implementation that reads `null` as no digest accepts them.
@@ -816,7 +817,7 @@ broken accountability JOIN (leaf-invoker ≠ the asserted proof `did`), and, fro
 and MUST NOT trust the card's self-declared `conformanceLevel`: it recomputes it.
 The accountable agent card of `agent-accountable` and `accountability-join-broken`
 declares no `revocation` entry, so each holds the JOIN alone.
-From suite 1.13.0, eight vectors hold that card to one hop of its chain (SPEC.md §6.10): the accountability edge MUST refuse a hop past any end it states, its `expirationDate` and its proof's `expires` as well as its `validUntil`, MUST refuse a hop whose `parentCredentialDigest` is not the SPEC.md §7.8 digest of the hop before it, and MUST refuse a root that states one, `null` included in both.
+From suite 1.13.0, nine vectors hold that card to one hop of its chain (SPEC.md §6.10): the accountability edge MUST refuse a hop past any end it states, its `expirationDate` and its proof's `expires` as well as its `validUntil`, MUST refuse a hop before its `issuanceDate` as before its `validFrom`, MUST refuse a hop whose `parentCredentialDigest` is not the SPEC.md §7.8 digest of the hop before it, and MUST refuse a root that states one, `null` included in both.
 The edge reads no hop proof and no status list: the golden chain carries placeholder proofs, and the reference adapter checks the chain's rules and each parent commitment, which need no key and no fetch.
 
 ### Card conformance ↔ the L1/L2/L3 ladder

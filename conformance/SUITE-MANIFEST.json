@@ -1,7 +1,7 @@
 {
   "suiteVersion": "1.13.0",
-  "vectorSetHash": "sha256:fff8af09b37a435abaa366035f76f9ca883f255038a5681d1e5dc1175cafe23d",
-  "vectorCount": 183,
+  "vectorSetHash": "sha256:e46fd2f52ea0910a3aaf430b003f1e568e39f3e51bc6f24032fa1b5aad08bcef",
+  "vectorCount": 184,
   "files": [
     [
       "audit-integrity.json",
@@ -29,7 +29,7 @@
     ],
     [
       "entity-card.json",
-      "110580d6042ef1af22d5b03df70d6b1501c002614b3878b2e5fc0c9714978b31"
+      "364a2a7fcb58446241358883967c48e461fe3b009f17daf1be961109c506942c"
     ],
     [
       "negotiation.json",

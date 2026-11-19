@@ -101,6 +101,27 @@ describe('a hop window', () => {
     expect(verdictOf(chain)).toEqual({ ok: false, code, reasons: [reason] });
   });
 
+  it.each<[string, DelegationChain]>([
+    ['an issuanceDate 2 seconds ahead, as on a hop just issued by a server whose clock runs ahead', rootWith({ issuanceDate: at(2 * SECOND) })],
+    ['an issuanceDate 120 seconds ahead, the tolerance exactly', rootWith({ issuanceDate: at(120 * SECOND) })],
+    ['an issuanceDate long past beside a validFrom reached', rootWith({ issuanceDate: '2020-01-01T00:00:00Z', validFrom: at(-SECOND) })],
+  ])('is read with %s, a start the hop states beside its validFrom', (_label, chain) => {
+    expect(verdictOf(chain)).toEqual({ ok: true, code: undefined, reasons: [] });
+  });
+
+  it.each<[string, DelegationChain, string, string]>([
+    ['an issuanceDate more than 120 seconds ahead', rootWith({ issuanceDate: at(121 * SECOND) }), 'delegation_not_yet_valid', `hop 0: not yet valid (issuanceDate "${at(121 * SECOND)}" is in the future)`],
+    [
+      'an issuanceDate months ahead on a hop that states no validFrom',
+      rootWith({ validFrom: undefined, issuanceDate: '2026-12-31T00:00:00Z' }),
+      'delegation_not_yet_valid',
+      'hop 0: not yet valid (issuanceDate "2026-12-31T00:00:00Z" is in the future)',
+    ],
+    ['an issuanceDate with no zone', rootWith({ issuanceDate: '2026-11-03T00:00:00' }), 'delegation_malformed', `hop 0: issuanceDate "2026-11-03T00:00:00" ${NOT_A_DATE}`],
+  ])('is refused with %s, a start the hop states beside its validFrom', (_label, chain, code, reason) => {
+    expect(verdictOf(chain)).toEqual({ ok: false, code, reasons: [reason] });
+  });
+
   it('holds each bound with the tolerance the context gives, exactly with none', () => {
     expect(verdictOf(rootWith({ validFrom: at(1) }), { now, maxClockSkewMs: 0 }).code).toBe('delegation_not_yet_valid');
     expect(verdictOf(rootWith({ validUntil: at(-1) }), { now, maxClockSkewMs: 0 }).code).toBe('delegation_expired');

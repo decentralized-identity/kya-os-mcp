@@ -1186,6 +1186,7 @@ The reference implementation returns the chain's caveats on its verdict, at thei
 
 **Validity window (fail-closed).** A chain is valid only while every hop is inside the window it states: no hop past its `validUntil` or a `ValidUntil` caveat's `date`, and none before its `validFrom`.
 A hop may also state its end as its `expirationDate`, the member [VC-DATA-MODEL] names for it, or as its proof's `expires`, after which [VC-DATA-INTEGRITY] has the proof expire, and its proof covers both, so a hop is past its end once any end it states has passed, whatever its `validUntil` says.
+Likewise a hop may state its start as its `issuanceDate`, the member [VC-DATA-MODEL] 1.1 names for it, which its proof covers, so a hop is before its start until every start it states, its `validFrom` and its `issuanceDate`, has come, whether or not it states a `validFrom`.
 Each of these, and each date the narrowing invariants compare, MUST be a date as §6.6 defines one, an [RFC3339] date-time with its offset from UTC.
 A hop that states one in any other form, a date-time with no offset included, is malformed and invalidates the chain.
 A verifier MAY hold each bound with the clock tolerance §6.6 permits for a status list, of no more than 600 seconds.

@@ -28,6 +28,9 @@ const SIGNED_AT = '2026-06-01T00:00:00Z';
 /** An end the suite's fixed clock (2026-06-30T12:00:00Z) is 12 hours past, far beyond its tolerance. */
 const PAST_END = '2026-06-30T00:00:00Z';
 
+/** A start the suite's fixed clock is six months short of, far beyond its tolerance. */
+const FUTURE_START = '2026-12-31T00:00:00Z';
+
 /** The golden chain's two hops as their issuers write them, before signing. */
 function unsignedHops(): [UnsignedDelegationCredential, UnsignedDelegationCredential] {
   const [root, leaf] = DELEGATION_CHAIN.map((hop) => {
@@ -108,6 +111,14 @@ export async function cardChainVectors(
       expected: 'fail',
       reason: 'A proof past its expires no longer says its issuer delegated, so the hop is refused whatever its validUntil says (delegation_expired)',
       input: holding(withLeaf({ ...goldenLeaf, proof: { ...goldenLeaf.proof, expires: PAST_END } })),
+    },
+    {
+      id: 'entity-card/hop-issuance-date-future',
+      category: 'entity-card',
+      description: `The accountable agent's chain, its leaf stating issuanceDate ${FUTURE_START} and no validFrom`,
+      expected: 'fail',
+      reason: 'A hop starts at the latest start it states, so one before its issuanceDate is refused though it states no validFrom (delegation_not_yet_valid)',
+      input: holding(withLeaf({ ...goldenLeaf, issuanceDate: FUTURE_START })),
     },
     {
       id: 'entity-card/hop-parent-digest',

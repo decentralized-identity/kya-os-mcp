@@ -733,6 +733,14 @@ interface DelegationConstraints {
 }
 ```
 
+#### Budget windows
+
+A CRISP `budget` with no `window` caps what the delegation spends for all time.
+A `rolling` window caps what it spends within any span of `durationSec` seconds.
+A `fixed` window counts from the Unix epoch, 1970-01-01T00:00:00Z: its windows are the consecutive spans from k × `durationSec` to (k + 1) × `durationSec` seconds after the epoch, for each whole number k, and the `cap` holds within each.
+A `fixed` window does not start when the credential does, so every delegation that states a `fixed` window of one `durationSec` has the same windows.
+An enforcer MUST count a `fixed` window so.
+
 #### CRISP scope matchers
 
 | `matcher` | Semantics | Intended value |
@@ -773,7 +781,9 @@ Delegations form a directed acyclic graph (DAG):
 - Child delegation's `issuerDid` MUST equal parent's `subjectDid`
 - Scope constraints MUST be equal to or narrower than parent's constraints
 - Under a parent that states a CRISP `budget` (§6.3), a verifier MUST reject a re-delegation that states none, or one that is not the parent's as written and is not narrower: a budget in the same `unit` whose `cap` is no higher, with no `window`, which caps all time, or, under a parent's window, a `rolling` window at least as long, or, under a parent's `fixed` window, a `fixed` window of the same `durationSec`.
-  A `fixed` window of any other length, or under a `rolling` window, starts where the parent's windows do not, so it would let the re-delegation spend its cap twice within one of the parent's windows.
+  A `fixed` window of the parent's `durationSec` has the parent's windows (§6.3), so its `cap` holds within each of them.
+  One that is shorter, or whose `durationSec` is not a whole multiple of the parent's, ends within one of the parent's windows and starts its next window there, and one under a `rolling` window starts wherever a charge falls, so either would let the re-delegation spend its cap twice within one of the parent's windows.
+  A `fixed` window a whole multiple as long contains whole windows of the parent's, and a verifier MUST still reject it, so that it compares a `fixed` window only as its parent states it.
   A budget is compared only when it states a `unit` that is a string other than the empty one, a `cap` that is a finite number of 0 or more, and, if it states a `window`, a `kind` of `rolling` or `fixed` and a `durationSec` greater than 0, and no other member; a child's budget that is not compared passes only as its parent's, as written.
 - A member of `constraints`, or of `constraints.crisp`, that §6.3 does not define MUST be stated with an equal value (RFC 8785) by every re-delegation below the delegation that states it, as §6.10 requires of a caveat, and a verifier MUST reject a re-delegation that drops or changes one.
   Whatever enforces such a member, or a budget, reads it from the presented credential alone, so a re-delegation that dropped or raised it would widen its parent.

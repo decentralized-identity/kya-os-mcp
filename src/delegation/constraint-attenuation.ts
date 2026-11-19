@@ -114,11 +114,13 @@ function budgetRefusal(
 /**
  * Whether a cap for each `child` window spends no more than one for each `parent` window. A cap for
  * all time does. Under a parent's window, so does a `rolling` window at least as long, since every
- * parent window lies within one of the child's. A `fixed` window does only under the parent's own
- * fixed window: one of any other length starts where the parent's does not, so the child could spend
+ * parent window lies within one of the child's. A `fixed` window counts from the Unix epoch (SPEC.md
+ * §6.3), so one of the parent's `durationSec` has the parent's windows. One shorter, or not a whole
+ * multiple as long, ends within a parent window and starts its next there, so the child could spend
  * its cap at the end of one window and again at the start of the next, within one parent window,
- * and under a rolling window the same holds of any fixed one. A cap for each window spends more than
- * one for all time.
+ * and under a rolling window the same holds of any fixed one. A whole multiple as long is refused
+ * too, so a fixed window is compared only as the parent states it. A cap for each window spends more
+ * than one for all time.
  */
 function windowWithin(parent: ReadBudget["window"], child: ReadBudget["window"]): boolean {
   if (child === undefined) return true;

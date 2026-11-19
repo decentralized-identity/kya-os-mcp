@@ -48,6 +48,8 @@ describe("checkConstraintAttenuation: the budget", () => {
     ["the child caps for all time what the parent caps for each window", budgeted(DAILY_100), budgeted(USD_100)],
     ["the child's window is of the same kind and longer", budgeted(DAILY_100), budgeted({ ...DAILY_100, window: { kind: "rolling", durationSec: 604_800 } })],
     ["both state the same budget the walk cannot read", budgeted({ unit: "USD", cap: "100" }), budgeted({ unit: "USD", cap: "100" })],
+    // Fixed windows count from the Unix epoch (SPEC.md §6.3), so the child's are the parent's.
+    ["the child states the parent's fixed window as written", budgeted(FIXED_DAY_100), budgeted(FIXED_DAY_100)],
     ["the child lowers the cap of each of the parent's fixed windows", budgeted(FIXED_DAY_100), budgeted({ ...FIXED_DAY_100, cap: 10 })],
     ["the child caps for all time what the parent caps for each fixed window", budgeted(FIXED_DAY_100), budgeted(USD_100)],
     // Every fixed day lies within some rolling window as long, which the child's cap holds.
@@ -79,8 +81,10 @@ describe("checkConstraintAttenuation: the budget", () => {
       budgeted({ ...DAILY_100, window: { kind: "fixed", durationSec: 86_400 } }),
       "Delegation child states a budget window parent parent's budget does not contain",
     ],
-    // A fixed window of another length starts where the parent's does not, so the child could spend
-    // its cap at the end of one of its windows and again at the start of the next, in one parent day.
+    // A fixed window shorter than the parent's, or not a whole multiple as long, ends within a parent
+    // day and starts its next there, so the child could spend its cap at the end of one of its windows
+    // and again at the start of the next, in one parent day. A whole multiple is refused too, so a
+    // fixed window is compared only as the parent states it.
     ...[
       ["longer than", 129_600],
       ["shorter than", 43_200],

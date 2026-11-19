@@ -9,6 +9,8 @@ import { realStatusListManager } from '../../__tests__/utils/status-list-manager
 import { statusListGzipCodec } from '../../utils/statuslist-gzip.js';
 import { StatusList2021Manager, type StatusListStorageProvider } from '../statuslist-manager.js';
 import { MemoryStatusListStorage } from '../storage/memory-statuslist-storage.js';
+import { RefusalError } from '../../utils/refusal.js';
+import { normalising, statusListManager } from './helpers/status-entry-operator.js';
 
 /** A storage provider written to the base contract alone: it cannot record an entry's owner. */
 function baseContract(memory: MemoryStatusListStorage): StatusListStorageProvider {
@@ -100,5 +102,38 @@ describe('StatusList2021Manager owners', () => {
     await expect(manager.allocateStatusEntry('revocation', { delegationId: undefined })).resolves.toMatchObject({
       statusListIndex: '0',
     });
+  });
+
+  it('acts only on the lists it issues, by their exact ids, even over a store that would read another spelling', async () => {
+    const manager = statusListManager(normalising(new MemoryStatusListStorage()));
+    const own = await manager.allocateStatusEntry('revocation', { delegationId: 'delegation-1' });
+
+    for (const list of [
+      'https://STATUS.example:443/revocation/v1',
+      'https://status.example/revocation/./v1',
+      'https://status.example/revocation/v1/',
+      'https://other.example/revocation/v1',
+    ]) {
+      const respelled = { ...own, id: `${list}#0`, statusListCredential: list };
+      const quoted = JSON.stringify(list);
+
+      const read = await manager.checkStatus(respelled).then(() => undefined, (thrown: unknown) => thrown);
+      expect(read).toBeInstanceOf(RefusalError);
+      expect((read as RefusalError).code).toBe('status_unavailable');
+      expect((read as RefusalError).message).toBe(
+        `Status list not found: ${quoted} is not a list this manager issues, so it cannot determine revocation status`,
+      );
+
+      const set = await manager.updateStatus(respelled, true).then(() => undefined, (thrown: unknown) => thrown);
+      expect(set).toBeInstanceOf(RefusalError);
+      expect((set as RefusalError).code).toBe('delegation_malformed');
+      expect((set as RefusalError).message).toBe(
+        `Status list ${quoted} is not a list this manager issues, so it sets and clears no entry of it`,
+      );
+
+      expect(await manager.getStatusEntryOwner(respelled)).toBeUndefined();
+    }
+    expect(await manager.checkStatus(own)).toBe(false);
+    expect(await manager.getStatusEntryOwner(own)).toBe('delegation-1');
   });
 });

@@ -66,15 +66,22 @@ describe("MemoryDelegationGraphStorage.getNodeIdsByStatusEntry", () => {
     expect(await storage.getNodeIdsByStatusEntry(`${LIST}#3`)).toEqual([]);
   });
 
-  it("lets a node be registered again with its own entry, and another be registered with an entry no node has", async () => {
+  it("leaves whose entry it is to the graph: it registers a node whose entry another stored node has", async () => {
     const storage = new MemoryDelegationGraphStorage();
     await storage.registerNodeAtomic(node("a", structured("3")));
     await storage.registerNodeAtomic(node("a", structured("3")));
-    await storage.registerNodeAtomic(node("b", structured("4")));
+    await storage.registerNodeAtomic(node("c", structured("03")));
+
+    expect(await storage.getNodeIdsByStatusEntry(`${LIST}#3`)).toEqual(["a", "c"]);
+  });
+
+  it("leaves out a stored node whose entry it cannot read, so one such node never fails a lookup", async () => {
+    const storage = new MemoryDelegationGraphStorage();
+    await storage.setNode(node("a", structured("3")));
+    await storage.setNode(node("bad", structured("x")));
+    await storage.setNode(node("huge", { credentialStatusId: `${LIST}#99999999999999999999` }));
 
     expect(await storage.getNodeIdsByStatusEntry(`${LIST}#3`)).toEqual(["a"]);
-    await expect(storage.registerNodeAtomic(node("c", structured("03")))).rejects.toThrow(
-      `Delegation c cannot be registered with status list entry ${LIST}#3: the entry is registered to another delegation`,
-    );
+    expect(await storage.getNodeIdsByStatusEntry(`${LIST}#4`)).toEqual([]);
   });
 });

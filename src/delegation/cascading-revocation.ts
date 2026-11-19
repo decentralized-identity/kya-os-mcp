@@ -7,19 +7,25 @@
  * Related Spec: KYA-OS §4.4, Delegation Chains
  */
 
+import type { CredentialStatus } from '../types/protocol.js';
 import { DelegationGraphManager, type DelegationNode } from './delegation-graph.js';
 import { nodeStatusEntry } from './delegation-status-entry.js';
+import { restoreRefusal, revocationDecision } from './status-entry-claim.js';
 import {
-  assertRestorable,
-  entriesLeftUnset,
-  entryLeftUnset,
-  unsetEntryClause,
-  type StatusEntryRecords,
-  type UnsetEntry,
-} from './status-entry-claim.js';
-import { readsStatusEntryOwners } from './status-entry-owner.js';
+  restoreLeftUnchanged,
+  revocationLeftUnchanged,
+  unchangedEntryClause,
+  type UnchangedStatusEntry,
+} from './status-entry-unchanged-error.js';
 import { StatusList2021Manager } from './statuslist-manager.js';
+import { RefusalError } from '../utils/refusal.js';
 import { readRevoked, unreadableStatusReason } from '../utils/revocation-answer.js';
+
+export {
+  StatusEntryUnchangedError,
+  type StatusEntryUnchangedReason,
+  type UnchangedStatusEntry,
+} from './status-entry-unchanged-error.js';
 
 export interface RevocationEvent {
   delegationId: string;
@@ -27,6 +33,14 @@ export interface RevocationEvent {
   parentId?: string;
   timestamp: number;
   reason?: string;
+  /**
+   * The delegations outside the revoked subtree that are registered with the
+   * status list entry this revocation set, so it revoked them too on the
+   * status list, though not in the graph. Present only when there are any,
+   * which a graph that reads owners never allows for an entry whose owner was
+   * recorded.
+   */
+  statusEntrySharedWith?: readonly string[];
 }
 
 export type RevocationHook = (event: RevocationEvent) => Promise<void> | void;
@@ -41,30 +55,35 @@ export interface CascadingRevocationOptions {
 /**
  * Revokes a delegation and its subtree, in the graph and on the status list, and restores one.
  *
- * Each status bit belongs to the delegations whose entry it is: the one the status list manager
- * allocated it to, or, when it recorded none, those the graph has registered with it. A revocation
- * sets a bit only when each of them lies in the subtree it revokes, and a restore clears one only
- * when it belongs to no other delegation, so neither ever changes the status of a delegation it was
- * not asked to change (`./status-entry-claim.ts`).
+ * Whose a status list entry is, it reads from the graph (`DelegationGraphManager.getStatusEntryClaim`),
+ * so registration and revocation apply one record. With a graph built with `statusEntryOwners`, an
+ * entry whose owner was recorded is set only by a revocation whose subtree holds that owner, and
+ * cleared only by restoring that owner: revoking or restoring a delegation never changes the status
+ * of a delegation outside what it revokes or restores. Any other entry, every entry with a graph
+ * built without owners, is set by any revocation of a delegation that carries it, revoking too, the
+ * safe way, any delegation outside the subtree registered with it (`statusEntrySharedWith`), and is
+ * cleared only when no other delegation is registered with it. Such a graph cannot refuse an entry
+ * allocated and not yet registered, nor a removed delegation's, so a delegation that carries one
+ * can still revoke or restore that entry (`registerDelegation`).
+ *
+ * An entry left unchanged, and one the status list manager refuses, such as an entry of a list it
+ * does not issue, is reported to the operator in a `StatusEntryUnchangedError`, never in a
+ * `RefusalError`.
  */
 export class CascadingRevocationManager {
-  private readonly entryRecords: StatusEntryRecords;
-
   constructor(
     private graph: DelegationGraphManager,
     private statusList: StatusList2021Manager
-  ) {
-    // A status list a host wraps or stubs may record no owners; the graph's registrations then say.
-    this.entryRecords = { owners: readsStatusEntryOwners(statusList) ? statusList : undefined, graph };
-  }
+  ) {}
 
   /**
    * Revoke `delegationId` and every delegation below it: each is marked revoked in the graph, and
-   * the status bit of each is set. A bit that also belongs to a delegation outside the subtree is
-   * left unchanged, since setting it would revoke that delegation too: once the whole subtree is
-   * revoked, this throws a `RefusalError` of code `delegation_malformed` that names each such
-   * delegation and its entry. Each is still revoked in the graph, which `isRevoked` reads, but not
-   * on the published list.
+   * its status list entry is set, unless it must be left unchanged (see the class). Once the whole
+   * subtree is revoked, an entry left unchanged throws a `StatusEntryUnchangedError` that carries
+   * the events of every delegation revoked and each entry left unchanged: those delegations are
+   * revoked in the graph, which `isRevoked` reads, but not on the published list. A dry run changes
+   * nothing, and returns or throws what the real run would, short of the status list manager's own
+   * refusals.
    */
   async revokeDelegation(
     delegationId: string,
@@ -83,11 +102,11 @@ export class CascadingRevocationManager {
       throw new Error(`Delegation depth ${depth} exceeds maximum ${maxDepth}`);
     }
 
-    const unset: UnsetEntry[] = [];
+    const unchanged: UnchangedStatusEntry[] = [];
     const rootEvent = await this.revokeNode(
       targetNode,
-      true,
-      unset,
+      delegationId,
+      unchanged,
       options.reason,
       options.dryRun
     );
@@ -102,11 +121,10 @@ export class CascadingRevocationManager {
     for (const descendant of descendants) {
       const event = await this.revokeNode(
         descendant,
-        false,
-        unset,
+        delegationId,
+        unchanged,
         `Cascaded from ${delegationId}`,
-        options.dryRun,
-        delegationId
+        options.dryRun
       );
       events.push(event);
 
@@ -115,71 +133,88 @@ export class CascadingRevocationManager {
       }
     }
 
-    const leftUnset = entriesLeftUnset(unset);
-    if (leftUnset) {
-      throw leftUnset;
+    if (unchanged.length > 0) {
+      throw revocationLeftUnchanged(delegationId, events, unchanged);
     }
     return events;
   }
 
   /**
-   * Revoke one node of the subtree, adding to `unset` its entry when that is left unchanged.
-   * `parentId` is the delegation the revocation was asked for, for every node below it.
+   * Revoke one node of the subtree of `root`, the delegation the revocation was asked for, adding
+   * to `unchanged` its entry when that is left unchanged. A dry run marks and sets nothing.
    */
   private async revokeNode(
     node: DelegationNode,
-    isRoot: boolean,
-    unset: UnsetEntry[],
+    root: string,
+    unchanged: UnchangedStatusEntry[],
     reason?: string,
-    dryRun?: boolean,
-    parentId?: string
+    dryRun?: boolean
   ): Promise<RevocationEvent> {
+    const isRoot = node.id === root;
     const event: RevocationEvent = {
       delegationId: node.id,
       isRoot,
-      parentId,
+      parentId: isRoot ? undefined : root,
       timestamp: Date.now(),
       reason,
     };
 
-    if (dryRun) {
-      return event;
-    }
-
     // Mark the graph first (SPEC.md §6.5 step 1): it holds even when the node
     // has no status list entry to flip (no status id, or one such as
     // urn:uuid:… that names no list and index), or when publishing the bit
-    // below fails.
-    const marked = await this.graph.setRevoked(node.id, true);
+    // below fails. A dry run marks nothing, and so needs no mark.
+    const marked = dryRun ? true : await this.graph.setRevoked(node.id, true);
 
     const credentialStatus = nodeStatusEntry(node);
-    const leftUnset = credentialStatus
-      ? await entryLeftUnset(node.id, parentId ?? node.id, credentialStatus, this.entryRecords)
-      : undefined;
     // With no bit to flip, the mark is the only record. If the storage
     // provider dropped it, reporting success would leave the delegation live.
-    if (!marked && (!credentialStatus || leftUnset)) {
-      const entry = leftUnset ? unsetEntryClause(leftUnset) : 'it has no status list entry';
-      throw new Error(
-        `Revocation of delegation ${node.id} was not recorded: ${entry}, and the ` +
-          `graph storage provider did not persist DelegationNode.revoked. A DelegationGraphStorageProvider ` +
-          `must store the revoked field to revoke delegations without a status list entry.`
-      );
+    if (credentialStatus === undefined) {
+      if (!marked) throw notRecorded(node.id, 'it has no status list entry');
+      return event;
     }
-    if (leftUnset) {
-      unset.push(leftUnset);
-    } else if (credentialStatus) {
-      await this.statusList.updateStatus(credentialStatus, true);
+
+    const decision = await revocationDecision(node.id, root, credentialStatus, this.graph);
+    if (decision.sharedWith !== undefined) {
+      event.statusEntrySharedWith = decision.sharedWith;
+    }
+    const left: UnchangedStatusEntry | undefined =
+      decision.unchanged !== undefined
+        ? { delegationId: node.id, credentialStatus, reason: decision.unchanged }
+        : dryRun
+          ? undefined
+          : await this.changeEntry(node.id, credentialStatus, true);
+    if (left !== undefined) {
+      if (!marked) throw notRecorded(node.id, unchangedEntryClause(left));
+      unchanged.push(left);
     }
 
     return event;
   }
 
   /**
-   * Restore `delegationId` alone: its status bit is cleared, then its graph mark. Its subtree stays
-   * revoked. A bit that belongs to another delegation too is never cleared, since that would restore
-   * the other delegation: this throws a `RefusalError` of code `delegation_malformed` before
-   * anything changes, and the delegation stays revoked.
+   * Set or clear `credentialStatus`, or say it was left unchanged: the status list manager refused
+   * it, as it does an entry of a list it does not issue. Any other failure is thrown.
+   */
+  private async changeEntry(
+    delegationId: string,
+    credentialStatus: CredentialStatus,
+    revoked: boolean
+  ): Promise<UnchangedStatusEntry | undefined> {
+    try {
+      await this.statusList.updateStatus(credentialStatus, revoked);
+      return undefined;
+    } catch (error) {
+      if (!(error instanceof RefusalError)) throw error;
+      return { delegationId, credentialStatus, reason: 'refused-by-status-list', cause: error };
+    }
+  }
+
+  /**
+   * Restore `delegationId` alone: its status list entry is cleared, then its graph mark. Its
+   * subtree stays revoked. An entry another delegation holds, by allocation or by registration, is
+   * never cleared, since that would restore the other delegation: this throws a
+   * `StatusEntryUnchangedError` before anything changes, and the delegation stays revoked, as it
+   * does when the status list manager refuses the entry.
    */
   async restoreDelegation(delegationId: string): Promise<RevocationEvent> {
     const node = await this.graph.getNode(delegationId);
@@ -198,8 +233,14 @@ export class CascadingRevocationManager {
     // delegation still reads as revoked.
     const credentialStatus = nodeStatusEntry(node);
     if (credentialStatus) {
-      await assertRestorable(node.id, credentialStatus, this.entryRecords);
-      await this.statusList.updateStatus(credentialStatus, false);
+      const refused = await restoreRefusal(node.id, credentialStatus, this.graph);
+      const left: UnchangedStatusEntry | undefined =
+        refused !== undefined
+          ? { delegationId: node.id, credentialStatus, reason: refused }
+          : await this.changeEntry(node.id, credentialStatus, false);
+      if (left !== undefined) {
+        throw restoreLeftUnchanged(left);
+      }
     }
     await this.graph.setRevoked(node.id, false);
 
@@ -280,6 +321,15 @@ export class CascadingRevocationManager {
 
     return { valid: true };
   }
+}
+
+/** The error of a revocation the graph storage provider did not record, for a node `entry` says of. */
+function notRecorded(delegationId: string, entry: string): Error {
+  return new Error(
+    `Revocation of delegation ${delegationId} was not recorded: ${entry}, and the ` +
+      `graph storage provider did not persist DelegationNode.revoked. A DelegationGraphStorageProvider ` +
+      `must store the revoked field to revoke delegations without a status list entry.`
+  );
 }
 
 export function createCascadingRevocationManager(

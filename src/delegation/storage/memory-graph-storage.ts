@@ -15,7 +15,7 @@ import type {
 } from '../delegation-graph.js';
 import { registrationConflict } from '../delegation-registration.js';
 import { statusEntryKey } from '../delegation-status-entry.js';
-import { registrationRefused } from '../status-entry-claim.js';
+import { RefusalError } from '../../utils/refusal.js';
 
 /**
  * Memory-based Delegation Graph storage
@@ -53,9 +53,8 @@ export class MemoryDelegationGraphStorage
    * Performs parent validation, child insert, and parent link in one
    * serialization point. An id that is already stored is left untouched: a
    * repeat of the same registration is a no-op, and a conflicting one throws
-   * rather than replace the node's revocation state and children. A new node
-   * whose status list entry another stored node has is refused, with the
-   * `RefusalError` `DelegationGraphManager` throws for it.
+   * rather than replace the node's revocation state and children. Whose a
+   * status list entry is, `DelegationGraphManager` decides before it calls this.
    */
   async registerNodeAtomic(node: DelegationNode): Promise<void> {
     if (node.parentId === node.id) {
@@ -72,10 +71,6 @@ export class MemoryDelegationGraphStorage
     const parent = node.parentId === null ? null : this.nodes.get(node.parentId);
     if (node.parentId !== null && parent === undefined) {
       throw new Error(`Parent delegation not found: ${node.parentId}`);
-    }
-    const key = statusEntryKey(node);
-    if (key !== undefined && this.nodeIdsByStatusEntry(key).length > 0) {
-      throw registrationRefused(node.id, key, 'registration');
     }
     const storedNode = { ...node, children: [...node.children] };
     if (parent !== null && parent !== undefined) {
@@ -95,12 +90,12 @@ export class MemoryDelegationGraphStorage
    * Reads every node, as a store for tests and development may; a durable
    * store indexes the key instead.
    */
+  /**
+   * Every stored node whose status list entry is `entryKey`. A node whose
+   * stored entry no list can hold is left out: it sets no bit.
+   */
   async getNodeIdsByStatusEntry(entryKey: string): Promise<string[]> {
-    return this.nodeIdsByStatusEntry(entryKey);
-  }
-
-  private nodeIdsByStatusEntry(entryKey: string): string[] {
-    return [...this.nodes.values()].filter((node) => statusEntryKey(node) === entryKey).map((node) => node.id);
+    return [...this.nodes.values()].filter((node) => readableEntryKey(node) === entryKey).map((node) => node.id);
   }
 
   /**
@@ -232,5 +227,18 @@ export class MemoryDelegationGraphStorage
     }
 
     return chain;
+  }
+}
+
+/**
+ * The key of `node`'s status list entry, or `undefined` for a node with none,
+ * or with one whose index no list can hold, which `statusEntryKey` refuses.
+ */
+function readableEntryKey(node: DelegationNode): string | undefined {
+  try {
+    return statusEntryKey(node);
+  } catch (error) {
+    if (error instanceof RefusalError) return undefined;
+    throw error;
   }
 }

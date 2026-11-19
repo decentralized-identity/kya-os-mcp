@@ -5,8 +5,9 @@
  * A delegation credential carries its status entry, and whoever signs the credential writes it. An
  * agent that signs a re-delegation can write any entry, another delegation's included, so carrying
  * an entry never makes it the delegation's own. The record kept here does: the operator names the
- * delegation when it allocates the entry, and the delegation graph and cascading revocation refuse
- * to register, set or clear the entry for any other.
+ * delegation when it allocates the entry, and a delegation graph built with the manager as
+ * `statusEntryOwners` registers the entry for no other, and cascading revocation sets and clears
+ * it for no other.
  */
 
 import type { CredentialStatus } from '../types/protocol.js';
@@ -18,9 +19,11 @@ import type { StatusListStorageProvider } from './statuslist-manager.js';
 export interface StatusEntryAllocationOptions {
   /**
    * The id the delegation the entry is for is registered under in the delegation graph. The
-   * manager records the entry as that delegation's, and the graph and `CascadingRevocationManager`
-   * then refuse to register, set or clear it for any other delegation. Needs a storage provider
-   * that can record it ({@link StatusEntryOwnerStorageProvider}); `MemoryStatusListStorage` can.
+   * manager records the entry as that delegation's, and a graph built with the manager as
+   * `statusEntryOwners` then registers it for no other. Choose the id as the operator, the one you
+   * register the delegation under: never read it from the credential a presenter submits, whose
+   * signer could then name any delegation's id. Needs a storage provider that can record it
+   * ({@link StatusEntryOwnerStorageProvider}); `MemoryStatusListStorage` can.
    */
   delegationId?: string;
 }
@@ -29,8 +32,8 @@ export interface StatusEntryAllocationOptions {
 export interface StatusEntryOwners {
   /**
    * The id of the delegation `credentialStatus` was allocated to, or `undefined` when no owner was
-   * recorded for it: it was allocated without a `delegationId`, by a storage provider that keeps
-   * no owners, or is not an entry of this manager's lists.
+   * recorded for it: it was allocated without a `delegationId`, or not yet, or is not an entry of
+   * a list this manager issues, by that list's exact id.
    */
   getStatusEntryOwner(credentialStatus: CredentialStatus): Promise<string | undefined>;
 }

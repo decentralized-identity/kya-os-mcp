@@ -136,6 +136,7 @@ export {
   type DelegationNode,
   type DelegationGraphOptions,
   type DelegationGraphStorageProvider,
+  type StatusEntryClaim,
   type StatusEntryIndexedGraphStorageProvider,
 } from './delegation/delegation-graph.js';
 
@@ -153,7 +154,10 @@ export type {
 
 export {
   CascadingRevocationManager,
+  StatusEntryUnchangedError,
   createCascadingRevocationManager,
+  type StatusEntryUnchangedReason,
+  type UnchangedStatusEntry,
   type RevocationEvent,
   type RevocationHook,
   type CascadingRevocationOptions,

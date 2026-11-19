@@ -18,7 +18,8 @@ import {
   verifyObservationHistory,
   verifySupportingAnchors,
 } from './bundle-evidence.js';
-import type { AuditHasher, AuditSignatureVerifier, AuditSigner } from './crypto.js';
+import type { AuditHasher, AuditSignatureVerifier } from './crypto.js';
+import { BUNDLE_SCHEMA } from './bundle-exporter.js';
 import { hashAuditValue } from './crypto.js';
 import { AUDIT_DIGEST_DOMAINS } from './integrity.js';
 import { sameSigner, validAt } from './key-trust.js';
@@ -29,17 +30,13 @@ import {
   auditObservationReceiptSchema,
   auditReplayBundleSchema,
   auditVerificationPolicySchema,
-  parseAuditBundleManifestCore,
   signedAuditCheckpointSchema,
   signedAuditEntrySchema,
 } from './schemas.js';
 import type {
-  AuditBundleComponentV1,
-  AuditBundleDisposition,
   AuditBundleManifestCoreV1,
   AuditLedgerRef,
   AuditObservationReceiptV1,
-  AuditBundleSelectionV1,
   AuditAnchorReceipt,
   AuditReplayBundleV1,
   AuditVerificationDimension,
@@ -48,7 +45,8 @@ import type {
   SignedAuditCheckpointV1,
   SignedAuditEntryV1,
 } from './types.js';
-import { dimension, mergeDimensionList } from './verdicts.js';
+import { withCarriedEvidence } from './key-dating-evidence.js';
+import { dimension, mergeDimensionList, verdictOf } from './verdicts.js';
 import {
   AUDIT_REASON_CODES,
   AuditArtifactVerifier,
@@ -58,48 +56,12 @@ import {
 } from './verifier.js';
 
 export { AUDIT_BUNDLE_MEDIA_TYPES } from './bundle-components.js';
-
-const BUNDLE_SCHEMA =
-  'https://schema.kya-os.org/v1/protocol/audit/bundle-manifest/v1.0.0' as const;
-const BUNDLE_SUITE = 'KYA-AUDIT-BUNDLE-JCS-SHA256-JWS-2026' as const;
-
-export type AuditBundleComponentInput =
-  | {
-      path: string;
-      mediaType: string;
-      disposition: 'included';
-      content: unknown;
-    }
-  | {
-      path: string;
-      mediaType: string;
-      disposition: Exclude<AuditBundleDisposition, 'included'>;
-      reasonCode: string;
-    };
-
-export interface AuditReplayBundleExportInput {
-  bundleId: string;
-  purpose: string;
-  verificationPolicyDigest: `sha256:${string}`;
-  selections: readonly AuditBundleSelectionV1[];
-  components: readonly AuditBundleComponentInput[];
-}
-
-export interface AuditReplayBundleExporterOptions {
-  hasher: AuditHasher;
-  signer: AuditSigner;
-  clock: { now(): number };
-}
-
-function deepFreeze<T>(value: T): T {
-  if (typeof value !== 'object' || value === null || Object.isFrozen(value)) return value;
-  for (const child of Object.values(value)) deepFreeze(child);
-  return Object.freeze(value);
-}
-
-function cloneCanonical<T>(value: T): T {
-  return JSON.parse(canonicalizeJson(value)) as T;
-}
+export {
+  AuditReplayBundleExporter,
+  type AuditBundleComponentInput,
+  type AuditReplayBundleExporterOptions,
+  type AuditReplayBundleExportInput,
+} from './bundle-exporter.js';
 
 function malformedBundleReport(policy: AuditVerificationPolicyV1): AuditVerificationReportV1 {
   return {
@@ -119,77 +81,16 @@ function malformedBundleReport(policy: AuditVerificationPolicyV1): AuditVerifica
   };
 }
 
-/** Produces deterministic, signed-inventory evidence bundles. */
-export class AuditReplayBundleExporter {
-  constructor(private readonly options: AuditReplayBundleExporterOptions) {}
-
-  async export(input: AuditReplayBundleExportInput): Promise<AuditReplayBundleV1> {
-    if (!input.bundleId || !input.purpose) {
-      throw new TypeError('Bundle ID and export purpose are required');
-    }
-    const paths = new Set<string>();
-    const sortedInputs = [...input.components].sort((left, right) =>
-      left.path.localeCompare(right.path));
-    const components: AuditBundleComponentV1[] = [];
-    for (const item of sortedInputs) {
-      assertPath(item.path);
-      if (paths.has(item.path)) throw new TypeError(`Duplicate bundle component path: ${item.path}`);
-      paths.add(item.path);
-      if (item.disposition === 'included') {
-        const content = cloneCanonical(item.content);
-        const bytes = canonicalizeJsonBytes(content);
-        components.push({
-          path: item.path,
-          mediaType: item.mediaType,
-          disposition: 'included',
-          digest: await this.options.hasher.sha256(bytes),
-          size: String(bytes.length),
-          content,
-        });
-      } else {
-        if (!item.reasonCode) throw new TypeError('Excluded bundle items require a reason code');
-        components.push({
-          path: item.path,
-          mediaType: item.mediaType,
-          disposition: item.disposition,
-          reasonCode: item.reasonCode,
-        });
-      }
-    }
-
-    const inventory = components.map((component) => componentMetadata(component));
-    const core = parseAuditBundleManifestCore({
-      schema: BUNDLE_SCHEMA,
-      bundleId: input.bundleId,
-      formatVersion: '1.0.0',
-      selections: cloneCanonical([...input.selections]),
-      exporter: this.options.signer.ref,
-      purpose: input.purpose,
-      exportedAt: this.options.clock.now(),
-      verificationPolicyDigest: input.verificationPolicyDigest,
-      inventory,
-      integritySuite: BUNDLE_SUITE,
-    });
-    const manifestDigest = await hashAuditValue(
-      this.options.hasher,
-      AUDIT_DIGEST_DOMAINS.bundleManifest,
-      core,
-    );
-    return deepFreeze({
-      manifest: {
-        core,
-        manifestDigest,
-        jws: await this.options.signer.sign(canonicalizeJsonBytes(core)),
-      },
-      components,
-    });
-  }
-}
-
 export interface VerifyAuditBundleDependencies {
   hasher: AuditHasher;
   signatures: AuditSignatureVerifier;
   artifacts?: AuditArtifactVerifier;
+  /**
+   * The verifier's clock, used when `artifacts` is not given. A key whose validity has ended by
+   * then makes what it signed undecided unless evidence dates it before the end; with no clock,
+   * any key with an end is taken to have ended.
+   */
+  verifiedAt?: () => number;
   verifySupportingAnchor?: (
     checkpoint: SignedAuditCheckpointV1,
     receipt: AuditAnchorReceipt,
@@ -354,18 +255,56 @@ export async function verifyAuditBundle(
     ...includedArrays<unknown>(replayBundle, AUDIT_BUNDLE_MEDIA_TYPES.consistencyProofs)
       .filter((candidate) => auditBundleConsistencyProofSchema.safeParse(candidate).success),
   ] as AuditLedgerRef[];
-  // The bundle's own checkpoints are what checkpoint-bounded key policies name.
-  const context: AuditVerificationContext = { checkpoints };
   const artifacts = dependencies.artifacts ?? new AuditArtifactVerifier(dependencies);
+  const proofs = await verifyMerkleProofComponents(
+    replayBundle,
+    entries,
+    checkpoints,
+    dependencies.hasher,
+  );
+  // The bundle's own checkpoints are what checkpoint-bounded key policies name.
+  const supporting: AuditVerificationContext = { checkpoints };
+  const checkpointsByDigest = firstByKey(checkpoints, (checkpoint) => checkpoint.checkpointDigest);
+  const observationResults: AuditVerificationDimension[] = [];
+  const observed: AuditObservationReceiptV1[] = [];
+  for (const candidate of observationCandidates) {
+    if (!auditObservationReceiptSchema.safeParse(candidate).success) {
+      observationResults.push(dimension('invalid', [AUDIT_REASON_CODES.SCHEMA_INVALID]));
+      continue;
+    }
+    const receipt = candidate as AuditObservationReceiptV1;
+    const checkpoint = checkpointsByDigest.get(receipt.core.checkpointDigest);
+    const result = checkpoint === undefined
+      ? dimension('invalid', [AUDIT_REASON_CODES.OBSERVATION_SCOPE_MISMATCH])
+      : await artifacts.verifyObservation(checkpoint, receipt, policy, supporting);
+    if (result.verdict === 'valid') observed.push(receipt);
+    observationResults.push(result);
+  }
+  const anchors = await verifySupportingAnchors(
+    anchorCandidates,
+    checkpoints,
+    policy,
+    dependencies.verifySupportingAnchor,
+  );
+  // With the proofs, observations and anchors that verified, and any successor genesis the
+  // bundle carries, they date records whose key has ended.
+  const context = withCarriedEvidence({
+    checkpoints,
+    // Each is verified before it dates anything.
+    successorGeneses: includedArrays<SignedAuditEntryV1>(
+      replayBundle,
+      AUDIT_BUNDLE_MEDIA_TYPES.successorGeneses,
+    ),
+  }, {
+    entries,
+    inclusions: proofs.inclusions,
+    extensions: proofs.extensions,
+    observations: observed,
+    anchors: anchors.verified,
+  });
   const artifactReport = await verifyEntryGroups(entryCandidates, policy, artifacts, context);
   let checkpointDimension = artifactReport.checkpointIntegrity;
   if (checkpointCandidates.length > 0) {
-    const proofs = await verifyMerkleProofComponents(
-      replayBundle,
-      entries,
-      checkpoints,
-      dependencies.hasher,
-    );
     const binding = await checkpointBindings(
       checkpoints,
       entries,
@@ -406,19 +345,6 @@ export async function verifyAuditBundle(
   }
   let anchorDimension = artifactReport.anchorIntegrity;
   if (observationCandidates.length > 0) {
-    const checkpointsByDigest = firstByKey(checkpoints, (checkpoint) => checkpoint.checkpointDigest);
-    const observationResults: AuditVerificationDimension[] = [];
-    for (const candidate of observationCandidates) {
-      if (!auditObservationReceiptSchema.safeParse(candidate).success) {
-        observationResults.push(dimension('invalid', [AUDIT_REASON_CODES.SCHEMA_INVALID]));
-        continue;
-      }
-      const receipt = candidate as AuditObservationReceiptV1;
-      const checkpoint = checkpointsByDigest.get(receipt.core.checkpointDigest);
-      observationResults.push(checkpoint === undefined
-        ? dimension('invalid', [AUDIT_REASON_CODES.OBSERVATION_SCOPE_MISMATCH])
-        : await artifacts.verifyObservation(checkpoint, receipt, policy, context));
-    }
     observationResults.push(verifyObservationHistory(observations));
     anchorDimension = mergeDimensionList(observationResults);
   }
@@ -432,27 +358,19 @@ export async function verifyAuditBundle(
     );
   }
   if (anchorCandidates.length > 0) {
-    anchorDimension = mergeAuditDimensions(
-      anchorDimension,
-      await verifySupportingAnchors(
-        anchorCandidates,
-        checkpoints,
-        policy,
-        dependencies.verifySupportingAnchor,
-      ),
-    );
+    anchorDimension = mergeAuditDimensions(anchorDimension, anchors.dimension);
   }
 
-  // An exporter key bound that cannot be placed leaves the manifest
-  // undecided, never valid; any other manifest reason is a failure.
-  const manifestDimension = dimension(
-    reasons.size === 0
-      ? 'valid'
-      : [...reasons].every((reason) => reason === AUDIT_REASON_CODES.KEY_BOUNDARY_UNRESOLVED)
-        ? 'indeterminate'
-        : 'invalid',
-    reasons,
-  );
+  // Nothing dates an export: once the exporter's key has ended, its manifest is its word alone.
+  if (core !== undefined && exporter === 'authorized' && artifacts.keyHasEnded(
+    policy.authorizedExporters.flatMap((authorization) => authorization.signerKeys),
+    core.exporter,
+  )) {
+    reasons.add(AUDIT_REASON_CODES.KEY_ENDED_UNDATED);
+  }
+  // An exporter key bound that cannot be placed, or an exporter key that has ended, leaves the
+  // manifest undecided, never valid; any other manifest reason is a failure.
+  const manifestDimension = dimension(verdictOf(reasons), reasons);
   // Entry recorder keys were already evaluated per ledger epoch group.
   const currentKeys = artifacts.verifyCurrentKeys(policy, {
     checkpoints,

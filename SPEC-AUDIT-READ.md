@@ -102,6 +102,10 @@ A client MUST NOT accept an entry on the inclusion proof alone.
 A checkpoint commits to the leaves its journal held when it was signed, so the proof shows that a digest is in a signed tree, not that the recorder made the entry behind it.
 A client re-verifies a consistency proof by checking that the proof closes between the two named, signature-verified checkpoints.
 
+Once the trust policy no longer lists the recorder key that signed an entry as valid, the time the entry states is only that key's holder's word.
+A client MUST then treat the entry as undecided unless evidence its signer does not control dates it before the key's end, as the Auditability Protocol's verifier does (`AUDIT_KEY_ENDED_UNDATED`).
+After a rotation, that evidence is the successor epoch's genesis, read by `listEntries` of the successor epoch from sequence `0`, which commits to the predecessor's terminal checkpoint, together with that checkpoint and the entries it holds.
+
 Verification MUST succeed after transport serialization; a JSON round trip MUST NOT alter any digest or signature.
 
 ---

@@ -489,6 +489,11 @@ consistency proof; the proof, not the chain link, is the split-view guarantee,
 as for an observer catching up. A successor genesis commits where its
 predecessor epoch ends, so a predecessor checkpoint over a larger tree than
 that terminal checkpoint is reported as `AUDIT_CHECKPOINT_FORK_DETECTED`.
+
+A bundle may carry the geneses of the epochs that succeed the ones it selects, as an included component of media type `application/vnd.kya-os.audit.successor-geneses.v1+json` (`AUDIT_BUNDLE_MEDIA_TYPES.successorGeneses`) whose content is an array of signed entries.
+They are evidence, not selected content, so they sit outside every selection's scope.
+Each dates the records of the epoch before it once that epoch's key has ended, as *Artifacts whose key has ended* below describes; the genesis of a selected successor epoch, carried with its entries, dates them as well.
+The member is optional, and a verifier that predates it ignores it, as it ignores any component of a media type it does not read.
 Predecessor entries past the terminal are not by themselves a fork: the
 terminal checkpoint's own `checkpoint.created` event is appended after it is
 signed.
@@ -526,8 +531,35 @@ rejected for the constraints it uses:
   as-observed check is never waived, `current` and `both` evaluate the same
   keys. Current key status alone never makes `currentAuthorization` `valid`;
   that still takes the injected authorization verifier.
-  Under `as_observed` the signing time is the signer's own claim, so a key that may be compromised can still sign artifacts dated within its interval.
-  Retire a suspect key by checkpoint, with `validUntilCheckpoint`, or verify under `current` or `both`.
+  The time an artifact states is its signer's own claim, so the as-observed check alone holds only while the key is live; the next section says what holds once it has ended.
+
+### Artifacts whose key has ended
+
+A key has ended when the policy no longer lists it as valid at `verifiedAt`: its `validUntil` has passed, or it names a `validUntilCheckpoint`.
+A verifier with no `verifiedAt` clock takes any key with an end as ended, as nothing shows it has not.
+Whoever still holds an ended key can sign any time, so an entry or checkpoint it signed is its holder's word alone on when it was signed.
+Under every key revocation mode, such an artifact makes its dimension `indeterminate` (`AUDIT_KEY_ENDED_UNDATED`) unless evidence its signer does not control dates it at or before the key's end, which is the `validUntil` of the interval that places it; for an interval that ends only at a checkpoint, any such evidence does.
+This is never `invalid` on its own, and an artifact whose key is still live is taken at its word as before.
+
+Evidence dates checkpoints, and a checkpoint dates every entry its tree holds, by its recomputed root or a verified inclusion proof:
+
+- The genesis of a successor epoch, signed by the new key and verified as the first entry of an epoch the policy trusts, with that key placed at the time the genesis states, commits to the terminal checkpoint of the epoch before it.
+  While the new key is live, or once evidence dates the genesis before the new key ended, it dates that terminal checkpoint at the genesis's `recordedAt`.
+  This is the evidence an ordinary rotation leaves: every record its predecessor's terminal checkpoint holds stays `valid`.
+- A checkpoint signed by another key the policy trusts for the epoch, while that key is live, is dated at its own `createdAt`.
+- An observation by a trusted observer whose key is live is dated at its `observedAt`, and a supporting anchor receipt that verified at its `issuedAt`.
+- A checkpoint a policy `validUntilCheckpoint` names, on a recorder key or a ledger epoch, is dated before any end: whoever wrote the policy vouches for the tree the key or epoch ends at.
+- A dated checkpoint dates an earlier checkpoint whose tree it holds: the one its `previousCheckpointDigest` names, one bound to it by a verified consistency proof, and one recomputed from the same carried leaves.
+
+An entry outside every dated tree reads `indeterminate`: a record inserted after the rotation, or a fork of the epoch at a position its terminal checkpoint covers.
+A successor genesis offered as evidence that dates nothing is reported as `AUDIT_SUCCESSOR_GENESIS_MISMATCH`, also `indeterminate`: one that does not verify, that is not the first entry of its epoch, whose key the policy does not place at its time, or that commits to a terminal checkpoint other than a verified one of the epoch it names.
+A genesis whose own key has ended dates nothing until evidence dates it in turn, as the terminal checkpoint of its own epoch, committed by the next genesis, does.
+
+Nothing dates an export, so a bundle whose exporter key has ended leaves cryptographic integrity `indeterminate` (`AUDIT_KEY_ENDED_UNDATED`); export it again under a live key.
+Observation receipts are taken at the observer's word as before.
+
+Set an old recorder key's `validUntil` at or after the successor genesis's `recordedAt`, or end it by `validUntilCheckpoint` at the terminal checkpoint, so the genesis dates the records before the end.
+Outside a bundle, give the verifier the successor geneses in `AuditVerificationContext.successorGeneses`, the terminal checkpoint in `checkpoints`, and the epoch's entries from its first, so its root can be recomputed.
 
 When a policy requires observation freshness, an observation dated more than
 the verifier's clock-skew allowance (`maxClockSkewMs`, default 120 s) after

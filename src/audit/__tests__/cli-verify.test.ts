@@ -81,7 +81,10 @@ describe('kya-audit verify: the policy constraints that need the present time', 
   it('exits 1 when the policy requires current keys and the signing key ended before now', async () => {
     const { exitCode, output } = await verify(await signedBundle(SIGNED_AT + DAY, 'current'));
     const report = JSON.parse(output) as Report;
-    expect(report['cryptographicIntegrity']!.verdict).toBe('valid');
+    // Nothing in the bundle dates its records before the key ended.
+    expect(report['cryptographicIntegrity']).toEqual({
+      verdict: 'indeterminate', reasonCodes: ['AUDIT_KEY_ENDED_UNDATED'],
+    });
     expect(report['currentAuthorization']).toMatchObject({ verdict: 'invalid' });
     expect(report['currentAuthorization']!.reasonCodes).toContain('AUDIT_KEY_NOT_CURRENT');
     expect(exitCode).toBe(1);

@@ -1,0 +1,25 @@
+kind: Security
+body: |-
+    **An audit record whose key has ended is not valid on the time it
+    states.** The verifier checked a recorder, checkpoint or exporter key's
+    validity interval against the time the signer wrote into the artifact,
+    so whoever still held a key the policy had retired could sign a record
+    or an export dated before the retirement, and it read `valid` in every
+    integrity dimension. Once the policy no longer lists the key as valid
+    at `verifiedAt`, or the verifier has no clock and the key has an end,
+    an entry or checkpoint it signed now reads `indeterminate`
+    (`AUDIT_KEY_ENDED_UNDATED`) unless evidence its signer does not
+    control dates it before the end: the successor epoch's genesis, signed
+    by the new key and committing to the old epoch's terminal checkpoint, a
+    checkpoint signed by another live key, an observation or supporting
+    anchor, or a checkpoint the policy names as the key's or the epoch's
+    end. A bundle carries successor geneses in a new optional component,
+    `AUDIT_BUNDLE_MEDIA_TYPES.successorGeneses`, and a verifier given
+    records outside a bundle takes them in
+    `AuditVerificationContext.successorGeneses`, so honest records stay
+    `valid` across a rotation. One that dates nothing is reported as
+    `AUDIT_SUCCESSOR_GENESIS_MISMATCH`. An export signed by an exporter
+    key that has ended reads `indeterminate`, as nothing dates it.
+    `verifyAuditBundle` takes a `verifiedAt` clock for the verifier it
+    builds. None of this makes a dimension `invalid`.
+time: 2026-11-19T14:00:00.000000-06:00

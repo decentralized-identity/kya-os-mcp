@@ -111,6 +111,48 @@ export function keyTrust(
 }
 
 /**
+ * When the key that signed an artifact stopped vouching for the time the artifact states, if it
+ * has: the latest `validUntil` of the intervals that place the artifact, `Infinity` for one
+ * ended only by `validUntilCheckpoint`, and `-Infinity` when none places it. `undefined` while
+ * the key is live ({@link keyIsLive}), since its holder's word on time is then the key's own.
+ * Evidence that the signer does not control must date such an artifact at or before this end.
+ */
+export function keyEnd(
+  keys: readonly HistoricalAuditKeyPolicy[],
+  signer: SignerRef,
+  at: number,
+  ledger: AuditLedgerRef,
+  position: bigint,
+  boundaries: CheckpointBoundaries,
+  epochBounds: CheckpointBounds,
+  now: number | undefined,
+): number | undefined {
+  if (keyIsLive(keys, signer, now)) return undefined;
+  const epoch = positionWithin(epochBounds, ledger, position, boundaries);
+  let end = -Infinity;
+  for (const key of keys) {
+    if (!sameSigner(key.signer, signer) || !validAt(key, at) ||
+      strictest(epoch, positionWithin(key, ledger, position, boundaries)) !== 'within') continue;
+    end = Math.max(end, key.validUntil ?? Infinity);
+  }
+  return end;
+}
+
+/**
+ * Whether the key is live: valid now by {@link keyIsCurrent}, or, for a verifier with no clock,
+ * listed under an interval with no end at all, as nothing else shows it has not ended.
+ */
+export function keyIsLive(
+  keys: readonly HistoricalAuditKeyPolicy[],
+  signer: SignerRef,
+  now: number | undefined,
+): boolean {
+  if (now !== undefined) return keyIsCurrent(keys, signer, now);
+  return keys.some((key) => sameSigner(key.signer, signer) &&
+    key.validUntil === undefined && key.validUntilCheckpoint === undefined);
+}
+
+/**
  * Whether the policy still lists the signer as valid at `now`. A checkpoint
  * bound names a checkpoint that already exists, so a key valid only until one
  * has been retired, while one valid from one has already started.

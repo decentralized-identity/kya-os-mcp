@@ -289,8 +289,10 @@ describe('signed replay bundles: observations, anchors, profiles and key status'
     };
 
     for (const revoke of ['exporter', 'observer'] as const) {
+      // Nothing dates an export: once its key has ended, the manifest is undecided.
+      const exported = revoke === 'exporter' ? 'indeterminate' : 'valid';
       const historical = await verifyUnder(under('as_observed', revoke), revokedAt + 1);
-      expect(historical.cryptographicIntegrity.verdict).toBe('valid');
+      expect(historical.cryptographicIntegrity.verdict).toBe(exported);
       expect(historical.anchorIntegrity.verdict).toBe('valid');
       expect(historical.currentAuthorization).toEqual({
         verdict: 'indeterminate',
@@ -298,7 +300,7 @@ describe('signed replay bundles: observations, anchors, profiles and key status'
       });
       for (const mode of ['current', 'both'] as const) {
         const report = await verifyUnder(under(mode, revoke), revokedAt + 1);
-        expect(report.cryptographicIntegrity.verdict).toBe('valid');
+        expect(report.cryptographicIntegrity.verdict).toBe(exported);
         expect(report.anchorIntegrity.verdict).toBe('valid');
         expect(report.currentAuthorization).toEqual(notCurrent);
       }

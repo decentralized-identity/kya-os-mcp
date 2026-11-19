@@ -115,8 +115,9 @@ export async function verifySupportingAnchors(
   checkpoints: readonly SignedAuditCheckpointV1[],
   policy: AuditVerificationPolicyV1,
   verifyReceipt: SupportingAnchorVerifier | undefined,
-): Promise<AuditVerificationDimension> {
+): Promise<{ dimension: AuditVerificationDimension; verified: AuditAnchorReceipt[] }> {
   const reasons = new Set<string>();
+  const verified: AuditAnchorReceipt[] = [];
   let notEvaluated = false;
   const byDigest = firstByKey(checkpoints, (checkpoint) => checkpoint.checkpointDigest);
   for (const candidate of candidates) {
@@ -137,10 +138,15 @@ export async function verifySupportingAnchors(
       notEvaluated = true;
     } else if ((await verifyReceipt(checkpoint, receipt)) !== true) {
       reasons.add(AUDIT_REASON_CODES.SUPPORTING_ANCHOR_INVALID);
+    } else if (trusted) {
+      verified.push(receipt);
     }
   }
   const invalid = [...reasons].some((reason) => reason !== AUDIT_REASON_CODES.NOT_EVALUATED);
-  return dimension(invalid ? 'invalid' : notEvaluated ? 'indeterminate' : 'valid', reasons);
+  return {
+    dimension: dimension(invalid ? 'invalid' : notEvaluated ? 'indeterminate' : 'valid', reasons),
+    verified,
+  };
 }
 
 /** A range of sequences, both ends included. */

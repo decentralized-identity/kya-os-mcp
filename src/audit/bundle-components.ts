@@ -14,6 +14,11 @@ export const AUDIT_BUNDLE_MEDIA_TYPES = Object.freeze({
   consistencyProofs: 'application/vnd.kya-os.audit.consistency-proofs.v1+json',
   observations: 'application/vnd.kya-os.audit.observations.v1+json',
   anchors: 'application/vnd.kya-os.audit.anchors.v1+json',
+  /**
+   * Geneses of the epochs that succeed a selected epoch, each committing to that epoch's terminal
+   * checkpoint: they date its records once the key that signed them has ended.
+   */
+  successorGeneses: 'application/vnd.kya-os.audit.successor-geneses.v1+json',
   verificationReport: 'application/vnd.kya-os.audit.verification-report.v1+json',
 });
 

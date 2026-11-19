@@ -410,6 +410,35 @@ A valid result now carries `meta`, so a deep-equality check against `{ valid: tr
 The JWS it signs is unchanged, since such a member never reached its payload, but `meta` as it goes on the wire can lose it.
 A caller that read such a member back from a proof's `meta` keeps it beside the proof instead.
 
+### Audit records whose key has ended
+
+Once a verification policy no longer lists a recorder key as valid at `verifiedAt`, the entries and checkpoints it signed read `indeterminate`, with `AUDIT_KEY_ENDED_UNDATED`, unless evidence the signer does not control dates them before the key ended.
+Until now they read `valid` on the time they state, which whoever still held the key could write.
+This applies under every `keyRevocationMode`, never makes a dimension `invalid`, and leaves the exit code of `kya-audit verify` as it was, since that exits 1 only for an `invalid` dimension.
+A key that is still valid at `verifiedAt` is taken at its word as before.
+
+The evidence an ordinary rotation leaves is the successor epoch's genesis, signed by the new key and committing to the old epoch's terminal checkpoint: it keeps every record that checkpoint holds `valid`.
+Give it to the verifier:
+
+- In a replay bundle, as a component of media type `AUDIT_BUNDLE_MEDIA_TYPES.successorGeneses`, whose content is the array of successor geneses, beside the epoch's entries and its terminal checkpoint.
+  A successor epoch the bundle selects already carries its genesis.
+- Outside a bundle, in `AuditVerificationContext.successorGeneses`, with the terminal checkpoint in `checkpoints` and the epoch's entries from its genesis, so the checkpoint's root can be recomputed.
+
+Set the old key's `validUntil` at or after the successor genesis's `recordedAt`, or end the key with `validUntilCheckpoint` at the terminal checkpoint: a genesis dated after the old key's end dates nothing before it.
+A checkpoint signed by another key that is still valid, an observation by an observer whose key is still valid, a supporting anchor and a checkpoint the policy ends a key or an epoch at date records too.
+A successor genesis that dates nothing, because it does not verify or commits to another checkpoint than the one carried, is reported as `AUDIT_SUCCESSOR_GENESIS_MISMATCH`, also `indeterminate`.
+
+A verifier with no clock takes any key with an end as ended.
+Give `AuditArtifactVerifier` its `verifiedAt` option, and `verifyAuditBundle` the new `verifiedAt` dependency when it builds its own verifier.
+
+A bundle exported before this release carries no successor geneses.
+It reads as it did while every key that signed it is still valid at `verifiedAt`.
+Once its recorder key has ended, its entries and checkpoints read `indeterminate` unless it carries other evidence that dates them, such as a selected successor epoch, an observation or a supporting anchor; export it again with the successor genesis to read them `valid`.
+Nothing dates an export, so once its exporter key has ended the bundle's cryptographic integrity reads `indeterminate` whatever it carries; export it again under a valid key.
+Observation receipts are read as before.
+
+A consumer that lists every audit reason code adds `AUDIT_KEY_ENDED_UNDATED` and `AUDIT_SUCCESSOR_GENESIS_MISMATCH`.
+
 ## From 1.24.0
 
 ### The delegation gate shows the failure your DID resolver reports

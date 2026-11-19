@@ -163,18 +163,18 @@ function carriedEntries(group: readonly SignedAuditEntryV1[]): CarriedEntries {
   return { sequences, digestsAt };
 }
 
-/**
- * How the bundle binds each of its checkpoints to the entries it carries. A checkpoint over a tree
- * no larger than the prefix its epoch carries whole is bound by its recomputed root, all of an
- * epoch's roots computed in one pass; any other, by inclusion proofs for the entries it covers,
- * counted in `inclusionCounts` by {@link verifyMerkleProofComponents}.
- */
-export async function checkpointBindings(
+/** Each epoch's carried entries, the prefix of them carried whole, and the roots its checkpoints need. */
+interface PrefixState {
+  epochs: Map<string, SignedAuditEntryV1[]>;
+  prefixes: Map<string, SignedAuditEntryV1[]>;
+  roots: Map<string, Map<number, Digest>>;
+}
+
+async function prefixState(
   checkpoints: readonly SignedAuditCheckpointV1[],
   entries: readonly SignedAuditEntryV1[],
-  inclusionCounts: ReadonlyMap<string, number>,
   hasher: AuditHasher,
-): Promise<(checkpoint: SignedAuditCheckpointV1) => AuditVerificationDimension> {
+): Promise<PrefixState> {
   const epochs = new Map<string, SignedAuditEntryV1[]>();
   for (const entry of entries) {
     const key = ledgerEpochKey(entry.core);
@@ -183,7 +183,6 @@ export async function checkpointBindings(
     epochs.set(key, group);
   }
   const prefixes = new Map([...epochs].map(([key, group]) => [key, wholePrefix(group)]));
-  const carried = new Map([...epochs].map(([key, group]) => [key, carriedEntries(group)]));
   const sizes = new Map<string, number[]>();
   for (const checkpoint of checkpoints) {
     const key = ledgerEpochKey(checkpoint.core);
@@ -198,20 +197,55 @@ export async function checkpointBindings(
     const leaves = prefixes.get(key)!.map((entry) => entry.entryDigest);
     roots.set(key, await prefixRoots(hasher, leaves, wanted));
   }
-  return (checkpoint) => {
-    const key = ledgerEpochKey(checkpoint.core);
-    const prefix = prefixes.get(key) ?? [];
-    const treeSize = BigInt(checkpoint.core.treeSize);
-    if (treeSize <= BigInt(prefix.length)) {
-      const size = Number(treeSize);
-      return prefixBinding(checkpoint, prefix[size - 1], roots.get(key)?.get(size));
-    }
-    return verifyInclusionBinding(
+  return { epochs, prefixes, roots };
+}
+
+/** The prefix binding of a checkpoint over a tree no larger than its epoch's whole prefix. */
+function boundByPrefix(state: PrefixState, checkpoint: SignedAuditCheckpointV1): AuditVerificationDimension | undefined {
+  const key = ledgerEpochKey(checkpoint.core);
+  const prefix = state.prefixes.get(key) ?? [];
+  const size = Number(checkpoint.core.treeSize);
+  if (BigInt(checkpoint.core.treeSize) > BigInt(prefix.length)) return undefined;
+  return prefixBinding(checkpoint, prefix[size - 1], state.roots.get(key)?.get(size));
+}
+
+/**
+ * The checkpoints whose root, range and head the entries recompute from a prefix they carry whole,
+ * with that prefix: each such checkpoint holds the first `treeSize` entries of it.
+ */
+export async function prefixBoundCheckpoints(
+  checkpoints: readonly SignedAuditCheckpointV1[],
+  entries: readonly SignedAuditEntryV1[],
+  hasher: AuditHasher,
+): Promise<{ checkpoint: SignedAuditCheckpointV1; prefix: readonly SignedAuditEntryV1[] }[]> {
+  const state = await prefixState(checkpoints, entries, hasher);
+  return checkpoints
+    .filter((checkpoint) => boundByPrefix(state, checkpoint)?.verdict === 'valid')
+    .map((checkpoint) => ({
       checkpoint,
-      carried.get(key) ?? { sequences: [], digestsAt: new Map() },
-      inclusionCounts.get(checkpointKey(checkpoint.core, checkpoint.checkpointDigest)) ?? 0,
-    );
-  };
+      prefix: state.prefixes.get(ledgerEpochKey(checkpoint.core))!,
+    }));
+}
+
+/**
+ * How the bundle binds each of its checkpoints to the entries it carries. A checkpoint over a tree
+ * no larger than the prefix its epoch carries whole is bound by its recomputed root, all of an
+ * epoch's roots computed in one pass; any other, by inclusion proofs for the entries it covers,
+ * counted in `inclusionCounts` by {@link verifyMerkleProofComponents}.
+ */
+export async function checkpointBindings(
+  checkpoints: readonly SignedAuditCheckpointV1[],
+  entries: readonly SignedAuditEntryV1[],
+  inclusionCounts: ReadonlyMap<string, number>,
+  hasher: AuditHasher,
+): Promise<(checkpoint: SignedAuditCheckpointV1) => AuditVerificationDimension> {
+  const state = await prefixState(checkpoints, entries, hasher);
+  const carried = new Map([...state.epochs].map(([key, group]) => [key, carriedEntries(group)]));
+  return (checkpoint) => boundByPrefix(state, checkpoint) ?? verifyInclusionBinding(
+    checkpoint,
+    carried.get(ledgerEpochKey(checkpoint.core)) ?? { sequences: [], digestsAt: new Map() },
+    inclusionCounts.get(checkpointKey(checkpoint.core, checkpoint.checkpointDigest)) ?? 0,
+  );
 }
 
 export function verifyCheckpointHistory(
@@ -310,6 +344,10 @@ export interface MerkleProofVerification {
   inclusionCounts: Map<string, number>;
   /** Consistency proofs that verified, keyed by old and new checkpoint digest. */
   consistencies: Set<string>;
+  /** The inclusion proofs that verified. */
+  inclusions: AuditBundleInclusionProofV1[];
+  /** The consistency proofs that verified, as their new and old checkpoint digests. */
+  extensions: (readonly [newer: Digest, older: Digest])[];
 }
 
 export async function verifyMerkleProofComponents(
@@ -322,6 +360,8 @@ export async function verifyMerkleProofComponents(
   const inclusions = new Set<string>();
   const inclusionCounts = new Map<string, number>();
   const consistencies = new Set<string>();
+  const inclusionItems: AuditBundleInclusionProofV1[] = [];
+  const extensions: (readonly [Digest, Digest])[] = [];
   const tree = new Rfc9162MerkleTree(hasher);
   const checkpointsByKey = firstByKey(checkpoints, (value) =>
     checkpointKey(value.core, value.checkpointDigest));
@@ -353,6 +393,7 @@ export async function verifyMerkleProofComponents(
       }))) {
       reasons.add(AUDIT_REASON_CODES.MERKLE_PROOF_INVALID);
     } else {
+      inclusionItems.push(item);
       const counted = checkpointKey(item, item.checkpointDigest);
       const key = `${counted}\0${inclusionKey(item.checkpointDigest, item.entryDigest, item.sequence)}`;
       if (!inclusions.has(key)) {
@@ -387,12 +428,15 @@ export async function verifyMerkleProofComponents(
       reasons.add(AUDIT_REASON_CODES.MERKLE_PROOF_INVALID);
     } else {
       consistencies.add(consistencyKey(item.oldCheckpointDigest, item.newCheckpointDigest));
+      extensions.push([item.newCheckpointDigest, item.oldCheckpointDigest]);
     }
   }
   return {
     dimension: dimension(reasons.size === 0 ? 'valid' : 'invalid', reasons),
     inclusionCounts,
     consistencies,
+    inclusions: inclusionItems,
+    extensions,
   };
 }
 

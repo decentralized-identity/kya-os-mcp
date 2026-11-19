@@ -299,6 +299,10 @@ def main() -> int:
                     parent_commitment(hop_chain("root-states-parent-digest")) == "root-states"))
     results.append(("hop that states no parent digest is held to none",
                     parent_commitment(hop_chain("hop-parent-digest-absent")) == "uncommitted"))
+    results.append(("root that states a parent digest as null states one",
+                    parent_commitment(hop_chain("root-states-parent-digest-null")) == "root-states"))
+    results.append(("hop that states a parent digest as null states one that is not its parent's",
+                    parent_commitment(hop_chain("hop-parent-digest-null")) == "mismatch"))
 
     relationship_file = read_vector_file(HERE / "vectors" / "signed-proof-key-relationship.json")
     results.append(("every detached proof key-relationship vector has the verdict it expects",

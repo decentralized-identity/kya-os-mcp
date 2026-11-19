@@ -17,6 +17,7 @@ import {
   type DelegationCredential,
   type UnsignedDelegationCredential,
 } from '../src/card/index.js';
+import { signEddsaJcs2022 } from '../src/card/data-integrity.js';
 import { parentCredentialDigestOf } from '../src/card/parent-digest.js';
 import { AGENT_A, AGENT_A_KEY, DELEGATION_CHAIN, OWNER, OWNER_KEY } from './card-fixtures.js';
 import type { ConformanceVector, EntityCardAccountabilityInput } from './types.js';
@@ -79,6 +80,16 @@ export async function cardChainVectors(
     ...unsignedRoot,
     credentialSubject: { ...unsignedRoot.credentialSubject, parentCredentialDigest: rootDigest },
   }, owner, signing);
+  // `null` is a value stated, not a member left out, so each of these hops states a digest that is
+  // not its parent's, or, on the root, states one at all. `signDelegationCredential` signs no such
+  // hop, so its issuer signs it as data.
+  const signedStatingNull = (hop: UnsignedDelegationCredential, issuer: typeof owner) => signEddsaJcs2022(
+    { ...hop, credentialSubject: { ...hop.credentialSubject, parentCredentialDigest: null } },
+    issuer,
+    { proofPurpose: 'assertionMethod', created: SIGNED_AT },
+  );
+  const nullRoot = await signedStatingNull(unsignedRoot, owner);
+  const nullLeaf = await signedStatingNull(unsignedLeaf, agentA);
 
   const holding = (chain: unknown[]) => ({ card, accountability: { ...accountability, chain } });
   return [
@@ -126,6 +137,22 @@ export async function cardChainVectors(
       expected: 'fail',
       reason: 'The root has no parent credential, so it states no parentCredentialDigest (chain_invalid)',
       input: holding([committedRoot, uncommittedLeaf]),
+    },
+    {
+      id: 'entity-card/root-states-parent-digest-null',
+      category: 'entity-card',
+      description: 'The signed chain, its root stating parentCredentialDigest as null',
+      expected: 'fail',
+      reason: 'A member stated as null is stated: the root has no parent credential, so it states no parentCredentialDigest, null included (chain_invalid)',
+      input: holding([nullRoot, uncommittedLeaf]),
+    },
+    {
+      id: 'entity-card/hop-parent-digest-null',
+      category: 'entity-card',
+      description: 'The signed chain, its leaf stating parentCredentialDigest as null',
+      expected: 'fail',
+      reason: 'A member stated as null is stated, and null is not the digest of the hop before it (chain_invalid). Only a hop that leaves the member out states none',
+      input: holding([root, nullLeaf]),
     },
     {
       id: 'entity-card/hop-parent-digest-absent',

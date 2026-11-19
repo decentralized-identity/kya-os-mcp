@@ -1181,6 +1181,298 @@
       }
     },
     {
+      "id": "entity-card/root-states-parent-digest-null",
+      "category": "entity-card",
+      "description": "The signed chain, its root stating parentCredentialDigest as null",
+      "expected": "fail",
+      "reason": "A member stated as null is stated: the root has no parent credential, so it states no parentCredentialDigest, null included (chain_invalid)",
+      "input": {
+        "card": {
+          "id": "did:web:example.com:agents:acme-pay",
+          "entityType": "agent",
+          "name": "Acme Pay Agent",
+          "kid": "did:web:example.com:agents:acme-pay#key-1",
+          "capabilities": [
+            "handshake",
+            {
+              "name": "payments.transfer",
+              "attestations": [
+                {
+                  "vc": "jwt-cap-attestation"
+                }
+              ]
+            }
+          ],
+          "responsibleParty": "did:web:api.example",
+          "principal": "did:web:example.com:users:alice",
+          "delegationRef": "urn:zcap:root>urn:zcap:del1",
+          "proofProfile": "org.kya-os/proof.v1"
+        },
+        "accountability": {
+          "resourceOwner": "did:web:api.example",
+          "resource": "did:web:api.example:payments",
+          "chain": [
+            {
+              "@context": [
+                "https://www.w3.org/ns/credentials/v2",
+                "https://w3id.org/security/zcap/v1",
+                "https://kya-os.org/ns/delegation/v1"
+              ],
+              "id": "urn:zcap:root",
+              "type": [
+                "VerifiableCredential",
+                "DelegationCredential"
+              ],
+              "issuer": "did:web:api.example",
+              "validUntil": "2027-01-01T00:00:00Z",
+              "credentialSubject": {
+                "id": "urn:zcap:root",
+                "invoker": "did:web:agent-a.example",
+                "parentCapability": "did:web:api.example:payments",
+                "invocationTarget": "did:web:api.example:payments",
+                "allowedAction": [
+                  "payments.transfer",
+                  "payments.read"
+                ],
+                "caveats": [
+                  {
+                    "type": "MaxAmount",
+                    "limit": "1000.00",
+                    "currency": "USD"
+                  },
+                  {
+                    "type": "ValidUntil",
+                    "date": "2027-01-01T00:00:00Z"
+                  }
+                ],
+                "parentCredentialDigest": null
+              },
+              "credentialStatus": {
+                "type": "BitstringStatusListEntry",
+                "statusPurpose": "revocation",
+                "statusListIndex": "7",
+                "statusListCredential": "https://api.example/status/delegations"
+              },
+              "proof": {
+                "type": "DataIntegrityProof",
+                "cryptosuite": "eddsa-jcs-2022",
+                "created": "2026-06-01T00:00:00Z",
+                "verificationMethod": "did:web:api.example#key-1",
+                "proofPurpose": "assertionMethod",
+                "@context": [
+                  "https://www.w3.org/ns/credentials/v2",
+                  "https://w3id.org/security/zcap/v1",
+                  "https://kya-os.org/ns/delegation/v1"
+                ],
+                "proofValue": "z5pCQ8Y8Ut1xEyvqe2MecsRfscRBCbpdVHKpMtFR8DiV5NFV7AzdU3j53ebUVb69rveDA5wSymgfXZnUYpdvrWY2w"
+              }
+            },
+            {
+              "@context": [
+                "https://www.w3.org/ns/credentials/v2",
+                "https://w3id.org/security/zcap/v1",
+                "https://kya-os.org/ns/delegation/v1"
+              ],
+              "id": "urn:zcap:del1",
+              "type": [
+                "VerifiableCredential",
+                "DelegationCredential"
+              ],
+              "issuer": "did:web:agent-a.example",
+              "validUntil": "2026-07-01T00:00:00Z",
+              "credentialSubject": {
+                "id": "urn:zcap:del1",
+                "invoker": "did:web:example.com:agents:acme-pay",
+                "parentCapability": "urn:zcap:root",
+                "invocationTarget": "did:web:api.example:payments",
+                "allowedAction": [
+                  "payments.transfer"
+                ],
+                "caveats": [
+                  {
+                    "type": "MaxAmount",
+                    "limit": "500.00",
+                    "currency": "USD"
+                  },
+                  {
+                    "type": "ValidUntil",
+                    "date": "2026-07-01T00:00:00Z"
+                  }
+                ]
+              },
+              "credentialStatus": {
+                "type": "BitstringStatusListEntry",
+                "statusPurpose": "revocation",
+                "statusListIndex": "42",
+                "statusListCredential": "https://agent-a.example/status/delegations"
+              },
+              "proof": {
+                "type": "DataIntegrityProof",
+                "cryptosuite": "eddsa-jcs-2022",
+                "created": "2026-06-01T00:00:00Z",
+                "verificationMethod": "did:web:agent-a.example#key-1",
+                "proofPurpose": "assertionMethod",
+                "@context": [
+                  "https://www.w3.org/ns/credentials/v2",
+                  "https://w3id.org/security/zcap/v1",
+                  "https://kya-os.org/ns/delegation/v1"
+                ],
+                "proofValue": "z59m6faBpSC5L7kDGaemPtTakgVto9GuD7SYTMu4yRNxPvTeCdFA4Li9Dtv1eEa78Nem84tCUMCQb7wSYPdoss2rT"
+              }
+            }
+          ],
+          "proofDid": "did:web:example.com:agents:acme-pay",
+          "now": 1782820800000
+        }
+      }
+    },
+    {
+      "id": "entity-card/hop-parent-digest-null",
+      "category": "entity-card",
+      "description": "The signed chain, its leaf stating parentCredentialDigest as null",
+      "expected": "fail",
+      "reason": "A member stated as null is stated, and null is not the digest of the hop before it (chain_invalid). Only a hop that leaves the member out states none",
+      "input": {
+        "card": {
+          "id": "did:web:example.com:agents:acme-pay",
+          "entityType": "agent",
+          "name": "Acme Pay Agent",
+          "kid": "did:web:example.com:agents:acme-pay#key-1",
+          "capabilities": [
+            "handshake",
+            {
+              "name": "payments.transfer",
+              "attestations": [
+                {
+                  "vc": "jwt-cap-attestation"
+                }
+              ]
+            }
+          ],
+          "responsibleParty": "did:web:api.example",
+          "principal": "did:web:example.com:users:alice",
+          "delegationRef": "urn:zcap:root>urn:zcap:del1",
+          "proofProfile": "org.kya-os/proof.v1"
+        },
+        "accountability": {
+          "resourceOwner": "did:web:api.example",
+          "resource": "did:web:api.example:payments",
+          "chain": [
+            {
+              "@context": [
+                "https://www.w3.org/ns/credentials/v2",
+                "https://w3id.org/security/zcap/v1",
+                "https://kya-os.org/ns/delegation/v1"
+              ],
+              "id": "urn:zcap:root",
+              "type": [
+                "VerifiableCredential",
+                "DelegationCredential"
+              ],
+              "issuer": "did:web:api.example",
+              "validUntil": "2027-01-01T00:00:00Z",
+              "credentialSubject": {
+                "id": "urn:zcap:root",
+                "invoker": "did:web:agent-a.example",
+                "parentCapability": "did:web:api.example:payments",
+                "invocationTarget": "did:web:api.example:payments",
+                "allowedAction": [
+                  "payments.transfer",
+                  "payments.read"
+                ],
+                "caveats": [
+                  {
+                    "type": "MaxAmount",
+                    "limit": "1000.00",
+                    "currency": "USD"
+                  },
+                  {
+                    "type": "ValidUntil",
+                    "date": "2027-01-01T00:00:00Z"
+                  }
+                ]
+              },
+              "credentialStatus": {
+                "type": "BitstringStatusListEntry",
+                "statusPurpose": "revocation",
+                "statusListIndex": "7",
+                "statusListCredential": "https://api.example/status/delegations"
+              },
+              "proof": {
+                "type": "DataIntegrityProof",
+                "cryptosuite": "eddsa-jcs-2022",
+                "created": "2026-06-01T00:00:00Z",
+                "verificationMethod": "did:web:api.example#key-1",
+                "proofPurpose": "assertionMethod",
+                "@context": [
+                  "https://www.w3.org/ns/credentials/v2",
+                  "https://w3id.org/security/zcap/v1",
+                  "https://kya-os.org/ns/delegation/v1"
+                ],
+                "proofValue": "z45ajP4MsAprnzyxQaVXuZwzr79E8Li4wkXxAf85wQxZBgotQeXw1kuikTzJGQhx1jde16AGLDXefgV76EnuwdLmd"
+              }
+            },
+            {
+              "@context": [
+                "https://www.w3.org/ns/credentials/v2",
+                "https://w3id.org/security/zcap/v1",
+                "https://kya-os.org/ns/delegation/v1"
+              ],
+              "id": "urn:zcap:del1",
+              "type": [
+                "VerifiableCredential",
+                "DelegationCredential"
+              ],
+              "issuer": "did:web:agent-a.example",
+              "validUntil": "2026-07-01T00:00:00Z",
+              "credentialSubject": {
+                "id": "urn:zcap:del1",
+                "invoker": "did:web:example.com:agents:acme-pay",
+                "parentCapability": "urn:zcap:root",
+                "invocationTarget": "did:web:api.example:payments",
+                "allowedAction": [
+                  "payments.transfer"
+                ],
+                "caveats": [
+                  {
+                    "type": "MaxAmount",
+                    "limit": "500.00",
+                    "currency": "USD"
+                  },
+                  {
+                    "type": "ValidUntil",
+                    "date": "2026-07-01T00:00:00Z"
+                  }
+                ],
+                "parentCredentialDigest": null
+              },
+              "credentialStatus": {
+                "type": "BitstringStatusListEntry",
+                "statusPurpose": "revocation",
+                "statusListIndex": "42",
+                "statusListCredential": "https://agent-a.example/status/delegations"
+              },
+              "proof": {
+                "type": "DataIntegrityProof",
+                "cryptosuite": "eddsa-jcs-2022",
+                "created": "2026-06-01T00:00:00Z",
+                "verificationMethod": "did:web:agent-a.example#key-1",
+                "proofPurpose": "assertionMethod",
+                "@context": [
+                  "https://www.w3.org/ns/credentials/v2",
+                  "https://w3id.org/security/zcap/v1",
+                  "https://kya-os.org/ns/delegation/v1"
+                ],
+                "proofValue": "z4QRRmZbfCdUPdXGJYk8WABgzf8MJBx1HMLJ6S7n8ttBFfaFVEQkUTh9irPiJCCtWFnExMY5gSrpHt18FRyUxiMsi"
+              }
+            }
+          ],
+          "proofDid": "did:web:example.com:agents:acme-pay",
+          "now": 1782820800000
+        }
+      }
+    },
+    {
       "id": "entity-card/hop-parent-digest-absent",
       "category": "entity-card",
       "description": "The signed chain, its leaf stating no parentCredentialDigest",

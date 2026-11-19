@@ -1171,7 +1171,8 @@ An `eddsa-jcs-2022` signature also covers the proof's configuration, so the dige
 It is the digest §7.8 gives each credential of a chain, so a party that holds those digests matches a hop's commitment against them.
 A verifier MUST check the digest of every hop that states one against the hop before it in the chain, as received, and MUST refuse the chain, as `chain_invalid`, when the two differ, when that hop has no signed form, or when the root states one, since the root has no parent credential.
 The reference implementation checks it after the local chain rules and before any hop proof, since it reads nothing from the network.
-A hop that states none is accepted as before, its parent named by its `id` alone; version 2.0.0 requires it of every hop but the root.
+A hop states the member when its `credentialSubject` holds it, whatever its value, so a hop that states it as `null` states a digest that is not its parent's, and a root that does states one.
+A hop that states none, leaving the member out, is accepted as before, its parent named by its `id` alone; version 2.0.0 requires it of every hop but the root.
 An issuer that holds the parent when it signs a hop SHOULD state it, and the reference implementation's `signDelegationCredential` writes it when given the parent as `options.parent`.
 
 **Caveats (fail-closed).** Every caveat of every hop applies to every call the chain authorizes.

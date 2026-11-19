@@ -62,23 +62,30 @@ def chain_digest(chain: list) -> str:
     return domain_digest(CHAIN_DIGEST_DOMAIN, [credential_digest(credential) for credential in chain])
 
 
+# What a hop that leaves a member out states of it: nothing, which no JSON value is.
+NOT_STATED = object()
+
+
 def parent_commitment(chain: list) -> str:
     """SPEC.md 6.10: how the hops of a chain, root first, commit to their parents.
 
     "root-states" when the root states a `parentCredentialDigest`, which it may not; "mismatch"
     when a later hop states one that is not the 7.8 digest of the hop before it; "committed" when
     a later hop states one and every one stated is its parent's; "uncommitted" when none states one.
+    A hop states the member when its subject holds it, whatever its value: `null` is stated.
     """
     def stated(hop) -> object:
         subject = hop.get("credentialSubject") if isinstance(hop, dict) else None
-        return subject.get("parentCredentialDigest") if isinstance(subject, dict) else None
+        if isinstance(subject, dict) and "parentCredentialDigest" in subject:
+            return subject["parentCredentialDigest"]
+        return NOT_STATED
 
-    if stated(chain[0]) is not None:
+    if stated(chain[0]) is not NOT_STATED:
         return "root-states"
     committed = False
     for parent, hop in zip(chain, chain[1:]):
         digest = stated(hop)
-        if digest is None:
+        if digest is NOT_STATED:
             continue
         if digest != credential_digest(parent):
             return "mismatch"

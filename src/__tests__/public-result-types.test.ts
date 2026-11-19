@@ -1,9 +1,9 @@
 /**
  * Code written against 1.22.0 still compiles. Since then the public results gained a refusal code
- * and whether it is transient, each optional, beside the members they had: a result is read as it
- * was, a double of a public function returns what it returned, and a host's seam answers as it
- * answered. Each test compiles code that uses the package's public entry points, with strict
- * options, and expects no type error.
+ * and whether it is transient, and a verdict on a delegation chain the caveats it grants under, each
+ * optional, beside the members they had: a result is read as it was, a double of a public function
+ * returns what it returned, and a host's seam answers as it answered. Each test compiles code that
+ * uses the package's public entry points, with strict options, and expects no type error.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -83,6 +83,10 @@ describe('the public results changed since 1.22.0', () => {
             revocation: { revoked: false, fresh: true },
           };
           export const rejected: RequestDelegationResult = { ok: false, code: 'delegation_missing', reasons: [] };
+          export const granted: RequestDelegationResult = {
+            ok: true, source: 'carried', responsibleParty: 'did:web:acme.example', leafInvoker: 'did:web:agent.example',
+            invocationTarget: 'did:web:merchant.example', allowedAction: ['orders.place'], depth: 1, fresh: true,
+          };
           export const gate: DelegationGateResult = {
             ok: false, status: 401, error: { code: 'delegation_missing', message: 'none', reasons: [] },
           };

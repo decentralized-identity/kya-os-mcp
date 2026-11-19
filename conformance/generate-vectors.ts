@@ -144,6 +144,23 @@ async function signedProofVectors(): Promise<VectorFile> {
     meta: { ...envelopeProof.meta, prf: 'org.example/unknown-profile.v9' as never },
   };
 
+  // ── 1.x legacy request shapes (SPEC §7.3, suite 1.11.0 or later) ─
+  // Proofs over `{method: <tool name>, params: <arguments>}`, held against the
+  // `tools/call` request as sent, which carries a control argument.
+  const heldCall = {
+    method: 'tools/call',
+    params: { name: 'echo', arguments: { msg: 'hi', _kyaos_delegation: 'vc-jwt-of-the-delegation' } },
+  };
+  const legacyInput = async (method: string, params: Record<string, unknown>) => {
+    const legacy = await gen.generateProof({ method, params }, { data: { output: 'hi' } }, session);
+    const proof = await signProofMeta(agent, { ...legacy.meta, ts: NOW });
+    const expected = { request: heldCall, response: { data: { output: 'hi' } } };
+    return { proof, publicKeyJwk: jwk, now: NOW, skewSeconds: 300, expected };
+  };
+  const legacyAsReceived = await legacyInput('echo', heldCall.params.arguments);
+  const legacyWithoutControlArgs = await legacyInput('echo', { msg: 'hi' });
+  const legacyOtherTool = await legacyInput('delete', { msg: 'hi' });
+
   // ── Delegation chain binding (`delegationChainDigest`, SPEC §7.8; suite 1.5.0 or later) ─
   const delegationBinding = await delegationBindingVectors<Party>({
     publicKeyJwk: jwk,
@@ -253,6 +270,32 @@ async function signedProofVectors(): Promise<VectorFile> {
       reason:
         'Unknown response-proof profiles are rejected fail-closed — never verified under weaker (body-only) semantics',
       input: { proof: unknownProfileProof, publicKeyJwk: jwk, now: NOW, skewSeconds: 300 },
+    },
+    {
+      id: 'signed-proof/legacy-request-shape',
+      category: 'signed-proof',
+      description:
+        'Proof whose requestHash is over the 1.x legacy shape {method: <tool name>, params: <arguments as received>}, verified against the tools/call request as sent',
+      expected: 'pass',
+      reason: 'During 1.x a verifier accepts a requestHash over the legacy shape with the arguments as received (SPEC.md §7.3)',
+      input: legacyAsReceived,
+    },
+    {
+      id: 'signed-proof/legacy-request-shape-without-control-args',
+      category: 'signed-proof',
+      description:
+        'Proof whose requestHash is over the 1.x legacy shape with every _kyaos* argument removed, verified against the tools/call request as sent',
+      expected: 'pass',
+      reason: 'During 1.x a verifier accepts a requestHash over the legacy shape with the control arguments removed (SPEC.md §7.3)',
+      input: legacyWithoutControlArgs,
+    },
+    {
+      id: 'signed-proof/legacy-request-shape-other-tool',
+      category: 'signed-proof',
+      description: 'Proof whose requestHash is over the 1.x legacy shape of a call to another tool with the same arguments',
+      expected: 'fail',
+      reason: 'The hash is over none of the three shapes of the call held, so the request mismatches',
+      input: legacyOtherTool,
     },
     ...delegationBinding,
   ];

@@ -23,7 +23,8 @@ import { refusalCodeOf } from '../utils/refusal.js';
 import { thrownReason } from '../utils/thrown-words.js';
 import type { RefusalCode } from '../refusal-codes.js';
 import { admitsRootIssuer } from '../delegation/root-admission.js';
-import { revocationEntriesOf, validateDelegationChain, type DelegationChain } from './delegation.js';
+import { revocationEntriesOf, validateDelegationChain, type DelegationChain, type DelegationChainResult } from './delegation.js';
+import { warnOfUnknownCaveats, type EffectiveCaveats } from './caveats.js';
 import {
   KYA_OS_DELEGATION_CHAIN_META_KEY,
   parseCredentials,
@@ -151,8 +152,14 @@ export interface RequestDelegationInput {
   action: string;
 }
 
-/** The authority a verified chain grants, recomputed from the chain. */
-export interface RequestDelegationGrant {
+/**
+ * The authority a verified chain grants, recomputed from the chain, with the limits it grants it
+ * under ({@link EffectiveCaveats}): `caveats`, at their tightest, the chain's expiry among them,
+ * every one of which applies to the call, and `unknownCaveats`, which the host must enforce or
+ * refuse. Hold the call to them with `caveatRefusal`, at the time of the call, which also refuses a
+ * grant that lacks either member rather than read it as unlimited.
+ */
+export interface RequestDelegationGrant extends EffectiveCaveats {
   source: DelegationChainSource;
   /** The root issuer: the party accountable for the call (§10.2). */
   responsibleParty: string;
@@ -206,7 +213,8 @@ function rejection(
  *    the subtree.
  *
  * Cheap, local checks run before the ones that may touch the network. Never throws on a
- * malformed input or a throwing seam; returns `{ ok: false, code, reasons, refusalCode, transient }`.
+ * malformed input, a throwing seam or a fault in its own chain rules, which it refuses as
+ * `runtime_error`; returns `{ ok: false, code, reasons, refusalCode, transient }`.
  * The `refusalCode` says which rule refused the chain: for example `needs_authorization` for no
  * chain, `holder_binding_failed` for a leaf delegate that is not `proofDid`, `untrusted_root`,
  * `invalid_proof` for a hop's proof, `insufficient_scope` for the action, the code of the status
@@ -235,16 +243,24 @@ async function verifyRequest(input: RequestDelegationInput, deps: VerifyRequestD
   const reject = (code: DelegationGateCode, refusalCode: RefusalCode, reasons: string[]): Rejection =>
     rejection(code, refusalCode, reasons, source);
 
-  const structural = validateDelegationChain(chain, {
-    resource: deps.resource,
-    ...(deps.resourceOwner !== undefined ? { resourceOwner: deps.resourceOwner } : {}),
-    ...(deps.maxChainLength !== undefined ? { maxChainLength: deps.maxChainLength } : {}),
-    ...(deps.now !== undefined ? { now: deps.now } : {}),
-    ...(deps.maxClockSkewMs !== undefined ? { maxClockSkewMs: deps.maxClockSkewMs } : {}),
-  });
+  let structural: DelegationChainResult;
+  try {
+    structural = validateDelegationChain(chain, {
+      resource: deps.resource,
+      ...(deps.resourceOwner !== undefined ? { resourceOwner: deps.resourceOwner } : {}),
+      ...(deps.maxChainLength !== undefined ? { maxChainLength: deps.maxChainLength } : {}),
+      ...(deps.now !== undefined ? { now: deps.now } : {}),
+      ...(deps.maxClockSkewMs !== undefined ? { maxClockSkewMs: deps.maxClockSkewMs } : {}),
+    });
+  } catch (error) {
+    // The chain rules refuse every input they cannot read; a throw is the library's own fault, for the operator's log.
+    const reason = thrownReason(error, { withheld: 'delegation chain could not be checked: the chain rules faulted', tag: '[kya-os]' });
+    return reject('delegation_invalid', 'runtime_error', [reason]);
+  }
   // validateDelegationChain codes every chain it refuses.
   if (!structural.ok) return reject('delegation_invalid', structural.code ?? 'chain_invalid', structural.reasons);
-  const { responsibleParty, leafInvoker, invocationTarget, allowedAction, depth } = structural;
+  // validateDelegationChain sets `caveats` and `unknownCaveats` on every result, so the grant carries both.
+  const { responsibleParty, leafInvoker, invocationTarget, allowedAction, caveats, unknownCaveats, depth } = structural;
   if (responsibleParty === undefined || leafInvoker === undefined || invocationTarget === undefined) {
     return reject('delegation_invalid', 'delegation_malformed', ['delegation chain has no root issuer or leaf delegate']);
   }
@@ -277,6 +293,7 @@ async function verifyRequest(input: RequestDelegationInput, deps: VerifyRequestD
   }
   if (!revocation.ok) return reject('delegation_revoked', revocation.code, revocation.reasons);
 
+  warnOfUnknownCaveats(structural);
   return {
     ok: true,
     source,
@@ -284,6 +301,8 @@ async function verifyRequest(input: RequestDelegationInput, deps: VerifyRequestD
     leafInvoker,
     invocationTarget,
     allowedAction,
+    caveats,
+    unknownCaveats,
     depth,
     fresh: revocation.fresh,
   };

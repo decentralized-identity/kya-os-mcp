@@ -1,0 +1,10 @@
+kind: Spec
+body: |-
+    **SPEC.md §7.3: for the 1.x line, a verifier MUST accept a tool call's
+    `requestHash` over the covered request, the legacy shape `{"method":
+    <tool name>, "params": <arguments>}`, or the legacy shape with every
+    `_kyaos*` argument removed.** The 1.x reference producers sign a legacy
+    shape, so a verifier written from the text alone refused their proofs.
+    Producers SHOULD sign the covered request, and 2.0.0 removes the legacy
+    shapes. Conformance suite 1.11.0 adds three vectors.
+time: 2026-11-18T19:54:50.000000-06:00

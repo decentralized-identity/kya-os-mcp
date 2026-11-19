@@ -17,6 +17,9 @@
  * asserts equals `proof.did`. Revocation reuses the injected {@link BitstringRevocationChecker} seam from
  * `./revocation` (no status-list churn reaches callers; NO `mcp-i-core` runtime dep). Per-hop
  * signature verification is injected into evaluateDelegationChain, after local checks and before status.
+ *
+ * Each hop's caveats are read at their tightest, and a verdict carries the caveats the chain grants
+ * under, for the host to enforce (`./caveats.ts`).
  */
 
 import { z } from 'zod';
@@ -32,8 +35,18 @@ import { warnOncePerProcess } from '../utils/warn-once.js';
 import type { DelegationProofVerifier } from './delegation-proof.js';
 import { firstHopProofRefusal } from './hop-proofs.js';
 import { hopWindowRules } from './hop-window.js';
-import { parseDateTime } from '../utils/rfc3339.js';
 import { withVerifiedRoot } from '../utils/verified-root.js';
+import { describeValue } from '../utils/describe-value.js';
+import { dateLte } from '../utils/rfc3339.js';
+import {
+  effectiveCaveatsOf,
+  malformedCaveatRules,
+  tightestOf,
+  unnarrowedCaveats,
+  warnOfUnknownCaveats,
+  type EffectiveCaveats,
+  type HopCaveats,
+} from './caveats.js';
 
 export const DELEGATION_CONTEXT_V2 = 'https://www.w3.org/ns/credentials/v2'; // VC 2.0 base `@context`
 export const ZCAP_CONTEXT = 'https://w3id.org/security/zcap/v1'; // ZCAP-LD capability context
@@ -183,85 +196,31 @@ export function revocationEntriesOf(chain: DelegationChain, trustedRootIssuer?: 
   });
 }
 
-/** A non-negative decimal split into its digit strings, or `undefined` when it is not one. */
-function decimalParts(dec: string): { whole: string; fraction: string } | undefined {
-  const match = /^(\d+)(?:\.(\d+))?$/.exec(dec.trim());
-  return match?.[1] ? { whole: match[1], fraction: match[2] ?? '' } : undefined;
-}
-
-// `child ≤ parent`, compared EXACTLY, fail-closed (any unparseable value ⇒ false). Both sides are
-// scaled to the longer fraction, never truncated: rounding to a fixed precision would let a child
-// whose excess sits below that precision (100.0000009 under a parent of 100) pass as a narrowing.
-function decimalLte(child: string, parent: string): boolean {
-  const c = decimalParts(child);
-  const p = decimalParts(parent);
-  if (!c || !p) return false;
-  const scale = Math.max(c.fraction.length, p.fraction.length);
-  const scaled = ({ whole, fraction }: { whole: string; fraction: string }): bigint =>
-    BigInt(whole + fraction.padEnd(scale, '0'));
-  return scaled(c) <= scaled(p);
-}
-// `child ≤ parent`, each read as an RFC 3339 date-time with its zone, fail-closed (any other value ⇒ false).
-function dateLte(child: string, parent: string): boolean {
-  const c = parseDateTime(child);
-  const p = parseDateTime(parent);
-  return c !== undefined && p !== undefined && c <= p;
-}
-
-// Stable structural equality (sorted-key JSON) for verbatim unknown-caveat comparison.
-function deepEqual(a: unknown, b: unknown): boolean {
-  return JSON.stringify(sortKeys(a)) === JSON.stringify(sortKeys(b));
-}
-function sortKeys(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortKeys);
-  if (value && typeof value === 'object') {
-    const record = value as Record<string, unknown>;
-    return Object.fromEntries(Object.keys(record).sort().map((k) => [k, sortKeys(record[k])]));
-  }
-  return value;
-}
-
-/** True iff `child` is at least as narrow as `parent` for the same caveat. */
-function caveatNarrows(parent: Caveat, child: Caveat): boolean {
-  if (parent.type !== child.type) return false;
-  if (parent.type === 'ValidUntil') {
-    return typeof parent.date === 'string' && typeof child.date === 'string' && dateLte(child.date, parent.date);
-  }
-  if (parent.type === 'MaxAmount') {
-    // Currency is monotone, not strict-equal: a currency-LESS parent (any currency, per the optional
-    // schema) may be narrowed by a child that pins one; a parent that already pins a currency requires
-    // the SAME one (dropping/switching it broadens). Never fail-open — the amount must still narrow.
-    const currencyNarrows = parent.currency === undefined || parent.currency === child.currency;
-    return (
-      currencyNarrows &&
-      typeof parent.limit === 'string' &&
-      typeof child.limit === 'string' &&
-      decimalLte(child.limit, parent.limit)
-    );
-  }
-  return deepEqual(parent, child); // unknown caveat type — must be replicated verbatim
-}
 function actionReasons(parent: readonly string[], child: readonly string[]): string[] {
   const parentSet = new Set(parent);
   const escalated = child.filter((action) => !parentSet.has(action));
   return escalated.length === 0 ? [] : [`allowedAction escalation: [${escalated.join(', ')}] ⊄ parent`];
 }
-function caveatReasons(parent: readonly Caveat[], child: readonly Caveat[]): string[] {
-  return parent
-    .filter((pc) => !child.some((cc) => caveatNarrows(pc, cc)))
-    .map((pc) => `caveat "${pc.type}" broadened or dropped by child (monotone-narrowing violated)`);
+// Each hop read at its tightest, so a looser duplicate of a caveat in one hop neither excuses nor fails it.
+function caveatReasons(parent: HopCaveats, child: HopCaveats): string[] {
+  return unnarrowedCaveats(parent, child).map((pc) => `caveat ${describeValue(pc.type)} broadened or dropped by child (monotone-narrowing violated)`);
 }
+
+/** The caveats `vc` states, read at their tightest (`./caveats.ts`). */
+const hopCaveatsOf = (vc: DelegationCredential): HopCaveats => tightestOf(vc.credentialSubject.caveats ?? []);
 
 /** Reasons the `child` FAILS to attenuate its `parent` (empty ⇒ valid hop): action subset, caveat
  *  monotonicity, `validUntil` narrowing, invoker→issuer continuity, `parentCapability` linkage,
  *  constant `invocationTarget`. */
 export function attenuates(parent: DelegationCredential, child: DelegationCredential): string[] {
+  return hopReasons(parent, child, hopCaveatsOf(parent), hopCaveatsOf(child));
+}
+
+/** {@link attenuates}, with each hop's caveats already read at their tightest. */
+function hopReasons(parent: DelegationCredential, child: DelegationCredential, parentCaveats: HopCaveats, childCaveats: HopCaveats): string[] {
   const p = parent.credentialSubject;
   const c = child.credentialSubject;
-  const reasons: string[] = [
-    ...actionReasons(p.allowedAction, c.allowedAction),
-    ...caveatReasons(p.caveats ?? [], c.caveats ?? []),
-  ];
+  const reasons: string[] = [...actionReasons(p.allowedAction, c.allowedAction), ...caveatReasons(parentCaveats, childCaveats)];
   if (parent.validUntil !== undefined && (child.validUntil === undefined || !dateLte(child.validUntil, parent.validUntil))) {
     reasons.push('validUntil broadened: child must expire no later than its parent');
   }
@@ -330,9 +289,10 @@ const brokenAs = (code: RefusalCode, reasons: readonly string[]): BrokenRule[] =
 /**
  * What {@link validateDelegationChain} finds. A refused chain carries, beside its `reasons`, the
  * `code` of the first rule it breaks and whether that code is `transient`; a chain that passes
- * carries neither.
+ * carries neither. Either carries the chain's `caveats` and `unknownCaveats`
+ * ({@link EffectiveCaveats}), which a host holds a call to once the chain passes.
  */
-export interface DelegationChainResult extends RefusalCoding {
+export interface DelegationChainResult extends RefusalCoding, EffectiveCaveats {
   ok: boolean; // true iff the chain attenuates correctly at every hop (fail-closed)
   reasons: string[]; // fail-closed reasons (empty ⇒ ok)
   responsibleParty?: string; // recomputed `issuer(rootVC)` — the accountable party
@@ -363,10 +323,13 @@ function rootReasons(root: DelegationCredential, ctx: DelegationChainContext): B
  * reason it breaks a rule, and the code of the first: `chain_invalid` for an empty chain, one longer
  * than `maxChainLength`, a root that does not name the resource and a hop that does not attenuate
  * its parent; `configuration_error` for a `maxChainLength` that is not a positive integer;
- * `untrusted_root` for a root not issued by `resourceOwner`; and `delegation_expired`,
- * `delegation_not_yet_valid` or `delegation_malformed` for a hop outside its validity window, held
- * with `maxClockSkewMs`, or one whose time is not an RFC 3339 date-time with its zone
- * (`./hop-window.ts`); `configuration_error` too for a `maxClockSkewMs` it cannot use.
+ * `untrusted_root` for a root not issued by `resourceOwner`; `delegation_malformed` for a caveat of
+ * a known type in a form it cannot be read in, on any hop, ahead of every hop rule below
+ * (`./caveats.ts`); and `delegation_expired`, `delegation_not_yet_valid` or `delegation_malformed`
+ * for a hop outside its validity window, held with `maxClockSkewMs`, or one whose time is not an
+ * RFC 3339 date-time with its zone (`./hop-window.ts`); `configuration_error` too for a
+ * `maxClockSkewMs` it cannot use. Either result carries the chain's effective caveats, each hop's
+ * read at their tightest once. It has no side effect: it never warns.
  */
 export function validateDelegationChain(
   chain: DelegationChain,
@@ -375,7 +338,15 @@ export function validateDelegationChain(
   const depth = chain.length;
   const maxChainLength = ctx.maxChainLength ?? ctx.maxDepth;
   if (depth === 0) {
-    return { ok: false, reasons: ['empty delegation chain'], allowedAction: [], depth, ...coded('chain_invalid') };
+    return {
+      ok: false,
+      reasons: ['empty delegation chain'],
+      allowedAction: [],
+      caveats: [],
+      unknownCaveats: [],
+      depth,
+      ...coded('chain_invalid'),
+    };
   }
   const root = chain[0]!;
   const leaf = chain[depth - 1]!;
@@ -388,8 +359,10 @@ export function validateDelegationChain(
     }
   }
   broken.push(...rootReasons(root, ctx));
+  broken.push(...malformedCaveatRules(chain));
+  const hopCaveats = chain.map(hopCaveatsOf);
   for (let i = 1; i < depth; i += 1) {
-    broken.push(...brokenAs('chain_invalid', attenuates(chain[i - 1]!, chain[i]!)));
+    broken.push(...brokenAs('chain_invalid', hopReasons(chain[i - 1]!, chain[i]!, hopCaveats[i - 1]!, hopCaveats[i]!)));
   }
   // Wall-clock gate: a chain can attenuate perfectly and still be fully EXPIRED. Default to real
   // time so the gate is never silently skipped; deterministic callers inject `ctx.now`.
@@ -403,6 +376,7 @@ export function validateDelegationChain(
     leafInvoker: leafInvokerOf(chain),
     invocationTarget: leaf.credentialSubject.invocationTarget,
     allowedAction: leaf.credentialSubject.allowedAction,
+    ...effectiveCaveatsOf(chain, hopCaveats),
     depth,
   };
 }
@@ -421,6 +395,7 @@ export interface DelegationChainEvaluation extends DelegationChainResult {
  * The first revoked or unreadable hop stops that walk, carrying its refusal code, and so does a
  * checker that throws or rejects: `status_unavailable`, or the code of a `RefusalError` it throws.
  * Each proof and status answer gets `ctx.dependencyTimeoutMs` (5,000 ms by default).
+ * A chain that passes with a caveat the library does not interpret warns once per process.
  * Without `verifyHopProof`, legacy status-only evaluation continues with one process-wide warning;
  * issuers and status URLs are then only as authentic as the proofs the caller checks separately.
  * Pass `createDelegationProofVerifier({ didResolver })`; the next major version requires this option.
@@ -448,6 +423,7 @@ export async function evaluateDelegationChain(
     check,
     { dependencyTimeoutMs: timeoutMs },
   ).catch(checkerThrew);
+  if (revocation.ok) warnOfUnknownCaveats(structural);
   return {
     ...structural,
     ok: revocation.ok,

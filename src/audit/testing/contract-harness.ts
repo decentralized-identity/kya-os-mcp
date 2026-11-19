@@ -63,14 +63,28 @@ export function assertAuditProviderContract(value: AuditProviderContractReport):
   }
 }
 
+/** A distinct digest for each `value`, apart from every {@link digest} of one repeated character. */
+export function numberedDigest(value: number): Digest {
+  return `sha256:${'f'.repeat(48)}${value.toString(16).padStart(16, '0')}`;
+}
+
+/**
+ * A well-formed entry for a journal to store. Two entries at one sequence
+ * differ only where `variant` names them apart: their entry digest and event ID.
+ */
 export function contractEntry(
   ledger: AuditLedgerRef,
   sequence: number,
   eventDigest: Digest,
   previousEntryDigest: Digest | null,
+  variant?: number,
 ): SignedAuditEntryV1 {
-  const entryDigest = digest(((sequence + 3) % 10).toString());
-  const eventId = `contract-event-${sequence}`;
+  const entryDigest = variant === undefined
+    ? digest(((sequence + 3) % 10).toString())
+    : numberedDigest(variant);
+  const eventId = variant === undefined
+    ? `contract-event-${sequence}`
+    : `contract-event-${sequence}-${variant}`;
   return {
     core: {
       schema: 'https://schema.kya-os.org/v1/protocol/audit/entry/v1.0.0',

@@ -193,6 +193,12 @@ const report = await evaluateAuditJournalProviderContract(
 assertAuditProviderContract(report);
 ```
 
+The journal contract issues eight compare-and-append calls on one expected head at once.
+Exactly one must commit, and each of the others must answer `head_conflict` with the head that won, or fail without committing.
+A journal that reads the head, compares it and then inserts, with any await between the two steps, commits more than one, and the recorder would sign each of them at one sequence.
+The contract also offers an expected head that is no longer the head, both the current sequence with another entry's digest and an earlier head, and requires a `head_conflict` that names the actual head.
+Passing it shows that the adapter serializes appends under the contract's load; it does not prove the adapter atomic under every load, so keep the comparison and the insert in one transaction or one serialization point as below.
+
 The package also includes distinct evidence, observer, and supporting-anchor
 contract suites. Passing the anchor suite never qualifies an adapter as an
 independent observer.

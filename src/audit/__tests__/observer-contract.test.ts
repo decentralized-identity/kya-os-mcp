@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { AuditCheckpointObserverProvider } from '../providers/observer.js';
-import { evaluateAuditObserverProviderContract } from '../testing/provider-contracts.js';
+import {
+  assertAuditProviderContract,
+  evaluateAuditObserverProviderContract,
+} from '../testing/provider-contracts.js';
 import type { SignedAuditCheckpointV1 } from '../types.js';
 import { checkingObserver, observerContractFixtures } from './observer-fixtures.js';
 
@@ -47,6 +50,19 @@ describe('observer provider contract: what an observer signs', () => {
     expect(checkOf(report, signatureCheck)).toMatchObject({ passed: false });
     expect(errorOf(report, signatureCheck)).toMatch(/signature does not verify/);
     expect(report.passed).toBe(false);
+    const thrown = (() => {
+      try {
+        assertAuditProviderContract(report);
+      } catch (error) {
+        return error;
+      }
+      return undefined;
+    })();
+    expect(thrown).toBeInstanceOf(AggregateError);
+    expect((thrown as AggregateError).message).toBe(
+      `observer provider contract failed: ${signatureCheck}`,
+    );
+    expect((thrown as AggregateError).errors).toEqual([checkOf(report, signatureCheck)!.error]);
   });
 
   it('fails when no fork fixture is given, since nothing else can show the extension check', async () => {

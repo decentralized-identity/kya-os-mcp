@@ -7,9 +7,11 @@
  * lookup; or a deadline that passed, whose timing the presenter observes anyway. Any other thrown
  * message (a transport's error, an HTTP status, an answer that is not JSON, a byte cap, a redirect,
  * a refusal made after a DNS lookup) goes to the operator's log, and the reason says only what could
- * not be done. So does a refusal of what a host answered, before a proof vouched for it
- * ({@link NetworkRefusalError}): its words quote what the host wrote. The DID resolvers mark their
- * failures by the same rule (`delegation/did-resolution-failure.ts`).
+ * not be done. A verdict about a document that was read, such as a status list, reaches the
+ * presenter only once the document's proof verifies, since only then are its words its issuer's;
+ * before that, its reason and any remedy go to the operator's log ({@link NetworkRefusalError}).
+ * That refines, and does not replace, the rule above. The DID resolvers mark their failures by the
+ * same rule (`delegation/did-resolution-failure.ts`).
  */
 
 import { logger } from '../logging/index.js';
@@ -23,11 +25,12 @@ import { RefusalError } from './refusal.js';
 const LOGGED_LENGTH = 1024;
 
 /**
- * The library's refusal of what a host answered, decided before any proof vouched for the answer,
+ * The library's verdict about what a host answered, decided before the answer's proof verified,
  * such as a fetched status list the acceptance rule refuses before its proof is checked. Its code
- * reaches the refusal as a {@link RefusalError}'s does, but its words quote members of the answer,
- * which whoever chose the URL may have pointed at any document the verifier can reach, so they go
- * to the operator's log alone and the reason says only what could not be done.
+ * reaches the refusal as a {@link RefusalError}'s does. Its words, a remedy among them, quote
+ * members of the answer, which whoever chose the URL may have pointed at any document the verifier
+ * can reach, so until the proof verifies they go to the operator's log alone, and the reason says
+ * only what could not be done.
  */
 export class NetworkRefusalError extends RefusalError {}
 

@@ -269,9 +269,10 @@ function failedClosed(code: RefusalCode, reason?: string): RevocationStatus & Co
  * is checked and the bits are read as before.
  *
  * Whoever presents an entry chooses the URL it names, and so the document read there, which may be
- * any JSON the verifier can reach. A refusal of the list decided before its proof has verified (its
- * keeper, its purpose or its `id`, or its dates without `verifyStatusList`) quotes that document, so
- * its words, the `statusListIssuers` remedy included, go to the operator's log as
+ * any JSON the verifier can reach. A verdict about the list reaches the presenter only once the
+ * list's proof verifies; before that, the reason and the `statusListIssuers` remedy go to the
+ * operator's log. So a list refused for its keeper, its purpose or its `id`, which are asked before
+ * the proof, or for its dates without `verifyStatusList`, is logged as
  * `[revocation] the status list at "<url>" could not be read or checked: revocation: <words>`, and the
  * reason, which reaches whoever presented the entry, is that first part alone. The code is as before.
  *
@@ -318,7 +319,7 @@ export function createRevocationChecker(
           : acceptStatusList(credential, expectation);
       if (!verdict.valid) {
         const refused = heldTo && expectation && { list: credential, statusListCredential, context: heldTo, statusListIssuers, keeper: expectation.keeper };
-        // Asked before the list's proof, so the rule quotes what the host answered: the operator's log alone.
+        // Asked before the list's proof verifies, so the reason and the remedy go to the operator's log alone.
         throw new NetworkRefusalError(
           'status_signer_untrusted',
           `revocation: ${refused ? withStatusListIssuersRemedy(verdict.reason, refused, CHECKER_REASON_LENGTH) : verdict.reason}`,
@@ -327,8 +328,8 @@ export function createRevocationChecker(
       if (deps.verifyStatusList && (await codedVariantOf(deps.verifyStatusList)(credential)) !== true) {
         throw new RefusalError('status_signer_untrusted', 'revocation: status-list proof rejected');
       }
-      // A list outside the window it states says nothing of now, whatever its bits say. The window
-      // quotes the list's dates, its issuer's word once its proof has verified, and else its host's.
+      // A list outside the window it states says nothing of now, whatever its bits say. Its reason
+      // reaches the presenter only once the list's proof verifies, so with no proof checked it is logged.
       const window = acceptStatusListValidity(credential, clock(), skewMs);
       if (!window.valid) throw new (deps.verifyStatusList ? RefusalError : NetworkRefusalError)('status_unavailable', window.reason);
       const bits = await decodeStatusList(credential, decompress);

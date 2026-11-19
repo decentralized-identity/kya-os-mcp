@@ -190,6 +190,14 @@ export interface VerificationMethod {
  * reads a list only from the one keeper of the entry's URL: the issuer its own `statusListIssuers`
  * configuration binds the URL or its origin to, else the pinned root when its credential names the
  * URL, else the credential's issuer.
+ * A verdict about a list reaches the presenter only once the list's proof verifies: until then the
+ * list is whatever its URL answered, which the presenter chose, and the rule's reason quotes it. So
+ * a resolver that asks `acceptStatusList` before the proof verifies, as the library's readers do so
+ * that a list from another issuer triggers no DID resolution, keeps its reason out of the
+ * presenter's refusal: it throws that reason in an error that is not a `RefusalError`, whose words
+ * the verifier gives to the operator's log while the refusal names the list and says only that it
+ * could not be read or checked. Only a reason given once the proof has verified may be thrown as a
+ * `RefusalError` of code `status_signer_untrusted`.
  * `CheqdStatusListResolver` holds every list to the one DID it is configured to trust.
  * A resolver that reads the one bit at an entry's `statusListIndex` first passes
  * `acceptEntrySize(status.statusSize)`, as the library's readers do, and throws its reason, as a

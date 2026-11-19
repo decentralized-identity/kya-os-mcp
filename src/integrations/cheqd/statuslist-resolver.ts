@@ -40,10 +40,10 @@
  * not answer or whose proof does not verify, the resolution's code for an
  * issuer DID that could not be resolved, and `status_unavailable` otherwise,
  * a list outside its window included, with a reason that says when it ends or begins.
- * A refusal that quotes the list or its proof before the signature verifies,
- * the acceptance rule's among them, is a `NetworkRefusalError`, whose words
- * the delegation verifier logs for the operator and never shows whoever
- * presented the credential, since until then they are what the host answered.
+ * A verdict about a list reaches the presenter only once the list's
+ * signature verifies, so a refusal that quotes the list or its proof before
+ * then, the acceptance rule's among them, is a `NetworkRefusalError`, whose
+ * words the delegation verifier gives to the operator's log alone.
  *
  * Freshness: an internal {@link TtlCache} holds the VERIFIED document
  * (default 10 s — one fetch amortizes across every credential on a list;
@@ -226,7 +226,7 @@ export class CheqdStatusListResolver implements StatusListResolver {
       requireId: true,
     });
     if (!verdict.valid) {
-      // The rule quotes the list, which no signature vouches for yet: the operator's log alone.
+      // Asked before the signature verifies, so the reason goes to the operator's log alone.
       throw new NetworkRefusalError('status_signer_untrusted', verdict.reason);
     }
     if (!cached) {
@@ -298,8 +298,8 @@ export class CheqdStatusListResolver implements StatusListResolver {
     if (typeof proofValue !== 'string' || proofValue.length === 0) {
       throw new RefusalError('status_signer_untrusted', 'Status list proof is missing proofValue');
     }
-    // Until the signature verifies, the proof is whatever the host answered, so a refusal that
-    // quotes it reaches the operator's log alone.
+    // A verdict about the list reaches the presenter only once its signature verifies, so a
+    // refusal that quotes its proof before then goes to the operator's log alone.
     const purposeMismatch = proofPurposeMismatch(proof, ASSERTION_METHOD);
     if (purposeMismatch) {
       throw new NetworkRefusalError('status_signer_untrusted', purposeMismatch);

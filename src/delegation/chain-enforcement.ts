@@ -164,8 +164,6 @@ export interface ChainValidationResult extends EvaluatedCredentials, RefusalCodi
  * structural shape, per-credential verification, audience binding to the server,
  * the §11.6 re-delegation audience-constraint requirement, parent↔child linkage
  * (parentId + issuerDid==parent.subjectDid), cycle detection, scope attenuation,
- * the attenuation of a CRISP budget and of every constraint the walk does not
- * interpret (`./constraint-attenuation.ts`),
  * and — when a {@link RevocationChecker} is supplied — graph-backed ancestor
  * revocation. `skipSignature` applies only to the presented leaf whose JWT
  * envelope the caller has verified; ancestors always require verification.
@@ -177,6 +175,8 @@ export interface ChainValidationResult extends EvaluatedCredentials, RefusalCodi
  * agent signs for itself included, and neither throws nor warns: unlike the
  * `withKyaOs` gate, which refuses to run with no root pinned, it leaves
  * pinning the root to its caller.
+ * A re-delegation must also narrow its parent's CRISP budget and replicate
+ * every constraint the walk does not interpret (`./constraint-attenuation.ts`).
  * The presented credential is verified before any ancestor, and a refusal of the
  * chain the resolver returned tells the presenter only what the presented
  * credential states, the ancestors it withholds going to the operator's log.

@@ -6,11 +6,13 @@
  * as received, so a segment that a lenient decoder reads to the same bytes as
  * another string is still refused.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { logger } from '../../logging/index.js';
 import { ed25519Signer } from '../../__tests__/utils/ed25519-signer.js';
 import { base64url } from '../../__tests__/utils/encodings.js';
 import { nodeCrypto } from '../../__tests__/utils/node-crypto-provider.js';
 import { CryptoService, type Ed25519JWK } from '../crypto-service.js';
+import { hasUnseenCodePoint } from '../unseen-code-points.js';
 
 const service = new CryptoService(nodeCrypto);
 const KID = 'did:key:z6MkSigner#key-1';
@@ -141,6 +143,18 @@ describe('CryptoService.verifyJWS reads each segment as a JWS segment', () => {
     );
   });
 
+  it('says a segment is not JSON in its own words, quoting none of the text the segment encodes', () => {
+    const [payload, signature] = [base64url('{}'), base64url(new Uint8Array(64))];
+    const notJson = base64url('\n\u001b[2J[kya-os]');
+
+    expect(() => service.parseJWS(`${notJson}.${payload}.${signature}`)).toThrow(
+      new Error('Invalid header base64: the text it encodes is not JSON'),
+    );
+    expect(() => service.parseJWS(`${HEADER}.${notJson}.${signature}`)).toThrow(
+      new Error('Invalid payload base64: the text it encodes is not JSON'),
+    );
+  });
+
   it('reads a detached JWS the same way', async () => {
     const { jwk, sign } = await signer();
     const payload = new TextEncoder().encode('{"detached":true}');
@@ -156,5 +170,33 @@ describe('CryptoService.verifyJWS reads each segment as a JWS segment', () => {
       expect(await detached(base64(signature))).toBe(false);
       return;
     }
+  });
+});
+
+describe("what verifyJWS logs of a JWS it refuses, which a presenter wrote", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** The text each argument of every `logger.error` call prints, after verifying `jws`. */
+  async function loggedFor(jws: string): Promise<string[]> {
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const { jwk } = await signer();
+    expect(await service.verifyJWS(jws, jwk)).toBe(false);
+    return error.mock.calls.flat().map((argument) => (argument instanceof Error ? argument.message : String(argument)));
+  }
+
+  const CONTROLS = '\n\u001b[2J[kya-os]';
+  const [payload, signature] = [base64url('{}'), base64url(new Uint8Array(64))];
+
+  it('holds no character of a header that is not JSON', async () => {
+    const logged = await loggedFor(`${base64url(CONTROLS)}.${payload}.${signature}`);
+    expect(logged).toEqual(['[CryptoService] Invalid JWS format:', 'Invalid header base64: the text it encodes is not JSON']);
+  });
+
+  it('quotes the alg a header names, so no control character of it reaches the line', async () => {
+    const logged = await loggedFor(`${base64url(JSON.stringify({ alg: CONTROLS }))}.${payload}.${signature}`);
+    expect(logged).toEqual([`[CryptoService] Unsupported algorithm ${JSON.stringify(CONTROLS)}, expected EdDSA`]);
+    expect(logged.filter(hasUnseenCodePoint)).toEqual([]);
   });
 });

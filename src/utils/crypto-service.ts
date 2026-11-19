@@ -8,6 +8,7 @@
 import { CryptoProvider } from '../providers/base.js';
 import { logger } from '../logging/index.js';
 import { base64urlEncodeFromBytes, bytesToBase64 } from './base64.js';
+import { describeValue } from './describe-value.js';
 import { strictBase64urlBytes, strictBase64urlText } from './base64-reading.js';
 import { ed25519KeyBytes } from './ed25519-public-key.js';
 
@@ -23,11 +24,19 @@ function segmentBytes(segment: string): Uint8Array {
   return bytes;
 }
 
-/** A JWS segment's JSON, its bytes read as UTF-8 that is well formed (see {@link segmentBytes}). */
+/**
+ * A JWS segment's JSON, its bytes read as UTF-8 that is well formed (see {@link segmentBytes}). It
+ * refuses in its own words: the engine's parse error quotes the text around the fault, which whoever
+ * wrote the JWS chose, control characters included, and a caller logs what it throws.
+ */
 function segmentJson(segment: string): Record<string, unknown> {
   const text = strictBase64urlText(segment);
   if (text === undefined) throw new Error('not base64url of UTF-8 text as RFC 7515 §2 writes it');
-  return JSON.parse(text) as Record<string, unknown>;
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    throw new Error('the text it encodes is not JSON');
+  }
 }
 
 /**
@@ -154,9 +163,7 @@ export class CryptoService {
 
       const expectedAlg = options?.alg || 'EdDSA';
       if (parsed.header['alg'] !== expectedAlg) {
-        logger.error(
-          `[CryptoService] Unsupported algorithm: ${parsed.header['alg']}, expected ${expectedAlg}`
-        );
+        logger.error(`[CryptoService] Unsupported algorithm ${describeValue(parsed.header['alg'])}, expected ${expectedAlg}`);
         return false;
       }
       if (

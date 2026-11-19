@@ -141,6 +141,11 @@ describe("Base58 Utilities", () => {
         base58Decode("ABCDlEF");
       }).toThrow("Invalid base58 character");
     });
+
+    it("quotes the character it refuses, so a control character reaches no message raw", () => {
+      expect(() => base58Decode("ABC\u001bDEF")).toThrow(new Error('Invalid base58 character "\\u001b"'));
+      expect(() => base58Decode("ABC\nDEF")).toThrow(new Error('Invalid base58 character "\\n"'));
+    });
   });
 
   describe("isValidBase58", () => {

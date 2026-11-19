@@ -92,6 +92,9 @@ describe('createStatusListProofVerifier (eddsa-jcs-2022)', () => {
     expect(await verify(signEddsaJcs2022(statusList([5])))).toBe(true);
   });
 
+  // The recorded list states no proof @context but signed the document's in its configuration,
+  // the 1.x legacy shape, so it verifies only through the legacy retry (verifiesAsLegacyProof).
+  // The lists builders.kya-os.org serves must be re-signed before that retry goes (DEPRECATIONS.md).
   it('accepts a list signed by builders.kya-os.org, an independent signer, once its key is an assertionMethod', async () => {
     const fixture = JSON.parse(
       readFileSync(new URL('./__fixtures__/builders-status-list.json', import.meta.url), 'utf8'),

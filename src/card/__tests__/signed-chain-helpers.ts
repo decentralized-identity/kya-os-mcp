@@ -65,9 +65,10 @@ export function published(key: TestIdentity): TestIdentity & { kid: string; publ
 export type ProofContextForm = 'standard' | 'unstated' | 'legacy';
 
 /**
- * eddsa-jcs-2022 over `document`, signed by `signer` (proof options overridable). A proof states
- * the document's `@context` by default, as the library's issuers write it; this helper wrote the
- * legacy form until that form was found to fail a standard verifier. `form` makes the other two.
+ * eddsa-jcs-2022 over `document`, signed by `signer` (proof options, `@context` included,
+ * overridable). A proof states the document's `@context` by default, as the library's issuers
+ * write it; this helper wrote the legacy form until that form was found to fail a standard
+ * verifier. `form` makes the other two.
  */
 export function signEddsaJcs2022<T extends Record<string, unknown>>(
   document: T,
@@ -75,17 +76,16 @@ export function signEddsaJcs2022<T extends Record<string, unknown>>(
   options: Record<string, unknown> = {},
   form: ProofContextForm = 'standard',
 ): T & { proof: Record<string, unknown> } {
-  const proofOptions: Record<string, unknown> = {
+  const defaults: Record<string, unknown> = {
     type: 'DataIntegrityProof',
     cryptosuite: 'eddsa-jcs-2022',
     created: '2026-11-01T00:00:00Z',
     verificationMethod: signer.method,
     proofPurpose: 'assertionMethod',
-    ...options,
   };
   const context = document['@context'] === undefined ? {} : { '@context': document['@context'] };
-  const proof = form === 'standard' ? { ...proofOptions, ...context } : proofOptions;
-  const config = form === 'legacy' ? { ...proofOptions, ...context } : proof;
+  const proof = form === 'standard' ? { ...defaults, ...context, ...options } : { ...defaults, ...options };
+  const config = form === 'legacy' ? { ...proof, ...context } : proof;
   const hash = (value: unknown) => createHash('sha256').update(canonicalize(value)).digest();
   const signature = sign(null, Buffer.concat([hash(config), hash(document)]), signer.privateKey);
   return { ...document, proof: { ...proof, proofValue: `z${base58Encode(new Uint8Array(signature))}` } };

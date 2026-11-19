@@ -1109,8 +1109,8 @@ Whichever verifier is injected, it MUST accept an `eddsa-jcs-2022` proof, on a h
 The cryptosuite retrieves that key as CID §3.3 does, so its verification method MUST also be a conforming one (step 8) whose `controller` is the signer's DID (step 10).
 The method is looked for only among those in `verificationMethod` and those `assertionMethod` embeds, never among those another relationship embeds.
 If more than one of them has the method's id, written as an absolute DID URL of the signer or a `#fragment`, the id names no method, whether or not each of them conforms or names the signer as its `controller`, and a verifier MUST NOT verify the proof with any of them.
-An issuer MUST create the proof as [VC-DI-EDDSA] §3.3.1 does, setting `proof.@context` to the credential's `@context` so that the signature covers it, and a verifier MUST verify it as §3.3.2 does.
-During 1.x a verifier MUST also accept a proof without `proof.@context` whose configuration, as signed, includes the credential's `@context`, the shape the reference implementation issued from 1.22.0 to 1.25.0.
+An issuer MUST create the proof as [VC-DI-EDDSA] §3.3.1 does, setting `proof.@context` to the credential's `@context`, since a verifier MUST verify it as §3.3.2 does, rebuilding the signed configuration from the proof alone.
+During 1.x a verifier MUST also accept a proof without `proof.@context` whose configuration, as signed, includes the credential's `@context`, a shape issuers wrote before this rule, the reference implementation from 1.22.0 to 1.25.0 among them.
 
 **The delegate.** The delegate is `credentialSubject.invoker`, falling back to `credentialSubject.controller`; a
 capability MUST name one of them.

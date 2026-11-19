@@ -78,11 +78,13 @@ export async function verifyEddsaJcs2022(
 }
 
 /**
- * The cryptosuite's own check, W3C vc-di-eddsa §3.3.2: whether `signature`, decoded from
- * `proof.proofValue`, is the Ed25519 signature of `jwk` over `document` and its `proof`. A proof
- * that states `@context` verifies only when the document's `@context` starts with it, entry for
- * entry, and is signed with it as the document's; one that states none is signed without it. Where
- * the key comes from is the caller's to check, as {@link verifyEddsaJcs2022} does.
+ * The cryptosuite's check, W3C vc-di-eddsa §3.3.2, with the 1.x allowance beside it: whether
+ * `signature`, decoded from `proof.proofValue`, is the Ed25519 signature of `jwk` over `document`
+ * and its `proof`. A proof that states `@context` verifies only when the document's `@context`
+ * starts with it, entry for entry, and is signed with it as the document's. One that states none
+ * verifies when signed without it, as §3.3.2 reads it, or, until 2.0.0, with the document's
+ * `@context` in its configuration ({@link verifiesAsLegacyProof}). Where the key comes from is the
+ * caller's to check, as {@link verifyEddsaJcs2022} does.
  */
 export async function eddsaJcs2022Verifies(
   document: Record<string, unknown>,
@@ -98,26 +100,28 @@ export async function eddsaJcs2022Verifies(
     if (!startsWith(contexts(document['@context']), contexts(options['@context']))) return false;
     unsecured['@context'] = options['@context'];
   }
-  if (await ed25519VerifyRaw(jwk, signature, await hashData(options, unsecured))) return true;
-  return verifiesAsLegacyProof(options, unsecured, signature, jwk);
+  const documentHash = await jcsHash(unsecured);
+  const signedWith = async (configuration: Record<string, unknown>): Promise<boolean> =>
+    ed25519VerifyRaw(jwk, signature, hashData(await jcsHash(configuration), documentHash));
+  if (await signedWith(options)) return true;
+  return verifiesAsLegacyProof(options, unsecured['@context'], signedWith);
 }
 
 /**
  * LEGACY, for the 1.x line only; remove at 2.0.0 (DEPRECATIONS.md). From 1.22.0 to 1.25.0 the
- * library signed the document's `@context` in the proof configuration but did not state it in the
- * proof, so a proof that states no `@context` is checked once more with the document's in its
- * configuration. It checks only such a proof of a document that has a `@context`, and only once the
- * standard check has refused it: one more signature check, on a refusal alone.
+ * library, like other issuers then, signed the document's `@context` in the proof configuration
+ * but did not state it in the proof, so a proof that states no `@context` is checked once more
+ * with the document's in its configuration. It checks only such a proof of a document that has a
+ * `@context`, and only once the standard check has refused it: one more signature check, over the
+ * document hash already taken, on a refusal alone.
  */
 async function verifiesAsLegacyProof(
   options: Record<string, unknown>,
-  unsecured: Record<string, unknown>,
-  signature: Uint8Array,
-  jwk: RawSigningJwk,
+  documentContext: unknown,
+  signedWith: (configuration: Record<string, unknown>) => Promise<boolean>,
 ): Promise<boolean> {
-  if (options['@context'] !== undefined || unsecured['@context'] === undefined) return false;
-  const configuration = { ...options, '@context': unsecured['@context'] };
-  return ed25519VerifyRaw(jwk, signature, await hashData(configuration, unsecured));
+  if (options['@context'] !== undefined || documentContext === undefined) return false;
+  return signedWith({ ...options, '@context': documentContext });
 }
 
 /**
@@ -218,21 +222,33 @@ export async function signEddsaJcs2022<T extends Record<string, unknown>>(
     created: options.created ?? new Date().toISOString(),
     verificationMethod: signer.kid,
     proofPurpose: options.proofPurpose,
-    ...(document['@context'] === undefined ? {} : { '@context': document['@context'] }),
+    ...(document['@context'] === undefined ? {} : { '@context': copyOf(document['@context']) }),
   };
-  const signature = base64urlDecodeToBytes(await signer.signRaw(await hashData(proof, document)));
+  const data = hashData(await jcsHash(proof), await jcsHash(document));
+  const signature = base64urlDecodeToBytes(await signer.signRaw(data));
   if (signature.length !== ED25519_SIGNATURE_LENGTH) throw new Error('signer returned a malformed Ed25519 signature');
   return { ...document, proof: { ...proof, proofValue: `z${base58Encode(signature)}` } };
 }
 
-/** The cryptosuite's hash data: SHA-256 of the canonical proof configuration, then of the canonical document. */
-async function hashData(configuration: Record<string, unknown>, unsecured: Record<string, unknown>): Promise<Uint8Array> {
-  const proofHash = await sha256(canonicalizeJsonBytes(configuration));
-  const documentHash = await sha256(canonicalizeJsonBytes(unsecured));
-  const data = new Uint8Array(proofHash.length + documentHash.length);
-  data.set(proofHash, 0);
-  data.set(documentHash, proofHash.length);
+/** SHA-256 of `value`'s RFC 8785 form. */
+async function jcsHash(value: Record<string, unknown>): Promise<Uint8Array> {
+  return sha256(canonicalizeJsonBytes(value));
+}
+
+/** The cryptosuite's hash data: the proof configuration's hash, then the document's. */
+function hashData(configurationHash: Uint8Array, documentHash: Uint8Array): Uint8Array {
+  const data = new Uint8Array(configurationHash.length + documentHash.length);
+  data.set(configurationHash, 0);
+  data.set(documentHash, configurationHash.length);
   return data;
+}
+
+/**
+ * The document's `@context` for its proof to state. An array is copied, so that a context appended
+ * to the document in place after signing, as §3.3.2 step 4 allows, leaves the proof's as signed.
+ */
+function copyOf(context: unknown): unknown {
+  return Array.isArray(context) ? [...context] : context;
 }
 
 function contexts(value: unknown): unknown[] {

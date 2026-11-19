@@ -19,6 +19,7 @@ import { DELEGATION_CONTEXT_V2 } from '../delegation.js';
 import { createDelegationProofVerifier, signDelegationCredential } from '../delegation-proof.js';
 import { ed25519SignerFromJwk } from '../proof/signer.js';
 import { createStatusListProofVerifier, signStatusListCredential } from '../status-list-proof.js';
+import { verifiesAs1250 } from './frozen-eddsa-jcs-2022-rule.js';
 import { parties, signEddsaJcs2022, statusList, twoHopChain, type TestIdentity } from './signed-chain-helpers.js';
 
 const didResolver = createDidKeyResolver();
@@ -152,12 +153,22 @@ describe('a hop and a status list the library signs', () => {
     expect(await verifyList(list)).toBe(true);
   });
 
-  it('carry the signature 1.25.0 wrote, so a verifier of 1.20.0 to 1.25.0 accepts them', async () => {
+  it('carry the signature 1.25.0 wrote, and verify under the rule of a 1.25.0 verifier', async () => {
     const { acme, hop, list } = await signedByLibrary();
     for (const signed of [hop, list]) {
       const { '@context': _context, ...legacyProof } = signed.proof as Record<string, unknown>;
       expect({ ...signed, proof: legacyProof }).toEqual(signEddsaJcs2022(unsigned(signed), acme, {}, 'legacy'));
+      expect(await verifiesAs1250(signed, acme.publicJwk)).toBe(true);
     }
+    // That rule refused a standard proof that states no @context, which the library now accepts.
+    expect(await verifiesAs1250(signEddsaJcs2022(unsigned(list), acme, {}, 'unstated'), acme.publicJwk)).toBe(false);
+  });
+
+  it('keep the @context they state as signed when a context is appended to the document in place', async () => {
+    const { list } = await signedByLibrary();
+    (list['@context'] as string[]).push(OTHER_CONTEXT);
+    expect((list.proof as Record<string, unknown>)['@context']).toEqual([DELEGATION_CONTEXT_V2]);
+    expect(await verifyList(list)).toBe(true);
   });
 });
 

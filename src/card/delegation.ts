@@ -355,6 +355,12 @@ function rootReasons(root: DelegationCredential, ctx: DelegationChainContext): B
  * RFC 3339 date-time with its zone (`./hop-window.ts`); `configuration_error` too for a
  * `maxClockSkewMs` it cannot use. Either result carries the chain's effective caveats, each hop's
  * read at their tightest once. It has no side effect: it never warns.
+ *
+ * It does not check a hop's `parentCredentialDigest` (SPEC.md §6.10) against the hop before it:
+ * that digest is a SHA-256 the library computes only asynchronously, through Web Crypto. So a chain
+ * this accepts may hold a hop committed to another parent. {@link evaluateDelegationChain},
+ * `verifyRequestDelegation` and `requireDelegation` check every digest a hop states; call one of
+ * them, not this alone, before acting on a chain.
  */
 export function validateDelegationChain(
   chain: DelegationChain,

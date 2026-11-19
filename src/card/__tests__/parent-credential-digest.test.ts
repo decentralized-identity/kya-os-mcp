@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createDidKeyResolver } from '../../delegation/did-key-resolver.js';
 import { delegationCredentialDigest } from '../../delegation/chain-digest.js';
 import { createDelegationProofVerifier, signDelegationCredential, type DelegationProofVerifier } from '../delegation-proof.js';
-import { evaluateDelegationChain, type DelegationChain, type DelegationCredential } from '../delegation.js';
+import { evaluateDelegationChain, validateDelegationChain, type DelegationChain, type DelegationCredential } from '../delegation.js';
 import { verifyRequestDelegation, toDelegationChainMeta } from '../request-delegation.js';
 import { createRevocationChecker } from '../revocation.js';
 import { createStatusListProofVerifier } from '../status-list-proof.js';
@@ -223,5 +223,16 @@ describe('the parent a verifier digests', () => {
     } finally {
       digest.mockRestore();
     }
+  });
+});
+
+describe('validateDelegationChain, the synchronous rules alone', () => {
+  it("reads no hop's parentCredentialDigest, which evaluateDelegationChain checks", async () => {
+    const p = parties();
+    const chain = [grant(p, 4), onward(p, await digestOf(grant(p, 5)))];
+    expect(validateDelegationChain(chain, { resource: RESOURCE, resourceOwner: p.acme.did, now: () => NOW_MS }))
+      .toMatchObject({ ok: true, reasons: [] });
+    const evaluated = await PATHS[1]![1](p, chain);
+    expect(evaluated).toMatchObject({ ok: false, code: 'chain_invalid' });
   });
 });

@@ -32,7 +32,7 @@ With outbound delegation propagation:
 | `KYA-OS-Delegation-Credential` | The delegation credential as a VC-JWT, which Server B derives authorization from (§8.1) | `eyJhbGciOiJFZERTQS...` |
 | `KYA-OS-Agent-DID` | The original agent's DID | `did:key:z6Mk...` |
 | `KYA-OS-Delegation-Chain` | The delegation chain ID (vcId of the root delegation); advisory, never read for a decision | `urn:uuid:abc-123` |
-| `KYA-OS-Session-Id` | The current KYA-OS session ID | `kyaos_xyz789` |
+| `KYA-OS-Session-Id` | An anchor of the current KYA-OS session for this target's host, never the session ID, which the session's grants answer to | `sha256:6f1c...` |
 | `KYA-OS-Delegation-Proof` | Signed JWT proving the delegation is being forwarded | `eyJhbGciOiJFZERTQS...` |
 
 `buildOutboundDelegationHeaders()` sends `KYA-OS-Delegation-Credential` when you pass the credential as `credentialJwt`.

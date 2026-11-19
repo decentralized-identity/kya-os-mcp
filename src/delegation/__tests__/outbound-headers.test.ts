@@ -5,6 +5,7 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
+import { createHash } from 'node:crypto';
 import { decodeJwt, decodeProtectedHeader } from 'jose';
 import {
   buildOutboundDelegationHeaders,
@@ -110,11 +111,25 @@ describe('buildOutboundDelegationHeaders', () => {
     expect(headers['KYA-OS-Delegation-Chain']).toBe(context.delegation.vcId);
   });
 
-  it('KYA-OS-Session-Id matches session.sessionId', async () => {
+  it('KYA-OS-Session-Id is the anchor of the session for the target host, never the session id', async () => {
     const context = createTestContext();
     const headers = await buildOutboundDelegationHeaders(context);
 
-    expect(headers['KYA-OS-Session-Id']).toBe(context.session.sessionId);
+    // SHA-256(UTF8(domain) || 0x00 || JCS([sessionId, target host])), written as `sha256:<hex>`.
+    const input = `org.kya-os.outbound.session-anchor.v1\0${JSON.stringify([context.session.sessionId, 'downstream-api.example.com'])}`;
+    const anchor = `sha256:${createHash('sha256').update(input, 'utf8').digest('hex')}`;
+    expect(headers['KYA-OS-Session-Id']).toBe(anchor);
+    expect(headers['KYA-OS-Session-Id']).not.toContain(context.session.sessionId);
+  });
+
+  it('KYA-OS-Session-Id is one anchor for one session at one host, and another for another of either', async () => {
+    const anchorOf = async (sessionId: string, targetUrl: string) =>
+      (await buildOutboundDelegationHeaders(createTestContext({ session: createTestSession({ sessionId }), targetUrl })))['KYA-OS-Session-Id'];
+    const here = await anchorOf('kyaos_one', 'https://downstream-api.example.com/a');
+
+    expect(await anchorOf('kyaos_one', 'https://downstream-api.example.com/b?c=d')).toBe(here);
+    expect(await anchorOf('kyaos_one', 'https://other-api.example.com/a')).not.toBe(here);
+    expect(await anchorOf('kyaos_two', 'https://downstream-api.example.com/a')).not.toBe(here);
   });
 
   it('KYA-OS-Delegation-Proof is a valid JWT with correct claims', async () => {

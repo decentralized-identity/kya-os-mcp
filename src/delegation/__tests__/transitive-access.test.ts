@@ -1043,7 +1043,8 @@ describe('Transitive Access — Karp Use Cases', () => {
       // Headers expose the full provenance
       expect(headers['KYA-OS-Agent-DID']).toBe(alice.did);
       expect(headers['KYA-OS-Delegation-Chain']).toBe(aliceToBob.id);
-      expect(headers['KYA-OS-Session-Id']).toBe('kyaos_test-session');
+      // The session is named by an anchor for the target, never by its id, which the session's grants answer to.
+      expect(headers['KYA-OS-Session-Id']).toMatch(/^sha256:[0-9a-f]{64}$/);
       // The proof is a signed JWT that downstream can verify
       expect(headers['KYA-OS-Delegation-Proof']).toMatch(
         /^eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/,

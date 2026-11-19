@@ -1693,7 +1693,7 @@ When an MCP server calls downstream services (APIs, other MCP servers), it MUST 
 | `KYA-OS-Delegation-Credential` | **AUTHORITATIVE** | The delegation Verifiable Credential (VC-JWT). The verifier derives granted scopes and the delegation chain from it (its embedded scopes, its chain to a trusted root, its StatusList revocation state). |
 | `KYA-OS-Delegation-Proof` | **AUTHORITATIVE** | The holder-of-key delegation proof JWT (EdDSA-signed, `aud`-bound to the request authority, `sub` == the Layer-1 signature DID); see §8.2. |
 | `KYA-OS-Agent-DID` | **AUTHORITATIVE** | The agent's DID. A conformant verifier MUST check it equals the Layer-1 signature's resolved DID. |
-| `KYA-OS-Session-Id` | Anchor | The KYA-OS session ID, used for grant read-back. An anchor, not an authorization input. |
+| `KYA-OS-Session-Id` | Anchor | An anchor of the forwarding server's session for the target's host; never the session ID itself. An anchor, not an authorization input. |
 | `KYA-OS-Delegation-Chain` | OPTIONAL (advisory) | A transport hint for routing/observability/debugging. **MUST NOT** be used for any authorization decision; ignored when it disagrees with the credential. |
 | `KYA-OS-Granted-Scopes` | OPTIONAL (advisory) | A transport hint for routing/observability/debugging. **MUST NOT** be used for any authorization decision; ignored when it disagrees with the credential. |
 
@@ -1707,6 +1707,11 @@ Layer-1 signature's resolved DID. `KYA-OS-Delegation-Chain` and
 `KYA-OS-Granted-Scopes` are advisory only: a conformant verifier MUST NOT trust
 them for any authorization decision and MUST ignore them when they disagree with
 the credential.
+
+**The session anchor.** A server that resolves anything by its session ID alone, as a durable grant bound to a session is resolved, makes that ID a bearer of the session.
+A forwarding server MUST NOT send its session ID downstream, since every service it calls, and whatever logs or proxies their headers, would then hold it.
+It sends instead an anchor of the session for the target: the reference implementation sends `SHA-256(UTF8("org.kya-os.outbound.session-anchor.v1") || 0x00 || JCS([sessionId, host]))`, in the hash format of §7.3, where `host` is the target's host, the `aud` of §8.2.
+The anchor is one value for every call of one session to one host, so the target can tell which of its calls one session made, and it names nothing the target could present to the forwarding server.
 
 **Corollary (covered components).** Because authority is derived only from signed
 artifacts — the VC and the proof JWT, each with independent integrity — the

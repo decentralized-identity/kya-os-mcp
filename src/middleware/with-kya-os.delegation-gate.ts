@@ -254,12 +254,15 @@ export function createDelegationGate(
                 parsedProof = {};
               }
             }
+            // A proof that names the delegation it was made for (SPEC §7.8) binds
+            // only beside that one, so none other can be swapped in beside it.
             const binding = await assertHolderBinding({
               proof: parsedProof as DetachedProof,
               subjectDid,
               request: toHolderBindingRequest(toolName, args),
               expectedAudience: identity.did,
               proofVerifier: holderBindingVerifier,
+              delegation: { delegationRef: check.evidence.delegationRef, chainDigest: check.chainDigest },
             });
             if (binding.status !== "bound") {
               const reason =

@@ -219,6 +219,7 @@ export {
   type GenerateRequestProofInput,
   type HolderBindingResult,
   type HolderBindingStatus,
+  type PresentedDelegation,
 } from './delegation/holder-binding.js';
 
 export {

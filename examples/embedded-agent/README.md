@@ -36,6 +36,12 @@ const proof = await generateRequestProof({
 A fresh CSPRNG nonce per call makes every proof replay-safe. That is the whole
 client half of holder binding (KYA-OS spec §11.8).
 
+When the call presents a delegation, or an agent holds delegations from more than
+one party, also pass `delegationChain`: the chain the call is made under, root
+first, the credential it sends as `_kyaos_delegation` last. The proof then names
+that delegation (SPEC §7.8), and the server refuses it beside any other, so no
+party on the path can put another of the agent's delegations in its place.
+
 ## Run it
 
 ```bash

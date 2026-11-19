@@ -24,6 +24,10 @@
  * caller can defer them to cnf-based binding (phase 2) instead of rejecting
  * legitimate traffic. Callers MUST surface that gap (e.g. log it) rather than
  * treat `not_applicable` as success.
+ *
+ * A proof covers the call, not the delegation beside it, so a proof may also
+ * name the delegation it was made for (`./named-delegation.ts`), and is then
+ * bound only beside that one.
  */
 
 import { extractPublicKeyFromDidKey, publicKeyToJwk } from './did-key-resolver.js';
@@ -36,11 +40,13 @@ import type { ToolRequest, ToolResponse, ProofAgentIdentity } from '../proof/gen
 import type { DetachedProof } from '../types/protocol.js';
 import type { CryptoProvider } from '../providers/base.js';
 import type { Ed25519JWK } from '../utils/crypto-service.js';
+import { namesAnotherDelegation, namesOfDelegationChain, type PresentedDelegation } from './named-delegation.js';
 
 // The control-arg predicate, and the copy of a call without its control args,
 // live with the request-hash rules they feed; they are re-exported here, where
 // the package entry point imports them.
 export { isKyaOsControlArg, withoutControlArgs };
+export type { PresentedDelegation };
 
 /**
  * The canonical request a holder-binding proof binds: the tool name plus the
@@ -73,18 +79,36 @@ export interface GenerateRequestProofInput {
   audience: string;
   /** The handshake session id, when one exists. */
   sessionId?: string;
+  /**
+   * The delegation chain the call is made under, root first, the credential sent as
+   * `_kyaos_delegation` last, each as it is sent: a credential object, or a VC-JWT string. A
+   * credential with no parent is a chain of one. When given, the proof names it by the two members
+   * of SPEC §7.8, its last credential's `delegationRef` and the chain's `delegationChainDigest`,
+   * and the gate refuses the proof beside any other delegation, so a party on the path cannot put
+   * another delegation of the agent's in its place. The chain must be the one the server
+   * evaluates: where the server resolves the credential's ancestors (`resolveDelegationChain`),
+   * every one of them.
+   */
+  delegationChain?: readonly unknown[];
 }
 
 /**
  * Mint the `_kyaos_proof` a key-bearing agent attaches to an outbound tool call
  * — the client half of holder binding. It is a request-only detached proof (no
- * response yet) signed by the agent's key over {@link toHolderBindingRequest}.
+ * response yet) signed by the agent's key over {@link toHolderBindingRequest},
+ * naming the delegation it is made under when `delegationChain` is given.
  * A fresh nonce is generated per call so the PEP's replay cache rejects reuse.
+ *
+ * @throws {TypeError} for a `delegationChain` that is empty, and
+ *   `NoSignedFormError` for one holding a value with no signed form (SPEC §7.8)
  */
 export async function generateRequestProof(
   input: GenerateRequestProofInput,
 ): Promise<DetachedProof> {
-  const { identity, crypto, toolName, args, audience, sessionId } = input;
+  const { identity, crypto, toolName, args, audience, sessionId, delegationChain } = input;
+  const named = delegationChain === undefined
+    ? {}
+    : await namesOfDelegationChain(delegationChain, (bytes) => crypto.hash(bytes));
   const generator = new ProofGenerator(identity, crypto);
   const request = toHolderBindingRequest(toolName, args);
   const nonce = base64urlEncodeFromBytes(await crypto.randomBytes(16));
@@ -105,7 +129,7 @@ export async function generateRequestProof(
     lastActivity: now,
     ttlMinutes: 30,
     identityState: 'anonymous',
-  });
+  }, named);
 }
 
 /**
@@ -166,6 +190,13 @@ export interface AssertHolderBindingInput {
   expectedAudience?: string | string[];
   /** The existing verifier — supplies signature, nonce, timestamp and content checks. */
   proofVerifier: ProofVerifier;
+  /**
+   * The delegation the call presented, as the server read it. When set, a proof that names a
+   * delegation (SPEC §7.8: `delegationRef`, `delegationChainDigest`) is bound only if it names this
+   * one, so a delegation swapped in beside the proof is refused. A proof that names none is held to
+   * nothing more. Omit it where no delegation was presented (back-compatible).
+   */
+  delegation?: PresentedDelegation;
 }
 
 export interface HolderBindingResult {
@@ -242,6 +273,31 @@ export async function assertHolderBinding(
         errorCode: HOLDER_BINDING_ERROR,
         reason: 'Proof audience does not match this server',
         cause: 'audience_mismatch',
+      };
+    }
+  }
+
+  // The delegation: a proof that names one is good only beside it. Checked
+  // before the signature, as the audience is, so a proof a party on the path
+  // put beside another delegation fails without burning its nonce.
+  if (input.delegation !== undefined) {
+    let other: boolean;
+    try {
+      other = await namesAnotherDelegation(proof.meta, input.delegation);
+    } catch {
+      return {
+        status: 'unbound',
+        errorCode: HOLDER_BINDING_ERROR,
+        reason: 'The delegation the request proof names could not be compared with the one presented',
+        cause: 'delegation_unchecked',
+      };
+    }
+    if (other) {
+      return {
+        status: 'unbound',
+        errorCode: HOLDER_BINDING_ERROR,
+        reason: 'Request proof names another delegation than the one presented',
+        cause: 'delegation_mismatch',
       };
     }
   }

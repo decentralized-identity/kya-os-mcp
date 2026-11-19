@@ -23,6 +23,7 @@ import {
   isHolderBindingApplicable,
   toHolderBindingRequest,
 } from "../delegation/holder-binding.js";
+import { namesAnotherDelegation, type DelegationNames } from "../delegation/named-delegation.js";
 import { logger } from "../logging/index.js";
 import type { MiddlewareDeps } from "./with-kya-os.deps.js";
 
@@ -111,11 +112,13 @@ export function createGrantResolution(
   /**
    * A grant caches evidence, never a permanent authorization decision. Returns
    * the grant with the scopes of its re-verified credential, or undefined when
-   * the grant does not authorize `scopeId` now.
+   * the grant does not authorize `scopeId` now, or its delegation is not the one
+   * `named`, the call's holder proof, names (SPEC §7.8).
    */
   async function authorizeGrant(
     grant: Grant,
     scopeId: string,
+    named?: DelegationNames,
   ): Promise<ResolvedGrant | undefined> {
     if (grant.status !== "active" || !grant.scopes.includes(scopeId)) return undefined;
     if (
@@ -135,6 +138,10 @@ export function createGrantResolution(
         subject.id !== grant.agentDid ||
         !namesItsResponsibleParty(grant, check.rootIssuer, subject.delegation.controller) ||
         !scopeSatisfies(scopeId, check.vc).satisfied
+      ) return undefined;
+      if (
+        named !== undefined &&
+        await namesAnotherDelegation(named, { delegationRef: check.evidence.delegationRef, chainDigest: check.chainDigest })
       ) return undefined;
       return {
         grant,
@@ -190,13 +197,15 @@ export function createGrantResolution(
     if (binding.status !== "bound") return undefined;
     const grants = await grantStore.getByAgent(agentDid, [scopeId]);
     // A session-bound grant is usable only from its own session; an
-    // agent-anchored (session-less) grant is portable across transports.
+    // agent-anchored (session-less) grant is portable across transports. A
+    // proof that names a delegation resolves only a grant of that one, so the
+    // call is not run under another Responsible Party's grant for the agent.
     for (const grant of grants) {
       if (
         grant.agentDid !== agentDid ||
         (grant.sessionId !== undefined && grant.sessionId !== sessionId)
       ) continue;
-      const resolved = await authorizeGrant(grant, scopeId);
+      const resolved = await authorizeGrant(grant, scopeId, proof.meta);
       if (resolved) return resolved;
     }
     return undefined;

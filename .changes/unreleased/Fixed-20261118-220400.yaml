@@ -1,0 +1,17 @@
+kind: Fixed
+body: |-
+    **A holder-binding proof can name the delegation it was made for, and
+    the gate refuses it beside any other.** A request proof covers the tool
+    name and the business arguments, and not `_kyaos_delegation`, so a party
+    on the path that held another delegation of the same agent, from another
+    Responsible Party, could put it in place of the one the agent chose, or
+    take the delegation away so that the agent's durable grant from the
+    other party authorized the call, and the call ran and was recorded under
+    that party. `generateRequestProof` takes the new `delegationChain`, root
+    first, and names it by the `delegationRef` and `delegationChainDigest` of
+    SPEC.md §7.8, which its signature covers. The gate refuses such a proof
+    as `holder_binding_failed` beside any other delegation, and resolves for
+    it only a durable grant of that delegation. `assertHolderBinding` takes
+    the presented delegation as `delegation` to do the same. A proof that
+    names no delegation is accepted as before.
+time: 2026-11-18T22:04:00.000000-06:00

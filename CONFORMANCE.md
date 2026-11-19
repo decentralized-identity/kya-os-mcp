@@ -2,7 +2,7 @@
 
 **Compliance levels for KYA-OS implementations**
 
-Version: 1.10.0
+Version: 1.11.0
 Status: Stable
 
 ---
@@ -461,7 +461,7 @@ so it is reproducible against any implementation without re-signing.
 
 | File | Category | Positive | Negative |
 |------|----------|----------|----------|
-| `vectors/signed-proof.json` | Detached proof verification | valid signature + in-window ts; envelope content binding (profile `org.kya-os/response-proof.envelope`); delegation chain binding on an allowed call, on a refusal held as a refusal, and against a re-serialized copy of the chain (`delegationChainDigest`); a credential whose id is too long to record, or holds a bidi override, a zero-width space or a code point that renders as nothing by default, or is the word `unknown`, named by its digest (`delegationRef`); a request with no `params`, bound by its method alone | tampered signature, tampered meta, wrong key, timestamp skew exceeded; tampered `structuredContent` under envelope coverage, `prf` stripped (downgrade), unknown profile; chain with a re-issued hop, chain digest stripped, proof that binds no chain, a refusal held against its chain with no outcome stated, a chain whose VC-JWT signature is not base64url, a proof that names another credential of its chain; a JWS segment with a character outside base64url, white space or padding, or written in the base64 alphabet, a JWS of four segments, a claim of `meta` altered after signing, a proof held against another request, a header that names another algorithm or another key, a `kid` of another DID than `meta.did` |
+| `vectors/signed-proof.json` | Detached proof verification | valid signature + in-window ts; envelope content binding (profile `org.kya-os/response-proof.envelope`); delegation chain binding on an allowed call, on a refusal held as a refusal, and against a re-serialized copy of the chain (`delegationChainDigest`); a credential whose id is too long to record, or holds a bidi override, a zero-width space or a code point that renders as nothing by default, or is the word `unknown`, named by its digest (`delegationRef`); a request with no `params`, bound by its method alone; a `requestHash` over either 1.x legacy shape of the call held | tampered signature, tampered meta, wrong key, timestamp skew exceeded; tampered `structuredContent` under envelope coverage, `prf` stripped (downgrade), unknown profile; chain with a re-issued hop, chain digest stripped, proof that binds no chain, a refusal held against its chain with no outcome stated, a chain whose VC-JWT signature is not base64url, a proof that names another credential of its chain; a JWS segment with a character outside base64url, white space or padding, or written in the base64 alphabet, a JWS of four segments, a claim of `meta` altered after signing, a proof held against another request, a header that names another algorithm or another key, a `kid` of another DID than `meta.did`; a legacy-shape `requestHash` of another tool |
 | `vectors/delegation-chain.json` | Delegation chain verification | single-hop, two-hop attenuated | broken issuer↔subject linkage, scope widening, a scope under a parent that states none, tampered signature, audience mismatch |
 | `vectors/delegation-chain-key-relationship.json` | Delegation chain verification: the issuer's key (SPEC.md §6.2) | signed with the key the issuer lists under `assertionMethod`; as a VC-JWT with no `kid`, signed with the key its first `assertionMethod` entry names | signed with a key it lists only under `authentication`, proof stating `proofPurpose: "authentication"`, issuer document whose `id` is another DID, signing key whose method names another DID as its `controller`, signing key whose method the document defines twice, signing key under another DID's id, signing key under no relationship, signing key whose method has no `type` or no `controller`; as a VC-JWT, a `kid` naming the `authentication` key, an empty `kid` |
 | `vectors/status-list.json` | StatusList2021 and Bitstring Status List revocation | active (bit unset), issuer's list stating no `id`, Bitstring list declaring two purposes | revoked (bit set), list altered after signing, list signed by another issuer, list of another purpose, StatusList2021 list declaring its purposes in an array, list stating another URL as its `id`, list of a pinned root or a configured issuer stating no `id` |
@@ -626,6 +626,9 @@ Because fresh keys change the committed bytes, regenerated output MUST NOT be co
 
 ### Suite versioning and immutability
 
+Suite 1.11.0 adds three `signed-proof` vectors, for 167 vectors total: proofs whose `requestHash` is over the 1.x legacy shape of a `tools/call` request that carries `_kyaos_delegation`, with the arguments as received or with the control arguments removed, which must pass, and over the legacy shape of a call to another tool, which must fail (SPEC.md §7.3).
+`signed-proof.json` is generated whole by one run, its earlier vectors signed again under that run's keys with the same cases and expected outcomes; the other vector files change only their `version`.
+
 Suite 1.10.0 adds four `status-list-validity.json` vectors, for 164 vectors total: a list whose `validFrom` states no time zone, a StatusList2021 list whose `expirationDate` states none, and a list whose `validUntil` is an HTTP date, each of which must be refused, and a list whose bounds are stated at offsets from UTC, one with nine digits of a second, which must be read.
 A bound is an RFC 3339 date-time with its time zone (SPEC.md §6.6); one with no zone names no single instant, so a verifier that read it in its own zone would answer by where it runs.
 Every bound is months or more from when the suite runs, so a vector decides alike with or without the clock tolerance SPEC.md §6.6 permits.
@@ -686,6 +689,7 @@ Suite 1.7.0 adds the `status-list-validity.json` vectors, which a verifier that 
 Suite 1.8.0 adds `entity-card/revocation-unchecked`, which a verifier that passes a card whose `revocation` entry it does not check fails.
 Suite 1.9.0 adds `signed-proof-key-relationship.json`, which a verifier that accepts a detached proof key outside the signer's own `assertionMethod` fails.
 Suite 1.10.0 adds `status-list/zoneless-start-list`, `status-list/zoneless-end-list-2021` and `status-list/http-date-end-list`, which a verifier that reads a list's bounds with `Date.parse`, or another reader that takes a time with no zone, fails.
+Suite 1.11.0 adds `signed-proof/legacy-request-shape` and `signed-proof/legacy-request-shape-without-control-args`, which a verifier that recomputes `requestHash` only over the covered request fails.
 The SIGNED public suite manifest published by the Conformance Attestation Program is a separate artifact built on this committed one.
 
 ### Running the harness against YOUR implementation

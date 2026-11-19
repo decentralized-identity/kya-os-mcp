@@ -1240,12 +1240,16 @@ For a tool call:
 }
 ```
 
-A client, a PEP or a third-party auditor recomputes `requestHash` this way from the request it sent or received.
+A client, a PEP or a third-party auditor recomputes `requestHash` this way from the request it sent or received, and for the 1.x line also accepts the legacy shapes below.
 Rule 1 is the rule Entity Card request proofs use (SPEC-ENTITY-CARD §8.3).
 Appendix C.1 gives vectors.
 
-**Legacy shape in 1.x.** The 1.x releases of the reference implementation (`@kya-os/mcp`) still emit `requestHash` over the legacy shape `{"method": <tool name>, "params": <arguments>}` for every proof over a tool call: response and outcome proofs (§7.4), the approval `requestHash` of a step-up challenge, and holder-of-key request proofs.
-Their verifiers accept a `requestHash` over either shape of the call they hold, so a producer that follows this section verifies against them; the reference producers switch to the covered request above in 2.0.0.
+**Legacy shapes in 1.x.** For the 1.x line, a verifier MUST accept a `requestHash` computed over any of three shapes of the tool call it holds: the covered request above; the legacy shape; and the legacy shape with every `_kyaos*` argument removed.
+The legacy shape is `{"method": <params.name>, "params": <params.arguments as received>}`, canonicalized with JCS as above.
+An absent `params.arguments` is `{}`, and `params._meta` is never in it.
+Producers SHOULD sign the covered request.
+The 1.x releases of the reference implementation (`@kya-os/mcp`) sign one of the legacy shapes for every proof over a tool call: response and outcome proofs (§7.4), the approval `requestHash` of a step-up challenge, and holder-of-key request proofs.
+2.0.0 removes the legacy shapes.
 The legacy shape is deprecated: it hashes a tool named after a JSON-RPC method like that method's request, and it has no room for `params` members other than the arguments.
 
 Response canonicalization is selected by the proof's response-proof profile, named by the signature-covered `prf` claim (§7.2):

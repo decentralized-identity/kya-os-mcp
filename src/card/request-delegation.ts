@@ -24,7 +24,7 @@ import { thrownReason } from '../utils/thrown-words.js';
 import type { RefusalCode } from '../refusal-codes.js';
 import { admitsRootIssuer } from '../delegation/root-admission.js';
 import { revocationEntriesOf, validateDelegationChain, type DelegationChain } from './delegation.js';
-import type { EffectiveCaveats } from './caveats.js';
+import { warnOfUnknownCaveats, type EffectiveCaveats } from './caveats.js';
 import {
   KYA_OS_DELEGATION_CHAIN_META_KEY,
   parseCredentials,
@@ -154,9 +154,10 @@ export interface RequestDelegationInput {
 
 /**
  * The authority a verified chain grants, recomputed from the chain, with the limits it grants it
- * under: `caveats`, at their tightest, of which the host enforces each but `ValidUntil`, which the
- * library has held the call to, and `unknownCaveats`, which the host must enforce or refuse
- * ({@link EffectiveCaveats}).
+ * under ({@link EffectiveCaveats}): `caveats`, at their tightest, every one of which applies to
+ * the call, and `unknownCaveats`, which the host must enforce or refuse. The library has held the
+ * call to each `ValidUntil`; hold it to the rest with `caveatRefusal`, which also refuses a grant
+ * that lacks either member rather than read it as unlimited.
  */
 export interface RequestDelegationGrant extends EffectiveCaveats {
   source: DelegationChainSource;
@@ -284,6 +285,7 @@ async function verifyRequest(input: RequestDelegationInput, deps: VerifyRequestD
   }
   if (!revocation.ok) return reject('delegation_revoked', revocation.code, revocation.reasons);
 
+  warnOfUnknownCaveats(structural);
   return {
     ok: true,
     source,

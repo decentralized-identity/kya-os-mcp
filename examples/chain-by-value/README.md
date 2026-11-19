@@ -33,7 +33,7 @@ Only the network is in memory.
 | 6. Root revoked | Acme set the root's bit in its status list; the chain is byte for byte the one from call 2 | `403 delegation_revoked` |
 
 Call 3 shows that a verified chain still limits the call.
-The guard checks that each hop's caveats narrow its parent's, but it never sees the order's amount, so the merchant holds the order to the limit itself.
+The guard checks that each hop's caveats narrow its parent's, but it never sees the order's amount, so the merchant holds the order to the limit the grant carries, with `caveatRefusal`.
 Call 4 shows that attenuation alone is not enough: the edited hop still narrows its parent, and only the signature catches it.
 Call 6 shows that carrying a chain does not freeze it, since every hop's status is read live.
 
@@ -41,6 +41,7 @@ Call 6 shows that carrying a chain does not freeze it, since every hop's status 
 
 ```ts
 import {
+  caveatRefusal,
   createDelegationProofVerifier,
   createRevocationChecker,
   createStatusListProofVerifier,
@@ -66,14 +67,17 @@ const authority = await delegationGuard({ meta, proofDid: proof.did, action: req
 if (!authority.ok) return { status: authority.status, error: authority.error };
 // authority.responsibleParty is the root issuer, recomputed from the chain.
 // authority.caveats holds the chain's limits at their tightest, such as the lowest MaxAmount.
-// Hold the call to each one, and refuse it when authority.unknownCaveats names one you cannot enforce.
-const overLimit = limitBroken(request.params.arguments, authority);
+// Every one applies to the call: caveatRefusal holds the order to each.
+const { amount, currency } = request.params.arguments;
+const overLimit = caveatRefusal(authority, { amount, currency });
 if (overLimit !== undefined) return { status: 403, error: { code: 'limit_exceeded', message: overLimit } };
 ```
 
-The library holds the call to each `ValidUntil` caveat itself.
-A `MaxAmount` limits a value only your server sees, so `limitBroken` in [walkthrough.ts](./walkthrough.ts) compares the order's amount with each `MaxAmount` in `authority.caveats`, exactly and in its currency.
-A caveat of a type the library does not know is passed on in `authority.unknownCaveats`, and the library warns once per process; enforce it yourself, or refuse the call.
+The library holds the call to each `ValidUntil` caveat itself, but a `MaxAmount` limits a value only your server sees.
+`caveatRefusal`, from `@kya-os/mcp/card`, compares the amount with every `MaxAmount` in `authority.caveats`, as an exact decimal.
+A `MaxAmount` that names a currency also requires the call to be in that currency, and one that names none limits the amount whatever its currency, so limits in two currencies permit no call.
+It refuses a call under a caveat the library does not interpret, listed in `authority.unknownCaveats`, unless you name its type in `enforcedTypes` and enforce it yourself.
+It also refuses a grant without `caveats` or `unknownCaveats`, as a test double or a cached grant may be, rather than read it as unlimited.
 
 On the calling side, `toDelegationChainMeta(chain)` builds the `_meta` member to send beside the request proof.
 

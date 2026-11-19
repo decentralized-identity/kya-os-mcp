@@ -2,10 +2,13 @@
  * The caveats a verified delegation chain grants under (SPEC.md §6.10). The chain rules check that
  * each hop's caveats narrow its parent's, and the verdict then carries the tightest caveat of each
  * kind the chain states, so a host holds the call to the limit from the verdict alone: the lowest
- * `MaxAmount`, the earliest `ValidUntil`, and every caveat of a type the library does not know, as
- * written, listed apart and warned of once per process. A duplicate within one hop never loosens
- * what the verdict says, and a `ValidUntil` that states no date is malformed. Every case goes
- * through `@kya-os/mcp/card` as an adopter calls it, on hops signed with real keys.
+ * `MaxAmount` that names one currency, or none, the earliest `ValidUntil`, and every caveat the
+ * library does not interpret, as written, listed apart. A caveat of a known type with a member the
+ * library does not know is one it does not interpret. Every caveat applies to every call, so a
+ * `MaxAmount` that names a currency never stands in for one that names none. A duplicate within one
+ * hop never loosens what the verdict says. A passing verdict warns once per process of a caveat
+ * the library does not interpret; a refused one does not. Every case goes through
+ * `@kya-os/mcp/card` as an adopter calls it, on hops signed with real keys.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -136,10 +139,19 @@ describe('two caveats of one type in one hop', () => {
     expect(await verdictOn(p, chain)).toMatchObject({ ok: true, caveats: [validUntil('2026-12-01T00:00:00Z')] });
   });
 
-  it('keeps both MaxAmount caveats of different currencies, since neither narrows the other', async () => {
+  it('keeps both MaxAmount caveats of different currencies, which together permit no call', async () => {
     const p = parties();
     const chain = chainUnder(p, [[maxAmount('100.00', 'USD'), maxAmount('90.00', 'EUR')]]);
     expect(await verdictOn(p, chain)).toMatchObject({ ok: true, caveats: [maxAmount('100.00', 'USD'), maxAmount('90.00', 'EUR')] });
+  });
+
+  it('keeps a MaxAmount that names no currency beside a lower one that names one', async () => {
+    const p = parties();
+    const anyCurrency: Caveat = { type: 'MaxAmount', limit: '100' };
+    const oneHop = chainUnder(p, [[maxAmount('50'), anyCurrency]]);
+    expect(await verdictOn(p, oneHop)).toMatchObject({ ok: true, caveats: [maxAmount('50'), anyCurrency] });
+    const narrowed = chainUnder(p, [[anyCurrency], [maxAmount('50')]]);
+    expect(await verdictOn(p, narrowed)).toMatchObject({ ok: true, caveats: [anyCurrency, maxAmount('50')] });
   });
 
   it('still refuses a hop none of whose duplicates narrows its parent', async () => {
@@ -149,7 +161,7 @@ describe('two caveats of one type in one hop', () => {
   });
 });
 
-describe('a caveat of a type the library does not know', () => {
+describe('a caveat the library does not interpret', () => {
   const warned = Symbol.for('@kya-os/mcp/unknown-caveat-warned');
   const registry = globalThis as { [warned]?: true };
   let previous: true | undefined;
@@ -172,10 +184,73 @@ describe('a caveat of a type the library does not know', () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
     const chain = chainUnder(p, [[approval, maxAmount('500.00')], [approval, maxAmount('100.00'), region]]);
     const verdict = await verdictOn(p, chain);
-    expect(verdict).toMatchObject({ ok: true, caveats: [maxAmount('100.00'), approval, region], unknownCaveats: [approval, region] });
+    expect(verdict).toMatchObject({ ok: true, caveats: [approval, maxAmount('100.00'), region], unknownCaveats: [approval, region] });
     expect(await verdictOn(p, chain)).toMatchObject({ ok: true, unknownCaveats: [approval, region] });
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith(expect.stringMatching(/^\[kya-os\] .*unknownCaveats.*enforce.*or refuse/));
+  });
+
+  it('warns from a passing evaluateDelegationChain, but never from validateDelegationChain', async () => {
+    const p = parties();
+    const approval: Caveat = { type: 'RequiresHumanApproval', approvers: 2 };
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const chain = chainUnder(p, [[approval], [approval]]);
+    const ctx = { resource: RESOURCE, resourceOwner: p.acme.did, now, verifyHopProof: createDelegationProofVerifier({ didResolver }) };
+    expect(validateDelegationChain(chain, ctx)).toMatchObject({ ok: true, unknownCaveats: [approval] });
+    expect(warn).not.toHaveBeenCalled();
+    expect(await evaluateDelegationChain(chain, checkerFor(p), ctx)).toMatchObject({ ok: true, unknownCaveats: [approval] });
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not warn for a chain refused as untrusted_root, or refused by evaluateDelegationChain', async () => {
+    const p = parties();
+    const approval: Caveat = { type: 'RequiresHumanApproval', approvers: 2 };
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const chain = chainUnder(p, [[approval], [approval]]);
+    const untrusted = requireDelegation({
+      resource: RESOURCE,
+      trustedRootIssuers: [identity().did],
+      verifyHopProof: createDelegationProofVerifier({ didResolver }),
+      checkRevocation: checkerFor(p),
+      now,
+    });
+    expect(await untrusted({ meta: toDelegationChainMeta(chain), proofDid: p.subAgent.did, action: 'orders.place' })).toMatchObject({
+      ok: false,
+      refusalCode: 'untrusted_root',
+    });
+    const revoked = createRevocationChecker({ fetch: serve(statusList(p.acme, [3])), now, verifyStatusList: createStatusListProofVerifier({ didResolver }) });
+    const ctx = { resource: RESOURCE, resourceOwner: p.acme.did, now, verifyHopProof: createDelegationProofVerifier({ didResolver }) };
+    expect(await evaluateDelegationChain(chain, revoked, ctx)).toMatchObject({ ok: false });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('treats a type written in another case as one it does not know', async () => {
+    const p = parties();
+    const odd: Caveat = { type: 'maxAmount', limit: '1', currency: 'USD' };
+    vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    expect(await verdictOn(p, chainUnder(p, [[odd], [odd]]))).toMatchObject({ ok: true, caveats: [odd], unknownCaveats: [odd] });
+  });
+
+  it('treats a known type with a member it does not know as one it does not interpret, kept as written', async () => {
+    const p = parties();
+    const daily: Caveat = { type: 'MaxAmount', limit: '100', currency: 'USD', per: 'day' };
+    vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    // Neither stands in for the other: the tighter plain limit does not absorb the daily one, nor it the plain one.
+    const both = chainUnder(p, [[daily], [daily, maxAmount('50')]]);
+    expect(await verdictOn(p, both)).toMatchObject({ ok: true, caveats: [daily, maxAmount('50')], unknownCaveats: [daily] });
+    const looser = chainUnder(p, [[daily, maxAmount('500')]]);
+    expect(await verdictOn(p, looser)).toMatchObject({ ok: true, caveats: [daily, maxAmount('500')], unknownCaveats: [daily] });
+  });
+
+  it('holds a hop to replicate such a caveat verbatim, as one of a type it does not know', async () => {
+    const p = parties();
+    const daily: Caveat = { type: 'MaxAmount', limit: '100', currency: 'USD', per: 'day' };
+    vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    // A narrower limit that drops the member it does not know may widen it, so it is no narrowing.
+    const dropped = chainUnder(p, [[daily], [maxAmount('50')]]);
+    expect(await verdictOn(p, dropped)).toMatchObject({ ok: false, refusalCode: 'chain_invalid' });
+    const restated = chainUnder(p, [[daily], [{ ...daily, limit: '50' }]]);
+    expect(await verdictOn(p, restated)).toMatchObject({ ok: false, refusalCode: 'chain_invalid' });
   });
 
   it('does not warn for a chain whose every caveat it knows', async () => {

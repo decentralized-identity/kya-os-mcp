@@ -25,8 +25,9 @@
  *
  * Every key is a real Ed25519 did:key, every hop and the status list are signed with
  * `eddsa-jcs-2022` through the SDK, and the merchant runs the shipped `requireProof` and
- * `requireDelegation` guards, then holds each order to the limits the grant carries. Only the network is in memory: the merchant can reach Acme's status
- * list, as anyone can, and nothing else at Acme.
+ * `requireDelegation` guards, then holds each order to the limits the grant carries with
+ * `caveatRefusal`. Only the network is in memory: the merchant can reach Acme's status list, as
+ * anyone can, and nothing else at Acme.
  *
  * Run: npm run example:chain-by-value   (or: npx tsx examples/chain-by-value/walkthrough.ts)
  */
@@ -37,6 +38,7 @@ import { gzipSync } from 'node:zlib';
 import { exportJWK, generateKeyPair } from 'jose';
 import {
   buildCardProof,
+  caveatRefusal,
   createDelegationProofVerifier,
   createRevocationChecker,
   createStatusListProofVerifier,
@@ -54,7 +56,6 @@ import {
   type DelegationChain,
   type DelegationCredential,
   type Ed25519PrivateJwk,
-  type EffectiveCaveats,
   type ProofSigner,
   type SafeFetch,
   type UnsignedDelegationCredential,
@@ -172,32 +173,6 @@ function merchantNetwork(statusList: () => Record<string, unknown>): SafeFetch {
   };
 }
 
-/** An amount such as `"60.00"` in hundredths, exactly, or `undefined` when it is not a decimal of at most two places. */
-function hundredths(amount: string | undefined): bigint | undefined {
-  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(amount ?? '');
-  return match === null ? undefined : BigInt(`${match[1]}${(match[2] ?? '').padEnd(2, '0')}`);
-}
-
-/**
- * Why the merchant will not place `order` under the limits `grant` carries, or `undefined` when the
- * order keeps to every one. The library has already held the call to each `ValidUntil`. The
- * merchant holds the order to each `MaxAmount`, in its currency, and refuses a caveat it does not
- * know how to enforce, and an amount or a limit it cannot read.
- */
-function limitBroken(order: OrderCall['params']['arguments'], grant: EffectiveCaveats): string | undefined {
-  if ((grant.unknownCaveats ?? []).length > 0) return 'the delegation carries a caveat this merchant does not enforce';
-  const amount = hundredths(order.amount);
-  for (const caveat of grant.caveats ?? []) {
-    if (caveat.type !== 'MaxAmount') continue;
-    const limit = hundredths(caveat.limit);
-    const inCurrency = caveat.currency === undefined || caveat.currency === order.currency;
-    if (amount === undefined || limit === undefined || !inCurrency || amount > limit) {
-      return `order of ${order.amount} ${order.currency} is over the delegated MaxAmount of ${caveat.limit} ${caveat.currency ?? 'in any currency'}`;
-    }
-  }
-  return undefined;
-}
-
 /** Build the merchant's handler for `orders.place`. */
 export function merchant(opts: { trustedCustomers: string[]; fetch: SafeFetch }) {
   const didResolver = createDidKeyResolver();
@@ -246,8 +221,11 @@ export function merchant(opts: { trustedCustomers: string[]; fetch: SafeFetch })
     if (!proof.ok) return { status: proof.status, code: proof.error.code, reason: proof.error.reasons[0] };
     const authority = await delegationGuard({ meta, proofDid: proof.did, action: request.params.name });
     if (!authority.ok) return { status: authority.status, code: authority.error.code, reason: authority.error.reasons[0] };
-    // The grant carries the chain's limits at their tightest: hold the order to them before placing it.
-    const overLimit = limitBroken(request.params.arguments, authority);
+    // The grant carries the chain's limits at their tightest, every one of which applies to the order.
+    // caveatRefusal holds the order to each, and refuses a grant that lacks them rather than read it
+    // as unlimited, and any caveat this merchant does not enforce.
+    const { amount, currency } = request.params.arguments;
+    const overLimit = caveatRefusal(authority, { amount, currency });
     if (overLimit !== undefined) return { status: 403, code: 'limit_exceeded', reason: overLimit };
     return {
       status: 200,

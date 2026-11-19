@@ -36,13 +36,15 @@ import type { DelegationProofVerifier } from './delegation-proof.js';
 import { firstHopProofRefusal } from './hop-proofs.js';
 import { hopWindowRules } from './hop-window.js';
 import { withVerifiedRoot } from '../utils/verified-root.js';
+import { dateLte } from '../utils/rfc3339.js';
 import {
-  caveatNarrows,
-  dateLte,
   effectiveCaveatsOf,
-  tightestCaveats,
+  malformedCaveatRules,
+  tightestOf,
+  unnarrowedCaveats,
   warnOfUnknownCaveats,
   type EffectiveCaveats,
+  type HopCaveats,
 } from './caveats.js';
 
 export const DELEGATION_CONTEXT_V2 = 'https://www.w3.org/ns/credentials/v2'; // VC 2.0 base `@context`
@@ -198,24 +200,26 @@ function actionReasons(parent: readonly string[], child: readonly string[]): str
   const escalated = child.filter((action) => !parentSet.has(action));
   return escalated.length === 0 ? [] : [`allowedAction escalation: [${escalated.join(', ')}] ⊄ parent`];
 }
-// Each side at its tightest, so a looser duplicate of a caveat in one hop neither excuses nor fails it.
-function caveatReasons(parent: readonly Caveat[], child: readonly Caveat[]): string[] {
-  const narrowest = tightestCaveats(child);
-  return tightestCaveats(parent)
-    .filter((pc) => !narrowest.some((cc) => caveatNarrows(pc, cc)))
-    .map((pc) => `caveat "${pc.type}" broadened or dropped by child (monotone-narrowing violated)`);
+// Each hop read at its tightest, so a looser duplicate of a caveat in one hop neither excuses nor fails it.
+function caveatReasons(parent: HopCaveats, child: HopCaveats): string[] {
+  return unnarrowedCaveats(parent, child).map((pc) => `caveat "${pc.type}" broadened or dropped by child (monotone-narrowing violated)`);
 }
+
+/** The caveats `vc` states, read at their tightest (`./caveats.ts`). */
+const hopCaveatsOf = (vc: DelegationCredential): HopCaveats => tightestOf(vc.credentialSubject.caveats ?? []);
 
 /** Reasons the `child` FAILS to attenuate its `parent` (empty ⇒ valid hop): action subset, caveat
  *  monotonicity, `validUntil` narrowing, invoker→issuer continuity, `parentCapability` linkage,
  *  constant `invocationTarget`. */
 export function attenuates(parent: DelegationCredential, child: DelegationCredential): string[] {
+  return hopReasons(parent, child, hopCaveatsOf(parent), hopCaveatsOf(child));
+}
+
+/** {@link attenuates}, with each hop's caveats already read at their tightest. */
+function hopReasons(parent: DelegationCredential, child: DelegationCredential, parentCaveats: HopCaveats, childCaveats: HopCaveats): string[] {
   const p = parent.credentialSubject;
   const c = child.credentialSubject;
-  const reasons: string[] = [
-    ...actionReasons(p.allowedAction, c.allowedAction),
-    ...caveatReasons(p.caveats ?? [], c.caveats ?? []),
-  ];
+  const reasons: string[] = [...actionReasons(p.allowedAction, c.allowedAction), ...caveatReasons(parentCaveats, childCaveats)];
   if (parent.validUntil !== undefined && (child.validUntil === undefined || !dateLte(child.validUntil, parent.validUntil))) {
     reasons.push('validUntil broadened: child must expire no later than its parent');
   }
@@ -318,13 +322,13 @@ function rootReasons(root: DelegationCredential, ctx: DelegationChainContext): B
  * reason it breaks a rule, and the code of the first: `chain_invalid` for an empty chain, one longer
  * than `maxChainLength`, a root that does not name the resource and a hop that does not attenuate
  * its parent; `configuration_error` for a `maxChainLength` that is not a positive integer;
- * `untrusted_root` for a root not issued by `resourceOwner`; and `delegation_expired`,
- * `delegation_not_yet_valid` or `delegation_malformed` for a hop outside its validity window, held
- * with `maxClockSkewMs`, or one whose time is not an RFC 3339 date-time with its zone, a
- * `ValidUntil` caveat that states no date included (`./hop-window.ts`); `configuration_error` too
- * for a `maxClockSkewMs` it cannot use. Either result carries the chain's effective caveats
- * (`./caveats.ts`), and a chain that passes with a caveat of a type the library does not know
- * logs one warning per process.
+ * `untrusted_root` for a root not issued by `resourceOwner`; `delegation_malformed` for a caveat of
+ * a known type in a form it cannot be read in, on any hop, ahead of every hop rule below
+ * (`./caveats.ts`); and `delegation_expired`, `delegation_not_yet_valid` or `delegation_malformed`
+ * for a hop outside its validity window, held with `maxClockSkewMs`, or one whose time is not an
+ * RFC 3339 date-time with its zone (`./hop-window.ts`); `configuration_error` too for a
+ * `maxClockSkewMs` it cannot use. Either result carries the chain's effective caveats, each hop's
+ * read at their tightest once. It has no side effect: it never warns.
  */
 export function validateDelegationChain(
   chain: DelegationChain,
@@ -354,15 +358,15 @@ export function validateDelegationChain(
     }
   }
   broken.push(...rootReasons(root, ctx));
+  broken.push(...malformedCaveatRules(chain));
+  const hopCaveats = chain.map(hopCaveatsOf);
   for (let i = 1; i < depth; i += 1) {
-    broken.push(...brokenAs('chain_invalid', attenuates(chain[i - 1]!, chain[i]!)));
+    broken.push(...brokenAs('chain_invalid', hopReasons(chain[i - 1]!, chain[i]!, hopCaveats[i - 1]!, hopCaveats[i]!)));
   }
   // Wall-clock gate: a chain can attenuate perfectly and still be fully EXPIRED. Default to real
   // time so the gate is never silently skipped; deterministic callers inject `ctx.now`.
   broken.push(...hopWindowRules(chain, (ctx.now ?? Date.now)(), ctx.maxClockSkewMs));
   const first = broken[0];
-  const effective = effectiveCaveatsOf(chain);
-  if (first === undefined && effective.unknownCaveats.length > 0) warnOfUnknownCaveats();
   return {
     ok: first === undefined,
     reasons: broken.map((rule) => rule.reason),
@@ -371,7 +375,7 @@ export function validateDelegationChain(
     leafInvoker: leafInvokerOf(chain),
     invocationTarget: leaf.credentialSubject.invocationTarget,
     allowedAction: leaf.credentialSubject.allowedAction,
-    ...effective,
+    ...effectiveCaveatsOf(hopCaveats),
     depth,
   };
 }
@@ -390,6 +394,7 @@ export interface DelegationChainEvaluation extends DelegationChainResult {
  * The first revoked or unreadable hop stops that walk, carrying its refusal code, and so does a
  * checker that throws or rejects: `status_unavailable`, or the code of a `RefusalError` it throws.
  * Each proof and status answer gets `ctx.dependencyTimeoutMs` (5,000 ms by default).
+ * A chain that passes with a caveat the library does not interpret warns once per process.
  * Without `verifyHopProof`, legacy status-only evaluation continues with one process-wide warning;
  * issuers and status URLs are then only as authentic as the proofs the caller checks separately.
  * Pass `createDelegationProofVerifier({ didResolver })`; the next major version requires this option.
@@ -417,6 +422,7 @@ export async function evaluateDelegationChain(
     check,
     { dependencyTimeoutMs: timeoutMs },
   ).catch(checkerThrew);
+  if (revocation.ok) warnOfUnknownCaveats(structural);
   return {
     ...structural,
     ok: revocation.ok,

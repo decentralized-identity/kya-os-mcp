@@ -45,7 +45,7 @@ describe('examples/chain-by-value: carrying the delegation chain with the reques
     expect((await result()).overLimit).toEqual({
       status: 403,
       code: 'limit_exceeded',
-      reason: 'order of 240.00 USD is over the delegated MaxAmount of 100.00 USD',
+      reason: 'the call\'s amount 240.00 is over the delegated MaxAmount of 100.00 in "USD"',
     });
   });
 

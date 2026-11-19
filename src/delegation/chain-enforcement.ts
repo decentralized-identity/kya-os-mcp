@@ -32,6 +32,7 @@ import {
   unreadableChainAnswer,
 } from "./chain-reasons.js";
 import { chainLinkageRefusal } from "./chain-linkage.js";
+import { checkConstraintAttenuation } from "./constraint-attenuation.js";
 import { rootAdmissionRefusal } from "./root-admission.js";
 import { hasDelegationShape, resolvedAncestors } from "./resolved-chain.js";
 import type { AncestorReading, EvaluatedCredentials } from "./resolved-chain.js";
@@ -162,6 +163,8 @@ export interface ChainValidationResult extends EvaluatedCredentials, RefusalCodi
  * structural shape, per-credential verification, audience binding to the server,
  * the §11.6 re-delegation audience-constraint requirement, parent↔child linkage
  * (parentId + issuerDid==parent.subjectDid), cycle detection, scope attenuation,
+ * the attenuation of a CRISP budget and of every constraint the walk does not
+ * interpret (`./constraint-attenuation.ts`),
  * and — when a {@link RevocationChecker} is supplied — graph-backed ancestor
  * revocation. `skipSignature` applies only to the presented leaf whose JWT
  * envelope the caller has verified; ancestors always require verification.
@@ -353,6 +356,10 @@ async function walkChain(
     const scopeValidation = checkScopeAttenuation(previousCredential, credential);
     if (!scopeValidation.valid) {
       return scopeValidation;
+    }
+    const constraintValidation = checkConstraintAttenuation(previousCredential, credential);
+    if (!constraintValidation.valid) {
+      return constraintValidation;
     }
     warnings.push(...attenuationWarnings(previousCredential, credential));
 

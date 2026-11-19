@@ -164,6 +164,25 @@ describe('validateDelegationChain (CRISP attenuation, fail-closed)', () => {
     expect(result.reasons.some((r) => /caveat "CustomLimit"/.test(r))).toBe(true);
   });
 
+  describe('gives at most 16 reasons, however many rules a chain breaks', () => {
+    /** A chain whose child drops each of `count` caveats of its root that no other caveat repeats. */
+    const dropping = (count: number) =>
+      validateDelegationChain(
+        [root({ caveats: Array.from({ length: count }, (_unused, i) => ({ type: 'X', v: `p${i}` }) as Caveat) }), child({ caveats: [] })],
+        ownerCtx,
+      );
+    const dropped = 'caveat "X" broadened or dropped by child (monotone-narrowing violated)';
+
+    it('lists all 16 when it breaks 16', () => {
+      expect(dropping(16)).toMatchObject({ ok: false, code: 'chain_invalid', reasons: Array(16).fill(dropped) });
+    });
+
+    it('lists the first 15 and says how many more it breaks past 16', () => {
+      expect(dropping(17)).toMatchObject({ ok: false, code: 'chain_invalid', reasons: [...Array(15).fill(dropped), 'and 2 more rules it breaks'] });
+      expect(dropping(1200).reasons).toEqual([...Array(15).fill(dropped), 'and 1185 more rules it breaks']);
+    });
+  });
+
   it('REJECTS a child whose top-level validUntil outlives its parent', () => {
     const rogue = child({ validUntil: '2099-01-01T00:00:00Z' });
     const result = validateDelegationChain([root(), rogue], ownerCtx);

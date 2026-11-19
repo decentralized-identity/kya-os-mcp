@@ -287,6 +287,20 @@ interface BrokenRule {
 const brokenAs = (code: RefusalCode, reasons: readonly string[]): BrokenRule[] => reasons.map((reason) => ({ code, reason }));
 
 /**
+ * The most reasons a refused chain gives. A presenter writes the chain, and one hop can state
+ * thousands of caveats its child drops, each a rule broken, so the reasons, which go back to it and
+ * into the operator's log, are bounded rather than grown with what it sent.
+ */
+const MAX_CHAIN_REASONS = 16;
+
+/** The reasons of `broken`: every one when there are at most {@link MAX_CHAIN_REASONS}, else the first ones and how many more. */
+function reasonsOf(broken: readonly BrokenRule[]): string[] {
+  if (broken.length <= MAX_CHAIN_REASONS) return broken.map((rule) => rule.reason);
+  const listed = broken.slice(0, MAX_CHAIN_REASONS - 1).map((rule) => rule.reason);
+  return [...listed, `and ${broken.length - listed.length} more rules it breaks`];
+}
+
+/**
  * What {@link validateDelegationChain} finds. A refused chain carries, beside its `reasons`, the
  * `code` of the first rule it breaks and whether that code is `transient`; a chain that passes
  * carries neither. Either carries the chain's `caveats` and `unknownCaveats`
@@ -319,8 +333,9 @@ function rootReasons(root: DelegationCredential, ctx: DelegationChainContext): B
 
 /**
  * Structurally validate a chain (CRISP + continuity), fail-closed. Signature + revocation
- * are separate injected concerns (see {@link evaluateDelegationChain}). A refused chain gives every
- * reason it breaks a rule, and the code of the first: `chain_invalid` for an empty chain, one longer
+ * are separate injected concerns (see {@link evaluateDelegationChain}). A refused chain gives the
+ * reason for each rule it breaks, at most 16 of them, the 16th saying how many more it breaks when
+ * there are more, and the code of the first: `chain_invalid` for an empty chain, one longer
  * than `maxChainLength`, a root that does not name the resource and a hop that does not attenuate
  * its parent; `configuration_error` for a `maxChainLength` that is not a positive integer;
  * `untrusted_root` for a root not issued by `resourceOwner`; `delegation_malformed` for a caveat of
@@ -370,7 +385,7 @@ export function validateDelegationChain(
   const first = broken[0];
   return {
     ok: first === undefined,
-    reasons: broken.map((rule) => rule.reason),
+    reasons: reasonsOf(broken),
     ...(first === undefined ? {} : coded(first.code)),
     responsibleParty: responsiblePartyOf(chain),
     leafInvoker: leafInvokerOf(chain),

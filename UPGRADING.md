@@ -272,7 +272,7 @@ A re-delegation must copy, as written, every member of `constraints` and of `con
 An agent that re-delegates copies those members from its own credential; one that does not is refused as `chain_invalid`.
 Under a parent's `fixed` budget window, a re-delegation states no window, a `fixed` window of the same `durationSec`, or a `rolling` window at least as long; a `fixed` window of another length is refused as `chain_invalid`.
 
-`StatusList2021Manager` takes `listLifetimeMs`, which bounds how long each list it signs is read.
+`StatusList2021Manager` takes `listLifetimeMs`, which bounds how long each list it signs is read: a whole number of milliseconds from 1 to a century, 3,155,760,000,000; any other value throws a `TypeError` where the manager is built.
 An issuer that sets it calls `renewStatusList` for each list before the list ends, as every half lifetime, or every credential on that list is refused once it ends.
 
 `removeDelegation` throws, removing nothing, for a delegation with others registered under it.

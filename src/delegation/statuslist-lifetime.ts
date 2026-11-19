@@ -12,15 +12,24 @@ import type { StatusList2021Credential } from '../types/protocol.js';
 import { describeOptionValue } from '../utils/describe-value.js';
 
 /**
+ * The longest lifetime a manager gives its lists: a century of 365.25 days. A list that lives longer
+ * bounds nothing a reader keeps, and one far longer would end where no RFC 3339 date-time, four
+ * digits of year, can say (SPEC.md §6.6), or where no `Date` is, so every list would fail to sign.
+ */
+export const MAX_LIST_LIFETIME_MS = 36_525 * 24 * 60 * 60 * 1000;
+
+/**
  * The `listLifetimeMs` option as a number of milliseconds, or `undefined` when it is not set.
  * Throws a `TypeError` naming the option for any value that is not a whole number of milliseconds
- * greater than 0, so a mistyped option fails where the manager is built.
+ * from 1 to {@link MAX_LIST_LIFETIME_MS}, so a mistyped option fails where the manager is built,
+ * not at every list it signs.
  */
 export function listLifetimeOf(value: unknown): number | undefined {
   if (value === undefined) return undefined;
-  if (!Number.isSafeInteger(value) || (value as number) <= 0) {
+  if (!Number.isSafeInteger(value) || (value as number) <= 0 || (value as number) > MAX_LIST_LIFETIME_MS) {
     throw new TypeError(
-      `[kya-os] listLifetimeMs must be a whole number of milliseconds greater than 0 (got ${describeOptionValue(value)})`,
+      `[kya-os] listLifetimeMs must be a whole number of milliseconds from 1 to ${MAX_LIST_LIFETIME_MS}, a century ` +
+        `(got ${describeOptionValue(value)})`,
     );
   }
   return value as number;

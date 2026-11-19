@@ -19,6 +19,8 @@ import {
 import { RefusalError } from '../../utils/refusal.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** A century of 365.25 days, the longest lifetime a manager gives its lists. */
+const CENTURY_MS = 36_525 * DAY_MS;
 const crypto = createRealCryptoProvider();
 
 afterEach(() => {
@@ -80,7 +82,20 @@ describe('StatusList2021Manager: listLifetimeMs', () => {
     expect(list).not.toHaveProperty('validUntil');
   });
 
-  it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, '86400000', null])(
+  it('signs lists that live a century, each with an end a reader reads', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.parse('2026-11-18T12:00:00Z'));
+    const { manager, storage } = await managed(CENTURY_MS);
+    const entry = await manager.allocateStatusEntry('revocation');
+    const list = await storage.getStatusList(entry.statusListCredential);
+    // 36,525 days on, past 24 leap days, as 2100 is none.
+    expect(list!.expirationDate).toBe('2126-11-19T12:00:00.000Z');
+    expect(acceptStatusListValidity(list, Date.parse('2126-11-19T11:00:00Z')).valid).toBe(true);
+  });
+
+  // A lifetime past a century, up to the largest safe integer, would end a list where no date-time a
+  // reader reads can say, or where no Date is, so every list the manager signed would throw.
+  it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, '86400000', null, CENTURY_MS + 1, 8.7e15, Number.MAX_SAFE_INTEGER])(
     'throws a TypeError naming the option for %s',
     (listLifetimeMs) => {
       expect(
@@ -93,7 +108,7 @@ describe('StatusList2021Manager: listLifetimeMs', () => {
             statusListGzipCodec,
             { listLifetimeMs: listLifetimeMs as number },
           ),
-      ).toThrow(/^\[kya-os\] listLifetimeMs must be a whole number of milliseconds greater than 0/);
+      ).toThrow(/^\[kya-os\] listLifetimeMs must be a whole number of milliseconds from 1 to 3155760000000, a century/);
     },
   );
 });

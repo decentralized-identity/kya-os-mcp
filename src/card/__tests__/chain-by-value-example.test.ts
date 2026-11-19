@@ -1,8 +1,9 @@
 /**
  * `examples/chain-by-value/walkthrough.ts` runs end to end: the merchant cannot resolve the chain
- * by reference, accepts it carried by value, and rejects a hop edited after signing, the chain
- * presented by another key, and the chain once its Responsible Party revokes the root. What the
- * registry answered goes to the merchant's log, not to the caller.
+ * by reference, accepts it carried by value, holds the order to the limit the grant carries, and
+ * rejects a hop edited after signing, the chain presented by another key, and the chain once its
+ * Responsible Party revokes the root. What the registry answered goes to the merchant's log, not to
+ * the caller.
  */
 
 import { afterAll, beforeAll, describe, it, expect, vi, type MockInstance } from 'vitest';
@@ -37,6 +38,14 @@ describe('examples/chain-by-value: carrying the delegation chain with the reques
       source: 'carried',
       depth: 2,
       fresh: true,
+    });
+  });
+
+  it("refuses an order over the worker's own limit, though inside Acme's, from the limit the grant carries", async () => {
+    expect((await result()).overLimit).toEqual({
+      status: 403,
+      code: 'limit_exceeded',
+      reason: 'order of 240.00 USD is over the delegated MaxAmount of 100.00 USD',
     });
   });
 

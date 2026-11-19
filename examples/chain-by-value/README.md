@@ -13,7 +13,7 @@ npm run example:chain-by-value
   It delegates `orders.place` and `orders.read`, up to 500 USD, to its procurement agent.
 - The **procurement agent** re-delegates `orders.place`, up to 100 USD, to a checkout worker.
   It signs that hop with its own key and asks no one, because Acme's hop already names it as the delegate.
-- The **merchant** (`did:web:merchant.example`) runs `requireProof` and then `requireDelegation` on every call to `orders.place`.
+- The **merchant** (`did:web:merchant.example`) runs `requireProof` and then `requireDelegation` on every call to `orders.place`, and holds each order to the limits the grant carries.
   It knows Acme's DID and trusts it as a customer.
   It can fetch Acme's public revocation list, but Acme's delegation registry refuses it.
 
@@ -21,18 +21,21 @@ Every party has a real Ed25519 `did:key`.
 Both hops and Acme's Bitstring Status List are signed with `eddsa-jcs-2022` through the SDK.
 Only the network is in memory.
 
-## The five calls
+## The six calls
 
 | Call | What the merchant sees | Answer |
 | --- | --- | --- |
 | 1. By reference | Only the worker's request proof, so it asks Acme's registry for the chain | `403 delegation_unresolvable` |
-| 2. Chain carried | The chain in `_meta["org.kya-os/delegation-chain"]` beside the proof | `200`, Acme recomputed as the Responsible Party |
-| 3. Edited hop | The worker raised its limit from 100 to 400, still inside Acme's 500 | `403 delegation_invalid`: the agent's signature no longer verifies |
-| 4. Chain replayed | Another agent sends the worker's chain with a valid proof of its own | `403 delegation_invalid`: the leaf names the worker, not this caller |
-| 5. Root revoked | Acme set the root's bit in its status list; the chain is byte for byte the one from call 2 | `403 delegation_revoked` |
+| 2. Chain carried | The chain in `_meta["org.kya-os/delegation-chain"]` beside the proof, for an order of 60 USD | `200`, Acme recomputed as the Responsible Party |
+| 3. Over the limit | The same chain, for an order of 240 USD, inside Acme's 500 but over the worker's 100 | `403 limit_exceeded`: the grant carries the worker's limit |
+| 4. Edited hop | The worker raised its limit from 100 to 400, still inside Acme's 500 | `403 delegation_invalid`: the agent's signature no longer verifies |
+| 5. Chain replayed | Another agent sends the worker's chain with a valid proof of its own | `403 delegation_invalid`: the leaf names the worker, not this caller |
+| 6. Root revoked | Acme set the root's bit in its status list; the chain is byte for byte the one from call 2 | `403 delegation_revoked` |
 
-Call 3 shows that attenuation alone is not enough: the edited hop still narrows its parent, and only the signature catches it.
-Call 5 shows that carrying a chain does not freeze it, since every hop's status is read live.
+Call 3 shows that a verified chain still limits the call.
+The guard checks that each hop's caveats narrow its parent's, but it never sees the order's amount, so the merchant holds the order to the limit itself.
+Call 4 shows that attenuation alone is not enough: the edited hop still narrows its parent, and only the signature catches it.
+Call 6 shows that carrying a chain does not freeze it, since every hop's status is read live.
 
 ## Wiring it into a server
 
@@ -62,7 +65,15 @@ const authority = await delegationGuard({ meta, proofDid: proof.did, action: req
 // refusalCode and transient say why, for your logs; the client needs only the status and the error.
 if (!authority.ok) return { status: authority.status, error: authority.error };
 // authority.responsibleParty is the root issuer, recomputed from the chain.
+// authority.caveats holds the chain's limits at their tightest, such as the lowest MaxAmount.
+// Hold the call to each one, and refuse it when authority.unknownCaveats names one you cannot enforce.
+const overLimit = limitBroken(request.params.arguments, authority);
+if (overLimit !== undefined) return { status: 403, error: { code: 'limit_exceeded', message: overLimit } };
 ```
+
+The library holds the call to each `ValidUntil` caveat itself.
+A `MaxAmount` limits a value only your server sees, so `limitBroken` in [walkthrough.ts](./walkthrough.ts) compares the order's amount with each `MaxAmount` in `authority.caveats`, exactly and in its currency.
+A caveat of a type the library does not know is passed on in `authority.unknownCaveats`, and the library warns once per process; enforce it yourself, or refuse the call.
 
 On the calling side, `toDelegationChainMeta(chain)` builds the `_meta` member to send beside the request proof.
 

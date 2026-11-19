@@ -5,24 +5,27 @@
  * Acme delegates `orders.place` to its procurement agent, which re-delegates a narrower slice to
  * a checkout worker. The worker calls a merchant's MCP server. The merchant is a different
  * organization: it knows Acme's DID, but it has no account on Acme's delegation registry and no
- * business querying it. The walkthrough runs five calls against the merchant:
+ * business querying it. The walkthrough runs six calls against the merchant:
  *
  *   1. By reference: the worker sends only its request proof. The merchant has to ask Acme's
  *      registry for the chain, the registry refuses, and the call fails `delegation_unresolvable`.
  *   2. By value: the worker sends the chain in `_meta['org.kya-os/delegation-chain']`. The merchant
  *      checks every hop's signature against the delegator's own DID and recomputes the
- *      Responsible Party (Acme) from the root. Accepted.
- *   3. The worker raises its own limit after signing. The new value still sits inside Acme's, so
+ *      Responsible Party (Acme) from the root. The order is inside the worker's limit. Accepted.
+ *   3. The worker orders more than its own limit, though less than Acme's. The chain verifies, and
+ *      the grant carries the worker's limit, the tightest any hop states, so the merchant refuses
+ *      the order.
+ *   4. The worker raises its own limit after signing. The new value still sits inside Acme's, so
  *      attenuation passes; the agent's signature does not, and the call fails.
- *   4. Another agent replays the worker's chain under its own, valid request proof. The leaf
+ *   5. Another agent replays the worker's chain under its own, valid request proof. The leaf
  *      names the worker's key, not this one, and the call fails.
- *   5. Acme revokes the root hop in its public Bitstring Status List. The carried chain is byte for
+ *   6. Acme revokes the root hop in its public Bitstring Status List. The carried chain is byte for
  *      byte the one accepted in step 2, and the call fails `delegation_revoked`: carrying the chain
  *      does not freeze it.
  *
  * Every key is a real Ed25519 did:key, every hop and the status list are signed with
  * `eddsa-jcs-2022` through the SDK, and the merchant runs the shipped `requireProof` and
- * `requireDelegation` guards. Only the network is in memory: the merchant can reach Acme's status
+ * `requireDelegation` guards, then holds each order to the limits the grant carries. Only the network is in memory: the merchant can reach Acme's status
  * list, as anyone can, and nothing else at Acme.
  *
  * Run: npm run example:chain-by-value   (or: npx tsx examples/chain-by-value/walkthrough.ts)
@@ -51,6 +54,7 @@ import {
   type DelegationChain,
   type DelegationCredential,
   type Ed25519PrivateJwk,
+  type EffectiveCaveats,
   type ProofSigner,
   type SafeFetch,
   type UnsignedDelegationCredential,
@@ -69,7 +73,17 @@ export const ACME_STATUS_URL = 'https://acme.example/status/1';
 const ROOT_STATUS_INDEX = 3;
 const LEAF_STATUS_INDEX = 7;
 const VALID_UNTIL = '2027-01-01T00:00:00Z';
-const PLACE_ORDER = { method: 'tools/call', params: { name: 'orders.place', arguments: { sku: 'A-100', qty: 2 } } };
+const PLACE_ORDER = {
+  method: 'tools/call',
+  params: { name: 'orders.place', arguments: { sku: 'A-100', qty: 2, amount: '60.00', currency: 'USD' } },
+};
+/** An order over the worker's own limit of 100 USD, though inside Acme's 500 USD. */
+const PLACE_LARGE_ORDER = {
+  method: 'tools/call',
+  params: { name: 'orders.place', arguments: { sku: 'A-100', qty: 8, amount: '240.00', currency: 'USD' } },
+};
+/** A call to `orders.place`. */
+type OrderCall = typeof PLACE_ORDER;
 
 // ── Parties ──────────────────────────────────────────────────────────────────
 
@@ -158,6 +172,32 @@ function merchantNetwork(statusList: () => Record<string, unknown>): SafeFetch {
   };
 }
 
+/** An amount such as `"60.00"` in hundredths, exactly, or `undefined` when it is not a decimal of at most two places. */
+function hundredths(amount: string | undefined): bigint | undefined {
+  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(amount ?? '');
+  return match === null ? undefined : BigInt(`${match[1]}${(match[2] ?? '').padEnd(2, '0')}`);
+}
+
+/**
+ * Why the merchant will not place `order` under the limits `grant` carries, or `undefined` when the
+ * order keeps to every one. The library has already held the call to each `ValidUntil`. The
+ * merchant holds the order to each `MaxAmount`, in its currency, and refuses a caveat it does not
+ * know how to enforce, and an amount or a limit it cannot read.
+ */
+function limitBroken(order: OrderCall['params']['arguments'], grant: EffectiveCaveats): string | undefined {
+  if ((grant.unknownCaveats ?? []).length > 0) return 'the delegation carries a caveat this merchant does not enforce';
+  const amount = hundredths(order.amount);
+  for (const caveat of grant.caveats ?? []) {
+    if (caveat.type !== 'MaxAmount') continue;
+    const limit = hundredths(caveat.limit);
+    const inCurrency = caveat.currency === undefined || caveat.currency === order.currency;
+    if (amount === undefined || limit === undefined || !inCurrency || amount > limit) {
+      return `order of ${order.amount} ${order.currency} is over the delegated MaxAmount of ${caveat.limit} ${caveat.currency ?? 'in any currency'}`;
+    }
+  }
+  return undefined;
+}
+
 /** Build the merchant's handler for `orders.place`. */
 export function merchant(opts: { trustedCustomers: string[]; fetch: SafeFetch }) {
   const didResolver = createDidKeyResolver();
@@ -201,11 +241,14 @@ export function merchant(opts: { trustedCustomers: string[]; fetch: SafeFetch })
     },
   });
 
-  return async function placeOrder(request: typeof PLACE_ORDER, meta: Record<string, unknown>): Promise<MerchantAnswer> {
+  return async function placeOrder(request: OrderCall, meta: Record<string, unknown>): Promise<MerchantAnswer> {
     const proof = await proofGuard(request, meta);
     if (!proof.ok) return { status: proof.status, code: proof.error.code, reason: proof.error.reasons[0] };
     const authority = await delegationGuard({ meta, proofDid: proof.did, action: request.params.name });
     if (!authority.ok) return { status: authority.status, code: authority.error.code, reason: authority.error.reasons[0] };
+    // The grant carries the chain's limits at their tightest: hold the order to them before placing it.
+    const overLimit = limitBroken(request.params.arguments, authority);
+    if (overLimit !== undefined) return { status: 403, code: 'limit_exceeded', reason: overLimit };
     return {
       status: 200,
       responsibleParty: authority.responsibleParty,
@@ -217,18 +260,19 @@ export function merchant(opts: { trustedCustomers: string[]; fetch: SafeFetch })
   };
 }
 
-/** A caller's request proof for `orders.place`, bound to the merchant and a fresh nonce. */
-async function proveCall(caller: Party): Promise<Record<string, unknown>> {
-  return buildCardProof(PLACE_ORDER, caller.signer, { audience: MERCHANT_DID, nonce: randomBytes(16).toString('base64url') });
+/** A caller's request proof for `request`, bound to the merchant and a fresh nonce. */
+async function proveCall(caller: Party, request: OrderCall = PLACE_ORDER): Promise<Record<string, unknown>> {
+  return buildCardProof(request, caller.signer, { audience: MERCHANT_DID, nonce: randomBytes(16).toString('base64url') });
 }
 
-// ── The five calls ───────────────────────────────────────────────────────────
+// ── The six calls ────────────────────────────────────────────────────────────
 
 export interface DemoResult {
   parties: { acme: Party; agent: Party; worker: Party; other: Party };
   chain: [DelegationCredential, DelegationCredential];
   byReference: MerchantAnswer;
   carried: MerchantAnswer;
+  overLimit: MerchantAnswer;
   tampered: MerchantAnswer;
   replayedByAnother: MerchantAnswer;
   revoked: MerchantAnswer;
@@ -277,21 +321,27 @@ export async function demoScenario(): Promise<DemoResult> {
   // 2. By value: the chain travels in the same _meta as the proof.
   const carried = await placeOrder(PLACE_ORDER, { ...(await proveCall(worker)), ...toDelegationChainMeta(chain) });
 
-  // 3. The worker edits its own hop: 100 becomes 400, still inside Acme's 500.
+  // 3. The worker orders 240 USD: inside Acme's 500, over the 100 its own hop allows.
+  const overLimit = await placeOrder(PLACE_LARGE_ORDER, {
+    ...(await proveCall(worker, PLACE_LARGE_ORDER)),
+    ...toDelegationChainMeta(chain),
+  });
+
+  // 4. The worker edits its own hop: 100 becomes 400, still inside Acme's 500.
   const raised = {
     ...leaf,
     credentialSubject: { ...leaf.credentialSubject, caveats: [{ type: 'MaxAmount', limit: '400.00', currency: 'USD' }] },
   };
   const tampered = await placeOrder(PLACE_ORDER, { ...(await proveCall(worker)), ...toDelegationChainMeta([root, raised]) });
 
-  // 4. Another agent presents the worker's chain with a valid proof of its own.
+  // 5. Another agent presents the worker's chain with a valid proof of its own.
   const replayedByAnother = await placeOrder(PLACE_ORDER, { ...(await proveCall(other)), ...toDelegationChainMeta(chain) });
 
-  // 5. Acme revokes the root. The worker sends exactly the chain that was accepted in step 2.
+  // 6. Acme revokes the root. The worker sends exactly the chain that was accepted in step 2.
   published = await acmeStatusList(acme, [ROOT_STATUS_INDEX]);
   const revoked = await placeOrder(PLACE_ORDER, { ...(await proveCall(worker)), ...toDelegationChainMeta(chain) });
 
-  return { parties: { acme, agent, worker, other }, chain, byReference, carried, tampered, replayedByAnother, revoked };
+  return { parties: { acme, agent, worker, other }, chain, byReference, carried, overLimit, tampered, replayedByAnother, revoked };
 }
 
 // ── Run it ───────────────────────────────────────────────────────────────────
@@ -323,10 +373,11 @@ async function main(): Promise<void> {
   console.log('\nCalls to orders.place');
   const rows: [string, MerchantAnswer][] = [
     ['1. by reference (merchant asks Acme)', result.byReference],
-    ['2. chain carried in _meta', result.carried],
-    ['3. worker raised its own limit', result.tampered],
-    ["4. another agent sends the worker's chain", result.replayedByAnother],
-    ['5. Acme revoked the root', result.revoked],
+    ['2. chain carried in _meta, 60.00 USD', result.carried],
+    ['3. same chain, 240.00 USD', result.overLimit],
+    ['4. worker raised its own limit', result.tampered],
+    ["5. another agent sends the worker's chain", result.replayedByAnother],
+    ['6. Acme revoked the root', result.revoked],
   ];
   for (const [label, answer] of rows) console.log(`  ${label.padEnd(44)} ${describeAnswer(answer, parties)}`);
   console.log('');

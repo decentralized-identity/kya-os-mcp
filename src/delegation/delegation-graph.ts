@@ -17,10 +17,12 @@ import {
   type StatusEntrySources,
 } from './status-entry-claim.js';
 import { readsStatusEntryOwners, type StatusEntryOwners } from './status-entry-owner.js';
-import { KeyedLock, keyedLockOf } from '../utils/keyed-lock.js';
+import { describeValue } from '../utils/describe-value.js';
+import { KeyedLock } from '../utils/keyed-lock.js';
 import { warnOncePerProcess } from '../utils/warn-once.js';
 import { graphChainBreak } from './graph-chain.js';
 import { removeDelegationNode } from './delegation-removal.js';
+import { nodeTurnsOf, type NodeTurns } from './graph-node-turns.js';
 import {
   supportsAtomicRegistration,
   supportsStatusEntryLookup,
@@ -73,10 +75,10 @@ export class DelegationGraphManager {
   /**
    * Runs the changes to one stored node one at a time, by the node's id: each reads the node and
    * writes it back whole, so two at once would lose one. Shared by every manager over the same
-   * storage provider object (see {@link keyedLockOf}). A change to a node and then to its parent
-   * takes the node's turn first, never the other way round.
+   * storage provider object, and each waits for its turn at most 10 seconds (`nodeTurnsOf`). A
+   * change to a node and then to its parent takes the node's turn first, never the other way round.
    */
-  private readonly nodeTurns: KeyedLock;
+  private readonly nodeTurns: NodeTurns;
 
   /**
    * @param options.statusEntryOwners - The `StatusList2021Manager` that
@@ -88,7 +90,7 @@ export class DelegationGraphManager {
     private storage: DelegationGraphStorageProvider,
     options: DelegationGraphOptions = {},
   ) {
-    this.nodeTurns = keyedLockOf(storage);
+    this.nodeTurns = nodeTurnsOf(storage);
     const owners = options.statusEntryOwners;
     if (owners !== undefined && !readsStatusEntryOwners(owners)) {
       throw new TypeError(
@@ -221,7 +223,7 @@ export class DelegationGraphManager {
       await this.linkNode(node);
       return;
     }
-    await this.nodeTurns.run(parentId, () => this.linkNode(node));
+    await this.nodeTurns.take(parentId, `given the child ${describeValue(node.id)}`, () => this.linkNode(node));
   }
 
   /** Store `node` and link it under its parent, which the caller holds the turn of. */
@@ -286,7 +288,8 @@ export class DelegationGraphManager {
    * the subtree itself.
    */
   async setRevoked(delegationId: string, revoked: boolean): Promise<boolean> {
-    return this.nodeTurns.run(delegationId, async () => {
+    const change = revoked ? 'marked revoked' : 'cleared of its revocation mark';
+    return this.nodeTurns.take(delegationId, change, async () => {
       const node = await this.storage.getNode(delegationId);
       if (!node) {
         throw new Error(`Delegation not found: ${delegationId}`);

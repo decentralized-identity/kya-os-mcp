@@ -7,7 +7,10 @@
  */
 
 import type { CredentialStatus } from '../types/protocol.js';
+import { describeTimeout } from '../utils/deadline.js';
 import { describeValue } from '../utils/describe-value.js';
+import { RefusalError } from '../utils/refusal.js';
+import { NODE_TURN_WAIT_MS } from './graph-node-turns.js';
 import type { RevocationEvent } from './cascading-revocation.js';
 import { entryKey } from './delegation-status-entry.js';
 
@@ -150,5 +153,25 @@ export function revocationNotRecorded(first: UnrecordedRevocation, more: number)
     `Revocation of delegation ${describeValue(first.delegationId)} was not recorded: ${why}, and the graph storage ` +
       'provider did not persist DelegationNode.revoked, the only record of a revocation that sets no status list ' +
       `entry. A DelegationGraphStorageProvider must store the revoked field.${others}`,
+  );
+}
+
+/**
+ * The error of a revocation of `root` that could not mark `first` in the graph, nor `more` others
+ * of its subtree, since another change to each one's node did not finish in time: a transient
+ * `deadline_exceeded`, so the caller revokes again. Every other delegation of the subtree is marked.
+ */
+export function revocationStalled(root: string, first: string, more: number): RefusalError {
+  const others =
+    more === 0
+      ? ''
+      : more === 1
+        ? ' One more delegation of the subtree was not marked either.'
+        : ` ${more} more delegations of the subtree were not marked either.`;
+  return new RefusalError(
+    'deadline_exceeded',
+    `Revocation of delegation ${describeValue(root)} did not land in full: delegation ${describeValue(first)} was not ` +
+      'marked revoked, since another change to its node in the graph did not finish within ' +
+      `${describeTimeout(NODE_TURN_WAIT_MS)}.${others} Revoke delegation ${describeValue(root)} again`,
   );
 }

@@ -6,42 +6,45 @@
  * and deletes its node, or refuses, removing nothing.
  */
 
-import type { KeyedLock } from '../utils/keyed-lock.js';
+import { describeValue } from '../utils/describe-value.js';
 import type { DelegationGraphStorageProvider, DelegationNode } from './delegation-graph-storage.js';
 import { readableStatusEntry } from './delegation-status-entry.js';
+import type { NodeTurns } from './graph-node-turns.js';
 import type { StatusEntryOwners } from './status-entry-owner.js';
 
 /** What a removal reads and writes: the graph's store, the turns at its nodes, and the entries' owners. */
 export interface RemovalContext {
   readonly storage: DelegationGraphStorageProvider;
-  readonly turns: KeyedLock;
+  readonly turns: NodeTurns;
   readonly owners: StatusEntryOwners | undefined;
 }
 
 /** Remove `delegationId`, as `DelegationGraphManager.removeDelegation` says. */
 export async function removeDelegationNode(context: RemovalContext, delegationId: string): Promise<void> {
   const { storage, turns } = context;
-  await turns.run(delegationId, async () => {
+  await turns.take(delegationId, 'removed', async () => {
     const node = await storage.getNode(delegationId);
     if (!node) return;
     const refused = await removalRefusal(storage, node);
     if (refused !== undefined) {
       throw new Error(`Delegation ${delegationId} is not removed: ${refused}`);
     }
-    await retireOwnedEntry(context.owners, node);
-
     const parentId = node.parentId;
-    if (parentId) {
-      await turns.run(parentId, async () => {
-        const parent = await storage.getNode(parentId);
-        if (parent) {
-          parent.children = parent.children.filter((id) => id !== delegationId);
-          await storage.setNode(parent);
-        }
-      });
+    if (!parentId) {
+      await retireOwnedEntry(context.owners, node);
+      await storage.deleteNode(delegationId);
+      return;
     }
-
-    await storage.deleteNode(delegationId);
+    // In the parent's turn too, so the removal changes nothing unless it can unlink the node.
+    await turns.take(parentId, `unlinked from ${describeValue(delegationId)}, which is so not removed`, async () => {
+      await retireOwnedEntry(context.owners, node);
+      const parent = await storage.getNode(parentId);
+      if (parent) {
+        parent.children = parent.children.filter((id) => id !== delegationId);
+        await storage.setNode(parent);
+      }
+      await storage.deleteNode(delegationId);
+    });
   });
 }
 

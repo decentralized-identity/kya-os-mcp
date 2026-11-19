@@ -15,6 +15,7 @@ import {
   restoreLeftUnchanged,
   revocationLeftUnchanged,
   revocationNotRecorded,
+  revocationStalled,
   type UnchangedStatusEntry,
   type UnrecordedRevocation,
 } from './status-entry-unchanged-error.js';
@@ -23,6 +24,7 @@ import { readRevoked, unreadableStatusReason } from '../utils/revocation-answer.
 import { describeValue } from '../utils/describe-value.js';
 import { RefusalError } from '../utils/refusal.js';
 import { graphChainBreak } from './graph-chain.js';
+import { isStalledTurn } from './graph-node-turns.js';
 
 export {
   StatusEntryUnchangedError,
@@ -62,6 +64,8 @@ interface RevocationWalk {
   readonly events: RevocationEvent[];
   readonly unchanged: UnchangedStatusEntry[];
   readonly unrecorded: UnrecordedRevocation[];
+  /** The delegations the walk could not mark, since their node's turn did not come. */
+  readonly stalled: string[];
   readonly dryRun: boolean;
 }
 
@@ -122,7 +126,10 @@ export class CascadingRevocationManager {
    * the events of every delegation revoked and each entry left unchanged: those delegations are
    * revoked in the graph, which `isRevoked` reads, but not on the published list. A delegation
    * whose mark the graph storage provider dropped, and whose entry was not set, is recorded
-   * nowhere: that throws an `Error` naming it instead, also once the walk is done. A dry run
+   * nowhere: that throws an `Error` naming it instead, also once the walk is done. A delegation
+   * whose node another change holds for 10 seconds is not marked: the walk goes on, and then, before
+   * either of those, throws a transient `RefusalError` of code `deadline_exceeded` naming it, so
+   * the caller revokes again. A dry run
    * changes nothing, and returns or throws what the real run would, short of what only changing
    * the list shows.
    */
@@ -147,6 +154,7 @@ export class CascadingRevocationManager {
       events: [],
       unchanged: [],
       unrecorded: [],
+      stalled: [],
       dryRun: options.dryRun === true,
     };
     await this.revokeNode(targetNode, walk, options.reason, options.onRevoke);
@@ -156,6 +164,10 @@ export class CascadingRevocationManager {
       await this.revokeNode(descendant, walk, `Cascaded from ${delegationId}`, options.onRevoke);
     }
 
+    const [firstStalled, ...moreStalled] = walk.stalled;
+    if (firstStalled !== undefined) {
+      throw revocationStalled(delegationId, firstStalled, moreStalled.length);
+    }
     const [firstUnrecorded, ...moreUnrecorded] = walk.unrecorded;
     if (firstUnrecorded !== undefined) {
       throw revocationNotRecorded(firstUnrecorded, moreUnrecorded.length);
@@ -186,20 +198,38 @@ export class CascadingRevocationManager {
     // has no status list entry to flip (no status id, or one such as
     // urn:uuid:… that names no list and index), or when publishing the bit
     // below fails. A dry run marks nothing, and so needs no mark.
-    const marked = walk.dryRun ? true : await this.graph.setRevoked(node.id, true);
+    // A node whose turn did not come is not marked: the walk goes on, and
+    // says so at its end, so the caller revokes again.
+    const marked = await this.mark(node.id, walk);
     const outcome = await this.revokeEntry(node, walk, event);
     if (outcome.unchanged !== undefined) {
       walk.unchanged.push(outcome.unchanged);
     }
     // With no bit set, the mark is the only record. If the storage provider
     // dropped it, reporting success would leave the delegation live.
-    if (!marked && !outcome.set) {
+    if (marked === false && !outcome.set) {
       walk.unrecorded.push({ delegationId: node.id, unchanged: outcome.unchanged });
     }
 
     walk.events.push(event);
     if (onRevoke) {
       await onRevoke(event);
+    }
+  }
+
+  /**
+   * Mark `delegationId` revoked in the graph, as the walk's revocation does, and say whether the
+   * stored node carries the mark: `'stalled'` when its turn did not come, which the walk records.
+   * A dry run marks nothing, and so needs no mark.
+   */
+  private async mark(delegationId: string, walk: RevocationWalk): Promise<boolean | 'stalled'> {
+    if (walk.dryRun) return true;
+    try {
+      return await this.graph.setRevoked(delegationId, true);
+    } catch (error) {
+      if (!isStalledTurn(error)) throw error;
+      walk.stalled.push(delegationId);
+      return 'stalled';
     }
   }
 

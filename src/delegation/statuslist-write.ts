@@ -9,6 +9,7 @@
 
 import type { StatusList2021Credential } from '../types/protocol.js';
 import { describeOptionValue } from '../utils/describe-value.js';
+import { LONGEST_WAIT_MS } from '../utils/keyed-lock.js';
 import { warnOncePerProcess } from '../utils/warn-once.js';
 import { supportsConditionalWrite, type StatusListStorageProvider } from './statuslist-storage.js';
 
@@ -21,13 +22,12 @@ const LEAST_WAIT_CEILING_MS = 100;
 /** How many refusals double the ceiling on a wait that the length of a try sets. */
 const REFUSALS_PER_CEILING_DOUBLING = 4;
 
-/**
- * The longest one wait between two tries of a write may be, in milliseconds, however slow the
- * tries. A change so gives up within `maxWriteConflicts` waits of this length and one try more
- * than that many tries, while the manager holds the list's turn and its other changes of that
- * list wait behind it.
+/*
+ * The longest one wait between two tries of a write is LONGEST_WAIT_MS, however slow the tries. A
+ * change so gives up within `maxWriteConflicts` waits of this length and one try more than that
+ * many tries, while the manager holds the list's turn and its other changes of that list wait
+ * behind it.
  */
-const LONGEST_WAIT_MS = 10_000;
 
 /** The options of a `StatusList2021Manager` that say how it retries a refused write. */
 export interface StatusListWriteRetryOptions {

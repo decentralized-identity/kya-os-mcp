@@ -97,8 +97,10 @@ interface EntryOutcome {
  *
  * A revocation never stops part way for an entry: every delegation of the subtree is marked in the
  * graph, and an entry it may not change, that cannot be read, or that the status list manager
- * could not change, is reported to the operator at the end in a `StatusEntryUnchangedError`, never
- * in a `RefusalError`.
+ * could not change, is reported to the operator at the end in a `StatusEntryUnchangedError`, which
+ * is not a `RefusalError`. When the walk also could not mark a delegation, since its node's turn did
+ * not come, it throws a `RevocationStalledError` instead: a transient `RefusalError` of code
+ * `deadline_exceeded`, which carries those entries in its `unchanged`.
  */
 export class CascadingRevocationManager {
   private readonly claims: ClaimReader;

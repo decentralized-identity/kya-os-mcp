@@ -3,7 +3,9 @@
  * revocation would set or a restore would clear. It is the operator's error, not a refusal of a
  * credential, so it is no `RefusalError` and carries no refusal code: a host does not pass it to a
  * presenter. Its message quotes each id and entry it names (`describeValue`), since a re-delegation's
- * issuer writes the entry it carries.
+ * issuer writes the entry it carries. A revocation that also could not mark a delegation throws
+ * `RevocationStalledError` instead, a transient `RefusalError` the caller retries, which carries the
+ * entries left unchanged with the rest of the walk's reports.
  */
 
 import type { CredentialStatus } from '../types/protocol.js';

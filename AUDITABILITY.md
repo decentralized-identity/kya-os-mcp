@@ -521,6 +521,8 @@ rejected for the constraints it uses:
   as-observed check is never waived, `current` and `both` evaluate the same
   keys. Current key status alone never makes `currentAuthorization` `valid`;
   that still takes the injected authorization verifier.
+  Under `as_observed` the signing time is the signer's own claim, so a key that may be compromised can still sign artifacts dated within its interval.
+  Retire a suspect key by checkpoint, with `validUntilCheckpoint`, or verify under `current` or `both`.
 
 When a policy requires observation freshness, an observation dated more than
 the verifier's clock-skew allowance (`maxClockSkewMs`, default 120 s) after

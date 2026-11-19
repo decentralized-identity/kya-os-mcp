@@ -1,0 +1,11 @@
+kind: Fixed
+body: |-
+    **Every Entity Card verifier refuses a malformed `parentCredentialDigest`
+    as `chain_invalid`.** `verifyRequestDelegation` and `requireDelegation`
+    parsed the member as a digest and refused any other value, `null`
+    included, as `delegation_malformed`, while `evaluateDelegationChain`
+    refused it as `chain_invalid`, as SPEC.md §6.10 says. Parsing now reads
+    the member as any value and leaves its form to the chain rules, so
+    every path refuses it as `chain_invalid`. `signDelegationCredential`
+    still signs no hop that states one in another form.
+time: 2026-11-19T02:00:00.000000-06:00

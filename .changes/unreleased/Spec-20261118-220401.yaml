@@ -1,0 +1,9 @@
+kind: Spec
+body: |-
+    **SPEC.md §6.6 says how the reference issuer bounds a status list.**
+    `StatusList2021Manager` states an end `validityPeriodMs` after it signs
+    each version when that option is set, as the list's `validUntil` or, on
+    a `StatusList2021Credential`, its `expirationDate`, and
+    `renewStatusList` republishes a list with a new end; without the option
+    its lists state no end, as before.
+time: 2026-11-18T22:04:01.000000-06:00

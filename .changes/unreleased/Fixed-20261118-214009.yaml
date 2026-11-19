@@ -1,0 +1,10 @@
+kind: Fixed
+body: |-
+    **`kya-audit verify` writes no bytes of a bundle to the terminal.** A
+    bundle that was not valid JSON was reported with the parser's message,
+    which quotes the characters around the error, so a bundle could send
+    escape sequences that clear the screen, move the cursor or retitle the
+    window to the operator's terminal. The CLI now says `<file> is not valid
+    JSON`, names the file in every failure, reports a schema's refusal on
+    one line, and writes every character that does not print as U+FFFD.
+time: 2026-11-18T21:40:09.000000-06:00

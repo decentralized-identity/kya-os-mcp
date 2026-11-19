@@ -1,0 +1,10 @@
+kind: Fixed
+body: |-
+    **A JWS a presenter wrote puts none of its own characters raw into the
+    log.** `CryptoService.verifyJWS` logged the engine's JSON parse error
+    for a header or payload that is not JSON, which quotes the text around
+    the fault, control characters and line breaks included, and logged a
+    header's `alg` as written. `parseJWS` now says such a segment is not
+    JSON in its own words, the `alg` is quoted, and `base58Decode` quotes a
+    character it refuses.
+time: 2026-11-18T22:05:19.000000-06:00

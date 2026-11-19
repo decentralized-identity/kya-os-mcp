@@ -1,0 +1,18 @@
+kind: Spec
+body: |-
+    **Auditability: a record whose key has ended is undecided until
+    evidence dates it.** AUDITABILITY.md now says when a key has ended, that
+    an entry or checkpoint it signed is `indeterminate`
+    (`AUDIT_KEY_ENDED_UNDATED`) under every key revocation mode unless
+    evidence its signer does not control dates it at or before the end,
+    and which evidence does: a successor epoch's genesis, verified and
+    committing to its predecessor's terminal checkpoint, a checkpoint by
+    another live key, an observation by a live observer, a supporting
+    anchor, and a checkpoint a policy `validUntilCheckpoint` names, each
+    dating the checkpoints whose trees it holds and the entries in them.
+    It names the optional replay-bundle component that carries successor
+    geneses, `application/vnd.kya-os.audit.successor-geneses.v1+json`, and
+    the `AUDIT_SUCCESSOR_GENESIS_MISMATCH` report. SPEC-AUDIT-READ.md §4
+    holds a client to the same rule, and says where it reads a successor
+    genesis.
+time: 2026-11-19T14:01:00.000000-06:00

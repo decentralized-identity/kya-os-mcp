@@ -1,0 +1,12 @@
+kind: Fixed
+body: |-
+    **A replay bundle carries only what its signed selections cover.** The
+    bundle verifier checked the exporter's allowed ledgers against the
+    selections the manifest declares, but verified and reported every entry
+    in the bundle, whatever ledger it came from. An exporter authorized for
+    one ledger could carry a chosen slice of another, and the report called
+    the bundle complete. An entry outside every selected range, or a
+    checkpoint, observation or Merkle proof of a ledger epoch no selection
+    names, now makes scope and evidence completeness `invalid` with the new
+    reason code `AUDIT_BUNDLE_CONTENT_OUTSIDE_SELECTION`.
+time: 2026-11-18T22:03:03.000000-06:00

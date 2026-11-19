@@ -1,0 +1,17 @@
+kind: Fixed
+body: |-
+    **A replay bundle meets AAP-3 or AAP-4 only when a checkpoint and an
+    observation cover the entries it selects.** The bundle verifier judged
+    each checkpoint only against the entries below its tree size, so entries
+    past every checkpoint, or of an epoch with none, needed nothing, and any
+    valid observation or anchor receipt in the bundle made observation
+    integrity valid. A holder of the recorder key could export two
+    conflicting continuations of one observed checkpoint, and both passed a
+    policy that required AAP-4. Checkpoint integrity is now `indeterminate`
+    (`AUDIT_CHECKPOINT_MISSING`) until a checkpoint of each selected ledger
+    epoch holds every entry selected, and observation integrity
+    `indeterminate` (`AUDIT_OBSERVER_EVIDENCE_MISSING`) until an observation
+    names such a checkpoint; AAP-4 also needs a supporting anchor receipt for
+    one. A bundle that selects entries past its last checkpoint now reports
+    those dimensions `indeterminate` where it reported `valid`.
+time: 2026-11-18T22:04:04.000000-06:00

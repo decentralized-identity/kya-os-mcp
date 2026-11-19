@@ -1,0 +1,12 @@
+kind: Upgrading
+body: |-
+    **A pinned root's own status list is read on a private host only at that root's own did:web origin.**
+    `createRevocationChecker` read the list a pinned root's own credential
+    names on any host, a private one included, once that credential's proof
+    had verified, so a root pinned from another trust domain could have the
+    verifier connect to any private address. It now reads it there only
+    when the list is at the https origin, host and port, the root's did:web
+    DID names. A list on any other private host, and every list of a
+    did:key root, which has no host, is read as a URL a presenter names
+    unless `statusListIssuers` binds it: bind it there to keep reading it.
+time: 2026-11-18T23:00:10.000000-06:00

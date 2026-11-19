@@ -1,0 +1,11 @@
+kind: Spec
+body: |-
+    **SPEC.md §6.3: a `fixed` budget window counts from the Unix epoch.**
+    §6.3 and §6.4 never said where a `fixed` window starts, and a
+    re-delegation that states its parent's `fixed` window is narrower only
+    when both have the same windows. A `fixed` window's spans now run from
+    k × `durationSec` to (k + 1) × `durationSec` seconds after
+    1970-01-01T00:00:00Z, not from the credential's own start, and an
+    enforcer must count it so. §6.4 says why every other `fixed` length
+    under a `fixed` parent is still refused.
+time: 2026-11-19T09:15:00.000000-06:00

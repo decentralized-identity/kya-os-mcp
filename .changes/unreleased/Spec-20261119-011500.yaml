@@ -1,8 +1,0 @@
-kind: Spec
-body: |-
-    **Conformance suite 1.13.0 holds a `parentCredentialDigest` stated as
-    `null` to be stated.** Two more `entity-card` vectors sign a root, and
-    a leaf, that state it as `null`, and require refusing both, as SPEC.md
-    §6.10 now says. The Python cross-check read `null` as no digest and
-    accepted both; it now tests whether the member is present.
-time: 2026-11-19T01:15:00.000000-06:00

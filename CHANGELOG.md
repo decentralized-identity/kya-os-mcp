@@ -5,7 +5,7 @@ All notable changes to @kya-os/mcp will be documented here.
 Format: https://keepachangelog.com/en/1.0.0/
 Versioning: https://semver.org/spec/v2.0.0.html
 
-## [1.26.0] - 2026-11-18
+## [1.26.0] - 2026-11-19
 
 ### Upgrading
 
@@ -21,6 +21,80 @@ Versioning: https://semver.org/spec/v2.0.0.html
   A graph built without `statusEntryOwners` logs a warning once.
   UPGRADING.md, "A delegation's status entry is the one allocated for it",
   has the steps.
+- **Run the journal and observer contracts again, and give the observer
+  contract a `fork` fixture.** An observer adapter that does not verify
+  each checkpoint's signature now fails the observer contract, and, when
+  `fixtures.fork` is given, one that does not verify a larger checkpoint's
+  consistency with the one it observed fails it too. Without `fork` that
+  check is reported as skipped, with the reason, and does not fail the
+  report. A journal adapter whose compare-and-append is not one atomic
+  step, or compares only the sequence of the expected head, now fails the
+  journal contract. UPGRADING.md, "The audit store contracts fail adapters
+  that break what they promise", has the steps.
+- **Give the checkpoint builder a `signatures` verifier that resolves the
+  recorder's key.** A `CompactJwsAuditSigner` over a private JWK, a
+  `KeyObject` or an extractable `CryptoKey` now verifies by default the
+  stored entries the recorder and the builder build on under its own key.
+  A builder that signs with a key of its own keeps building over the
+  recorder's entries as before, trusting them as written, and warns once
+  per process for each such key; only `signatures` verifies them. A
+  signer over a non-extractable `CryptoKey`, or one of your own without
+  `verifier()`, still trusts the journal as written: give both
+  `signatures`. UPGRADING.md, "The recorder and the checkpoint builder can
+  verify what the journal holds", has the steps.
+- **Under `holderBinding: 'enforce'`, a delegation whose subject is a
+  did:key of a key other than Ed25519 is refused.** A request proof is
+  EdDSA, so such a subject, a P-256 did:key say, can never be bound, and
+  the gate took it as it takes a did:web subject: it logged that the
+  subject "is not did:key" and ran the tool for whoever held the
+  credential, with no proof at all. It is now refused as
+  `holder_binding_failed`, with or without a proof, and a session grant
+  no longer authorizes such an agent under `enforce`.
+  `isHolderBindingApplicable` is true for every did:key, as its
+  documentation says, and `assertHolderBinding` answers `unbound` with
+  the cause `unsupported_subject_key` for one it cannot bind. UPGRADING.md,
+  "Holder binding refuses a did:key subject it cannot bind", has the
+  steps.
+- **A pinned root's own status list is read on a private host only at that root's own did:web origin.**
+  `createRevocationChecker` read the list a pinned root's own credential
+  names on any host, a private one included, once that credential's proof
+  had verified, so a root pinned from another trust domain could have the
+  verifier connect to any private address. It now reads it there only
+  when the list is at the https origin, host and port, the root's did:web
+  DID names. A list on any other private host, and every list of a
+  did:key root, which has no host, is read as a URL a presenter names
+  unless `statusListIssuers` binds it: bind it there to keep reading it.
+- **A request proof states its delegation, and three kinds of client have
+  something to change.** A client that calls `generateRequestProof` with
+  the arguments it sends, or `buildCardProof` with a request that holds
+  its chain, changes nothing. One that makes the proof first and attaches
+  the delegation afterwards makes a proof that states `none` beside a
+  delegation: make the proof from what is sent, or pass the credential as
+  the new `delegation` input. One that sends no delegation while the
+  server retains grants for its agent under more than one passes the one
+  it means as `delegation`. One that signs card proofs with a
+  `ProofSigner` of its own writes the parameters `sign` now receives as
+  its second argument into the protected header. A server sets
+  `delegation.requestBinding: 'require'`, or `requestBinding` on the card
+  guards, once every client signs with 1.26.0 or later; the default,
+  `'prefer'`, accepts a proof that names no credential with one warning
+  per process, and 2.0.0 makes `'require'` the default. An enforcement
+  point that calls `assertHolderBinding` itself moves to
+  `verifyDelegatedCallProof`. UPGRADING.md, "A request proof names the
+  delegation it is made for", has the steps, the causes, and what each
+  released verifier makes of the new proofs.
+- **Status lists take the W3C terms, and an issuer chooses its format.**
+  An issuer that sets no new option changes nothing. To issue W3C
+  Bitstring Status List v1.0 lists, build `StatusList2021Manager` with
+  `format: 'BitstringStatusList'` and a `statusListBaseUrl` no
+  StatusList2021 list is stored under, and type a store of your own for
+  the lists it then holds, as
+  `StatusListStorageProvider<StatusListCredential>`. To bound how long a
+  copy of a list is read, set `validityPeriodMs` and call
+  `renewStatusList` for each list before its end.
+  `RuntimeFetchProvider.fetchStatusList` still answers a
+  `StatusList2021Credential` alone. UPGRADING.md, "Status lists take the
+  W3C Bitstring Status List terms", has the steps.
 
 ### Added
 
@@ -48,6 +122,49 @@ Versioning: https://semver.org/spec/v2.0.0.html
   `STATUS_LIST_WRITE_CONFLICT` and which `isStatusListWriteConflict`
   knows from any copy of the package. UPGRADING.md, "Status-list stores
   take a conditional write", has the detail.
+- **A delegation hop can commit to its parent credential by its digest.**
+  A hop of the Entity Card profile named its parent only by the parent's
+  delegate and capability id, so a parent issued again under the id of
+  one that was revoked carried every hop signed under the first. A hop
+  may now state `credentialSubject.parentCredentialDigest`, the digest
+  SPEC.md §7.8 gives the parent credential with its signature.
+  `evaluateDelegationChain`, `verifyRequestDelegation` and
+  `requireDelegation` check it whenever a hop states it, before any hop
+  proof, and refuse a mismatch, or a root that states one, as
+  `chain_invalid`; a hop that states none is accepted as before.
+  `signDelegationCredential` writes it when given the parent as
+  `options.parent`. Version 2.0.0 requires it of every hop but the root.
+- **`StatusList2021Manager` issues W3C Bitstring Status List v1.0 lists.**
+  Built with `format: 'BitstringStatusList'`, it writes a
+  `BitstringStatusListCredential`, a Verifiable Credentials Data Model 2.0
+  document that states its window as `validFrom` and `validUntil`, and
+  allocates `BitstringStatusListEntry` entries, the entry a card
+  delegation credential requires and the manager could not allocate. The
+  new option `ttl` is the `credentialSubject.ttl` such a list states: how
+  long, in milliseconds, a reader keeps it before it fetches it again,
+  which never extends the list past its `validUntil`. A stored list keeps
+  the format it was created in, so a manager of either format revokes on
+  it and renews it in its own terms, and `allocateStatusEntry` throws a
+  `TypeError` for a list of the other format. The manager also throws a
+  `TypeError` where it is built for a `ttl` with the StatusList2021 format,
+  which has no such member, a `ttl` longer than `validityPeriodMs`, and a
+  Bitstring Status List of fewer than 131,072 entries. The new types
+  `BitstringStatusListCredential`, `StatusListCredential`,
+  `StatusListFormat` and `StatusListEntryOf` are exported. The store
+  contracts and `MemoryStatusListStorage` take the type of the lists they
+  hold as a type argument, which defaults to `StatusList2021Credential`,
+  so a store written for 1.25.0 compiles as it is. StatusList2021 stays
+  the default through 1.x.
+
+### Deprecated
+
+- **`StatusList2021Manager` writes StatusList2021 lists by default only
+  through 1.x.** W3C Bitstring Status List v1.0, a Recommendation, succeeds
+  StatusList2021, and 2.0.0 makes `format: 'BitstringStatusList'` the
+  default. An issuer that means to keep adding to its StatusList2021 lists
+  sets `format: 'StatusList2021'`; one that moves gives the manager a
+  `statusListBaseUrl` of its own for the new lists, and goes on revoking
+  on the old ones through it. DEPRECATIONS.md has the row.
 
 ### Security
 
@@ -108,6 +225,52 @@ Versioning: https://semver.org/spec/v2.0.0.html
   with `{ statusEntryOwners: statusList }` to have registration refuse
   every entry not allocated to the delegation. UPGRADING.md, "A
   delegation's status entry is the one allocated for it", has the detail.
+- **A request proof names the delegation it is made for, and a server
+  refuses it beside any other.** A holder's request proof covers the tool
+  name and the business arguments, and not `_kyaos_delegation`, so a
+  party on the path that held another delegation of the same agent, and
+  no key, could put it in place of the one the agent chose, or take the
+  delegation away so that a grant retained under the other one
+  authorized the call, and the call ran and was recorded under that
+  delegation. `generateRequestProof` and `buildCardProof` now state the
+  delegation the call presents in the proof's JWS protected header,
+  which the signature covers: the SPEC.md §7.8 digest of the credential,
+  or `none`. A client that passes the arguments it sends changes nothing.
+  The delegation gate, `requireDelegation` and `verifyRequestDelegation`
+  refuse a proof that names another credential than the one presented,
+  and resolve for a call that presents none only a grant of the
+  credential its proof names. The new `verifyDelegatedCallProof` does the
+  same for an enforcement point of your own, and takes the presented
+  credential as a required input, so the check cannot be left out. A
+  base profile re-delegation may state its parent's digest, as a card hop
+  does, through the issuer's new `parent` option, and where every hop
+  states it the proof fixes the whole chain. A verifier that predates the
+  header parameter ignores it, so released servers accept the new proofs.
+  A proof that names no credential, as a client before 1.26.0 makes it,
+  is still accepted, with a warning, until `requestBinding: 'require'` is
+  set.
+- **An audit record whose key has ended is not valid on the time it
+  states.** The verifier checked a recorder, checkpoint or exporter key's
+  validity interval against the time the signer wrote into the artifact,
+  so whoever still held a key the policy had retired could sign a record
+  or an export dated before the retirement, and it read `valid` in every
+  integrity dimension. Once the policy no longer lists the key as valid
+  at `verifiedAt`, or the verifier has no clock and the key has an end,
+  an entry or checkpoint it signed now reads `indeterminate`
+  (`AUDIT_KEY_ENDED_UNDATED`) unless evidence its signer does not
+  control dates it before the end: the successor epoch's genesis, signed
+  by the new key and committing to the old epoch's terminal checkpoint, a
+  checkpoint signed by another live key, an observation or supporting
+  anchor, or a checkpoint the policy names as the key's or the epoch's
+  end. A bundle carries successor geneses in a new optional component,
+  `AUDIT_BUNDLE_MEDIA_TYPES.successorGeneses`, and a verifier given
+  records outside a bundle takes them in
+  `AuditVerificationContext.successorGeneses`, so honest records stay
+  `valid` across a rotation. One that dates nothing is reported as
+  `AUDIT_SUCCESSOR_GENESIS_MISMATCH`. An export signed by an exporter
+  key that has ended reads `indeterminate`, as nothing dates it.
+  `verifyAuditBundle` takes a `verifiedAt` clock for the verifier it
+  builds. None of this makes a dimension `invalid`.
 
 ### Fixed
 
@@ -120,6 +283,424 @@ Versioning: https://semver.org/spec/v2.0.0.html
   1.20.0 on accept. `createDelegationProofVerifier` and
   `createStatusListProofVerifier` now accept a standard proof that states
   no `@context`, and still accept the shape 1.22.0 to 1.25.0 issued.
+- **The journal provider contract fails a journal whose compare-and-append
+  is not atomic.** `evaluateAuditJournalProviderContract` appended one entry
+  at a time and offered no stale head but `null`, so a journal that reads
+  the head, compares it and then inserts in a second step passed every
+  check, and under concurrent submissions the recorder signed several
+  entries at one sequence. The contract now issues eight compare-and-append
+  calls on one expected head at once and requires exactly one to commit,
+  every other to answer `head_conflict` with the head that won or fail
+  without committing, and the journal to hold one entry at that sequence.
+  It also requires a `head_conflict` naming the actual head for an expected
+  head that is no longer the head, so a journal that compares only the
+  sequence fails too. AUDITABILITY.md, "Atomic journal contract", has the
+  detail.
+- **The observer provider contract fails an observer that signs a
+  checkpoint it did not check.** `evaluateAuditObserverProviderContract`
+  required only that an observer refuse a smaller tree and a different
+  checkpoint at the size it observed, so an observer that signed a receipt
+  for any larger checkpoint, its signature unchecked and its tree not
+  shown to extend the observed one, passed, and would have signed a
+  rewritten history. The contract now refuses an observer that accepts a
+  checkpoint whose signature does not verify, derived from `first` and
+  `next`, and takes a new optional fixture, `fork`: a validly signed,
+  larger checkpoint over a history that does not extend `first`, which the
+  observer must refuse once it has observed `first`. Without `fork` that
+  check is reported with `skipped` set to the reason, a new optional member
+  of `AuditProviderContractCheck`, and does not fail the report.
+  AUDITABILITY.md, "Atomic journal contract", says how to build it.
+- **A recorder and a checkpoint builder no longer sign over an entry the
+  recorder never made, when they can verify the journal.** A party that
+  can write the journal store, and holds no key, could insert a
+  well-formed entry with correct digests and an unsigned receipt:
+  `AuditRecorderService` chained the next entry to it,
+  `AuditCheckpointBuilder` signed a tree that held it, and the read
+  service proved it included in that tree. Both now check such an entry
+  with a new optional `signatures` verifier or, given none, with the
+  verifier their signer derives from its own key through a new optional
+  `AuditSigner.verifier()`, which `CompactJwsAuditSigner` implements for a
+  private JWK, a Node.js `KeyObject` (both now accepted) or an extractable
+  `CryptoKey`. The recorder chains to a journal head it did not append in
+  this process only once the stored entry verifies as one it signed for
+  its ledger epoch, and the builder signs a checkpoint only over leaves
+  that verify and chain; each refuses with `AUDIT_JOURNAL_FAILURE` naming
+  the entry's `sequence` otherwise. A derived verifier checks only entries
+  under the signer's own key, so a builder with a key of its own trusts
+  the recorder's entries as written, as before, and warns once per process
+  for each such key. `createInMemoryReferenceRecorder` passes
+  `signatures`. With neither, as for a signer over a non-extractable
+  `CryptoKey`, the journal is trusted as written, as before.
+- **`AuditCheckpointCoordinator` counts only receipts for the checkpoint it
+  published.** It counted whatever its observers and anchors returned, and
+  took an anchor's kind from the receipt, so an observer that answered
+  with its receipt for an earlier checkpoint, or an anchor declared as one
+  kind that answered with a receipt of another kind for an earlier
+  checkpoint, met `minimumObservers` and `requiredAnchorKinds`, and
+  `onPublished` was told the new checkpoint had its external evidence. An
+  observation must now name the published checkpoint's digest, ledger
+  epoch and tree size, and an anchor receipt its digest and its provider's
+  kind; any other answer is a failed publication for that provider,
+  retried like a thrown one.
+- **`kya-audit verify` decides the policy constraints that need the present
+  time.** It built its verifier without a clock, so under a policy whose
+  `keyRevocationMode` is `current` or `both`, and for
+  `requiredCheckpointFreshnessMs`, it reported `AUDIT_NOT_EVALUATED` and
+  exited 0 for a bundle signed with keys whose validity had ended, or with
+  a stale observation. It now verifies at the present time, so such a
+  bundle reports `AUDIT_KEY_NOT_CURRENT` or `AUDIT_OBSERVATION_STALE` and
+  exits 1.
+- **`kya-audit verify` writes no bytes of a bundle to the terminal.** A
+  bundle that was not valid JSON was reported with the parser's message,
+  which quotes the characters around the error, so a bundle could send
+  escape sequences that clear the screen, move the cursor or retitle the
+  window to the operator's terminal. The CLI now says `<file> is not valid
+  JSON`, names the file in every failure, reports a schema's refusal on
+  one line, and writes every character that does not print as U+FFFD.
+- **A delegation credential is not accepted before its `issuanceDate`.**
+  VC Data Model 1.1 §4.6 makes `issuanceDate` the moment a credential
+  becomes valid, but the delegation gate and `DelegationCredentialVerifier`
+  read only `constraints.notBefore`, so a credential its issuer dated for
+  next month authorized calls today. `isDelegationCredentialNotYetValid`
+  now also holds a credential to its `issuanceDate`, with 120 seconds of
+  tolerance for the issuer's clock, and refuses it before then as
+  `delegation_not_yet_valid`. An `issuanceDate` that is not an RFC 3339
+  date-time with its zone counts as not yet valid, as an unreadable
+  `notBefore` does.
+- **`verifyAuditBundle` answers a bundle with a long component with a
+  report, not an exception.** It spread each component's array, and later
+  one verdict per checkpoint or observation, into the arguments of a single
+  call, so a bundle whose component held a few hundred thousand items made
+  it reject with `RangeError`: a stranger could stop a host that verifies
+  uploaded bundles, and an honest export of a long ledger in one component
+  could not be verified. It now reads and merges those lists without a
+  call per item, and answers every such bundle with a report.
+- **A did:web DID whose path segment decodes to white space or a control
+  character names no URL.** The URL parser removes every tab, line feed and
+  carriage return from a URL before it reads it, so
+  `did:web:example.com:bob:%2E%09%2E:alice` was resolved from
+  `https://example.com/alice/did.json`, a document outside the path the DID
+  spells, and `%09` alone was read as an empty segment. `parseDidWeb`,
+  `didWebToUrl`, the did:web resolver and the Entity Card's URLs now refuse
+  such a segment, as they already refused one for the host.
+- **A re-delegation that widens its parent's CRISP budget, or drops or
+  changes a constraint the chain walk does not interpret, is refused.** The
+  walk compared only scopes, so an agent holding a budget of 100 USD could
+  re-delegate with a budget of 1,000,000 USD, or none, and whatever enforced
+  the budget of the presented credential enforced that. `validateDelegationChain`
+  and the delegation gate now refuse, as `chain_invalid`, a re-delegation
+  whose budget is not its parent's and is not narrower: in the same unit, a
+  cap no higher, and no window, or a window of the parent's kind at least as
+  long. A member of `constraints` or `constraints.crisp` that SPEC.md §6.3
+  does not define must be replicated as written. Per-scope `constraints` are
+  still reported in `warnings`, as before.
+- **A replay bundle that withholds a component by policy is no longer
+  reported complete.** The bundle verifier gave a reason, and an
+  `indeterminate` scope and evidence completeness, for a component marked
+  `redacted`, `disposed` or `unavailable`, but nothing for one marked
+  `policy_excluded`, so an exporter could leave out evidence without the
+  report saying so. A `policy_excluded` component now gives the new reason
+  code `AUDIT_EXPLICITLY_POLICY_EXCLUDED`, as the other three dispositions
+  give theirs.
+- **A refusal of a re-delegation tells its presenter nothing the chain
+  resolver answered, and the presented credential is verified before its
+  ancestors.** A caller with no key, who knew only the id of somebody's
+  delegation, could present an unsigned credential naming it as parent and
+  read the parent's subject DID in the refusal, then present again as that
+  DID and learn from the reasons whether each ancestor was expired or
+  revoked, at the cost of a verification of every ancestor to the server.
+  `validateDelegationChain` and the delegation gate now word a refusal of
+  how the presented credential links to its parent from that credential
+  alone, and tell the presenter of any other link, or of a resolved root
+  that is not trusted, only that its chain is broken or its root not
+  trusted, logging what they withhold through `logger.warn`. They verify
+  the presented credential first, so one its parent's subject did not sign
+  costs no ancestor's verification.
+- **A replay bundle carries only what its signed selections cover.** The
+  bundle verifier checked the exporter's allowed ledgers against the
+  selections the manifest declares, but verified and reported every entry
+  in the bundle, whatever ledger it came from. An exporter authorized for
+  one ledger could carry a chosen slice of another, and the report called
+  the bundle complete. An entry outside every selected range, or a
+  checkpoint, observation or Merkle proof of a ledger epoch no selection
+  names, now makes scope and evidence completeness `invalid` with the new
+  reason code `AUDIT_BUNDLE_CONTENT_OUTSIDE_SELECTION`.
+- **`StatusList2021Manager` can state an end on every status list it signs,
+  so a copy kept from before a revocation stops being read.** A list that
+  states no end is read until its issuer replaces it, and the manager's
+  lists stated none and could not, so an old copy with a revoked
+  credential's bit clear, served by a cache, a mirror or the credential's
+  holder, verified for as long as the issuer's key did. The new option
+  `validityPeriodMs`, named for the validity period W3C Bitstring Status
+  List v1.0 leaves an issuer to choose, gives every version, as it is
+  created, changed or renewed, an end that long after it is signed: the
+  `expirationDate` of a `StatusList2021Credential`, or the `validUntil` of
+  a `BitstringStatusListCredential`. The new `renewStatusList(statusListId)`
+  signs a list again with a new end and the same bits. Renew each list
+  before its end: a list past it is refused by every reader, the manager's
+  own `checkStatus` included. Without the option nothing changes.
+- **A replay bundle meets AAP-3 or AAP-4 only when a checkpoint and an
+  observation cover the entries it selects.** The bundle verifier judged
+  each checkpoint only against the entries below its tree size, so entries
+  past every checkpoint, or of an epoch with none, needed nothing, and any
+  valid observation or anchor receipt in the bundle made observation
+  integrity valid. A holder of the recorder key could export two
+  conflicting continuations of one observed checkpoint, and both passed a
+  policy that required AAP-4. Checkpoint integrity is now `indeterminate`
+  (`AUDIT_CHECKPOINT_MISSING`) until a checkpoint of each selected ledger
+  epoch holds every entry selected, and observation integrity
+  `indeterminate` (`AUDIT_OBSERVER_EVIDENCE_MISSING`) until an observation
+  names such a checkpoint; AAP-4 also needs a supporting anchor receipt for
+  one. A bundle that selects entries past its last checkpoint now reports
+  those dimensions `indeterminate` where it reported `valid`.
+- **`CascadingRevocationManager` no longer reads a delegation as not revoked
+  when the graph cannot read its chain to a root.** `isRevoked` walked
+  whatever chain the graph's store returned, so a delegation below a node
+  the store did not hold, as a replica not yet sent it or a store that lost
+  it reads, was reported live even under a revoked root, and
+  `validateDelegation` passed it. `isRevoked` now throws a `RefusalError` of
+  code `status_unavailable` for a chain that does not read from a root to
+  the delegation asked about, which the chain walk refuses as it refuses a
+  status it cannot read, and `validateChain`, which `validateDelegation` now
+  reads first, refuses such a chain with a reason that says where it
+  breaks. A delegation the graph does not hold at all still reads as not
+  revoked. `removeDelegation` now throws, removing nothing, for a
+  delegation others are registered under, which it left under a parent the
+  graph did not hold; the new `removeDelegation(id, { subtree: true })`
+  removes it and every delegation under it, children first, retiring each
+  one's entry, and when one cannot be removed keeps every delegation above
+  it, removes the rest and throws a `SubtreeRemovalError` that says which. A removed delegation with no status list entry that
+  reads as revoked, whose revocation removal erased, now leaves a revoked
+  record of its id (`DelegationNode.removed`), which is never restored,
+  registered again, nor given children.
+- **Verifying a replay bundle costs work in proportion to the bundle.** The
+  bundle verifier hashed every checkpoint in the bundle again for each
+  checkpoint and observation it checked, and recomputed the Merkle root
+  over all covered entries for each checkpoint, whether or not an
+  authorized exporter signed the bundle. Doubling the checkpoints in an
+  unsigned bundle nearly quadrupled the hashing, so a few megabytes kept a
+  verifier busy for minutes. The verifier now indexes key boundaries once
+  per bundle, computes every checkpoint root of a ledger epoch in one pass
+  over its entries, and looks checkpoints and entries up by key instead of
+  scanning for each proof and observation. Reports are unchanged.
+- **`requireProof` refuses a `minLevel` it does not know where the guard
+  is built.** A level written another way, such as `l3`, `L3 ` or `L4`,
+  or a value that is not a string, ranked as no floor at all, so the
+  guard passed an `L3-minus` proof under it. It now throws a `TypeError`
+  naming the option and the two levels it takes, `L3-minus` and `L3`.
+- **A JWS a presenter wrote puts none of its own characters raw into the
+  log.** `CryptoService.verifyJWS` logged the engine's JSON parse error
+  for a header or payload that is not JSON, which quotes the text around
+  the fault, control characters and line breaks included, and logged a
+  header's `alg` as written. `parseJWS` now says such a segment is not
+  JSON in its own words, the `alg` is quoted, and `base58Decode` quotes a
+  character it refuses.
+- **A refused delegation chain gives at most 16 reasons.**
+  `validateDelegationChain`, and through it `evaluateDelegationChain`,
+  `verifyRequestDelegation` and `requireDelegation`, gave one reason for
+  every rule a chain broke, so a carried chain whose hops state thousands
+  of caveats, signed by nobody, was refused with thousands of reasons.
+  Past 16, it now lists the first 15 and says how many more rules the
+  chain breaks. The refusal code is the first rule's, as before.
+- **A verdict about a status list reaches the presenter only once the list's proof verifies.**
+  Whoever presents a status entry chooses the URL it names, so the
+  document read there may be any JSON the verifier can reach. The
+  status-list checker and `CheqdStatusListResolver` refused such a
+  document for its `issuer`, `id` or `statusPurpose` before checking its
+  proof, and the refusal, which reaches the presenter through the
+  delegation gate and `requireDelegation`, quoted those members. The
+  refusal now says only `the status list at "<url>" could not be read or
+  checked`, with its code as before, and the operator's log says why,
+  with the `statusListIssuers` configuration that would accept a list
+  another DID signed. So do a cheqd list proof's stated purpose and
+  verification method, and the dates of a list the checker reads without
+  `verifyStatusList`. Once a list's proof has verified, a refusal keeps
+  its reason. This refines the rule that a refusal tells the presenter
+  only what the DID or the URL alone decides, or a deadline.
+- **A revocation the graph reported done is no longer lost to a
+  re-delegation registered under the revoked delegation at the same time.**
+  Over a graph store without `registerNodeAtomic`, registering a child read
+  the parent and wrote it back whole, so a revocation of the parent stored
+  in between, the only record of it for a delegation with no status list
+  entry, was overwritten, and both the parent and its new child read as not
+  revoked. Every change `DelegationGraphManager` makes to a stored node,
+  linking a child, marking a revocation and removing a delegation, now
+  takes its turn at that node, shared by every manager over the same
+  storage provider object, so a revocation waits for a link under way and
+  cascades to the new child. A change waits for its turn at most 10
+  seconds: behind a write the store never finishes, it throws a transient
+  `RefusalError` of code `deadline_exceeded` naming the node, having changed
+  nothing, and a cascading revocation marks the rest of its subtree first,
+  so the caller knows to revoke again. Across processes only the store can keep the
+  turn: the first link a process makes through a store without
+  `registerNodeAtomic` warns once, and `registerNodeAtomic` must change
+  nothing of the parent but its `children`.
+- **`buildOutboundDelegationHeaders` throws, and signs nothing, for a
+  delegation record that is not in force.** It signed a
+  `delegation:propagate` proof for whatever record it was given, so a
+  server could tell a downstream service it was propagating a delegation
+  that was revoked or expired, past its `notAfter`, before its
+  `notBefore`, or addressed to another server. It now throws for a record
+  whose `status` is not `active`, whose `notAfter` has passed or
+  `notBefore` has not, a bound that is no finite number counting as
+  either, or whose audience does not admit the forwarding server's DID.
+- **The audit signature verifier checks a JWK's key whatever its `ext`
+  member says.** `CompactJwsAuditSignatureVerifier` refuses a small-order
+  Ed25519 key, under which one signature verifies every payload, by reading
+  the imported key back. It imported a JWK as the JWK's own `ext` member
+  asked, so a JWK with `"ext": false` could not be read back and verified
+  a forged signature on any entry, checkpoint, observation or bundle
+  manifest. It now imports every JWK extractable, so the check always
+  runs; a sound key with `"ext": false` verifies as before.
+- **A VC-JWT's envelope check refuses a small-order issuer key whatever
+  its JWK's `ext` member says.** The check refuses a small-order Ed25519
+  key, under which one signature verifies every payload, by reading the
+  imported key back. It imported the issuer's `publicKeyJwk` as the JWK's
+  own `ext` member asked, so a DID document that published such a key with
+  `"ext": false` let a fixed signature verify any VC-JWT the issuer was
+  trusted for. The key is now imported extractable, so the check always
+  runs; a sound key with `"ext": false` verifies as before.
+- **A proof verifier hands back, and acts on, only the meta a signature
+  covers.** A proof whose `meta` carried a member the proof schema does
+  not name, or an optional claim written as `""`, verified, and code that
+  read `proof.meta` after verifying it read that member as if it were
+  signed. `ProofVerifier.verifyProof`, `verifyProofArtifact` and
+  `verifyProofDetached` still accept such a proof in 1.x, but they act
+  only on the meta rebuilt from what the signature covers, and a valid
+  result now carries that meta as `meta`: read it, not `proof.meta`. An
+  unsigned member is not in it, and an empty optional claim is absent.
+  `extractProofFromMeta` and `ProofGenerator.verifyProof` keep only that
+  meta too, and `ProofGenerator.generateProof` never writes an unknown
+  member or an empty optional claim into the meta, whatever its options
+  carry. SPEC.md §7.4 says a verifier MUST NOT return or act on a member no
+  signature covers; from 2.0.0 a verifier refuses such a proof.
+- **A checkpoint builder no longer checkpoints an entry under another key
+  than its epoch's recorder signs with.** A builder that signed with the
+  recorder's own key, given no `signatures`, trusted as written any leaf
+  that named another key, so a writer of the journal store with no key
+  could append an entry naming `did:key:zElsewhere` with a junk receipt
+  and have it checkpointed with only a warning. A recorder signs every
+  entry of an epoch under one key, so `AuditCheckpointBuilder` now holds
+  every leaf to the key the epoch's genesis entry names and refuses any
+  other with `AUDIT_JOURNAL_FAILURE`. When the genesis names the builder's
+  own key it verifies every leaf; when it names another, it trusts the
+  leaves as written, as before, and warns once per process for that key.
+- **`verifyAuditBundle` reads a bundle in time that grows with it.** A
+  checkpoint over a tree larger than the entries its epoch carries read
+  every entry of the epoch, as did each selection and each supporting
+  anchor, so a bundle of 4,000 entries and 4,000 such checkpoints took
+  about 5 s to verify, and twice as many took four times as long. A
+  verifier now counts the inclusion proofs that verify for each
+  checkpoint and reads each epoch's entries and selections once. The
+  verdicts are unchanged.
+- **`kya-audit verify` makes every check of a run at one instant.** It
+  read the clock at each check, so a key whose validity ended while the
+  run was under way could be current for one check and ended for the
+  next. It now reads the clock once per run.
+- **Removing a revoked delegation no longer erases its revocation.**
+  `removeDelegation` deleted whole a revoked delegation that had a status
+  list entry, as if the entry recorded the revocation. When the write of
+  its bit had failed, or left the list unchanged, the graph's mark was
+  the only record, so once it was removed `isRevoked` answered
+  `{ revoked: false }`. A removed delegation that reads as revoked now
+  always leaves a revoked record of its id, which refuses the id's
+  registration again. One that does not read as revoked is still removed
+  whole.
+- **A chain refusal writes no presenter text raw to the operator's log.**
+  The line the gate logs when it withholds what the chain resolver
+  answered cleaned only the withheld half, while the half the presenter
+  reads carries the presented credential's `id` and `parentId`, written
+  before any signature is checked, so a line break or a bidirectional
+  override in either reached the log as written. The whole line is now
+  cleaned, and those refusals quote each id, as `Delegation "leaf"
+  references parent "middle"`.
+- **A re-delegation cannot widen a fixed budget window by lengthening
+  it.** The chain walk accepted, under a parent's `fixed` window, a
+  child's `fixed` window of any greater length, so a child capped at 100
+  per fixed day and a half under a parent capped at 100 per fixed day
+  could spend 200 within one parent day. Under a `fixed` window a child
+  now states no window, the parent's window length, or a `rolling`
+  window at least as long, which the walk now accepts.
+- **An Entity Card hop is held to its `issuanceDate` as a start.** The
+  hop window read a VC 1.1 `expirationDate` as an end but not an
+  `issuanceDate` as a start, so a hop issued for the end of the year and
+  stating no `validFrom` was accepted at midyear, while the VC-JWT path
+  already refuses a credential before its `issuanceDate`. A hop before
+  its `issuanceDate`, held with the clock tolerance, is now refused as
+  `delegation_not_yet_valid`. Conformance suite 1.13.0 adds
+  `entity-card/hop-issuance-date-future` for it.
+- **A delegation is never registered under a parent a racing removal
+  left as a revoked record.** `registerDelegation` checked that its
+  parent stood before it took the parent's turn, so a registration
+  racing `removeDelegation` of a revoked parent linked the child under
+  the record the removal left. The parent is now read again in its turn,
+  and `MemoryDelegationGraphStorage.registerNodeAtomic` refuses a parent
+  stored as removed, as the `registerNodeAtomic` contract now asks of
+  every provider.
+- **Every Entity Card verifier refuses a malformed `parentCredentialDigest`
+  as `chain_invalid`.** `verifyRequestDelegation` and `requireDelegation`
+  parsed the member as a digest and refused any other value, `null`
+  included, as `delegation_malformed`, while `evaluateDelegationChain`
+  refused it as `chain_invalid`, as SPEC.md §6.10 says. Parsing now reads
+  the member as any value and leaves its form to the chain rules, so
+  every path refuses it as `chain_invalid`. `signDelegationCredential`
+  still signs no hop that states one in another form.
+- **`StatusList2021Manager` refuses a `validityPeriodMs` past a century
+  where it is built.** It took any safe integer, but a period above about
+  8.6e15 milliseconds ends a list where no `Date` is, so the manager was
+  built and then every list it signed threw, and one far shorter still
+  ended a list past the year 9999, which no reader reads as an RFC 3339
+  date-time. The option now takes a whole number of milliseconds from 1
+  to a century of 365.25 days, 3,155,760,000,000, and throws a `TypeError`
+  naming it for any other value.
+- **A revocation tells `onRevoke` only of what landed, and a stalled one
+  keeps its reports.** When a node's turn did not come, the cascade still
+  called `onRevoke` for it, though it had no entry set and was not
+  marked, and the transient error it then threw dropped the entries left
+  unchanged and the revocations not recorded. `onRevoke` is now told of a
+  delegation only once it is marked in the graph or set on its status
+  list, and the error is a `RevocationStalledError`, still a
+  `RefusalError` of code `deadline_exceeded`, that carries the walk's
+  `events`, `stalled`, `unrecorded` and `unchanged`.
+- **A checkpoint builder recomputes the digest of the genesis it reads the
+  recorder key from.** It took the key from the stored genesis core, while
+  only the stored `entryDigest` was compared with the latest checkpoint.
+  A writer of the journal store could rewrite the genesis `recorder` to a
+  key of its choosing under the same digest, append a leaf under that key,
+  and have a builder that shares the recorder's key checkpoint it with one
+  warning. `AuditCheckpointBuilder` now recomputes the genesis digest on
+  every run, and the digest of each leaf it trusts as written, and refuses
+  one whose core is not the one its digest was made from with
+  `AUDIT_JOURNAL_FAILURE`.
+- **The refusal of an empty resolved chain quotes the ids it names.**
+  When the chain resolver answered no ancestors, the reason
+  `Delegation <id> references parent <parentId> but the resolved chain is
+  empty` held both ids as the presenter wrote them, before any signature
+  was checked, so a line break or a bidirectional override reached the
+  presenter's reason and whatever logged it. Both are now quoted as JSON
+  strings, as every other chain refusal quotes them.
+- **A small-order Ed25519 key is refused even when it cannot be read
+  back.** Under a key on a point of small order one signature fits every
+  message, and every verification path refused such a key only when it
+  could export the key's bytes, so a key a resolver imported
+  non-extractable passed: the audit signature verifier then accepted one
+  fixed signature for any entry, checkpoint or manifest under it. Such a
+  key is now checked by what it verifies, one WebCrypto `verify` of a
+  fixed probe signature that every small-order key accepts and no other
+  key does, asked once per key. A resolver may now import keys either
+  way.
+- **A recorder and a checkpoint builder whose signer yields no public key
+  verify the journal when the signer names its did:key.** With no
+  `signatures`, a signer over a non-extractable `CryptoKey`, or one backed
+  by a remote key service without `verifier()`, left the journal trusted
+  as written, so a party that could write the journal store and held no
+  key could have the recorder chain to an entry it never made, and the
+  builder checkpoint it. When the signer's `ref` names an Ed25519 did:key,
+  the recorder and the builder now derive a verifier from it, once the
+  signer's signature over a fixed self-check payload verifies under it,
+  and refuse such an entry with `AUDIT_JOURNAL_FAILURE`. A signer that
+  names no such key keeps the journal trusted as written, now with a
+  warning once per process. No option is added.
 
 ### Spec
 
@@ -156,6 +737,139 @@ Versioning: https://semver.org/spec/v2.0.0.html
   one of an unknown type is; and a verifier that accepts a chain MUST hold
   each call to its caveats or refuse it. SPEC-ENTITY-CARD.md §11.4 adds the
   caveats to what a Verifier holds on success.
+- **SPEC-AUDIT-READ §4: an inclusion proof is re-verified with the entry it
+  names.** A client verifies that entry's digests and recorder receipt
+  signature against the trust policy, as it verifies a `listEntries`
+  entry, before it checks the Merkle path, and MUST NOT accept an entry on
+  the inclusion proof alone: a checkpoint commits to whatever leaves its
+  journal held, so the proof does not show that the recorder made the
+  entry.
+- **SPEC.md §6.2: a delegation credential's subject `id` MUST be a URL by
+  the rule its issuer is held to, and a verifier MUST reject one that is
+  not.** The gate held the subject only to being a non-empty string, and
+  handed it on as the acting agent's DID, so an agent that re-delegated
+  could name a subject holding a line break, which forged a line of the
+  operator's log, or a bidirectional control, which showed the audit
+  trail and the tool another agent's DID. The basic stage now refuses
+  such a credential as `delegation_malformed`, and the gate's log line
+  for a subject it defers holder binding for quotes the subject.
+- **SPEC.md §6.4: a re-delegation's CRISP budget is no wider than its
+  parent's, and a constraint §6.3 does not define is replicated as
+  written.** A verifier MUST reject a re-delegation that drops its parent's
+  budget, raises its cap, changes its unit, or caps each window where the
+  parent caps all time or a longer window, and one that drops or changes a
+  member of `constraints` or `constraints.crisp` that §6.3 does not define,
+  as §6.10 requires of a caveat.
+- **SPEC.md §7.8: a presented credential the server refuses on its own is
+  refused before any ancestor is examined.** The digest of such a refusal,
+  one whose signature, a VC-JWT envelope's among them, does not verify,
+  covers the presented credential alone, where it covered the ancestors
+  before it too.
+- **SPEC.md §6.6 says how the reference issuer bounds a status list.**
+  `StatusList2021Manager` states an end `validityPeriodMs` after it signs
+  each version when that option is set, as the list's `validUntil` or, on
+  a `StatusList2021Credential`, its `expirationDate`, and
+  `renewStatusList` republishes a list with a new end; without the option
+  its lists state no end, as before.
+- **SPEC.md §8.1: a forwarding server MUST NOT send its session ID
+  downstream, and `KYA-OS-Session-Id` carries an anchor of the session for
+  the target's host instead.** The delegation gate resolves a grant it
+  bound in a session by the session ID alone, and
+  `buildOutboundDelegationHeaders` sent that ID to every target as it was,
+  so a downstream service, or whatever logged or proxied its headers,
+  could call the server's gate in the session as the agent. The header is
+  now `sha256:` and the hex SHA-256 of the session ID and the target's
+  host under the domain `org.kya-os.outbound.session-anchor.v1`: one value
+  for every call of one session to one host, and nothing the target can
+  present for the session. The helper's debug line logs the anchor, not
+  the ID.
+- **SPEC.md §6.5: a server refuses a delegation whose chain its graph cannot
+  read to a root.** It refuses it as `status_unavailable`, never as
+  standing, removes a delegation only once none is registered under it,
+  and keeps a record that a removed delegation with no status list entry
+  that reads as revoked is revoked.
+- **SPEC.md §6.10: a delegation hop is past its end once any end it
+  states has passed, its `expirationDate` and its proof's `expires`
+  beside its `validUntil`.** The Entity Card chain rules read only
+  `validUntil`, so a hop whose issuer stated its end as the VC 1.1
+  `expirationDate`, or as the Data Integrity proof's `expires`, was
+  accepted after that end, though its proof covers both. They now refuse
+  such a hop as `delegation_expired`, and one whose end is not an RFC
+  3339 date-time with its offset as `delegation_malformed`, and a verdict
+  carries each end as a `ValidUntil` caveat.
+- **Conformance suite 1.13.0 adds thirty-seven vectors, 208 in all, and
+  SPEC.md §7.8 defines the delegation a holder's request proof states.** A holder MUST
+  state, in the JWS protected header parameter `org.kya-os/delegation`,
+  the §7.8 digest of the credential its call presents, or `none`. A
+  verifier MUST read the statement only from the header whose signature
+  verified, MUST refuse one that is malformed or that names another
+  credential than the one presented, MUST authorize a call that presents
+  none only under authority retained for the credential stated, and MUST
+  refuse a signed `delegationRef` or `delegationChainDigest` of another
+  delegation. It SHOULD refuse a proof that names no credential, MAY
+  accept one during the transition without reporting the call as bound
+  to its delegation, and version 2.0.0 makes the refusal a MUST. §6.2
+  gives a base profile re-delegation the optional `parentCredentialDigest`
+  §6.10 gives a card hop, which a verifier MUST check when stated and
+  2.0.0 requires. Appendix C.5 works a statement through, and
+  SPEC-ENTITY-CARD.md §8.4 and §11.4 hold a card proof to the same rule.
+  Sixteen `signed-proof/request-binding-*` vectors and five
+  `delegation-chain/parent-digest-*` vectors, in two new files generated
+  deterministically, hold a verifier to each rule; no vector requires
+  accepting a proof that names no credential. `card-proof.json` is signed
+  again, since a card proof now carries the statement.
+  Of the other sixteen, three `status-list/ttl-*` vectors hold a reader to
+  the rule on `ttl` of §6.6, and `delegation-chain` refuses a subject id
+  holding a control character and an `issuanceDate` past the tolerance.
+  `signed-proof` refuses a request proof that signs the chain of one
+  delegation presented beside another, and a refusal whose chain digest
+  covers the failing leaf alone. `entity-card` refuses a hop past its
+  `expirationDate`, past its proof's `expires`, or before its
+  `issuanceDate`, and covers the parent digest: stated and valid, absent,
+  stated by a hop presented under a parent reissued under the same id,
+  stated by a root, and stated as `null` on a root or a leaf, which
+  counts as stated. The Python cross-check reads the new vectors and
+  every parent digest, and now tests whether `parentCredentialDigest` is
+  present rather than reading `null` as absent.
+- **SPEC.md §6.3: a `fixed` budget window counts from the Unix epoch.**
+  §6.3 and §6.4 never said where a `fixed` window starts, and a
+  re-delegation that states its parent's `fixed` window is narrower only
+  when both have the same windows. A `fixed` window's spans now run from
+  k × `durationSec` to (k + 1) × `durationSec` seconds after
+  1970-01-01T00:00:00Z, not from the credential's own start, and an
+  enforcer must count it so. §6.4 says why every other `fixed` length
+  under a `fixed` parent is still refused.
+- **SPEC.md §6.6 is written in the terms of W3C Bitstring Status List
+  v1.0.** The section, now "Status List Revocation", leads with a
+  `BitstringStatusListCredential` and its `BitstringStatusListEntry`. A
+  publisher SHOULD publish that format and MUST write it as the W3C
+  specification requires, MAY publish a `StatusList2021Credential`
+  instead, and SHOULD NOT name a list of one format from an entry of the
+  other; a verifier MUST read both formats, as before. An issuer SHOULD
+  state an end on every version of a list, its `validUntil` or
+  `expirationDate`. A list's `ttl` is no part of its window: a verifier
+  MUST NOT read a list past its `validUntil` because its `ttl` has not run
+  out, and MUST NOT refuse, because of its `ttl`, a list it has just
+  fetched inside its window. The reference readers meet both, since they
+  do not read `ttl`. `status-list/ttl-list` and `ttl-run-out-list` must
+  pass and `ttl-past-end-list` must fail; `status-list-validity.json` is
+  generated whole, its earlier vectors signed again with the same cases
+  and outcomes.
+- **Auditability: a record whose key has ended is undecided until
+  evidence dates it.** AUDITABILITY.md now says when a key has ended, that
+  an entry or checkpoint it signed is `indeterminate`
+  (`AUDIT_KEY_ENDED_UNDATED`) under every key revocation mode unless
+  evidence its signer does not control dates it at or before the end,
+  and which evidence does: a successor epoch's genesis, verified and
+  committing to its predecessor's terminal checkpoint, a checkpoint by
+  another live key, an observation by a live observer, a supporting
+  anchor, and a checkpoint a policy `validUntilCheckpoint` names, each
+  dating the checkpoints whose trees it holds and the entries in them.
+  It names the optional replay-bundle component that carries successor
+  geneses, `application/vnd.kya-os.audit.successor-geneses.v1+json`, and
+  the `AUDIT_SUCCESSOR_GENESIS_MISMATCH` report. SPEC-AUDIT-READ.md §4
+  holds a client to the same rule, and says where it reads a successor
+  genesis.
 
 ## [1.25.0] - 2026-11-18
 

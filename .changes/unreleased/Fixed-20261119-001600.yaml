@@ -1,7 +1,0 @@
-kind: Fixed
-body: |-
-    **`kya-audit verify` makes every check of a run at one instant.** It
-    read the clock at each check, so a key whose validity ended while the
-    run was under way could be current for one check and ended for the
-    next. It now reads the clock once per run.
-time: 2026-11-19T00:16:00.000000-06:00

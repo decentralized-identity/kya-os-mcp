@@ -18,6 +18,7 @@ import {
 } from "../types/protocol.js";
 import type { RefusalCode } from "../refusal-codes.js";
 import { answerWithinDeadline, dependencyTimeoutRefusal } from "../utils/deadline.js";
+import { describeValue } from "../utils/describe-value.js";
 import { OUTBOUND_READ_TIMEOUT_MS } from "../utils/outbound-read-limits.js";
 import { coded, refusal, refusalCodeOf, type Passed, type Refusal } from "../utils/refusal.js";
 import { OPERATOR_REASON_LENGTH } from "../utils/revocation-answer.js";
@@ -296,8 +297,8 @@ function admissionRefusal(chain: readonly DelegationCredential[], trustedRootIss
   if (refused === undefined || chain.length === 1 || refused.code === "configuration_error") return refused;
   const leafId = extractDelegationFromVC(chain[chain.length - 1]!).id;
   const said = refused.code === "untrusted_root"
-    ? `Delegation ${leafId} descends from a root whose issuer is not a trusted root issuer`
-    : `Delegation ${leafId} descends from a root whose credential names no issuer`;
+    ? `Delegation ${describeValue(leafId)} descends from a root whose issuer is not a trusted root issuer`
+    : `Delegation ${describeValue(leafId)} descends from a root whose credential names no issuer`;
   return refusal(refused.code, presentedReason(said, refused.reason));
 }
 

@@ -203,7 +203,7 @@ describe('root admission before DID and status resolution', () => {
       const { verify, resolve, isRevoked } = setup({ resolveDelegationChain: async () => [parent] });
       expect(await verify(await wire(leaf, delegate))).toMatchObject({
         // The root is the resolver's answer, which the presenter is not told.
-        valid: false, reason: 'Delegation leaf does not descend from a root through the chain its parent resolves to',
+        valid: false, reason: 'Delegation "leaf" does not descend from a root through the chain its parent resolves to',
       });
       expect(resolve).not.toHaveBeenCalled();
       expect(isRevoked).not.toHaveBeenCalled();

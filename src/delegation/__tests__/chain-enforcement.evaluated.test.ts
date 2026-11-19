@@ -84,10 +84,10 @@ describe("validateDelegationChain: the credentials it reports", () => {
     // A chain's links, and then its root's issuer, are checked before the walk starts.
     const unlinked = cred({ id: "middle", issuerDid: "did:rogue", subjectDid: "did:sub", parentId: "root", scopes: ["read"], audience: SERVER });
     const broken = await validateDelegationChain(leaf, resolving([root, unlinked]));
-    expect(broken.reason).toBe("Delegation leaf does not descend from a root through the chain its parent resolves to");
+    expect(broken.reason).toBe('Delegation "leaf" does not descend from a root through the chain its parent resolves to');
     expect(broken).not.toHaveProperty("evaluated");
     const untrusted = await validateDelegationChain(leaf, { ...resolving([root, middle]), trustedRootIssuers: ["did:other"] });
-    expect(untrusted.reason).toBe("Delegation leaf descends from a root whose issuer is not a trusted root issuer");
+    expect(untrusted.reason).toBe('Delegation "leaf" descends from a root whose issuer is not a trusted root issuer');
     expect(untrusted).not.toHaveProperty("evaluated");
   });
 

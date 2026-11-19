@@ -62,7 +62,7 @@ export function chainLinkageRefusal(chain: readonly DelegationCredential[]): Lin
 
 /** What the presenter of the delegation `leafId` is told when a link between two of its ancestors is refused. */
 function brokenAncestry(leafId: string): string {
-  return `Delegation ${leafId} does not descend from a root through the chain its parent resolves to`;
+  return `Delegation ${describeValue(leafId)} does not descend from a root through the chain its parent resolves to`;
 }
 
 /**
@@ -94,26 +94,26 @@ function rootRefusal(root: DelegationRecord, issuer: string | undefined): Refuse
 
 /**
  * Why `child`, in a credential naming `issuer`, is not a re-delegation by the subject of `parent`.
- * The words its presenter reads quote only the child's own members, its DIDs as
- * {@link describeValue} does, since nothing has authenticated them yet.
+ * The words its presenter reads name only the child's own members, its ids and DIDs quoted as
+ * {@link describeValue} quotes them, since nothing has authenticated them yet.
  */
 function childRefusal(child: DelegationRecord, issuer: string | undefined, parent: DelegationRecord): RefusedLink | undefined {
   if (child.parentId !== parent.id) {
     return {
       detail: `Delegation ${child.id} references parent ${child.parentId} but expected ${parent.id}`,
-      presented: `Delegation ${child.id} references parent ${child.parentId}, which its resolved chain does not end with`,
+      presented: `Delegation ${describeValue(child.id)} references parent ${describeValue(child.parentId)}, which its resolved chain does not end with`,
     };
   }
   if (child.issuerDid !== parent.subjectDid) {
     return {
       detail: `Delegation ${child.id} issued by ${child.issuerDid} but parent subject is ${parent.subjectDid}`,
-      presented: `Delegation ${child.id} issued by ${describeValue(child.issuerDid)} is not a re-delegation by the subject of parent ${child.parentId}`,
+      presented: `Delegation ${describeValue(child.id)} issued by ${describeValue(child.issuerDid)} is not a re-delegation by the subject of parent ${describeValue(child.parentId)}`,
     };
   }
   if (issuer !== parent.subjectDid) {
     return {
       detail: `Delegation ${child.id} is signed by ${issuer ?? "an unidentified issuer"} but parent subject is ${parent.subjectDid}`,
-      presented: `Delegation ${child.id} is signed by ${issuer === undefined ? "an unidentified issuer" : describeValue(issuer)}, not by the subject of parent ${child.parentId}`,
+      presented: `Delegation ${describeValue(child.id)} is signed by ${issuer === undefined ? "an unidentified issuer" : describeValue(issuer)}, not by the subject of parent ${describeValue(child.parentId)}`,
     };
   }
   return undefined;

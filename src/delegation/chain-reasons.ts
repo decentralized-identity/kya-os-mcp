@@ -25,9 +25,11 @@ function thrownByHost(error: unknown, opening: string, failed: string): string {
 /**
  * `said`, the reason a refusal gives whoever presented the delegation, having told the operator's
  * log what it withholds there: `withheld`, a reason that names what the chain resolver answered.
+ * Both halves of the line hold text the presenter wrote before any signature was checked, so the
+ * line is written through `sanitizeForMessage`, free of any character that would rewrite the log.
  */
 export function presentedReason(said: string, withheld: string): string {
-  logger.warn(`[kya-os] ${said}: ${sanitizeForMessage(withheld, OPERATOR_REASON_LENGTH)}`);
+  logger.warn(`[kya-os] ${sanitizeForMessage(said)}: ${sanitizeForMessage(withheld, OPERATOR_REASON_LENGTH)}`);
   return said;
 }
 

@@ -161,7 +161,7 @@ describe("validateDelegationChain: snapshotAncestor", () => {
       // Read as the leaf, it is the resolver's copy of the leaf and is set
       // aside: the leaf presented is then held to the root, which is not its
       // parent. Links are checked before any credential is verified, so none was.
-      expect(result.reason).toBe("Delegation leaf references parent middle, which its resolved chain does not end with");
+      expect(result.reason).toBe('Delegation "leaf" references parent "middle", which its resolved chain does not end with');
       expect(result).not.toHaveProperty("evaluated");
     }
   });

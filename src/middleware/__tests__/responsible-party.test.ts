@@ -110,7 +110,7 @@ describe('the Responsible Party the delegation gate names', () => {
       // Presented, the root is quoted; resolved, it is the resolver's answer, which the presenter is not told.
       [`Root delegation ${solo.id} names issuerDid "${ALICE}" but its credential names issuer "${root.did}"`, await s.call(undefined, await credentialNaming(root, root.did, root.kid, solo))],
       [
-        `Delegation ${leafRecord.id} does not descend from a root through the chain its parent resolves to`,
+        `Delegation "${leafRecord.id}" does not descend from a root through the chain its parent resolves to`,
         await s.call(undefined, await signedCredential(delegate, { record: leafRecord }), [await credentialNaming(root, root.did, root.kid, rootRecord)]),
       ],
     ];

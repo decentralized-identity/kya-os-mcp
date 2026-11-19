@@ -26,7 +26,6 @@ import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents
 import type { DIDResolver } from '../../delegation/vc-verifier.types.js';
 import {
   hop,
-  identity,
   published,
   RESOURCE,
   serveAt,
@@ -34,6 +33,7 @@ import {
   statusList,
   type TestIdentity,
   now,
+  webIdentity,
 } from './signed-chain-helpers.js';
 import { moveBinding, nameSigner } from './status-list-paths.js';
 import { ANY_CODE, BIT_SET, codedAs } from '../../__tests__/utils/refusal-coding.js';
@@ -41,11 +41,6 @@ import { withWarnings } from '../../__tests__/utils/logged-lines.js';
 import { unreadStatusList } from '../../utils/thrown-words.js';
 
 const CARDS_URL = 'https://example.com/status/cards';
-
-/** An Ed25519 key published as the verification method `<did>#key-1` of a did:web DID. */
-function webIdentity(did: string): TestIdentity {
-  return { ...identity(), did, method: `${did}#key-1` };
-}
 
 const entity = webIdentity('did:web:example.com:agents:acme-pay');
 const responsibleParty = webIdentity('did:web:api.example');

@@ -3,16 +3,16 @@
  * lets the presenter be the root of its own chain, and so choose the URL its root credential names.
  * When such a host's accountability verifier reports that URL as `rootStatusList`, as UPGRADING.md
  * says it may, `verifyCard` must not read it as the operator's own: only a root the operator pins in
- * `trustedRootIssuers` makes it so, as on the delegation paths. Otherwise the URL is held to the
- * private-network rule as any URL a presenter names, so a name that resolves to a public address
- * once, and to a private one when the Card's own entry is read, is refused at the second lookup.
+ * `trustedRootIssuers` makes it so, as on the delegation paths, and only for a URL on that root's
+ * own did:web host. Otherwise the URL is held to the private-network rule as any URL a presenter
+ * names, so a name that resolves to a public address once, and to a private one when the Card's
+ * own entry is read, is refused at the second lookup.
  *
  * Real keys and the shipped verifiers throughout. Only DNS and the connection are faked: the
  * presenter's list host resolves to a public address the first time and a private one after.
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { createDidKeyResolver } from '../../delegation/did-key-resolver.js';
 import { logger } from '../../logging/index.js';
 import { createSafeFetch, type DnsLookup, type SafeFetchTransport } from '../../utils/safe-fetch.js';
 import { evaluateDelegationChain, type DelegationChain } from '../delegation.js';
@@ -22,14 +22,24 @@ import { createRevocationChecker } from '../revocation.js';
 import type { EntityCard } from '../schema.js';
 import { createStatusListProofVerifier } from '../status-list-proof.js';
 import { verifyCard } from '../verify.js';
-import { hop, now, parties, RESOURCE, statusList, type ChainParties, type TestIdentity } from './signed-chain-helpers.js';
+import { hop, now, parties as didKeyParties, resolverServing, RESOURCE, statusList, webIdentity, type ChainParties, type TestIdentity } from './signed-chain-helpers.js';
 
-const didResolver = createDidKeyResolver();
-const verifyHopProof = createDelegationProofVerifier({ didResolver });
 const PUBLIC = '93.184.216.34';
 const PRIVATE = '10.0.0.7';
 const HOST = 'lists.presenter.example';
 const LIST = `https://${HOST}/root`;
+
+/** The did:web roots the tests make, on the list's own host, whose documents the resolver serves, the newest first. */
+const webRoots: TestIdentity[] = [];
+const didResolver = resolverServing(webRoots);
+const verifyHopProof = createDelegationProofVerifier({ didResolver });
+
+/** The presenter's root as a did:web DID on the list's host, and two did:key delegates. */
+function parties(): ChainParties {
+  const acme = webIdentity(`did:web:${HOST}`);
+  webRoots.unshift(acme);
+  return { ...didKeyParties(), acme };
+}
 
 const listAt = (signer: TestIdentity, url: string) => statusList(signer, [], { id: url, credentialSubject: { id: `${url}#list` } });
 
@@ -88,12 +98,20 @@ describe('a Card whose responsible party is the presenter, under a host that acc
     expect(result.revocation).toMatchObject({ revoked: true, fresh: false, code: 'status_unavailable' });
   });
 
-  it('reads it there once the operator pins that party in trustedRootIssuers, as the delegation paths do', async () => {
+  it('reads it there once the operator pins that party in trustedRootIssuers, as the delegation paths do, the list being on its own host', async () => {
     vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const p = parties();
     const { result, connected } = await verifyUnderAnyRoot(p, [p.acme.did]);
     expect(connected).toEqual([[LIST, PUBLIC], [LIST, PRIVATE]]);
     expect(result.revocation).toMatchObject({ revoked: false, fresh: true });
+  });
+
+  it('never reads it at the private address for a pinned did:key party, which has no host of its own', async () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const p = didKeyParties();
+    const { result, connected } = await verifyUnderAnyRoot(p, [p.acme.did]);
+    expect(connected).toEqual([[LIST, PUBLIC]]);
+    expect(result.revocation).toMatchObject({ revoked: true, fresh: false, code: 'status_unavailable' });
   });
 });
 

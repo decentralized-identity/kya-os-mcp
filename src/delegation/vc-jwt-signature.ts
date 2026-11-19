@@ -82,7 +82,9 @@ export async function checkVcJwtSignature(
 
   let key: Awaited<ReturnType<typeof importJWK>>;
   try {
-    key = await importJWK(publicKeyJwk as JWK, "EdDSA");
+    // Imported extractable whatever the JWK's own `ext` member says: a key that
+    // cannot be read back escapes the small-order check below.
+    key = await importJWK(publicKeyJwk as JWK, "EdDSA", { extractable: true });
   } catch (err) {
     return refused("did_invalid", `JWT envelope signature is not valid: ${errMsg(err)}`);
   }

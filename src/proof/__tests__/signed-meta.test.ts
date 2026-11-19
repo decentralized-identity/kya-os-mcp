@@ -118,6 +118,36 @@ describe('the meta the generator writes', () => {
     expect(await generator.verifyProof({ ...proof, meta: { ...proof.meta, ...unsigned } }, request, response))
       .toBe(true);
   });
+
+  it('keeps every member it sets when an untyped caller passes the same names as options', async () => {
+    const elsewhere = `sha256:${'0'.repeat(64)}`;
+    const untyped = {
+      did: 'did:web:attacker.example', kid: 'did:web:attacker.example#key-1', ts: 1, nonce: 'chosen',
+      audience: 'did:web:other.example', sessionId: 'kyaos_other', requestHash: elsewhere, responseHash: elsewhere,
+      prf: 'org.kya-os/response-proof.envelope', clientDid: 'did:web:client.example',
+    } as unknown as ProofOptions;
+
+    const proof = await generator.generateProof(request, response, session, untyped);
+    const reference = await generator.generateProof(request, response, session, { clientDid: 'did:web:client.example' });
+
+    expect(proof.meta).toMatchObject({
+      did: server.did, kid: server.kid, audience: session.audience, sessionId: session.sessionId,
+      requestHash: reference.meta.requestHash, responseHash: reference.meta.responseHash, clientDid: 'did:web:client.example',
+    });
+    expect(proof.meta).not.toHaveProperty('prf');
+    expect(proof.meta.nonce).not.toBe('chosen');
+    expect(proof.meta.ts).toBeGreaterThan(1);
+    expect(await verifier().verifyProof(proof, key, { request, response })).toEqual({ valid: true, meta: proof.meta });
+  });
+
+  it('binds no response an untyped caller names when it is given none', async () => {
+    const untyped = { responseHash: `sha256:${'0'.repeat(64)}`, outcome: 'denied' } as unknown as ProofOptions;
+
+    const proof = await generator.generateProof(request, undefined, session, untyped);
+
+    expect(proof.meta).not.toHaveProperty('responseHash');
+    expect(await verifier().verifyProof(proof, key, { request })).toEqual({ valid: true, meta: proof.meta });
+  });
 });
 
 describe('signedProofMeta', () => {

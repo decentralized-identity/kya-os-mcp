@@ -131,6 +131,14 @@ export interface ProofOptions {
  */
 export const PRECOMPUTED_REQUEST_HASH: unique symbol = Symbol('kya-os.precomputed-request-hash');
 
+/**
+ * The members of a proof's meta the generator sets itself, from its identity, the session, the
+ * request and response, and `profile`: never from an option of the same name.
+ */
+const GENERATOR_SET_MEMBERS = [
+  'did', 'kid', 'ts', 'nonce', 'audience', 'sessionId', 'requestHash', 'responseHash', 'prf',
+] as const satisfies ReadonlyArray<keyof ProofMeta>;
+
 /** {@link ProofOptions} with the internal precomputed request hash. */
 export interface InternalProofOptions extends ProofOptions {
   [PRECOMPUTED_REQUEST_HASH]?: string;
@@ -180,10 +188,12 @@ export class ProofGenerator {
     // the spread below can never leak a `profile` key into the signed meta. The
     // claim form is `prf`, set only for the envelope profile (the body profile stays byte-identical on the wire).
     const { profile = RESPONSE_PROOF_PROFILE_BODY, ...metaOptions } = options;
-    // The `prf` claim derives ONLY from `profile`. TypeScript keeps `prf` out
-    // of ProofOptions, but a plain-JS caller could still pass one — strip it so
-    // a foreign profile value can never ride the spread into the signed payload.
-    Reflect.deleteProperty(metaOptions, 'prf');
+    // The members the generator sets, `prf` among them, which derives ONLY from
+    // `profile`, always win. TypeScript keeps them out of ProofOptions, but a
+    // plain-JS caller could still pass one: strip each, so no value of the
+    // caller's can ride the spread into the signed payload in its place, and no
+    // `responseHash` binds a response the generator was not given.
+    for (const member of GENERATOR_SET_MEMBERS) Reflect.deleteProperty(metaOptions, member);
     // A request hash computed earlier, when the caller no longer holds the
     // request; never copied into the meta.
     const precomputed = (options as InternalProofOptions)[PRECOMPUTED_REQUEST_HASH];

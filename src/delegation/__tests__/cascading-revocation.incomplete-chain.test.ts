@@ -33,7 +33,7 @@ async function graphOfThree(entries = false) {
     const credentialStatus = entries ? await manager.allocateStatusEntry('revocation') : undefined;
     await graph.registerDelegation({ id, parentId, issuerDid, subjectDid, ...(credentialStatus ? { credentialStatus } : {}) });
   }
-  return { storage, graph, revocation };
+  return { storage, graph, revocation, manager };
 }
 
 /** What `run` threw, or a failure when it settled otherwise. */
@@ -167,10 +167,33 @@ describe('DelegationGraphManager.removeDelegation: no gap, and no revocation era
     expect(await revocation.isRevoked('leaf')).toMatchObject({ revoked: true });
   });
 
-  it('removes a revoked delegation whose status list entry records its revocation, as before', async () => {
+  it('keeps a revoked record of a revoked delegation whose status list entry records its revocation too', async () => {
     const { graph, revocation } = await graphOfThree(true);
     await revocation.revokeDelegation('leaf');
     await graph.removeDelegation('leaf');
+    expect(await graph.getNode('leaf')).toMatchObject({ removed: true, revoked: true });
+    expect(await revocation.isRevoked('leaf')).toMatchObject({ revoked: true });
+  });
+
+  it('keeps a revoked record of a revoked delegation whose status list entry never recorded the revocation', async () => {
+    const { graph, revocation, manager } = await graphOfThree(true);
+    const entry = (await graph.getNode('leaf'))!.credentialStatus!;
+    vi.spyOn(manager, 'updateStatus').mockRejectedValueOnce(new Error('status list store unavailable'));
+    await expect(revocation.revokeDelegation('leaf')).rejects.toThrow();
+    expect(await revocation.isRevoked('leaf')).toMatchObject({ revoked: true });
+    expect(await manager.checkStatus(entry)).toBe(false);
+
+    await graph.removeDelegation('leaf');
+    expect(await graph.getNode('leaf')).toMatchObject({ removed: true, revoked: true });
+    expect(await revocation.isRevoked('leaf')).toMatchObject({ revoked: true });
+    expect(await revocation.validateDelegation('leaf')).toEqual({ valid: false, reason: 'Delegation is revoked' });
+  });
+
+  it('removes a delegation with a status list entry that never was revoked whole, so its id registers again', async () => {
+    const { graph } = await graphOfThree(true);
+    await graph.removeDelegation('leaf');
     expect(await graph.getNode('leaf')).toBeNull();
+    await graph.registerDelegation({ id: 'leaf', parentId: 'middle', issuerDid: 'did:web:b.example', subjectDid: 'did:web:c.example' });
+    expect(await graph.getNode('leaf')).toMatchObject({ id: 'leaf', parentId: 'middle' });
   });
 });

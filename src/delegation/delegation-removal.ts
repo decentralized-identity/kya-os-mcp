@@ -3,9 +3,9 @@
  *
  * How a `DelegationGraphManager` removes a delegation from its graph: in the delegation's turn,
  * then its parent's, it retires the status list entry allocated to it, unlinks it from its parent
- * and deletes its node, or refuses, removing nothing. A delegation the graph alone records as
- * revoked leaves a revoked record of its id in place of its node, since a delegation the graph
- * does not hold reads as not revoked.
+ * and deletes its node, or refuses, removing nothing. A delegation that reads as revoked in the
+ * graph leaves a revoked record of its id in place of its node, since a delegation the graph does
+ * not hold reads as not revoked, and its status list entry may not record the revocation.
  */
 
 import { describeValue } from '../utils/describe-value.js';
@@ -32,7 +32,7 @@ export async function removeDelegationNode(context: RemovalContext, delegationId
     if (refused !== undefined) {
       throw new Error(`Delegation ${delegationId} is not removed: ${refused}`);
     }
-    const drop = (await revokedInGraphAlone(storage, node))
+    const drop = (await readsRevokedInGraph(storage, node))
       ? () => storage.setNode(revokedRecordOf(node))
       : () => storage.deleteNode(delegationId);
     const parentId = node.parentId;
@@ -138,17 +138,17 @@ async function removalRefusal(storage: DelegationGraphStorageProvider, node: Del
 }
 
 /**
- * Whether the graph holds the only record that `node` is revoked: it has no status list entry,
- * and it, or an ancestor, is marked revoked, or its chain does not read to a root, so it cannot be
- * told not to be.
+ * Whether `node` reads as revoked in the graph: it, or an ancestor, is marked revoked, or its chain
+ * does not read to a root, so it cannot be told not to be. Its status list entry, when it has one,
+ * is not asked: a revocation whose write to the list failed, or left the list unchanged, is
+ * recorded in the graph alone.
  */
-async function revokedInGraphAlone(storage: DelegationGraphStorageProvider, node: DelegationNode): Promise<boolean> {
-  if (readableStatusEntry(node) !== undefined) return false;
+async function readsRevokedInGraph(storage: DelegationGraphStorageProvider, node: DelegationNode): Promise<boolean> {
   const chain = await storage.getChain(node.id);
   return graphChainBreak(chain, node.id) !== undefined || chain.some((link) => link.revoked === true);
 }
 
-/** The record a removed `node` leaves when the graph alone records its revocation: a revoked root. */
+/** The record a removed `node` leaves when it reads as revoked in the graph: a revoked root. */
 function revokedRecordOf(node: DelegationNode): DelegationNode {
   return {
     id: node.id,

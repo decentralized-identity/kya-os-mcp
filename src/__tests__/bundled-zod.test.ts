@@ -10,8 +10,8 @@
  * (`dist/`), to it.
  */
 import { build } from 'esbuild';
-import { afterAll, describe, expect, it } from 'vitest';
-import { BUILT, consumerDir, ENTRIES } from './bundling.js';
+import { describe, expect, it } from 'vitest';
+import { BUILT, ENTRIES, useConsumerDir } from './bundling.js';
 
 /**
  * The locale modules of zod a bundle holds, by file name: those that put any bytes into the output.
@@ -26,12 +26,11 @@ function zodLocales(inputs: Record<string, { bytesInOutput: number }>): string[]
 }
 
 describe.skipIf(!BUILT)('a bundle of any entry holds no zod locale but English', () => {
-  const { dir, remove } = consumerDir('kya-os-bundle-zod-');
-  afterAll(remove);
+  const consumerDir = useConsumerDir('kya-os-bundle-zod-');
 
   it.each(ENTRIES)('every export of $specifier', async ({ specifier }) => {
     const result = await build({
-      stdin: { contents: `export * from ${JSON.stringify(specifier)};`, resolveDir: dir, loader: 'js' },
+      stdin: { contents: `export * from ${JSON.stringify(specifier)};`, resolveDir: consumerDir(), loader: 'js' },
       bundle: true,
       write: false,
       metafile: true,

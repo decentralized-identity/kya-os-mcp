@@ -4,6 +4,41 @@ This file holds the detail behind the Upgrading entries in CHANGELOG.md: the ste
 Each release has one section, newest first, and declares every change of behaviour against the release before it.
 CHANGELOG.md says what changed and names the section here that says what to do about it.
 
+## From 1.25.0
+
+### Status-list stores take a conditional write
+
+`StatusList2021Manager` changes a list by reading it whole, setting or clearing one bit, signing it again and writing it whole.
+It serialised those changes within one manager only, and a `StatusListStorageProvider` has only `getStatusList` and `setStatusList`, so the store could not tell which list a writer had read.
+Two managers over one store, as two replicas of an issuing service, two serverless instances, or a process that builds a manager per request have, could each read a list, change a different bit, and write it back.
+The second write replaced the first, both calls resolved, and the first revocation was gone from the signed list, so a verifier that read the list accepted the revoked credential.
+`CascadingRevocationManager` revokes through the manager, so its revocations could be lost the same way.
+
+A store may now implement `ConditionalStatusListStorageProvider`, an optional contract beside the three methods every store has, as `AtomicDelegationGraphStorageProvider` is beside the delegation graph's store:
+
+- `getStatusListWithEtag(statusListId)` answers the stored list with its etag, a string that names the write that stored it, such as a row version or an HTTP ETag, or `null` when no list is stored.
+- `setStatusListIfMatch(statusListId, credential, etag)` stores the list only while the stored list is the one `etag` names, or, for a `null` etag, only while no list is stored.
+  It resolves `true` when it stored the list and `false` when it did not.
+  The comparison and the write must be one atomic step for every writer of the store, and a write through `setStatusList` must change the etag too.
+
+Over such a store a manager writes a list only over the list it read.
+When another writer stored the list first, the manager reads it again, applies only its own change, signs it and tries again, up to 10 times in all.
+When every try is refused it throws `StatusListWriteConflictError`, whose `code` is `STATUS_LIST_WRITE_CONFLICT`, and stores nothing, so the list keeps every other writer's change and the caller can make its own again.
+A store whose `setStatusListIfMatch` resolves anything but a boolean is refused with a `TypeError`.
+`MemoryStatusListStorage` implements the contract.
+`allocateIndex` must hand out each index once across every manager of the store as well, or two credentials share one bit.
+
+A store without the conditional write works as before, and is safe with one manager writing to it.
+The first manager a process builds over one warns once through `logger.warn`, in fixed words: `[kya-os] StatusList2021Manager was built over a status-list store with no conditional write, ...`.
+The warning is shared across package copies in the process.
+
+| If you | Do this | Effect |
+| --- | --- | --- |
+| Use `MemoryStatusListStorage` | Nothing. | No warning, and managers over one store keep every change. |
+| Run more than one manager over a store of your own: replicas, serverless instances, or a manager per request | Implement `getStatusListWithEtag` and `setStatusListIfMatch` on it, with a version column and `UPDATE ... WHERE version = ?`, a compare-and-set, or HTTP `If-Match` and `If-None-Match: *`, as `adopters/fixtures/status-list-replicas.ts` does. | No revocation is lost, and the warning stops. |
+| Write through one manager only, in one process | Nothing, or implement the two methods to stop the warning. | The store is read and written as on 1.25.0. |
+| Call `updateStatus`, `allocateStatusEntry` or `CascadingRevocationManager.revokeDelegation` over a store with the conditional write | Treat `StatusListWriteConflictError` as a change that was not made, and make it again. | A change that could not be stored is reported, never lost. |
+
 ## From 1.24.0
 
 ### The delegation gate shows the failure your DID resolver reports

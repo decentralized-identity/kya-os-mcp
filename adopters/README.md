@@ -36,6 +36,7 @@ A fixture prints `PASS <fixture>: <what it showed>`, or one `FAIL <fixture>: <ca
 | `card-revocation-checker` | `verifyCard` with and without a `statusListChecker` built from `createRevocationChecker`: a Card that declares a revocation entry is refused as `configuration_error` when no checker is given, and a Card that declares none needs no checker. |
 | `window-dates` | `createRevocationChecker`, `CheqdStatusListResolver` and `requireDelegation` over `RuntimeFetchProvider` and SafeFetch: a list or hop bound with no time zone, or not RFC 3339, is refused alike under `TZ=UTC` and `TZ=America/Chicago`, and one a few seconds outside its window is read within the clock tolerance. |
 | `checkpoint-conflicts` | An on-demand checkpoint endpoint over `AuditRecorderService` and `AuditCheckpointBuilder`, with two signer processes sharing one checkpoint store: it answers success for a lost race and failure for a forked journal, told apart by `isLostCheckpointRace`. |
+| `status-list-replicas` | Two issuing replicas, each with its own `StatusList2021Manager`, over the adopter's own versioned status-list table that implements `ConditionalStatusListStorageProvider`: revocations made at the same moment all reach the published list, a write refused every time throws `StatusListWriteConflictError`, and the same table without the conditional write loses one and warns once. |
 
 A case whose name starts with `control:` checks the setup the other cases rely on, so a failure beside a passing control is the library's, not the fixture's.
 

@@ -138,9 +138,12 @@ export {
 
 export {
   StatusList2021Manager,
+  StatusListWriteConflictError,
   createStatusListManager,
+  type ConditionalStatusListStorageProvider,
   type StatusListStorageProvider,
   type StatusListIdentityProvider,
+  type StoredStatusList,
 } from './delegation/statuslist-manager.js';
 
 export {

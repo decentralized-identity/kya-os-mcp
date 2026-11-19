@@ -121,6 +121,65 @@ describe("MemoryStatusListStorage", () => {
     });
   });
 
+  describe("conditional write", () => {
+    const statusListId = "https://example.com/status/revocation/v1";
+    const updated = { ...mockStatusListCredential, issuanceDate: "2024-01-02T00:00:00Z" };
+
+    it("reads no list and no etag where none is stored", async () => {
+      expect(await storage.getStatusListWithEtag(statusListId)).toBeNull();
+    });
+
+    it("creates a list for a null etag only while none is stored", async () => {
+      expect(await storage.setStatusListIfMatch(statusListId, mockStatusListCredential, null)).toBe(true);
+      expect(await storage.setStatusListIfMatch(statusListId, updated, null)).toBe(false);
+
+      expect((await storage.getStatusListWithEtag(statusListId))?.credential).toEqual(mockStatusListCredential);
+      expect(await storage.getStatusListVersionCount(statusListId)).toBe(1);
+    });
+
+    it("stores a list over the etag it was read with, and refuses that etag once another write lands", async () => {
+      await storage.setStatusList(statusListId, mockStatusListCredential);
+      const read = await storage.getStatusListWithEtag(statusListId);
+      const other = await storage.getStatusListWithEtag(statusListId);
+
+      expect(await storage.setStatusListIfMatch(statusListId, updated, read!.etag)).toBe(true);
+      expect(await storage.setStatusListIfMatch(statusListId, mockStatusListCredential, other!.etag)).toBe(false);
+
+      const stored = await storage.getStatusListWithEtag(statusListId);
+      expect(stored?.credential).toEqual(updated);
+      expect(stored?.etag).not.toBe(read!.etag);
+      expect(await storage.getStatusListVersionCount(statusListId)).toBe(2);
+    });
+
+    it("gives a write through setStatusList a new etag too", async () => {
+      await storage.setStatusList(statusListId, mockStatusListCredential);
+      const read = await storage.getStatusListWithEtag(statusListId);
+      await storage.setStatusList(statusListId, mockStatusListCredential);
+
+      expect(await storage.setStatusListIfMatch(statusListId, updated, read!.etag)).toBe(false);
+      expect(await storage.getStatusList(statusListId)).toEqual(mockStatusListCredential);
+    });
+
+    it("refuses a non-null etag where no list is stored, and never gives an etag again after clear", async () => {
+      expect(await storage.setStatusListIfMatch(statusListId, updated, "1")).toBe(false);
+
+      await storage.setStatusList(statusListId, mockStatusListCredential);
+      const beforeClear = await storage.getStatusListWithEtag(statusListId);
+      storage.clear();
+      await storage.setStatusList(statusListId, mockStatusListCredential);
+
+      expect(await storage.setStatusListIfMatch(statusListId, updated, beforeClear!.etag)).toBe(false);
+    });
+
+    it("hands back copies, so a change to what was read is not stored", async () => {
+      await storage.setStatusList(statusListId, mockStatusListCredential);
+      const read = await storage.getStatusListWithEtag(statusListId);
+      read!.credential.issuanceDate = "mutated";
+
+      expect((await storage.getStatusList(statusListId))?.issuanceDate).toBe(mockStatusListCredential.issuanceDate);
+    });
+  });
+
   describe("allocateIndex", () => {
     it("should allocate sequential indices starting from 0", async () => {
       const statusListId = "https://example.com/status/revocation/v1";

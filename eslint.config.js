@@ -25,10 +25,10 @@ export default tseslint.config(
     },
   },
   {
-    // The adopter suite's runner is plain Node ESM, with the Node globals it uses.
-    files: ['adopters/run.mjs', 'adopters/runner/*.mjs'],
+    // The adopter suite's runners are plain Node ESM, with the Node globals they use.
+    files: ['adopters/*.mjs', 'adopters/runner/*.mjs'],
     languageOptions: {
-      globals: { process: 'readonly', console: 'readonly', setTimeout: 'readonly', clearTimeout: 'readonly' },
+      globals: { process: 'readonly', console: 'readonly', setTimeout: 'readonly', clearTimeout: 'readonly', Buffer: 'readonly' },
     },
   },
   {

@@ -12,6 +12,7 @@
 import { base64ToBytes } from './base64.js';
 import { strictBase64urlBytes } from './base64-reading.js';
 import { ED25519_KEY_SIZE } from './ed25519-constants.js';
+import { verifiesSmallOrderProbe } from './ed25519-small-order-probe.js';
 
 /** 32 bytes as base64 or base64url: 43 characters, optionally one `=` of padding. */
 const ED25519_PUBLIC_KEY_BASE64 = /^[A-Za-z0-9+/_-]{43}=?$/;
@@ -102,15 +103,18 @@ export function decodeEd25519PublicKey(publicKeyBase64: string): Uint8Array | nu
  * that import a JWK through `jose` or WebCrypto check the imported key, not
  * the JWK string: neither refuses a small-order point, and Node's JWK import
  * decodes `x` leniently (padding, junk, non-zero trailing bits), so a check on
- * the string can be sidestepped. A key that is not an extractable Ed25519
- * public key cannot be read back and is left to the verifier.
+ * the string can be sidestepped. An extractable key is read back and its bytes
+ * checked; a key imported non-extractable is checked by what it verifies
+ * ({@link verifiesSmallOrderProbe}), so a resolver may import keys either way.
+ * Anything that is not an Ed25519 public CryptoKey is false.
  */
 export async function isSmallOrderEd25519CryptoKey(key: object): Promise<boolean> {
   // Typed as `object` so callers holding an opaque key handle (or the
   // Uint8Array secret jose returns for `oct` keys) need no casts.
   const { type, algorithm, extractable } = key as Partial<CryptoKey>;
-  if (type !== 'public' || (algorithm as { name: string }).name !== 'Ed25519' || extractable !== true) {
+  if (type !== 'public' || (algorithm as { name: string }).name !== 'Ed25519') {
     return false;
   }
+  if (extractable !== true) return verifiesSmallOrderProbe(key as CryptoKey);
   return isSmallOrderEd25519Key(new Uint8Array(await crypto.subtle.exportKey('raw', key as CryptoKey)));
 }

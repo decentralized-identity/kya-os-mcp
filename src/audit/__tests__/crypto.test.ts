@@ -2,7 +2,7 @@ import { exportJWK, generateKeyPair } from 'jose';
 import { describe, expect, it } from 'vitest';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
 import { base64url } from '../../__tests__/utils/encodings.js';
-import { forgedJws, IDENTITY } from '../../__tests__/utils/small-order.js';
+import { forgedJws, IDENTITY, IDENTITY_SIGNED } from '../../__tests__/utils/small-order.js';
 import {
   CompactJwsAuditSignatureVerifier,
   CompactJwsAuditSigner,
@@ -69,6 +69,33 @@ describe('audit cryptography adapters', () => {
       const payload = encoder.encode('canonical audit receipt');
       const jws = await new CompactJwsAuditSigner(signerRef, privateKey).sign(payload);
       const verifier = new CompactJwsAuditSignatureVerifier({ resolve: async () => jwk });
+
+      await expect(verifier.verify(payload, jws, signerRef)).resolves.toBe(true);
+    });
+  });
+
+  describe('a key the resolver imported non-extractable', () => {
+    const encoder = new TextEncoder();
+    const forged = (payload: string): string => forgedJws({ alg: 'EdDSA', kid: signerRef.kid }, payload);
+
+    it.each([
+      ['the identity', IDENTITY],
+      ['the identity with the sign bit set', IDENTITY_SIGNED],
+    ])('refuses a small-order key, %s, that cannot be read back', async (_case, point) => {
+      const key = await crypto.subtle.importKey('raw', point, { name: 'Ed25519' }, false, ['verify']);
+      const verifier = new CompactJwsAuditSignatureVerifier({ resolve: async () => key });
+      const payload = 'any payload at all';
+
+      await expect(verifier.verify(encoder.encode(payload), forged(payload), signerRef)).resolves.toBe(false);
+    });
+
+    it('verifies under a sound key that cannot be read back', async () => {
+      const { privateKey, publicKey } = await generateKeyPair('Ed25519', { extractable: true });
+      const raw = await crypto.subtle.exportKey('raw', publicKey as CryptoKey);
+      const hidden = await crypto.subtle.importKey('raw', raw, { name: 'Ed25519' }, false, ['verify']);
+      const payload = encoder.encode('canonical audit receipt');
+      const jws = await new CompactJwsAuditSigner(signerRef, privateKey).sign(payload);
+      const verifier = new CompactJwsAuditSignatureVerifier({ resolve: async () => hidden });
 
       await expect(verifier.verify(payload, jws, signerRef)).resolves.toBe(true);
     });

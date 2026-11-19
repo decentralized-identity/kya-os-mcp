@@ -1,10 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { importJWK } from 'jose';
 import {
   decodeEd25519PublicKey,
   isSmallOrderEd25519CryptoKey,
   isSmallOrderEd25519Key,
 } from '../ed25519-public-key.js';
+import { SMALL_ORDER_PROBE_MESSAGE, SMALL_ORDER_PROBE_SIGNATURE } from '../ed25519-small-order-probe.js';
 import { base64urlEncodeFromBytes, bytesToBase64 } from '../base64.js';
 
 const hex = (h: string) => Uint8Array.from(h.match(/../g)!.map((b) => parseInt(b, 16)));
@@ -90,13 +91,67 @@ describe('isSmallOrderEd25519CryptoKey', () => {
     expect(await isSmallOrderEd25519CryptoKey(publicKey)).toBe(false);
   });
 
-  it('leaves alone what it cannot read back as an Ed25519 public key', async () => {
+  it('leaves alone what is not an Ed25519 public key', async () => {
     const ed = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']) as CryptoKeyPair;
     const ec = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']) as CryptoKeyPair;
-    const hidden = await crypto.subtle.importKey('jwk', okp(hex(SMALL_ORDER[1]!)), { name: 'Ed25519' }, false, ['verify']);
     expect(await isSmallOrderEd25519CryptoKey(ed.privateKey)).toBe(false);
     expect(await isSmallOrderEd25519CryptoKey(ec.publicKey)).toBe(false);
-    expect(await isSmallOrderEd25519CryptoKey(hidden)).toBe(false);
     expect(await isSmallOrderEd25519CryptoKey(new Uint8Array(32))).toBe(false);
+  });
+
+  it.each(SMALL_ORDER)('flags %s imported non-extractable, under either sign bit, by what it verifies', async (encoding) => {
+    const bytes = hex(encoding);
+    for (const flip of [0, 0x80]) {
+      const raw = Uint8Array.from(bytes, (byte, i) => (i === 31 ? byte | flip : byte));
+      const hidden = await crypto.subtle.importKey('raw', raw, { name: 'Ed25519' }, false, ['verify']);
+      expect(hidden.extractable).toBe(false);
+      expect(await isSmallOrderEd25519CryptoKey(hidden)).toBe(true);
+    }
+  });
+
+  it('passes an ordinary Ed25519 public key imported non-extractable', async () => {
+    for (let i = 0; i < 32; i++) {
+      const { publicKey } = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']) as CryptoKeyPair;
+      const raw = await crypto.subtle.exportKey('raw', publicKey);
+      const hidden = await crypto.subtle.importKey('raw', raw, { name: 'Ed25519' }, false, ['verify']);
+      expect(await isSmallOrderEd25519CryptoKey(hidden)).toBe(false);
+    }
+  });
+
+  it('passes a non-extractable key that may not verify, which no verifier can use', async () => {
+    const raw = hex(SMALL_ORDER[1]!);
+    const unusable = await crypto.subtle.importKey('raw', raw, { name: 'Ed25519' }, false, []);
+    expect(await isSmallOrderEd25519CryptoKey(unusable)).toBe(false);
+  });
+
+  it('asks WebCrypto once per key', async () => {
+    const hidden = await crypto.subtle.importKey('raw', hex(SMALL_ORDER[2]!), { name: 'Ed25519' }, false, ['verify']);
+    const verify = vi.spyOn(crypto.subtle, 'verify');
+    try {
+      expect(await isSmallOrderEd25519CryptoKey(hidden)).toBe(true);
+      expect(await isSmallOrderEd25519CryptoKey(hidden)).toBe(true);
+      expect(verify).toHaveBeenCalledTimes(1);
+    } finally {
+      verify.mockRestore();
+    }
+  });
+});
+
+describe('the small-order probe', () => {
+  const L = (1n << 252n) + 27742317777372353535851937790883648493n;
+  const ORDER = [4, 1, 8, 8, 2, 4, 1];
+  const littleEndian = (bytes: Uint8Array) => bytes.reduceRight((value, byte) => (value << 8n) | BigInt(byte), 0n);
+
+  it('is a message whose challenge is a multiple of the order of every small-order encoding, under either sign bit', async () => {
+    const message = new TextEncoder().encode(SMALL_ORDER_PROBE_MESSAGE);
+    const identity = SMALL_ORDER_PROBE_SIGNATURE.slice(0, 32);
+    expect(SMALL_ORDER_PROBE_SIGNATURE.slice(32).every((byte) => byte === 0)).toBe(true);
+    for (const [index, encoding] of SMALL_ORDER.entries()) {
+      for (const flip of [0, 0x80]) {
+        const key = Uint8Array.from(hex(encoding), (byte, i) => (i === 31 ? byte | flip : byte));
+        const digest = new Uint8Array(await crypto.subtle.digest('SHA-512', new Uint8Array([...identity, ...key, ...message])));
+        expect((littleEndian(digest) % L) % BigInt(ORDER[index]!)).toBe(0n);
+      }
+    }
   });
 });

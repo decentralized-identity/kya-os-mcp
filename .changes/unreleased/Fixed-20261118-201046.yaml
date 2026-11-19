@@ -1,0 +1,17 @@
+kind: Fixed
+body: |-
+    **A standard `eddsa-jcs-2022` verifier accepts the delegation hops and
+    status lists the library signs.** `signDelegationCredential` and
+    `signStatusListCredential` signed the document's `@context` in the proof
+    configuration but left it out of the proof, so a verifier that follows
+    W3C vc-di-eddsa §3.3.2 refused every proof they made as an invalid
+    signature. The proof now states it, as §3.3.1 step 2 has an issuer do,
+    with the same signature as before, which verifiers from 1.20.0 on
+    accept. `createDelegationProofVerifier` and
+    `createStatusListProofVerifier` put the document's `@context` in every
+    configuration, so they refused a standard proof that states none; they
+    now read a proof as §3.3.2 does and, until 2.0.0, also accept the shape
+    1.22.0 to 1.25.0 issued, with one more signature check when the
+    standard one fails. SPEC.md §6.10 and SPEC-ENTITY-CARD.md §10.5 require
+    both.
+time: 2026-11-18T20:10:46.000000-06:00

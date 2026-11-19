@@ -56,13 +56,26 @@ export function published(key: TestIdentity): TestIdentity & { kid: string; publ
   return { ...key, kid: key.method, publicKey: Buffer.from(key.publicJwk.x, 'base64url').toString('base64') };
 }
 
-/** eddsa-jcs-2022 over `document`, signed by `signer` (proof options overridable). */
+/**
+ * Where a proof puts the document's `@context`: in the proof, and so in the signed configuration,
+ * as W3C vc-di-eddsa §3.3.1 step 2 has an issuer put it (`standard`); nowhere, as an issuer that
+ * skips step 2 signs (`unstated`); or in the signed configuration but not in the proof, as 1.22.0
+ * to 1.25.0 issued it (`legacy`), which a verifier accepts during 1.x only.
+ */
+export type ProofContextForm = 'standard' | 'unstated' | 'legacy';
+
+/**
+ * eddsa-jcs-2022 over `document`, signed by `signer` (proof options overridable). A proof states
+ * the document's `@context` by default, as the library's issuers write it; this helper wrote the
+ * legacy form until that form was found to fail a standard verifier. `form` makes the other two.
+ */
 export function signEddsaJcs2022<T extends Record<string, unknown>>(
   document: T,
   signer: TestIdentity,
   options: Record<string, unknown> = {},
+  form: ProofContextForm = 'standard',
 ): T & { proof: Record<string, unknown> } {
-  const proof: Record<string, unknown> = {
+  const proofOptions: Record<string, unknown> = {
     type: 'DataIntegrityProof',
     cryptosuite: 'eddsa-jcs-2022',
     created: '2026-11-01T00:00:00Z',
@@ -70,7 +83,9 @@ export function signEddsaJcs2022<T extends Record<string, unknown>>(
     proofPurpose: 'assertionMethod',
     ...options,
   };
-  const config = { ...proof, '@context': document['@context'] };
+  const context = document['@context'] === undefined ? {} : { '@context': document['@context'] };
+  const proof = form === 'standard' ? { ...proofOptions, ...context } : proofOptions;
+  const config = form === 'legacy' ? { ...proofOptions, ...context } : proof;
   const hash = (value: unknown) => createHash('sha256').update(canonicalize(value)).digest();
   const signature = sign(null, Buffer.concat([hash(config), hash(document)]), signer.privateKey);
   return { ...document, proof: { ...proof, proofValue: `z${base58Encode(new Uint8Array(signature))}` } };

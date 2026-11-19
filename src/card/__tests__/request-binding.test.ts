@@ -45,7 +45,7 @@ const WARNED = ['request-proof-names-no-delegation', 'request-proof-states-none-
 let nonces = 0;
 const context = (more: Partial<BuildProofContext> = {}): BuildProofContext => ({ audience: RESOURCE, nonce: `n-${(nonces += 1)}`, ...more });
 const signerOf = (id: TestIdentity): Promise<ProofSigner> => ed25519SignerFromJwk({ did: id.did, kid: id.method, privateJwk: id.privateJwk });
-const statedIn = (proof: CardProofMeta): unknown => decodeProtectedHeader(proof.jws.replace('..', '.e30.'))[DELEGATION_HEADER_PARAMETER];
+const statedIn = (proof: CardProofMeta): unknown => decodeProtectedHeader(proof.jws)[DELEGATION_HEADER_PARAMETER];
 
 /** A second root issuer, and the chain it grants the same sub-agent for the same action, under ids of its own. */
 function otherChain(p: ChainParties, other: TestIdentity): DelegationChain {
@@ -123,7 +123,7 @@ describe('the delegation buildCardProof states', () => {
     const { signer } = await scene();
     const proof = (await buildCardProof(REQUEST, signer, context()))[KYA_OS_CARD_PROOF_META_KEY];
     expect(statedIn(proof)).toBe('none');
-    expect(decodeProtectedHeader(proof.jws.replace('..', '.e30.'))).toEqual({ alg: 'EdDSA', kid: signer.kid, [DELEGATION_HEADER_PARAMETER]: 'none' });
+    expect(decodeProtectedHeader(proof.jws)).toEqual({ alg: 'EdDSA', kid: signer.kid, [DELEGATION_HEADER_PARAMETER]: 'none' });
   });
 
   it('is the credential passed as `delegation`, whatever the request carries', async () => {
@@ -153,7 +153,7 @@ describe('the delegation buildCardProof states', () => {
     expect(statedIn(proof)).toBe(await digestOf(chosen[1]));
 
     const jws = await es256.sign(new Uint8Array([1]), { alg: 'none', kid: 'did:web:other.example#key-9', extra: 'kept' });
-    expect(decodeProtectedHeader(jws.replace('..', '.e30.'))).toEqual({ alg: 'ES256', kid: 'did:web:agent.example#key-1', extra: 'kept' });
+    expect(decodeProtectedHeader(jws)).toEqual({ alg: 'ES256', kid: 'did:web:agent.example#key-1', extra: 'kept' });
   });
 
   it('warns once when a signer of the caller\'s own writes no header parameter, and throws when the statement was asked for', async () => {

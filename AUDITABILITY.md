@@ -556,7 +556,9 @@ A successor genesis offered as evidence that dates nothing is reported as `AUDIT
 A genesis whose own key has ended dates nothing until evidence dates it in turn, as the terminal checkpoint of its own epoch, committed by the next genesis, does.
 
 Nothing dates an export, so a bundle whose exporter key has ended leaves cryptographic integrity `indeterminate` (`AUDIT_KEY_ENDED_UNDATED`); export it again under a live key.
-Observation receipts are taken at the observer's word as before.
+An observation receipt is not held to this rule, and stays `valid` once its observer's key has ended.
+Observations are what dates the other records, so undating every older one whenever an observer rotates its key would leave the bundles it dated undecided.
+The cost is that a receipt signed after its observer's key ended, by whoever still holds that key, reads as an honest one, though it dates nothing, as the list above says.
 
 Set an old recorder key's `validUntil` at or after the successor genesis's `recordedAt`, or end it by `validUntilCheckpoint` at the terminal checkpoint, so the genesis dates the records before the end.
 Outside a bundle, give the verifier the successor geneses in `AuditVerificationContext.successorGeneses`, the terminal checkpoint in `checkpoints`, and the epoch's entries from its first, so its root can be recomputed.

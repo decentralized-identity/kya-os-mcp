@@ -1,0 +1,11 @@
+kind: Fixed
+body: |-
+    **`verifyAuditBundle` reads a bundle in time that grows with it.** A
+    checkpoint over a tree larger than the entries its epoch carries read
+    every entry of the epoch, as did each selection and each supporting
+    anchor, so a bundle of 4,000 entries and 4,000 such checkpoints took
+    about 5 s to verify, and twice as many took four times as long. A
+    verifier now counts the inclusion proofs that verify for each
+    checkpoint and reads each epoch's entries and selections once. The
+    verdicts are unchanged.
+time: 2026-11-19T00:15:00.000000-06:00

@@ -353,10 +353,10 @@ export async function verifyMerkleProofComponents(
       }))) {
       reasons.add(AUDIT_REASON_CODES.MERKLE_PROOF_INVALID);
     } else {
-      const key = inclusionKey(item.checkpointDigest, item.entryDigest, item.sequence);
+      const counted = checkpointKey(item, item.checkpointDigest);
+      const key = `${counted}\0${inclusionKey(item.checkpointDigest, item.entryDigest, item.sequence)}`;
       if (!inclusions.has(key)) {
         inclusions.add(key);
-        const counted = checkpointKey(item, item.checkpointDigest);
         inclusionCounts.set(counted, (inclusionCounts.get(counted) ?? 0) + 1);
       }
     }

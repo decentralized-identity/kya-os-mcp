@@ -106,6 +106,8 @@ export function decodeEd25519PublicKey(publicKeyBase64: string): Uint8Array | nu
  * the string can be sidestepped. An extractable key is read back and its bytes
  * checked; a key imported non-extractable is checked by what it verifies
  * ({@link verifiesSmallOrderProbe}), so a resolver may import keys either way.
+ * A runtime that verifies nothing under a small-order key has such a key
+ * answer false here, and no signature verifies under it.
  * Anything that is not an Ed25519 public CryptoKey is false.
  */
 export async function isSmallOrderEd25519CryptoKey(key: object): Promise<boolean> {

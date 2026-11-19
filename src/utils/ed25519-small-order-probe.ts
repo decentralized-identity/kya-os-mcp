@@ -9,7 +9,10 @@
  * libsodium blocks (the seven `ed25519-public-key.ts` lists, under either sign bit), so every key
  * on a small-order point verifies the probe. Under any other key, which has a component of large
  * order, the probe verifies only if k is 0 mod L, a forgery nobody can arrange. So one WebCrypto
- * `verify` call tells the two apart for a key imported non-extractable, on any runtime.
+ * `verify` call tells the two apart for a key imported non-extractable, on any runtime that verifies
+ * under a small-order key. A runtime that verifies nothing under one, as the Secure Curves draft asks
+ * and Node 24.22.3 does, refuses the probe too: there such a key is not flagged, and needs not be,
+ * since no signature under it verifies, a forgery included.
  *
  * Internal: not re-exported from the package.
  */
@@ -29,8 +32,10 @@ const verdicts = new WeakMap<CryptoKey, Promise<boolean>>();
 
 /**
  * True if WebCrypto verifies the probe under `key`, an Ed25519 public key: the key is on a point
- * of small order. False for any other key, and for a key WebCrypto will not verify with, such as
- * one imported without the `verify` usage, which no verifier can use either. Asked once per key.
+ * of small order, and the runtime would verify a forgery under it. False for any other key, and for
+ * a key WebCrypto will not verify with, such as one imported without the `verify` usage, or one of
+ * small order on a runtime that verifies nothing under such a key, which no verifier can use either.
+ * Asked once per key.
  */
 export function verifiesSmallOrderProbe(key: CryptoKey): Promise<boolean> {
   let verdict = verdicts.get(key);

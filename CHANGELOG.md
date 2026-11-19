@@ -687,8 +687,10 @@ Versioning: https://semver.org/spec/v2.0.0.html
   fixed signature for any entry, checkpoint or manifest under it. Such a
   key is now checked by what it verifies, one WebCrypto `verify` of a
   fixed probe signature that every small-order key accepts and no other
-  key does, asked once per key. A resolver may now import keys either
-  way.
+  key does, asked once per key. A runtime that verifies nothing under a
+  small-order key, as Node 24.22.3 does, refuses the probe as it refuses
+  every other signature under such a key. A resolver may now import keys
+  either way.
 - **A recorder and a checkpoint builder whose signer yields no public key
   verify the journal when the signer names its did:key.** With no
   `signatures`, a signer over a non-extractable `CryptoKey`, or one backed

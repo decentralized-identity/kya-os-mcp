@@ -18,6 +18,12 @@ import { acceptEntrySize, acceptStatusPurpose } from '../utils/statuslist-accept
 import { assertStatusListValidity } from '../utils/statuslist-validity.js';
 import { clockSkewOption } from '../utils/validity-window.js';
 import { RefusalError } from '../utils/refusal.js';
+import {
+  entryOwnerRecorder,
+  readEntryOwner,
+  type StatusEntryAllocationOptions,
+  type StatusEntryOwners,
+} from './status-entry-owner.js';
 
 export interface StatusListStorageProvider {
   getStatusList(statusListId: string): Promise<StatusList2021Credential | null>;
@@ -39,7 +45,7 @@ export interface StatusListIdentityProvider {
   getKeyId(): string;
 }
 
-export class StatusList2021Manager {
+export class StatusList2021Manager implements StatusEntryOwners {
   private statusListBaseUrl: string;
   private defaultListSize: number;
   /** The clock tolerance each bound of a list's validity window is held with, in milliseconds. */
@@ -83,7 +89,19 @@ export class StatusList2021Manager {
     this.skewMs = clockSkewOption(options?.maxClockSkewMs);
   }
 
-  async allocateStatusEntry(purpose: 'revocation' | 'suspension'): Promise<CredentialStatus> {
+  /**
+   * Allocate the next entry of the `purpose` list for one delegation. Give each delegation an entry
+   * of its own, and register the delegation with it. Pass `options.delegationId`, the id the
+   * delegation is registered under, to record the entry as that delegation's: the delegation graph
+   * and `CascadingRevocationManager` then refuse to register, set or clear it for any other. It
+   * needs a storage provider that implements `StatusEntryOwnerStorageProvider`, and throws a
+   * `TypeError` before taking an index for one that does not.
+   */
+  async allocateStatusEntry(
+    purpose: 'revocation' | 'suspension',
+    options?: StatusEntryAllocationOptions
+  ): Promise<CredentialStatus> {
+    const recordOwner = entryOwnerRecorder(this.storage, options);
     const statusListId = `${this.statusListBaseUrl}/${purpose}/v1`;
 
     const index = await this.storage.allocateIndex(statusListId);
@@ -97,6 +115,8 @@ export class StatusList2021Manager {
       );
     }
 
+    await recordOwner(statusListId, index);
+
     const credentialStatus: CredentialStatus = {
       id: `${statusListId}#${index}`,
       type: 'StatusList2021Entry',
@@ -106,6 +126,14 @@ export class StatusList2021Manager {
     };
 
     return credentialStatus;
+  }
+
+  /**
+   * The id of the delegation `credentialStatus` was allocated to, as `allocateStatusEntry` recorded
+   * it, or `undefined` when it recorded none.
+   */
+  getStatusEntryOwner(credentialStatus: CredentialStatus): Promise<string | undefined> {
+    return readEntryOwner(this.storage, credentialStatus);
   }
 
   async updateStatus(credentialStatus: CredentialStatus, revoked: boolean): Promise<void> {

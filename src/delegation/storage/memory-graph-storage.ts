@@ -11,8 +11,11 @@ import type {
   AtomicDelegationGraphStorageProvider,
   DelegationGraphStorageProvider,
   DelegationNode,
+  StatusEntryIndexedGraphStorageProvider,
 } from '../delegation-graph.js';
 import { registrationConflict } from '../delegation-registration.js';
+import { statusEntryKey } from '../delegation-status-entry.js';
+import { registrationRefused } from '../status-entry-claim.js';
 
 /**
  * Memory-based Delegation Graph storage
@@ -25,7 +28,10 @@ import { registrationConflict } from '../delegation-registration.js';
  * - Examples
  */
 export class MemoryDelegationGraphStorage
-  implements DelegationGraphStorageProvider, AtomicDelegationGraphStorageProvider
+  implements
+    DelegationGraphStorageProvider,
+    AtomicDelegationGraphStorageProvider,
+    StatusEntryIndexedGraphStorageProvider
 {
   private nodes = new Map<string, DelegationNode>();
 
@@ -47,7 +53,9 @@ export class MemoryDelegationGraphStorage
    * Performs parent validation, child insert, and parent link in one
    * serialization point. An id that is already stored is left untouched: a
    * repeat of the same registration is a no-op, and a conflicting one throws
-   * rather than replace the node's revocation state and children.
+   * rather than replace the node's revocation state and children. A new node
+   * whose status list entry another stored node has is refused, with the
+   * `RefusalError` `DelegationGraphManager` throws for it.
    */
   async registerNodeAtomic(node: DelegationNode): Promise<void> {
     if (node.parentId === node.id) {
@@ -65,6 +73,10 @@ export class MemoryDelegationGraphStorage
     if (node.parentId !== null && parent === undefined) {
       throw new Error(`Parent delegation not found: ${node.parentId}`);
     }
+    const key = statusEntryKey(node);
+    if (key !== undefined && this.nodeIdsByStatusEntry(key).length > 0) {
+      throw registrationRefused(node.id, key, 'registration');
+    }
     const storedNode = { ...node, children: [...node.children] };
     if (parent !== null && parent !== undefined) {
       const storedParent = {
@@ -76,6 +88,19 @@ export class MemoryDelegationGraphStorage
       this.nodes.set(storedParent.id, storedParent);
     }
     this.nodes.set(storedNode.id, storedNode);
+  }
+
+  /**
+   * The ids of every stored node whose status list entry has key `entryKey`.
+   * Reads every node, as a store for tests and development may; a durable
+   * store indexes the key instead.
+   */
+  async getNodeIdsByStatusEntry(entryKey: string): Promise<string[]> {
+    return this.nodeIdsByStatusEntry(entryKey);
+  }
+
+  private nodeIdsByStatusEntry(entryKey: string): string[] {
+    return [...this.nodes.values()].filter((node) => statusEntryKey(node) === entryKey).map((node) => node.id);
   }
 
   /**

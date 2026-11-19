@@ -4,6 +4,38 @@ This file holds the detail behind the Upgrading entries in CHANGELOG.md: the ste
 Each release has one section, newest first, and declares every change of behaviour against the release before it.
 CHANGELOG.md says what changed and names the section here that says what to do about it.
 
+## From 1.25.0
+
+### A delegation's status entry is the one allocated for it
+
+On 1.25.0 `DelegationGraphManager.registerDelegation` stored whatever status list entry it was given, and `CascadingRevocationManager` set that entry's bit on a revoke and cleared it on a restore, whichever delegation the entry was allocated to.
+A delegation credential carries its entry, and whoever signs the credential writes it.
+An operator that registered each re-delegation an agent submits with the entry the agent wrote let the agent name another delegation's entry, its root's included.
+Revoking the re-delegation, or the agent above it, then revoked that other delegation on the published status list, and restoring the re-delegation made a credential the operator had revoked read as live there.
+
+The graph and the cascade now read whose an entry is, and never change one that is another delegation's.
+An entry belongs to the delegation `allocateStatusEntry(purpose, { delegationId })` allocated it to.
+An entry allocated with no `delegationId` belongs to each delegation the graph has registered with it, which the graph can look up when its storage provider implements `getNodeIdsByStatusEntry`, as `MemoryDelegationGraphStorage` does.
+
+- `registerDelegation` stores nothing, and throws a `RefusalError` of code `delegation_malformed`, for an entry another delegation is registered with, or allocated to another delegation when the graph was built with `{ statusEntryOwners: statusList }`.
+  It throws the same refusal for an index no status list can hold, which on 1.25.0 was registered and refused only when the delegation was revoked.
+- `revokeDelegation` still marks the whole subtree revoked in the graph, and sets each bit that belongs only to delegations in the subtree.
+  It leaves unchanged a bit that also belongs to a delegation outside the subtree, and once the subtree is revoked it throws a `delegation_malformed` refusal that names each such delegation and its entry.
+  `isRevoked` reads each of them as revoked, from the graph; a verifier that reads only the status list does not.
+- `restoreDelegation` changes nothing, and throws a `delegation_malformed` refusal, when the delegation's entry also belongs to another delegation, so the delegation stays revoked.
+
+| If you | Do this | Effect |
+| --- | --- | --- |
+| Allocate one entry for each delegation and register each delegation with its own | Nothing. To have the records say so, allocate with `allocateStatusEntry(purpose, { delegationId: id })` and build the graph with `new DelegationGraphManager(storage, { statusEntryOwners: statusList })`. | Revocation and restore are unchanged. With the owners recorded, an entry allocated to one delegation is never registered, set or cleared for another. |
+| Register a re-delegation an agent submits with the entry its credential carries | Allocate the re-delegation's entry with `allocateStatusEntry(purpose, { delegationId })` before the agent signs it, have the agent carry that entry, and refuse one that carries any other. | A re-delegation that names another delegation's entry is refused when it is registered, and can never revoke or restore that delegation. |
+| Implement `DelegationGraphStorageProvider` yourself | Implement `getNodeIdsByStatusEntry(entryKey)`, indexing each node by `statusEntryKey(node)` as you store it; an `AtomicDelegationGraphStorageProvider` should also refuse a new node whose key another node has. | The graph refuses an entry another delegation is registered with, even one allocated with no `delegationId`. Without it, and without recorded owners, nothing can tell whose an entry is, and the warning below is logged. |
+| Implement `StatusListStorageProvider` yourself and allocate with `delegationId` | Implement `setEntryOwner` and `getEntryOwner`, the optional `StatusEntryOwnerStorageProvider` contract. | `allocateStatusEntry` records each entry's owner. With a provider that cannot, it throws a `TypeError` before taking an index. |
+| Hold delegations registered on 1.25.0 that share an entry | Find them with `graph.getDelegationIdsByStatusEntry(entry)`, remove the one the entry was not allocated for with `removeDelegation`, and issue it again with an entry of its own. | Until then a revoke leaves that entry unchanged, unless every delegation that shares it is in the subtree it revokes, and a restore of any of them is refused. |
+
+When neither the status list nor the graph can say whose an entry is, the entry is taken for the delegation that carries it, as on 1.25.0.
+The first such registration, revocation or restore in a process warns once through `logger.warn`, in fixed words: `[kya-os] A status list entry was registered, set or cleared with no record of whose it is: ...`.
+The warning is shared across package copies in the process.
+
 ## From 1.24.0
 
 ### The delegation gate shows the failure your DID resolver reports

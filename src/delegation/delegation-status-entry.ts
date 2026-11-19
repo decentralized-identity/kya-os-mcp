@@ -1,8 +1,10 @@
 /**
  * The status list entry behind a delegation graph node — one reading shared by
- * cascading revocation, which flips and reads it.
+ * cascading revocation, which flips and reads it, and by the graph, which
+ * refuses an entry another delegation holds.
  *
- * Internal: not re-exported from the delegation barrel.
+ * Internal: only {@link statusEntryKey}, which a storage provider indexes nodes
+ * by, is re-exported, through `delegation-graph.ts`.
  */
 
 import type { CredentialStatus } from '../types/protocol.js';
@@ -45,8 +47,42 @@ export function parseCredentialStatusId(credentialStatusId: string): CredentialS
  */
 export function nodeStatusEntry(node: DelegationNode): CredentialStatus | undefined {
   if (node.credentialStatus) {
-    const index = parseStatusListIndex(node.credentialStatus.statusListIndex, { acceptNumber: true });
-    return { ...node.credentialStatus, statusListIndex: String(index) };
+    return canonicalStatusEntry(node.credentialStatus);
   }
   return node.credentialStatusId ? parseCredentialStatusId(node.credentialStatusId) : undefined;
+}
+
+/**
+ * `entry` with its index read as the operator's own record is read (see
+ * {@link nodeStatusEntry}) and written in canonical decimal, so two ways of
+ * writing one index name one entry. An index that is neither throws.
+ */
+export function canonicalStatusEntry(entry: CredentialStatus): CredentialStatus {
+  const index = parseStatusListIndex(entry.statusListIndex, { acceptNumber: true });
+  return { ...entry, statusListIndex: String(index) };
+}
+
+/**
+ * The key of a canonical entry ({@link canonicalStatusEntry}):
+ * `<statusListCredential>#<index>`, the bit it sets. Its purpose, type and `id`
+ * are left out, since they do not change which bit that is.
+ */
+export function entryKey(entry: CredentialStatus): string {
+  return `${entry.statusListCredential}#${entry.statusListIndex}`;
+}
+
+/**
+ * The key of the status list entry that revoking `node` sets:
+ * `<statusListCredential>#<index>`, with the index in canonical decimal, as
+ * `StatusList2021Manager` writes an entry's `id`. Two nodes have the same key
+ * exactly when revoking either sets the same bit, however each writes the
+ * entry. `undefined` for a node that has no entry to set. Throws, as revoking
+ * the node would, for an index that no list can hold.
+ *
+ * A storage provider that implements `getNodeIdsByStatusEntry` indexes its
+ * nodes by this key.
+ */
+export function statusEntryKey(node: DelegationNode): string | undefined {
+  const entry = nodeStatusEntry(node);
+  return entry === undefined ? undefined : entryKey(entry);
 }

@@ -9,6 +9,11 @@
 
 import type { CredentialStatus } from '../types/protocol.js';
 import { registrationConflict } from './delegation-registration.js';
+import { canonicalStatusEntry, entryKey, nodeStatusEntry } from './delegation-status-entry.js';
+import { assertRegistrable, type StatusEntryRecords } from './status-entry-claim.js';
+import { readsStatusEntryOwners, type StatusEntryOwners } from './status-entry-owner.js';
+
+export { statusEntryKey } from './delegation-status-entry.js';
 
 export interface DelegationNode {
   id: string;
@@ -19,10 +24,19 @@ export interface DelegationNode {
   /**
    * Reference to the node's status list entry. Revocation flips a status bit
    * only when it has the form `<statusListCredential>#<index>`; prefer
-   * {@link credentialStatus}, which needs no parsing.
+   * {@link credentialStatus}, which needs no parsing. The same rule holds as
+   * for `credentialStatus`: it must name the entry the operator allocated for
+   * this delegation.
    */
   credentialStatusId?: string;
-  /** The node's status list entry, as carried in the credential. */
+  /**
+   * The node's status list entry, which revoking the delegation sets and
+   * restoring it clears. It must be an entry the operator allocated for this
+   * delegation (`StatusList2021Manager.allocateStatusEntry`), and no other
+   * delegation's. A credential states such an entry, but carrying one does
+   * not make it the delegation's: whoever signs a re-delegation writes the
+   * entry it carries, and can write another delegation's.
+   */
   credentialStatus?: CredentialStatus;
   /**
    * Set when the delegation is revoked in the graph (SPEC.md §6.5 step 1).
@@ -49,8 +63,38 @@ export interface AtomicDelegationGraphStorageProvider extends DelegationGraphSto
    * and any other SHOULD be rejected: overwriting would drop the stored node's
    * revocation state and children. `DelegationGraphManager` checks first, but
    * only the provider can close the race between that check and the write.
+   * A provider that also implements {@link StatusEntryIndexedGraphStorageProvider}
+   * SHOULD likewise reject a new node whose {@link statusEntryKey} another
+   * stored node has, for the same reason.
    */
   registerNodeAtomic(node: DelegationNode): Promise<void>;
+}
+
+/**
+ * Optional, stronger contract for providers that can find the nodes
+ * registered with a status list entry. With it, `registerDelegation` refuses an
+ * entry another delegation is registered with, and `CascadingRevocationManager`
+ * refuses to set or clear one that belongs to a delegation outside what it
+ * revokes or restores, even for entries allocated with no `delegationId`.
+ */
+export interface StatusEntryIndexedGraphStorageProvider extends DelegationGraphStorageProvider {
+  /**
+   * The ids of every stored node whose {@link statusEntryKey} is `entryKey`,
+   * in any order, or none. Index each node by `statusEntryKey(node)` as it is
+   * stored, as `MemoryDelegationGraphStorage` does.
+   */
+  getNodeIdsByStatusEntry(entryKey: string): Promise<string[]>;
+}
+
+/** Options of {@link DelegationGraphManager}. */
+export interface DelegationGraphOptions {
+  /**
+   * The record of the delegation each status list entry was allocated to:
+   * the `StatusList2021Manager` that allocates them. With it,
+   * `registerDelegation` refuses an entry allocated to another delegation,
+   * even before that delegation is registered.
+   */
+  statusEntryOwners?: StatusEntryOwners;
 }
 
 function supportsAtomicRegistration(
@@ -60,9 +104,64 @@ function supportsAtomicRegistration(
     typeof storage.registerNodeAtomic === 'function';
 }
 
-export class DelegationGraphManager {
-  constructor(private storage: DelegationGraphStorageProvider) {}
+function supportsStatusEntryLookup(
+  storage: DelegationGraphStorageProvider,
+): storage is StatusEntryIndexedGraphStorageProvider {
+  return 'getNodeIdsByStatusEntry' in storage &&
+    typeof storage.getNodeIdsByStatusEntry === 'function';
+}
 
+export class DelegationGraphManager {
+  private readonly entryRecords: StatusEntryRecords;
+
+  /**
+   * @param options.statusEntryOwners - The `StatusList2021Manager` that
+   *   allocates the graph's entries, so registration can refuse an entry
+   *   allocated to another delegation. A value without `getStatusEntryOwner`
+   *   throws a `TypeError`.
+   */
+  constructor(
+    private storage: DelegationGraphStorageProvider,
+    options: DelegationGraphOptions = {},
+  ) {
+    const owners = options.statusEntryOwners;
+    if (owners !== undefined && !readsStatusEntryOwners(owners)) {
+      throw new TypeError(
+        'DelegationGraphManager was given statusEntryOwners without a getStatusEntryOwner method: pass the ' +
+          'StatusList2021Manager that allocates the entries',
+      );
+    }
+    this.entryRecords = { owners, graph: this };
+  }
+
+  /**
+   * Register a delegation in the graph: a root when `parentId` is `null`, else
+   * a child linked under its registered parent. Registering an id again is a
+   * no-op that returns the stored node when every registered field matches,
+   * and throws when any differs.
+   *
+   * `credentialStatus`, or a `credentialStatusId` of the form
+   * `<statusListCredential>#<index>`, is the status list entry that revoking
+   * the delegation sets and restoring it clears. It must be an entry the
+   * operator allocated for this delegation with
+   * `StatusList2021Manager.allocateStatusEntry`. Never pass the entry a
+   * submitted credential carries unless it is that entry: whoever signs a
+   * re-delegation writes it, and can write another delegation's. Registration
+   * stores nothing, and throws a `RefusalError` of code
+   * `delegation_malformed`, for an entry:
+   *
+   * - allocated to another delegation, when it was allocated with a
+   *   `delegationId` and the graph was built with `statusEntryOwners`;
+   * - another delegation is registered with, when it records no owner and the
+   *   storage provider implements `getNodeIdsByStatusEntry`, as
+   *   `MemoryDelegationGraphStorage` does;
+   * - whose index no status list can hold.
+   *
+   * With neither record nothing can tell whose the entry is: it is registered
+   * as given, and a warning is logged once per process.
+   * `CascadingRevocationManager` applies the same records when it revokes and
+   * restores.
+   */
   async registerDelegation(params: {
     id: string;
     parentId: string | null;
@@ -107,6 +206,11 @@ export class DelegationGraphManager {
       );
     }
 
+    const credentialStatus = nodeStatusEntry(node);
+    if (credentialStatus !== undefined) {
+      await assertRegistrable(node.id, credentialStatus, this.entryRecords);
+    }
+
     if (supportsAtomicRegistration(this.storage)) {
       await this.storage.registerNodeAtomic(node);
     } else {
@@ -146,6 +250,19 @@ export class DelegationGraphManager {
 
   async getNode(delegationId: string): Promise<DelegationNode | null> {
     return this.storage.getNode(delegationId);
+  }
+
+  /**
+   * The ids of the delegations registered with status list entry `entry`,
+   * however each writes it, or `undefined` when the storage provider cannot
+   * look them up: it does not implement `getNodeIdsByStatusEntry`. An index no
+   * status list can hold throws.
+   */
+  async getDelegationIdsByStatusEntry(entry: CredentialStatus): Promise<string[] | undefined> {
+    if (!supportsStatusEntryLookup(this.storage)) {
+      return undefined;
+    }
+    return this.storage.getNodeIdsByStatusEntry(entryKey(canonicalStatusEntry(entry)));
   }
 
   /**
@@ -233,7 +350,8 @@ export class DelegationGraphManager {
 }
 
 export function createDelegationGraph(
-  storage: DelegationGraphStorageProvider
+  storage: DelegationGraphStorageProvider,
+  options?: DelegationGraphOptions,
 ): DelegationGraphManager {
-  return new DelegationGraphManager(storage);
+  return new DelegationGraphManager(storage, options);
 }

@@ -26,7 +26,9 @@ export const REFUSAL_CODES = Object.freeze({
    * encoded. Also a status entry no
    * checker of the verifier reads: one that states another `statusPurpose` than the checker's, a
    * `statusSize` other than 1, an index that is not a non-negative decimal string, or an index past
-   * the end of its status list.
+   * the end of its status list. To `DelegationGraphManager` and `CascadingRevocationManager`, also
+   * a status entry that is another delegation's: one allocated to another delegation, or one
+   * another delegation is registered with.
    */
   delegation_malformed: 'delegation_malformed',
   /** The credential, a VC-JWT's `exp`, or a credential of the chain is past its expiry, or its delegation's `status` is `expired`. */

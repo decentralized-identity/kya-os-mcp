@@ -27,6 +27,11 @@ export {
 } from '../utils/statuslist-acceptance.js';
 export { acceptStatusListValidity } from '../utils/statuslist-validity.js';
 export * from './statuslist-manager.js';
+export type {
+  StatusEntryAllocationOptions,
+  StatusEntryOwners,
+  StatusEntryOwnerStorageProvider,
+} from './status-entry-owner.js';
 export * from './delegation-graph.js';
 export * from './cascading-revocation.js';
 export * from './utils.js';

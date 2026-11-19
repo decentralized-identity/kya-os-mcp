@@ -7,15 +7,20 @@
 
 import type { StatusList2021Credential } from '../../types/protocol.js';
 import type { HistoricalStatusListStorageProvider } from '../statuslist-manager.js';
+import type { StatusEntryOwnerStorageProvider } from '../status-entry-owner.js';
 
 function clone(credential: StatusList2021Credential): StatusList2021Credential {
   return structuredClone(credential);
 }
 
-export class MemoryStatusListStorage implements HistoricalStatusListStorageProvider {
+export class MemoryStatusListStorage
+  implements HistoricalStatusListStorageProvider, StatusEntryOwnerStorageProvider
+{
   private statusLists = new Map<string, StatusList2021Credential>();
   private versions = new Map<string, StatusList2021Credential[]>();
   private indexCounters = new Map<string, number>();
+  /** The delegation each entry was allocated to, by `<statusListId>#<index>`. */
+  private entryOwners = new Map<string, string>();
 
   async getStatusList(statusListId: string): Promise<StatusList2021Credential | null> {
     const value = this.statusLists.get(statusListId);
@@ -35,6 +40,14 @@ export class MemoryStatusListStorage implements HistoricalStatusListStorageProvi
     const allocated = current;
     this.indexCounters.set(statusListId, current + 1);
     return allocated;
+  }
+
+  async setEntryOwner(statusListId: string, index: number, delegationId: string): Promise<void> {
+    this.entryOwners.set(`${statusListId}#${index}`, delegationId);
+  }
+
+  async getEntryOwner(statusListId: string, index: number): Promise<string | null> {
+    return this.entryOwners.get(`${statusListId}#${index}`) ?? null;
   }
 
   getIndexCount(statusListId: string): number {
@@ -58,6 +71,7 @@ export class MemoryStatusListStorage implements HistoricalStatusListStorageProvi
     this.statusLists.clear();
     this.versions.clear();
     this.indexCounters.clear();
+    this.entryOwners.clear();
   }
 
   getAllStatusListIds(): string[] {

@@ -1,8 +1,7 @@
 kind: Spec
 body: |-
     **SPEC.md §6.6 is written in the terms of W3C Bitstring Status List
-    v1.0, and conformance suite 1.13.0 gains three `ttl` vectors, 208 in
-    all.** The section, now "Status List Revocation", leads with a
+    v1.0.** The section, now "Status List Revocation", leads with a
     `BitstringStatusListCredential` and its `BitstringStatusListEntry`. A
     publisher SHOULD publish that format and MUST write it as the W3C
     specification requires, MAY publish a `StatusList2021Credential`

@@ -53,6 +53,10 @@ const NOT_CODED: Record<string, { literals: number; why: string }> = {
     literals: 3,
     why: 'the delegation graph checks the records it stores, not a credential presented to a verifier',
   },
+  'src/delegation/delegation-removal.ts': {
+    literals: 1,
+    why: 'the revoked record a removed delegation leaves in the graph, a node it stores, not a refusal',
+  },
   'src/proof/verifier.ts': { literals: 10, why: 'a request proof refusal carries an errorCode from the proof error codes' },
   'src/card/proof/verify.ts': { literals: 1, why: "a card request proof's reasons are its codes" },
   'src/card/verify-claims.ts': { literals: 2, why: "a card request proof's reasons are its codes" },

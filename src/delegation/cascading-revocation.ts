@@ -287,12 +287,16 @@ export class CascadingRevocationManager {
    * subtree stays revoked. An entry another delegation holds, by allocation or by registration, is
    * never cleared, since that would restore the other delegation: this throws a
    * `StatusEntryUnchangedError` before anything changes, and the delegation stays revoked, as it
-   * does for an entry that cannot be read or that the status list manager could not clear.
+   * does for an entry that cannot be read or that the status list manager could not clear. A
+   * delegation removed while revoked (`DelegationNode.removed`) throws, and stays revoked.
    */
   async restoreDelegation(delegationId: string): Promise<RevocationEvent> {
     const node = await this.graph.getNode(delegationId);
     if (!node) {
       throw new Error(`Delegation not found: ${delegationId}`);
+    }
+    if (node.removed === true) {
+      throw new Error(`Delegation ${delegationId} was removed while revoked, and its id stays revoked: it is not restored`);
     }
 
     const event: RevocationEvent = {

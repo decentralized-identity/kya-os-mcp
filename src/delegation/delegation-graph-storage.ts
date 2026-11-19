@@ -36,6 +36,13 @@ export interface DelegationNode {
    * for a delegation that has no status list entry.
    */
   revoked?: boolean;
+  /**
+   * Set on the record a removed delegation leaves when it read as revoked and had no status list
+   * entry, so the graph held the only record of its revocation (`removeDelegation`): a revoked
+   * root, unlinked from its parent, that keeps the id reading as revoked. It is never restored,
+   * registered again, nor given children.
+   */
+  removed?: boolean;
 }
 
 /**

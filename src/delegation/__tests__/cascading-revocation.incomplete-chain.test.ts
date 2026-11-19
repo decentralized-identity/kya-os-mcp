@@ -4,9 +4,9 @@
  * read from a root to the delegation asked about, as one that stops at a node a replica has not
  * received or a store lost, says nothing of an ancestor above the gap. So `isRevoked` refuses to
  * answer for it, `validateChain` and `validateDelegation` refuse it, and `removeDelegation` makes
- * no such gap, nor erases a revocation the graph alone records. A delegation the graph never held
- * still reads as not revoked: the chain walk asks about every credential, a leaf never registered
- * among them.
+ * no such gap, nor erases a revocation the graph alone records: it keeps a revoked record of that
+ * id. A delegation the graph never held still reads as not revoked: the chain walk asks about every
+ * credential, a leaf never registered among them.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { realStatusListManager } from '../../__tests__/utils/status-list-manager.js';
@@ -103,20 +103,67 @@ describe('DelegationGraphManager.removeDelegation: no gap, and no revocation era
     expect((await graph.getNode('root'))?.children).toEqual([]);
   });
 
-  it('refuses a revoked delegation with no status list entry, whose revocation the graph alone records', async () => {
+  it('keeps a revoked record of a removed revoked delegation with no status list entry, without restoring it first', async () => {
     const { graph, revocation } = await graphOfThree();
     await revocation.revokeDelegation('leaf');
-    const error = await thrown(graph.removeDelegation('leaf'));
-    expect(error.message).toBe(
-      'Delegation leaf is not removed: it is revoked, and has no status list entry, so the graph holds the ' +
-        'only record of its revocation, and a delegation the graph does not hold reads as not revoked. ' +
-        'Restore it first to remove it',
-    );
-    expect(await revocation.isRevoked('leaf')).toMatchObject({ revoked: true });
+    await graph.removeDelegation('leaf');
 
-    await revocation.restoreDelegation('leaf');
+    expect(await graph.getNode('leaf')).toEqual({
+      id: 'leaf',
+      parentId: null,
+      children: [],
+      issuerDid: 'did:web:b.example',
+      subjectDid: 'did:web:c.example',
+      revoked: true,
+      removed: true,
+    });
+    expect((await graph.getNode('middle'))?.children).toEqual([]);
+    expect(await revocation.isRevoked('leaf')).toEqual({ revoked: true, reason: 'Directly revoked', revokedAncestor: undefined });
+    expect(await revocation.validateDelegation('leaf')).toEqual({ valid: false, reason: 'Delegation is revoked' });
+    // Removing it again changes nothing, and the parent it was under can be removed now.
+    await graph.removeDelegation('leaf');
+    expect(await graph.getNode('leaf')).toMatchObject({ removed: true, revoked: true });
+    await graph.removeDelegation('middle');
+    expect(await revocation.isRevoked('leaf')).toMatchObject({ revoked: true });
+  });
+
+  it('keeps that record for one under a revoked ancestor, or whose chain does not read to a root', async () => {
+    const { graph, revocation } = await graphOfThree();
+    await revocation.revokeDelegation('middle');
+    await graph.registerDelegation({ id: 'late', parentId: 'middle', issuerDid: 'did:web:b.example', subjectDid: 'did:web:d.example' });
+    expect((await graph.getNode('late'))?.revoked).toBeUndefined();
+    await graph.removeDelegation('late');
+    expect(await revocation.isRevoked('late')).toMatchObject({ revoked: true });
+
+    const gap = await graphOfThree();
+    await gap.storage.deleteNode('middle');
+    await gap.graph.removeDelegation('leaf');
+    expect(await gap.graph.getNode('leaf')).toMatchObject({ removed: true, revoked: true });
+  });
+
+  it('removes a delegation that stands, and one with no status list entry that never was revoked, whole', async () => {
+    const { graph } = await graphOfThree();
     await graph.removeDelegation('leaf');
     expect(await graph.getNode('leaf')).toBeNull();
+  });
+
+  it('refuses to register the removed id again, to register under it, and to restore it', async () => {
+    const { graph, revocation } = await graphOfThree();
+    await revocation.revokeDelegation('leaf');
+    await graph.removeDelegation('leaf');
+
+    const again = { id: 'leaf', parentId: 'middle', issuerDid: 'did:web:b.example', subjectDid: 'did:web:c.example' };
+    expect((await thrown(graph.registerDelegation(again))).message).toBe(
+      'Delegation leaf was removed while revoked, and its id stays revoked: register the delegation under another id',
+    );
+    const under = { id: 'under', parentId: 'leaf', issuerDid: 'did:web:c.example', subjectDid: 'did:web:d.example' };
+    expect((await thrown(graph.registerDelegation(under))).message).toBe(
+      'Parent delegation leaf was removed while revoked: register the delegation under one that stands',
+    );
+    expect((await thrown(revocation.restoreDelegation('leaf'))).message).toBe(
+      'Delegation leaf was removed while revoked, and its id stays revoked: it is not restored',
+    );
+    expect(await revocation.isRevoked('leaf')).toMatchObject({ revoked: true });
   });
 
   it('removes a revoked delegation whose status list entry records its revocation, as before', async () => {

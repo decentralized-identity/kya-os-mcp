@@ -176,6 +176,11 @@ export class DelegationGraphManager {
       if (!parent) {
         throw new Error(`Parent delegation not found: ${params.parentId}`);
       }
+      if (parent.removed === true) {
+        throw new Error(
+          `Parent delegation ${params.parentId} was removed while revoked: register the delegation under one that stands`,
+        );
+      }
     }
 
     // Registering an id again is a no-op when nothing registered changes, so
@@ -183,6 +188,11 @@ export class DelegationGraphManager {
     // revocation state and children or relinking it under its own descendant,
     // so it is refused.
     const existing = await this.storage.getNode(params.id);
+    if (existing?.removed === true) {
+      throw new Error(
+        `Delegation ${params.id} was removed while revoked, and its id stays revoked: register the delegation under another id`,
+      );
+    }
     if (existing) {
       const conflict = registrationConflict(existing, node);
       if (conflict === undefined) {
@@ -362,10 +372,16 @@ export class DelegationGraphManager {
    *
    * Throws, removing nothing, for a delegation with delegations registered
    * under it, which would be left under a parent the graph does not hold, so
-   * that none could be read to a root: remove them first. Throws too for a
-   * delegation revoked in the graph that has no status list entry, since the
-   * graph holds the only record of its revocation and a delegation it does
-   * not hold reads as not revoked: restore it first to remove it.
+   * that none could be read to a root: remove them first.
+   *
+   * A delegation that has no status list entry, and that reads as revoked in
+   * the graph, through its own mark, an ancestor's, or a chain that does not
+   * read to a root, leaves a revoked record of its id (`DelegationNode.removed`)
+   * in place of its node, since the graph holds the only record of its
+   * revocation and a delegation it does not hold reads as not revoked. The id
+   * so stays revoked: it is never restored, registered again, nor given
+   * children. A delegation with an entry is removed whole: its entry records
+   * its revocation, and a verifier reads it from the credential.
    */
   async removeDelegation(delegationId: string): Promise<void> {
     await removeDelegationNode(

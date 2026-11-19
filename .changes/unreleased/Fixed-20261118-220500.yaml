@@ -13,7 +13,8 @@ body: |-
     breaks. A delegation the graph does not hold at all still reads as not
     revoked. `removeDelegation` now throws, removing nothing, for a
     delegation others are registered under, which it left under a parent the
-    graph did not hold, and for a revoked delegation with no status list
-    entry, whose revocation it erased: remove the ones under it first, or
-    restore it first.
+    graph did not hold. A removed delegation with no status list entry that
+    reads as revoked, whose revocation removal erased, now leaves a revoked
+    record of its id (`DelegationNode.removed`), which is never restored,
+    registered again, nor given children.
 time: 2026-11-18T22:05:00.000000-06:00

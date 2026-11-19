@@ -818,7 +818,7 @@ When a delegation is revoked:
 A server that reads revocation from its delegation graph reads a delegation's chain from a root down to it.
 When the graph holds a delegation but not that whole chain, as a replica that has not received a node, or a store that lost one, does not, the server cannot say whether an ancestor above the gap is revoked: it refuses the delegation as `status_unavailable` and never reads it as standing.
 A delegation the graph does not hold at all is read as not revoked there, since the server asks the graph about every credential of a chain, its ancestors among them.
-So the graph keeps every delegation that others are registered under, and every revoked delegation that has no status list entry, whose node is the only record of its revocation.
+So the graph removes a delegation only once none is registered under it, and a removed delegation that has no status list entry, and that reads as revoked, leaves a record that its id is revoked, since that is the only record of its revocation.
 
 #### 6.5.1 Revocation Rights
 

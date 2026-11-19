@@ -439,7 +439,7 @@ export async function verifyAuditBundle(
     scopeEvidenceCompleteness: selectionCompleteness(
       core?.selections ?? [],
       entries,
-      replayBundle.components.filter((component) => component.disposition !== 'included'),
+      replayBundle.components,
     ),
     currentAuthorization: currentKeys === undefined
       ? artifactReport.currentAuthorization

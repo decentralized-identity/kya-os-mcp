@@ -12,6 +12,7 @@ import { auditAnchorReceiptSchema, signedAuditEntrySchema } from './schemas.js';
 import type {
   AuditAnchorReceipt,
   AuditBundleComponentV1,
+  AuditBundleDisposition,
   AuditBundleSelectionV1,
   AuditObservationReceiptV1,
   AuditVerificationDimension,
@@ -30,6 +31,14 @@ type AuditReportDimensionName = {
   [Name in keyof AuditVerificationReportV1]-?:
     AuditVerificationReportV1[Name] extends AuditVerificationDimension ? Name : never;
 }[keyof AuditVerificationReportV1];
+
+/** The reason each disposition of an omitted component gives: none is left unreported. */
+const OMISSION_REASONS: Readonly<Record<Exclude<AuditBundleDisposition, 'included'>, string>> = {
+  redacted: AUDIT_REASON_CODES.EXPLICITLY_REDACTED,
+  disposed: AUDIT_REASON_CODES.EXPLICITLY_DISPOSED,
+  unavailable: AUDIT_REASON_CODES.EXPLICITLY_UNAVAILABLE,
+  policy_excluded: AUDIT_REASON_CODES.EXPLICITLY_POLICY_EXCLUDED,
+};
 
 export type SupportingAnchorVerifier = (
   checkpoint: SignedAuditCheckpointV1,
@@ -135,7 +144,7 @@ export async function verifySupportingAnchors(
 export function selectionCompleteness(
   selections: readonly AuditBundleSelectionV1[],
   entries: readonly SignedAuditEntryV1[],
-  explicitOmissions: readonly AuditBundleComponentV1[],
+  components: readonly AuditBundleComponentV1[],
 ): AuditVerificationDimension {
   const reasons = new Set<string>();
   for (const selection of selections) {
@@ -176,10 +185,8 @@ export function selectionCompleteness(
       reasons.add(AUDIT_REASON_CODES.BUNDLE_SELECTION_INCOMPLETE);
     }
   }
-  for (const component of explicitOmissions) {
-    if (component.disposition === 'redacted') reasons.add(AUDIT_REASON_CODES.EXPLICITLY_REDACTED);
-    if (component.disposition === 'disposed') reasons.add(AUDIT_REASON_CODES.EXPLICITLY_DISPOSED);
-    if (component.disposition === 'unavailable') reasons.add(AUDIT_REASON_CODES.EXPLICITLY_UNAVAILABLE);
+  for (const { disposition } of components) {
+    if (disposition !== 'included') reasons.add(OMISSION_REASONS[disposition]);
   }
   if (reasons.has(AUDIT_REASON_CODES.BUNDLE_SELECTION_INCOMPLETE)) return dimension('invalid', reasons);
   return reasons.size === 0 ? dimension('valid') : dimension('indeterminate', reasons);

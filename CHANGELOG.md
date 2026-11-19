@@ -5,6 +5,158 @@ All notable changes to @kya-os/mcp will be documented here.
 Format: https://keepachangelog.com/en/1.0.0/
 Versioning: https://semver.org/spec/v2.0.0.html
 
+## [1.26.0] - 2026-11-18
+
+### Upgrading
+
+- **Check how you register delegations with status list entries, and
+  catch `StatusEntryUnchangedError` from revocation.** `registerDelegation`
+  refuses, as `delegation_malformed`, an entry another registered
+  delegation holds, so a subtree can no longer share one entry, and with
+  `statusEntryOwners` any entry not allocated to the delegation.
+  `revokeDelegation` and `restoreDelegation` throw a
+  `StatusEntryUnchangedError`, not the status list manager's error, for an
+  entry left unchanged, `StatusListWriteConflictError` among them, and a
+  revocation now marks the whole subtree first.
+  A graph built without `statusEntryOwners` logs a warning once.
+  UPGRADING.md, "A delegation's status entry is the one allocated for it",
+  has the steps.
+
+### Added
+
+- **A delegation graph can read whose each status list entry is.**
+  `allocateStatusEntry(purpose, { delegationId })` records the entry's
+  owner, and `getStatusEntryOwner` and `retireStatusEntry` read and retire
+  it, through the optional `StatusEntryOwnerStorageProvider` contract that
+  `MemoryStatusListStorage` implements. `DelegationGraphManager` takes the
+  manager as `statusEntryOwners`, registers a delegation only with an
+  entry allocated to it, retires the entry when it removes the delegation,
+  and answers `getStatusEntryClaim`. A graph storage provider can
+  implement `getNodeIdsByStatusEntry`, keyed by `statusEntryKey`.
+  `StatusEntryUnchangedError` reports each entry a revocation or restore
+  left unchanged, with its `events`, and `RevocationEvent` gains
+  `statusEntrySharedWith`. UPGRADING.md, "A delegation's status entry is
+  the one allocated for it", has the detail.
+- **Status-list stores can take a conditional write.** The new
+  `ConditionalStatusListStorageProvider` adds `getStatusListWithEtag`,
+  which answers a `StoredStatusList`, the list with the etag of the
+  write that stored it, and `setStatusListIfMatch`, which stores a list
+  only over the one that etag names. `StatusList2021Manager` and
+  `createStatusListManager` take the new `maxWriteConflicts` option, how
+  many refused writes one change outlasts, 32 by default, and then throw
+  `StatusListWriteConflictError`, whose `code` is
+  `STATUS_LIST_WRITE_CONFLICT` and which `isStatusListWriteConflict`
+  knows from any copy of the package. UPGRADING.md, "Status-list stores
+  take a conditional write", has the detail.
+
+### Security
+
+- **Two status-list managers over one store no longer lose each other's
+  revocations.** `StatusList2021Manager` serialised its read, change, sign
+  and write of a list within one manager only, and a store could not tell
+  which list a writer had read, so two managers over one store, such as
+  two replicas or a manager built per request, could each revoke a
+  credential and the second write dropped the first's bit from the signed
+  list: a verifier then accepted the revoked credential. A store may now
+  implement the optional `ConditionalStatusListStorageProvider`, a write
+  that names the list it was made over, and the manager then makes a
+  refused write again over the list now stored, after a random wait of at
+  most 10 s that grows with each refusal and with how long a try takes,
+  up to the new `maxWriteConflicts` option, 32 by default, before it throws
+  `StatusListWriteConflictError`, which `isStatusListWriteConflict`
+  knows, and stores nothing. `MemoryStatusListStorage` implements it,
+  for its subclasses too. A store without it works as before, safely
+  with one manager only, and the first write a manager makes to one
+  warns once per process. UPGRADING.md, "Status-list stores take a
+  conditional write", has the detail.
+- **A delegation verdict carries the caveats its chain grants under.**
+  `requireDelegation`, `verifyRequestDelegation`, `evaluateDelegationChain`
+  and `validateDelegationChain` checked that each hop's caveats narrow its
+  parent's, then returned a verdict without them, so a host that trusted the
+  verdict never learned that the call was limited, for example by a
+  `MaxAmount` of 100, and nothing held the call to the limit. Each verdict now
+  carries `caveats`, every limit the chain states at its tightest, the
+  earliest hop `validUntil` among them, and lists those the library does not
+  interpret apart in `unknownCaveats`. The new `caveatRefusal(verdict, {
+  amount, currency })` holds a call to them and answers with a refusal code
+  and reason: every caveat applies to every call, so a `MaxAmount` that names
+  a currency refuses a call in any other, and it fails closed on a verdict
+  that does not pass, one without the lists, and a caveat the host does not
+  enforce. A `ValidUntil` that states no date, a `MaxAmount` whose `limit` is
+  not a plain non-negative decimal or whose `currency` is not a string, and a
+  caveat nested more than 64 levels deep are now refused as
+  `delegation_malformed`, so no caveat can run the guard out of stack. A
+  `MaxAmount` or `ValidUntil` with a member the library does not know is now
+  compared verbatim. The library warns once per process when it passes a
+  verdict with a caveat it does not interpret, never from
+  `validateDelegationChain`, and a hop's caveats are read in time linear in
+  their number. SPEC.md §6.10 states these rules. UPGRADING.md, "A
+  delegation verdict carries the caveats it grants under", has the detail.
+- **Revoking or restoring a re-delegation no longer changes another
+  delegation's status.** `DelegationGraphManager.registerDelegation` stored
+  any status list entry it was given, and `CascadingRevocationManager` set
+  or cleared that entry's bit, so a host that registered each submitted
+  re-delegation with the entry its credential carries let the agent that
+  signed it name another delegation's entry, its root's included. The
+  cascade now reads the owner the status list manager recorded for each
+  entry, and sets or clears an owned entry only for its owner or a
+  subtree that holds it; it refuses to clear an entry another registered
+  delegation holds; and it walks the whole subtree whatever entry a node
+  carries. `StatusList2021Manager.updateStatus` refuses an entry that
+  names its list by another spelling. Allocate each entry with
+  `allocateStatusEntry(purpose, { delegationId })` and build the graph
+  with `{ statusEntryOwners: statusList }` to have registration refuse
+  every entry not allocated to the delegation. UPGRADING.md, "A
+  delegation's status entry is the one allocated for it", has the detail.
+
+### Fixed
+
+- **A standard `eddsa-jcs-2022` verifier accepts the delegation hops and
+  status lists the library signs.** `signDelegationCredential` and
+  `signStatusListCredential` signed the document's `@context` in the
+  proof configuration but left it out of the proof, so a verifier that
+  follows W3C vc-di-eddsa refused every proof they made. The proof now
+  states it, with the same signature as before, which verifiers from
+  1.20.0 on accept. `createDelegationProofVerifier` and
+  `createStatusListProofVerifier` now accept a standard proof that states
+  no `@context`, and still accept the shape 1.22.0 to 1.25.0 issued.
+
+### Spec
+
+- **SPEC.md §7.3: for the 1.x line, a verifier MUST accept a tool call's
+  `requestHash` over the covered request, the legacy shape `{"method":
+  <tool name>, "params": <arguments>}`, or the legacy shape with every
+  `_kyaos*` argument removed.** The 1.x reference producers sign a legacy
+  shape, so a verifier written from the text alone refused their proofs.
+  Producers SHOULD sign the covered request, and 2.0.0 removes the legacy
+  shapes. Conformance suite 1.11.0 adds three vectors.
+- **SPEC.md §6.6: a status list's `encodedList` is the multibase prefix `u`
+  and base64url without padding of the GZIP-compressed bitstring, index 0
+  in the most significant bit of the first byte, for StatusList2021 and
+  Bitstring Status List lists alike, and a publisher MUST write that
+  form.** For the 1.x line a reader MUST also accept the legacy forms the
+  reference reads: no `u`, characters of the base64 alphabet, and `=`
+  padding. A publisher MUST write at least 131,072 entries, and for the
+  1.x line a reader MUST NOT refuse a shorter list. §6.7 bounds an index
+  by its list's length rather than by 131,071. 2.0.0 removes the legacy
+  forms and refuses a shorter list. Conformance suite 1.12.0 adds four
+  vectors, and the Python cross-check now reads the legacy forms.
+- **SPEC.md §6.10 and SPEC-ENTITY-CARD.md §10.5: an `eddsa-jcs-2022`
+  issuer MUST set `proof.@context` as W3C vc-di-eddsa §3.3.1 does, and a
+  verifier MUST verify as §3.3.2 does.** Until 2.0.0 a verifier MUST also
+  accept a proof without `proof.@context` whose signed configuration
+  includes the document's `@context`, a shape issuers wrote before this
+  rule, the reference implementation from 1.22.0 to 1.25.0 among them.
+- **SPEC.md §6.10 states how a chain's caveats apply to a call.** Every
+  caveat of every hop applies to every call; a `MaxAmount` that names a
+  currency permits no call in another, and one that names none limits every
+  call whatever its currency; a `MaxAmount` whose `limit` is not a plain
+  decimal, or a `ValidUntil` with no date, invalidates the chain; a caveat of
+  a known type with a member §6.10 does not define is replicated verbatim, as
+  one of an unknown type is; and a verifier that accepts a chain MUST hold
+  each call to its caveats or refuse it. SPEC-ENTITY-CARD.md §11.4 adds the
+  caveats to what a Verifier holds on success.
+
 ## [1.25.0] - 2026-11-18
 
 ### Added

@@ -205,6 +205,98 @@ Choose `delegationId` as the operator, the id you register the delegation under;
 | Hold delegations registered on 1.25.0 that share an entry | Find them with `graph.getStatusEntryClaim(entry)`, remove the one the entry was not allocated for with `removeDelegation`, and issue it again with an entry of its own. | Until then a revocation of either sets the entry, revoking both on the status list, and a restore of either is refused. |
 | Catch the error the status list manager throws for an entry, through `revokeDelegation` or `restoreDelegation` | Catch `StatusEntryUnchangedError`: the manager's error is the `cause` of the entry in `unchanged`. For a `StatusListWriteConflictError` there, call the method again. | A revocation no longer stops at the first such entry: it revokes the rest of the subtree first. |
 
+### Delegation gate
+
+Under `holderBinding: 'enforce'`, the gate refuses a delegation whose subject is a did:key that does not encode an Ed25519 key, with the cause `unsupported_subject_key`, since a request proof is checked only with an Ed25519 key.
+`isHolderBindingApplicable` is now true for every did:key, so such a subject is no longer let through as a bearer.
+An issuer that names such a subject issues the delegation to an Ed25519 did:key or to a did:web instead.
+
+A delegation credential whose `issuanceDate` is more than 120 s ahead of the verifier's clock, or cannot be read, is refused as `delegation_not_yet_valid`.
+An issuer stamps `issuanceDate` with the moment it signs, so keep the issuer's clock and the verifier's within that tolerance.
+
+A credential's `credentialSubject.id` must be a URL as it stands, with no unprintable character, as an issuer's is; any other is refused as `delegation_malformed`.
+An agent that re-delegates writes its subject's DID there as it is, with no white space or control character around or in it.
+
+The `KYA-OS-Session-Id` header that `buildOutboundDelegationHeaders` writes now carries an anchor of the session for the target's host, `sha256:` and 64 hex digits, and never the session id.
+A downstream service that read the session id from it reads it as an opaque value that stays the same for every call of the session to that host.
+
+`buildOutboundDelegationHeaders` throws for a delegation record that is not in force: one that is not active, is before its `notBefore` or past its `notAfter`, or names an audience that does not admit the server.
+Check the record before forwarding the call, or catch the error and refuse the call.
+
+To bind a request proof to the delegation it is made under, pass `delegationChain`, root first, to `generateRequestProof`.
+The proof then names the presented credential's `delegationRef` and the chain's `delegationChainDigest`, and the gate refuses it beside any other delegation.
+
+### Card
+
+`requireProof` throws a `TypeError` when it is built with a `minLevel` other than `"L3-minus"` or `"L3"`, where a level it does not rank, a misspelt one included, set no floor at all.
+Pass one of the two levels, or leave `minLevel` out.
+
+A verdict about a status list reaches the presenter only once the list's proof verifies.
+Until then the refusal names the list, `the status list at "<url>" could not be read or checked`, and its reason and remedy go to the operator's log.
+Read the log, not the refusal, to learn why such a list was refused.
+
+A custom `StatusListResolver` that asks `acceptStatusList` before it verifies the list's proof throws that reason in an error that is not a `RefusalError`, so the verifier gives its words to the log.
+Only a reason given once the proof has verified may be thrown as a `RefusalError` of code `status_signer_untrusted`.
+
+A delegation hop past its `expirationDate`, or past its proof's `expires`, is refused whatever its `validUntil` says.
+An issuer that set `validUntil` later than either sets them to agree.
+
+A pinned root's own status list on a private or local host is read only at the root's own did:web origin, host and port.
+Bind any other list on a private host, and every list of a did:key root, to its signer in `statusListIssuers`.
+
+A hop may now commit to its parent with `credentialSubject.parentCredentialDigest`, the SPEC §7.8 digest of the parent credential.
+Sign each hop with `signDelegationCredential(hop, signer, { parent })` to write it.
+A verifier checks the digest whenever a hop states it, and refuses a hop whose digest is not its parent's as `chain_invalid`.
+
+### Delegation graph
+
+A refusal of an ancestor that the chain resolver resolved gives the presenter fixed words and sends the resolver's answer to the operator's log.
+Match such a refusal on its `code`, not on its text.
+
+`isRevoked` throws a `RefusalError` of code `status_unavailable` when the graph holds no chain from the delegation to a root, and `validateDelegation` checks the chain first, so it answers `valid: false` for such a delegation instead.
+A caller of `isRevoked` catches the error, or calls `validateDelegation`.
+
+A storage provider that implements `registerNodeAtomic` changes nothing of the parent but adding the child's id to its `children`, so a revocation of the parent stored in between is kept.
+
+A re-delegation must copy, as written, every member of `constraints` and of `constraints.crisp` its parent states that the chain walk does not interpret, and must not widen its parent's budget.
+An agent that re-delegates copies those members from its own credential; one that does not is refused as `chain_invalid`.
+
+`StatusList2021Manager` takes `listLifetimeMs`, which bounds how long each list it signs is read.
+An issuer that sets it calls `renewStatusList` for each list before the list ends, as every half lifetime, or every credential on that list is refused once it ends.
+
+`removeDelegation` throws, removing nothing, for a delegation with others registered under it.
+To remove a whole subtree, call `removeDelegation(id, { subtree: true })`, and when it throws a `SubtreeRemovalError`, call it again.
+A removed delegation that reads as revoked and has no status list entry stays as a revoked record, and its id cannot be registered again.
+
+A change to the graph may throw a `RefusalError` of code `deadline_exceeded`, which is transient and names the node, when another change to that node held it past the wait; the change was not made.
+Make the change again.
+
+### Audit ledger
+
+`evaluateAuditJournalProviderContract` now fails a journal whose compare-and-append is not atomic: one that commits more than one of several concurrent appends on one expected head, or accepts an expected head that is no longer the head.
+`evaluateAuditObserverProviderContract` now fails an observer that accepts a checkpoint whose signature does not verify.
+Without `fixtures.fork`, it reports the check that an observer refuses a larger checkpoint that does not extend the observed tree as `skipped`; pass `fork` to run it.
+An adapter that passed the 1.25.0 contracts runs them again before upgrading.
+
+The recorder and the checkpoint builder now verify the journal entries they read by default when the signer's key is a private JWK, a `KeyObject` or an extractable `CryptoKey`, and refuse an entry that does not verify with `AUDIT_JOURNAL_FAILURE`.
+A builder that signs with a key of its own keeps working: it trusts as written the entries its recorder signed under another key, and warns once per process for each such key.
+Pass `signatures`, resolving the recorder's key, to verify them.
+With a non-extractable `CryptoKey`, or a signer of your own without `verifier()`, pass `signatures` to either; otherwise the journal is trusted as written.
+
+`kya-audit verify` evaluates a bundle at the present time.
+So under `keyRevocationMode` `current` or `both`, or with `requiredCheckpointFreshnessMs`, a bundle that exited 0 when it was made can exit 1 later, once a key it was signed with has ended or its checkpoint has grown stale.
+
+### Audit bundle and proofs
+
+A replay bundle reports checkpoint integrity, or observation integrity, as `indeterminate`, and fails AAP-3 or AAP-4, while its selections run past its last checkpoint, or past its last observed or anchored one.
+Export ranges that end inside a checkpoint's tree.
+Content in a bundle outside its selections gets scope completeness `invalid`.
+
+A proof verifier now returns the meta its signature covers as `result.meta`.
+Read that, not `proof.meta` as received: a member no signature covers is not in it, and an optional claim written as an empty string is absent from it.
+Keep data no signature covers outside a proof's meta.
+A valid result now carries `meta`, so a deep-equality check against `{ valid: true }` changes to check `valid` alone or to expect `meta`.
+
 ## From 1.24.0
 
 ### The delegation gate shows the failure your DID resolver reports

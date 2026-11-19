@@ -204,22 +204,23 @@ describe("MemoryStatusListStorage", () => {
   });
 
   describe("setEntryOwner and getEntryOwner", () => {
-    it("record the delegation each entry of each list was allocated to", async () => {
+    it("record the owner of each entry of each list, and replace it when the entry is retired", async () => {
       const revocation = "https://example.com/status/revocation/v1";
       const suspension = "https://example.com/status/suspension/v1";
 
-      await storage.setEntryOwner(revocation, 0, "delegation-1");
-      await storage.setEntryOwner(suspension, 0, "delegation-2");
+      await storage.setEntryOwner(revocation, 0, { delegationId: "delegation-1", retired: false });
+      await storage.setEntryOwner(suspension, 0, { delegationId: "delegation-2", retired: false });
+      await storage.setEntryOwner(suspension, 0, { delegationId: "delegation-2", retired: true });
 
-      expect(await storage.getEntryOwner(revocation, 0)).toBe("delegation-1");
-      expect(await storage.getEntryOwner(suspension, 0)).toBe("delegation-2");
+      expect(await storage.getEntryOwner(revocation, 0)).toEqual({ delegationId: "delegation-1", retired: false });
+      expect(await storage.getEntryOwner(suspension, 0)).toEqual({ delegationId: "delegation-2", retired: true });
       expect(await storage.getEntryOwner(revocation, 1)).toBeNull();
       expect(await storage.getEntryOwner("https://example.com/status/other", 0)).toBeNull();
     });
 
     it("forget every owner on clear", async () => {
       const revocation = "https://example.com/status/revocation/v1";
-      await storage.setEntryOwner(revocation, 0, "delegation-1");
+      await storage.setEntryOwner(revocation, 0, { delegationId: "delegation-1", retired: false });
 
       storage.clear();
 

@@ -29,6 +29,7 @@ export { acceptStatusListValidity } from '../utils/statuslist-validity.js';
 export * from './statuslist-manager.js';
 export type {
   StatusEntryAllocationOptions,
+  StatusEntryOwner,
   StatusEntryOwners,
   StatusEntryOwnerStorageProvider,
 } from './status-entry-owner.js';

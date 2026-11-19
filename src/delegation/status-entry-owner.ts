@@ -7,7 +7,8 @@
  * an entry never makes it the delegation's own. The record kept here does: the operator names the
  * delegation when it allocates the entry, and a delegation graph built with the manager as
  * `statusEntryOwners` registers the entry for no other, and cascading revocation sets and clears
- * it for no other.
+ * it for no other. When that graph removes the delegation, the entry is retired, and no delegation
+ * is registered with it again.
  */
 
 import type { CredentialStatus } from '../types/protocol.js';
@@ -28,29 +29,43 @@ export interface StatusEntryAllocationOptions {
   delegationId?: string;
 }
 
+/** Whose a status list entry is: the record `allocateStatusEntry(purpose, { delegationId })` keeps. */
+export interface StatusEntryOwner {
+  /** The delegation the entry was allocated to. */
+  readonly delegationId: string;
+  /**
+   * Whether the entry was retired: the delegation was removed from a graph that reads owners, so
+   * no delegation, under any id, may be registered with the entry again. Revoking and restoring
+   * still read the entry as that delegation's.
+   */
+  readonly retired: boolean;
+}
+
 /** What tells which delegation a status list entry was allocated to. `StatusList2021Manager` is one. */
 export interface StatusEntryOwners {
   /**
-   * The id of the delegation `credentialStatus` was allocated to, or `undefined` when no owner was
-   * recorded for it: it was allocated without a `delegationId`, or not yet, or is not an entry of
-   * a list this manager issues, by that list's exact id.
+   * The owner of `credentialStatus`, or `undefined` when none was recorded for it: it was allocated
+   * without a `delegationId`, or not yet.
    */
-  getStatusEntryOwner(credentialStatus: CredentialStatus): Promise<string | undefined>;
+  getStatusEntryOwner(credentialStatus: CredentialStatus): Promise<StatusEntryOwner | undefined>;
+  /** Retire `credentialStatus`, keeping its owner; an entry with no owner recorded is left as it is. */
+  retireStatusEntry(credentialStatus: CredentialStatus): Promise<void>;
 }
 
 /**
- * Optional, stronger storage contract: a provider that also records which delegation each entry
- * was allocated to. `allocateStatusEntry(purpose, { delegationId })` needs it, and throws for a
- * provider without it rather than allocate an entry whose owner it cannot keep.
+ * Optional, stronger storage contract: a provider that also records whose each entry is.
+ * `allocateStatusEntry(purpose, { delegationId })` needs it, and throws for a provider without it
+ * rather than allocate an entry whose owner it cannot keep. Key the records by the list id exactly
+ * as given.
  */
 export interface StatusEntryOwnerStorageProvider extends StatusListStorageProvider {
   /**
-   * Record that entry `index` of list `statusListId` was allocated to `delegationId`. Called once
-   * per entry, after `allocateIndex` gave the index, so the record never needs to change.
+   * Record `owner` for entry `index` of list `statusListId`: once when the entry is allocated, after
+   * `allocateIndex` gave the index, and again, retired, when its delegation is removed.
    */
-  setEntryOwner(statusListId: string, index: number, delegationId: string): Promise<void>;
-  /** The delegation entry `index` of list `statusListId` was allocated to, or `null` when none was recorded. */
-  getEntryOwner(statusListId: string, index: number): Promise<string | null>;
+  setEntryOwner(statusListId: string, index: number, owner: StatusEntryOwner): Promise<void>;
+  /** The owner recorded for entry `index` of list `statusListId`, or `null` when none was recorded. */
+  getEntryOwner(statusListId: string, index: number): Promise<StatusEntryOwner | null>;
 }
 
 function recordsOwners(storage: StatusListStorageProvider): storage is StatusEntryOwnerStorageProvider {
@@ -62,13 +77,15 @@ function recordsOwners(storage: StatusListStorageProvider): storage is StatusEnt
   );
 }
 
-/** Whether `value` can tell an entry's owner, as a status list a host wraps or stubs may not. */
+/** Whether `value` can tell and retire an entry's owner, as a status list a host wraps or stubs may not. */
 export function readsStatusEntryOwners(value: unknown): value is StatusEntryOwners {
   return (
     typeof value === 'object' &&
     value !== null &&
     'getStatusEntryOwner' in value &&
-    typeof value.getStatusEntryOwner === 'function'
+    typeof value.getStatusEntryOwner === 'function' &&
+    'retireStatusEntry' in value &&
+    typeof value.retireStatusEntry === 'function'
   );
 }
 
@@ -102,7 +119,7 @@ export function entryOwnerRecorder(
         '(StatusEntryOwnerStorageProvider), as MemoryStatusListStorage does, or allocate without a delegationId.',
     );
   }
-  return (statusListId, index) => storage.setEntryOwner(statusListId, index, delegationId);
+  return (statusListId, index) => storage.setEntryOwner(statusListId, index, { delegationId, retired: false });
 }
 
 /**
@@ -113,9 +130,21 @@ export function entryOwnerRecorder(
 export async function readEntryOwner(
   storage: StatusListStorageProvider,
   credentialStatus: CredentialStatus,
-): Promise<string | undefined> {
+): Promise<StatusEntryOwner | undefined> {
   if (!recordsOwners(storage)) return undefined;
   const index = parseStatusListIndex(credentialStatus.statusListIndex, { acceptNumber: true });
   const owner = await storage.getEntryOwner(credentialStatus.statusListCredential, index);
   return owner ?? undefined;
+}
+
+/** Retire `credentialStatus` in `storage`'s records, keeping its owner, when it has one and is not retired yet. */
+export async function retireEntryOwner(
+  storage: StatusListStorageProvider,
+  credentialStatus: CredentialStatus,
+): Promise<void> {
+  if (!recordsOwners(storage)) return;
+  const index = parseStatusListIndex(credentialStatus.statusListIndex, { acceptNumber: true });
+  const owner = await storage.getEntryOwner(credentialStatus.statusListCredential, index);
+  if (owner === null || owner.retired) return;
+  await storage.setEntryOwner(credentialStatus.statusListCredential, index, { delegationId: owner.delegationId, retired: true });
 }

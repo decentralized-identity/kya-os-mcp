@@ -46,16 +46,31 @@ describe('StatusList2021Manager owners', () => {
       statusListIndex: '0',
       statusListCredential: 'https://status.example/revocation/v1',
     });
-    expect(await manager.getStatusEntryOwner(owned)).toBe('delegation-1');
-    expect(await manager.getStatusEntryOwner({ ...owned, statusListIndex: '00' })).toBe('delegation-1');
-    expect(await manager.getStatusEntryOwner({ ...owned, statusListIndex: 0 as unknown as string })).toBe('delegation-1');
+    const one = { delegationId: 'delegation-1', retired: false };
+    expect(await manager.getStatusEntryOwner(owned)).toEqual(one);
+    expect(await manager.getStatusEntryOwner({ ...owned, statusListIndex: '00' })).toEqual(one);
+    expect(await manager.getStatusEntryOwner({ ...owned, statusListIndex: 0 as unknown as string })).toEqual(one);
     expect(await manager.getStatusEntryOwner(unowned)).toBeUndefined();
-    expect(await manager.getStatusEntryOwner(suspension)).toBe('delegation-2');
-    expect(await manager.getStatusEntryOwner({ ...owned, statusListCredential: 'https://status.example/suspension/v1' })).toBe(
-      'delegation-2',
-    );
+    expect(await manager.getStatusEntryOwner(suspension)).toEqual({ delegationId: 'delegation-2', retired: false });
+    expect(await manager.getStatusEntryOwner({ ...owned, statusListCredential: 'https://status.example/suspension/v1' })).toEqual({
+      delegationId: 'delegation-2',
+      retired: false,
+    });
     expect(await manager.getStatusEntryOwner({ ...owned, statusListCredential: 'https://other.example/revocation/v1' })).toBeUndefined();
-    expect(await storage.getEntryOwner('https://status.example/revocation/v1', 0)).toBe('delegation-1');
+    expect(await storage.getEntryOwner('https://status.example/revocation/v1', 0)).toEqual(one);
+  });
+
+  it('retires an entry it recorded an owner for, keeping the owner, and retires nothing else', async () => {
+    const { manager } = await realStatusListManager();
+    const owned = await manager.allocateStatusEntry('revocation', { delegationId: 'delegation-1' });
+    const unowned = await manager.allocateStatusEntry('revocation');
+
+    await manager.retireStatusEntry({ ...owned, statusListIndex: '00' });
+    await manager.retireStatusEntry(unowned);
+    await manager.retireStatusEntry(owned);
+
+    expect(await manager.getStatusEntryOwner(owned)).toEqual({ delegationId: 'delegation-1', retired: true });
+    expect(await manager.getStatusEntryOwner(unowned)).toBeUndefined();
   });
 
   it('refuses to record an owner its storage provider cannot keep, before it takes an index', async () => {
@@ -104,36 +119,42 @@ describe('StatusList2021Manager owners', () => {
     });
   });
 
-  it('acts only on the lists it issues, by their exact ids, even over a store that would read another spelling', async () => {
+  it('sets an entry only under the id its list was created with, and reads as before', async () => {
+    const memory = new MemoryStatusListStorage();
+    const before = statusListManager(memory);
+    const own = await before.allocateStatusEntry('revocation', { delegationId: 'delegation-1' });
+    // The same storage, under a manager whose base URL has since changed.
+    const after = new StatusList2021Manager(
+      memory,
+      { getDid: () => 'did:web:status.example', getKeyId: () => 'did:web:status.example#key-1' },
+      async () => ({ type: 'Ed25519Signature2020', proofValue: 'z' }),
+      statusListGzipCodec,
+      statusListGzipCodec,
+      { statusListBaseUrl: 'https://lists.example', defaultListSize: 1024 },
+    );
+
+    await after.updateStatus(own, true);
+    expect(await after.checkStatus(own)).toBe(true);
+    expect(await after.getStatusEntryOwner(own)).toEqual({ delegationId: 'delegation-1', retired: false });
+  });
+
+  it('never sets an entry that names its list by another spelling, over a store that reads it as the same list', async () => {
     const manager = statusListManager(normalising(new MemoryStatusListStorage()));
     const own = await manager.allocateStatusEntry('revocation', { delegationId: 'delegation-1' });
 
-    for (const list of [
-      'https://STATUS.example:443/revocation/v1',
-      'https://status.example/revocation/./v1',
-      'https://status.example/revocation/v1/',
-      'https://other.example/revocation/v1',
-    ]) {
+    for (const list of ['https://STATUS.example:443/revocation/v1', 'https://status.example/revocation/./v1']) {
       const respelled = { ...own, id: `${list}#0`, statusListCredential: list };
-      const quoted = JSON.stringify(list);
-
-      const read = await manager.checkStatus(respelled).then(() => undefined, (thrown: unknown) => thrown);
-      expect(read).toBeInstanceOf(RefusalError);
-      expect((read as RefusalError).code).toBe('status_unavailable');
-      expect((read as RefusalError).message).toBe(
-        `Status list not found: ${quoted} is not a list this manager issues, so it cannot determine revocation status`,
-      );
 
       const set = await manager.updateStatus(respelled, true).then(() => undefined, (thrown: unknown) => thrown);
       expect(set).toBeInstanceOf(RefusalError);
       expect((set as RefusalError).code).toBe('delegation_malformed');
       expect((set as RefusalError).message).toBe(
-        `Status list ${quoted} is not a list this manager issues, so it sets and clears no entry of it`,
+        `Status list ${JSON.stringify(list)} reads as the list "https://status.example/revocation/v1", so no entry ` +
+          'of it is set or cleared: an entry names its list by the id the list was created with',
       );
-
-      expect(await manager.getStatusEntryOwner(respelled)).toBeUndefined();
+      // A read is answered as before, from the list the store holds.
+      expect(await manager.checkStatus(respelled)).toBe(false);
     }
     expect(await manager.checkStatus(own)).toBe(false);
-    expect(await manager.getStatusEntryOwner(own)).toBe('delegation-1');
   });
 });

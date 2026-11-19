@@ -8,6 +8,7 @@
  */
 
 import type { CredentialStatus } from '../types/protocol.js';
+import { RefusalError } from '../utils/refusal.js';
 import { parseStatusListIndex } from '../utils/statuslist-bits.js';
 import type { DelegationNode } from './delegation-graph.js';
 
@@ -50,6 +51,21 @@ export function nodeStatusEntry(node: DelegationNode): CredentialStatus | undefi
     return canonicalStatusEntry(node.credentialStatus);
   }
   return node.credentialStatusId ? parseCredentialStatusId(node.credentialStatusId) : undefined;
+}
+
+/**
+ * The node's status list entry, as {@link nodeStatusEntry} reads it, or
+ * `undefined` for a node with none, or with one whose index no list can hold,
+ * as a node stored before entries were checked may have. Such a node sets no
+ * bit, so it holds no entry. Any other error is thrown.
+ */
+export function readableStatusEntry(node: DelegationNode): CredentialStatus | undefined {
+  try {
+    return nodeStatusEntry(node);
+  } catch (error) {
+    if (error instanceof RefusalError) return undefined;
+    throw error;
+  }
 }
 
 /**

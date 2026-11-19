@@ -17,19 +17,26 @@ import { entryKey } from './delegation-status-entry.js';
  * - `allocated-to-another`: the status list manager allocated it to another delegation, one
  *   outside the subtree a revocation reaches, or other than the one a restore restores;
  * - `registered-to-another`: another delegation is registered with it, so clearing it would
- *   restore that delegation too (a graph that reads no owners);
- * - `refused-by-status-list`: the status list manager refused to change it, as it does an entry of
- *   a list it does not issue; `cause` is its error.
+ *   restore that delegation too;
+ * - `unreadable-entry`: the entry the node stores names no bit, as an index no list can hold,
+ *   stored before entries were checked, does; `cause` is the refusal;
+ * - `status-list-error`: the status list manager could not change it, as for an index past the end
+ *   of its list, a list it never created, or an entry that names its list by another spelling;
+ *   `cause` is its error.
  */
-export type StatusEntryUnchangedReason = 'allocated-to-another' | 'registered-to-another' | 'refused-by-status-list';
+export type StatusEntryUnchangedReason =
+  | 'allocated-to-another'
+  | 'registered-to-another'
+  | 'unreadable-entry'
+  | 'status-list-error';
 
 /** A status list entry left unchanged, and the delegation that carries it. */
 export interface UnchangedStatusEntry {
   readonly delegationId: string;
-  /** The entry the delegation's node holds, with its index in canonical decimal. */
-  readonly credentialStatus: CredentialStatus;
+  /** The entry the delegation's node holds, with its index in canonical decimal; absent for `unreadable-entry`. */
+  readonly credentialStatus?: CredentialStatus;
   readonly reason: StatusEntryUnchangedReason;
-  /** The status list manager's error, for `refused-by-status-list`. */
+  /** The error behind `unreadable-entry` and `status-list-error`. */
   readonly cause?: unknown;
 }
 
@@ -60,7 +67,8 @@ const REVOCATION_REASONS: Record<StatusEntryUnchangedReason, string> = {
     'it was allocated to a delegation outside the subtree, and setting it would revoke that delegation too',
   'registered-to-another':
     'another delegation outside the subtree is registered with it, and setting it would revoke that delegation too',
-  'refused-by-status-list': 'the status list manager refused to set it',
+  'unreadable-entry': 'the entry it stores cannot be read',
+  'status-list-error': 'the status list manager could not set it',
 };
 
 const RESTORE_REASONS: Record<StatusEntryUnchangedReason, string> = {
@@ -68,11 +76,15 @@ const RESTORE_REASONS: Record<StatusEntryUnchangedReason, string> = {
     'it was allocated to another delegation, and clearing it would restore that delegation too',
   'registered-to-another':
     'another delegation is registered with it, and clearing it would restore that delegation too',
-  'refused-by-status-list': 'the status list manager refused to clear it',
+  'unreadable-entry': 'the entry it stores cannot be read',
+  'status-list-error': 'the status list manager could not clear it',
 };
 
-function quotedEntry(entry: CredentialStatus): string {
-  return describeValue(entryKey(entry));
+/** How a message names the entry of `unchanged`: quoted, or as unread. */
+function namedEntry(unchanged: UnchangedStatusEntry): string {
+  return unchanged.credentialStatus === undefined
+    ? 'entry'
+    : `entry ${describeValue(entryKey(unchanged.credentialStatus))}`;
 }
 
 /** The error a revocation of `root` throws for the entries `unchanged` it left, once `events` are done. */
@@ -85,9 +97,9 @@ export function revocationLeftUnchanged(
   const named = unchanged
     .slice(0, NAMED_ENTRIES)
     .map(
-      ({ delegationId, credentialStatus, reason }) =>
-        `entry ${quotedEntry(credentialStatus)} of delegation ${describeValue(delegationId)}, since ` +
-        REVOCATION_REASONS[reason],
+      (entry) =>
+        `${namedEntry(entry)} of delegation ${describeValue(entry.delegationId)}, since ` +
+        REVOCATION_REASONS[entry.reason],
     );
   const more = unchanged.length - named.length;
   if (more > 0) named.push(`and ${more} more, each in the error's unchanged entries`);
@@ -104,18 +116,39 @@ export function revocationLeftUnchanged(
 /** The error a restore throws for the entry it left set, before it changes anything. */
 export function restoreLeftUnchanged(unchanged: UnchangedStatusEntry): StatusEntryUnchangedError {
   return new StatusEntryUnchangedError(
-    `Delegation ${describeValue(unchanged.delegationId)} was not restored: its status list entry ` +
-      `${quotedEntry(unchanged.credentialStatus)} was left unchanged, since ${RESTORE_REASONS[unchanged.reason]}. ` +
+    `Delegation ${describeValue(unchanged.delegationId)} was not restored: its status list ` +
+      `${namedEntry(unchanged)} was left unchanged, since ${RESTORE_REASONS[unchanged.reason]}. ` +
       'It stays revoked; issue the delegation again with an entry allocated for it.',
     [],
     [unchanged],
   );
 }
 
-/** What a revocation that could not record itself says of an entry it left unchanged. */
-export function unchangedEntryClause(unchanged: UnchangedStatusEntry): string {
-  return (
-    `its status list entry ${quotedEntry(unchanged.credentialStatus)} was left unchanged, since ` +
-    REVOCATION_REASONS[unchanged.reason]
+/** A delegation whose revocation nothing recorded: its graph mark was dropped, and its entry not set. */
+export interface UnrecordedRevocation {
+  readonly delegationId: string;
+  /** Its entry, when it has one, left unchanged. */
+  readonly unchanged?: UnchangedStatusEntry;
+}
+
+/**
+ * The error of a revocation the graph storage provider did not record: `first` says why of the
+ * first such delegation, and `more` counts the others of the subtree.
+ */
+export function revocationNotRecorded(first: UnrecordedRevocation, more: number): Error {
+  const why =
+    first.unchanged === undefined
+      ? 'it has no status list entry'
+      : `its status list ${namedEntry(first.unchanged)} was left unchanged, since ${REVOCATION_REASONS[first.unchanged.reason]}`;
+  const others =
+    more === 0
+      ? ''
+      : more === 1
+        ? ' The revocation of one more delegation of the subtree was not recorded either.'
+        : ` The revocations of ${more} more delegations of the subtree were not recorded either.`;
+  return new Error(
+    `Revocation of delegation ${describeValue(first.delegationId)} was not recorded: ${why}, and the graph storage ` +
+      'provider did not persist DelegationNode.revoked, the only record of a revocation that sets no status list ' +
+      `entry. A DelegationGraphStorageProvider must store the revoked field.${others}`,
   );
 }

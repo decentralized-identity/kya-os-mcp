@@ -16,33 +16,39 @@ Revoking the re-delegation, or the agent above it, then revoked that other deleg
 What is guaranteed now depends on whether the graph reads the owners the status list manager records.
 
 **With owners.**
-Allocate each entry with `allocateStatusEntry(purpose, { delegationId })` and build the graph with `new DelegationGraphManager(storage, { statusEntryOwners: statusList })`, passing the same `StatusList2021Manager` the cascade uses.
+Allocate each entry with `allocateStatusEntry(purpose, { delegationId })` and build the graph with `new DelegationGraphManager(storage, { statusEntryOwners: statusList })`, passing the same `StatusList2021Manager` the cascade uses; `CascadingRevocationManager` throws a `TypeError` when given another.
 Choose `delegationId` as the operator, the id you register the delegation under; never read it, or the entry, from a submitted credential alone.
 
-- `registerDelegation` registers a delegation only with an entry allocated to its `id`.
-  Any other is refused with a `RefusalError` of code `delegation_malformed`, and nothing is stored: an entry allocated to another delegation, one allocated without a `delegationId`, one not allocated yet, and one that names a list the manager does not issue.
+- `registerDelegation` registers a delegation only with an entry allocated to its `id` and not retired.
+  Any other is refused with a `RefusalError` of code `delegation_malformed`, and nothing is stored: an entry allocated to another delegation, one allocated without a `delegationId`, one not allocated yet (an index past the end of its list among them), one of a list never created, and one retired.
   The refusal reads the same for each, so it names no other delegation and does not say whether the entry is in use.
-- A revocation sets an entry only when the delegation it was allocated to lies in the subtree it revokes, and a restore clears one only for that delegation, so neither changes the status of a delegation outside what it revokes or restores.
-- An index allocated and not yet registered cannot be claimed first, and a removed delegation's entry cannot be taken by another, since the owner record outlives the node.
+  This holds across `DelegationGraphManager` instances over one storage provider, since only the entry's owner can pass it.
+- `removeDelegation` retires the entry allocated to the delegation it removes, so no delegation, under any id, the removed one's included, is registered with it again.
+  An index allocated and not yet registered cannot be claimed first either.
 
 **Without owners**, the graph cannot tell which delegation an entry was allocated to.
 
 - `registerDelegation` refuses, in the same words, an entry another registered delegation holds, when the graph's storage provider implements `getNodeIdsByStatusEntry`, as `MemoryDelegationGraphStorage` does.
-- A revocation always sets the entry, revoking on the status list, the safe way, any delegation outside the subtree registered with it too; each `RevocationEvent` names those in `statusEntrySharedWith`.
-- A restore never clears an entry another delegation is registered with.
-- It cannot refuse an index allocated and not yet registered, nor the entry of a delegation since removed with `removeDelegation`: a re-delegation that carries such an entry is registered, and revoking or restoring it changes that entry.
-  Wiring owners refuses both.
+  Registrations run one at a time within one `DelegationGraphManager`; two managers over one storage provider can each register a delegation with one entry.
+- It cannot refuse an index allocated and not yet registered, an index past the end of its list, nor the entry of a delegation since removed with `removeDelegation`.
+  Wiring owners refuses all three.
 - The first registration with an entry in a process logs a warning through `logger.warn`, in fixed words that say so: `[kya-os] A delegation was registered with a status list entry by a delegation graph built without statusEntryOwners, ...`.
   The warning is shared across package copies in the process.
 
-In both modes:
+**Cascading revocation, in both modes,** reads the owner the status list manager recorded for an entry, whether or not the graph reads owners.
 
-- `StatusList2021Manager` reads, sets and records owners only for the exact ids of the lists it issues, `<statusListBaseUrl>/revocation/v1` and `<statusListBaseUrl>/suspension/v1`.
-  `checkStatus` refuses an entry that names any other, another spelling of one of its own included, with a `status_unavailable` refusal, and `updateStatus` with a `delegation_malformed` one, so a storage provider that reads two spellings as one list never sees the second.
-- A revocation or restore that leaves an entry unchanged throws a `StatusEntryUnchangedError`, never a `RefusalError`, so a host does not pass it to a presenter.
-  A revocation throws it once it has revoked the whole subtree in the graph, with the `events` of each delegation and each entry in `unchanged`; a restore throws it before it changes anything, and the delegation stays revoked.
-  A dry run runs the same checks, and throws the same error, but for the status list manager's own refusals.
-- Registrations that carry an entry run one at a time within a `DelegationGraphManager`, so two that carry one entry are never both registered.
+- A revocation sets an entry whose owner was recorded only when the owner lies in the subtree it revokes, and a restore clears one only for its owner, so neither changes the status of a delegation outside what it revokes or restores.
+  So a graph that allocates with `delegationId` but was built without `statusEntryOwners` still never lets a delegation that carries another's entry revoke or restore it, though it registers that delegation.
+- A revocation sets an entry with no owner recorded, revoking on the status list, the safe way, any delegation outside the subtree registered with it too; each `RevocationEvent` names those in `statusEntrySharedWith`.
+  A restore never clears such an entry when another delegation is registered with it.
+- A revocation never stops part way for an entry.
+  It marks every delegation of the subtree in the graph, and records as unchanged an entry it may not set, one the node stores but no list can hold, and one the status list manager could not set, as for an index past the end of its list or a list never created.
+  Once the walk is done it throws a `StatusEntryUnchangedError`, never a `RefusalError`, with the `events` of each delegation and each entry in `unchanged`, its `reason` and, for a failure, its `cause`.
+  A restore throws the same error before it changes anything, and the delegation stays revoked.
+  A dry run runs the same checks, and throws the same error, but for what only changing the list shows.
+- A delegation whose mark the graph storage provider dropped, and whose entry was not set, is recorded nowhere; the revocation names it in an `Error` once the walk is done, rather than stopping there.
+- `StatusList2021Manager.updateStatus` sets and clears an entry only when the list stored under its `statusListCredential` was created with that id, so a storage provider that reads two spellings of a URL as one list never has the other spelling's entry set.
+  Lists created under an earlier `statusListBaseUrl` are still set and read as before, and `checkStatus` reads as on 1.25.0.
 - An index no status list can hold is refused when the delegation is registered, rather than when it is revoked.
 
 | If you | Do this | Effect |
@@ -50,11 +56,12 @@ In both modes:
 | Allocate one entry for each delegation and register each delegation with its own | Allocate with `allocateStatusEntry(purpose, { delegationId: id })` and build the graph with `{ statusEntryOwners: statusList }`. | Revocation and restore are unchanged, and the warning is not logged. An entry allocated to one delegation is never registered, set or cleared for another. |
 | Register a re-delegation an agent submits with the entry its credential carries | Allocate the re-delegation's entry with `allocateStatusEntry(purpose, { delegationId })` before the agent signs it, have the agent carry that entry, and build the graph with owners. | A re-delegation that carries any other entry is refused when it is registered. |
 | Register a subtree's delegations with one shared entry, so one bit revokes them all | Allocate an entry for each delegation, register each with its own, and revoke the subtree's root with `revokeDelegation`, which sets every entry below it. | A child carrying its parent's entry is refused, with owners or without them over a provider with `getNodeIdsByStatusEntry`. |
-| Register delegations with entries allocated before upgrading, in a graph with owners | Issue each again with an entry allocated for it. | An entry with no owner record is refused at registration. Delegations already registered revoke and restore as without owners. |
-| Implement `DelegationGraphStorageProvider` yourself | Implement `getNodeIdsByStatusEntry(entryKey)`, indexing each node by `statusEntryKey(node)` as you store it, and leaving out a node for which `statusEntryKey` throws. | Without owners, the graph refuses an entry another delegation holds, names the delegations a revocation revokes too, and refuses a restore that would clear their entry. Without it, it can do none of these. |
-| Implement `StatusListStorageProvider` yourself and allocate with `delegationId` | Implement `setEntryOwner` and `getEntryOwner`, the optional `StatusEntryOwnerStorageProvider` contract, keyed by the list id exactly as given. | `allocateStatusEntry` records each entry's owner. With a provider that cannot, it throws a `TypeError` before taking an index. |
+| Remove a delegation and register it again under the same id | Allocate a new entry for it with `allocateStatusEntry(purpose, { delegationId })`. | With owners, the removed delegation's entry is retired, and refused for any id. |
+| Register delegations with entries allocated before upgrading, in a graph with owners | Issue each again with an entry allocated for it. | An entry with no owner record is refused at registration. Delegations already registered revoke and restore as entries with no owner recorded do. |
+| Implement `DelegationGraphStorageProvider` yourself | Implement `getNodeIdsByStatusEntry(entryKey)`, indexing each node by `statusEntryKey(node)` as you store it, and leaving out a node for which `statusEntryKey` throws. | The graph refuses an entry another delegation holds without owners, and the cascade names the delegations a revocation revokes too and refuses a restore that would clear their entry. Without it, it can do none of these. |
+| Implement `StatusListStorageProvider` yourself and allocate with `delegationId` | Implement `setEntryOwner` and `getEntryOwner`, the optional `StatusEntryOwnerStorageProvider` contract, storing the `{ delegationId, retired }` record keyed by the list id exactly as given. | `allocateStatusEntry` records each entry's owner, and retiring rewrites it. With a provider that cannot, `allocateStatusEntry` throws a `TypeError` before taking an index. |
 | Hold delegations registered on 1.25.0 that share an entry | Find them with `graph.getStatusEntryClaim(entry)`, remove the one the entry was not allocated for with `removeDelegation`, and issue it again with an entry of its own. | Until then a revocation of either sets the entry, revoking both on the status list, and a restore of either is refused. |
-| Catch the `RefusalError` the status list manager throws for an entry, through `revokeDelegation` or `restoreDelegation` | Catch `StatusEntryUnchangedError`: the manager's refusal is the `cause` of the entry in `unchanged`. | A revocation no longer stops at the first such entry: it revokes the rest of the subtree first. |
+| Catch the error the status list manager throws for an entry, through `revokeDelegation` or `restoreDelegation` | Catch `StatusEntryUnchangedError`: the manager's error is the `cause` of the entry in `unchanged`. | A revocation no longer stops at the first such entry: it revokes the rest of the subtree first. |
 
 ## From 1.24.0
 

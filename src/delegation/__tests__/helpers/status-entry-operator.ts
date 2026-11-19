@@ -151,6 +151,9 @@ export function operator(setup: OperatorSetup = {}) {
   const bits = async (): Promise<Record<string, boolean>> =>
     Object.fromEntries(await Promise.all([...entries].map(async ([id, entry]) => [id, await manager.checkStatus(entry)])));
   const entry = (id: string): CredentialStatus => entries.get(id)!;
+  /** Store `id` under `parentId` as given, with no check at all, as a node stored before entries were checked. */
+  const storeRaw = (id: string, parentId: string, credentialStatus: CredentialStatus) =>
+    memory.registerNodeAtomic({ ...params(id, parentId, credentialStatus), children: [] });
 
-  return { manager, memory, graph, cascade, entries, params, allocate, issue, carrying, carryingBefore, bits, entry };
+  return { manager, memory, graph, cascade, entries, params, allocate, issue, carrying, carryingBefore, storeRaw, bits, entry };
 }

@@ -14,8 +14,7 @@ import type {
   StatusEntryIndexedGraphStorageProvider,
 } from '../delegation-graph.js';
 import { registrationConflict } from '../delegation-registration.js';
-import { statusEntryKey } from '../delegation-status-entry.js';
-import { RefusalError } from '../../utils/refusal.js';
+import { entryKey, readableStatusEntry } from '../delegation-status-entry.js';
 
 /**
  * Memory-based Delegation Graph storage
@@ -86,16 +85,13 @@ export class MemoryDelegationGraphStorage
   }
 
   /**
-   * The ids of every stored node whose status list entry has key `entryKey`.
+   * The ids of every stored node whose status list entry has key `key`. A
+   * node whose stored entry no list can hold is left out: it sets no bit.
    * Reads every node, as a store for tests and development may; a durable
    * store indexes the key instead.
    */
-  /**
-   * Every stored node whose status list entry is `entryKey`. A node whose
-   * stored entry no list can hold is left out: it sets no bit.
-   */
-  async getNodeIdsByStatusEntry(entryKey: string): Promise<string[]> {
-    return [...this.nodes.values()].filter((node) => readableEntryKey(node) === entryKey).map((node) => node.id);
+  async getNodeIdsByStatusEntry(key: string): Promise<string[]> {
+    return [...this.nodes.values()].filter((node) => readableEntryKey(node) === key).map((node) => node.id);
   }
 
   /**
@@ -230,15 +226,8 @@ export class MemoryDelegationGraphStorage
   }
 }
 
-/**
- * The key of `node`'s status list entry, or `undefined` for a node with none,
- * or with one whose index no list can hold, which `statusEntryKey` refuses.
- */
+/** The key of `node`'s status list entry, or `undefined` for a node that holds none it can read. */
 function readableEntryKey(node: DelegationNode): string | undefined {
-  try {
-    return statusEntryKey(node);
-  } catch (error) {
-    if (error instanceof RefusalError) return undefined;
-    throw error;
-  }
+  const entry = readableStatusEntry(node);
+  return entry === undefined ? undefined : entryKey(entry);
 }

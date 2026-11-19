@@ -148,6 +148,7 @@ export {
 } from './delegation/statuslist-manager.js';
 export type {
   StatusEntryAllocationOptions,
+  StatusEntryOwner,
   StatusEntryOwners,
   StatusEntryOwnerStorageProvider,
 } from './delegation/status-entry-owner.js';

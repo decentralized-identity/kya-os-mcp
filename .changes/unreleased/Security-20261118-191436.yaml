@@ -5,17 +5,15 @@ body: |-
     any status list entry it was given, and `CascadingRevocationManager` set
     or cleared that entry's bit, so a host that registered each submitted
     re-delegation with the entry its credential carries let the agent that
-    signed it name another delegation's entry, its root's included. A graph
-    built with `{ statusEntryOwners: statusList }`, over entries allocated
-    with `allocateStatusEntry(purpose, { delegationId })`, now registers a
-    delegation only with an entry allocated to it, and the cascade sets or
-    clears an entry only for that delegation or a subtree that holds it. A
-    graph built without owners refuses an entry another registered
-    delegation holds, sets a shared entry on any revoke and names the others
-    it revokes, refuses a restore that would clear one, and warns once: it
-    cannot refuse an index allocated and not yet registered, nor a removed
-    delegation's entry. `StatusList2021Manager` now reads and sets only the
-    exact ids of its own lists, and an entry left unchanged throws a
-    `StatusEntryUnchangedError` rather than a `RefusalError`. UPGRADING.md,
-    "A delegation's status entry is the one allocated for it", has the detail.
+    signed it name another delegation's entry, its root's included. The
+    cascade now reads the owner the status list manager recorded for each
+    entry, and sets or clears an owned entry only for its owner or a
+    subtree that holds it; it refuses to clear an entry another registered
+    delegation holds; and it walks the whole subtree whatever entry a node
+    carries. `StatusList2021Manager.updateStatus` refuses an entry that
+    names its list by another spelling. Allocate each entry with
+    `allocateStatusEntry(purpose, { delegationId })` and build the graph
+    with `{ statusEntryOwners: statusList }` to have registration refuse
+    every entry not allocated to the delegation. UPGRADING.md, "A
+    delegation's status entry is the one allocated for it", has the detail.
 time: 2026-11-18T19:14:36.000000-06:00

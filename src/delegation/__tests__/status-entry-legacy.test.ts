@@ -22,7 +22,7 @@ const UNWIRED_WARNING =
   'statusEntryOwners, so the graph cannot tell which delegation an entry was allocated to. It refuses an entry ' +
   'another registered delegation holds, when its storage provider implements getNodeIdsByStatusEntry, but it ' +
   'cannot refuse an entry allocated and not yet registered, nor the entry of a delegation removed from the ' +
-  'graph: a re-delegation that carries such an entry is registered, and revoking or restoring it changes that ' +
+  'graph: a re-delegation that carries such an entry is registered, and revoking or restoring it can change that ' +
   'entry. Allocate each entry with allocateStatusEntry(purpose, { delegationId }) and pass that ' +
   'StatusList2021Manager to the graph as statusEntryOwners, which refuses both.';
 
@@ -162,18 +162,36 @@ describe('a graph built without statusEntryOwners', () => {
     expect(await op.bits()).toEqual({ root: false });
   });
 
-  it('applies one rule half wired, when entries record owners the graph does not read: it warns at registration', async () => {
+  it('warns at registration when half wired, and the cascade still reads the owners the status list recorded', async () => {
     const op = operator({ owners: 'half-wired' });
     await op.issue('root');
     expect(warn.mock.calls).toEqual([[UNWIRED_WARNING]]);
 
-    // The owners recorded are not read, by the graph or the cascade: both apply the rule above.
+    // Registration applies the rule above: a pre-claimed index registers.
     expect((await refusal(op.carrying('child', 'root', op.entry('root')))).message).toBe(REGISTRATION_REFUSED('child'));
     const next = Number(op.entry('root').statusListIndex) + 1;
     await op.carrying('squatter', 'root', { ...op.entry('root'), id: ENTRY(next), statusListIndex: String(next) });
     await op.allocate('victim');
 
-    await op.cascade.revokeDelegation('squatter');
+    // The cascade reads that the index was allocated to the victim, and leaves it alone.
+    const revoked = await leftUnchanged(op.cascade.revokeDelegation('squatter'));
+    expect(revoked.unchanged.map((entry) => entry.reason)).toEqual(['allocated-to-another']);
+    expect(await op.bits()).toEqual({ root: false, victim: false });
+  });
+
+  it("refuses, half wired, to restore a removed delegation's entry for the delegation that took it", async () => {
+    const op = operator({ owners: 'half-wired' });
+    await op.issue('root');
+    await op.issue('victim', 'root');
+    await op.cascade.revokeDelegation('victim');
+    await op.graph.removeDelegation('victim');
+    await op.carrying('squatter', 'root', op.entry('victim'));
+
+    const restored = await leftUnchanged(op.cascade.restoreDelegation('squatter'));
+    expect(restored.unchanged).toEqual([
+      { delegationId: 'squatter', credentialStatus: op.entry('victim'), reason: 'allocated-to-another' },
+    ]);
+    expect(await op.manager.getStatusEntryOwner(op.entry('victim'))).toEqual({ delegationId: 'victim', retired: false });
     expect(await op.bits()).toEqual({ root: false, victim: true });
   });
 });

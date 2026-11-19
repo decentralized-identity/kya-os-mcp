@@ -7,7 +7,7 @@
 
 import type { StatusList2021Credential } from '../../types/protocol.js';
 import type { HistoricalStatusListStorageProvider } from '../statuslist-manager.js';
-import type { StatusEntryOwnerStorageProvider } from '../status-entry-owner.js';
+import type { StatusEntryOwner, StatusEntryOwnerStorageProvider } from '../status-entry-owner.js';
 
 function clone(credential: StatusList2021Credential): StatusList2021Credential {
   return structuredClone(credential);
@@ -19,8 +19,8 @@ export class MemoryStatusListStorage
   private statusLists = new Map<string, StatusList2021Credential>();
   private versions = new Map<string, StatusList2021Credential[]>();
   private indexCounters = new Map<string, number>();
-  /** The delegation each entry was allocated to, by `<statusListId>#<index>`. */
-  private entryOwners = new Map<string, string>();
+  /** The owner of each entry, by `<statusListId>#<index>`. */
+  private entryOwners = new Map<string, StatusEntryOwner>();
 
   async getStatusList(statusListId: string): Promise<StatusList2021Credential | null> {
     const value = this.statusLists.get(statusListId);
@@ -42,12 +42,13 @@ export class MemoryStatusListStorage
     return allocated;
   }
 
-  async setEntryOwner(statusListId: string, index: number, delegationId: string): Promise<void> {
-    this.entryOwners.set(`${statusListId}#${index}`, delegationId);
+  async setEntryOwner(statusListId: string, index: number, owner: StatusEntryOwner): Promise<void> {
+    this.entryOwners.set(`${statusListId}#${index}`, { delegationId: owner.delegationId, retired: owner.retired });
   }
 
-  async getEntryOwner(statusListId: string, index: number): Promise<string | null> {
-    return this.entryOwners.get(`${statusListId}#${index}`) ?? null;
+  async getEntryOwner(statusListId: string, index: number): Promise<StatusEntryOwner | null> {
+    const owner = this.entryOwners.get(`${statusListId}#${index}`);
+    return owner === undefined ? null : { ...owner };
   }
 
   getIndexCount(statusListId: string): number {

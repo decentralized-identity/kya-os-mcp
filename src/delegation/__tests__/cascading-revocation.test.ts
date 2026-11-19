@@ -743,7 +743,7 @@ describe("CascadingRevocationManager over the memory graph and status list", () 
 
     // Nothing would record this one.
     await expect(revocation.revokeDelegation("unlisted")).rejects.toThrow(
-      "Revocation of delegation unlisted was not recorded: it has no status list entry, and the graph storage provider did not persist DelegationNode.revoked",
+      `Revocation of delegation "unlisted" was not recorded: it has no status list entry, and the graph storage provider did not persist DelegationNode.revoked`,
     );
   });
 

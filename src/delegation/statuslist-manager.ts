@@ -22,7 +22,9 @@ import { describeValue } from '../utils/describe-value.js';
 import {
   entryOwnerRecorder,
   readEntryOwner,
+  retireEntryOwner,
   type StatusEntryAllocationOptions,
+  type StatusEntryOwner,
   type StatusEntryOwners,
 } from './status-entry-owner.js';
 
@@ -104,7 +106,7 @@ export class StatusList2021Manager implements StatusEntryOwners {
     options?: StatusEntryAllocationOptions
   ): Promise<CredentialStatus> {
     const recordOwner = entryOwnerRecorder(this.storage, options);
-    const statusListId = this.listId(purpose);
+    const statusListId = `${this.statusListBaseUrl}/${purpose}/v1`;
 
     const index = await this.storage.allocateIndex(statusListId);
 
@@ -131,41 +133,30 @@ export class StatusList2021Manager implements StatusEntryOwners {
   }
 
   /**
-   * The id of the delegation `credentialStatus` was allocated to, as `allocateStatusEntry` recorded
-   * it, or `undefined` when it recorded none, as for an entry of a list this manager does not issue.
+   * The owner `allocateStatusEntry` recorded for `credentialStatus`, by its list's id exactly as
+   * written, or `undefined` when it recorded none.
    */
-  async getStatusEntryOwner(credentialStatus: CredentialStatus): Promise<string | undefined> {
-    if (!this.issues(credentialStatus.statusListCredential)) return undefined;
+  getStatusEntryOwner(credentialStatus: CredentialStatus): Promise<StatusEntryOwner | undefined> {
     return readEntryOwner(this.storage, credentialStatus);
   }
 
-  /** The id of this manager's `purpose` list, the one id of it `issues` accepts. */
-  private listId(purpose: 'revocation' | 'suspension'): string {
-    return `${this.statusListBaseUrl}/${purpose}/v1`;
-  }
-
   /**
-   * Whether `statusListCredential` is exactly the id of a list this manager issues. The manager
-   * reads, sets and records owners only by those ids, so an entry that names one of its lists by
-   * another spelling, which a storage provider might read as the same list, names none.
+   * Retire `credentialStatus`, keeping its owner, so a delegation graph built with this manager as
+   * `statusEntryOwners` registers no delegation with it again. The graph calls this when it removes
+   * the delegation the entry was allocated to.
    */
-  private issues(statusListCredential: unknown): boolean {
-    return statusListCredential === this.listId('revocation') || statusListCredential === this.listId('suspension');
+  retireStatusEntry(credentialStatus: CredentialStatus): Promise<void> {
+    return retireEntryOwner(this.storage, credentialStatus);
   }
 
   /**
-   * Set (`revoked`) or clear the bit of `credentialStatus`. An entry of a list this manager does not
-   * issue throws a `RefusalError` of code `delegation_malformed`, and changes nothing.
+   * Set (`revoked`) or clear the bit of `credentialStatus`. An entry whose `statusListCredential` is
+   * not the id the stored list was created with, which a storage provider that reads two spellings
+   * of a URL as one list would hand back, throws a `RefusalError` of code `delegation_malformed`,
+   * and changes nothing.
    */
   async updateStatus(credentialStatus: CredentialStatus, revoked: boolean): Promise<void> {
     assertOneBitEntry(credentialStatus);
-    if (!this.issues(credentialStatus.statusListCredential)) {
-      throw new RefusalError(
-        'delegation_malformed',
-        `Status list ${describeValue(credentialStatus.statusListCredential)} is not a list this manager issues, ` +
-          'so it sets and clears no entry of it'
-      );
-    }
     await this.withListLock(credentialStatus.statusListCredential, () =>
       this.doUpdateStatus(credentialStatus, revoked)
     );
@@ -195,6 +186,13 @@ export class StatusList2021Manager implements StatusEntryOwners {
     const statusList = await this.storage.getStatusList(statusListCredential);
     if (!statusList) {
       throw new Error(`Status list not found: ${statusListCredential}`);
+    }
+    if (statusList.id !== statusListCredential) {
+      throw new RefusalError(
+        'delegation_malformed',
+        `Status list ${describeValue(statusListCredential)} reads as the list ${describeValue(statusList.id)}, so no ` +
+          'entry of it is set or cleared: an entry names its list by the id the list was created with'
+      );
     }
 
     const manager = await BitstringManager.decode(
@@ -241,13 +239,6 @@ export class StatusList2021Manager implements StatusEntryOwners {
   async checkStatus(credentialStatus: CredentialStatus): Promise<boolean> {
     assertOneBitEntry(credentialStatus);
     const { statusListCredential, statusListIndex } = credentialStatus;
-    if (!this.issues(statusListCredential)) {
-      throw new RefusalError(
-        'status_unavailable',
-        `Status list not found: ${describeValue(statusListCredential)} is not a list this manager issues, so it ` +
-          'cannot determine revocation status'
-      );
-    }
 
     const statusList = await this.storage.getStatusList(statusListCredential);
     if (!statusList) {

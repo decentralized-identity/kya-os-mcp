@@ -7,9 +7,18 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { logger } from '../../logging/index.js';
+import { CascadingRevocationManager } from '../cascading-revocation.js';
 import { DelegationGraphManager } from '../delegation-graph.js';
 import { MemoryDelegationGraphStorage } from '../storage/memory-graph-storage.js';
-import { ENTRY, REGISTRATION_REFUSED, forgetWarning, leftUnchanged, operator, refusal } from './helpers/status-entry-operator.js';
+import {
+  ENTRY,
+  REGISTRATION_REFUSED,
+  forgetWarning,
+  leftUnchanged,
+  operator,
+  refusal,
+  statusListManager,
+} from './helpers/status-entry-operator.js';
 
 describe('a graph that reads the owners the status list manager records', () => {
   let warn: ReturnType<typeof vi.spyOn>;
@@ -106,18 +115,55 @@ describe('a graph that reads the owners the status list manager records', () => 
     expect(await op.bits()).toEqual({ root: false, victim: true });
   });
 
-  it("keeps a removed delegation's entry its own, so no other delegation can take it and restore it", async () => {
+  it("retires a removed delegation's entry, so no delegation, under any id, is registered with it again", async () => {
     const op = operator({ owners: 'wired' });
     await op.issue('root');
     await op.issue('victim', 'root');
+    await op.issue('live', 'root');
     await op.cascade.revokeDelegation('victim');
     await op.graph.removeDelegation('victim');
+    await op.graph.removeDelegation('live');
 
-    expect((await refusal(op.carrying('squatter', 'root', op.entry('victim')))).message).toBe(REGISTRATION_REFUSED('squatter'));
-    expect(await op.bits()).toEqual({ root: false, victim: true });
+    for (const [id, named] of [['squatter', 'victim'], ['victim', 'victim'], ['live', 'live']] as const) {
+      expect((await refusal(op.carrying(id, 'root', op.entry(named)))).message).toBe(REGISTRATION_REFUSED(id));
+    }
+    expect(await op.manager.getStatusEntryOwner(op.entry('victim'))).toEqual({ delegationId: 'victim', retired: true });
+    expect(await op.bits()).toEqual({ root: false, victim: true, live: false });
 
-    // The delegation the entry was allocated to may be registered again with it.
-    await op.carrying('victim', 'root', op.entry('victim'));
+    // Removing a node that carries an entry allocated to another retires nothing.
+    await op.carryingBefore('squatter', 'root', op.entry('root'));
+    await op.graph.removeDelegation('squatter');
+    expect(await op.manager.getStatusEntryOwner(op.entry('root'))).toEqual({ delegationId: 'root', retired: false });
+  });
+
+  it('refuses an index past the end of its list, and an entry of a list never created, at registration', async () => {
+    const op = operator({ owners: 'wired' });
+    await op.issue('root');
+    const pastTheEnd = { ...op.entry('root'), id: ENTRY(5000), statusListIndex: '5000' };
+    const neverCreated = {
+      ...op.entry('root'),
+      id: 'https://status.example/suspension/v1#0',
+      statusPurpose: 'suspension' as const,
+      statusListCredential: 'https://status.example/suspension/v1',
+    };
+
+    for (const entry of [pastTheEnd, neverCreated]) {
+      expect((await refusal(op.carrying('child', 'root', entry))).message).toBe(REGISTRATION_REFUSED('child'));
+    }
+  });
+
+  it('lets one of two registrations carrying one entry through across two graph managers over one store', async () => {
+    const op = operator({ owners: 'wired' });
+    await op.issue('root');
+    const entry = await op.allocate('owner');
+    const other = new DelegationGraphManager(op.memory, { statusEntryOwners: op.manager });
+
+    const [squatter, owner] = await Promise.allSettled([
+      other.registerDelegation(op.params('squatter', 'root', { ...entry })),
+      op.carrying('owner', 'root', entry),
+    ]);
+    expect(squatter.status).toBe('rejected');
+    expect(owner.status).toBe('fulfilled');
   });
 
   it('lets one of two concurrent registrations carrying one entry through: the one it was allocated to', async () => {
@@ -161,14 +207,30 @@ describe('a graph that reads the owners the status list manager records', () => 
     expect(await op.bits()).toEqual({ root: false, victim: false });
   });
 
-  it('throws a TypeError for statusEntryOwners without getStatusEntryOwner', () => {
-    expect(
-      () => new DelegationGraphManager(new MemoryDelegationGraphStorage(), { statusEntryOwners: {} as never }),
-    ).toThrow(
+  it('throws a TypeError for statusEntryOwners without getStatusEntryOwner and retireStatusEntry', () => {
+    for (const owners of [{}, { getStatusEntryOwner: async () => undefined }]) {
+      expect(
+        () => new DelegationGraphManager(new MemoryDelegationGraphStorage(), { statusEntryOwners: owners as never }),
+      ).toThrow(
+        new TypeError(
+          'DelegationGraphManager was given statusEntryOwners without getStatusEntryOwner and retireStatusEntry ' +
+            'methods: pass the StatusList2021Manager that allocates the entries',
+        ),
+      );
+    }
+  });
+
+  it('throws a TypeError for a cascade over a status list manager other than the one the graph reads owners from', () => {
+    const op = operator({ owners: 'wired' });
+    const other = statusListManager();
+
+    expect(() => new CascadingRevocationManager(op.graph, other)).toThrow(
       new TypeError(
-        'DelegationGraphManager was given statusEntryOwners without a getStatusEntryOwner method: pass the ' +
-          'StatusList2021Manager that allocates the entries',
+        'CascadingRevocationManager was given a status list manager other than the one its delegation graph reads ' +
+          'owners from (statusEntryOwners): pass the same StatusList2021Manager to both',
       ),
     );
+    expect(() => new CascadingRevocationManager(op.graph, op.manager)).not.toThrow();
+    expect(() => new CascadingRevocationManager(new DelegationGraphManager(op.memory), other)).not.toThrow();
   });
 });

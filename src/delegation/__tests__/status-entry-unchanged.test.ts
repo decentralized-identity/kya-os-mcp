@@ -9,7 +9,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { logger } from '../../logging/index.js';
 import { RefusalError } from '../../utils/refusal.js';
 import type { RevocationEvent } from '../cascading-revocation.js';
-import { forgetWarning, leftUnchanged, operator } from './helpers/status-entry-operator.js';
+import { DelegationGraphManager } from '../delegation-graph.js';
+import { CascadingRevocationManager } from '../cascading-revocation.js';
+import { MemoryDelegationGraphStorage } from '../storage/memory-graph-storage.js';
+import {
+  ENTRY,
+  baseContract,
+  forgetWarning,
+  leftUnchanged,
+  operator,
+  statusListManager,
+} from './helpers/status-entry-operator.js';
 
 /** An event without its timestamp, which differs from run to run. */
 const withoutTime = ({ delegationId, isRoot, parentId, reason }: RevocationEvent) => ({ delegationId, isRoot, parentId, reason });
@@ -39,7 +49,7 @@ describe('an entry left unchanged', () => {
         {
           delegationId: 'squatter',
           credentialStatus: expect.objectContaining({ statusListCredential: list }),
-          reason: 'refused-by-status-list',
+          reason: 'status-list-error',
           cause: expect.any(RefusalError),
         },
       ]);
@@ -49,7 +59,7 @@ describe('an entry left unchanged', () => {
 
       await op.cascade.revokeDelegation('victim');
       const restored = await leftUnchanged(op.cascade.restoreDelegation('squatter'));
-      expect(restored.unchanged.map((entry) => entry.reason)).toEqual(['refused-by-status-list']);
+      expect(restored.unchanged.map((entry) => entry.reason)).toEqual(['status-list-error']);
       expect(await op.bits()).toEqual({ root: false, victim: true });
     });
   }
@@ -146,5 +156,69 @@ describe('an entry left unchanged', () => {
     expect(error.message).toContain('of delegation "s4", since');
     expect(error.message).not.toContain('"s5"');
     expect(error.message).toContain("; and 2 more, each in the error's unchanged entries.");
+  });
+
+  it('is recorded for an entry the manager cannot set or the node cannot read, and the walk revokes the rest', async () => {
+    const op = operator();
+    await op.issue('root');
+    await op.carrying('past', 'root', { ...op.entry('root'), id: ENTRY(5000), statusListIndex: '5000' });
+    const unmade = {
+      ...op.entry('root'),
+      id: 'https://status.example/suspension/v1#0',
+      statusPurpose: 'suspension' as const,
+      statusListIndex: '0',
+      statusListCredential: 'https://status.example/suspension/v1',
+    };
+    await op.carrying('unmade', 'root', unmade);
+    await op.storeRaw('unreadable', 'root', { ...op.entry('root'), statusListIndex: 'x' });
+    await op.issue('last', 'root');
+
+    const error = await leftUnchanged(op.cascade.revokeDelegation('root'));
+
+    expect(error.events.map((event) => event.delegationId)).toEqual(['root', 'past', 'unmade', 'unreadable', 'last']);
+    expect(error.unchanged).toEqual([
+      { delegationId: 'past', credentialStatus: expect.objectContaining({ statusListIndex: '5000' }), reason: 'status-list-error', cause: expect.any(Error) },
+      { delegationId: 'unmade', credentialStatus: unmade, reason: 'status-list-error', cause: expect.objectContaining({ message: expect.stringContaining('Status list not found') }) },
+      { delegationId: 'unreadable', reason: 'unreadable-entry', cause: expect.any(RefusalError) },
+    ]);
+    expect(error.message).toContain('entry of delegation "unreadable", since the entry it stores cannot be read');
+    for (const id of ['root', 'past', 'unmade', 'unreadable', 'last']) {
+      expect((await op.graph.getNode(id))?.revoked).toBe(true);
+    }
+    expect(await op.bits()).toEqual({ root: true, last: true });
+
+    for (const [id, reason] of [['unreadable', 'unreadable-entry'], ['past', 'status-list-error']] as const) {
+      const restored = await leftUnchanged(op.cascade.restoreDelegation(id));
+      expect(restored.unchanged.map((entry) => entry.reason)).toEqual([reason]);
+      expect((await op.graph.getNode(id))?.revoked).toBe(true);
+    }
+  });
+
+  it('is not recorded where the graph drops its mark too, which is said, in quoted words, once the walk is done', async () => {
+    const memory = new MemoryDelegationGraphStorage();
+    const dropping = { ...baseContract(memory), setNode: (node: Parameters<typeof memory.setNode>[0]) => memory.setNode({ ...node, revoked: undefined }) };
+    const graph = new DelegationGraphManager(dropping);
+    const manager = statusListManager();
+    const cascade = new CascadingRevocationManager(graph, manager);
+    const party = (id: string, parentId: string | null) => ({ id, parentId, issuerDid: 'did:web:a.example', subjectDid: `did:web:${id}.example` });
+    const root = await manager.allocateStatusEntry('revocation');
+    const last = await manager.allocateStatusEntry('revocation');
+    await graph.registerDelegation({ ...party('root', null), credentialStatus: root });
+    await graph.registerDelegation({ ...party('past', 'root'), credentialStatus: { ...root, id: ENTRY(5000), statusListIndex: '5000' } });
+    await graph.registerDelegation(party('plain', 'root'));
+    await graph.registerDelegation({ ...party('last', 'root'), credentialStatus: last });
+
+    const error = await cascade.revokeDelegation('root').then(() => undefined, (thrown: unknown) => thrown);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe(
+      'Revocation of delegation "past" was not recorded: its status list entry ' +
+        '"https://status.example/revocation/v1#5000" was left unchanged, since the status list manager could not set ' +
+        'it, and the graph storage provider did not persist DelegationNode.revoked, the only record of a revocation ' +
+        'that sets no status list entry. A DelegationGraphStorageProvider must store the revoked field. The ' +
+        'revocation of one more delegation of the subtree was not recorded either.',
+    );
+    expect(await manager.checkStatus(root)).toBe(true);
+    expect(await manager.checkStatus(last)).toBe(true);
   });
 });

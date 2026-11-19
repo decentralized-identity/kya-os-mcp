@@ -3,15 +3,15 @@
  * with an entry, and for cascading revocation, which sets and clears it.
  *
  * A graph built with `statusEntryOwners` reads the delegation the status list manager allocated
- * each entry to. It registers a delegation only with an entry allocated to that delegation, and a
- * revocation sets an entry only when that delegation lies in the subtree it revokes, and a
- * restore clears one only for that delegation.
+ * each entry to. It registers a delegation only with an entry allocated to that delegation and not
+ * retired. A graph built without it cannot tell, and warns once: it refuses an entry another
+ * registered delegation holds, when its storage provider can look one up.
  *
- * A graph built without it cannot tell, and warns once. It refuses an entry another registered
- * delegation holds, when its storage provider can look one up. A revocation always sets the entry,
- * and reports the delegations outside the subtree that hold it too; a restore never clears an entry
- * another delegation holds. The same holds, in a graph built with owners, for an entry whose owner
- * was never recorded.
+ * Cascading revocation reads the owner the status list manager recorded, whether or not the graph
+ * does. A revocation sets an owned entry only when its owner lies in the subtree it revokes, and a
+ * restore clears one only for its owner. An entry with no owner recorded is set by any revocation,
+ * which reports the delegations outside the subtree registered with it too, and a restore never
+ * clears one another delegation is registered with.
  *
  * Internal: not re-exported from the delegation barrel, but for {@link StatusEntryClaim}.
  */
@@ -21,7 +21,7 @@ import { describeValue } from '../utils/describe-value.js';
 import { RefusalError } from '../utils/refusal.js';
 import { warnOncePerProcess } from '../utils/warn-once.js';
 import type { DelegationGraphManager } from './delegation-graph.js';
-import type { StatusEntryOwners } from './status-entry-owner.js';
+import { readsStatusEntryOwners, type StatusEntryOwners } from './status-entry-owner.js';
 import type { StatusEntryUnchangedReason } from './status-entry-unchanged-error.js';
 
 /** Whose a status list entry is, as the delegation graph reads it. */
@@ -49,7 +49,7 @@ export async function readClaim(
   sources: StatusEntrySources,
 ): Promise<StatusEntryClaim | undefined> {
   const owner = await sources.owners?.getStatusEntryOwner(entry);
-  if (owner !== undefined) return { by: 'allocation', ids: [owner] };
+  if (owner !== undefined) return { by: 'allocation', ids: [owner.delegationId] };
   const ids = await sources.registered(entry);
   return ids === undefined ? undefined : { by: 'registration', ids };
 }
@@ -62,7 +62,7 @@ const UNWIRED_WARNING =
   'statusEntryOwners, so the graph cannot tell which delegation an entry was allocated to. It refuses an entry ' +
   'another registered delegation holds, when its storage provider implements getNodeIdsByStatusEntry, but it ' +
   'cannot refuse an entry allocated and not yet registered, nor the entry of a delegation removed from the ' +
-  'graph: a re-delegation that carries such an entry is registered, and revoking or restoring it changes that ' +
+  'graph: a re-delegation that carries such an entry is registered, and revoking or restoring it can change that ' +
   'entry. Allocate each entry with allocateStatusEntry(purpose, { delegationId }) and pass that ' +
   'StatusList2021Manager to the graph as statusEntryOwners, which refuses both.';
 
@@ -81,7 +81,7 @@ function registrationRefused(delegationId: string): RefusalError {
 
 /**
  * Throw unless `delegationId` may be registered with `entry`: by `sources.owners`, the entry was
- * allocated to it; without them, no other delegation is registered with it.
+ * allocated to it and is not retired; without them, no other delegation is registered with it.
  */
 export async function assertRegistrable(
   delegationId: string,
@@ -89,7 +89,10 @@ export async function assertRegistrable(
   sources: StatusEntrySources,
 ): Promise<void> {
   if (sources.owners !== undefined) {
-    if ((await sources.owners.getStatusEntryOwner(entry)) !== delegationId) throw registrationRefused(delegationId);
+    const owner = await sources.owners.getStatusEntryOwner(entry);
+    if (owner === undefined || owner.retired || owner.delegationId !== delegationId) {
+      throw registrationRefused(delegationId);
+    }
     return;
   }
   warnOncePerProcess(UNWIRED_WARNED, UNWIRED_WARNING);
@@ -98,7 +101,23 @@ export async function assertRegistrable(
 }
 
 /** How a graph reads claims and walks chains, for cascading revocation. */
-type ClaimReader = Pick<DelegationGraphManager, 'getStatusEntryClaim' | 'isAncestor'>;
+export type ClaimReader = Pick<DelegationGraphManager, 'getStatusEntryClaim' | 'isAncestor'>;
+
+/**
+ * How cascading revocation over `graph` and `statusList` reads claims: the owner `statusList`
+ * recorded, when it records owners, so a graph built without `statusEntryOwners` never lets the
+ * cascade change an entry allocated to another delegation; else the graph's claim.
+ */
+export function cascadeClaims(graph: ClaimReader, statusList: unknown): ClaimReader {
+  const owners = readsStatusEntryOwners(statusList) ? statusList : undefined;
+  return {
+    getStatusEntryClaim: async (entry) => {
+      const owner = await owners?.getStatusEntryOwner(entry);
+      return owner !== undefined ? { by: 'allocation', ids: [owner.delegationId] } : graph.getStatusEntryClaim(entry);
+    },
+    isAncestor: (ancestorId, descendantId) => graph.isAncestor(ancestorId, descendantId),
+  };
+}
 
 /** What revoking a delegation does with its entry: leaves it unchanged, or sets it, revoking `sharedWith` too. */
 export interface RevocationDecision {

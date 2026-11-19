@@ -9,7 +9,7 @@
 
 import type { CredentialStatus } from '../types/protocol.js';
 import { registrationConflict } from './delegation-registration.js';
-import { canonicalStatusEntry, entryKey, nodeStatusEntry } from './delegation-status-entry.js';
+import { canonicalStatusEntry, entryKey, nodeStatusEntry, readableStatusEntry } from './delegation-status-entry.js';
 import {
   assertRegistrable,
   readClaim,
@@ -100,10 +100,11 @@ export interface DelegationGraphOptions {
    * The record of the delegation each status list entry was allocated to:
    * the `StatusList2021Manager` that allocates the entries, with
    * `allocateStatusEntry(purpose, { delegationId })`, and that
-   * `CascadingRevocationManager` sets and clears them on. With it, the graph
-   * registers a delegation only with an entry allocated to its id, and
-   * cascading revocation reads the same record. Without it, the graph cannot
-   * tell whose an entry is, and warns once (see `registerDelegation`).
+   * `CascadingRevocationManager` sets and clears them on, which throws a
+   * `TypeError` when given another. With it, the graph registers a delegation
+   * only with an entry allocated to its id, and retires the entry when it
+   * removes the delegation. Without it, the graph cannot tell whose an entry
+   * is, and warns once (see `registerDelegation`).
    */
   statusEntryOwners?: StatusEntryOwners;
 }
@@ -140,8 +141,8 @@ export class DelegationGraphManager {
     const owners = options.statusEntryOwners;
     if (owners !== undefined && !readsStatusEntryOwners(owners)) {
       throw new TypeError(
-        'DelegationGraphManager was given statusEntryOwners without a getStatusEntryOwner method: pass the ' +
-          'StatusList2021Manager that allocates the entries',
+        'DelegationGraphManager was given statusEntryOwners without getStatusEntryOwner and retireStatusEntry ' +
+          'methods: pass the StatusList2021Manager that allocates the entries',
       );
     }
     this.entrySources = {
@@ -169,11 +170,14 @@ export class DelegationGraphManager {
    * whoever signs a re-delegation writes both.
    *
    * A graph built with `statusEntryOwners` registers a delegation only with an
-   * entry allocated to its `id`. Any other, one allocated to another
-   * delegation, without a `delegationId`, not allocated yet, or of a list the
-   * manager does not issue, is refused: nothing is stored, and a `RefusalError`
-   * of code `delegation_malformed` is thrown, in words that name no other
-   * delegation and do not say whether the entry is in use.
+   * entry allocated to its `id` and not retired. Any other, one allocated to
+   * another delegation, without a `delegationId`, not allocated yet (an index
+   * past the end of its list among them), of a list the manager never created,
+   * or retired when its delegation was removed, is refused: nothing is stored,
+   * and a `RefusalError` of code `delegation_malformed` is thrown, in words
+   * that name no other delegation and do not say whether the entry is in use.
+   * This holds across managers over one storage provider, since only the
+   * entry's owner can pass it.
    *
    * A graph built without it cannot tell which delegation an entry was
    * allocated to, and logs a warning once per process. It refuses, in the same
@@ -184,9 +188,12 @@ export class DelegationGraphManager {
    * allocated and not yet registered, nor the entry of a delegation since
    * removed with `removeDelegation`: wire `statusEntryOwners` to refuse both.
    *
-   * Registrations with an entry run one at a time within this manager, so two
-   * that carry one entry are never both registered. An index no status list
-   * can hold is refused too.
+   * Registrations with an entry run one at a time within this manager, so,
+   * without owners, two that carry one entry are never both registered through
+   * one manager; through two managers over one storage provider, they can be.
+   * An index no status list can hold is refused in both modes. A graph built
+   * without owners does not know a list's size: it registers an index past the
+   * end of one, and cascading revocation reports that entry as left unchanged.
    */
   async registerDelegation(params: {
     id: string;
@@ -242,6 +249,14 @@ export class DelegationGraphManager {
       });
     }
     return node;
+  }
+
+  /**
+   * The record of each entry's owner the graph reads: the `statusEntryOwners`
+   * it was built with, or `undefined`.
+   */
+  get statusEntryOwners(): StatusEntryOwners | undefined {
+    return this.entrySources.owners;
   }
 
   /**
@@ -379,9 +394,16 @@ export class DelegationGraphManager {
     return { valid: true };
   }
 
+  /**
+   * Remove a delegation from the graph. In a graph built with
+   * `statusEntryOwners`, the entry allocated to it is retired first, so no
+   * delegation, under any id, is registered with it again; a node that
+   * carries an entry allocated to another retires nothing.
+   */
   async removeDelegation(delegationId: string): Promise<void> {
     const node = await this.storage.getNode(delegationId);
     if (!node) return;
+    await this.retireOwnedEntry(node);
 
     if (node.parentId) {
       const parent = await this.storage.getNode(node.parentId);
@@ -392,6 +414,16 @@ export class DelegationGraphManager {
     }
 
     await this.storage.deleteNode(delegationId);
+  }
+
+  /** Retire `node`'s entry when the graph reads owners and the entry was allocated to `node`. */
+  private async retireOwnedEntry(node: DelegationNode): Promise<void> {
+    const owners = this.entrySources.owners;
+    const entry = owners === undefined ? undefined : readableStatusEntry(node);
+    if (owners === undefined || entry === undefined) return;
+    if ((await owners.getStatusEntryOwner(entry))?.delegationId === node.id) {
+      await owners.retireStatusEntry(entry);
+    }
   }
 }
 

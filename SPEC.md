@@ -903,9 +903,54 @@ primary mechanism) and polling status lists frequently. The unavoidable
 race is the same trade-off familiar from PKI: short certificate lifetimes
 reduce the window during which a compromised credential can be used.
 
-### 6.6 StatusList2021 Revocation
+### 6.6 Status List Revocation
 
-KYA-OS uses the W3C StatusList2021 specification for revocation:
+KYA-OS publishes revocation as a status list, in the terms of W3C Bitstring Status List v1.0 [BITSTRING-STATUS-LIST], a W3C Recommendation:
+
+```json
+{
+  "@context": ["https://www.w3.org/ns/credentials/v2"],
+  "id": "https://example.com/status/1",
+  "type": ["VerifiableCredential", "BitstringStatusListCredential"],
+  "issuer": "did:web:example.com",
+  "validFrom": "2024-03-01T00:00:00Z",
+  "validUntil": "2024-03-08T00:00:00Z",
+  "credentialSubject": {
+    "id": "https://example.com/status/1#list",
+    "type": "BitstringStatusList",
+    "statusPurpose": "revocation",
+    "encodedList": "uH4sIAAAAAAAAA-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA",
+    "ttl": 300000
+  }
+}
+```
+
+A credential names its entry of that list as its `credentialStatus`:
+
+```json
+{
+  "id": "https://example.com/status/1#94567",
+  "type": "BitstringStatusListEntry",
+  "statusPurpose": "revocation",
+  "statusListIndex": "94567",
+  "statusListCredential": "https://example.com/status/1"
+}
+```
+
+The list's `encodedList` is a list of 131,072 entries with none set, the list of the [STATUS-LIST-2021] example written in the form below, and each example list leaves out its `proof` (§6.2).
+
+**Formats.** A status list is a `BitstringStatusListCredential`, the list of Bitstring Status List v1.0 and a [VC-DATA-MODEL-2.0] document, or a `StatusList2021Credential`, the list of [STATUS-LIST-2021] and a [VC-DATA-MODEL] 1.1 document, which the first succeeds.
+A list is of a format when it is typed as that format's list in both places its specification names: a `type` that includes `BitstringStatusListCredential` and a subject whose `type` is `BitstringStatusList` (Bitstring Status List v1.0 §2.2), or a `type` that includes `StatusList2021Credential` and a subject whose `type` is `StatusList2021`.
+A list typed as one in one place alone is of neither format, and a verifier MAY refuse it.
+A publisher SHOULD publish a `BitstringStatusListCredential`, and MUST write one as its §2.2 requires: a [VC-DATA-MODEL-2.0] document, whose first `@context` is `https://www.w3.org/ns/credentials/v2`, that states the start of its window as `validFrom`, its end as `validUntil`, and one string, or an array of them, as its `statusPurpose`.
+A publisher MAY publish a `StatusList2021Credential` instead, and a verifier MUST read a list of either format.
+An entry is of its list's format: a `BitstringStatusListEntry` names a `BitstringStatusListCredential`, whose `type` its §2.1 requires to include that value, and a `StatusList2021Entry` names a `StatusList2021Credential`.
+A publisher SHOULD NOT name a list of one format from an entry of the other: Bitstring Status List v1.0 §2.1 requires the list a `BitstringStatusListEntry` names to be a `BitstringStatusListCredential`.
+This specification does not require a verifier to refuse a credential for that alone, and the reference readers read the list an entry names as the format the list is typed as.
+An entry states one string as its `statusPurpose`, and an `id` it states MUST NOT be the URL of its list (§2.1).
+The reference implementation's `StatusList2021Manager` writes a `StatusList2021Credential` and `StatusList2021Entry` entries through the 1.x line, and a `BitstringStatusListCredential` and `BitstringStatusListEntry` entries when its `format` option is `BitstringStatusList`, which 2.0.0 makes its default.
+It keeps a stored list in the format the list was created in, and allocates no entry on a list of the other format.
+The same list as a `StatusList2021Credential` states its window as `issuanceDate` and `expirationDate`, and has no `ttl`:
 
 ```json
 {
@@ -917,6 +962,7 @@ KYA-OS uses the W3C StatusList2021 specification for revocation:
   "type": ["VerifiableCredential", "StatusList2021Credential"],
   "issuer": "did:web:example.com",
   "issuanceDate": "2024-03-01T00:00:00Z",
+  "expirationDate": "2024-03-08T00:00:00Z",
   "credentialSubject": {
     "id": "https://example.com/status/1#list",
     "type": "StatusList2021",
@@ -926,8 +972,6 @@ KYA-OS uses the W3C StatusList2021 specification for revocation:
 }
 ```
 
-The example's `encodedList` is a list of 131,072 entries with none set, the list of the [STATUS-LIST-2021] example written in the form below.
-
 **Encoding.** Under both StatusList2021 and Bitstring Status List v1.0, a list's `encodedList` is the multibase prefix `u` followed by the base64url encoding (RFC 4648 §5), without padding, of the GZIP (RFC 1952) compression of the list's bitstring, in which the entry at index 0 is the most significant bit of the first byte, as Bitstring Status List v1.0 §2.2 and §3.3 write it.
 A publisher MUST write `encodedList` in that form.
 For the 1.x line, a reader MUST also accept an `encodedList` in the legacy forms the reference implementation reads, alone or together: with no `u`; with any of its characters in the base64 alphabet (RFC 4648 §4), `+` standing for `-` and `/` for `_`; and with `=` after its last character, no more of them than complete its last group of four characters.
@@ -936,12 +980,12 @@ A reader MAY refuse an `encodedList` in any other form, such as one with white s
 2.0.0 removes the legacy forms.
 
 **Length.** A publisher MUST write a list of at least 131,072 entries, 16 KiB uncompressed, as Bitstring Status List v1.0 §2.2 requires, so that each credential's entry is one among many.
-The reference implementation's `StatusList2021Manager` writes 131,072 entries unless its `defaultListSize` option sets another size; a size below 131,072 writes a list this rule forbids.
+The reference implementation's `StatusList2021Manager` writes 131,072 entries unless its `defaultListSize` option sets another size; a size below 131,072 writes a `StatusList2021Credential` this rule forbids, and is refused, where the manager is built, for a `BitstringStatusListCredential`.
 For the 1.x line, for compatibility, a reader MUST NOT refuse a list for holding fewer entries.
 Bitstring Status List v1.0 §3.2 refuses such a list (step 9) unless a specification sets another lower bound (step 2), and this one sets none for 1.x; 2.0.0 refuses a list of fewer than 131,072 entries.
 Whatever its length, a list holds no entry at or past its end, so an index there is rejected (§6.7).
 
-A verifier that reads a `StatusList2021Credential` MUST verify its proof, as
+A verifier that reads a status list, of either format, MUST verify its proof, as
 §6.2 states, before reading any bit. A list whose proof does not verify is
 unresolvable: the credential it covers is rejected, never read as active.
 
@@ -1024,9 +1068,19 @@ This holds for `issuanceDate` and `expirationDate` too, though [VC-DATA-MODEL] l
 A verifier MAY hold each bound with a tolerance for the difference between its clock and the issuer's, of no more than 600 seconds, the largest skew of §10.1: it then reads a list from its `validFrom` less the tolerance until its `validUntil` plus the tolerance.
 Without one, a list whose issuer stamps its `validFrom` with the moment it publishes the list is refused, for as long as the difference, by every verifier whose clock runs behind the issuer's.
 The reference implementation holds both bounds with a tolerance of 120 seconds, the default skew of §11.3, which each status-list reader's `maxClockSkewMs` option sets, from 0 to 600,000 milliseconds.
-A list that states no end is read until its issuer replaces it, so an earlier version of it can be served for as long as it verifies; an issuer that states a `validUntil`, and republishes the list before it passes, bounds that.
-The reference implementation's `StatusList2021Manager` states such an end, as the `expirationDate` of a `StatusList2021Credential`, `listLifetimeMs` after it signs each version, when that option is set, and its `renewStatusList` signs a list again with a new end and the same bits.
-Without the option its lists state no end.
+A list that states no end is read until its issuer replaces it, so an earlier version of it can be served for as long as it verifies.
+An issuer SHOULD therefore state an end on every version of a list it signs, as the list's `validUntil` or, on a `StatusList2021Credential`, its `expirationDate`, and republish the list before that end passes.
+How long a version is valid, its validity period, is the issuer's to choose: it is the longest an earlier version can be served after a revocation, and Bitstring Status List v1.0 §7.2 suggests "no minimum or maximum validity period" for all status lists.
+A `BitstringStatusListCredential` MAY also state `credentialSubject.ttl`, which its §2.2 defines as "the "time to live" in milliseconds before a refresh SHOULD be attempted": a hint to a reader that keeps the list, which a publisher SHOULD serve the list's caching headers in agreement with, as that section says.
+A `ttl` is no part of the window, since "the value does not override or replace the validity period".
+A verifier MUST NOT read a list past its `validUntil` because its `ttl` has not run out.
+A `ttl` counts from when a reader fetched the list, never from the list's `validFrom`, so a verifier MUST NOT refuse, because of its `ttl`, a list it has just fetched inside its window.
+A `StatusList2021Credential` has no such member, since its context defines none, so a publisher SHOULD NOT state a `ttl` on one, and a verifier gives it no meaning there.
+The reference implementation's `StatusList2021Manager` states the end `validityPeriodMs` after it signs each version, when that option is set, and its `renewStatusList` signs a list again with a new end and the same bits.
+Without the option its lists state no end, through the 1.x line.
+Its `ttl` option is the `ttl` each `BitstringStatusListCredential` it signs states.
+It refuses, where it is built, a `ttl` for a `StatusList2021Credential`, and a `ttl` longer than its validity period, which no reader could keep to.
+The reference readers do not read `ttl`: each keeps a list or a verdict no longer than its own configuration says.
 In the reference implementation every status-list reader refuses a list outside its window with the transient code `status_unavailable`, since the issuer republishing the list ends it, and with a reason that names the bound and quotes the time the list states.
 That reason reaches the presenter only once the list's proof verifies (§6.10), so a reader that checks no proof, as the reference checker without its `verifyStatusList` seam, gives it to the operator's log, and the reason says only that the list could not be read or checked.
 An Entity Card's Entity keeps the URL its own Card names unless the verifier's configuration binds that URL to another issuer, so whoever holds the Entity's key and controls what the Card's `statusListCredential` URL returns can serve a list the Entity signed, with the Card's bit clear.
@@ -1046,7 +1100,7 @@ L1 implementations do not require revocation support; revocation checking is ava
 Revocation does not require a globally accessible list. A verifier only needs to
 know whether a delegation has been revoked **for the resources it gates**, so the
 revocation state MAY be held as verifier-local state rather than fetched from an
-external URL. `StatusList2021` is the interoperable wire format for _publishing_
+external URL. A status list is the interoperable wire format for _publishing_
 revocation when the delegator and verifier are operationally decoupled; it is not
 a requirement to operate a public, globally-readable certificate-revocation list.
 A verifier that issues and gates its own delegations MAY check revocation entirely
@@ -2403,6 +2457,7 @@ rules, and operational requirements are specified in [`AUDITABILITY.md`](./AUDIT
 - **[DID-KEY]** W3C CCG. *did:key Method Specification*. https://w3c-ccg.github.io/did-method-key/
 - **[DID-WEB]** W3C CCG. *did:web Method Specification*. https://w3c-ccg.github.io/did-method-web/
 - **[STATUS-LIST-2021]** W3C CCG. *Status List 2021*. https://w3c-ccg.github.io/vc-status-list-2021/
+- **[BITSTRING-STATUS-LIST]** W3C. *Bitstring Status List v1.0*. https://www.w3.org/TR/vc-bitstring-status-list/
 - **[RFC8037]** IETF. *CFRG Elliptic Curve Diffie-Hellman (ECDH) and Signatures in JOSE*. https://datatracker.ietf.org/doc/html/rfc8037
 - **[RFC7517]** IETF. *JSON Web Key (JWK)*. https://datatracker.ietf.org/doc/html/rfc7517
 - **[RFC7515]** IETF. *JSON Web Signature (JWS)*. https://datatracker.ietf.org/doc/html/rfc7515

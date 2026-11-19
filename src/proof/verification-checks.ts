@@ -7,12 +7,15 @@
 import {
   validateDetachedProof,
   type DetachedProof,
+  type ProofMeta,
 } from "../types/protocol.js";
 import { PROOF_VERIFICATION_ERROR_CODES } from "./errors.js";
+import { signedProofMeta } from "./payload.js";
 import type { ProofVerificationOptions, ProofVerificationResult } from "./verifier-types.js";
 
 /**
- * Validate proof structure
+ * Validate proof structure, and give the proof with only the meta its signature covers
+ * (`signedProofMeta`), which is all a verifier acts on (SPEC §7.4).
  */
 export async function validateProofStructure(
   proof: DetachedProof
@@ -31,10 +34,16 @@ export async function validateProofStructure(
       },
     };
   }
+  const { jws, meta } = validationResult.data!;
   return {
     valid: true,
-    proof: validationResult.data,
+    proof: { jws, meta: signedProofMeta(meta) },
   };
+}
+
+/** A valid result with the meta its signature covers, which is what the caller reads; a refusal as it is. */
+export function withSignedMeta(result: ProofVerificationResult, meta: ProofMeta): ProofVerificationResult {
+  return result.valid ? { ...result, meta } : result;
 }
 
 /**

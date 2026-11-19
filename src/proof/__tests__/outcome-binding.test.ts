@@ -52,7 +52,7 @@ describe("a refusal that binds the chain it refused", () => {
       delegationChain: CHAIN,
       outcome: "denied",
     });
-    expect(held).toEqual({ valid: true });
+    expect(held).toEqual({ valid: true, meta: proof.meta });
     const other = await verifier.verifyProofArtifact(proof, jwk, {
       request: REQUEST,
       delegationChain: [ROOT, LEAF],
@@ -71,7 +71,7 @@ describe("a refusal that binds the chain it refused", () => {
       expect(result.errorCode).toBe(PROOF_VERIFICATION_ERROR_CODES.OUTCOME_MISMATCH);
       expect(result.details).toEqual({ binding: "outcome", outcome });
       const stated = await verifier.verifyProofArtifact(proof, jwk, { request: REQUEST, delegationChain: CHAIN, outcome });
-      expect(stated).toEqual({ valid: true });
+      expect(stated).toEqual({ valid: true, meta: proof.meta });
     },
   );
 
@@ -105,7 +105,7 @@ describe("a refusal that binds the chain it refused", () => {
       delegationChain: CHAIN,
       outcome: "denied",
     });
-    expect(asRefused).toEqual({ valid: true });
+    expect(asRefused).toEqual({ valid: true, meta: proof.meta });
   });
 });
 
@@ -115,7 +115,7 @@ describe("a verifier that requires an outcome", () => {
     expect(proof.meta).not.toHaveProperty("outcome");
     const verifier = makeVerifier();
     const content = { request: REQUEST, response: RESPONSE };
-    expect(await verifier.verifyProofArtifact(proof, jwk, { ...content, outcome: "allowed" })).toEqual({ valid: true });
+    expect(await verifier.verifyProofArtifact(proof, jwk, { ...content, outcome: "allowed" })).toEqual({ valid: true, meta: proof.meta });
     const asRefusal = await verifier.verifyProofArtifact(proof, jwk, { ...content, delegationChain: CHAIN, outcome: "denied" });
     expect(asRefusal.errorCode).toBe(PROOF_VERIFICATION_ERROR_CODES.OUTCOME_MISMATCH);
     expect(asRefusal.details).toEqual({ binding: "outcome", outcome: "allowed" });
@@ -129,7 +129,7 @@ describe("a verifier that requires an outcome", () => {
       response: RESPONSE,
       delegationChain: CHAIN,
     });
-    expect(result).toEqual({ valid: true });
+    expect(result).toEqual({ valid: true, meta: proof.meta });
   });
 
   it("can be required with no chain", async () => {
@@ -138,12 +138,12 @@ describe("a verifier that requires an outcome", () => {
     const asAllowed = await verifier.verifyProofArtifact(proof, jwk, { request: REQUEST, outcome: "allowed" });
     expect(asAllowed.errorCode).toBe(PROOF_VERIFICATION_ERROR_CODES.OUTCOME_MISMATCH);
     expect(asAllowed.details).toEqual({ binding: "outcome", outcome: "denied" });
-    expect(await verifier.verifyProofArtifact(proof, jwk, { request: REQUEST, outcome: "denied" })).toEqual({ valid: true });
+    expect(await verifier.verifyProofArtifact(proof, jwk, { request: REQUEST, outcome: "denied" })).toEqual({ valid: true, meta: proof.meta });
   });
 
   it("is not required of a caller that states none and supplies no chain", async () => {
     const { proof, jwk } = await bound({ outcome: "denied", reason: "Insufficient scope" }, "nothing");
-    expect(await makeVerifier().verifyProofArtifact(proof, jwk, { request: REQUEST })).toEqual({ valid: true });
+    expect(await makeVerifier().verifyProofArtifact(proof, jwk, { request: REQUEST })).toEqual({ valid: true, meta: proof.meta });
   });
 
   // As conformance/verify.py reads it: a chain given as null is none, as an
@@ -157,8 +157,8 @@ describe("a verifier that requires an outcome", () => {
     const { proof, jwk } = await make();
     const verifier = makeVerifier();
     const nullChain = { request: REQUEST, delegationChain: null as unknown as readonly ReceivedCredential[] };
-    expect(await verifier.verifyProofArtifact(proof, jwk, nullChain)).toEqual({ valid: true });
-    expect(await verifier.verifyProofArtifact(proof, jwk, { ...nullChain, outcome: null as never })).toEqual({ valid: true });
+    expect(await verifier.verifyProofArtifact(proof, jwk, nullChain)).toEqual({ valid: true, meta: proof.meta });
+    expect(await verifier.verifyProofArtifact(proof, jwk, { ...nullChain, outcome: null as never })).toEqual({ valid: true, meta: proof.meta });
     const asAllowed = await verifier.verifyProofArtifact(proof, jwk, { ...nullChain, outcome: "allowed" });
     expect(asAllowed.valid).toBe(proof.meta.outcome === undefined);
   });

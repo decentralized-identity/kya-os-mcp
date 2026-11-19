@@ -1420,6 +1420,14 @@ A verifier MUST read a proof's JWS as follows, and MUST refuse a proof whose JWS
 So every claim in `meta` is held to what was signed, and a proof whose `meta` differs from its payload fails.
 Reading a segment more loosely would let two strings stand for one signature, and a verifier that accepts one of them where another refuses it would give two verdicts on one proof.
 
+**Members no signature covers.**
+A generator writes in `meta` only the members the payload above signs, with `kid`, and writes no optional claim as an empty string.
+`schemas/detached-proof.json` describes that `meta`, the one a generator writes.
+A `meta` member no signature covers is a member the proof schema does not name, or an optional claim given as an empty string, which the payload leaves out.
+A verifier MUST NOT return or act on a `meta` member no signature covers.
+In 1.x a verifier ignores such members, and reads an empty optional claim as absent, so the proof verifies on what its signature covers and the `meta` it hands back holds nothing else.
+From 2.0.0 a verifier refuses a proof whose `meta` carries a member no signature covers.
+
 ### 7.5 _meta Attachment
 
 The proof is attached to tool responses under the reverse-DNS key

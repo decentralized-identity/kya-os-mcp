@@ -150,38 +150,52 @@ export async function findContentBindingMismatch(
   return undefined;
 }
 
+/** The members of a proof's meta its signature always covers. */
+const REQUIRED_SIGNED_MEMBERS: ReadonlySet<string> = new Set(
+  ['did', 'kid', 'ts', 'nonce', 'audience', 'sessionId', 'requestHash'] satisfies ReadonlyArray<keyof ProofMeta>,
+);
+
+/**
+ * The optional claims a proof signs, each only when it holds a value: one written as "" is not
+ * signed, and reads as absent. `prf`, the profile discriminator of envelope-profile proofs, is
+ * among them, so it cannot be stripped to downgrade the proof to body-only semantics.
+ */
+const OPTIONAL_SIGNED_CLAIMS: ReadonlySet<string> = new Set(
+  ['scopeId', 'delegationRef', 'delegationChainDigest', 'clientDid', 'outcome', 'reason', 'prf'] satisfies
+    ReadonlyArray<keyof ProofMeta>,
+);
+
+/** Members of the meta the payload carries under another name (`did`, `audience`) or not at all (`kid`). */
+const RENAMED_OR_IN_HEADER: ReadonlySet<string> = new Set(['did', 'kid', 'audience']);
+
+function isSigned(name: string, value: unknown): boolean {
+  if (REQUIRED_SIGNED_MEMBERS.has(name)) return true;
+  // responseHash is absent on denial / step-up proofs (no response).
+  if (name === 'responseHash') return value !== undefined;
+  return OPTIONAL_SIGNED_CLAIMS.has(name) && Boolean(value);
+}
+
+/**
+ * A proof's meta as its signature covers it (SPEC §7.4): the members `buildProofJwsPayload` signs,
+ * with `kid`, which the protected header pins, in the order the meta gives them. A member the
+ * proof schema does not name, and an optional claim written as "", are left out. The verifier
+ * hands back, and acts on, only this, and the generator writes only this.
+ */
+export function signedProofMeta(meta: ProofMeta): ProofMeta {
+  return Object.fromEntries(Object.entries(meta).filter(([name, value]) => isSigned(name, value))) as unknown as ProofMeta;
+}
+
 /**
  * Build the exact JWS payload object a proof signs over, from its `ProofMeta`.
  * SINGLE source of truth for the payload SHAPE: the signer
  * (`ProofGenerator.generateJWS`) serializes it and the verifier
  * (`ProofVerifier.buildCanonicalPayload`) reconstructs it from received meta,
  * so a claim added in one place can never silently go uncovered in the other.
+ * Its claims are those of `signedProofMeta`, with the signer as `iss` and `sub`
+ * and the audience as `aud` (RFC 7519); `kid` is in the protected header.
  * Serialization is always RFC 8785 (`canonicalizeJson`), never `JSON.stringify`.
  */
 export function buildProofJwsPayload(meta: ProofMeta): Record<string, unknown> {
-  return {
-    // Standard JWT claims (RFC 7519)
-    aud: meta.audience,
-    sub: meta.did,
-    iss: meta.did,
-
-    // KYA-OS proof claims
-    requestHash: meta.requestHash,
-    // responseHash is absent on denial / step-up proofs (no response).
-    ...(meta.responseHash !== undefined && { responseHash: meta.responseHash }),
-    ts: meta.ts,
-    nonce: meta.nonce,
-    sessionId: meta.sessionId,
-
-    // Optional claims (only include if present)
-    ...(meta.scopeId && { scopeId: meta.scopeId }),
-    ...(meta.delegationRef && { delegationRef: meta.delegationRef }),
-    ...(meta.delegationChainDigest && { delegationChainDigest: meta.delegationChainDigest }),
-    ...(meta.clientDid && { clientDid: meta.clientDid }),
-    ...(meta.outcome && { outcome: meta.outcome }),
-    ...(meta.reason && { reason: meta.reason }),
-    // Profile discriminator (envelope-profile proofs only), covered by the signature so it
-    // cannot be stripped to downgrade the proof to body-only semantics.
-    ...(meta.prf && { prf: meta.prf }),
-  };
+  const claims = Object.entries(signedProofMeta(meta)).filter(([name]) => !RENAMED_OR_IN_HEADER.has(name));
+  return { aud: meta.audience, sub: meta.did, iss: meta.did, ...Object.fromEntries(claims) };
 }

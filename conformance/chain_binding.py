@@ -6,7 +6,7 @@ chain digest and the reference the proof signs, in the order 7.8 compares them.
 """
 
 from delegation_ref import delegation_ref_of
-from response_proof import binds_request, proof_verifies, response_binds, response_hash
+from response_proof import binds_request, proof_verifies, response_binds, response_hash, signed_meta
 from signed_form import chain_digest
 
 
@@ -42,7 +42,8 @@ def _or(value, default):
 def _chain_binding(vector: dict) -> str:
     if not proof_verifies(vector):
         return "invalid"
-    meta = vector["proof"]["meta"]
+    # Only what the signature covers is compared (7.4).
+    meta = signed_meta(vector["proof"]["meta"])
     if "expected" not in vector:
         return "no-chain"
     expected = vector["expected"]

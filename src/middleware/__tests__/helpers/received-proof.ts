@@ -5,6 +5,7 @@
  */
 import type { AuditTrailService } from '../../../audit/service.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { isDeepStrictEqual } from 'node:util';
 import {
   createKyaOsMiddleware,
   type KyaOsConfig,
@@ -218,7 +219,9 @@ export function proofOf(result: object): DetachedProof | undefined {
  * <arguments> }` (the default), or the `tools/call` request as sent. With a
  * `delegationChain`, root first, the proof must also bind that chain and
  * name its last credential, and must record a call that was allowed unless
- * `outcome` asks for another outcome.
+ * `outcome` asks for another outcome. A proof that verifies must carry only the
+ * meta its signature covers, which the verifier hands back; the valid result is
+ * given without it.
  */
 export async function verifyReceived(
   result: Record<string, unknown>,
@@ -249,7 +252,7 @@ export async function verifyReceived(
   const request = expected.shape === 'tools/call'
     ? { method: 'tools/call', params: { name: expected.toolName, arguments: expected.params } }
     : { method: expected.toolName, params: expected.params };
-  return verifier.verifyProof(
+  const verified = await verifier.verifyProof(
     proof,
     jwk,
     {
@@ -260,4 +263,7 @@ export async function verifyReceived(
     },
     { expectedDid: expected.signer },
   );
+  if (!verified.valid) return verified;
+  if (!isDeepStrictEqual(verified.meta, proof.meta)) throw new Error('the proof carries meta its signature does not cover');
+  return { valid: true };
 }

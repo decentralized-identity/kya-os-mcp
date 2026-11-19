@@ -23,6 +23,7 @@ import {
   handleVerificationError,
   validateProofStructure,
   validateSigner,
+  withSignedMeta,
 } from "./verification-checks.js";
 
 export type { ProofVerificationOptions, ProofVerificationResult, ProofVerifierConfig } from "./verifier-types.js";
@@ -103,6 +104,11 @@ export class ProofVerifier {
    * This path uses the caller-supplied key. The caller must retrieve it from the
    * signer's assertionMethod; fetchPublicKeyFromDID enforces that relationship.
    *
+   * Reads only the meta the signature covers (SPEC §7.4): a member of `proof.meta`
+   * no signature covers is ignored, and an optional claim written as "" is read
+   * as absent. A valid result carries that meta as `meta`; read it, not
+   * `proof.meta`.
+   *
    * Reconstructs the canonical payload from proof.meta and checks the JWS
    * signature, nonce replay, and timestamp skew — proving the proof is AUTHENTIC
    * (signed by the holder of `kid`). On its own this does NOT confirm that the
@@ -153,13 +159,13 @@ export class ProofVerifier {
       if (!structureValidation.valid) return structureValidation;
       const validatedProof = structureValidation.proof!;
 
-      return await this.runVerificationPipeline(
+      return withSignedMeta(await this.runVerificationPipeline(
         validatedProof,
         publicKeyJwk,
         this.encodeCanonicalPayload(validatedProof.meta),
         expected,
         options,
-      );
+      ), validatedProof.meta);
     } catch (error) {
       return handleVerificationError(error);
     }
@@ -197,9 +203,9 @@ export class ProofVerifier {
       if (!signatureValidation.valid) return signatureValidation;
 
       if (expected !== undefined) {
-        return this.validateContentBinding(validatedProof, expected);
+        return withSignedMeta(await this.validateContentBinding(validatedProof, expected), validatedProof.meta);
       }
-      return { valid: true };
+      return { valid: true, meta: validatedProof.meta };
     } catch (error) {
       return handleVerificationError(error);
     }
@@ -244,7 +250,10 @@ export class ProofVerifier {
         };
       }
 
-      return await this.runVerificationPipeline(validatedProof, publicKeyJwk, metaPayload);
+      return withSignedMeta(
+        await this.runVerificationPipeline(validatedProof, publicKeyJwk, metaPayload),
+        validatedProof.meta,
+      );
     } catch (error) {
       return handleVerificationError(error);
     }

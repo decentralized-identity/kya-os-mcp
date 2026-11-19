@@ -15,6 +15,7 @@ import {
   LEGACY_NAMESPACED_PROOF_META_KEY,
   LEGACY_PROOF_META_KEY,
 } from "./generator.js";
+import { signedProofMeta } from "./payload.js";
 
 /**
  * MCP-reserved / standard `_meta` keys a KYA-OS verifier MUST tolerate but
@@ -92,7 +93,7 @@ export function validateMetaStructure(
  *
  * @param meta - The _meta object from a response
  * @param policy - Meta policy ('strict' or 'allow-extensions')
- * @returns Extracted proof or error result
+ * @returns Extracted proof, with only the meta its signature covers, or error result
  */
 export function extractProofFromMeta(
   meta: Record<string, unknown>,
@@ -127,5 +128,7 @@ export function extractProofFromMeta(
     };
   }
 
-  return { success: true, proof: proofValidation.data! };
+  // Only the meta the signature covers is handed on (SPEC §7.4).
+  const { jws, meta: proofMeta } = proofValidation.data!;
+  return { success: true, proof: { jws, meta: signedProofMeta(proofMeta) } };
 }

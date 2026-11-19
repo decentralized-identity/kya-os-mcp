@@ -5,10 +5,17 @@
  */
 
 import type { ClockProvider, CryptoProvider, FetchProvider, NonceCacheProvider } from "../providers/base.js";
+import type { ProofMeta } from "../types/protocol.js";
 import type { ProofVerificationErrorCode } from "./errors.js";
 
 export interface ProofVerificationResult {
   valid: boolean;
+  /**
+   * On a valid result, the proof's meta as its signature covers it (SPEC §7.4): read this, not
+   * the meta of the proof as received. A member no signature covers is not in it, and an optional
+   * claim written as "" is absent.
+   */
+  meta?: ProofMeta;
   reason?: string;
   error?: Error;
   errorCode?: ProofVerificationErrorCode;

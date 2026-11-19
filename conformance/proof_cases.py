@@ -14,13 +14,15 @@ satisfies under that key.
 The TypeScript reference is held to the same cases, under the same names
 (conformance/__tests__/proof-path-cases.test.ts): a case `bound` or `no-chain` here passes
 there, and every other fails there where it fails here: on the request, on the response, on
-the chain, or before any of them is compared.
+the chain, or before any of them is compared. A case whose proof carries a member no signature
+covers verifies in both, and neither hands that member back with the meta it verified.
 """
 
 import copy
 
 from base64url import b64url_nopad, strict_base64url_bytes
 from chain_binding import chain_binding
+from response_proof import verified_meta
 from digests import sha256_digest
 from ed25519 import L, ed25519_equation_holds, ed25519_public_key, ed25519_sign
 from strict_json import jcs
@@ -277,12 +279,25 @@ def proof_cases(bound: dict, bare: dict) -> list:
     ]
 
 
+# The cases whose proof carries a member no signature covers, and that member (7.4).
+UNSIGNED_MEMBERS = {
+    "scopeId empty, which is not signed": "scopeId",
+    "member the proof schema does not name": "note",
+}
+
+
 def proof_cases_hold(bound: dict, bare: dict) -> bool:
-    """Every case has its verdict. Each that does not is printed, so a run says which."""
+    """Every case has its verdict, and a proof that carries a member no signature covers is
+    verified without it. Each case that does not hold is printed, so a run says which."""
     held = True
     for name, vector, verdict in proof_cases(bound, bare):
         reached = chain_binding(vector)
         if reached != verdict:
             print(f"  proof case {name!r}: {reached}, not {verdict}")
+            held = False
+        member = UNSIGNED_MEMBERS.get(name)
+        verified = verified_meta(vector) if member else None
+        if member and (verified is None or member in verified):
+            print(f"  proof case {name!r}: verified with its unsigned {member}")
             held = False
     return held

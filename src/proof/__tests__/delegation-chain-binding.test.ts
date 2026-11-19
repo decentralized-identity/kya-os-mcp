@@ -108,7 +108,7 @@ describe("a verifier that holds the chain", () => {
   it("accepts the chain the proof binds", async () => {
     const { proof, jwk } = await bound();
     const result = await makeVerifier().verifyProof(proof, jwk, { ...expected, delegationChain: CHAIN });
-    expect(result).toEqual({ valid: true });
+    expect(result).toEqual({ valid: true, meta: proof.meta });
   });
 
   it.each([
@@ -233,8 +233,8 @@ describe("a verifier that holds the chain", () => {
     const verifier = makeVerifier();
     const once = await verifier.verifyProofArtifact(proof, jwk, { ...expected, delegationChain: CHAIN });
     const twice = await verifier.verifyProofArtifact(proof, jwk, { ...expected, delegationChain: CHAIN });
-    expect(once).toEqual({ valid: true });
-    expect(twice).toEqual({ valid: true });
+    expect(once).toEqual({ valid: true, meta: proof.meta });
+    expect(twice).toEqual({ valid: true, meta: proof.meta });
   });
 
   it("is checked by the generator's own verifyProof as part of the signed payload", async () => {
@@ -285,7 +285,7 @@ describe("the credential a proof names, for a verifier that holds the chain", ()
   ])("requires a proof to name none when the last credential is %s", async (_name, leaf) => {
     const chain = [ROOT, MIDDLE, leaf];
     const unnamed = await boundTo(chain);
-    expect(await verify(unnamed.proof, unnamed.jwk, chain)).toEqual({ valid: true });
+    expect(await verify(unnamed.proof, unnamed.jwk, chain)).toEqual({ valid: true, meta: unnamed.proof.meta });
     const named = await boundTo(chain, { delegationRef: "urn:uuid:leaf" });
     expect(await verify(named.proof, named.jwk, chain)).toEqual(misnamed);
   });
@@ -294,7 +294,7 @@ describe("the credential a proof names, for a verifier that holds the chain", ()
     const chain = [ROOT, jwt({ vc: {} })];
     const { proof, jwk } = await boundTo(chain);
     const relayed = { ...proof, meta: { ...proof.meta, delegationRef: "" } };
-    expect(await verify(relayed, jwk, chain)).toEqual({ valid: true });
+    expect(await verify(relayed, jwk, chain)).toEqual({ valid: true, meta: proof.meta });
   });
 
   it.each([
@@ -310,7 +310,7 @@ describe("the credential a proof names, for a verifier that holds the chain", ()
     expect(reference).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(reference).not.toBe(id);
     const byDigest = await boundTo(chain, { delegationRef: reference! });
-    expect(await verify(byDigest.proof, byDigest.jwk, chain)).toEqual({ valid: true });
+    expect(await verify(byDigest.proof, byDigest.jwk, chain)).toEqual({ valid: true, meta: byDigest.proof.meta });
     const verbatim = await boundTo(chain, { delegationRef: id });
     expect(await verify(verbatim.proof, verbatim.jwk, chain)).toEqual(misnamed);
   });
@@ -323,7 +323,7 @@ describe("the credential a proof names, for a verifier that holds the chain", ()
     const reference = `sha256:${createHash("sha256").update(Buffer.from([...Buffer.from("urn:"), 0xed, 0xa0, 0x80])).digest("hex")}`;
     expect(await delegationRefOf(leaf, hash)).toBe(reference);
     const byDigest = await boundTo(chain, { delegationRef: reference });
-    expect(await verify(byDigest.proof, byDigest.jwk, chain)).toEqual({ valid: true });
+    expect(await verify(byDigest.proof, byDigest.jwk, chain)).toEqual({ valid: true, meta: byDigest.proof.meta });
     const unnamed = await boundTo(chain);
     expect(await verify(unnamed.proof, unnamed.jwk, chain)).toEqual(misnamed);
   });
@@ -336,6 +336,6 @@ describe("the credential a proof names, for a verifier that holds the chain", ()
 
   it("is compared with nothing when no chain is supplied", async () => {
     const { proof, jwk } = await boundTo(CHAIN, { delegationRef: "urn:uuid:other" });
-    expect(await makeVerifier().verifyProofArtifact(proof, jwk, expected)).toEqual({ valid: true });
+    expect(await makeVerifier().verifyProofArtifact(proof, jwk, expected)).toEqual({ valid: true, meta: proof.meta });
   });
 });

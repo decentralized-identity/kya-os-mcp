@@ -25,6 +25,7 @@ import {
   buildProofJwsPayload,
   computeCanonicalHashes,
   findContentBindingMismatch,
+  signedProofMeta,
 } from './payload.js';
 import { base64ToBytes, base64urlEncodeFromBytes, bytesToBase64 } from '../utils/base64.js';
 import { ED25519_PKCS8_DER_HEADER, ED25519_KEY_SIZE } from '../utils/ed25519-constants.js';
@@ -193,7 +194,9 @@ export class ProofGenerator {
       await this.cryptoProvider.randomBytes(16),
     );
 
-    const meta: ProofMeta = {
+    // Only what the signature covers goes into the meta (`signedProofMeta`): an option the
+    // schema does not name, or an optional claim given as "", never reaches it.
+    const meta: ProofMeta = signedProofMeta({
       did: this.identity.did,
       kid: this.identity.kid,
       ts: Math.floor(Date.now() / 1000),
@@ -208,7 +211,7 @@ export class ProofGenerator {
         ? { prf: RESPONSE_PROOF_PROFILE_ENVELOPE }
         : {}),
       ...metaOptions,
-    };
+    });
 
     const jws = await this.generateJWS(meta);
 
@@ -304,9 +307,10 @@ export class ProofGenerator {
 
   /**
    * Check that a proof was signed by this generator's identity over `request`
-   * and, when the proof binds one, `response`. Every `meta` member is checked
-   * through the signature: the JWS is verified against the payload rebuilt from
-   * `meta`, and a payload it embeds must be that one. A proof that binds a
+   * and, when the proof binds one, `response`. Every `meta` member it reads is
+   * checked through the signature: it reads only the meta the signature covers
+   * (`signedProofMeta`), the JWS is verified against the payload rebuilt from
+   * that, and a payload it embeds must be that one. A proof that binds a
    * response fails without one, and a proof that binds none fails with one.
    * `request` may be given in either shape (see {@link acceptedRequestHashes}).
    *
@@ -320,7 +324,7 @@ export class ProofGenerator {
   ): Promise<boolean> {
     try {
       if (!validateDetachedProof(proof).success) return false;
-      const { meta } = proof;
+      const meta = signedProofMeta(proof.meta);
       // iss/sub cover meta.did; the protected header's kid is pinned below.
       if (meta.did !== this.identity.did || meta.kid !== this.identity.kid) {
         return false;

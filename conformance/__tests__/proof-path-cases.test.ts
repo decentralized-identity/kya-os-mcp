@@ -10,6 +10,8 @@
  * that key. A case the Python verifier finds `bound`, or `no-chain`, passes
  * here; every other fails, and fails where the Python verifier does: on the
  * request, on the response, on the chain, or before any of them is compared.
+ * A case whose proof carries a member no signature covers verifies in both, and
+ * neither hands that member back with the meta it verified (SPEC.md §7.4).
  */
 
 import { createHash } from 'node:crypto';
@@ -17,11 +19,17 @@ import { canonicalize } from 'json-canonicalize';
 import { describe, expect, it } from 'vitest';
 import { signProofMeta } from '../crypto-kit.js';
 import { BASE_POINT_ORDER, ORDER_TWO } from '../small-order.js';
-import { buildProofJwsPayload } from '../../src/index.js';
+import {
+  buildProofJwsPayload,
+  MemoryNonceCacheProvider,
+  NoopFetchProvider,
+  ProofVerifier,
+  SystemClockProvider,
+} from '../../src/index.js';
 import { bindingFailure } from '../../src/proof/binding.js';
 import type { AdapterResult, SignedProofInput } from '../types.js';
 import { base64url } from '../../src/__tests__/utils/encodings.js';
-import { inputOf, verify } from './helpers/delegation-vectors.js';
+import { crypto, inputOf, verify } from './helpers/delegation-vectors.js';
 
 type Members = Record<string, unknown>;
 /** A vector's input, as JSON gives it: any member may hold anything. */
@@ -250,6 +258,12 @@ async function proofCases(bound: Input, bare: Input): Promise<Array<[string, Inp
   ];
 }
 
+/** The cases whose proof carries a member no signature covers, and that member, as proof_cases.py names them. */
+const UNSIGNED_MEMBERS: ReadonlyArray<[string, string]> = [
+  ['scopeId empty, which is not signed', 'scopeId'],
+  ['member the proof schema does not name', 'note'],
+];
+
 /**
  * What the reference adapter reports a verification that fails on the
  * request, on the response, or on a chain that has no digest, which it
@@ -290,6 +304,22 @@ describe('the cases conformance/proof_cases.py holds the Python verifier to', ()
     }
     expect(missed).toEqual([]);
     expect(cases).toHaveLength(86);
+  });
+
+  it('verify a proof that carries a member no signature covers, and hand back its meta without it', async () => {
+    const cases = new Map((await proofCases(bound, bare)).map(([name, input]) => [name, input]));
+    const verifier = new ProofVerifier({
+      cryptoProvider: crypto,
+      clockProvider: new SystemClockProvider(),
+      nonceCacheProvider: new MemoryNonceCacheProvider(),
+      fetchProvider: new NoopFetchProvider(),
+    });
+    for (const [name, member] of UNSIGNED_MEMBERS) {
+      const { proof, publicKeyJwk, expected } = cases.get(name)!;
+      expect(proof.meta).toHaveProperty(member);
+      const result = await verifier.verifyProofArtifact(proof as never, publicKeyJwk as never, expected as never);
+      expect(result).toEqual({ valid: true, meta: set(proof.meta, { [member]: LEFT_OUT }) });
+    }
   });
 
   it('refuse a clock or a skew given as anything but a number, and the reference says so', async () => {

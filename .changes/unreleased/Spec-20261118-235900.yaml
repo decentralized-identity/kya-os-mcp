@@ -1,0 +1,15 @@
+kind: Spec
+body: |-
+    **Conformance suite 1.13.0 adds ten vectors, and SPEC.md §7.8 says what
+    a holder's request proof that names its delegation is held to.** The
+    vectors cover a delegation subject id holding a control character, an
+    `issuanceDate` past the tolerance, a request proof that names one
+    delegation presented beside another, a leaf whose signature fails under
+    valid ancestors, and, for Entity Card hops, a past `expirationDate` or
+    proof `expires` and the parent digest: stated and valid, stated by a
+    hop presented under a parent reissued under the same id, stated by a
+    root, and absent. A verifier MUST refuse a request proof whose
+    `delegationRef` or `delegationChainDigest` names a delegation other
+    than the one the call presents, and a holder SHOULD name it. The Python
+    cross-check reads every new vector.
+time: 2026-11-18T23:59:00.000000-06:00

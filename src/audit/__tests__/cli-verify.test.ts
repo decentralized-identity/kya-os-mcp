@@ -101,3 +101,87 @@ describe('kya-audit verify: the policy constraints that need the present time', 
     expect(exitCode).toBe(0);
   });
 });
+
+describe('kya-audit verify: what reaches the terminal', () => {
+  const ESC = '\u001b';
+  const BEL = '\u0007';
+  // eslint-disable-next-line no-control-regex
+  const CONTROL = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/;
+
+  it('says a bundle that is not JSON is not JSON, and quotes none of it', async () => {
+    const files = await signedBundle(Date.now() + DAY, 'as_observed');
+    const { exitCode, errors, output } = await verify({
+      ...files,
+      'bundle.json': `{"manifest":${ESC}]0;verified${BEL}${ESC}[2J${ESC}[1;1HAudit verification passed`,
+    });
+    expect(exitCode).toBe(2);
+    expect(output).toBe('');
+    expect(errors).toBe('Audit verification failed: bundle.json is not valid JSON\n');
+  });
+
+  it('names the policy or key file that is not JSON, and quotes none of it', async () => {
+    const files = await signedBundle(Date.now() + DAY, 'as_observed');
+    for (const name of ['policy.json', 'keys.json']) {
+      const { exitCode, errors } = await verify({ ...files, [name]: `{${ESC}[2J` });
+      expect(exitCode).toBe(2);
+      expect(errors).toBe(`Audit verification failed: ${name} is not valid JSON\n`);
+    }
+  });
+
+  it('writes no control character from any message it prints', async () => {
+    const files = await signedBundle(Date.now() + DAY, 'as_observed');
+    const policy = JSON.parse(files['policy.json']!) as Record<string, unknown>;
+    // A schema refusal of a member whose name holds an escape sequence.
+    const { exitCode, errors } = await verify({
+      ...files, 'policy.json': JSON.stringify({ ...policy, [`x${ESC}[2J`]: true }),
+    });
+    expect(exitCode).toBe(2);
+    expect(errors).toMatch(/^Audit verification failed: /);
+    expect(errors.slice(0, -1)).not.toMatch(CONTROL);
+    expect(errors.endsWith('\n')).toBe(true);
+  });
+
+  it('names the file a schema refuses, and says why on one line', async () => {
+    const files = await signedBundle(Date.now() + DAY, 'as_observed');
+    const policy = await verify({ ...files, 'policy.json': '"not a policy"' });
+    expect(policy.exitCode).toBe(2);
+    expect(policy.errors).toMatch(/^Audit verification failed: policy\.json is not a valid verification policy: [^\n]*expected object[^\n]*\n$/);
+    const keys = await verify({ ...files, 'keys.json': JSON.stringify({ keys: [{ kid: 'k', jwk: { kid: 'j' } }] }) });
+    expect(keys.errors).toBe(
+      'Audit verification failed: keys.json is not a valid key file: keys.0.jwk.kid: JWK kid must match the key-file kid\n',
+    );
+  });
+
+  it('names a file it cannot read', async () => {
+    const files = await signedBundle(Date.now() + DAY, 'as_observed');
+    const { exitCode, errors } = await runAuditCliWith({
+      ...files,
+    }, 'keys.json');
+    expect(exitCode).toBe(2);
+    expect(errors).toMatch(/^Audit verification failed: keys\.json could not be read/);
+    expect(errors.slice(0, -1)).not.toMatch(CONTROL);
+    const thrownText = await runAuditCli(['verify', 'bundle.json', '--policy', 'policy.json', '--keys', 'keys.json'], {
+      readText: async (path) => {
+        if (path === 'bundle.json') throw 'device not ready'; // eslint-disable-line @typescript-eslint/only-throw-error
+        return files[path]!;
+      },
+      write: () => undefined,
+      writeError: (text) => expect(text).toBe('Audit verification failed: bundle.json could not be read: device not ready\n'),
+    });
+    expect(thrownText).toBe(2);
+  });
+});
+
+/** Runs the CLI over `files`, with `unreadable` failing to read as a missing file does. */
+async function runAuditCliWith(files: Record<string, string>, unreadable: string) {
+  const errors: string[] = [];
+  const exitCode = await runAuditCli(['verify', 'bundle.json', '--policy', 'policy.json', '--keys', 'keys.json'], {
+    readText: async (path) => {
+      if (path === unreadable) throw Object.assign(new Error(`ENOENT: no such file, open '${path}${'\u001b'}[2J'`), { code: 'ENOENT' });
+      return files[path]!;
+    },
+    write: () => undefined,
+    writeError: (text) => errors.push(text),
+  });
+  return { exitCode, errors: errors.join('') };
+}

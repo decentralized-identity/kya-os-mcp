@@ -525,6 +525,9 @@ by the relying party's policy.
 The CLI verifies at the present time.
 Under a policy whose `keyRevocationMode` is `current` or `both`, each key the bundle was signed with must still be valid now, and `requiredCheckpointFreshnessMs` is measured to now, so a key whose validity has ended or a stale observation makes its dimension `invalid` and the exit code `1`.
 
+A failure that exits `2` writes one line to standard error, naming the file it concerns: `bundle.json is not valid JSON`, `policy.json is not a valid verification policy: ...`, or `keys.json could not be read: ...`.
+It quotes no bytes of a file that is not JSON, and every character that does not print, a terminal's escape sequences among them, is written as U+FFFD, so a bundle from a stranger cannot reach the operator's terminal.
+
 ## Projections and Checkpoint integration
 
 `AuditProjectionWorker` derives a minimal timeline projection with an atomic

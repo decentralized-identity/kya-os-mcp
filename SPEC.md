@@ -1159,6 +1159,7 @@ A verifier that accepts a chain MUST hold each call to every caveat of every hop
 The reference implementation returns the chain's caveats on its verdict, at their tightest, and its `caveatRefusal` helper holds a call to them.
 
 **Validity window (fail-closed).** A chain is valid only while every hop is inside the window it states: no hop past its `validUntil` or a `ValidUntil` caveat's `date`, and none before its `validFrom`.
+A hop may also state its end as its `expirationDate`, the member [VC-DATA-MODEL] names for it, or as its proof's `expires`, after which [VC-DATA-INTEGRITY] has the proof expire, and its proof covers both, so a hop is past its end once any end it states has passed, whatever its `validUntil` says.
 Each of these, and each date the narrowing invariants compare, MUST be a date as §6.6 defines one, an [RFC3339] date-time with its offset from UTC.
 A hop that states one in any other form, a date-time with no offset included, is malformed and invalidates the chain.
 A verifier MAY hold each bound with the clock tolerance §6.6 permits for a status list, of no more than 600 seconds.
@@ -2284,6 +2285,7 @@ rules, and operational requirements are specified in [`AUDITABILITY.md`](./AUDIT
 - **[VC-DATA-MODEL]** W3C. *Verifiable Credentials Data Model v1.1*. https://www.w3.org/TR/vc-data-model/
 - **[VC-DATA-MODEL-2.0]** W3C. *Verifiable Credentials Data Model v2.0*. https://www.w3.org/TR/vc-data-model-2.0/
 - **[VC-DI-EDDSA]** W3C. *Data Integrity EdDSA Cryptosuites v1.0*. https://www.w3.org/TR/vc-di-eddsa/
+- **[VC-DATA-INTEGRITY]** W3C. *Verifiable Credential Data Integrity 1.0*. https://www.w3.org/TR/vc-data-integrity/
 - **[URL]** WHATWG. *URL Standard*. https://url.spec.whatwg.org/
 - **[DID-KEY]** W3C CCG. *did:key Method Specification*. https://w3c-ccg.github.io/did-method-key/
 - **[DID-WEB]** W3C CCG. *did:web Method Specification*. https://w3c-ccg.github.io/did-method-web/

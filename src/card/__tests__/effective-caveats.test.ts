@@ -142,6 +142,21 @@ describe('the verdict on a verified chain carries its effective caveats', () => 
     // An earlier ValidUntil caveat stays as written.
     expect(verdictUnder([[vu(2)]], [vu(30).date!])).toMatchObject({ ok: true, caveats: [vu(2)] });
   });
+
+  it("reads every other end a hop states as a ValidUntil too: its expirationDate and its proof's expires", () => {
+    const p = parties();
+    const root = hop({ issuer: p.acme, invoker: p.agent.did, id: 'urn:zcap:acme-root', parentCapability: RESOURCE, allowedAction: ['orders.place'] });
+    const ending = (members: Record<string, unknown>, expires?: string): DelegationChain => [
+      { ...root, ...members, proof: { ...root.proof!, ...(expires === undefined ? {} : { expires }) } },
+    ];
+    const verdictOn = (chain: DelegationChain) => validateDelegationChain(chain, { now });
+    expect(verdictOn(ending({ expirationDate: '2026-12-20T00:00:00Z' }))).toMatchObject({ ok: true, caveats: [validUntil('2026-12-20T00:00:00Z')] });
+    expect(verdictOn(ending({ expirationDate: '2026-12-20T00:00:00Z' }, '2026-12-10T00:00:00Z'))).toMatchObject({
+      ok: true,
+      caveats: [validUntil('2026-12-10T00:00:00Z')],
+    });
+    expect(verdictOn(ending({ validUntil: undefined }, '2026-12-10T00:00:00Z'))).toMatchObject({ ok: true, caveats: [validUntil('2026-12-10T00:00:00Z')] });
+  });
 });
 
 describe('two caveats of one type in one hop', () => {

@@ -1,0 +1,12 @@
+kind: Spec
+body: |-
+    **SPEC.md §6.10: a delegation hop is past its end once any end it
+    states has passed, its `expirationDate` and its proof's `expires`
+    beside its `validUntil`.** The Entity Card chain rules read only
+    `validUntil`, so a hop whose issuer stated its end as the VC 1.1
+    `expirationDate`, or as the Data Integrity proof's `expires`, was
+    accepted after that end, though its proof covers both. They now refuse
+    such a hop as `delegation_expired`, and one whose end is not an RFC
+    3339 date-time with its offset as `delegation_malformed`, and a verdict
+    carries each end as a `ValidUntil` caveat.
+time: 2026-11-18T22:05:43.000000-06:00

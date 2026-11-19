@@ -1,8 +1,9 @@
 /**
- * The window of each Entity Card delegation hop (`../hop-window.ts`): its `validFrom`, its
- * `validUntil` and each `ValidUntil` caveat are RFC 3339 date-times with their zone, read as one
- * instant wherever they are read, and each is held with the clock tolerance, `maxClockSkewMs`, as a
- * status list's window is. Every case goes through `@kya-os/mcp/card` as an adopter calls it.
+ * The window of each Entity Card delegation hop (`../hop-window.ts`): its `validFrom`, each end it
+ * states (its `validUntil`, its `expirationDate` and its proof's `expires`) and each `ValidUntil`
+ * caveat are RFC 3339 date-times with their zone, read as one instant wherever they are read, and
+ * each is held with the clock tolerance, `maxClockSkewMs`, as a status list's window is. Every case
+ * goes through `@kya-os/mcp/card` as an adopter calls it.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -35,6 +36,12 @@ const rootWith = (fields: Partial<DelegationCredential>): DelegationChain => [
 const rootUntilCaveat = (date: string): DelegationChain => [
   hop({ issuer: p.acme, invoker: p.agent.did, id: 'urn:zcap:acme-root', parentCapability: RESOURCE, allowedAction: ['orders.place'], caveats: [{ type: 'ValidUntil', date }] }),
 ];
+
+/** A one-hop chain whose root's proof states `expires`. */
+const rootProofExpires = (expires: unknown): DelegationChain => {
+  const [root] = rootWith({});
+  return [{ ...root!, proof: { ...root!.proof!, expires } }];
+};
 
 /** The verdict of the card profile's chain rules, its code and reasons. */
 const verdictOf = (chain: DelegationChain, ctx: DelegationChainContext = { now }) => {
@@ -69,6 +76,29 @@ describe('a hop window', () => {
     expect(verdict.ok).toBe(false);
     expect(verdict.code).toBe(code);
     expect(verdict.reasons).toContain(reason);
+  });
+
+  it.each<[string, DelegationChain]>([
+    ['an expirationDate 2 seconds ago', rootWith({ expirationDate: at(-2 * SECOND) })],
+    ['an expirationDate ahead, on a hop that states no validUntil', rootWith({ validUntil: undefined, expirationDate: at(60 * SECOND) })],
+    ['a proof that expires 2 seconds ago', rootProofExpires(at(-2 * SECOND))],
+  ])('is read with %s, an end the hop states beside its validUntil', (_label, chain) => {
+    expect(verdictOf(chain)).toEqual({ ok: true, code: undefined, reasons: [] });
+  });
+
+  it.each<[string, DelegationChain, string, string]>([
+    ['an expirationDate more than 120 seconds ago', rootWith({ expirationDate: at(-121 * SECOND) }), 'delegation_expired', `hop 0: expired (expirationDate "${at(-121 * SECOND)}" is in the past)`],
+    [
+      'an expirationDate long past on a hop that states no validUntil',
+      rootWith({ validUntil: undefined, expirationDate: '2020-01-01T00:00:00Z' }),
+      'delegation_expired',
+      'hop 0: expired (expirationDate "2020-01-01T00:00:00Z" is in the past)',
+    ],
+    ['a proof that expired more than 120 seconds ago', rootProofExpires(at(-121 * SECOND)), 'delegation_expired', `hop 0: expired (proof.expires "${at(-121 * SECOND)}" is in the past)`],
+    ['an expirationDate with no zone', rootWith({ expirationDate: '2026-12-01T00:00:00' }), 'delegation_malformed', `hop 0: expirationDate "2026-12-01T00:00:00" ${NOT_A_DATE}`],
+    ['a proof whose expires is a number', rootProofExpires(1_800_000_000), 'delegation_malformed', `hop 0: proof.expires of type number ${NOT_A_DATE}`],
+  ])('is refused with %s, an end the hop states beside its validUntil', (_label, chain, code, reason) => {
+    expect(verdictOf(chain)).toEqual({ ok: false, code, reasons: [reason] });
   });
 
   it('holds each bound with the tolerance the context gives, exactly with none', () => {

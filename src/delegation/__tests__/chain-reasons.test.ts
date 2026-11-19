@@ -8,7 +8,7 @@
  * which of them failed.
  */
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { chainResolutionFailure, revocationCheckFailure, revokedReason } from '../chain-reasons.js';
+import { chainResolutionFailure, presentedReason, revocationCheckFailure, revokedReason } from '../chain-reasons.js';
 import { logger } from '../../logging/index.js';
 import { RefusalError } from '../../utils/refusal.js';
 import { WRAPPED_REASON_LENGTH } from '../../utils/revocation-answer.js';
@@ -26,6 +26,16 @@ const HOSTILE = `gone\n\u001b[31m\uD800${'x'.repeat(300)}`;
 const SANITIZED = `gone��[31m�${'x'.repeat(256 - 11)}…`;
 
 describe('chain enforcement reasons', () => {
+  it("writes a presented reason to the operator's log through sanitizeForMessage, even one that quotes nothing", () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    // Presenter text no caller quoted: a line that would forge a log entry, and a bidi override.
+    const said = 'Delegation forged\n[kya-os] audit: approved\u202e is refused';
+    expect(presentedReason(said, 'the resolver answered nothing')).toBe(said);
+    expect(warn.mock.calls).toEqual([
+      ['[kya-os] Delegation forged\uFFFD[kya-os] audit: approved\uFFFD is refused: the resolver answered nothing'],
+    ]);
+  });
+
   it('quotes the words of a RefusalError the chain resolver threw, sanitized', () => {
     expect(chainResolutionFailure(refused(HOSTILE))).toBe(`Failed to resolve delegation chain: ${SANITIZED}`);
     expect(chainResolutionFailure(refused('timeout'))).toBe('Failed to resolve delegation chain: timeout');

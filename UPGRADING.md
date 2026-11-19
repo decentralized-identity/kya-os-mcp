@@ -16,8 +16,7 @@ Hold each call to them with the new `caveatRefusal`.
 The library reads caveats by one rule of its own: every caveat applies to every call.
 A `MaxAmount` limits the amount of every call: one that names a currency also requires the call to be in that currency, and one that names none limits the amount whatever its currency.
 So `MaxAmount` limits of 100 USD and 90 EUR together permit no call, and a limit of 100 beside one of 50 USD permits calls in USD up to 50.
-SPEC.md §6.10 says only that a child's `MaxAmount` is at most its parent's, in the same currency, compared as exact decimals.
-The library's rule is the reading under which a hop that adds a caveat, or pins a currency its parent left open, only narrows its parent, and a clarification of §6.10 that states it is proposed.
+SPEC.md §6.10 states this rule: it is the reading under which a hop that adds a caveat, or pins a currency its parent left open, only narrows its parent.
 A host that held a call only to the limits in the call's own currency would pass 1,000,000 EUR under a grant limited to 100 USD.
 
 `caveats` holds the lowest `MaxAmount` of each currency the chain names, the lowest of those that name none, the earliest `ValidUntil`, and each caveat the library does not interpret, once, as written, in the order each first appears.
@@ -29,7 +28,7 @@ Over well-formed caveats it passes and refuses the same chains as 1.25.0, apart 
 
 The library does not interpret a caveat of a type it does not know, a type written in another case such as `maxAmount` included, or a caveat of a known type with a member it does not know, such as `{ "type": "MaxAmount", "limit": "100", "per": "day" }`.
 Each is listed, as written, in `unknownCaveats`.
-§6.10 requires a caveat of an unknown type to be replicated verbatim, and the library now holds a caveat of a known type with a member it does not know to the same rule, which the proposed clarification states too: a hop below must replicate it as written.
+§6.10 requires a caveat of an unknown type, or of a known type with a member it does not define, to be replicated verbatim, and the library now holds both to that rule: a hop below must replicate it as written.
 The library still holds a hop to the date of such a `ValidUntil`.
 It still passes a call under such a caveat, and warns once per process, in fixed words, when it returns a passing grant or evaluation that carries one: `[kya-os] A delegation chain carries a caveat this library does not interpret, so it does not enforce it. ...`.
 `validateDelegationChain`, which runs before the proof, holder and root checks, never warns, and neither does a refused chain.
@@ -37,7 +36,7 @@ It still passes a call under such a caveat, and warns once per process, in fixed
 A caveat in a form the library cannot read is now refused as `delegation_malformed`, on any hop, ahead of every other rule a hop breaks:
 
 - a `ValidUntil` that states no `date`, or one that is not an RFC 3339 date-time with its offset, which was already refused, as §6.10 requires of every date a hop states;
-- a `MaxAmount` that states no `limit`, a `limit` that is not a plain non-negative decimal string, such as `"abc"`, `"-5"`, `" 100 "`, `"1e3"` or `"100."`, or a `currency` that is not a string, none of which the library can compare as the exact decimals §6.10 compares; the proposed clarification states this too;
+- a `MaxAmount` that states no `limit`, a `limit` that is not a plain non-negative decimal string, such as `"abc"`, `"-5"`, `" 100 "`, `"1e3"` or `"100."`, or a `currency` that is not a string, none of which the library can compare as the exact decimals §6.10 compares, and §6.10 refuses each;
 - a caveat of any type whose arrays and objects nest more than 64 levels deep, `MAX_CREDENTIAL_NESTING_DEPTH`, the bound SPEC.md §7.8 sets on a whole credential. Such a caveat is never read whole, so it can no longer run the guard out of stack.
 
 The reason names the hop, such as `hop 0: MaxAmount caveat limit "1e3" is not a non-negative decimal`.

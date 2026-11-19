@@ -59,9 +59,11 @@ Stepping the cursor from the start MUST reconstruct the ledger exactly, with no 
 
 ### 2.3 getInclusionProof
 
-Returns a self-contained Merkle inclusion proof binding one entry to the latest checkpoint's signed root.
+Returns a Merkle inclusion proof binding one entry's digest to the latest checkpoint's signed root.
 The request names the entry by `sequence`.
 The response is an `AuditBundleInclusionProofV1` carrying the ledger ref, the entry's `sequence` and `entryDigest`, the `checkpointDigest`, and the raw Merkle proof.
+It carries the entry's digest, not the entry, and a client verifies the entry before it relies on the proof (Section 4).
+A client fetches the entry with `listEntries`, giving `afterSequence` one below the proof's `sequence`, or no `afterSequence` for sequence `0`, and `limit` 1, and takes the one entry returned only if its `sequence` is the proof's.
 An implementation MUST reject the request when no checkpoint exists for the ledger, or when the sequence is not covered by the latest checkpoint.
 
 ### 2.4 getConsistencyProof

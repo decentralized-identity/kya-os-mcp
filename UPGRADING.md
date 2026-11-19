@@ -299,6 +299,10 @@ Read that, not `proof.meta` as received: a member no signature covers is not in 
 Keep data no signature covers outside a proof's meta.
 A valid result now carries `meta`, so a deep-equality check against `{ valid: true }` changes to check `valid` alone or to expect `meta`.
 
+`generateProof` now leaves out of `meta` an option the detached proof schema does not name, an optional claim given as `""`, and any option named after a member the generator sets itself: `did`, `kid`, `ts`, `nonce`, `audience`, `sessionId`, `requestHash`, `responseHash` or `prf`.
+The JWS it signs is unchanged, since such a member never reached its payload, but `meta` as it goes on the wire can lose it.
+A caller that read such a member back from a proof's `meta` keeps it beside the proof instead.
+
 ## From 1.24.0
 
 ### The delegation gate shows the failure your DID resolver reports

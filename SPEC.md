@@ -1105,7 +1105,8 @@ chain:
 - **action subset** - child `allowedAction ⊆ parent`;
 - **monotone caveats** - no parent caveat may be silently dropped; for a shared caveat type, child
   `MaxAmount ≤ parent` (same currency; compared as exact decimals, never rounded or truncated) and
-  child `ValidUntil ≤ parent`; an unknown caveat type MUST be replicated **verbatim**;
+  child `ValidUntil ≤ parent`; a caveat of an unknown type, or of a known type with a member this
+  section does not define, MUST be replicated **verbatim**;
 - **top-level `validUntil` narrowing** - child `validUntil ≤ parent`, each read as a date (below);
 - **continuity** - the parent's delegate (`invoker`) MUST equal the child's `issuer` (you may only
   re-delegate what was delegated to YOUR key), and child `parentCapability` MUST reference the
@@ -1114,6 +1115,15 @@ chain:
 - **root** - root `parentCapability` MUST equal its `invocationTarget` (the resource); when a
   resource owner / resource is asserted, root `issuer` MUST equal the resource owner and root
   `invocationTarget` MUST equal the resource.
+
+**Caveats (fail-closed).** Every caveat of every hop applies to every call the chain authorizes.
+A `MaxAmount` states `limit`, one or more decimal digits optionally followed by `.` and one or more digits, and MAY state `currency`, a string.
+One that names a currency limits the amount of a call in that currency and permits no call in another; one that names none limits the amount of every call, whatever its currency.
+So a hop that adds a caveat, or names a currency its parent left open, only narrows its parent.
+A `ValidUntil` states `date`, a date as below.
+A `MaxAmount` whose `limit` is missing or not of that form, or whose `currency` is not a string, and a `ValidUntil` whose `date` is missing or not a date, are malformed and invalidate the chain; a member either type does not define makes neither malformed.
+A verifier that accepts a chain MUST hold each call to every caveat of every hop, or refuse the call; a caveat it does not interpret it MUST enforce by a rule of its own or refuse the call.
+The reference implementation returns the chain's caveats on its verdict, at their tightest, and its `caveatRefusal` helper holds a call to them.
 
 **Validity window (fail-closed).** A chain is valid only while every hop is inside the window it states: no hop past its `validUntil` or a `ValidUntil` caveat's `date`, and none before its `validFrom`.
 Each of these, and each date the narrowing invariants compare, MUST be a date as §6.6 defines one, an [RFC3339] date-time with its offset from UTC.

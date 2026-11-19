@@ -21,7 +21,6 @@ body: |-
     compared verbatim. The library warns once per process when it passes a
     verdict with a caveat it does not interpret, never from
     `validateDelegationChain`, and a hop's caveats are read in time linear in
-    their number. SPEC.md §6.10 says only that a child's `MaxAmount` narrows its
-    parent's in the same currency; a clarification is proposed. UPGRADING.md, "A
+    their number. SPEC.md §6.10 states these rules. UPGRADING.md, "A
     delegation verdict carries the caveats it grants under", has the detail.
 time: 2026-11-18T19:05:00.000000-06:00

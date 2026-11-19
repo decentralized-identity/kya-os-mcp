@@ -15,6 +15,7 @@
 import { pathToFileURL } from 'node:url';
 import { buildCardProof, ed25519SignerFromJwk, type CardProofMeta } from '../src/card/index.js';
 import { KYA_OS_CARD_PROOF_META_KEY } from '../src/card/index.js';
+import { cardChainVectors } from './card-chain-vectors.js';
 import type { ConformanceVector, VectorFile } from './types.js';
 import { SUITE_VERSION, writeVectorFile } from './vector-files.js';
 import {
@@ -147,7 +148,7 @@ export async function cardProofVectorFile(): Promise<VectorFile> {
   return { version: SUITE_VERSION, category: 'card-proof', vectors };
 }
 
-export function entityCardVectorFile(): VectorFile {
+export async function entityCardVectorFile(): Promise<VectorFile> {
   const accountability = { resourceOwner: OWNER, resource: RESOURCE, chain: DELEGATION_CHAIN, proofDid: ENTITY_DID, now: T0_MS };
   // The accountability vectors hold the JOIN alone, so their card declares no revocation entry (suite >= 1.8.0).
   const { revocation: _revocation, ...accountableAgent } = GOLDEN_CARDS.agent;
@@ -188,6 +189,7 @@ export function entityCardVectorFile(): VectorFile {
       reason: 'The delegation/proof JOIN (leaf-invoker === proof.did) fails ⇒ accountability fails closed',
       input: { card: accountableAgent, accountability: { ...accountability, proofDid: 'did:web:attacker.example' } },
     },
+    ...(await cardChainVectors(accountableAgent, accountability)),
   ];
   return { version: SUITE_VERSION, category: 'entity-card', vectors };
 }
@@ -206,7 +208,7 @@ function passCard(entityType: string, card: unknown, reason: string): Conformanc
 
 export async function generateCardVectors(): Promise<void> {
   writeVectorFile(await cardProofVectorFile(), 'card-proof.json');
-  writeVectorFile(entityCardVectorFile(), 'entity-card.json');
+  writeVectorFile(await entityCardVectorFile(), 'entity-card.json');
   console.log('Entity Card conformance vectors generated (deterministic).');
 }
 

@@ -46,6 +46,24 @@ export const OWNER = 'did:web:api.example'; // root issuer === responsibleParty
 export const RESOURCE = 'did:web:api.example:payments'; // constant invocationTarget
 export const AGENT_A = 'did:web:agent-a.example';
 
+/**
+ * The FIXED test-only Ed25519 keys the root's issuer (`OWNER`) and the leaf's (`AGENT_A`) sign
+ * the hops of the parent-commitment vectors with, each derived from the SHA-256 of a fixed label.
+ * Ed25519 signs deterministically, so those vectors are byte-identical on every run.
+ */
+export const OWNER_KEY: Ed25519PrivateJwk = {
+  kty: 'OKP',
+  crv: 'Ed25519',
+  x: '-W4DGxi9416CbO0bgFZqtwUyYdKbPgFENjgjs-wsiD8',
+  d: 'DJXYztuoHlMKWeMlbgQofkPxklpj36DpXkXM79YVk6E',
+};
+export const AGENT_A_KEY: Ed25519PrivateJwk = {
+  kty: 'OKP',
+  crv: 'Ed25519',
+  x: 'XPjKojPzDPYOXbrB6WxbB4ZTB9afTmH5gjFLmUxQD4g',
+  d: 'UPHgQ669jT1E95XKnnpZn8MTkTUY4S6dbUN4UPEY2vw',
+};
+
 const DELEGATION_CONTEXT = [
   'https://www.w3.org/ns/credentials/v2',
   'https://w3id.org/security/zcap/v1',

@@ -2,7 +2,7 @@
 
 **Compliance levels for KYA-OS implementations**
 
-Version: 1.12.0
+Version: 1.13.0
 Status: Stable
 
 ---
@@ -462,8 +462,8 @@ so it is reproducible against any implementation without re-signing.
 
 | File | Category | Positive | Negative |
 |------|----------|----------|----------|
-| `vectors/signed-proof.json` | Detached proof verification | valid signature + in-window ts; envelope content binding (profile `org.kya-os/response-proof.envelope`); delegation chain binding on an allowed call, on a refusal held as a refusal, and against a re-serialized copy of the chain (`delegationChainDigest`); a credential whose id is too long to record, or holds a bidi override, a zero-width space or a code point that renders as nothing by default, or is the word `unknown`, named by its digest (`delegationRef`); a request with no `params`, bound by its method alone; a `requestHash` over either 1.x legacy shape of the call held | tampered signature, tampered meta, wrong key, timestamp skew exceeded; tampered `structuredContent` under envelope coverage, `prf` stripped (downgrade), unknown profile; chain with a re-issued hop, chain digest stripped, proof that binds no chain, a refusal held against its chain with no outcome stated, a chain whose VC-JWT signature is not base64url, a proof that names another credential of its chain; a JWS segment with a character outside base64url, white space or padding, or written in the base64 alphabet, a JWS of four segments, a claim of `meta` altered after signing, a proof held against another request, a header that names another algorithm or another key, a `kid` of another DID than `meta.did`; a legacy-shape `requestHash` of another tool |
-| `vectors/delegation-chain.json` | Delegation chain verification | single-hop, two-hop attenuated | broken issuer↔subject linkage, scope widening, a scope under a parent that states none, tampered signature, audience mismatch |
+| `vectors/signed-proof.json` | Detached proof verification | valid signature + in-window ts; envelope content binding (profile `org.kya-os/response-proof.envelope`); delegation chain binding on an allowed call, on a refusal held as a refusal, and against a re-serialized copy of the chain (`delegationChainDigest`); a credential whose id is too long to record, or holds a bidi override, a zero-width space or a code point that renders as nothing by default, or is the word `unknown`, named by its digest (`delegationRef`); a request with no `params`, bound by its method alone; a `requestHash` over either 1.x legacy shape of the call held; a refusal of a presented credential that does not verify, binding it alone | tampered signature, tampered meta, wrong key, timestamp skew exceeded; tampered `structuredContent` under envelope coverage, `prf` stripped (downgrade), unknown profile; chain with a re-issued hop, chain digest stripped, proof that binds no chain, a refusal held against its chain with no outcome stated, a chain whose VC-JWT signature is not base64url, a proof that names another credential of its chain; a JWS segment with a character outside base64url, white space or padding, or written in the base64 alphabet, a JWS of four segments, a claim of `meta` altered after signing, a proof held against another request, a header that names another algorithm or another key, a `kid` of another DID than `meta.did`; a legacy-shape `requestHash` of another tool; a proof that names its chain, held against another delegation of the same agent |
+| `vectors/delegation-chain.json` | Delegation chain verification | single-hop, two-hop attenuated | broken issuer↔subject linkage, scope widening, a scope under a parent that states none, tampered signature, audience mismatch, a subject id holding a line feed, an `issuanceDate` far ahead of the clock |
 | `vectors/delegation-chain-key-relationship.json` | Delegation chain verification: the issuer's key (SPEC.md §6.2) | signed with the key the issuer lists under `assertionMethod`; as a VC-JWT with no `kid`, signed with the key its first `assertionMethod` entry names | signed with a key it lists only under `authentication`, proof stating `proofPurpose: "authentication"`, issuer document whose `id` is another DID, signing key whose method names another DID as its `controller`, signing key whose method the document defines twice, signing key under another DID's id, signing key under no relationship, signing key whose method has no `type` or no `controller`; as a VC-JWT, a `kid` naming the `authentication` key, an empty `kid` |
 | `vectors/status-list.json` | StatusList2021 and Bitstring Status List revocation | active (bit unset), issuer's list stating no `id`, Bitstring list declaring two purposes | revoked (bit set), list altered after signing, list signed by another issuer, list of another purpose, StatusList2021 list declaring its purposes in an array, list stating another URL as its `id`, list of a pinned root or a configured issuer stating no `id` |
 | `vectors/status-list-key-relationship.json` | StatusList2021 revocation: the list issuer's key (SPEC.md §6.2) | list signed with the key the issuer lists under `assertionMethod` | list signed with a key it lists only under `authentication`, list proof stating `proofPurpose: "authentication"`, issuer document whose `id` is another DID, list signed with a key it lists under `assertionMethod` whose method names another DID as its `controller`, list signed with a key whose method the document defines twice |
@@ -472,7 +472,7 @@ so it is reproducible against any implementation without re-signing.
 | `vectors/did-key-resolution.json` | did:key resolution | valid Ed25519 | malformed multibase, wrong method |
 | `vectors/did-web-resolution.json` | did:web resolution | well-formed id-matched document | document id mismatch, not found |
 | `vectors/card-proof.json` | `org.kya-os/proof.v1` holder-of-key proof | valid signed proof, in-window, audience-bound | tampered body, tampered signature, wrong audience, expired, kid⇄did forgery |
-| `vectors/entity-card.json` | Entity Card `parseCard` + `verifyCard` | golden card per `entityType`, accountable agent | malformed (unknown field), broken accountability JOIN, revocation entry with nothing to check it |
+| `vectors/entity-card.json` | Entity Card `parseCard` + `verifyCard` | golden card per `entityType`, accountable agent; its chain signed with a leaf that states the root's `parentCredentialDigest`, or states none | malformed (unknown field), broken accountability JOIN, revocation entry with nothing to check it; a hop past its `expirationDate` or its proof's `expires` with a later `validUntil`, a leaf whose `parentCredentialDigest` is another root's, a root that states one |
 | `vectors/signed-proof-key-relationship.json` | Detached proof key retrieval from the signer's `assertionMethod` (SPEC.md §7.2) | referenced or embedded assertion key; no `kid` with a usable first assertion entry | authentication-only or unlisted key, duplicate definition, foreign controller or document, foreign `kid`, unusable first assertion entry |
 | `vectors/audit-integrity.json` | Audit JCS + domain-separated hashing + RFC 9162 | fixed Unicode event, leaf/root, inclusion and consistency paths | mutated event/proof relationships are exercised by the audit unit suites |
 | `vectors/negotiation.json` | MCP extension admission gate (`org.kya-os/decentralized-authority`) | declared and malformed-degrades-to-core (optional server); empty-object and initialize-era declarations, `server/discover` exemption (required server) | absent against a required server (`-32021`), present-but-malformed against a required server (`-32602`, malformed_declaration) |
@@ -628,6 +628,16 @@ Because fresh keys change the committed bytes, regenerated output MUST NOT be co
 
 ### Suite versioning and immutability
 
+Suite 1.13.0 adds ten vectors, for 181 vectors total.
+Two are `delegation-chain` vectors, which must be refused: `subject-id-control-character`, a credential whose `credentialSubject.id` holds a line feed, and `issued-in-future`, a credential whose `issuanceDate` is a century ahead (SPEC.md §6.2).
+Two are `signed-proof` vectors (SPEC.md §7.8): `delegation-chain-other-delegation`, a proof that names its chain held against another delegation of the same agent, which must fail, and `delegation-chain-refused-leaf-alone`, a refusal of a presented credential whose signature fails under ancestors that verify, which binds that credential alone and must pass held against it.
+Six are `entity-card` vectors that turn on a hop of the accountable agent's chain (SPEC.md §6.10).
+`hop-expiration-date-past` and `hop-proof-expired` require refusing a hop past its `expirationDate`, or past its proof's `expires`, whatever its later `validUntil`.
+`hop-parent-digest`, `hop-parent-digest-reissued-root`, `root-states-parent-digest` and `hop-parent-digest-absent` sign the chain, and require accepting a leaf that states its root's `parentCredentialDigest`, refusing it under a root issued again under the same id, refusing a root that states one, and accepting a leaf that states none.
+The root's `proofValue` is 89 characters of multibase base58btc, which SPEC.md §7.8 reads as base64 characters, so an implementation that decodes it as base58 digests other bytes and refuses `hop-parent-digest`.
+`delegation-chain.json` and `signed-proof.json` are generated whole by one run, their earlier vectors signed again under that run's keys with the same cases and expected outcomes; `entity-card.json` is generated deterministically, its earlier vectors unchanged; the other vector files change only their `version`.
+The Python cross-language check holds the two new `signed-proof` vectors as it holds the others, and reads each parent commitment of the four signed chains.
+
 Suite 1.12.0 adds four `status-list-authority.json` vectors, for 171 vectors total (SPEC.md §6.6 and §6.7).
 `legacy-encoding-2021` requires reading a StatusList2021 list whose `encodedList` is written in the base64 alphabet, padded and with no multibase prefix, as a 1.x reader must.
 `index-past-minimum` requires reading entry 131,072 of a list of 262,144 entries, which is clear while bit 0 is set, and `index-past-end` requires refusing the same index on a list of 131,072 entries, past its end.
@@ -700,6 +710,7 @@ Suite 1.9.0 adds `signed-proof-key-relationship.json`, which a verifier that acc
 Suite 1.10.0 adds `status-list/zoneless-start-list`, `status-list/zoneless-end-list-2021` and `status-list/http-date-end-list`, which a verifier that reads a list's bounds with `Date.parse`, or another reader that takes a time with no zone, fails.
 Suite 1.11.0 adds `signed-proof/legacy-request-shape` and `signed-proof/legacy-request-shape-without-control-args`, which a verifier that recomputes `requestHash` only over the covered request fails.
 Suite 1.12.0 adds `status-list/legacy-encoding-2021`, which a verifier that reads an `encodedList` only in the form a publisher writes fails, `status-list/short-list`, which a verifier that refuses a list of fewer than 131,072 entries fails, `status-list/index-past-minimum`, which a verifier that bounds an index by 131,071, or wraps it, fails, and `status-list/index-past-end`, which a verifier that reads a bit past a list's end as clear fails.
+Suite 1.13.0 adds `entity-card/hop-parent-digest`, which a verifier that decodes a `proofValue` as base58 before digesting it fails, and `entity-card/hop-parent-digest-reissued-root`, which a verifier that checks no `parentCredentialDigest` fails.
 The SIGNED public suite manifest published by the Conformance Attestation Program is a separate artifact built on this committed one.
 
 ### Running the harness against YOUR implementation
@@ -804,6 +815,8 @@ broken accountability JOIN (leaf-invoker ≠ the asserted proof `did`), and, fro
 and MUST NOT trust the card's self-declared `conformanceLevel`: it recomputes it.
 The accountable agent card of `agent-accountable` and `accountability-join-broken`
 declares no `revocation` entry, so each holds the JOIN alone.
+From suite 1.13.0, six vectors hold that card to one hop of its chain (SPEC.md §6.10): the accountability edge MUST refuse a hop past any end it states, its `expirationDate` and its proof's `expires` as well as its `validUntil`, MUST refuse a hop whose `parentCredentialDigest` is not the SPEC.md §7.8 digest of the hop before it, and MUST refuse a root that states one.
+The edge reads no hop proof and no status list: the golden chain carries placeholder proofs, and the reference adapter checks the chain's rules and each parent commitment, which need no key and no fetch.
 
 ### Card conformance ↔ the L1/L2/L3 ladder
 
@@ -840,6 +853,7 @@ It also runs the `signed-proof/delegation-*` vectors, and holds every `signed-pr
 It holds each response proof as the TypeScript verifier holds it: to its form, its signer, its time and its signature, each segment of its JWS and the key's `x` read as SPEC.md §7.4 reads them, the signature checked over the payload rebuilt from `meta`, and a key of small order refused; then to the request and the response it binds.
 It recomputes the delegation chain digest and the delegation reference of SPEC.md §7.8 from the credentials, and holds them and the proof's outcome against what the proof signs, for the positive vectors and for each negative one's intended reason.
 It reads a `null` as the TypeScript verifier does: a chain or an outcome the verifier gives as `null` is none, and a claim the proof's `meta` gives as `null`, or out of the form `schemas/detached-proof.json` gives it, makes no proof.
+It reads the parent commitment of each signed chain of the `entity-card/hop-parent-digest*` and `entity-card/root-states-parent-digest` vectors: the digest a hop states must be the SPEC.md §7.8 digest of the hop before it, and the root states none.
 It holds its reading of a signed form, and of a credential's id and reference, to the cases the TypeScript tests hold theirs to (`src/delegation/__tests__/chain-digest.test.ts`, `src/delegation/__tests__/delegation-ref.test.ts`): the values §7.8 gives no signed form are refused, and the others come to the same digests and references.
 It holds its reading of a response proof to the cases the TypeScript reference is held to under the same names (`conformance/__tests__/proof-path-cases.test.ts`): the verifier's clock, skew and key, the JWS as received, the request, the response and the chain it holds, and each claim signed again with the test key of RFC 8032 §7.1.
 The cases sign the payload §7.4 lists, written out apart from the code that rebuilds it, with a signer first held to the public key and the signature RFC 8032 gives for that key.
@@ -878,6 +892,8 @@ KYA-OS cross-language verifier (Python 3.x, stdlib-only)
   [PASS] proof that only names a credential binds no chain
   [PASS] chain whose VC-JWT signature is not base64url has no digest to bind
   [PASS] proof that binds a chain and names another of its credentials
+  [PASS] proof that names its chain is no binding for another delegation of the same agent
+  [PASS] refusal of a presented credential that does not verify binds that credential alone
   [PASS] credential id too long to record is named by its SHA-256
   [PASS] credential nested 64 levels deep, as deep as one may be, is bound
   [PASS] credential nested 65 levels deep has no signed form, so no digest to bind
@@ -903,6 +919,10 @@ KYA-OS cross-language verifier (Python 3.x, stdlib-only)
   [PASS] kid that names a key of another DID than meta.did makes no proof
   [PASS] request with no params is bound by its method alone
   [PASS] every signed-proof vector has the verdict it expects
+  [PASS] hop's parent digest is the 7.8 digest of a root whose 89-character proofValue is read as base64
+  [PASS] hop under a root issued again under the same id states another root's digest
+  [PASS] root that states a parent digest
+  [PASS] hop that states no parent digest is held to none
   [PASS] every detached proof key-relationship vector has the verdict it expects
   [PASS] verifier that ran out of stack reports a fault, which is no verdict
   [PASS] empty delegationRef in meta names no credential, as leaving it out does

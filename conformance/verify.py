@@ -38,6 +38,9 @@ hold their reading to as well.
 Every status-list vector is independently checked by status_list.py: authority,
 both Ed25519 proofs, the list's validity window, bounded gzip decoding and the
 strict indexed bit read.
+Of the entity-card vectors that turn on a hop's commitment to its parent
+(SPEC.md 6.10), each chain is read here too: the parent digest a hop states
+must be the 7.8 digest of the hop before it, and the root states none.
 
 Zero external dependencies: SHA-256 via `hashlib`, JCS via an exact RFC 8785 serializer
 (ECMAScript number formatting and UTF-16 code-unit object-key ordering, covering the full admitted
@@ -53,7 +56,7 @@ name. What it checks with is in the modules beside it, one job to each:
     digests.py           the `sha256:` digest form, and the domain-separated digest
     card_proof.py        what the `org.kya-os/proof.v1` signatures cover
     audit_merkle.py      the RFC 9162 Merkle root, and its inclusion and consistency proofs
-    signed_form.py       a credential's signed form, and the credential and chain digests (7.8)
+    signed_form.py       a credential's signed form, the credential and chain digests (7.8), and a hop's parent digest (6.10)
     delegation_ref.py    the id a credential shows, and the reference it goes by (7.8)
     response_proof.py    a response proof, and the request and response it binds (7.3, 7.4)
     chain_binding.py     how a response proof stands against what its verifier holds (7.8)
@@ -88,6 +91,7 @@ from ed25519 import ed25519_verify
 from proof_cases import forgeries_hold, proof_cases_hold, signer_holds
 from proof_key import verify_input as verify_proof_key_input
 from response_proof import jws_segment_json, proof_of_its_form
+from signed_form import credential_digest, parent_commitment
 from status_list import verify_input as verify_status_input
 from strict_json import jcs, read_json
 
@@ -209,6 +213,10 @@ def main() -> int:
                     binding("chain-no-signed-form") == "no-signed-form"))
     results.append(("proof that binds a chain and names another of its credentials",
                     binding("ref-substituted") == "misnamed"))
+    results.append(("proof that names its chain is no binding for another delegation of the same agent",
+                    binding("chain-other-delegation") == "mismatch"))
+    results.append(("refusal of a presented credential that does not verify binds that credential alone",
+                    binding("chain-refused-leaf-alone") == "bound"))
     results.append(("credential id too long to record is named by its SHA-256",
                     binding("ref-digest-form") == "bound"))
     results.append(("credential nested 64 levels deep, as deep as one may be, is bound",
@@ -271,6 +279,26 @@ def main() -> int:
     results.append(("every signed-proof vector has the verdict it expects",
                     all((chain_binding(vector["input"]) in ("bound", "no-chain")) == (vector["expected"] == "pass")
                         for vector in proof_file["vectors"])))
+
+    # A hop's commitment to its parent (SPEC.md 6.10): the 7.8 digest of the hop before it, and
+    # none on the root. The card and the rest of its chain's rules are the TypeScript reference's.
+    card_file = read_vector_file(HERE / "vectors" / "entity-card.json")
+
+    def hop_chain(name: str) -> list:
+        return vector_by_id(card_file, "entity-card/" + name)["accountability"]["chain"]
+
+    committed = next(vector for vector in card_file["vectors"] if vector["id"] == "entity-card/hop-parent-digest")
+    committed_root = hop_chain("hop-parent-digest")[0]
+    results.append(("hop's parent digest is the 7.8 digest of a root whose 89-character proofValue is read as base64",
+                    parent_commitment(hop_chain("hop-parent-digest")) == "committed" and
+                    len(committed_root["proof"]["proofValue"]) == 89 and
+                    credential_digest(committed_root) in committed["description"]))
+    results.append(("hop under a root issued again under the same id states another root's digest",
+                    parent_commitment(hop_chain("hop-parent-digest-reissued-root")) == "mismatch"))
+    results.append(("root that states a parent digest",
+                    parent_commitment(hop_chain("root-states-parent-digest")) == "root-states"))
+    results.append(("hop that states no parent digest is held to none",
+                    parent_commitment(hop_chain("hop-parent-digest-absent")) == "uncommitted"))
 
     relationship_file = read_vector_file(HERE / "vectors" / "signed-proof-key-relationship.json")
     results.append(("every detached proof key-relationship vector has the verdict it expects",

@@ -60,3 +60,27 @@ def chain_digest(chain: list) -> str:
     if not isinstance(chain, list) or not chain:
         raise ValueError("a delegation chain is an array of at least one credential")
     return domain_digest(CHAIN_DIGEST_DOMAIN, [credential_digest(credential) for credential in chain])
+
+
+def parent_commitment(chain: list) -> str:
+    """SPEC.md 6.10: how the hops of a chain, root first, commit to their parents.
+
+    "root-states" when the root states a `parentCredentialDigest`, which it may not; "mismatch"
+    when a later hop states one that is not the 7.8 digest of the hop before it; "committed" when
+    a later hop states one and every one stated is its parent's; "uncommitted" when none states one.
+    """
+    def stated(hop) -> object:
+        subject = hop.get("credentialSubject") if isinstance(hop, dict) else None
+        return subject.get("parentCredentialDigest") if isinstance(subject, dict) else None
+
+    if stated(chain[0]) is not None:
+        return "root-states"
+    committed = False
+    for parent, hop in zip(chain, chain[1:]):
+        digest = stated(hop)
+        if digest is None:
+            continue
+        if digest != credential_digest(parent):
+            return "mismatch"
+        committed = True
+    return "committed" if committed else "uncommitted"

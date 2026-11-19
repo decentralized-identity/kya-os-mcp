@@ -456,6 +456,26 @@ async function delegationChainVectors(): Promise<VectorFile> {
     audience: 'did:web:other.example.com',
   });
 
+  // Negative: a subject id holding a line break, which a log line or an audit
+  // record that prints the acting agent's DID would read as two lines.
+  const controlCharacterSubject = await buildSignedDelegation({
+    issuer: root,
+    subjectDid: `${agent.did}\n${root.did}`,
+    id: 'del-control-character-subject',
+    scopes: ['greeting:read'],
+    audience: SERVER_DID,
+  });
+
+  // Negative: an issuanceDate a century ahead of any verifier's clock.
+  const issuedInFuture = await buildSignedDelegation({
+    issuer: root,
+    subjectDid: agent.did,
+    id: 'del-issued-in-future',
+    scopes: ['greeting:read'],
+    audience: SERVER_DID,
+    members: [['issuanceDate', '2126-01-01T00:00:00.000Z']],
+  });
+
   const vectors: ConformanceVector[] = [
     {
       id: 'delegation-chain/valid-single-hop',
@@ -512,6 +532,24 @@ async function delegationChainVectors(): Promise<VectorFile> {
       expected: 'fail',
       reason: 'Audience binding (confused-deputy guard) must reject a mismatched server',
       input: { leaf: wrongAudience, serverDid: SERVER_DID, didDocuments },
+    },
+    {
+      id: 'delegation-chain/subject-id-control-character',
+      category: 'delegation-chain',
+      description: 'Signed delegation whose credentialSubject.id holds a line feed between two DIDs',
+      expected: 'fail',
+      reason:
+        'A subject id is held to the rule an issuer is: a URL as it stands, with no character a reader does not see. The verifier hands it on as the acting agent\'s DID, where a line break forges a line (delegation_malformed)',
+      input: { leaf: controlCharacterSubject, serverDid: SERVER_DID, didDocuments },
+    },
+    {
+      id: 'delegation-chain/issued-in-future',
+      category: 'delegation-chain',
+      description: 'Signed delegation whose issuanceDate is 2126-01-01, far past the 120 s clock tolerance',
+      expected: 'fail',
+      reason:
+        'issuanceDate is when the credential becomes valid, held with the clock tolerance a status list\'s start is, so one beyond it is not yet valid (delegation_not_yet_valid)',
+      input: { leaf: issuedInFuture, serverDid: SERVER_DID, didDocuments },
     },
   ];
 

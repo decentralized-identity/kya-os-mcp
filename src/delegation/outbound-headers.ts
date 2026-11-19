@@ -25,8 +25,8 @@ import { base64ToBytes, base64urlEncodeFromBytes } from '../utils/base64.js';
 import { strictBase64urlBytes } from '../utils/base64-reading.js';
 import { isRecord } from '../utils/guards.js';
 import { canonicalizeJsonBytes } from '../utils/canonical-json.js';
+import { domainDigest, webCryptoSha256 } from '../utils/domain-digest.js';
 import { warnOncePerProcess } from '../utils/warn-once.js';
-import { WebCryptoProvider } from '../providers/web-crypto.js';
 import { logger } from '../logging/index.js';
 
 /**
@@ -156,8 +156,6 @@ function forwardingRefusal(delegation: DelegationRecord, serverDid: string): str
 /** Domain of a session anchor: `SHA-256(UTF8(domain) || 0x00 || JCS([sessionId, target host]))`. */
 const SESSION_ANCHOR_DOMAIN = 'org.kya-os.outbound.session-anchor.v1';
 
-const sha256 = new WebCryptoProvider();
-
 /**
  * The `KYA-OS-Session-Id` a target is sent: an anchor of the session for the target's host, the
  * host the proof is addressed to. It is one value for every call of one session to one host, so the
@@ -166,13 +164,8 @@ const sha256 = new WebCryptoProvider();
  * the id is a bearer of the session: sent as it is, every downstream service, and whatever logs or
  * proxies its headers, could call the server's gate in that session as the agent.
  */
-async function sessionAnchor(sessionId: string, targetHostname: string): Promise<string> {
-  const prefix = new TextEncoder().encode(`${SESSION_ANCHOR_DOMAIN}\0`);
-  const canonical = canonicalizeJsonBytes([sessionId, targetHostname]);
-  const input = new Uint8Array(prefix.length + canonical.length);
-  input.set(prefix);
-  input.set(canonical, prefix.length);
-  return sha256.hash(input);
+function sessionAnchor(sessionId: string, targetHostname: string): Promise<string> {
+  return domainDigest(SESSION_ANCHOR_DOMAIN, canonicalizeJsonBytes([sessionId, targetHostname]), webCryptoSha256);
 }
 
 /**

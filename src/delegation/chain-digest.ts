@@ -27,14 +27,13 @@
  */
 
 import { canonicalizeJsonBytes } from '../utils/canonical-json.js';
+import { domainDigest, type Sha256 } from '../utils/domain-digest.js';
 import { digestInput, signedForm, type ReceivedCredential } from './signed-form.js';
 import { isDigest } from './digest-form.js';
 import type { Digest } from '../audit/types.js';
 
 export type { ReceivedCredential } from './signed-form.js';
-
-/** Bytes to `sha256:<64 lowercase hex>`: bind a `CryptoProvider.hash`. */
-export type Sha256 = (bytes: Uint8Array) => Promise<string>;
+export type { Sha256 } from '../utils/domain-digest.js';
 
 /** The digests of a chain's credentials, and the one digest that stands for the chain. */
 export interface DelegationChainDigests {
@@ -48,20 +47,6 @@ export interface DelegationChainDigests {
 export const DELEGATION_CREDENTIAL_DIGEST_DOMAIN = 'org.kya-os.delegation.credential.v1';
 /** Domain of a chain digest: `SHA-256(UTF8(domain) || 0x00 || JCS(credential digests))`. */
 export const DELEGATION_CHAIN_DIGEST_DOMAIN = 'org.kya-os.delegation.chain.v1';
-
-const encoder = new TextEncoder();
-
-/**
- * `SHA-256(UTF8(domain) || 0x00 || canonical)`, the construction the audit
- * protocol uses, over a value's RFC 8785 bytes.
- */
-async function domainDigest(domain: string, canonical: Uint8Array, hash: Sha256): Promise<Digest> {
-  const prefix = encoder.encode(`${domain}\0`);
-  const input = new Uint8Array(prefix.length + canonical.length);
-  input.set(prefix);
-  input.set(canonical, prefix.length);
-  return (await hash(input)) as Digest;
-}
 
 /**
  * The digest of one credential (SPEC §7.8): SHA-256, under the credential

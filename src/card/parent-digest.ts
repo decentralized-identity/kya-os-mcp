@@ -16,19 +16,16 @@
  * refuses a mismatch; a hop that states none is accepted, as before.
  */
 
-import { delegationCredentialDigest, type Sha256 } from '../delegation/chain-digest.js';
+import { delegationCredentialDigest } from '../delegation/chain-digest.js';
 import { NoSignedFormError } from '../delegation/signed-form.js';
 import type { Digest } from '../audit/types.js';
-import { WebCryptoProvider } from '../providers/web-crypto.js';
+import { webCryptoSha256 } from '../utils/domain-digest.js';
 import { isRecord } from '../utils/guards.js';
 import { coded, type Coded } from '../utils/refusal.js';
 import { thrownReason } from '../utils/thrown-words.js';
 
 /** The member of a hop's `credentialSubject` that commits it to its parent. */
 export const PARENT_CREDENTIAL_DIGEST = 'parentCredentialDigest';
-
-const webCrypto = new WebCryptoProvider();
-const sha256: Sha256 = (bytes) => webCrypto.hash(bytes);
 
 /**
  * The `parentCredentialDigest` a child of `parent` states: the digest SPEC §7.8 gives the parent
@@ -38,7 +35,7 @@ const sha256: Sha256 = (bytes) => webCrypto.hash(bytes);
  *   signature among them.
  */
 export function parentCredentialDigestOf(parent: object): Promise<Digest> {
-  return delegationCredentialDigest(parent, sha256);
+  return delegationCredentialDigest(parent, webCryptoSha256);
 }
 
 /** The `parentCredentialDigest` a received hop states, or `undefined` when it states none. */

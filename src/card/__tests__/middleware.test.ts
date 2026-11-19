@@ -89,11 +89,13 @@ describe('requireProof — the per-request holder-of-key guard', () => {
     const result = await guard(REQ, await mintMeta(signer));
     // The proof carried a cnf but no token cnf was wired, so the guard surfaces the non-fatal
     // unfused-cnf warning (TM-1) alongside the valid L3-minus result — it does not fail the guard.
+    // It hands back what the proof states of its delegation (SPEC.md §7.8): none, for this request.
     expect(result).toEqual({
       ok: true,
       did: signer.did,
       level: 'L3-minus',
       warnings: ['cnf_present_but_token_unfused'],
+      statedDelegation: { kind: 'none' },
     });
   });
 
@@ -101,7 +103,7 @@ describe('requireProof — the per-request holder-of-key guard', () => {
     const { signer, publicJwk } = await keypair();
     const guard = requireProof(deps(publicJwk, { tokenCnfJkt: signer.jkt }));
     const result = await guard(REQ, await mintMeta(signer));
-    expect(result).toEqual({ ok: true, did: signer.did, level: 'L3' });
+    expect(result).toEqual({ ok: true, did: signer.did, level: 'L3', statedDelegation: { kind: 'none' } });
   });
 
   it('401s (proof_missing) when _meta carries no proof', async () => {

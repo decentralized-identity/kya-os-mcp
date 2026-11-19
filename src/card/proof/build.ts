@@ -6,10 +6,18 @@
  * from the legacy session proof's `org.kya-os/proof` so the two coexist. The proof binds:
  * `requestHash` → THIS body (JCS), `audience` → THIS recipient, `nonce` + `created`/`expires` → NOW,
  * `kid` → the signing DID key, and (optionally) `cnf.jkt` → the token's RFC 9449 sender-constraint.
+ * Its JWS protected header states the delegation the call presents (SPEC.md §7.8), which rides
+ * beside the proof in `_meta` and outside `requestHash`.
  * Crypto is entirely inside the injected {@link ProofSigner}.
  */
 
+import { statementParameters } from '../../delegation/stated-delegation.js';
 import type { ToolRequest } from '../../proof/generator.js';
+import { jwsProtectedHeader } from '../../utils/crypto-service.js';
+import { webCryptoSha256 } from '../../utils/domain-digest.js';
+import { isRecord } from '../../utils/guards.js';
+import { warnOncePerProcess } from '../../utils/warn-once.js';
+import { KYA_OS_DELEGATION_CHAIN_META_KEY } from '../carried-chain.js';
 import { canonicalPayloadBytes, computeRequestHash } from './canonical.js';
 import { httpSignatureBaseBytes } from './http-sig.js';
 import {
@@ -22,11 +30,41 @@ import {
   type ProofSigner,
 } from './types.js';
 
+/** `Symbol.for` key, so every copy of the package a process loads warns once between them. */
+const SIGNER_WROTE_NO_STATEMENT_WARNED = Symbol.for('kya-os.warned.card-proof-signer-wrote-no-delegation');
+
+/**
+ * The delegation `req` sends: the leaf of the chain in its `params._meta`, `undefined` when it holds
+ * none, and whatever the member holds when that is not a chain with a leaf.
+ */
+function sentDelegation(req: ToolRequest): unknown {
+  const meta = isRecord(req.params) ? req.params._meta : undefined;
+  const chain = isRecord(meta) ? meta[KYA_OS_DELEGATION_CHAIN_META_KEY] : undefined;
+  return Array.isArray(chain) && chain.length > 0 ? chain[chain.length - 1] : chain;
+}
+
+/** Whether the protected header of `jws` holds every one of `parameters`, as given. */
+function wrote(jws: string, parameters: Readonly<Record<string, string>>): boolean {
+  try {
+    const header = jwsProtectedHeader(jws);
+    return Object.entries(parameters).every(([name, value]) => Object.hasOwn(header, name) && header[name] === value);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Mint an `org.kya-os/proof.v1` for `req`, signed by `signer`, bound to `ctx`. Returns the proof
  * keyed by {@link KYA_OS_CARD_PROOF_META_KEY} so it can be spread straight into an MCP request
  * `_meta`. The `cnf.jkt` is `ctx.cnfJkt` when given, else the signer's own key thumbprint, else
  * omitted (an L3-minus proof — still bound by request + audience + nonce + key).
+ *
+ * The proof states the delegation the call presents (SPEC.md §7.8): `ctx.delegation`, or else the
+ * leaf of the chain `req` holds in `params._meta`, or `'none'`. A signer of the caller's own that
+ * does not write the protected header parameters it is handed makes a proof that states nothing:
+ * that throws when `ctx.delegation` asked for the statement, and warns once otherwise.
+ *
+ * @throws `NoSignedFormError` for a `ctx.delegation` with no signed form (SPEC.md §7.8)
  */
 export async function buildCardProof(
   req: ToolRequest,
@@ -59,7 +97,17 @@ export async function buildCardProof(
     jws: '',
   };
 
-  const jws = await signer.sign(canonicalPayloadBytes(unsigned));
+  const stated = await statementParameters(ctx.delegation, sentDelegation(req), webCryptoSha256);
+  const jws = await signer.sign(canonicalPayloadBytes(unsigned), stated);
+  if (!wrote(jws, stated)) {
+    const unwritten = 'the signer did not write the protected header parameters it was handed, so the proof does not state its delegation';
+    if (ctx.delegation !== undefined) throw new Error(`buildCardProof: ${unwritten}`);
+    warnOncePerProcess(
+      SIGNER_WROTE_NO_STATEMENT_WARNED,
+      `[kya-os] buildCardProof: ${unwritten} (SPEC.md §7.8). ` +
+        'A ProofSigner now takes them as the second argument of sign(); a verifier that requires the statement refuses this proof.',
+    );
+  }
   const signed: CardProofMeta = { ...unsigned, jws };
 
   // Dual carrier: when the signer exposes a raw-signature seam, ALSO sign the RFC 9421 base so the

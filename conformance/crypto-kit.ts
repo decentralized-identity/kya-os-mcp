@@ -9,7 +9,7 @@
  * `statusListGzipCodec`.
  */
 
-import { createPrivateKey, sign } from 'node:crypto';
+import { createHash, createPrivateKey, createPublicKey, sign } from 'node:crypto';
 import { canonicalize } from 'json-canonicalize';
 import { CompactSign, importPKCS8 } from 'jose';
 import { canonicalizeJSON } from '../src/delegation/utils.js';
@@ -17,13 +17,42 @@ import { publicKeyToJwk } from '../src/delegation/did-key-resolver.js';
 import type { NodeCryptoProvider } from '../src/providers/node-crypto.js';
 import { ED25519_PKCS8_DER_HEADER, ED25519_KEY_SIZE } from '../src/utils/ed25519-constants.js';
 import { base64ToBytes, bytesToBase64 } from '../src/utils/base64.js';
-import { buildProofJwsPayload, type DelegationCredential, type DetachedProof, type Proof } from '../src/index.js';
+import {
+  buildProofJwsPayload,
+  didKeyFragment,
+  generateDidKeyFromBase64,
+  type DelegationCredential,
+  type DetachedProof,
+  type Proof,
+} from '../src/index.js';
 
 /** A party as the generator mints it: its DID, the key id it signs under, and its Ed25519 private key in base64. */
 export interface SigningParty {
   did: string;
   kid: string;
   privateKey: string;
+}
+
+/** A {@link SigningParty} with its Ed25519 public key in base64, which its did:key encodes. */
+export interface KeyedParty extends SigningParty {
+  publicKey: string;
+}
+
+/** The party that holds `privateKey` and `publicKey`, both in base64, under the did:key of its key. */
+export function partyOf(keys: { privateKey: string; publicKey: string }): KeyedParty {
+  const did = generateDidKeyFromBase64(keys.publicKey);
+  return { did, kid: `${did}#${didKeyFragment(did)}`, ...keys };
+}
+
+/**
+ * A party whose TEST-ONLY Ed25519 private key is the SHA-256 of `label`. Ed25519 signs
+ * deterministically, so what such parties sign is byte-identical on every run, and a generator that
+ * mints its parties this way writes the same vector file every time. Never use one for anything real.
+ */
+export function fixedParty(label: string): KeyedParty {
+  const seed = createHash('sha256').update(label, 'utf8').digest();
+  const spki = createPublicKey(createPrivateKey(formatPrivateKeyAsPEM(seed.toString('base64')))).export({ format: 'der', type: 'spki' });
+  return partyOf({ privateKey: seed.toString('base64'), publicKey: spki.subarray(spki.length - ED25519_KEY_SIZE).toString('base64') });
 }
 
 /**
@@ -74,14 +103,16 @@ export function ed25519VerificationMethod(
  * Date.now(), so the generator reproduces the documented payload shape directly.
  *
  * The JWS is signed under `header`, the producer's `{ alg: 'EdDSA', kid }`
- * unless a vector needs a proof whose header names another algorithm or key.
- * It is signed by hand, as JWS libraries sign it, since they refuse to sign
- * under such a header.
+ * unless a vector needs a proof whose header names another algorithm or key,
+ * or carries a further parameter. A header given as a string is signed as that
+ * text, for one a JSON serializer would not write, such as one that holds a
+ * member twice. It is signed by hand, as JWS libraries sign it, since they
+ * refuse to sign under such a header.
  */
 export async function signProofMeta(
   party: Pick<SigningParty, 'kid' | 'privateKey'>,
   meta: DetachedProof['meta'],
-  header: Record<string, unknown> = { alg: 'EdDSA', kid: party.kid },
+  header: Record<string, unknown> | string = { alg: 'EdDSA', kid: party.kid },
 ): Promise<DetachedProof> {
   // The payload SHAPE comes from the library's own buildProofJwsPayload, the
   // single source of truth shared with ProofGenerator/ProofVerifier, so a
@@ -90,7 +121,7 @@ export async function signProofMeta(
   const payload = buildProofJwsPayload(meta);
   const canonical = canonicalize(payload as Parameters<typeof canonicalize>[0]);
   const base64url = (text: string | Uint8Array): string => Buffer.from(text).toString('base64url');
-  const signingInput = `${base64url(JSON.stringify(header))}.${base64url(canonical)}`;
+  const signingInput = `${base64url(typeof header === 'string' ? header : JSON.stringify(header))}.${base64url(canonical)}`;
   const key = createPrivateKey(formatPrivateKeyAsPEM(party.privateKey));
   return { jws: `${signingInput}.${base64url(sign(null, Buffer.from(signingInput), key))}`, meta };
 }

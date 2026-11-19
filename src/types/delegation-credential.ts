@@ -56,6 +56,11 @@ export interface DelegationRecord {
   controller?: string;
   vcId: string;
   parentId?: string;
+  /**
+   * The SPEC §7.8 digest of the parent credential, which a re-delegation may state to commit to
+   * that one credential (SPEC §6.2). A delegation with no `parentId` states none.
+   */
+  parentCredentialDigest?: string;
   constraints: DelegationConstraints;
   signature: string;
   status: DelegationStatus;
@@ -110,6 +115,8 @@ export interface DelegationCredentialSubject {
     scopes?: string[];
     controller?: string;
     parentId?: string;
+    /** The SPEC §7.8 digest of the parent credential, when the re-delegation commits to it (SPEC §6.2). */
+    parentCredentialDigest?: string;
     constraints: DelegationConstraints;
     status: DelegationStatus;
     createdAt?: number;
@@ -207,6 +214,7 @@ export function wrapDelegationAsVC(
         ...(scopes && scopes.length > 0 && { scopes }),
         ...(delegation.controller !== undefined && { controller: delegation.controller }),
         ...(delegation.parentId !== undefined && { parentId: delegation.parentId }),
+        ...(delegation.parentCredentialDigest !== undefined && { parentCredentialDigest: delegation.parentCredentialDigest }),
         constraints: delegation.constraints,
         status: delegation.status,
         ...(delegation.createdAt !== undefined && { createdAt: delegation.createdAt }),

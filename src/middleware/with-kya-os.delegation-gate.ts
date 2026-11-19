@@ -7,11 +7,9 @@
  * `./with-kya-os.ts`; verification plumbing lives in `./with-kya-os.delegation-verify.ts`.
  */
 
-import {
-  isHolderBindingApplicable,
-  assertHolderBinding,
-  toHolderBindingRequest,
-} from "../delegation/holder-binding.js";
+import { isHolderBindingApplicable, toHolderBindingRequest } from "../delegation/holder-binding.js";
+import { verifyDelegatedCallProof } from "../delegation/delegated-call-proof.js";
+import { warnOfUnnamedProof } from "../delegation/unnamed-proof-warning.js";
 import { scopeSatisfies } from "../delegation/scope-matcher.js";
 import { getDelegationScopes } from "../delegation/chain-enforcement.js";
 import { NO_DELEGATION_ID } from "../delegation/delegation-id.js";
@@ -72,7 +70,7 @@ export function createDelegationGate(
   deps: MiddlewareDeps,
   wiring: DelegationGateWiring,
 ): Pick<KyaOsDelegationGate, "wrapWithDelegation"> {
-  const { identity, holderBindingMode, holderBindingVerifier, audit } = deps;
+  const { identity, holderBindingMode, holderBindingVerifier, requestBindingMode, cryptoProvider, audit } = deps;
   const { attachOutcomeProof, requireProofLayer, resolveExistingGrant, bindGrantOnSuccess } =
     wiring;
 
@@ -254,16 +252,21 @@ export function createDelegationGate(
                 parsedProof = {};
               }
             }
-            // A proof that names the delegation it was made for (SPEC §7.8) binds
-            // only beside that one, so none other can be swapped in beside it.
-            const binding = await assertHolderBinding({
+            // The proof is held to the delegation presented beside it (SPEC §7.8):
+            // one made for another delegation of the subject does not bind, so
+            // none can be swapped in beside it.
+            const binding = await verifyDelegatedCallProof({
               proof: parsedProof as DetachedProof,
               subjectDid,
               request: toHolderBindingRequest(toolName, args),
               expectedAudience: identity.did,
               proofVerifier: holderBindingVerifier,
-              delegation: { delegationRef: check.evidence.delegationRef, chainDigest: check.chainDigest },
+              presented: check.presented,
+              ancestors: check.ancestors,
+              mode: requestBindingMode,
+              hash: (bytes) => cryptoProvider.hash(bytes),
             });
+            warnOfUnnamedProof(binding);
             if (binding.status !== "bound") {
               const reason =
                 binding.reason ??

@@ -223,6 +223,8 @@ All Level 2 requirements, plus:
 | L3.26 | Audit logging MUST be implemented | — | Implementation-specific |
 | L3.27 | Derive authorization from the VC; treat L2 chain/scope headers as advisory | — | Spec-defined behavior (SPEC §8.1) |
 | L3.28 | Compute the delegation chain digest and the delegation reference, holding each credential to the nesting bound; reject a chain that is not the one a proof binds, a credential that is not the one it names, and an outcome that is not the one expected | `src/delegation/__tests__/chain-digest.test.ts`, `src/delegation/__tests__/delegation-ref.test.ts`, `src/delegation/__tests__/signed-form.test.ts`, `src/proof/__tests__/delegation-chain-binding.test.ts`, `src/proof/__tests__/outcome-binding.test.ts` | `reproduces the SPEC Appendix C.4 vector`; `delegationReference` (all tests); `of an object nested as deep as a credential may be` (all tests); `a verifier that holds the chain` and `the credential a proof names, for a verifier that holds the chain` (all tests); `a verifier that requires an outcome` (all tests) |
+| L3.29 | State the delegation a request proof is made for in its JWS protected header, and hold a request proof to the credential its call presents: reject one that states another credential or a value that is neither a credential digest nor `none`, read the statement only from the header that verified, and, where naming is required, reject one that names no credential | `src/delegation/__tests__/stated-delegation.test.ts`, `src/delegation/__tests__/holder-binding.stated-delegation.test.ts`, `src/delegation/__tests__/delegated-call-proof.test.ts`, `src/delegation/__tests__/spec-appendix-c5.test.ts`, `src/middleware/__tests__/holder-binding-gate.stated-delegation.test.ts`, `src/card/__tests__/request-binding.test.ts` | All tests; `reproduces` SPEC Appendix C.5 in `SPEC Appendix C.5: a request proof that names its delegation` |
+| L3.30 | Check the `parentCredentialDigest` a re-delegation states against its parent credential, and reject one stated by a credential with no parent | `src/delegation/__tests__/chain-enforcement.parent-commitment.test.ts` | All tests |
 
 ### Detailed Requirements
 
@@ -327,6 +329,34 @@ Both MUST hold every credential to the nesting bound of SPEC §7.8, counting bef
 A credential whose arrays and objects nest 64 levels deep is read.
 A credential object nested deeper has no signed form, and the header or payload of a VC-JWT nested deeper is not read as JSON.
 Neither reports its own failure to read a value, a call stack that ran out say, as a value with no signed form.
+
+#### L3.29 - Request Proof Delegation Statement
+
+A holder's request proof states the delegation its call presents, in the protected header of its JWS, as `org.kya-os/delegation` (SPEC §7.8).
+
+A holder MUST:
+- State, in every request proof, the credential digest of SPEC §7.8 of the credential the call presents, in the form it is sent, or `none` for a call that presents none, and reproduce the Appendix C.5 vector
+- State the delegation it will attach, never `none`, when it makes the proof before attaching it
+
+A verifier that checks a request proof for a delegated call MUST:
+- Read the statement only from the protected header of the JWS whose signature it verified
+- Reject a proof whose statement is neither a credential digest nor `none`
+- Digest the presented credential in the form received, and reject a proof that states the digest of another
+- Authorize a call that presents no delegation, under authority it retains, only under authority retained for the credential a proof states
+- Reject a proof whose signed `delegationRef` or `delegationChainDigest` is that of another delegation
+
+A verifier SHOULD reject a proof that names no credential: one that states nothing, or one that states `none` beside a presented credential.
+One that accepts such a proof during the transition MUST NOT report the call as bound to its delegation by the holder.
+Version 2.0.0 of the specification makes the rejection a MUST, and the vectors that hold a verifier to it state `expected.requestBinding: "require"`.
+
+#### L3.30 - Parent Commitment
+
+A re-delegation MAY state `parentCredentialDigest`, the SPEC §7.8 digest of its parent credential (SPEC §6.2).
+
+A verifier MUST:
+- Check the digest of every credential that states one against its parent credential, as received, and reject the chain when they differ
+- Reject a chain whose root, which has no parent, states one
+- Read a member that is present as stated, whatever its value, so `null` is a digest that is not the parent's
 
 ---
 
@@ -474,6 +504,8 @@ so it is reproducible against any implementation without re-signing.
 | `vectors/card-proof.json` | `org.kya-os/proof.v1` holder-of-key proof | valid signed proof, in-window, audience-bound | tampered body, tampered signature, wrong audience, expired, kid⇄did forgery |
 | `vectors/entity-card.json` | Entity Card `parseCard` + `verifyCard` | golden card per `entityType`, accountable agent; its chain signed with a leaf that states the root's `parentCredentialDigest`, or states none | malformed (unknown field), broken accountability JOIN, revocation entry with nothing to check it; a hop past its `expirationDate` or its proof's `expires` with a later `validUntil`, a leaf whose `parentCredentialDigest` is another root's, a root that states one |
 | `vectors/signed-proof-key-relationship.json` | Detached proof key retrieval from the signer's `assertionMethod` (SPEC.md §7.2) | referenced or embedded assertion key; no `kid` with a usable first assertion entry | authentication-only or unlisted key, duplicate definition, foreign controller or document, foreign `kid`, unusable first assertion entry |
+| `vectors/signed-proof-request-binding.json` | A holder's request proof and the delegation presented beside it (SPEC.md §7.8) | proof whose protected header states the digest of the credential presented, as an object or as a VC-JWT, or beside a copy that differs in nothing signed; proof that states `none` for a call that presents none | proof beside another delegation of its holder, one issued again under the same id, or the same one in another form; statement in upper case or in an array; statement changed, or removed, after signing; header that holds the parameter twice; signed `delegationRef` of another credential; for a verifier that requires naming, a proof that states `none` beside a credential, or states nothing |
+| `vectors/delegation-chain-parent-commitment.json` | Delegation chain verification: a re-delegation's commitment to its parent (SPEC.md §6.2) | re-delegation that states the digest of its parent, or states none | the same re-delegation under a parent issued again under the same id, one that states `null`, a delegation with no parent that states one |
 | `vectors/audit-integrity.json` | Audit JCS + domain-separated hashing + RFC 9162 | fixed Unicode event, leaf/root, inclusion and consistency paths | mutated event/proof relationships are exercised by the audit unit suites |
 | `vectors/negotiation.json` | MCP extension admission gate (`org.kya-os/decentralized-authority`) | declared and malformed-degrades-to-core (optional server); empty-object and initialize-era declarations, `server/discover` exemption (required server) | absent against a required server (`-32021`), present-but-malformed against a required server (`-32602`, malformed_declaration) |
 
@@ -624,11 +656,12 @@ construction.
 The key-relationship files have their own generator, `pnpm run conformance:generate:key-relationship`, which also mints fresh keys.
 `status-list-authority.json` has its own generator too, `pnpm run conformance:generate:status-authority`, which also mints fresh keys and writes no other file.
 `status-list-validity.json` has its own as well, `pnpm run conformance:generate:status-validity`, which mints fresh keys and writes no other file.
+`signed-proof-request-binding.json` and `delegation-chain-parent-commitment.json` have one generator, `pnpm run conformance:generate:request-binding`, which signs with fixed test keys at a fixed time and so writes the same two files on every run, as `pnpm run conformance:generate:card` does for the card vectors.
 Because fresh keys change the committed bytes, regenerated output MUST NOT be committed over an existing `suiteVersion` (see [Suite versioning and immutability](#suite-versioning-and-immutability)).
 
 ### Suite versioning and immutability
 
-Suite 1.13.0 adds thirteen vectors, for 184 vectors total.
+Suite 1.13.0 adds thirty-four vectors, for 205 vectors total.
 Two are `delegation-chain` vectors, which must be refused: `subject-id-control-character`, a credential whose `credentialSubject.id` holds a line feed, and `issued-in-future`, a credential whose `issuanceDate` is a century ahead (SPEC.md §6.2).
 Two are `signed-proof` vectors (SPEC.md §7.8): `delegation-chain-other-delegation`, a proof that names its chain held against another delegation of the same agent, which must fail, and `delegation-chain-refused-leaf-alone`, a refusal of a presented credential whose signature fails under ancestors that verify, which binds that credential alone and must pass held against it.
 Nine are `entity-card` vectors that turn on a hop of the accountable agent's chain (SPEC.md §6.10).
@@ -637,7 +670,15 @@ Nine are `entity-card` vectors that turn on a hop of the accountable agent's cha
 `hop-parent-digest`, `hop-parent-digest-reissued-root`, `root-states-parent-digest` and `hop-parent-digest-absent` sign the chain, and require accepting a leaf that states its root's `parentCredentialDigest`, refusing it under a root issued again under the same id, refusing a root that states one, and accepting a leaf that states none.
 The root's `proofValue` is 89 characters of multibase base58btc, which SPEC.md §7.8 reads as base64 characters, so an implementation that decodes it as base58 digests other bytes and refuses `hop-parent-digest`.
 `root-states-parent-digest-null` and `hop-parent-digest-null` sign a root, and a leaf, that state `parentCredentialDigest` as `null`, and require refusing both: a member stated as `null` is stated, so an implementation that reads `null` as no digest accepts them.
-`delegation-chain.json` and `signed-proof.json` are generated whole by one run, their earlier vectors signed again under that run's keys with the same cases and expected outcomes; `entity-card.json` is generated deterministically, its earlier vectors unchanged; the other vector files change only their `version`.
+Sixteen are the `signed-proof/request-binding-*` vectors of `signed-proof-request-binding.json` (SPEC.md §7.8): a holder's request proof, the credential its call presented as `expected.presentedDelegation` (`null` for none), and `expected.requestBinding: "require"` where the verdict is that of a verifier that requires a proof to name the credential presented.
+`named`, `named-vc-jwt`, `reserialized` and `none` must pass, and `named` is the proof the reference generator makes from the arguments its call sends, with no other input.
+`other-delegation`, `reissued-under-same-id` and `other-form` hold that same proof beside another credential, and must fail: the statement is a digest of the credential in the form sent, so neither another delegation of the holder, nor one issued again under the same id, nor the VC-JWT of the delegation the proof names as an object, is the credential named.
+`statement-not-lowercase` and `statement-not-a-string` are signed statements that are neither a credential digest nor `none`, `statement-altered` and `statement-stripped` rewrite the header after signing, `statement-duplicated` signs a header that holds the parameter twice with the presented credential first, and `payload-names-another` also signs the `delegationRef` of another credential; each must fail.
+`none-beside-delegation`, `unnamed-beside-delegation` and `unnamed` must fail for a verifier that requires naming, which SPEC.md §7.8 says a verifier SHOULD and version 2.0.0 makes a MUST; no vector requires accepting a proof that names no credential.
+Every other vector of the file has the same verdict whether or not the verifier requires naming.
+Five are the `delegation-chain/parent-digest-*` vectors of `delegation-chain-parent-commitment.json` (SPEC.md §6.2): `committed` and `absent` must pass, and `reissued-parent`, `null` and `on-root` must fail, as their `entity-card` counterparts do for a hop of that profile.
+Both files are signed with fixed test keys at a fixed time, so their generator writes the same bytes on every run.
+`delegation-chain.json` and `signed-proof.json` are generated whole by one run, their earlier vectors signed again under that run's keys with the same cases and expected outcomes; `entity-card.json` is generated deterministically, its earlier vectors unchanged; `card-proof.json` is generated deterministically too, its proofs signed again, with the same cases and expected outcomes, because a card proof now states its delegation in its protected header (SPEC-ENTITY-CARD.md §8.4), `none` for these requests, and `card-proof/tampered-signature` now changes the first character of the signature, every bit of which is significant; the other vector files change only their `version`.
 The Python cross-language check holds the two new `signed-proof` vectors as it holds the others, and reads each parent commitment of the six signed chains.
 
 Suite 1.12.0 adds four `status-list-authority.json` vectors, for 171 vectors total (SPEC.md §6.6 and §6.7).
@@ -713,6 +754,7 @@ Suite 1.10.0 adds `status-list/zoneless-start-list`, `status-list/zoneless-end-l
 Suite 1.11.0 adds `signed-proof/legacy-request-shape` and `signed-proof/legacy-request-shape-without-control-args`, which a verifier that recomputes `requestHash` only over the covered request fails.
 Suite 1.12.0 adds `status-list/legacy-encoding-2021`, which a verifier that reads an `encodedList` only in the form a publisher writes fails, `status-list/short-list`, which a verifier that refuses a list of fewer than 131,072 entries fails, `status-list/index-past-minimum`, which a verifier that bounds an index by 131,071, or wraps it, fails, and `status-list/index-past-end`, which a verifier that reads a bit past a list's end as clear fails.
 Suite 1.13.0 adds `entity-card/hop-parent-digest`, which a verifier that decodes a `proofValue` as base58 before digesting it fails, and `entity-card/hop-parent-digest-reissued-root`, which a verifier that checks no `parentCredentialDigest` fails.
+It also adds `signed-proof-request-binding.json`, which a verifier that does not hold a request proof to the delegation statement of its protected header fails, and `delegation-chain/parent-digest-reissued-parent`, which a verifier that checks no `parentCredentialDigest` in a §6.2 credential fails.
 The SIGNED public suite manifest published by the Conformance Attestation Program is a separate artifact built on this committed one.
 
 ### Running the harness against YOUR implementation
@@ -802,6 +844,9 @@ pinned `nowMs`/`skewSeconds` window. A conformant `verifyCardProof` MUST recompu
 | `card-proof/expired` | fail | evaluated outside `created`/`expires` (±skew) — replay guard |
 | `card-proof/kid-did-forgery` | fail | `kid.split('#')[0] !== did` — the forgeable-principal gap |
 
+From suite 1.13.0 each proof's detached JWS states, in its protected header, the delegation its request carries (SPEC-ENTITY-CARD.md §8.4): `none`, since these requests carry no chain.
+The header is part of the signing input, so a verifier checks the signature over the header as the vector gives it, and one that does not know the parameter ignores it.
+
 ### `entity-card` — the typed card (`parseCard` + `verifyCard`)
 
 `vectors/entity-card.json` ships the golden `parseCard`-valid card for each
@@ -856,15 +901,18 @@ It holds each response proof as the TypeScript verifier holds it: to its form, i
 It recomputes the delegation chain digest and the delegation reference of SPEC.md §7.8 from the credentials, and holds them and the proof's outcome against what the proof signs, for the positive vectors and for each negative one's intended reason.
 It reads a `null` as the TypeScript verifier does: a chain or an outcome the verifier gives as `null` is none, and a claim the proof's `meta` gives as `null`, or out of the form `schemas/detached-proof.json` gives it, makes no proof.
 It reads the parent commitment of each signed chain of the `entity-card/hop-parent-digest*` and `entity-card/root-states-parent-digest` vectors: the digest a hop states must be the SPEC.md §7.8 digest of the hop before it, and the root states none.
+It reads the same commitment in the `delegation-chain/parent-digest-*` vectors, where a §6.2 credential states it in its `delegation` object.
+It holds every `signed-proof/request-binding-*` vector to the verdict it expects, and each negative one to its intended reason (`request_binding.py`): the proof is held as a response proof is, its signer to the did:key of the key the vector gives, and then the statement of the protected header its signature covers, and the `delegationRef` it signs, to the credential presented.
 It holds its reading of a signed form, and of a credential's id and reference, to the cases the TypeScript tests hold theirs to (`src/delegation/__tests__/chain-digest.test.ts`, `src/delegation/__tests__/delegation-ref.test.ts`): the values §7.8 gives no signed form are refused, and the others come to the same digests and references.
 It holds its reading of a response proof to the cases the TypeScript reference is held to under the same names (`conformance/__tests__/proof-path-cases.test.ts`): the verifier's clock, skew and key, the JWS as received, the request, the response and the chain it holds, and each claim signed again with the test key of RFC 8032 §7.1.
 The cases sign the payload §7.4 lists, written out apart from the code that rebuilds it, with a signer first held to the public key and the signature RFC 8032 gives for that key.
 `verify.py` is the driver: it reads the vector files, makes each check, and reports it under its name.
-What it checks with is in the modules beside it in `conformance/`, one job to each, which its docstring lists: `ed25519.py`, `strict_json.py`, `base64url.py`, `digests.py`, `card_proof.py`, `audit_merkle.py`, `status_list.py` for the status-list vectors, `response_proof.py` for §7.3 and §7.4, and for §7.8 `signed_form.py`, `delegation_ref.py`, `chain_binding.py` and `delegation_cases.py`, which holds the cases above, with `proof_cases.py` holding those of a response proof.
+What it checks with is in the modules beside it in `conformance/`, one job to each, which its docstring lists: `ed25519.py`, `strict_json.py`, `base64url.py`, `digests.py`, `card_proof.py`, `audit_merkle.py`, `status_list.py` for the status-list vectors, `response_proof.py` for §7.3 and §7.4, and for §7.8 `signed_form.py`, `delegation_ref.py`, `chain_binding.py`, `request_binding.py` and `delegation_cases.py`, which holds the cases above, with `proof_cases.py` holding those of a response proof.
 
 ```bash
 python3 conformance/verify.py       # npm run conformance:verify:crosslang
 npm run conformance:generate:card   # deterministically regenerate the card vectors
+npm run conformance:generate:request-binding   # deterministically regenerate the request-binding and parent-commitment vectors
 ```
 
 Expected output:
@@ -927,6 +975,21 @@ KYA-OS cross-language verifier (Python 3.x, stdlib-only)
   [PASS] hop that states no parent digest is held to none
   [PASS] root that states a parent digest as null states one
   [PASS] hop that states a parent digest as null states one that is not its parent's
+  [PASS] base profile re-delegation's parent digest is the 7.8 digest of its parent
+  [PASS] base profile re-delegation under a parent issued again under the same id states another parent's digest
+  [PASS] base profile re-delegation that states no parent digest is held to none
+  [PASS] base profile re-delegation that states a parent digest as null states one that is not its parent's
+  [PASS] base profile delegation with no parent that states a parent digest
+  [PASS] request proof that states the digest of the credential its call presents, an object or a VC-JWT
+  [PASS] request proof beside a copy of the credential it names that differs in nothing signed
+  [PASS] request proof beside another delegation of its holder, one issued again under the same id, or the same one in another form
+  [PASS] request proof that states none, for a call that presents no delegation
+  [PASS] request proof that names no credential is refused by a verifier that requires one, and bound by one that does not
+  [PASS] statement that is neither a credential digest nor none is malformed
+  [PASS] statement changed or removed after signing breaks the signature
+  [PASS] of statements that share the parameter's name the last is read
+  [PASS] request proof that also signs the delegationRef of another credential
+  [PASS] every request-binding vector has the verdict it expects, and one that names no policy has it under both
   [PASS] every detached proof key-relationship vector has the verdict it expects
   [PASS] verifier that ran out of stack reports a fault, which is no verdict
   [PASS] empty delegationRef in meta names no credential, as leaving it out does

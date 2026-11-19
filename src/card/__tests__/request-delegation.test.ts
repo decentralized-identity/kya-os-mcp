@@ -128,6 +128,9 @@ describe('verifyRequestDelegation: a carried chain', () => {
       unknownCaveats: [],
       depth: 2,
       fresh: true,
+      // The request brought no proof, so nothing named the chain, and its leaf states no parent digest (SPEC.md §7.8).
+      delegationNamed: false,
+      ancestorsPinned: false,
     });
   });
 
@@ -364,6 +367,12 @@ describe('requireDelegation', () => {
     const delegationGuard = requireDelegation(deps(p));
     const authority = await delegationGuard({ meta, proofDid: proof.did, action: request.params.name });
     expect(authority).toMatchObject({ ok: true, source: 'carried', responsibleParty: p.acme.did });
+    // The same call, its proof made from the request that carries the chain, names the chain's leaf.
+    const carrying = { ...request, params: { ...request.params, _meta: toDelegationChainMeta(twoHopChain(p)) } };
+    const named = { ...(await buildCardProof(carrying, signer, { audience: RESOURCE, nonce: 'n-0002' })), ...carrying.params._meta };
+    const again = await proofGuard(request, named);
+    if (!again.ok) throw new Error('unreachable');
+    expect(await delegationGuard({ meta: named, proofDid: again.did, action: request.params.name })).toMatchObject({ ok: true, delegationNamed: true });
   });
 
   it('is 401-shaped when no authority is presented, and 403-shaped when it does not authorize', async () => {

@@ -27,6 +27,7 @@ import type {
 } from "../delegation/vc-verifier.js";
 import type { DIDResolverRegistry } from "../delegation/did-resolver-registry.js";
 import type { RevocationChecker } from "../delegation/chain-enforcement.js";
+import type { RequestBindingMode } from "../delegation/stated-delegation.js";
 import type { DelegationCredential, ResponseProofProfile } from "../types/protocol.js";
 
 export interface KyaOsIdentityConfig {
@@ -187,6 +188,28 @@ export interface KyaOsDelegationConfig {
    * one that does not decode, since no proof can bind it.
    */
   holderBinding?: "off" | "warn" | "enforce";
+  /**
+   * How holder binding takes a request proof that does not name the delegation
+   * its call is made under (SPEC §7.8). A proof made by `generateRequestProof`
+   * states the credential the call presents, or that it presents none, and one
+   * that names another delegation than the one presented is always refused, as
+   * is one for a call that presents none when only another delegation's grant
+   * is retained. This option decides the rest, wherever `holderBinding` checks
+   * a proof:
+   *
+   * - `'prefer'` (default): a proof that states nothing, as one made before
+   *   1.26.0 does, or that states `none` beside a presented delegation, as one
+   *   made before the delegation was attached does, still binds, with one
+   *   warning per process. Such a proof is good beside any delegation of its
+   *   subject.
+   * - `'require'`: such a proof does not bind, and neither does one that states
+   *   `none` for a call that presents no delegation while the grants retained
+   *   for its subject hold more than one. Opt in once every caller states its
+   *   delegation. Version 2.0.0 makes it the default.
+   *
+   * Any other value is refused at startup with a `TypeError`.
+   */
+  requestBinding?: RequestBindingMode;
   /**
    * Tuning for the delegation verifier's SIGNATURE-verification cache (the
    * expensive DID-resolve + crypto dimension). Revocation status and basic

@@ -89,6 +89,9 @@ describe('the verdict on a verified chain carries its effective caveats', () => 
       unknownCaveats: [],
       depth: 2,
       fresh: true,
+      // What it says of the request proof it was handed nothing of, and of the chain's hops (SPEC.md §7.8).
+      delegationNamed: false,
+      ancestorsPinned: false,
     });
   });
 

@@ -40,6 +40,16 @@ function segmentJson(segment: string): Record<string, unknown> {
 }
 
 /**
+ * The protected header of a compact JWS, read as {@link CryptoService.verifyJWS} reads it. A
+ * parameter of it binds something only once the signature has verified over this same string.
+ *
+ * @throws when the first segment is not base64url of JSON text
+ */
+export function jwsProtectedHeader(jws: string): Record<string, unknown> {
+  return segmentJson(jws.split('.')[0] ?? '');
+}
+
+/**
  * Minimal Ed25519 JWK interface
  */
 export interface Ed25519JWK {

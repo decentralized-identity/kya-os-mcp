@@ -1,7 +1,7 @@
 {
   "suiteVersion": "1.13.0",
-  "vectorSetHash": "sha256:e46fd2f52ea0910a3aaf430b003f1e568e39f3e51bc6f24032fa1b5aad08bcef",
-  "vectorCount": 184,
+  "vectorSetHash": "sha256:387ee8da39c2bbe1fe5557e1bab09169a26434f452ded00554ec46a67360f063",
+  "vectorCount": 205,
   "files": [
     [
       "audit-integrity.json",
@@ -9,11 +9,15 @@
     ],
     [
       "card-proof.json",
-      "323f060cb0abd0c8a2dcf2bc466d315703395527c0bd364122576f383666b103"
+      "daa84b23c16d17331f573450bc255ef0e31969e6a62b079fd4bab97dfbca2407"
     ],
     [
       "delegation-chain-key-relationship.json",
       "fca34b57ee8ed983ce47d9dfe56111d69c03253fe5712dc7ad26df84eb8a63a7"
+    ],
+    [
+      "delegation-chain-parent-commitment.json",
+      "609ca6581fe859182c5ffc7e85ae7a93e686cd1be12a8837cc169bfd81852d85"
     ],
     [
       "delegation-chain.json",
@@ -38,6 +42,10 @@
     [
       "signed-proof-key-relationship.json",
       "9a5c6d64ae3d121afe7dc411915ce5a78154384081c93ef0b641c6b935a6a00b"
+    ],
+    [
+      "signed-proof-request-binding.json",
+      "ce407b9b1f24d13cfafdb47701b61856a1546e910d731ddacb2ee2acea93bc8a"
     ],
     [
       "signed-proof.json",

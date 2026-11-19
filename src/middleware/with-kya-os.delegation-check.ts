@@ -14,6 +14,7 @@ import {
   NoSignedFormError,
   canonicalVcJwt,
 } from "../delegation/signed-form.js";
+import type { ReceivedCredential } from "../delegation/chain-digest.js";
 import type { DelegationCredentialVerifier } from "../delegation/vc-verifier.js";
 import type {
   DelegationVCVerificationResult,
@@ -48,16 +49,26 @@ export interface Authenticated {
 
 /**
  * Outcome of authenticating a presented delegation. On success the caller gets
- * the normalized credential and its wire form, and can have the chain it was
- * verified as digested (SPEC §7.8), to compare with one a holder proof names;
+ * the normalized credential and its wire form, and what the check was reached
+ * on ({@link VerifiedPresentation}), which a holder proof is held to (SPEC §7.8);
  * on failure a sanitizable reason plus the best-effort parsed credential, if
  * any. Either way it carries the {@link DelegationRecords} of what was
  * presented: on a refusal they describe a credential that did not verify, or a
  * chain that was refused.
  */
 export type DelegationCheck =
-  | (Extract<Verdict, { valid: true }> & DelegationRecords & { chainDigest(): Promise<Digest> })
+  | (Extract<Verdict, { valid: true }> & DelegationRecords & VerifiedPresentation)
   | (Extract<Verdict, { valid: false }> & DelegationRecords);
+
+/** What a valid check was reached on, each value as it was read once, for a holder proof to be held to. */
+export interface VerifiedPresentation {
+  /** The credential presented: an object, or a VC-JWT by its string. */
+  presented: ReceivedCredential;
+  /** The ancestors it was verified under, root first. */
+  ancestors: readonly ReceivedCredential[];
+  /** The digest of the chain it was verified as (SPEC §7.8), made when asked for. */
+  chainDigest(): Promise<Digest>;
+}
 
 /** The reason for a delegation whose verification faulted: it says nothing of the fault, which is logged. */
 export const UNVERIFIABLE_DELEGATION = "Delegation credential could not be verified";
@@ -182,6 +193,8 @@ export async function checkPresentation(
     return {
       ...verdict,
       ...(await describer.describe({ presented, ancestors, verified: true })),
+      presented: presented as ReceivedCredential,
+      ancestors: ancestors as readonly ReceivedCredential[],
       chainDigest: () => describer.chainDigest({ presented, ancestors }),
     };
   } catch (error) {

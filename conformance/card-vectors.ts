@@ -17,6 +17,7 @@ import { buildCardProof, ed25519SignerFromJwk, type CardProofMeta } from '../src
 import { KYA_OS_CARD_PROOF_META_KEY } from '../src/card/index.js';
 import { cardChainVectors } from './card-chain-vectors.js';
 import type { ConformanceVector, VectorFile } from './types.js';
+import { flipSignatureChar } from './tampering.js';
 import { SUITE_VERSION, writeVectorFile } from './vector-files.js';
 import {
   AUDIENCE,
@@ -48,12 +49,6 @@ async function mintProof(opts: {
   return env[KYA_OS_CARD_PROOF_META_KEY];
 }
 
-/** Flip a base64url string's last char — a minimal, still-well-formed tamper. */
-function flipLastChar(value: string): string {
-  const last = value[value.length - 1];
-  return value.slice(0, -1) + (last === 'A' ? 'B' : 'A');
-}
-
 interface ProofInputOverrides {
   proof?: unknown;
   request?: unknown;
@@ -80,7 +75,7 @@ export async function cardProofVectorFile(): Promise<VectorFile> {
   // A forgery: the proof CLAIMS `did = VICTIM_DID` while `kid` still names the real
   // signer — authentically signed, so only the kid⇄did binding rejects it.
   const forged = await mintProof({ did: VICTIM_DID, kid: KID, nonce: 'n-forgery-00000000000000000000', audience: AUDIENCE });
-  const tamperedSig: CardProofMeta = { ...valid, jws: flipLastChar(valid.jws) };
+  const tamperedSig: CardProofMeta = { ...valid, jws: flipSignatureChar(valid.jws) };
   const tamperedRequest = {
     method: 'tools/call',
     params: { name: 'payments.transfer', arguments: { to: 'did:web:merchant.example', amount: '9999.00', currency: 'USD' } },

@@ -99,6 +99,7 @@
     "conformance:generate": "tsx conformance/generate-vectors.ts",
     "conformance:generate:card": "tsx conformance/card-vectors.ts",
     "conformance:generate:key-relationship": "tsx conformance/key-relationship-vectors.ts",
+    "conformance:generate:request-binding": "tsx conformance/request-binding-vectors.ts",
     "conformance:generate:status-authority": "tsx conformance/status-list-authority-vectors.ts",
     "conformance:generate:status-validity": "tsx conformance/status-list-validity-vectors.ts",
     "conformance:verify:crosslang": "python3 conformance/verify.py",

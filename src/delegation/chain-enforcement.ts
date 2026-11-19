@@ -33,7 +33,7 @@ import {
   revocationRefusal,
   unreadableChainAnswer,
 } from "./chain-reasons.js";
-import { chainLinkageRefusal } from "./chain-linkage.js";
+import { chainCommitmentRefusal, chainLinkageRefusal } from "./chain-linkage.js";
 import { checkConstraintAttenuation } from "./constraint-attenuation.js";
 import { rootAdmissionRefusal } from "./root-admission.js";
 import { hasDelegationShape, resolvedAncestors } from "./resolved-chain.js";
@@ -272,7 +272,13 @@ async function enforceChain(
   // trusted root issuer. The application's `resolveDelegationChain` above runs first and bounds its
   // own I/O. What the resolver answered is the operator's to read: a refusal of it tells the
   // presenter only what the presented credential states (`chainLinkageRefusal`).
-  const linkage = chainLinkageRefusal(chain);
+  // Then each parent commitment a credential states (SPEC §6.2), against the credential before it as held.
+  let linkage = chainLinkageRefusal(chain);
+  try {
+    linkage ??= await chainCommitmentRefusal(chain);
+  } catch (error) {
+    return refusal(refusalCodeOf(error, "runtime_error"), "Delegation chain could not be checked: a parent credential could not be digested");
+  }
   if (linkage !== undefined) {
     return refusal("chain_invalid", linkage.logged === undefined ? linkage.reason : presentedReason(linkage.reason, linkage.logged));
   }

@@ -20,9 +20,6 @@ import { pathToFileURL } from 'node:url';
 import { NodeCryptoProvider } from '../src/providers/node-crypto.js';
 import {
   ProofGenerator,
-  generateDidKeyFromBase64,
-  didKeyFragment,
-  wrapDelegationAsVC,
   buildDidWebDocument,
   RESPONSE_PROOF_PROFILE_ENVELOPE,
   type DelegationCredential,
@@ -31,11 +28,12 @@ import {
 } from '../src/index.js';
 import { extractPublicKeyFromDidKey, publicKeyToJwk } from '../src/delegation/did-key-resolver.js';
 import { VECTORS_DIR } from './loader.js';
-import { ed25519VerificationMethod, signProofMeta, signVC, signVcJwt } from './crypto-kit.js';
-import type { CredentialOptions } from './delegation-binding-kit.js';
+import { signedDelegation, type SignedDelegationArgs } from './credential-kit.js';
+import { ed25519VerificationMethod, partyOf, signProofMeta, signVcJwt, type KeyedParty } from './crypto-kit.js';
 import { delegationBindingVectors } from './delegation-binding-vectors.js';
 import { READ_AS_LARGE_INTEGER } from './numbers-as-written.js';
 import { statusListVectors, type StatusListVectorDeps } from './status-list-vectors.js';
+import { flipB64url, flipSignatureChar } from './tampering.js';
 import { SUITE_VERSION, writeVectorFile } from './vector-files.js';
 import type {
   ConformanceVector,
@@ -46,17 +44,10 @@ const crypto = new NodeCryptoProvider();
 const NOW = 1_750_000_000; // fixed epoch-seconds anchor for proof timestamps
 const SERVER_DID = 'did:web:server.example.com';
 
-interface Party {
-  did: string;
-  kid: string;
-  privateKey: string;
-  publicKey: string;
-}
+type Party = KeyedParty;
 
 async function mintParty(): Promise<Party> {
-  const { privateKey, publicKey } = await crypto.generateKeyPair();
-  const did = generateDidKeyFromBase64(publicKey);
-  return { did, kid: `${did}#${didKeyFragment(did)}`, privateKey, publicKey };
+  return partyOf(await crypto.generateKeyPair());
 }
 
 function jwkFor(party: Party) {
@@ -303,22 +294,6 @@ async function signedProofVectors(): Promise<VectorFile> {
   return { version: SUITE_VERSION, category: 'signed-proof', vectors };
 }
 
-/**
- * Corrupt a JWS signature by flipping the FIRST character of its signature
- * segment. The first character's bits are all significant, so the decoded
- * signature bytes are guaranteed to change. (Flipping the LAST character is
- * not a reliable tamper: an 86-char base64url segment for a 64-byte Ed25519
- * signature carries only 2 significant bits in its final character, and
- * lenient decoders ignore the 4 padding bits — an 'A'↔'B' swap there can
- * decode to the identical signature.)
- */
-function flipSignatureChar(jws: string): string {
-  const [header, payload, signature] = jws.split('.');
-  const first = signature![0];
-  const swap = first === 'A' ? 'B' : 'A';
-  return `${header}.${payload}.${swap}${signature!.slice(1)}`;
-}
-
 // ── delegation-chain vectors ───────────────────────────────────────────────────
 
 function didDocFor(party: Party): Record<string, unknown> {
@@ -330,41 +305,9 @@ function didDocFor(party: Party): Record<string, unknown> {
   };
 }
 
-async function buildSignedDelegation(args: {
-  issuer: Party;
-  subjectDid: string;
-  id: string;
-  parentId?: string;
-  scopes: string[];
-  audience: string | string[];
-  status?: 'active' | 'revoked';
-  credentialStatus?: CredentialStatus;
-} & CredentialOptions): Promise<DelegationCredential> {
-  const unsigned = wrapDelegationAsVC(
-    {
-      id: args.id,
-      issuerDid: args.issuer.did,
-      subjectDid: args.subjectDid,
-      vcId: args.vcId ?? `urn:uuid:${args.id}`,
-      parentId: args.parentId,
-      constraints: { scopes: args.scopes, audience: args.audience },
-      signature: '',
-      status: args.status ?? 'active',
-      createdAt: NOW * 1000,
-      ...(args.metadata === undefined ? {} : { metadata: args.metadata }),
-    },
-    {
-      issuanceDate: '2026-01-01T00:00:00.000Z',
-      ...(args.credentialStatus ? { credentialStatus: args.credentialStatus } : {}),
-    },
-  );
-  for (const [key, value] of args.members ?? []) {
-    Object.defineProperty(unsigned, key, { value, enumerable: true, writable: true, configurable: true });
-  }
-  const { privateKey, kid } = args.issuer;
-  const proof = await signVC(crypto, unsigned as Record<string, unknown>, privateKey, kid, args.canonicalize);
-  return { ...unsigned, proof } as DelegationCredential;
-}
+/** A delegation signed by its issuer at the suite's fixed time (./credential-kit.ts). */
+const buildSignedDelegation = (args: SignedDelegationArgs): Promise<DelegationCredential> =>
+  signedDelegation(crypto, args, NOW);
 
 async function delegationChainVectors(): Promise<VectorFile> {
   const root = await mintParty(); // issuer (user/org)
@@ -554,17 +497,6 @@ async function delegationChainVectors(): Promise<VectorFile> {
   ];
 
   return { version: SUITE_VERSION, category: 'delegation-chain', vectors };
-}
-
-/**
- * Corrupt a base64url signature by changing its FIRST character, for the reason
- * {@link flipSignatureChar} gives: the last character of a 64-byte Ed25519
- * signature carries bits a decoder ignores, so changing it can leave the
- * signature as it was.
- */
-function flipB64url(value: string): string {
-  const swap = value[0] === 'A' ? 'B' : 'A';
-  return swap + value.slice(1);
 }
 
 // ── status-list vectors ─────────────────────────────────────────────────────────

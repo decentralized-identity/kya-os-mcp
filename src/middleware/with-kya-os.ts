@@ -28,6 +28,7 @@ import {
   type ProofAgentIdentity,
 } from "../proof/generator.js";
 import { ProofVerifier } from "../proof/verifier.js";
+import { requestBindingMode } from "../delegation/stated-delegation.js";
 import { SystemClockProvider } from "../providers/system-clock.js";
 import { MemoryNonceCacheProvider } from "../providers/memory.js";
 import { logger } from "../logging/index.js";
@@ -192,6 +193,9 @@ export function createKyaOsMiddleware(
               : new NoopFetchProvider()),
         });
 
+  // Refused at startup: a mistyped mode is never read as the default.
+  const requestBinding = requestBindingMode(delegationConfig?.requestBinding, "delegation.requestBinding");
+
   // The constructed collaborators, threaded into each sub-factory.
   const deps: MiddlewareDeps = {
     identity,
@@ -205,6 +209,7 @@ export function createKyaOsMiddleware(
     delegationConfig,
     holderBindingMode,
     holderBindingVerifier,
+    requestBindingMode: requestBinding,
     emitLegacyProofKey,
     responseProofProfile,
     development,

@@ -1,0 +1,758 @@
+{
+  "version": "1.13.0",
+  "category": "delegation-chain",
+  "vectors": [
+    {
+      "id": "delegation-chain/parent-digest-committed",
+      "category": "delegation-chain",
+      "description": "A re-delegation that states the §7.8 digest of its parent credential, sha256:065b25ff9d2f61d553a971bbd5818557bdf6836ba5f9063843b6cab9645f47d3, under that parent",
+      "expected": "pass",
+      "reason": "The digest stated is that of the parent the chain resolves to, so the commitment holds",
+      "input": {
+        "leaf": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-agent-sub-agent",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn",
+            "delegation": {
+              "id": "del-agent-sub-agent",
+              "issuerDid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+              "subjectDid": "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn",
+              "scopes": [
+                "records:read"
+              ],
+              "parentId": "del-user-agent",
+              "parentCredentialDigest": "sha256:065b25ff9d2f61d553a971bbd5818557bdf6836ba5f9063843b6cab9645f47d3",
+              "constraints": {
+                "scopes": [
+                  "records:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "czZQHkEqZOn5E9oKjAQFeaDEaaahGwi_G1W1G0tYc86dtx3eeY3TwZX_ChogOG3O-lQWMsuaBMN9-CjYfvt2BA"
+          }
+        },
+        "ancestors": [
+          {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+            ],
+            "id": "urn:uuid:del-user-agent",
+            "type": [
+              "VerifiableCredential",
+              "DelegationCredential"
+            ],
+            "issuer": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+              "delegation": {
+                "id": "del-user-agent",
+                "issuerDid": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "subjectDid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "scopes": [
+                  "records:read",
+                  "records:write"
+                ],
+                "constraints": {
+                  "scopes": [
+                    "records:read",
+                    "records:write"
+                  ],
+                  "audience": "did:web:server.example.com"
+                },
+                "status": "active",
+                "createdAt": 1750000000000
+              }
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "u8Nh3WKY-OPLVZTyYD5XAyuFGPotMqkum6S7NS2Zb-rY4lg8i5wXVepuzFNkYVBfZQMdiuwUv9XYyf-BNgAmAQ"
+            }
+          }
+        ],
+        "serverDid": "did:web:server.example.com",
+        "didDocuments": {
+          "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP": {
+            "id": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "g3onSvA-pEFTuSlqOa5JzZYmi3m1vGLquvEgJ94Zjvg"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP"
+            ],
+            "authentication": [
+              "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP"
+            ]
+          },
+          "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn": {
+            "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "HT4K9wP4DpdCUhmKpydmAY4DJn2i782BNop7_EtkF_0"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+            ],
+            "authentication": [
+              "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+            ]
+          },
+          "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn": {
+            "id": "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn#z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "KnBNKL25wmvUTS-4G4rPiANrwFPipRKgMhuG-lSTUT0"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn#z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn"
+            ],
+            "authentication": [
+              "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn#z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "delegation-chain/parent-digest-reissued-parent",
+      "category": "delegation-chain",
+      "description": "The same re-delegation under a parent its issuer issued again under the same id, with wider scopes",
+      "expected": "fail",
+      "reason": "The child committed to one parent credential; another under the same id has another digest, so the chain is refused although every id and issuer links",
+      "input": {
+        "leaf": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-agent-sub-agent",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn",
+            "delegation": {
+              "id": "del-agent-sub-agent",
+              "issuerDid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+              "subjectDid": "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn",
+              "scopes": [
+                "records:read"
+              ],
+              "parentId": "del-user-agent",
+              "parentCredentialDigest": "sha256:065b25ff9d2f61d553a971bbd5818557bdf6836ba5f9063843b6cab9645f47d3",
+              "constraints": {
+                "scopes": [
+                  "records:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "czZQHkEqZOn5E9oKjAQFeaDEaaahGwi_G1W1G0tYc86dtx3eeY3TwZX_ChogOG3O-lQWMsuaBMN9-CjYfvt2BA"
+          }
+        },
+        "ancestors": [
+          {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+            ],
+            "id": "urn:uuid:del-user-agent",
+            "type": [
+              "VerifiableCredential",
+              "DelegationCredential"
+            ],
+            "issuer": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+              "delegation": {
+                "id": "del-user-agent",
+                "issuerDid": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "subjectDid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "scopes": [
+                  "records:read",
+                  "records:write",
+                  "records:delete"
+                ],
+                "constraints": {
+                  "scopes": [
+                    "records:read",
+                    "records:write",
+                    "records:delete"
+                  ],
+                  "audience": "did:web:server.example.com"
+                },
+                "status": "active",
+                "createdAt": 1750000000000
+              }
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "JbbvleoKlWFxdRTDXtIYz0cJxUFour4SNKfdUD1Xmu6H_eADLo-bp5yRytehDeS6KFIyDU1y29CxRWxUBC4VAQ"
+            }
+          }
+        ],
+        "serverDid": "did:web:server.example.com",
+        "didDocuments": {
+          "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP": {
+            "id": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "g3onSvA-pEFTuSlqOa5JzZYmi3m1vGLquvEgJ94Zjvg"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP"
+            ],
+            "authentication": [
+              "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP"
+            ]
+          },
+          "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn": {
+            "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "HT4K9wP4DpdCUhmKpydmAY4DJn2i782BNop7_EtkF_0"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+            ],
+            "authentication": [
+              "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+            ]
+          },
+          "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn": {
+            "id": "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn#z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "KnBNKL25wmvUTS-4G4rPiANrwFPipRKgMhuG-lSTUT0"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn#z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn"
+            ],
+            "authentication": [
+              "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn#z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "delegation-chain/parent-digest-absent",
+      "category": "delegation-chain",
+      "description": "A re-delegation that states no parentCredentialDigest, under its parent",
+      "expected": "pass",
+      "reason": "The member is optional in this version of the suite: a credential that states none is held to its parentId and its issuer alone",
+      "input": {
+        "leaf": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-agent-sub-agent",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn",
+            "delegation": {
+              "id": "del-agent-sub-agent",
+              "issuerDid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+              "subjectDid": "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn",
+              "scopes": [
+                "records:read"
+              ],
+              "parentId": "del-user-agent",
+              "constraints": {
+                "scopes": [
+                  "records:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "uNEC3IWEZBdqX-Jd0oKNbNJwjPNJDlX_YBasGbjcIED1ng86uBPAcnC3j94TMY4Ax0-Tj5VxfdeRpbWTJsQgCQ"
+          }
+        },
+        "ancestors": [
+          {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+            ],
+            "id": "urn:uuid:del-user-agent",
+            "type": [
+              "VerifiableCredential",
+              "DelegationCredential"
+            ],
+            "issuer": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+              "delegation": {
+                "id": "del-user-agent",
+                "issuerDid": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "subjectDid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "scopes": [
+                  "records:read",
+                  "records:write"
+                ],
+                "constraints": {
+                  "scopes": [
+                    "records:read",
+                    "records:write"
+                  ],
+                  "audience": "did:web:server.example.com"
+                },
+                "status": "active",
+                "createdAt": 1750000000000
+              }
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "u8Nh3WKY-OPLVZTyYD5XAyuFGPotMqkum6S7NS2Zb-rY4lg8i5wXVepuzFNkYVBfZQMdiuwUv9XYyf-BNgAmAQ"
+            }
+          }
+        ],
+        "serverDid": "did:web:server.example.com",
+        "didDocuments": {
+          "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP": {
+            "id": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "g3onSvA-pEFTuSlqOa5JzZYmi3m1vGLquvEgJ94Zjvg"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP"
+            ],
+            "authentication": [
+              "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP"
+            ]
+          },
+          "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn": {
+            "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "HT4K9wP4DpdCUhmKpydmAY4DJn2i782BNop7_EtkF_0"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+            ],
+            "authentication": [
+              "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+            ]
+          },
+          "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn": {
+            "id": "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn#z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "KnBNKL25wmvUTS-4G4rPiANrwFPipRKgMhuG-lSTUT0"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn#z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn"
+            ],
+            "authentication": [
+              "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn#z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "delegation-chain/parent-digest-null",
+      "category": "delegation-chain",
+      "description": "A re-delegation that states parentCredentialDigest as null, under its parent",
+      "expected": "fail",
+      "reason": "A credential states the member when it holds it, whatever its value, and null is not the digest of its parent",
+      "input": {
+        "leaf": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-agent-sub-agent",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn",
+            "delegation": {
+              "id": "del-agent-sub-agent",
+              "issuerDid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+              "subjectDid": "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn",
+              "scopes": [
+                "records:read"
+              ],
+              "parentId": "del-user-agent",
+              "parentCredentialDigest": null,
+              "constraints": {
+                "scopes": [
+                  "records:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "tIpo711YsHW9_ojNQn-fm3eid1oS69YSz6I_Jy57MEM1KFZs_KcWgVgw3Y8t4S6y6PMbcjMXA-86X2yuKJiSCg"
+          }
+        },
+        "ancestors": [
+          {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+            ],
+            "id": "urn:uuid:del-user-agent",
+            "type": [
+              "VerifiableCredential",
+              "DelegationCredential"
+            ],
+            "issuer": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+              "delegation": {
+                "id": "del-user-agent",
+                "issuerDid": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "subjectDid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "scopes": [
+                  "records:read",
+                  "records:write"
+                ],
+                "constraints": {
+                  "scopes": [
+                    "records:read",
+                    "records:write"
+                  ],
+                  "audience": "did:web:server.example.com"
+                },
+                "status": "active",
+                "createdAt": 1750000000000
+              }
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "u8Nh3WKY-OPLVZTyYD5XAyuFGPotMqkum6S7NS2Zb-rY4lg8i5wXVepuzFNkYVBfZQMdiuwUv9XYyf-BNgAmAQ"
+            }
+          }
+        ],
+        "serverDid": "did:web:server.example.com",
+        "didDocuments": {
+          "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP": {
+            "id": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "g3onSvA-pEFTuSlqOa5JzZYmi3m1vGLquvEgJ94Zjvg"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP"
+            ],
+            "authentication": [
+              "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP"
+            ]
+          },
+          "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn": {
+            "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "HT4K9wP4DpdCUhmKpydmAY4DJn2i782BNop7_EtkF_0"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+            ],
+            "authentication": [
+              "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+            ]
+          },
+          "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn": {
+            "id": "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn#z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "KnBNKL25wmvUTS-4G4rPiANrwFPipRKgMhuG-lSTUT0"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn#z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn"
+            ],
+            "authentication": [
+              "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn#z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "delegation-chain/parent-digest-on-root",
+      "category": "delegation-chain",
+      "description": "A delegation with no parentId that states a parentCredentialDigest",
+      "expected": "fail",
+      "reason": "A credential with no parent has no parent credential to commit to, so it states none",
+      "input": {
+        "leaf": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:del-user-agent-root",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "delegation": {
+              "id": "del-user-agent-root",
+              "issuerDid": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+              "subjectDid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+              "scopes": [
+                "records:read"
+              ],
+              "parentCredentialDigest": "sha256:065b25ff9d2f61d553a971bbd5818557bdf6836ba5f9063843b6cab9645f47d3",
+              "constraints": {
+                "scopes": [
+                  "records:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "by9pBv-yskEiNiTnGMrQtoPy9APPsqVHPson8nlY3kOKpNk9MDo8jfPI4yqiUdIiFPT0m-hFf7IzK6cYcWksBQ"
+          }
+        },
+        "serverDid": "did:web:server.example.com",
+        "didDocuments": {
+          "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP": {
+            "id": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "g3onSvA-pEFTuSlqOa5JzZYmi3m1vGLquvEgJ94Zjvg"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP"
+            ],
+            "authentication": [
+              "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP"
+            ]
+          },
+          "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn": {
+            "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "HT4K9wP4DpdCUhmKpydmAY4DJn2i782BNop7_EtkF_0"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+            ],
+            "authentication": [
+              "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+            ]
+          },
+          "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn": {
+            "id": "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn#z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "KnBNKL25wmvUTS-4G4rPiANrwFPipRKgMhuG-lSTUT0"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn#z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn"
+            ],
+            "authentication": [
+              "did:key:z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn#z6MkhJvVJHuumQoYbqPjixh1MW7HEJzkWPiDWS9e34MGFWfn"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

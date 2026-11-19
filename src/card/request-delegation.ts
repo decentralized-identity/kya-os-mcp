@@ -40,6 +40,8 @@ import type { BitstringRevocationChecker } from './revocation.js';
 import { walkRevocationChain, type RevocationChainWalk } from './revocation-chain.js';
 import { admitRootIssuers } from './request-root-issuers.js';
 import { firstParentDigestRefusal } from './parent-digest.js';
+import { requestBindingOf, requestBindingRefusal, requestStatement, type RequestBinding } from './request-binding.js';
+import { requestBindingMode, type RequestBindingMode, type StatedDelegation } from '../delegation/stated-delegation.js';
 import { clockSkewOption } from '../utils/validity-window.js';
 
 export {
@@ -128,6 +130,13 @@ export interface VerifyRequestDelegationDeps {
    * chain comes from the verifier's own resolver and is bounded only when this is set.
    */
   maxChainLength?: number;
+  /**
+   * How a request proof that does not name the chain's leaf credential is taken (SPEC.md §7.8):
+   * `prefer` (the default) authorizes the call, with one warning per process, and `require`
+   * refuses it. A proof that names another credential is refused under both. Version 2.0.0 makes
+   * `require` the default. Any other value throws a `TypeError` naming the option.
+   */
+  requestBinding?: RequestBindingMode;
   /** Injectable clock (epoch ms) for the expiry gate; default `Date.now`. */
   now?: () => number;
   /**
@@ -151,6 +160,14 @@ export interface RequestDelegationInput {
   proofDid: string;
   /** The action this call exercises. It must be in the leaf hop's `allowedAction`. */
   action: string;
+  /**
+   * What the request proof states of its delegation (SPEC.md §7.8): `requireProof`'s
+   * `statedDelegation`, read from the protected header that verified. The chain is held to it: a
+   * proof that names a credential authorizes only a chain that ends in that credential. Left out, it
+   * is read from the card proof in `meta`, which is the same reading when `meta` is the bag
+   * `requireProof` verified; pass it when the proof was verified from anywhere else.
+   */
+  statedDelegation?: StatedDelegation;
 }
 
 /**
@@ -160,7 +177,7 @@ export interface RequestDelegationInput {
  * refuse. Hold the call to them with `caveatRefusal`, at the time of the call, which also refuses a
  * grant that lacks either member rather than read it as unlimited.
  */
-export interface RequestDelegationGrant extends EffectiveCaveats {
+export interface RequestDelegationGrant extends EffectiveCaveats, Partial<RequestBinding> {
   source: DelegationChainSource;
   /** The root issuer: the party accountable for the call (§10.2). */
   responsibleParty: string;
@@ -204,7 +221,8 @@ function rejection(
  * 1. Obtain the chain: the carried member when present (never the resolver then), else the
  *    by-reference resolver, else `delegation_missing`.
  * 2. The SPEC.md §6.10 chain rules, with `resource` (and `resourceOwner`) asserted at the root.
- * 3. The join: the leaf delegate equals `proofDid`.
+ * 3. The join: the leaf delegate equals `proofDid`, and the leaf is the credential the request
+ *    proof states (SPEC.md §7.8), as `requestBinding` takes a proof that names none.
  * 4. The root issuer is trusted, when `trustedRootIssuers` is set.
  * 5. Every hop's proof, root to leaf.
  * 6. The action is in the leaf's `allowedAction`.
@@ -218,6 +236,7 @@ function rejection(
  * `runtime_error`; returns `{ ok: false, code, reasons, refusalCode, transient }`.
  * The `refusalCode` says which rule refused the chain: for example `needs_authorization` for no
  * chain, `holder_binding_failed` for a leaf delegate that is not `proofDid`, `untrusted_root`,
+ * also for a chain the request proof does not state,
  * `invalid_proof` for a hop's proof, `insufficient_scope` for the action, the code of the status
  * that refused a hop, and `deadline_exceeded` or `runtime_error` for a seam that did not answer in
  * time or threw. Rejects, before it reads the chain, with an `Error` naming every fix when neither
@@ -225,7 +244,8 @@ function rejection(
  * `allowAnyRootIssuer: true`, and with a `TypeError` for a `trustedRootIssuers` that is not an array
  * of DIDs, each a string that starts with `did:` and has no white space around it, for an
  * `allowAnyRootIssuer` or a `development` that is not a boolean, for `allowAnyRootIssuer: true`
- * beside a pin, and for a `dependencyTimeoutMs` that is not a number of milliseconds it can wait.
+ * beside a pin, for a `requestBinding` that is neither `prefer` nor `require`, and for a
+ * `dependencyTimeoutMs` that is not a number of milliseconds it can wait.
  */
 export async function verifyRequestDelegation(
   input: RequestDelegationInput,
@@ -237,6 +257,7 @@ export async function verifyRequestDelegation(
 /** {@link verifyRequestDelegation}, with a rejection that cannot be built without its code. */
 async function verifyRequest(input: RequestDelegationInput, deps: VerifyRequestDelegationDeps): Promise<RequestVerdict> {
   admitRootIssuers(deps, 'verifyRequestDelegation');
+  const bindingMode = requestBindingMode(deps.requestBinding, 'requestBinding');
   const timeoutMs = dependencyTimeout(deps.dependencyTimeoutMs);
   const obtained = await obtainChain(input, deps, timeoutMs);
   if (!obtained.ok) return obtained;
@@ -274,6 +295,15 @@ async function verifyRequest(input: RequestDelegationInput, deps: VerifyRequestD
       `leaf delegate ${leafInvoker} is not the request proof's DID ${input.proofDid}`,
     ]);
   }
+  // The chain the proof was made for: its leaf is the credential the proof states (SPEC.md §7.8).
+  const statement = requestStatement(input);
+  try {
+    const unbound = await requestBindingRefusal(statement.stated, credentials[credentials.length - 1]!, source === 'carried', bindingMode);
+    if (unbound !== undefined) return reject('delegation_invalid', 'holder_binding_failed', [unbound.reason]);
+  } catch (error) {
+    const reason = thrownReason(error, { withheld: 'the delegation the request proof states could not be compared with the chain', tag: '[kya-os]' });
+    return reject('delegation_invalid', 'runtime_error', [reason]);
+  }
   if (!admitsRootIssuer(deps.trustedRootIssuers, responsibleParty)) {
     return reject('delegation_invalid', 'untrusted_root', [`root issuer ${responsibleParty} is not a trusted root issuer`]);
   }
@@ -309,6 +339,7 @@ async function verifyRequest(input: RequestDelegationInput, deps: VerifyRequestD
     unknownCaveats,
     depth,
     fresh: revocation.fresh,
+    ...requestBindingOf(statement, credentials),
   };
 }
 
@@ -396,7 +427,12 @@ const GATE_MESSAGES: Record<DelegationGateCode, string> = {
  * ```ts
  * const proof = await proofGuard(req, meta);
  * if (!proof.ok) return proof;
- * const authority = await delegationGuard({ meta, proofDid: proof.did, action: req.params.name });
+ * const authority = await delegationGuard({
+ *   meta,
+ *   proofDid: proof.did,
+ *   statedDelegation: proof.statedDelegation,
+ *   action: req.params.name,
+ * });
  * ```
  *
  * Throws an `Error` naming every fix when neither `trustedRootIssuers` nor `resourceOwner` pins the
@@ -404,11 +440,13 @@ const GATE_MESSAGES: Record<DelegationGateCode, string> = {
  * it builds the guard and warns once. Throws a `TypeError`, naming the option, for a
  * `trustedRootIssuers` that is not an array of DIDs, each a string that starts with `did:` and has
  * no white space around it, for an `allowAnyRootIssuer` or a `development` that is not a boolean,
- * for `allowAnyRootIssuer: true` beside a pin, and for a `dependencyTimeoutMs` that is not a number
- * of milliseconds it can wait, so a mistyped option fails when the guard is built.
+ * for `allowAnyRootIssuer: true` beside a pin, for a `requestBinding` that is neither `prefer` nor
+ * `require`, and for a `dependencyTimeoutMs` that is not a number of milliseconds it can wait, so a
+ * mistyped option fails when the guard is built.
  */
 export function requireDelegation(deps: VerifyRequestDelegationDeps): DelegationGuard {
   admitRootIssuers(deps, 'requireDelegation', true);
+  requestBindingMode(deps.requestBinding, 'requestBinding');
   dependencyTimeout(deps.dependencyTimeoutMs);
   clockSkewOption(deps.maxClockSkewMs);
   return async (input) => {

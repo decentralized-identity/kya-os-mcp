@@ -18,12 +18,14 @@ import type {
   DelegationVerification,
 } from "./with-kya-os.delegation-verify.js";
 import { getDelegationScopes } from "../delegation/chain-enforcement.js";
+import { isHolderBindingApplicable, toHolderBindingRequest } from "../delegation/holder-binding.js";
 import {
-  assertHolderBinding,
-  isHolderBindingApplicable,
-  toHolderBindingRequest,
-} from "../delegation/holder-binding.js";
-import { namesAnotherDelegation, type DelegationNames } from "../delegation/named-delegation.js";
+  admitsRetainedDelegation,
+  verifyDelegatedCallProof,
+  type ProofDelegationClaims,
+} from "../delegation/delegated-call-proof.js";
+import { delegationCredentialDigest, type ReceivedCredential } from "../delegation/chain-digest.js";
+import { warnOfNoneAmongGrants, warnOfUnnamedProof } from "../delegation/unnamed-proof-warning.js";
 import { logger } from "../logging/index.js";
 import type { MiddlewareDeps } from "./with-kya-os.deps.js";
 
@@ -92,7 +94,9 @@ export function createGrantResolution(
     grantStore,
     holderBindingMode,
     holderBindingVerifier,
+    requestBindingMode,
   } = deps;
+  const hash = (bytes: Uint8Array): Promise<string> => cryptoProvider.hash(bytes);
 
   /**
    * Deterministic grant id from (agentDid, sessionId, sorted scopes). Stable for
@@ -112,13 +116,13 @@ export function createGrantResolution(
   /**
    * A grant caches evidence, never a permanent authorization decision. Returns
    * the grant with the scopes of its re-verified credential, or undefined when
-   * the grant does not authorize `scopeId` now, or its delegation is not the one
-   * `named`, the call's holder proof, names (SPEC §7.8).
+   * the grant does not authorize `scopeId` now, or its delegation is not one
+   * `claims`, the call's holder proof's, admit (SPEC §7.8).
    */
   async function authorizeGrant(
     grant: Grant,
     scopeId: string,
-    named?: DelegationNames,
+    claims?: ProofDelegationClaims,
   ): Promise<ResolvedGrant | undefined> {
     if (grant.status !== "active" || !grant.scopes.includes(scopeId)) return undefined;
     if (
@@ -139,9 +143,15 @@ export function createGrantResolution(
         !namesItsResponsibleParty(grant, check.rootIssuer, subject.delegation.controller) ||
         !scopeSatisfies(scopeId, check.vc).satisfied
       ) return undefined;
+      const credentialDigest = check.evidence.delegationCredentialDigest;
       if (
-        named !== undefined &&
-        await namesAnotherDelegation(named, { delegationRef: check.evidence.delegationRef, chainDigest: check.chainDigest })
+        claims !== undefined &&
+        (credentialDigest === undefined ||
+          !(await admitsRetainedDelegation(claims, {
+            credentialDigest,
+            delegationRef: check.evidence.delegationRef,
+            chainDigest: check.chainDigest,
+          })))
       ) return undefined;
       return {
         grant,
@@ -156,21 +166,21 @@ export function createGrantResolution(
     }
   }
 
+  /** The holder of a call that presents no delegation, and what its proof says of the delegation it means. */
+  interface Holder {
+    agentDid: string;
+    claims: ProofDelegationClaims;
+  }
+
   /**
-   * Resolve a durable, agent-anchored grant for a no-delegation call — BUT ONLY
-   * behind a verified holder-of-key proof. The agent DID is taken from the
-   * `_kyaos_proof` and re-proven per request (possession of the subject key over
-   * THIS request), never trusted from a bearer hint. This is the single most
-   * security-sensitive gate of the durable-consent change: without it, any
-   * caller who knows agent A's DID could replay A's grant (confused-deputy
-   * escalation, spec §A.4). Returns undefined unless possession is proven.
+   * The holder a no-delegation call proves itself to be, or undefined. The
+   * agent DID is taken from the `_kyaos_proof` and re-proven per request
+   * (possession of the subject key over THIS request), never trusted from a
+   * bearer hint. This is the single most security-sensitive gate of the
+   * durable-consent change: without it, any caller who knows agent A's DID
+   * could replay A's grant (confused-deputy escalation, spec §A.4).
    */
-  async function resolveAgentGrant(
-    toolName: string,
-    args: Record<string, unknown>,
-    sessionId: string | undefined,
-    scopeId: string,
-  ): Promise<ResolvedGrant | undefined> {
+  async function provenHolder(toolName: string, args: Record<string, unknown>): Promise<Holder | undefined> {
     if (!holderBindingVerifier) return undefined; // inert unless holder binding is on
     const proofArg = args["_kyaos_proof"];
     if (proofArg === undefined) return undefined;
@@ -187,28 +197,66 @@ export function createGrantResolution(
     if (typeof agentDid !== "string" || !isHolderBindingApplicable(agentDid)) {
       return undefined;
     }
-    const binding = await assertHolderBinding({
+    const binding = await verifyDelegatedCallProof({
       proof,
       subjectDid: agentDid,
       request: toHolderBindingRequest(toolName, args),
       expectedAudience: identity.did,
       proofVerifier: holderBindingVerifier,
+      presented: null,
+      mode: requestBindingMode,
+      hash,
     });
-    if (binding.status !== "bound") return undefined;
-    const grants = await grantStore.getByAgent(agentDid, [scopeId]);
-    // A session-bound grant is usable only from its own session; an
-    // agent-anchored (session-less) grant is portable across transports. A
-    // proof that names a delegation resolves only a grant of that one, so the
-    // call is not run under another Responsible Party's grant for the agent.
-    for (const grant of grants) {
-      if (
-        grant.agentDid !== agentDid ||
-        (grant.sessionId !== undefined && grant.sessionId !== sessionId)
-      ) continue;
-      const resolved = await authorizeGrant(grant, scopeId, proof.meta);
-      if (resolved) return resolved;
+    if (binding.status !== "bound" || binding.claims === undefined) return undefined;
+    warnOfUnnamedProof(binding);
+    return { agentDid, claims: binding.claims };
+  }
+
+  /** The digest of the credential `grant` retains, or undefined when it retains none with a signed form. */
+  async function retainedDigest(grant: Grant): Promise<string | undefined> {
+    const evidence = grant.credentialJwt ?? grant.delegationCredential;
+    try {
+      return evidence === undefined ? undefined : await delegationCredentialDigest(evidence as ReceivedCredential, hash);
+    } catch {
+      return undefined;
     }
-    return undefined;
+  }
+
+  /**
+   * The first of `grants` that authorizes `scopeId` under a delegation
+   * `holder`'s proof admits. A proof that names a credential resolves only a
+   * grant of that one, so the call is not run under another Responsible
+   * Party's grant for the agent. One that states `none` names no credential:
+   * where the grants hold more than one, `require` resolves none of them, since
+   * nothing says which the holder means, and `prefer` takes the first with a
+   * warning.
+   */
+  async function firstAdmitted(grants: readonly Grant[], scopeId: string, holder: Holder): Promise<ResolvedGrant | undefined> {
+    const unnamed = holder.claims.statement.kind === "none";
+    let first: ResolvedGrant | undefined;
+    for (const grant of grants) {
+      if (first === undefined) {
+        first = await authorizeGrant(grant, scopeId, holder.claims);
+        if (first !== undefined && !unnamed) return first;
+        continue;
+      }
+      const own = first.evidence.delegationCredentialDigest;
+      if (requestBindingMode === "require") {
+        const another = await authorizeGrant(grant, scopeId, holder.claims);
+        if (another !== undefined && another.evidence.delegationCredentialDigest !== own) {
+          logger.warn(
+            `[kya-os] No grant resolved for scope "${scopeId}": the request proof names no delegation, and the grants retained for its subject hold more than one`,
+          );
+          return undefined;
+        }
+      } else {
+        const other = await retainedDigest(grant);
+        if (other === undefined || other === own) continue;
+        warnOfNoneAmongGrants();
+        return first;
+      }
+    }
+    return first;
   }
 
   async function resolveExistingGrant(
@@ -217,8 +265,16 @@ export function createGrantResolution(
     sessionId: string | undefined,
     scopeId: string,
   ): Promise<ResolvedGrant | undefined> {
-    const agentGrant = await resolveAgentGrant(toolName, args, sessionId, scopeId);
-    if (agentGrant) return agentGrant;
+    const holder = await provenHolder(toolName, args);
+    if (holder !== undefined) {
+      // A session-bound grant is usable only from its own session; an
+      // agent-anchored (session-less) grant is portable across transports.
+      const grants = (await grantStore.getByAgent(holder.agentDid, [scopeId])).filter(
+        (grant) => grant.agentDid === holder.agentDid && (grant.sessionId === undefined || grant.sessionId === sessionId),
+      );
+      const agentGrant = await firstAdmitted(grants, scopeId, holder);
+      if (agentGrant) return agentGrant;
+    }
 
     if (sessionId) {
       const grants = await grantStore.getBySession(sessionId, [scopeId]);
@@ -230,7 +286,13 @@ export function createGrantResolution(
           holderBindingMode === "enforce" &&
           isHolderBindingApplicable(grant.agentDid)
         ) continue;
-        const resolved = await authorizeGrant(grant, scopeId);
+        // A proof the grant's own agent made is held to here as well: what it
+        // names is not answered by a session grant of another delegation.
+        const resolved = await authorizeGrant(
+          grant,
+          scopeId,
+          holder !== undefined && holder.agentDid === grant.agentDid ? holder.claims : undefined,
+        );
         if (resolved) return resolved;
       }
     }

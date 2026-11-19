@@ -19,6 +19,7 @@
  * Pure composition over the shipped engine — no new crypto, no runtime (`mcp-i-core`) dependency.
  */
 
+import type { StatedDelegation } from '../delegation/stated-delegation.js';
 import type { ToolRequest } from '../proof/generator.js';
 import { dependencyTimeout } from '../utils/deadline.js';
 import { describeOptionValue } from '../utils/describe-value.js';
@@ -141,7 +142,17 @@ export interface ProofGateError {
 
 /** The guard verdict: a pass carries the accountable principal + assurance; a fail is 401-shaped. */
 export type ProofGateResult =
-  | { ok: true; did: string; level: ProofAssurance; warnings?: string[] }
+  | {
+      ok: true;
+      did: string;
+      level: ProofAssurance;
+      warnings?: string[];
+      /**
+       * What the proof states of the delegation its call presents (SPEC.md §7.8), from the protected
+       * header that verified. Hand it to the delegation guard as `statedDelegation`.
+       */
+      statedDelegation?: StatedDelegation;
+    }
   | { ok: false; status: 401; error: ProofGateError };
 
 /**
@@ -211,6 +222,7 @@ export function requireProof(deps: VerifyProofDeps, opts: RequireProofOptions = 
       did: result.did,
       level,
       ...(result.warnings ? { warnings: result.warnings } : {}),
+      ...(result.statedDelegation ? { statedDelegation: result.statedDelegation } : {}),
     };
   };
 }

@@ -139,9 +139,19 @@ const GENERATOR_SET_MEMBERS = [
   'did', 'kid', 'ts', 'nonce', 'audience', 'sessionId', 'requestHash', 'responseHash', 'prf',
 ] as const satisfies ReadonlyArray<keyof ProofMeta>;
 
-/** {@link ProofOptions} with the internal precomputed request hash. */
+/**
+ * Internal option key: parameters the proof's JWS protected header carries beside `alg` and `kid`,
+ * which they never replace. The header is part of the signing input, so the signature covers them,
+ * and a verifier that does not know one ignores it (RFC 7515 §4). A symbol, as
+ * {@link PRECOMPUTED_REQUEST_HASH} is, and exported from this module only: a request proof states
+ * its delegation this way (`../delegation/stated-delegation.ts`).
+ */
+export const PROTECTED_HEADER_PARAMETERS: unique symbol = Symbol('kya-os.protected-header-parameters');
+
+/** {@link ProofOptions} with the internal precomputed request hash and protected header parameters. */
 export interface InternalProofOptions extends ProofOptions {
   [PRECOMPUTED_REQUEST_HASH]?: string;
+  [PROTECTED_HEADER_PARAMETERS]?: Readonly<Record<string, string>>;
 }
 
 // Re-exported so proof consumers can import the profile vocabulary from the
@@ -198,6 +208,9 @@ export class ProofGenerator {
     // request; never copied into the meta.
     const precomputed = (options as InternalProofOptions)[PRECOMPUTED_REQUEST_HASH];
     Reflect.deleteProperty(metaOptions, PRECOMPUTED_REQUEST_HASH);
+    // Parameters for the protected header, which is signed; never copied into the meta either.
+    const headerParameters = (options as InternalProofOptions)[PROTECTED_HEADER_PARAMETERS];
+    Reflect.deleteProperty(metaOptions, PROTECTED_HEADER_PARAMETERS);
     const hashes = await this.generateCanonicalHashes(request, response, profile);
     if (precomputed !== undefined) hashes.requestHash = precomputed;
     const proofNonce = base64urlEncodeFromBytes(
@@ -223,7 +236,7 @@ export class ProofGenerator {
       ...metaOptions,
     });
 
-    const jws = await this.generateJWS(meta);
+    const jws = await this.generateJWS(meta, headerParameters);
 
     return { jws, meta };
   }
@@ -263,7 +276,7 @@ export class ProofGenerator {
       : key;
   }
 
-  private async generateJWS(meta: ProofMeta): Promise<string> {
+  private async generateJWS(meta: ProofMeta, headerParameters: Readonly<Record<string, string>> = {}): Promise<string> {
     try {
       // jose's CompactSign owns the JWS signing-input construction, so
       // canonicalization stays inside the library and the signing input is the
@@ -279,11 +292,10 @@ export class ProofGenerator {
       const canonicalPayload = canonicalizeJson(payload);
       const payloadBytes = new TextEncoder().encode(canonicalPayload);
 
+      // `alg` and `kid` come first and are the generator's own, whatever else the header is given.
+      const own = { alg: 'EdDSA', kid: this.identity.kid };
       const jws = await new CompactSign(payloadBytes)
-        .setProtectedHeader({
-          alg: 'EdDSA',
-          kid: this.identity.kid,
-        })
+        .setProtectedHeader({ ...own, ...headerParameters, ...own })
         .sign(privateKey);
 
       return jws;

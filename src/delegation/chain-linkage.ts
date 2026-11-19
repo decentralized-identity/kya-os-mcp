@@ -9,7 +9,10 @@
 
 import { extractDelegationFromVC, type DelegationCredential, type DelegationRecord } from "../types/protocol.js";
 import { describeValue } from "../utils/describe-value.js";
+import { webCryptoSha256 } from "../utils/domain-digest.js";
+import type { Sha256 } from "./chain-digest.js";
 import { credentialIssuerDid } from "./credential-issuer.js";
+import { PARENT_CREDENTIAL_DIGEST, commitsTo, parentReferenceOf } from "./parent-commitment.js";
 
 /**
  * A refusal of a chain's links: the `reason` its presenter is told, and, where that withholds what
@@ -56,6 +59,41 @@ export function chainLinkageRefusal(chain: readonly DelegationCredential[]): Lin
     }
     seen.add(delegation.id);
     parent = delegation;
+  }
+  return undefined;
+}
+
+/**
+ * Why `chain` (root first, the presented credential last) breaks a parent commitment (SPEC.md §6.2),
+ * or `undefined` when it breaks none: a re-delegation that states `parentCredentialDigest` states
+ * the SPEC §7.8 digest of the credential before it, as the chain holds it, and the root, which has
+ * no parent credential, states none. A credential states the member when its delegation holds it,
+ * whatever its value. One that states none is accepted, its parent named by its id alone.
+ *
+ * Run it on a chain {@link chainLinkageRefusal} accepted. It reads the credentials and hashes them;
+ * nothing is resolved or fetched. A refusal is told as that one tells its own: the presenter reads
+ * only what the presented credential states, and what an ancestor states is in `logged`.
+ */
+export async function chainCommitmentRefusal(
+  chain: readonly DelegationCredential[],
+  hash: Sha256 = webCryptoSha256,
+): Promise<LinkageRefusal | undefined> {
+  const presented = chain.length - 1;
+  for (const [index, credential] of chain.entries()) {
+    const { commitment } = parentReferenceOf(credential);
+    if (commitment === undefined) continue;
+    const { id } = extractDelegationFromVC(credential);
+    if (index === 0) {
+      const states = `has no parent credential, so it states no ${PARENT_CREDENTIAL_DIGEST}`;
+      return index === presented
+        ? { reason: `Delegation ${describeValue(id)} ${states}` }
+        : { reason: brokenAncestry(extractDelegationFromVC(chain[presented]!).id), logged: `Root delegation ${id} ${states}` };
+    }
+    if (await commitsTo(commitment.stated, chain[index - 1]!, hash)) continue;
+    const logged = `Delegation ${id} states a ${PARENT_CREDENTIAL_DIGEST} that is not the digest of its parent ${extractDelegationFromVC(chain[index - 1]!).id} as resolved`;
+    return index === presented
+      ? { reason: `Delegation ${describeValue(id)} states a ${PARENT_CREDENTIAL_DIGEST} that is not the digest of the parent its chain resolves to`, logged }
+      : { reason: brokenAncestry(extractDelegationFromVC(chain[presented]!).id), logged };
   }
   return undefined;
 }

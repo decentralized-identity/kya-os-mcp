@@ -66,7 +66,8 @@ const delegationGuard = requireDelegation({
 
 const proof = await proofGuard(request, meta);
 if (!proof.ok) return { status: proof.status, error: proof.error };
-const authority = await delegationGuard({ meta, proofDid: proof.did, action: request.params.name });
+// proof.statedDelegation is the delegation the proof names, read from the header its signature covers.
+const authority = await delegationGuard({ meta, proofDid: proof.did, statedDelegation: proof.statedDelegation, action: request.params.name });
 // refusalCode and transient say why, for your logs; the client needs only the status and the error.
 if (!authority.ok) return { status: authority.status, error: authority.error };
 // authority.responsibleParty is the root issuer, recomputed from the chain.
@@ -90,6 +91,10 @@ It refuses a `MaxAmount` or `ValidUntil` that states a member the library does n
 It also refuses a verdict that does not pass, and a grant without `caveats` or `unknownCaveats`, as a test double or a cached grant may be, rather than read it as unlimited.
 
 On the calling side, `toDelegationChainMeta(chain)` builds the `_meta` member to send beside the request proof.
+The chain rides outside what the proof signs, so the proof names it: `buildCardProof` states the chain's last credential in the proof's signed header, from a request whose `params._meta` already holds the chain, or from the `delegation` you pass, as [walkthrough.ts](./walkthrough.ts) does.
+The guard refuses a proof that names one chain beside another, so a party on the path cannot put another of the caller's chains in its place.
+`authority.delegationNamed` says whether the proof named its chain.
+A caller on an earlier release names none, and the guard accepts it with a warning until you set `requestBinding: 'require'`, which the walkthrough's merchant does.
 
 ## Evaluate the chain on its own
 

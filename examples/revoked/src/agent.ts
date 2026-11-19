@@ -115,10 +115,10 @@ export async function runAgentSend(options: {
   // holder binding can never verify. A synthetic id satisfies structure;
   // replay safety rides on the per-call nonce.
   //
-  // The proof also names the delegation it is made for, by the chain the call
-  // presents, root first. The Responsible Party issues the credential itself,
-  // so the chain is that one credential, and the server refuses the proof
-  // beside any other.
+  // The proof also names the delegation it is made for: generateRequestProof
+  // reads `_kyaos_delegation` from the arguments it is given and states that
+  // credential's digest in the proof's signed header, so the server refuses
+  // the proof beside any other delegation. Nothing more is passed for it.
   args['_kyaos_proof'] = await generateRequestProof({
     identity,
     crypto: cryptoProvider,
@@ -126,7 +126,6 @@ export async function runAgentSend(options: {
     args,
     audience,
     sessionId: `sessionless-${Date.now().toString(36)}`,
-    delegationChain: [credential],
   });
 
   const client = new Client({ name: 'revoked-agent', version: '0.1.0' });

@@ -224,8 +224,26 @@ export {
   type GenerateRequestProofInput,
   type HolderBindingResult,
   type HolderBindingStatus,
-  type PresentedDelegation,
 } from './delegation/holder-binding.js';
+
+export {
+  verifyDelegatedCallProof,
+  admitsRetainedDelegation,
+  type VerifyDelegatedCallProofInput,
+  type DelegatedCallProofResult,
+  type ProofDelegationClaims,
+  type HeldDelegation,
+} from './delegation/delegated-call-proof.js';
+export type { PresentedDelegation } from './delegation/named-delegation.js';
+export {
+  DELEGATION_HEADER_PARAMETER,
+  NO_DELEGATION,
+  delegationStatement,
+  statedDelegationOf,
+  type RequestBindingMode,
+  type StatedDelegation,
+} from './delegation/stated-delegation.js';
+export { PARENT_CREDENTIAL_DIGEST, parentCredentialDigestOf } from './delegation/parent-commitment.js';
 
 export {
   delegationCredentialDigest,

@@ -1,6 +1,7 @@
 import { AUDIT_ERROR_CODES, AuditProtocolError } from './errors.js';
 import type { AuditRecorderServiceConfig } from './recorder-config.js';
-import { sameParty, sameSigner } from './recorder-authority.js';
+import { sameSigner } from './key-trust.js';
+import { sameParty } from './recorder-authority.js';
 import {
   AUDIT_EVENT_SCHEMA_ID,
   parseAuditProducerEvent,

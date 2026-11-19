@@ -1,13 +1,8 @@
 import { canonicalizeJson } from '../utils/canonical-json.js';
-import type { AuditSigner } from './crypto.js';
 import { AUDIT_ERROR_CODES, AuditProtocolError } from './errors.js';
 import type { AuditRecorderSubmission } from './providers/recorder-client.js';
 import type { AuthenticatedAuditSubmissionContext } from './recorder-config.js';
 import type { AuditProducerEventCoreV1, PartyRef } from './types.js';
-
-export function sameSigner(left: AuditSigner['ref'], right: AuditSigner['ref']): boolean {
-  return left.did === right.did && left.kid === right.kid && left.alg === right.alg;
-}
 
 export function sameParty(left: PartyRef, right: PartyRef): boolean {
   return canonicalizeJson(left) === canonicalizeJson(right);

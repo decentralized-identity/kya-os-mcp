@@ -1,6 +1,7 @@
 /**
  * Whether a verification policy trusts a signing key for an artifact: by the key's time interval,
  * and by the checkpoints that bound it or its ledger epoch, resolved against supporting checkpoints.
+ * Every module of the audit layer compares two signer references here ({@link sameSigner}).
  */
 
 import type {
@@ -11,6 +12,7 @@ import type {
   SignerRef,
 } from './types.js';
 
+/** Whether two signer references name one key: the same DID, key id and algorithm. */
 export function sameSigner(left: SignerRef, right: SignerRef): boolean {
   return left.did === right.did && left.kid === right.kid && left.alg === right.alg;
 }

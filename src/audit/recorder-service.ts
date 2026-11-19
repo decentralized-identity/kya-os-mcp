@@ -9,11 +9,8 @@ import {
   digestAuditEvent,
 } from './integrity.js';
 import type { AuditRecorderSubmission } from './providers/recorder-client.js';
-import {
-  sameSigner,
-  validateEventAuthority,
-  validateSubmissionEnvelope,
-} from './recorder-authority.js';
+import { sameSigner } from './key-trust.js';
+import { validateEventAuthority, validateSubmissionEnvelope } from './recorder-authority.js';
 import type {
   AuditRecorderServiceConfig,
   AuthenticatedAuditSubmissionContext,

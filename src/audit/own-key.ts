@@ -5,7 +5,7 @@
  */
 import { exportJWK, type JWK, type KeyObject } from 'jose';
 import type { AuditVerificationKeyResolver } from './crypto.js';
-import { sameSigner } from './recorder-authority.js';
+import { sameSigner } from './key-trust.js';
 import type { SignerRef } from './types.js';
 
 /** A private key an audit signer signs with: a CryptoKey, a Node.js KeyObject or a private JWK. */

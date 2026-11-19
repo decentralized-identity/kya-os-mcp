@@ -7,7 +7,7 @@ import {
   digestAuditEvent,
   digestAuditEvidenceManifest,
 } from './integrity.js';
-import { sameSigner } from './recorder-authority.js';
+import { sameSigner } from './key-trust.js';
 import type { AuditLedgerRef, DecimalString, SignedAuditEntryV1, SignerRef } from './types.js';
 import { warnUnverifiedRecorderKey } from './unverified-recorder-keys.js';
 

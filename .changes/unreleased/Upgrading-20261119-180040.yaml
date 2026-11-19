@@ -1,9 +1,0 @@
-kind: Upgrading
-body: |-
-    **A chain may be any length, and a check has 30 seconds.** If you
-    counted on a carried chain of more than 10 credentials being refused,
-    set `maxChainLength: 10`. If one check of a delegation honestly takes
-    your dependencies more than 30 seconds, raise `totalTimeoutMs`.
-    UPGRADING.md, "A chain may be any length, and a check has 30 seconds",
-    has both.
-time: 2026-11-19T18:00:40.000000-06:00

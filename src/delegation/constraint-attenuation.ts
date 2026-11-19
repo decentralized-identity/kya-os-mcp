@@ -112,13 +112,19 @@ function budgetRefusal(
 }
 
 /**
- * Whether a cap for each `child` window spends no more than one for each `parent` window: a cap for
- * all time does, and under a parent's window so does one for a window of its kind at least as long.
- * A cap for each window spends more than one for all time.
+ * Whether a cap for each `child` window spends no more than one for each `parent` window. A cap for
+ * all time does. Under a parent's window, so does a `rolling` window at least as long, since every
+ * parent window lies within one of the child's. A `fixed` window does only under the parent's own
+ * fixed window: one of any other length starts where the parent's does not, so the child could spend
+ * its cap at the end of one window and again at the start of the next, within one parent window,
+ * and under a rolling window the same holds of any fixed one. A cap for each window spends more than
+ * one for all time.
  */
 function windowWithin(parent: ReadBudget["window"], child: ReadBudget["window"]): boolean {
   if (child === undefined) return true;
-  return parent !== undefined && child.kind === parent.kind && child.durationSec >= parent.durationSec;
+  if (parent === undefined) return false;
+  if (child.kind === "rolling") return child.durationSec >= parent.durationSec;
+  return parent.kind === "fixed" && child.durationSec === parent.durationSec;
 }
 
 /** `value` as a budget the walk compares, or `undefined` when it states anything else. */

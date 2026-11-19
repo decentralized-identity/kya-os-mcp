@@ -260,6 +260,7 @@ A storage provider that implements `registerNodeAtomic` changes nothing of the p
 
 A re-delegation must copy, as written, every member of `constraints` and of `constraints.crisp` its parent states that the chain walk does not interpret, and must not widen its parent's budget.
 An agent that re-delegates copies those members from its own credential; one that does not is refused as `chain_invalid`.
+Under a parent's `fixed` budget window, a re-delegation states no window, a `fixed` window of the same `durationSec`, or a `rolling` window at least as long; a `fixed` window of another length is refused as `chain_invalid`.
 
 `StatusList2021Manager` takes `listLifetimeMs`, which bounds how long each list it signs is read.
 An issuer that sets it calls `renewStatusList` for each list before the list ends, as every half lifetime, or every credential on that list is refused once it ends.

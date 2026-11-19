@@ -26,6 +26,7 @@ import {
   signedJwt,
 } from '../../__tests__/utils/delegation-credentials.js';
 import type { AgentIdentity } from '../../providers/base.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const crypto = createRealCryptoProvider();
 /** Longer than a refusal reason quotes, and within the 2,048-character limit on a DID a verifier resolves. */
@@ -204,7 +205,7 @@ describe('the Data Integrity path', () => {
     const objectType = JSON.parse('{"toString":"DataIntegrityProof"}');
     for (const [issuer, quoted] of QUOTED_ISSUERS) {
       expect(await verifier.verifyDelegationCredential({ ...credential, issuer }, { skipCache: true }))
-        .toMatchObject({ valid: false, stage: 'signature', reason: `Could not resolve issuer DID: ${quoted}` });
+        .toMatchObject({ valid: false, stage: 'signature', reason: `Could not resolve issuer DID: ${quoted}${WITHHELD_SUFFIX}` });
     }
     for (const [value, quoted] of [...QUOTED_ISSUERS, QUOTED_UNSEEN, [objectType, 'of type object']] as [unknown, string][]) {
       expect(await verifier.verifyDelegationCredential({ ...credential, proof: { ...credential.proof!, type: value } as never }, { skipCache: true }))
@@ -326,9 +327,9 @@ describe('the VC-JWT path', () => {
     });
     for (const [issuer, quoted] of QUOTED_ISSUERS) {
       const jwt = await signedJwt(assert, { kid: assert.kid, record: delegationRecord(issuer) });
-      expect(await verify(acmeDocument(login, assert), jwt)).toMatchObject({ valid: false, stage: 'signature', reason: `Could not resolve issuer DID: ${quoted}` });
+      expect(await verify(acmeDocument(login, assert), jwt)).toMatchObject({ valid: false, stage: 'signature', reason: `Could not resolve issuer DID: ${quoted}${WITHHELD_SUFFIX}` });
       expect(await throwing.verifyDelegationJwt(jwt, { skipCache: true }))
-        .toMatchObject({ valid: false, stage: 'signature', reason: `Could not resolve issuer DID: ${quoted}`, code: 'did_unavailable' });
+        .toMatchObject({ valid: false, stage: 'signature', reason: `Could not resolve issuer DID: ${quoted}${WITHHELD_SUFFIX}`, code: 'did_unavailable' });
     }
   });
 

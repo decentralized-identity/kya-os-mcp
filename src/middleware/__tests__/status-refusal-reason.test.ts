@@ -22,6 +22,7 @@ import type { FetchProvider } from '../../providers/base.js';
 import type { CredentialStatus } from '../../types/protocol.js';
 import { withWarnings } from '../../__tests__/utils/logged-lines.js';
 import { createMiddleware, crypto, handshake, proofOf, served, verifyReceived } from './helpers/received-proof.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const EMOJI = '\u{1F600}';
 const LONE_HIGH = '\uD83D';
@@ -57,7 +58,7 @@ async function refusing(change: (list: Record<string, unknown>) => Record<string
 
 /** What the gate signs for a list the reader refused before checking its proof, at `url`. */
 const unread = (url: string): string =>
-  `Delegation del-1 invalid: Status check error: the status list at "${url}" could not be read or checked`;
+  `Delegation del-1 invalid: Status check error: the status list at "${url}" could not be read or checked${WITHHELD_SUFFIX}`;
 
 /** The gate's response to a delegation whose status is `entry`, read by `statusListResolver`. */
 async function gateAnswer(statusListResolver: StatusListResolver, entry: CredentialStatus) {

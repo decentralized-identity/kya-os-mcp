@@ -6,6 +6,24 @@ CHANGELOG.md says what changed and names the section here that says what to do a
 
 ## From 1.25.0
 
+### Do I need to do anything?
+
+Most apps need nothing: code written for 1.25.0 compiles against this version unchanged.
+Two cases need work:
+
+- **You act on a delegated call** through `requireDelegation`, `verifyRequestDelegation`, `evaluateDelegationChain` or `validateDelegationChain`.
+  Hold each call to the verdict's `caveats` with `caveatRefusal`, as [A delegation verdict carries the caveats it grants under](#a-delegation-verdict-carries-the-caveats-it-grants-under) says.
+- **More than one process writes status lists through a store of your own**, as replicas or serverless instances of an issuing service do.
+  Implement `getStatusListWithEtag` and `setStatusListIfMatch`, as [Status-list stores take a conditional write](#status-list-stores-take-a-conditional-write) says.
+
+Check these too, where they apply to you:
+
+- You register delegations an agent submits, or implement `DelegationGraphStorageProvider`: [A delegation's status entry is the one allocated for it](#a-delegations-status-entry-is-the-one-allocated-for-it).
+- You sign card proofs with a `ProofSigner` of your own, or attach `_kyaos_delegation` after making a request proof: [A client](#a-client).
+- You run the audit provider contracts against an adapter of your own: [Audit ledger](#audit-ledger).
+- You compare a refusal's words, not its `code`: [A refusal says when the operator's log has why](#a-refusal-says-when-the-operators-log-has-why).
+- Every client of your server signs with 1.26.0 or later: set `delegation.requestBinding: 'require'`, as [A server](#a-server) says.
+
 ### A delegation verdict carries the caveats it grants under
 
 `requireDelegation`, `verifyRequestDelegation`, `evaluateDelegationChain` and `validateDelegationChain` checked that each hop's caveats narrow its parent's, and then returned a verdict without them.
@@ -319,6 +337,22 @@ Each verifier gives the proof that states its delegation the verdict it gives th
 A server before 1.26.0 accepts the proof and compares the statement with nothing, so the protection starts when the server upgrades.
 `adopters/README.md` says how to run the measurement against other versions.
 
+### A refusal says when the operator's log has why
+
+A refusal tells whoever presented the request nothing the verifier learned from its network, and none of the words a dependency of yours threw, so those go to the operator's log.
+On 1.25.0 such a refusal stopped at its fixed words, as `Could not resolve issuer DID: "<did>"` did, and a developer who read it could not tell that the log had more.
+Each now ends with `; the verifier's log says why`:
+
+- A DID the resolver found no document for, unless the DID alone or the deadline decided why, which the reason still shows in parentheses.
+- A status list that could not be read or checked.
+- A step that threw: a DID resolver, a proof or signature verifier, a status checker, a chain resolver, a revocation checker, or the chain rules themselves.
+  A `RefusalError` it throws still gives its own code and words, with no ending.
+- A chain that the resolver answered and that does not link, or that descends from a root that is not admitted, where the refusal names only the credential presented.
+
+The ending names no cause, so it tells the presenter only what the fixed words already did, and the log has a line for each such refusal.
+A resolver of your own whose `lastFailure` reports a detail the refusal does not show has it logged, as `[kya-os] the DID resolver could not resolve "<did>": <detail>`; on 1.25.0 the library logged no such detail.
+A check that compares a whole reason, or its end, with one of these compares it with the ending added, so compare `code` instead.
+
 ### Delegation gate
 
 Under `holderBinding: 'enforce'`, the gate refuses a delegation whose subject is a did:key that does not encode an Ed25519 key, with the cause `unsupported_subject_key`, since a request proof is checked only with an Ed25519 key.
@@ -343,7 +377,7 @@ Check the record before forwarding the call, or catch the error and refuse the c
 Pass one of the two levels, or leave `minLevel` out.
 
 A verdict about a status list reaches the presenter only once the list's proof verifies.
-Until then the refusal names the list, `the status list at "<url>" could not be read or checked`, and its reason and remedy go to the operator's log.
+Until then the refusal names the list, `the status list at "<url>" could not be read or checked; the verifier's log says why`, and its reason and remedy go to the operator's log.
 Read the log, not the refusal, to learn why such a list was refused.
 
 A custom `StatusListResolver` that asks `acceptStatusList` before it verifies the list's proof throws that reason in an error that is not a `RefusalError`, so the verifier gives its words to the log.

@@ -21,6 +21,7 @@ import { createDidCheqdResolver } from '../../integrations/cheqd/index.js';
 import { AnsweringFetchProvider, safeFetchProvider, safeFetchServing } from '../../__tests__/utils/adopter-providers.js';
 import { delegationRecord, keyOf, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 import { codedAs } from '../../__tests__/utils/refusal-coding.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -88,7 +89,7 @@ describe('a DID the verifier can never resolve', () => {
       [direct, 'DID resolution byte limit exceeded'],
       [safe, 'safe-fetch: response body exceeds size cap 1048576'],
     ] as const) {
-      expect(await refusalOf(did, resolver)).toEqual({ valid: false, reason: `Could not resolve issuer DID: "${did}"`, ...codedAs('did_invalid') });
+      expect(await refusalOf(did, resolver)).toEqual({ valid: false, reason: `Could not resolve issuer DID: "${did}"${WITHHELD_SUFFIX}`, ...codedAs('did_invalid') });
       expect(warn.mock.calls.flat().join(' ')).toContain(`${did}: ${detail}`);
     }
   });
@@ -119,7 +120,7 @@ describe('a DID of a method a resolver does not serve', () => {
     ],
   ])('is did_unavailable where %s alone, and tells the operator it may not serve the method', async (_name, resolver, did, method) => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
-    expect(await refusalOf(did, resolver())).toEqual({ valid: false, reason: `Could not resolve issuer DID: "${did}"`, ...codedAs('did_unavailable') });
+    expect(await refusalOf(did, resolver())).toEqual({ valid: false, reason: `Could not resolve issuer DID: "${did}"${WITHHELD_SUFFIX}`, ...codedAs('did_unavailable') });
     expect(warn).toHaveBeenCalledWith(
       `[kya-os] the DID resolver found no document for "${did}" and gave no cause: it may not serve the ${method} method; ` +
         'if it does not, give the verifier a resolver that does',
@@ -136,7 +137,7 @@ describe('a DID of a method a resolver does not serve', () => {
     };
     expect(await refusalOf('did:web:busy.example', composite)).toEqual({
       valid: false,
-      reason: 'Could not resolve issuer DID: "did:web:busy.example"',
+      reason: `Could not resolve issuer DID: "did:web:busy.example"${WITHHELD_SUFFIX}`,
       ...codedAs('did_unavailable'),
     });
   });

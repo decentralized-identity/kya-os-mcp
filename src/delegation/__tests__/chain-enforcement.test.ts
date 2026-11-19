@@ -19,6 +19,7 @@ import { MemoryStatusListStorage } from "../storage/memory-statuslist-storage.js
 import { StatusList2021Manager } from "../statuslist-manager.js";
 import { CascadingRevocationManager } from "../cascading-revocation.js";
 import { SERVER, baseDeps, cred, okVerifier } from "./helpers/chain-fixtures.js";
+import { WITHHELD_SUFFIX } from "../../utils/thrown-words.js";
 
 describe("validateScopeAttenuation (pure)", () => {
   const parent = cred({ id: "p", issuerDid: "did:a", subjectDid: "did:b", scopes: ["read", "write"] });
@@ -181,7 +182,7 @@ describe("validateDelegationChain", () => {
     const r = await validateDelegationChain(leaf, { ...baseDeps, resolveDelegationChain: async () => [root, root, leaf] });
     expect(r.valid).toBe(false);
     // The ancestors are the resolver's answer: the presenter is told only that they do not link.
-    expect(r.reason).toBe('Delegation "leaf" does not descend from a root through the chain its parent resolves to');
+    expect(r.reason).toBe(`Delegation "leaf" does not descend from a root through the chain its parent resolves to${WITHHELD_SUFFIX}`);
   });
 
   it("rejects an issuer that is not the parent's subject (confused-deputy linkage)", async () => {
@@ -189,7 +190,7 @@ describe("validateDelegationChain", () => {
     const child = cred({ id: "child", issuerDid: "did:IMPOSTER", subjectDid: "did:sub", parentId: "root", audience: SERVER, scopes: ["read"] });
     const r = await validateDelegationChain(child, { ...baseDeps, resolveDelegationChain: async () => [root, child] });
     expect(r.valid).toBe(false);
-    expect(r.reason).toBe('Delegation "child" issued by "did:IMPOSTER" is not a re-delegation by the subject of parent "root"');
+    expect(r.reason).toBe(`Delegation "child" issued by "did:IMPOSTER" is not a re-delegation by the subject of parent "root"${WITHHELD_SUFFIX}`);
   });
 
   it("rejects scope widening across a hop", async () => {
@@ -369,7 +370,7 @@ describe("validateDelegationChain", () => {
       const r = await validateDelegationChain(root, { ...baseDeps, revocationChecker: checker });
       expect(r).toEqual({
         valid: false,
-        reason: 'Revocation check failed for delegation "root": the revocation checker failed',
+        reason: `Revocation check failed for delegation "root": the revocation checker failed${WITHHELD_SUFFIX}`,
         code: "status_unavailable",
         transient: true,
         evaluated: [root],
@@ -382,7 +383,7 @@ describe("validateDelegationChain", () => {
       };
       expect(await validateDelegationChain(root, { ...baseDeps, revocationChecker: throwsNonError })).toEqual({
         valid: false,
-        reason: 'Revocation check failed for delegation "root": the revocation checker failed',
+        reason: `Revocation check failed for delegation "root": the revocation checker failed${WITHHELD_SUFFIX}`,
         code: "status_unavailable",
         transient: true,
         evaluated: [root],
@@ -431,7 +432,7 @@ describe("validateDelegationChain: who actually issued each link", () => {
     };
     const result = await validateDelegationChain(forged, chainDeps);
     expect(result.valid).toBe(false);
-    expect(result.reason).toBe('Delegation "leaf" is signed by "did:mallory", not by the subject of parent "root"');
+    expect(result.reason).toBe(`Delegation "leaf" is signed by "did:mallory", not by the subject of parent "root"${WITHHELD_SUFFIX}`);
   });
 
   it("applies the signer check to a JWT leaf whose envelope was verified by the caller", async () => {
@@ -458,7 +459,7 @@ describe("validateDelegationChain: who actually issued each link", () => {
     const leaf = cred({ id: "leaf", issuerDid: "did:agent", subjectDid: "did:sub", parentId: "root", audience: SERVER, scopes: ["read"] });
     const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
     expect((await validateDelegationChain(leaf, { ...baseDeps, resolveDelegationChain: async () => [mismatched] })).reason).toBe(
-      'Delegation "leaf" does not descend from a root through the chain its parent resolves to',
+      `Delegation "leaf" does not descend from a root through the chain its parent resolves to${WITHHELD_SUFFIX}`,
     );
     expect(String(warn.mock.calls[0]?.[0])).toContain(
       'Root delegation root names issuerDid "did:user" but its credential names issuer "did:signing-key"',

@@ -21,6 +21,7 @@ import { createRealCryptoProvider, createRealIdentity, createRealSignatureVerifi
 import { delegationRecord, keyOf, signedCredential, signedJwt } from '../../__tests__/utils/delegation-credentials.js';
 import { NOW_MS, RESOURCE, parties } from '../../card/__tests__/signed-chain-helpers.js';
 import { createMiddleware, crypto as gateCrypto, handshake, served } from '../../middleware/__tests__/helpers/received-proof.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const crypto = createRealCryptoProvider();
 const TRANSPORT = 'getaddrinfo ENOTFOUND jenkins.corp.example';
@@ -55,7 +56,7 @@ async function verdicts(deps: { didResolver: DIDResolver; signatureVerifier?: Re
 describe("the delegation verifier, when the host's DID resolver throws", () => {
   it('says only that the DID could not be resolved, on either proof path, and logs what it threw', async () => {
     const { answer, log } = await logged(() => verdicts({ didResolver: { resolve: throwing(new TypeError(TRANSPORT)) } }));
-    const unresolved = { reason: `Could not resolve issuer DID: "${answer.did}"`, code: 'did_unavailable' };
+    const unresolved = { reason: `Could not resolve issuer DID: "${answer.did}"${WITHHELD_SUFFIX}`, code: 'did_unavailable' };
     expect(answer).toMatchObject({ embedded: unresolved, enveloped: unresolved });
     expect(log).toContain(TRANSPORT);
   });
@@ -81,7 +82,7 @@ describe("the delegation verifier, when the host's signature verifier throws", (
       });
       return verifier.verifyDelegationCredential(await signedCredential(issuer), { skipCache: true });
     });
-    expect(answer).toMatchObject({ valid: false, reason: 'Signature verification error: the signature could not be checked', code: 'runtime_error' });
+    expect(answer).toMatchObject({ valid: false, reason: `Signature verification error: the signature could not be checked${WITHHELD_SUFFIX}`, code: 'runtime_error' });
     expect(log).toContain('connect ECONNREFUSED 10.1.2.3:443');
   });
 });
@@ -101,7 +102,7 @@ describe("chain enforcement, when the host's chain resolver or revocation checke
     const { answer, log } = await logged(async () =>
       validateDelegationChain(await leaf('del-0'), { ...deps, resolveDelegationChain: throwing(new Error(`store at ${TRANSPORT}`)) }),
     );
-    expect(answer).toMatchObject({ valid: false, reason: 'Failed to resolve delegation chain: the chain resolver failed', code: 'runtime_error' });
+    expect(answer).toMatchObject({ valid: false, reason: `Failed to resolve delegation chain: the chain resolver failed${WITHHELD_SUFFIX}`, code: 'runtime_error' });
     expect(log).toContain(TRANSPORT);
   });
 
@@ -111,7 +112,7 @@ describe("chain enforcement, when the host's chain resolver or revocation checke
     );
     expect(answer).toMatchObject({
       valid: false,
-      reason: 'Revocation check failed for delegation "del-1": the revocation checker failed',
+      reason: `Revocation check failed for delegation "del-1": the revocation checker failed${WITHHELD_SUFFIX}`,
       code: 'status_unavailable',
     });
     expect(log).toContain(TRANSPORT);
@@ -145,7 +146,7 @@ describe("the Card request verifier, when the host's chain resolver throws", () 
         },
       ),
     );
-    expect(answer).toMatchObject({ ok: false, refusalCode: 'runtime_error', reasons: ['delegation chain could not be resolved: the chain resolver failed'] });
+    expect(answer).toMatchObject({ ok: false, refusalCode: 'runtime_error', reasons: [`delegation chain could not be resolved: the chain resolver failed${WITHHELD_SUFFIX}`] });
     expect(log).toContain(TRANSPORT);
   });
 });
@@ -171,7 +172,7 @@ describe("the delegation gate, when the host's own DID resolver throws", () => {
       };
       return { did: grantor.did, body: JSON.parse(result.content[0]!.text) as unknown };
     });
-    expect(answer.body).toEqual({ error: 'delegation_invalid', reason: `Delegation del-1 invalid: Could not resolve issuer DID: "${answer.did}"` });
+    expect(answer.body).toEqual({ error: 'delegation_invalid', reason: `Delegation del-1 invalid: Could not resolve issuer DID: "${answer.did}"${WITHHELD_SUFFIX}` });
     expect(log).toContain(TRANSPORT);
   });
 });

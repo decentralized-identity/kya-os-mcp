@@ -15,6 +15,7 @@ import {
   type StatusListIdentityProvider,
   type StatusListStorageProvider,
 } from "../statuslist-manager.js";
+import { WITHHELD_SUFFIX } from "../../utils/thrown-words.js";
 
 // Mock the protocol functions (preserving all other exports)
 vi.mock("../../types/protocol.js", async (importOriginal) => {
@@ -409,7 +410,7 @@ describe("DelegationCredentialVerifier", () => {
 
       expect(result.valid).toBe(false);
       expect(result.reason).toBe(
-        'Could not resolve issuer DID: "did:web:example.com:issuer"'
+        `Could not resolve issuer DID: "did:web:example.com:issuer"${WITHHELD_SUFFIX}`
       );
       expect(result.stage).toBe("signature");
       expect(result.checks?.signatureValid).toBe(false);
@@ -987,7 +988,7 @@ describe("DelegationCredentialVerifier", () => {
 
       expect(result.valid).toBe(false);
       expect(result.code).toBe("runtime_error");
-      expect(result.reason).toBe("Signature verification error: the signature could not be checked");
+      expect(result.reason).toBe(`Signature verification error: the signature could not be checked${WITHHELD_SUFFIX}`);
       expect(warn.mock.calls.map(String).join("\n")).toContain("Signature algorithm unsupported");
       warn.mockRestore();
     });

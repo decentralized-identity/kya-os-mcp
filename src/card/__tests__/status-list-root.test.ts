@@ -32,7 +32,7 @@ import { cast, expectAccepted, expectRevokedAt, listOf, listUrlOf, nameSigner, s
 import { BIT_SET, codedAs } from '../../__tests__/utils/refusal-coding.js';
 import { withWarnings } from '../../__tests__/utils/logged-lines.js';
 import type { StatusCheckContext } from '../../utils/statuslist-keeper.js';
-import { unreadStatusList } from '../../utils/thrown-words.js';
+import { unreadStatusList, WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 import { anyRootUnlessPinned } from './root-issuers.js';
 
 const didResolver = createDidKeyResolver();
@@ -311,7 +311,7 @@ describe("each path names a hop's issuer, and the chain's root only as the verif
     /** That the checker refuses the list for `context`, telling the log it is `did`'s, as `as`, and the caller only that it could not be read. */
     const expectRefusedFor = async (context: StatusCheckContext, did: string, as: string) => {
       const { result, logged } = await withWarnings(() => check(onAcmes(6), context));
-      expect(result).toEqual({ revoked: true, fresh: false, reason: unreadStatusList(listUrlOf(c.acme)), ...codedAs('status_signer_untrusted') });
+      expect(result).toEqual({ revoked: true, fresh: false, reason: `${unreadStatusList(listUrlOf(c.acme))}${WITHHELD_SUFFIX}`, ...codedAs('status_signer_untrusted') });
       expect(logged).toContain(`status list issuer "${c.acme.did}" does not keep this list's URL: "${did}" does, as ${as}${nameSigner(c.acme.did, listUrlOf(c.acme))}`);
     };
     // A root named with no URL, or with another, keeps nothing here, and a URL with no root is ignored.

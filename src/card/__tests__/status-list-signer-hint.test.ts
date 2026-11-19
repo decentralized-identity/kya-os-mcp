@@ -23,6 +23,7 @@ import { documentsOf, servingFromMemory, signedStatusList, webParty, type WebPar
 import { credentialJwt, delegationRecord, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 import { codedAs } from '../../__tests__/utils/refusal-coding.js';
 import { withWarnings } from '../../__tests__/utils/logged-lines.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const LIST_URL = 'https://issuer.example/lists/1';
 const ENTRY = { statusListCredential: LIST_URL, statusListIndex: '3', statusPurpose: 'revocation' as const };
@@ -50,7 +51,7 @@ function checkerWith(statusListIssuers?: StatusListIssuers, served: Record<strin
 }
 
 /** What a reason says of the list at `url` when the checker refuses it before its proof is checked. */
-const unread = (url: string): string => `the status list at "${url}" could not be read or checked`;
+const unread = (url: string): string => `the status list at "${url}" could not be read or checked${WITHHELD_SUFFIX}`;
 
 type Checker = ReturnType<typeof createRevocationChecker>;
 

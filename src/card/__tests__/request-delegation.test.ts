@@ -34,6 +34,7 @@ import {
   twoHopChain,
   type ChainParties,
 } from './signed-chain-helpers.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const didResolver = createDidKeyResolver();
 
@@ -281,7 +282,7 @@ describe('verifyRequestDelegation: a carried chain', () => {
       throw new Error('boom');
     };
     const result = await verifyRequestDelegation(carried(twoHopChain(p), p), deps(p, { verifyHopProof }));
-    expect(result).toMatchObject({ ok: false, code: 'delegation_invalid', reasons: ['hop 0: proof did not verify'] });
+    expect(result).toMatchObject({ ok: false, code: 'delegation_invalid', reasons: [`hop 0: proof did not verify${WITHHELD_SUFFIX}`] });
   });
 
   it('rejects when the revocation seam throws', async () => {
@@ -322,7 +323,7 @@ describe('verifyRequestDelegation: by reference', () => {
     expect(result).toEqual({
       ok: false,
       code: 'delegation_unresolvable',
-      reasons: ['delegation chain could not be resolved: the chain resolver failed'],
+      reasons: [`delegation chain could not be resolved: the chain resolver failed${WITHHELD_SUFFIX}`],
       source: 'resolved',
       refusalCode: 'runtime_error',
       transient: true,

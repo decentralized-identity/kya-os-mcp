@@ -28,6 +28,7 @@ import {
   type VerifyRequestDelegationDeps,
 } from '../index.js';
 import { NOW_MS, RESOURCE, hop, now, parties, serve, statusList, twoHopChain, type ChainParties } from './signed-chain-helpers.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const didResolver = createDidKeyResolver();
 const p = parties();
@@ -90,7 +91,7 @@ describe("the card profile's evaluateDelegationChain", () => {
   ])('refuses, and does not reject, a chain whose checker %s, saying nothing of the network', async (_name, check) => {
     const result = await evaluateDelegationChain(chain, check as never, { now });
     expect({ ok: result.ok, fresh: result.fresh, ...pick(result) }).toEqual({ ok: false, fresh: false, ...coded('status_unavailable') });
-    expect(result.reasons).toEqual(['revocation checker threw: status unprovable, fail-closed']);
+    expect(result.reasons).toEqual([`revocation checker threw: status unprovable, fail-closed${WITHHELD_SUFFIX}`]);
   });
 
   it('refuses a chain whose checker throws a RefusalError with its code and its words', async () => {

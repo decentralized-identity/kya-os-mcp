@@ -7,7 +7,7 @@
  * lookup; or a deadline that passed, whose timing the presenter observes anyway. Any other thrown
  * message (a transport's error, an HTTP status, an answer that is not JSON, a byte cap, a redirect,
  * a refusal made after a DNS lookup) goes to the operator's log, and the reason says only what could
- * not be done. A verdict about a document that was read, such as a status list, reaches the
+ * not be done, ending with {@link WITHHELD_SUFFIX} so whoever reads it knows where the detail went. A verdict about a document that was read, such as a status list, reaches the
  * presenter only once the document's proof verifies, since only then are its words its issuer's;
  * before that, its reason and any remedy go to the operator's log ({@link NetworkRefusalError}).
  * That refines, and does not replace, the rule above. The DID resolvers mark their failures by the
@@ -23,6 +23,14 @@ import { RefusalError } from './refusal.js';
 
 /** The most UTF-16 code units of a withheld message the operator's log line keeps. */
 const LOGGED_LENGTH = 1024;
+
+/**
+ * What a reason ends with when the thrown words behind it went to the operator's log instead: that
+ * the log has them. It names no cause, so it tells whoever presented the request only what the
+ * reason's fixed words already did, that the library withheld something, and tells a developer who
+ * reads the refusal where to look.
+ */
+export const WITHHELD_SUFFIX = "; the verifier's log says why";
 
 /**
  * The library's verdict about what a host answered, decided before the answer's proof verified,
@@ -59,7 +67,7 @@ export function shownWords(error: unknown, maxLength = 256): string | undefined 
 
 /** How a reason is written for a thrown error, by {@link thrownReason}. */
 export interface ThrownReason {
-  /** The whole reason where the error's words may not reach it. */
+  /** The reason where the error's words may not reach it, before {@link WITHHELD_SUFFIX}. */
   readonly withheld: string;
   /** The reason around the error's words where they may; by default the words alone. */
   readonly shown?: (words: string) => string;
@@ -71,13 +79,14 @@ export interface ThrownReason {
 
 /**
  * The reason for `error`: `shown` around its {@link shownWords} where it has some; otherwise
- * `withheld`, with the message logged for the operator as `<tag> <withheld>: <message>`.
+ * `withheld` and {@link WITHHELD_SUFFIX}, with the message logged for the operator as
+ * `<tag> <withheld>: <message>`.
  */
 export function thrownReason(error: unknown, { withheld, shown = (words) => words, tag, maxLength = 256 }: ThrownReason): string {
   const words = shownWords(error, maxLength);
   if (words !== undefined) return shown(words);
   logger.warn(`${tag} ${withheld}: ${loggedWords(error)}`);
-  return withheld;
+  return `${withheld}${WITHHELD_SUFFIX}`;
 }
 
 /**

@@ -19,6 +19,7 @@ import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents
 import type { AgentIdentity } from '../../providers/base.js';
 import type { DIDDocument } from '../../delegation/vc-verifier.js';
 import type { CredentialStatus, DelegationCredential } from '../../types/protocol.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const crypto = new NodeCryptoProvider();
 const SERVER = 'did:web:server.example';
@@ -99,7 +100,7 @@ for (const form of ['object', 'JWT'] as const) {
       const leaf = await resignedCredential(await credential(attacker, 'evil-leaf', delegate.did, 'good-root'), { credentialStatus: statusEntry }, attacker, attacker.kid);
       const { verify, resolve, checkStatus } = gate({ resolveDelegationChain: async () => [parent] });
       expect(await verify(await wire(leaf, attacker, attacker.kid))).toMatchObject({
-        valid: false, reason: `Delegation "evil-leaf" issued by "${attacker.did}" is not a re-delegation by the subject of parent "good-root"`,
+        valid: false, reason: `Delegation "evil-leaf" issued by "${attacker.did}" is not a re-delegation by the subject of parent "good-root"${WITHHELD_SUFFIX}`,
       });
       expect(resolve).not.toHaveBeenCalled();
       expect(checkStatus).not.toHaveBeenCalled();
@@ -113,7 +114,7 @@ for (const form of ['object', 'JWT'] as const) {
       );
       const { verify, resolve, checkStatus } = gate({ resolveDelegationChain: async () => [parent] });
       expect(await verify(await wire(leaf, attacker, attacker.kid))).toMatchObject({
-        valid: false, reason: `Delegation "claiming-leaf" is signed by "${attacker.did}", not by the subject of parent "good-root"`,
+        valid: false, reason: `Delegation "claiming-leaf" is signed by "${attacker.did}", not by the subject of parent "good-root"${WITHHELD_SUFFIX}`,
       });
       expect(resolve).not.toHaveBeenCalled();
       expect(checkStatus).not.toHaveBeenCalled();
@@ -124,7 +125,7 @@ for (const form of ['object', 'JWT'] as const) {
       const leaf = await credential(delegate, 'orphan-leaf', attacker.did, 'other-root');
       const { verify, resolve } = gate({ resolveDelegationChain: async () => [parent] });
       expect(await verify(await wire(leaf, delegate, delegate.kid))).toMatchObject({
-        valid: false, reason: 'Delegation "orphan-leaf" references parent "other-root", which its resolved chain does not end with',
+        valid: false, reason: `Delegation "orphan-leaf" references parent "other-root", which its resolved chain does not end with${WITHHELD_SUFFIX}`,
       });
       expect(resolve).not.toHaveBeenCalled();
     });

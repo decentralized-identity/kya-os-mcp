@@ -24,6 +24,7 @@ import { delegationRecord, resignedCredential, signedCredential } from '../../..
 import type { NodeCryptoProvider } from '../../../__tests__/utils/node-crypto-provider.js';
 import type { CredentialStatus } from '../../../types/protocol.js';
 import { withWarnings } from '../../../__tests__/utils/logged-lines.js';
+import { WITHHELD_SUFFIX } from '../../../utils/thrown-words.js';
 
 describe('CheqdStatusListResolver and the status-list acceptance rule', () => {
   let crypto: NodeCryptoProvider;
@@ -375,7 +376,7 @@ describe('CheqdStatusListResolver and the status-list acceptance rule', () => {
       served = await otherSetup.storage.getStatusList(clearEntry.statusListCredential);
       const { result, logged } = await withWarnings(() => verify(other, clearEntry));
       expect(result).toMatchObject({ valid: false, stage: 'status', statusOutcome: 'status_unresolvable' });
-      expect(result.reason).toBe(`Status check error: the status list at "${clearEntry.statusListCredential}" could not be read or checked`);
+      expect(result.reason).toBe(`Status check error: the status list at "${clearEntry.statusListCredential}" could not be read or checked${WITHHELD_SUFFIX}`);
       expect(logged).toMatch(/does not keep this list's URL/);
     });
 
@@ -384,7 +385,7 @@ describe('CheqdStatusListResolver and the status-list acceptance rule', () => {
       served = { ...stored, proof: { ...(stored.proof as Record<string, unknown>), proofPurpose: 'authentication' } };
       const { result, logged } = await withWarnings(() => verify(pinned, revokedEntry));
       expect(result).toMatchObject({ valid: false, stage: 'status', statusOutcome: 'status_unresolvable' });
-      expect(result.reason).toBe(`Status check error: the status list at "${revokedEntry.statusListCredential}" could not be read or checked`);
+      expect(result.reason).toBe(`Status check error: the status list at "${revokedEntry.statusListCredential}" could not be read or checked${WITHHELD_SUFFIX}`);
       expect(logged).toContain('Proof purpose "authentication" is not assertionMethod');
     });
 
@@ -407,7 +408,7 @@ describe('CheqdStatusListResolver and the status-list acceptance rule', () => {
       const { result, logged } = await withWarnings(() => verify(pinned, { ...revokedEntry, statusPurpose: named }));
       expect(result).toMatchObject({ valid: false, stage: 'status', statusOutcome: 'status_unresolvable' });
       // The rule quotes the list's purpose, which no signature vouches for yet, so only the log is told it.
-      expect(result.reason).toBe(`Status check error: the status list at "${revokedEntry.statusListCredential}" could not be read or checked`);
+      expect(result.reason).toBe(`Status check error: the status list at "${revokedEntry.statusListCredential}" could not be read or checked${WITHHELD_SUFFIX}`);
       expect(logged).toContain(`status list statusPurpose mismatch: the list's is "revocation" and the entry's is of type object`);
     });
   });

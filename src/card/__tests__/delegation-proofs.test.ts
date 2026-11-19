@@ -11,6 +11,7 @@ import { createStatusListProofVerifier } from '../status-list-proof.js';
 import {
   RESOURCE, STATUS_URL, hop, identity, now, parties, serve, signEddsaJcs2022, statusList, twoHopChain,
 } from './signed-chain-helpers.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const didResolver = createDidKeyResolver();
 
@@ -184,7 +185,7 @@ describe('evaluateDelegationChain proofs before status', () => {
 
   it.each([
     ['coded', () => { throw new RefusalError('host_refused', 'issuer host refused'); }, 'host_refused', 'issuer host refused'],
-    ['unexpected', () => { throw new Error('private transport detail'); }, 'runtime_error', 'proof did not verify'],
+    ['unexpected', () => { throw new Error('private transport detail'); }, 'runtime_error', `proof did not verify${WITHHELD_SUFFIX}`],
     ['false', () => false, 'invalid_proof', 'proof did not verify'],
     ['DID outage', createDelegationProofVerifier({ didResolver: { resolve: async () => null } }), 'did_unavailable', undefined],
   ] as const)('keeps %s refusal codes in parity with verifyRequestDelegation', async (_name, verify, code, reason) => {

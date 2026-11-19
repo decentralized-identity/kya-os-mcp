@@ -25,6 +25,7 @@ import { validateDelegationChain, type ChainEnforcementDeps } from '../chain-enf
 import { DID_RESOLUTION_TIMEOUT_MS } from '../did-resource-limits.js';
 import { createDidWebResolver, DidWebResolver } from '../did-web-resolver.js';
 import { createDelegationVerifier, DelegationCredentialVerifier, type DIDResolver } from '../vc-verifier.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const SERVER = 'did:web:server.example';
 const SLOW = 'did:web:slow.example';
@@ -134,7 +135,7 @@ describe.each(DEADLINES)('%s', (_label, option, ms, stated) => {
         reasons.push((await verifier.verifyDelegationCredential(credential, { skipCache: true })).reason);
         expect(vi.getTimerCount()).toBe(0);
       }
-      const unread = `Status check error: the status list at "${STATUS.statusListCredential}" could not be read or checked`;
+      const unread = `Status check error: the status list at "${STATUS.statusListCredential}" could not be read or checked${WITHHELD_SUFFIX}`;
       expect(reasons).toEqual([undefined, unread, unread]);
     });
   });
@@ -167,7 +168,7 @@ describe.each(DEADLINES)('%s', (_label, option, ms, stated) => {
       expect(vi.getTimerCount()).toBe(0);
       expect(await validate(leaf, { resolveDelegationChain: () => { throw new Error('store offline'); } })).toEqual({
         valid: false,
-        reason: 'Failed to resolve delegation chain: the chain resolver failed',
+        reason: `Failed to resolve delegation chain: the chain resolver failed${WITHHELD_SUFFIX}`,
         code: 'runtime_error',
         transient: true,
       });

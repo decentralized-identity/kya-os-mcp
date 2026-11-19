@@ -8,7 +8,7 @@
 
 import { expect } from 'vitest';
 import { withWarnings } from '../../__tests__/utils/logged-lines.js';
-import { unreadStatusList } from '../../utils/thrown-words.js';
+import { unreadStatusList, WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 import { createDidKeyResolver } from '../../delegation/did-key-resolver.js';
 import type { DIDResolver } from '../../delegation/vc-verifier.types.js';
 import {
@@ -167,7 +167,7 @@ export async function expectRevokedAt(
   if (because !== undefined) {
     const url = chain[hopIndex]?.credentialStatus?.statusListCredential;
     const refused = [evaluated.reasons, request.ok ? [] : request.reasons, guarded.ok ? [] : guarded.error.reasons];
-    for (const [reason] of refused) expect(reason).toMatch(new RegExp(`, subtree invalidated: ${escaped(unreadStatusList(url))}$`));
+    for (const [reason] of refused) expect(reason).toMatch(new RegExp(`, subtree invalidated: ${escaped(unreadStatusList(url) + WITHHELD_SUFFIX)}$`));
     const told = logged.split('\n').filter((line) => line.includes(`revocation: ${because}`));
     expect(told, logged).toHaveLength(refused.length);
     for (const line of told) {

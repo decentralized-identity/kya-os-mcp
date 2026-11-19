@@ -11,6 +11,7 @@ import { logger } from "../../logging/index.js";
 import { validateDelegationChain, type DelegationCredentialVerifierPort } from "../chain-enforcement.js";
 import type { DelegationCredential } from "../../types/protocol.js";
 import { SERVER, chainOfThree, cred, resolving } from "./helpers/chain-fixtures.js";
+import { WITHHELD_SUFFIX } from "../../utils/thrown-words.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -37,25 +38,25 @@ describe("validateDelegationChain: a refusal of how the presented credential lin
     [
       "names an issuerDid that is not the parent's subject",
       presented("did:presenter"),
-      'Delegation "forged" issued by "did:presenter" is not a re-delegation by the subject of parent "middle"',
+      `Delegation "forged" issued by "did:presenter" is not a re-delegation by the subject of parent "middle"${WITHHELD_SUFFIX}`,
       "parent subject is did:sub",
     ],
     [
       "is signed by another than the parent's subject",
       presented("did:sub", "middle", "did:presenter"),
-      'Delegation "forged" is signed by "did:presenter", not by the subject of parent "middle"',
+      `Delegation "forged" is signed by "did:presenter", not by the subject of parent "middle"${WITHHELD_SUFFIX}`,
       "parent subject is did:sub",
     ],
     [
       "is in a credential that names no issuer",
       { ...presented("did:sub"), issuer: { name: "no id" } as unknown as string },
-      'Delegation "forged" is signed by an unidentified issuer, not by the subject of parent "middle"',
+      `Delegation "forged" is signed by an unidentified issuer, not by the subject of parent "middle"${WITHHELD_SUFFIX}`,
       "is signed by an unidentified issuer but parent subject is did:sub",
     ],
     [
       "names a parent the resolved chain does not end with",
       presented("did:sub", "elsewhere"),
-      'Delegation "forged" references parent "elsewhere", which its resolved chain does not end with',
+      `Delegation "forged" references parent "elsewhere", which its resolved chain does not end with${WITHHELD_SUFFIX}`,
       "expected middle",
     ],
   ])("names nothing the resolver answered when it %s, and logs what it withheld", async (_name, forged, reason, withheld) => {
@@ -74,7 +75,7 @@ describe("validateDelegationChain: a refusal of the resolved ancestors themselve
     const { answer, log } = await logged(() => validateDelegationChain(leaf, resolving(ancestors)));
     expect(answer).toEqual({
       valid: false,
-      reason: 'Delegation "leaf" does not descend from a root through the chain its parent resolves to',
+      reason: `Delegation "leaf" does not descend from a root through the chain its parent resolves to${WITHHELD_SUFFIX}`,
       code: "chain_invalid",
       transient: false,
     });
@@ -87,7 +88,7 @@ describe("validateDelegationChain: a refusal of the resolved ancestors themselve
     );
     expect(answer).toEqual({
       valid: false,
-      reason: 'Delegation "leaf" descends from a root whose issuer is not a trusted root issuer',
+      reason: `Delegation "leaf" descends from a root whose issuer is not a trusted root issuer${WITHHELD_SUFFIX}`,
       code: "untrusted_root",
       transient: false,
     });
@@ -151,7 +152,7 @@ describe("validateDelegationChain: presenter text in the operator's log", () => 
     const { answer, log, lines } = await logged(() => validateDelegationChain(forged, resolving([root, middle])));
     expect(answer.reason).toBe(
       'Delegation "forged\\n[kya-os] audit: delegation approved by admin" references parent "elsewhere\\u202e", ' +
-        "which its resolved chain does not end with",
+        `which its resolved chain does not end with${WITHHELD_SUFFIX}`,
     );
     expect(lines.length).toBeGreaterThan(0);
     for (const line of lines) expect(line).not.toMatch(REWRITES_THE_LOG);
@@ -165,7 +166,7 @@ describe("validateDelegationChain: presenter text in the operator's log", () => 
     };
     const broken = await logged(() => validateDelegationChain(presentedLeaf, resolving([root, root, middle])));
     expect(broken.answer.reason).toBe(
-      'Delegation "forged\\n[kya-os] audit: delegation approved by admin" does not descend from a root through the chain its parent resolves to',
+      `Delegation "forged\\n[kya-os] audit: delegation approved by admin" does not descend from a root through the chain its parent resolves to${WITHHELD_SUFFIX}`,
     );
     expect(broken.lines.length).toBeGreaterThan(0);
     for (const line of broken.lines) expect(line).not.toMatch(REWRITES_THE_LOG);
@@ -174,7 +175,7 @@ describe("validateDelegationChain: presenter text in the operator's log", () => 
       validateDelegationChain(presentedLeaf, { ...resolving([root, middle]), trustedRootIssuers: ["did:trusted"] }),
     );
     expect(untrusted.answer.reason).toBe(
-      'Delegation "forged\\n[kya-os] audit: delegation approved by admin" descends from a root whose issuer is not a trusted root issuer',
+      `Delegation "forged\\n[kya-os] audit: delegation approved by admin" descends from a root whose issuer is not a trusted root issuer${WITHHELD_SUFFIX}`,
     );
     expect(untrusted.lines.length).toBeGreaterThan(0);
     for (const line of untrusted.lines) expect(line).not.toMatch(REWRITES_THE_LOG);

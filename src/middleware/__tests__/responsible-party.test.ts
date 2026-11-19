@@ -19,6 +19,7 @@ import { didKeyFragment, generateDidKeyFromBase64 } from '../../utils/did-helper
 import { createKyaOsMiddleware } from '../with-kya-os.js';
 import type { KyaOsCallContext } from '../with-kya-os.types.js';
 import { crypto, handshake, served } from './helpers/received-proof.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const ALICE = 'did:web:alice.example';
 const VICTIM = 'did:web:victim.example';
@@ -110,7 +111,7 @@ describe('the Responsible Party the delegation gate names', () => {
       // Presented, the root is quoted; resolved, it is the resolver's answer, which the presenter is not told.
       [`Root delegation ${solo.id} names issuerDid "${ALICE}" but its credential names issuer "${root.did}"`, await s.call(undefined, await credentialNaming(root, root.did, root.kid, solo))],
       [
-        `Delegation "${leafRecord.id}" does not descend from a root through the chain its parent resolves to`,
+        `Delegation "${leafRecord.id}" does not descend from a root through the chain its parent resolves to${WITHHELD_SUFFIX}`,
         await s.call(undefined, await signedCredential(delegate, { record: leafRecord }), [await credentialNaming(root, root.did, root.kid, rootRecord)]),
       ],
     ];

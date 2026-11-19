@@ -26,6 +26,7 @@ import { documentsOf, servingFromMemory, signedStatusList, webParty, type WebPar
 import { credentialJwt, delegationRecord, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 import { validateDelegationChain } from '../../delegation/chain-enforcement.js';
 import { withWarnings } from '../../__tests__/utils/logged-lines.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const TENANT = 'did:web:identity.platform.example.com:tenants:northwind';
 const LIST_URL = 'https://identity.platform.example.com/tenants/northwind/status/revocation/1';
@@ -113,7 +114,7 @@ describe("the statusListIssuers remedy of a tenant's list, through a wrapper", (
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const reason = await verifierReason(wrapping(ADOPTER_WORDS, (message) => new Error(message)));
     // The list's URL is quoted as every value a credential chose is, cut at 64 code units.
-    expect(reason).toBe(`Status check error: the status list at "${LIST_URL.slice(0, 64)}"... could not be read or checked`);
+    expect(reason).toBe(`Status check error: the status list at "${LIST_URL.slice(0, 64)}"... could not be read or checked${WITHHELD_SUFFIX}`);
     expect(remedyIn(reason)).toBe('none');
     expect(warn.mock.calls.map(String).join('\n')).toContain(`in statusListIssuers: ${CONFIGURATION}`);
     warn.mockRestore();

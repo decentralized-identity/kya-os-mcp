@@ -15,8 +15,9 @@
  * which the presenter observes anyway. Anything else was learned from the network, or is reported
  * by a host's resolver that cannot say it was not: an HTTP status, a byte cap, an answer that is not
  * JSON, a redirect, a document that is not the DID's, or a name that resolves to a private address.
- * The refusal then says only that the DID could not be resolved, with the code of the cause, and the
- * library's resolvers log the detail for the operator.
+ * The refusal then says only that the DID could not be resolved, with the code of the cause, and
+ * that the verifier's log says why: the library's resolvers log the detail as they fail, and the
+ * library logs the detail a host's resolver reports.
  */
 
 import { logger } from '../logging/index.js';
@@ -27,7 +28,7 @@ import { getDidMethod } from '../utils/did-helpers.js';
 import { isRecord } from '../utils/guards.js';
 import { sanitizeForMessage } from '../utils/message-text.js';
 import { readFailureKind } from '../utils/read-failure.js';
-import { presentable } from '../utils/thrown-words.js';
+import { presentable, WITHHELD_SUFFIX } from '../utils/thrown-words.js';
 import type { DIDDocument, DIDResolver, DidResolutionFailure, DidResolutionFailureCause } from './vc-verifier.types.js';
 import { resolveWithinLimits, type ResolutionDeadline } from './did-resource-limits.js';
 
@@ -47,23 +48,43 @@ const MAX_RECORDED_FAILURES = 256;
 const DETAIL_LENGTH = 256;
 
 /**
- * The failures of the library's own resolvers whose detail a refusal may show ({@link shownToPresenter}):
- * those decided from the DID alone, before any request or DNS lookup, and those of a read whose
- * error is presentable by the rule thrown words follow (`utils/thrown-words.ts`). They are kept by
+ * How a refusal treats a failure of the library's own resolvers: `shown`, a detail a refusal may show
+ * ({@link shownToPresenter}), decided from the DID alone, before any request or DNS lookup, or of a
+ * read whose error is presentable by the rule thrown words follow (`utils/thrown-words.ts`); or
+ * `logged`, a detail the operator's log was told as the resolver failed, so a refusal that withholds
+ * it can say the log has it.
+ */
+type Disclosure = 'shown' | 'logged';
+
+/**
+ * The failures of the library's own resolvers, with how a refusal treats each. They are kept by
  * identity, so a host's resolver cannot claim one, and each is frozen, so none changes once marked.
  */
-const SHOWN_FAILURES = new WeakSet<object>();
+const DISCLOSURES = new WeakMap<object, Disclosure>();
 
-/** A frozen copy of `failure`, marked as one whose detail a refusal may show. */
-function shownFailure(failure: DidResolutionFailure): DidResolutionFailure {
+/** A frozen copy of `failure`, marked with `disclosure` where there is one. */
+function marked(failure: DidResolutionFailure, disclosure: Disclosure | undefined): DidResolutionFailure {
   const kept = Object.freeze({ cause: failure.cause, detail: failure.detail });
-  SHOWN_FAILURES.add(kept);
+  if (disclosure !== undefined) DISCLOSURES.set(kept, disclosure);
   return kept;
 }
 
-/** A frozen copy of `failure`, read from `from`, marked as one a refusal may show when `from` was. */
+/** A frozen copy of `failure`, marked as one whose detail a refusal may show. */
+function shownFailure(failure: DidResolutionFailure): DidResolutionFailure {
+  return marked(failure, 'shown');
+}
+
+/**
+ * A frozen copy of `failure`, marked as one of the library's whose detail the operator's log was
+ * told as it failed: its caller logs before recording it.
+ */
+export function loggedFailure(failure: DidResolutionFailure): DidResolutionFailure {
+  return marked(failure, 'logged');
+}
+
+/** A frozen copy of `failure`, read from `from`, marked as `from` was. */
 function keptAs(from: object, failure: DidResolutionFailure): DidResolutionFailure {
-  return SHOWN_FAILURES.has(from) ? shownFailure(failure) : Object.freeze({ cause: failure.cause, detail: failure.detail });
+  return marked(failure, DISCLOSURES.get(from));
 }
 
 /** A resolver's record of the last failure for each DID, of at most {@link MAX_RECORDED_FAILURES} DIDs. */
@@ -92,18 +113,18 @@ export class DidResolutionFailures {
  * The failure an error thrown while reading a DID document from `url` stands for, under a deadline
  * of `timeoutMs`: the kind of read failure it carries, shown where its error is presentable (a read
  * that refused its URL before any request, or a deadline), or `unavailable` for a transport's own
- * error, whose words are left to the log.
+ * error, whose words are left to the log. The caller has logged the error's words.
  */
 export function readFailureOf(error: unknown, url: string, timeoutMs: number): DidResolutionFailure {
   const kind = readFailureKind(error);
   if (kind === undefined) {
-    return { cause: 'unavailable', detail: `The fetch provider could not fetch ${describeValue(url)}; its error is logged` };
+    return loggedFailure({ cause: 'unavailable', detail: `The fetch provider could not fetch ${describeValue(url)}; its error is logged` });
   }
   const { message } = error as Error;
   const failure: DidResolutionFailure = kind === 'deadline_exceeded'
     ? { cause: kind, detail: `${message}: no document arrived within ${describeTimeout(timeoutMs)}` }
     : { cause: kind, detail: message };
-  return presentable(error) ? shownFailure(failure) : failure;
+  return presentable(error) ? shownFailure(failure) : loggedFailure(failure);
 }
 
 /** An `invalid_document` failure decided from the DID alone: `detail` says what about it no resolution can change. */
@@ -117,9 +138,12 @@ export function unservedMethod(resolver: string, did: string): DidResolutionFail
   return invalidDid(method === undefined ? `${resolver} resolves no such DID` : `${resolver} resolves no ${describeValue(method)} DID`);
 }
 
-/** An `invalid_document` failure learned from the network: the document read from `url` is not a valid one of the DID, as `why` says. */
+/**
+ * An `invalid_document` failure learned from the network: the document read from `url` is not a
+ * valid one of the DID, as `why` says. The caller has logged why.
+ */
 export function invalidDocument(url: string, why: string): DidResolutionFailure {
-  return { cause: 'invalid_document', detail: `The document at ${describeValue(url)} ${why}` };
+  return loggedFailure({ cause: 'invalid_document', detail: `The document at ${describeValue(url)} ${why}` });
 }
 
 /**
@@ -169,17 +193,23 @@ export function unresolvedCode(failure: DidResolutionFailure | undefined): Refus
  * reported by a host's resolver that cannot say it was not, and is for the operator alone.
  */
 function shownToPresenter(failure: DidResolutionFailure): boolean {
-  return failure.cause === 'deadline_exceeded' || SHOWN_FAILURES.has(failure);
+  return failure.cause === 'deadline_exceeded' || DISCLOSURES.get(failure) === 'shown';
 }
 
 /**
- * What a refusal of a DID as unresolvable ends with: the detail of `failure`, the failure the
- * resolver reports for it, in parentheses after a space and sanitized for a message, where it is
- * {@link shownToPresenter}, or nothing.
+ * What a refusal of `did` as unresolvable ends with, `failure` the failure the resolver reports for
+ * it: its detail, in parentheses after a space and sanitized for a message, where it is
+ * {@link shownToPresenter}; otherwise {@link WITHHELD_SUFFIX}, once the operator's log has why. The
+ * library's own resolvers told the log as they failed; the log is told here the detail a host's
+ * resolver reports, or that it reported none ({@link warnUncaused}).
  */
-function failureSuffix(failure: DidResolutionFailure | undefined): string {
-  if (failure === undefined || !shownToPresenter(failure)) return '';
-  return ` (${sanitizeForMessage(failure.detail, DETAIL_LENGTH)})`;
+function refusalEnding(did: string, failure: DidResolutionFailure | undefined): string {
+  if (failure === undefined) warnUncaused(did);
+  else if (shownToPresenter(failure)) return ` (${sanitizeForMessage(failure.detail, DETAIL_LENGTH)})`;
+  else if (DISCLOSURES.get(failure) !== 'logged') {
+    logger.warn(`[kya-os] the DID resolver could not resolve ${describeValue(did)}: ${sanitizeForMessage(failure.detail, DETAIL_LENGTH)}`);
+  }
+  return WITHHELD_SUFFIX;
 }
 
 /**
@@ -193,12 +223,11 @@ export type ExplainedResolution =
 /**
  * Resolve `did` through `resolver` within the limits, as `resolveBoundedDid` does, and when no
  * document is found say why. When the resolver found nothing, that is the failure it reports, as a
- * suffix in parentheses where a refusal may show it ({@link failureSuffix}), with the code of its
- * cause ({@link unresolvedCode}). When the limits refused the DID, its key or what the resolver
- * returned, it is nothing, since the resolver's last failure is then not this one, with
- * `did_invalid`. A resolver that throws, or a deadline that passes,
- * rejects, as `resolveWithinLimits` does. Where the resolver found nothing and gave no cause, the
- * operator's log is told so ({@link warnUncaused}).
+ * suffix in parentheses where a refusal may show it, or else a pointer to the operator's log
+ * ({@link refusalEnding}), with the code of its cause ({@link unresolvedCode}). When the limits
+ * refused the DID, its key or what the resolver returned, it is nothing, since the resolver's last
+ * failure is then not this one, with `did_invalid`. A resolver that throws, or a deadline that
+ * passes, rejects, as `resolveWithinLimits` does.
  */
 export async function resolveExplained(
   resolver: DIDResolver, did: string, key?: unknown, within?: ResolutionDeadline | number,
@@ -207,15 +236,14 @@ export async function resolveExplained(
   if (resolution.status === 'found') return { document: resolution.document };
   if (resolution.status === 'refused') return { document: null, why: '', code: 'did_invalid' };
   const failure = reportedFailure(resolver, did);
-  if (failure === undefined) warnUncaused(did);
-  return { document: null, why: failureSuffix(failure), code: unresolvedCode(failure) };
+  return { document: null, why: refusalEnding(did, failure), code: unresolvedCode(failure) };
 }
 
 /**
  * Tell the operator that the resolver found no document for `did` and gave no cause, as a resolver
  * of the library's does for a DID of a method it does not serve. The refusal is then
- * `did_unavailable`, transient, and says no more to the presenter, so only this line says the
- * verifier may lack a resolver for the DID's method.
+ * `did_unavailable`, transient, and tells the presenter only that the log says why, so only this
+ * line says the verifier may lack a resolver for the DID's method.
  */
 function warnUncaused(did: string): void {
   const method = getDidMethod(did);

@@ -5,11 +5,11 @@
  * refuses that list until it is told, in `statusListIssuers`, that the status identity keeps it.
  * The operator's log has to say so, printing the list's own URL to bind, never its origin, which
  * would hand the status identity every list there. The refusal itself, which reaches whoever
- * presented the chain, says only that the list could not be read or checked, since the rule that
- * refused it quoted the list before its proof was checked. An operator who means the whole origin
- * binds it as SPEC.md §6.6 reads one, `https://issuer.example`; written with a `/` after it, the
- * origin would bind only itself, as an exact URL, so the configuration is refused when it is given,
- * naming the form to write.
+ * presented the chain, says only that the list could not be read or checked, and that the verifier's
+ * log says why, since the rule that refused it quoted the list before its proof was checked. An
+ * operator who means the whole origin binds it as SPEC.md §6.6 reads one, `https://issuer.example`;
+ * written with a `/` after it, the origin would bind only itself, as an exact URL, so the
+ * configuration is refused when it is given, naming the form to write.
  *
  * The chain is verified as the Entity Card gate verifies a request, `verifyRequestDelegation`, with
  * `createRevocationChecker` as its revocation check, and the library's default logger writes the
@@ -97,7 +97,7 @@ await runCases('separate-status-signer', "a list signed by a separate status DID
       if (result.ok) return;
       assert.equal(result.code, 'delegation_revoked');
       const reasons = result.reasons.join('; ');
-      assert.ok(reasons.endsWith(`the status list at "${LIST_URL}" could not be read or checked`), `the reason says more than that the list could not be read: ${reasons}`);
+      assert.ok(reasons.endsWith(`the status list at "${LIST_URL}" could not be read or checked; the verifier's log says why`), `the reason says more than that the list could not be read: ${reasons}`);
       assert.ok(!reasons.includes('statusListIssuers'), `the reason names statusListIssuers: ${reasons}`);
       const hint = `in statusListIssuers: { "${statusSigner.did}": ["${LIST_URL}"] }`;
       assert.ok(warnings.includes(hint), `the operator's log does not give the configuration ${hint}: ${warnings}`);

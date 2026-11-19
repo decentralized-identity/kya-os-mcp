@@ -12,6 +12,7 @@ import { chainResolutionFailure, presentedReason, revocationCheckFailure, revoke
 import { logger } from '../../logging/index.js';
 import { RefusalError } from '../../utils/refusal.js';
 import { WRAPPED_REASON_LENGTH } from '../../utils/revocation-answer.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -30,7 +31,7 @@ describe('chain enforcement reasons', () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     // Presenter text no caller quoted: a line that would forge a log entry, and a bidi override.
     const said = 'Delegation forged\n[kya-os] audit: approved\u202e is refused';
-    expect(presentedReason(said, 'the resolver answered nothing')).toBe(said);
+    expect(presentedReason(said, 'the resolver answered nothing')).toBe(`${said}${WITHHELD_SUFFIX}`);
     expect(warn.mock.calls).toEqual([
       ['[kya-os] Delegation forged\uFFFD[kya-os] audit: approved\uFFFD is refused: the resolver answered nothing'],
     ]);
@@ -47,9 +48,9 @@ describe('chain enforcement reasons', () => {
 
   it('says only which failed, for any other error either threw, and logs its words', () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
-    expect(chainResolutionFailure(new Error('connect ECONNREFUSED 10.1.2.3:5432'))).toBe('Failed to resolve delegation chain: the chain resolver failed');
+    expect(chainResolutionFailure(new Error('connect ECONNREFUSED 10.1.2.3:5432'))).toBe(`Failed to resolve delegation chain: the chain resolver failed${WITHHELD_SUFFIX}`);
     expect(revocationCheckFailure('del-1', new Error('connect ECONNREFUSED 10.1.2.3:6379'))).toBe(
-      'Revocation check failed for delegation "del-1": the revocation checker failed',
+      `Revocation check failed for delegation "del-1": the revocation checker failed${WITHHELD_SUFFIX}`,
     );
     expect(warn.mock.calls.map(String)).toEqual([
       '[kya-os] Failed to resolve delegation chain: the chain resolver failed: connect ECONNREFUSED 10.1.2.3:5432',
@@ -79,8 +80,8 @@ describe('chain enforcement reasons', () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const thrown: unknown[] = [HOSTILE, undefined, null, 7, { message: HOSTILE }, { toString: () => HOSTILE }];
     for (const value of thrown) {
-      expect(chainResolutionFailure(value)).toBe('Failed to resolve delegation chain: the chain resolver failed');
-      expect(revocationCheckFailure('del-1', value)).toBe('Revocation check failed for delegation "del-1": the revocation checker failed');
+      expect(chainResolutionFailure(value)).toBe(`Failed to resolve delegation chain: the chain resolver failed${WITHHELD_SUFFIX}`);
+      expect(revocationCheckFailure('del-1', value)).toBe(`Revocation check failed for delegation "del-1": the revocation checker failed${WITHHELD_SUFFIX}`);
     }
     expect(warn.mock.calls.map(String).join('\n')).not.toContain('gone');
   });

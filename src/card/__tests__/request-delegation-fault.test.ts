@@ -18,6 +18,7 @@ import {
   verifyRequestDelegation,
 } from '../index.js';
 import { NOW_MS, RESOURCE, parties, serve, statusList, twoHopChain } from './signed-chain-helpers.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 /** The part that faults in the test running, or none, and how: a stack run out, as no input can now make the real ones do. */
 const faulting = vi.hoisted(() => ({
@@ -80,7 +81,7 @@ describe('a fault in checking a delegation', () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
     faulting.at = part;
     const { deps, input } = request();
-    const reasons = [withheld];
+    const reasons = [`${withheld}${WITHHELD_SUFFIX}`];
     expect(await verifyRequestDelegation(input, deps)).toEqual({
       ok: false,
       code: 'delegation_invalid',

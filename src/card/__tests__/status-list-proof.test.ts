@@ -11,6 +11,7 @@ import type { DIDDocument, DIDResolver } from '../../delegation/vc-verifier.type
 import type { SafeFetch } from '../../utils/safe-fetch.js';
 import { logger } from '../../logging/index.js';
 import { BIT_SET, codedAs } from '../../__tests__/utils/refusal-coding.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -270,7 +271,7 @@ describe('createRevocationChecker with verifyStatusList', () => {
     expect(await checker(list, () => { throw new Error('bad'); })(entry(5), ofIssuer)).toEqual({
       revoked: true,
       fresh: false,
-      reason: `the status list at "${STATUS_URL}" could not be read or checked`,
+      reason: `the status list at "${STATUS_URL}" could not be read or checked${WITHHELD_SUFFIX}`,
       ...codedAs('status_unavailable'),
     });
     expect(await checker(list, async () => 'yes' as unknown as boolean)(entry(5), ofIssuer)).toEqual(rejected);

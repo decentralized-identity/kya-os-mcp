@@ -10,6 +10,7 @@ import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents
 import type { AgentIdentity } from '../../providers/base.js';
 import type { DIDDocument } from '../../delegation/vc-verifier.js';
 import type { CredentialStatus, DelegationCredential } from '../../types/protocol.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const crypto = new NodeCryptoProvider();
 const SERVER = 'did:web:server.example';
@@ -193,7 +194,7 @@ describe('root admission before DID and status resolution', () => {
       }
       expect(reasons).toEqual([
         'Delegation listed invalid: Credential revoked via "StatusList2021Entry" ("revocation")',
-        'Delegation listed invalid: Status check error: the status list at "https://status.example/1" could not be read or checked',
+        `Delegation listed invalid: Status check error: the status list at "https://status.example/1" could not be read or checked${WITHHELD_SUFFIX}`,
       ]);
     });
 
@@ -203,7 +204,7 @@ describe('root admission before DID and status resolution', () => {
       const { verify, resolve, isRevoked } = setup({ resolveDelegationChain: async () => [parent] });
       expect(await verify(await wire(leaf, delegate))).toMatchObject({
         // The root is the resolver's answer, which the presenter is not told.
-        valid: false, reason: 'Delegation "leaf" does not descend from a root through the chain its parent resolves to',
+        valid: false, reason: `Delegation "leaf" does not descend from a root through the chain its parent resolves to${WITHHELD_SUFFIX}`,
       });
       expect(resolve).not.toHaveBeenCalled();
       expect(isRevoked).not.toHaveBeenCalled();

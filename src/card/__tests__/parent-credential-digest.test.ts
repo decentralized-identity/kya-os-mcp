@@ -30,6 +30,7 @@ import {
   type HopOptions,
   type TestIdentity,
 } from './signed-chain-helpers.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const didResolver = createDidKeyResolver();
 const verifyHopProof = createDelegationProofVerifier({ didResolver });
@@ -243,7 +244,7 @@ describe('the parent a verifier digests', () => {
       const { result, logged } = await withWarnings(() =>
         evaluateDelegationChain([parent, child], checker(p), { resource: RESOURCE, resourceOwner: p.acme.did, verifyHopProof, now: () => NOW_MS }),
       );
-      expect(result).toMatchObject({ ok: false, code: 'runtime_error', reasons: ['hop 1: parentCredentialDigest could not be checked'] });
+      expect(result).toMatchObject({ ok: false, code: 'runtime_error', reasons: [`hop 1: parentCredentialDigest could not be checked${WITHHELD_SUFFIX}`] });
       expect(logged).toContain('the hash provider is away');
     } finally {
       digest.mockRestore();

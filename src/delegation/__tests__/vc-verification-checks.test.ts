@@ -13,6 +13,7 @@ import { issuerDidDocument, methodOf } from "../../__tests__/utils/did-documents
 import { WRAPPED_REASON_LENGTH } from "../../utils/revocation-answer.js";
 import { RefusalError } from "../../utils/refusal.js";
 import { logger } from "../../logging/index.js";
+import { WITHHELD_SUFFIX } from "../../utils/thrown-words.js";
 
 const ISSUER = "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK";
 
@@ -245,7 +246,7 @@ describe("refusal reasons quote what the credential chose as describeValue does"
     expect(await checkCredentialStatus(credentialStatus("revocation"), resolver, ISSUER)).toEqual({
       valid: false,
       outcome: "status_unresolvable",
-      reason: 'Status check error: the status list at "https://status.example/1" could not be read or checked',
+      reason: `Status check error: the status list at "https://status.example/1" could not be read or checked${WITHHELD_SUFFIX}`,
       code: "status_unavailable",
       transient: true,
       durationMs: expect.any(Number),
@@ -291,7 +292,7 @@ describe("verifySignature: fail-closed paths", () => {
     };
     const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
     const result = await verifySignature(credential(), resolver, signatureVerifier);
-    expect(result).toMatchObject({ valid: false, reason: "Signature verification error: the signature could not be checked", code: "runtime_error" });
+    expect(result).toMatchObject({ valid: false, reason: `Signature verification error: the signature could not be checked${WITHHELD_SUFFIX}`, code: "runtime_error" });
     warn.mockRestore();
   });
 });

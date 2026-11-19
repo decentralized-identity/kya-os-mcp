@@ -38,7 +38,7 @@ import {
 import { moveBinding, nameSigner } from './status-list-paths.js';
 import { ANY_CODE, BIT_SET, codedAs } from '../../__tests__/utils/refusal-coding.js';
 import { withWarnings } from '../../__tests__/utils/logged-lines.js';
-import { unreadStatusList } from '../../utils/thrown-words.js';
+import { unreadStatusList, WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const CARDS_URL = 'https://example.com/status/cards';
 
@@ -139,7 +139,7 @@ const REFUSED = { revoked: true, fresh: false, reason: expect.any(String) as str
  */
 async function expectListRefused(run: () => Promise<VerifyCardResult>, detail: string): Promise<VerifyCardResult> {
   const { result, logged } = await withWarnings(run);
-  expect(result.revocation).toStrictEqual({ revoked: true, fresh: false, reason: unreadStatusList(CARDS_URL), ...codedAs('status_signer_untrusted') });
+  expect(result.revocation).toStrictEqual({ revoked: true, fresh: false, reason: `${unreadStatusList(CARDS_URL)}${WITHHELD_SUFFIX}`, ...codedAs('status_signer_untrusted') });
   expect(logged).toContain(detail);
   return result;
 }

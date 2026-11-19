@@ -16,6 +16,7 @@ import { WebCryptoProvider } from '../../providers/web-crypto.js';
 import type { DelegationCredential } from '../../types/protocol.js';
 import { nodeCrypto } from '../../__tests__/utils/node-crypto-provider.js';
 import { delegate, party, reissued, type Party } from '../../middleware/__tests__/helpers/delegating-party.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const SERVER = 'did:web:server.example';
 const hash = (bytes: Uint8Array): Promise<string> => nodeCrypto.hash(bytes);
@@ -105,7 +106,7 @@ describe('a parent commitment in a base profile chain', () => {
 
     expect(await validateDelegationChain(leaf, deps)).toEqual({
       valid: false,
-      reason: 'Delegation "leaf" states a parentCredentialDigest that is not the digest of the parent its chain resolves to',
+      reason: `Delegation "leaf" states a parentCredentialDigest that is not the digest of the parent its chain resolves to${WITHHELD_SUFFIX}`,
       code: 'chain_invalid',
       transient: false,
     });
@@ -119,7 +120,7 @@ describe('a parent commitment in a base profile chain', () => {
 
     expect(await validateDelegationChain(leaf, resolving([again, middle]))).toMatchObject({
       valid: false,
-      reason: 'Delegation "leaf" does not descend from a root through the chain its parent resolves to',
+      reason: `Delegation "leaf" does not descend from a root through the chain its parent resolves to${WITHHELD_SUFFIX}`,
       code: 'chain_invalid',
     });
     expect(warn.mock.calls.flat().join('\n')).toContain('Delegation middle states a parentCredentialDigest that is not the digest of its parent root as resolved');
@@ -134,7 +135,7 @@ describe('a parent commitment in a base profile chain', () => {
     expect(await validateDelegationChain(stating(leaf, stated), resolving([root, middle]))).toMatchObject({
       valid: false,
       code: 'chain_invalid',
-      reason: 'Delegation "leaf" states a parentCredentialDigest that is not the digest of the parent its chain resolves to',
+      reason: `Delegation "leaf" states a parentCredentialDigest that is not the digest of the parent its chain resolves to${WITHHELD_SUFFIX}`,
     });
   });
 
@@ -178,7 +179,7 @@ describe('a parent commitment in a base profile chain', () => {
     expect(await validateDelegationChain(under, resolving([statingRoot]))).toMatchObject({
       valid: false,
       code: 'chain_invalid',
-      reason: 'Delegation "under" does not descend from a root through the chain its parent resolves to',
+      reason: `Delegation "under" does not descend from a root through the chain its parent resolves to${WITHHELD_SUFFIX}`,
     });
     expect(warn.mock.calls.flat().join('\n')).toContain('Root delegation root has no parent credential');
   });

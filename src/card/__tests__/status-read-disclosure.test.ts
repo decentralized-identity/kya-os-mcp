@@ -31,6 +31,7 @@ import {
 } from '../index.js';
 import { createDidKeyResolver } from '../../index.js';
 import { NOW_MS, RESOURCE, STATUS_URL, hop, now, parties, serveAt, statusList, twoHopChain } from './signed-chain-helpers.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const LIST = 'https://jenkins.corp.example/status/1';
 
@@ -99,7 +100,7 @@ const UNREAD: [string, SafeFetch, RefusalCode, string][] = [
 describe('the Card revocation checker, when it could not read a status list', () => {
   it.each(UNREAD)('names the list and says only that it could not be read, logging the rest, for %s', async (_name, fetch, code, logged) => {
     const outcome = await answerFor(fetch);
-    expect(outcome.answer).toEqual({ revoked: true, fresh: false, reason: `the status list at "${LIST}" could not be read or checked`, ...coded(code) });
+    expect(outcome.answer).toEqual({ revoked: true, fresh: false, reason: `the status list at "${LIST}" could not be read or checked${WITHHELD_SUFFIX}`, ...coded(code) });
     expect(outcome.logged).toContain(logged);
   });
 
@@ -196,7 +197,7 @@ describe('the Card revocation checker, when it refuses a list it read before che
     ['a list past its validUntil, where no proof is checked', () => statusList(p.agent, [], { id: LIST, validUntil: '2020-01-01T00:00:00Z' }), 'status_unavailable', 'expired at "2020-01-01T00:00:00Z"', false],
   ])('names the list and says only that it could not be read or checked, logging the rest, for %s', async (_name, body, code, said, proofChecked) => {
     const { answer, logged } = await answerOfRead(body(), { proofChecked });
-    expect(answer).toEqual({ revoked: true, fresh: false, reason: `the status list at "${LIST}" could not be read or checked`, ...coded(code) });
+    expect(answer).toEqual({ revoked: true, fresh: false, reason: `the status list at "${LIST}" could not be read or checked${WITHHELD_SUFFIX}`, ...coded(code) });
     expect(logged).toContain(said);
   });
 
@@ -236,7 +237,7 @@ describe('a delegation hop whose status entry names a document that is no status
     })({ meta: toDelegationChainMeta([root, leaf]), proofDid: p.subAgent.did, action: 'orders.place' });
     if (verdict.ok) throw new Error('a hop whose status list is no status list was accepted');
     expect(verdict.error.code).toBe('delegation_revoked');
-    expect(verdict.error.reasons?.[0]?.endsWith(`subtree invalidated: the status list at "${LIST}" could not be read or checked`)).toBe(true);
+    expect(verdict.error.reasons?.[0]?.endsWith(`subtree invalidated: the status list at "${LIST}" could not be read or checked${WITHHELD_SUFFIX}`)).toBe(true);
     const told = JSON.stringify(verdict);
     expect(told).not.toContain('login.corp.internal');
     expect(told).not.toContain('tenant-7731');

@@ -40,6 +40,7 @@ import {
 import { AnsweringFetchProvider } from '../../__tests__/utils/adopter-providers.js';
 import { delegationRecord, keyOf, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 import { delegate, party } from './helpers/delegating-party.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const crypto = new NodeCryptoProvider();
 const AGENT = 'did:web:agent.localhost%3A4102';
@@ -49,6 +50,8 @@ const SCOPE = 'notes:read';
 
 /** The refusal of the agent's delegation as unresolvable, before any detail it ends with. */
 const UNRESOLVED = `Delegation leaf invalid: Could not resolve issuer DID: "${AGENT}"`;
+/** That refusal where the operator's log has why. */
+const UNRESOLVED_WITHHELD = `${UNRESOLVED}${WITHHELD_SUFFIX}`;
 /** The detail of a refusal of the agent's local name by the private-network rule, before any request. */
 const LOCAL_NAME_REFUSED = ' (Request to "agent.localhost:4102" refused: a private or local host. In local development, set development: true;';
 
@@ -157,7 +160,7 @@ describe.each(SLOTS)('a withKyaOs server with %s', (_label, slot) => {
     const gateReads = serving(buildDidWebDocument(agent));
     const outcome = await callUnder({ ...slot(forwarding(createDidWebResolver(hostReads, { development: true }))), fetchProvider: gateReads });
 
-    expect(outcome).toEqual({ allowed: false, reason: UNRESOLVED, code: 'did_invalid' });
+    expect(outcome).toEqual({ allowed: false, reason: UNRESOLVED_WITHHELD, code: 'did_invalid' });
     expect(hostReads.requested).toEqual([AGENT_DOCUMENT_URL]);
     expect(gateReads.requested).toEqual([]);
   });
@@ -180,7 +183,7 @@ it("keeps the failure the host's own resolver reports when the resolver configur
     fetchProvider: serving(),
   });
 
-  expect(outcome).toEqual({ allowed: false, reason: UNRESOLVED, code: 'did_invalid' });
+  expect(outcome).toEqual({ allowed: false, reason: UNRESOLVED_WITHHELD, code: 'did_invalid' });
 });
 
 /** Words a transport might throw, naming a host on the verifier's network. */
@@ -198,8 +201,10 @@ describe.each(SLOTS)('a withKyaOs server with %s, which throws', (_label, slot) 
   it('refuses with did_unavailable, showing the presenter none of its words, and logs them once', async () => {
     const outcome = await callUnder({ ...slot(throwingForDidWeb(new Error(TRANSPORT_WORDS))), fetchProvider: serving() });
 
-    expect(outcome).toEqual({ allowed: false, reason: UNRESOLVED, code: 'did_unavailable' });
+    expect(outcome).toEqual({ allowed: false, reason: UNRESOLVED_WITHHELD, code: 'did_unavailable' });
     expect(warnings().filter((line) => line.includes(TRANSPORT_WORDS))).toHaveLength(1);
+    // The gate logged the throw, so the refusal that points to the log adds no line of its own.
+    expect(warnings().filter((line) => line.includes('the DID resolver could not resolve'))).toEqual([]);
     expect(warnings().filter((line) => line.includes('gave no cause'))).toEqual([]);
   });
 

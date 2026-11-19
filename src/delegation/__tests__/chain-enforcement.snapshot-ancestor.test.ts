@@ -7,6 +7,7 @@ import { describe, it, expect, vi } from "vitest";
 import { validateDelegationChain } from "../chain-enforcement.js";
 import type { DelegationCredential } from "../../types/protocol.js";
 import { SERVER, chainOfThree, cred, resolving } from "./helpers/chain-fixtures.js";
+import { WITHHELD_SUFFIX } from "../../utils/thrown-words.js";
 
 describe("validateDelegationChain: snapshotAncestor", () => {
   const { root, middle, leaf } = chainOfThree();
@@ -161,7 +162,7 @@ describe("validateDelegationChain: snapshotAncestor", () => {
       // Read as the leaf, it is the resolver's copy of the leaf and is set
       // aside: the leaf presented is then held to the root, which is not its
       // parent. Links are checked before any credential is verified, so none was.
-      expect(result.reason).toBe('Delegation "leaf" references parent "middle", which its resolved chain does not end with');
+      expect(result.reason).toBe(`Delegation "leaf" references parent "middle", which its resolved chain does not end with${WITHHELD_SUFFIX}`);
       expect(result).not.toHaveProperty("evaluated");
     }
   });

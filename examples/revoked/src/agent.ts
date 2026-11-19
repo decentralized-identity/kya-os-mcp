@@ -10,6 +10,8 @@
  *      by the agent's OWN did:key, minted with the shipped
  *      `generateRequestProof`. The server runs holderBinding: 'enforce', so a
  *      stolen credential without the agent's key is refused (spec §11.8).
+ *      The proof names the credential it rides beside (spec §7.8), so no
+ *      other delegation of the agent's can be put in its place.
  *
  * The wallet never leaves the server (custodian); the agent holds authority,
  * not keys to the funds. Runnable standalone for the live demo:
@@ -112,6 +114,11 @@ export async function runAgentSend(options: {
   // rejects as INVALID_PROOF_STRUCTURE (non-empty required), so sessionless
   // holder binding can never verify. A synthetic id satisfies structure;
   // replay safety rides on the per-call nonce.
+  //
+  // The proof also names the delegation it is made for, by the chain the call
+  // presents, root first. The Responsible Party issues the credential itself,
+  // so the chain is that one credential, and the server refuses the proof
+  // beside any other.
   args['_kyaos_proof'] = await generateRequestProof({
     identity,
     crypto: cryptoProvider,
@@ -119,6 +126,7 @@ export async function runAgentSend(options: {
     args,
     audience,
     sessionId: `sessionless-${Date.now().toString(36)}`,
+    delegationChain: [credential],
   });
 
   const client = new Client({ name: 'revoked-agent', version: '0.1.0' });

@@ -163,10 +163,13 @@ export type {
 
 export {
   CascadingRevocationManager,
+  RevocationStalledError,
   StatusEntryUnchangedError,
   createCascadingRevocationManager,
+  type RevocationReports,
   type StatusEntryUnchangedReason,
   type UnchangedStatusEntry,
+  type UnrecordedRevocation,
   type RevocationEvent,
   type RevocationHook,
   type CascadingRevocationOptions,

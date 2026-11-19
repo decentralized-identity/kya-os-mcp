@@ -11,7 +11,7 @@ import { logger } from '../../logging/index.js';
 import { realStatusListManager } from '../../__tests__/utils/status-list-manager.js';
 import { isTransientRefusal } from '../../refusal-codes.js';
 import { RefusalError } from '../../utils/refusal.js';
-import { CascadingRevocationManager } from '../cascading-revocation.js';
+import { CascadingRevocationManager, RevocationStalledError } from '../cascading-revocation.js';
 import { DelegationGraphManager, type DelegationNode } from '../delegation-graph.js';
 import { MemoryDelegationGraphStorage } from '../storage/memory-graph-storage.js';
 
@@ -155,6 +155,40 @@ describe('CascadingRevocationManager.revokeDelegation: a node whose turn never c
 
     const error = await afterTheWait(revocation.revokeDelegation('root'), 3);
     expect((error as Error).message).toContain('2 more delegations of the subtree were not marked either.');
+  });
+
+  it('tells onRevoke only of revocations that landed, and carries every report on the error', async () => {
+    const { storage, hold, stuck } = stuckStore();
+    const { manager } = await realStatusListManager();
+    const graph = new DelegationGraphManager(storage);
+    const revocation = new CascadingRevocationManager(new DelegationGraphManager(storage), manager);
+    const entryOf = async () => manager.allocateStatusEntry('revocation');
+    await graph.registerDelegation({ id: 'root', parentId: null, issuerDid: 'did:web:user.example', subjectDid: 'did:web:a.example' });
+    // `stuck` has no entry, so its mark is the only record; `stuck-set` has one, which is set.
+    await graph.registerDelegation({ id: 'stuck', parentId: 'root', issuerDid: 'did:web:a.example', subjectDid: 'did:web:b.example' });
+    const setEntry = await entryOf();
+    await graph.registerDelegation({ id: 'stuck-set', parentId: 'root', issuerDid: 'did:web:a.example', subjectDid: 'did:web:c.example', credentialStatus: setEntry });
+    const failedEntry = await entryOf();
+    await graph.registerDelegation({ id: 'unset', parentId: 'root', issuerDid: 'did:web:a.example', subjectDid: 'did:web:d.example', credentialStatus: failedEntry });
+    const updateStatus = manager.updateStatus.bind(manager);
+    vi.spyOn(manager, 'updateStatus').mockImplementation(async (entry, revoked) => {
+      if (entry.statusListIndex === failedEntry.statusListIndex) throw new Error('status list store unavailable');
+      return updateStatus(entry, revoked);
+    });
+    hold.node = (node) => ['stuck', 'stuck-set'].includes(node.id) && node.revoked === true;
+    void graph.setRevoked('stuck', true);
+    await stuck;
+    void graph.setRevoked('stuck-set', true);
+
+    const told: string[] = [];
+    const error = await afterTheWait(revocation.revokeDelegation('root', { onRevoke: (event) => void told.push(event.delegationId) }), 2);
+
+    expect(error).toBeInstanceOf(RevocationStalledError);
+    expect(error).toMatchObject({ code: 'deadline_exceeded', stalled: ['stuck', 'stuck-set'], unrecorded: [] });
+    expect(told.sort()).toEqual(['root', 'stuck-set', 'unset']);
+    const reports = error as RevocationStalledError;
+    expect(reports.events.map((event) => event.delegationId).sort()).toEqual(['root', 'stuck-set', 'unset']);
+    expect(reports.unchanged).toMatchObject([{ delegationId: 'unset', reason: 'status-list-error' }]);
   });
 
   it('throws any other error of a mark at once, as before', async () => {

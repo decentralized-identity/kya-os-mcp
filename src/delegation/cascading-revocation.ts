@@ -27,9 +27,12 @@ import { graphChainBreak } from './graph-chain.js';
 import { isStalledTurn } from './graph-node-turns.js';
 
 export {
+  RevocationStalledError,
   StatusEntryUnchangedError,
+  type RevocationReports,
   type StatusEntryUnchangedReason,
   type UnchangedStatusEntry,
+  type UnrecordedRevocation,
 } from './status-entry-unchanged-error.js';
 
 export interface RevocationEvent {
@@ -128,8 +131,10 @@ export class CascadingRevocationManager {
    * whose mark the graph storage provider dropped, and whose entry was not set, is recorded
    * nowhere: that throws an `Error` naming it instead, also once the walk is done. A delegation
    * whose node another change holds for 10 seconds is not marked: the walk goes on, and then, before
-   * either of those, throws a transient `RefusalError` of code `deadline_exceeded` naming it, so
-   * the caller revokes again. A dry run
+   * either of those, throws a transient `RevocationStalledError`, a `RefusalError` of code
+   * `deadline_exceeded`, naming it and carrying every report of the walk, so the caller revokes
+   * again. `onRevoke` is told of each delegation whose revocation landed, marked in the graph or set
+   * on its status list, and of no other. A dry run
    * changes nothing, and returns or throws what the real run would, short of what only changing
    * the list shows.
    */
@@ -164,9 +169,8 @@ export class CascadingRevocationManager {
       await this.revokeNode(descendant, walk, `Cascaded from ${delegationId}`, options.onRevoke);
     }
 
-    const [firstStalled, ...moreStalled] = walk.stalled;
-    if (firstStalled !== undefined) {
-      throw revocationStalled(delegationId, firstStalled, moreStalled.length);
+    if (walk.stalled.length > 0) {
+      throw revocationStalled(delegationId, walk);
     }
     const [firstUnrecorded, ...moreUnrecorded] = walk.unrecorded;
     if (firstUnrecorded !== undefined) {
@@ -178,7 +182,10 @@ export class CascadingRevocationManager {
     return walk.events;
   }
 
-  /** Revoke one node of the walk's subtree, then tell `onRevoke`. A dry run marks and sets nothing. */
+  /**
+   * Revoke one node of the walk's subtree, then, once the revocation landed, marked in the graph or
+   * set on its status list, record its event and tell `onRevoke`. A dry run marks and sets nothing.
+   */
   private async revokeNode(
     node: DelegationNode,
     walk: RevocationWalk,
@@ -210,6 +217,8 @@ export class CascadingRevocationManager {
     if (marked === false && !outcome.set) {
       walk.unrecorded.push({ delegationId: node.id, unchanged: outcome.unchanged });
     }
+    // A node neither marked nor set was not revoked: nothing landed to tell of.
+    if (marked !== true && !outcome.set) return;
 
     walk.events.push(event);
     if (onRevoke) {

@@ -283,6 +283,8 @@ Register a new delegation under a new id; a removed delegation that never read a
 
 A change to the graph may throw a `RefusalError` of code `deadline_exceeded`, which is transient and names the node, when another change to that node held it past the wait; the change was not made.
 Make the change again.
+A revocation that could not mark a node so throws a `RevocationStalledError`, a `RefusalError` of that code, once it has walked the whole subtree, and carries the walk's `events`, `stalled`, `unrecorded` and `unchanged` reports.
+`onRevoke` is told of a delegation only once its revocation landed, marked in the graph or set on its status list, so it is not told of a node whose turn did not come and that has no entry set.
 
 ### Audit ledger
 

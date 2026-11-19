@@ -1,0 +1,12 @@
+kind: Fixed
+body: |-
+    **A revocation tells `onRevoke` only of what landed, and a stalled one
+    keeps its reports.** When a node's turn did not come, the cascade still
+    called `onRevoke` for it, though it had no entry set and was not
+    marked, and the transient error it then threw dropped the entries left
+    unchanged and the revocations not recorded. `onRevoke` is now told of a
+    delegation only once it is marked in the graph or set on its status
+    list, and the error is a `RevocationStalledError`, still a
+    `RefusalError` of code `deadline_exceeded`, that carries the walk's
+    `events`, `stalled`, `unrecorded` and `unchanged`.
+time: 2026-11-19T02:15:00.000000-06:00

@@ -267,6 +267,8 @@ A caller of `isRevoked` catches the error, or calls `validateDelegation`.
 A caller of `getRevokedInSubtree` catches it, and reads the subtree again once the graph holds the missing node.
 
 A storage provider that implements `registerNodeAtomic` changes nothing of the parent but adding the child's id to its `children`, so a revocation of the parent stored in between is kept.
+It also refuses, storing nothing, a node whose parent is not stored, or is stored as `removed`, the record `removeDelegation` leaves of a delegation removed while revoked: throw a `RefusalError` of code `delegation_revoked` for that one, as `MemoryDelegationGraphStorage` does.
+`DelegationGraphManager` reads the parent again in its turn, but when another process removes the parent between that read and the write, only your `registerNodeAtomic` can refuse the child, which would otherwise hang under a revoked record.
 
 A re-delegation must copy, as written, every member of `constraints` and of `constraints.crisp` its parent states that the chain walk does not interpret, and must not widen its parent's budget.
 An agent that re-delegates copies those members from its own credential; one that does not is refused as `chain_invalid`.

@@ -75,8 +75,11 @@ describe('StatusList2021Manager over a store with no conditional write', () => {
     const [message] = args as [string];
     expect(message).toMatch(/^\[kya-os\] StatusList2021Manager was built over a status-list store with no conditional write/);
     expect(message).toMatch(/a revocation can be lost/);
-    expect(message).toMatch(/Implement getStatusListWithEtag and setStatusListIfMatch on the store/);
-    expect(message).toMatch(/or write through one manager per store\.$/);
+    expect(message).toMatch(
+      /Implement ConditionalStatusListStorageProvider \(getStatusListWithEtag and setStatusListIfMatch\) on the store/,
+    );
+    expect(message).toMatch(/or write through one manager per store\./);
+    expect(message).toMatch(/UPGRADING\.md, "Status-list stores take a conditional write", has the detail\.$/);
 
     vi.resetModules();
     const reloaded = await import('../statuslist-manager.js');
@@ -126,5 +129,74 @@ describe('StatusList2021Manager over a store with the conditional write', () => 
           'and false when it refused it',
       ),
     );
+  });
+
+  it.each([undefined, '', 7])(
+    'throws a TypeError, and writes nothing, when the store reads a list with the etag %s',
+    async (etag) => {
+      /** A store that, once `blank` is on, reads each stored list with `etag` in place of its own. */
+      class EtaglessStore extends MemoryStatusListStorage {
+        blank = false;
+        conditionalWrites = 0;
+
+        override async getStatusListWithEtag(statusListId: string) {
+          const stored = await super.getStatusListWithEtag(statusListId);
+          return stored === null || !this.blank ? stored : { ...stored, etag: etag as unknown as string };
+        }
+
+        override async setStatusListIfMatch(
+          statusListId: string,
+          credential: StatusList2021Credential,
+          expected: string | null,
+        ): Promise<boolean> {
+          this.conditionalWrites++;
+          return super.setStatusListIfMatch(statusListId, credential, expected);
+        }
+      }
+      const store = new EtaglessStore();
+      const manager = new StatusList2021Manager(store, identity, sign, undefined, undefined, options);
+      const entry = await manager.allocateStatusEntry('revocation');
+      store.blank = true;
+      store.conditionalWrites = 0;
+
+      await expect(manager.updateStatus(entry, true)).rejects.toThrow(
+        new TypeError(
+          'ConditionalStatusListStorageProvider.getStatusListWithEtag must answer a stored list with its etag, ' +
+            'a string that is not empty',
+        ),
+      );
+      expect(store.conditionalWrites).toBe(0);
+      expect(await manager.checkStatus(entry)).toBe(false);
+    },
+  );
+});
+
+describe('StatusList2021Manager over a subclass of MemoryStatusListStorage', () => {
+  it('reads and writes through the subclass, so one that counts its writes sees each, with no warning', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    class CountingStore extends MemoryStatusListStorage {
+      reads = 0;
+      writes = 0;
+
+      override async getStatusList(statusListId: string): Promise<StatusList2021Credential | null> {
+        this.reads++;
+        return super.getStatusList(statusListId);
+      }
+
+      override async setStatusList(statusListId: string, credential: StatusList2021Credential): Promise<void> {
+        this.writes++;
+        await super.setStatusList(statusListId, credential);
+      }
+    }
+    const store = new CountingStore();
+    const manager = createStatusListManager(store, identity, sign, undefined, undefined, options);
+
+    const entry = await manager.allocateStatusEntry('revocation');
+    await manager.updateStatus(entry, true);
+
+    expect(store.writes).toBe(2);
+    expect(store.reads).toBe(2);
+    expect(await manager.checkStatus(entry)).toBe(true);
+    expect(warn).not.toHaveBeenCalled();
   });
 });

@@ -3,9 +3,9 @@
  * over one status-list store of its own: a table whose rows carry a version, as a database row
  * does, read and written after a moment's latency. Both replicas revoke credentials on one list at
  * the same moment, so each reads the list before the other has written it. The table implements
- * the optional conditional write, `ConditionalStatusListStorageProvider`, with the row version as
- * the etag, so a write over a row that has since changed is refused and the replica makes its
- * change again over the row now stored. A verifier that reads the published list finds every
+ * the optional conditional write, `ConditionalStatusListStorageProvider`, with an etag drawn from a
+ * sequence that never resets, so a write over a row that has since changed is refused and the
+ * replica makes its change again over the row now stored. A verifier that reads the published list finds every
  * revocation either replica reported, on a list the issuer signed, and the library warns about
  * nothing. A replica whose every write is refused throws `StatusListWriteConflictError` and
  * stores nothing.
@@ -21,10 +21,12 @@ import {
   StatusListWriteConflictError,
   base64urlDecodeToBytes,
   canonicalizeJSON,
+  isStatusListWriteConflict,
   statusListGzipCodec,
   type ConditionalStatusListStorageProvider,
   type CredentialStatus,
   type StatusList2021Credential,
+  type StatusList2021ManagerOptions,
   type StatusListStorageProvider,
   type StoredStatusList,
 } from '@kya-os/mcp';
@@ -36,12 +38,19 @@ import { crypto, didKeyParty } from './shared/keys.js';
 const BASE_URL = 'https://status.issuer.example';
 const issuer = await didKeyParty();
 
-/** The adopter's status-list table: one row per list, the list as JSON and a version every write of the row raises. */
+/**
+ * The adopter's status-list table: one row per list, holding the list as JSON, an etag and how
+ * many times the row was written. Each write takes its etag from one sequence that never resets,
+ * as a database sequence does, so no etag repeats, even for a row deleted and stored again.
+ */
 class StatusListTable implements ConditionalStatusListStorageProvider {
-  readonly #rows = new Map<string, { json: string; version: number }>();
+  readonly #rows = new Map<string, { json: string; etag: string; writes: number }>();
   readonly #nextIndex = new Map<string, number>();
+  #sequence = 0;
   /** While on, another writer updates the row just before each conditional write. */
   busy = false;
+  /** How many conditional writes the table refused. */
+  refusals = 0;
 
   async getStatusList(statusListId: string): Promise<StatusList2021Credential | null> {
     return (await this.getStatusListWithEtag(statusListId))?.credential ?? null;
@@ -51,7 +60,7 @@ class StatusListTable implements ConditionalStatusListStorageProvider {
     await sleep(1);
     const row = this.#rows.get(statusListId);
     if (row === undefined) return null;
-    return { credential: JSON.parse(row.json) as StatusList2021Credential, etag: String(row.version) };
+    return { credential: JSON.parse(row.json) as StatusList2021Credential, etag: row.etag };
   }
 
   async setStatusList(statusListId: string, credential: StatusList2021Credential): Promise<void> {
@@ -59,7 +68,7 @@ class StatusListTable implements ConditionalStatusListStorageProvider {
     this.#write(statusListId, credential);
   }
 
-  /** `UPDATE ... SET json = ?, version = version + 1 WHERE id = ? AND version = ?`, or an `INSERT` that fails on a row already there. */
+  /** `UPDATE ... SET json = ?, etag = nextval(...) WHERE id = ? AND etag = ?`, or an `INSERT` that fails on a row already there. */
   async setStatusListIfMatch(
     statusListId: string,
     credential: StatusList2021Credential,
@@ -67,8 +76,11 @@ class StatusListTable implements ConditionalStatusListStorageProvider {
   ): Promise<boolean> {
     await sleep(1);
     const row = this.#rows.get(statusListId);
-    if (this.busy && row !== undefined) row.version++;
-    if ((row === undefined ? null : String(row.version)) !== etag) return false;
+    if (this.busy && row !== undefined) row.etag = this.#nextEtag();
+    if ((row?.etag ?? null) !== etag) {
+      this.refusals++;
+      return false;
+    }
     this.#write(statusListId, credential);
     return true;
   }
@@ -80,13 +92,17 @@ class StatusListTable implements ConditionalStatusListStorageProvider {
   }
 
   /** How many times the row of `statusListId` was written. */
-  version(statusListId: string): number {
-    return this.#rows.get(statusListId)?.version ?? 0;
+  writes(statusListId: string): number {
+    return this.#rows.get(statusListId)?.writes ?? 0;
+  }
+
+  #nextEtag(): string {
+    return String(++this.#sequence);
   }
 
   #write(statusListId: string, credential: StatusList2021Credential): void {
-    const version = this.version(statusListId) + 1;
-    this.#rows.set(statusListId, { json: JSON.stringify(credential), version });
+    const writes = this.writes(statusListId) + 1;
+    this.#rows.set(statusListId, { json: JSON.stringify(credential), etag: this.#nextEtag(), writes });
   }
 }
 
@@ -100,14 +116,14 @@ function withoutConditionalWrite(table: StatusListTable): StatusListStorageProvi
 }
 
 /** One replica of the issuing service: its own manager over `store`, signing as the issuer. */
-function replica(store: StatusListStorageProvider): StatusList2021Manager {
+function replica(store: StatusListStorageProvider, options: StatusList2021ManagerOptions = {}): StatusList2021Manager {
   return new StatusList2021Manager(
     store,
     { getDid: () => issuer.did, getKeyId: () => issuer.kid },
     signingFunctionOf(issuer),
     statusListGzipCodec,
     statusListGzipCodec,
-    { statusListBaseUrl: BASE_URL },
+    { statusListBaseUrl: BASE_URL, ...options },
   );
 }
 
@@ -163,6 +179,7 @@ await runCases('status-list-replicas', 'two replicas over a store with the condi
       const { value: entries, warnings } = await watchingWarnings(() => revokeFromTwoReplicas(table));
       assert.deepEqual(await revokedAsPublished(table, entries), [true, true]);
       assert.equal(await signedByIssuer(table, entries[0]!.statusListCredential), true);
+      assert.ok(table.refusals >= 1, 'the replicas never conflicted, so the case showed nothing');
       assert.deepEqual(warnings, []);
     },
   },
@@ -170,15 +187,19 @@ await runCases('status-list-replicas', 'two replicas over a store with the condi
     name: 'a replica whose every write is refused throws StatusListWriteConflictError and stores nothing',
     run: async () => {
       const table = new StatusListTable();
-      const manager = replica(table);
+      const manager = replica(table, { maxWriteConflicts: 3 });
       const entry = await manager.allocateStatusEntry('revocation');
       table.busy = true;
       const error: unknown = await manager.updateStatus(entry, true).catch((thrown: unknown) => thrown);
       table.busy = false;
+      assert.equal(isStatusListWriteConflict(error), true, String(error));
       assert.ok(error instanceof StatusListWriteConflictError, String(error));
       assert.equal(error.code, 'STATUS_LIST_WRITE_CONFLICT');
       assert.equal(error.statusListId, entry.statusListCredential);
+      assert.equal(error.attempts, 4);
+      assert.equal(table.refusals, 4);
       assert.deepEqual(await revokedAsPublished(table, [entry]), [false]);
+      // Made again once the other writer stops, the change is stored.
       await manager.updateStatus(entry, true);
       assert.deepEqual(await revokedAsPublished(table, [entry]), [true]);
     },
@@ -190,9 +211,9 @@ await runCases('status-list-replicas', 'two replicas over a store with the condi
       const { value: entries, warnings } = await watchingWarnings(() => revokeFromTwoReplicas(withoutConditionalWrite(table)));
       const revoked = await revokedAsPublished(table, entries);
       assert.equal(revoked.filter(Boolean).length, 1, `revoked as published: ${revoked.join(', ')}`);
-      assert.equal(table.version(entries[0]!.statusListCredential), 3);
+      assert.equal(table.writes(entries[0]!.statusListCredential), 3);
       assert.equal(warnings.length, 1, warnings.join('\n'));
-      assert.match(warnings[0] ?? '', /Implement getStatusListWithEtag and setStatusListIfMatch/);
+      assert.match(warnings[0] ?? '', /Implement ConditionalStatusListStorageProvider/);
     },
   },
 ]);

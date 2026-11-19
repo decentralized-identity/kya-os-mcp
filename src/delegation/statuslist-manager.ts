@@ -18,24 +18,37 @@ import { acceptEntrySize, acceptStatusPurpose } from '../utils/statuslist-accept
 import { assertStatusListValidity } from '../utils/statuslist-validity.js';
 import { clockSkewOption } from '../utils/validity-window.js';
 import { RefusalError } from '../utils/refusal.js';
+import { warnUnlessConditional, type StatusListStorageProvider } from './statuslist-storage.js';
 import {
   commitStatusListChange,
-  warnUnlessConditional,
+  writeRetryOf,
   type StatusListChange,
-  type StatusListStorageProvider,
-} from './statuslist-storage.js';
+  type StatusListWriteRetry,
+  type StatusListWriteRetryOptions,
+} from './statuslist-write.js';
 
+export type {
+  ConditionalStatusListStorageProvider,
+  HistoricalStatusListStorageProvider,
+  StatusListStorageProvider,
+  StoredStatusList,
+} from './statuslist-storage.js';
 export {
   StatusListWriteConflictError,
-  type ConditionalStatusListStorageProvider,
-  type HistoricalStatusListStorageProvider,
-  type StatusListStorageProvider,
-  type StoredStatusList,
-} from './statuslist-storage.js';
+  isStatusListWriteConflict,
+  type StatusListWriteRetryOptions,
+} from './statuslist-write.js';
 
 export interface StatusListIdentityProvider {
   getDid(): string;
   getKeyId(): string;
+}
+
+/** The options of a {@link StatusList2021Manager}, and how it retries a refused write. */
+export interface StatusList2021ManagerOptions extends StatusListWriteRetryOptions {
+  statusListBaseUrl?: string;
+  defaultListSize?: number;
+  maxClockSkewMs?: number;
 }
 
 export class StatusList2021Manager {
@@ -43,6 +56,8 @@ export class StatusList2021Manager {
   private defaultListSize: number;
   /** The clock tolerance each bound of a list's validity window is held with, in milliseconds. */
   private skewMs: number;
+  /** How a write a conditional store refused is tried again. */
+  private retry: StatusListWriteRetry;
   /**
    * Per-status-list mutex for this manager's own writes. Every read-modify-write
    * of a list this manager makes (status updates and first creation) runs inside
@@ -58,9 +73,10 @@ export class StatusList2021Manager {
    *   built per request do, only when the store implements
    *   `ConditionalStatusListStorageProvider`, as `MemoryStatusListStorage`
    *   does: a write another writer got in before is then made again over the
-   *   list now stored. Over any other store the last write wins, so write
-   *   through one manager only; building a manager over one warns once per
-   *   process.
+   *   list now stored, after a short random wait, up to
+   *   `options.maxWriteConflicts` times. Over any other store the last write
+   *   wins, so write through one manager only; building a manager over one
+   *   warns once per process.
    * @param compressor - GZIP-compresses the bitstring of every list this
    *   manager publishes. Defaults to `statusListGzipCodec` (through
    *   {@link BitstringManager}). Status-list readers accept only GZIP, so a
@@ -74,6 +90,13 @@ export class StatusList2021Manager {
    *   bound of a kept list's validity window is held with when the list is
    *   read: a number from 0 to 600,000. Default 120,000, the proof verifier's
    *   default skew. Any other value throws a `TypeError` naming the option.
+   * @param options.maxWriteConflicts - How many times a conditional store may
+   *   refuse the write of one change before it throws
+   *   `StatusListWriteConflictError`: a whole number, 0 or more. Default 32.
+   *   Between tries the manager waits a random part of a delay that doubles
+   *   from 2 ms up to 100 ms. Any other value throws a `TypeError` naming the
+   *   option. `options.sleep` and `options.random` replace the timer and
+   *   `Math.random` the wait is made with, for tests.
    */
   constructor(
     private storage: StatusListStorageProvider,
@@ -81,15 +104,12 @@ export class StatusList2021Manager {
     private signingFunction: VCSigningFunction,
     private compressor?: CompressionFunction,
     private decompressor?: DecompressionFunction,
-    options?: {
-      statusListBaseUrl?: string;
-      defaultListSize?: number;
-      maxClockSkewMs?: number;
-    }
+    options?: StatusList2021ManagerOptions
   ) {
     this.statusListBaseUrl = options?.statusListBaseUrl || 'https://status.example.com';
     this.defaultListSize = options?.defaultListSize || 131072;
     this.skewMs = clockSkewOption(options?.maxClockSkewMs);
+    this.retry = writeRetryOf(options);
     warnUnlessConditional(storage);
   }
 
@@ -138,8 +158,11 @@ export class StatusList2021Manager {
     assertOneBitEntry(credentialStatus);
     const { statusListCredential } = credentialStatus;
     await this.withListLock(statusListCredential, () =>
-      commitStatusListChange(this.storage, statusListCredential, (statusList) =>
-        this.withStatusBit(statusList, credentialStatus, revoked)
+      commitStatusListChange(
+        this.storage,
+        statusListCredential,
+        (statusList) => this.withStatusBit(statusList, credentialStatus, revoked),
+        this.retry
       )
     );
   }
@@ -283,8 +306,11 @@ export class StatusList2021Manager {
     purpose: 'revocation' | 'suspension'
   ): Promise<number> {
     return this.withListLock(statusListId, () =>
-      commitStatusListChange(this.storage, statusListId, (existing) =>
-        this.createdIfMissing(existing, statusListId, purpose)
+      commitStatusListChange(
+        this.storage,
+        statusListId,
+        (existing) => this.createdIfMissing(existing, statusListId, purpose),
+        this.retry
       )
     );
   }
@@ -371,11 +397,7 @@ export function createStatusListManager(
   signingFunction: VCSigningFunction,
   compressor?: CompressionFunction,
   decompressor?: DecompressionFunction,
-  options?: {
-    statusListBaseUrl?: string;
-    defaultListSize?: number;
-    maxClockSkewMs?: number;
-  }
+  options?: StatusList2021ManagerOptions
 ): StatusList2021Manager {
   return new StatusList2021Manager(
     storage,

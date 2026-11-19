@@ -171,6 +171,50 @@ describe("MemoryStatusListStorage", () => {
       expect(await storage.setStatusListIfMatch(statusListId, updated, beforeClear!.etag)).toBe(false);
     });
 
+    it("reads and writes through a subclass's getStatusList and setStatusList", async () => {
+      const calls: string[] = [];
+      class Recording extends MemoryStatusListStorage {
+        override async getStatusList(id: string) {
+          calls.push("get");
+          return super.getStatusList(id);
+        }
+        override async setStatusList(id: string, credential: StatusList2021Credential) {
+          calls.push("set");
+          await super.setStatusList(id, credential);
+        }
+      }
+      const recording = new Recording();
+
+      expect(await recording.setStatusListIfMatch(statusListId, mockStatusListCredential, null)).toBe(true);
+      const read = await recording.getStatusListWithEtag(statusListId);
+      expect(await recording.setStatusListIfMatch(statusListId, updated, read!.etag)).toBe(true);
+      expect(await recording.setStatusListIfMatch(statusListId, updated, read!.etag)).toBe(false);
+
+      expect(calls).toEqual(["set", "get", "set"]);
+      expect(read?.credential).toEqual(mockStatusListCredential);
+    });
+
+    it("keeps a conditional write atomic when a subclass's setStatusList waits before it stores", async () => {
+      class Slow extends MemoryStatusListStorage {
+        override async setStatusList(id: string, credential: StatusList2021Credential) {
+          await new Promise((resolve) => setImmediate(resolve));
+          await super.setStatusList(id, credential);
+        }
+      }
+      const slow = new Slow();
+      await slow.setStatusList(statusListId, mockStatusListCredential);
+      const read = await slow.getStatusListWithEtag(statusListId);
+
+      const [first, second] = await Promise.all([
+        slow.setStatusListIfMatch(statusListId, updated, read!.etag),
+        slow.setStatusListIfMatch(statusListId, { ...updated, issuanceDate: "2024-01-03T00:00:00Z" }, read!.etag),
+      ]);
+
+      expect([first, second]).toEqual([true, false]);
+      expect((await slow.getStatusList(statusListId))?.issuanceDate).toBe(updated.issuanceDate);
+      expect(await slow.getStatusListVersionCount(statusListId)).toBe(2);
+    });
+
     it("hands back copies, so a change to what was read is not stored", async () => {
       await storage.setStatusList(statusListId, mockStatusListCredential);
       const read = await storage.getStatusListWithEtag(statusListId);

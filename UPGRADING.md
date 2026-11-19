@@ -16,28 +16,44 @@ The second write replaced the first, both calls resolved, and the first revocati
 
 A store may now implement `ConditionalStatusListStorageProvider`, an optional contract beside the three methods every store has, as `AtomicDelegationGraphStorageProvider` is beside the delegation graph's store:
 
-- `getStatusListWithEtag(statusListId)` answers the stored list with its etag, a string that names the write that stored it, such as a row version or an HTTP ETag, or `null` when no list is stored.
+- `getStatusListWithEtag(statusListId)` answers the stored list with its etag, a string that names the write that stored it, or `null` when no list is stored.
+  It must read where the conditional write checks the etag, such as a database's primary rather than a replica that may lag it, or a writer keeps reading an old list and every write it makes is refused.
 - `setStatusListIfMatch(statusListId, credential, etag)` stores the list only while the stored list is the one `etag` names, or, for a `null` etag, only while no list is stored.
   It resolves `true` when it stored the list and `false` when it did not.
   The comparison and the write must be one atomic step for every writer of the store, and a write through `setStatusList` must change the etag too.
 
+An etag must never be given twice for one `statusListId`, even after the list is deleted and stored again, or a writer that read the old list could match the new one and replace it.
+Draw it from a sequence that never resets, such as a database sequence shared by every row, or make it a random UUID for each write.
+A version column that starts again at 1 when its row is created again repeats, so do not use one as the etag.
+
 Over such a store a manager writes a list only over the list it read.
-When another writer stored the list first, the manager reads it again, applies only its own change, signs it and tries again, up to 10 times in all.
-When every try is refused it throws `StatusListWriteConflictError`, whose `code` is `STATUS_LIST_WRITE_CONFLICT`, and stores nothing, so the list keeps every other writer's change and the caller can make its own again.
-A store whose `setStatusListIfMatch` resolves anything but a boolean is refused with a `TypeError`.
-`MemoryStatusListStorage` implements the contract.
+When another writer stored the list first, the manager waits a random part of a delay that doubles from 2 ms up to 100 ms, reads the list again, applies only its own change, signs it and tries again.
+The new option `maxWriteConflicts` of `StatusList2021Manager` and `createStatusListManager` says how many refusals one change outlasts: a whole number, 0 or more, 32 by default, and any other value throws a `TypeError` naming the option.
+When the change is refused once more than that, the manager throws `StatusListWriteConflictError`, whose `code` is `STATUS_LIST_WRITE_CONFLICT`, and stores nothing, so the list keeps every other writer's change and the caller can make its own again.
+`isStatusListWriteConflict(error)` tells one by its code, so it also knows one that another copy of the package threw, where `instanceof` is false.
+The manager throws a `TypeError` when the store reads a stored list with an etag that is not a string, or is empty, before it writes anything.
+It throws one too when `setStatusListIfMatch` resolves anything but a boolean, since it cannot then tell whether the list was stored: the write may already be stored.
 `allocateIndex` must hand out each index once across every manager of the store as well, or two credentials share one bit.
 
+The guarantee holds once every writer of the store writes this way.
+During a rolling upgrade, a replica still on 1.25.0 writes through `setStatusList`, which changes the etag but can replace a list an upgraded replica just stored, so a revocation can still be lost until the last replica is upgraded.
+
+`MemoryStatusListStorage` implements the contract.
+Its conditional write now reads and stores through `getStatusList` and `setStatusList`, so a subclass that overrides them to count, log, delay or copy what is stored sees every read and write the manager makes, as on 1.25.0.
+Each override must call the method it overrides, since the etag follows the writes that reach the base class; a subclass that keeps its lists elsewhere must implement the conditional write itself.
+
 A store without the conditional write works as before, and is safe with one manager writing to it.
-The first manager a process builds over one warns once through `logger.warn`, in fixed words: `[kya-os] StatusList2021Manager was built over a status-list store with no conditional write, ...`.
+The first manager a process builds over one warns once through `logger.warn`, in fixed words: `[kya-os] StatusList2021Manager was built over a status-list store with no conditional write, ...`, naming `ConditionalStatusListStorageProvider` and this section.
 The warning is shared across package copies in the process.
 
 | If you | Do this | Effect |
 | --- | --- | --- |
-| Use `MemoryStatusListStorage` | Nothing. | No warning, and managers over one store keep every change. |
-| Run more than one manager over a store of your own: replicas, serverless instances, or a manager per request | Implement `getStatusListWithEtag` and `setStatusListIfMatch` on it, with a version column and `UPDATE ... WHERE version = ?`, a compare-and-set, or HTTP `If-Match` and `If-None-Match: *`, as `adopters/fixtures/status-list-replicas.ts` does. | No revocation is lost, and the warning stops. |
+| Use `MemoryStatusListStorage`, or a subclass whose overrides call `super` | Nothing. | No warning, and managers over one store keep every change. |
+| Run more than one manager over a store of your own: replicas, serverless instances, or a manager per request | Implement `getStatusListWithEtag` and `setStatusListIfMatch` on it, with an etag from a sequence that never resets and `UPDATE ... WHERE etag = ?`, a compare-and-set, or HTTP `If-Match` and `If-None-Match: *`, reading from where the write is checked, as `adopters/fixtures/status-list-replicas.ts` does. Upgrade every replica before you rely on it. | No revocation is lost, and the warning stops. |
 | Write through one manager only, in one process | Nothing, or implement the two methods to stop the warning. | The store is read and written as on 1.25.0. |
-| Call `updateStatus`, `allocateStatusEntry` or `CascadingRevocationManager.revokeDelegation` over a store with the conditional write | Treat `StatusListWriteConflictError` as a change that was not made, and make it again. | A change that could not be stored is reported, never lost. |
+| Call `updateStatus` or `allocateStatusEntry` over a store with the conditional write | Treat an error `isStatusListWriteConflict` knows as a change that was not made, and make it again. | A change that could not be stored is reported, never lost. |
+| Call `CascadingRevocationManager.revokeDelegation` over a store with the conditional write | On such an error, call it again: the nodes revoked before it stopped are revoked again, which changes nothing but tells `onRevoke` of them again. | A cascade that stopped part way is finished, never left part done. |
+| See `StatusListWriteConflictError` often | Raise `maxWriteConflicts`, or write each list from fewer replicas at once. | Each change outlasts more refusals before it gives up. |
 
 ## From 1.24.0
 

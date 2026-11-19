@@ -242,6 +242,8 @@ A delegation hop past its `expirationDate`, or past its proof's `expires`, is re
 An issuer that set `validUntil` later than either sets them to agree.
 A hop before its `issuanceDate`, held with the same clock tolerance, is refused as `delegation_not_yet_valid` whether or not it states a `validFrom`.
 An issuer stamps `issuanceDate` with the moment it signs, or leaves it out.
+A hop's `expirationDate`, its proof's `expires` and its `issuanceDate` are read as its `validFrom` and `validUntil` are, as an RFC 3339 date-time with its offset from UTC, so one with no offset, such as `2026-12-01T00:00:00`, or a date alone is refused as `delegation_malformed`.
+An issuer writes each with its zone, as `toISOString()` does.
 
 A pinned root's own status list on a private or local host is read only at the root's own did:web origin, host and port.
 Bind any other list on a private host, and every list of a did:key root, to its signer in `statusListIssuers`.
@@ -252,11 +254,15 @@ A verifier checks the digest whenever a hop states it, and refuses a hop whose d
 
 ### Delegation graph
 
-A refusal of an ancestor that the chain resolver resolved gives the presenter fixed words and sends the resolver's answer to the operator's log.
-Match such a refusal on its `code`, not on its text.
+When the ancestors the chain resolver resolved do not link to the presented credential, or link to it from a root that is not admitted, the refusal names only the presented credential, in fixed words, and the resolver's answer goes to the operator's log.
+Each such refusal quotes the presented credential's id, and its `parentId` where it names it, as a JSON string, such as `Delegation "leaf" references parent "middle"`.
+A refusal of an ancestor's own signature, status, audience or attenuation still names that ancestor, as `Delegation middle invalid: ...` does.
+Match a refusal on its `code`, not on its text.
 
 `isRevoked` throws a `RefusalError` of code `status_unavailable` when the graph holds no chain from the delegation to a root, and `validateDelegation` checks the chain first, so it answers `valid: false` for such a delegation instead.
 A caller of `isRevoked` catches the error, or calls `validateDelegation`.
+`getRevokedInSubtree` asks `isRevoked` of each delegation in the subtree, so it throws that error too, once one of them has no such chain, and returns no partial list.
+A caller of `getRevokedInSubtree` catches it, and reads the subtree again once the graph holds the missing node.
 
 A storage provider that implements `registerNodeAtomic` changes nothing of the parent but adding the child's id to its `children`, so a revocation of the parent stored in between is kept.
 

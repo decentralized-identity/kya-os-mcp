@@ -12,6 +12,7 @@ import { delegationCredentialDigest } from '../chain-digest.js';
 import { validateDelegationChain, type ChainEnforcementDeps, type DelegationCredentialVerifierPort } from '../chain-enforcement.js';
 import { commitsTo } from '../parent-commitment.js';
 import { logger } from '../../logging/index.js';
+import { WebCryptoProvider } from '../../providers/web-crypto.js';
 import type { DelegationCredential } from '../../types/protocol.js';
 import { nodeCrypto } from '../../__tests__/utils/node-crypto-provider.js';
 import { delegate, party, reissued, type Party } from '../../middleware/__tests__/helpers/delegating-party.js';
@@ -150,6 +151,17 @@ describe('a parent commitment in a base profile chain', () => {
     expect(await commitsTo(digest, root, hash)).toBe(true);
     const failing = (): Promise<string> => Promise.reject(new Error('no hash'));
     await expect(commitsTo(digest, root, failing)).rejects.toThrow('no hash');
+  });
+
+  it('refuses a chain whose parent cannot be digested as a fault, before any credential is verified', async () => {
+    vi.spyOn(WebCryptoProvider.prototype, 'hash').mockRejectedValue(new Error('no hash'));
+    const deps = resolving([root, middle]);
+    expect(await validateDelegationChain(leaf, deps)).toMatchObject({
+      valid: false,
+      code: 'runtime_error',
+      reason: 'Delegation chain could not be checked: a parent credential could not be digested',
+    });
+    expect(deps.asked).toEqual([]);
   });
 
   it('refuses a root that states one, presented or resolved, since it has no parent credential', async () => {

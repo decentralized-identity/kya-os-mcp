@@ -15,11 +15,12 @@ import {
 } from '../../delegation/unnamed-proof-warning.js';
 import { ARGS, TOOL, proofStating } from '../../delegation/__tests__/helpers/request-proofs.js';
 import { logger } from '../../logging/index.js';
-import { MemoryGrantStore } from '../../providers/grant-store.js';
+import { MemoryGrantStore, type Grant } from '../../providers/grant-store.js';
 import type { DelegationCredential } from '../../types/protocol.js';
 import type { KyaOsDelegationConfig } from '../with-kya-os.config-types.js';
 import { createKyaOsMiddleware } from '../with-kya-os.js';
 import type { KyaOsCallContext } from '../with-kya-os.types.js';
+import { chainDigestOf } from './helpers/delegation-chains.js';
 import { delegate, party, reissued, type Party } from './helpers/delegating-party.js';
 import { crypto, served } from './helpers/received-proof.js';
 
@@ -35,17 +36,18 @@ const forgetWarnings = (): void => {
 
 /**
  * A gate of `server`'s, with a durable grant store, in front of `payments.send`, and how `agent`
- * calls it: `send` makes the proof with the default generator from the arguments it sends, and
- * `onPath` then changes what arrives. A call's outcome is `ran`, or the error it was refused with;
- * `ranFor` holds the Responsible Party of each call the tool ran.
+ * calls it: `send` makes the proof with the default generator from the arguments it sends, in
+ * the session given, and `onPath` then changes what arrives. A call's outcome is `ran`, or the error
+ * it was refused with; `ranFor` holds the Responsible Party of each call the tool ran.
  */
 async function gate(server: Party, agent: Party, delegation: KyaOsDelegationConfig) {
+  const grantStore = new MemoryGrantStore();
   const kyaos = await served(createKyaOsMiddleware(
     {
       identity: server,
       session: { sessionTtlMinutes: 60 },
       delegation: { holderBinding: 'enforce', ...delegation },
-      grantStore: new MemoryGrantStore(),
+      grantStore,
     },
     crypto,
   ));
@@ -62,13 +64,24 @@ async function gate(server: Party, agent: Party, delegation: KyaOsDelegationConf
     const text = (await handler(args, sessionId)).content[0]!.text as string;
     return text === 'sent' ? 'ran' : (JSON.parse(text) as { error: string }).error;
   };
-  const send = async (args: Args, onPath: OnPath = (sent) => sent, more: { delegation?: DelegationCredential } = {}) => {
+  const send = async (args: Args, onPath: OnPath = (sent) => sent, more: { delegation?: DelegationCredential; sessionId?: string } = {}) => {
     const proof = await generateRequestProof({ identity: agent, crypto, toolName: TOOL, args, audience: server.did, ...more });
-    return arrive(onPath({ ...args, _kyaos_proof: proof }));
+    return arrive(onPath({ ...args, _kyaos_proof: proof }), more.sessionId);
   };
   /** A call as a client on an earlier release makes it: its proof states nothing of its delegation. */
   const sendUnnamed = async (args: Args) => arrive({ ...args, _kyaos_proof: await proofStating(agent, undefined, {}, server.did) });
-  return { send, sendUnnamed, arrive, ranFor, kyaos };
+  /** A session the gate opened at a handshake. */
+  const openSession = async (): Promise<string> => {
+    const answer = await kyaos.handleHandshake({
+      nonce: `nonce-${Math.random().toString(36).slice(2)}`,
+      audience: server.did,
+      timestamp: Math.floor(Date.now() / 1000),
+    });
+    const { sessionId } = JSON.parse(answer.content[0]!.text) as { sessionId?: string };
+    if (sessionId === undefined) throw new Error('the handshake opened no session');
+    return sessionId;
+  };
+  return { send, sendUnnamed, arrive, openSession, ranFor, grantStore };
 }
 
 /**
@@ -177,6 +190,42 @@ describe('the delegation gate and the delegation a request proof states', () => 
       expect(ranFor).toEqual([]);
     });
 
+    it.each(['prefer', 'require'] as const)('takes one delegation retained twice as one for a proof that states "none" (%s)', async (requestBinding) => {
+      const warned = vi.spyOn(logger, 'warn');
+      const { send, openSession, ranFor, partyOne, forPartyOne } = await twoParties({ requestBinding });
+      const sessionId = await openSession();
+      // Bound once with no session and once in this one: two rows of the store, for one delegation.
+      expect(await send({ ...ARGS, _kyaos_delegation: forPartyOne })).toBe('ran');
+      expect(await send({ ...ARGS, _kyaos_delegation: forPartyOne }, undefined, { sessionId })).toBe('ran');
+      ranFor.length = 0;
+
+      expect(await send(ARGS, undefined, { sessionId })).toBe('ran');
+      expect(ranFor).toEqual([partyOne.did]);
+      expect(warned.mock.calls.filter(([line]) => String(line).includes('hold more than one'))).toEqual([]);
+    });
+
+    it('counts no row that retains no signed credential as a second delegation under prefer', async () => {
+      const warned = vi.spyOn(logger, 'warn');
+      const { send, grantStore, ranFor, agent, partyOne, partyTwo, forPartyOne, forPartyTwo } = await twoParties();
+      expect(await send({ ...ARGS, _kyaos_delegation: forPartyOne })).toBe('ran');
+      const { proof: _proof, ...unsigned } = forPartyTwo;
+      const row: Omit<Grant, 'id'> = {
+        agentDid: agent.did,
+        responsibleParty: partyTwo.did,
+        scopes: [SCOPE],
+        authorization: { type: 'delegation' },
+        issuedAt: Date.now(),
+        status: 'active',
+      };
+      await grantStore.bind({ ...row, id: 'retains-none' });
+      await grantStore.bind({ ...row, id: 'retains-unsigned', delegationCredential: unsigned as DelegationCredential });
+      ranFor.length = 0;
+
+      expect(await send(ARGS)).toBe('ran');
+      expect(ranFor).toEqual([partyOne.did]);
+      expect(warned.mock.calls.filter(([line]) => String(line).includes('hold more than one'))).toEqual([]);
+    });
+
     it('refuses a delegation added beside a proof that states "none" under require, and warns once under prefer', async () => {
       const strict = await twoParties({ requestBinding: 'require' });
       expect(await strict.send(ARGS, swapFor(strict.forPartyTwo))).toBe('holder_binding_failed');
@@ -213,13 +262,25 @@ describe('the delegation gate and the delegation a request proof states', () => 
     });
   });
 
+  it('resolves only the grant of the chain a proof names by its digest', async () => {
+    const { send, arrive, ranFor, agent, server, partyOne, forPartyOne, forPartyTwo } = await twoParties();
+    expect(await send({ ...ARGS, _kyaos_delegation: forPartyTwo })).toBe('ran');
+    expect(await send({ ...ARGS, _kyaos_delegation: forPartyOne })).toBe('ran');
+    ranFor.length = 0;
+    const naming = async (chain: DelegationCredential[]) =>
+      arrive({ ...ARGS, _kyaos_proof: await proofStating(agent, undefined, { delegationChainDigest: await chainDigestOf(chain) }, server.did) });
+
+    expect(await naming([forPartyOne])).toBe('ran');
+    expect(ranFor).toEqual([partyOne.did]);
+    ranFor.length = 0;
+    // A chain the gate never evaluated names no grant it holds.
+    expect(await naming([await delegate(partyOne, agent.did, { scopes: [SCOPE] })])).toBe('needs_authorization');
+    expect(ranFor).toEqual([]);
+  });
+
   it('holds a proof to what it names for a session grant too, where holder binding only warns', async () => {
-    const { kyaos, arrive, ranFor, agent, server, partyTwo, forPartyOne, forPartyTwo } = await twoParties({ holderBinding: 'warn' });
-    const sessionId = (await kyaos.handleHandshake({
-      nonce: `nonce-${Math.random().toString(36).slice(2)}`,
-      audience: server.did,
-      timestamp: Math.floor(Date.now() / 1000),
-    })).sessionId as string;
+    const { openSession, arrive, ranFor, agent, server, partyTwo, forPartyOne, forPartyTwo } = await twoParties({ holderBinding: 'warn' });
+    const sessionId = await openSession();
     const proofNaming = (delegation: DelegationCredential) =>
       generateRequestProof({ identity: agent, crypto, toolName: TOOL, args: ARGS, audience: server.did, sessionId, delegation });
     // Party two's delegation binds a grant for the session.

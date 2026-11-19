@@ -112,6 +112,15 @@ describe('DelegationGraphManager.removeDelegation with { subtree: true }', () =>
     expect(error.message).toContain('delegation "c" was not, and one more was not, for the reasons in notRemoved');
   });
 
+  it('counts every other delegation it could not remove', async () => {
+    const { storage, graph } = await tree();
+    vi.spyOn(storage, 'deleteNode').mockRejectedValue(new Error('store unreachable'));
+    const error = (await graph.removeDelegation('top', { subtree: true }).catch((thrown: unknown) => thrown)) as SubtreeRemovalError;
+    expect(error.notRemoved.map((entry) => entry.delegationId)).toEqual(['d', 'c', 'b']);
+    expect(error.kept).toEqual(['a', 'top']);
+    expect(error.message).toContain('delegation "d" was not, and 2 more were not, for the reasons in notRemoved');
+  });
+
   it('removes nothing for a delegation the graph does not hold, and one delegation alone as without the option', async () => {
     const { graph } = await tree();
     await graph.removeDelegation('missing', { subtree: true });

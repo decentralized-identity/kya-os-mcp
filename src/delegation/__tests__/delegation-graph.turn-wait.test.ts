@@ -144,4 +144,26 @@ describe('CascadingRevocationManager.revokeDelegation: a node whose turn never c
         'subtree was not marked either. Revoke delegation "root" again',
     );
   });
+
+  it('counts every other node it could not mark', async () => {
+    const { hold, stuck, revocation, graph } = await wired();
+    hold.node = (node) => ['first', 'second', 'under-first'].includes(node.id) && node.revoked === true;
+    void graph.setRevoked('first', true);
+    await stuck;
+    void graph.setRevoked('second', true);
+    void graph.setRevoked('under-first', true);
+
+    const error = await afterTheWait(revocation.revokeDelegation('root'), 3);
+    expect((error as Error).message).toContain('2 more delegations of the subtree were not marked either.');
+  });
+
+  it('throws any other error of a mark at once, as before', async () => {
+    const { graph, revocation } = await wired();
+    const setRevoked = graph.setRevoked.bind(graph);
+    vi.spyOn(DelegationGraphManager.prototype, 'setRevoked').mockImplementation(async function (this: DelegationGraphManager, id, revoked) {
+      if (id === 'second') throw new Error('Delegation not found: second');
+      return setRevoked(id, revoked);
+    });
+    await expect(revocation.revokeDelegation('root')).rejects.toThrow('Delegation not found: second');
+  });
 });

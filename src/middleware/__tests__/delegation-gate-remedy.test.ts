@@ -1,8 +1,10 @@
 /**
  * The `statusListIssuers` configuration a keeper refusal ends with, as the delegation gate passes it
- * on. The gate's log line starts with the chain walk's words and the verifier's, then the words of
- * the adopter's resolver, then the checker's reason, so it carries the configuration whole for the
- * operator to copy. The client's reason is cut where it was, and carries no part of it.
+ * on. The keeper rule quotes the list before its proof is checked, so the checker logs its words,
+ * the configuration whole among them, for the operator to copy, and its reason says only that the
+ * list could not be read or checked. The gate's log line starts with the chain walk's words and the
+ * verifier's, then the words of the adopter's resolver, then that reason. The client's reason
+ * carries no part of the configuration.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -61,11 +63,12 @@ describe("a delegation refused on a tenant's status list another DID signed", ()
 
     const result = await kyaos.wrapWithDelegation(TOOL, CONSENT, released)({ ...ARGS, _kyaos_delegation: credential });
 
-    const logged = String(warn.mock.calls.find(([line]) => String(line).startsWith(LOG_OPENING))?.[0]);
-    expect(logged).toMatch(/^\[kya-os\] Delegation verification failed for "[^"]+": Delegation delegation-d+ invalid: Status check error: /);
-    expect(logged.endsWith(`in statusListIssuers: ${CONFIGURATION}`)).toBe(true);
+    const lines = warn.mock.calls.map(([line]) => String(line));
+    const checker = lines.find((line) => line.startsWith('[revocation] the status list at "') && line.includes(' could not be read or checked: revocation: '));
+    expect(checker?.endsWith(`in statusListIssuers: ${CONFIGURATION}`)).toBe(true);
+    const gate = lines.find((line) => line.startsWith(LOG_OPENING));
+    expect(gate).toMatch(/^\[kya-os\] Delegation verification failed for "[^"]+": Delegation delegation-d+ invalid: Status check error: /);
     const body = JSON.parse((result.content[0] as { text: string }).text) as { reason: string };
-    expect(body.reason.endsWith('…')).toBe(true);
     expect(body.reason.length).toBeLessThanOrEqual(257);
     expect(body.reason).not.toMatch(/; if |statusListIssuers/);
   });

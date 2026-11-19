@@ -7,7 +7,9 @@
  * lookup; or a deadline that passed, whose timing the presenter observes anyway. Any other thrown
  * message (a transport's error, an HTTP status, an answer that is not JSON, a byte cap, a redirect,
  * a refusal made after a DNS lookup) goes to the operator's log, and the reason says only what could
- * not be done. The DID resolvers mark their failures by the same rule (`delegation/did-resolution-failure.ts`).
+ * not be done. So does a refusal of what a host answered, before a proof vouched for it
+ * ({@link NetworkRefusalError}): its words quote what the host wrote. The DID resolvers mark their
+ * failures by the same rule (`delegation/did-resolution-failure.ts`).
  */
 
 import { logger } from '../logging/index.js';
@@ -21,12 +23,22 @@ import { RefusalError } from './refusal.js';
 const LOGGED_LENGTH = 1024;
 
 /**
- * Whether `error`'s message may reach whoever presented the request: the library's own refusal, a
- * read's refusal of its URL before any request or DNS lookup, or a deadline that passed.
+ * The library's refusal of what a host answered, decided before any proof vouched for the answer,
+ * such as a fetched status list the acceptance rule refuses before its proof is checked. Its code
+ * reaches the refusal as a {@link RefusalError}'s does, but its words quote members of the answer,
+ * which whoever chose the URL may have pointed at any document the verifier can reach, so they go
+ * to the operator's log alone and the reason says only what could not be done.
+ */
+export class NetworkRefusalError extends RefusalError {}
+
+/**
+ * Whether `error`'s message may reach whoever presented the request: the library's own refusal, but
+ * for one of what a host answered ({@link NetworkRefusalError}), a read's refusal of its URL before
+ * any request or DNS lookup, or a deadline that passed.
  */
 export function presentable(error: unknown): boolean {
   return (
-    error instanceof RefusalError ||
+    (error instanceof RefusalError && !(error instanceof NetworkRefusalError)) ||
     error instanceof DeadlineExceededError ||
     refusedBeforeRequest(error) ||
     readFailureKind(error) === 'deadline_exceeded'

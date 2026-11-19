@@ -23,6 +23,7 @@ import {
 import { documentsOf, servingFromMemory, signedStatusList, webParty, type WebParty } from '../../__tests__/utils/adopter-issuers.js';
 import { credentialJwt, delegationRecord, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 import { codedAs } from '../../__tests__/utils/refusal-coding.js';
+import { withWarnings } from '../../__tests__/utils/logged-lines.js';
 
 const LIST_URL = 'https://issuer.example/status/1';
 const CLEAR = 3;
@@ -87,11 +88,9 @@ describe('a StatusListResolver that wraps the library checker and forwards only 
   });
 
   it("still holds the list to the credential's issuer, so another issuer's credential is refused", async () => {
-    expect(await verified(other, CLEAR, wrapping(checker))).toMatchObject({
-      valid: false,
-      statusOutcome: 'status_unresolvable',
-      reason: expect.stringContaining(`Status check error: status list issuer "${issuer.did}" does not keep this list's URL`),
-    });
+    const { result, logged } = await withWarnings(() => verified(other, CLEAR, wrapping(checker)));
+    expect(result).toMatchObject({ valid: false, statusOutcome: 'status_unresolvable' });
+    expect(logged).toContain(`status list issuer "${issuer.did}" does not keep this list's URL: "${other.did}" does`);
   });
 
   it('works behind withStatusCache, which hands its resolver the context too', async () => {
@@ -142,12 +141,16 @@ describe('a BitstringRevocationChecker that wraps the library checker and forwar
       await new Promise((resolve) => setTimeout(resolve, 10));
       return checker(given);
     };
-    const [byAcme, byOther] = await Promise.all([
-      evaluateRevocationChain([{ entry, credentialIssuer: issuer.did }], slow),
-      evaluateRevocationChain([{ entry, credentialIssuer: other.did }], slow),
-    ]);
+    const { result, logged } = await withWarnings(() =>
+      Promise.all([
+        evaluateRevocationChain([{ entry, credentialIssuer: issuer.did }], slow),
+        evaluateRevocationChain([{ entry, credentialIssuer: other.did }], slow),
+      ]),
+    );
+    const [byAcme, byOther] = result;
     expect(byAcme).toMatchObject({ ok: true });
-    expect(byOther).toMatchObject({ ok: false, reasons: [expect.stringContaining(`"${other.did}" does, as the issuer of the credential`)] });
+    expect(byOther).toMatchObject({ ok: false });
+    expect(logged).toContain(`"${other.did}" does, as the issuer of the credential`);
     expect(Object.getOwnPropertySymbols(entry)).toEqual([]);
   });
 

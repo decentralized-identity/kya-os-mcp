@@ -36,7 +36,7 @@ import { describeValue } from '../utils/describe-value.js';
 import { isRecord, issuerOf } from '../utils/guards.js';
 import { coded, RefusalError, refusalCodeOf, type Coded } from '../utils/refusal.js';
 import { CHECKER_REASON_LENGTH } from '../utils/revocation-answer.js';
-import { thrownReason, unreadStatusList } from '../utils/thrown-words.js';
+import { NetworkRefusalError, thrownReason, unreadStatusList } from '../utils/thrown-words.js';
 import { carriedContext } from '../utils/status-check-carrier.js';
 import { operatorNamedHops } from '../utils/verified-root.js';
 import { codedVariantOf } from './coded-proof-verifier.js';
@@ -59,7 +59,7 @@ import {
   type DecompressLimits,
 } from '../utils/statuslist-bits.js';
 import { statusListGzipCodec } from '../utils/statuslist-gzip.js';
-import { assertStatusListValidity } from '../utils/statuslist-validity.js';
+import { acceptStatusListValidity } from '../utils/statuslist-validity.js';
 import { clockSkewOption } from '../utils/validity-window.js';
 import type { SafeFetch } from '../utils/safe-fetch.js';
 import type { BitstringStatusListEntry } from './schema.js';
@@ -240,8 +240,10 @@ function failedClosed(code: RefusalCode, reason?: string): RevocationStatus & Co
  * `issuanceDate` and `expirationDate`, at the time `now` gives, once its proof has verified, each
  * bound held with `maxClockSkewMs`. A list past its end, before its start or stating a bound that is
  * not an RFC 3339 date-time with its zone fails closed as `status_unavailable`, whatever its bits,
- * with a reason that names the bound and quotes the time the list states. A list that states no
- * bound is read.
+ * with a reason that names the bound and quotes the time the list states. Without
+ * `verifyStatusList` no proof vouches for that time, so the operator's log is told it instead, and
+ * the reason says only that the list could not be read or checked. A list that states no bound is
+ * read.
  *
  * The checker answers for one purpose, its `statusPurpose`. An entry that states another (a
  * `suspension` entry under a revocation checker), or a value that is not a string, `null` included,
@@ -260,11 +262,18 @@ function failedClosed(code: RefusalCode, reason?: string): RevocationStatus & Co
  * carries ({@link BitstringRevocationChecker}). A call that names no `credentialIssuer` either way
  * cannot be held to anyone and fails closed ({@link failedClosed}) before any fetch, with a reason that
  * says a checker or resolver wrapping this one must pass its second argument on. A list another DID
- * signed is refused with a reason that ends with the `statusListIssuers` configuration that would
- * accept it, as a condition the operator judges, or says where to name that DID when the
+ * signed is refused with words that end with the `statusListIssuers` configuration that would
+ * accept it, as a condition the operator judges, or say where to name that DID when the
  * configuration cannot be printed whole within {@link CHECKER_REASON_LENGTH}.
  * Without `verifyStatusList` nothing about the list is authenticated, so only its `statusPurpose`
  * is checked and the bits are read as before.
+ *
+ * Whoever presents an entry chooses the URL it names, and so the document read there, which may be
+ * any JSON the verifier can reach. A refusal of the list decided before its proof has verified (its
+ * keeper, its purpose or its `id`, or its dates without `verifyStatusList`) quotes that document, so
+ * its words, the `statusListIssuers` remedy included, go to the operator's log as
+ * `[revocation] the status list at "<url>" could not be read or checked: revocation: <words>`, and the
+ * reason, which reaches whoever presented the entry, is that first part alone. The code is as before.
  *
  * @throws TypeError when `statusListIssuers` is malformed, or given without `verifyStatusList`, or
  *   when `dependencyTimeoutMs` is not a number of milliseconds the checker can wait, or
@@ -308,7 +317,8 @@ export function createRevocationChecker(
           : acceptStatusList(credential, expectation);
       if (!verdict.valid) {
         const refused = heldTo && expectation && { list: credential, statusListCredential, context: heldTo, statusListIssuers, keeper: expectation.keeper };
-        throw new RefusalError(
+        // Asked before the list's proof, so the rule quotes what the host answered: the operator's log alone.
+        throw new NetworkRefusalError(
           'status_signer_untrusted',
           `revocation: ${refused ? withStatusListIssuersRemedy(verdict.reason, refused, CHECKER_REASON_LENGTH) : verdict.reason}`,
         );
@@ -316,8 +326,10 @@ export function createRevocationChecker(
       if (deps.verifyStatusList && (await codedVariantOf(deps.verifyStatusList)(credential)) !== true) {
         throw new RefusalError('status_signer_untrusted', 'revocation: status-list proof rejected');
       }
-      // A list outside the window it states says nothing of now, whatever its bits say.
-      assertStatusListValidity(credential, clock(), skewMs);
+      // A list outside the window it states says nothing of now, whatever its bits say. The window
+      // quotes the list's dates, its issuer's word once its proof has verified, and else its host's.
+      const window = acceptStatusListValidity(credential, clock(), skewMs);
+      if (!window.valid) throw new (deps.verifyStatusList ? RefusalError : NetworkRefusalError)('status_unavailable', window.reason);
       const bits = await decodeStatusList(credential, decompress);
       const revoked = readStatusBit(bits, parseStatusListIndex(entry.statusListIndex));
       return revoked ? { revoked, fresh: true, ...coded('delegation_revoked') } : { revoked, fresh: true };

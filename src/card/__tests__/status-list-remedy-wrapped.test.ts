@@ -1,14 +1,14 @@
 /**
  * The `statusListIssuers` configuration a keeper refusal ends with, as it reaches the operator
- * through a resolver or a checker an adopter wraps around the library's checker, with words of its
- * own before the checker's reason. Tenant DIDs on a shared identity host are long, so the reason
- * nears the length a checker's reason may have. The configuration is the line an operator copies,
- * so wherever a reason is cut, it is printed whole or not at all, and a wrapper's words of up to
- * 128 code units still leave it whole, on the delegation verifier's status check, in chain
- * enforcement's refusal on a `RevocationChecker`'s reason, and in the Card revocation walk. A resolver gives the verifier its words by throwing a
- * `RefusalError`; any other error a resolver throws may be its transport's, so its words go to the
- * operator's log and the reason says only that the list could not be read. Every test uses the
- * package's public exports.
+ * when a resolver or a checker an adopter wraps around the library's checker puts words of its own
+ * before the checker's reason. The keeper rule quotes the list before its proof is checked, so the
+ * checker logs its words for the operator, the configuration whole among them, and its reason says
+ * only that the list could not be read or checked. Tenant DIDs on a shared identity host are long,
+ * so the refusal nears the length a checker's reason may have. The configuration is the line an
+ * operator copies, so the log prints it whole, and no reason holds any part of it, whatever the
+ * wrapper's words: not the delegation verifier's status check, chain enforcement's refusal on a
+ * `RevocationChecker`'s reason, or the Card revocation walk. Every test uses the package's public
+ * exports.
  */
 
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -25,6 +25,7 @@ import {
 import { documentsOf, servingFromMemory, signedStatusList, webParty, type WebParty } from '../../__tests__/utils/adopter-issuers.js';
 import { credentialJwt, delegationRecord, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 import { validateDelegationChain } from '../../delegation/chain-enforcement.js';
+import { withWarnings } from '../../__tests__/utils/logged-lines.js';
 
 const TENANT = 'did:web:identity.platform.example.com:tenants:northwind';
 const LIST_URL = 'https://identity.platform.example.com/tenants/northwind/status/revocation/1';
@@ -79,18 +80,26 @@ function remedyIn(reason: string): 'whole' | 'none' | 'part' {
   return /; if |statusListIssuers|\{ "did:/.test(reason) ? 'part' : 'none';
 }
 
+/** The checker's log line for its refusal of the tenant's list, among `logged`'s lines. */
+function checkerLine(logged: string): string {
+  return logged.split('\n').find((line) => line.startsWith('[revocation] ') && line.includes(': revocation: status list issuer ')) ?? '';
+}
+
 describe("the statusListIssuers remedy of a tenant's list, through a wrapper", () => {
-  it("is whole in the checker's own reason, which nears the length a reason may have", async () => {
-    const verdict = await checker(ENTRY, { credentialIssuer: issuer.did });
-    expect(remedyIn(verdict.reason!)).toBe('whole');
-    expect(verdict.reason!.length).toBeGreaterThan(CHECKER_REASON_LENGTH - 64);
-    expect(verdict.reason!.length).toBeLessThanOrEqual(CHECKER_REASON_LENGTH);
+  it("is whole in the checker's log line, which nears the length a reason may have, and in no part of its reason", async () => {
+    const { result: verdict, logged } = await withWarnings(() => checker(ENTRY, { credentialIssuer: issuer.did }));
+    expect(remedyIn(verdict.reason!)).toBe('none');
+    const refusal = checkerLine(logged).slice(checkerLine(logged).indexOf(': revocation: ') + 2);
+    expect(remedyIn(refusal)).toBe('whole');
+    expect(refusal.length).toBeGreaterThan(CHECKER_REASON_LENGTH - 64);
+    expect(refusal.length).toBeLessThanOrEqual(CHECKER_REASON_LENGTH);
   });
 
-  it("reaches the delegation verifier's reason whole through the adopter fixture's resolver, and that configuration accepts the list", async () => {
-    const reason = await verifierReason(wrapping(ADOPTER_WORDS));
-    expect(reason.startsWith(`Status check error: ${ADOPTER_WORDS}status list issuer `)).toBe(true);
-    expect(remedyIn(reason)).toBe('whole');
+  it("reaches the operator's log whole through the adopter fixture's resolver, and that configuration accepts the list", async () => {
+    const { result: reason, logged } = await withWarnings(() => verifierReason(wrapping(ADOPTER_WORDS)));
+    expect(reason.startsWith(`Status check error: ${ADOPTER_WORDS}the status list at `)).toBe(true);
+    expect(remedyIn(reason)).toBe('none');
+    expect(remedyIn(checkerLine(logged))).toBe('whole');
     const configured = JSON.parse(CONFIGURATION) as StatusListIssuers;
     const accepting = createRevocationChecker({
       fetch: servingFromMemory({ [LIST_URL]: await signedStatusList(signer, LIST_URL) }),
@@ -110,18 +119,17 @@ describe("the statusListIssuers remedy of a tenant's list, through a wrapper", (
     warn.mockRestore();
   });
 
-  it('stays whole after a wrapper\'s words of up to 128 code units, and is never printed in part after longer ones', async () => {
-    for (let length = 0; length <= 384; length += 8) {
-      const reason = await verifierReason(wrapping(`${'w'.repeat(length)}: `));
-      const found = remedyIn(reason);
-      expect(found, `${length} code units of words: ${reason}`).not.toBe('part');
-      if (length + 2 <= 128) expect(found, `${length} code units of words`).toBe('whole');
+  it("is in no part of the reason after a wrapper's words of any length, and whole in the log", async () => {
+    for (const length of [0, 126, 384]) {
+      const { result: reason, logged } = await withWarnings(() => verifierReason(wrapping(`${'w'.repeat(length)}: `)));
+      expect(remedyIn(reason), `${length} code units of words: ${reason}`).toBe('none');
+      expect(remedyIn(checkerLine(logged)), `${length} code units of words`).toBe('whole');
     }
   });
 
-  it("reaches chain enforcement's refusal whole through a RevocationChecker whose reason wraps the library checker's", async () => {
+  it("reaches no part of chain enforcement's refusal through a RevocationChecker whose reason wraps the library checker's", async () => {
     const credential = await signedCredential(issuer.key, { record: delegationRecord(issuer.did, { id: 'del-1' }) });
-    const result = await validateDelegationChain(credential, {
+    const { result, logged } = await withWarnings(() => validateDelegationChain(credential, {
       serverDid: 'did:web:server.example',
       verifier: { verifyDelegationCredential: async () => ({ valid: true }) },
       statusListConfigured: true,
@@ -131,18 +139,20 @@ describe("the statusListIssuers remedy of a tenant's list, through a wrapper", (
           return { revoked: true, reason: `${ADOPTER_WORDS}${verdict.reason ?? ''}` };
         },
       },
-    });
+    }));
     expect(result.valid).toBe(false);
-    expect(remedyIn(result.reason ?? '')).toBe('whole');
+    expect(remedyIn(result.reason ?? '')).toBe('none');
+    expect(remedyIn(checkerLine(logged))).toBe('whole');
   });
 
-  it('reaches the Card revocation walk whole through a checker that wraps the library\'s', async () => {
+  it('reaches no part of the Card revocation walk through a checker that wraps the library\'s', async () => {
     const wrapped: BitstringRevocationChecker = async (entry, context) => {
       const verdict = await checker(entry, context);
       return verdict.revoked && !verdict.fresh ? { ...verdict, reason: `${ADOPTER_WORDS}${verdict.reason}` } : verdict;
     };
-    const walked = await evaluateRevocationChain([{ entry: ENTRY, credentialIssuer: issuer.did }], wrapped);
+    const { result: walked, logged } = await withWarnings(() => evaluateRevocationChain([{ entry: ENTRY, credentialIssuer: issuer.did }], wrapped));
     expect(walked.ok).toBe(false);
-    expect(remedyIn(walked.reasons[0]!)).toBe('whole');
+    expect(remedyIn(walked.reasons[0]!)).toBe('none');
+    expect(remedyIn(checkerLine(logged))).toBe('whole');
   });
 });

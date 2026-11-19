@@ -39,6 +39,8 @@ import {
 } from './signed-chain-helpers.js';
 import { moveBinding } from './status-list-paths.js';
 import { ANY_CODE, BIT_SET, codedAs } from '../../__tests__/utils/refusal-coding.js';
+import { withWarnings } from '../../__tests__/utils/logged-lines.js';
+import { unreadStatusList } from '../../utils/thrown-words.js';
 import { anyRootUnlessPinned } from './root-issuers.js';
 
 const didResolver = createDidKeyResolver();
@@ -142,15 +144,13 @@ describe('createRevocationChecker holds a verified list to the credential', () =
     expect(await check(entry(3), issuedBy(acme))).toEqual(REVOKED);
     expect(await check(entry(4), issuedBy(acme))).toEqual({ revoked: false, fresh: true });
     expect(await check(entry(4), issuedBy(identity()))).toEqual({ revoked: false, fresh: true });
-    // The credential's own issuer's list is refused at a URL the configuration binds to another.
-    expect(await checkerServing(statusList(acme), { statusListIssuers })(entry(4), issuedBy(acme))).toEqual({
-      revoked: true,
-      fresh: false,
-      reason:
-        `status list issuer "${acme.did}" does not keep this list's URL: "${statusService.did}" does, as the issuer statusListIssuers binds this URL to` +
+    // The credential's own issuer's list is refused at a URL the configuration binds to another, and the log says why.
+    const { result, logged } = await withWarnings(async () => checkerServing(statusList(acme), { statusListIssuers })(entry(4), issuedBy(acme)));
+    expect(result).toEqual({ revoked: true, fresh: false, reason: unreadStatusList(STATUS_URL), ...codedAs('status_signer_untrusted') });
+    expect(logged).toContain(
+      `status list issuer "${acme.did}" does not keep this list's URL: "${statusService.did}" does, as the issuer statusListIssuers binds this URL to` +
         moveBinding(acme.did, STATUS_URL),
-      ...codedAs('status_signer_untrusted'),
-    });
+    );
     // Bound to another URL, the service keeps nothing here.
     const elsewhere = checkerServing(statusList(statusService), { statusListIssuers: { [statusService.did]: [`${STATUS_URL}/2`] } });
     expect(await elsewhere(entry(4), issuedBy(acme))).toEqual(REVOKED_UNPROVEN);

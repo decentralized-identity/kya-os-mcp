@@ -33,7 +33,9 @@
  *
  * The rule is pure and checks no proof. It means something only together with a proof verified under
  * a key the list's `issuer` lists under `assertionMethod`: until then, every field it reads, the
- * `issuer` it decides by included, is whatever the server wrote.
+ * `issuer` it decides by included, is whatever the server wrote. So its reasons, which quote those
+ * fields, are refused with a `NetworkRefusalError` (`./thrown-words.ts`) by a reader that asks it
+ * before the proof, and reach the operator's log, never whoever presented the entry.
  */
 
 import { describeValue } from './describe-value.js';

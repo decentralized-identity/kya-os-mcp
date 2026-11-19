@@ -14,7 +14,9 @@
  * binding may be, there is no remedy to offer. Where it cannot be printed whole and exactly,
  * within the length a reason may have, the refusal says where to name the list's issuer instead,
  * and where that does not fit either, it offers none. The words of a remedy are `./remedy-text`'s,
- * which also keeps a reason cut for length from ending inside one.
+ * which also keeps a reason cut for length from ending inside one. The refusal it ends quotes the
+ * list before its proof is checked, so the operator's log is told it, and not whoever presented the
+ * entry (`./thrown-words.ts`).
  */
 
 import { isRecord, issuerOf } from './guards.js';

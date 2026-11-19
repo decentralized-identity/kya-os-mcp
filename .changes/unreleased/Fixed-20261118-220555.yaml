@@ -1,0 +1,17 @@
+kind: Fixed
+body: |-
+    **A status list refused before its proof is checked is quoted only in the operator's log.**
+    Whoever presents a status entry chooses the URL it names, so the
+    document read there may be any JSON the verifier can reach. The
+    status-list checker and `CheqdStatusListResolver` refused such a
+    document for its `issuer`, `id` or `statusPurpose` before checking its
+    proof, and the refusal, which reaches the presenter through the
+    delegation gate and `requireDelegation`, quoted those members. The
+    refusal now says only `the status list at "<url>" could not be read or
+    checked`, with its code as before, and the operator's log says why,
+    with the `statusListIssuers` configuration that would accept a list
+    another DID signed. So do a cheqd list proof's stated purpose and
+    verification method, and the dates of a list the checker reads without
+    `verifyStatusList`. Once a list's proof has verified, a refusal keeps
+    its reason.
+time: 2026-11-18T22:05:55.000000-06:00

@@ -30,6 +30,9 @@ import {
 } from './signed-chain-helpers.js';
 import { cast, expectAccepted, expectRevokedAt, listOf, listUrlOf, nameSigner, servedBy, threeHopChain } from './status-list-paths.js';
 import { BIT_SET, codedAs } from '../../__tests__/utils/refusal-coding.js';
+import { withWarnings } from '../../__tests__/utils/logged-lines.js';
+import type { StatusCheckContext } from '../../utils/statuslist-keeper.js';
+import { unreadStatusList } from '../../utils/thrown-words.js';
 import { anyRootUnlessPinned } from './root-issuers.js';
 
 const didResolver = createDidKeyResolver();
@@ -305,12 +308,12 @@ describe("each path names a hop's issuer, and the chain's root only as the verif
     const below = { credentialIssuer: c.subAgent.did, trustedRootIssuer: c.acme.did, trustedRootStatusList: listUrlOf(c.acme) };
     expect(await check(onAcmes(5), below)).toEqual({ revoked: true, fresh: true, ...BIT_SET });
     expect(await check(onAcmes(6), below)).toEqual({ revoked: false, fresh: true });
-    const refusedFor = (did: string, as: string) => ({
-      revoked: true,
-      fresh: false,
-      reason: `status list issuer "${c.acme.did}" does not keep this list's URL: "${did}" does, as ${as}${nameSigner(c.acme.did, listUrlOf(c.acme))}`,
-      ...codedAs('status_signer_untrusted'),
-    });
+    /** That the checker refuses the list for `context`, telling the log it is `did`'s, as `as`, and the caller only that it could not be read. */
+    const expectRefusedFor = async (context: StatusCheckContext, did: string, as: string) => {
+      const { result, logged } = await withWarnings(() => check(onAcmes(6), context));
+      expect(result).toEqual({ revoked: true, fresh: false, reason: unreadStatusList(listUrlOf(c.acme)), ...codedAs('status_signer_untrusted') });
+      expect(logged).toContain(`status list issuer "${c.acme.did}" does not keep this list's URL: "${did}" does, as ${as}${nameSigner(c.acme.did, listUrlOf(c.acme))}`);
+    };
     // A root named with no URL, or with another, keeps nothing here, and a URL with no root is ignored.
     for (const context of [
       { trustedRootIssuer: c.acme.did },
@@ -318,14 +321,10 @@ describe("each path names a hop's issuer, and the chain's root only as the verif
       { trustedRootStatusList: listUrlOf(c.acme) },
       {},
     ]) {
-      expect(await check(onAcmes(6), { credentialIssuer: c.subAgent.did, ...context })).toEqual(
-        refusedFor(c.subAgent.did, 'the issuer of the credential'),
-      );
+      await expectRefusedFor({ credentialIssuer: c.subAgent.did, ...context }, c.subAgent.did, 'the issuer of the credential');
     }
     for (const trustedRootIssuer of [c.agent.did, c.mallory.did]) {
-      expect(await check(onAcmes(6), { ...below, trustedRootIssuer })).toEqual(
-        refusedFor(trustedRootIssuer, 'the pinned root whose own credential names it'),
-      );
+      await expectRefusedFor({ ...below, trustedRootIssuer }, trustedRootIssuer, 'the pinned root whose own credential names it');
     }
   });
 });

@@ -674,6 +674,10 @@ The parser removes some of these before it parses and accepts the others, most o
 A party that re-delegates writes the subject of the credential it signs, and a verifier hands that `id` on as the acting agent's DID: into its log, its audit trail and the context of the call it authorizes.
 A line break there would end a log line and start one the party wrote, and a format character could show the `id` as another agent's DID.
 
+**The start.** A credential's `issuanceDate` is "the date and time the credential becomes valid" ([VC-DATA-MODEL] 1.1 §4.6), in either form, VC-JWT or object, and MUST be a date as §6.6 defines one.
+A verifier MUST reject a credential whose `issuanceDate` is ahead of its clock, or cannot be read as such a date, since it names no start, as `delegation_not_yet_valid`.
+It MAY hold the start with the clock tolerance §6.6 permits for a status list, of no more than 600 seconds, since an issuer stamps it with the moment it signs; the reference implementation holds it with 120 seconds.
+
 A `DelegationCredential` carries a _permission_, not a _claim_. To keep claim
 semantics out of an authorization decision — a confused-deputy vector (§11.6) —
 the `credentialSubject` MUST contain only two properties: `id` (the delegate's
@@ -1771,6 +1775,10 @@ the credential.
 A forwarding server MUST NOT send its session ID downstream, since every service it calls, and whatever logs or proxies their headers, would then hold it.
 It sends instead an anchor of the session for the target: the reference implementation sends `SHA-256(UTF8("org.kya-os.outbound.session-anchor.v1") || 0x00 || JCS([sessionId, host]))`, in the hash format of §7.3, where `host` is the target's host, the `aud` of §8.2.
 The anchor is one value for every call of one session to one host, so the target can tell which of its calls one session made, and it names nothing the target could present to the forwarding server.
+
+**A delegation in force.** A forwarding server MUST NOT forward a delegation that is not in force for it: one that is not active, is before its `notBefore` or past its `notAfter`, or names an `audience` that does not admit the forwarding server's DID.
+A delegation the forwarding server may not act under is not its to hand on, and forwarding it would send the credential and a fresh proof for it to every service it calls.
+The reference implementation's `buildOutboundDelegationHeaders` throws for such a record and builds no header.
 
 **Corollary (covered components).** Because authority is derived only from signed
 artifacts — the VC and the proof JWT, each with independent integrity — the

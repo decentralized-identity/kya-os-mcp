@@ -259,7 +259,7 @@ export function extractDelegationFromVC(vc: DelegationCredential): DelegationRec
   // clear, controlled error instead of a cryptic "Cannot read properties of
   // undefined (reading 'delegation')" when the credential is structurally
   // malformed. validate*-style callers should shape-check first and return
-  // { valid, reason } rather than relying on this throw — see
+  // { valid, reason } rather than relying on this throw; see
   // validateDelegationChain, which never throws on a malformed leaf.
   const delegation = vc?.credentialSubject?.delegation;
   if (!delegation || typeof delegation !== 'object') {

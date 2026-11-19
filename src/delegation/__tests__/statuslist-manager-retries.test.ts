@@ -1,10 +1,11 @@
 /**
  * How a `StatusList2021Manager` retries a write a conditional store refused. Between tries it waits
  * a random part of a delay that doubles from 2 ms, under a ceiling of 100 ms or, where it is
- * longer, the length of the try just refused doubled every four refusals, so a manager that lost a
- * race does not meet the winner's next write head on and many managers with slow tries still each
- * get a turn. It gives up after `maxWriteConflicts` refusals with a coded error and nothing
- * stored. Time and chance are injected, so each run takes one course.
+ * longer, the length of the try just refused doubled every four refusals, and never more than
+ * 10 s, so a manager that lost a race does not meet the winner's next write head on and many
+ * managers with slow tries still each get a turn. It gives up after `maxWriteConflicts` refusals
+ * with a coded error and nothing stored. Time and chance are injected, so each run takes one
+ * course.
  */
 
 import { describe, expect, it, vi } from 'vitest';
@@ -161,6 +162,33 @@ describe('StatusList2021Manager retry budget', () => {
     expect(waits.slice(0, 7)).toEqual([1, 2, 4, 8, 16, 32, 64]);
     // Half the ceiling from the eighth refusal: 50 ms doubled for each four refusals, 200, 400, 800.
     expect([waits[7], waits[11], waits[15]]).toEqual([100, 200, 400]);
+  });
+
+  it('never waits more than 10 s at once, so a change of 10 s tries gives up within 32 waits and 33 tries', async () => {
+    const storage = new ContendedStore();
+    const [entry] = await allocated(storage, 1);
+    const waits: number[] = [];
+    let time = 0;
+    // Each try takes 10 s, all of it signing, and the clock moves through each wait too.
+    const slowSign = async (canonical: string) => {
+      time += 10_000;
+      return proofOver(canonical);
+    };
+    const sleep = async (ms: number) => {
+      waits.push(ms);
+      time += ms;
+    };
+    const manager = replica(storage, {
+      sign: slowSign,
+      options: { sleep, random: () => 0.999, now: () => time },
+    });
+
+    await expect(manager.updateStatus(entry!, true)).rejects.toMatchObject({ attempts: 33 });
+    expect(waits).toHaveLength(32);
+    expect(Math.max(...waits)).toBeLessThanOrEqual(10_000);
+    // From the 14th refusal the doubling delay passes 10 s, and each wait is a part of 10 s.
+    expect(waits.slice(13).every((ms) => ms === 0.999 * 10_000)).toBe(true);
+    expect(time).toBeLessThanOrEqual(32 * (10_000 + 10_000) + 10_000);
   });
 
   it('throws a coded error after 33 tries by default, and never stores a stale list', async () => {

@@ -30,10 +30,10 @@ An object store's own ETag, which S3 and R2 compare with `If-Match`, qualifies o
 
 Over such a store a manager writes a list only over the list it read.
 When another writer stored the list first, the manager waits, reads the list again, applies only its own change, signs it and tries again.
-Each wait is a random part of a delay that doubles from 2 ms, held under a ceiling: 100 ms, or, where it is longer, the length of the try just refused, doubled every four refusals.
+Each wait is a random part of a delay that doubles from 2 ms, held under a ceiling: 100 ms, or, where it is longer, the length of the try just refused, doubled every four refusals, and never more than 10 s.
 Waits so keep pace with slow tries, as a remote signer makes them, and keep spreading out while more writers contend, so each writer of a list gets its turn.
 With the defaults, the package's tests land every change when 200 managers each change one list at once and each try takes 150 ms, and a slower try does not lower that count, since the waits grow with it.
-A change that is refused every time gives up after about 2 minutes when each try takes 150 ms, or about 2 seconds when it takes 2 ms; set `maxWriteConflicts` lower to give up sooner.
+A change refused every time gives up within `maxWriteConflicts` waits of at most 10 s and one try more than that many tries, which with the default 32 is at most about 2.5 minutes when each try takes 150 ms and 9 minutes when each takes 10 s, while the manager's other changes to that list wait behind it; set `maxWriteConflicts` lower to give up sooner.
 The new option `maxWriteConflicts` of `StatusList2021Manager` and `createStatusListManager` says how many refusals one change outlasts: a whole number, 0 or more, 32 by default, and any other value throws a `TypeError` naming the option.
 When the change is refused once more than that, the manager throws `StatusListWriteConflictError`, whose `code` is `STATUS_LIST_WRITE_CONFLICT`, and stores nothing, so the list keeps every other writer's change and the caller can make its own again.
 `isStatusListWriteConflict(error)` tells one by its code, so it also knows one that another copy of the package threw, where `instanceof` is false.

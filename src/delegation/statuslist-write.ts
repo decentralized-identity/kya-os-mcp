@@ -21,6 +21,14 @@ const LEAST_WAIT_CEILING_MS = 100;
 /** How many refusals double the ceiling on a wait that the length of a try sets. */
 const REFUSALS_PER_CEILING_DOUBLING = 4;
 
+/**
+ * The longest one wait between two tries of a write may be, in milliseconds, however slow the
+ * tries. A change so gives up within `maxWriteConflicts` waits of this length and one try more
+ * than that many tries, while the manager holds the list's turn and its other changes of that
+ * list wait behind it.
+ */
+const LONGEST_WAIT_MS = 10_000;
+
 /** The options of a `StatusList2021Manager` that say how it retries a refused write. */
 export interface StatusListWriteRetryOptions {
   /**
@@ -85,17 +93,18 @@ export function writeRetryOf(
  * The wait after the `conflicts`th refusal, in milliseconds: a random part of a delay that doubles
  * from 2 ms, held under a ceiling of {@link LEAST_WAIT_CEILING_MS} or, where it is longer,
  * `refusedTryMs`, how long the try just refused took, doubled every
- * {@link REFUSALS_PER_CEILING_DOUBLING} refusals. Writers that lost one race to the same winner so
- * spread out instead of meeting its next write head on, waits keep pace with tries that take long,
- * as a slow signer makes them, and they keep spreading out while more writers contend than the
- * ceiling has room for, so every writer of one list gets its turn.
+ * {@link REFUSALS_PER_CEILING_DOUBLING} refusals, and never above {@link LONGEST_WAIT_MS}.
+ * Writers that lost one race to the same winner so spread out instead of meeting its next write
+ * head on, waits keep pace with tries that take long, as a slow signer makes them, and they keep
+ * spreading out while more writers contend than the ceiling has room for, so every writer of one
+ * list gets its turn.
  */
 function backoffMs(conflicts: number, refusedTryMs: number, random: () => number): number {
   const ceiling = Math.max(
     LEAST_WAIT_CEILING_MS,
     refusedTryMs * 2 ** (conflicts / REFUSALS_PER_CEILING_DOUBLING),
   );
-  return random() * Math.min(2 ** conflicts, ceiling);
+  return random() * Math.min(2 ** conflicts, ceiling, LONGEST_WAIT_MS);
 }
 
 /**

@@ -9,9 +9,9 @@ body: |-
     list: a verifier then accepted the revoked credential. A store may now
     implement the optional `ConditionalStatusListStorageProvider`, a write
     that names the list it was made over, and the manager then makes a
-    refused write again over the list now stored, after a random wait that
-    grows with each refusal and with how long a try takes, up to the new
-    `maxWriteConflicts` option, 32 by default, before it throws
+    refused write again over the list now stored, after a random wait of at
+    most 10 s that grows with each refusal and with how long a try takes,
+    up to the new `maxWriteConflicts` option, 32 by default, before it throws
     `StatusListWriteConflictError`, which `isStatusListWriteConflict`
     knows, and stores nothing. `MemoryStatusListStorage` implements it,
     for its subclasses too. A store without it works as before, safely

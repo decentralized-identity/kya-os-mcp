@@ -96,8 +96,9 @@ export class StatusList2021Manager {
    *   `StatusListWriteConflictError`: a whole number, 0 or more. Default 32.
    *   Between tries the manager waits a random part of a delay that doubles
    *   from 2 ms, under a ceiling of 100 ms or, where it is longer, the length
-   *   of the try just refused doubled every four refusals. Any other value
-   *   throws a `TypeError` naming the option.
+   *   of the try just refused doubled every four refusals, and never waits
+   *   more than 10 s at once. Any other value throws a `TypeError` naming the
+   *   option.
    */
   constructor(
     private storage: StatusListStorageProvider,

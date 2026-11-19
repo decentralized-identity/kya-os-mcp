@@ -948,7 +948,7 @@ A Verifier that authorizes a call by delegation runs these steps after §11.2 su
 
 Steps 2-4 are local; step 5 may resolve DIDs; step 7 fetches status lists.
 The order keeps a Verifier from spending network work on a chain a local check already rejects.
-On success the Verifier holds the recomputed `responsibleParty`, the leaf invoker, the leaf's granted actions, the chain depth, and whether every status read was live.
+On success the Verifier holds the recomputed `responsibleParty`, the leaf invoker, the leaf's granted actions, the chain depth, whether every status read was live, and the caveats every call under the chain must be held to (SPEC.md §6.10).
 A rejection with `delegation_missing` is 401-shaped, so a server MAY answer it with a consent step-up (SPEC.md §9); every other code is 403-shaped (Appendix D.5).
 
 ---

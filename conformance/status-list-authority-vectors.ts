@@ -5,9 +5,11 @@
  * a credential's entry names, which is the issuer the verifier binds the URL or its origin to, else
  * the pinned root when its own credential names the URL, else the credential's issuer; the
  * credential's own issuer's list without an `id`, read only when nobody else keeps a URL; entries whose
- * `statusListIndex` is a string of decimal digits or not; and entries that state a `statusSize`,
- * read only when it is 1. It runs on its own, so adding a case
- * re-signs this file and no other.
+ * `statusListIndex` is a string of decimal digits or not; entries that state a `statusSize`,
+ * read only when it is 1; and, from suite 1.12.0, how a list is written and how many entries it
+ * holds (SPEC.md §6.6 and §6.7): a list in a 1.x legacy encoding, an index past 131,071 on a longer
+ * list and a list of 16 entries, each read, and an index past a list's end, refused. It runs on its
+ * own, so adding a case re-signs this file and no other.
  *
  * It mints parties and signs delegations as `generate-vectors.ts` does, with fresh keys on every
  * run, so its output must never be committed over an existing suiteVersion.
@@ -125,6 +127,48 @@ export async function statusListAuthorityVectors<P extends Signer>(deps: StatusL
       statusLists: { [url]: served },
     }));
   }
+  /**
+   * How a list is written and how many entries it holds (SPEC.md §6.6 and §6.7, suite >= 1.12.0).
+   * Each list is the credential issuer's own, states its URL as its `id` and verifies, so only its
+   * encoding, its length or the entry's index decides.
+   */
+  const encodingAndLengthVectors = async (): Promise<ConformanceVector[]> => {
+    const encodedOf = (size: number, set: number[] = []) =>
+      BitstringManager.fromSetBits(size, set, statusListGzipCodec, statusListGzipCodec).encode();
+    // The clear list of 262,144 entries is the one whose GZIP, in the base64 alphabet, has a `+`, a `/` and padding.
+    const legacy = Buffer.from((await encodedOf(262144)).slice(1), 'base64url').toString('base64');
+    if (!/[+/]/.test(legacy) || !legacy.endsWith('=')) {
+      throw new Error('the legacy encodedList has no character of the base64 alphabet alone, or no padding');
+    }
+    const unsigned2021 = {
+      '@context': ['https://www.w3.org/2018/credentials/v1', 'https://w3id.org/vc/status-list/2021/v1'],
+      id: url, type: ['VerifiableCredential', 'StatusList2021Credential'], issuer: issuer.did,
+      issuanceDate: '2026-01-01T00:00:00.000Z',
+      credentialSubject: { id: `${url}#list`, type: 'StatusList2021', statusPurpose: 'revocation', encodedList: legacy },
+    };
+    const legacyList = { ...unsigned2021, proof: await signVC(deps.crypto, unsigned2021, issuer.privateKey, issuer.kid) };
+    const at = (name: string, index: number) => deps.signDelegation(issuer, holder.did, `authority-${name}`, {
+      ...entry, id: `${url}#${index}`, statusListIndex: String(index),
+    });
+    return [
+      vector('legacy-encoding-2021', 'pass', 'A StatusList2021 list whose encodedList is base64 in the base64 alphabet, padded, with no multibase prefix, as Status List v2021 lets a publisher write it, is read during 1.x', {
+        ...common,
+        credential: await deps.signDelegation(issuer, holder.did, 'authority-legacy-encoding-2021', { ...entry, type: 'StatusList2021Entry' }),
+        statusLists: { [url]: legacyList },
+      }),
+      // Bit 0 is set, so a reader that takes the index modulo 131,072 reads the credential as revoked.
+      vector('index-past-minimum', 'pass', 'An index past 131,071 names an entry of a list of 262,144 entries, and its clear bit is read', {
+        ...common, credential: await at('index-past-minimum', 131072), statusLists: { [url]: await list(issuer, true, await encodedOf(262144, [0])) },
+      }),
+      vector('index-past-end', 'fail', 'The same index on a list of 131,072 entries names no entry the list has, so the credential is refused', {
+        ...common, credential: await at('index-past-end', 131072), statusLists: { [url]: ownList },
+      }),
+      vector('short-list', 'pass', 'During 1.x a reader does not refuse a list of fewer than 131,072 entries: this one has 16, and the bit at index 7 is clear', {
+        ...common, statusLists: { [url]: await list(issuer, true, await encodedOf(16)) },
+      }),
+    ];
+  };
+  vectors.push(...(await encodingAndLengthVectors()));
   return { version: SUITE_VERSION, category: 'status-list', vectors };
 }
 

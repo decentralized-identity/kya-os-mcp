@@ -47,3 +47,13 @@ export function parseDateTime(value: unknown): number | undefined {
   instant.setUTCHours(hour, minute, second, Number(fraction.padEnd(3, '0').slice(0, 3)));
   return instant.getTime() - (sign === '-' ? -offset : offset) * 60_000;
 }
+
+/**
+ * Whether `child` names an instant no later than the one `parent` names, each read by
+ * {@link parseDateTime}. False, failing closed, when either is no date.
+ */
+export function dateLte(child: unknown, parent: unknown): boolean {
+  const c = parseDateTime(child);
+  const p = parseDateTime(parent);
+  return c !== undefined && p !== undefined && c <= p;
+}

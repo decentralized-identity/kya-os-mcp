@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { BitstringManager, statusListGzipCodec } from '../../src/index.js';
 import { revocationEntriesOf, type DelegationChain } from '../../src/card/delegation.js';
 import { acceptEntrySize, acceptStatusList, statusListExpectationFor, type StatusListIssuers } from '../../src/utils/statuslist-acceptance.js';
-import { parseStatusListIndex } from '../../src/utils/statuslist-bits.js';
+import { decodeStatusListPayload, parseStatusListIndex } from '../../src/utils/statuslist-bits.js';
 import { loadVectors } from '../loader.js';
 import { PYTHON_TEST_TIMEOUT_MS, requirePython } from './python.js';
 import type { StatusListInput } from '../types.js';
@@ -156,5 +156,47 @@ describe('independent statusSize reading', () => {
     const accepted = [acceptEntrySize(undefined), ...sizes.map(acceptEntrySize)].map((verdict) => verdict.valid);
     expect(['none', ...sizes].map((size, i) => [size, read[i]])).toEqual(['none', ...sizes].map((size, i) => [size, accepted[i]]));
     expect(read.slice(0, 3)).toEqual([true, true, false]);
+  });
+});
+
+describe('independent encodedList reading', () => {
+  // Each form opens with `H4sI`, the base64 of a GZIP stream's first three bytes, so the reference
+  // reader's GZIP check passes and only the encoding decides. White space, which the reference's
+  // runtime decoder passes over in some places, is left out: SPEC.md §6.6 lets a reader refuse it.
+  const tails = ['', 'SGkh', 'SGk', 'SA', 'SR', 'SGk=', 'SA==', 'SA=', 'SGkhSA=', 'SGk==', 'SGk===', 'SA===', 'SGkh=',
+    'SGkh==', '=', 'SG=k', 'S', 'S=', 'SGkhS', '-_-_', '+/+/', '-/+_', 'SGk*', 'SG.k', 'SGké'];
+  const forms = [...tails.flatMap((tail) => [`H4sI${tail}`, `uH4sI${tail}`]), 'UH4sISGk', 'mH4sISGk', 'uuH4sISGk'];
+
+  /** The bytes the reference reader hands its decompressor for `form`, in hex, or null when it refuses the form. */
+  async function referenceBytes(form: string): Promise<string | null> {
+    let read: string | null = null;
+    try {
+      await decodeStatusListPayload(form, (bytes) => {
+        read = Buffer.from(bytes).toString('hex');
+        return new Uint8Array(1);
+      });
+    } catch {
+      return null;
+    }
+    return read;
+  }
+
+  it('reads every form the reference reader reads, to the same bytes, and refuses every other', { timeout: PYTHON_TEST_TIMEOUT_MS }, async (context) => {
+    const [command, ...args] = requirePython(context);
+    // gzip refuses bytes that do not open as GZIP does, so status_list.py refuses them as the reference does.
+    const reader = [
+      'import json, sys', 'sys.path.insert(0, sys.argv[1])', 'from base64url import encoded_list_bytes',
+      'for line in sys.stdin.buffer:',
+      '    try:', '        data = encoded_list_bytes(json.loads(line))', '    except ValueError:', '        data = None',
+      '    print(json.dumps(data.hex() if data is not None and data[:2] == b"\\x1f\\x8b" else None))',
+    ].join('\n');
+    const output = execFileSync(command!, [...args, '-I', '-B', '-c', reader, fileURLToPath(new URL('..', import.meta.url))], {
+      input: forms.map((form) => JSON.stringify(form)).join('\n') + '\n', encoding: 'utf8',
+    });
+    const read = output.trim().split('\n').map((line) => JSON.parse(line) as string | null);
+    const expected = await Promise.all(forms.map(referenceBytes));
+    expect(forms.map((form, i) => [form, read[i]])).toEqual(forms.map((form, i) => [form, expected[i]]));
+    expect(expected).toContain(null);
+    expect(expected.filter((bytes) => bytes !== null).length).toBeGreaterThan(forms.length / 3);
   });
 });

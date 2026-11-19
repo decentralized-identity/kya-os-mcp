@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { loadVectors } from '../loader.js';
 import { ReferenceConformanceAdapter } from '../reference-adapter.js';
 import type { ConformanceVector, StatusListInput } from '../types.js';
-import { isIndexSet } from '../../src/delegation/bitstring.js';
+import { BitstringManager, isIndexSet } from '../../src/delegation/bitstring.js';
+import { statusListGzipCodec } from '../../src/utils/statuslist-gzip.js';
 import { parseStatusListIndex } from '../../src/utils/statuslist-bits.js';
 
 const indexNames = ['index-suffix', 'index-fraction', 'index-space', 'index-number'];
@@ -168,5 +169,49 @@ describe('the size of a status entry', () => {
     const input = vectorOf('status-size-one').input as StatusListInput;
     expect(entryOf(input).statusSize).toBe(1);
     expect([await bitOf(input, 7), await bitOf(input, 14), await bitOf(input, 15)]).toEqual([false, true, true]);
+  });
+});
+
+/**
+ * How a list is written and how many entries it holds (SPEC.md §6.6 and §6.7, suite >= 1.12.0). Each
+ * vector serves the credential issuer's own list, so only the encoding, the length or the index decides.
+ */
+describe('the encoding and length of a status list', () => {
+  const inputOf = (name: string) => vectorOf(name).input as StatusListInput;
+  const listOf = (name: string) =>
+    Object.values(inputOf(name).statusLists)[0] as { type: string[]; credentialSubject: { encodedList: string } };
+  const indexOf = (name: string) =>
+    (inputOf(name).credential as { credentialStatus: { statusListIndex: string } }).credentialStatus.statusListIndex;
+  const entriesOf = async (encodedList: string) =>
+    (await BitstringManager.decode(encodedList, statusListGzipCodec, statusListGzipCodec)).getSize();
+
+  it('legacy-encoding-2021 serves a StatusList2021 list in padded base64 with no multibase prefix', async () => {
+    const { type, credentialSubject } = listOf('legacy-encoding-2021');
+    expect(type).toContain('StatusList2021Credential');
+    expect(credentialSubject.encodedList).toMatch(/^H4sI[A-Za-z0-9+/]*[+/][A-Za-z0-9+/]*=+$/);
+    const written = `u${Buffer.from(credentialSubject.encodedList, 'base64').toString('base64url')}`;
+    expect(await entriesOf(written)).toBe(262144);
+    expect(await isIndexSet(credentialSubject.encodedList, 7)).toBe(false);
+  });
+
+  it('index-past-minimum names entry 131,072 of a list of 262,144, clear there and set at 0', async () => {
+    const { encodedList } = listOf('index-past-minimum').credentialSubject;
+    expect(indexOf('index-past-minimum')).toBe('131072');
+    expect(await entriesOf(encodedList)).toBe(262144);
+    expect([await isIndexSet(encodedList, 131072), await isIndexSet(encodedList, 0)]).toEqual([false, true]);
+  });
+
+  it('index-past-end names the same entry of a list of 131,072, past its end', async () => {
+    const { encodedList } = listOf('index-past-end').credentialSubject;
+    expect(indexOf('index-past-end')).toBe('131072');
+    expect(await entriesOf(encodedList)).toBe(131072);
+    await expect(isIndexSet(encodedList, 131072)).rejects.toThrow('Bit index 131072 out of range for the status list');
+  });
+
+  it('short-list serves a list of 16 entries, clear at the index 7 its credential names', async () => {
+    const { encodedList } = listOf('short-list').credentialSubject;
+    expect(indexOf('short-list')).toBe('7');
+    expect(await entriesOf(encodedList)).toBe(16);
+    expect(await isIndexSet(encodedList, 7)).toBe(false);
   });
 });

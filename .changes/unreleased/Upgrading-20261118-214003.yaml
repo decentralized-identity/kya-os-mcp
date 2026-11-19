@@ -1,0 +1,12 @@
+kind: Upgrading
+body: |-
+    **Give the observer provider contract a `fork` fixture, and run the
+    journal and observer contracts again.** Without `fixtures.fork`,
+    `evaluateAuditObserverProviderContract` now fails. An observer adapter
+    that does not verify each checkpoint's signature, or a larger
+    checkpoint's consistency with the one it observed, now fails the
+    observer contract, and a journal adapter whose compare-and-append is not
+    one atomic step, or compares only the sequence of the expected head, now
+    fails the journal contract. UPGRADING.md, "The audit store contracts
+    fail adapters that break what they promise", has the steps.
+time: 2026-11-18T21:40:03.000000-06:00

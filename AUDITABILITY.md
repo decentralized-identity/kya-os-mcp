@@ -203,6 +203,13 @@ The package also includes distinct evidence, observer, and supporting-anchor
 contract suites. Passing the anchor suite never qualifies an adapter as an
 independent observer.
 
+The observer contract takes checkpoints signed by the recorder key your observer trusts.
+Besides `first`, `next`, `conflict`, `rollback` and the optional `gapped`, give it `fork`: a validly signed checkpoint of the same ledger epoch, larger than `first`, over a history that does not extend `first`'s tree, as a holder of the recorder key could sign after rewriting the observed history.
+Sign it over a second journal with the same ledger ID, epoch and key, recorded with different events.
+The observer must accept `fork` on its own and refuse it once it has observed `first`; without `fork` the contract fails, because no other fixture shows that the observer checks an extension.
+The contract also derives, from `first` and `next`, checkpoints whose signature does not verify, and requires the observer to refuse each and keep `first` as its latest observation.
+`fork` is optional in `AuditCheckpointProviderContractFixtures` only so that fixtures written before it still compile.
+
 For PostgreSQL, use a ledger-head row plus entry/idempotency unique constraints
 inside one transaction. For Cloudflare, route one epoch to one Durable Object
 serialization point. R2, KV, object lock, and a broker partition are useful

@@ -1,0 +1,15 @@
+kind: Fixed
+body: |-
+    **The observer provider contract fails an observer that signs a
+    checkpoint it did not check.** `evaluateAuditObserverProviderContract`
+    required only that an observer refuse a smaller tree and a different
+    checkpoint at the size it observed, so an observer that signed a receipt
+    for any larger checkpoint, its signature unchecked and its tree not
+    shown to extend the observed one, passed, and would have signed a
+    rewritten history. The contract now refuses an observer that accepts a
+    checkpoint whose signature does not verify, derived from `first` and
+    `next`, and takes a new fixture, `fork`: a validly signed, larger
+    checkpoint over a history that does not extend `first`, which the
+    observer must refuse once it has observed `first`. AUDITABILITY.md,
+    "Atomic journal contract", says how to build it.
+time: 2026-11-18T21:40:02.000000-06:00

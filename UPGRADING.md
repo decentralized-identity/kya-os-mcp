@@ -258,6 +258,7 @@ A digest stated in any other form, `null` included, is not its parent's, and `ve
 
 When the ancestors the chain resolver resolved do not link to the presented credential, or link to it from a root that is not admitted, the refusal names only the presented credential, in fixed words, and the resolver's answer goes to the operator's log.
 Each such refusal quotes the presented credential's id, and its `parentId` where it names it, as a JSON string, such as `Delegation "leaf" references parent "middle"`.
+So does the refusal of a presented credential whose chain resolver answers no ancestors at all: `Delegation "leaf" references parent "middle" but the resolved chain is empty`.
 A refusal of an ancestor's own signature, status, audience or attenuation still names that ancestor, as `Delegation middle invalid: ...` does.
 Match a refusal on its `code`, not on its text.
 

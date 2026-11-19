@@ -1,0 +1,10 @@
+kind: Fixed
+body: |-
+    **The refusal of an empty resolved chain quotes the ids it names.**
+    When the chain resolver answered no ancestors, the reason
+    `Delegation <id> references parent <parentId> but the resolved chain is
+    empty` held both ids as the presenter wrote them, before any signature
+    was checked, so a line break or a bidirectional override reached the
+    presenter's reason and whatever logged it. Both are now quoted as JSON
+    strings, as every other chain refusal quotes them.
+time: 2026-11-19T09:45:00.000000-06:00

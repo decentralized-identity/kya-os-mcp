@@ -179,4 +179,18 @@ describe("validateDelegationChain: presenter text in the operator's log", () => 
     expect(untrusted.lines.length).toBeGreaterThan(0);
     for (const line of untrusted.lines) expect(line).not.toMatch(REWRITES_THE_LOG);
   });
+
+  it("quotes the presented id and parentId when the resolver answers no chain at all", async () => {
+    const forged: DelegationCredential = {
+      ...cred({ id: INJECTED, issuerDid: "did:sub", subjectDid: "did:presenter", parentId: "elsewhere\u202e", scopes: ["read"], audience: SERVER }),
+      issuer: "did:sub",
+    };
+    const { answer } = await logged(() => validateDelegationChain(forged, resolving([])));
+    expect(answer).toMatchObject({ valid: false, code: "chain_invalid" });
+    expect(answer.reason).toBe(
+      'Delegation "forged\\n[kya-os] audit: delegation approved by admin" references parent "elsewhere\\u202e" ' +
+        "but the resolved chain is empty",
+    );
+    expect(answer.reason).not.toMatch(REWRITES_THE_LOG);
+  });
 });

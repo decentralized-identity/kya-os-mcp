@@ -238,7 +238,8 @@ async function enforceChain(
     if (resolvedChain.length === 0) {
       return refusal(
         "chain_invalid",
-        `Delegation ${leafDelegation.id} references parent ${leafDelegation.parentId} but the resolved chain is empty`,
+        `Delegation ${describeValue(leafDelegation.id)} references parent ${describeValue(leafDelegation.parentId)} ` +
+          "but the resolved chain is empty",
       );
     }
 

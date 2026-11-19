@@ -193,7 +193,9 @@ The builder verifies the leaves after the last checkpoint it verified in full, a
 They check with the `signatures` verifier when you give one.
 Otherwise they ask their signer: a `CompactJwsAuditSigner` over a private JWK, a Node.js `KeyObject` or an extractable `CryptoKey` derives, from the public half of its key, a verifier of signatures under its own `ref`, and they use that.
 A `CompactJwsAuditSigner` over a `CryptoKey` created non-extractable, from which WebCrypto reads no public key, derives none, and nor does a signer of your own unless it implements `verifier()`, as a signer backed by a remote key service can when it reads the public key from that service.
-Give such a recorder and builder the `signatures` verifier you give `AuditArtifactVerifier`, resolving the recorder's key; without either, the journal is trusted as written, as in earlier releases.
+When the signer derives none, and its `ref` names an Ed25519 did:key with the `EdDSA` algorithm, they derive a verifier from that did:key, once the signer has signed a fixed self-check payload that verifies under it; a `ref` naming another key than the one the signer signs with derives nothing.
+A did:web `ref` is not read, since the recorder has no fetch provider.
+Otherwise give such a recorder and builder the `signatures` verifier you give `AuditArtifactVerifier`, resolving the recorder's key; without any, the journal is trusted as written, as in earlier releases, and each warns once per process.
 
 ```ts
 // recorderKeys is an AuditVerificationKeyResolver that resolves the recorder's public key.

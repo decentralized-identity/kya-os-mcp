@@ -9,7 +9,8 @@ import {
 } from './integrity.js';
 import { sameSigner } from './key-trust.js';
 import type { AuditLedgerRef, DecimalString, SignedAuditEntryV1, SignerRef } from './types.js';
-import { warnUnverifiedRecorderKey } from './unverified-recorder-keys.js';
+import { didKeyVerifierOf } from './signer-did-key.js';
+import { warnJournalTrustedAsWritten, warnUnverifiedRecorderKey } from './unverified-recorder-keys.js';
 
 /** What a stored entry is checked with before the recorder or a checkpoint builds on it. */
 export interface StoredAuditEntryVerification {
@@ -174,6 +175,12 @@ export class StoredAuditEntryVerifier {
         { cause: error },
       );
     }
-    return signatures === undefined ? undefined : { hasher, signatures, ownKey: signer.ref };
+    // A signer whose key yields no public key may still name the Ed25519 did:key it signs with.
+    signatures ??= await didKeyVerifierOf(signer);
+    if (signatures === undefined) {
+      warnJournalTrustedAsWritten();
+      return undefined;
+    }
+    return { hasher, signatures, ownKey: signer.ref };
   }
 }

@@ -63,9 +63,12 @@ export interface AuditRecorderServiceConfig {
    * successor to an entry it never made. Without it the recorder uses the
    * verifier `signer.verifier()` derives from its own key, which checks the
    * entries recorded under that key, the only key the recorder chains to in
-   * its epoch; when the signer derives none, as a signer over a
-   * non-extractable CryptoKey or a remote key service does not, the journal
-   * is trusted as written. Pass it when the signer derives no verifier.
+   * its epoch. When the signer derives none, as a signer over a
+   * non-extractable CryptoKey or a remote key service does not, it derives
+   * one from the Ed25519 did:key `signer.ref` names, once the signer's
+   * signature over a self-check payload verifies under that key; failing
+   * that, the journal is trusted as written, with a warning once per process.
+   * Pass it when the signer derives no verifier and names no such did:key.
    * @since 1.26.0
    */
   signatures?: AuditSignatureVerifier;

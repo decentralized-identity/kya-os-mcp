@@ -164,10 +164,11 @@ export interface AuditCheckpointBuilderOptions {
    * leaves that chain, name the recorder key the epoch's genesis names, and
    * verify as that recorder's for this ledger epoch, and refuses with
    * `AUDIT_JOURNAL_FAILURE` otherwise. Without it the builder verifies with
-   * `signer.verifier()` when the genesis names the signer's own key; when it
-   * names another, it trusts the leaves as written with a warning naming that
-   * key, and it trusts the journal as written when the signer derives no
-   * verifier.
+   * `signer.verifier()` when the genesis names the signer's own key, or with
+   * one derived from the Ed25519 did:key `signer.ref` names, as the recorder
+   * does, when the signer derives none; when the genesis names another key, it
+   * trusts the leaves as written with a warning naming that key, and it trusts
+   * the journal as written, with a warning, when no verifier can be derived.
    * @since 1.26.0
    */
   signatures?: AuditSignatureVerifier;

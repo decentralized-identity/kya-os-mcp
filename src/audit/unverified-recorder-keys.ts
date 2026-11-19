@@ -1,7 +1,8 @@
 /**
- * The warning a checkpoint builder gives when it covers journal entries its
- * derived verifier cannot check: entries recorded under another key than its
- * signer's, which it trusts as written.
+ * The warnings a recorder or a checkpoint builder gives when it builds on
+ * journal entries it does not verify: a builder whose derived verifier cannot
+ * check entries recorded under another key than its signer's, and either one
+ * when no verifier is passed and its signer derives none.
  */
 import { logger } from '../logging/index.js';
 import { canonicalizeJson } from '../utils/canonical-json.js';
@@ -18,6 +19,23 @@ export const MAX_WARNED_RECORDER_KEYS = 32;
 
 /** Where every copy of this package records the keys it has warned of. */
 const WARNED = Symbol.for('@kya-os/mcp/audit-unverified-recorder-keys');
+
+/** Where every copy of this package records that it warned of a journal trusted as written. */
+const TRUSTED_AS_WRITTEN_WARNED = Symbol.for('@kya-os/mcp/audit-journal-trusted-as-written-warned');
+
+/** Fixed words: nothing a writer of the journal store chose is in them. */
+const TRUSTED_AS_WRITTEN_WARNING =
+  '[kya-os] An audit recorder or checkpoint builder trusts its journal as written: it was given no signatures, ' +
+  'and its signer yields no public key and names no Ed25519 did:key that it signs with, so the stored entries it ' +
+  'builds on are not verified. Pass signatures that resolve the recorder key, or give the signer a verifier().';
+
+/**
+ * Warns, once per process, that a recorder or a checkpoint builder trusts its
+ * journal as written, for want of any verifier of its signer's signatures.
+ */
+export function warnJournalTrustedAsWritten(): void {
+  warnOncePerProcess(TRUSTED_AS_WRITTEN_WARNED, TRUSTED_AS_WRITTEN_WARNING);
+}
 
 /** Where every copy of this package records that it stopped naming keys. */
 const MORE_WARNED = Symbol.for('@kya-os/mcp/audit-unverified-recorder-keys-more');

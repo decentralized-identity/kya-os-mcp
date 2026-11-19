@@ -1,10 +1,11 @@
 /**
  * The parts of a replay bundle as the verifier reads them: the media types of its components, safe
  * component paths, the inventory metadata of a component, the artifacts an included component
- * carries, and how those artifacts are keyed by ledger epoch and ordered by sequence.
+ * carries, and how those artifacts are keyed by ledger epoch, looked up by key, and ordered by
+ * sequence.
  */
 
-import type { AuditBundleComponentV1, AuditLedgerRef, AuditReplayBundleV1 } from './types.js';
+import type { AuditBundleComponentV1, AuditReplayBundleV1 } from './types.js';
 
 export const AUDIT_BUNDLE_MEDIA_TYPES = Object.freeze({
   entries: 'application/vnd.kya-os.audit.entries.v1+json',
@@ -56,8 +57,14 @@ export function ledgerEpochKey(value: { ledgerId: string; ledgerEpochId: string 
   return `${value.ledgerId}\0${value.ledgerEpochId}`;
 }
 
-export function sameLedgerEpoch(left: AuditLedgerRef, right: AuditLedgerRef): boolean {
-  return left.ledgerId === right.ledgerId && left.ledgerEpochId === right.ledgerEpochId;
+/** The first item for each key, so a lookup finds what a scan in bundle order would. */
+export function firstByKey<T>(items: readonly T[], key: (item: T) => string): Map<string, T> {
+  const result = new Map<string, T>();
+  for (const item of items) {
+    const itemKey = key(item);
+    if (!result.has(itemKey)) result.set(itemKey, item);
+  }
+  return result;
 }
 
 export function compareDecimal(left: string, right: string): number {

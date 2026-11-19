@@ -10,6 +10,7 @@ import type { AuditHasher } from './crypto.js';
 import {
   AUDIT_BUNDLE_MEDIA_TYPES,
   compareDecimal,
+  firstByKey,
   includedArrays,
   ledgerEpochKey,
 } from './bundle-components.js';
@@ -37,16 +38,6 @@ function inclusionKey(checkpointDigest: string, entryDigest: string, sequence: s
 
 function consistencyKey(oldCheckpointDigest: string, newCheckpointDigest: string): string {
   return `${oldCheckpointDigest}\0${newCheckpointDigest}`;
-}
-
-/** The first item for each key, so a lookup finds what a scan in bundle order would. */
-function firstByKey<T>(items: readonly T[], key: (item: T) => string): Map<string, T> {
-  const result = new Map<string, T>();
-  for (const item of items) {
-    const itemKey = key(item);
-    if (!result.has(itemKey)) result.set(itemKey, item);
-  }
-  return result;
 }
 
 function checkpointKey(ledger: AuditLedgerRef, checkpointDigest: string): string {

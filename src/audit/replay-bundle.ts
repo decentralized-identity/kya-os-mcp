@@ -3,6 +3,7 @@ import {
   AUDIT_BUNDLE_MEDIA_TYPES,
   assertPath,
   componentMetadata,
+  firstByKey,
   includedArrays,
 } from './bundle-components.js';
 import {
@@ -405,12 +406,7 @@ export async function verifyAuditBundle(
   }
   let anchorDimension = artifactReport.anchorIntegrity;
   if (observationCandidates.length > 0) {
-    const checkpointsByDigest = new Map<string, SignedAuditCheckpointV1>();
-    for (const checkpoint of checkpoints) {
-      if (!checkpointsByDigest.has(checkpoint.checkpointDigest)) {
-        checkpointsByDigest.set(checkpoint.checkpointDigest, checkpoint);
-      }
-    }
+    const checkpointsByDigest = firstByKey(checkpoints, (checkpoint) => checkpoint.checkpointDigest);
     const observationResults: AuditVerificationDimension[] = [];
     for (const candidate of observationCandidates) {
       if (!auditObservationReceiptSchema.safeParse(candidate).success) {

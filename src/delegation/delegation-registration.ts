@@ -1,7 +1,8 @@
 /**
  * When registering an already-registered delegation id is a harmless repeat
- * and when it is a conflict — one rule shared by `DelegationGraphManager` and
- * the memory store's atomic path.
+ * and when it is a conflict, and which parents a delegation may be registered
+ * under: rules shared by `DelegationGraphManager` and the memory store's
+ * atomic path.
  *
  * Internal: not re-exported from the delegation barrel.
  */
@@ -34,6 +35,22 @@ export function registrationConflict(
   }
   if (!sameStatusEntry(stored.credentialStatus, incoming.credentialStatus)) {
     return 'credentialStatus';
+  }
+  return undefined;
+}
+
+/**
+ * Why a delegation may not be registered under the parent `parentId`, stored
+ * as `parent`, or `undefined` when it may: the parent is not stored, or was
+ * removed while revoked, which leaves a record that holds no children.
+ */
+export function parentRegistrationRefusal(
+  parentId: string,
+  parent: DelegationNode | null | undefined,
+): string | undefined {
+  if (!parent) return `Parent delegation not found: ${parentId}`;
+  if (parent.removed === true) {
+    return `Parent delegation ${parentId} was removed while revoked: register the delegation under one that stands`;
   }
   return undefined;
 }

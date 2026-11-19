@@ -1,0 +1,11 @@
+kind: Fixed
+body: |-
+    **A delegation is never registered under a parent a racing removal
+    left as a revoked record.** `registerDelegation` checked that its
+    parent stood before it took the parent's turn, so a registration
+    racing `removeDelegation` of a revoked parent linked the child under
+    the record the removal left. The parent is now read again in its turn,
+    and `MemoryDelegationGraphStorage.registerNodeAtomic` refuses a parent
+    stored as removed, as the `registerNodeAtomic` contract now asks of
+    every provider.
+time: 2026-11-19T01:45:00.000000-06:00

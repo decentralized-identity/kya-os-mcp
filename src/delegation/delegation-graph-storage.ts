@@ -69,7 +69,10 @@ export interface AtomicDelegationGraphStorageProvider extends DelegationGraphSto
   /**
    * Insert `node` and link it under its parent in one step, changing nothing of the parent but
    * adding `node.id` to its `children`: writing back the rest of the parent as it was read would
-   * lose a revocation of the parent stored in between. When the id is
+   * lose a revocation of the parent stored in between. Reject, storing nothing, a node whose
+   * parent is not stored, or is stored as `removed`: a record a removal left holds no children,
+   * and `DelegationGraphManager` reads the parent again in its turn, but only the provider can
+   * close the race with a removal by another process. When the id is
    * already stored, a node identical in every registered field is a no-op,
    * and any other SHOULD be rejected: overwriting would drop the stored node's
    * revocation state and children. `DelegationGraphManager` checks first, but

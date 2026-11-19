@@ -14,6 +14,7 @@ import { CascadingRevocationManager } from '../cascading-revocation.js';
 import { DelegationGraphManager, type DelegationNode } from '../delegation-graph.js';
 import { MemoryDelegationGraphStorage } from '../storage/memory-graph-storage.js';
 import { RefusalError } from '../../utils/refusal.js';
+import { baseContract } from './helpers/status-entry-operator.js';
 
 const UNREADABLE = (id: string) =>
   `The delegation graph holds no chain from delegation "${id}" to a root, so whether it is revoked cannot be read`;
@@ -146,6 +147,24 @@ describe('DelegationGraphManager.removeDelegation: no gap, and no revocation era
     const { graph } = await graphOfThree();
     await graph.removeDelegation('leaf');
     expect(await graph.getNode('leaf')).toBeNull();
+  });
+
+  it.each([
+    ['links atomically', (storage: MemoryDelegationGraphStorage) => storage],
+    ['links by writing the parent back', (storage: MemoryDelegationGraphStorage) => baseContract(storage)],
+  ])('refuses a registration under a delegation that a removal racing it leaves as a revoked record, over a store that %s', async (_name, over) => {
+    const { storage, revocation } = await graphOfThree();
+    const graph = new DelegationGraphManager(over(storage));
+    await revocation.revokeDelegation('leaf');
+    const removal = graph.removeDelegation('leaf');
+    const under = graph.registerDelegation({ id: 'under', parentId: 'leaf', issuerDid: 'did:web:c.example', subjectDid: 'did:web:d.example' });
+
+    await removal;
+    expect((await thrown(under)).message).toBe(
+      'Parent delegation leaf was removed while revoked: register the delegation under one that stands',
+    );
+    expect(await storage.getNode('under')).toBeNull();
+    expect(await storage.getNode('leaf')).toMatchObject({ removed: true, revoked: true, children: [] });
   });
 
   it('refuses to register the removed id again, to register under it, and to restore it', async () => {

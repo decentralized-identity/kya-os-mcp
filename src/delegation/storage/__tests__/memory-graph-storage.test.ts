@@ -113,6 +113,16 @@ describe("MemoryDelegationGraphStorage", () => {
       expect(await storage.getNode("del-root")).toEqual(root);
     });
 
+    it("should reject a node under a parent removed while revoked, retaining nothing", async () => {
+      await storage.setNode({ ...createMockNode("del-removed"), revoked: true, removed: true });
+
+      await expect(storage.registerNodeAtomic(createMockNode("del-child", "del-removed"))).rejects.toThrow(
+        "Parent delegation del-removed was removed while revoked: register the delegation under one that stands"
+      );
+      expect(await storage.getNode("del-child")).toBeNull();
+      expect((await storage.getNode("del-removed"))?.children).toEqual([]);
+    });
+
     it("should reject a node that names itself as parent", async () => {
       await storage.setNode(createMockNode("del-self"));
 

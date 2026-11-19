@@ -8,7 +8,7 @@
  */
 
 import type { CredentialStatus } from '../types/protocol.js';
-import { registrationConflict } from './delegation-registration.js';
+import { parentRegistrationRefusal, registrationConflict } from './delegation-registration.js';
 import { canonicalStatusEntry, entryKey, nodeStatusEntry } from './delegation-status-entry.js';
 import {
   assertRegistrable,
@@ -183,15 +183,8 @@ export class DelegationGraphManager {
     }
 
     if (params.parentId) {
-      const parent = await this.storage.getNode(params.parentId);
-      if (!parent) {
-        throw new Error(`Parent delegation not found: ${params.parentId}`);
-      }
-      if (parent.removed === true) {
-        throw new Error(
-          `Parent delegation ${params.parentId} was removed while revoked: register the delegation under one that stands`,
-        );
-      }
+      const refused = parentRegistrationRefusal(params.parentId, await this.storage.getNode(params.parentId));
+      if (refused !== undefined) throw new Error(refused);
     }
 
     // Registering an id again is a no-op when nothing registered changes, so
@@ -247,8 +240,16 @@ export class DelegationGraphManager {
     await this.nodeTurns.take(parentId, `given the child ${describeValue(node.id)}`, () => this.linkNode(node));
   }
 
-  /** Store `node` and link it under its parent, which the caller holds the turn of. */
+  /**
+   * Store `node` and link it under its parent, which the caller holds the turn of. The parent is
+   * read again in its turn, so a removal of it that took the turn first refuses the node, rather
+   * than leave it under a parent the graph no longer holds or a record that holds no children.
+   */
   private async linkNode(node: DelegationNode): Promise<void> {
+    if (node.parentId) {
+      const refused = parentRegistrationRefusal(node.parentId, await this.storage.getNode(node.parentId));
+      if (refused !== undefined) throw new Error(refused);
+    }
     if (supportsAtomicRegistration(this.storage)) {
       await this.storage.registerNodeAtomic(node);
       return;

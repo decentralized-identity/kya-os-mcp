@@ -187,7 +187,7 @@ rewind.
 A head the recorder did not append in this process, and every leaf a checkpoint covers, is otherwise whatever the journal store holds.
 A party that can write that store, and holds no key, can insert a well-formed entry with correct digests and a receipt the recorder never signed: the recorder would then sign a successor that commits to it, and the checkpoint builder a tree that holds it.
 The recorder and the checkpoint builder therefore check each such entry before they build on it.
-The recorder chains to such a head only once the stored entry at that head verifies as one it signed for its ledger epoch, and the builder signs a checkpoint only over leaves that verify as their recorder's and chain to the leaf before them; each refuses with `AUDIT_JOURNAL_FAILURE`, naming the entry's `sequence`, otherwise.
+The recorder chains to such a head only once the stored entry at that head verifies as one it signed for its ledger epoch, and the builder signs a checkpoint only over leaves that chain to the leaf before them and that verify as their recorder's, where its verifier can check the recorder's key (below); each refuses with `AUDIT_JOURNAL_FAILURE`, naming the entry's `sequence`, otherwise.
 The builder verifies the leaves after the last checkpoint it verified in full, and every leaf after a restart.
 
 They check with the `signatures` verifier when you give one.

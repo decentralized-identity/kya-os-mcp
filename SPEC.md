@@ -1208,7 +1208,7 @@ The reference checker does so when given its `verifyStatusList` seam (optional u
 With that seam it also holds each hop's list to the keeper §6.6 names for the URL of the hop's entry: the issuer its `statusListIssuers` option binds the URL or its origin to, else the chain's root issuer when the verifier pins it with its trusted root issuers or the resource owner it asserts and the root hop's own entry names the same URL, else the hop's own issuer.
 A list is read without an `id` only when the hop's own issuer signed it and keeps the URL as that issuer, not by a binding, no other root is pinned and `statusListIssuers` names no other issuer; any other list is read only when it states its URL as its `id`.
 The hop's own issuer is the one the hop names, so a verifier checks every hop's proof before it reads their status (SPEC-ENTITY-CARD.md §11.4).
-It is **fail-closed**: an unreachable list, malformed credential, rejected list proof, a list outside the validity window it states (§6.6), list `issuer` that is not the keeper of the entry's URL, list `id` other than the `statusListCredential` URL, no list `id` where §6.6 requires one, a list `statusPurpose` that does not include the checker's, a `statusPurpose` array on a list §6.6 holds to one string, an entry whose `statusPurpose`, when present, is not the checker's (`null` included), an entry whose `statusSize`, when present, is not 1, or out-of-range index all resolve to `{ revoked: true }`, with a `reason` that says which.
+It is **fail-closed**: an unreachable list, malformed credential, rejected list proof, a list outside the validity window it states (§6.6), list `issuer` that is not the keeper of the entry's URL, list `id` other than the `statusListCredential` URL, no list `id` where §6.6 requires one, a list `statusPurpose` that does not include the checker's, a `statusPurpose` array on a list §6.6 holds to one string, an entry whose `statusPurpose`, when present, is not the checker's (`null` included), an entry whose `statusSize`, when present, is not 1, or out-of-range index all resolve to `{ revoked: true }`, with a `reason` that says which once the list's proof verifies, as below.
 Whoever presents an entry chooses the URL it names, so the document read there may be any JSON the verifier can reach.
 A verdict about a list reaches the presenter only once the list's proof verifies, since only then is what the list says its issuer's word; before that, the reason and the remedy go to the operator's log, and the `reason` says only that the list at the URL could not be read or checked, as for a list that could not be read.
 So a list refused for its `issuer`, its `id` or its `statusPurpose`, which the reference checker asks before the proof, or for its window where no proof is checked, has that `reason`, and the operator's log says which, with the `statusListIssuers` configuration that would accept a list another DID signed.
@@ -1364,7 +1364,8 @@ BASE64URL(header) . BASE64URL(payload) . BASE64URL(signature)
 ```
 
 An envelope-profile proof (§7.3) additionally carries its `prf` claim in this payload — profile selection is signed, never advisory.
-Every optional `ProofMeta` member present on the proof (`scopeId`, `delegationRef`, `delegationChainDigest`, `clientDid`, `outcome`, `reason`, `prf`) appears in the payload; the mirrored `meta` block and the decoded payload MUST reconcile exactly.
+Every optional `ProofMeta` member present on the proof with a value (`scopeId`, `delegationRef`, `delegationChainDigest`, `clientDid`, `outcome`, `reason`, `prf`) appears in the payload, and one given as an empty string does not (see "Members no signature covers" below).
+Every member of the mirrored `meta` block that the payload signs MUST reconcile exactly with the decoded payload.
 
 **Denial** and **step-up** proofs have no response body, so `responseHash` is
 omitted and `outcome` (plus an optional `reason`) is included instead. Keys
@@ -1417,7 +1418,7 @@ A verifier MUST read a proof's JWS as follows, and MUST refuse a proof whose JWS
 4. The signature is verified over the header segment and the payload rebuilt from `meta` as above, written as base64url without padding.
    A payload segment the JWS carries that is not that one MUST verify under the same signature too.
 
-So every claim in `meta` is held to what was signed, and a proof whose `meta` differs from its payload fails.
+So every claim of `meta` that the payload signs is held to what was signed, and a proof whose signed claims differ from its payload fails.
 Reading a segment more loosely would let two strings stand for one signature, and a verifier that accepts one of them where another refuses it would give two verdicts on one proof.
 
 **Members no signature covers.**

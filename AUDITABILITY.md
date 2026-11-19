@@ -409,6 +409,10 @@ observers and supporting anchors. Publication is retryable and may enforce a
 minimum observer count and required anchor kinds. Failure does not roll back the
 signed checkpoint.
 
+A receipt counts only when it is for the checkpoint just published.
+An observation must name that checkpoint's digest, ledger epoch and tree size, and an anchor receipt its digest and the kind its provider declares.
+Any other answer, such as a lagging observer's receipt for an earlier checkpoint, is a failed publication for that provider, retried like a thrown one, and is never counted toward `minimumObservers` or `requiredAnchorKinds`.
+
 The roles are not interchangeable:
 
 - An independent observer validates, retains, chains, and compares checkpoint

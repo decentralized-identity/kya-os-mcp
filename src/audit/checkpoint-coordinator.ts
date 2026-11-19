@@ -45,6 +45,49 @@ export interface AuditCheckpointCoordinatorOptions {
   onPublished?: (result: AuditCheckpointPublicationResult) => Promise<void> | void;
 }
 
+/** Whether `receipt` is an observation of `checkpoint`, by its digest, ledger epoch and tree size. */
+function isObservationOf(
+  receipt: AuditObservationReceiptV1 | undefined,
+  checkpoint: SignedAuditCheckpointV1,
+): boolean {
+  const core = receipt?.core;
+  return core?.checkpointDigest === checkpoint.checkpointDigest &&
+    core.ledgerId === checkpoint.core.ledgerId &&
+    core.ledgerEpochId === checkpoint.core.ledgerEpochId &&
+    core.treeSize === checkpoint.core.treeSize;
+}
+
+/** Whether `receipt` anchors `checkpoint`, and is of the kind its provider declares. */
+function isAnchorReceiptOf(
+  receipt: AuditAnchorReceipt | undefined,
+  checkpoint: SignedAuditCheckpointV1,
+  kind: AuditAnchorReceipt['kind'],
+): boolean {
+  return receipt?.checkpointDigest === checkpoint.checkpointDigest && receipt.kind === kind;
+}
+
+/**
+ * A receipt that `matches` the published checkpoint; any other answer is a
+ * failed publication, retried like a thrown one. A lagging or dishonest
+ * service that answers with its receipt for an earlier checkpoint, or an
+ * anchor that answers with a receipt of another kind, is never counted as
+ * evidence for this one.
+ */
+async function receiptFor<T>(
+  role: AuditCheckpointPublicationFailure['role'],
+  publish: () => Promise<T>,
+  matches: (receipt: T | undefined) => boolean,
+): Promise<T> {
+  const receipt = await publish();
+  if (!matches(receipt)) {
+    throw new AuditProtocolError(
+      AUDIT_ERROR_CODES.CHECKPOINT_PUBLICATION_FAILED,
+      `${role === 'observer' ? 'Observer' : 'Anchor'} answered with a receipt that is not for the published checkpoint`,
+    );
+  }
+  return receipt;
+}
+
 /**
  * Coordinates post-commit checkpoint publication. A failed publication never
  * rolls back or rewrites the already signed checkpoint.
@@ -85,7 +128,8 @@ export class AuditCheckpointCoordinator {
       const outcome = await this.publishWithRetry(
         'observer',
         providerIndex,
-        () => provider.publish(checkpoint),
+        () => receiptFor('observer', () => provider.publish(checkpoint),
+          (receipt) => isObservationOf(receipt, checkpoint)),
       );
       if (outcome.ok) observations.push(outcome.value);
       else failures.push(outcome.failure);
@@ -94,7 +138,8 @@ export class AuditCheckpointCoordinator {
       const outcome = await this.publishWithRetry(
         'anchor',
         providerIndex,
-        () => provider.publish(checkpoint),
+        () => receiptFor('anchor', () => provider.publish(checkpoint),
+          (receipt) => isAnchorReceiptOf(receipt, checkpoint, provider.kind)),
         provider.kind,
       );
       if (outcome.ok) anchors.push(outcome.value);

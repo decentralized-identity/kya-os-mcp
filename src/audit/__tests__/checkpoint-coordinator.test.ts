@@ -112,3 +112,93 @@ describe('AuditCheckpointCoordinator', () => {
     expect(publishedAnchor).toHaveBeenCalledOnce();
   });
 });
+
+describe('AuditCheckpointCoordinator: receipts for the checkpoint it published', () => {
+  const ledger = { ledgerId: 'ledger', ledgerEpochId: 'epoch' };
+  const observer = (publish: () => Promise<AuditObservationReceiptV1>) => ({
+    capability: 'independent-observer' as const, publish,
+    latest: async () => null, verifyObservation: async () => false,
+  });
+  const anchorProvider = (kind: AuditAnchorReceipt['kind'], publish: () => Promise<AuditAnchorReceipt>) => ({
+    capability: 'supporting-anchor' as const, kind, publish, verify: async () => false,
+  });
+  const otherCheckpoint = (field: 'checkpointDigest' | 'treeSize' | 'ledgerId' | 'ledgerEpochId') =>
+    field === 'checkpointDigest'
+      ? { ...observation, core: { ...observation.core, checkpointDigest: digest('e') } }
+      : { ...observation, core: { ...observation.core, [field]: field === 'treeSize' ? '2' : 'other' } };
+
+  it('does not count an observation that names another checkpoint, tree size or ledger epoch', async () => {
+    for (const field of ['checkpointDigest', 'treeSize', 'ledgerId', 'ledgerEpochId'] as const) {
+      const coordinator = new AuditCheckpointCoordinator({
+        checkpoints: { createCheckpoint: async () => checkpoint },
+        observers: [observer(async () => otherCheckpoint(field))],
+        requirements: { minimumObservers: 1, requiredAnchorKinds: [] },
+      });
+      const failure = await coordinator.createAndPublish(ledger).catch((error: unknown) => error);
+      expect(failure, field).toMatchObject({
+        code: 'AUDIT_CHECKPOINT_PUBLICATION_FAILED',
+        details: { publishedObservers: 0, failedProviders: [{ role: 'observer', providerIndex: 0 }] },
+      });
+    }
+  });
+
+  it('does not count an anchor receipt for another checkpoint, or of a kind its provider is not', async () => {
+    const coordinator = new AuditCheckpointCoordinator({
+      checkpoints: { createCheckpoint: async () => checkpoint },
+      anchors: [
+        anchorProvider('worm', async () => ({ ...anchor, kind: 'rfc3161' })),
+        anchorProvider('scitt', async () => ({ ...anchor, kind: 'scitt', checkpointDigest: digest('e') })),
+      ],
+      requirements: { minimumObservers: 0, requiredAnchorKinds: ['rfc3161', 'scitt'] },
+    });
+    await expect(coordinator.createAndPublish(ledger)).rejects.toMatchObject({
+      code: 'AUDIT_CHECKPOINT_PUBLICATION_FAILED',
+      details: {
+        missingAnchorKinds: ['rfc3161', 'scitt'],
+        failedProviders: [
+          { role: 'anchor', providerIndex: 0, kind: 'worm' },
+          { role: 'anchor', providerIndex: 1, kind: 'scitt' },
+        ],
+      },
+    });
+  });
+
+  it('reports a receipt for another checkpoint as a failure, and never as evidence', async () => {
+    const coordinator = new AuditCheckpointCoordinator({
+      checkpoints: { createCheckpoint: async () => checkpoint },
+      observers: [observer(async () => otherCheckpoint('checkpointDigest'))],
+      anchors: [anchorProvider('worm', async () => ({ ...anchor, checkpointDigest: digest('e') }))],
+    });
+    const result = await coordinator.createAndPublish(ledger);
+    expect(result.observations).toEqual([]);
+    expect(result.anchors).toEqual([]);
+    expect(result.failures.map(({ role, error }) => [role, (error as Error).message])).toEqual([
+      ['anchor', 'Anchor answered with a receipt that is not for the published checkpoint'],
+      ['observer', 'Observer answered with a receipt that is not for the published checkpoint'],
+    ]);
+  });
+
+  it('retries a provider that first answers for another checkpoint', async () => {
+    const publish = vi.fn()
+      .mockResolvedValueOnce(otherCheckpoint('checkpointDigest'))
+      .mockResolvedValueOnce(observation);
+    const coordinator = new AuditCheckpointCoordinator({
+      checkpoints: { createCheckpoint: async () => checkpoint },
+      observers: [observer(publish)],
+      requirements: { minimumObservers: 1, requiredAnchorKinds: [] },
+      maxPublishAttempts: 2,
+    });
+    await expect(coordinator.createAndPublish(ledger)).resolves.toMatchObject({ observations: [observation] });
+    expect(publish).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports a malformed receipt as a failure', async () => {
+    const coordinator = new AuditCheckpointCoordinator({
+      checkpoints: { createCheckpoint: async () => checkpoint },
+      observers: [observer(async () => ({}) as AuditObservationReceiptV1)],
+      anchors: [anchorProvider('worm', async () => null as unknown as AuditAnchorReceipt)],
+    });
+    const result = await coordinator.createAndPublish(ledger);
+    expect(result.failures.map(({ role }) => role)).toEqual(['anchor', 'observer']);
+  });
+});

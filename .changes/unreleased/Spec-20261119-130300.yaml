@@ -1,0 +1,20 @@
+kind: Spec
+body: |-
+    **SPEC.md §6.6 is written in the terms of W3C Bitstring Status List
+    v1.0, and conformance suite 1.13.0 gains three `ttl` vectors, 208 in
+    all.** The section, now "Status List Revocation", leads with a
+    `BitstringStatusListCredential` and its `BitstringStatusListEntry`. A
+    publisher SHOULD publish that format and MUST write it as the W3C
+    specification requires, MAY publish a `StatusList2021Credential`
+    instead, and SHOULD NOT name a list of one format from an entry of the
+    other; a verifier MUST read both formats, as before. An issuer SHOULD
+    state an end on every version of a list, its `validUntil` or
+    `expirationDate`. A list's `ttl` is no part of its window: a verifier
+    MUST NOT read a list past its `validUntil` because its `ttl` has not run
+    out, and MUST NOT refuse, because of its `ttl`, a list it has just
+    fetched inside its window. The reference readers meet both, since they
+    do not read `ttl`. `status-list/ttl-list` and `ttl-run-out-list` must
+    pass and `ttl-past-end-list` must fail; `status-list-validity.json` is
+    generated whole, its earlier vectors signed again with the same cases
+    and outcomes.
+time: 2026-11-19T13:03:00.000000-06:00

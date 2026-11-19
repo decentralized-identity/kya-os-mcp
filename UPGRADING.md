@@ -205,6 +205,33 @@ Choose `delegationId` as the operator, the id you register the delegation under;
 | Hold delegations registered on 1.25.0 that share an entry | Find them with `graph.getStatusEntryClaim(entry)`, remove the one the entry was not allocated for with `removeDelegation`, and issue it again with an entry of its own. | Until then a revocation of either sets the entry, revoking both on the status list, and a restore of either is refused. |
 | Catch the error the status list manager throws for an entry, through `revokeDelegation` or `restoreDelegation` | Catch `StatusEntryUnchangedError`: the manager's error is the `cause` of the entry in `unchanged`. For a `StatusListWriteConflictError` there, call the method again. | A revocation no longer stops at the first such entry: it revokes the rest of the subtree first. |
 
+### Status lists take the W3C Bitstring Status List terms
+
+An issuer that sets none of the options below changes nothing: `StatusList2021Manager` writes `StatusList2021Credential` lists that state no end, as on 1.25.0.
+
+To issue the lists of W3C Bitstring Status List v1.0, build the manager with `format: 'BitstringStatusList'`.
+It then writes a `BitstringStatusListCredential` and allocates `BitstringStatusListEntry` entries, the entry a card delegation credential requires.
+Give that manager a `statusListBaseUrl` no StatusList2021 list is stored under: a stored list keeps the format it was created in, and `allocateStatusEntry` throws a `TypeError` for a list of the other format.
+Keep revoking on, and renewing, the lists you have already published, through a manager of either format; each list is signed again in its own.
+2.0.0 makes `BitstringStatusList` the default (DEPRECATIONS.md), so an issuer that means to stay on StatusList2021 sets `format: 'StatusList2021'`.
+
+To bound how long a copy of a list is read, set `validityPeriodMs`, a whole number of milliseconds from 1 to a century, 3,155,760,000,000.
+Each version the manager signs then states its end that long after it is signed, as its `validUntil`, or as the `expirationDate` of a `StatusList2021Credential`.
+Call `renewStatusList(statusListId)` for each list before its end, as every half period, or every credential on that list is refused once it ends.
+
+`ttl`, which only the Bitstring Status List format has, is the `credentialSubject.ttl` each list states: how long, in milliseconds, a reader keeps the list before it fetches it again.
+It never extends a list past its `validUntil`, so serve the list with a `Cache-Control` `max-age` that agrees with it.
+
+The manager throws a `TypeError` where it is built for a `format` that is neither of the two, a `validityPeriodMs` or a `ttl` out of that range, a `ttl` with the StatusList2021 format, a `ttl` longer than `validityPeriodMs`, and a `defaultListSize` under 131,072 with the Bitstring Status List format.
+
+In TypeScript, a store written for 1.25.0 compiles as it is.
+`StatusListStorageProvider`, the other store contracts and `MemoryStatusListStorage` take the type of the lists they hold as a type argument, which defaults to `StatusList2021Credential`.
+Type a store that holds W3C lists with `BitstringStatusListCredential`, and one that holds lists of both formats with `StatusListCredential`, as `new MemoryStatusListStorage<StatusListCredential>()`; a manager takes any of the three.
+A manager built with `format: 'BitstringStatusList'` written out types the entries it allocates as `BitstringStatusListEntry`, so one goes on a card delegation credential as `credentialStatus` with no cast.
+
+`CheqdStatusListResolver` still reads a `StatusList2021Credential` alone, so an issuer whose lists are read through it keeps the default format for now.
+`RuntimeFetchProvider.fetchStatusList`, which nothing in the library calls, still answers a `StatusList2021Credential` alone, and `null` for a W3C list: read W3C lists with `createRevocationChecker` or the manager's `checkStatus`.
+
 ### A request proof names the delegation it is made for
 
 A holder's request proof covers the tool name and the business arguments.
@@ -360,9 +387,6 @@ An agent that re-delegates copies those members from its own credential; one tha
 Under a parent's `fixed` budget window, a re-delegation states no window, a `fixed` window of the same `durationSec`, or a `rolling` window at least as long; a `fixed` window of another length is refused as `chain_invalid`.
 SPEC.md §6.3 now says where a `fixed` window starts: it counts from the Unix epoch in consecutive spans of `durationSec`, not from the credential's own start, so a re-delegation that states its parent's `fixed` window has the parent's windows.
 An enforcer of your own that counts a `fixed` window from any other start must count it from the epoch.
-
-`StatusList2021Manager` takes `listLifetimeMs`, which bounds how long each list it signs is read: a whole number of milliseconds from 1 to a century, 3,155,760,000,000; any other value throws a `TypeError` where the manager is built.
-An issuer that sets it calls `renewStatusList` for each list before the list ends, as every half lifetime, or every credential on that list is refused once it ends.
 
 `removeDelegation` throws, removing nothing, for a delegation with others registered under it.
 To remove a whole subtree, call `removeDelegation(id, { subtree: true })`, and when it throws a `SubtreeRemovalError`, call it again.

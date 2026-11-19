@@ -1,0 +1,15 @@
+kind: Upgrading
+body: |-
+    **Status lists take the W3C terms, and an issuer chooses its format.**
+    An issuer that sets no new option changes nothing. To issue W3C
+    Bitstring Status List v1.0 lists, build `StatusList2021Manager` with
+    `format: 'BitstringStatusList'` and a `statusListBaseUrl` no
+    StatusList2021 list is stored under, and type a store of your own for
+    the lists it then holds, as
+    `StatusListStorageProvider<StatusListCredential>`. To bound how long a
+    copy of a list is read, set `validityPeriodMs` and call
+    `renewStatusList` for each list before its end.
+    `RuntimeFetchProvider.fetchStatusList` still answers a
+    `StatusList2021Credential` alone. UPGRADING.md, "Status lists take the
+    W3C Bitstring Status List terms", has the steps.
+time: 2026-11-19T13:04:00.000000-06:00

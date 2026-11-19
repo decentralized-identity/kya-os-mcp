@@ -1,11 +1,11 @@
 kind: Fixed
 body: |-
-    **`StatusList2021Manager` refuses a `listLifetimeMs` past a century
-    where it is built.** It took any safe integer, but a lifetime above
-    about 8.6e15 milliseconds ends a list where no `Date` is, so the
-    manager was built and then every list it signed threw, and one far
-    shorter still ended a list past the year 9999, which no reader reads
-    as an RFC 3339 date-time. The option now takes a whole number of
-    milliseconds from 1 to a century of 365.25 days, 3,155,760,000,000,
-    and throws a `TypeError` naming it for any other value.
+    **`StatusList2021Manager` refuses a `validityPeriodMs` past a century
+    where it is built.** It took any safe integer, but a period above about
+    8.6e15 milliseconds ends a list where no `Date` is, so the manager was
+    built and then every list it signed threw, and one far shorter still
+    ended a list past the year 9999, which no reader reads as an RFC 3339
+    date-time. The option now takes a whole number of milliseconds from 1
+    to a century of 365.25 days, 3,155,760,000,000, and throws a `TypeError`
+    naming it for any other value.
 time: 2026-11-19T02:05:00.000000-06:00

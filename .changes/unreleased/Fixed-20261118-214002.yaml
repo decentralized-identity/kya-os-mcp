@@ -8,8 +8,10 @@ body: |-
     shown to extend the observed one, passed, and would have signed a
     rewritten history. The contract now refuses an observer that accepts a
     checkpoint whose signature does not verify, derived from `first` and
-    `next`, and takes a new fixture, `fork`: a validly signed, larger
-    checkpoint over a history that does not extend `first`, which the
-    observer must refuse once it has observed `first`. AUDITABILITY.md,
-    "Atomic journal contract", says how to build it.
+    `next`, and takes a new optional fixture, `fork`: a validly signed,
+    larger checkpoint over a history that does not extend `first`, which the
+    observer must refuse once it has observed `first`. Without `fork` that
+    check is reported with `skipped` set to the reason, a new optional member
+    of `AuditProviderContractCheck`, and does not fail the report.
+    AUDITABILITY.md, "Atomic journal contract", says how to build it.
 time: 2026-11-18T21:40:02.000000-06:00

@@ -222,9 +222,18 @@ independent observer.
 The observer contract takes checkpoints signed by the recorder key your observer trusts.
 Besides `first`, `next`, `conflict`, `rollback` and the optional `gapped`, give it `fork`: a validly signed checkpoint of the same ledger epoch, larger than `first`, over a history that does not extend `first`'s tree, as a holder of the recorder key could sign after rewriting the observed history.
 Sign it over a second journal with the same ledger ID, epoch and key, recorded with different events.
-The observer must accept `fork` on its own and refuse it once it has observed `first`; without `fork` the contract fails, because no other fixture shows that the observer checks an extension.
-The contract also derives, from `first` and `next`, checkpoints whose signature does not verify, and requires the observer to refuse each and keep `first` as its latest observation.
-`fork` is optional in `AuditCheckpointProviderContractFixtures` only so that fixtures written before it still compile.
+The observer must accept `fork` on its own and refuse it once it has observed `first`.
+Without `fork` that check is not run: the report lists it with `skipped` set to the reason, and it does not fail the report or `assertAuditProviderContract`, but no other fixture shows that the observer checks an extension, so give `fork` to have it checked.
+The contract also derives, from `first` and `next`, checkpoints whose signature does not verify, and requires the observer to refuse each and keep `first` as its latest observation; that check needs no fixture and always runs.
+
+A check that a contract could not run, for want of a fixture, is reported with `passed: true` and `skipped` set to why and what to give it.
+`passed` then means only that the check did not fail, so a CI job that must show every check ran can require that no check has `skipped` set:
+
+```ts
+const report = await evaluateAuditObserverProviderContract({ createProvider, fixtures });
+assertAuditProviderContract(report);
+expect(report.checks.filter((check) => check.skipped !== undefined)).toEqual([]);
+```
 
 For PostgreSQL, use a ledger-head row plus entry/idempotency unique constraints
 inside one transaction. For Cloudflare, route one epoch to one Durable Object

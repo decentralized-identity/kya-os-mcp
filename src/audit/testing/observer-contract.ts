@@ -5,6 +5,7 @@ import {
   equalJson,
   expectContract,
   report,
+  skip,
   type AuditProviderContractCheck,
   type AuditProviderContractReport,
 } from './contract-harness.js';
@@ -23,11 +24,11 @@ export interface AuditCheckpointProviderContractFixtures {
   /**
    * A checkpoint of the ledger epoch of `first`, validly signed and larger
    * than it, over a history that does not extend its tree: what a holder of
-   * the recorder key would sign after rewriting the observed history. The
-   * observer must accept it on its own and refuse it once it has observed
-   * `first`. Optional in the type so fixtures written before it still
-   * compile; without it the contract fails, because no other fixture shows
-   * that the observer checks an extension.
+   * the recorder key would sign after rewriting the observed history. When
+   * provided, the observer must accept it on its own and refuse it once it
+   * has observed `first`. Without it that check is reported as skipped, since
+   * no other fixture shows that the observer checks an extension.
+   * @since 1.26.0
    */
   fork?: SignedAuditCheckpointV1;
 }
@@ -69,6 +70,11 @@ async function expectLatest(
     'a refused checkpoint replaced the latest observation',
   );
 }
+
+const FORK_CHECK = 'rejects a larger checkpoint that does not extend the observed tree';
+
+const FORK_MISSING =
+  'pass fixtures.fork to check that the observer refuses a checkpoint that does not extend the one it observed';
 
 /** Executable monotonicity/split-view contract for independent observers. */
 export async function evaluateAuditObserverProviderContract(input: {
@@ -119,31 +125,31 @@ export async function evaluateAuditObserverProviderContract(input: {
     );
     await expectLatest(provider, input.fixtures.first);
   });
-  await check(checks, 'rejects a larger checkpoint that does not extend the observed tree', async () => {
-    const { first, fork } = input.fixtures;
-    expectContract(
-      fork !== undefined,
-      'fixtures.fork is required: a validly signed checkpoint, larger than fixtures.first, ' +
-        'over a history that does not extend its tree',
-    );
-    expectContract(
-      fork.core.ledgerId === first.core.ledgerId &&
-        fork.core.ledgerEpochId === first.core.ledgerEpochId &&
-        BigInt(fork.core.treeSize) > BigInt(first.core.treeSize),
-      'fixtures.fork must be a larger checkpoint of the ledger epoch of fixtures.first',
-    );
-    expectContract(
-      !(await refuses(await input.createProvider(), fork)),
-      'observer refused fixtures.fork on its own, so its refusal after fixtures.first shows nothing',
-    );
-    const provider = await input.createProvider();
-    await provider.publish(first);
-    expectContract(
-      await refuses(provider, fork),
-      'observer accepted a larger checkpoint that does not extend the observed tree',
-    );
-    await expectLatest(provider, first);
-  });
+  const fork = input.fixtures.fork;
+  if (fork === undefined) {
+    skip(checks, FORK_CHECK, FORK_MISSING);
+  } else {
+    await check(checks, FORK_CHECK, async () => {
+      const { first } = input.fixtures;
+      expectContract(
+        fork.core.ledgerId === first.core.ledgerId &&
+          fork.core.ledgerEpochId === first.core.ledgerEpochId &&
+          BigInt(fork.core.treeSize) > BigInt(first.core.treeSize),
+        'fixtures.fork must be a larger checkpoint of the ledger epoch of fixtures.first',
+      );
+      expectContract(
+        !(await refuses(await input.createProvider(), fork)),
+        'observer refused fixtures.fork on its own, so its refusal after fixtures.first shows nothing',
+      );
+      const provider = await input.createProvider();
+      await provider.publish(first);
+      expectContract(
+        await refuses(provider, fork),
+        'observer accepted a larger checkpoint that does not extend the observed tree',
+      );
+      await expectLatest(provider, first);
+    });
+  }
   if (input.fixtures.gapped !== undefined) {
     const gapped = input.fixtures.gapped;
     await check(checks, 'accepts a gapped but consistent extension as catch-up', async () => {

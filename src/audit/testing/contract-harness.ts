@@ -11,8 +11,19 @@ import type {
 
 export interface AuditProviderContractCheck {
   name: string;
+  /**
+   * Whether the check did not fail. True for a check that was not run, which
+   * `skipped` then says, so it never fails the report or
+   * `assertAuditProviderContract`.
+   */
   passed: boolean;
   error?: unknown;
+  /**
+   * Set when the check was not run, to the reason and what to give the
+   * contract to run it: a check that needs a fixture the caller did not pass.
+   * @since 1.26.0
+   */
+  skipped?: string;
 }
 
 export interface AuditProviderContractReport {
@@ -44,6 +55,11 @@ export async function check(
   } catch (error) {
     checks.push({ name, passed: false, error });
   }
+}
+
+/** Records the check `name` as not run, for `reason`. */
+export function skip(checks: AuditProviderContractCheck[], name: string, reason: string): void {
+  checks.push({ name, passed: true, skipped: reason });
 }
 
 export function report(

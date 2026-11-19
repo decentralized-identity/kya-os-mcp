@@ -65,14 +65,41 @@ describe('observer provider contract: what an observer signs', () => {
     expect((thrown as AggregateError).errors).toEqual([checkOf(report, signatureCheck)!.error]);
   });
 
-  it('fails when no fork fixture is given, since nothing else can show the extension check', async () => {
+  it('reports the extension check as skipped, and does not fail, when no fork fixture is given', async () => {
     const { fixtures, builders } = await observerContractFixtures();
     const { fork: _fork, ...withoutFork } = fixtures;
     const report = await evaluateAuditObserverProviderContract({
       fixtures: withoutFork, createProvider: () => checkingObserver(builders),
     });
+    expect(checkOf(report, forkCheck)).toEqual({
+      name: forkCheck,
+      passed: true,
+      skipped: 'pass fixtures.fork to check that the observer refuses a checkpoint that does not extend the one it observed',
+    });
+    expect(report.checks.filter((item) => item.skipped !== undefined)).toHaveLength(1);
+    expect(report.passed).toBe(true);
+    expect(() => assertAuditProviderContract(report)).not.toThrow();
+  });
+
+  it('still checks every signature when no fork fixture is given', async () => {
+    const { fixtures, builders } = await observerContractFixtures();
+    const { fork: _fork, ...withoutFork } = fixtures;
+    const report = await evaluateAuditObserverProviderContract({
+      fixtures: withoutFork,
+      createProvider: () => checkingObserver(builders, { verifyCheckpoint: async () => true }),
+    });
+    expect(checkOf(report, signatureCheck)).toMatchObject({ passed: false });
+    expect(checkOf(report, signatureCheck)!.skipped).toBeUndefined();
+    expect(report.passed).toBe(false);
+  });
+
+  it('runs the extension check, and skips nothing, when the fork fixture is given', async () => {
+    const { fixtures, builders } = await observerContractFixtures();
+    const report = await evaluateAuditObserverProviderContract({
+      fixtures, createProvider: () => checkingObserver(builders, { verifyConsistency: async () => true }),
+    });
+    expect(report.checks.filter((item) => item.skipped !== undefined)).toEqual([]);
     expect(checkOf(report, forkCheck)).toMatchObject({ passed: false });
-    expect(errorOf(report, forkCheck)).toMatch(/fixtures\.fork is required/);
   });
 
   it('fails a fork fixture that is not larger than first, rather than pass the check vacuously', async () => {

@@ -36,7 +36,6 @@ import type { DelegationProofVerifier } from './delegation-proof.js';
 import { firstHopProofRefusal } from './hop-proofs.js';
 import { hopWindowRules } from './hop-window.js';
 import { withVerifiedRoot } from '../utils/verified-root.js';
-import { isDigest } from '../delegation/digest-form.js';
 import { firstParentDigestRefusal } from './parent-digest.js';
 import { describeValue } from '../utils/describe-value.js';
 import { dateLte } from '../utils/rfc3339.js';
@@ -77,11 +76,13 @@ export const ZcapCapabilitySchema = z
     invocationTarget: z.string().min(1),
     allowedAction: z.array(z.string().min(1)),
     caveats: z.array(CaveatSchema).optional(),
-    /** The digest SPEC §7.8 gives the parent credential (`./parent-digest.ts`); a root states none. */
-    parentCredentialDigest: z
-      .string()
-      .refine((value): boolean => isDigest(value), { message: 'parentCredentialDigest is "sha256:" followed by 64 lowercase hex digits' })
-      .optional(),
+    /**
+     * The digest SPEC §7.8 gives the parent credential (`./parent-digest.ts`); a root states none.
+     * Read as any value: one in another form, `null` included, is not the parent's digest, which
+     * the chain rules refuse as `chain_invalid` (SPEC §6.10), so parsing leaves it to them, and a
+     * verifier that parses the chain and one that does not refuse it alike.
+     */
+    parentCredentialDigest: z.unknown().optional(),
   })
   .passthrough()
   .refine((s) => Boolean(s.controller ?? s.invoker), {

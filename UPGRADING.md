@@ -251,6 +251,8 @@ Bind any other list on a private host, and every list of a did:key root, to its 
 A hop may now commit to its parent with `credentialSubject.parentCredentialDigest`, the SPEC §7.8 digest of the parent credential.
 Sign each hop with `signDelegationCredential(hop, signer, { parent })` to write it.
 A verifier checks the digest whenever a hop states it, and refuses a hop whose digest is not its parent's as `chain_invalid`.
+A digest stated in any other form, `null` included, is not its parent's, and `verifyRequestDelegation` and `requireDelegation` refuse it as `chain_invalid`, as `evaluateDelegationChain` does, where they refused it as `delegation_malformed` before.
+`signDelegationCredential` signs no hop that states one in another form.
 
 ### Delegation graph
 

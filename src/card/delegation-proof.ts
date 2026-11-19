@@ -17,6 +17,7 @@
 
 import type { DIDResolver } from '../delegation/vc-verifier.types.js';
 import { dependencyTimeout } from '../utils/deadline.js';
+import { isDigest } from '../delegation/digest-form.js';
 import { ASSERTION_METHOD } from '../delegation/verification-relationship.js';
 import { booleanProofVerifier } from './coded-proof-verifier.js';
 import { signEddsaJcs2022, verifyEddsaJcs2022Proof } from './data-integrity.js';
@@ -83,9 +84,9 @@ export interface SignDelegationCredentialOptions {
  * `ed25519SignerFromJwk`; any {@link ProofSigner} with `signRaw` works, a KMS or non-extractable
  * key included. With `options.parent`, it writes the parent's digest into the hop before signing.
  * Throws when the credential is not a §6.10 `DelegationCredential` or the signer cannot sign for its
- * issuer, and a `TypeError` when `options.parent` is not the parent the hop names by its
- * `parentCapability`, has no signed form (SPEC.md §7.8), or is not the parent whose digest the hop
- * already states.
+ * issuer, and a `TypeError` when it states a `parentCredentialDigest` that is not a digest, or when
+ * `options.parent` is not the parent the hop names by its `parentCapability`, has no signed form
+ * (SPEC.md §7.8), or is not the parent whose digest the hop already states.
  */
 export async function signDelegationCredential(
   credential: UnsignedDelegationCredential,
@@ -96,6 +97,12 @@ export async function signDelegationCredential(
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     throw new Error(`not a DelegationCredential at ${issue?.path.join('.') ?? '(root)'}: ${issue?.message ?? 'invalid'}`);
+  }
+  // A verifier reads the member as any value, and refuses one that is not a digest; an issuer
+  // writes none such.
+  const stated = credential.credentialSubject[PARENT_CREDENTIAL_DIGEST];
+  if (stated !== undefined && !isDigest(stated)) {
+    throw new TypeError(`signDelegationCredential: ${PARENT_CREDENTIAL_DIGEST} is "sha256:" followed by 64 lowercase hex digits`);
   }
   const committed = options.parent === undefined ? credential : await committedTo(credential, options.parent);
   return signEddsaJcs2022(committed, signer, { proofPurpose: ASSERTION_METHOD, created: options.created });

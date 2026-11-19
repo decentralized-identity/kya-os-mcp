@@ -131,6 +131,18 @@ describe('signDelegationCredential, with the parent in hand', () => {
     );
   });
 
+  it.each([
+    ['a digest in upper case', `SHA256:${'A'.repeat(64)}`],
+    ['a number', 7],
+    ['null', null],
+  ])('refuses, with or without the parent, a hop that states as its digest %s', async (_form, stated) => {
+    const p = parties();
+    const hopStating = unsigned(onward(p, stated));
+    const signer = await signerFor(p.agent);
+    await expect(signDelegationCredential(hopStating, signer)).rejects.toThrow(/parentCredentialDigest/);
+    await expect(signDelegationCredential(hopStating, signer, { parent: grant(p, 4) })).rejects.toThrow(/parentCredentialDigest/);
+  });
+
   it('refuses a parent that carries no signature, which has no digest', async () => {
     const p = parties();
     const parent = unsigned(grant(p, 4)) as unknown as DelegationCredential;
@@ -169,16 +181,29 @@ describe.each(PATHS)('%s reads a hop\'s parentCredentialDigest', (_name, verify)
     expect(said.reasons).toContain('root delegation: it has no parent credential, so it states no parentCredentialDigest');
   });
 
+  // A digest stated in any other form is not the parent's digest, as SPEC §6.10 refuses it.
   it.each([
     ['a digest in upper case', (digest: string) => digest.toUpperCase().replace('SHA256', 'sha256')],
     ['no digest at all', () => 'sha256:'],
     ['a number', () => 7],
-  ])('refuses a hop whose parentCredentialDigest is %s', async (_form, write) => {
+    ['null', () => null],
+  ])('refuses a hop whose parentCredentialDigest is %s as chain_invalid', async (_form, write) => {
     const p = parties();
     const parent = grant(p, 4);
     const said = await verify(p, [parent, onward(p, write(await digestOf(parent)))]);
-    expect(said.ok).toBe(false);
-    expect(['chain_invalid', 'delegation_malformed']).toContain(said.code);
+    expect(said).toEqual({
+      ok: false,
+      code: 'chain_invalid',
+      reasons: ['hop 1: parentCredentialDigest is not the digest of hop 0, the parent presented with it'],
+    });
+  });
+
+  it('refuses a root whose parentCredentialDigest is not a digest as chain_invalid', async () => {
+    const p = parties();
+    const root = grant(p, 4, { parentCredentialDigest: 7 });
+    const said = await verify(p, [root, onward(p)]);
+    expect(said).toMatchObject({ ok: false, code: 'chain_invalid' });
+    expect(said.reasons).toContain('root delegation: it has no parent credential, so it states no parentCredentialDigest');
   });
 
   it('refuses a mismatch before it verifies any hop proof or reads any status', async () => {

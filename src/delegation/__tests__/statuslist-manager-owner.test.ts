@@ -10,6 +10,9 @@ import { statusListGzipCodec } from '../../utils/statuslist-gzip.js';
 import { StatusList2021Manager, type StatusListStorageProvider } from '../statuslist-manager.js';
 import { MemoryStatusListStorage } from '../storage/memory-statuslist-storage.js';
 import { RefusalError } from '../../utils/refusal.js';
+import { CascadingRevocationManager } from '../cascading-revocation.js';
+import { DelegationGraphManager } from '../delegation-graph.js';
+import { MemoryDelegationGraphStorage } from '../storage/memory-graph-storage.js';
 import { normalising, statusListManager } from './helpers/status-entry-operator.js';
 
 /** A storage provider written to the base contract alone: it cannot record an entry's owner. */
@@ -19,6 +22,13 @@ function baseContract(memory: MemoryStatusListStorage): StatusListStorageProvide
     setStatusList: (id, credential) => memory.setStatusList(id, credential),
     allocateIndex: vi.fn((id: string) => memory.allocateIndex(id)),
   };
+}
+
+/** A store whose `allocateIndex` gives index 0 every time, against its contract. */
+class RepeatingIndexStore extends MemoryStatusListStorage {
+  override async allocateIndex(): Promise<number> {
+    return 0;
+  }
 }
 
 function managerOver(storage: StatusListStorageProvider): StatusList2021Manager {
@@ -73,19 +83,67 @@ describe('StatusList2021Manager owners', () => {
     expect(await manager.getStatusEntryOwner(unowned)).toBeUndefined();
   });
 
+  it('refuses an index that already has an owner, as a store that gives an index twice hands back, recording nothing', async () => {
+    const manager = managerOver(new RepeatingIndexStore());
+    const first = await manager.allocateStatusEntry('revocation', { delegationId: 'first' });
+
+    for (const delegationId of ['second', 'first']) {
+      await expect(manager.allocateStatusEntry('revocation', { delegationId })).rejects.toThrow(
+        new Error(
+          'Status list "https://status.example/revocation/v1" gave index 0, which already has an owner recorded, so ' +
+            'no entry was allocated: allocateIndex must give each index once across every manager of the store',
+        ),
+      );
+    }
+    expect(await manager.getStatusEntryOwner(first)).toEqual({ delegationId: 'first', retired: false });
+
+    // The first delegation's entry is still its own, so revoking it sets the bit.
+    const graph = new DelegationGraphManager(new MemoryDelegationGraphStorage(), { statusEntryOwners: manager });
+    await graph.registerDelegation({
+      id: 'first',
+      parentId: null,
+      issuerDid: 'did:web:operator.example',
+      subjectDid: 'did:web:first.example',
+      credentialStatus: first,
+    });
+    await new CascadingRevocationManager(graph, manager).revokeDelegation('first');
+    expect(await manager.checkStatus(first)).toBe(true);
+  });
+
+  it('throws a TypeError, recording nothing, when setEntryOwnerIfAbsent answers anything but a boolean', async () => {
+    const storage = new MemoryStatusListStorage();
+    storage.setEntryOwnerIfAbsent = async () => undefined as unknown as boolean;
+
+    await expect(managerOver(storage).allocateStatusEntry('revocation', { delegationId: 'first' })).rejects.toThrow(
+      new TypeError(
+        'StatusEntryOwnerStorageProvider.setEntryOwnerIfAbsent must resolve true when it recorded the owner and ' +
+          'false when the entry already had one',
+      ),
+    );
+    expect(await storage.getEntryOwner('https://status.example/revocation/v1', 0)).toBeNull();
+  });
+
   it('refuses to record an owner its storage provider cannot keep, before it takes an index', async () => {
     const memory = new MemoryStatusListStorage();
     const storage = baseContract(memory);
     const manager = managerOver(storage);
+    // A provider with no set-if-absent cannot keep an owner safely either.
+    const withoutIfAbsent = {
+      ...baseContract(memory),
+      setEntryOwner: memory.setEntryOwner.bind(memory),
+      getEntryOwner: memory.getEntryOwner.bind(memory),
+    };
 
-    await expect(manager.allocateStatusEntry('revocation', { delegationId: 'delegation-1' })).rejects.toThrow(
-      new TypeError(
-        'allocateStatusEntry was given a delegationId, but the status list storage provider cannot record which ' +
-          'delegation an entry was allocated to. Implement setEntryOwner and getEntryOwner ' +
-          '(StatusEntryOwnerStorageProvider), as MemoryStatusListStorage does, or allocate without a delegationId.',
-      ),
-    );
-    expect(storage.allocateIndex).not.toHaveBeenCalled();
+    for (const provider of [storage, withoutIfAbsent]) {
+      await expect(managerOver(provider).allocateStatusEntry('revocation', { delegationId: 'delegation-1' })).rejects.toThrow(
+        new TypeError(
+          'allocateStatusEntry was given a delegationId, but the status list storage provider cannot record which ' +
+            'delegation an entry was allocated to. Implement setEntryOwnerIfAbsent, setEntryOwner and getEntryOwner ' +
+            '(StatusEntryOwnerStorageProvider), as MemoryStatusListStorage does, or allocate without a delegationId.',
+        ),
+      );
+      expect(provider.allocateIndex).not.toHaveBeenCalled();
+    }
     expect(memory.getAllStatusListIds()).toEqual([]);
 
     // Without an owner it allocates as before, and reads no owner.

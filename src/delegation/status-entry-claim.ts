@@ -62,9 +62,10 @@ const UNWIRED_WARNING =
   'statusEntryOwners, so the graph cannot tell which delegation an entry was allocated to. It refuses an entry ' +
   'another registered delegation holds, when its storage provider implements getNodeIdsByStatusEntry, but it ' +
   'cannot refuse an entry allocated and not yet registered, nor the entry of a delegation removed from the ' +
-  'graph: a re-delegation that carries such an entry is registered, and revoking or restoring it can change that ' +
-  'entry. Allocate each entry with allocateStatusEntry(purpose, { delegationId }) and pass that ' +
-  'StatusList2021Manager to the graph as statusEntryOwners, which refuses both.';
+  'graph, which it does not retire: a re-delegation that carries such an entry is registered, and revoking or ' +
+  'restoring it can change that entry, even one allocated with a delegationId when the re-delegation is ' +
+  'registered under that id. Allocate each entry with allocateStatusEntry(purpose, { delegationId }) and pass ' +
+  'that StatusList2021Manager to the graph as statusEntryOwners, which refuses both.';
 
 /**
  * The refusal of registering `delegationId` with the entry it carries. It reads the same whatever
@@ -106,7 +107,9 @@ export type ClaimReader = Pick<DelegationGraphManager, 'getStatusEntryClaim' | '
 /**
  * How cascading revocation over `graph` and `statusList` reads claims: the owner `statusList`
  * recorded, when it records owners, so a graph built without `statusEntryOwners` never lets the
- * cascade change an entry allocated to another delegation; else the graph's claim.
+ * cascade change an entry for a delegation registered under an id other than its owner's; else the
+ * graph's claim. Such a graph retires nothing, so a delegation registered again under a removed
+ * one's id reads as the owner of the removed one's entry.
  */
 export function cascadeClaims(graph: ClaimReader, statusList: unknown): ClaimReader {
   const owners = readsStatusEntryOwners(statusList) ? statusList : undefined;

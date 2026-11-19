@@ -12,7 +12,7 @@
  */
 
 import type { CredentialStatus } from '../types/protocol.js';
-import { describeOptionValue } from '../utils/describe-value.js';
+import { describeOptionValue, describeValue } from '../utils/describe-value.js';
 import { parseStatusListIndex } from '../utils/statuslist-bits.js';
 import type { StatusListStorageProvider } from './statuslist-storage.js';
 
@@ -62,9 +62,14 @@ export interface StatusEntryOwners {
  */
 export interface StatusEntryOwnerStorageProvider extends StatusListStorageProvider {
   /**
-   * Record `owner` for entry `index` of list `statusListId`: once when the entry is allocated, after
-   * `allocateIndex` gave the index, and again, retired, when its delegation is removed.
+   * Record `owner` for entry `index` of list `statusListId`, which `allocateIndex` just gave, only
+   * while no record of that entry exists, retired or not. Resolve true when it recorded `owner`,
+   * and false, leaving the record as it is, when one exists. The check and the write MUST be one
+   * atomic step for every writer of the store, as a conditional insert or a compare-and-set makes
+   * them, so an index `allocateIndex` ever gives twice is refused rather than given a second owner.
    */
+  setEntryOwnerIfAbsent(statusListId: string, index: number, owner: StatusEntryOwner): Promise<boolean>;
+  /** Rewrite the record of entry `index` of list `statusListId` as `owner`: retired, when its delegation is removed. */
   setEntryOwner(statusListId: string, index: number, owner: StatusEntryOwner): Promise<void>;
   /** The owner recorded for entry `index` of list `statusListId`, or `null` when none was recorded. */
   getEntryOwner(statusListId: string, index: number): Promise<StatusEntryOwner | null>;
@@ -72,6 +77,8 @@ export interface StatusEntryOwnerStorageProvider extends StatusListStorageProvid
 
 function recordsOwners(storage: StatusListStorageProvider): storage is StatusEntryOwnerStorageProvider {
   return (
+    'setEntryOwnerIfAbsent' in storage &&
+    typeof storage.setEntryOwnerIfAbsent === 'function' &&
     'setEntryOwner' in storage &&
     typeof storage.setEntryOwner === 'function' &&
     'getEntryOwner' in storage &&
@@ -91,7 +98,10 @@ export function readsStatusEntryOwners(value: unknown): value is StatusEntryOwne
   );
 }
 
-/** Records an entry's owner once `allocateIndex` has given its index. */
+/**
+ * Records an entry's owner once `allocateIndex` has given its index, only where the entry has no
+ * record yet, and throws, recording nothing, where it has one.
+ */
 export type EntryOwnerRecorder = (statusListId: string, index: number) => Promise<void>;
 
 const RECORD_NOTHING: EntryOwnerRecorder = async () => undefined;
@@ -117,11 +127,24 @@ export function entryOwnerRecorder(
   if (!recordsOwners(storage)) {
     throw new TypeError(
       'allocateStatusEntry was given a delegationId, but the status list storage provider cannot record which ' +
-        'delegation an entry was allocated to. Implement setEntryOwner and getEntryOwner ' +
+        'delegation an entry was allocated to. Implement setEntryOwnerIfAbsent, setEntryOwner and getEntryOwner ' +
         '(StatusEntryOwnerStorageProvider), as MemoryStatusListStorage does, or allocate without a delegationId.',
     );
   }
-  return (statusListId, index) => storage.setEntryOwner(statusListId, index, { delegationId, retired: false });
+  return async (statusListId, index) => {
+    const recorded: unknown = await storage.setEntryOwnerIfAbsent(statusListId, index, { delegationId, retired: false });
+    if (recorded === true) return;
+    if (typeof recorded !== 'boolean') {
+      throw new TypeError(
+        'StatusEntryOwnerStorageProvider.setEntryOwnerIfAbsent must resolve true when it recorded the owner and ' +
+          'false when the entry already had one',
+      );
+    }
+    throw new Error(
+      `Status list ${describeValue(statusListId)} gave index ${index}, which already has an owner recorded, so no ` +
+        'entry was allocated: allocateIndex must give each index once across every manager of the store',
+    );
+  };
 }
 
 /**

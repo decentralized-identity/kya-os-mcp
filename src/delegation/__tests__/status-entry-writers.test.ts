@@ -19,8 +19,8 @@ import { ENTRY, LIST, REGISTRATION_REFUSED, leftUnchanged, refusal } from './hel
 import { proofOver, replica, signedOverItself } from './helpers/status-list-writers.js';
 
 /**
- * A memory store that logs each owner record written and each conditional write it refused, and
- * can be made to refuse or fail the writes to come.
+ * A memory store that logs each owner an allocation records and each conditional write it refused,
+ * and can be made to refuse or fail the writes to come.
  */
 class WatchedStore extends MemoryStatusListStorage {
   readonly ownerWrites: { entry: string; owner: StatusEntryOwner }[] = [];
@@ -47,12 +47,12 @@ class WatchedStore extends MemoryStatusListStorage {
     return stored;
   }
 
-  override async setEntryOwner(statusListId: string, index: number, owner: StatusEntryOwner): Promise<void> {
+  override async setEntryOwnerIfAbsent(statusListId: string, index: number, owner: StatusEntryOwner): Promise<boolean> {
     const failure = this.nextOwnerFailure;
     this.nextOwnerFailure = undefined;
     if (failure !== undefined) throw failure;
     this.ownerWrites.push({ entry: `${statusListId}#${index}`, owner: { ...owner } });
-    await super.setEntryOwner(statusListId, index, owner);
+    return super.setEntryOwnerIfAbsent(statusListId, index, owner);
   }
 }
 

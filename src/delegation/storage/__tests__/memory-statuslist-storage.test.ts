@@ -378,6 +378,17 @@ describe("MemoryStatusListStorage", () => {
       expect(await storage.getEntryOwner("https://example.com/status/other", 0)).toBeNull();
     });
 
+    it("record a new entry's owner only while the entry has none, with setEntryOwnerIfAbsent", async () => {
+      const revocation = "https://example.com/status/revocation/v1";
+
+      expect(await storage.setEntryOwnerIfAbsent(revocation, 0, { delegationId: "delegation-1", retired: false })).toBe(true);
+      expect(await storage.setEntryOwnerIfAbsent(revocation, 0, { delegationId: "delegation-2", retired: false })).toBe(false);
+      await storage.setEntryOwner(revocation, 0, { delegationId: "delegation-1", retired: true });
+      expect(await storage.setEntryOwnerIfAbsent(revocation, 0, { delegationId: "delegation-1", retired: false })).toBe(false);
+
+      expect(await storage.getEntryOwner(revocation, 0)).toEqual({ delegationId: "delegation-1", retired: true });
+    });
+
     it("forget every owner on clear", async () => {
       const revocation = "https://example.com/status/revocation/v1";
       await storage.setEntryOwner(revocation, 0, { delegationId: "delegation-1", retired: false });

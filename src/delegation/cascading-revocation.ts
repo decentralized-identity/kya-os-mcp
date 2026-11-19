@@ -74,9 +74,12 @@ interface EntryOutcome {
  * Whose a status list entry is, it reads from the owner the status list manager recorded, whether
  * or not the graph was built with `statusEntryOwners`, and otherwise from the graph's
  * registrations (`DelegationGraphManager.getStatusEntryClaim`). An entry whose owner was recorded
- * is set only by a revocation whose subtree holds that owner, and cleared only by restoring that
- * owner: revoking or restoring a delegation never changes the status of a delegation outside what
- * it revokes or restores. An entry with no owner recorded is set by any revocation of a delegation
+ * is set only by a revocation whose subtree holds a delegation registered under the owner's id, and
+ * cleared only by restoring one. With a graph built with `statusEntryOwners`, whose
+ * `removeDelegation` retires the entry, revoking or restoring a delegation so never changes the
+ * status of a delegation outside what it revokes or restores. A graph built without it retires
+ * nothing, so a delegation registered again under a removed one's id reads as the owner of the
+ * removed one's entry, and restoring it clears that entry. An entry with no owner recorded is set by any revocation of a delegation
  * that carries it, revoking too, the safe way, any delegation outside the subtree registered with
  * it (`statusEntrySharedWith`), and is cleared only when no other delegation is registered with it.
  * A graph built without owners cannot refuse such an entry when it was allocated and not yet

@@ -22,9 +22,10 @@ const UNWIRED_WARNING =
   'statusEntryOwners, so the graph cannot tell which delegation an entry was allocated to. It refuses an entry ' +
   'another registered delegation holds, when its storage provider implements getNodeIdsByStatusEntry, but it ' +
   'cannot refuse an entry allocated and not yet registered, nor the entry of a delegation removed from the ' +
-  'graph: a re-delegation that carries such an entry is registered, and revoking or restoring it can change that ' +
-  'entry. Allocate each entry with allocateStatusEntry(purpose, { delegationId }) and pass that ' +
-  'StatusList2021Manager to the graph as statusEntryOwners, which refuses both.';
+  'graph, which it does not retire: a re-delegation that carries such an entry is registered, and revoking or ' +
+  'restoring it can change that entry, even one allocated with a delegationId when the re-delegation is ' +
+  'registered under that id. Allocate each entry with allocateStatusEntry(purpose, { delegationId }) and pass ' +
+  'that StatusList2021Manager to the graph as statusEntryOwners, which refuses both.';
 
 describe('a graph built without statusEntryOwners', () => {
   let warn: ReturnType<typeof vi.spyOn>;
@@ -218,5 +219,23 @@ describe('a graph built without statusEntryOwners', () => {
     ]);
     expect(await op.manager.getStatusEntryOwner(op.entry('victim'))).toEqual({ delegationId: 'victim', retired: false });
     expect(await op.bits()).toEqual({ root: false, victim: true });
+  });
+
+  it("restores, half wired, a removed delegation's entry for a delegation registered again under its id", async () => {
+    const op = operator({ owners: 'half-wired' });
+    await op.issue('root');
+    await op.issue('agent', 'root');
+    await op.issue('victim', 'root');
+    await op.cascade.revokeDelegation('victim');
+    await op.graph.removeDelegation('victim');
+
+    // Removal retires nothing here, and the owner record names an id, so the new delegation under
+    // that id reads as the entry's owner: it is registered, and restoring it clears the removed
+    // delegation's revoked bit. A graph built with statusEntryOwners refuses the registration.
+    expect(await op.manager.getStatusEntryOwner(op.entry('victim'))).toEqual({ delegationId: 'victim', retired: false });
+    await op.carrying('victim', 'agent', op.entry('victim'));
+    await op.cascade.restoreDelegation('victim');
+
+    expect(await op.bits()).toEqual({ root: false, agent: false, victim: false });
   });
 });

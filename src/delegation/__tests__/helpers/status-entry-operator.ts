@@ -86,7 +86,8 @@ export function normalising(memory: MemoryStatusListStorage): StatusEntryOwnerSt
     getStatusList: (id) => memory.getStatusList(href(id)),
     setStatusList: (id, credential) => memory.setStatusList(href(id), credential),
     allocateIndex: (id) => memory.allocateIndex(href(id)),
-    setEntryOwner: (id, index, delegationId) => memory.setEntryOwner(href(id), index, delegationId),
+    setEntryOwnerIfAbsent: (id, index, owner) => memory.setEntryOwnerIfAbsent(href(id), index, owner),
+    setEntryOwner: (id, index, owner) => memory.setEntryOwner(href(id), index, owner),
     getEntryOwner: (id, index) => memory.getEntryOwner(href(id), index),
   };
 }

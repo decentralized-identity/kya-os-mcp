@@ -19,6 +19,14 @@ function clone(credential: StatusList2021Credential): StatusList2021Credential {
   return structuredClone(credential);
 }
 
+function entryOwnerKey(statusListId: string, index: number): string {
+  return `${statusListId}#${index}`;
+}
+
+function copyOwner(owner: StatusEntryOwner): StatusEntryOwner {
+  return { delegationId: owner.delegationId, retired: owner.retired };
+}
+
 /**
  * The etag of a list no write to this class stored, as a subclass that keeps its lists elsewhere
  * holds: the SHA-256 of the list's JSON. Two lists share it only when they are the same list, so
@@ -117,13 +125,21 @@ export class MemoryStatusListStorage
     return allocated;
   }
 
+  /** Record `owner` for an entry with no record yet, in one step, since nothing is awaited between the check and the write. */
+  async setEntryOwnerIfAbsent(statusListId: string, index: number, owner: StatusEntryOwner): Promise<boolean> {
+    const key = entryOwnerKey(statusListId, index);
+    if (this.entryOwners.has(key)) return false;
+    this.entryOwners.set(key, copyOwner(owner));
+    return true;
+  }
+
   async setEntryOwner(statusListId: string, index: number, owner: StatusEntryOwner): Promise<void> {
-    this.entryOwners.set(`${statusListId}#${index}`, { delegationId: owner.delegationId, retired: owner.retired });
+    this.entryOwners.set(entryOwnerKey(statusListId, index), copyOwner(owner));
   }
 
   async getEntryOwner(statusListId: string, index: number): Promise<StatusEntryOwner | null> {
-    const owner = this.entryOwners.get(`${statusListId}#${index}`);
-    return owner === undefined ? null : { ...owner };
+    const owner = this.entryOwners.get(entryOwnerKey(statusListId, index));
+    return owner === undefined ? null : copyOwner(owner);
   }
 
   getIndexCount(statusListId: string): number {

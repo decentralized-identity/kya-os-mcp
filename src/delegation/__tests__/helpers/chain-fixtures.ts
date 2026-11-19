@@ -74,6 +74,19 @@ export function chainOfThree() {
   return { root, middle, leaf };
 }
 
+/** A linked, audience-bound chain of `length` credentials, root first, each `c<i>` delegating `read`. */
+export const linkedChain = (length: number): DelegationCredential[] =>
+  Array.from({ length }, (_, i) =>
+    cred({
+      id: `c${i}`,
+      issuerDid: i === 0 ? "did:a" : `did:h${i}`,
+      subjectDid: `did:h${i + 1}`,
+      ...(i > 0 ? { parentId: `c${i - 1}` } : {}),
+      audience: SERVER,
+      scopes: ["read"],
+    }),
+  );
+
 /** The base deps, with a resolver that returns `resolved`. */
 export const resolving = (resolved: DelegationCredential[]): ChainEnforcementDeps => ({
   ...baseDeps,

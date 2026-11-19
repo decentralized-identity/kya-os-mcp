@@ -5,7 +5,7 @@
  */
 
 import type { RefusalCode } from '../refusal-codes.js';
-import { dependencyTimeout } from '../utils/deadline.js';
+import { dependencyTimeout, startTimeBudget, totalTimeout, type TimeBudget } from '../utils/deadline.js';
 import { describeValue } from '../utils/describe-value.js';
 import { isRecord } from '../utils/guards.js';
 import { sanitizeForMessage } from '../utils/message-text.js';
@@ -84,25 +84,39 @@ export interface RevocationChainEntry extends Omit<StatusCheckContext, 'credenti
  * checker that has not answered in time.
  *
  * Each answer of the checker gets `options.dependencyTimeoutMs`, 5,000 ms by default, and a hop
- * whose checker has not answered by then is unresolvable. Rejects with a `TypeError` for a value
- * that is not a number of milliseconds greater than 0 and at most 2,147,483,647.
+ * whose checker has not answered by then is unresolvable. The walk as a whole gets
+ * `options.totalTimeoutMs`, 30,000 ms by default: there may be any number of entries, so once that
+ * time is spent the hop then being asked about is unresolvable too, and no later one is asked
+ * about. Rejects with a `TypeError` for either that is not a number of milliseconds greater than 0
+ * and at most 2,147,483,647.
  */
 export async function evaluateRevocationChain(
   entries: readonly (RevocationStatusEntry | RevocationChainEntry)[],
   check: BitstringRevocationChecker,
-  options: { dependencyTimeoutMs?: number } = {},
+  options: RevocationWalkOptions = {},
 ): Promise<RevocationChainResult> {
   return walkRevocationChain(entries, check, options);
+}
+
+/** How long a walk of a chain's status entries waits ({@link evaluateRevocationChain}). */
+export interface RevocationWalkOptions {
+  /** How long, in milliseconds, each answer of the checker may take. Default 5,000. */
+  dependencyTimeoutMs?: number;
+  /** How long, in milliseconds, the whole walk may take. Default 30,000. */
+  totalTimeoutMs?: number;
 }
 
 /**
  * {@link evaluateRevocationChain}, with a refusal that cannot be built without its code: the library's
  * own verifiers walk a chain through it, so the code of a refused walk is typed as always present.
+ * A verifier that walks a chain as one step of a longer check passes that check's `budget`, which
+ * the walk then draws on in place of one of its own.
  */
 export async function walkRevocationChain(
   entries: readonly (RevocationStatusEntry | RevocationChainEntry)[],
   check: BitstringRevocationChecker,
-  options: { dependencyTimeoutMs?: number },
+  options: RevocationWalkOptions,
+  budget: TimeBudget = startTimeBudget('the revocation check', totalTimeout(options.totalTimeoutMs)),
 ): Promise<RevocationChainWalk> {
   const timeoutMs = dependencyTimeout(options.dependencyTimeoutMs);
   let fresh = entries.length > 0; // no entries ⇒ no live signal ⇒ not fresh (fail-closed for L3)
@@ -118,7 +132,7 @@ export async function walkRevocationChain(
     } else {
       entry = item;
     }
-    const asked = await checkWithinDeadline(check, entry, context, timeoutMs);
+    const asked = await checkWithinDeadline(check, entry, context, timeoutMs, budget);
     if ('expired' in asked) {
       return refusedHop('deadline_exceeded', `${hopName(hop, entry)} is unresolvable: ${asked.expired}`);
     }

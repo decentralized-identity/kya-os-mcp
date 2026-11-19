@@ -332,6 +332,7 @@ The reference implementation refuses DID resolution and status-list inputs over 
 | Entries of `verificationMethod` and the five verification relationships | 8,192 in all |
 | Status-list response | 1,048,576 decompressed UTF-8 bytes, under the same JSON nesting, member name and member limits as a DID document |
 | Fetch and body consumption | One deadline for each DID resolution and each status-list read: 5 seconds, unless the host sets another as `dependencyTimeoutMs` |
+| One check of a delegation chain | 30 seconds for the chain's resolution, every credential's verification and every status or revocation answer together, unless the host sets another as `totalTimeoutMs`; the number of credentials is not limited unless the host sets `maxChainLength` |
 | Redirects a did:web, status-list or cheqd resolver read follows | 3 |
 | Each built-in network resolver's cache | 128 documents and 8 MiB of compact JSON, plus its TTL, evicting the least recently used |
 
@@ -810,6 +811,10 @@ re-delegated. Separately, a verifier may cap how many credentials it will verify
 a local resource limit: each credential costs a signature check and possibly a DID resolution. The
 reference implementation exposes this as `maxChainLength`, unset by default. Such a cap is the
 verifier's policy, not a protocol rule, and a chain it refuses is not thereby invalid elsewhere.
+What the reference implementation bounds by default is the time of one check, since a chain of any
+length is then held by its time: 30 seconds for the chain's resolution, every credential's
+verification and every revocation answer together, unless the host sets another as
+`totalTimeoutMs` (§4.4.2).
 
 ### 6.4.1 Designation Invariant
 
@@ -1280,9 +1285,12 @@ capability may be re-delegated. Earlier drafts listed a 10-hop cap among the inv
 but a longer chain broadens nothing, so it was never an attenuation rule. A verifier may cap how
 many credentials it evaluates for one chain as a local resource limit: each hop may cost a
 signature check and a status-list fetch. The reference implementation takes the same
-`maxChainLength` option here, unset by default, and exports `MAX_DELEGATION_DEPTH` (10) as a
-suggested value. Such a cap is the verifier's policy, not a protocol rule, and a chain it refuses
-is not thereby invalid elsewhere.
+`maxChainLength` option here, unset by default for a chain a request carries as for one it
+resolves, and exports `MAX_DELEGATION_DEPTH` (10) as a suggested value. Such a cap is the
+verifier's policy, not a protocol rule, and a chain it refuses is not thereby invalid elsewhere.
+What holds a chain of any length is the order a verifier checks it in and the time it gives the
+check (SPEC-ENTITY-CARD.md §10.5 rule 2), 30 seconds in the reference implementation unless the
+host sets another as `totalTimeoutMs`.
 
 A verifying resource SHOULD assert its own identity as the expected resource when it evaluates a
 chain (the `resource` context of `evaluateDelegationChain`), so that a chain minted for a

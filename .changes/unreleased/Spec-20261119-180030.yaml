@@ -1,0 +1,12 @@
+kind: Spec
+body: |-
+    **Entity Card: a carried chain is held by the order and the time of its
+    check, not by its length.** SPEC-ENTITY-CARD.md §10.5 rule 2 required a
+    Verifier to bound a carried chain's length, which SPEC.md §6.10 says no
+    rule of the profile does. It now requires the order of §11.4, under
+    which no hop's issuer is resolved before the hops above it verify and
+    no status list is read before every hop has, and a bound on the time
+    spent on one chain. A Verifier may still bound the length as local
+    policy. SPEC.md §4.4.2, §6.4 and §6.10 state the reference
+    implementation's 30 seconds.
+time: 2026-11-19T18:00:30.000000-06:00

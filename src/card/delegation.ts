@@ -30,7 +30,7 @@ import { checkerThrew, walkRevocationChain } from './revocation-chain.js';
 import type { RefusalCode } from '../refusal-codes.js';
 import type { RefusalCoding } from '../delegation/vc-verifier.types.js';
 import { coded } from '../utils/refusal.js';
-import { dependencyTimeout } from '../utils/deadline.js';
+import { askWithin, delegationCheckBudget, dependencyTimeout } from '../utils/deadline.js';
 import { warnOncePerProcess } from '../utils/warn-once.js';
 import type { DelegationProofVerifier } from './delegation-proof.js';
 import { firstHopProofRefusal } from './hop-proofs.js';
@@ -283,6 +283,13 @@ export interface DelegationChainContext {
    * 2,147,483,647. Default 5,000. Any other value makes it reject with a `TypeError`.
    */
   dependencyTimeoutMs?: number;
+  /**
+   * How long, in milliseconds, `evaluateDelegationChain` may take in all, every hop proof and
+   * status answer together: a number greater than 0 and at most 2,147,483,647. Default 30,000. A
+   * chain may be any length, so this is what bounds the evaluation's time; one out of time is
+   * refused as `deadline_exceeded`. Any other value makes it reject with a `TypeError`.
+   */
+  totalTimeoutMs?: number;
 }
 
 /** A rule a chain breaks: why, and the code of that rule. */
@@ -428,7 +435,8 @@ export interface DelegationChainEvaluation extends DelegationChainResult {
  * when `ctx.resourceOwner` pins it, the root issuer and the root hop's own status-list URL.
  * The first revoked or unreadable hop stops that walk, carrying its refusal code, and so does a
  * checker that throws or rejects: `status_unavailable`, or the code of a `RefusalError` it throws.
- * Each proof and status answer gets `ctx.dependencyTimeoutMs` (5,000 ms by default).
+ * Each proof and status answer gets `ctx.dependencyTimeoutMs` (5,000 ms by default), and all of
+ * them together `ctx.totalTimeoutMs` (30,000 ms by default).
  * A chain that passes with a caveat the library does not interpret warns once per process.
  * Without `verifyHopProof`, legacy status-only evaluation continues with one process-wide warning;
  * issuers and status URLs are then only as authentic as the proofs the caller checks separately.
@@ -442,12 +450,13 @@ export async function evaluateDelegationChain(
   const structural = validateDelegationChain(chain, ctx);
   if (!structural.ok) return { ...structural, fresh: false };
   const timeoutMs = dependencyTimeout(ctx.dependencyTimeoutMs);
+  const budget = delegationCheckBudget(ctx.totalTimeoutMs);
   const uncommitted = await firstParentDigestRefusal(chain);
   if (uncommitted !== undefined) {
     return { ...structural, ok: false, ...coded(uncommitted.code), reasons: [uncommitted.reason], fresh: false };
   }
   if (ctx.verifyHopProof !== undefined) {
-    const refused = await firstHopProofRefusal(chain, ctx.verifyHopProof, timeoutMs);
+    const refused = await firstHopProofRefusal(chain, ctx.verifyHopProof, askWithin(timeoutMs, budget));
     if (refused !== undefined) {
       return { ...structural, ok: false, ...coded(refused.code), reasons: [refused.reason], fresh: false };
     }
@@ -460,6 +469,7 @@ export async function evaluateDelegationChain(
     ctx.verifyHopProof === undefined ? entries : withVerifiedRoot(entries),
     check,
     { dependencyTimeoutMs: timeoutMs },
+    budget,
   ).catch(checkerThrew);
   if (revocation.ok) warnOfUnknownCaveats(structural);
   return {

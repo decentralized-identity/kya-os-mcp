@@ -1,0 +1,13 @@
+kind: Added
+body: |-
+    **`totalTimeoutMs`: the time one whole check of a delegation chain may
+    take.** `verifyRequestDelegation`, `requireDelegation`,
+    `evaluateDelegationChain`, `evaluateRevocationChain`,
+    `validateDelegationChain` and the middleware's `delegation`
+    configuration take it, 30 seconds by default. Each dependency still has
+    its own `dependencyTimeoutMs`; this bounds them together, so hosts that
+    each answer just in time cannot hold a check open however long the
+    chain. A check out of time is refused as `deadline_exceeded`, which is
+    transient, and asks nothing more. A check of 10 credentials could wait
+    about 100 seconds before.
+time: 2026-11-19T18:00:10.000000-06:00

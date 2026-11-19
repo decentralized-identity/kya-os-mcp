@@ -56,6 +56,10 @@ export type RevocationHook = (event: RevocationEvent) => Promise<void> | void;
 export interface CascadingRevocationOptions {
   reason?: string;
   onRevoke?: RevocationHook;
+  /**
+   * @deprecated Removed in 2.0.0. Revocation reaches a delegation at any depth; set, this refuses
+   * to revoke one deeper than `maxDepth`, a positive integer, and so leaves it live.
+   */
   maxDepth?: number;
   dryRun?: boolean;
 }
@@ -138,22 +142,28 @@ export class CascadingRevocationManager {
    * again. `onRevoke` is told of each delegation whose revocation landed, marked in the graph or set
    * on its status list, and of no other. A dry run
    * changes nothing, and returns or throws what the real run would, short of what only changing
-   * the list shows.
+   * the list shows. No depth limit applies unless the deprecated `maxDepth` is set: a delegation
+   * may be re-delegated any number of times, and revoked wherever it sits.
    */
   async revokeDelegation(
     delegationId: string,
     options: CascadingRevocationOptions = {}
   ): Promise<RevocationEvent[]> {
-    const maxDepth = options.maxDepth || 100;
+    const { maxDepth } = options;
+    if (maxDepth !== undefined && (!Number.isInteger(maxDepth) || maxDepth < 1)) {
+      throw new TypeError(`maxDepth must be a positive integer (got ${String(maxDepth)})`);
+    }
 
     const targetNode = await this.graph.getNode(delegationId);
     if (!targetNode) {
       throw new Error(`Delegation not found: ${delegationId}`);
     }
 
-    const depth = await this.graph.getDepth(delegationId);
-    if (depth > maxDepth) {
-      throw new Error(`Delegation depth ${depth} exceeds maximum ${maxDepth}`);
+    if (maxDepth !== undefined) {
+      const depth = await this.graph.getDepth(delegationId);
+      if (depth > maxDepth) {
+        throw new Error(`Delegation depth ${depth} exceeds maximum ${maxDepth}`);
+      }
     }
 
     const walk: RevocationWalk = {

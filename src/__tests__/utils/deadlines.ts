@@ -51,6 +51,32 @@ export async function settledAt<T>(ms: number, work: (hang: Hang) => Promise<T>)
 }
 
 /**
+ * What `work` settles to and the milliseconds of the faked clock it took, for work that waits many
+ * times: the clock is walked `stepMs` at a time whenever a timer is waiting, and real work that no
+ * timer waits on, such as hashing, is given turns in between, during which the clock stands still.
+ * Every dependency the work waits on under a deadline must answer by a faked timer, or at once: a
+ * real signature check under one would have the clock walked while it ran. The caller restores real
+ * timers.
+ */
+export async function settledAfter<T>(work: () => Promise<T>, stepMs = 1_000): Promise<{ value: T; ms: number }> {
+  vi.useFakeTimers();
+  let settled: { value: T } | undefined;
+  const done = work().then((value) => {
+    settled = { value };
+  });
+  let ms = 0;
+  for (let turn = 0; settled === undefined; turn += 1) {
+    if (turn > 10_000) throw new Error('settledAfter: the work never settled');
+    await realWorkDone();
+    if (settled !== undefined || vi.getTimerCount() === 0) continue;
+    await vi.advanceTimersByTimeAsync(stepMs);
+    ms += stepMs;
+  }
+  await done;
+  return { value: settled.value, ms };
+}
+
+/**
  * The two deadlines every wait is tested under: the default, with the option left out, and one the
  * host raised. Each row is a label, the option to spread into the verifier's options, the
  * milliseconds waited, and how a reason states them.
@@ -71,9 +97,9 @@ export const REFUSED_TIMEOUTS: [string, unknown, string][] = [
   ['null', null, 'a value of type null'],
 ];
 
-/** The `TypeError` an option at `path` throws for a refused value described as `got`. */
-export function timeoutTypeError(got: string, path = ''): TypeError {
+/** The `TypeError` `option` at `path` throws for a refused value described as `got`. */
+export function timeoutTypeError(got: string, path = '', option = 'dependencyTimeoutMs'): TypeError {
   return new TypeError(
-    `[kya-os] ${path}dependencyTimeoutMs must be a number of milliseconds greater than 0 and at most 2147483647 (got ${got})`,
+    `[kya-os] ${path}${option} must be a number of milliseconds greater than 0 and at most 2147483647 (got ${got})`,
   );
 }

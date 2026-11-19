@@ -1,7 +1,7 @@
 /**
  * KYA-OS Entity Card: the delegation chain a request carries in its `_meta`
- * (SPEC-ENTITY-CARD §10.5): the member a caller sends, and how a verifier reads it, fail-closed and
- * bounded before any parsing, with the code of why when it refuses what it read. Re-exported from
+ * (SPEC-ENTITY-CARD §10.5): the member a caller sends, and how a verifier reads it, fail-closed,
+ * with the code of why when it refuses what it read. Re-exported from
  * `./request-delegation.ts`, which verifies what this reads.
  */
 
@@ -19,10 +19,10 @@ import {
 export const KYA_OS_DELEGATION_CHAIN_META_KEY = 'org.kya-os/delegation-chain';
 
 /**
- * The most credentials {@link verifyRequestDelegation} accepts in a CARRIED chain unless the caller
- * sets `maxChainLength`. A carried chain's length is chosen by the caller, and every hop can cost a
- * DID resolution and a status-list fetch, so a carried chain is bounded by default. It is a local
- * resource limit, not a protocol rule about how far authority may be delegated (SPEC.md §6.10).
+ * @deprecated Applied to nothing, and removed in 2.0.0: a carried chain has no limit unless the
+ * caller sets `maxChainLength`, as a resolved one never had. Through 1.25 it was the most
+ * credentials {@link verifyRequestDelegation} accepted in a carried chain by default. A host that
+ * wants that limit passes `maxChainLength: MAX_DELEGATION_DEPTH`.
  */
 export const DEFAULT_CARRIED_CHAIN_LIMIT = MAX_DELEGATION_DEPTH;
 
@@ -84,9 +84,10 @@ export function readRefusal(code: RefusalCode, reason: string): ReadRefusal {
 
 /**
  * Read `_meta['org.kya-os/delegation-chain']`, fail-closed. Absent means not carried. Anything
- * present must be a non-empty array of `DelegationCredential` objects no longer than
- * `maxChainLength` (default {@link DEFAULT_CARRIED_CHAIN_LIMIT}); the length is checked before any
- * entry is parsed.
+ * present must be a non-empty array of `DelegationCredential` objects, of any length unless the
+ * caller sets `maxChainLength`, a positive integer; the length is then checked before any entry is
+ * parsed. A delegation may be re-delegated any number of times (SPEC.md §6.10), so a limit is the
+ * verifier's own policy, never a default.
  */
 export function readDelegationChain(meta: unknown, opts: { maxChainLength?: number } = {}): CarriedChainRead {
   return readCarriedChain(meta, opts);
@@ -106,12 +107,14 @@ export function readCarriedChain(
     return reject('delegation_malformed', `${KYA_OS_DELEGATION_CHAIN_META_KEY} must be an array of DelegationCredential objects, root to leaf`);
   }
   if (value.length === 0) return reject('chain_invalid', 'empty delegation chain');
-  const limit = opts.maxChainLength ?? DEFAULT_CARRIED_CHAIN_LIMIT;
-  if (!Number.isInteger(limit) || limit < 1) {
-    return reject('configuration_error', `maxChainLength must be a positive integer (got ${String(limit)})`);
-  }
-  if (value.length > limit) {
-    return reject('chain_invalid', `carried delegation chain of ${value.length} credentials exceeds the limit of ${limit}`);
+  const limit = opts.maxChainLength;
+  if (limit !== undefined) {
+    if (!Number.isInteger(limit) || limit < 1) {
+      return reject('configuration_error', `maxChainLength must be a positive integer (got ${String(limit)})`);
+    }
+    if (value.length > limit) {
+      return reject('chain_invalid', `carried delegation chain of ${value.length} credentials exceeds the limit of ${limit}`);
+    }
   }
   return { carried: true, ...parseCredentials(value) };
 }

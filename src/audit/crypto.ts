@@ -44,6 +44,12 @@ export interface AuditSignatureVerifier {
 
 export type AuditVerificationKey = CryptoKey | JWK | Uint8Array;
 
+/**
+ * Resolves the key a signer verifies under. A JWK is imported and checked, so a small-order
+ * Ed25519 key, under which one signature fits every payload, is refused. A `CryptoKey` imported
+ * as non-extractable cannot be read back for that check, so a resolver that imports keys itself
+ * should import them extractable, or return the JWK.
+ */
 export interface AuditVerificationKeyResolver {
   resolve(signer: SignerRef): Promise<AuditVerificationKey | null>;
 }
@@ -58,8 +64,12 @@ export class CompactJwsAuditSignatureVerifier implements AuditSignatureVerifier 
       const resolved = await this.keys.resolve(signer);
       if (resolved === null) return false;
       // Imported here rather than inside compactVerify so the key can be checked:
-      // under a small-order Ed25519 key one signature fits every payload.
-      const key = isJwk(resolved) ? await importJWK(resolved, signer.alg) : resolved;
+      // under a small-order Ed25519 key one signature fits every payload. A JWK's
+      // own "ext": false must not hide the key from that check, so it is imported
+      // extractable whatever it says.
+      const key = isJwk(resolved)
+        ? await importJWK(resolved, signer.alg, { extractable: true })
+        : resolved;
       if (await isSmallOrderEd25519CryptoKey(key)) return false;
       const result = await compactVerify(jws, key, { algorithms: [signer.alg] });
       if (result.protectedHeader.alg !== signer.alg ||

@@ -5,7 +5,7 @@
  * NOT suitable for production (no persistence).
  */
 
-import type { StatusList2021Credential } from '../../types/protocol.js';
+import type { StatusList2021Credential, StatusListCredential } from '../../types/protocol.js';
 import { base64urlEncodeFromBytes } from '../../utils/base64.js';
 import { KeyedLock } from '../../utils/keyed-lock.js';
 import type { StatusEntryOwner, StatusEntryOwnerStorageProvider } from '../status-entry-owner.js';
@@ -14,10 +14,6 @@ import type {
   HistoricalStatusListStorageProvider,
   StoredStatusList,
 } from '../statuslist-storage.js';
-
-function clone(credential: StatusList2021Credential): StatusList2021Credential {
-  return structuredClone(credential);
-}
 
 function entryOwnerKey(statusListId: string, index: number): string {
   return `${statusListId}#${index}`;
@@ -33,7 +29,7 @@ function copyOwner(owner: StatusEntryOwner): StatusEntryOwner {
  * a write made over a list read with it replaces only that list, and it is never one of the
  * etags this class gives its own writes, which are digits.
  */
-async function contentEtag(credential: StatusList2021Credential): Promise<string> {
+async function contentEtag(credential: StatusListCredential): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(credential)));
   return `sha256:${base64urlEncodeFromBytes(new Uint8Array(digest))}`;
 }
@@ -56,12 +52,20 @@ async function contentEtag(credential: StatusList2021Credential): Promise<string
  * same list. A conditional write stores through `setStatusList` while it holds
  * the list's turn, so the inner conditional write would wait for the outer one
  * to end, and the outer one for it: neither would ever settle.
+ *
+ * `L` is the type of the lists held, `StatusList2021Credential` unless given: build the store of a
+ * manager whose `format` is `BitstringStatusList` as
+ * `new MemoryStatusListStorage<BitstringStatusListCredential>()`, and one that holds lists of both
+ * formats as `new MemoryStatusListStorage<StatusListCredential>()`.
  */
-export class MemoryStatusListStorage
-  implements HistoricalStatusListStorageProvider, ConditionalStatusListStorageProvider, StatusEntryOwnerStorageProvider
+export class MemoryStatusListStorage<L extends StatusListCredential = StatusList2021Credential>
+  implements
+    HistoricalStatusListStorageProvider<L>,
+    ConditionalStatusListStorageProvider<L>,
+    StatusEntryOwnerStorageProvider<L>
 {
-  private statusLists = new Map<string, StatusList2021Credential>();
-  private versions = new Map<string, StatusList2021Credential[]>();
+  private statusLists = new Map<string, L>();
+  private versions = new Map<string, L[]>();
   private indexCounters = new Map<string, number>();
   /** The owner of each entry, by `<statusListId>#<index>`. */
   private entryOwners = new Map<string, StatusEntryOwner>();
@@ -75,12 +79,12 @@ export class MemoryStatusListStorage
    */
   private acceptedWriteCount = 0;
 
-  async getStatusList(statusListId: string): Promise<StatusList2021Credential | null> {
+  async getStatusList(statusListId: string): Promise<L | null> {
     const value = this.statusLists.get(statusListId);
-    return value === undefined ? null : clone(value);
+    return value === undefined ? null : structuredClone(value);
   }
 
-  async setStatusList(statusListId: string, credential: StatusList2021Credential): Promise<void> {
+  async setStatusList(statusListId: string, credential: L): Promise<void> {
     this.storeAsNewVersion(statusListId, credential);
   }
 
@@ -91,7 +95,7 @@ export class MemoryStatusListStorage
    * the list is read pairs an older etag with a newer list, which a
    * conditional write then refuses, and never the other way round.
    */
-  async getStatusListWithEtag(statusListId: string): Promise<StoredStatusList | null> {
+  async getStatusListWithEtag(statusListId: string): Promise<StoredStatusList<L> | null> {
     const etag = this.etagsOfStoredLists.get(statusListId);
     const credential = await this.getStatusList(statusListId);
     if (credential === null) return null;
@@ -106,11 +110,7 @@ export class MemoryStatusListStorage
    * stays atomic even where a subclass's `setStatusList` waits before it
    * stores.
    */
-  setStatusListIfMatch(
-    statusListId: string,
-    credential: StatusList2021Credential,
-    etag: string | null,
-  ): Promise<boolean> {
+  setStatusListIfMatch(statusListId: string, credential: L, etag: string | null): Promise<boolean> {
     return this.conditionalWriteTurns.run(statusListId, async () => {
       if ((await this.etagOfStoredList(statusListId)) !== etag) return false;
       await this.setStatusList(statusListId, credential);
@@ -146,13 +146,10 @@ export class MemoryStatusListStorage
     return this.indexCounters.get(statusListId) || 0;
   }
 
-  async getStatusListVersion(
-    statusListId: string,
-    version: number,
-  ): Promise<StatusList2021Credential | null> {
+  async getStatusListVersion(statusListId: string, version: number): Promise<L | null> {
     if (!Number.isSafeInteger(version) || version < 1) return null;
     const value = this.versions.get(statusListId)?.[version - 1];
-    return value === undefined ? null : clone(value);
+    return value === undefined ? null : structuredClone(value);
   }
 
   async getStatusListVersionCount(statusListId: string): Promise<number> {
@@ -183,8 +180,8 @@ export class MemoryStatusListStorage
   }
 
   /** Store a copy of `credential` as the list's newest version, with a new etag. */
-  private storeAsNewVersion(statusListId: string, credential: StatusList2021Credential): void {
-    const snapshot = clone(credential);
+  private storeAsNewVersion(statusListId: string, credential: L): void {
+    const snapshot = structuredClone(credential);
     this.statusLists.set(statusListId, snapshot);
     this.etagsOfStoredLists.set(statusListId, String(++this.acceptedWriteCount));
     const history = this.versions.get(statusListId) ?? [];

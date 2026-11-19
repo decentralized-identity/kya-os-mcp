@@ -141,9 +141,10 @@ export const DELEGATION_CREDENTIAL_CONTEXT =
   'https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0' as const;
 
 // ============================================================================
-// StatusList2021 (W3C)
+// Status lists: StatusList2021 and W3C Bitstring Status List v1.0
 // ============================================================================
 
+/** A status list of Verifiable Credentials Status List v2021, a Verifiable Credentials Data Model 1.1 document. */
 export interface StatusList2021Credential {
   '@context': (string | Record<string, unknown>)[];
   id: string;
@@ -159,6 +160,32 @@ export interface StatusList2021Credential {
   proof?: Record<string, unknown>;
   [key: string]: unknown;
 }
+
+/**
+ * A status list of W3C Bitstring Status List v1.0 (its §2.2), a Verifiable Credentials Data Model
+ * 2.0 document: its window is `validFrom` and `validUntil`, it states one purpose or several, and
+ * `credentialSubject.ttl` is how long, in milliseconds, a reader keeps it before it fetches it again.
+ */
+export interface BitstringStatusListCredential {
+  '@context': (string | Record<string, unknown>)[];
+  id: string;
+  type: string[];
+  issuer: string | { id: string };
+  validFrom?: string;
+  validUntil?: string;
+  credentialSubject: {
+    id?: string;
+    type: 'BitstringStatusList';
+    statusPurpose: string | string[];
+    encodedList: string;
+    ttl?: number;
+  };
+  proof?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+/** A status list in either format a `StatusList2021Manager` writes and a status-list store keeps. */
+export type StatusListCredential = StatusList2021Credential | BitstringStatusListCredential;
 
 // ============================================================================
 // Delegation VC utility functions

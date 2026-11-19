@@ -1,14 +1,15 @@
 /**
  * StatusList2021 Manager
  *
- * Manages StatusList2021 credentials for efficient delegation revocation.
+ * Issues and keeps status lists for efficient delegation revocation, in the format its `format`
+ * option names: StatusList2021, the default through 1.x, or W3C Bitstring Status List v1.0.
  *
- * Related Spec: W3C StatusList2021
+ * Related Spec: W3C Bitstring Status List v1.0, Verifiable Credentials Status List v2021, SPEC.md §6.6
  */
 
 import type {
-  StatusList2021Credential,
   CredentialStatus,
+  StatusListCredential,
 } from '../types/protocol.js';
 import { BitstringManager, type CompressionFunction, type DecompressionFunction } from './bitstring.js';
 import { parseStatusListIndex } from '../utils/statuslist-bits.js';
@@ -27,9 +28,15 @@ import {
   type StatusEntryOwners,
 } from './status-entry-owner.js';
 import { KeyedLock } from '../utils/keyed-lock.js';
-import { assertOneBitEntry, assertStoredUnder } from './statuslist-checks.js';
-import { listLifetimeOf, withEnd } from './statuslist-lifetime.js';
+import { assertAllocatedIn, assertOneBitEntry, assertStoredUnder } from './statuslist-checks.js';
+import {
+  statusListEntry,
+  unsignedStatusList,
+  type StatusListEntryOf,
+  type StatusListFormat,
+} from '../utils/statuslist-format.js';
 import type { StatusListStorageProvider } from './statuslist-storage.js';
+import { restated, statusListTermsOf, type StatusListTerms, type StatusListTermsOptions } from './statuslist-terms.js';
 import {
   commitStatusListChange,
   writeRetryOf,
@@ -49,37 +56,39 @@ export {
   isStatusListWriteConflict,
   type StatusListWriteRetryOptions,
 } from './statuslist-write.js';
+export type { StatusListTermsOptions } from './statuslist-terms.js';
+export type { StatusListEntryOf, StatusListFormat } from '../utils/statuslist-format.js';
 
 export interface StatusListIdentityProvider {
   getDid(): string;
   getKeyId(): string;
 }
 
-/** The options of a {@link StatusList2021Manager}, and how it retries a refused write. */
-export interface StatusList2021ManagerOptions extends StatusListWriteRetryOptions {
+/**
+ * The options of a {@link StatusList2021Manager}: what its lists state (`format`,
+ * `validityPeriodMs` and `ttl`, {@link StatusListTermsOptions}), and how it retries a refused write.
+ */
+export interface StatusList2021ManagerOptions extends StatusListWriteRetryOptions, StatusListTermsOptions {
   statusListBaseUrl?: string;
   defaultListSize?: number;
   maxClockSkewMs?: number;
-  /**
-   * How long each version of a list the manager signs may be read, in milliseconds: every version,
-   * as it is created, changed or renewed, states as its `expirationDate` this long after it is
-   * signed, so a copy kept from before a revocation stops being read within that time (SPEC.md
-   * §6.6). Renew each list with `renewStatusList` before its end, as every half lifetime: a list
-   * past its end is unresolvable, and every credential on it is refused. A whole number greater
-   * than 0; any other value throws a `TypeError` naming the option. Unset, lists state no end.
-   */
-  listLifetimeMs?: number;
 }
 
-export class StatusList2021Manager implements StatusEntryOwners {
+/**
+ * `F` is the format the manager was built with, when the options it was built with state one as a
+ * literal: the entries it allocates are then typed as that format's. Otherwise they are typed as
+ * either format's, as a `CredentialStatus` is. It is read from `options.format` and chooses
+ * nothing, so leave it to be inferred.
+ */
+export class StatusList2021Manager<F extends StatusListFormat = StatusListFormat> implements StatusEntryOwners {
   private statusListBaseUrl: string;
   private defaultListSize: number;
   /** The clock tolerance each bound of a list's validity window is held with, in milliseconds. */
   private skewMs: number;
   /** How a write a conditional store refused is tried again. */
   private retry: StatusListWriteRetry;
-  /** How long each version of a list stays readable, or `undefined` when lists state no end. */
-  private lifetimeMs: number | undefined;
+  /** What the lists this manager signs state: their format, their validity period and their `ttl`. */
+  private terms: StatusListTerms;
   /**
    * Per-status-list mutex for this manager's own writes. Every read-modify-write
    * of a list this manager makes (status updates and first creation) runs inside
@@ -122,23 +131,25 @@ export class StatusList2021Manager implements StatusEntryOwners {
    *   option.
    */
   constructor(
-    private storage: StatusListStorageProvider,
+    private storage: StatusListStorageProvider<StatusListCredential>,
     private identity: StatusListIdentityProvider,
     private signingFunction: VCSigningFunction,
     private compressor?: CompressionFunction,
     private decompressor?: DecompressionFunction,
-    options?: StatusList2021ManagerOptions
+    options?: StatusList2021ManagerOptions & { format?: F }
   ) {
     this.statusListBaseUrl = options?.statusListBaseUrl || 'https://status.example.com';
     this.defaultListSize = options?.defaultListSize || 131072;
     this.skewMs = clockSkewOption(options?.maxClockSkewMs);
     this.retry = writeRetryOf(options);
-    this.lifetimeMs = listLifetimeOf(options?.listLifetimeMs);
+    this.terms = statusListTermsOf(options, this.defaultListSize);
   }
 
   /**
    * Allocate the next entry of the `purpose` list for one delegation, creating the list on first
-   * use. Give each delegation an entry of its own, and register the delegation with it. Pass
+   * use, the list and the entry in the manager's `format`: a `StatusList2021Entry`, or the
+   * `BitstringStatusListEntry` of W3C Bitstring Status List v1.0 §2.1. Give each delegation an
+   * entry of its own, and register the delegation with it. Pass
    * `options.delegationId`, the id the delegation is registered under, to record the entry as that
    * delegation's: a delegation graph built with this manager as `statusEntryOwners` then registers
    * it for no other, and `CascadingRevocationManager` sets and clears it for no other. It needs a
@@ -150,13 +161,15 @@ export class StatusList2021Manager implements StatusEntryOwners {
    * Allocate again.
    *
    * @throws {Error} when the index the store allocated is outside the list.
+   * @throws {TypeError} when the list stored under the purpose's URL is of the other format, whose
+   *   entries this manager does not allocate; an index was taken and nothing else.
    * @throws {StatusListWriteConflictError} when the list had to be created and
    *   a conditional store refused every write of it; nothing was stored.
    */
   async allocateStatusEntry(
     purpose: 'revocation' | 'suspension',
     options?: StatusEntryAllocationOptions
-  ): Promise<CredentialStatus> {
+  ): Promise<StatusListEntryOf<F>> {
     const recordOwner = entryOwnerRecorder(this.storage, options);
     const statusListId = `${this.statusListBaseUrl}/${purpose}/v1`;
 
@@ -180,15 +193,8 @@ export class StatusList2021Manager implements StatusEntryOwners {
 
     await recordOwner(statusListId, index);
 
-    const credentialStatus: CredentialStatus = {
-      id: `${statusListId}#${index}`,
-      type: 'StatusList2021Entry',
-      statusPurpose: purpose,
-      statusListIndex: index.toString(),
-      statusListCredential: statusListId,
-    };
-
-    return credentialStatus;
+    // The format the terms hold is the one the options stated, which is what `F` was read from.
+    return statusListEntry(this.terms.format as F, statusListId, index, purpose);
   }
 
   /**
@@ -238,7 +244,7 @@ export class StatusList2021Manager implements StatusEntryOwners {
    * this change is added to whatever other writers stored.
    */
   private async withStatusBit(
-    statusList: StatusList2021Credential | null,
+    statusList: StatusListCredential | null,
     credentialStatus: CredentialStatus,
     revoked: boolean
   ): Promise<StatusListChange<void>> {
@@ -261,32 +267,25 @@ export class StatusList2021Manager implements StatusEntryOwners {
 
     const encodedList = await manager.encode();
 
-    const updatedCredential: StatusList2021Credential = {
-      ...statusList,
-      credentialSubject: {
-        ...statusList.credentialSubject,
-        encodedList,
-      },
-    };
-
-    return { write: await this.signed(updatedCredential), result: undefined };
+    return { write: await this.signed(withEncodedList(statusList, encodedList)), result: undefined };
   }
 
   /**
    * Sign the list stored under `statusListId` again, its bits unchanged, with a new end,
-   * `listLifetimeMs` from now, and store it, so a list nobody changes stays readable: renew each
-   * list before its end passes. Over a conditional store it is written as `updateStatus` writes.
+   * `validityPeriodMs` from now, and store it, so a list nobody changes stays readable: renew each
+   * list before its end passes. The end is stated as the list's own format states one, `validUntil`
+   * or `expirationDate`. Over a conditional store it is written as `updateStatus` writes.
    *
-   * @throws {TypeError} when the manager was built without `listLifetimeMs`, before anything is read.
+   * @throws {TypeError} when the manager was built without `validityPeriodMs`, before anything is read.
    * @throws {Error} when no list is stored under `statusListId`.
    * @throws {RefusalError} of code `delegation_malformed` when the list stored there was created
    *   under another id.
    * @throws {StatusListWriteConflictError} when a conditional store refused every write of it.
    */
   async renewStatusList(statusListId: string): Promise<void> {
-    if (this.lifetimeMs === undefined) {
+    if (this.terms.validityPeriodMs === undefined) {
       throw new TypeError(
-        '[kya-os] renewStatusList gives a list a new end, and this manager gives its lists none: set listLifetimeMs'
+        '[kya-os] renewStatusList gives a list a new end, and this manager gives its lists none: set validityPeriodMs'
       );
     }
     await this.updateLocks.run(statusListId, () =>
@@ -303,12 +302,11 @@ export class StatusList2021Manager implements StatusEntryOwners {
   }
 
   /**
-   * `credential` with a new proof by this manager's identity over all of it but its old proof, and,
-   * when the manager gives its lists a lifetime, a new end first.
+   * `credential` with a new proof by this manager's identity over all of it but its old proof, and
+   * first, in the terms of the list's own format, the end and the `ttl` the manager gives its lists.
    */
-  private async signed(credential: StatusList2021Credential): Promise<StatusList2021Credential> {
-    const unsignedCredential: StatusList2021Credential =
-      this.lifetimeMs === undefined ? { ...credential } : withEnd(credential, this.lifetimeMs, Date.now());
+  private async signed(credential: StatusListCredential): Promise<StatusListCredential> {
+    const unsignedCredential = restated(credential, this.terms, Date.now());
     delete (unsignedCredential as Record<string, unknown>)['proof'];
 
     const canonicalVC = canonicalizeJSON(unsignedCredential);
@@ -342,7 +340,7 @@ export class StatusList2021Manager implements StatusEntryOwners {
       throw new RefusalError('status_signer_untrusted', purpose.reason);
     }
     // A list outside the validity window it states says nothing of now, whatever its bits say. The
-    // lists this manager writes state no end unless it gives them a lifetime (`listLifetimeMs`).
+    // lists this manager writes state no end unless it gives them one (`validityPeriodMs`).
     assertStatusListValidity(statusList, Date.now(), this.skewMs);
 
     const manager = await BitstringManager.decode(
@@ -394,13 +392,17 @@ export class StatusList2021Manager implements StatusEntryOwners {
     );
   }
 
-  /** No write and the capacity of `existing` when there is one, else a fresh signed list and its capacity. */
+  /**
+   * No write and the capacity of `existing` when there is one, of the manager's format, else a
+   * fresh signed list of that format and its capacity.
+   */
   private async createdIfMissing(
-    existing: StatusList2021Credential | null,
+    existing: StatusListCredential | null,
     statusListId: string,
     purpose: 'revocation' | 'suspension'
   ): Promise<StatusListChange<number>> {
     if (existing) {
+      assertAllocatedIn(existing, this.terms.format, statusListId);
       const decoded = await BitstringManager.decode(
         existing.credentialSubject.encodedList,
         this.compressor,
@@ -416,22 +418,13 @@ export class StatusList2021Manager implements StatusEntryOwners {
     );
     const encodedList = await manager.encode();
 
-    const unsignedCredential = {
-      '@context': [
-        'https://www.w3.org/2018/credentials/v1',
-        'https://w3id.org/vc/status-list/2021/v1',
-      ] as [string, string],
+    const unsignedCredential = unsignedStatusList(this.terms.format, {
       id: statusListId,
-      type: ['VerifiableCredential', 'StatusList2021Credential'] as [string, string],
       issuer: this.identity.getDid(),
-      issuanceDate: new Date().toISOString(),
-      credentialSubject: {
-        id: `${statusListId}#list`,
-        type: 'StatusList2021' as const,
-        statusPurpose: purpose,
-        encodedList,
-      },
-    };
+      statusPurpose: purpose,
+      encodedList,
+      validFrom: new Date().toISOString(),
+    });
 
     return {
       write: await this.signed(unsignedCredential),
@@ -449,6 +442,11 @@ export class StatusList2021Manager implements StatusEntryOwners {
   }
 }
 
+/** `list` with `encodedList` as its bits, every other member kept. */
+function withEncodedList<T extends StatusListCredential>(list: T, encodedList: string): T {
+  return { ...list, credentialSubject: { ...list.credentialSubject, encodedList } };
+}
+
 /**
  * Build a {@link StatusList2021Manager}. `compressor` and `decompressor`
  * default to `statusListGzipCodec`; when supplied they MUST GZIP and
@@ -457,14 +455,14 @@ export class StatusList2021Manager implements StatusEntryOwners {
  * `ConditionalStatusListStorageProvider`; over any other store, write
  * through one manager only, and its first write warns once per process.
  */
-export function createStatusListManager(
-  storage: StatusListStorageProvider,
+export function createStatusListManager<F extends StatusListFormat = StatusListFormat>(
+  storage: StatusListStorageProvider<StatusListCredential>,
   identity: StatusListIdentityProvider,
   signingFunction: VCSigningFunction,
   compressor?: CompressionFunction,
   decompressor?: DecompressionFunction,
-  options?: StatusList2021ManagerOptions
-): StatusList2021Manager {
+  options?: StatusList2021ManagerOptions & { format?: F }
+): StatusList2021Manager<F> {
   return new StatusList2021Manager(
     storage,
     identity,

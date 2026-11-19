@@ -7,7 +7,7 @@
  * random and grows with each refusal, up to a bound on how many refusals a change outlasts.
  */
 
-import type { StatusList2021Credential } from '../types/protocol.js';
+import type { StatusListCredential } from '../types/protocol.js';
 import { describeOptionValue } from '../utils/describe-value.js';
 import { LONGEST_WAIT_MS } from '../utils/keyed-lock.js';
 import { warnOncePerProcess } from '../utils/warn-once.js';
@@ -155,7 +155,7 @@ const UNCONDITIONAL_WRITE_WARNING =
 /** What a change to a stored list comes to: the signed list to store, if any, and the answer. */
 export interface StatusListChange<T> {
   /** The signed list to store, or none when the stored list stands as it is. */
-  readonly write?: StatusList2021Credential;
+  readonly write?: StatusListCredential;
   readonly result: T;
 }
 
@@ -175,9 +175,9 @@ export interface StatusListChange<T> {
  *   a boolean, since the write cannot then be known to have been stored or refused.
  */
 export async function commitStatusListChange<T>(
-  storage: StatusListStorageProvider,
+  storage: StatusListStorageProvider<StatusListCredential>,
   statusListId: string,
-  change: (stored: StatusList2021Credential | null) => Promise<StatusListChange<T>>,
+  change: (stored: StatusListCredential | null) => Promise<StatusListChange<T>>,
   retry: StatusListWriteRetry,
 ): Promise<T> {
   if (!supportsConditionalWrite(storage)) {

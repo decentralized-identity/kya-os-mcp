@@ -1,9 +1,11 @@
 /**
  * A status list that states no end is read until its issuer replaces it, so a copy signed before a
  * revocation reads as current for as long as its key verifies (SPEC.md §6.6). A manager built with
- * `listLifetimeMs` states an end on every version it signs, `listLifetimeMs` after it signs it, so
- * such a copy stops being readable within that time; `renewStatusList` signs the list again with a
- * new end, its bits unchanged, so a list nobody changes stays readable.
+ * `validityPeriodMs` states an end on every version it signs, that long after it signs it, so such
+ * a copy stops being readable within that time; `renewStatusList` signs the list again with a new
+ * end, its bits unchanged, so a list nobody changes stays readable. The end is the `expirationDate`
+ * of a `StatusList2021Credential`, the format these tests leave as it is; the `validUntil` of a
+ * `BitstringStatusListCredential` is in `statuslist-manager-format.test.ts`.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isIndexSet } from '../bitstring.js';
@@ -11,39 +13,22 @@ import { StatusList2021Manager } from '../statuslist-manager.js';
 import { MemoryStatusListStorage } from '../storage/memory-statuslist-storage.js';
 import { acceptStatusListValidity } from '../../utils/statuslist-validity.js';
 import { statusListGzipCodec } from '../../utils/statuslist-gzip.js';
-import {
-  createRealCryptoProvider,
-  createRealIdentity,
-  createRealSigningFunction,
-} from '../../__tests__/audit/helpers/crypto-helpers.js';
+import { statusListIssuer } from '../../__tests__/utils/status-list-manager.js';
 import { RefusalError } from '../../utils/refusal.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** A century of 365.25 days, the longest lifetime a manager gives its lists. */
+/** A century of 365.25 days, the longest validity period a manager gives its lists. */
 const CENTURY_MS = 36_525 * DAY_MS;
-const crypto = createRealCryptoProvider();
 
 afterEach(() => {
   vi.useRealTimers();
 });
 
-/** A manager over its own store, whose lists live `listLifetimeMs` when it is given. */
-async function managed(listLifetimeMs?: number) {
-  const issuer = await createRealIdentity(crypto);
-  const storage = new MemoryStatusListStorage();
-  const manager = new StatusList2021Manager(
-    storage,
-    { getDid: () => issuer.did, getKeyId: () => issuer.kid },
-    createRealSigningFunction(crypto, issuer),
-    statusListGzipCodec,
-    statusListGzipCodec,
-    { statusListBaseUrl: 'https://status.example', ...(listLifetimeMs === undefined ? {} : { listLifetimeMs }) },
-  );
-  return { manager, storage };
-}
+/** A manager over its own store, whose lists are valid for `validityPeriodMs` when it is given. */
+const managed = (validityPeriodMs?: number) => statusListIssuer(validityPeriodMs === undefined ? {} : { validityPeriodMs });
 
-describe('StatusList2021Manager: listLifetimeMs', () => {
-  it('states an end on every version, so a copy from before a revocation is not readable a lifetime on', async () => {
+describe('StatusList2021Manager: validityPeriodMs', () => {
+  it('states an end on every version, so a copy from before a revocation is not readable a validity period on', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(Date.parse('2026-11-18T12:00:00Z'));
     const { manager, storage } = await managed(7 * DAY_MS);
@@ -93,11 +78,11 @@ describe('StatusList2021Manager: listLifetimeMs', () => {
     expect(acceptStatusListValidity(list, Date.parse('2126-11-19T11:00:00Z')).valid).toBe(true);
   });
 
-  // A lifetime past a century, up to the largest safe integer, would end a list where no date-time a
+  // A validity period past a century, up to the largest safe integer, would end a list where no date-time a
   // reader reads can say, or where no Date is, so every list the manager signed would throw.
   it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, '86400000', null, CENTURY_MS + 1, 8.7e15, Number.MAX_SAFE_INTEGER])(
     'throws a TypeError naming the option for %s',
-    (listLifetimeMs) => {
+    (validityPeriodMs) => {
       expect(
         () =>
           new StatusList2021Manager(
@@ -106,9 +91,9 @@ describe('StatusList2021Manager: listLifetimeMs', () => {
             async () => ({ type: 'Ed25519Signature2020', proofValue: 'x' }),
             statusListGzipCodec,
             statusListGzipCodec,
-            { listLifetimeMs: listLifetimeMs as number },
+            { validityPeriodMs: validityPeriodMs as number },
           ),
-      ).toThrow(/^\[kya-os\] listLifetimeMs must be a whole number of milliseconds from 1 to 3155760000000, a century/);
+      ).toThrow(/^\[kya-os\] validityPeriodMs must be a whole number of milliseconds from 1 to 3155760000000, a century/);
     },
   );
 });
@@ -131,11 +116,13 @@ describe('StatusList2021Manager.renewStatusList', () => {
     expect(await manager.checkStatus(entry)).toBe(true);
   });
 
-  it('throws a TypeError from a manager that gives its lists no lifetime, and changes nothing', async () => {
+  it('throws a TypeError naming the option from a manager that gives its lists no validity period, and changes nothing', async () => {
     const { manager, storage } = await managed();
     const entry = await manager.allocateStatusEntry('revocation');
     const before = await storage.getStatusList(entry.statusListCredential);
-    await expect(manager.renewStatusList(entry.statusListCredential)).rejects.toThrow(TypeError);
+    await expect(manager.renewStatusList(entry.statusListCredential)).rejects.toThrow(
+      new TypeError('[kya-os] renewStatusList gives a list a new end, and this manager gives its lists none: set validityPeriodMs'),
+    );
     expect(await storage.getStatusList(entry.statusListCredential)).toEqual(before);
   });
 

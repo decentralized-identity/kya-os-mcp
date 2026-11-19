@@ -13,7 +13,7 @@
  * that does not is safe only with one manager writing to it.
  */
 
-import type { StatusList2021Credential } from '../types/protocol.js';
+import type { StatusList2021Credential, StatusListCredential } from '../types/protocol.js';
 
 /**
  * Where a `StatusList2021Manager` keeps its status lists.
@@ -21,10 +21,17 @@ import type { StatusList2021Credential } from '../types/protocol.js';
  * A store with only these methods cannot tell which list a writer read, so the last write wins:
  * it is safe with one manager writing to it. Where more than one manager writes, implement
  * {@link ConditionalStatusListStorageProvider} too.
+ *
+ * `L` is the type of the lists the store holds, here and on every other store contract. It
+ * defaults to `StatusList2021Credential`, the lists a manager writes unless its `format` says
+ * otherwise, so a store written before the manager had a `format` compiles as it is. Type a store
+ * that holds the lists of a manager built with `format: 'BitstringStatusList'` with
+ * `BitstringStatusListCredential`, and one that holds lists of both formats with
+ * `StatusListCredential`. A manager takes a store typed for either format or for both.
  */
-export interface StatusListStorageProvider {
-  getStatusList(statusListId: string): Promise<StatusList2021Credential | null>;
-  setStatusList(statusListId: string, credential: StatusList2021Credential): Promise<void>;
+export interface StatusListStorageProvider<L extends StatusListCredential = StatusList2021Credential> {
+  getStatusList(statusListId: string): Promise<L | null>;
+  setStatusList(statusListId: string, credential: L): Promise<void>;
   /**
    * The next unused index of the list. Each index MUST be handed out once across every manager of
    * the store, or two credentials share one bit.
@@ -33,17 +40,15 @@ export interface StatusListStorageProvider {
 }
 
 /** Optional immutable-history extension used by audit replay/export adapters. */
-export interface HistoricalStatusListStorageProvider extends StatusListStorageProvider {
-  getStatusListVersion(
-    statusListId: string,
-    version: number,
-  ): Promise<StatusList2021Credential | null>;
+export interface HistoricalStatusListStorageProvider<L extends StatusListCredential = StatusList2021Credential>
+  extends StatusListStorageProvider<L> {
+  getStatusListVersion(statusListId: string, version: number): Promise<L | null>;
   getStatusListVersionCount(statusListId: string): Promise<number>;
 }
 
 /** A status list as a conditional store holds it, with the etag of the write that stored it. */
-export interface StoredStatusList {
-  readonly credential: StatusList2021Credential;
+export interface StoredStatusList<L extends StatusListCredential = StatusList2021Credential> {
+  readonly credential: L;
   /**
    * Names the write that stored `credential`: a string that is not empty, and that no other write
    * of this `statusListId` has had or will have, even after the list is deleted and stored again.
@@ -72,14 +77,15 @@ export interface StoredStatusList {
  * so use such a store with one manager only. The first write a manager makes to one warns once per
  * process.
  */
-export interface ConditionalStatusListStorageProvider extends StatusListStorageProvider {
+export interface ConditionalStatusListStorageProvider<L extends StatusListCredential = StatusList2021Credential>
+  extends StatusListStorageProvider<L> {
   /**
    * The list stored under `statusListId` with its etag, or null when none is stored. It MUST read
    * where `setStatusListIfMatch` checks the etag, such as a database's primary rather than a
    * replica that may lag it, or a writer keeps reading an old list and every write it makes is
    * refused.
    */
-  getStatusListWithEtag(statusListId: string): Promise<StoredStatusList | null>;
+  getStatusListWithEtag(statusListId: string): Promise<StoredStatusList<L> | null>;
 
   /**
    * Store `credential` under `statusListId` only while the stored list is the one `etag` names,
@@ -91,17 +97,13 @@ export interface ConditionalStatusListStorageProvider extends StatusListStorageP
    * `If-None-Match: *` for null) make them. A write through `setStatusList` MUST change the etag
    * too.
    */
-  setStatusListIfMatch(
-    statusListId: string,
-    credential: StatusList2021Credential,
-    etag: string | null,
-  ): Promise<boolean>;
+  setStatusListIfMatch(statusListId: string, credential: L, etag: string | null): Promise<boolean>;
 }
 
 /** Whether `storage` implements the conditional write: both of its methods. */
-export function supportsConditionalWrite(
-  storage: StatusListStorageProvider,
-): storage is ConditionalStatusListStorageProvider {
+export function supportsConditionalWrite<L extends StatusListCredential>(
+  storage: StatusListStorageProvider<L>,
+): storage is ConditionalStatusListStorageProvider<L> {
   return 'getStatusListWithEtag' in storage &&
     typeof storage.getStatusListWithEtag === 'function' &&
     'setStatusListIfMatch' in storage &&

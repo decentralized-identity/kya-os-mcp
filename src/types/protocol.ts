@@ -29,6 +29,8 @@ export type {
   DelegationCredentialSubject,
   DelegationCredential,
   StatusList2021Credential,
+  BitstringStatusListCredential,
+  StatusListCredential,
 } from './delegation-credential.js';
 
 // ============================================================================

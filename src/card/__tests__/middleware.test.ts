@@ -8,6 +8,7 @@ import {
   toServerCardMeta,
   withKyaOsCard,
   type CardProofMeta,
+  type MinProofLevel,
   type ProofSigner,
 } from '../index.js';
 import { AUD, NONCE, PROOF_KEY, REQ, clock, deps, keypair } from './proof-helpers.js';
@@ -149,6 +150,28 @@ describe('requireProof — the per-request holder-of-key guard', () => {
     const guard = requireProof(deps(publicJwk, { tokenCnfJkt: signer.jkt }), { minLevel: 'L3' });
     const result = await guard(REQ, await mintMeta(signer));
     expect(result.ok).toBe(true);
+  });
+
+  it.each<[string, unknown, string]>([
+    ['a level in the wrong case', 'l3', 'a value "l3"'],
+    ['a level with a trailing space', 'L3 ', 'a value "L3 "'],
+    ['a level the guard does not know', 'L4', 'a value "L4"'],
+    ['a number', 3, '3'],
+    ['an inherited member of an object', 'constructor', 'a value "constructor"'],
+    ['the empty string', '', 'a value ""'],
+    ['null', null, 'a value of type null'],
+  ])('refuses %s as minLevel where the guard is built, naming the levels it knows', (_name, minLevel, named) => {
+    expect(() => requireProof(deps({ kty: 'OKP', crv: 'Ed25519', x: 'x' }), { minLevel: minLevel as MinProofLevel })).toThrow(
+      new TypeError(`[kya-os] minLevel must be "L3-minus" or "L3" (got ${named})`),
+    );
+  });
+
+  it('builds a guard with minLevel L3-minus or left out, which passes an L3-minus proof', async () => {
+    const { signer, publicJwk } = await keypair();
+    for (const options of [{ minLevel: 'L3-minus' as const }, { minLevel: undefined }, {}]) {
+      const result = await requireProof(deps(publicJwk), options)(REQ, await mintMeta(signer));
+      expect(result).toMatchObject({ ok: true, level: 'L3-minus' });
+    }
   });
 
   it('is fail-closed when the key resolver throws (proof_invalid, never escapes)', async () => {

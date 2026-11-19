@@ -21,6 +21,7 @@
 
 import type { ToolRequest } from '../proof/generator.js';
 import { dependencyTimeout } from '../utils/deadline.js';
+import { describeOptionValue } from '../utils/describe-value.js';
 import { isRecord } from '../utils/guards.js';
 import {
   toDidServiceEntry,
@@ -151,7 +152,10 @@ export type ProofGuard = (req: ToolRequest, meta: unknown) => Promise<ProofGateR
 
 /** Options for {@link requireProof}. */
 export interface RequireProofOptions {
-  /** Minimum assurance a valid proof must carry (`L3` requires the AS `cnf` fusion). */
+  /**
+   * Minimum assurance a valid proof must carry (`L3` requires the AS `cnf` fusion): `L3-minus` or
+   * `L3`, written exactly so. Any other value throws a `TypeError` where the guard is built.
+   */
   minLevel?: MinProofLevel;
 }
 
@@ -159,11 +163,24 @@ export interface RequireProofOptions {
 const ASSURANCE_RANK: Record<ProofAssurance, number> = { 'L3-minus': 1, L3: 2 };
 
 /**
+ * `minLevel` as the gate reads it, `undefined` when it is left out. A level the gate does not rank
+ * would compare as no floor at all, so a value that is not one of its own levels, written exactly,
+ * throws a `TypeError` naming the option, and the guard is never built with it.
+ */
+function minLevelOption(minLevel: unknown): MinProofLevel | undefined {
+  if (minLevel === undefined) return undefined;
+  if (typeof minLevel === 'string' && Object.hasOwn(ASSURANCE_RANK, minLevel)) return minLevel as MinProofLevel;
+  const levels = Object.keys(ASSURANCE_RANK).map((level) => `"${level}"`).join(' or ');
+  throw new TypeError(`[kya-os] minLevel must be ${levels} (got ${describeOptionValue(minLevel)})`);
+}
+
+/**
  * Build a per-request holder-of-key guard from the pre-bound proof-verification seams. The returned
  * guard reads `_meta['org.kya-os/request-proof']` (legacy `org.kya-os/proof.v1` accepted), RECOMPUTES it against the request via {@link verifyCardProof},
  * enforces `opts.minLevel`, and returns `{ ok: true, did, level }` or a 401-shaped rejection. Fail-closed
  * throughout: a missing proof, a broken binding, a throwing verifier, or an assurance below `minLevel`
- * all reject.
+ * all reject. A `minLevel` other than `L3-minus` or `L3`, or a `dependencyTimeoutMs` it cannot wait,
+ * throws a `TypeError` here, so no guard runs with a floor it does not hold.
  *
  * REPLAY DEFENSE (do NOT skip): `deps.consumeNonceIfFresh` MUST be an ATOMIC test-AND-set — it
  * records the nonce and returns `false` on a replay (SPEC §12.2). A pure read that never persists
@@ -172,8 +189,9 @@ const ASSURANCE_RANK: Record<ProofAssurance, number> = { 'L3-minus': 1, L3: 2 };
  * request FAILS CLOSED (`nonce_seam_missing`).
  */
 export function requireProof(deps: VerifyProofDeps, opts: RequireProofOptions = {}): ProofGuard {
-  // A mistyped deadline fails when the guard is built, not as a proof that did not verify.
+  // A mistyped deadline or level fails when the guard is built, not as a proof that did or did not verify.
   dependencyTimeout(deps.dependencyTimeoutMs);
+  const minLevel = minLevelOption(opts.minLevel);
   return async (req, meta) => {
     const proof = readCardProof(meta);
     if (proof === undefined) {
@@ -184,8 +202,8 @@ export function requireProof(deps: VerifyProofDeps, opts: RequireProofOptions = 
       return fail('proof_invalid', 'holder-of-key proof did not verify', result.reasons);
     }
     const level = result.level;
-    if (opts.minLevel && ASSURANCE_RANK[level] < ASSURANCE_RANK[opts.minLevel]) {
-      const message = `proof assurance ${level} is below the required ${opts.minLevel}`;
+    if (minLevel !== undefined && ASSURANCE_RANK[level] < ASSURANCE_RANK[minLevel]) {
+      const message = `proof assurance ${level} is below the required ${minLevel}`;
       return fail('proof_level_insufficient', message, ['proof_level_insufficient']);
     }
     return {

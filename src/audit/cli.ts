@@ -130,11 +130,13 @@ export async function runAuditCli(
     const hasher = new CryptoProviderAuditHasher(new NodeCryptoProvider());
     // The present time, so a policy's constraints that need it (keys that must
     // still be valid, how fresh an observation must be) are decided here and
-    // not left `indeterminate` behind an exit code of 0.
+    // not left `indeterminate` behind an exit code of 0. It is read once, so
+    // every check of the run is made at the same instant.
+    const verifiedAt = Date.now();
     const report = await verifyAuditBundle(bundle, policy, {
       hasher,
       signatures,
-      artifacts: new AuditArtifactVerifier({ hasher, signatures, verifiedAt: () => Date.now() }),
+      artifacts: new AuditArtifactVerifier({ hasher, signatures, verifiedAt: () => verifiedAt }),
     });
     io.write(`${JSON.stringify(report, null, 2)}\n`);
     const dimensions = Object.values(report).filter((value): value is {

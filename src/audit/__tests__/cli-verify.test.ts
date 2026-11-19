@@ -1,5 +1,5 @@
 import { exportJWK, generateKeyPair } from 'jose';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { NodeCryptoProvider } from '../../providers/node-crypto.js';
 import { runAuditCli, type AuditCliIo } from '../cli.js';
 import { CompactJwsAuditSigner, CryptoProviderAuditHasher, hashAuditValue } from '../crypto.js';
@@ -91,6 +91,21 @@ describe('kya-audit verify: the policy constraints that need the present time', 
     const { exitCode, output } = await verify(await signedBundle(SIGNED_AT + DAY, 'both'));
     expect((JSON.parse(output) as Report)['currentAuthorization']!.reasonCodes).toContain('AUDIT_KEY_NOT_CURRENT');
     expect(exitCode).toBe(1);
+  });
+
+  it('reads the clock once per run, so every check is made at one instant', async () => {
+    const validUntil = SIGNED_AT + DAY;
+    const files = await signedBundle(validUntil, 'current');
+    // The key is valid at the first read of the clock and has ended at every later one.
+    let reads = 0;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => (reads++ === 0 ? validUntil - 1 : validUntil + 1));
+    try {
+      const { exitCode, output } = await verify(files);
+      expect((JSON.parse(output) as Report)['currentAuthorization']!.reasonCodes).not.toContain('AUDIT_KEY_NOT_CURRENT');
+      expect(exitCode).toBe(0);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it('exits 0 when the signing key is still valid now', async () => {

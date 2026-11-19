@@ -18,25 +18,38 @@ import { acceptEntrySize, acceptStatusPurpose } from '../utils/statuslist-accept
 import { assertStatusListValidity } from '../utils/statuslist-validity.js';
 import { clockSkewOption } from '../utils/validity-window.js';
 import { RefusalError } from '../utils/refusal.js';
+import { KeyedLock } from '../utils/keyed-lock.js';
+import type { StatusListStorageProvider } from './statuslist-storage.js';
+import {
+  commitStatusListChange,
+  writeRetryOf,
+  type StatusListChange,
+  type StatusListWriteRetry,
+  type StatusListWriteRetryOptions,
+} from './statuslist-write.js';
 
-export interface StatusListStorageProvider {
-  getStatusList(statusListId: string): Promise<StatusList2021Credential | null>;
-  setStatusList(statusListId: string, credential: StatusList2021Credential): Promise<void>;
-  allocateIndex(statusListId: string): Promise<number>;
-}
-
-/** Optional immutable-history extension used by audit replay/export adapters. */
-export interface HistoricalStatusListStorageProvider extends StatusListStorageProvider {
-  getStatusListVersion(
-    statusListId: string,
-    version: number,
-  ): Promise<StatusList2021Credential | null>;
-  getStatusListVersionCount(statusListId: string): Promise<number>;
-}
+export type {
+  ConditionalStatusListStorageProvider,
+  HistoricalStatusListStorageProvider,
+  StatusListStorageProvider,
+  StoredStatusList,
+} from './statuslist-storage.js';
+export {
+  StatusListWriteConflictError,
+  isStatusListWriteConflict,
+  type StatusListWriteRetryOptions,
+} from './statuslist-write.js';
 
 export interface StatusListIdentityProvider {
   getDid(): string;
   getKeyId(): string;
+}
+
+/** The options of a {@link StatusList2021Manager}, and how it retries a refused write. */
+export interface StatusList2021ManagerOptions extends StatusListWriteRetryOptions {
+  statusListBaseUrl?: string;
+  defaultListSize?: number;
+  maxClockSkewMs?: number;
 }
 
 export class StatusList2021Manager {
@@ -44,14 +57,27 @@ export class StatusList2021Manager {
   private defaultListSize: number;
   /** The clock tolerance each bound of a list's validity window is held with, in milliseconds. */
   private skewMs: number;
+  /** How a write a conditional store refused is tried again. */
+  private retry: StatusListWriteRetry;
   /**
-   * Per-status-list mutex. Every read-modify-write of a list (status updates
-   * and first creation) runs inside it, so no writer can overwrite another's
-   * bit with a stale copy.
+   * Per-status-list mutex for this manager's own writes. Every read-modify-write
+   * of a list this manager makes (status updates and first creation) runs inside
+   * it, so none of them overwrites another of them with a stale copy. It cannot
+   * see another manager's writes: those are kept only by a store with the
+   * conditional write, as the constructor's `storage` says.
    */
-  private updateLocks = new Map<string, Promise<void>>();
+  private updateLocks = new KeyedLock();
 
   /**
+   * @param storage - Where the manager keeps its lists. More than one manager
+   *   may write to one store, as replicas, serverless instances, or a manager
+   *   built per request do, only when the store implements
+   *   `ConditionalStatusListStorageProvider`, as `MemoryStatusListStorage`
+   *   does: a write another writer got in before is then made again over the
+   *   list now stored, after a short random wait, up to
+   *   `options.maxWriteConflicts` times. Over any other store the last write
+   *   wins, so write through one manager only; the first write a manager
+   *   makes to one warns once per process.
    * @param compressor - GZIP-compresses the bitstring of every list this
    *   manager publishes. Defaults to `statusListGzipCodec` (through
    *   {@link BitstringManager}). Status-list readers accept only GZIP, so a
@@ -65,6 +91,14 @@ export class StatusList2021Manager {
    *   bound of a kept list's validity window is held with when the list is
    *   read: a number from 0 to 600,000. Default 120,000, the proof verifier's
    *   default skew. Any other value throws a `TypeError` naming the option.
+   * @param options.maxWriteConflicts - How many times a conditional store may
+   *   refuse the write of one change before it throws
+   *   `StatusListWriteConflictError`: a whole number, 0 or more. Default 32.
+   *   Between tries the manager waits a random part of a delay that doubles
+   *   from 2 ms, under a ceiling of 100 ms or, where it is longer, the length
+   *   of the try just refused doubled every four refusals, and never waits
+   *   more than 10 s at once. Any other value throws a `TypeError` naming the
+   *   option.
    */
   constructor(
     private storage: StatusListStorageProvider,
@@ -72,17 +106,22 @@ export class StatusList2021Manager {
     private signingFunction: VCSigningFunction,
     private compressor?: CompressionFunction,
     private decompressor?: DecompressionFunction,
-    options?: {
-      statusListBaseUrl?: string;
-      defaultListSize?: number;
-      maxClockSkewMs?: number;
-    }
+    options?: StatusList2021ManagerOptions
   ) {
     this.statusListBaseUrl = options?.statusListBaseUrl || 'https://status.example.com';
     this.defaultListSize = options?.defaultListSize || 131072;
     this.skewMs = clockSkewOption(options?.maxClockSkewMs);
+    this.retry = writeRetryOf(options);
   }
 
+  /**
+   * Allocate the next entry of the `purpose` list, creating the list on first
+   * use.
+   *
+   * @throws {Error} when the index the store allocated is outside the list.
+   * @throws {StatusListWriteConflictError} when the list had to be created and
+   *   a conditional store refused every write of it; nothing was stored.
+   */
   async allocateStatusEntry(purpose: 'revocation' | 'suspension'): Promise<CredentialStatus> {
     const statusListId = `${this.statusListBaseUrl}/${purpose}/v1`;
 
@@ -108,35 +147,39 @@ export class StatusList2021Manager {
     return credentialStatus;
   }
 
+  /**
+   * Set the bit of `credentialStatus` when `revoked` is true, or clear it, then
+   * sign the list again and store it.
+   *
+   * @throws {StatusListWriteConflictError} when a conditional store refused
+   *   every write of the list, because another writer stored it first each
+   *   time; nothing was stored, so make the change again.
+   */
   async updateStatus(credentialStatus: CredentialStatus, revoked: boolean): Promise<void> {
     assertOneBitEntry(credentialStatus);
-    await this.withListLock(credentialStatus.statusListCredential, () =>
-      this.doUpdateStatus(credentialStatus, revoked)
+    const { statusListCredential } = credentialStatus;
+    await this.updateLocks.run(statusListCredential, () =>
+      commitStatusListChange(
+        this.storage,
+        statusListCredential,
+        (statusList) => this.withStatusBit(statusList, credentialStatus, revoked),
+        this.retry
+      )
     );
   }
 
   /**
-   * Run `task` once every earlier task on the same status list has settled,
-   * serializing read-modify-write per list. The task's own error reaches the
-   * caller; the chain stores a non-rejecting copy so later tasks still run.
+   * `statusList` with the bit of `credentialStatus` set to `revoked`, signed
+   * again. Applied to each list the store holds until one is written, so only
+   * this change is added to whatever other writers stored.
    */
-  private withListLock<T>(statusListId: string, task: () => Promise<T>): Promise<T> {
-    const previous = this.updateLocks.get(statusListId) ?? Promise.resolve();
-    const operation = previous.then(task);
-    this.updateLocks.set(
-      statusListId,
-      operation.then(
-        () => undefined,
-        () => undefined
-      )
-    );
-    return operation;
-  }
-
-  private async doUpdateStatus(credentialStatus: CredentialStatus, revoked: boolean): Promise<void> {
+  private async withStatusBit(
+    statusList: StatusList2021Credential | null,
+    credentialStatus: CredentialStatus,
+    revoked: boolean
+  ): Promise<StatusListChange<void>> {
     const { statusListCredential, statusListIndex } = credentialStatus;
 
-    const statusList = await this.storage.getStatusList(statusListCredential);
     if (!statusList) {
       throw new Error(`Status list not found: ${statusListCredential}`);
     }
@@ -164,7 +207,12 @@ export class StatusList2021Manager {
       },
     };
 
-    const unsignedCredential = { ...updatedCredential };
+    return { write: await this.signed(updatedCredential), result: undefined };
+  }
+
+  /** `credential` with a new proof by this manager's identity over all of it but its old proof. */
+  private async signed(credential: StatusList2021Credential): Promise<StatusList2021Credential> {
+    const unsignedCredential = { ...credential };
     delete (unsignedCredential as Record<string, unknown>)['proof'];
 
     const canonicalVC = canonicalizeJSON(unsignedCredential);
@@ -174,12 +222,7 @@ export class StatusList2021Manager {
       this.identity.getKeyId()
     );
 
-    const signedCredential: StatusList2021Credential = {
-      ...updatedCredential,
-      proof,
-    };
-
-    await this.storage.setStatusList(statusListCredential, signedCredential);
+    return { ...credential, proof };
   }
 
   async checkStatus(credentialStatus: CredentialStatus): Promise<boolean> {
@@ -235,31 +278,39 @@ export class StatusList2021Manager {
 
   /**
    * Create the status list on first use and return its capacity in entries.
-   * Runs inside the list's lock and re-reads the list there: a creation that
-   * raced past another must not replace a list that has since recorded a
-   * revocation with a fresh, empty one.
+   * Runs inside the list's lock and re-reads the list there, and over a
+   * conditional store creates it only where none is stored: a creation that
+   * raced past another, this manager's or another manager's, must not replace
+   * a list that has since recorded a revocation with a fresh, empty one. Over
+   * any other store that holds for this manager's own creations only.
    */
   private ensureStatusListExists(
     statusListId: string,
     purpose: 'revocation' | 'suspension'
   ): Promise<number> {
-    return this.withListLock(statusListId, () =>
-      this.createStatusListIfMissing(statusListId, purpose)
+    return this.updateLocks.run(statusListId, () =>
+      commitStatusListChange(
+        this.storage,
+        statusListId,
+        (existing) => this.createdIfMissing(existing, statusListId, purpose),
+        this.retry
+      )
     );
   }
 
-  private async createStatusListIfMissing(
+  /** No write and the capacity of `existing` when there is one, else a fresh signed list and its capacity. */
+  private async createdIfMissing(
+    existing: StatusList2021Credential | null,
     statusListId: string,
     purpose: 'revocation' | 'suspension'
-  ): Promise<number> {
-    const existing = await this.storage.getStatusList(statusListId);
+  ): Promise<StatusListChange<number>> {
     if (existing) {
       const decoded = await BitstringManager.decode(
         existing.credentialSubject.encodedList,
         this.compressor,
         this.decompressor
       );
-      return decoded.getSize();
+      return { result: decoded.getSize() };
     }
 
     const manager = new BitstringManager(
@@ -286,21 +337,11 @@ export class StatusList2021Manager {
       },
     };
 
-    const canonicalVC = canonicalizeJSON(unsignedCredential);
-    const proof = await this.signingFunction(
-      canonicalVC,
-      this.identity.getDid(),
-      this.identity.getKeyId()
-    );
-
-    const signedCredential: StatusList2021Credential = {
-      ...unsignedCredential,
-      proof,
+    return {
+      write: await this.signed(unsignedCredential),
+      // Capacity as a reader decodes it: whole bytes of the encoded bitstring.
+      result: manager.getRawBits().length * 8,
     };
-
-    await this.storage.setStatusList(statusListId, signedCredential);
-    // Capacity as a reader decodes it: whole bytes of the encoded bitstring.
-    return manager.getRawBits().length * 8;
   }
 
   getStatusListBaseUrl(): string {
@@ -328,7 +369,10 @@ function assertOneBitEntry(credentialStatus: CredentialStatus): void {
 /**
  * Build a {@link StatusList2021Manager}. `compressor` and `decompressor`
  * default to `statusListGzipCodec`; when supplied they MUST GZIP and
- * inflate GZIP, as the manager's constructor documents.
+ * inflate GZIP, as the manager's constructor documents. More than one manager
+ * may write to `storage` only when it implements
+ * `ConditionalStatusListStorageProvider`; over any other store, write
+ * through one manager only, and its first write warns once per process.
  */
 export function createStatusListManager(
   storage: StatusListStorageProvider,
@@ -336,11 +380,7 @@ export function createStatusListManager(
   signingFunction: VCSigningFunction,
   compressor?: CompressionFunction,
   decompressor?: DecompressionFunction,
-  options?: {
-    statusListBaseUrl?: string;
-    defaultListSize?: number;
-    maxClockSkewMs?: number;
-  }
+  options?: StatusList2021ManagerOptions
 ): StatusList2021Manager {
   return new StatusList2021Manager(
     storage,

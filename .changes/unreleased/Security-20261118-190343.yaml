@@ -1,0 +1,21 @@
+kind: Security
+body: |-
+    **Two status-list managers over one store no longer lose each other's
+    revocations.** `StatusList2021Manager` serialised its read, change, sign
+    and write of a list within one manager only, and a store could not tell
+    which list a writer had read, so two managers over one store, such as
+    two replicas or a manager built per request, could each revoke a
+    credential and the second write dropped the first's bit from the signed
+    list: a verifier then accepted the revoked credential. A store may now
+    implement the optional `ConditionalStatusListStorageProvider`, a write
+    that names the list it was made over, and the manager then makes a
+    refused write again over the list now stored, after a random wait of at
+    most 10 s that grows with each refusal and with how long a try takes,
+    up to the new `maxWriteConflicts` option, 32 by default, before it throws
+    `StatusListWriteConflictError`, which `isStatusListWriteConflict`
+    knows, and stores nothing. `MemoryStatusListStorage` implements it,
+    for its subclasses too. A store without it works as before, safely
+    with one manager only, and the first write a manager makes to one
+    warns once per process. UPGRADING.md, "Status-list stores take a
+    conditional write", has the detail.
+time: 2026-11-18T19:03:43.000000-06:00

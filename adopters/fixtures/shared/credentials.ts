@@ -44,7 +44,7 @@ export interface DelegationTerms {
 }
 
 /** Signs the canonical credential with the party's key, as an `Ed25519Signature2020` proof under `assertionMethod`. */
-function signingFunctionOf(party: Party): VCSigningFunction {
+export function signingFunctionOf(party: Party): VCSigningFunction {
   return async (canonicalVC, _issuerDid, kid) => {
     const signature = await crypto.sign(new TextEncoder().encode(canonicalVC), party.privateKey);
     return {

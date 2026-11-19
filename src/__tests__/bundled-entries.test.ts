@@ -14,8 +14,8 @@
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
-import { afterAll, describe, expect, it } from 'vitest';
-import { BUILT, consumerDir, ENTRIES, PACKAGE } from './bundling.js';
+import { describe, expect, it } from 'vitest';
+import { BUILT, ENTRIES, PACKAGE, useConsumerDir } from './bundling.js';
 
 type Snapshot = Record<string, { type: string; value?: unknown }>;
 
@@ -40,8 +40,7 @@ function valueExports(module: Record<string, unknown>): string[] {
 describe.skipIf(!BUILT)('public entries keep their values when bundled with esbuild', () => {
   // A consumer resolves the package through node_modules, so esbuild reads the
   // real package.json (exports map and sideEffects).
-  const { dir: workDir, remove } = consumerDir('kya-os-bundle-');
-  afterAll(remove);
+  const consumerDir = useConsumerDir('kya-os-bundle-');
 
   it('covers every code entry in the exports map', () => {
     const specifiers = ENTRIES.map(({ specifier }) => specifier);
@@ -61,6 +60,7 @@ describe.skipIf(!BUILT)('public entries keep their values when bundled with esbu
     const lazyEntry = entry === PACKAGE.name ? `${PACKAGE.name}/card` : PACKAGE.name;
     const imports = names.map((name) => `${name} as v_${name}`).join(', ');
     const values = names.map((name) => `${JSON.stringify(name)}: v_${name}`).join(', ');
+    const workDir = consumerDir();
     const outfile = join(workDir, `${entry.replace(/\W/g, '_')}.mjs`);
     await build({
       stdin: {

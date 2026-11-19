@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync }
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { afterAll, beforeAll } from 'vitest';
 
 export const PACKAGE_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -31,12 +32,25 @@ export const ENTRIES = Object.entries(PACKAGE.exports)
   }));
 
 /**
- * A new directory a consumer bundles from, with the package linked into its `node_modules`, and how
- * to remove it. A junction needs no privileges on Windows and is a plain symlink elsewhere.
+ * The directory a suite's consumer bundles from, with the package linked into its `node_modules`.
+ * Call this in the suite's body, and the function it returns inside a test. The directory is made
+ * before the suite's first test and removed after its last, so a suite that is skipped, whose body
+ * is still read for its tests, makes none. A junction needs no privileges on Windows and is a plain
+ * symlink elsewhere.
  */
-export function consumerDir(prefix: string): { readonly dir: string; readonly remove: () => void } {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
-  mkdirSync(join(dir, 'node_modules', '@kya-os'), { recursive: true });
-  symlinkSync(PACKAGE_ROOT, join(dir, 'node_modules', PACKAGE.name), 'junction');
-  return { dir, remove: () => rmSync(dir, { recursive: true, force: true }) };
+export function useConsumerDir(prefix: string): () => string {
+  let dir: string | undefined;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), prefix));
+    mkdirSync(join(dir, 'node_modules', '@kya-os'), { recursive: true });
+    symlinkSync(PACKAGE_ROOT, join(dir, 'node_modules', PACKAGE.name), 'junction');
+  });
+  afterAll(() => {
+    if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
+    dir = undefined;
+  });
+  return () => {
+    if (dir === undefined) throw new Error('a consumer directory exists only while its suite runs');
+    return dir;
+  };
 }

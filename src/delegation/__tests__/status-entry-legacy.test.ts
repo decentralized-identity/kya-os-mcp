@@ -72,6 +72,31 @@ describe('a graph built without statusEntryOwners', () => {
     });
   }
 
+  it('registers a delegation with one entry while a registration with another entry waits on the store', async () => {
+    const op = operator();
+    await op.issue('root');
+    const slowEntry = await op.allocate('slow');
+    const quickEntry = await op.allocate('quick');
+    const lookup = op.memory.getNodeIdsByStatusEntry.bind(op.memory);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let calls = 0;
+    vi.spyOn(op.memory, 'getNodeIdsByStatusEntry').mockImplementation(async (key) => {
+      if (++calls === 1) await held;
+      return lookup(key);
+    });
+
+    const slow = op.carrying('slow', 'root', slowEntry);
+    const quick = op.carrying('quick', 'root', quickEntry).then(() => 'registered');
+    const waited = new Promise((resolve) => setTimeout(() => resolve('waited'), 100));
+
+    expect(await Promise.race([quick, waited])).toBe('registered');
+    release();
+    await slow;
+  });
+
   it("sets the victim's own entry when the victim is revoked, and reports the squatter that holds it too", async () => {
     const op = operator();
     await op.issue('root');

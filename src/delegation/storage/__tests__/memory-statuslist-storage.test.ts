@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { MemoryStatusListStorage } from "../memory-statuslist-storage.js";
 import { OwnMapStore } from "../../__tests__/helpers/status-list-writers.js";
 import type { StatusList2021Credential } from "../../../types/protocol.js";
+import type { StatusEntryOwnerStorageProvider } from "../../status-entry-owner.js";
+import type { ConditionalStatusListStorageProvider } from "../../statuslist-storage.js";
 
 describe("MemoryStatusListStorage", () => {
   let storage: MemoryStatusListStorage;
@@ -384,6 +386,26 @@ describe("MemoryStatusListStorage", () => {
 
       expect(await storage.getEntryOwner(revocation, 0)).toBeNull();
     });
+
+    for (const [name, make] of [
+      ["MemoryStatusListStorage", () => new MemoryStatusListStorage()],
+      ["a subclass that keeps its lists elsewhere", () => new OwnMapStore()],
+    ] as const) {
+      it(`keep apart from the lists, so no list write changes a record nor a record write an etag (${name})`, async () => {
+        const store: ConditionalStatusListStorageProvider & StatusEntryOwnerStorageProvider = make();
+        const statusListId = "https://example.com/status/revocation/v1";
+        await store.setEntryOwner(statusListId, 0, { delegationId: "delegation-1", retired: false });
+        await store.setStatusList(statusListId, mockStatusListCredential);
+        const read = await store.getStatusListWithEtag(statusListId);
+
+        // A retirement lands between a writer's read of the list and its conditional write.
+        await store.setEntryOwner(statusListId, 0, { delegationId: "delegation-1", retired: true });
+        expect(await store.setStatusListIfMatch(statusListId, mockStatusListCredential, read!.etag)).toBe(true);
+        await store.setStatusList(statusListId, mockStatusListCredential);
+
+        expect(await store.getEntryOwner(statusListId, 0)).toEqual({ delegationId: "delegation-1", retired: true });
+      });
+    }
   });
 
   describe("getAllStatusListIds", () => {

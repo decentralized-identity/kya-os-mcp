@@ -7,7 +7,8 @@ body: |-
     `statusEntryOwners` any entry not allocated to the delegation.
     `revokeDelegation` and `restoreDelegation` throw a
     `StatusEntryUnchangedError`, not the status list manager's error, for an
-    entry left unchanged, and a revocation now marks the whole subtree first.
+    entry left unchanged, `StatusListWriteConflictError` among them, and a
+    revocation now marks the whole subtree first.
     A graph built without `statusEntryOwners` logs a warning once.
     UPGRADING.md, "A delegation's status entry is the one allocated for it",
     has the steps.

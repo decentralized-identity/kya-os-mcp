@@ -14,7 +14,7 @@
 import type { CredentialStatus } from '../types/protocol.js';
 import { describeOptionValue } from '../utils/describe-value.js';
 import { parseStatusListIndex } from '../utils/statuslist-bits.js';
-import type { StatusListStorageProvider } from './statuslist-manager.js';
+import type { StatusListStorageProvider } from './statuslist-storage.js';
 
 /** Options of `StatusList2021Manager.allocateStatusEntry`. */
 export interface StatusEntryAllocationOptions {
@@ -56,7 +56,9 @@ export interface StatusEntryOwners {
  * Optional, stronger storage contract: a provider that also records whose each entry is.
  * `allocateStatusEntry(purpose, { delegationId })` needs it, and throws for a provider without it
  * rather than allocate an entry whose owner it cannot keep. Key the records by the list id exactly
- * as given.
+ * as given, and keep them apart from the lists: no write of a list, through `setStatusList` or
+ * `setStatusListIfMatch`, may change a record. A list a writer read before an entry was retired,
+ * and wrote back after, would otherwise bring the entry back for registration.
  */
 export interface StatusEntryOwnerStorageProvider extends StatusListStorageProvider {
   /**

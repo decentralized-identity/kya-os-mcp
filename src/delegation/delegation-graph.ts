@@ -17,6 +17,7 @@ import {
   type StatusEntrySources,
 } from './status-entry-claim.js';
 import { readsStatusEntryOwners, type StatusEntryOwners } from './status-entry-owner.js';
+import { KeyedLock } from '../utils/keyed-lock.js';
 
 export { statusEntryKey } from './delegation-status-entry.js';
 export type { StatusEntryClaim } from './status-entry-claim.js';
@@ -125,8 +126,11 @@ function supportsStatusEntryLookup(
 
 export class DelegationGraphManager {
   private readonly entrySources: StatusEntrySources;
-  /** The last registration with a status list entry, which the next one waits for. */
-  private registrations: Promise<void> = Promise.resolve();
+  /**
+   * Runs the registrations that carry one status list entry one at a time, by the entry's key, so
+   * no two check and store that entry at once. Registrations with other entries run alongside.
+   */
+  private readonly registrations = new KeyedLock();
 
   /**
    * @param options.statusEntryOwners - The `StatusList2021Manager` that
@@ -188,9 +192,10 @@ export class DelegationGraphManager {
    * allocated and not yet registered, nor the entry of a delegation since
    * removed with `removeDelegation`: wire `statusEntryOwners` to refuse both.
    *
-   * Registrations with an entry run one at a time within this manager, so,
-   * without owners, two that carry one entry are never both registered through
-   * one manager; through two managers over one storage provider, they can be.
+   * Registrations that carry one entry run one at a time within this manager,
+   * and those with other entries alongside them, so, without owners, two that
+   * carry one entry are never both registered through one manager; through two
+   * managers over one storage provider, they can be.
    * An index no status list can hold is refused in both modes. A graph built
    * without owners does not know a list's size: it registers an index past the
    * end of one, and cascading revocation reports that entry as left unchanged.
@@ -243,7 +248,7 @@ export class DelegationGraphManager {
     if (credentialStatus === undefined) {
       await this.storeNode(node);
     } else {
-      await this.oneAtATime(async () => {
+      await this.registrations.run(entryKey(credentialStatus), async () => {
         await assertRegistrable(node.id, credentialStatus, this.entrySources);
         await this.storeNode(node);
       });
@@ -257,20 +262,6 @@ export class DelegationGraphManager {
    */
   get statusEntryOwners(): StatusEntryOwners | undefined {
     return this.entrySources.owners;
-  }
-
-  /**
-   * Run `task` once the registration before it has settled, so no two check
-   * and store an entry at once. The task's own error reaches its caller; the
-   * chain keeps only that it settled, so the next task still runs.
-   */
-  private oneAtATime(task: () => Promise<void>): Promise<void> {
-    const run = this.registrations.then(task);
-    this.registrations = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
   }
 
   /** Store a new node and link it under its parent: atomically when the provider can. */

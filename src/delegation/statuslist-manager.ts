@@ -132,6 +132,10 @@ export class StatusList2021Manager implements StatusEntryOwners {
    * storage provider that implements `StatusEntryOwnerStorageProvider`, and throws a `TypeError`
    * before taking an index for one that does not.
    *
+   * The owner is recorded last, once the list holds the entry's index: an allocation that throws
+   * records none, and its index is registered for no delegation by a graph that reads owners.
+   * Allocate again.
+   *
    * @throws {Error} when the index the store allocated is outside the list.
    * @throws {StatusListWriteConflictError} when the list had to be created and
    *   a conditional store refused every write of it; nothing was stored.
@@ -143,6 +147,13 @@ export class StatusList2021Manager implements StatusEntryOwners {
     const recordOwner = entryOwnerRecorder(this.storage, options);
     const statusListId = `${this.statusListBaseUrl}/${purpose}/v1`;
 
+    // The order: take the index, write the list (a conditional write, tried again over the list now
+    // stored when another writer got in first), check the list holds the index, and only then
+    // record the owner, under that same index. An index with no owner recorded is registered for
+    // no delegation by a graph that reads owners, and `allocateIndex` never gives it out again, so
+    // an allocation that stops before the record, as for a `StatusListWriteConflictError`, a store
+    // that cannot be reached, or a crash, leaves an index nobody can take. Recording first would
+    // leave an owner for an index the allocation then gave up.
     const index = await this.storage.allocateIndex(statusListId);
 
     const capacity = await this.ensureStatusListExists(statusListId, purpose);

@@ -1,4 +1,4 @@
-import { canonicalizeJson, canonicalizeJsonBytes } from '../utils/canonical-json.js';
+import { canonicalizeJsonBytes, sameCanonicalJson } from '../utils/canonical-json.js';
 import { hashAuditValue } from './crypto.js';
 import {
   AUDIT_DIGEST_DOMAINS,
@@ -56,14 +56,6 @@ export type {
 
 /** Matches the proof verifier's default timestamp tolerance. */
 const DEFAULT_MAX_CLOCK_SKEW_MS = 120_000;
-
-function exactJson(left: unknown, right: unknown): boolean {
-  try {
-    return canonicalizeJson(left) === canonicalizeJson(right);
-  } catch {
-    return false;
-  }
-}
 
 type CheckpointCheck =
   | { kind: 'rejected'; result: AuditVerificationDimension }
@@ -461,7 +453,7 @@ export class AuditArtifactVerifier {
     if (entryDigest !== entry.entryDigest) reasons.add(AUDIT_REASON_CODES.ENTRY_DIGEST_MISMATCH);
 
     const expectedReceipt = buildAuditRecorderReceiptCore(entry.core, entry.entryDigest);
-    if (!exactJson(expectedReceipt, entry.recorderReceipt.core)) {
+    if (!sameCanonicalJson(expectedReceipt, entry.recorderReceipt.core)) {
       reasons.add(AUDIT_REASON_CODES.RECEIPT_MISMATCH);
     }
     if ((await this.options.signatures.verify(

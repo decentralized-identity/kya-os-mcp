@@ -7,6 +7,7 @@ import { CryptoProviderAuditHasher } from './crypto.js';
 import { CompactJwsAuditSignatureVerifier } from './crypto.js';
 import { verifyAuditBundle } from './replay-bundle.js';
 import { parseAuditVerificationPolicy } from './schemas.js';
+import { AuditArtifactVerifier } from './verifier.js';
 import type {
   AuditReplayBundleV1,
   AuditVerificationPolicyV1,
@@ -93,9 +94,14 @@ export async function runAuditCli(
         return keys.get(signer.kid) ?? null;
       },
     });
+    const hasher = new CryptoProviderAuditHasher(new NodeCryptoProvider());
+    // The present time, so a policy's constraints that need it (keys that must
+    // still be valid, how fresh an observation must be) are decided here and
+    // not left `indeterminate` behind an exit code of 0.
     const report = await verifyAuditBundle(bundle, policy, {
-      hasher: new CryptoProviderAuditHasher(new NodeCryptoProvider()),
+      hasher,
       signatures,
+      artifacts: new AuditArtifactVerifier({ hasher, signatures, verifiedAt: () => Date.now() }),
     });
     io.write(`${JSON.stringify(report, null, 2)}\n`);
     const dimensions = Object.values(report).filter((value): value is {

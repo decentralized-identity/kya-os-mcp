@@ -522,6 +522,9 @@ dimension, and `2` means usage/configuration/input processing failed. An
 `indeterminate` dimension remains visible in the JSON report and must be handled
 by the relying party's policy.
 
+The CLI verifies at the present time.
+Under a policy whose `keyRevocationMode` is `current` or `both`, each key the bundle was signed with must still be valid now, and `requiredCheckpointFreshnessMs` is measured to now, so a key whose validity has ended or a stale observation makes its dimension `invalid` and the exit code `1`.
+
 ## Projections and Checkpoint integration
 
 `AuditProjectionWorker` derives a minimal timeline projection with an atomic

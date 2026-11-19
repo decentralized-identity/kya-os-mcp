@@ -4,14 +4,11 @@ import {
   assertPath,
   componentMetadata,
   includedArrays,
-  sameLedgerEpoch,
 } from './bundle-components.js';
 import {
-  coveringCheckpoints,
+  checkpointBindings,
   coversEverySelection,
-  isCompletePrefix,
   verifyCheckpointHistory,
-  verifyInclusionBinding,
   verifyMerkleProofComponents,
 } from './bundle-checkpoints.js';
 import {
@@ -341,10 +338,11 @@ export async function verifyAuditBundle(
   );
   const entries = entryCandidates.filter((candidate): candidate is SignedAuditEntryV1 =>
     signedAuditEntrySchema.safeParse(candidate).success);
-  const checkpoints = checkpointCandidates.filter(
+  // Frozen, so the verifier indexes the key boundaries they state only once.
+  const checkpoints = Object.freeze(checkpointCandidates.filter(
     (candidate): candidate is SignedAuditCheckpointV1 =>
       signedAuditCheckpointSchema.safeParse(candidate).success,
-  );
+  ));
   const observations = observationCandidates.filter(
     (candidate): candidate is AuditObservationReceiptV1 =>
       auditObservationReceiptSchema.safeParse(candidate).success,
@@ -367,6 +365,12 @@ export async function verifyAuditBundle(
       checkpoints,
       dependencies.hasher,
     );
+    const binding = await checkpointBindings(
+      checkpoints,
+      entries,
+      proofs.inclusions,
+      dependencies.hasher,
+    );
     const checkpointResults: AuditVerificationDimension[] = [];
     for (const candidate of checkpointCandidates) {
       if (!signedAuditCheckpointSchema.safeParse(candidate).success) {
@@ -374,17 +378,10 @@ export async function verifyAuditBundle(
         continue;
       }
       const checkpoint = candidate as SignedAuditCheckpointV1;
-      const covered = entries.filter((entry) =>
-        sameLedgerEpoch(entry.core, checkpoint.core) &&
-        BigInt(entry.core.sequence) < BigInt(checkpoint.core.treeSize));
-      // A subset export (a sequence range, or no entries at all) cannot
-      // recompute the root, so its entries are bound by inclusion proofs.
-      checkpointResults.push(isCompletePrefix(covered, checkpoint.core.treeSize)
-        ? await artifacts.verifyCheckpoint(checkpoint, covered, policy, context)
-        : mergeAuditDimensions(
-            await artifacts.verifySignedCheckpoint(checkpoint, policy, context),
-            verifyInclusionBinding(checkpoint, covered, proofs.inclusions),
-          ));
+      checkpointResults.push(mergeAuditDimensions(
+        await artifacts.verifySignedCheckpoint(checkpoint, policy, context),
+        binding(checkpoint),
+      ));
     }
     checkpointResults.push(
       verifyCheckpointHistory(checkpoints, entries, core.selections, proofs.consistencies),
@@ -396,8 +393,11 @@ export async function verifyAuditBundle(
   }
   // Checkpoint and observation verdicts speak for the selected entries only
   // through a checkpoint that holds them all.
-  const covering = coveringCheckpoints(core.selections, checkpoints);
-  if (covering.some((digests) => digests.size === 0)) {
+  const named = (digests: readonly string[]): SignedAuditCheckpointV1[] => {
+    const set = new Set(digests);
+    return checkpoints.filter((checkpoint) => set.has(checkpoint.checkpointDigest));
+  };
+  if (!coversEverySelection(core.selections, checkpoints)) {
     checkpointDimension = mergeAuditDimensions(
       checkpointDimension,
       dimension('indeterminate', [AUDIT_REASON_CODES.CHECKPOINT_MISSING]),
@@ -405,6 +405,12 @@ export async function verifyAuditBundle(
   }
   let anchorDimension = artifactReport.anchorIntegrity;
   if (observationCandidates.length > 0) {
+    const checkpointsByDigest = new Map<string, SignedAuditCheckpointV1>();
+    for (const checkpoint of checkpoints) {
+      if (!checkpointsByDigest.has(checkpoint.checkpointDigest)) {
+        checkpointsByDigest.set(checkpoint.checkpointDigest, checkpoint);
+      }
+    }
     const observationResults: AuditVerificationDimension[] = [];
     for (const candidate of observationCandidates) {
       if (!auditObservationReceiptSchema.safeParse(candidate).success) {
@@ -412,8 +418,7 @@ export async function verifyAuditBundle(
         continue;
       }
       const receipt = candidate as AuditObservationReceiptV1;
-      const checkpoint = checkpoints.find((candidate) =>
-        candidate.checkpointDigest === receipt.core.checkpointDigest);
+      const checkpoint = checkpointsByDigest.get(receipt.core.checkpointDigest);
       observationResults.push(checkpoint === undefined
         ? dimension('invalid', [AUDIT_REASON_CODES.OBSERVATION_SCOPE_MISMATCH])
         : await artifacts.verifyObservation(checkpoint, receipt, policy, context));
@@ -421,7 +426,10 @@ export async function verifyAuditBundle(
     observationResults.push(verifyObservationHistory(observations));
     anchorDimension = mergeDimensionList(observationResults);
   }
-  if (!coversEverySelection(covering, observations.map((receipt) => receipt.core.checkpointDigest))) {
+  if (!coversEverySelection(
+    core.selections,
+    named(observations.map((receipt) => receipt.core.checkpointDigest)),
+  )) {
     anchorDimension = mergeAuditDimensions(
       anchorDimension,
       dimension('indeterminate', [AUDIT_REASON_CODES.OBSERVER_EVIDENCE_MISSING]),
@@ -477,9 +485,9 @@ export async function verifyAuditBundle(
       ? artifactReport.currentAuthorization
       : mergeAuditDimensions(artifactReport.currentAuthorization, currentKeys),
   }, policy, {
-    supportingAnchors: coversEverySelection(covering, anchorCandidates
+    supportingAnchors: coversEverySelection(core.selections, named(anchorCandidates
       .filter((candidate): candidate is AuditAnchorReceipt =>
         auditAnchorReceiptSchema.safeParse(candidate).success)
-      .map((receipt) => receipt.checkpointDigest)),
+      .map((receipt) => receipt.checkpointDigest))),
   });
 }

@@ -10,6 +10,7 @@ import {
 import {
   keyIsCurrent,
   keyTrust,
+  withBoundary,
   type CheckpointBoundaries,
   type CheckpointBoundary,
 } from './key-trust.js';
@@ -70,6 +71,9 @@ type CheckpointCheck =
 
 /** Pure historical verifier. It never reads live nonce state or applies current freshness. */
 export class AuditArtifactVerifier {
+  /** Boundary indexes of the frozen checkpoint lists this verifier was given, built once each. */
+  private readonly indexed = new WeakMap<readonly unknown[], Promise<CheckpointBoundaries>>();
+
   constructor(private readonly options: AuditArtifactVerifierOptions) {}
 
   async verifyEntries(
@@ -270,10 +274,15 @@ export class AuditArtifactVerifier {
     if (!policy.acceptedAlgorithms.includes(core.observer.alg)) {
       reasons.add(AUDIT_REASON_CODES.UNSUPPORTED_ALGORITHM);
     }
-    const boundaries = await this.boundaries([
-      ...(context.checkpoints ?? []),
-      validatedCheckpoint,
-    ]);
+    const boundaries = withBoundary(
+      await this.boundaries(context.checkpoints ?? []),
+      await hashAuditValue(
+        this.options.hasher,
+        AUDIT_DIGEST_DOMAINS.checkpoint,
+        validatedCheckpoint.core,
+      ),
+      validatedCheckpoint.core,
+    );
     const trust = keyTrust(
       policy.trustedObservers,
       core.observer,
@@ -340,6 +349,11 @@ export class AuditArtifactVerifier {
     if (!policy.acceptedAlgorithms.includes(core.issuer.alg)) {
       reasons.add(AUDIT_REASON_CODES.UNSUPPORTED_ALGORITHM);
     }
+    const expectedDigest = await hashAuditValue(
+      this.options.hasher,
+      AUDIT_DIGEST_DOMAINS.checkpoint,
+      core,
+    );
     const epochPolicy = policy.trustedLedgerEpochs.find((candidate) =>
       candidate.ledgerId === core.ledgerId &&
       candidate.ledgerEpochId === core.ledgerEpochId);
@@ -349,17 +363,12 @@ export class AuditArtifactVerifier {
       core.createdAt,
       core,
       BigInt(core.treeSize),
-      await this.boundaries([...(context.checkpoints ?? []), validated]),
+      withBoundary(await this.boundaries(context.checkpoints ?? []), expectedDigest, core),
       epochPolicy,
     );
     if (trust === 'outside') reasons.add(AUDIT_REASON_CODES.UNTRUSTED_RECORDER);
     if (trust === 'unresolved') reasons.add(AUDIT_REASON_CODES.KEY_BOUNDARY_UNRESOLVED);
 
-    const expectedDigest = await hashAuditValue(
-      this.options.hasher,
-      AUDIT_DIGEST_DOMAINS.checkpoint,
-      core,
-    );
     if (expectedDigest !== validated.checkpointDigest) {
       reasons.add(AUDIT_REASON_CODES.CHECKPOINT_DIGEST_MISMATCH);
     }
@@ -377,8 +386,20 @@ export class AuditArtifactVerifier {
    * Indexes candidate checkpoints by their recomputed digest. A policy names a
    * boundary by digest, which commits to the checkpoint core, so a matching
    * core authenticates the boundary's ledger epoch and tree size by itself.
+   * A frozen list cannot change, so its index is built once however many
+   * artifacts are checked against it; a replay bundle freezes its own.
    */
-  private async boundaries(
+  private boundaries(checkpoints: readonly unknown[]): Promise<CheckpointBoundaries> {
+    if (!Object.isFrozen(checkpoints)) return this.indexBoundaries(checkpoints);
+    let index = this.indexed.get(checkpoints);
+    if (index === undefined) {
+      index = this.indexBoundaries(checkpoints);
+      this.indexed.set(checkpoints, index);
+    }
+    return index;
+  }
+
+  private async indexBoundaries(
     checkpoints: readonly unknown[],
   ): Promise<Map<string, CheckpointBoundary>> {
     const result = new Map<string, CheckpointBoundary>();

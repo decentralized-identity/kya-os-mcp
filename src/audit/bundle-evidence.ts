@@ -156,7 +156,9 @@ function carriesUnselected(
   const selected = new Map<string, AuditBundleSelectionV1[]>();
   for (const selection of selections) {
     const key = ledgerEpochKey(selection);
-    selected.set(key, [...(selected.get(key) ?? []), selection]);
+    const group = selected.get(key) ?? [];
+    group.push(selection);
+    selected.set(key, group);
   }
   if (scoped.some((artifact) => !selected.has(ledgerEpochKey(artifact)))) return true;
   return entries.some((entry) => {

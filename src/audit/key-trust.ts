@@ -4,6 +4,7 @@
  */
 
 import type {
+  AuditCheckpointCoreV1,
   AuditLedgerRef,
   Digest,
   HistoricalAuditKeyPolicy,
@@ -29,7 +30,28 @@ export interface CheckpointBoundary extends AuditLedgerRef {
   treeSize: bigint;
 }
 
-export type CheckpointBoundaries = ReadonlyMap<string, CheckpointBoundary>;
+/** Checkpoint boundaries by the digest of the checkpoint core that states them. */
+export interface CheckpointBoundaries {
+  get(digest: Digest): CheckpointBoundary | undefined;
+}
+
+/**
+ * `boundaries` with one more checkpoint laid over it: the one being checked, whose own digest a
+ * policy bound may name. Nothing is copied, so a check costs the same however many checkpoints
+ * `boundaries` holds.
+ */
+export function withBoundary(
+  boundaries: CheckpointBoundaries,
+  digest: Digest,
+  checkpoint: AuditCheckpointCoreV1,
+): CheckpointBoundaries {
+  const own: CheckpointBoundary = {
+    ledgerId: checkpoint.ledgerId,
+    ledgerEpochId: checkpoint.ledgerEpochId,
+    treeSize: BigInt(checkpoint.treeSize),
+  };
+  return { get: (candidate) => candidate === digest ? own : boundaries.get(candidate) };
+}
 
 export type BoundStatus = 'within' | 'unresolved' | 'outside';
 

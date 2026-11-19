@@ -1,7 +1,8 @@
 /**
  * What a replay bundle's checkpoints and Merkle proofs prove: the checkpoint history of each ledger
- * epoch, the bundle-bound inclusion and consistency proofs, and the binding of a subset export's
- * entries to the checkpoint that covers them.
+ * epoch, the bundle-bound inclusion and consistency proofs, the binding of each checkpoint to the
+ * entries it covers, and whether the checkpoints cover what the bundle selects. Anyone may hand a
+ * verifier a bundle, so the work here grows with the bundle, never with its square.
  */
 
 import { canonicalizeJson } from '../utils/canonical-json.js';
@@ -11,7 +12,6 @@ import {
   compareDecimal,
   includedArrays,
   ledgerEpochKey,
-  sameLedgerEpoch,
 } from './bundle-components.js';
 import { Rfc9162MerkleTree } from './merkle.js';
 import {
@@ -22,8 +22,10 @@ import type {
   AuditBundleConsistencyProofV1,
   AuditBundleInclusionProofV1,
   AuditBundleSelectionV1,
+  AuditLedgerRef,
   AuditReplayBundleV1,
   AuditVerificationDimension,
+  Digest,
   SignedAuditCheckpointV1,
   SignedAuditEntryV1,
 } from './types.js';
@@ -37,10 +39,147 @@ function consistencyKey(oldCheckpointDigest: string, newCheckpointDigest: string
   return `${oldCheckpointDigest}\0${newCheckpointDigest}`;
 }
 
-export /** True when the entries are exactly the leaves 0..treeSize-1, in order. */
-function isCompletePrefix(entries: readonly SignedAuditEntryV1[], treeSize: string): boolean {
-  return BigInt(entries.length) === BigInt(treeSize) &&
-    entries.every((entry, index) => entry.core.sequence === String(index));
+/** The first item for each key, so a lookup finds what a scan in bundle order would. */
+function firstByKey<T>(items: readonly T[], key: (item: T) => string): Map<string, T> {
+  const result = new Map<string, T>();
+  for (const item of items) {
+    const itemKey = key(item);
+    if (!result.has(itemKey)) result.set(itemKey, item);
+  }
+  return result;
+}
+
+function checkpointKey(ledger: AuditLedgerRef, checkpointDigest: string): string {
+  return `${ledgerEpochKey(ledger)}\0${checkpointDigest}`;
+}
+
+function entryKey(ledger: AuditLedgerRef, entryDigest: string, sequence: string): string {
+  return `${ledgerEpochKey(ledger)}\0${entryDigest}\0${sequence}`;
+}
+
+/**
+ * The longest prefix of one epoch's leaves that the bundle carries whole: entries 0..n-1, each
+ * once, in bundle order. A checkpoint over a tree no larger is bound by recomputing its root.
+ */
+function wholePrefix(epochEntries: readonly SignedAuditEntryV1[]): SignedAuditEntryV1[] {
+  const bySequence = new Map<string, { entry: SignedAuditEntryV1; position: number; count: number }>();
+  epochEntries.forEach((entry, position) => {
+    const seen = bySequence.get(entry.core.sequence);
+    if (seen === undefined) bySequence.set(entry.core.sequence, { entry, position, count: 1 });
+    else seen.count += 1;
+  });
+  const prefix: SignedAuditEntryV1[] = [];
+  let previousPosition = -1;
+  while (prefix.length < epochEntries.length) {
+    const next = bySequence.get(String(prefix.length));
+    if (next === undefined || next.count !== 1 || next.position < previousPosition) break;
+    prefix.push(next.entry);
+    previousPosition = next.position;
+  }
+  return prefix;
+}
+
+/**
+ * The RFC 9162 roots of the prefixes of `leaves` of the given sizes, in one pass: each leaf is
+ * hashed once into the perfect subtrees of the prefix so far, and a prefix's root folds those
+ * subtrees from the right. Hashing every prefix from its leaves would cost the square of the
+ * ledger for a bundle with a checkpoint at every size.
+ */
+export async function prefixRoots(
+  hasher: AuditHasher,
+  leaves: readonly Digest[],
+  sizes: Iterable<number>,
+): Promise<Map<number, Digest>> {
+  const tree = new Rfc9162MerkleTree(hasher);
+  const wanted = [...new Set(sizes)]
+    .filter((size) => size >= 1 && size <= leaves.length)
+    .sort((left, right) => left - right);
+  const roots = new Map<number, Digest>();
+  // The perfect subtrees of the leaves consumed so far, largest first.
+  const subtrees: { size: number; root: Digest }[] = [];
+  let consumed = 0;
+  for (const size of wanted) {
+    for (; consumed < size; consumed += 1) {
+      let joined = { size: 1, root: await tree.leafHash(leaves[consumed]!) };
+      while (subtrees.at(-1)?.size === joined.size) {
+        const left = subtrees.pop()!;
+        joined = { size: left.size * 2, root: await tree.nodeHash(left.root, joined.root) };
+      }
+      subtrees.push(joined);
+    }
+    let root = subtrees.at(-1)!.root;
+    for (let index = subtrees.length - 2; index >= 0; index -= 1) {
+      root = await tree.nodeHash(subtrees[index]!.root, root);
+    }
+    roots.set(size, root);
+  }
+  return roots;
+}
+
+/**
+ * Binds a checkpoint to the whole prefix the bundle carries for it, given the prefix's last entry
+ * and recomputed root: the prefix must be the range it signed, end at the head it signed, and hash
+ * to the root it signed.
+ */
+function prefixBinding(
+  checkpoint: SignedAuditCheckpointV1,
+  head: SignedAuditEntryV1 | undefined,
+  root: Digest | undefined,
+): AuditVerificationDimension {
+  const { core } = checkpoint;
+  if (core.firstSequence !== '0' || head === undefined ||
+    head.core.sequence !== core.lastSequence || head.entryDigest !== core.headEntryDigest) {
+    return dimension('invalid', [AUDIT_REASON_CODES.CHECKPOINT_RANGE_MISMATCH]);
+  }
+  return root === core.rootDigest
+    ? dimension('valid')
+    : dimension('invalid', [AUDIT_REASON_CODES.CHECKPOINT_ROOT_MISMATCH]);
+}
+
+/**
+ * How the bundle binds each of its checkpoints to the entries it carries. A checkpoint over a tree
+ * no larger than the prefix its epoch carries whole is bound by its recomputed root, all of an
+ * epoch's roots computed in one pass; any other, by inclusion proofs for the entries it covers.
+ */
+export async function checkpointBindings(
+  checkpoints: readonly SignedAuditCheckpointV1[],
+  entries: readonly SignedAuditEntryV1[],
+  verifiedInclusions: ReadonlySet<string>,
+  hasher: AuditHasher,
+): Promise<(checkpoint: SignedAuditCheckpointV1) => AuditVerificationDimension> {
+  const epochs = new Map<string, SignedAuditEntryV1[]>();
+  for (const entry of entries) {
+    const key = ledgerEpochKey(entry.core);
+    const group = epochs.get(key) ?? [];
+    group.push(entry);
+    epochs.set(key, group);
+  }
+  const prefixes = new Map([...epochs].map(([key, group]) => [key, wholePrefix(group)]));
+  const sizes = new Map<string, number[]>();
+  for (const checkpoint of checkpoints) {
+    const key = ledgerEpochKey(checkpoint.core);
+    const treeSize = BigInt(checkpoint.core.treeSize);
+    if (treeSize < 1n || treeSize > BigInt(prefixes.get(key)?.length ?? 0)) continue;
+    const group = sizes.get(key) ?? [];
+    group.push(Number(checkpoint.core.treeSize));
+    sizes.set(key, group);
+  }
+  const roots = new Map<string, Map<number, Digest>>();
+  for (const [key, wanted] of sizes) {
+    const leaves = prefixes.get(key)!.map((entry) => entry.entryDigest);
+    roots.set(key, await prefixRoots(hasher, leaves, wanted));
+  }
+  return (checkpoint) => {
+    const key = ledgerEpochKey(checkpoint.core);
+    const prefix = prefixes.get(key) ?? [];
+    const treeSize = BigInt(checkpoint.core.treeSize);
+    if (treeSize <= BigInt(prefix.length)) {
+      const size = Number(treeSize);
+      return prefixBinding(checkpoint, prefix[size - 1], roots.get(key)?.get(size));
+    }
+    const covered = (epochs.get(key) ?? []).filter((entry) => BigInt(entry.core.sequence) < treeSize);
+    return verifyInclusionBinding(checkpoint, covered, verifiedInclusions);
+  };
 }
 
 export function verifyCheckpointHistory(
@@ -85,13 +224,16 @@ export function verifyCheckpointHistory(
     }
   }
 
+  // Each group is sorted by tree size above.
+  const treeSizes = new Map([...groups].map(([key, group]) =>
+    [key, canonicalizeJson(group.map((checkpoint) => checkpoint.core.treeSize))]));
+  const selected = new Set(selections.map(ledgerEpochKey));
+  const byDigest = firstByKey(checkpoints, (checkpoint) =>
+    checkpointKey(checkpoint.core, checkpoint.checkpointDigest));
   for (const selection of selections) {
-    const actual = (groups.get(ledgerEpochKey(selection)) ?? [])
-      .map((checkpoint) => checkpoint.core.treeSize)
-      .sort(compareDecimal);
     const expected = [...selection.checkpointTreeSizes]
       .sort(compareDecimal);
-    if (canonicalizeJson(actual) !== canonicalizeJson(expected)) {
+    if ((treeSizes.get(ledgerEpochKey(selection)) ?? '[]') !== canonicalizeJson(expected)) {
       reasons.add(AUDIT_REASON_CODES.CHECKPOINT_MISSING);
     }
   }
@@ -106,10 +248,10 @@ export function verifyCheckpointHistory(
       ledgerId: entry.core.ledgerId,
       ledgerEpochId: details.previousEpochId,
     };
-    if (!selections.some((selection) => sameLedgerEpoch(selection, predecessor))) continue;
-    const terminal = checkpoints.find((checkpoint) =>
-      sameLedgerEpoch(checkpoint.core, predecessor) &&
-      checkpoint.checkpointDigest === details.previousTerminalCheckpointDigest);
+    if (!selected.has(ledgerEpochKey(predecessor))) continue;
+    const terminal = byDigest.get(
+      checkpointKey(predecessor, details.previousTerminalCheckpointDigest),
+    );
     if (terminal === undefined) {
       reasons.add(AUDIT_REASON_CODES.CHECKPOINT_CHAIN_MISMATCH);
       continue;
@@ -118,10 +260,8 @@ export function verifyCheckpointHistory(
     // predecessor checkpoint signed over a larger tree is a second authority
     // still checkpointing after rollover. Entries past the terminal are not:
     // the terminal checkpoint's own lifecycle event lands there legitimately.
-    const terminalSize = BigInt(terminal.core.treeSize);
-    if (checkpoints.some((checkpoint) =>
-      sameLedgerEpoch(checkpoint.core, predecessor) &&
-      BigInt(checkpoint.core.treeSize) > terminalSize)) {
+    const largest = groups.get(ledgerEpochKey(predecessor))!.at(-1)!;
+    if (BigInt(largest.core.treeSize) > BigInt(terminal.core.treeSize)) {
       reasons.add(AUDIT_REASON_CODES.CHECKPOINT_FORK_DETECTED);
     }
   }
@@ -147,6 +287,10 @@ export async function verifyMerkleProofComponents(
   const inclusions = new Set<string>();
   const consistencies = new Set<string>();
   const tree = new Rfc9162MerkleTree(hasher);
+  const checkpointsByKey = firstByKey(checkpoints, (value) =>
+    checkpointKey(value.core, value.checkpointDigest));
+  const entriesByKey = firstByKey(entries, (value) =>
+    entryKey(value.core, value.entryDigest, value.core.sequence));
   const inclusionCandidates = includedArrays<unknown>(
     bundle,
     AUDIT_BUNDLE_MEDIA_TYPES.inclusionProofs,
@@ -157,15 +301,8 @@ export async function verifyMerkleProofComponents(
       continue;
     }
     const item = candidate as AuditBundleInclusionProofV1;
-    const checkpoint = checkpoints.find((value) =>
-      value.checkpointDigest === item.checkpointDigest &&
-      value.core.ledgerId === item.ledgerId &&
-      value.core.ledgerEpochId === item.ledgerEpochId);
-    const entry = entries.find((value) =>
-      value.entryDigest === item.entryDigest &&
-      value.core.sequence === item.sequence &&
-      value.core.ledgerId === item.ledgerId &&
-      value.core.ledgerEpochId === item.ledgerEpochId);
+    const checkpoint = checkpointsByKey.get(checkpointKey(item, item.checkpointDigest));
+    const entry = entriesByKey.get(entryKey(item, item.entryDigest, item.sequence));
     const leafIndex = Number(item.proof.leafIndex);
     const treeSize = Number(item.proof.treeSize);
     if (checkpoint === undefined || entry === undefined ||
@@ -194,14 +331,8 @@ export async function verifyMerkleProofComponents(
       continue;
     }
     const item = candidate as AuditBundleConsistencyProofV1;
-    const oldCheckpoint = checkpoints.find((value) =>
-      value.checkpointDigest === item.oldCheckpointDigest &&
-      value.core.ledgerId === item.ledgerId &&
-      value.core.ledgerEpochId === item.ledgerEpochId);
-    const newCheckpoint = checkpoints.find((value) =>
-      value.checkpointDigest === item.newCheckpointDigest &&
-      value.core.ledgerId === item.ledgerId &&
-      value.core.ledgerEpochId === item.ledgerEpochId);
+    const oldCheckpoint = checkpointsByKey.get(checkpointKey(item, item.oldCheckpointDigest));
+    const newCheckpoint = checkpointsByKey.get(checkpointKey(item, item.newCheckpointDigest));
     if (oldCheckpoint === undefined || newCheckpoint === undefined ||
       item.proof.oldTreeSize !== oldCheckpoint.core.treeSize ||
       item.proof.newTreeSize !== newCheckpoint.core.treeSize ||
@@ -229,7 +360,7 @@ export async function verifyMerkleProofComponents(
  * so every entry it covers must instead carry a verified inclusion proof
  * against it, and a covered head entry must be the one the checkpoint signed.
  */
-export function verifyInclusionBinding(
+function verifyInclusionBinding(
   checkpoint: SignedAuditCheckpointV1,
   covered: readonly SignedAuditEntryV1[],
   verifiedInclusions: ReadonlySet<string>,
@@ -251,30 +382,20 @@ export function verifyInclusionBinding(
 }
 
 /**
- * For each selection, the digests of the checkpoints that cover it: of its ledger epoch, over a
- * tree that holds every entry it selects. A checkpoint, an observation or a supporting anchor is
- * evidence about the entries a bundle selects only through one of these.
+ * Whether, for every selection, one of `checkpoints` covers it: of the selection's ledger epoch,
+ * over a tree that holds every entry it selects. A checkpoint, an observation or a supporting
+ * anchor is evidence about the entries a bundle selects only through such a checkpoint.
  */
-export function coveringCheckpoints(
+export function coversEverySelection(
   selections: readonly AuditBundleSelectionV1[],
   checkpoints: readonly SignedAuditCheckpointV1[],
-): ReadonlySet<string>[] {
-  const byEpoch = new Map<string, SignedAuditCheckpointV1[]>();
+): boolean {
+  const largest = new Map<string, bigint>();
   for (const checkpoint of checkpoints) {
     const key = ledgerEpochKey(checkpoint.core);
-    byEpoch.set(key, [...(byEpoch.get(key) ?? []), checkpoint]);
+    const treeSize = BigInt(checkpoint.core.treeSize);
+    if (treeSize > (largest.get(key) ?? -1n)) largest.set(key, treeSize);
   }
-  return selections.map((selection) => new Set((byEpoch.get(ledgerEpochKey(selection)) ?? [])
-    .filter((checkpoint) => BigInt(checkpoint.core.treeSize) > BigInt(selection.lastSequence))
-    .map((checkpoint) => checkpoint.checkpointDigest)));
-}
-
-/** Whether `digests` name, for every selection, one of the checkpoints that cover it. */
-export function coversEverySelection(
-  covering: readonly ReadonlySet<string>[],
-  digests: readonly string[],
-): boolean {
-  const named = new Set(digests);
-  return covering.every((digestsOfSelection) =>
-    [...digestsOfSelection].some((digest) => named.has(digest)));
+  return selections.every((selection) =>
+    (largest.get(ledgerEpochKey(selection)) ?? -1n) > BigInt(selection.lastSequence));
 }

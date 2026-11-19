@@ -204,8 +204,10 @@ const checkpoints = new AuditCheckpointBuilder({ journal, store, signer, hasher,
 
 A derived verifier checks only entries recorded under the signer's own key.
 That covers the recorder, which chains only to entries recorded under its own key, as every entry of its epoch is.
-A checkpoint builder may sign with a key of its own, and then cannot check the recorder's entries with its derived verifier: it trusts each leaf recorded under another key as written, as in earlier releases, still requires it to chain to the leaf before it, and warns once per process for each such key, naming it and saying to pass `signatures`.
-A forged entry that claims another key is therefore checkpointed with only that warning, so give a builder `signatures` that resolve the recorder's key wherever you can; with `signatures` every leaf is verified, and one under a key they cannot resolve is refused.
+The recorder of an epoch signs every entry in it, its genesis included, under one key, so the builder holds every leaf to the key the epoch's genesis entry names, and refuses a leaf under any other.
+A builder that signs with the recorder's own key verifies every leaf with its derived verifier.
+A checkpoint builder may sign with a key of its own, and then cannot check the recorder's entries with its derived verifier: when the genesis names another key than its own, it trusts the epoch's leaves as written, as in earlier releases, still requires each to chain to the leaf before it and to name the genesis key, and warns once per process for that key, naming it and saying to pass `signatures`.
+A forged entry under the genesis key is therefore checkpointed with only that warning, so give such a builder `signatures` that resolve the recorder's key wherever you can; with `signatures` every leaf is verified, and one under a key they cannot resolve is refused.
 The warning names at most 32 keys in a process, then says once that there are more.
 When the signer fails to derive its verifier, the recorder or builder refuses the call with `AUDIT_INVALID_CONFIGURATION` and asks the signer again on the next one.
 `createInMemoryReferenceRecorder` passes `signatures`.

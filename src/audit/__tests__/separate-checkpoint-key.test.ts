@@ -65,6 +65,19 @@ describe('a checkpoint builder that signs with another key than the recorder', (
     expect(message).toContain('Pass signatures that resolve that key to verify them');
   });
 
+  it('refuses, with no signatures, a leaf under another key than the genesis names', async () => {
+    const recorderKey = await jwkSigner('recorder');
+    const journal = new MemoryAuditJournal();
+    await record(recorderWith(journal, recorderKey), 'evt_1', 1);
+    const claimed: SignerRef = { did: 'did:key:zElsewhere', kid: 'did:key:zElsewhere#k', alg: 'EdDSA' };
+    await insert(journal, await unsignedEntryAfter((await journal.getHead(ledger))!, { recorder: claimed }), '9');
+
+    await expect(builderWith(journal, await jwkSigner('checkpoints')).createCheckpoint(ledger)).rejects.toMatchObject({
+      code: AUDIT_ERROR_CODES.JOURNAL_FAILURE, message: forgedMessage, details: { sequence: '2' },
+    });
+    expect(warn.mock.calls.map(([message]) => message).join('\n')).not.toContain('zElsewhere');
+  });
+
   it('refuses a forged entry, and any entry under a key it cannot resolve, when given signatures', async () => {
     const recorderKey = await jwkSigner('recorder');
     const checkpointKey = await jwkSigner('checkpoints');
@@ -110,37 +123,47 @@ describe('a checkpoint builder that signs with the recorder key, given no signat
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it('trusts as written, and names in a warning, a forged entry under another key, which signatures refuse', async () => {
+  it('refuses an entry under another key than the genesis names, with or without signatures, and warns of nothing', async () => {
     const signer = await jwkSigner();
     const journal = new MemoryAuditJournal();
     await record(recorderWith(journal, signer), 'evt_1', 1);
-    const claimed: SignerRef = { did: 'did:key:zElsewhere', kid: 'did:key:zElsewhere#k\u001b[2J\u202e', alg: 'EdDSA' };
+    const claimed: SignerRef = { did: 'did:key:zElsewhere', kid: 'did:key:zElsewhere#k', alg: 'EdDSA' };
     await insert(journal, await unsignedEntryAfter((await journal.getHead(ledger))!, { recorder: claimed }), '9');
 
-    await expect(builderWith(journal, signer).createCheckpoint(ledger))
-      .resolves.toMatchObject({ core: { treeSize: '3' } });
-    expect(warn).toHaveBeenCalledTimes(1);
-    const [message] = warn.mock.calls[0]!;
-    // Quoted as JSON, which escapes a control character, with a format character replaced.
-    expect(message).toContain('"did:key:zElsewhere#k\\u001b[2J\ufffd"');
-    expect(message).not.toMatch(/[\u001b\u202e]/);
-
+    await expect(builderWith(journal, signer).createCheckpoint(ledger)).rejects.toMatchObject({
+      code: AUDIT_ERROR_CODES.JOURNAL_FAILURE, message: forgedMessage, details: { sequence: '2' },
+    });
     const signatures: AuditSignatureVerifier = (await signer.verifier())!;
     await expect(builderWith(journal, signer, signatures).createCheckpoint(ledger))
       .rejects.toMatchObject({ message: forgedMessage, details: { sequence: '2' } });
+    expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe('the recorder key a checkpoint builder warns of', () => {
+  it('is the one the genesis names, quoted as JSON with what does not print replaced', async () => {
+    const recorderKey = await jwkSigner('k\u001b[2J\u202e');
+    const journal = new MemoryAuditJournal();
+    await record(recorderWith(journal, recorderKey), 'evt_1', 1);
+
+    await expect(builderWith(journal, await jwkSigner('checkpoints')).createCheckpoint(ledger))
+      .resolves.toMatchObject({ core: { treeSize: '2' } });
+    expect(warn).toHaveBeenCalledTimes(1);
+    const [message] = warn.mock.calls[0]!;
+    // Quoted as JSON, which escapes a control character, with a format character replaced.
+    expect(message).toContain('"did:key:zRecorder#k\\u001b[2J\ufffd"');
+    expect(message).not.toMatch(/[\u001b\u202e]/);
   });
 
   it('names at most a bounded number of keys in a process, then says once that there are more', async () => {
-    const signer = await jwkSigner();
-    const journal = new MemoryAuditJournal();
-    await record(recorderWith(journal, signer), 'evt_1', 1);
+    const checkpointKey = await jwkSigner('checkpoints');
     const keys = MAX_WARNED_RECORDER_KEYS + 3;
     for (let n = 0; n < keys; n += 1) {
-      const recorder: SignerRef = { did: 'did:key:zElsewhere', kid: `did:key:zElsewhere#k${n}`, alg: 'EdDSA' };
-      await append(journal, await unsignedEntryAfter((await journal.getHead(ledger))!, { recorder }), n);
+      const journal = new MemoryAuditJournal();
+      await record(recorderWith(journal, await jwkSigner(`k${n}`)), 'evt_1', 1);
+      await expect(builderWith(journal, checkpointKey).createCheckpoint(ledger))
+        .resolves.toMatchObject({ core: { treeSize: '2' } });
     }
-    await expect(builderWith(journal, signer).createCheckpoint(ledger))
-      .resolves.toMatchObject({ core: { treeSize: String(2 + keys) } });
     expect(warn).toHaveBeenCalledTimes(MAX_WARNED_RECORDER_KEYS + 1);
     expect(warn.mock.calls.at(-1)![0]).toMatch(/more keys than this process names/);
     expect(warn.mock.calls.slice(0, -1).map(([message]) => message).join('\n'))

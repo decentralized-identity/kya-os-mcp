@@ -17,8 +17,8 @@ export interface StoredAuditEntryVerification {
   signatures: AuditSignatureVerifier;
   /**
    * Set when `signatures` was derived from this signer's own key, the one key
-   * it can check. A checkpoint builder then trusts as written, with a
-   * warning, a leaf recorded under another key.
+   * it can check. A checkpoint builder over an epoch whose genesis names
+   * another key then trusts that epoch's leaves as written, with a warning.
    */
   ownKey?: SignerRef;
 }
@@ -82,13 +82,16 @@ export async function requireStoredAuditEntry(
 }
 
 /**
- * Refuses, as {@link requireStoredAuditEntry} does, unless each of `entries`
- * from index `from` chains to the entry before it and verifies as one its
- * recorder signed. A verifier derived from the builder's own key cannot check
- * a leaf recorded under another key, as a recorder with a key of its own
- * writes: that leaf is trusted as written, as before such a verifier, and
- * {@link warnUnverifiedRecorderKey} names its key. Only `signatures` given
- * explicitly verifies it.
+ * Refuses, as {@link requireStoredAuditEntry} does, unless each of `entries`,
+ * a ledger epoch from its genesis, from index `from` chains to the entry
+ * before it, names the recorder key the genesis names, and verifies as one
+ * that recorder signed. A recorder signs every entry of an epoch, its genesis
+ * included, under one key, so an entry under any other is refused.
+ * A verifier derived from the builder's own key cannot check another key, as
+ * a recorder with a key of its own signs under: when the genesis names
+ * another key, the epoch's leaves are trusted as written, as before such a
+ * verifier, and {@link warnUnverifiedRecorderKey} names that key. Only
+ * `signatures` given explicitly verifies them.
  */
 export async function requireStoredAuditLeaves(
   entries: readonly SignedAuditEntryV1[],
@@ -96,16 +99,17 @@ export async function requireStoredAuditLeaves(
   ledger: AuditLedgerRef,
   verification: StoredAuditEntryVerification,
 ): Promise<void> {
+  const recorder = entries[0]?.core.recorder;
+  if (recorder === undefined || from >= entries.length) return;
   const { ownKey } = verification;
+  const trusted = ownKey !== undefined && !sameSigner(recorder, ownKey);
+  if (trusted) warnUnverifiedRecorderKey(recorder);
   for (let index = from; index < entries.length; index += 1) {
     const entry = entries[index]!;
     const chained = entry.core.previousEntryDigest === (entries[index - 1]?.entryDigest ?? null);
-    if (chained && ownKey !== undefined && !sameSigner(entry.core.recorder, ownKey)) {
-      warnUnverifiedRecorderKey(entry.core.recorder);
-      continue;
-    }
     await requireStoredAuditEntry(entry.core.sequence, async () =>
-      chained && verifyStoredAuditEntry(entry, ledger, verification));
+      chained && sameSigner(entry.core.recorder, recorder) &&
+      (trusted || verifyStoredAuditEntry(entry, ledger, verification)));
   }
 }
 

@@ -1,0 +1,14 @@
+kind: Fixed
+body: |-
+    **A checkpoint builder no longer checkpoints an entry under another key
+    than its epoch's recorder signs with.** A builder that signed with the
+    recorder's own key, given no `signatures`, trusted as written any leaf
+    that named another key, so a writer of the journal store with no key
+    could append an entry naming `did:key:zElsewhere` with a junk receipt
+    and have it checkpointed with only a warning. A recorder signs every
+    entry of an epoch under one key, so `AuditCheckpointBuilder` now holds
+    every leaf to the key the epoch's genesis entry names and refuses any
+    other with `AUDIT_JOURNAL_FAILURE`. When the genesis names the builder's
+    own key it verifies every leaf; when it names another, it trusts the
+    leaves as written, as before, and warns once per process for that key.
+time: 2026-11-18T23:28:55.000000-06:00

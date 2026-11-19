@@ -279,7 +279,9 @@ Without `fixtures.fork`, it reports the check that an observer refuses a larger 
 An adapter that passed the 1.25.0 contracts runs them again before upgrading.
 
 The recorder and the checkpoint builder now verify the journal entries they read by default when the signer's key is a private JWK, a `KeyObject` or an extractable `CryptoKey`, and refuse an entry that does not verify with `AUDIT_JOURNAL_FAILURE`.
-A builder that signs with a key of its own keeps working: it trusts as written the entries its recorder signed under another key, and warns once per process for each such key.
+The checkpoint builder holds every leaf of an epoch to the recorder key the epoch's genesis entry names, and refuses a leaf under any other with `AUDIT_JOURNAL_FAILURE`.
+A builder that signs with the recorder's own key verifies every leaf.
+A builder that signs with a key of its own keeps working: when the genesis names another key, it trusts the epoch's leaves as written, and warns once per process for that key.
 Pass `signatures`, resolving the recorder's key, to verify them.
 With a non-extractable `CryptoKey`, or a signer of your own without `verifier()`, pass `signatures` to either; otherwise the journal is trusted as written.
 

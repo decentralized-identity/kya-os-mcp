@@ -27,9 +27,9 @@ import {
   parseAuditProducerEvent,
 } from './schemas.js';
 import {
-  checkStoredAuditEntry,
   requireStoredAuditEntry,
   StoredAuditEntryVerifier,
+  verifyStoredAuditEntry,
 } from './stored-entry.js';
 import type {
   AuditHead,
@@ -321,10 +321,10 @@ export class AuditRecorderService {
     // so an entry under another key is not one it can chain to.
     await requireStoredAuditEntry(head.sequence, async () => {
       const entry = await this.entryAt(ledger, head.sequence);
-      return entry === undefined || entry.entryDigest !== head.entryDigest ||
-        !sameSigner(entry.core.recorder, this.config.signer.ref)
-        ? 'not-signed'
-        : checkStoredAuditEntry(entry, ledger, verification);
+      return entry !== undefined &&
+        entry.entryDigest === head.entryDigest &&
+        sameSigner(entry.core.recorder, this.config.signer.ref) &&
+        verifyStoredAuditEntry(entry, ledger, verification);
     });
     this.receiptedHead = head;
   }

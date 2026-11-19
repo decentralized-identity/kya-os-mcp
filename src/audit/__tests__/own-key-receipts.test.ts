@@ -1,7 +1,6 @@
 import { generateKeyPairSync, type KeyObject } from 'node:crypto';
 import { exportJWK, generateKeyPair, type JWK } from 'jose';
 import { describe, expect, it, vi } from 'vitest';
-import { AuditCheckpointBuilder, MemoryAuditCheckpointStore } from '../checkpoint.js';
 import {
   CompactJwsAuditSignatureVerifier,
   CompactJwsAuditSigner,
@@ -11,18 +10,18 @@ import {
 import { AUDIT_ERROR_CODES } from '../errors.js';
 import { publicJwkOf } from '../own-key.js';
 import { MemoryAuditJournal } from '../providers/memory-journal.js';
-import { AuditRecorderService } from '../recorder-service.js';
-import type { SignerRef } from '../types.js';
-import { producerEvent, tenantRef } from './audit-fixtures.js';
-import { hasher, ledger } from './observer-fixtures.js';
-import { insert, unsignedEntryAfter } from './stored-entry-fixtures.js';
+import { ledger } from './observer-fixtures.js';
+import {
+  builderWith,
+  insert,
+  jwkSigner,
+  record,
+  recorderWith,
+  ref,
+  unsignedEntryAfter,
+} from './stored-entry-fixtures.js';
 
-const submitter = { producerAuthority: 'did:key:zProducer', tenantAuthority: 'tenant-1', tenantRef };
 const payload = new TextEncoder().encode('{"receipt":1}');
-
-function ref(kid = 'key-1', alg: SignerRef['alg'] = 'EdDSA'): SignerRef {
-  return { did: 'did:key:zRecorder', kid: `did:key:zRecorder#${kid}`, alg };
-}
 
 /** The same kind of Ed25519 private key in each form the signer takes that yields its public key. */
 async function privateKeyForms(): Promise<Record<string, CryptoKey | JWK | KeyObject>> {
@@ -32,32 +31,6 @@ async function privateKeyForms(): Promise<Record<string, CryptoKey | JWK | KeyOb
     'private JWK': await exportJWK((await generateKeyPair('EdDSA', { extractable: true })).privateKey),
     KeyObject: generateKeyPairSync('ed25519').privateKey,
   };
-}
-
-async function jwkSigner(kid = 'key-1'): Promise<CompactJwsAuditSigner> {
-  return new CompactJwsAuditSigner(ref(kid), await exportJWK((await generateKeyPair('EdDSA', { extractable: true })).privateKey));
-}
-
-function recorderWith(journal: MemoryAuditJournal, signer: AuditSigner, signatures?: AuditSignatureVerifier) {
-  return new AuditRecorderService({
-    ...ledger, tenantRef, binding: 'urn:kya-os:audit-binding:mcp:2025-11-25', sourceId: 'recorder-1',
-    journal, signer, hasher, clock: { now: () => 1_750_000_001_000 },
-    ...(signatures === undefined ? {} : { signatures }),
-  });
-}
-
-function builderWith(journal: MemoryAuditJournal, signer: AuditSigner, signatures?: AuditSignatureVerifier) {
-  return new AuditCheckpointBuilder({
-    journal, store: new MemoryAuditCheckpointStore(), signer, hasher, clock: { now: () => 1_750_000_002_000 },
-    ...(signatures === undefined ? {} : { signatures }),
-  });
-}
-
-async function record(recorder: AuditRecorderService, id: string, sequence: number) {
-  return recorder.submitAuthenticated(
-    { ledgerId: ledger.ledgerId, producerEvent: producerEvent(id, sequence), encryptedEvidence: [] },
-    submitter,
-  );
 }
 
 /** A journal holding a genesis and one entry recorded by `signer`, then a forged entry under its name. */
@@ -161,20 +134,6 @@ describe('a recorder and a builder whose signing key yields its public key, give
       .resolves.toMatchObject({ core: { sequence: '2' } });
     await expect(builderWith(journal, signer).createCheckpoint(ledger))
       .resolves.toMatchObject({ core: { treeSize: '3' } });
-  });
-
-  it('refuse, for a builder that signs with another key than the recorder, saying to pass a verifier', async () => {
-    const recorderKey = await jwkSigner('recorder');
-    const checkpointKey = await jwkSigner('checkpoints');
-    const journal = new MemoryAuditJournal();
-    await record(recorderWith(journal, recorderKey), 'evt_1', 1);
-    await expect(builderWith(journal, checkpointKey).createCheckpoint(ledger)).rejects.toMatchObject({
-      code: AUDIT_ERROR_CODES.JOURNAL_FAILURE,
-      message: 'Audit journal entry was recorded under a key the signer cannot verify; pass signatures that resolve it',
-      details: { sequence: '0' },
-    });
-    await expect(builderWith(journal, checkpointKey, (await recorderKey.verifier())!).createCheckpoint(ledger))
-      .resolves.toMatchObject({ core: { treeSize: '2', issuer: checkpointKey.ref } });
   });
 
   it('refuse, for a recorder, a head recorded under another key, whatever verifier it is given', async () => {

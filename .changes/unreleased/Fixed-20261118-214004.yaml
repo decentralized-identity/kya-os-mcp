@@ -15,7 +15,10 @@ body: |-
     this process only once the stored entry verifies as one it signed for
     its ledger epoch, and the builder signs a checkpoint only over leaves
     that verify and chain; each refuses with `AUDIT_JOURNAL_FAILURE` naming
-    the entry's `sequence` otherwise. `createInMemoryReferenceRecorder`
-    passes `signatures`. With neither, as for a signer over a non-extractable
+    the entry's `sequence` otherwise. A derived verifier checks only entries
+    under the signer's own key, so a builder with a key of its own trusts
+    the recorder's entries as written, as before, and warns once per process
+    for each such key. `createInMemoryReferenceRecorder` passes
+    `signatures`. With neither, as for a signer over a non-extractable
     `CryptoKey`, the journal is trusted as written, as before.
 time: 2026-11-18T21:40:04.000000-06:00

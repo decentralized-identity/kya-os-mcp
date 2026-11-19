@@ -61,11 +61,11 @@ export interface AuditRecorderServiceConfig {
    * refuses with `AUDIT_JOURNAL_FAILURE` otherwise, so a party that can write
    * the journal store but holds no key cannot have the recorder sign a
    * successor to an entry it never made. Without it the recorder uses the
-   * verifier `signer.verifier()` derives from its own key, which checks only
-   * entries recorded under that key; when the signer derives none, as a
-   * signer over a non-extractable CryptoKey or a remote key service does not,
-   * the journal is trusted as written. Pass it when the signer derives no
-   * verifier.
+   * verifier `signer.verifier()` derives from its own key, which checks the
+   * entries recorded under that key, the only key the recorder chains to in
+   * its epoch; when the signer derives none, as a signer over a
+   * non-extractable CryptoKey or a remote key service does not, the journal
+   * is trusted as written. Pass it when the signer derives no verifier.
    * @since 1.26.0
    */
   signatures?: AuditSignatureVerifier;

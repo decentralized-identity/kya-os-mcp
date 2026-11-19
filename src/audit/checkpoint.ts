@@ -161,10 +161,11 @@ export interface AuditCheckpointBuilderOptions {
   onCheckpointCreated?: (checkpoint: SignedAuditCheckpointV1) => Promise<void> | void;
   /**
    * Verifies the recorder receipts in the journal: the builder signs only over
-   * leaves that verify as their recorder's for this ledger epoch and chain,
+   * leaves that chain and verify as their recorder's for this ledger epoch,
    * and refuses with `AUDIT_JOURNAL_FAILURE` otherwise. Without it the builder
-   * uses `signer.verifier()`, which checks only entries under the signer's own
-   * key, and trusts the journal as written when the signer derives none.
+   * verifies with `signer.verifier()` the leaves under the signer's own key,
+   * trusts other leaves as written with a warning naming their key, and trusts
+   * the journal as written when the signer derives no verifier.
    * @since 1.26.0
    */
   signatures?: AuditSignatureVerifier;

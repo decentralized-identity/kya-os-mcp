@@ -6,11 +6,12 @@
 
 import { describe, expect, it } from 'vitest';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
-import { checkpointBindings, prefixRoots } from '../bundle-checkpoints.js';
+import { checkpointBindings, prefixRoots, verifyMerkleProofComponents } from '../bundle-checkpoints.js';
 import { AuditCheckpointBuilder, MemoryAuditCheckpointStore } from '../checkpoint.js';
 import { CryptoProviderAuditHasher } from '../crypto.js';
 import { Rfc9162MerkleTree } from '../merkle.js';
-import type { Digest, SignedAuditCheckpointV1 } from '../types.js';
+import type { AuditReplayBundleV1, Digest, SignedAuditCheckpointV1, SignedAuditEntryV1 } from '../types.js';
+import { AUDIT_BUNDLE_MEDIA_TYPES } from '../bundle-components.js';
 import { AUDIT_REASON_CODES } from '../verifier.js';
 import { recordedHistory, TestSigner } from './audit-fixtures.js';
 
@@ -72,5 +73,36 @@ describe('checkpoint bindings', () => {
 
     expect(twice(checkpoint)).toEqual(missing);
     expect(reordered(checkpoint)).toEqual(missing);
+  });
+});
+
+describe('inclusion counts', () => {
+  /** Ledger epoch `ledgerEpochId`'s one-leaf tree, with the same entry and checkpoint digests in every epoch. */
+  const epoch = async (ledgerEpochId: string) => {
+    const ledger = { ledgerId: 'kya:tenant:prod:primary', ledgerEpochId };
+    const entryDigest = leaves[0]!;
+    const checkpointDigest = leaves[1]!;
+    const rootDigest = await new Rfc9162MerkleTree(hasher).root([entryDigest]);
+    return {
+      entry: { core: { ...ledger, sequence: '0' }, entryDigest } as unknown as SignedAuditEntryV1,
+      checkpoint: { core: { ...ledger, treeSize: '1', rootDigest }, checkpointDigest } as unknown as SignedAuditCheckpointV1,
+      proof: { ...ledger, sequence: '0', entryDigest, checkpointDigest, proof: { leafIndex: '0', treeSize: '1', auditPath: [] } },
+    };
+  };
+  const carrying = (proofs: unknown[]) => ({
+    components: [{ path: 'inclusion-proofs.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.inclusionProofs, disposition: 'included', content: proofs }],
+  }) as unknown as AuditReplayBundleV1;
+
+  it('count each entry once for each checkpoint, in the ledger epoch the proof names, though another has its digests', async () => {
+    const [first, second] = [await epoch('epoch_1'), await epoch('epoch_2')];
+    const { dimension, inclusionCounts } = await verifyMerkleProofComponents(
+      carrying([first.proof, second.proof, first.proof]),
+      [first.entry, second.entry],
+      [first.checkpoint, second.checkpoint],
+      hasher,
+    );
+
+    expect(dimension.verdict).toBe('valid');
+    expect([...inclusionCounts.values()]).toEqual([1, 1]);
   });
 });

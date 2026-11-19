@@ -9,7 +9,11 @@ import {
   digestAuditEvent,
 } from './integrity.js';
 import type { AuditRecorderSubmission } from './providers/recorder-client.js';
-import { validateEventAuthority, validateSubmissionEnvelope } from './recorder-authority.js';
+import {
+  sameSigner,
+  validateEventAuthority,
+  validateSubmissionEnvelope,
+} from './recorder-authority.js';
 import type {
   AuditRecorderServiceConfig,
   AuthenticatedAuditSubmissionContext,
@@ -22,6 +26,7 @@ import {
   parseAuditEntryCore,
   parseAuditProducerEvent,
 } from './schemas.js';
+import { requireStoredAuditEntry, verifyStoredAuditEntry } from './stored-entry.js';
 import type {
   AuditHead,
   AuditLedgerRef,
@@ -63,6 +68,8 @@ export class AuditRecorderService {
   private committedHead: AuditHead | null = null;
   /** Highest head the journal has reported in a compare-and-append result. */
   private reportedHead: AuditHead | null = null;
+  /** The last journal head whose stored entry verified as one this recorder signed. */
+  private receiptedHead: AuditHead | null = null;
   /** Write-ahead evidence held, persisted and disposed for submissions in flight. */
   private readonly writeAhead: RecorderWriteAheadEvidence;
 
@@ -210,6 +217,7 @@ export class AuditRecorderService {
         if (raced !== null) return validateExistingGenesis(raced, this.config);
       }
 
+      await this.assertHeadReceipted(head);
       const candidate = await this.buildCandidate(event, eventDigest, head, genesis);
       let result;
       try {
@@ -289,6 +297,42 @@ export class AuditRecorderService {
         { committedSequence: committed?.sequence, reportedSequence: actual?.sequence },
       );
     }
+  }
+
+  /**
+   * With `signatures`, the recorder chains only to a head it appended in this
+   * process or one whose stored entry verifies as one it signed for this
+   * ledger epoch. A head read from the journal is otherwise whatever a writer
+   * of the journal store put there, and the next receipt would commit to it.
+   */
+  private async assertHeadReceipted(head: AuditHead | null): Promise<void> {
+    const signatures = this.config.signatures;
+    if (signatures === undefined || head === null ||
+      sameHead(head, this.committedHead) || sameHead(head, this.receiptedHead)) return;
+    const ledger = this.ledgerRef();
+    await requireStoredAuditEntry(head.sequence, async () => {
+      const entry = await this.entryAt(ledger, head.sequence);
+      return entry !== undefined &&
+        entry.entryDigest === head.entryDigest &&
+        sameSigner(entry.core.recorder, this.config.signer.ref) &&
+        verifyStoredAuditEntry(entry, ledger, { hasher: this.config.hasher, signatures });
+    });
+    this.receiptedHead = head;
+  }
+
+  /** The stored entry at `sequence`, if the journal returns that one first from just below it. */
+  private async entryAt(
+    ledger: AuditLedgerRef,
+    sequence: string,
+  ): Promise<SignedAuditEntryV1 | undefined> {
+    const position = BigInt(sequence);
+    const range = this.config.journal.readRange({
+      ...ledger,
+      ...(position === 0n ? {} : { afterSequence: String(position - 1n) }),
+      limit: 1,
+    });
+    for await (const entry of range) return entry.core.sequence === sequence ? entry : undefined;
+    return undefined;
   }
 
   private async identifyEvent(

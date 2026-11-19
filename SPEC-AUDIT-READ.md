@@ -95,7 +95,9 @@ This profile assumes the "verify twice" model.
 A serving implementation MAY assert its own verification result to a client, but a conforming client MUST be able to independently re-verify.
 
 A client re-verifies a `listEntries` response by validating the response envelope, then verifying the embedded entries against a trust policy: signatures, digests, and chain continuity.
-A client re-verifies an inclusion proof by confirming the entry's `entryDigest`, then checking that the proof's Merkle path closes to the `rootDigest` of the named, signature-verified checkpoint.
+A client re-verifies an inclusion proof by verifying the entry the proof names as it verifies an entry of a `listEntries` response, its digests and its recorder receipt signature against the trust policy, and confirming that its `entryDigest` is the one the proof names; then by checking that the proof's Merkle path closes to the `rootDigest` of the named, signature-verified checkpoint.
+A client MUST NOT accept an entry on the inclusion proof alone.
+A checkpoint commits to the leaves its journal held when it was signed, so the proof shows that a digest is in a signed tree, not that the recorder made the entry behind it.
 A client re-verifies a consistency proof by checking that the proof closes between the two named, signature-verified checkpoints.
 
 Verification MUST succeed after transport serialization; a JSON round trip MUST NOT alter any digest or signature.

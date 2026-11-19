@@ -1,0 +1,9 @@
+kind: Upgrading
+body: |-
+    **Give `AuditRecorderService` and `AuditCheckpointBuilder` the
+    `signatures` verifier that resolves your recorder's key.** Without it
+    both trust the journal store as written, and a writer of that store
+    with no key can have the recorder key sign over an entry the recorder
+    never made. UPGRADING.md, "The recorder and the checkpoint builder can
+    verify what the journal holds", has the steps.
+time: 2026-11-18T21:40:06.000000-06:00

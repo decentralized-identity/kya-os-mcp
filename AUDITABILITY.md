@@ -184,6 +184,22 @@ closed with `AUDIT_JOURNAL_FAILURE` instead of signing a second entry at a
 receipted sequence. Restoring a journal is an epoch transition, not a silent
 rewind.
 
+A head the recorder did not append in this process, and every leaf a checkpoint covers, is otherwise whatever the journal store holds.
+A party that can write that store, and holds no key, can insert a well-formed entry with correct digests and a receipt the recorder never signed: the recorder would then sign a successor that commits to it, and the checkpoint builder a tree that holds it.
+Give `AuditRecorderService` and `AuditCheckpointBuilder` the `signatures` verifier you give `AuditArtifactVerifier`, resolving the recorder's key:
+
+```ts
+// recorderKeys is an AuditVerificationKeyResolver that resolves the recorder's public key.
+const signatures = new CompactJwsAuditSignatureVerifier(recorderKeys);
+const recorder = new AuditRecorderService({ ...config, journal, signer, hasher, clock, signatures });
+const checkpoints = new AuditCheckpointBuilder({ journal, store, signer, hasher, signatures });
+```
+
+With it, the recorder chains to such a head only once the stored entry at that head verifies as one it signed for its ledger epoch, and the builder signs a checkpoint only over leaves that verify as their recorder's and chain to the leaf before them; each refuses with `AUDIT_JOURNAL_FAILURE`, naming the entry's `sequence`, otherwise.
+The builder verifies the leaves after the last checkpoint it verified in full, and every leaf after a restart.
+`createInMemoryReferenceRecorder` wires it.
+Without `signatures` the journal is trusted as written, as in earlier releases.
+
 Run the provider contract kit for every adapter:
 
 ```ts

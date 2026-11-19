@@ -126,6 +126,7 @@ export async function createInMemoryReferenceRecorder(
 
   const hasher = new CryptoProviderAuditHasher(new WebCryptoProvider());
   const signer = new CompactJwsAuditSigner(signerRef, privateKey);
+  const signatures = new CompactJwsAuditSignatureVerifier(keyResolver);
   const journal = new MemoryAuditJournal();
   const clock: AuditClock = options.clock ?? { now: () => Date.now() };
 
@@ -139,6 +140,7 @@ export async function createInMemoryReferenceRecorder(
     signer,
     hasher,
     clock,
+    signatures,
   });
 
   const checkpointStore = new MemoryAuditCheckpointStore();
@@ -148,15 +150,13 @@ export async function createInMemoryReferenceRecorder(
     signer,
     hasher,
     clock,
+    signatures,
   });
   const read = new LocalAuditReadService({
     journal,
     checkpoints: { builder: checkpointBuilder, store: checkpointStore },
   });
-  const verifier = new AuditArtifactVerifier({
-    hasher,
-    signatures: new CompactJwsAuditSignatureVerifier(keyResolver),
-  });
+  const verifier = new AuditArtifactVerifier({ hasher, signatures });
   const verificationPolicy: AuditVerificationPolicyV1 = {
     policyId: 'policy:reference-recorder',
     trustedLedgerEpochs: [{

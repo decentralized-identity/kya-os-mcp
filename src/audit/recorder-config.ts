@@ -1,4 +1,4 @@
-import type { AuditHasher, AuditSigner } from './crypto.js';
+import type { AuditHasher, AuditSignatureVerifier, AuditSigner } from './crypto.js';
 import type { AuditEvidenceProvider } from './providers/evidence.js';
 import type { AuditJournalProvider } from './providers/journal.js';
 import type { AuditRecorderSubmission } from './providers/recorder-client.js';
@@ -54,4 +54,14 @@ export interface AuditRecorderServiceConfig {
   previousTerminalCheckpointDigest?: Digest;
   epochTransitionGuard?: AuditEpochTransitionGuard;
   maxAppendConflicts?: number;
+  /**
+   * Verifies the recorder's own receipt signatures. Given it, the recorder
+   * chains to a journal head it did not append in this process only once the
+   * stored entry at that head verifies as one it signed for this ledger epoch,
+   * and refuses with `AUDIT_JOURNAL_FAILURE` otherwise, so a party that can
+   * write the journal store but holds no key cannot have the recorder sign a
+   * successor to an entry it never made. Without it the journal is trusted as
+   * written.
+   */
+  signatures?: AuditSignatureVerifier;
 }

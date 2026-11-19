@@ -739,7 +739,7 @@ describe('signed replay bundles', () => {
     const evidencePolicyDigest = await hashAuditValue(
       hasher, 'org.kya-os.audit.verification-policy.v1', evidencePolicy,
     );
-    const bundle = await new AuditReplayBundleExporter({
+    const observedBundle = (observations: unknown[]) => new AuditReplayBundleExporter({
       hasher, signer, clock: { now: () => 1_750_000_010_000 },
     }).export({
       bundleId: 'bundle_observed', purpose: 'regulatory-review',
@@ -752,28 +752,45 @@ describe('signed replay bundles', () => {
       components: [
         { path: 'entries.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.entries, disposition: 'included', content: entries },
         { path: 'checkpoint.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.checkpoints, disposition: 'included', content: [checkpoint] },
-        { path: 'observations.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.observations, disposition: 'included', content: [first, brokenLink] },
+        { path: 'observations.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.observations, disposition: 'included', content: observations },
         { path: 'anchors.json', mediaType: AUDIT_BUNDLE_MEDIA_TYPES.anchors, disposition: 'included', content: [anchor] },
       ],
     });
-    const notEvaluated = await verifyAuditBundle(bundle, evidencePolicy, {
+    // A trusted anchor no verifier was given for leaves anchor integrity undecided.
+    const observed = await observedBundle([first]);
+    const anchoredOnly = await verifyAuditBundle(observed, evidencePolicy, {
       hasher, signatures: new TestVerifier(),
     });
-    expect(notEvaluated.anchorIntegrity.reasonCodes).toEqual(expect.arrayContaining([
-      AUDIT_REASON_CODES.OBSERVATION_CHAIN_MISMATCH,
-      AUDIT_REASON_CODES.NOT_EVALUATED,
-    ]));
+    expect(anchoredOnly.anchorIntegrity).toEqual({
+      verdict: 'indeterminate', reasonCodes: [AUDIT_REASON_CODES.NOT_EVALUATED],
+    });
 
-    const rejected = await verifyAuditBundle(bundle, {
+    const notEvaluated = await verifyAuditBundle(await observedBundle([first, brokenLink]), evidencePolicy, {
+      hasher, signatures: new TestVerifier(),
+    });
+    expect(notEvaluated.anchorIntegrity).toEqual({
+      verdict: 'invalid',
+      reasonCodes: [
+        AUDIT_REASON_CODES.NOT_EVALUATED,
+        AUDIT_REASON_CODES.OBSERVATION_CHAIN_MISMATCH,
+        AUDIT_REASON_CODES.OBSERVATION_DIGEST_MISMATCH,
+        AUDIT_REASON_CODES.OBSERVATION_SIGNATURE_INVALID,
+      ],
+    });
+
+    const rejected = await verifyAuditBundle(observed, {
       ...evidencePolicy,
       trustedSupportingAnchors: [],
     }, {
       hasher, signatures: new TestVerifier(), verifySupportingAnchor: async () => false,
     });
-    expect(rejected.anchorIntegrity.reasonCodes).toEqual(expect.arrayContaining([
-      AUDIT_REASON_CODES.UNTRUSTED_SUPPORTING_ANCHOR,
-      AUDIT_REASON_CODES.SUPPORTING_ANCHOR_INVALID,
-    ]));
+    expect(rejected.anchorIntegrity).toEqual({
+      verdict: 'invalid',
+      reasonCodes: [
+        AUDIT_REASON_CODES.SUPPORTING_ANCHOR_INVALID,
+        AUDIT_REASON_CODES.UNTRUSTED_SUPPORTING_ANCHOR,
+      ],
+    });
   });
 
   it('returns a policy-specific invalid report before processing a bundle', async () => {

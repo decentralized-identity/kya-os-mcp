@@ -299,6 +299,8 @@ const authority = await evaluateDelegationChain(chain, checkRevocation, {
 
 Use your DID resolver and safe fetch provider for the issuers and status lists you accept.
 For a request, use `requireDelegation` after `requireProof` to bind the caller and check the requested action as well.
+A passing verdict, from either one, carries `caveats`, the chain's limits at their tightest, and `unknownCaveats`, those the library does not interpret.
+Hold each call to them with `caveatRefusal(authority, { amount, currency })`, pricing the call from your own records, which returns a refusal `{ code, reason }` or `undefined`; [examples/chain-by-value](./examples/chain-by-value/) shows how.
 Omitting `verifyHopProof` preserves the legacy status-only evaluation with one process-wide warning; the option becomes required in the next major version.
 See [Upgrading from 1.23.0](./UPGRADING.md#from-1230).
 

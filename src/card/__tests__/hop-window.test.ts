@@ -56,9 +56,9 @@ describe('a hop window', () => {
   });
 
   it.each<[string, DelegationChain, string, string]>([
-    ['a validFrom more than 120 seconds ahead', rootWith({ validFrom: at(121 * SECOND) }), 'delegation_not_yet_valid', `hop 0: not yet valid (validFrom ${at(121 * SECOND)} is in the future)`],
-    ['a validUntil more than 120 seconds ago', rootWith({ validUntil: at(-121 * SECOND) }), 'delegation_expired', `hop 0: expired (validUntil ${at(-121 * SECOND)} is in the past)`],
-    ['a ValidUntil caveat more than 120 seconds ago', rootUntilCaveat(at(-121 * SECOND)), 'delegation_expired', `hop 0: expired caveat (ValidUntil ${at(-121 * SECOND)} is in the past)`],
+    ['a validFrom more than 120 seconds ahead', rootWith({ validFrom: at(121 * SECOND) }), 'delegation_not_yet_valid', `hop 0: not yet valid (validFrom "${at(121 * SECOND)}" is in the future)`],
+    ['a validUntil more than 120 seconds ago', rootWith({ validUntil: at(-121 * SECOND) }), 'delegation_expired', `hop 0: expired (validUntil "${at(-121 * SECOND)}" is in the past)`],
+    ['a ValidUntil caveat more than 120 seconds ago', rootUntilCaveat(at(-121 * SECOND)), 'delegation_expired', `hop 0: expired caveat (ValidUntil "${at(-121 * SECOND)}" is in the past)`],
     ['a validFrom with no zone, which names no single instant', rootWith({ validFrom: '2026-11-03T00:00:00' }), 'delegation_malformed', `hop 0: validFrom "2026-11-03T00:00:00" ${NOT_A_DATE}`],
     ['a validUntil with no zone', rootWith({ validUntil: '2026-12-01T00:00:00.000' }), 'delegation_malformed', `hop 0: validUntil "2026-12-01T00:00:00.000" ${NOT_A_DATE}`],
     ['a validUntil that is a date alone', rootWith({ validUntil: '2026-12-01' }), 'delegation_malformed', `hop 0: validUntil "2026-12-01" ${NOT_A_DATE}`],

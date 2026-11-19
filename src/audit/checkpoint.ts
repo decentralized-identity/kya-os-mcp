@@ -1,4 +1,5 @@
 import { canonicalizeJsonBytes } from '../utils/canonical-json.js';
+import { KeyedLock } from '../utils/keyed-lock.js';
 import type { AuditHasher, AuditSigner } from './crypto.js';
 import { hashAuditValue } from './crypto.js';
 import { AUDIT_DIGEST_DOMAINS } from './integrity.js';
@@ -159,7 +160,7 @@ export interface AuditCheckpointBuilderOptions {
 export class AuditCheckpointBuilder {
   private readonly tree: Rfc9162MerkleTree;
   private readonly clock: { now(): number };
-  private readonly ledgerTails = new Map<string, Promise<void>>();
+  private readonly ledgerTurns = new KeyedLock();
   /** Per ledger, stored checkpoints whose lifecycle hook has not completed, oldest first. */
   private readonly failedHooks = new Map<string, SignedAuditCheckpointV1[]>();
 
@@ -196,20 +197,8 @@ export class AuditCheckpointBuilder {
     return checkpoint;
   }
 
-  private async serialized<T>(ledger: AuditLedgerRef, operation: () => Promise<T>): Promise<T> {
-    const key = ledgerKey(ledger);
-    const previous = this.ledgerTails.get(key) ?? Promise.resolve();
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
-    const tail = previous.then(() => gate);
-    this.ledgerTails.set(key, tail);
-    await previous;
-    try {
-      return await operation();
-    } finally {
-      release();
-      if (this.ledgerTails.get(key) === tail) this.ledgerTails.delete(key);
-    }
+  private serialized<T>(ledger: AuditLedgerRef, operation: () => Promise<T>): Promise<T> {
+    return this.ledgerTurns.run(ledgerKey(ledger), operation);
   }
 
   private async storeCheckpoint(

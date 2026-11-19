@@ -124,6 +124,8 @@ describe('verifyRequestDelegation: a carried chain', () => {
       leafInvoker: p.subAgent.did,
       invocationTarget: RESOURCE,
       allowedAction: ['orders.place'],
+      caveats: [{ type: 'MaxAmount', limit: '100.00', currency: 'USD' }, { type: 'ValidUntil', date: '2027-01-01T00:00:00Z' }],
+      unknownCaveats: [],
       depth: 2,
       fresh: true,
     });

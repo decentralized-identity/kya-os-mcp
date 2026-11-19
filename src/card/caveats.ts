@@ -66,7 +66,7 @@ export function caveatNarrows(parent: Caveat, child: Caveat): boolean {
   if (parent.type === 'MaxAmount') {
     // Currency is monotone, not strict-equal: a currency-LESS parent (any currency, per the optional
     // schema) may be narrowed by a child that pins one; a parent that already pins a currency requires
-    // the SAME one (dropping/switching it broadens). Never fail-open — the amount must still narrow.
+    // the SAME one (dropping/switching it broadens). Never fail open: the amount must still narrow.
     const currencyNarrows = parent.currency === undefined || parent.currency === child.currency;
     return (
       currencyNarrows &&
@@ -75,7 +75,7 @@ export function caveatNarrows(parent: Caveat, child: Caveat): boolean {
       decimalLte(child.limit, parent.limit)
     );
   }
-  return canonical(parent) === canonical(child); // unknown caveat type — must be replicated verbatim
+  return canonical(parent) === canonical(child); // an unknown caveat type must be replicated verbatim
 }
 
 /**

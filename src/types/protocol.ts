@@ -8,6 +8,7 @@
  */
 
 import { parseDateTime } from '../utils/rfc3339.js';
+import { DEFAULT_MAX_CLOCK_SKEW_MS, windowBreach } from '../utils/validity-window.js';
 
 // ============================================================================
 // CRISP Delegation Constraints (KYA-OS §4.2)
@@ -321,10 +322,21 @@ export function isDelegationCredentialExpired(vc: DelegationCredential): boolean
 }
 
 /**
- * Check if a DelegationCredential is not yet valid. A present
- * `constraints.notBefore` that is not a finite number counts as not yet valid.
+ * Check if a DelegationCredential is not yet valid: before its `issuanceDate`,
+ * "the date and time the credential becomes valid" (VC Data Model 1.1 §4.6),
+ * or before `constraints.notBefore`. An `issuanceDate` is read as
+ * `expirationDate` is, and one that cannot be read counts as not yet valid. An
+ * issuer stamps it with the moment it signs, so it is held with the tolerance
+ * the start of a status list's window is (`utils/validity-window.ts`). A
+ * present `constraints.notBefore` that is not a finite number counts as not
+ * yet valid.
  */
 export function isDelegationCredentialNotYetValid(vc: DelegationCredential): boolean {
+  const issuedAt = parseDateTime(vc.issuanceDate);
+  if (issuedAt === undefined || windowBreach(issuedAt, undefined, Date.now(), DEFAULT_MAX_CLOCK_SKEW_MS) !== undefined) {
+    return true;
+  }
+
   const notBefore = vc.credentialSubject.delegation.constraints?.notBefore;
   if (notBefore === undefined) {
     return false;

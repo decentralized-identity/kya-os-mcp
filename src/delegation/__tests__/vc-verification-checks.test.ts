@@ -114,6 +114,28 @@ describe("validateBasicProperties: validity bounds and status fail closed", () =
     expect(validateBasicProperties(withConstraints({ notBefore: nowSec + 60 })).valid).toBe(false);
   });
 
+  it("treats a credential as not yet valid before its issuanceDate, held with the clock tolerance", () => {
+    const issuedIn = (ms: number) => new Date(Date.now() + ms).toISOString();
+    const notYetValid = { valid: false, reason: "Delegation credential not yet valid", code: "delegation_not_yet_valid", transient: false };
+    expect(validateBasicProperties(credential({ issuanceDate: issuedIn(30 * 24 * 60 * 60 * 1000) }))).toEqual(notYetValid);
+    expect(validateBasicProperties(credential({ issuanceDate: issuedIn(125_000) }))).toEqual(notYetValid);
+    // Signed a moment ago by an issuer whose clock runs a minute ahead of the verifier's.
+    expect(validateBasicProperties(credential({ issuanceDate: issuedIn(60_000) }))).toEqual({ valid: true });
+    expect(validateBasicProperties(credential({ issuanceDate: issuedIn(-60_000) }))).toEqual({ valid: true });
+  });
+
+  it("treats an issuanceDate that is not an RFC 3339 date-time with its zone as not yet valid", () => {
+    for (const issuanceDate of ["next month", "2026-01-01T00:00:00", "2026-01-01", "2026-02-30T00:00:00Z"]) {
+      expect(validateBasicProperties(credential({ issuanceDate })), issuanceDate).toEqual({
+        valid: false,
+        reason: "Delegation credential not yet valid",
+        code: "delegation_not_yet_valid",
+        transient: false,
+      });
+    }
+    expect(validateBasicProperties(credential({ issuanceDate: "2025-12-31T18:00:00-06:00" }))).toEqual({ valid: true });
+  });
+
   it("passes only an active delegation", () => {
     expect(validateBasicProperties(credential())).toEqual({ valid: true });
     for (const [status, reason, code] of [

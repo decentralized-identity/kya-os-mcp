@@ -115,6 +115,8 @@ describe('a stored entry the recorder did not sign', () => {
         const entry = await unsignedEntryAfter(head);
         return { ...entry, core: { ...entry.core, recordedAt: entry.core.recordedAt + 1 } };
       }],
+      ['an evidence-manifest digest that is not its event\'s, under an entry digest and receipt made for it', (head) =>
+        unsignedEntryAfter(head, { evidenceManifestDigest: `sha256:${'6'.repeat(64)}` })],
       ['a receipt core that is not the one built for its entry', async (head) => {
         const entry = await unsignedEntryAfter(head);
         return { ...entry, recorderReceipt: { ...entry.recorderReceipt, core: { ...entry.recorderReceipt.core, eventId: 'other' } } };

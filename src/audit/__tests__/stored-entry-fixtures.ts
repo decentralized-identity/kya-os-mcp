@@ -29,6 +29,8 @@ export async function unsignedEntryAfter(
     recorder?: SignerRef;
     ledgerRef?: AuditLedgerRef;
     previousEntryDigest?: AuditHead['entryDigest'];
+    /** An evidence-manifest digest in place of the event's own, digested into the entry as if it were. */
+    evidenceManifestDigest?: AuditEntryCoreV1['evidenceManifestDigest'];
     /** Signs the receipt with this signer instead of writing `jws`. */
     signWith?: AuditSigner;
   } = {},
@@ -44,7 +46,7 @@ export async function unsignedEntryAfter(
     recorder: options.recorder ?? new TestSigner().ref,
     eventDigest,
     event,
-    evidenceManifestDigest: await digestAuditEvidenceManifest(hasher, event),
+    evidenceManifestDigest: options.evidenceManifestDigest ?? await digestAuditEvidenceManifest(hasher, event),
     integritySuite: 'KYA-AUDIT-JCS-SHA256-JWS-2026',
   };
   const entryDigest = await digestAuditEntry(hasher, core);

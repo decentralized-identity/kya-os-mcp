@@ -22,7 +22,7 @@ import { credentialIssuerDid, credentialIssuerRefusal } from './credential-issue
 export function rootAdmissionRefusal(
   root: DelegationCredential,
   trustedRootIssuers: readonly string[] | undefined,
-): Refusal | undefined {
+): (Refusal & { readonly reason: string }) | undefined {
   if (trustedRootIssuers === undefined) return undefined;
   const invalidList = trustedRootIssuersRefusal(trustedRootIssuers);
   if (invalidList !== undefined) return refusal('configuration_error', invalidList);

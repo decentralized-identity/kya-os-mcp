@@ -278,9 +278,10 @@ async function enforceChain(
   if (rootRefusal !== undefined) return rootRefusal;
 
   // Every result of the walk carries the credentials it reached, root first.
-  const reached: Reached = { ancestors: 0, presented: false };
+  const reached: Reached = { ancestors: 0 };
   const verdict = await walkChain(chain, reached, leafDelegation, deps, timeoutMs, options);
-  const evaluated = [...chain.slice(0, reached.ancestors), ...(reached.presented ? [leafCredential] : [])];
+  // The walk examines the presented credential first, so every verdict covers it.
+  const evaluated = [...chain.slice(0, reached.ancestors), leafCredential];
   return { ...verdict, evaluated };
 }
 
@@ -297,13 +298,12 @@ function admissionRefusal(chain: readonly DelegationCredential[], trustedRootIss
   const said = refused.code === "untrusted_root"
     ? `Delegation ${leafId} descends from a root whose issuer is not a trusted root issuer`
     : `Delegation ${leafId} descends from a root whose credential names no issuer`;
-  return refusal(refused.code, presentedReason(said, refused.reason ?? said));
+  return refusal(refused.code, presentedReason(said, refused.reason));
 }
 
-/** How far the walk of a chain reached: how many of its ancestors, root first, and the presented credential. */
+/** How far the walk of a chain reached: how many of its ancestors, root first, past the presented credential. */
 interface Reached {
   ancestors: number;
-  presented: boolean;
 }
 
 /**
@@ -326,7 +326,6 @@ async function walkChain(
   const expiry: { at?: number } = {};
   const warnings: string[] = [];
 
-  reached.presented = true;
   const presentedRefusal = await credentialRefusal(leafCredential, expiry, deps, timeoutMs, options?.skipSignature === true);
   if (presentedRefusal !== undefined) return presentedRefusal;
 
